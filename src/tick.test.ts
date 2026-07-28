@@ -30,6 +30,7 @@ const addReaction = vi.fn();
 const mergePullRequest = vi.fn();
 const incrementAttemptCount = vi.fn();
 const setIssueState = vi.fn();
+const getPullRequestStatus = vi.fn();
 vi.mock('./github.js', () => ({
   hasEvidenceComment: (...args: unknown[]) => hasEvidenceComment(...args),
   postEvidenceComment: (...args: unknown[]) => postEvidenceComment(...args),
@@ -37,6 +38,7 @@ vi.mock('./github.js', () => ({
   mergePullRequest: (...args: unknown[]) => mergePullRequest(...args),
   incrementAttemptCount: (...args: unknown[]) => incrementAttemptCount(...args),
   setIssueState: (...args: unknown[]) => setIssueState(...args),
+  getPullRequestStatus: (...args: unknown[]) => getPullRequestStatus(...args),
 }));
 
 const publishEvidence = vi.fn();
@@ -164,5 +166,34 @@ describe('processSlicePr — bottom-of-stack PR (unchanged behavior)', () => {
 
     expect(stillInProgress).toBe(false);
     expect(notifyBlocker).toHaveBeenCalled();
+  });
+});
+
+describe('processSlicePr — mentions found on an already-mergeable bottom PR (regression)', () => {
+  beforeEach(() => {
+    worktreeDirFor.mockReturnValue('/tmp/worktree-bottom');
+  });
+
+  it('re-reads fresh PR state after review-request and merges in the same tick, instead of deferring', async () => {
+    const bottomPr = pr({
+      number: 229,
+      sliceIndex: 0,
+      baseRefName: 'main',
+      headRefName: 'valeria/228/slice-1',
+      checksPassing: false, // stale snapshot taken before the mention landed
+      reviewDecision: '',
+    });
+    findUnprocessedMentions.mockResolvedValue([{ id: 1, kind: 'issue', body: '@valeria-agent fijate esto', reactionsEyes: 0 }]);
+    getPullRequestStatus.mockResolvedValue({ ...bottomPr, checksPassing: true, reviewDecision: 'APPROVED' });
+    isBehind.mockResolvedValue(false);
+
+    const stillInProgress = await processSlicePr(issue(), bottomPr, true);
+
+    expect(runAgentTask).toHaveBeenCalledWith({
+      type: 'review-request', issueNumber: 228, prNumber: 229,
+      mentions: [{ id: 1, kind: 'issue', body: '@valeria-agent fijate esto', reactionsEyes: 0 }],
+    });
+    expect(stillInProgress).toBe(true);
+    expect(mergePullRequest).toHaveBeenCalledWith(229);
   });
 });

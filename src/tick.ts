@@ -16,6 +16,7 @@ import {
   hasEvidenceComment,
   postEvidenceComment,
   addReaction,
+  getPullRequestStatus,
   type TrackingIssue,
   type PullRequestStatus,
 } from './github.js';
@@ -226,13 +227,20 @@ export async function processSlicePr(issue: TrackingIssue, pr: StackedPr, isBott
   // failure reading comments must stay local to this secondary flow, never
   // reach tick()'s catch and put the whole issue in `blocked` (which also
   // emails a human). See docs/superpowers/specs/2026-07-28-mention-review-design.md.
-  let mentionsFound = false;
   try {
     const mentions = await findUnprocessedMentions(pr.number);
-    mentionsFound = mentions.length > 0;
-    if (mentionsFound) {
+    if (mentions.length > 0) {
       await runAgentTask({ type: 'review-request', issueNumber: issue.number, prNumber: pr.number, mentions });
       for (const m of mentions) await addReaction(m.id, m.kind, 'eyes');
+      // `pr` was read before a claude -p run that can take up to 30
+      // minutes and may itself push a commit, so its checks/review fields
+      // can be stale now — re-read before falling through to the merge
+      // decision below. Without this, an already-approved, checks-passing
+      // PR that merely got mentioned would sit unmerged until whatever
+      // processIssue does next (e.g. starting a brand new slice) finishes,
+      // since the cron lock is single-flight — not just the usual ~5min
+      // tick cadence. See docs/superpowers/specs/2026-07-28-mention-review-design.md.
+      pr = { ...pr, ...(await getPullRequestStatus(pr.number)) };
     }
   } catch (error) {
     // Local failure, not the issue-wide catch in tick(): a review-request
@@ -240,12 +248,6 @@ export async function processSlicePr(issue: TrackingIssue, pr: StackedPr, isBott
     // added, so the next tick picks these same comments up again.
     log.error(`review-request failed for PR #${pr.number}`, error);
   }
-  // Returns whether the review-request succeeded or threw, like every other
-  // agent-task branch below: `pr` was read before a claude -p run that can
-  // take up to 30 minutes, so falling through to the merge decision would
-  // act on a stale snapshot (e.g. merging a PR that was mentioned and
-  // reviewed in this very tick). The next tick re-reads fresh PR state.
-  if (mentionsFound) return true;
 
   // Solo el fondo del stack necesita estar al día con main antes de evaluar
   // merge — ver docs/superpowers/specs/2026-07-28-stacked-prs-design.md §5.
