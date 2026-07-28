@@ -205,7 +205,7 @@ function logSliceOutcome(issue: TrackingIssue, pr: StackedPr, isBottom: boolean,
   log.info(`issue #${issue.number} slice ${pr.sliceIndex + 1} PR #${pr.number}${isBottom ? ' (bottom)' : ''}: ${outcome}`);
 }
 
-async function processSlicePr(issue: TrackingIssue, pr: StackedPr, isBottom: boolean): Promise<boolean> {
+export async function processSlicePr(issue: TrackingIssue, pr: StackedPr, isBottom: boolean): Promise<boolean> {
   await recordSlicePr(issue.number, pr.sliceIndex, pr.number);
 
   // Checked every tick until it succeeds once (hasEvidenceComment gates the
@@ -256,19 +256,13 @@ async function processSlicePr(issue: TrackingIssue, pr: StackedPr, isBottom: boo
       logSliceOutcome(issue, pr, isBottom, 'poniéndose al día con main, esperando');
       return true;
     }
-  }
 
-  if (pr.checksPassing && pr.reviewDecision === 'APPROVED') {
-    // Aprobado pero no es el fondo del stack: espera su turno sin
-    // notificación — mismo "estado de espera normal" de docs/BLOCKING.md.
-    if (!isBottom) {
-      logSliceOutcome(issue, pr, isBottom, 'aprobado, esperando su turno (no es el fondo)');
+    if (pr.checksPassing && pr.reviewDecision === 'APPROVED') {
+      await mergePullRequest(pr.number);
+      await markSliceMerged(issue.number, pr.sliceIndex);
+      logSliceOutcome(issue, pr, isBottom, 'mergeado');
       return true;
     }
-    await mergePullRequest(pr.number);
-    await markSliceMerged(issue.number, pr.sliceIndex);
-    logSliceOutcome(issue, pr, isBottom, 'mergeado');
-    return true;
   }
 
   if (pr.reviewDecision === 'CHANGES_REQUESTED') {
@@ -279,6 +273,16 @@ async function processSlicePr(issue: TrackingIssue, pr: StackedPr, isBottom: boo
     if (blocked) return false;
     logSliceOutcome(issue, pr, isBottom, 'changes requested, disparando fix-review');
     await runAgentTask({ type: 'fix-review', issueNumber: issue.number, prNumber: pr.number });
+    return true;
+  }
+
+  // bmedical's CI pipeline only runs against PRs targeting `main`; a
+  // non-bottom stacked PR's base is always another slice's branch, so it
+  // never gets a statusCheckRollup at all. Evaluating checksPending for it
+  // would escalate forever on a state that's actually just "waiting its
+  // turn" — see docs/superpowers/specs/2026-07-28-bottom-only-checks-design.md.
+  if (!isBottom) {
+    logSliceOutcome(issue, pr, isBottom, 'esperando su turno (no es el fondo)');
     return true;
   }
 
