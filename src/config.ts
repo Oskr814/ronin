@@ -26,6 +26,11 @@ export const config = {
   // see docs/DESIGN.md §7.1. Containment relies on every task running
   // inside its own disposable git worktree, never the main checkout.
   agentTaskTimeoutMs: Number(process.env.AGENT_TASK_TIMEOUT_MINUTES ?? 30) * 60_000,
+  // Binary invoked for headless runs. A plain `claude` login is tied to one
+  // account — on a machine with multiple Claude accounts (aliased CLIs like
+  // `claude-bmedical`), this needs to point at whichever one is actually
+  // logged in, found live when a real slice failed with "Not logged in".
+  claudeCommand: process.env.CLAUDE_COMMAND ?? 'claude',
   // Dedicated ValerIA GitHub App — never the ambient `gh auth` session, so
   // issues/PRs are authored by "ValerIA[bot]", not whoever is logged into
   // `gh` on the box running the supervisor. See docs/DESIGN.md §7.

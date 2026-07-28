@@ -18,7 +18,7 @@ const execFileAsync = promisify(execFile);
 export async function runClaudeHeadless(cwd: string, prompt: string): Promise<string> {
   const token = await getInstallationToken();
   const { stdout } = await execFileAsync(
-    'claude',
+    config.claudeCommand,
     ['-p', prompt, '--permission-mode', 'bypassPermissions'],
     { cwd, timeout: config.agentTaskTimeoutMs, maxBuffer: 32 * 1024 * 1024, env: { ...process.env, GH_TOKEN: token } },
   );
