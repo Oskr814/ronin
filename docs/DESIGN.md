@@ -53,19 +53,25 @@ El estado en sí **no se infiere parseando el body** — vive en labels, que son
 
 El body queda como contexto legible para el humano (qué slice va, qué PR corresponde, por qué está bloqueado); las labels son lo que el supervisor realmente lee para decidir la próxima acción.
 
-### 3. Supervisor (honelab, tmux)
+### 3. Supervisor (honelab, cron)
 
-Un proceso supervisor corre en una sesión tmux persistente y en cada tick:
+`pnpm tick` corre y termina — no es un proceso long-running. La recurrencia la da **cron** (no un loop en tmux, que era la idea original): `scripts/setup-cron.sh <minutos>` instala una entrada de crontab que invoca el tick cada N minutos.
 
-1. Escanea specs con `status: ready` sin `issue` vinculado → crea el issue, dispara una sesión `claude -p` en un worktree nuevo para plan + primera slice.
+En cada tick:
+
+1. Escanea specs asignados vía PR + label (`valeria:runner-<id>`, ver §1) → mergea el spec, crea el issue, dispara una sesión `claude -p` en un worktree nuevo para plan + primera slice.
 2. Escanea issues abiertos `in-progress` → decide la próxima acción según el estado real del PR/CI/reviews (implementar siguiente slice, resolver comentarios de Copilot, mergear si está aprobado).
 3. Cada acción es una invocación de Claude no interactiva, aislada en su propio worktree, que termina al completar la unidad de trabajo — así nunca se acumula contexto entre tareas.
-4. Manejo de cuota: si `claude` sale por rate-limit/cuota, no se reintenta de inmediato — backoff (usar el reset time del error si viene, si no, reintentar más tarde).
+4. Manejo de cuota: si `claude` sale por rate-limit/cuota, no se reintenta de inmediato — backoff (usar el reset time del error si viene, si no, reintentar más tarde). *(Pendiente: hoy un fallo así solo se ve reflejado como excepción no manejada → bloqueo del issue; falta backoff específico para el caso de cuota, ver "Pendiente" más abajo.)*
 5. Bloqueo real (spec ambiguo, e2e fallando tras N intentos, conflicto que requiere juicio humano) → notificación por email, el loop deja ese issue en paz hasta recibir input humano.
 
-Concurrencia: un spec/slice a la vez por seguridad de worktree; specs independientes sí pueden correr en paralelo en worktrees separados.
+**Un tick a la vez por host**: como un tick puede tardar (una invocación de `claude -p` puede llegar a `AGENT_TASK_TIMEOUT_MINUTES`), el wrapper que genera `setup-cron.sh` usa `flock` para que un disparo de cron mientras el anterior sigue corriendo se salte en vez de arrancar en paralelo — evita que dos ticks concurrentes en el mismo host pisen `.valeria-state.json` a la vez. Esto es independiente del claim entre runners distintos (§9), que protege contra *otro host*, no contra el mismo proceso solapado consigo mismo.
+
+Concurrencia entre issues: un spec/slice a la vez por seguridad de worktree; specs independientes sí pueden correr en paralelo en worktrees separados (dentro del mismo tick, secuencial; entre hosts, ver §9).
 
 Convención de branches: `valeria/<issue>/<slice-slug>` — así el supervisor encuentra el PR de la slice en curso de un issue por prefijo de branch, sin mantener un mapeo aparte.
+
+**Setup**: `pnpm cron:setup [minutos]` (default 5) instala el cron; `pnpm cron:remove` lo saca. El script resuelve el `PATH` real de una shell de login (cron no fuentea `.bashrc`/`.profile`, así que `node`/`pnpm` instalados vía nvm u otro manager no estarían en el `PATH` mínimo de cron) y lo hornea en un wrapper generado (`scripts/run-tick.sh`, no versionado — específico de cada máquina). Logs en `logs/tick.log`.
 
 ### 3.1 Implementación (`src/`)
 
@@ -144,9 +150,11 @@ Misma identidad que la asignación de specs (§1): `RUNNER_ID` (el usuario de Gi
 - [x] Estado persistente entre ticks: índice de slice actual (`src/checklist.ts`, parseado del propio checklist del issue) y contador de reintentos por PR (`valeria:attempts-N`, labels en `src/github.ts`) — ver §3.1
 - [x] Claim entre múltiples supervisores concurrentes — ver `src/claim.ts` y §9
 - [x] Descubrimiento por asignación manual vía PR (reemplaza el escaneo de frontmatter local) — ver §1, resuelve de paso el gap de descubrimiento duplicado que tenía la versión anterior de §9
+- [x] Recurrencia vía cron (no tmux) — `scripts/setup-cron.sh`, con `flock` para que un host nunca corra dos ticks solapados
 
 **Pendiente, fuera de este scaffold:**
 
+- Backoff específico para rate-limit/cuota de `claude`: hoy ese fallo cae en el catch-all de `tick.ts` como cualquier otra excepción → bloqueo + email, en vez de reintentarse solo más tarde sin marcar el issue como bloqueado
 - Cuándo limpiar un worktree (`removeWorktree` existe pero no está conectado a nada todavía — ¿al mergear? ¿al llegar a `blocked`?)
 - Slugs de slice legibles: hoy el branch de `implement-slice` usa el índice crudo (`slice-1`, `slice-2`); una vez que se valore la legibilidad de branches/PRs, debería derivar el slug del título real de la slice
 - Decidir si Copilot review se activa (`REQUEST_COPILOT_REVIEW`) y cómo se resuelven sus comentarios automáticamente

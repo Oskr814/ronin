@@ -8,7 +8,9 @@
     "tick": "tsx src/index.ts",
     "typecheck": "tsc --noEmit",
     "smoke-test": "tsx scripts/smoke-test.ts",
-    "find-installation-id": "tsx scripts/find-installation-id.ts"
+    "find-installation-id": "tsx scripts/find-installation-id.ts",
+    "cron:setup": "bash scripts/setup-cron.sh",
+    "cron:remove": "bash scripts/setup-cron.sh --remove"
   },
   "dependencies": {
     "@octokit/auth-app": "^8.2.0",
