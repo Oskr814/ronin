@@ -45,6 +45,17 @@ issue: null            # lo rellena el agente al descubrir el spec
   - PR **approved** → candidato a merge automático
   - PR merged → siguiente slice
 
+### 2.1 Template del issue de tracking
+
+El body lo genera el agente a partir de [`templates/tracking-issue.md`](../templates/tracking-issue.md): un link al spec, un checklist de slices (una línea por slice, con el PR asociado apenas se abre), y una sección de bloqueo que solo se llena cuando aplica.
+
+El estado en sí **no se infiere parseando el body** — vive en labels, que son consultables directamente vía `gh issue list --label`:
+
+- `valeria` — marca el issue como gestionado por el agente (para poder filtrar sin ambigüedad entre issues del repo).
+- `valeria:ready | valeria:in-progress | valeria:blocked | valeria:done` — estado actual, mutuamente excluyente, la swap-ea el agente. Espejo 1:1 del `status` del frontmatter del spec.
+
+El body queda como contexto legible para el humano (qué slice va, qué PR corresponde, por qué está bloqueado); las labels son lo que el supervisor realmente lee para decidir la próxima acción.
+
 ### 3. Supervisor (honelab, tmux)
 
 Un proceso supervisor corre en una sesión tmux persistente y en cada tick:
@@ -76,6 +87,6 @@ Solo se notifica por email en bloqueos reales, no en progreso rutinario (para ev
 Diseño en progreso, sin código todavía. Próximos pasos:
 
 - [ ] Definir el esqueleto del supervisor (script + estructura de tick)
-- [ ] Definir el template del issue de tracking (checklist de slices)
+- [x] Definir el template del issue de tracking (checklist de slices) — ver [`templates/tracking-issue.md`](../templates/tracking-issue.md) y §2.1
 - [ ] Definir el criterio exacto de "bloqueo" que dispara notificación
 - [ ] Prototipo de la app de notificación por email
