@@ -5,6 +5,8 @@ import {
   createTrackingIssue,
   listTrackingIssues,
   listAssignedSpecPrs,
+  listAssignedBugIssues,
+  addIssueLabel,
   setPrState,
   getSpecPathsFromPr,
   mergeSpecPr,
@@ -21,16 +23,16 @@ import {
   type PullRequestStatus,
 } from './github.js';
 import { fetchOriginMain, readSpecFile, extractTitle } from './spec-content.js';
-import { nextUnstartedSlice, hasRemainingSlices, recordSlicePr, markSliceMerged } from './checklist.js';
+import { nextUnstartedSlice, hasRemainingSlices, recordSlicePr, markSliceMerged, seedSingleSlice } from './checklist.js';
 import { notifyBlocker } from './notifier.js';
-import { runAgentTask } from './agent-task.js';
+import { runAgentTask, type AgentTask } from './agent-task.js';
 import { ClaudeUsageLimitError } from './claude-runner.js';
 import { toStackedPrs, pickBottomPr, type StackedPr } from './stack.js';
 import { tryClaim, releaseIfNoLongerInProgress, runnerLabel } from './claim.js';
 import { worktreeDirFor, isBehind, attemptRebase } from './worktree.js';
 import { publishEvidence, rawEvidenceUrl } from './evidence.js';
 import { findUnprocessedMentions } from './mentions.js';
-import { config } from './config.js';
+import { config, LABEL_BUG, LABEL_MANAGED } from './config.js';
 import { log } from './logger.js';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -69,6 +71,16 @@ async function renderTrackingIssueBody(specPaths: string[]): Promise<string> {
 // falls back to the first file if nothing matches that shape.
 function primarySpecPath(specPaths: string[]): string {
   return specPaths.find((p) => p.includes('/specs/')) ?? specPaths[0];
+}
+
+// A bug issue (bugfix label — see docs/superpowers/specs/2026-07-28-bug-issue-intake-design.md)
+// and a spec's tracking issue share the exact same slice-checklist
+// machinery; this is the one place that decides which agent prompt a given
+// slice actually needs. Exported for direct unit testing.
+export function agentTaskFor(issue: TrackingIssue, sliceIndex: number, sliceTitle: string): AgentTask {
+  return issue.labels.includes(LABEL_BUG)
+    ? { type: 'fix-bug', issueNumber: issue.number, sliceIndex, sliceTitle }
+    : { type: 'implement-slice', issueNumber: issue.number, sliceIndex, sliceTitle };
 }
 
 // Discovery source: a human writes the spec as a PR against the product
@@ -121,6 +133,40 @@ async function discoverAssignedSpecs(): Promise<void> {
         reason: `Excepción no manejada procesando el spec PR: ${(error as Error).message}`,
       });
       await setPrState(pr.number, 'blocked').catch(() => {});
+    }
+  }
+}
+
+function issueUrl(issueNumber: number): string {
+  return `https://github.com/${config.productRepo}/issues/${issueNumber}`;
+}
+
+// Discovery source: a human labels an existing bug-report issue (already
+// carrying bmedical's own `bugfix` label) with this runner's assignment
+// label — same "andá" signal as a spec PR's runner label, but without a
+// draft/ready step, since a GitHub issue has no draft state. Unlike specs,
+// no mirror tracking issue is created: the bug issue itself becomes the
+// tracked unit, seeded with a single-slice checklist so the rest of the
+// pipeline (merge gate, fix-review/fix-e2e cycles, evidence) treats it
+// exactly like a spec's tracking issue. See
+// docs/superpowers/specs/2026-07-28-bug-issue-intake-design.md.
+async function discoverAssignedBugs(): Promise<void> {
+  const bugs = await listAssignedBugIssues(runnerLabel());
+  for (const bug of bugs) {
+    try {
+      // Added first, before anything else can fail, so a partial failure
+      // still leaves the issue valeria-managed (and therefore reachable via
+      // listTrackingIssues once set to blocked below) instead of retried
+      // forever as "not yet picked up".
+      await addIssueLabel(bug.number, LABEL_MANAGED);
+      await seedSingleSlice(bug.number, `Fix — ${bug.title}`);
+      await setIssueState(bug.number, 'in-progress');
+    } catch (error) {
+      await notifyBlocker({
+        issueUrl: issueUrl(bug.number),
+        reason: `Excepción no manejada procesando el issue de bug: ${(error as Error).message}`,
+      });
+      await setIssueState(bug.number, 'blocked').catch(() => {});
     }
   }
 }
@@ -270,6 +316,14 @@ export async function processSlicePr(issue: TrackingIssue, pr: StackedPr, isBott
     if (pr.checksPassing && pr.reviewDecision === 'APPROVED') {
       await mergePullRequest(pr.number);
       await markSliceMerged(issue.number, pr.sliceIndex);
+      // Closes a one-tick gap: a bug-fix PR's "Closes #N" (see
+      // docs/superpowers/specs/2026-07-28-bug-issue-intake-design.md) makes
+      // GitHub close the issue on merge, and listTrackingIssues filters
+      // --state open — without this, the next tick would never see the
+      // issue again to notice no slices remain, leaving it
+      // valeria:in-progress forever. Also shaves a tick off `done` for
+      // ordinary specs, harmlessly.
+      if (!(await hasRemainingSlices(issue.number))) await setIssueState(issue.number, 'done');
       logSliceOutcome(issue, pr, isBottom, 'mergeado');
       return true;
     }
@@ -336,7 +390,7 @@ async function processIssue(issue: TrackingIssue): Promise<void> {
     const slice = await nextUnstartedSlice(issue.number);
     if (slice) {
       log.info(`issue #${issue.number}: sin PRs abiertos, arrancando slice ${slice.index + 1} (${slice.title})`);
-      await runAgentTask({ type: 'implement-slice', issueNumber: issue.number, sliceIndex: slice.index, sliceTitle: slice.title });
+      await runAgentTask(agentTaskFor(issue, slice.index, slice.title));
       return;
     }
     // Ningún PR abierto y ninguna slice sin arrancar: o todo mergeó, o algún
@@ -367,13 +421,14 @@ async function processIssue(issue: TrackingIssue): Promise<void> {
   const nextUnstarted = await nextUnstartedSlice(issue.number);
   if (nextUnstarted) {
     log.info(`issue #${issue.number}: stack de ${stack.length} PR(s) abierto(s), arrancando slice ${nextUnstarted.index + 1} (${nextUnstarted.title}) en paralelo`);
-    await runAgentTask({ type: 'implement-slice', issueNumber: issue.number, sliceIndex: nextUnstarted.index, sliceTitle: nextUnstarted.title });
+    await runAgentTask(agentTaskFor(issue, nextUnstarted.index, nextUnstarted.title));
   }
 }
 
 export async function tick(): Promise<void> {
   log.info(`tick start (commit ${await currentCommit()})`);
   await discoverAssignedSpecs();
+  await discoverAssignedBugs();
 
   const inProgress = await listTrackingIssues('in-progress');
   log.info(`${inProgress.length} issue(s) en progreso`);

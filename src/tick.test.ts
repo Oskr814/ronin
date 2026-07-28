@@ -15,13 +15,16 @@ vi.mock('./config.js', () => ({
     worktreeBaseRef: 'origin/main',
     productRepo: 'bmedical/bmedical',
   },
+  LABEL_BUG: 'bugfix',
 }));
 
 const recordSlicePr = vi.fn();
 const markSliceMerged = vi.fn();
+const hasRemainingSlices = vi.fn();
 vi.mock('./checklist.js', () => ({
   recordSlicePr: (...args: unknown[]) => recordSlicePr(...args),
   markSliceMerged: (...args: unknown[]) => markSliceMerged(...args),
+  hasRemainingSlices: (...args: unknown[]) => hasRemainingSlices(...args),
 }));
 
 const hasEvidenceComment = vi.fn();
@@ -71,7 +74,7 @@ vi.mock('./notifier.js', () => ({
   notifyBlocker: (...args: unknown[]) => notifyBlocker(...args),
 }));
 
-const { processSlicePr } = await import('./tick.js');
+const { processSlicePr, agentTaskFor } = await import('./tick.js');
 
 function issue(overrides: Partial<TrackingIssue> = {}): TrackingIssue {
   return { number: 228, title: 'Test issue', url: 'https://github.com/x/y/issues/228', labels: [], ...overrides };
@@ -101,6 +104,7 @@ beforeEach(() => {
   worktreeDirFor.mockReturnValue('/tmp/worktree');
   incrementAttemptCount.mockResolvedValue(1);
   existsSync.mockReturnValue(true);
+  hasRemainingSlices.mockResolvedValue(true); // preserves pre-existing merge test behavior by default
 });
 
 describe('processSlicePr — non-bottom stacked PR', () => {
@@ -195,5 +199,61 @@ describe('processSlicePr — mentions found on an already-mergeable bottom PR (r
     });
     expect(stillInProgress).toBe(true);
     expect(mergePullRequest).toHaveBeenCalledWith(229);
+  });
+});
+
+describe('agentTaskFor', () => {
+  it('routes to implement-slice for a tracking issue without the bugfix label', () => {
+    expect(agentTaskFor(issue({ labels: [] }), 2, 'Tabla de citas')).toEqual({
+      type: 'implement-slice', issueNumber: 228, sliceIndex: 2, sliceTitle: 'Tabla de citas',
+    });
+  });
+
+  it('routes to fix-bug for an issue labeled bugfix', () => {
+    expect(agentTaskFor(issue({ labels: ['bugfix'] }), 0, 'Fix — Login redirects to 404')).toEqual({
+      type: 'fix-bug', issueNumber: 228, sliceIndex: 0, sliceTitle: 'Fix — Login redirects to 404',
+    });
+  });
+});
+
+describe('processSlicePr — same-tick done transition on merge', () => {
+  beforeEach(() => {
+    worktreeDirFor.mockReturnValue('/tmp/worktree-bottom');
+  });
+
+  it('marks the issue done in the same tick when the merged slice was the last one', async () => {
+    const bottomPr = pr({
+      number: 229,
+      sliceIndex: 0,
+      baseRefName: 'main',
+      headRefName: 'valeria/228/slice-1',
+      checksPassing: true,
+      checksPending: false,
+      reviewDecision: 'APPROVED',
+    });
+    isBehind.mockResolvedValue(false);
+    hasRemainingSlices.mockResolvedValue(false);
+
+    await processSlicePr(issue(), bottomPr, true);
+
+    expect(setIssueState).toHaveBeenCalledWith(228, 'done');
+  });
+
+  it('does not mark done while another slice is still pending', async () => {
+    const bottomPr = pr({
+      number: 229,
+      sliceIndex: 0,
+      baseRefName: 'main',
+      headRefName: 'valeria/228/slice-1',
+      checksPassing: true,
+      checksPending: false,
+      reviewDecision: 'APPROVED',
+    });
+    isBehind.mockResolvedValue(false);
+    hasRemainingSlices.mockResolvedValue(true);
+
+    await processSlicePr(issue(), bottomPr, true);
+
+    expect(setIssueState).not.toHaveBeenCalledWith(228, 'done');
   });
 });
