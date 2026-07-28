@@ -106,13 +106,10 @@ export async function runAgentTask(task: AgentTask): Promise<void> {
 
   log.info(`starting ${task.type} for issue #${task.issueNumber} on branch ${branch}`);
   try {
-    // The claude -p output was previously discarded entirely — nothing
-    // about what the agent actually did was visible anywhere, only the
-    // supervisor's own before/after GitHub state. Logging it in full is
-    // verbose but this is the one place that answers "what did the agent
-    // do" for monitoring.
-    const output = await runClaudeHeadless(worktreeDir, prompt);
-    log.info(`finished ${task.type} for issue #${task.issueNumber}:\n${output}`);
+    // Output streams live to the log as the agent works — see
+    // claude-runner.ts — so nothing further to dump here once it's done.
+    await runClaudeHeadless(worktreeDir, prompt, `${task.type} #${task.issueNumber}`);
+    log.info(`finished ${task.type} for issue #${task.issueNumber}`);
   } catch (error) {
     log.error(`${task.type} for issue #${task.issueNumber} failed`, error);
     throw error;
