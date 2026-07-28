@@ -97,4 +97,9 @@ export const LABEL_STATES = {
   done: 'valeria:done',
 } as const;
 
+// bmedical's own pre-existing label ("Something isn't working") — reused as
+// the bug-intake trigger instead of a new valeria:-prefixed label, see
+// docs/superpowers/specs/2026-07-28-bug-issue-intake-design.md.
+export const LABEL_BUG = 'bugfix';
+
 export type SpecStatus = keyof typeof LABEL_STATES;
