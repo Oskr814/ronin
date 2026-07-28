@@ -22,6 +22,44 @@ async function gh(args: string[]): Promise<string> {
   return stdout;
 }
 
+export async function getIssueBody(issueNumber: number): Promise<string> {
+  const stdout = await gh(['issue', 'view', String(issueNumber), '--json', 'body']);
+  return (JSON.parse(stdout) as { body: string }).body;
+}
+
+export async function setIssueBody(issueNumber: number, body: string): Promise<void> {
+  const dir = await mkdtemp(join(tmpdir(), 'valeria-issue-body-'));
+  const bodyFile = join(dir, 'body.md');
+  try {
+    await writeFile(bodyFile, body, 'utf8');
+    await gh(['issue', 'edit', String(issueNumber), '--body-file', bodyFile]);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
+const ATTEMPT_LABEL_RE = /^valeria:attempts-(\d+)$/;
+
+// Tracks how many fix attempts (review or e2e) a PR has been through, as a
+// label swap — same pattern as the state labels. Scoped to the PR, not the
+// issue, since attempts are about converging *this* slice's PR, not the spec
+// as a whole. See docs/BLOCKING.md for the limits this is checked against.
+export async function getAttemptCount(prNumber: number): Promise<number> {
+  const stdout = await gh(['pr', 'view', String(prNumber), '--json', 'labels']);
+  const labels = (JSON.parse(stdout) as { labels: Array<{ name: string }> }).labels.map((l) => l.name);
+  const match = labels.map((l) => l.match(ATTEMPT_LABEL_RE)).find((m) => m !== null);
+  return match ? Number(match[1]) : 0;
+}
+
+export async function incrementAttemptCount(prNumber: number): Promise<number> {
+  const current = await getAttemptCount(prNumber);
+  const next = current + 1;
+  const args = ['pr', 'edit', String(prNumber), '--add-label', `valeria:attempts-${next}`];
+  if (current > 0) args.push('--remove-label', `valeria:attempts-${current}`);
+  await gh(args);
+  return next;
+}
+
 export interface TrackingIssue {
   number: number;
   title: string;

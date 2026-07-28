@@ -75,11 +75,14 @@ Convención de branches: `valeria/<issue>/<slice-slug>` — así el supervisor e
 Scaffold en TypeScript (`pnpm tick` corre un tick y termina — pensado para invocarse en loop desde tmux, no como proceso long-running):
 
 - `config.ts` — env vars, labels, límites de reintento
-- `github.ts` — wrappers sobre `gh` CLI (execFile con argv array, nunca shell string) para issues/PRs/labels/merge. El gate de approval está *en código*, no solo documentado: `mergePullRequest` lanza si `reviewDecision !== 'APPROVED'`
+- `github.ts` — wrappers sobre `gh` CLI (execFile con argv array, nunca shell string) para issues/PRs/labels/merge/body/contador de intentos. El gate de approval está *en código*, no solo documentado: `mergePullRequest` lanza si `reviewDecision !== 'APPROVED'`
+- `checklist.ts` — parsea y edita el checklist de slices del body del issue (índice de próxima slice, marcar merged, registrar PR); es la fuente de verdad para "qué slice sigue", no un contador aparte
 - `specs.ts` — escanea frontmatter de specs, filtra `status: ready` sin `issue`, escribe de vuelta el link una vez creado el issue
 - `notifier.ts` — prototipo del notificador (nodemailer + Gmail SMTP)
-- `agent-task.ts` — **sin implementar a propósito**: es la interfaz hacia "correr `claude -p` en un worktree aislado". Necesita su propio diseño (ciclo de vida del worktree, forma del prompt, timeout/retry) antes de poder implementarse
-- `tick.ts` — el loop de decisión, con dos TODOs explícitos pendientes de estado persistente entre ticks: índice de slice actual y contador de reintentos (ver `docs/BLOCKING.md`)
+- `worktree.ts` — crea/reutiliza un git worktree desechable por branch de tarea
+- `claude-runner.ts` — invoca `claude -p` con `--permission-mode bypassPermissions`, reenviando el installation token del App como `GH_TOKEN` al proceso hijo (así los `gh` que el propio Claude headless corra también quedan a nombre de `ValerIA[bot]`)
+- `agent-task.ts` — arma el prompt (en inglés, ver §8) según el tipo de tarea (plan / implement-slice / fix-review / fix-e2e) y orquesta worktree + invocación
+- `tick.ts` — el loop de decisión: descubre specs nuevos, y por cada issue `in-progress` decide la próxima acción leyendo el checklist y el contador de intentos por PR contra los límites de `docs/BLOCKING.md`
 
 ### 4. Testing y review externo
 
@@ -124,12 +127,16 @@ La única contención real es que **cada tarea corre en su propio git worktree d
 - [x] Definir el template del issue de tracking (checklist de slices) — ver [`templates/tracking-issue.md`](../templates/tracking-issue.md) y §2.1
 - [x] Definir el criterio exacto de "bloqueo" que dispara notificación — ver [`docs/BLOCKING.md`](BLOCKING.md)
 - [x] Prototipo de la app de notificación por email — ver `src/notifier.ts`
-- [x] `agent-task.ts`: invocación de `claude -p` en un worktree aislado (ciclo de vida básico, prompts por tipo de tarea) — ver `src/worktree.ts`, `src/claude-runner.ts`, `src/agent-task.ts` y §7.1
+- [x] `agent-task.ts`: invocación de `claude -p` en un worktree aislado (ciclo de vida básico, prompts por tipo de tarea, en inglés — ver §8) — ver `src/worktree.ts`, `src/claude-runner.ts`, `src/agent-task.ts` y §7.1
+- [x] Estado persistente entre ticks: índice de slice actual (`src/checklist.ts`, parseado del propio checklist del issue) y contador de reintentos por PR (`valeria:attempts-N`, labels en `src/github.ts`) — ver §3.1
 
 **Pendiente, fuera de este scaffold:**
 
-- Estado persistente entre ticks para índice de slice actual y contadores de reintento (hoy son TODOs en `tick.ts`) — sin esto, `agent-task.ts` no sabe distinguir un primer intento de un reintento tras bloqueo
 - Cuándo limpiar un worktree (`removeWorktree` existe pero no está conectado a nada todavía — ¿al mergear? ¿al llegar a `blocked`?)
-- Slugs de slice legibles: hoy el branch de `implement-slice` usa el índice crudo (`slice-1`, `slice-2`); una vez que el checklist real se parsea desde el issue, debería derivar el slug del título
+- Slugs de slice legibles: hoy el branch de `implement-slice` usa el índice crudo (`slice-1`, `slice-2`); una vez que se valore la legibilidad de branches/PRs, debería derivar el slug del título real de la slice
 - Decidir si Copilot review se activa (`REQUEST_COPILOT_REVIEW`) y cómo se resuelven sus comentarios automáticamente
 - Verificación end-to-end contra un spec real — no se corrió todavía (ver PR de esta pieza)
+
+### 8. Idioma
+
+Todo lo que el agente headless lee o produce como instrucción — los prompts en `agent-task.ts`, el texto y comentarios de `templates/tracking-issue.md` — está en inglés, independientemente del idioma de esta documentación. Lo que es comunicación humana (esta doc, `docs/BLOCKING.md`, el cuerpo de los emails de `src/notifier.ts`, los motivos de bloqueo en `tick.ts`) se mantiene en español.

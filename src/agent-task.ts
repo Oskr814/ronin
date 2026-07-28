@@ -13,11 +13,19 @@ function repoUrl(): string {
   return `https://github.com/${config.productRepo}`;
 }
 
-// Placeholder slug — once tick.ts parses real slice titles out of the issue
-// checklist (still a TODO there), this should use a slug derived from the
-// title instead of the raw index, for readable branch/PR names.
-function sliceBranch(issueNumber: number, sliceIndex: number): string {
+// Placeholder slug — once slice titles are used for the branch name instead
+// of the raw index, this and the regex below need to move to a slugify
+// scheme instead of a fixed-format parse. Exported so tick.ts can recover
+// the slice index from an already-open PR's branch name.
+export function sliceBranch(issueNumber: number, sliceIndex: number): string {
   return `valeria/${issueNumber}/slice-${sliceIndex + 1}`;
+}
+
+const SLICE_BRANCH_RE = /^valeria\/\d+\/slice-(\d+)$/;
+
+export function sliceIndexFromBranch(branch: string): number | null {
+  const match = branch.match(SLICE_BRANCH_RE);
+  return match ? Number(match[1]) - 1 : null;
 }
 
 async function buildTask(task: AgentTask): Promise<{ branch: string; prompt: string }> {
@@ -26,11 +34,11 @@ async function buildTask(task: AgentTask): Promise<{ branch: string; prompt: str
       return {
         branch: `valeria/${task.issueNumber}/plan`,
         prompt: [
-          `Sos ValerIA, un agente autónomo trabajando sobre el issue de tracking #${task.issueNumber} en ${repoUrl()}.`,
-          `Leé el spec en "${task.specPath}" (dentro de este mismo checkout).`,
-          'Diseñá el plan de implementación troceado en slices pequeñas e independientemente revisables (usá el skill de planificación si está disponible).',
-          `Reescribí el body del issue #${task.issueNumber} (gh issue edit ${task.issueNumber} --body-file <archivo>) reemplazando el checklist de templates/tracking-issue.md con las slices reales, una línea por slice en el formato "- [ ] Slice N: <título> — PR: _pendiente_".`,
-          'No implementes código todavía — esta tarea es solo el plan.',
+          `You are ValerIA, an autonomous agent working on tracking issue #${task.issueNumber} in ${repoUrl()}.`,
+          `Read the spec at "${task.specPath}" (inside this checkout).`,
+          'Design the implementation plan, sliced into small, independently reviewable pieces (use the planning skill if one is available).',
+          `Rewrite the body of issue #${task.issueNumber} (gh issue edit ${task.issueNumber} --body-file <file>), replacing the templates/tracking-issue.md checklist with the real slices, one line per slice in the format "- [ ] Slice N: <title> — PR: _pending_".`,
+          'Do not implement any code yet — this task is plan-only.',
         ].join('\n'),
       };
 
@@ -38,10 +46,10 @@ async function buildTask(task: AgentTask): Promise<{ branch: string; prompt: str
       return {
         branch: sliceBranch(task.issueNumber, task.sliceIndex),
         prompt: [
-          `Sos ValerIA, un agente autónomo trabajando sobre el issue de tracking #${task.issueNumber} en ${repoUrl()}.`,
-          `Leé el checklist de slices en el issue (gh issue view ${task.issueNumber}) e implementá la slice número ${task.sliceIndex + 1}.`,
-          'Seguí las convenciones de CLAUDE.md de este repo, incluyendo los requisitos de testing.',
-          'Al terminar: corré los tests relevantes, hacé commit y push de esta branch, abrí un PR contra main (gh pr create) describiendo la slice, y actualizá la línea correspondiente del checklist del issue con el número de PR.',
+          `You are ValerIA, an autonomous agent working on tracking issue #${task.issueNumber} in ${repoUrl()}.`,
+          `Read the slice checklist in the issue (gh issue view ${task.issueNumber}) and implement slice number ${task.sliceIndex + 1}.`,
+          "Follow this repo's CLAUDE.md conventions, including its testing requirements.",
+          'When done: run the relevant tests, commit and push this branch, and open a PR against main (gh pr create) describing the slice. You do not need to edit the issue checklist yourself — the supervisor updates it with the PR number.',
         ].join('\n'),
       };
 
@@ -50,9 +58,9 @@ async function buildTask(task: AgentTask): Promise<{ branch: string; prompt: str
       return {
         branch: pr.headRefName,
         prompt: [
-          `Sos ValerIA. El PR #${task.prNumber} (issue de tracking #${task.issueNumber}) tiene comentarios de review sin resolver.`,
-          `Leélos con "gh pr view ${task.prNumber} --comments", aplicá los cambios necesarios siguiendo las convenciones de CLAUDE.md, y hacé commit y push a esta misma branch.`,
-          'Si algún comentario contradice lo que el spec pide explícitamente, no lo apliques — dejá el PR como está y no toques nada más; esto requiere una decisión humana.',
+          `You are ValerIA. PR #${task.prNumber} (tracking issue #${task.issueNumber}) has unresolved review comments.`,
+          `Read them with "gh pr view ${task.prNumber} --comments", apply the necessary changes following this repo's CLAUDE.md conventions, and commit and push to this same branch.`,
+          'If any comment contradicts what the spec explicitly requires, do not apply it — leave the PR as-is and do not touch anything else; that needs a human decision.',
         ].join('\n'),
       };
     }
@@ -62,8 +70,8 @@ async function buildTask(task: AgentTask): Promise<{ branch: string; prompt: str
       return {
         branch: pr.headRefName,
         prompt: [
-          `Sos ValerIA. Los checks de CI/e2e (Playwright) están fallando en el PR #${task.prNumber} (issue de tracking #${task.issueNumber}).`,
-          'Investigá la causa, arreglala, y hacé commit y push a esta misma branch.',
+          `You are ValerIA. CI/e2e checks (Playwright) are failing on PR #${task.prNumber} (tracking issue #${task.issueNumber}).`,
+          'Investigate the cause, fix it, and commit and push to this same branch.',
         ].join('\n'),
       };
     }

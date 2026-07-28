@@ -1,7 +1,7 @@
 <!--
-Template usado por el supervisor para generar el issue de tracking de un spec.
-Placeholders {{...}} los rellena el agente al crear el issue vía `gh issue create`.
-No editar a mano salvo para ajustar el formato del template en sí.
+Template used by the supervisor to generate a spec's tracking issue.
+{{...}} placeholders are filled in when the issue is created via `gh issue create`.
+Don't hand-edit an existing issue's body against this shape — change the template instead.
 -->
 
 ## Spec
@@ -10,16 +10,17 @@ No editar a mano salvo para ajustar el formato del template en sí.
 
 ## Slices
 
-- [ ] Slice 1: {{slice_1_title}} — PR: _pendiente_
-- [ ] Slice 2: {{slice_2_title}} — PR: _pendiente_
+- [ ] Slice 1: {{slice_1_title}} — PR: _pending_
+- [ ] Slice 2: {{slice_2_title}} — PR: _pending_
 
-<!-- Una línea por slice del plan. El agente marca [x] cuando el PR de esa
-     slice se mergea, y reemplaza "_pendiente_" por "#<numero>" apenas abre el PR. -->
+<!-- One line per slice in the plan. The supervisor checks a slice off once
+     its PR is merged, and replaces "_pending_" with "#<number>" once the
+     PR is open — see src/checklist.ts. -->
 
-## Bloqueo
+## Blocker
 
-_(vacío mientras no haya bloqueo)_
+_(empty while there is no blocker)_
 
-<!-- El agente completa esta sección con el motivo concreto y el link relevante
-     (PR, log de e2e, comentario de review) en el mismo momento en que aplica
-     la label `valeria:blocked`. Nunca dejar la label sin esta sección rellena. -->
+<!-- Filled in with the concrete reason and the relevant link (PR, e2e log,
+     review comment) at the same moment the `valeria:blocked` label is
+     applied. Never leave the label set without this section filled in. -->

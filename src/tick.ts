@@ -7,11 +7,18 @@ import {
   getOpenPrForIssue,
   mergePullRequest,
   setIssueState,
+  incrementAttemptCount,
   type TrackingIssue,
+  type PullRequestStatus,
 } from './github.js';
+import { nextSliceIndex, hasRemainingSlices, recordSlicePr, markSliceMerged } from './checklist.js';
 import { notifyBlocker } from './notifier.js';
-import { runAgentTask } from './agent-task.js';
+import { runAgentTask, sliceIndexFromBranch } from './agent-task.js';
 import { config } from './config.js';
+
+function prUrl(pr: PullRequestStatus): string {
+  return `https://github.com/${config.productRepo}/pull/${pr.number}`;
+}
 
 async function renderTrackingIssueBody(spec: SpecFile): Promise<string> {
   const template = await readFile(join(process.cwd(), 'templates/tracking-issue.md'), 'utf8');
@@ -27,40 +34,77 @@ async function discoverNewSpecs(): Promise<void> {
     const body = await renderTrackingIssueBody(spec);
     const issue = await createTrackingIssue(`[spec] ${spec.title}`, body);
     await linkSpecToIssue(spec, issue.number);
-    // Slicing the plan into the checklist happens inside this task, once
-    // agent-task.ts is implemented — it owns rewriting the issue body.
+    // The plan task rewrites the issue body with the real slice checklist.
     await runAgentTask({ type: 'plan', issueNumber: issue.number, specPath: spec.relativePath });
   }
+}
+
+async function blockOnAttemptLimit(
+  issue: TrackingIssue,
+  pr: PullRequestStatus,
+  limit: number,
+  reason: string,
+): Promise<boolean> {
+  const attempts = await incrementAttemptCount(pr.number);
+  if (attempts <= limit) return false;
+
+  await notifyBlocker({
+    issueUrl: issue.url,
+    prUrl: prUrl(pr),
+    reason,
+    excerpt: `PR #${pr.number}, ${attempts} intentos (límite ${limit})`,
+  });
+  await setIssueState(issue.number, 'blocked');
+  return true;
 }
 
 async function processIssue(issue: TrackingIssue): Promise<void> {
   const pr = await getOpenPrForIssue(issue.number);
 
   if (!pr) {
-    // TODO: sliceIndex needs to come from the issue's checklist (first
-    // unchecked item), not a hardcoded 0 — parsing that back out of the
-    // issue body is part of the agent-task.ts design pass.
-    await runAgentTask({ type: 'implement-slice', issueNumber: issue.number, sliceIndex: 0 });
+    const sliceIndex = await nextSliceIndex(issue.number);
+    if (sliceIndex === null) {
+      // Checklist fully checked but no open PR left: nothing more to do.
+      await setIssueState(issue.number, 'done');
+      return;
+    }
+    await runAgentTask({ type: 'implement-slice', issueNumber: issue.number, sliceIndex });
     return;
+  }
+
+  const sliceIndex = sliceIndexFromBranch(pr.headRefName);
+  if (sliceIndex !== null) {
+    // Idempotent bookkeeping — reconciles the checklist from the PR's own
+    // branch name rather than trusting the headless agent's own issue edit
+    // to have landed. See docs/DESIGN.md §3.1.
+    await recordSlicePr(issue.number, sliceIndex, pr.number);
   }
 
   if (pr.checksPassing && pr.reviewDecision === 'APPROVED') {
     await mergePullRequest(pr.number);
-    // TODO: check the issue's checklist for remaining unchecked slices before
-    // marking done — right now this always closes out the issue.
+    if (sliceIndex !== null) await markSliceMerged(issue.number, sliceIndex);
+
+    if (await hasRemainingSlices(issue.number)) return; // next tick picks up the next slice
     await setIssueState(issue.number, 'done');
     return;
   }
 
   if (pr.reviewDecision === 'CHANGES_REQUESTED') {
+    const blocked = await blockOnAttemptLimit(
+      issue, pr, config.sliceAttemptLimit,
+      'Feedback de review sin converger tras el límite de intentos',
+    );
+    if (blocked) return;
     await runAgentTask({ type: 'fix-review', issueNumber: issue.number, prNumber: pr.number });
     return;
   }
 
   if (!pr.checksPassing) {
-    // TODO: this must count attempts against config.e2eRetryLimit /
-    // config.sliceAttemptLimit (docs/BLOCKING.md) before blindly retrying —
-    // needs the same persistent-counter mechanism as sliceIndex above.
+    const blocked = await blockOnAttemptLimit(
+      issue, pr, config.e2eRetryLimit,
+      'E2E fallando persistentemente tras el límite de reintentos',
+    );
+    if (blocked) return;
     await runAgentTask({ type: 'fix-e2e', issueNumber: issue.number, prNumber: pr.number });
     return;
   }
