@@ -15,6 +15,7 @@ import {
   incrementAttemptCount,
   hasEvidenceComment,
   postEvidenceComment,
+  addReaction,
   type TrackingIssue,
   type PullRequestStatus,
 } from './github.js';
@@ -26,6 +27,7 @@ import { toStackedPrs, pickBottomPr, type StackedPr } from './stack.js';
 import { tryClaim, releaseIfNoLongerInProgress, runnerLabel } from './claim.js';
 import { worktreeDirFor, isBehind, attemptRebase } from './worktree.js';
 import { publishEvidence, rawEvidenceUrl } from './evidence.js';
+import { findUnprocessedMentions } from './mentions.js';
 import { config } from './config.js';
 import { log } from './logger.js';
 import { execFile } from 'node:child_process';
@@ -219,6 +221,31 @@ async function processSlicePr(issue: TrackingIssue, pr: StackedPr, isBottom: boo
     logSliceOutcome(issue, pr, isBottom, 'draft, esperando');
     return true;
   }
+
+  // The detection call itself is inside the try on purpose: a transient API
+  // failure reading comments must stay local to this secondary flow, never
+  // reach tick()'s catch and put the whole issue in `blocked` (which also
+  // emails a human). See docs/superpowers/specs/2026-07-28-mention-review-design.md.
+  let mentionsFound = false;
+  try {
+    const mentions = await findUnprocessedMentions(pr.number);
+    mentionsFound = mentions.length > 0;
+    if (mentionsFound) {
+      await runAgentTask({ type: 'review-request', issueNumber: issue.number, prNumber: pr.number, mentions });
+      for (const m of mentions) await addReaction(m.id, m.kind, 'eyes');
+    }
+  } catch (error) {
+    // Local failure, not the issue-wide catch in tick(): a review-request
+    // that doesn't land shouldn't block the slice loop. No reaction was
+    // added, so the next tick picks these same comments up again.
+    log.error(`review-request failed for PR #${pr.number}`, error);
+  }
+  // Returns whether the review-request succeeded or threw, like every other
+  // agent-task branch below: `pr` was read before a claude -p run that can
+  // take up to 30 minutes, so falling through to the merge decision would
+  // act on a stale snapshot (e.g. merging a PR that was mentioned and
+  // reviewed in this very tick). The next tick re-reads fresh PR state.
+  if (mentionsFound) return true;
 
   // Solo el fondo del stack necesita estar al día con main antes de evaluar
   // merge — ver docs/superpowers/specs/2026-07-28-stacked-prs-design.md §5.

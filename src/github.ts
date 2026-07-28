@@ -22,6 +22,21 @@ async function gh(args: string[]): Promise<string> {
   return stdout;
 }
 
+// `gh api` has no --repo/-R flag at all (unlike `gh pr`/`gh issue`), so it
+// can't go through gh() above: it would fail outright with "unknown flag:
+// --repo". It resolves the {owner}/{repo} placeholders from the current
+// directory's git remote or $GH_REPO — and the supervisor's cwd is ValerIA's
+// own checkout, not PRODUCT_REPO_PATH, so those placeholders would target the
+// wrong repo anyway. Every caller therefore spells out
+// `repos/${config.productRepo}/...` literally instead.
+async function ghApi(args: string[]): Promise<string> {
+  const token = await getInstallationToken();
+  const { stdout } = await execFileAsync('gh', args, {
+    env: { ...process.env, GH_TOKEN: token },
+  });
+  return stdout;
+}
+
 const ensuredLabels = new Set<string>();
 
 // GitHub rejects `--add-label` for a label that doesn't exist in the repo
@@ -352,4 +367,70 @@ export async function commentOnSpecPr(prNumber: number, body: string): Promise<v
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+}
+export interface Comment {
+  id: number;
+  kind: 'issue' | 'review';
+  body: string;
+  reactionsEyes: number;
+}
+
+interface RawApiComment {
+  id: number;
+  body: string;
+  reactions: { eyes: number };
+  pull_request_review_id?: number | null;
+}
+
+function reactionsPath(kind: 'issue' | 'review'): string {
+  return kind === 'issue' ? 'issues/comments' : 'pulls/comments';
+}
+
+// per_page=100 (the API default is 30): comments come back oldest-first, so
+// on a busy PR the newest ones — where a fresh mention lives — would fall on
+// a page never fetched, silently. 100 is the API maximum.
+export async function listIssueComments(prNumber: number): Promise<Comment[]> {
+  const stdout = await ghApi(['api', `repos/${config.productRepo}/issues/${prNumber}/comments?per_page=100`]);
+  const raw = JSON.parse(stdout) as RawApiComment[];
+  return raw.map((c) => ({ id: c.id, kind: 'issue' as const, body: c.body, reactionsEyes: c.reactions.eyes }));
+}
+
+interface RawReview {
+  id: number;
+  state: string;
+}
+
+// Excluye comentarios que pertenecen a una review todavía en borrador
+// (PENDING, no enviada) — no son un pedido real hasta que su autor la
+// publica. Ver docs/superpowers/specs/2026-07-28-mention-review-design.md.
+export async function listReviewComments(prNumber: number): Promise<Comment[]> {
+  const [commentsStdout, reviewsStdout] = await Promise.all([
+    ghApi(['api', `repos/${config.productRepo}/pulls/${prNumber}/comments?per_page=100`]),
+    ghApi(['api', `repos/${config.productRepo}/pulls/${prNumber}/reviews?per_page=100`]),
+  ]);
+  const rawComments = JSON.parse(commentsStdout) as RawApiComment[];
+  const rawReviews = JSON.parse(reviewsStdout) as RawReview[];
+  const pendingReviewIds = new Set(rawReviews.filter((r) => r.state === 'PENDING').map((r) => r.id));
+
+  return rawComments
+    .filter((c) => !(c.pull_request_review_id != null && pendingReviewIds.has(c.pull_request_review_id)))
+    .map((c) => ({ id: c.id, kind: 'review' as const, body: c.body, reactionsEyes: c.reactions.eyes }));
+}
+
+export async function hasBotReaction(commentId: number, kind: 'issue' | 'review', botLogin: string): Promise<boolean> {
+  const stdout = await ghApi([
+    'api',
+    `repos/${config.productRepo}/${reactionsPath(kind)}/${commentId}/reactions?content=eyes&per_page=100`,
+  ]);
+  const raw = JSON.parse(stdout) as Array<{ user: { login: string } }>;
+  return raw.some((r) => r.user.login === botLogin);
+}
+
+export async function addReaction(commentId: number, kind: 'issue' | 'review', content: 'eyes'): Promise<void> {
+  await ghApi([
+    'api',
+    `repos/${config.productRepo}/${reactionsPath(kind)}/${commentId}/reactions`,
+    '-f',
+    `content=${content}`,
+  ]);
 }

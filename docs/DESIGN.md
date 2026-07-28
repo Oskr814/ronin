@@ -128,11 +128,12 @@ Se eligió App sobre usuario/máquina + PAT por dos razones: permisos más finos
 1. Registrar el GitHub App en `Bmedical` (Settings de la org → Developer settings → GitHub Apps → New GitHub App). Permisos: Contents, Issues, Pull requests en read/write.
 2. Generar y descargar la private key (`.pem`) al registrar el App — guardarla fuera del repo, nunca commitearla.
 3. Instalar el App en el repo `bmedical` (y en `ValerIA` si en algún momento gestiona issues propios) — esto da el installation ID.
-4. Setear `VALERIA_GITHUB_APP_ID`, `VALERIA_GITHUB_APP_PRIVATE_KEY_PATH`, `VALERIA_GITHUB_APP_INSTALLATION_ID` en el `.env` del supervisor — nunca commitear el `.env` (ya está en `.gitignore`).
+4. Setear `VALERIA_GITHUB_APP_ID`, `VALERIA_GITHUB_APP_PRIVATE_KEY_PATH`, `VALERIA_GITHUB_APP_INSTALLATION_ID` y `VALERIA_GITHUB_APP_SLUG` en el `.env` del supervisor — nunca commitear el `.env` (ya está en `.gitignore`). `VALERIA_GITHUB_APP_SLUG` es el slug del App tal como aparece en la URL de su página de configuración (`github.com/settings/apps/<slug>`); su bot user en la API es `<slug>[bot]`, y de ahí sale saber si el App ya reaccionó a un comentario (ver §7.2). Es **requerida sin default**: un deployment ya existente corta al arrancar hasta agregarla.
+5. Opcional: `VALERIA_MENTION_HANDLE` (default `valeria-agent`), solo si el usuario mencionable se llama distinto — ver §7.2.
 
 `VALERIA_GITHUB_APP_INSTALLATION_ID` es **puramente numérico** (ej. `149492854`) — no confundir con ningún client secret u otro string alfanumérico de la pantalla de configuración del App. Si no es obvio cuál es, `pnpm find-installation-id` lo resuelve solo a partir del App ID + la private key (no necesita el installation ID de entrada).
 
-**Verificación:** `pnpm smoke-test` pide un installation token real y confirma lectura de `PRODUCT_REPO` — correrlo después de cualquier cambio de credenciales antes de asumir que quedaron bien.
+**Verificación:** `pnpm smoke-test` pide un installation token real, confirma lectura de `PRODUCT_REPO`, y valida que `VALERIA_GITHUB_APP_SLUG` coincida con el slug real del App (leído de `GET /app`, que se autentica con el JWT del App, no con el installation token) — correrlo después de cualquier cambio de credenciales antes de asumir que quedaron bien.
 
 ### 7.1 Permisos de las invocaciones headless
 
@@ -141,6 +142,14 @@ Se eligió App sobre usuario/máquina + PAT por dos razones: permisos más finos
 La única contención real es que **cada tarea corre en su propio git worktree desechable** (`src/worktree.ts`), nunca en el checkout principal de `PRODUCT_REPO_PATH` — así un comando destructivo lanzado por error solo puede arruinar ese worktree, que se puede recrear desde cero. Esto es una mitigación, no una garantía: un comando que apunte fuera del worktree (paths absolutos, `cd`, etc.) no está bloqueado por nada. Reconsiderar si en algún momento el blast radius observado no compensa la autonomía ganada.
 
 Segunda limitación encontrada en el primer dry run: el prompt de una tarea puntual no acota lo que el agente puede decidir hacer con `gh`/`git` más allá de esa tarea — si lee contexto que contiene instrucciones para *otras* situaciones (ej. el propio template del issue), puede actuar sobre ellas aunque no vengan de su prompt. Mitigado parcialmente pasando solo la información mínima necesaria en cada prompt (ver §9.1) en vez de decirle al agente que lea documentos completos con instrucciones para roles que no son el suyo.
+
+### 7.2 Usuario mencionable (`valeria-agent`)
+
+Un humano puede pedirle a ValerIA una review puntual sobre un PR que ella misma abrió escribiendo `@valeria-agent <pedido>` en un comentario (general o inline). Como GitHub no expone a apps de terceros el mecanismo nativo de "Reviewers" que usa Copilot, y el bot user de un App no siempre es mencionable/notificable de forma confiable, se usa un **usuario dedicado** — misma técnica que la integración de Claude Code.
+
+**Setup manual (una vez, por parte del dueño del repo):** crear el usuario de GitHub `valeria-agent` y agregarlo como colaborador **solo-lectura** de `PRODUCT_REPO`. No tiene ni necesita permisos de escritura: existe puramente para que la @mención dispare una notificación real. Quien postea las reacciones 👀 y la review sigue siendo el App vía su installation token, igual que todo lo demás. Si el usuario se llama distinto, setear `VALERIA_MENTION_HANDLE` en el `.env` (default `valeria-agent`).
+
+Detalle completo del flujo (dedup por reacción, exclusión de reviews en `PENDING`, review siempre `COMMENT`) en [`docs/superpowers/specs/2026-07-28-mention-review-design.md`](superpowers/specs/2026-07-28-mention-review-design.md).
 
 ### 9. Concurrencia entre múltiples supervisores
 

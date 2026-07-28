@@ -42,6 +42,17 @@ export const config = {
   githubAppId: requireEnv('VALERIA_GITHUB_APP_ID'),
   githubAppPrivateKeyPath: requireEnv('VALERIA_GITHUB_APP_PRIVATE_KEY_PATH'),
   githubAppInstallationId: requireEnv('VALERIA_GITHUB_APP_INSTALLATION_ID'),
+  // Usuario dedicado (no el bot user del App) creado solo para que
+  // @mencionarlo dispare notificación real — mismo approach que usa la
+  // integración de Claude Code. Colaborador solo-lectura de PRODUCT_REPO;
+  // quien realmente postea reacciones/reviews sigue siendo el App vía
+  // installation token. Ver docs/superpowers/specs/2026-07-28-mention-review-design.md.
+  mentionHandle: process.env.VALERIA_MENTION_HANDLE ?? 'valeria-agent',
+  // Slug del GitHub App (no el usuario valeria-agent) — su bot user en la
+  // API es "${slug}[bot]". Necesario para distinguir "el App ya reaccionó a
+  // este comentario" de una reacción de cualquier otra persona. Se ve en la
+  // URL de configuración del App (Settings → Developer settings → GitHub Apps).
+  githubAppSlug: requireEnv('VALERIA_GITHUB_APP_SLUG'),
   specDir: process.env.SPEC_DIR ?? 'docs/superpowers',
   gmailUser: process.env.GMAIL_USER ?? '',
   gmailAppPassword: process.env.GMAIL_APP_PASSWORD ?? '',
