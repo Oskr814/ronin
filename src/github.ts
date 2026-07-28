@@ -84,12 +84,13 @@ export interface PullRequestStatus {
   reviewDecision: 'APPROVED' | 'CHANGES_REQUESTED' | 'REVIEW_REQUIRED' | '';
   checksPassing: boolean;
   mergeable: boolean;
+  headRefName: string;
 }
 
 export async function getPullRequestStatus(prNumber: number): Promise<PullRequestStatus> {
   const stdout = await gh([
     'pr', 'view', String(prNumber),
-    '--json', 'number,state,reviewDecision,statusCheckRollup,mergeable',
+    '--json', 'number,state,reviewDecision,statusCheckRollup,mergeable,headRefName',
   ]);
   const raw = JSON.parse(stdout) as {
     number: number;
@@ -97,6 +98,7 @@ export async function getPullRequestStatus(prNumber: number): Promise<PullReques
     reviewDecision: PullRequestStatus['reviewDecision'] | null;
     statusCheckRollup: Array<{ conclusion: string | null }>;
     mergeable: string;
+    headRefName: string;
   };
   return {
     number: raw.number,
@@ -104,6 +106,7 @@ export async function getPullRequestStatus(prNumber: number): Promise<PullReques
     reviewDecision: raw.reviewDecision ?? '',
     checksPassing: raw.statusCheckRollup.length > 0 && raw.statusCheckRollup.every((c) => c.conclusion === 'SUCCESS'),
     mergeable: raw.mergeable === 'MERGEABLE',
+    headRefName: raw.headRefName,
   };
 }
 

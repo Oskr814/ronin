@@ -112,15 +112,24 @@ Se eligió App sobre usuario/máquina + PAT por dos razones: permisos más finos
 
 **Verificación:** `pnpm smoke-test` pide un installation token real y confirma lectura de `PRODUCT_REPO` — correrlo después de cualquier cambio de credenciales antes de asumir que quedaron bien.
 
+### 7.1 Permisos de las invocaciones headless
+
+`claude -p` corre sin nadie mirando, así que el modo de permisos por defecto (confirmar cada tool call) se cuelga. Se decidió explícitamente `--permission-mode bypassPermissions` — sin ningún gate — en vez de una allowlist curada, priorizando autonomía sobre contención granular.
+
+La única contención real es que **cada tarea corre en su propio git worktree desechable** (`src/worktree.ts`), nunca en el checkout principal de `PRODUCT_REPO_PATH` — así un comando destructivo lanzado por error solo puede arruinar ese worktree, que se puede recrear desde cero. Esto es una mitigación, no una garantía: un comando que apunte fuera del worktree (paths absolutos, `cd`, etc.) no está bloqueado por nada. Reconsiderar si en algún momento el blast radius observado no compensa la autonomía ganada.
+
 ## Estado actual
 
 - [x] Definir el esqueleto del supervisor (script + estructura de tick) — ver §3.1 y `src/`
 - [x] Definir el template del issue de tracking (checklist de slices) — ver [`templates/tracking-issue.md`](../templates/tracking-issue.md) y §2.1
 - [x] Definir el criterio exacto de "bloqueo" que dispara notificación — ver [`docs/BLOCKING.md`](BLOCKING.md)
 - [x] Prototipo de la app de notificación por email — ver `src/notifier.ts`
+- [x] `agent-task.ts`: invocación de `claude -p` en un worktree aislado (ciclo de vida básico, prompts por tipo de tarea) — ver `src/worktree.ts`, `src/claude-runner.ts`, `src/agent-task.ts` y §7.1
 
 **Pendiente, fuera de este scaffold:**
 
-- `agent-task.ts`: cómo se invoca `claude -p` en un worktree (ciclo de vida, prompt, timeout/retry)
-- Estado persistente entre ticks para índice de slice actual y contadores de reintento (hoy son TODOs en `tick.ts`)
+- Estado persistente entre ticks para índice de slice actual y contadores de reintento (hoy son TODOs en `tick.ts`) — sin esto, `agent-task.ts` no sabe distinguir un primer intento de un reintento tras bloqueo
+- Cuándo limpiar un worktree (`removeWorktree` existe pero no está conectado a nada todavía — ¿al mergear? ¿al llegar a `blocked`?)
+- Slugs de slice legibles: hoy el branch de `implement-slice` usa el índice crudo (`slice-1`, `slice-2`); una vez que el checklist real se parsea desde el issue, debería derivar el slug del título
 - Decidir si Copilot review se activa (`REQUEST_COPILOT_REVIEW`) y cómo se resuelven sus comentarios automáticamente
+- Verificación end-to-end contra un spec real — no se corrió todavía (ver PR de esta pieza)

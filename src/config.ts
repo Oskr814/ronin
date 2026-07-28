@@ -1,12 +1,24 @@
+import { join } from 'node:path';
+
 function requireEnv(name: string): string {
   const value = process.env[name];
   if (!value) throw new Error(`Missing required env var: ${name}`);
   return value;
 }
 
+const productRepoPath = requireEnv('PRODUCT_REPO_PATH');
+
 export const config = {
   productRepo: requireEnv('PRODUCT_REPO'),
-  productRepoPath: requireEnv('PRODUCT_REPO_PATH'),
+  productRepoPath,
+  // Sibling directory to the product repo checkout, not inside it — worktrees
+  // come and go per task and should never be mistaken for the main checkout.
+  worktreeBasePath: process.env.WORKTREE_BASE_PATH ?? join(productRepoPath, '..', 'valeria-worktrees'),
+  // claude -p runs unattended (nobody to answer permission prompts), and
+  // bypassPermissions was chosen deliberately over a curated allowlist —
+  // see docs/DESIGN.md §7.1. Containment relies on every task running
+  // inside its own disposable git worktree, never the main checkout.
+  agentTaskTimeoutMs: Number(process.env.AGENT_TASK_TIMEOUT_MINUTES ?? 30) * 60_000,
   // Dedicated ValerIA GitHub App — never the ambient `gh auth` session, so
   // issues/PRs are authored by "ValerIA[bot]", not whoever is logged into
   // `gh` on the box running the supervisor. See docs/DESIGN.md §7.
