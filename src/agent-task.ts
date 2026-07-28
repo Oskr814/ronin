@@ -117,9 +117,9 @@ async function buildTask(task: AgentTask): Promise<{ branch: string; prompt: str
           `You are ValerIA. A human left the following comment(s) on PR #${task.prNumber} (tracking issue #${task.issueNumber}), mentioning you and asking for a review:`,
           mentionList,
           `Read the current diff ("gh pr diff ${task.prNumber}") and address what was asked.`,
-          `Post inline comments on specific lines via "gh api repos/{owner}/{repo}/pulls/${task.prNumber}/reviews" and a general summary via "gh pr review ${task.prNumber} --comment --body <text>".`,
-          'The review event must always be COMMENT — never APPROVE or REQUEST_CHANGES, regardless of what you find. Merge approval is reserved for a human, not for you.',
-          'Do not modify, commit, push, or merge anything in this repository — your only output is review comments. If the request asks for a code change, say so in the review text instead of making the change yourself.',
+          'If the request is concrete and actionable (e.g. delete a file, rename a variable, fix a specific line) and does not contradict this repo\'s spec/plan for this slice, apply it yourself: amend the existing commit (`git commit --amend`) — never create a new commit — and force-push (`git push --force-with-lease`) to this same branch, same as you would for `fix-review`. If it contradicts the spec, or is a question/opinion rather than a concrete change, do not touch any code — that needs a human decision.',
+          `Post exactly one review via "gh pr review ${task.prNumber} --comment --body <text>" (inline comments only if you're pointing at specific unapplied lines) summarizing, in a few sentences, either what you changed or why you didn't. Do not post multiple separate reviews or comments for the same batch of mentions, and do not repeat reasoning you already posted for an earlier mention on this PR — check the existing review history first.`,
+          'The review event must always be COMMENT — never APPROVE or REQUEST_CHANGES, regardless of what you find or change. Merge approval is reserved for a human, not for you.',
           'Do not edit the tracking issue or change any labels, on either the issue or this PR — that is owned entirely by the supervisor, not by you.',
         ].join('\n'),
       };
