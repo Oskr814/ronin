@@ -108,6 +108,10 @@ Se eligió App sobre usuario/máquina + PAT por dos razones: permisos más finos
 3. Instalar el App en el repo `bmedical` (y en `ValerIA` si en algún momento gestiona issues propios) — esto da el installation ID.
 4. Setear `VALERIA_GITHUB_APP_ID`, `VALERIA_GITHUB_APP_PRIVATE_KEY_PATH`, `VALERIA_GITHUB_APP_INSTALLATION_ID` en el `.env` del supervisor — nunca commitear el `.env` (ya está en `.gitignore`).
 
+`VALERIA_GITHUB_APP_INSTALLATION_ID` es **puramente numérico** (ej. `149492854`) — no confundir con ningún client secret u otro string alfanumérico de la pantalla de configuración del App. Si no es obvio cuál es, `pnpm find-installation-id` lo resuelve solo a partir del App ID + la private key (no necesita el installation ID de entrada).
+
+**Verificación:** `pnpm smoke-test` pide un installation token real y confirma lectura de `PRODUCT_REPO` — correrlo después de cualquier cambio de credenciales antes de asumir que quedaron bien.
+
 ## Estado actual
 
 - [x] Definir el esqueleto del supervisor (script + estructura de tick) — ver §3.1 y `src/`

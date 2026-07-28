@@ -6,7 +6,9 @@
   "description": "Supervisor autonomo para implementacion de specs via GitHub como maquina de estados",
   "scripts": {
     "tick": "tsx src/index.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "smoke-test": "tsx scripts/smoke-test.ts",
+    "find-installation-id": "tsx scripts/find-installation-id.ts"
   },
   "dependencies": {
     "@octokit/auth-app": "^8.2.0",
