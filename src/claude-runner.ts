@@ -27,7 +27,10 @@ export async function runClaudeHeadless(cwd: string, prompt: string, label: stri
     const child = spawn(
       config.claudeCommand,
       ['-p', prompt, '--permission-mode', 'bypassPermissions'],
-      { cwd, env },
+      // stdin explicitly closed ('ignore'): an unset stdio here defaults to
+      // an open, never-written pipe, which makes `claude -p` wait ~3s for
+      // input before warning and proceeding without it on every single run.
+      { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] },
     );
 
     let stdout = '';
