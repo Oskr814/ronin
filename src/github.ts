@@ -4,17 +4,20 @@ import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { config, LABEL_MANAGED, LABEL_STATES, type SpecStatus } from './config.js';
+import { getInstallationToken } from './github-app-auth.js';
 
 const execFileAsync = promisify(execFile);
 
 // All gh invocations use execFile with an argv array (never a shell string) so
 // issue/PR titles and bodies coming from spec content can't be interpreted as
-// shell syntax. GH_TOKEN is set explicitly per-call rather than relying on
-// `gh auth login` state on the host, so every issue/PR is authored by the
-// ValerIA bot account regardless of who else is logged into `gh` there.
+// shell syntax. GH_TOKEN is set explicitly per-call from the GitHub App
+// installation token rather than relying on `gh auth login` state on the
+// host, so every issue/PR is authored by "ValerIA[bot]" regardless of who
+// else is logged into `gh` there.
 async function gh(args: string[]): Promise<string> {
+  const token = await getInstallationToken();
   const { stdout } = await execFileAsync('gh', [...args, '--repo', config.productRepo], {
-    env: { ...process.env, GH_TOKEN: config.githubToken },
+    env: { ...process.env, GH_TOKEN: token },
   });
   return stdout;
 }
