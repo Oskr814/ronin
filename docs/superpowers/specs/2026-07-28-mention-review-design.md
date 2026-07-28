@@ -36,6 +36,9 @@ la única vía para habilitar el merge.
 - **Alcance**: solo PRs que ValerIA abrió (los que `tick.ts` ya trackea vía
   `getOpenPrForIssue`), no cualquier PR del repo — reusa el descubrimiento
   existente, sin escanear el repo entero.
+- **PRs en draft se ignoran**: mismo criterio que ya aplica el resto de
+  `processIssue` (checks/review no corren en draft) — una mención en un PR
+  todavía en draft queda sin procesar hasta que salga de ese estado.
 - **Ambos tipos de comentario**: generales (issue comments) e inline (review
   comments) — un pedido tipo "@valeria-agent fijate esta línea" es un caso de
   uso natural y no tiene sentido cubrir solo uno de los dos.
@@ -154,10 +157,15 @@ contexto, no solo el diff en texto plano.
 
 ### 5. `src/tick.ts`
 
-Dentro de `processIssue`, agregado **antes** del `if (pr.isDraft) return`
-(para que funcione incluso mientras el PR sigue en draft):
+Dentro de `processIssue`, agregado **después** del `if (pr.isDraft) return`
+— un PR en draft se ignora por completo, igual que ya ignora checks/review
+en ese estado; una mención ahí queda simplemente sin procesar hasta que el
+PR salga de draft (no se marca con 👀, así que el primer tick post-draft la
+levanta normalmente):
 
 ```ts
+if (pr.isDraft) return; // ya existente
+
 const mentions = await findUnprocessedMentions(pr.number);
 if (mentions.length > 0) {
   try {
