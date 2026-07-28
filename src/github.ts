@@ -3,7 +3,7 @@ import { promisify } from 'node:util';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { config, LABEL_MANAGED, LABEL_STATES, type SpecStatus } from './config.js';
+import { config, LABEL_MANAGED, LABEL_STATES, LABEL_BUG, type SpecStatus } from './config.js';
 import { getInstallationToken } from './github-app-auth.js';
 
 const execFileAsync = promisify(execFile);
@@ -307,6 +307,32 @@ export async function listAssignedSpecPrs(label: string): Promise<SpecPr[]> {
     .filter((pr) => !pr.isDraft)
     .filter((pr) => !pr.labels.some((l) => l.name === LABEL_STATES['in-progress'] || l.name === LABEL_STATES.done || l.name === LABEL_STATES.blocked))
     .map((pr) => ({ number: pr.number, headRefName: pr.headRefName }));
+}
+
+export interface BugIssue {
+  number: number;
+  title: string;
+}
+
+// Discovery source of truth for the bug-intake path: an issue is ready for
+// this runner once a human has applied both bmedical's own `bugfix` label
+// and this runner's assignment label (see claim.ts's runnerLabel) — no
+// draft/ready step like a spec PR has, since a GitHub issue has no draft
+// state. Already-managed issues (label `valeria` present) are excluded so
+// an issue is only ever picked up once. See
+// docs/superpowers/specs/2026-07-28-bug-issue-intake-design.md.
+export async function listAssignedBugIssues(label: string): Promise<BugIssue[]> {
+  const stdout = await gh([
+    'issue', 'list',
+    '--label', LABEL_BUG,
+    '--label', label,
+    '--state', 'open',
+    '--json', 'number,title,labels',
+  ]);
+  const raw = JSON.parse(stdout) as Array<{ number: number; title: string; labels: Array<{ name: string }> }>;
+  return raw
+    .filter((issue) => !issue.labels.some((l) => l.name === LABEL_MANAGED))
+    .map((issue) => ({ number: issue.number, title: issue.title }));
 }
 
 // Swaps state labels on a spec PR the same way setIssueState does on a
