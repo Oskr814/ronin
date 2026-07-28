@@ -53,6 +53,16 @@ export const config = {
   // already held doesn't need to be re-verified against GitHub every tick.
   // Never committed — see .gitignore.
   localStatePath: process.env.LOCAL_STATE_PATH ?? '.valeria-state.json',
+  // ValerIA's own repo — e2e screenshot evidence is committed here (main),
+  // not to PRODUCT_REPO, so bmedical's history never picks up binary
+  // bloat from every PR. See docs/DESIGN.md §4.
+  valeriaRepo: process.env.VALERIA_REPO ?? 'Bmedical/ValerIA',
+  // Playwright's screenshot output dir, relative to the product repo root
+  // (bmedical's apps/webapp/playwright.config.ts sets `screenshot: 'on'`).
+  // Gitignored there on purpose — evidence.ts reads straight off a
+  // worktree's disk instead of trying to get these into bmedical's git
+  // history at all.
+  playwrightTestResultsDir: process.env.PLAYWRIGHT_TEST_RESULTS_DIR ?? 'apps/webapp/test-results',
 } as const;
 
 export const LABEL_MANAGED = 'valeria';

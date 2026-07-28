@@ -11,6 +11,8 @@ import {
   mergePullRequest,
   setIssueState,
   incrementAttemptCount,
+  hasEvidenceComment,
+  postEvidenceComment,
   type TrackingIssue,
   type PullRequestStatus,
 } from './github.js';
@@ -19,6 +21,8 @@ import { nextSlice, hasRemainingSlices, recordSlicePr, markSliceMerged } from '.
 import { notifyBlocker } from './notifier.js';
 import { runAgentTask, sliceIndexFromBranch } from './agent-task.js';
 import { tryClaim, releaseIfNoLongerInProgress, runnerLabel } from './claim.js';
+import { worktreeDirFor } from './worktree.js';
+import { publishEvidence, rawEvidenceUrl } from './evidence.js';
 import { config } from './config.js';
 
 function prUrl(prNumber: number): string {
@@ -114,6 +118,18 @@ async function processIssue(issue: TrackingIssue): Promise<void> {
     // branch name rather than trusting the headless agent's own issue edit
     // to have landed. See docs/DESIGN.md §3.1.
     await recordSlicePr(issue.number, sliceIndex, pr.number);
+  }
+
+  // Checked every tick until it succeeds once (hasEvidenceComment gates the
+  // repeat work) — the agent may not have finished running e2e yet on an
+  // earlier tick, and a slice that doesn't touch e2e-covered behavior just
+  // never produces anything to publish, which is fine (publishEvidence
+  // returns [] and this silently no-ops). See docs/DESIGN.md §4.
+  if (!(await hasEvidenceComment(pr.number))) {
+    const paths = await publishEvidence(issue.number, pr.number, worktreeDirFor(pr.headRefName));
+    if (paths.length > 0) {
+      await postEvidenceComment(pr.number, paths.map(rawEvidenceUrl));
+    }
   }
 
   if (pr.isDraft) {

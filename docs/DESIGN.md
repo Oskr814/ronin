@@ -84,16 +84,27 @@ Scaffold en TypeScript (`pnpm tick` corre un tick y termina — pensado para inv
 - `checklist.ts` — parsea y edita el checklist de slices del body del issue (índice de próxima slice, marcar merged, registrar PR); es la fuente de verdad para "qué slice sigue", no un contador aparte
 - `spec-content.ts` — lee el contenido de un spec ya mergeado vía `git show origin/main:<path>` (nunca toca el working directory del checkout principal, así que no importa qué branch tenga el humano checked-out ahí)
 - `notifier.ts` — prototipo del notificador (nodemailer + Gmail SMTP)
+- `logger.ts` — formato `[ISO_TIMESTAMP] LEVEL mensaje`, usado en vez de `console.log` suelto (ver `logs/tick-YYYY-MM-DD.log`, §3)
 - `worktree.ts` — crea/reutiliza un git worktree desechable por branch de tarea
+- `evidence.ts` — publica screenshots de Playwright en `VALERIA_REPO` (no en `PRODUCT_REPO`) y arma sus URLs raw — ver §4
 - `claude-runner.ts` — invoca `claude -p` con `--permission-mode bypassPermissions`, reenviando el installation token del App como `GH_TOKEN` al proceso hijo (así los `gh` que el propio Claude headless corra también quedan a nombre de `ValerIA[bot]`)
 - `agent-task.ts` — arma el prompt (en inglés, ver §8) según el tipo de tarea (plan / implement-slice / fix-review / fix-e2e) y orquesta worktree + invocación
-- `claim.ts` — lock por label (`valeria:locked-by-<machine-id>`) + cache local (`.valeria-state.json`) para que dos supervisores no procesen el mismo issue — ver §9
-- `tick.ts` — el loop de decisión: descubre specs nuevos, y por cada issue `in-progress` decide la próxima acción leyendo el checklist y el contador de intentos por PR contra los límites de `docs/BLOCKING.md`
+- `claim.ts` — lock por label (`valeria:runner-<runner-id>`) + cache local (`.valeria-state.json`) para que dos supervisores no procesen el mismo issue — ver §9
+- `tick.ts` — el loop de decisión: descubre specs asignados, y por cada issue `in-progress` decide la próxima acción leyendo el checklist, la evidencia e2e, y el contador de intentos por PR contra los límites de `docs/BLOCKING.md`
 
-### 4. Testing y review externo
+### 4. Testing, evidencia e2e, y review externo
 
-- E2E: el agente levanta la app y corre flujos con Playwright antes de abrir el PR.
+- El agente corre Playwright (`apps/webapp/e2e/`) antes de abrir el PR — si la slice toca comportamiento de usuario, agrega o actualiza un spec y lo corre hasta que pase, en vez de dejárselo a CI.
 - Pipelines: el agente monitorea CI y solo considera un PR "mergeable" cuando CI está verde **y** el PR tiene approval humano explícito.
+
+**Evidencia visual**: `apps/webapp/playwright.config.ts` en bmedical tiene `screenshot: 'on'`, así que cada corrida deja capturas en `test-results/` — gitignoreado ahí a propósito, nunca llegan al historial de bmedical. En vez de eso:
+
+1. El agente solo corre los tests; no toca `test-results/` para nada más.
+2. El supervisor (`src/evidence.ts`), en el tick siguiente a que detecta el PR, lee esas capturas directo del worktree en disco, las copia a un checkout dedicado de **ValerIA** (`VALERIA_REPO`, siempre en `main`, nunca el checkout que un humano pueda tener en otra branch) bajo `evidence/<issue>/<pr>/`, commitea y pushea.
+3. Postea un comentario en el PR de bmedical (`postEvidenceComment`, una sola vez por PR — no edita, evita la complejidad de resolver el id REST de un comentario desde el `--json` de `gh`) con cada imagen embebida vía su URL raw (`raw.githubusercontent.com/<VALERIA_REPO>/main/...`), así se ven inline sin salir de GitHub.
+
+Por qué en ValerIA y no en bmedical: el historial del producto no debería acumular binarios de cada PR. El costo es un checkout extra (`valeria-evidence-checkout/`, sibling del repo) que el supervisor mantiene sincronizado a `main` en cada publicación — y como `main` de ValerIA también tiene código revisado del propio supervisor, esto mezcla commits automáticos de datos con historial de código (decisión consciente, más simple que una branch separada, pero vale reconsiderar si el volumen crece mucho).
+
 - Review de GitHub Copilot: **fuera del loop core por ahora**, parametrizable vía `REQUEST_COPILOT_REVIEW` (default `false`). Si se activa, el agente solicita el review y monitorea/resuelve sus comentarios igual que los de un humano — pero no es una dependencia asumida del flujo.
 
 ### 5. Parte visual
@@ -153,8 +164,11 @@ Misma identidad que la asignación de specs (§1): `RUNNER_ID` (el usuario de Gi
 - [x] Claim entre múltiples supervisores concurrentes — ver `src/claim.ts` y §9
 - [x] Descubrimiento por asignación manual vía PR (reemplaza el escaneo de frontmatter local) — ver §1, resuelve de paso el gap de descubrimiento duplicado que tenía la versión anterior de §9
 - [x] Recurrencia vía cron (no tmux) — `scripts/setup-cron.sh`, con `flock` para que un host nunca corra dos ticks solapados
+- [x] Evidencia visual de e2e en el PR — `src/evidence.ts` publica screenshots a `VALERIA_REPO` y las embebe en un comentario vía URL raw, ver §4
 
 **Pendiente, fuera de este scaffold:**
+
+- Nunca se probó en vivo contra un PR real con specs de e2e afectados (el dry run de §10 usó un spec sin ningún componente de UI)
 
 - Backoff específico para rate-limit/cuota de `claude`: hoy ese fallo cae en el catch-all de `tick.ts` como cualquier otra excepción → bloqueo + email, en vez de reintentarse solo más tarde sin marcar el issue como bloqueado
 - Cuándo limpiar un worktree (`removeWorktree` existe pero no está conectado a nada todavía — ¿al mergear? ¿al llegar a `blocked`?)

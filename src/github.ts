@@ -211,6 +211,35 @@ export async function requestCopilotReview(prNumber: number): Promise<void> {
   await gh(['pr', 'edit', String(prNumber), '--add-reviewer', 'copilot']);
 }
 
+const EVIDENCE_COMMENT_MARKER = '<!-- valeria:e2e-evidence -->';
+
+export async function hasEvidenceComment(prNumber: number): Promise<boolean> {
+  const stdout = await gh(['pr', 'view', String(prNumber), '--json', 'comments']);
+  const comments = (JSON.parse(stdout) as { comments: Array<{ body: string }> }).comments;
+  return comments.some((c) => c.body.includes(EVIDENCE_COMMENT_MARKER));
+}
+
+// Posts once per PR (guarded by hasEvidenceComment, checked by the caller)
+// rather than editing an existing comment — gh has no direct "edit PR
+// comment by id" and this is simpler than resolving the REST comment id
+// from gh's GraphQL-shaped --json output.
+export async function postEvidenceComment(prNumber: number, imageUrls: string[]): Promise<void> {
+  const body = [
+    EVIDENCE_COMMENT_MARKER,
+    '## Evidencia e2e (Playwright)',
+    ...imageUrls.map((url) => `![](${url})`),
+  ].join('\n\n');
+
+  const dir = await mkdtemp(join(tmpdir(), 'valeria-evidence-comment-'));
+  const bodyFile = join(dir, 'body.md');
+  try {
+    await writeFile(bodyFile, body, 'utf8');
+    await gh(['pr', 'comment', String(prNumber), '--body-file', bodyFile]);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
 export interface SpecPr {
   number: number;
   headRefName: string;

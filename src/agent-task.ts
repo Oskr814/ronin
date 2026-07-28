@@ -50,6 +50,7 @@ async function buildTask(task: AgentTask): Promise<{ branch: string; prompt: str
           `You are ValerIA, an autonomous agent working on tracking issue #${task.issueNumber} in ${repoUrl()}.`,
           `Implement this single slice: "${task.sliceTitle}".`,
           "Follow this repo's CLAUDE.md conventions, including its testing requirements.",
+          'If this slice touches user-facing behavior in apps/webapp, add or update a Playwright e2e spec under apps/webapp/e2e/ covering it, and run it (`pnpm --filter @bmedical/webapp exec playwright test`) until it passes — do not leave that for CI to catch. Leave the resulting output under apps/webapp/test-results/ as-is; do not move, copy, or commit it — the supervisor collects it separately.',
           'When done: run the relevant tests, commit and push this branch, and open a PR against main (gh pr create) describing the slice.',
           'Scope: only touch files needed for this slice. Do not edit the tracking issue (body, labels, assignees, or anything else) — that is owned entirely by the supervisor, not by you.',
         ].join('\n'),
@@ -74,7 +75,8 @@ async function buildTask(task: AgentTask): Promise<{ branch: string; prompt: str
         branch: pr.headRefName,
         prompt: [
           `You are ValerIA. CI/e2e checks (Playwright) are failing on PR #${task.prNumber} (tracking issue #${task.issueNumber}).`,
-          'Investigate the cause, fix it, and commit and push to this same branch.',
+          'Investigate the cause, fix it, and confirm the affected e2e spec(s) pass by re-running them (`pnpm --filter @bmedical/webapp exec playwright test`), then commit and push to this same branch.',
+          'Leave the resulting output under apps/webapp/test-results/ as-is; do not move, copy, or commit it — the supervisor collects it separately.',
           'Do not edit the tracking issue or change any labels, on either the issue or this PR — that is owned entirely by the supervisor, not by you.',
         ].join('\n'),
       };
