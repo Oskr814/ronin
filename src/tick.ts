@@ -23,7 +23,7 @@ import {
   type PullRequestStatus,
 } from './github.js';
 import { fetchOriginMain, readSpecFile, extractTitle } from './spec-content.js';
-import { nextUnstartedSlice, hasRemainingSlices, recordSlicePr, markSliceMerged, seedSingleSlice } from './checklist.js';
+import { nextUnstartedSlice, hasRemainingSlices, recordSlicePr, markSliceMerged, seedSingleSlice, getSlices } from './checklist.js';
 import { notifyBlocker } from './notifier.js';
 import { runAgentTask, type AgentTask } from './agent-task.js';
 import { ClaudeUsageLimitError } from './claude-runner.js';
@@ -150,7 +150,7 @@ function issueUrl(issueNumber: number): string {
 // pipeline (merge gate, fix-review/fix-e2e cycles, evidence) treats it
 // exactly like a spec's tracking issue. See
 // docs/superpowers/specs/2026-07-28-bug-issue-intake-design.md.
-async function discoverAssignedBugs(): Promise<void> {
+export async function discoverAssignedBugs(): Promise<void> {
   const bugs = await listAssignedBugIssues(runnerLabel());
   for (const bug of bugs) {
     try {
@@ -391,6 +391,21 @@ async function processIssue(issue: TrackingIssue): Promise<void> {
     if (slice) {
       log.info(`issue #${issue.number}: sin PRs abiertos, arrancando slice ${slice.index + 1} (${slice.title})`);
       await runAgentTask(agentTaskFor(issue, slice.index, slice.title));
+      return;
+    }
+    // Checklist vacío del todo (nunca se sembró): el `plan` de un spec, o el
+    // seedSingleSlice de un bug (ver discoverAssignedBugs), falló a mitad de
+    // camino y dejó el issue con el label `valeria` puesto pero sin ninguna
+    // slice en el body. Sin este chequeo, el fallthrough de abajo lo
+    // confundiría con "todo mergeó" y lo marcaría done sin que se haya
+    // tocado nada — un humano que reintente pasándolo de blocked a
+    // in-progress nunca se enteraría. Ver final review Fix 3.
+    if ((await getSlices(issue.number)).length === 0) {
+      await notifyBlocker({
+        issueUrl: issue.url,
+        reason: 'El checklist de slices está vacío — el seed/plan inicial nunca llegó a escribirse',
+      });
+      await setIssueState(issue.number, 'blocked');
       return;
     }
     // Ningún PR abierto y ninguna slice sin arrancar: o todo mergeó, o algún

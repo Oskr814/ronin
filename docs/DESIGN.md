@@ -100,7 +100,7 @@ Scaffold en TypeScript (`pnpm tick` corre un tick y termina — pensado para inv
 - `worktree.ts` — crea/reutiliza un git worktree desechable por branch de tarea
 - `evidence.ts` — publica screenshots de Playwright en `VALERIA_REPO` (no en `PRODUCT_REPO`) y arma sus URLs raw — ver §4
 - `claude-runner.ts` — invoca `claude -p` con `--permission-mode bypassPermissions`, reenviando el installation token del App como `GH_TOKEN` al proceso hijo (así los `gh` que el propio Claude headless corra también quedan a nombre de `ValerIA[bot]`)
-- `agent-task.ts` — arma el prompt (en inglés, ver §8) según el tipo de tarea (plan / implement-slice / fix-review / fix-e2e) y orquesta worktree + invocación
+- `agent-task.ts` — arma el prompt (en inglés, ver §8) según el tipo de tarea (plan / implement-slice / fix-review / fix-e2e / fix-bug) y orquesta worktree + invocación
 - `claim.ts` — lock por label (`valeria:runner-<runner-id>`) + cache local (`.valeria-state.json`) para que dos supervisores no procesen el mismo issue — ver §9
 - `tick.ts` — el loop de decisión: descubre specs asignados, y por cada issue `in-progress` decide la próxima acción leyendo el checklist, la evidencia e2e, y el contador de intentos por PR contra los límites de `docs/BLOCKING.md`
 

@@ -318,8 +318,9 @@ export interface BugIssue {
 // this runner once a human has applied both bmedical's own `bugfix` label
 // and this runner's assignment label (see claim.ts's runnerLabel) — no
 // draft/ready step like a spec PR has, since a GitHub issue has no draft
-// state. Already-managed issues (label `valeria` present) are excluded so
-// an issue is only ever picked up once. See
+// state. Already-managed issues (label `valeria` present) or already in a
+// tracked state (ready/in-progress/blocked/done) are excluded so an issue is
+// only ever picked up once — mirrors listAssignedSpecPrs's filter above. See
 // docs/superpowers/specs/2026-07-28-bug-issue-intake-design.md.
 export async function listAssignedBugIssues(label: string): Promise<BugIssue[]> {
   const stdout = await gh([
@@ -332,6 +333,7 @@ export async function listAssignedBugIssues(label: string): Promise<BugIssue[]> 
   const raw = JSON.parse(stdout) as Array<{ number: number; title: string; labels: Array<{ name: string }> }>;
   return raw
     .filter((issue) => !issue.labels.some((l) => l.name === LABEL_MANAGED))
+    .filter((issue) => !issue.labels.some((l) => l.name === LABEL_STATES['in-progress'] || l.name === LABEL_STATES.done || l.name === LABEL_STATES.blocked))
     .map((issue) => ({ number: issue.number, title: issue.title }));
 }
 

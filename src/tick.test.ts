@@ -16,15 +16,18 @@ vi.mock('./config.js', () => ({
     productRepo: 'bmedical/bmedical',
   },
   LABEL_BUG: 'bugfix',
+  LABEL_MANAGED: 'valeria',
 }));
 
 const recordSlicePr = vi.fn();
 const markSliceMerged = vi.fn();
 const hasRemainingSlices = vi.fn();
+const seedSingleSlice = vi.fn();
 vi.mock('./checklist.js', () => ({
   recordSlicePr: (...args: unknown[]) => recordSlicePr(...args),
   markSliceMerged: (...args: unknown[]) => markSliceMerged(...args),
   hasRemainingSlices: (...args: unknown[]) => hasRemainingSlices(...args),
+  seedSingleSlice: (...args: unknown[]) => seedSingleSlice(...args),
 }));
 
 const hasEvidenceComment = vi.fn();
@@ -34,6 +37,8 @@ const mergePullRequest = vi.fn();
 const incrementAttemptCount = vi.fn();
 const setIssueState = vi.fn();
 const getPullRequestStatus = vi.fn();
+const addIssueLabel = vi.fn();
+const listAssignedBugIssues = vi.fn();
 vi.mock('./github.js', () => ({
   hasEvidenceComment: (...args: unknown[]) => hasEvidenceComment(...args),
   postEvidenceComment: (...args: unknown[]) => postEvidenceComment(...args),
@@ -42,6 +47,8 @@ vi.mock('./github.js', () => ({
   incrementAttemptCount: (...args: unknown[]) => incrementAttemptCount(...args),
   setIssueState: (...args: unknown[]) => setIssueState(...args),
   getPullRequestStatus: (...args: unknown[]) => getPullRequestStatus(...args),
+  addIssueLabel: (...args: unknown[]) => addIssueLabel(...args),
+  listAssignedBugIssues: (...args: unknown[]) => listAssignedBugIssues(...args),
 }));
 
 const publishEvidence = vi.fn();
@@ -74,7 +81,7 @@ vi.mock('./notifier.js', () => ({
   notifyBlocker: (...args: unknown[]) => notifyBlocker(...args),
 }));
 
-const { processSlicePr, agentTaskFor } = await import('./tick.js');
+const { processSlicePr, agentTaskFor, discoverAssignedBugs } = await import('./tick.js');
 
 function issue(overrides: Partial<TrackingIssue> = {}): TrackingIssue {
   return { number: 228, title: 'Test issue', url: 'https://github.com/x/y/issues/228', labels: [], ...overrides };
@@ -105,6 +112,7 @@ beforeEach(() => {
   incrementAttemptCount.mockResolvedValue(1);
   existsSync.mockReturnValue(true);
   hasRemainingSlices.mockResolvedValue(true); // preserves pre-existing merge test behavior by default
+  listAssignedBugIssues.mockResolvedValue([]);
 });
 
 describe('processSlicePr — non-bottom stacked PR', () => {
@@ -255,5 +263,27 @@ describe('processSlicePr — same-tick done transition on merge', () => {
     await processSlicePr(issue(), bottomPr, true);
 
     expect(setIssueState).not.toHaveBeenCalledWith(228, 'done');
+  });
+});
+
+describe('discoverAssignedBugs', () => {
+  it('labels, seeds, and starts a bug issue not yet valeria-managed', async () => {
+    listAssignedBugIssues.mockResolvedValue([{ number: 500, title: 'Login redirects to 404' }]);
+
+    await discoverAssignedBugs();
+
+    expect(addIssueLabel).toHaveBeenCalledWith(500, 'valeria');
+    expect(seedSingleSlice).toHaveBeenCalledWith(500, 'Fix — Login redirects to 404');
+    expect(setIssueState).toHaveBeenCalledWith(500, 'in-progress');
+  });
+
+  it('does nothing when there are no newly-assigned bug issues', async () => {
+    listAssignedBugIssues.mockResolvedValue([]);
+
+    await discoverAssignedBugs();
+
+    expect(addIssueLabel).not.toHaveBeenCalled();
+    expect(seedSingleSlice).not.toHaveBeenCalled();
+    expect(setIssueState).not.toHaveBeenCalled();
   });
 });
