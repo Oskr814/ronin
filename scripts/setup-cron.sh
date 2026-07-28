@@ -60,7 +60,15 @@ flock -n 200 || { echo "\$(date -Is) [cron] tick ya en curso, salteando"; exit 0
 set -a
 source "$REPO_DIR/.env"
 set +a
-pnpm tick
+
+if [ ! -f dist/index.js ]; then
+  echo "\$(date -Is) [cron] dist/index.js no existe — correr pnpm build" >&2
+  exit 1
+fi
+if [ -n "\$(find src -newer dist/index.js)" ]; then
+  echo "\$(date -Is) [cron] WARN: src/ tiene cambios más nuevos que dist/ — considerar pnpm build"
+fi
+pnpm start
 EOF
 chmod +x "$WRAPPER"
 
