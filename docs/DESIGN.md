@@ -21,18 +21,15 @@ El flujo actual para implementar un spec es esencialmente manual más allá de l
 
 ### 1. Descubrimiento de specs
 
-Los specs viven en el repo del producto (ej. `docs/superpowers/` en bmedical) con frontmatter:
+El spec se escribe como un **PR draft contra el repo del producto** (ej. `bmedical`), con el archivo `.md` en `docs/superpowers/specs/` — sin frontmatter, un doc markdown normal, igual que los specs ya existentes en el repo.
 
-```yaml
----
-status: draft | ready | in-progress | blocked | done
-issue: null            # lo rellena el agente al descubrir el spec
----
-```
+Flujo:
 
-- `draft` / `ready` los controla el humano (marca `ready` cuando terminó de depurar el spec).
-- `in-progress` / `blocked` / `done` los controla el agente.
-- Una vez que `issue` está seteado, el frontmatter es un espejo — la fuente de verdad es el issue de GitHub, para evitar drift entre dos lugares de estado.
+1. El humano escribe el spec, abre el PR **en draft**, y le pone la label `valeria:runner-<su-usuario-de-github>` (ej. `valeria:runner-oskr814`) — así asigna qué runner lo va a procesar. Mientras está en draft, el agente lo ignora por completo: el humano puede seguir iterando el contenido sin que nada dispare.
+2. Cuando el spec está listo, el humano lo marca **ready for review** (sin necesidad de aprobación — undraft es la señal de "andá"). Esta es la única señal que importa; no hace falta más.
+3. El runner cuyo label coincide detecta el PR (abierto, no-draft, con su label, sin haber sido ya procesado — ver `listAssignedSpecPrs` en `github.ts`), lo mergea (sin el gate de approval que aplica a PRs de implementación — es documentación, no código de producto, y el humano ya señaló que está listo con la label + el undraft), y a partir de ahí sigue el flujo normal: crear issue de tracking, plan, slicing.
+
+Por qué asignación manual y no descubrimiento automático: dos runners corriendo en paralelo no pueden competir por "quién vio primero" un spec si solo uno de ellos tiene la label puesta — la decisión de quién lo procesa la toma un humano una sola vez, no una carrera entre máquinas. Ver §9 para el gap que esto todavía no resuelve (dos specs *distintos* asignados sin querer al mismo runner no es un problema; el problema real sería un humano poniendo la misma label en dos PRs que describen lo mismo — eso es un problema de proceso humano, no una condición de carrera en el código).
 
 ### 2. Mapeo a GitHub
 
@@ -77,7 +74,7 @@ Scaffold en TypeScript (`pnpm tick` corre un tick y termina — pensado para inv
 - `config.ts` — env vars, labels, límites de reintento
 - `github.ts` — wrappers sobre `gh` CLI (execFile con argv array, nunca shell string) para issues/PRs/labels/merge/body/contador de intentos. El gate de approval está *en código*, no solo documentado: `mergePullRequest` lanza si `reviewDecision !== 'APPROVED'`
 - `checklist.ts` — parsea y edita el checklist de slices del body del issue (índice de próxima slice, marcar merged, registrar PR); es la fuente de verdad para "qué slice sigue", no un contador aparte
-- `specs.ts` — escanea frontmatter de specs, filtra `status: ready` sin `issue`, escribe de vuelta el link una vez creado el issue
+- `spec-content.ts` — lee el contenido de un spec ya mergeado vía `git show origin/main:<path>` (nunca toca el working directory del checkout principal, así que no importa qué branch tenga el humano checked-out ahí)
 - `notifier.ts` — prototipo del notificador (nodemailer + Gmail SMTP)
 - `worktree.ts` — crea/reutiliza un git worktree desechable por branch de tarea
 - `claude-runner.ts` — invoca `claude -p` con `--permission-mode bypassPermissions`, reenviando el installation token del App como `GH_TOKEN` al proceso hijo (así los `gh` que el propio Claude headless corra también quedan a nombre de `ValerIA[bot]`)
@@ -126,15 +123,16 @@ Segunda limitación encontrada en el primer dry run: el prompt de una tarea punt
 
 ### 9. Concurrencia entre múltiples supervisores
 
-Implementado en `src/claim.ts`, siguiendo el mismo patrón de "GitHub como estado" que el resto del sistema — sin base de datos ni lock service aparte, y sin jitter ni timestamps: un label de claim por máquina más un cache local que evita repreguntarle a GitHub por algo que esta máquina ya sabe que es suyo.
+Implementado en `src/claim.ts`, siguiendo el mismo patrón de "GitHub como estado" que el resto del sistema — sin base de datos ni lock service aparte, y sin jitter ni timestamps: un label de claim por runner más un cache local que evita repreguntarle a GitHub por algo que este runner ya sabe que es suyo.
 
-- Cada máquina tiene una identidad (`MACHINE_ID`, default hostname) y agrega `valeria:locked-by-<machine-id>` al issue que va a trabajar.
-- **Estado local** (`.valeria-state.json`, gitignored, no compartido entre máquinas): cache de qué issues ya reclamó esta máquina. Si un issue ya está ahí, ni siquiera se consulta GitHub — se procesa directo. Es solo una optimización, no la fuente de verdad: si el archivo se pierde o es la primera corrida, se re-deriva todo desde las labels reales.
-- Cuando el estado local no tiene el issue: si ya hay un `locked-by-*` de *otra* máquina, se salta. Si no hay ninguno, agrega el propio y **relee** las labels — dos máquinas pueden pasar el chequeo y agregar su label en el mismo instante (`--add-label` no es compare-and-swap), así que el desempate es determinista: gana el `machine-id` alfabéticamente menor, sin esperar nada. El que pierde saca su propia label.
-- El **descubrimiento de un spec nuevo también reclama de inmediato** (`discoverNewSpecs` llama a `tryClaim` apenas crea el issue, antes de correr el plan) — así nunca hay una ventana donde el issue exista y esté sin dueño.
-- El lock se **libera solo cuando el issue deja de estar `in-progress`** (pasa a `blocked` o `done`) — mientras siga en curso, la misma máquina lo retiene sin volver a pelear por él en cada tick.
+Misma identidad que la asignación de specs (§1): `RUNNER_ID` (el usuario de GitHub, ej. `oskr814`, requerido — no hay default de hostname porque no significaría nada para un humano poniendo la label a mano) y el mismo label `valeria:runner-<runner-id>`, reutilizado como lock automático sobre issues además de como asignación manual sobre specs. La diferencia es quién lo escribe: en un spec PR lo pone un humano a mano; en un issue de tracking lo pone el propio `claim.ts` al procesar.
 
-**Gap que esto no resuelve**: dos máquinas pueden descubrir el *mismo spec* al mismo tiempo y crear **dos issues de tracking separados** para él — `scanReadySpecs` decide en base al frontmatter local (`status: ready`, `issue: null`), y cada máquina tiene su propio clon del repo producto, así que no hay nada compartido que les impida a ambas verlo como "sin tomar" antes de que cualquiera alcance a escribir el `issue:` de vuelta. El claim por label protege el *procesamiento* de un issue ya creado, no la *creación* del issue en sí. Si esto se vuelve un problema real, la solución probablemente pasa por buscar en GitHub un issue existente que ya linkee ese `spec_relative_path` antes de crear uno nuevo, en vez de confiar solo en el frontmatter local.
+- **Estado local** (`.valeria-state.json`, gitignored, no compartido entre runners): cache de qué issues ya reclamó este runner. Si un issue ya está ahí, ni siquiera se consulta GitHub — se procesa directo. Es solo una optimización, no la fuente de verdad: si el archivo se pierde o es la primera corrida, se re-deriva todo desde las labels reales.
+- Cuando el estado local no tiene el issue: si ya hay un `valeria:runner-*` de *otro* runner, se salta. Si no hay ninguno, agrega el propio y **relee** las labels — dos runners pueden pasar el chequeo y agregar su label en el mismo instante (`--add-label` no es compare-and-swap), así que el desempate es determinista: gana el `runner-id` alfabéticamente menor, sin esperar nada. El que pierde saca su propia label.
+- El **descubrimiento de un spec asignado también reclama de inmediato** (`discoverAssignedSpecs` marca el spec PR `in-progress` apenas lo detecta, antes de mergearlo) — así nunca hay una ventana donde algo exista y esté sin dueño.
+- El lock sobre un issue se **libera solo cuando deja de estar `in-progress`** (pasa a `blocked` o `done`) — mientras siga en curso, el mismo runner lo retiene sin volver a pelear por él en cada tick.
+
+**El gap de descubrimiento duplicado que documentábamos acá (dos máquinas creando dos issues para el mismo spec) queda resuelto por el cambio de §1**: como la asignación de qué runner procesa un spec la hace un humano poniendo una sola label en un solo PR, no hay dos runners compitiendo por "descubrir" lo mismo — solo uno tiene la label. Lo que sigue siendo un problema de **proceso humano, no de concurrencia**: si alguien pone la misma label en dos PRs que describen el mismo trabajo, eso lo procesan igual como dos specs distintos — no hay nada en el código que detecte esa duplicación de contenido.
 
 ## Estado actual
 
@@ -144,14 +142,14 @@ Implementado en `src/claim.ts`, siguiendo el mismo patrón de "GitHub como estad
 - [x] Prototipo de la app de notificación por email — ver `src/notifier.ts`
 - [x] `agent-task.ts`: invocación de `claude -p` en un worktree aislado (ciclo de vida básico, prompts por tipo de tarea, en inglés — ver §8) — ver `src/worktree.ts`, `src/claude-runner.ts`, `src/agent-task.ts` y §7.1
 - [x] Estado persistente entre ticks: índice de slice actual (`src/checklist.ts`, parseado del propio checklist del issue) y contador de reintentos por PR (`valeria:attempts-N`, labels en `src/github.ts`) — ver §3.1
-- [x] Claim entre múltiples supervisores concurrentes — ver `src/claim.ts` y §9 (deja abierto el caso de descubrimiento duplicado del mismo spec, documentado ahí)
+- [x] Claim entre múltiples supervisores concurrentes — ver `src/claim.ts` y §9
+- [x] Descubrimiento por asignación manual vía PR (reemplaza el escaneo de frontmatter local) — ver §1, resuelve de paso el gap de descubrimiento duplicado que tenía la versión anterior de §9
 
 **Pendiente, fuera de este scaffold:**
 
 - Cuándo limpiar un worktree (`removeWorktree` existe pero no está conectado a nada todavía — ¿al mergear? ¿al llegar a `blocked`?)
 - Slugs de slice legibles: hoy el branch de `implement-slice` usa el índice crudo (`slice-1`, `slice-2`); una vez que se valore la legibilidad de branches/PRs, debería derivar el slug del título real de la slice
 - Decidir si Copilot review se activa (`REQUEST_COPILOT_REVIEW`) y cómo se resuelven sus comentarios automáticamente
-- Descubrimiento duplicado del mismo spec por dos máquinas — ver el gap documentado al final de §9
 
 ### 10. Primer dry run (2026-07-28)
 

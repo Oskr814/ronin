@@ -210,3 +210,64 @@ export async function getOpenPrForIssue(issueNumber: number): Promise<PullReques
 export async function requestCopilotReview(prNumber: number): Promise<void> {
   await gh(['pr', 'edit', String(prNumber), '--add-reviewer', 'copilot']);
 }
+
+export interface SpecPr {
+  number: number;
+  headRefName: string;
+}
+
+// Discovery source of truth: a spec PR is ready for this runner once a
+// human has applied `label` (see claim.ts's runnerLabel) AND marked it
+// ready for review. Still-draft PRs are excluded on purpose — the human
+// can keep iterating on the spec without the agent touching it. Already
+// in-progress/done ones are excluded so a spec PR is only ever picked up
+// once. See docs/DESIGN.md §1.
+export async function listAssignedSpecPrs(label: string): Promise<SpecPr[]> {
+  const stdout = await gh([
+    'pr', 'list',
+    '--label', label,
+    '--state', 'open',
+    '--json', 'number,isDraft,headRefName,labels',
+  ]);
+  const raw = JSON.parse(stdout) as Array<{ number: number; isDraft: boolean; headRefName: string; labels: Array<{ name: string }> }>;
+  return raw
+    .filter((pr) => !pr.isDraft)
+    .filter((pr) => !pr.labels.some((l) => l.name === LABEL_STATES['in-progress'] || l.name === LABEL_STATES.done || l.name === LABEL_STATES.blocked))
+    .map((pr) => ({ number: pr.number, headRefName: pr.headRefName }));
+}
+
+// Swaps state labels on a spec PR the same way setIssueState does on a
+// tracking issue — same LABEL_STATES vocabulary applied to a different
+// resource type. `gh issue`/`gh pr` label operations are scoped separately
+// even though the label definitions are repo-wide, so this can't collide
+// with an actual tracking issue's state.
+export async function setPrState(prNumber: number, next: SpecStatus): Promise<void> {
+  const current = await gh(['pr', 'view', String(prNumber), '--json', 'labels']);
+  const labels = (JSON.parse(current) as { labels: Array<{ name: string }> }).labels.map((l) => l.name);
+  const staleStateLabels = Object.values(LABEL_STATES).filter((l) => labels.includes(l) && l !== LABEL_STATES[next]);
+
+  await ensureLabel(LABEL_STATES[next]);
+  const args = ['pr', 'edit', String(prNumber), '--add-label', LABEL_STATES[next]];
+  for (const stale of staleStateLabels) args.push('--remove-label', stale);
+  await gh(args);
+}
+
+// Assumes exactly one new .md file under config.specDir per spec PR — a
+// documented convention, not enforced anywhere else yet.
+export async function getSpecPathFromPr(prNumber: number): Promise<string> {
+  const stdout = await gh(['pr', 'diff', String(prNumber), '--name-only']);
+  const files = stdout.trim().split('\n').filter(Boolean);
+  const specFile = files.find((f) => f.startsWith(config.specDir) && f.endsWith('.md'));
+  if (!specFile) {
+    throw new Error(`PR #${prNumber} has no .md file under ${config.specDir} — can't tell which file is the spec`);
+  }
+  return specFile;
+}
+
+// Deliberately skips the human-approval gate that mergePullRequest enforces
+// — this merges spec documentation, not product code. The human already
+// signaled readiness by both assigning the runner label and marking the PR
+// ready for review (undrafting it) — see docs/DESIGN.md §1.
+export async function mergeSpecPr(prNumber: number): Promise<void> {
+  await gh(['pr', 'merge', String(prNumber), '--squash']);
+}

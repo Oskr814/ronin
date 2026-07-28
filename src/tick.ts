@@ -1,9 +1,12 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { scanReadySpecs, linkSpecToIssue, type SpecFile } from './specs.js';
 import {
   createTrackingIssue,
   listTrackingIssues,
+  listAssignedSpecPrs,
+  setPrState,
+  getSpecPathFromPr,
+  mergeSpecPr,
   getOpenPrForIssue,
   mergePullRequest,
   setIssueState,
@@ -11,42 +14,64 @@ import {
   type TrackingIssue,
   type PullRequestStatus,
 } from './github.js';
+import { fetchOriginMain, readSpecFile, extractTitle } from './spec-content.js';
 import { nextSlice, hasRemainingSlices, recordSlicePr, markSliceMerged } from './checklist.js';
 import { notifyBlocker } from './notifier.js';
 import { runAgentTask, sliceIndexFromBranch } from './agent-task.js';
-import { tryClaim, releaseIfNoLongerInProgress } from './claim.js';
+import { tryClaim, releaseIfNoLongerInProgress, runnerLabel } from './claim.js';
 import { config } from './config.js';
 
-function prUrl(pr: PullRequestStatus): string {
-  return `https://github.com/${config.productRepo}/pull/${pr.number}`;
+function prUrl(prNumber: number): string {
+  return `https://github.com/${config.productRepo}/pull/${prNumber}`;
 }
 
-async function renderTrackingIssueBody(spec: SpecFile): Promise<string> {
+async function renderTrackingIssueBody(title: string, specPath: string): Promise<string> {
   const template = await readFile(join(process.cwd(), 'templates/tracking-issue.md'), 'utf8');
   return template
-    .replaceAll('{{spec_title}}', spec.title)
+    .replaceAll('{{spec_title}}', title)
     .replaceAll('{{spec_repo_url}}', `https://github.com/${config.productRepo}`)
-    .replaceAll('{{spec_relative_path}}', spec.relativePath);
+    .replaceAll('{{spec_relative_path}}', specPath);
 }
 
-async function discoverNewSpecs(): Promise<void> {
-  const specs = await scanReadySpecs();
-  for (const spec of specs) {
-    const body = await renderTrackingIssueBody(spec);
-    const issue = await createTrackingIssue(`[spec] ${spec.title}`, body);
-    // Without this, the issue stays labeled valeria:ready forever and
-    // listTrackingIssues('in-progress') would never find it again on a
-    // later tick — found while preparing the first live dry run.
-    await setIssueState(issue.number, 'in-progress');
-    // Claimed by the same machine that just created it, before any other
-    // supervisor's tick could see it as unclaimed in-progress work — see
-    // docs/DESIGN.md §9. This doesn't protect against two machines
-    // discovering and creating separate issues for the same spec in the
-    // same window; that's a distinct, still-open gap (also §9).
-    await tryClaim(issue.number);
-    await linkSpecToIssue(spec, issue.number);
-    // The plan task rewrites the issue body with the real slice checklist.
-    await runAgentTask({ type: 'plan', issueNumber: issue.number, specPath: spec.relativePath });
+// Discovery source: a human writes the spec as a PR against the product
+// repo and labels it with this runner's identity (see claim.ts) once it's
+// ready to hand off — marking it ready for review (not draft) is the "go"
+// signal. This sidesteps the old race where two machines could each decide
+// independently to pick up the same spec: only one label, applied once, by
+// a human. See docs/DESIGN.md §1.
+async function discoverAssignedSpecs(): Promise<void> {
+  const prs = await listAssignedSpecPrs(runnerLabel());
+  for (const pr of prs) {
+    try {
+      // Claimed on the spec PR itself before doing anything else, so a
+      // failure partway through doesn't leave it silently re-picked-up
+      // (or silently ignored) on a later tick.
+      await setPrState(pr.number, 'in-progress');
+      const specPath = await getSpecPathFromPr(pr.number);
+
+      // Deliberately skips the approval gate mergePullRequest enforces for
+      // implementation PRs — this is documentation, and the human already
+      // signaled readiness via the label + undraft. See docs/DESIGN.md §1.
+      await mergeSpecPr(pr.number);
+      await fetchOriginMain();
+      const title = extractTitle(await readSpecFile(specPath), specPath);
+
+      const body = await renderTrackingIssueBody(title, specPath);
+      const issue = await createTrackingIssue(`[spec] ${title}`, body);
+      // Without this, the issue stays labeled valeria:ready forever and
+      // listTrackingIssues('in-progress') would never find it again.
+      await setIssueState(issue.number, 'in-progress');
+      await tryClaim(issue.number);
+      await setPrState(pr.number, 'done');
+      // The plan task rewrites the issue body with the real slice checklist.
+      await runAgentTask({ type: 'plan', issueNumber: issue.number, specPath });
+    } catch (error) {
+      await notifyBlocker({
+        issueUrl: prUrl(pr.number),
+        reason: `Excepción no manejada procesando el spec PR: ${(error as Error).message}`,
+      });
+      await setPrState(pr.number, 'blocked').catch(() => {});
+    }
   }
 }
 
@@ -61,7 +86,7 @@ async function blockOnAttemptLimit(
 
   await notifyBlocker({
     issueUrl: issue.url,
-    prUrl: prUrl(pr),
+    prUrl: prUrl(pr.number),
     reason,
     excerpt: `PR #${pr.number}, ${attempts} intentos (límite ${limit})`,
   });
@@ -132,11 +157,11 @@ async function processIssue(issue: TrackingIssue): Promise<void> {
 }
 
 export async function tick(): Promise<void> {
-  await discoverNewSpecs();
+  await discoverAssignedSpecs();
 
   const inProgress = await listTrackingIssues('in-progress');
   for (const issue of inProgress) {
-    if (!(await tryClaim(issue.number))) continue; // another machine already owns this one
+    if (!(await tryClaim(issue.number))) continue; // another runner already owns this one
 
     try {
       await processIssue(issue);

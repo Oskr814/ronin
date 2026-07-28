@@ -25,9 +25,16 @@ export async function ensureWorktree(branch: string, baseRef = config.worktreeBa
   if (existsSync(dir)) return dir;
 
   await mkdir(config.worktreeBasePath, { recursive: true });
-  const args = (await branchExists(branch))
-    ? ['worktree', 'add', dir, branch]
-    : ['worktree', 'add', '-b', branch, dir, baseRef];
+  const isNewBranch = !(await branchExists(branch));
+  if (isNewBranch) {
+    // Keeps origin/main current regardless of what's checked out in the
+    // primary worktree — a plain `git fetch` never touches the working
+    // directory or local branch refs.
+    await execFileAsync('git', ['fetch', 'origin'], { cwd: config.productRepoPath }).catch(() => {});
+  }
+  const args = isNewBranch
+    ? ['worktree', 'add', '-b', branch, dir, baseRef]
+    : ['worktree', 'add', dir, branch];
   await execFileAsync('git', args, { cwd: config.productRepoPath });
   return dir;
 }

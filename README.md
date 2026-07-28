@@ -6,14 +6,14 @@ Orquestación de agentes autónomos para desarrollo dirigido por specs. Nace del
 
 ## Estado
 
-🚧 Fase de diseño. Todavía no hay código — ver [`docs/DESIGN.md`](docs/DESIGN.md) para la arquitectura propuesta y las decisiones tomadas hasta ahora.
+🚧 Supervisor funcional (`pnpm tick`), verificado en un dry run real de punta a punta. Ver [`docs/DESIGN.md`](docs/DESIGN.md) para la arquitectura completa y las decisiones tomadas.
 
 ## Objetivo
 
 Reducir el cuello de botella de PRs gigantes (+100 archivos) generados por implementación "one-shot" de specs, dándole al agente autonomía para:
 
-- Descubrir specs listos para implementar (sin intervención manual por spec)
-- Trocear el trabajo en slices pequeños y revisables (PRs apilados)
+- Trocear el trabajo en slices pequeños y revisables (PRs apilados), una vez que un humano le asigna un spec (PR + label `valeria:runner-<usuario>`, ver §1 del diseño)
 - Correr tests e2e (Playwright) y pedir review externo (GitHub Copilot) por sí mismo
 - Reanudar automáticamente tras cortes de cuota, sin sesión continua ni intervención humana
 - Escalar bloqueos reales a un humano (notificación por email) en vez de improvisar
+- Correr en paralelo entre varios runners sin pisarse (claim por label, ver §9 del diseño)
