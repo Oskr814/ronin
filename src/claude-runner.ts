@@ -122,11 +122,17 @@ export async function runClaudeHeadless(cwd: string, prompt: string, label: stri
     const timer = setTimeout(() => { timedOut = true; child.kill('SIGTERM'); }, config.agentTaskTimeoutMs);
 
     const handleStdoutLine = (line: string) => {
+      // Checked against the raw line unconditionally, before parsing: the
+      // usage/spend-limit notice isn't always a bare non-JSON line as the
+      // stray-output case below assumes — it can also arrive wrapped inside
+      // a valid stream-json event (e.g. an assistant text block), in which
+      // case JSON.parse succeeds and a check placed only in the catch below
+      // would never run.
+      if (USAGE_LIMIT_PATTERN.test(line)) usageLimitHit = true;
       let event: any;
       try {
         event = JSON.parse(line);
       } catch {
-        if (USAGE_LIMIT_PATTERN.test(line)) usageLimitHit = true;
         log.info(`[${label}] ${line}`); // non-JSON stray output — surface it as-is rather than drop it
         return;
       }
