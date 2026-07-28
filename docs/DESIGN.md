@@ -95,6 +95,19 @@ Para flujos complejos, el spec incluye un link a un proyecto de Claude Design. E
 
 Solo se notifica por email en bloqueos reales, no en progreso rutinario (para evitar fatiga de alertas). Requiere una app pequeña con credenciales de Gmail vía variables de entorno, corriendo junto al supervisor.
 
+### 7. Identidad del agente en GitHub
+
+Los issues/PRs los abre un **GitHub App dedicado a ValerIA** (aparece como `ValerIA[bot]`), no la cuenta personal de quien corre el supervisor — así el historial de autoría es honesto sobre qué hizo un humano y qué hizo el agente, y el approval-gate del merge (§ Principios de diseño) tiene sentido: el aprobador y el autor nunca pueden ser la misma persona por accidente.
+
+Se eligió App sobre usuario/máquina + PAT por dos razones: permisos más finos (Contents/Issues/Pull requests por repo, sin ocupar un seat de la org) y revocación simple (desinstalar el App, sin rotar tokens a mano). El costo es que el App no usa un token estático — se autentica con una private key que firma un JWT, canjeado por un installation token de corta duración (~1h) vía la API de GitHub (`src/github-app-auth.ts`, con `@octokit/auth-app`). El supervisor nunca usa la sesión ambiente de `gh auth login` del host: cada llamada a `gh` fija `GH_TOKEN` con ese installation token (`src/github.ts`).
+
+**Setup manual (no automatizable, pasos para el dueño de la org):**
+
+1. Registrar el GitHub App en `Bmedical` (Settings de la org → Developer settings → GitHub Apps → New GitHub App). Permisos: Contents, Issues, Pull requests en read/write.
+2. Generar y descargar la private key (`.pem`) al registrar el App — guardarla fuera del repo, nunca commitearla.
+3. Instalar el App en el repo `bmedical` (y en `ValerIA` si en algún momento gestiona issues propios) — esto da el installation ID.
+4. Setear `VALERIA_GITHUB_APP_ID`, `VALERIA_GITHUB_APP_PRIVATE_KEY_PATH`, `VALERIA_GITHUB_APP_INSTALLATION_ID` en el `.env` del supervisor — nunca commitear el `.env` (ya está en `.gitignore`).
+
 ## Estado actual
 
 - [x] Definir el esqueleto del supervisor (script + estructura de tick) — ver §3.1 y `src/`

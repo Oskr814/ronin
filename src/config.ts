@@ -7,6 +7,12 @@ function requireEnv(name: string): string {
 export const config = {
   productRepo: requireEnv('PRODUCT_REPO'),
   productRepoPath: requireEnv('PRODUCT_REPO_PATH'),
+  // Dedicated ValerIA GitHub App — never the ambient `gh auth` session, so
+  // issues/PRs are authored by "ValerIA[bot]", not whoever is logged into
+  // `gh` on the box running the supervisor. See docs/DESIGN.md §7.
+  githubAppId: requireEnv('VALERIA_GITHUB_APP_ID'),
+  githubAppPrivateKeyPath: requireEnv('VALERIA_GITHUB_APP_PRIVATE_KEY_PATH'),
+  githubAppInstallationId: requireEnv('VALERIA_GITHUB_APP_INSTALLATION_ID'),
   specDir: process.env.SPEC_DIR ?? 'docs/superpowers',
   gmailUser: process.env.GMAIL_USER ?? '',
   gmailAppPassword: process.env.GMAIL_APP_PASSWORD ?? '',
