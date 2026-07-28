@@ -17,10 +17,13 @@ const execFileAsync = promisify(execFile);
 // defeating the bot-identity work in github.ts.
 export async function runClaudeHeadless(cwd: string, prompt: string): Promise<string> {
   const token = await getInstallationToken();
+  const env: NodeJS.ProcessEnv = { ...process.env, GH_TOKEN: token };
+  if (config.claudeConfigDir) env.CLAUDE_CONFIG_DIR = config.claudeConfigDir;
+
   const { stdout } = await execFileAsync(
     config.claudeCommand,
     ['-p', prompt, '--permission-mode', 'bypassPermissions'],
-    { cwd, timeout: config.agentTaskTimeoutMs, maxBuffer: 32 * 1024 * 1024, env: { ...process.env, GH_TOKEN: token } },
+    { cwd, timeout: config.agentTaskTimeoutMs, maxBuffer: 32 * 1024 * 1024, env },
   );
   return stdout;
 }
