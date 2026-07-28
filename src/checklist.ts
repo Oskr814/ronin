@@ -79,3 +79,16 @@ export async function recordSlicePr(issueNumber: number, index: number, prNumber
 export async function markSliceMerged(issueNumber: number, index: number): Promise<void> {
   await updateSlice(issueNumber, index, { checked: true });
 }
+
+// Used by the bug-issue intake path (docs/superpowers/specs/2026-07-28-bug-issue-intake-design.md)
+// to turn a plain bug-report issue into something nextUnstartedSlice/
+// hasRemainingSlices can drive, without an LLM planning session — a bug is
+// always exactly one slice, built mechanically. Checking getSlices first
+// (rather than string-scanning for "## Slices") makes this safe to retry
+// after a tick that failed partway through discovery.
+export async function seedSingleSlice(issueNumber: number, title: string): Promise<void> {
+  if ((await getSlices(issueNumber)).length > 0) return;
+  const body = await getIssueBody(issueNumber);
+  const section = `\n\n## Slices\n\n${renderLine({ index: 0, title, checked: false, prNumber: null })}\n`;
+  await setIssueBody(issueNumber, body + section);
+}

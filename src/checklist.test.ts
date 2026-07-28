@@ -1,15 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const bodies = new Map<number, string>();
+const setIssueBody = vi.fn(async (issueNumber: number, body: string) => {
+  bodies.set(issueNumber, body);
+});
 
 vi.mock('./github.js', () => ({
   getIssueBody: vi.fn(async (issueNumber: number) => bodies.get(issueNumber) ?? ''),
-  setIssueBody: vi.fn(async (issueNumber: number, body: string) => {
-    bodies.set(issueNumber, body);
-  }),
+  setIssueBody: (...args: [number, string]) => setIssueBody(...args),
 }));
 
-import { nextSlice, nextUnstartedSlice, hasRemainingSlices, recordSlicePr, markSliceMerged } from './checklist.js';
+import { nextSlice, nextUnstartedSlice, hasRemainingSlices, recordSlicePr, markSliceMerged, seedSingleSlice } from './checklist.js';
 
 const SAMPLE_BODY = [
   '## Slices',
@@ -22,6 +23,7 @@ const SAMPLE_BODY = [
 beforeEach(() => {
   bodies.clear();
   bodies.set(228, SAMPLE_BODY);
+  vi.clearAllMocks();
 });
 
 describe('nextSlice (unchanged)', () => {
@@ -63,5 +65,26 @@ describe('recordSlicePr / markSliceMerged', () => {
   it('markSliceMerged checks off the slice', async () => {
     await markSliceMerged(228, 1);
     expect(bodies.get(228)).toContain('- [x] Slice 2: Tabla de citas — PR: #230');
+  });
+});
+
+describe('seedSingleSlice', () => {
+  it('appends a single-slice "## Slices" section to an existing body', async () => {
+    bodies.set(500, '## Bug report\n\nSteps to reproduce...');
+
+    await seedSingleSlice(500, 'Fix — Login redirects to 404');
+
+    expect(bodies.get(500)).toBe(
+      '## Bug report\n\nSteps to reproduce...\n\n## Slices\n\n- [ ] Slice 1: Fix — Login redirects to 404 — PR: _pending_\n',
+    );
+  });
+
+  it('is idempotent — does nothing once a Slices section already exists', async () => {
+    bodies.set(228, SAMPLE_BODY);
+
+    await seedSingleSlice(228, 'irrelevant');
+
+    expect(bodies.get(228)).toBe(SAMPLE_BODY);
+    expect(setIssueBody).not.toHaveBeenCalled();
   });
 });
