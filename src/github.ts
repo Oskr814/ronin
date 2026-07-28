@@ -22,6 +22,18 @@ async function gh(args: string[]): Promise<string> {
   return stdout;
 }
 
+const ensuredLabels = new Set<string>();
+
+// GitHub rejects `--add-label` for a label that doesn't exist in the repo
+// yet — unlike topics, labels aren't auto-created. `--force` makes this
+// idempotent (create-or-update), and the in-process cache avoids repeating
+// the call for a label already confirmed this tick.
+async function ensureLabel(name: string): Promise<void> {
+  if (ensuredLabels.has(name)) return;
+  await gh(['label', 'create', name, '--force', '--color', 'ededed']);
+  ensuredLabels.add(name);
+}
+
 export async function getIssueBody(issueNumber: number): Promise<string> {
   const stdout = await gh(['issue', 'view', String(issueNumber), '--json', 'body']);
   return (JSON.parse(stdout) as { body: string }).body;
@@ -54,6 +66,7 @@ export async function getAttemptCount(prNumber: number): Promise<number> {
 export async function incrementAttemptCount(prNumber: number): Promise<number> {
   const current = await getAttemptCount(prNumber);
   const next = current + 1;
+  await ensureLabel(`valeria:attempts-${next}`);
   const args = ['pr', 'edit', String(prNumber), '--add-label', `valeria:attempts-${next}`];
   if (current > 0) args.push('--remove-label', `valeria:attempts-${current}`);
   await gh(args);
@@ -89,6 +102,8 @@ export async function createTrackingIssue(title: string, body: string): Promise<
   const bodyFile = join(dir, 'body.md');
   try {
     await writeFile(bodyFile, body, 'utf8');
+    await ensureLabel(LABEL_MANAGED);
+    await ensureLabel(LABEL_STATES.ready);
     const stdout = await gh([
       'issue', 'create',
       '--title', title,
@@ -111,6 +126,7 @@ export async function setIssueState(issueNumber: number, next: SpecStatus): Prom
   const labels = (JSON.parse(current) as { labels: Array<{ name: string }> }).labels.map((l) => l.name);
   const staleStateLabels = Object.values(LABEL_STATES).filter((l) => labels.includes(l) && l !== LABEL_STATES[next]);
 
+  await ensureLabel(LABEL_STATES[next]);
   const args = ['issue', 'edit', String(issueNumber), '--add-label', LABEL_STATES[next]];
   for (const stale of staleStateLabels) args.push('--remove-label', stale);
   await gh(args);
@@ -123,12 +139,13 @@ export interface PullRequestStatus {
   checksPassing: boolean;
   mergeable: boolean;
   headRefName: string;
+  isDraft: boolean;
 }
 
 export async function getPullRequestStatus(prNumber: number): Promise<PullRequestStatus> {
   const stdout = await gh([
     'pr', 'view', String(prNumber),
-    '--json', 'number,state,reviewDecision,statusCheckRollup,mergeable,headRefName',
+    '--json', 'number,state,reviewDecision,statusCheckRollup,mergeable,headRefName,isDraft',
   ]);
   const raw = JSON.parse(stdout) as {
     number: number;
@@ -137,6 +154,7 @@ export async function getPullRequestStatus(prNumber: number): Promise<PullReques
     statusCheckRollup: Array<{ conclusion: string | null }>;
     mergeable: string;
     headRefName: string;
+    isDraft: boolean;
   };
   return {
     number: raw.number,
@@ -145,6 +163,7 @@ export async function getPullRequestStatus(prNumber: number): Promise<PullReques
     checksPassing: raw.statusCheckRollup.length > 0 && raw.statusCheckRollup.every((c) => c.conclusion === 'SUCCESS'),
     mergeable: raw.mergeable === 'MERGEABLE',
     headRefName: raw.headRefName,
+    isDraft: raw.isDraft,
   };
 }
 

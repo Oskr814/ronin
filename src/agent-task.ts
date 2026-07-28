@@ -5,7 +5,7 @@ import { config } from './config.js';
 
 export type AgentTask =
   | { type: 'plan'; issueNumber: number; specPath: string }
-  | { type: 'implement-slice'; issueNumber: number; sliceIndex: number }
+  | { type: 'implement-slice'; issueNumber: number; sliceIndex: number; sliceTitle: string }
   | { type: 'fix-review'; issueNumber: number; prNumber: number }
   | { type: 'fix-e2e'; issueNumber: number; prNumber: number };
 
@@ -47,9 +47,10 @@ async function buildTask(task: AgentTask): Promise<{ branch: string; prompt: str
         branch: sliceBranch(task.issueNumber, task.sliceIndex),
         prompt: [
           `You are ValerIA, an autonomous agent working on tracking issue #${task.issueNumber} in ${repoUrl()}.`,
-          `Read the slice checklist in the issue (gh issue view ${task.issueNumber}) and implement slice number ${task.sliceIndex + 1}.`,
+          `Implement this single slice: "${task.sliceTitle}".`,
           "Follow this repo's CLAUDE.md conventions, including its testing requirements.",
-          'When done: run the relevant tests, commit and push this branch, and open a PR against main (gh pr create) describing the slice. You do not need to edit the issue checklist yourself — the supervisor updates it with the PR number.',
+          'When done: run the relevant tests, commit and push this branch, and open a PR against main (gh pr create) describing the slice.',
+          'Scope: only touch files needed for this slice. Do not edit the tracking issue (body, labels, assignees, or anything else) — that is owned entirely by the supervisor, not by you.',
         ].join('\n'),
       };
 
@@ -61,6 +62,7 @@ async function buildTask(task: AgentTask): Promise<{ branch: string; prompt: str
           `You are ValerIA. PR #${task.prNumber} (tracking issue #${task.issueNumber}) has unresolved review comments.`,
           `Read them with "gh pr view ${task.prNumber} --comments", apply the necessary changes following this repo's CLAUDE.md conventions, and commit and push to this same branch.`,
           'If any comment contradicts what the spec explicitly requires, do not apply it — leave the PR as-is and do not touch anything else; that needs a human decision.',
+          'Do not edit the tracking issue or change any labels, on either the issue or this PR — that is owned entirely by the supervisor, not by you.',
         ].join('\n'),
       };
     }
@@ -72,6 +74,7 @@ async function buildTask(task: AgentTask): Promise<{ branch: string; prompt: str
         prompt: [
           `You are ValerIA. CI/e2e checks (Playwright) are failing on PR #${task.prNumber} (tracking issue #${task.issueNumber}).`,
           'Investigate the cause, fix it, and commit and push to this same branch.',
+          'Do not edit the tracking issue or change any labels, on either the issue or this PR — that is owned entirely by the supervisor, not by you.',
         ].join('\n'),
       };
     }

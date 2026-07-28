@@ -121,6 +121,22 @@ Se eligió App sobre usuario/máquina + PAT por dos razones: permisos más finos
 
 La única contención real es que **cada tarea corre en su propio git worktree desechable** (`src/worktree.ts`), nunca en el checkout principal de `PRODUCT_REPO_PATH` — así un comando destructivo lanzado por error solo puede arruinar ese worktree, que se puede recrear desde cero. Esto es una mitigación, no una garantía: un comando que apunte fuera del worktree (paths absolutos, `cd`, etc.) no está bloqueado por nada. Reconsiderar si en algún momento el blast radius observado no compensa la autonomía ganada.
 
+Segunda limitación encontrada en el primer dry run: el prompt de una tarea puntual no acota lo que el agente puede decidir hacer con `gh`/`git` más allá de esa tarea — si lee contexto que contiene instrucciones para *otras* situaciones (ej. el propio template del issue), puede actuar sobre ellas aunque no vengan de su prompt. Mitigado parcialmente pasando solo la información mínima necesaria en cada prompt (ver §9.1) en vez de decirle al agente que lea documentos completos con instrucciones para roles que no son el suyo.
+
+### 9. Concurrencia entre múltiples supervisores
+
+Nada en el diseño actual impide que dos procesos supervisor (ej. dos máquinas, o dos corridas superpuestas en la misma) descubran el mismo spec o procesen el mismo issue en el mismo tick — `discoverNewSpecs` y `processIssue` no tienen ningún mecanismo de exclusión mutua todavía.
+
+Diseño propuesto (no implementado): un label de claim con desempate por timestamp, siguiendo el mismo patrón de "GitHub como estado" que el resto del sistema — sin base de datos ni lock service aparte.
+
+1. Antes de actuar sobre un issue, el supervisor agrega una label `valeria:claimed-by-<machine-id>-<epoch>` (no `--force`/upsert — un add simple).
+2. Espera un jitter corto (1–3s) y vuelve a leer las labels del issue.
+3. Si ve más de un label `claimed-by-*`, gana el de timestamp más antiguo (desempate determinista, no depende de quién “vio” primero). El que pierde remueve su propia label y no toca el issue este tick.
+4. El ganador procesa el issue y remueve su label al terminar (éxito, bloqueo, o cualquier otro estado final del tick).
+5. **Recuperación de claims huérfanos**: si un supervisor muere a mitad de tarea, su label queda pegada para siempre. Cualquier claim con timestamp más viejo que `2 × AGENT_TASK_TIMEOUT_MINUTES` se considera abandonado y puede ser tomado por otro supervisor.
+
+Esto no es exclusión mutua real (hay una ventana entre pasos 1 y 2 en la que ambos podrían creer que van a ganar antes de desempatar), pero es suficiente dado que los ticks corren cada minutos, no en paralelo estricto — el caso que hay que cubrir es "dos relojes despertaron cerca uno del otro", no "requests simultáneos reales". Si en algún momento se necesita una garantía más fuerte, reconsiderar acá antes de construir algo más complejo.
+
 ## Estado actual
 
 - [x] Definir el esqueleto del supervisor (script + estructura de tick) — ver §3.1 y `src/`
@@ -135,7 +151,19 @@ La única contención real es que **cada tarea corre en su propio git worktree d
 - Cuándo limpiar un worktree (`removeWorktree` existe pero no está conectado a nada todavía — ¿al mergear? ¿al llegar a `blocked`?)
 - Slugs de slice legibles: hoy el branch de `implement-slice` usa el índice crudo (`slice-1`, `slice-2`); una vez que se valore la legibilidad de branches/PRs, debería derivar el slug del título real de la slice
 - Decidir si Copilot review se activa (`REQUEST_COPILOT_REVIEW`) y cómo se resuelven sus comentarios automáticamente
-- Verificación end-to-end contra un spec real — no se corrió todavía (ver PR de esta pieza)
+- Implementar el mecanismo de claim para múltiples supervisores concurrentes — diseño ya definido, ver §9
+
+### 10. Primer dry run (2026-07-28)
+
+Corrida real de punta a punta contra `Bmedical/bmedical` (spec desechable, tarea trivial: agregar un comentario a `README.md` y abrir PR draft). Resultado: el pipeline funcionó — issue creado, plan generado, slice implementada, PR draft abierto, todo autorado como `ValerIA[bot]`/`app/valeria-agent`, checklist reconciliado correctamente. Se limpiaron todos los artefactos (issue, PR, branches, worktrees) después de verificar.
+
+Encontrado y arreglado a partir de esta corrida:
+
+- Los labels no existían en el repo destino y GitHub no los crea al aplicarlos (`--add-label` falla en seco) — `github.ts` ahora los crea con `--force` antes de usarlos (idempotente).
+- `discoverNewSpecs` nunca transicionaba el issue de `valeria:ready` a `valeria:in-progress` — el issue hubiera quedado invisible para el supervisor en todo tick posterior.
+- **Hallazgo de contención real**: durante `implement-slice`, el prompt le decía al agente "leé el checklist del issue completo" — eso lo exponía a las instrucciones para *otras* tareas embebidas en `templates/tracking-issue.md` (la sección de Bloqueo), y el agente se auto-aplicó la label `valeria:blocked` por su cuenta, sin que se lo pidiéramos y sin llenar la sección que la propia plantilla exige. Arreglado pasando el título de la slice directo en el prompt en vez de decirle que lea el issue entero, y agregando una instrucción explícita en los cuatro prompts de que la issue/labels son responsabilidad exclusiva del supervisor. Esto no es una garantía — con `bypassPermissions` el agente puede en principio ejecutar cualquier `gh`/`git` que decida — pero reduce la superficie de lo que razonablemente terminaría leyendo y actuando por su cuenta.
+- Un PR draft tenía `checksPassing: false` sin que fuera una falla real — la lógica ahora trata `isDraft` como estado de espera normal, no como algo a arreglar.
+- Efecto colateral no relacionado con el código: `bmedical` tiene integración con Linear, así que cada issue de tracking real va a generar un ticket enlazado automáticamente — no es un bug, pero vale saberlo.
 
 ### 8. Idioma
 

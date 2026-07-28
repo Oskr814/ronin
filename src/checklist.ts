@@ -38,13 +38,13 @@ export async function getSlices(issueNumber: number): Promise<Slice[]> {
 
 // First unchecked slice, or null if every slice is checked — at that point
 // the issue should already be `done` (tick.ts handles the transition).
-export async function nextSliceIndex(issueNumber: number): Promise<number | null> {
+export async function nextSlice(issueNumber: number): Promise<Slice | null> {
   const next = (await getSlices(issueNumber)).find((s) => !s.checked);
-  return next ? next.index : null;
+  return next ?? null;
 }
 
 export async function hasRemainingSlices(issueNumber: number): Promise<boolean> {
-  return (await nextSliceIndex(issueNumber)) !== null;
+  return (await nextSlice(issueNumber)) !== null;
 }
 
 async function updateSlice(issueNumber: number, index: number, patch: Partial<Pick<Slice, 'checked' | 'prNumber'>>): Promise<void> {

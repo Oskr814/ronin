@@ -11,7 +11,7 @@ import {
   type TrackingIssue,
   type PullRequestStatus,
 } from './github.js';
-import { nextSliceIndex, hasRemainingSlices, recordSlicePr, markSliceMerged } from './checklist.js';
+import { nextSlice, hasRemainingSlices, recordSlicePr, markSliceMerged } from './checklist.js';
 import { notifyBlocker } from './notifier.js';
 import { runAgentTask, sliceIndexFromBranch } from './agent-task.js';
 import { config } from './config.js';
@@ -66,13 +66,13 @@ async function processIssue(issue: TrackingIssue): Promise<void> {
   const pr = await getOpenPrForIssue(issue.number);
 
   if (!pr) {
-    const sliceIndex = await nextSliceIndex(issue.number);
-    if (sliceIndex === null) {
+    const slice = await nextSlice(issue.number);
+    if (slice === null) {
       // Checklist fully checked but no open PR left: nothing more to do.
       await setIssueState(issue.number, 'done');
       return;
     }
-    await runAgentTask({ type: 'implement-slice', issueNumber: issue.number, sliceIndex });
+    await runAgentTask({ type: 'implement-slice', issueNumber: issue.number, sliceIndex: slice.index, sliceTitle: slice.title });
     return;
   }
 
@@ -82,6 +82,13 @@ async function processIssue(issue: TrackingIssue): Promise<void> {
     // branch name rather than trusting the headless agent's own issue edit
     // to have landed. See docs/DESIGN.md §3.1.
     await recordSlicePr(issue.number, sliceIndex, pr.number);
+  }
+
+  if (pr.isDraft) {
+    // A draft PR has no checks/review yet by design — that's not a failure
+    // state. Left alone until it's marked ready for review (out of scope
+    // for this scaffold: nothing currently marks a draft ready).
+    return;
   }
 
   if (pr.checksPassing && pr.reviewDecision === 'APPROVED') {
