@@ -2,6 +2,7 @@ import { ensureWorktree } from './worktree.js';
 import { runClaudeHeadless } from './claude-runner.js';
 import { getPullRequestStatus } from './github.js';
 import { config } from './config.js';
+import { log } from './logger.js';
 
 export type AgentTask =
   | { type: 'plan'; issueNumber: number; specPath: string }
@@ -84,5 +85,18 @@ async function buildTask(task: AgentTask): Promise<{ branch: string; prompt: str
 export async function runAgentTask(task: AgentTask): Promise<void> {
   const { branch, prompt } = await buildTask(task);
   const worktreeDir = await ensureWorktree(branch);
-  await runClaudeHeadless(worktreeDir, prompt);
+
+  log.info(`starting ${task.type} for issue #${task.issueNumber} on branch ${branch}`);
+  try {
+    // The claude -p output was previously discarded entirely — nothing
+    // about what the agent actually did was visible anywhere, only the
+    // supervisor's own before/after GitHub state. Logging it in full is
+    // verbose but this is the one place that answers "what did the agent
+    // do" for monitoring.
+    const output = await runClaudeHeadless(worktreeDir, prompt);
+    log.info(`finished ${task.type} for issue #${task.issueNumber}:\n${output}`);
+  } catch (error) {
+    log.error(`${task.type} for issue #${task.issueNumber} failed`, error);
+    throw error;
+  }
 }

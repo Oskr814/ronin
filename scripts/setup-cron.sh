@@ -19,8 +19,9 @@ if [[ "${1:-}" == "--remove" ]]; then
 fi
 
 INTERVAL_MINUTES="${1:-5}"
-if ! [[ "$INTERVAL_MINUTES" =~ ^[0-9]+$ ]]; then
-  echo "Uso: $0 [minutos|--remove]" >&2
+RETENTION_DAYS="${2:-14}"
+if ! [[ "$INTERVAL_MINUTES" =~ ^[0-9]+$ && "$RETENTION_DAYS" =~ ^[0-9]+$ ]]; then
+  echo "Uso: $0 [minutos] [dias_retencion_logs] | --remove" >&2
   exit 1
 fi
 
@@ -38,12 +39,23 @@ set -euo pipefail
 export PATH="$FULL_PATH"
 cd "$REPO_DIR"
 
+LOG_DIR="$REPO_DIR/logs"
+mkdir -p "\$LOG_DIR"
+# One file per day instead of a single ever-growing one — "rotation" is
+# just writing to a new path once the date changes. Everything from here
+# on (including pnpm tick's own stdout/stderr) goes to it.
+exec >> "\$LOG_DIR/tick-\$(date +%F).log" 2>&1
+
+# Time-based retention: prune files older than $RETENTION_DAYS days on
+# every run, so this never needs a separate cron entry or logrotate.
+find "\$LOG_DIR" -name 'tick-*.log' -mtime +$RETENTION_DAYS -delete
+
 # Single-flight: a tick can run for a while (a claude -p invocation can take
 # up to AGENT_TASK_TIMEOUT_MINUTES). If a previous run is still going, skip
 # this trigger instead of running a second tick concurrently against the
 # same local state (.valeria-state.json) — see docs/DESIGN.md §9.
 exec 200>"$REPO_DIR/.tick.lock"
-flock -n 200 || { echo "\$(date -Is) tick ya en curso, salteando" >> "$LOG_DIR/tick.log"; exit 0; }
+flock -n 200 || { echo "\$(date -Is) [cron] tick ya en curso, salteando"; exit 0; }
 
 set -a
 source "$REPO_DIR/.env"
@@ -52,7 +64,10 @@ pnpm tick
 EOF
 chmod +x "$WRAPPER"
 
-CRON_LINE="*/$INTERVAL_MINUTES * * * * $WRAPPER >> $LOG_DIR/tick.log 2>&1 $MARKER"
+# No redirection here on purpose — the wrapper redirects its own output to
+# the dated log file (see above). A crontab-line redirect would also hit
+# cron's "%" means newline" gotcha the moment a date format is involved.
+CRON_LINE="*/$INTERVAL_MINUTES * * * * $WRAPPER $MARKER"
 
 # `crontab -l` exits non-zero when there's no crontab installed yet (the
 # common first-run case), and `grep -v` exits non-zero when nothing matched
@@ -64,6 +79,6 @@ FILTERED="$(printf '%s\n' "$EXISTING" | grep -v -F "$MARKER" || true)"
 printf '%s\n%s\n' "$FILTERED" "$CRON_LINE" | crontab -
 
 echo "Cron instalado: cada $INTERVAL_MINUTES min -> $WRAPPER"
-echo "Log: $LOG_DIR/tick.log"
+echo "Logs: $LOG_DIR/tick-YYYY-MM-DD.log (se conservan $RETENTION_DAYS días)"
 echo "Ver: crontab -l"
 echo "Desinstalar: $0 --remove"

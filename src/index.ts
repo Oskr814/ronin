@@ -1,14 +1,15 @@
-// Entrypoint for a single supervisor tick. Intended to be invoked repeatedly
-// by a loop running in a persistent tmux session on honelab (e.g. a `while
-// true; do pnpm tick; sleep <n>; done` shell, so each tick is its own process
-// and no state leaks between runs beyond what's in GitHub).
+// Entrypoint for a single supervisor tick. Invoked repeatedly by cron (see
+// scripts/setup-cron.sh) — each tick is its own process, so no state leaks
+// between runs beyond what's in GitHub (and the local claim cache, see
+// claim.ts).
 import { tick } from './tick.js';
+import { log } from './logger.js';
 
 tick()
   .then(() => {
-    console.log('tick complete');
+    log.info('tick complete');
   })
   .catch((error) => {
-    console.error('tick failed:', error);
+    log.error('tick failed', error);
     process.exitCode = 1;
   });
