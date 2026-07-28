@@ -9,6 +9,7 @@
     "typecheck": "tsc --noEmit",
     "smoke-test": "tsx scripts/smoke-test.ts",
     "find-installation-id": "tsx scripts/find-installation-id.ts",
+    "init-labels": "bash scripts/init-labels.sh",
     "cron:setup": "bash scripts/setup-cron.sh",
     "cron:remove": "bash scripts/setup-cron.sh --remove"
   },

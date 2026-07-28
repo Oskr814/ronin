@@ -17,3 +17,19 @@ Reducir el cuello de botella de PRs gigantes (+100 archivos) generados por imple
 - Reanudar automáticamente tras cortes de cuota, sin sesión continua ni intervención humana
 - Escalar bloqueos reales a un humano (notificación por email) en vez de improvisar
 - Correr en paralelo entre varios runners sin pisarse (claim por label, ver §9 del diseño)
+
+## Setup
+
+1. Clonar y `pnpm install`.
+2. Copiar `.env.example` a `.env` y completar `PRODUCT_REPO` / `PRODUCT_REPO_PATH` / `RUNNER_ID` (tu usuario de GitHub, no un hostname).
+3. Registrar el GitHub App dedicado e instalarlo en el repo del producto — pasos manuales en [`docs/DESIGN.md` §7](docs/DESIGN.md#7-identidad-del-agente-en-github), no automatizables. Completar las tres variables `VALERIA_GITHUB_APP_*` del `.env`.
+4. `pnpm smoke-test` — confirma que el App autentica y puede leer `PRODUCT_REPO` antes de seguir.
+5. `pnpm init-labels` — crea en `PRODUCT_REPO` los labels `valeria*` que usa el pipeline, incluida tu label de asignación `valeria:runner-<RUNNER_ID>`. Sin esto no vas a poder seleccionarla desde la UI de GitHub al asignarte un spec.
+6. `pnpm cron:setup [minutos]` (default 5) — instala el supervisor como cron job. `pnpm cron:remove` para sacarlo.
+
+### Asignarte un spec
+
+1. Escribí el spec como `.md` en `docs/superpowers/specs/` del repo del producto, en un PR **draft**.
+2. Poné la label `valeria:runner-<RUNNER_ID>` en ese PR — así lo asignás a tu runner.
+3. Cuando esté listo, marcalo **ready for review** (undraft). Esa es la señal de "andá" — mientras siga en draft, el agente lo ignora por completo y podés seguir iterando.
+4. El runner asignado lo va a detectar en su próximo tick, mergearlo, y arrancar el plan + slicing automáticamente.
