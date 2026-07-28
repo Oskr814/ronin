@@ -1,0 +1,45 @@
+import type { PullRequestStatus } from './github.js';
+
+// Placeholder slug — once slice titles are used for the branch name instead
+// of the raw index, this and the regex below need to move to a slugify
+// scheme instead of a fixed-format parse.
+export function sliceBranch(issueNumber: number, sliceIndex: number): string {
+  return `valeria/${issueNumber}/slice-${sliceIndex + 1}`;
+}
+
+const SLICE_BRANCH_RE = /^valeria\/\d+\/slice-(\d+)$/;
+
+export function sliceIndexFromBranch(branch: string): number | null {
+  const match = branch.match(SLICE_BRANCH_RE);
+  return match ? Number(match[1]) - 1 : null;
+}
+
+export interface StackedPr extends PullRequestStatus {
+  sliceIndex: number;
+}
+
+// Ordena por índice de slice; descarta cualquier PR cuyo branch no matchee el
+// patrón valeria/<issue>/slice-N (ej. el branch de la tarea 'plan') — no
+// debería pasar en la práctica, pero mejor un PR ignorado que uno mal indexado.
+export function toStackedPrs(prs: PullRequestStatus[]): StackedPr[] {
+  return prs
+    .flatMap((pr) => {
+      const sliceIndex = sliceIndexFromBranch(pr.headRefName);
+      return sliceIndex === null ? [] : [{ ...pr, sliceIndex }];
+    })
+    .sort((a, b) => a.sliceIndex - b.sliceIndex);
+}
+
+// El único PR elegible para intentar merge: el de menor índice, sin importar
+// el estado de aprobación de los que están más arriba en el stack.
+export function pickBottomPr(prs: StackedPr[]): StackedPr | null {
+  if (prs.length === 0) return null;
+  return prs.reduce((bottom, pr) => (pr.sliceIndex < bottom.sliceIndex ? pr : bottom));
+}
+
+// Branch base para arrancar la próxima slice: el ref raíz (main) para la
+// primera, o el branch de la slice anterior para cualquier otra — así cada
+// slice se apila en contenido sobre la anterior sin esperar a que mergee.
+export function baseBranchFor(sliceIndex: number, issueNumber: number, rootBaseRef: string): string {
+  return sliceIndex === 0 ? rootBaseRef : sliceBranch(issueNumber, sliceIndex - 1);
+}

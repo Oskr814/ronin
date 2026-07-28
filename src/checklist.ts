@@ -43,6 +43,14 @@ export async function nextSlice(issueNumber: number): Promise<Slice | null> {
   return next ?? null;
 }
 
+// Primera slice sin PR asignado — la próxima a implementar, sin importar si
+// otra slice más atrás en el checklist sigue con su PR abierto (a diferencia
+// de nextSlice, que mira "sin mergear").
+export async function nextUnstartedSlice(issueNumber: number): Promise<Slice | null> {
+  const next = (await getSlices(issueNumber)).find((s) => s.prNumber === null);
+  return next ?? null;
+}
+
 export async function hasRemainingSlices(issueNumber: number): Promise<boolean> {
   return (await nextSlice(issueNumber)) !== null;
 }

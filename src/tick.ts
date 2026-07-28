@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
@@ -8,7 +9,7 @@ import {
   getSpecPathsFromPr,
   mergeSpecPr,
   commentOnSpecPr,
-  getOpenPrForIssue,
+  getOpenPrsForIssue,
   mergePullRequest,
   setIssueState,
   incrementAttemptCount,
@@ -18,11 +19,12 @@ import {
   type PullRequestStatus,
 } from './github.js';
 import { fetchOriginMain, readSpecFile, extractTitle } from './spec-content.js';
-import { nextSlice, hasRemainingSlices, recordSlicePr, markSliceMerged } from './checklist.js';
+import { nextUnstartedSlice, hasRemainingSlices, recordSlicePr, markSliceMerged } from './checklist.js';
 import { notifyBlocker } from './notifier.js';
-import { runAgentTask, sliceIndexFromBranch } from './agent-task.js';
+import { runAgentTask } from './agent-task.js';
+import { toStackedPrs, pickBottomPr, type StackedPr } from './stack.js';
 import { tryClaim, releaseIfNoLongerInProgress, runnerLabel } from './claim.js';
-import { worktreeDirFor } from './worktree.js';
+import { worktreeDirFor, isBehind, attemptRebase } from './worktree.js';
 import { publishEvidence, rawEvidenceUrl } from './evidence.js';
 import { config } from './config.js';
 
@@ -111,33 +113,77 @@ async function blockOnAttemptLimit(
   return true;
 }
 
-async function processIssue(issue: TrackingIssue): Promise<void> {
-  const pr = await getOpenPrForIssue(issue.number);
+// 'ready': at or already merged onto worktreeBaseRef, safe to evaluate merge
+// this tick. 'not-ready': nothing wrong, just nothing more to do for this PR
+// this tick (worktree dir missing so far — retried silently up to
+// rebaseRetryLimit ticks in case it's transient, e.g. a runner mid-restart —
+// or a rebase+force-push just happened and its CI hasn't run against the new
+// head yet; either way the next tick re-reads PR status fresh and evaluates
+// merge then, per docs/superpowers/specs/2026-07-28-stacked-prs-design.md
+// §5). 'blocked': the issue was just set to valeria:blocked by
+// blockOnAttemptLimit.
+type BottomStatus = 'ready' | 'not-ready' | 'blocked';
 
-  if (!pr) {
-    const slice = await nextSlice(issue.number);
-    if (slice === null) {
-      // Checklist fully checked but no open PR left: nothing more to do.
-      await setIssueState(issue.number, 'done');
-      return;
-    }
-    await runAgentTask({ type: 'implement-slice', issueNumber: issue.number, sliceIndex: slice.index, sliceTitle: slice.title });
-    return;
+// Bare branch name a bottom-of-stack PR's base should point at, e.g.
+// "origin/main" -> "main" — this codebase always uses "origin" as the
+// remote name elsewhere too (see worktree.ts).
+function rootBranchName(): string {
+  return config.worktreeBaseRef.replace(/^origin\//, '');
+}
+
+async function ensureBottomUpToDate(issue: TrackingIssue, pr: StackedPr): Promise<BottomStatus> {
+  if (pr.baseRefName !== rootBranchName()) {
+    // GitHub auto-retargets the bottom PR's base to the root branch when its
+    // predecessor merges via mergePullRequest's --delete-branch. If that
+    // never fired (e.g. a human merged the predecessor from the GitHub UI
+    // without deleting its branch), this PR's base is still pointing at a
+    // now-dead branch — merging it would silently land it there instead of
+    // main. Never merge in that case; retry silently, then escalate like any
+    // other "needs a human eventually" case. See final review Fix 1.
+    const blocked = await blockOnAttemptLimit(
+      issue, pr, config.rebaseRetryLimit,
+      `Base del PR del fondo del stack es "${pr.baseRefName}", no "${rootBranchName()}" — el auto-retarget de GitHub no ocurrió`,
+    );
+    return blocked ? 'blocked' : 'not-ready';
   }
 
-  const sliceIndex = sliceIndexFromBranch(pr.headRefName);
-  if (sliceIndex !== null) {
-    // Idempotent bookkeeping — reconciles the checklist from the PR's own
-    // branch name rather than trusting the headless agent's own issue edit
-    // to have landed. See docs/DESIGN.md §3.1.
-    await recordSlicePr(issue.number, sliceIndex, pr.number);
+  const worktreeDir = worktreeDirFor(pr.headRefName);
+  if (!existsSync(worktreeDir)) {
+    // Still deliberately NOT auto-recreated via ensureWorktree here, even
+    // though the root cause that originally justified this (branchExists
+    // only checking local refs, never origin/<branch>) was fixed by adding
+    // remoteBranchExists to worktree.ts (final review Fix 2) — re-wiring
+    // this call site wasn't part of that fix's scope, so it's left as-is:
+    // treated as a mechanical failure like a rebase conflict, retried
+    // silently via the same attempt counter, then escalated to a real
+    // human-visible block — never a silent-forever stall, never fabricated
+    // git state.
+    const blocked = await blockOnAttemptLimit(
+      issue, pr, config.rebaseRetryLimit,
+      'Worktree del fondo del stack no encontrado en disco tras el límite de reintentos',
+    );
+    return blocked ? 'blocked' : 'not-ready';
   }
+  if (!(await isBehind(worktreeDir, config.worktreeBaseRef))) return 'ready';
+  if (await attemptRebase(worktreeDir, config.worktreeBaseRef, pr.headRefName)) return 'not-ready';
+
+  const blocked = await blockOnAttemptLimit(
+    issue, pr, config.rebaseRetryLimit,
+    'Rebase con conflicto real tras el límite de reintentos',
+  );
+  if (blocked) return 'blocked';
+  await runAgentTask({ type: 'fix-rebase', issueNumber: issue.number, prNumber: pr.number });
+  return 'not-ready';
+}
+
+// Returns whether the issue is still in-progress: false means this PR just
+// triggered blockOnAttemptLimit (issue set to valeria:blocked) and the caller
+// must stop processing the rest of the stack and skip starting new work.
+async function processSlicePr(issue: TrackingIssue, pr: StackedPr, isBottom: boolean): Promise<boolean> {
+  await recordSlicePr(issue.number, pr.sliceIndex, pr.number);
 
   // Checked every tick until it succeeds once (hasEvidenceComment gates the
-  // repeat work) — the agent may not have finished running e2e yet on an
-  // earlier tick, and a slice that doesn't touch e2e-covered behavior just
-  // never produces anything to publish, which is fine (publishEvidence
-  // returns [] and this silently no-ops). See docs/DESIGN.md §4.
+  // repeat work) — ver docs/DESIGN.md §4.
   if (!(await hasEvidenceComment(pr.number))) {
     const paths = await publishEvidence(issue.number, pr.number, worktreeDirFor(pr.headRefName));
     if (paths.length > 0) {
@@ -145,20 +191,23 @@ async function processIssue(issue: TrackingIssue): Promise<void> {
     }
   }
 
-  if (pr.isDraft) {
-    // A draft PR has no checks/review yet by design — that's not a failure
-    // state. Left alone until it's marked ready for review (out of scope
-    // for this scaffold: nothing currently marks a draft ready).
-    return;
+  if (pr.isDraft) return true;
+
+  // Solo el fondo del stack necesita estar al día con main antes de evaluar
+  // merge — ver docs/superpowers/specs/2026-07-28-stacked-prs-design.md §5.
+  if (isBottom) {
+    const status = await ensureBottomUpToDate(issue, pr);
+    if (status === 'blocked') return false;
+    if (status === 'not-ready') return true;
   }
 
   if (pr.checksPassing && pr.reviewDecision === 'APPROVED') {
+    // Aprobado pero no es el fondo del stack: espera su turno sin
+    // notificación — mismo "estado de espera normal" de docs/BLOCKING.md.
+    if (!isBottom) return true;
     await mergePullRequest(pr.number);
-    if (sliceIndex !== null) await markSliceMerged(issue.number, sliceIndex);
-
-    if (await hasRemainingSlices(issue.number)) return; // next tick picks up the next slice
-    await setIssueState(issue.number, 'done');
-    return;
+    await markSliceMerged(issue.number, pr.sliceIndex);
+    return true;
   }
 
   if (pr.reviewDecision === 'CHANGES_REQUESTED') {
@@ -166,9 +215,24 @@ async function processIssue(issue: TrackingIssue): Promise<void> {
       issue, pr, config.sliceAttemptLimit,
       'Feedback de review sin converger tras el límite de intentos',
     );
-    if (blocked) return;
+    if (blocked) return false;
     await runAgentTask({ type: 'fix-review', issueNumber: issue.number, prNumber: pr.number });
-    return;
+    return true;
+  }
+
+  // CI still running (queued/in-progress) reads the same as checksPassing
+  // === false — wait for it instead of treating it as an actual failure, so
+  // in-flight checks don't trigger a spurious fix-e2e / attempt increment.
+  // See final review Fix 6. Bounded by the same attempt limit as the actual
+  // e2e-failure path below (and sharing its counter) so a rollup that never
+  // reports anything — e.g. a path-filtered workflow that never triggers for
+  // this slice — still escalates instead of waiting forever in silence.
+  if (pr.checksPending) {
+    const blocked = await blockOnAttemptLimit(
+      issue, pr, config.e2eRetryLimit,
+      'CI nunca reportó resultados tras el límite de reintentos',
+    );
+    return !blocked;
   }
 
   if (!pr.checksPassing) {
@@ -176,13 +240,53 @@ async function processIssue(issue: TrackingIssue): Promise<void> {
       issue, pr, config.e2eRetryLimit,
       'E2E fallando persistentemente tras el límite de reintentos',
     );
-    if (blocked) return;
+    if (blocked) return false;
     await runAgentTask({ type: 'fix-e2e', issueNumber: issue.number, prNumber: pr.number });
-    return;
+    return true;
   }
 
   // Checks passing, no changes requested, not yet approved: normal
   // waiting-for-review state per docs/BLOCKING.md — no action, no notification.
+  return true;
+}
+
+async function processIssue(issue: TrackingIssue): Promise<void> {
+  const stack = toStackedPrs(await getOpenPrsForIssue(issue.number));
+
+  if (stack.length === 0) {
+    const slice = await nextUnstartedSlice(issue.number);
+    if (slice) {
+      await runAgentTask({ type: 'implement-slice', issueNumber: issue.number, sliceIndex: slice.index, sliceTitle: slice.title });
+      return;
+    }
+    // Ningún PR abierto y ninguna slice sin arrancar: o todo mergeó, o algún
+    // PR se cerró sin mergear y quedó huérfano (ninguna slice más va a
+    // arrancar sola porque el checklist ya tiene un número de PR anotado
+    // para todas). hasRemainingSlices distingue ambos casos — si hay algo
+    // sin mergear en este segundo caso, no hay forma de que el loop avance
+    // solo: escala en vez de quedar en un stall silencioso para siempre.
+    if (await hasRemainingSlices(issue.number)) {
+      await notifyBlocker({
+        issueUrl: issue.url,
+        reason: 'Hay slices sin PR abierto ni mergear — probablemente una PR se cerró sin mergear',
+      });
+      await setIssueState(issue.number, 'blocked');
+      return;
+    }
+    await setIssueState(issue.number, 'done');
+    return;
+  }
+
+  const bottom = pickBottomPr(stack)!; // stack.length >= 1 acá, chequeado arriba
+  for (const pr of stack) {
+    const stillInProgress = await processSlicePr(issue, pr, pr.sliceIndex === bottom.sliceIndex);
+    if (!stillInProgress) return; // se acaba de bloquear el issue — no arrancar trabajo nuevo
+  }
+
+  const nextUnstarted = await nextUnstartedSlice(issue.number);
+  if (nextUnstarted) {
+    await runAgentTask({ type: 'implement-slice', issueNumber: issue.number, sliceIndex: nextUnstarted.index, sliceTitle: nextUnstarted.title });
+  }
 }
 
 export async function tick(): Promise<void> {

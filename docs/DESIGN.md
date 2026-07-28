@@ -37,10 +37,10 @@ Por qué asignación manual y no descubrimiento automático: dos runners corrien
 - 1 slice → 1 PR apilado sobre el anterior.
 - Estado inferido de GitHub, no de memoria del agente:
   - branch existe → spec empezado
-  - PR abierto → slice en curso
+  - PR abierto → slice en curso (pueden ser varios PRs de un mismo issue abiertos a la vez, cada uno una slice apilada sobre la anterior — ver [`docs/superpowers/specs/2026-07-28-stacked-prs-design.md`](superpowers/specs/2026-07-28-stacked-prs-design.md) para el rationale completo)
   - comentarios sin resolver → ciclo de fix
   - PR **approved** → candidato a merge automático
-  - PR merged → siguiente slice
+  - PR abierto (aunque no esté mergeado) → arranca la siguiente slice apilada encima, sin esperar; solo el PR de menor índice del stack es candidato a merge
 
 ### 2.1 Template del issue de tracking
 
@@ -69,7 +69,7 @@ En cada tick:
 
 **Un tick a la vez por host**: como un tick puede tardar (una invocación de `claude -p` puede llegar a `AGENT_TASK_TIMEOUT_MINUTES`), el wrapper que genera `setup-cron.sh` usa `flock` para que un disparo de cron mientras el anterior sigue corriendo se salte en vez de arrancar en paralelo — evita que dos ticks concurrentes en el mismo host pisen `.valeria-state.json` a la vez. Esto es independiente del claim entre runners distintos (§9), que protege contra *otro host*, no contra el mismo proceso solapado consigo mismo.
 
-Concurrencia entre issues: un spec/slice a la vez por seguridad de worktree; specs independientes sí pueden correr en paralelo en worktrees separados (dentro del mismo tick, secuencial; entre hosts, ver §9).
+Concurrencia entre issues: un spec/issue a la vez por tick (dentro del mismo tick, secuencial; entre hosts, ver §9), pero *dentro* de un mismo issue pueden estar en vuelo varias slices/PRs a la vez, cada una apilada sobre la anterior — ya no se espera a que una slice mergee para arrancar la siguiente. Ver [`docs/superpowers/specs/2026-07-28-stacked-prs-design.md`](superpowers/specs/2026-07-28-stacked-prs-design.md) para el rationale completo. Specs independientes sí pueden correr en paralelo en worktrees separados.
 
 Convención de branches: `valeria/<issue>/<slice-slug>` — así el supervisor encuentra el PR de la slice en curso de un issue por prefijo de branch, sin mantener un mapeo aparte.
 

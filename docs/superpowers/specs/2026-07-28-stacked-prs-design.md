@@ -215,3 +215,21 @@ trabajo, debe squashearlos a uno solo antes de abrir el PR.
 - Verificación mecánica del supervisor de que el agente efectivamente dejó un solo commit.
 - Test de integración con repos git temporales para la mecánica de rebase.
 - Manejo del caso "el PR del fondo se cierra sin mergear" (branch huérfano) — gap conocido, no bloqueante.
+
+### Limitación conocida: amend a mitad de stack no rebasea lo que está arriba
+
+Amendear el commit de una slice a mitad de stack (vía `fix-review`/`fix-e2e`, que
+instruyen `git commit --amend` + `git push --force-with-lease`, ver §6) cambia su SHA de
+commit, pero nada rebasea automáticamente los PRs apilados sobre esa slice — el único
+rebase mecánico que existe es el del §5, y ese solo dispara cuando el predecesor del
+**fondo** del stack **mergea**, nunca cuando se amendea.
+
+Consecuencia concreta: si una slice a mitad de stack recibe `CHANGES_REQUESTED` y se
+amendea mientras ya hay slices siguientes apiladas encima, el diff de esas PRs
+posteriores se va a ir ensanchando para incluir los cambios de la slice amendeada, hasta
+que alguien las rebasee manual o mecánicamente. Esto contradice parcialmente el
+principio de "PRs revisables en minutos" mientras eso no se rebasea.
+
+Se acepta como alcance diferido para este plan — no se cambia comportamiento ahora. Si
+en la práctica esto molesta, revisitarlo (ej. extender el rebase mecánico del §5 para
+correr también tras un amend, no solo tras un merge del fondo).

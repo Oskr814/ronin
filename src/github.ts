@@ -152,15 +152,25 @@ export interface PullRequestStatus {
   state: 'OPEN' | 'CLOSED' | 'MERGED';
   reviewDecision: 'APPROVED' | 'CHANGES_REQUESTED' | 'REVIEW_REQUIRED' | '';
   checksPassing: boolean;
+  // True while CI hasn't finished yet (no checks reported at all, or any
+  // entry still queued/in-progress, conclusion === null) — distinguishes
+  // "not done running" from "actually failed" (checksPassing === false for
+  // both, otherwise indistinguishable to a caller). See final review Fix 6.
+  checksPending: boolean;
   mergeable: boolean;
   headRefName: string;
+  // The branch this PR merges into. Needed to notice when the bottom of a
+  // stack's base never got auto-retargeted to the root branch (e.g. a human
+  // merged the predecessor from the GitHub UI without --delete-branch) — see
+  // final review Fix 1.
+  baseRefName: string;
   isDraft: boolean;
 }
 
 export async function getPullRequestStatus(prNumber: number): Promise<PullRequestStatus> {
   const stdout = await gh([
     'pr', 'view', String(prNumber),
-    '--json', 'number,state,reviewDecision,statusCheckRollup,mergeable,headRefName,isDraft',
+    '--json', 'number,state,reviewDecision,statusCheckRollup,mergeable,headRefName,baseRefName,isDraft',
   ]);
   const raw = JSON.parse(stdout) as {
     number: number;
@@ -169,6 +179,7 @@ export async function getPullRequestStatus(prNumber: number): Promise<PullReques
     statusCheckRollup: Array<{ conclusion: string | null }>;
     mergeable: string;
     headRefName: string;
+    baseRefName: string;
     isDraft: boolean;
   };
   return {
@@ -176,8 +187,10 @@ export async function getPullRequestStatus(prNumber: number): Promise<PullReques
     state: raw.state,
     reviewDecision: raw.reviewDecision ?? '',
     checksPassing: raw.statusCheckRollup.length > 0 && raw.statusCheckRollup.every((c) => c.conclusion === 'SUCCESS'),
+    checksPending: raw.statusCheckRollup.length === 0 || raw.statusCheckRollup.some((c) => c.conclusion === null),
     mergeable: raw.mergeable === 'MERGEABLE',
     headRefName: raw.headRefName,
+    baseRefName: raw.baseRefName,
     isDraft: raw.isDraft,
   };
 }
@@ -194,7 +207,11 @@ export async function mergePullRequest(prNumber: number): Promise<void> {
   // "Squash merges are not allowed on this repository"). --merge is what's
   // actually enabled there (along with --rebase); hardcoded rather than
   // detected at runtime since PRODUCT_REPO is a single fixed target today.
-  await gh(['pr', 'merge', String(prNumber), '--merge']);
+  // --delete-branch: dispara el auto-retarget nativo de GitHub del PR
+  // inmediatamente superior en el stack (su base pasa de este branch a
+  // `main` solo, sin que el supervisor tenga que tocar nada del lado de
+  // GitHub) — ver docs/superpowers/specs/2026-07-28-stacked-prs-design.md §1.
+  await gh(['pr', 'merge', String(prNumber), '--merge', '--delete-branch']);
 }
 
 export function branchPrefix(issueNumber: number): string {
@@ -202,13 +219,15 @@ export function branchPrefix(issueNumber: number): string {
 }
 
 // Slice branches are created as `valeria/<issue>/<slice-slug>` (see agent-task.ts),
-// so the PR for a given issue's current slice is found by branch prefix instead
-// of maintaining a separate mapping.
-export async function getOpenPrForIssue(issueNumber: number): Promise<PullRequestStatus | null> {
+// so every open PR for an issue's stack is found by branch prefix instead of
+// maintaining a separate mapping. Can return more than one now that several
+// slices of the same issue can be in flight at once (see
+// docs/superpowers/specs/2026-07-28-stacked-prs-design.md).
+export async function getOpenPrsForIssue(issueNumber: number): Promise<PullRequestStatus[]> {
   const stdout = await gh(['pr', 'list', '--state', 'open', '--json', 'number,headRefName']);
   const prs = JSON.parse(stdout) as Array<{ number: number; headRefName: string }>;
-  const match = prs.find((pr) => pr.headRefName.startsWith(branchPrefix(issueNumber)));
-  return match ? getPullRequestStatus(match.number) : null;
+  const matches = prs.filter((pr) => pr.headRefName.startsWith(branchPrefix(issueNumber)));
+  return Promise.all(matches.map((pr) => getPullRequestStatus(pr.number)));
 }
 
 // Opt-in only (config.requestCopilotReview) — requesting Copilot review
