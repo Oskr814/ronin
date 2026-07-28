@@ -11,7 +11,9 @@ WRAPPER="$REPO_DIR/scripts/run-tick.sh"
 MARKER="# valeria-tick:$REPO_DIR"
 
 if [[ "${1:-}" == "--remove" ]]; then
-  crontab -l 2>/dev/null | grep -v -F "$MARKER" | crontab - || true
+  EXISTING="$(crontab -l 2>/dev/null || true)"
+  FILTERED="$(printf '%s\n' "$EXISTING" | grep -v -F "$MARKER" || true)"
+  printf '%s\n' "$FILTERED" | crontab -
   echo "Cron removido para $REPO_DIR"
   exit 0
 fi
@@ -51,7 +53,15 @@ EOF
 chmod +x "$WRAPPER"
 
 CRON_LINE="*/$INTERVAL_MINUTES * * * * $WRAPPER >> $LOG_DIR/tick.log 2>&1 $MARKER"
-( crontab -l 2>/dev/null | grep -v -F "$MARKER" ; echo "$CRON_LINE" ) | crontab -
+
+# `crontab -l` exits non-zero when there's no crontab installed yet (the
+# common first-run case), and `grep -v` exits non-zero when nothing matched
+# the marker (also common) — both are expected, not errors, so each needs
+# its own `|| true` rather than relying on one at the end of the pipeline
+# (which `set -o pipefail` would otherwise still trip on).
+EXISTING="$(crontab -l 2>/dev/null || true)"
+FILTERED="$(printf '%s\n' "$EXISTING" | grep -v -F "$MARKER" || true)"
+printf '%s\n%s\n' "$FILTERED" "$CRON_LINE" | crontab -
 
 echo "Cron instalado: cada $INTERVAL_MINUTES min -> $WRAPPER"
 echo "Log: $LOG_DIR/tick.log"
