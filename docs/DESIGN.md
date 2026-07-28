@@ -31,6 +31,16 @@ Flujo:
 
 Por qué asignación manual y no descubrimiento automático: dos runners corriendo en paralelo no pueden competir por "quién vio primero" un spec si solo uno de ellos tiene la label puesta — la decisión de quién lo procesa la toma un humano una sola vez, no una carrera entre máquinas. Ver §9 para el gap que esto todavía no resuelve (dos specs *distintos* asignados sin querer al mismo runner no es un problema; el problema real sería un humano poniendo la misma label en dos PRs que describen lo mismo — eso es un problema de proceso humano, no una condición de carrera en el código).
 
+**Variante: issues de bug.** Un issue ya existente en el repo del producto, etiquetado
+con la label propia de `bugfix` (ya existente en el repo) y `valeria:runner-<id>`, se
+toma con la misma señal de asignación manual que un spec PR, pero sin paso de
+draft/ready (un issue de GitHub no tiene estado draft). A diferencia de un spec, no se
+crea un issue de tracking espejo — el issue de bug pasa a ser directamente la unidad de
+tracking, sembrado con un checklist mecánico de una sola slice para que el resto del
+motor (merge gate, ciclos `fix-review`/`fix-e2e`, evidencia) lo trate igual que la
+tracking issue de un spec. Ver
+[`docs/superpowers/specs/2026-07-28-bug-issue-intake-design.md`](superpowers/specs/2026-07-28-bug-issue-intake-design.md).
+
 ### 2. Mapeo a GitHub
 
 - 1 spec → 1 issue de tracking, con checklist de slices (generado por el paso de planning).
