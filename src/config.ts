@@ -14,6 +14,10 @@ export const config = {
   // Sibling directory to the product repo checkout, not inside it — worktrees
   // come and go per task and should never be mistaken for the main checkout.
   worktreeBasePath: process.env.WORKTREE_BASE_PATH ?? join(productRepoPath, '..', 'valeria-worktrees'),
+  // Ref every new task branch is created from. Defaults to main; overridable
+  // (e.g. for a dry run against a throwaway base ref instead of the real
+  // main) without needing a code change every time.
+  worktreeBaseRef: process.env.WORKTREE_BASE_REF ?? 'main',
   // claude -p runs unattended (nobody to answer permission prompts), and
   // bypassPermissions was chosen deliberately over a curated allowlist —
   // see docs/DESIGN.md §7.1. Containment relies on every task running

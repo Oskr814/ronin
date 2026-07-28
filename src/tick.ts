@@ -33,6 +33,10 @@ async function discoverNewSpecs(): Promise<void> {
   for (const spec of specs) {
     const body = await renderTrackingIssueBody(spec);
     const issue = await createTrackingIssue(`[spec] ${spec.title}`, body);
+    // Without this, the issue stays labeled valeria:ready forever and
+    // listTrackingIssues('in-progress') would never find it again on a
+    // later tick — found while preparing the first live dry run.
+    await setIssueState(issue.number, 'in-progress');
     await linkSpecToIssue(spec, issue.number);
     // The plan task rewrites the issue body with the real slice checklist.
     await runAgentTask({ type: 'plan', issueNumber: issue.number, specPath: spec.relativePath });

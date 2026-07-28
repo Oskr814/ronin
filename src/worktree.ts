@@ -20,7 +20,7 @@ async function branchExists(branch: string): Promise<boolean> {
 // Reuses an existing worktree for `branch` if one is already checked out —
 // a retried task (fix-review, fix-e2e) picks up where the previous attempt
 // left off instead of starting from a clean tree each time.
-export async function ensureWorktree(branch: string, baseRef = 'main'): Promise<string> {
+export async function ensureWorktree(branch: string, baseRef = config.worktreeBaseRef): Promise<string> {
   const dir = dirFor(branch);
   if (existsSync(dir)) return dir;
 
