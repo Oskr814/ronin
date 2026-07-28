@@ -57,6 +57,8 @@ El body queda como contexto legible para el humano (qué slice va, qué PR corre
 
 `pnpm tick` corre y termina — no es un proceso long-running. La recurrencia la da **cron** (no un loop en tmux, que era la idea original): `scripts/setup-cron.sh <minutos>` instala una entrada de crontab que invoca el tick cada N minutos.
 
+En producción (y en el cron) lo que se ejecuta es el build compilado en `dist/` vía `pnpm start`, generado por un paso explícito `pnpm build` — nunca se reconstruye solo, así que hay que correrlo antes de instalar el cron y de nuevo después de cada cambio de código. `pnpm tick` (que corre el código fuente directo con `tsx`, sin compilar) queda para desarrollo local y dry runs. Ver [`docs/superpowers/specs/2026-07-28-build-step-design.md`](superpowers/specs/2026-07-28-build-step-design.md) para el rationale completo.
+
 En cada tick:
 
 1. Escanea specs asignados vía PR + label (`valeria:runner-<id>`, ver §1) → mergea el spec, crea el issue, dispara una sesión `claude -p` en un worktree nuevo para plan + primera slice.

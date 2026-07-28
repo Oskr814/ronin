@@ -25,8 +25,8 @@ Reducir el cuello de botella de PRs gigantes (+100 archivos) generados por imple
 3. Registrar el GitHub App dedicado e instalarlo en el repo del producto — pasos manuales en [`docs/DESIGN.md` §7](docs/DESIGN.md#7-identidad-del-agente-en-github), no automatizables. Completar las tres variables `VALERIA_GITHUB_APP_*` del `.env`.
 4. `pnpm smoke-test` — confirma que el App autentica y puede leer `PRODUCT_REPO` antes de seguir.
 5. `pnpm init-labels` — crea en `PRODUCT_REPO` los labels `valeria*` que usa el pipeline, incluida tu label de asignación `valeria:runner-<RUNNER_ID>`. Sin esto no vas a poder seleccionarla desde la UI de GitHub al asignarte un spec.
-6. `pnpm cron:setup [minutos] [días_retención]` (default 5 min / 14 días) — instala el supervisor como cron job. `pnpm cron:remove` para sacarlo. Logs en `logs/tick-YYYY-MM-DD.log` (`tail -f logs/tick-$(date +%F).log` para seguir el de hoy).
-7. Después de cualquier cambio de código, correr `pnpm build` — el cron corre el `dist/` compilado, nunca reconstruye solo. Sin un build nuevo, sigue corriendo la versión vieja (o corta si `dist/` nunca se generó).
+6. Correr `pnpm build` (antes de instalar el cron por primera vez, y después de cualquier cambio de código posterior) — el cron corre el `dist/` compilado, nunca reconstruye solo. Sin un build nuevo, sigue corriendo la versión vieja (o corta si `dist/` nunca se generó).
+7. `pnpm cron:setup [minutos] [días_retención]` (default 5 min / 14 días) — instala el supervisor como cron job. `pnpm cron:remove` para sacarlo. Logs en `logs/tick-YYYY-MM-DD.log` (`tail -f logs/tick-$(date +%F).log` para seguir el de hoy).
 
 ### Asignarte un spec
 

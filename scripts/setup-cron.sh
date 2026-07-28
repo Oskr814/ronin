@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Installs (or removes) a crontab entry that runs `pnpm tick` on a fixed
+# Installs (or removes) a crontab entry that runs `pnpm start` on a fixed
 # interval. Safe to re-run: replaces this repo's previous entry instead of
 # duplicating it, identified by a marker comment scoped to this repo's path
 # (so multiple ValerIA checkouts on the same host don't collide).
