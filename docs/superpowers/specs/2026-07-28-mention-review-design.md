@@ -39,6 +39,10 @@ la única vía para habilitar el merge.
 - **Ambos tipos de comentario**: generales (issue comments) e inline (review
   comments) — un pedido tipo "@valeria-agent fijate esta línea" es un caso de
   uso natural y no tiene sentido cubrir solo uno de los dos.
+- **Comentarios de una review en `PENDING` (borrador, no enviada) se
+  ignoran**: no son un pedido real hasta que su autor la publica — actuar
+  sobre ellos sería reaccionar a algo que todavía puede cambiar o nunca
+  enviarse.
 - **Review siempre en estado `COMMENT`**: nunca `APPROVE` ni
   `REQUEST_CHANGES`, sin importar lo que encuentre — un bot no debe tener
   poder de gate sobre el merge, coherente con el principio de que
@@ -93,7 +97,13 @@ token, ver línea 17):
   repos/{owner}/{repo}/issues/{pr}/comments`, incluye `reactions` en la
   respuesta para poder filtrar sin una segunda llamada.
 - `listReviewComments(prNumber): Promise<Comment[]>` — mismo patrón contra
-  `.../pulls/{pr}/comments` (los inline).
+  `.../pulls/{pr}/comments` (los inline), **excluyendo los que pertenecen a
+  una review en estado `PENDING`** (borrador, no enviada — GitHub la incluye
+  en la respuesta cuando el que llama a la API tiene visibilidad de esa
+  review en curso). Requiere cruzar con `GET .../pulls/{pr}/reviews` para
+  saber qué `pull_request_review_id` están en `PENDING` y descartar esos
+  comentarios antes de devolver la lista: un comentario que su autor todavía
+  no publicó no es un pedido real todavía.
 - `addReaction(commentId: number, kind: 'issue' | 'review', content:
   'eyes'): Promise<void>` — `POST .../issues/comments/{id}/reactions` o
   `.../pulls/comments/{id}/reactions` según `kind`.
