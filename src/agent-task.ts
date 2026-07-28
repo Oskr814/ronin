@@ -8,6 +8,7 @@ import { sliceBranch, baseBranchFor } from './stack.js';
 export type AgentTask =
   | { type: 'plan'; issueNumber: number; specPaths: string[] }
   | { type: 'implement-slice'; issueNumber: number; sliceIndex: number; sliceTitle: string }
+  | { type: 'fix-bug'; issueNumber: number; sliceIndex: number; sliceTitle: string }
   | { type: 'fix-review'; issueNumber: number; prNumber: number }
   | { type: 'fix-e2e'; issueNumber: number; prNumber: number }
   | { type: 'fix-rebase'; issueNumber: number; prNumber: number }
@@ -55,6 +56,26 @@ async function buildTask(task: AgentTask): Promise<{ branch: string; prompt: str
           'If this slice touches user-facing behavior in apps/webapp, add or update a Playwright e2e spec under apps/webapp/e2e/ covering it, and run it (`pnpm --filter @bmedical/webapp exec playwright test`) until it passes — do not leave that for CI to catch. Leave the resulting output under apps/webapp/test-results/ as-is; do not move, copy, or commit it — the supervisor collects it separately.',
           `When done: run the relevant tests, and make exactly one commit for this slice (squash any work-in-progress commits into one before pushing). Push this branch and open a PR (\`${prCommand}\`) describing the slice.`,
           'Scope: only touch files needed for this slice. Do not edit the tracking issue (body, labels, assignees, or anything else) — that is owned entirely by the supervisor, not by you.',
+        ].join('\n'),
+      };
+    }
+
+    case 'fix-bug': {
+      // Always slice 0 — a bug issue is seeded with exactly one slice
+      // (checklist.ts's seedSingleSlice), so unlike implement-slice this
+      // never needs baseBranchFor's "stack on the previous slice" logic or
+      // its remote-branch-missing fallback.
+      return {
+        branch: sliceBranch(task.issueNumber, task.sliceIndex),
+        baseBranch: config.worktreeBaseRef,
+        prompt: [
+          `You are ValerIA, an autonomous agent working on issue #${task.issueNumber} in ${repoUrl()}, labeled "bugfix".`,
+          `Read the full issue, including comments: "gh issue view ${task.issueNumber} --comments".`,
+          'Explore the repository to find the root cause — do not guess or fabricate a fix without evidence. If the issue lacks enough information to reproduce the problem, or is ambiguous, comment on the issue asking for what you need ("gh issue comment") and stop without touching any code — that needs a human answer.',
+          "Once you've found the root cause, fix it following this repo's CLAUDE.md conventions, including its testing requirements.",
+          'If this bug touches user-facing behavior in apps/webapp, add or update a Playwright e2e spec under apps/webapp/e2e/ covering it, and run it (`pnpm --filter @bmedical/webapp exec playwright test`) until it passes — do not leave that for CI to catch. Leave the resulting output under apps/webapp/test-results/ as-is; do not move, copy, or commit it — the supervisor collects it separately.',
+          `When done: run the relevant tests, and make exactly one commit for this fix. Push this branch and open a PR ("gh pr create") with "Closes #${task.issueNumber}" in the body, describing the root cause and the fix.`,
+          'Scope: only touch files needed for this fix. Do not edit the tracking issue (body, labels, assignees, or anything else) — that is owned entirely by the supervisor, not by you.',
         ].join('\n'),
       };
     }
