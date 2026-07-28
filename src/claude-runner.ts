@@ -5,6 +5,15 @@ import { log } from './logger.js';
 
 const MAX_LOG_LINE = 2000;
 
+// `claude -p` prints this as a plain (non-JSON) stdout line and exits 1 when
+// the account's spend/usage cap is hit mid-session — a transient, expected
+// condition (quota resets on its own) that must never be treated the same
+// as a real bug in the agent's work. Callers use this to skip the task
+// instead of blocking the issue — see tick.ts.
+const USAGE_LIMIT_PATTERN = /usage limit|spend limit/i;
+
+export class ClaudeUsageLimitError extends Error {}
+
 function truncate(text: string): string {
   const oneLine = text.replace(/\s+/g, ' ').trim();
   return oneLine.length > MAX_LOG_LINE ? `${oneLine.slice(0, MAX_LOG_LINE)}… [truncated]` : oneLine;
@@ -109,6 +118,7 @@ export async function runClaudeHeadless(cwd: string, prompt: string, label: stri
     let finalResult = '';
     let stderr = '';
     let timedOut = false;
+    let usageLimitHit = false;
     const timer = setTimeout(() => { timedOut = true; child.kill('SIGTERM'); }, config.agentTaskTimeoutMs);
 
     const handleStdoutLine = (line: string) => {
@@ -116,13 +126,18 @@ export async function runClaudeHeadless(cwd: string, prompt: string, label: stri
       try {
         event = JSON.parse(line);
       } catch {
+        if (USAGE_LIMIT_PATTERN.test(line)) usageLimitHit = true;
         log.info(`[${label}] ${line}`); // non-JSON stray output — surface it as-is rather than drop it
         return;
       }
       if (event.type === 'result') finalResult = String(event.result ?? '');
       else logStreamEvent(label, event);
     };
-    const handleStderrLine = (line: string) => { stderr += `${line}\n`; log.info(`[${label}] ${line}`); };
+    const handleStderrLine = (line: string) => {
+      if (USAGE_LIMIT_PATTERN.test(line)) usageLimitHit = true;
+      stderr += `${line}\n`;
+      log.info(`[${label}] ${line}`);
+    };
 
     child.stdout.on('data', makeLineBuffer(handleStdoutLine));
     child.stderr.on('data', makeLineBuffer(handleStderrLine));
@@ -132,6 +147,7 @@ export async function runClaudeHeadless(cwd: string, prompt: string, label: stri
       clearTimeout(timer);
       if (code === 0) resolve(finalResult);
       else if (timedOut) reject(new Error(`${config.claudeCommand} timed out after ${config.agentTaskTimeoutMs}ms`));
+      else if (usageLimitHit) reject(new ClaudeUsageLimitError(`${config.claudeCommand} hit its usage/spend limit`));
       else reject(new Error(`${config.claudeCommand} exited with code ${code}: ${stderr.slice(-2000)}`));
     });
   });

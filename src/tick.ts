@@ -24,6 +24,7 @@ import { fetchOriginMain, readSpecFile, extractTitle } from './spec-content.js';
 import { nextUnstartedSlice, hasRemainingSlices, recordSlicePr, markSliceMerged } from './checklist.js';
 import { notifyBlocker } from './notifier.js';
 import { runAgentTask } from './agent-task.js';
+import { ClaudeUsageLimitError } from './claude-runner.js';
 import { toStackedPrs, pickBottomPr, type StackedPr } from './stack.js';
 import { tryClaim, releaseIfNoLongerInProgress, runnerLabel } from './claim.js';
 import { worktreeDirFor, isBehind, attemptRebase } from './worktree.js';
@@ -108,6 +109,13 @@ async function discoverAssignedSpecs(): Promise<void> {
       // The plan task rewrites the issue body with the real slice checklist.
       await runAgentTask({ type: 'plan', issueNumber: issue.number, specPaths });
     } catch (error) {
+      // A monthly spend/usage cap is transient and resolves on its own —
+      // never a reason to block on a human. Leave state as-is and retry on
+      // a later tick. See ClaudeUsageLimitError.
+      if (error instanceof ClaudeUsageLimitError) {
+        log.info(`spec PR #${pr.number}: límite de uso de Claude alcanzado, reintentando en un tick posterior`);
+        continue;
+      }
       await notifyBlocker({
         issueUrl: prUrl(pr.number),
         reason: `Excepción no manejada procesando el spec PR: ${(error as Error).message}`,
@@ -375,11 +383,18 @@ export async function tick(): Promise<void> {
     try {
       await processIssue(issue);
     } catch (error) {
-      await notifyBlocker({
-        issueUrl: issue.url,
-        reason: `Excepción no manejada procesando el issue: ${(error as Error).message}`,
-      });
-      await setIssueState(issue.number, 'blocked');
+      // A monthly spend/usage cap is transient and resolves on its own —
+      // skip this issue for this tick instead of blocking it on a human;
+      // quota comes back and a later tick picks up where this left off.
+      if (error instanceof ClaudeUsageLimitError) {
+        log.info(`issue #${issue.number}: límite de uso de Claude alcanzado, reintentando en un tick posterior`);
+      } else {
+        await notifyBlocker({
+          issueUrl: issue.url,
+          reason: `Excepción no manejada procesando el issue: ${(error as Error).message}`,
+        });
+        await setIssueState(issue.number, 'blocked');
+      }
     }
     await releaseIfNoLongerInProgress(issue.number);
   }
