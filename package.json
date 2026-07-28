@@ -1,0 +1,21 @@
+{
+  "name": "valeria",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Supervisor autonomo para implementacion de specs via GitHub como maquina de estados",
+  "scripts": {
+    "tick": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "gray-matter": "^4.0.3",
+    "nodemailer": "^6.9.16"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/nodemailer": "^6.4.17",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

@@ -68,11 +68,24 @@ Un proceso supervisor corre en una sesión tmux persistente y en cada tick:
 
 Concurrencia: un spec/slice a la vez por seguridad de worktree; specs independientes sí pueden correr en paralelo en worktrees separados.
 
+Convención de branches: `valeria/<issue>/<slice-slug>` — así el supervisor encuentra el PR de la slice en curso de un issue por prefijo de branch, sin mantener un mapeo aparte.
+
+### 3.1 Implementación (`src/`)
+
+Scaffold en TypeScript (`pnpm tick` corre un tick y termina — pensado para invocarse en loop desde tmux, no como proceso long-running):
+
+- `config.ts` — env vars, labels, límites de reintento
+- `github.ts` — wrappers sobre `gh` CLI (execFile con argv array, nunca shell string) para issues/PRs/labels/merge. El gate de approval está *en código*, no solo documentado: `mergePullRequest` lanza si `reviewDecision !== 'APPROVED'`
+- `specs.ts` — escanea frontmatter de specs, filtra `status: ready` sin `issue`, escribe de vuelta el link una vez creado el issue
+- `notifier.ts` — prototipo del notificador (nodemailer + Gmail SMTP)
+- `agent-task.ts` — **sin implementar a propósito**: es la interfaz hacia "correr `claude -p` en un worktree aislado". Necesita su propio diseño (ciclo de vida del worktree, forma del prompt, timeout/retry) antes de poder implementarse
+- `tick.ts` — el loop de decisión, con dos TODOs explícitos pendientes de estado persistente entre ticks: índice de slice actual y contador de reintentos (ver `docs/BLOCKING.md`)
+
 ### 4. Testing y review externo
 
 - E2E: el agente levanta la app y corre flujos con Playwright antes de abrir el PR.
-- Review externo: se solicita review de GitHub Copilot sobre el PR; el agente monitorea y resuelve comentarios de forma automática.
 - Pipelines: el agente monitorea CI y solo considera un PR "mergeable" cuando CI está verde **y** el PR tiene approval humano explícito.
+- Review de GitHub Copilot: **fuera del loop core por ahora**, parametrizable vía `REQUEST_COPILOT_REVIEW` (default `false`). Si se activa, el agente solicita el review y monitorea/resuelve sus comentarios igual que los de un humano — pero no es una dependencia asumida del flujo.
 
 ### 5. Parte visual
 
@@ -84,9 +97,13 @@ Solo se notifica por email en bloqueos reales, no en progreso rutinario (para ev
 
 ## Estado actual
 
-Diseño en progreso, sin código todavía. Próximos pasos:
-
-- [ ] Definir el esqueleto del supervisor (script + estructura de tick)
+- [x] Definir el esqueleto del supervisor (script + estructura de tick) — ver §3.1 y `src/`
 - [x] Definir el template del issue de tracking (checklist de slices) — ver [`templates/tracking-issue.md`](../templates/tracking-issue.md) y §2.1
-- [ ] Definir el criterio exacto de "bloqueo" que dispara notificación
-- [ ] Prototipo de la app de notificación por email
+- [x] Definir el criterio exacto de "bloqueo" que dispara notificación — ver [`docs/BLOCKING.md`](BLOCKING.md)
+- [x] Prototipo de la app de notificación por email — ver `src/notifier.ts`
+
+**Pendiente, fuera de este scaffold:**
+
+- `agent-task.ts`: cómo se invoca `claude -p` en un worktree (ciclo de vida, prompt, timeout/retry)
+- Estado persistente entre ticks para índice de slice actual y contadores de reintento (hoy son TODOs en `tick.ts`)
+- Decidir si Copilot review se activa (`REQUEST_COPILOT_REVIEW`) y cómo se resuelven sus comentarios automáticamente
