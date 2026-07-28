@@ -27,6 +27,26 @@ import { tryClaim, releaseIfNoLongerInProgress, runnerLabel } from './claim.js';
 import { worktreeDirFor, isBehind, attemptRebase } from './worktree.js';
 import { publishEvidence, rawEvidenceUrl } from './evidence.js';
 import { config } from './config.js';
+import { log } from './logger.js';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+
+const execFileAsync = promisify(execFile);
+
+// Best-effort — prints "unknown" rather than throwing if this checkout ever
+// runs without a .git dir (e.g. a packaged install). Exists so a stale
+// `dist/` (built from a commit behind origin/main) shows up in the log
+// instead of silently running old logic — see
+// docs/superpowers/specs/2026-07-28-stacked-prs-design.md, discovered while
+// debugging issue #228 stalling on stale code.
+async function currentCommit(): Promise<string> {
+  try {
+    const { stdout } = await execFileAsync('git', ['rev-parse', '--short', 'HEAD']);
+    return stdout.trim();
+  } catch {
+    return 'unknown';
+  }
+}
 
 function prUrl(prNumber: number): string {
   return `https://github.com/${config.productRepo}/pull/${prNumber}`;
@@ -179,6 +199,10 @@ async function ensureBottomUpToDate(issue: TrackingIssue, pr: StackedPr): Promis
 // Returns whether the issue is still in-progress: false means this PR just
 // triggered blockOnAttemptLimit (issue set to valeria:blocked) and the caller
 // must stop processing the rest of the stack and skip starting new work.
+function logSliceOutcome(issue: TrackingIssue, pr: StackedPr, isBottom: boolean, outcome: string): void {
+  log.info(`issue #${issue.number} slice ${pr.sliceIndex + 1} PR #${pr.number}${isBottom ? ' (bottom)' : ''}: ${outcome}`);
+}
+
 async function processSlicePr(issue: TrackingIssue, pr: StackedPr, isBottom: boolean): Promise<boolean> {
   await recordSlicePr(issue.number, pr.sliceIndex, pr.number);
 
@@ -191,22 +215,32 @@ async function processSlicePr(issue: TrackingIssue, pr: StackedPr, isBottom: boo
     }
   }
 
-  if (pr.isDraft) return true;
+  if (pr.isDraft) {
+    logSliceOutcome(issue, pr, isBottom, 'draft, esperando');
+    return true;
+  }
 
   // Solo el fondo del stack necesita estar al día con main antes de evaluar
   // merge — ver docs/superpowers/specs/2026-07-28-stacked-prs-design.md §5.
   if (isBottom) {
     const status = await ensureBottomUpToDate(issue, pr);
     if (status === 'blocked') return false;
-    if (status === 'not-ready') return true;
+    if (status === 'not-ready') {
+      logSliceOutcome(issue, pr, isBottom, 'poniéndose al día con main, esperando');
+      return true;
+    }
   }
 
   if (pr.checksPassing && pr.reviewDecision === 'APPROVED') {
     // Aprobado pero no es el fondo del stack: espera su turno sin
     // notificación — mismo "estado de espera normal" de docs/BLOCKING.md.
-    if (!isBottom) return true;
+    if (!isBottom) {
+      logSliceOutcome(issue, pr, isBottom, 'aprobado, esperando su turno (no es el fondo)');
+      return true;
+    }
     await mergePullRequest(pr.number);
     await markSliceMerged(issue.number, pr.sliceIndex);
+    logSliceOutcome(issue, pr, isBottom, 'mergeado');
     return true;
   }
 
@@ -216,6 +250,7 @@ async function processSlicePr(issue: TrackingIssue, pr: StackedPr, isBottom: boo
       'Feedback de review sin converger tras el límite de intentos',
     );
     if (blocked) return false;
+    logSliceOutcome(issue, pr, isBottom, 'changes requested, disparando fix-review');
     await runAgentTask({ type: 'fix-review', issueNumber: issue.number, prNumber: pr.number });
     return true;
   }
@@ -232,6 +267,7 @@ async function processSlicePr(issue: TrackingIssue, pr: StackedPr, isBottom: boo
       issue, pr, config.e2eRetryLimit,
       'CI nunca reportó resultados tras el límite de reintentos',
     );
+    if (!blocked) logSliceOutcome(issue, pr, isBottom, 'checks pendientes, esperando');
     return !blocked;
   }
 
@@ -241,12 +277,14 @@ async function processSlicePr(issue: TrackingIssue, pr: StackedPr, isBottom: boo
       'E2E fallando persistentemente tras el límite de reintentos',
     );
     if (blocked) return false;
+    logSliceOutcome(issue, pr, isBottom, 'checks fallando, disparando fix-e2e');
     await runAgentTask({ type: 'fix-e2e', issueNumber: issue.number, prNumber: pr.number });
     return true;
   }
 
   // Checks passing, no changes requested, not yet approved: normal
   // waiting-for-review state per docs/BLOCKING.md — no action, no notification.
+  logSliceOutcome(issue, pr, isBottom, 'checks OK, esperando review');
   return true;
 }
 
@@ -256,6 +294,7 @@ async function processIssue(issue: TrackingIssue): Promise<void> {
   if (stack.length === 0) {
     const slice = await nextUnstartedSlice(issue.number);
     if (slice) {
+      log.info(`issue #${issue.number}: sin PRs abiertos, arrancando slice ${slice.index + 1} (${slice.title})`);
       await runAgentTask({ type: 'implement-slice', issueNumber: issue.number, sliceIndex: slice.index, sliceTitle: slice.title });
       return;
     }
@@ -273,6 +312,7 @@ async function processIssue(issue: TrackingIssue): Promise<void> {
       await setIssueState(issue.number, 'blocked');
       return;
     }
+    log.info(`issue #${issue.number}: todas las slices mergeadas, done`);
     await setIssueState(issue.number, 'done');
     return;
   }
@@ -285,14 +325,17 @@ async function processIssue(issue: TrackingIssue): Promise<void> {
 
   const nextUnstarted = await nextUnstartedSlice(issue.number);
   if (nextUnstarted) {
+    log.info(`issue #${issue.number}: stack de ${stack.length} PR(s) abierto(s), arrancando slice ${nextUnstarted.index + 1} (${nextUnstarted.title}) en paralelo`);
     await runAgentTask({ type: 'implement-slice', issueNumber: issue.number, sliceIndex: nextUnstarted.index, sliceTitle: nextUnstarted.title });
   }
 }
 
 export async function tick(): Promise<void> {
+  log.info(`tick start (commit ${await currentCommit()})`);
   await discoverAssignedSpecs();
 
   const inProgress = await listTrackingIssues('in-progress');
+  log.info(`${inProgress.length} issue(s) en progreso`);
   for (const issue of inProgress) {
     if (!(await tryClaim(issue.number))) continue; // another runner already owns this one
 
