@@ -6,7 +6,12 @@ Don't hand-edit an existing issue's body against this shape — change the templ
 
 ## Spec
 
-[{{spec_title}}]({{spec_repo_url}}/blob/main/{{spec_relative_path}})
+{{spec_links}}
+
+<!-- One link per .md file the spec PR added under the configured spec dir
+     (e.g. a design doc plus one or more plan docs) — see
+     getSpecPathsFromPr in src/github.ts. All of them are context for
+     planning, not just the first one. -->
 
 ## Slices
 

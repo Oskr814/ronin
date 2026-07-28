@@ -5,8 +5,9 @@ import {
   listTrackingIssues,
   listAssignedSpecPrs,
   setPrState,
-  getSpecPathFromPr,
+  getSpecPathsFromPr,
   mergeSpecPr,
+  commentOnSpecPr,
   getOpenPrForIssue,
   mergePullRequest,
   setIssueState,
@@ -29,12 +30,19 @@ function prUrl(prNumber: number): string {
   return `https://github.com/${config.productRepo}/pull/${prNumber}`;
 }
 
-async function renderTrackingIssueBody(title: string, specPath: string): Promise<string> {
+async function renderTrackingIssueBody(specPaths: string[]): Promise<string> {
   const template = await readFile(join(process.cwd(), 'templates/tracking-issue.md'), 'utf8');
-  return template
-    .replaceAll('{{spec_title}}', title)
-    .replaceAll('{{spec_repo_url}}', `https://github.com/${config.productRepo}`)
-    .replaceAll('{{spec_relative_path}}', specPath);
+  const repoUrl = `https://github.com/${config.productRepo}`;
+  const specLinks = specPaths.map((p) => `- [${p}](${repoUrl}/blob/main/${p})`).join('\n');
+  return template.replaceAll('{{spec_links}}', specLinks);
+}
+
+// Prefers a file under a `specs/` subdirectory as the "primary" doc (title,
+// issue naming) when a spec PR includes several .md files (e.g. bmedical's
+// own convention pairs a specs/<name>-design.md with plans/<name>.md) —
+// falls back to the first file if nothing matches that shape.
+function primarySpecPath(specPaths: string[]): string {
+  return specPaths.find((p) => p.includes('/specs/')) ?? specPaths[0];
 }
 
 // Discovery source: a human writes the spec as a PR against the product
@@ -51,24 +59,29 @@ async function discoverAssignedSpecs(): Promise<void> {
       // failure partway through doesn't leave it silently re-picked-up
       // (or silently ignored) on a later tick.
       await setPrState(pr.number, 'in-progress');
-      const specPath = await getSpecPathFromPr(pr.number);
+      const specPaths = await getSpecPathsFromPr(pr.number);
+      const primaryPath = primarySpecPath(specPaths);
 
       // Deliberately skips the approval gate mergePullRequest enforces for
       // implementation PRs — this is documentation, and the human already
       // signaled readiness via the label + undraft. See docs/DESIGN.md §1.
       await mergeSpecPr(pr.number);
       await fetchOriginMain();
-      const title = extractTitle(await readSpecFile(specPath), specPath);
+      const title = extractTitle(await readSpecFile(primaryPath), primaryPath);
 
-      const body = await renderTrackingIssueBody(title, specPath);
+      const body = await renderTrackingIssueBody(specPaths);
       const issue = await createTrackingIssue(`[spec] ${title}`, body);
       // Without this, the issue stays labeled valeria:ready forever and
       // listTrackingIssues('in-progress') would never find it again.
       await setIssueState(issue.number, 'in-progress');
       await tryClaim(issue.number);
       await setPrState(pr.number, 'done');
+      // The spec PR itself is merged and mostly done at this point — this
+      // is the one place a human watching that PR (not the tracking issue)
+      // finds out where the actual work moved to.
+      await commentOnSpecPr(pr.number, `🚀 Started: tracked in ${issue.url}`);
       // The plan task rewrites the issue body with the real slice checklist.
-      await runAgentTask({ type: 'plan', issueNumber: issue.number, specPath });
+      await runAgentTask({ type: 'plan', issueNumber: issue.number, specPaths });
     } catch (error) {
       await notifyBlocker({
         issueUrl: prUrl(pr.number),

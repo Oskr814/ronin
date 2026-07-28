@@ -5,7 +5,7 @@ import { config } from './config.js';
 import { log } from './logger.js';
 
 export type AgentTask =
-  | { type: 'plan'; issueNumber: number; specPath: string }
+  | { type: 'plan'; issueNumber: number; specPaths: string[] }
   | { type: 'implement-slice'; issueNumber: number; sliceIndex: number; sliceTitle: string }
   | { type: 'fix-review'; issueNumber: number; prNumber: number }
   | { type: 'fix-e2e'; issueNumber: number; prNumber: number };
@@ -36,7 +36,7 @@ async function buildTask(task: AgentTask): Promise<{ branch: string; prompt: str
         branch: `valeria/${task.issueNumber}/plan`,
         prompt: [
           `You are ValerIA, an autonomous agent working on tracking issue #${task.issueNumber} in ${repoUrl()}.`,
-          `Read the spec at "${task.specPath}" (inside this checkout).`,
+          `Read all of these spec files (inside this checkout) as context — together they describe the work, not just the first one:\n${task.specPaths.map((p) => `- ${p}`).join('\n')}`,
           'Design the implementation plan, sliced into small, independently reviewable pieces (use the planning skill if one is available).',
           `Rewrite the body of issue #${task.issueNumber} (gh issue edit ${task.issueNumber} --body-file <file>), replacing the templates/tracking-issue.md checklist with the real slices, one line per slice in the format "- [ ] Slice N: <title> — PR: _pending_".`,
           'Do not implement any code yet — this task is plan-only.',

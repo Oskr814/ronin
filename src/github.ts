@@ -81,7 +81,8 @@ export async function incrementAttemptCount(prNumber: number): Promise<number> {
   const current = await getAttemptCount(prNumber);
   const next = current + 1;
   await ensureLabel(`valeria:attempts-${next}`);
-  const args = ['pr', 'edit', String(prNumber), '--add-label', `valeria:attempts-${next}`];
+  // `gh issue edit`, not `gh pr edit` — see the note on setPrState below.
+  const args = ['issue', 'edit', String(prNumber), '--add-label', `valeria:attempts-${next}`];
   if (current > 0) args.push('--remove-label', `valeria:attempts-${current}`);
   await gh(args);
   return next;
@@ -188,7 +189,12 @@ export async function mergePullRequest(prNumber: number): Promise<void> {
   if (status.reviewDecision !== 'APPROVED') {
     throw new Error(`Refusing to merge PR #${prNumber}: reviewDecision is "${status.reviewDecision}", not APPROVED`);
   }
-  await gh(['pr', 'merge', String(prNumber), '--squash']);
+  // --squash fails outright on bmedical — squash merges are disabled at the
+  // repo settings level (found live: `gh pr merge --squash` errors with
+  // "Squash merges are not allowed on this repository"). --merge is what's
+  // actually enabled there (along with --rebase); hardcoded rather than
+  // detected at runtime since PRODUCT_REPO is a single fixed target today.
+  await gh(['pr', 'merge', String(prNumber), '--merge']);
 }
 
 export function branchPrefix(issueNumber: number): string {
@@ -207,6 +213,10 @@ export async function getOpenPrForIssue(issueNumber: number): Promise<PullReques
 
 // Opt-in only (config.requestCopilotReview) — requesting Copilot review
 // automatically is explicitly out of scope for the core loop for now.
+// NOTE: untested against the same `gh pr edit` GraphQL/Projects-Classic bug
+// documented on setPrState below — `--add-reviewer` has no `gh issue edit`
+// equivalent (reviewers aren't an issue concept), so if this turns out to
+// hit the same bug when the flag gets turned on, it'll need `gh api` directly.
 export async function requestCopilotReview(prNumber: number): Promise<void> {
   await gh(['pr', 'edit', String(prNumber), '--add-reviewer', 'copilot']);
 }
@@ -267,30 +277,42 @@ export async function listAssignedSpecPrs(label: string): Promise<SpecPr[]> {
 
 // Swaps state labels on a spec PR the same way setIssueState does on a
 // tracking issue — same LABEL_STATES vocabulary applied to a different
-// resource type. `gh issue`/`gh pr` label operations are scoped separately
-// even though the label definitions are repo-wide, so this can't collide
-// with an actual tracking issue's state.
+// resource type. PRs and issues share the same underlying label set (a PR
+// number is an issue number), so this reads/writes the identical data
+// setIssueState would for that number — no collision risk in practice
+// since a spec PR's number and its resulting tracking issue's number are
+// always different numbers.
+//
+// Uses `gh issue edit`, not `gh pr edit`: `gh pr edit --add-label` on this
+// org currently fails with a GraphQL error from a deprecated Projects
+// (classic) field it queries internally, even though the mutation has
+// nothing to do with project boards — found live, see docs/DESIGN.md §1.
+// `gh issue edit` performs the identical label mutation without hitting
+// that code path, since PRs and issues share the labels endpoint.
 export async function setPrState(prNumber: number, next: SpecStatus): Promise<void> {
   const current = await gh(['pr', 'view', String(prNumber), '--json', 'labels']);
   const labels = (JSON.parse(current) as { labels: Array<{ name: string }> }).labels.map((l) => l.name);
   const staleStateLabels = Object.values(LABEL_STATES).filter((l) => labels.includes(l) && l !== LABEL_STATES[next]);
 
   await ensureLabel(LABEL_STATES[next]);
-  const args = ['pr', 'edit', String(prNumber), '--add-label', LABEL_STATES[next]];
+  const args = ['issue', 'edit', String(prNumber), '--add-label', LABEL_STATES[next]];
   for (const stale of staleStateLabels) args.push('--remove-label', stale);
   await gh(args);
 }
 
-// Assumes exactly one new .md file under config.specDir per spec PR — a
-// documented convention, not enforced anywhere else yet.
-export async function getSpecPathFromPr(prNumber: number): Promise<string> {
+// A spec PR can include more than one .md file under config.specDir — e.g.
+// bmedical's own convention pairs a specs/<name>-design.md with one or more
+// plans/<name>.md. All of them are relevant context for slicing, not just
+// whichever happens to sort first — found live against a real PR that had
+// exactly this shape (a design doc + two plan docs).
+export async function getSpecPathsFromPr(prNumber: number): Promise<string[]> {
   const stdout = await gh(['pr', 'diff', String(prNumber), '--name-only']);
   const files = stdout.trim().split('\n').filter(Boolean);
-  const specFile = files.find((f) => f.startsWith(config.specDir) && f.endsWith('.md'));
-  if (!specFile) {
-    throw new Error(`PR #${prNumber} has no .md file under ${config.specDir} — can't tell which file is the spec`);
+  const specFiles = files.filter((f) => f.startsWith(config.specDir) && f.endsWith('.md'));
+  if (specFiles.length === 0) {
+    throw new Error(`PR #${prNumber} has no .md file under ${config.specDir} — can't tell which file(s) are the spec`);
   }
-  return specFile;
+  return specFiles;
 }
 
 // Deliberately skips the human-approval gate that mergePullRequest enforces
@@ -298,5 +320,17 @@ export async function getSpecPathFromPr(prNumber: number): Promise<string> {
 // signaled readiness by both assigning the runner label and marking the PR
 // ready for review (undrafting it) — see docs/DESIGN.md §1.
 export async function mergeSpecPr(prNumber: number): Promise<void> {
-  await gh(['pr', 'merge', String(prNumber), '--squash']);
+  // --merge, not --squash — see the note on mergePullRequest.
+  await gh(['pr', 'merge', String(prNumber), '--merge']);
+}
+
+export async function commentOnSpecPr(prNumber: number, body: string): Promise<void> {
+  const dir = await mkdtemp(join(tmpdir(), 'valeria-spec-pr-comment-'));
+  const bodyFile = join(dir, 'body.md');
+  try {
+    await writeFile(bodyFile, body, 'utf8');
+    await gh(['pr', 'comment', String(prNumber), '--body-file', bodyFile]);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 }
