@@ -14,6 +14,7 @@ import {
 import { nextSlice, hasRemainingSlices, recordSlicePr, markSliceMerged } from './checklist.js';
 import { notifyBlocker } from './notifier.js';
 import { runAgentTask, sliceIndexFromBranch } from './agent-task.js';
+import { tryClaim, releaseIfNoLongerInProgress } from './claim.js';
 import { config } from './config.js';
 
 function prUrl(pr: PullRequestStatus): string {
@@ -37,6 +38,12 @@ async function discoverNewSpecs(): Promise<void> {
     // listTrackingIssues('in-progress') would never find it again on a
     // later tick — found while preparing the first live dry run.
     await setIssueState(issue.number, 'in-progress');
+    // Claimed by the same machine that just created it, before any other
+    // supervisor's tick could see it as unclaimed in-progress work — see
+    // docs/DESIGN.md §9. This doesn't protect against two machines
+    // discovering and creating separate issues for the same spec in the
+    // same window; that's a distinct, still-open gap (also §9).
+    await tryClaim(issue.number);
     await linkSpecToIssue(spec, issue.number);
     // The plan task rewrites the issue body with the real slice checklist.
     await runAgentTask({ type: 'plan', issueNumber: issue.number, specPath: spec.relativePath });
@@ -129,6 +136,8 @@ export async function tick(): Promise<void> {
 
   const inProgress = await listTrackingIssues('in-progress');
   for (const issue of inProgress) {
+    if (!(await tryClaim(issue.number))) continue; // another machine already owns this one
+
     try {
       await processIssue(issue);
     } catch (error) {
@@ -138,5 +147,6 @@ export async function tick(): Promise<void> {
       });
       await setIssueState(issue.number, 'blocked');
     }
+    await releaseIfNoLongerInProgress(issue.number);
   }
 }

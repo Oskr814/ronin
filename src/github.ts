@@ -34,6 +34,20 @@ async function ensureLabel(name: string): Promise<void> {
   ensuredLabels.add(name);
 }
 
+export async function getIssueLabels(issueNumber: number): Promise<string[]> {
+  const stdout = await gh(['issue', 'view', String(issueNumber), '--json', 'labels']);
+  return (JSON.parse(stdout) as { labels: Array<{ name: string }> }).labels.map((l) => l.name);
+}
+
+export async function addIssueLabel(issueNumber: number, label: string): Promise<void> {
+  await ensureLabel(label);
+  await gh(['issue', 'edit', String(issueNumber), '--add-label', label]);
+}
+
+export async function removeIssueLabel(issueNumber: number, label: string): Promise<void> {
+  await gh(['issue', 'edit', String(issueNumber), '--remove-label', label]);
+}
+
 export async function getIssueBody(issueNumber: number): Promise<string> {
   const stdout = await gh(['issue', 'view', String(issueNumber), '--json', 'body']);
   return (JSON.parse(stdout) as { body: string }).body;

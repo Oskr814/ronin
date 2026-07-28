@@ -82,6 +82,7 @@ Scaffold en TypeScript (`pnpm tick` corre un tick y termina — pensado para inv
 - `worktree.ts` — crea/reutiliza un git worktree desechable por branch de tarea
 - `claude-runner.ts` — invoca `claude -p` con `--permission-mode bypassPermissions`, reenviando el installation token del App como `GH_TOKEN` al proceso hijo (así los `gh` que el propio Claude headless corra también quedan a nombre de `ValerIA[bot]`)
 - `agent-task.ts` — arma el prompt (en inglés, ver §8) según el tipo de tarea (plan / implement-slice / fix-review / fix-e2e) y orquesta worktree + invocación
+- `claim.ts` — lock por label (`valeria:locked-by-<machine-id>`) + cache local (`.valeria-state.json`) para que dos supervisores no procesen el mismo issue — ver §9
 - `tick.ts` — el loop de decisión: descubre specs nuevos, y por cada issue `in-progress` decide la próxima acción leyendo el checklist y el contador de intentos por PR contra los límites de `docs/BLOCKING.md`
 
 ### 4. Testing y review externo
@@ -125,17 +126,15 @@ Segunda limitación encontrada en el primer dry run: el prompt de una tarea punt
 
 ### 9. Concurrencia entre múltiples supervisores
 
-Nada en el diseño actual impide que dos procesos supervisor (ej. dos máquinas, o dos corridas superpuestas en la misma) descubran el mismo spec o procesen el mismo issue en el mismo tick — `discoverNewSpecs` y `processIssue` no tienen ningún mecanismo de exclusión mutua todavía.
+Implementado en `src/claim.ts`, siguiendo el mismo patrón de "GitHub como estado" que el resto del sistema — sin base de datos ni lock service aparte, y sin jitter ni timestamps: un label de claim por máquina más un cache local que evita repreguntarle a GitHub por algo que esta máquina ya sabe que es suyo.
 
-Diseño propuesto (no implementado): un label de claim con desempate por timestamp, siguiendo el mismo patrón de "GitHub como estado" que el resto del sistema — sin base de datos ni lock service aparte.
+- Cada máquina tiene una identidad (`MACHINE_ID`, default hostname) y agrega `valeria:locked-by-<machine-id>` al issue que va a trabajar.
+- **Estado local** (`.valeria-state.json`, gitignored, no compartido entre máquinas): cache de qué issues ya reclamó esta máquina. Si un issue ya está ahí, ni siquiera se consulta GitHub — se procesa directo. Es solo una optimización, no la fuente de verdad: si el archivo se pierde o es la primera corrida, se re-deriva todo desde las labels reales.
+- Cuando el estado local no tiene el issue: si ya hay un `locked-by-*` de *otra* máquina, se salta. Si no hay ninguno, agrega el propio y **relee** las labels — dos máquinas pueden pasar el chequeo y agregar su label en el mismo instante (`--add-label` no es compare-and-swap), así que el desempate es determinista: gana el `machine-id` alfabéticamente menor, sin esperar nada. El que pierde saca su propia label.
+- El **descubrimiento de un spec nuevo también reclama de inmediato** (`discoverNewSpecs` llama a `tryClaim` apenas crea el issue, antes de correr el plan) — así nunca hay una ventana donde el issue exista y esté sin dueño.
+- El lock se **libera solo cuando el issue deja de estar `in-progress`** (pasa a `blocked` o `done`) — mientras siga en curso, la misma máquina lo retiene sin volver a pelear por él en cada tick.
 
-1. Antes de actuar sobre un issue, el supervisor agrega una label `valeria:claimed-by-<machine-id>-<epoch>` (no `--force`/upsert — un add simple).
-2. Espera un jitter corto (1–3s) y vuelve a leer las labels del issue.
-3. Si ve más de un label `claimed-by-*`, gana el de timestamp más antiguo (desempate determinista, no depende de quién “vio” primero). El que pierde remueve su propia label y no toca el issue este tick.
-4. El ganador procesa el issue y remueve su label al terminar (éxito, bloqueo, o cualquier otro estado final del tick).
-5. **Recuperación de claims huérfanos**: si un supervisor muere a mitad de tarea, su label queda pegada para siempre. Cualquier claim con timestamp más viejo que `2 × AGENT_TASK_TIMEOUT_MINUTES` se considera abandonado y puede ser tomado por otro supervisor.
-
-Esto no es exclusión mutua real (hay una ventana entre pasos 1 y 2 en la que ambos podrían creer que van a ganar antes de desempatar), pero es suficiente dado que los ticks corren cada minutos, no en paralelo estricto — el caso que hay que cubrir es "dos relojes despertaron cerca uno del otro", no "requests simultáneos reales". Si en algún momento se necesita una garantía más fuerte, reconsiderar acá antes de construir algo más complejo.
+**Gap que esto no resuelve**: dos máquinas pueden descubrir el *mismo spec* al mismo tiempo y crear **dos issues de tracking separados** para él — `scanReadySpecs` decide en base al frontmatter local (`status: ready`, `issue: null`), y cada máquina tiene su propio clon del repo producto, así que no hay nada compartido que les impida a ambas verlo como "sin tomar" antes de que cualquiera alcance a escribir el `issue:` de vuelta. El claim por label protege el *procesamiento* de un issue ya creado, no la *creación* del issue en sí. Si esto se vuelve un problema real, la solución probablemente pasa por buscar en GitHub un issue existente que ya linkee ese `spec_relative_path` antes de crear uno nuevo, en vez de confiar solo en el frontmatter local.
 
 ## Estado actual
 
@@ -145,13 +144,14 @@ Esto no es exclusión mutua real (hay una ventana entre pasos 1 y 2 en la que am
 - [x] Prototipo de la app de notificación por email — ver `src/notifier.ts`
 - [x] `agent-task.ts`: invocación de `claude -p` en un worktree aislado (ciclo de vida básico, prompts por tipo de tarea, en inglés — ver §8) — ver `src/worktree.ts`, `src/claude-runner.ts`, `src/agent-task.ts` y §7.1
 - [x] Estado persistente entre ticks: índice de slice actual (`src/checklist.ts`, parseado del propio checklist del issue) y contador de reintentos por PR (`valeria:attempts-N`, labels en `src/github.ts`) — ver §3.1
+- [x] Claim entre múltiples supervisores concurrentes — ver `src/claim.ts` y §9 (deja abierto el caso de descubrimiento duplicado del mismo spec, documentado ahí)
 
 **Pendiente, fuera de este scaffold:**
 
 - Cuándo limpiar un worktree (`removeWorktree` existe pero no está conectado a nada todavía — ¿al mergear? ¿al llegar a `blocked`?)
 - Slugs de slice legibles: hoy el branch de `implement-slice` usa el índice crudo (`slice-1`, `slice-2`); una vez que se valore la legibilidad de branches/PRs, debería derivar el slug del título real de la slice
 - Decidir si Copilot review se activa (`REQUEST_COPILOT_REVIEW`) y cómo se resuelven sus comentarios automáticamente
-- Implementar el mecanismo de claim para múltiples supervisores concurrentes — diseño ya definido, ver §9
+- Descubrimiento duplicado del mismo spec por dos máquinas — ver el gap documentado al final de §9
 
 ### 10. Primer dry run (2026-07-28)
 

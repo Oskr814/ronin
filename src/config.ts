@@ -1,3 +1,4 @@
+import { hostname } from 'node:os';
 import { join } from 'node:path';
 
 function requireEnv(name: string): string {
@@ -39,6 +40,15 @@ export const config = {
   // for this skeleton, kept as an opt-in switch rather than baked into the
   // core loop. See docs/DESIGN.md §3.
   requestCopilotReview: process.env.REQUEST_COPILOT_REVIEW === 'true',
+  // Identity used for the per-issue claim lock (valeria:locked-by-<id>) when
+  // multiple supervisors run concurrently — see docs/DESIGN.md §9. Defaults
+  // to hostname for convenience; set explicitly if hostnames could collide
+  // (e.g. identical container images).
+  machineId: process.env.MACHINE_ID ?? hostname(),
+  // Per-machine cache of which issues this process already owns, so a claim
+  // already held doesn't need to be re-verified against GitHub every tick.
+  // Never committed — see .gitignore.
+  localStatePath: process.env.LOCAL_STATE_PATH ?? '.valeria-state.json',
 } as const;
 
 export const LABEL_MANAGED = 'valeria';
