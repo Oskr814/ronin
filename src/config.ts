@@ -7,6 +7,10 @@ function requireEnv(name: string): string {
 export const config = {
   productRepo: requireEnv('PRODUCT_REPO'),
   productRepoPath: requireEnv('PRODUCT_REPO_PATH'),
+  // PAT of the dedicated ValerIA machine user — never the ambient `gh auth`
+  // session, so issues/PRs are authored by the bot, not whoever is logged
+  // into `gh` on the box running the supervisor. See docs/DESIGN.md §7.
+  githubToken: requireEnv('VALERIA_GITHUB_TOKEN'),
   specDir: process.env.SPEC_DIR ?? 'docs/superpowers',
   gmailUser: process.env.GMAIL_USER ?? '',
   gmailAppPassword: process.env.GMAIL_APP_PASSWORD ?? '',

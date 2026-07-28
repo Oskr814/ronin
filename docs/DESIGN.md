@@ -95,6 +95,21 @@ Para flujos complejos, el spec incluye un link a un proyecto de Claude Design. E
 
 Solo se notifica por email en bloqueos reales, no en progreso rutinario (para evitar fatiga de alertas). Requiere una app pequeña con credenciales de Gmail vía variables de entorno, corriendo junto al supervisor.
 
+### 7. Identidad del agente en GitHub
+
+Los issues/PRs los abre un **usuario de GitHub dedicado a ValerIA** (machine user), no la cuenta personal de quien corre el supervisor — así el historial de autoría es honesto sobre qué hizo un humano y qué hizo el agente, y el approval-gate del merge (§ Principios de diseño) tiene sentido: el aprobador y el autor nunca pueden ser la misma persona por accidente.
+
+El supervisor nunca usa la sesión ambiente de `gh auth login` del host — cada llamada a `gh` fija `GH_TOKEN` explícitamente desde `VALERIA_GITHUB_TOKEN` (`src/github.ts`), así queda determinado qué identidad actúa sin importar quién más esté logueado en esa máquina.
+
+**Setup manual (no automatizable, pasos para el dueño de la org):**
+
+1. Crear la cuenta de GitHub para el bot (ej. `valeria-bot`) — requiere signup normal con verificación de email, no hay API para esto.
+2. Invitar esa cuenta a la organización `Bmedical` con acceso de escritura al repo `bmedical` (donde se crean los issues/PRs de tracking).
+3. Generar un PAT desde esa cuenta con scope `repo` (clásico) o, preferible, un fine-grained PAT limitado a `bmedical` con permisos Contents, Issues y Pull requests en read/write.
+4. Poner el token en `VALERIA_GITHUB_TOKEN` en el `.env` del supervisor — nunca commitear el `.env` (ya está en `.gitignore`).
+
+Alternativa considerada y descartada por ahora: una GitHub App en vez de un usuario. Da mejor gobernanza (permisos más finos, no ocupa un seat) pero requiere registrar la App y su instalación — más setup del que vale la pena para esta fase. Si el equipo crece y se necesita revocar/rotar acceso con más granularidad, reconsiderar.
+
 ## Estado actual
 
 - [x] Definir el esqueleto del supervisor (script + estructura de tick) — ver §3.1 y `src/`
