@@ -110,9 +110,12 @@ token, ver línea 17):
 - `addReaction(commentId: number, kind: 'issue' | 'review', content:
   'eyes'): Promise<void>` — `POST .../issues/comments/{id}/reactions` o
   `.../pulls/comments/{id}/reactions` según `kind`.
-- `postReviewComment(prNumber: number, body: string): Promise<void>` —
-  resumen general: `gh pr review <n> --comment --body-file <f>` (mismo
-  patrón de archivo temporal que `setIssueBody`).
+
+No hace falta una función de posteo de review acá: quien publica la review
+formal (comentarios inline + resumen) es el propio `claude -p` corriendo
+dentro de su worktree, vía `gh` directo — igual que ya hace `fix-review`
+para pushear commits, ver sección 4. El supervisor solo lee comentarios y
+marca reacciones.
 
 `Comment` es `{ id: number; kind: 'issue' | 'review'; body: string;
 reactions: string[] }`.
