@@ -10,6 +10,7 @@ vi.mock('node:fs', () => ({
 vi.mock('./config.js', () => ({
   config: {
     e2eRetryLimit: 2,
+    checksPendingRetryLimit: 60,
     sliceAttemptLimit: 3,
     rebaseRetryLimit: 3,
     worktreeBaseRef: 'origin/main',
@@ -51,6 +52,13 @@ vi.mock('./github.js', () => ({
   listAssignedBugIssues: (...args: unknown[]) => listAssignedBugIssues(...args),
 }));
 
+const incrementChecksPendingCount = vi.fn();
+const resetChecksPendingCount = vi.fn();
+vi.mock('./local-state.js', () => ({
+  incrementChecksPendingCount: (...args: unknown[]) => incrementChecksPendingCount(...args),
+  resetChecksPendingCount: (...args: unknown[]) => resetChecksPendingCount(...args),
+}));
+
 const publishEvidence = vi.fn();
 vi.mock('./evidence.js', () => ({
   publishEvidence: (...args: unknown[]) => publishEvidence(...args),
@@ -60,10 +68,12 @@ vi.mock('./evidence.js', () => ({
 const worktreeDirFor = vi.fn();
 const isBehind = vi.fn();
 const attemptRebase = vi.fn();
+const removeWorktree = vi.fn();
 vi.mock('./worktree.js', () => ({
   worktreeDirFor: (...args: unknown[]) => worktreeDirFor(...args),
   isBehind: (...args: unknown[]) => isBehind(...args),
   attemptRebase: (...args: unknown[]) => attemptRebase(...args),
+  removeWorktree: (...args: unknown[]) => removeWorktree(...args),
 }));
 
 const findUnprocessedMentions = vi.fn();
@@ -161,9 +171,10 @@ describe('processSlicePr — bottom-of-stack PR (unchanged behavior)', () => {
     expect(stillInProgress).toBe(true);
     expect(mergePullRequest).toHaveBeenCalledWith(229);
     expect(markSliceMerged).toHaveBeenCalledWith(228, 0);
+    expect(removeWorktree).toHaveBeenCalledWith('valeria/228/slice-1');
   });
 
-  it('escalates once e2eRetryLimit is exceeded when checks never report', async () => {
+  it('escalates once checksPendingRetryLimit is exceeded when checks never report', async () => {
     const bottomPr = pr({
       number: 229,
       sliceIndex: 0,
@@ -172,18 +183,60 @@ describe('processSlicePr — bottom-of-stack PR (unchanged behavior)', () => {
       checksPending: true,
     });
     isBehind.mockResolvedValue(false);
-    incrementAttemptCount.mockResolvedValue(3); // > e2eRetryLimit (2)
+    incrementChecksPendingCount.mockResolvedValue(61); // > checksPendingRetryLimit (60)
 
     const stillInProgress = await processSlicePr(issue(), bottomPr, true);
 
     expect(stillInProgress).toBe(false);
     expect(notifyBlocker).toHaveBeenCalled();
+    expect(incrementChecksPendingCount).toHaveBeenCalledWith(229);
+    expect(incrementAttemptCount).not.toHaveBeenCalled(); // not a GitHub label swap
+  });
+
+  // Regression: previously this shared the same counter/limit as
+  // e2eRetryLimit (2), so a still-running CI got escalated after just 2
+  // ticks — see PR #239, whose Integration Tests run alone took longer than
+  // that. checksPendingRetryLimit (60) gives CI a real chance to report.
+  it('does not escalate a still-running CI well within checksPendingRetryLimit', async () => {
+    const bottomPr = pr({
+      number: 229,
+      sliceIndex: 0,
+      baseRefName: 'main',
+      headRefName: 'valeria/228/slice-1',
+      checksPending: true,
+    });
+    isBehind.mockResolvedValue(false);
+    incrementChecksPendingCount.mockResolvedValue(3); // well under checksPendingRetryLimit (60)
+
+    const stillInProgress = await processSlicePr(issue(), bottomPr, true);
+
+    expect(stillInProgress).toBe(true);
+    expect(notifyBlocker).not.toHaveBeenCalled();
+    expect(runAgentTask).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'fix-e2e' }));
+  });
+
+  it('resets the checks-pending counter once checks conclude, pass or fail', async () => {
+    const bottomPr = pr({
+      number: 229,
+      sliceIndex: 0,
+      baseRefName: 'main',
+      headRefName: 'valeria/228/slice-1',
+      checksPassing: false,
+      checksPending: false,
+    });
+    isBehind.mockResolvedValue(false);
+    incrementAttemptCount.mockResolvedValue(1);
+
+    await processSlicePr(issue(), bottomPr, true);
+
+    expect(resetChecksPendingCount).toHaveBeenCalledWith(229);
   });
 });
 
 describe('processSlicePr — mentions found on an already-mergeable bottom PR (regression)', () => {
   beforeEach(() => {
     worktreeDirFor.mockReturnValue('/tmp/worktree-bottom');
+    publishEvidence.mockResolvedValue([]);
   });
 
   it('re-reads fresh PR state after review-request and merges in the same tick, instead of deferring', async () => {
@@ -207,6 +260,50 @@ describe('processSlicePr — mentions found on an already-mergeable bottom PR (r
     });
     expect(stillInProgress).toBe(true);
     expect(mergePullRequest).toHaveBeenCalledWith(229);
+  });
+
+  it('publishes fresh evidence and posts a new comment after a review-request that produced screenshots', async () => {
+    const bottomPr = pr({
+      number: 229,
+      sliceIndex: 0,
+      baseRefName: 'main',
+      headRefName: 'valeria/228/slice-1',
+      checksPassing: true,
+      reviewDecision: 'APPROVED',
+    });
+    findUnprocessedMentions.mockResolvedValue([{ id: 1, kind: 'issue', body: '@valeria-agent corré los e2e', reactionsEyes: 0 }]);
+    getPullRequestStatus.mockResolvedValue(bottomPr);
+    // hasEvidenceComment resolves true (beforeEach, line 119), so the
+    // automatic-publish block above (gated on it) never calls
+    // publishEvidence — the describe's beforeEach default of `[]` would
+    // apply to it if it somehow did. This single mocked value is what the
+    // new post-review-request block (ungated) consumes.
+    publishEvidence.mockResolvedValueOnce(['evidence/228/229/999/shot.png']);
+    isBehind.mockResolvedValue(false);
+
+    await processSlicePr(issue(), bottomPr, true);
+
+    expect(publishEvidence).toHaveBeenLastCalledWith(228, 229, '/tmp/worktree-bottom');
+    expect(postEvidenceComment).toHaveBeenCalledWith(229, ['https://raw/evidence/228/229/999/shot.png']);
+  });
+
+  it('does not post an evidence comment when the review-request produced no screenshots', async () => {
+    const bottomPr = pr({
+      number: 229,
+      sliceIndex: 0,
+      baseRefName: 'main',
+      headRefName: 'valeria/228/slice-1',
+      checksPassing: true,
+      reviewDecision: 'APPROVED',
+    });
+    findUnprocessedMentions.mockResolvedValue([{ id: 1, kind: 'issue', body: '@valeria-agent fijate esta línea', reactionsEyes: 0 }]);
+    getPullRequestStatus.mockResolvedValue(bottomPr);
+    publishEvidence.mockResolvedValue([]);
+    isBehind.mockResolvedValue(false);
+
+    await processSlicePr(issue(), bottomPr, true);
+
+    expect(postEvidenceComment).not.toHaveBeenCalled();
   });
 });
 

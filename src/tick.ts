@@ -28,8 +28,9 @@ import { notifyBlocker } from './notifier.js';
 import { runAgentTask, type AgentTask } from './agent-task.js';
 import { ClaudeUsageLimitError } from './claude-runner.js';
 import { toStackedPrs, pickBottomPr, type StackedPr } from './stack.js';
+import { incrementChecksPendingCount, resetChecksPendingCount } from './local-state.js';
 import { tryClaim, releaseIfNoLongerInProgress, runnerLabel } from './claim.js';
-import { worktreeDirFor, isBehind, attemptRebase } from './worktree.js';
+import { worktreeDirFor, isBehind, attemptRebase, removeWorktree } from './worktree.js';
 import { publishEvidence, rawEvidenceUrl } from './evidence.js';
 import { findUnprocessedMentions } from './mentions.js';
 import { config, LABEL_BUG, LABEL_MANAGED } from './config.js';
@@ -176,8 +177,9 @@ async function blockOnAttemptLimit(
   pr: PullRequestStatus,
   limit: number,
   reason: string,
+  countFn: (prNumber: number) => Promise<number> = incrementAttemptCount,
 ): Promise<boolean> {
-  const attempts = await incrementAttemptCount(pr.number);
+  const attempts = await countFn(pr.number);
   if (attempts <= limit) return false;
 
   await notifyBlocker({
@@ -285,6 +287,17 @@ export async function processSlicePr(issue: TrackingIssue, pr: StackedPr, isBott
     const mentions = await findUnprocessedMentions(pr.number);
     if (mentions.length > 0) {
       await runAgentTask({ type: 'review-request', issueNumber: issue.number, prNumber: pr.number, mentions });
+
+      // Barato cuando no hay .png nuevos (un readdir vacío) — el supervisor
+      // no interpreta el texto del mention, solo intenta publicar lo que
+      // haya quedado en test-results/ tras el review-request. Sin el gate
+      // de hasEvidenceComment: cada corrida disparada por mención postea su
+      // propio comentario. Ver docs/superpowers/specs/2026-07-29-mention-e2e-evidence-design.md.
+      const evidencePaths = await publishEvidence(issue.number, pr.number, worktreeDirFor(pr.headRefName));
+      if (evidencePaths.length > 0) {
+        await postEvidenceComment(pr.number, evidencePaths.map(rawEvidenceUrl));
+      }
+
       for (const m of mentions) await addReaction(m.id, m.kind, 'eyes');
       // `pr` was read before a claude -p run that can take up to 30
       // minutes and may itself push a commit, so its checks/review fields
@@ -316,6 +329,11 @@ export async function processSlicePr(issue: TrackingIssue, pr: StackedPr, isBott
     if (pr.checksPassing && pr.reviewDecision === 'APPROVED') {
       await mergePullRequest(pr.number);
       await markSliceMerged(issue.number, pr.sliceIndex);
+      // Merged branch's worktree (and any Docker Compose stack it spun up,
+      // e.g. a per-slice Postgres for integration tests) has no further use
+      // once its PR is merged — see worktree.ts's removeWorktree. Best-effort:
+      // never lets a leftover worktree/container block the rest of this tick.
+      await removeWorktree(pr.headRefName);
       // Closes a one-tick gap: a bug-fix PR's "Closes #N" (see
       // docs/superpowers/specs/2026-07-28-bug-issue-intake-design.md) makes
       // GitHub close the issue on merge, and listTrackingIssues filters
@@ -356,19 +374,31 @@ export async function processSlicePr(issue: TrackingIssue, pr: StackedPr, isBott
 
   // CI still running (queued/in-progress) reads the same as checksPassing
   // === false — wait for it instead of treating it as an actual failure, so
-  // in-flight checks don't trigger a spurious fix-e2e / attempt increment.
-  // See final review Fix 6. Bounded by the same attempt limit as the actual
-  // e2e-failure path below (and sharing its counter) so a rollup that never
-  // reports anything — e.g. a path-filtered workflow that never triggers for
-  // this slice — still escalates instead of waiting forever in silence.
+  // in-flight checks don't trigger a spurious fix-e2e. See final review Fix
+  // 6. Uses its own counter/limit (checksPendingRetryLimit), not e2eRetryLimit
+  // — per docs/BLOCKING.md, a running CI must never block on its own; this
+  // is only a safety net against a workflow that structurally never triggers
+  // for this slice, so it needs a much longer budget than "the agent's own
+  // fix keeps failing" does. Discovered live: PR #239's Integration Tests
+  // alone ran longer than e2eRetryLimit's default 2-minute budget (2 ticks
+  // at the 1-tick-per-minute cron cadence), blocking the issue on nothing
+  // more than CI still being in progress. Counted in local-state.ts, not as
+  // a GitHub label like incrementAttemptCount — a tens-of-ticks limit would
+  // otherwise mean a label swap every tick, flooding the issue's timeline.
   if (pr.checksPending) {
     const blocked = await blockOnAttemptLimit(
-      issue, pr, config.e2eRetryLimit,
+      issue, pr, config.checksPendingRetryLimit,
       'CI nunca reportó resultados tras el límite de reintentos',
+      incrementChecksPendingCount,
     );
     if (!blocked) logSliceOutcome(issue, pr, isBottom, 'checks pendientes, esperando');
     return !blocked;
   }
+
+  // Checks concluded this tick, pass or fail — clear the pending counter so
+  // a slow-but-legitimate run doesn't leave debt that costs a later,
+  // unrelated pending wait on this same PR its own budget.
+  await resetChecksPendingCount(pr.number);
 
   if (!pr.checksPassing) {
     const blocked = await blockOnAttemptLimit(
