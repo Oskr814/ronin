@@ -84,6 +84,11 @@ export async function publishEvidence(issueNumber: number, prNumber: number, wor
   return committed;
 }
 
+// A `blob/main/...` link, not raw.githubusercontent.com — that domain
+// doesn't share a github.com browser session, so it can't authenticate to a
+// private repo's content and the link just fails for every viewer. The blob
+// view is a normal github.com page, works with the viewer's existing repo
+// access, and still renders the PNG inline via GitHub's own image preview.
 export function rawEvidenceUrl(path: string): string {
-  return `https://raw.githubusercontent.com/${config.valeriaRepo}/main/${path}`;
+  return `https://github.com/${config.valeriaRepo}/blob/main/${path}`;
 }

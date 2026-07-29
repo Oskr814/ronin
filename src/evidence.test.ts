@@ -29,7 +29,7 @@ vi.mock('node:child_process', () => ({
   execFile: (...args: unknown[]) => (execFile as any)(...args),
 }));
 
-const { publishEvidence } = await import('./evidence.js');
+const { publishEvidence, rawEvidenceUrl } = await import('./evidence.js');
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -64,5 +64,13 @@ describe('publishEvidence', () => {
 
     expect(committed).toEqual([]);
     expect(mkdir).not.toHaveBeenCalled();
+  });
+});
+
+describe('rawEvidenceUrl', () => {
+  it('builds a github.com blob link, not a raw.githubusercontent.com one', () => {
+    const url = rawEvidenceUrl('evidence/228/229/1234567890/shot.png');
+
+    expect(url).toBe('https://github.com/Bmedical/ValerIA/blob/main/evidence/228/229/1234567890/shot.png');
   });
 });

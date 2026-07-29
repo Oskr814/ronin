@@ -321,11 +321,12 @@ export async function postEvidenceComment(prNumber: number, imageUrls: string[])
   // Plain links, not `![]()` image embeds: ValerIA (where evidence lives) is
   // a private repo, and GitHub renders embedded images through its Camo
   // proxy, which fetches anonymously and can never authenticate to private
-  // raw content — the image just fails to render for every viewer,
-  // regardless of their own repo access. A plain link instead sends the
-  // viewer's own browser (with their own GitHub session) straight to
-  // raw.githubusercontent.com, which works for anyone who already has repo
-  // access, same as clicking through to any other private-repo file.
+  // content — the image just fails to render for every viewer, regardless of
+  // their own repo access. A plain link instead sends the viewer's own
+  // browser (with their own github.com session) to the file's blob view —
+  // see evidence.ts's rawEvidenceUrl for why that's a `blob/main/...` URL,
+  // not raw.githubusercontent.com (a different domain with no session to
+  // share, so it can't authenticate to a private repo at all).
   const body = [
     EVIDENCE_COMMENT_MARKER,
     '## Evidencia e2e (Playwright)',
