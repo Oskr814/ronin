@@ -48,7 +48,11 @@ export async function publishEvidence(issueNumber: number, prNumber: number, wor
   if (screenshots.length === 0) return [];
 
   await ensureEvidenceCheckout();
-  const destDir = `evidence/${issueNumber}/${prNumber}`;
+  // Subcarpeta por corrida — evita que una segunda publicación (p.ej.
+  // disparada por @mención) pise los archivos de la anterior, o que no haya
+  // nada que comitear si el contenido es byte-idéntico. Ver
+  // docs/superpowers/specs/2026-07-29-mention-e2e-evidence-design.md.
+  const destDir = `evidence/${issueNumber}/${prNumber}/${Date.now()}`;
   await mkdir(join(EVIDENCE_CHECKOUT_DIR, destDir), { recursive: true });
 
   const committed: string[] = [];
@@ -63,7 +67,14 @@ export async function publishEvidence(issueNumber: number, prNumber: number, wor
   }
 
   await execFileAsync('git', ['add', ...committed], { cwd: EVIDENCE_CHECKOUT_DIR });
+  // -c user.name/user.email rather than relying on this checkout (or the
+  // host) having git identity configured globally — a fresh clone of
+  // EVIDENCE_CHECKOUT_DIR has neither, and `git commit` refuses to guess.
+  // Same "${slug}[bot]" convention used for the GitHub App's PR/issue
+  // authorship elsewhere (see config.ts's githubAppSlug).
   await execFileAsync('git', [
+    '-c', `user.name=${config.githubAppSlug}[bot]`,
+    '-c', `user.email=${config.githubAppId}+${config.githubAppSlug}[bot]@users.noreply.github.com`,
     'commit',
     '-m', `evidence: e2e screenshots for ${config.productRepo} PR #${prNumber}`,
   ], { cwd: EVIDENCE_CHECKOUT_DIR });
