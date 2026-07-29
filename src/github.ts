@@ -81,12 +81,15 @@ export async function setIssueBody(issueNumber: number, body: string): Promise<v
 
 const ATTEMPT_LABEL_RE = /^valeria:attempts-(\d+)$/;
 
-// Tracks how many fix attempts (review or e2e) a PR has been through, as a
-// label swap — same pattern as the state labels. Scoped to the PR, not the
-// issue, since attempts are about converging *this* slice's PR, not the spec
-// as a whole. See docs/BLOCKING.md for the limits this is checked against.
+// Tracks how many fix attempts (review, e2e, rebase, or an issue-level
+// transient exception) a PR or tracking issue has been through, as a label
+// swap — same pattern as the state labels. See docs/BLOCKING.md for the
+// limits this is checked against. `gh issue view` (not `gh pr view`) — PRs
+// are issues under the hood and this label read is shared with plain
+// tracking-issue numbers (see the issueErrorRetryLimit path in tick.ts),
+// which aren't resolvable via `gh pr view`.
 export async function getAttemptCount(prNumber: number): Promise<number> {
-  const stdout = await gh(['pr', 'view', String(prNumber), '--json', 'labels']);
+  const stdout = await gh(['issue', 'view', String(prNumber), '--json', 'labels']);
   const labels = (JSON.parse(stdout) as { labels: Array<{ name: string }> }).labels.map((l) => l.name);
   const match = labels.map((l) => l.match(ATTEMPT_LABEL_RE)).find((m) => m !== null);
   return match ? Number(match[1]) : 0;
@@ -201,8 +204,12 @@ export async function getPullRequestStatus(prNumber: number): Promise<PullReques
     number: raw.number,
     state: raw.state,
     reviewDecision: raw.reviewDecision ?? '',
+    // A still-running CheckRun reports conclusion as "" (empty string), not
+    // null — discovered live on PR #238, where an in-progress "Integration
+    // Tests" run got misread as an actual failure and spuriously triggered
+    // fix-e2e. Treat both null and "" as "not concluded yet".
     checksPassing: raw.statusCheckRollup.length > 0 && raw.statusCheckRollup.every((c) => c.conclusion === 'SUCCESS'),
-    checksPending: raw.statusCheckRollup.length === 0 || raw.statusCheckRollup.some((c) => c.conclusion === null),
+    checksPending: raw.statusCheckRollup.length === 0 || raw.statusCheckRollup.some((c) => !c.conclusion),
     mergeable: raw.mergeable === 'MERGEABLE',
     headRefName: raw.headRefName,
     baseRefName: raw.baseRefName,
@@ -239,8 +246,13 @@ export async function mergePullRequest(prNumber: number): Promise<void> {
   // PR #230's branch was deleted by an earlier version of this function
   // that passed `--delete-branch` straight to `gh pr merge`, racing
   // GitHub's own (nonexistent) retarget behavior.
+  // REST, not `gh pr edit` — the latter also fetches the updated PR back
+  // (including project-card fields) to print it, and that GraphQL query now
+  // errors on any repo that ever touched Projects Classic, even though the
+  // base-branch edit itself already succeeded. Discovered live: PR #238 was
+  // already correctly retargeted to main after this "failed".
   for (const dependent of await listOpenPrsWithBase(status.headRefName)) {
-    await gh(['pr', 'edit', String(dependent), '--base', status.baseRefName]);
+    await ghApi(['api', '--method', 'PATCH', `repos/${config.productRepo}/pulls/${dependent}`, '-f', `base=${status.baseRefName}`]);
   }
   await ghApi(['api', '--method', 'DELETE', `repos/${config.productRepo}/git/refs/heads/${status.headRefName}`]);
 }

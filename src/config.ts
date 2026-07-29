@@ -62,6 +62,11 @@ export const config = {
   // "Loop guard" de docs/BLOCKING.md: 3 intentos de dejar mergeable el fondo
   // del stack antes de escalar a bloqueo por "conflicto de merge no mecánico".
   rebaseRetryLimit: Number(process.env.REBASE_RETRY_LIMIT ?? 3),
+  // Excepciones no manejadas en processIssue (p.ej. un glitch transitorio de
+  // la API de GitHub) antes de escalar a bloqueo — separado de
+  // ClaudeUsageLimitError, que reintenta indefinidamente porque ya se sabe
+  // transitorio.
+  issueErrorRetryLimit: Number(process.env.ISSUE_ERROR_RETRY_LIMIT ?? 3),
   // Off by default: requesting Copilot review automatically is out of scope
   // for this skeleton, kept as an opt-in switch rather than baked into the
   // core loop. See docs/DESIGN.md §3.

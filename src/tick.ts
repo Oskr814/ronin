@@ -260,7 +260,7 @@ function logSliceOutcome(issue: TrackingIssue, pr: StackedPr, isBottom: boolean,
   log.info(`issue #${issue.number} slice ${pr.sliceIndex + 1} PR #${pr.number}${isBottom ? ' (bottom)' : ''}: ${outcome}`);
 }
 
-export async function processSlicePr(issue: TrackingIssue, pr: StackedPr, isBottom: boolean): Promise<boolean> {
+export async function processSlicePr(issue: TrackingIssue, pr: StackedPr, isBottom: boolean, waitingTurnPrs?: number[]): Promise<boolean> {
   await recordSlicePr(issue.number, pr.sliceIndex, pr.number);
 
   // Checked every tick until it succeeds once (hasEvidenceComment gates the
@@ -346,7 +346,11 @@ export async function processSlicePr(issue: TrackingIssue, pr: StackedPr, isBott
   // would escalate forever on a state that's actually just "waiting its
   // turn" — see docs/superpowers/specs/2026-07-28-bottom-only-checks-design.md.
   if (!isBottom) {
-    logSliceOutcome(issue, pr, isBottom, 'esperando su turno (no es el fondo)');
+    // Collapsed into one summary line per issue (see processIssue) instead of
+    // logging here directly — a stack of a dozen+ slices otherwise repeats
+    // this exact line every tick, drowning out anything actionable in the log.
+    if (waitingTurnPrs) waitingTurnPrs.push(pr.number);
+    else logSliceOutcome(issue, pr, isBottom, 'esperando su turno (no es el fondo)');
     return true;
   }
 
@@ -383,15 +387,24 @@ export async function processSlicePr(issue: TrackingIssue, pr: StackedPr, isBott
   return true;
 }
 
-async function processIssue(issue: TrackingIssue): Promise<void> {
+// A slice ready to start, deferred rather than run immediately — see the
+// two-pass split in tick() below.
+interface DeferredSliceStart {
+  issue: TrackingIssue;
+  index: number;
+  title: string;
+  // Only for the log line's wording — how many open PRs this issue's stack
+  // already has (0 for the very first slice).
+  stackSize: number;
+}
+
+async function processIssue(issue: TrackingIssue): Promise<DeferredSliceStart | null> {
   const stack = toStackedPrs(await getOpenPrsForIssue(issue.number));
 
   if (stack.length === 0) {
     const slice = await nextUnstartedSlice(issue.number);
     if (slice) {
-      log.info(`issue #${issue.number}: sin PRs abiertos, arrancando slice ${slice.index + 1} (${slice.title})`);
-      await runAgentTask(agentTaskFor(issue, slice.index, slice.title));
-      return;
+      return { issue, index: slice.index, title: slice.title, stackSize: 0 };
     }
     // Checklist vacío del todo (nunca se sembró): el `plan` de un spec, o el
     // seedSingleSlice de un bug (ver discoverAssignedBugs), falló a mitad de
@@ -406,7 +419,7 @@ async function processIssue(issue: TrackingIssue): Promise<void> {
         reason: 'El checklist de slices está vacío — el seed/plan inicial nunca llegó a escribirse',
       });
       await setIssueState(issue.number, 'blocked');
-      return;
+      return null;
     }
     // Ningún PR abierto y ninguna slice sin arrancar: o todo mergeó, o algún
     // PR se cerró sin mergear y quedó huérfano (ninguna slice más va a
@@ -420,24 +433,55 @@ async function processIssue(issue: TrackingIssue): Promise<void> {
         reason: 'Hay slices sin PR abierto ni mergear — probablemente una PR se cerró sin mergear',
       });
       await setIssueState(issue.number, 'blocked');
-      return;
+      return null;
     }
     log.info(`issue #${issue.number}: todas las slices mergeadas, done`);
     await setIssueState(issue.number, 'done');
-    return;
+    return null;
   }
 
   const bottom = pickBottomPr(stack)!; // stack.length >= 1 acá, chequeado arriba
+  const waitingTurnPrs: number[] = [];
   for (const pr of stack) {
-    const stillInProgress = await processSlicePr(issue, pr, pr.sliceIndex === bottom.sliceIndex);
-    if (!stillInProgress) return; // se acaba de bloquear el issue — no arrancar trabajo nuevo
+    const stillInProgress = await processSlicePr(issue, pr, pr.sliceIndex === bottom.sliceIndex, waitingTurnPrs);
+    if (!stillInProgress) return null; // se acaba de bloquear el issue — no arrancar trabajo nuevo
+  }
+  if (waitingTurnPrs.length > 0) {
+    log.info(`issue #${issue.number}: ${waitingTurnPrs.length} PR(s) esperando su turno (no son el fondo): ${waitingTurnPrs.map((n) => `#${n}`).join(', ')}`);
   }
 
   const nextUnstarted = await nextUnstartedSlice(issue.number);
   if (nextUnstarted) {
-    log.info(`issue #${issue.number}: stack de ${stack.length} PR(s) abierto(s), arrancando slice ${nextUnstarted.index + 1} (${nextUnstarted.title}) en paralelo`);
-    await runAgentTask(agentTaskFor(issue, nextUnstarted.index, nextUnstarted.title));
+    return { issue, index: nextUnstarted.index, title: nextUnstarted.title, stackSize: stack.length };
   }
+  return null;
+}
+
+// Shared error handling for a unit of per-issue work: transient Claude quota
+// retries forever, any other unhandled exception counts against
+// issueErrorRetryLimit before escalating to a human block. Used by both
+// passes in tick() below so neither has to duplicate this policy.
+async function runIssueStep(issue: TrackingIssue, step: () => Promise<void>): Promise<void> {
+  try {
+    await step();
+  } catch (error) {
+    // A monthly spend/usage cap is transient and resolves on its own —
+    // skip this issue for this tick instead of blocking it on a human;
+    // quota comes back and a later tick picks up where this left off.
+    if (error instanceof ClaudeUsageLimitError) {
+      log.info(`issue #${issue.number}: límite de uso de Claude alcanzado, reintentando en un tick posterior`);
+    } else {
+      const reason = `Excepción no manejada procesando el issue: ${(error as Error).message}`;
+      const attempts = await incrementAttemptCount(issue.number);
+      if (attempts <= config.issueErrorRetryLimit) {
+        log.info(`issue #${issue.number}: ${reason} (intento ${attempts}/${config.issueErrorRetryLimit}, reintentando en un tick posterior)`);
+      } else {
+        await notifyBlocker({ issueUrl: issue.url, reason });
+        await setIssueState(issue.number, 'blocked');
+      }
+    }
+  }
+  await releaseIfNoLongerInProgress(issue.number);
 }
 
 export async function tick(): Promise<void> {
@@ -447,25 +491,31 @@ export async function tick(): Promise<void> {
 
   const inProgress = await listTrackingIssues('in-progress');
   log.info(`${inProgress.length} issue(s) en progreso`);
+
+  // Two passes, not one per issue: an implement-slice/fix-bug run can take
+  // up to AGENT_TASK_TIMEOUT_MINUTES, and starting one for issue A must
+  // never delay a rebase/e2e/review fix that issue B needs right now — both
+  // would otherwise share this same single-flight tick (see run-tick.sh's
+  // flock). So every issue's fix work (rebase, e2e, review, merge) runs
+  // first, across the whole batch; only once that's done for everyone does
+  // any new (potentially long) slice actually start.
+  const deferred: DeferredSliceStart[] = [];
   for (const issue of inProgress) {
     if (!(await tryClaim(issue.number))) continue; // another runner already owns this one
+    await runIssueStep(issue, async () => {
+      const next = await processIssue(issue);
+      if (next) deferred.push(next);
+    });
+  }
 
-    try {
-      await processIssue(issue);
-    } catch (error) {
-      // A monthly spend/usage cap is transient and resolves on its own —
-      // skip this issue for this tick instead of blocking it on a human;
-      // quota comes back and a later tick picks up where this left off.
-      if (error instanceof ClaudeUsageLimitError) {
-        log.info(`issue #${issue.number}: límite de uso de Claude alcanzado, reintentando en un tick posterior`);
-      } else {
-        await notifyBlocker({
-          issueUrl: issue.url,
-          reason: `Excepción no manejada procesando el issue: ${(error as Error).message}`,
-        });
-        await setIssueState(issue.number, 'blocked');
-      }
-    }
-    await releaseIfNoLongerInProgress(issue.number);
+  for (const next of deferred) {
+    await runIssueStep(next.issue, async () => {
+      const context = next.stackSize === 0
+        ? 'sin PRs abiertos'
+        : `stack de ${next.stackSize} PR(s) abierto(s)`;
+      const suffix = next.stackSize === 0 ? '' : ' en paralelo';
+      log.info(`issue #${next.issue.number}: ${context}, arrancando slice ${next.index + 1} (${next.title})${suffix}`);
+      await runAgentTask(agentTaskFor(next.issue, next.index, next.title));
+    });
   }
 }

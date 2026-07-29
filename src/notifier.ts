@@ -1,5 +1,6 @@
 import nodemailer from 'nodemailer';
 import { config } from './config.js';
+import { log } from './logger.js';
 
 export interface BlockerNotification {
   issueUrl: string;
@@ -21,6 +22,14 @@ function transport() {
 // Fires only for the cases enumerated in docs/BLOCKING.md — waiting-for-review
 // and transient quota backoff must never reach this function.
 export async function notifyBlocker(notification: BlockerNotification): Promise<void> {
+  // Logged here, not at each call site, so every blocker — present and
+  // future — lands in the tick log, not only in an email a human may not
+  // check right away.
+  log.error(
+    `blocked: ${notification.reason}`,
+    notification.prUrl ? { issueUrl: notification.issueUrl, prUrl: notification.prUrl } : { issueUrl: notification.issueUrl },
+  );
+
   if (!config.notifyTo) {
     throw new Error('NOTIFY_TO not set — cannot send blocker notifications');
   }
