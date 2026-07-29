@@ -58,6 +58,15 @@ export const config = {
   gmailAppPassword: process.env.GMAIL_APP_PASSWORD ?? '',
   notifyTo: process.env.NOTIFY_TO ?? '',
   e2eRetryLimit: Number(process.env.E2E_RETRY_LIMIT ?? 2),
+  // Separate, much larger budget for "CI hasn't reported anything yet"
+  // (queued/in-progress) — per docs/BLOCKING.md, a running CI must never
+  // block on its own. This only exists as a safety net against a workflow
+  // that structurally never triggers for a given slice (e.g. path-filtered
+  // out), not to rush a real, still-running run — see the checksPending
+  // branch in tick.ts, discovered too tight at e2eRetryLimit's default of 2
+  // (i.e. 2 minutes at the 1-tick-per-minute cron cadence) on PR #239, whose
+  // Integration Tests run alone took several minutes.
+  checksPendingRetryLimit: Number(process.env.CHECKS_PENDING_RETRY_LIMIT ?? 60),
   sliceAttemptLimit: Number(process.env.SLICE_ATTEMPT_LIMIT ?? 3),
   // "Loop guard" de docs/BLOCKING.md: 3 intentos de dejar mergeable el fondo
   // del stack antes de escalar a bloqueo por "conflicto de merge no mecánico".

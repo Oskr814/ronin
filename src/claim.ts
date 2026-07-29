@@ -1,6 +1,6 @@
-import { readFile, writeFile } from 'node:fs/promises';
 import { config, LABEL_STATES } from './config.js';
 import { getIssueLabels, addIssueLabel, removeIssueLabel } from './github.js';
+import { readLocalState, writeLocalState } from './local-state.js';
 
 const RUNNER_PREFIX = 'valeria:runner-';
 
@@ -10,22 +10,6 @@ const RUNNER_PREFIX = 'valeria:runner-';
 // assigned to this runner with the identical string.
 export function runnerLabel(): string {
   return `${RUNNER_PREFIX}${config.runnerId}`;
-}
-
-interface LocalState {
-  claimedIssues: number[];
-}
-
-async function readLocalState(): Promise<LocalState> {
-  try {
-    return JSON.parse(await readFile(config.localStatePath, 'utf8')) as LocalState;
-  } catch {
-    return { claimedIssues: [] };
-  }
-}
-
-async function writeLocalState(state: LocalState): Promise<void> {
-  await writeFile(config.localStatePath, JSON.stringify(state, null, 2));
 }
 
 // True if this runner now owns the issue and may act on it. Local state is

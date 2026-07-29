@@ -66,11 +66,27 @@ export async function ensureWorktree(branch: string, baseRef = config.worktreeBa
   return dir;
 }
 
-// Not called anywhere yet — cleanup timing (on success only? on terminal
-// blocked state too?) is tied to the same cross-tick state work tracked in
-// tick.ts, so it's exposed here but deliberately unwired for now.
+// bmedical's own docker-compose.yml (a per-slice Postgres used by
+// integration tests) has no project `name:` set, so Compose defaults the
+// project name to the cwd's basename — which for a worktree is exactly this
+// dir's own name (see worktreeDirFor), giving every slice's worktree its own
+// isolated stack. Nothing ever tore these down: discovered live as
+// `valeria-228-slice-9-postgres-1` and `valeria-228-slice-10-postgres-1`
+// still running (one still "Up 12 hours (healthy)") long after their PRs
+// had merged. Best-effort — a worktree that never touched Docker has no
+// compose project to tear down, and `docker compose down` against a missing
+// config/no running project just errors harmlessly.
+async function removeDockerStack(worktreeDir: string): Promise<void> {
+  await execFileAsync('docker', ['compose', 'down', '--volumes', '--remove-orphans'], { cwd: worktreeDir }).catch(() => {});
+}
+
+// Wired in at merge time only (see tick.ts's processSlicePr) — a PR that
+// never merges (closed, or the issue got blocked) keeps its worktree around
+// for a human to inspect, same open question the original unwired version of
+// this function left for "on terminal blocked state too?".
 export async function removeWorktree(branch: string): Promise<void> {
   const dir = worktreeDirFor(branch);
+  await removeDockerStack(dir);
   await execFileAsync('git', ['worktree', 'remove', dir, '--force'], { cwd: config.productRepoPath }).catch(() => {});
 }
 
