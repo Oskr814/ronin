@@ -6,6 +6,7 @@ vi.mock('./config.js', () => ({
     githubAppSlug: 'valeria',
     githubAppId: '12345',
     playwrightTestResultsDir: 'apps/webapp/test-results',
+    productRepo: 'bmedical/bmedical',
   },
 }));
 
@@ -53,6 +54,7 @@ describe('publishEvidence', () => {
     const committed = await publishEvidence(228, 229, '/tmp/worktree');
 
     expect(committed).toEqual(['evidence/228/229/1234567890/login-smoke-chromium-test-finished-1.png']);
+    expect(mkdir).toHaveBeenCalledWith(expect.stringContaining('evidence/228/229/1234567890'), { recursive: true });
   });
 
   it('returns [] without touching the evidence checkout when there are no screenshots', async () => {

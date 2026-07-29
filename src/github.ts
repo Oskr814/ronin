@@ -88,6 +88,12 @@ const ATTEMPT_LABEL_RE = /^valeria:attempts-(\d+)$/;
 // are issues under the hood and this label read is shared with plain
 // tracking-issue numbers (see the issueErrorRetryLimit path in tick.ts),
 // which aren't resolvable via `gh pr view`.
+//
+// Deliberately NOT used for the checks-pending wait (see tick.ts /
+// local-state.ts) — that budget is large (tens of ticks) and a label swap
+// every tick floods the issue's activity timeline with noise. This one stays
+// label-based because its limits are small (2-3), so the escalation history
+// staying visible on the issue is actually useful.
 export async function getAttemptCount(prNumber: number): Promise<number> {
   const stdout = await gh(['issue', 'view', String(prNumber), '--json', 'labels']);
   const labels = (JSON.parse(stdout) as { labels: Array<{ name: string }> }).labels.map((l) => l.name);
@@ -251,8 +257,20 @@ export async function mergePullRequest(prNumber: number): Promise<void> {
   // errors on any repo that ever touched Projects Classic, even though the
   // base-branch edit itself already succeeded. Discovered live: PR #238 was
   // already correctly retargeted to main after this "failed".
+  //
+  // Same class of bug shows up on this PATCH call too — discovered live on
+  // PR #239, which threw "422 Validation Failed" here yet ended up with the
+  // right base anyway. So a throw doesn't necessarily mean the retarget
+  // didn't happen: re-check the actual base before deciding whether to
+  // propagate the error, instead of costing a whole retry cycle (or worse,
+  // never running the branch delete below) over a response-layer flake.
   for (const dependent of await listOpenPrsWithBase(status.headRefName)) {
-    await ghApi(['api', '--method', 'PATCH', `repos/${config.productRepo}/pulls/${dependent}`, '-f', `base=${status.baseRefName}`]);
+    try {
+      await ghApi(['api', '--method', 'PATCH', `repos/${config.productRepo}/pulls/${dependent}`, '-f', `base=${status.baseRefName}`]);
+    } catch (error) {
+      const current = await getPullRequestStatus(dependent);
+      if (current.baseRefName !== status.baseRefName) throw error;
+    }
   }
   await ghApi(['api', '--method', 'DELETE', `repos/${config.productRepo}/git/refs/heads/${status.headRefName}`]);
 }
@@ -291,15 +309,27 @@ export async function hasEvidenceComment(prNumber: number): Promise<boolean> {
   return comments.some((c) => c.body.includes(EVIDENCE_COMMENT_MARKER));
 }
 
-// Posts once per PR (guarded by hasEvidenceComment, checked by the caller)
-// rather than editing an existing comment — gh has no direct "edit PR
-// comment by id" and this is simpler than resolving the REST comment id
-// from gh's GraphQL-shaped --json output.
+// Never edits an existing comment — gh has no direct "edit PR comment by id"
+// and posting fresh is simpler than resolving the REST comment id from gh's
+// GraphQL-shaped --json output. Two call sites, with different cadences:
+// the automatic slice-publish path in processSlicePr (still gated by
+// hasEvidenceComment, checked by that caller — once per PR), and the
+// mention-triggered path in tick.ts's mentions block (ungated — a fresh
+// comment per publish). See
+// docs/superpowers/specs/2026-07-29-mention-e2e-evidence-design.md.
 export async function postEvidenceComment(prNumber: number, imageUrls: string[]): Promise<void> {
+  // Plain links, not `![]()` image embeds: ValerIA (where evidence lives) is
+  // a private repo, and GitHub renders embedded images through its Camo
+  // proxy, which fetches anonymously and can never authenticate to private
+  // raw content — the image just fails to render for every viewer,
+  // regardless of their own repo access. A plain link instead sends the
+  // viewer's own browser (with their own GitHub session) straight to
+  // raw.githubusercontent.com, which works for anyone who already has repo
+  // access, same as clicking through to any other private-repo file.
   const body = [
     EVIDENCE_COMMENT_MARKER,
     '## Evidencia e2e (Playwright)',
-    ...imageUrls.map((url) => `![](${url})`),
+    ...imageUrls.map((url, i) => `[Screenshot ${i + 1}](${url})`),
   ].join('\n\n');
 
   const dir = await mkdtemp(join(tmpdir(), 'valeria-evidence-comment-'));

@@ -285,6 +285,7 @@ describe('processSlicePr — mentions found on an already-mergeable bottom PR (r
 
     expect(publishEvidence).toHaveBeenLastCalledWith(228, 229, '/tmp/worktree-bottom');
     expect(postEvidenceComment).toHaveBeenCalledWith(229, ['https://raw/evidence/228/229/999/shot.png']);
+    expect(addReaction).toHaveBeenCalledWith(1, 'issue', 'eyes');
   });
 
   it('does not post an evidence comment when the review-request produced no screenshots', async () => {
@@ -304,6 +305,26 @@ describe('processSlicePr — mentions found on an already-mergeable bottom PR (r
     await processSlicePr(issue(), bottomPr, true);
 
     expect(postEvidenceComment).not.toHaveBeenCalled();
+    expect(addReaction).toHaveBeenCalledWith(1, 'issue', 'eyes');
+  });
+
+  it('still adds the reaction when evidence publish throws (a publish failure must never re-trigger review-request)', async () => {
+    const bottomPr = pr({
+      number: 229,
+      sliceIndex: 0,
+      baseRefName: 'main',
+      headRefName: 'valeria/228/slice-1',
+      checksPassing: true,
+      reviewDecision: 'APPROVED',
+    });
+    findUnprocessedMentions.mockResolvedValue([{ id: 1, kind: 'issue', body: '@valeria-agent corré los e2e', reactionsEyes: 0 }]);
+    getPullRequestStatus.mockResolvedValue(bottomPr);
+    publishEvidence.mockRejectedValue(new Error('push rejected'));
+    isBehind.mockResolvedValue(false);
+
+    await processSlicePr(issue(), bottomPr, true);
+
+    expect(addReaction).toHaveBeenCalledWith(1, 'issue', 'eyes');
   });
 });
 

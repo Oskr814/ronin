@@ -288,14 +288,32 @@ export async function processSlicePr(issue: TrackingIssue, pr: StackedPr, isBott
     if (mentions.length > 0) {
       await runAgentTask({ type: 'review-request', issueNumber: issue.number, prNumber: pr.number, mentions });
 
-      // Barato cuando no hay .png nuevos (un readdir vacío) — el supervisor
-      // no interpreta el texto del mention, solo intenta publicar lo que
-      // haya quedado en test-results/ tras el review-request. Sin el gate
-      // de hasEvidenceComment: cada corrida disparada por mención postea su
-      // propio comentario. Ver docs/superpowers/specs/2026-07-29-mention-e2e-evidence-design.md.
-      const evidencePaths = await publishEvidence(issue.number, pr.number, worktreeDirFor(pr.headRefName));
-      if (evidencePaths.length > 0) {
-        await postEvidenceComment(pr.number, evidencePaths.map(rawEvidenceUrl));
+      // Nested in its own try, separate from the outer one below: a
+      // publish/comment failure here (e.g. a non-fast-forward push race on
+      // ValerIA's own main, which also takes code commits — see
+      // docs/DESIGN.md §4) must never prevent the reactions loop from
+      // running, since a missing reaction is what makes
+      // findUnprocessedMentions treat these same comments as unprocessed and
+      // re-trigger the whole (expensive, side-effecting) review-request task
+      // on the next tick.
+      try {
+        // Barato cuando no hay .png nuevos (un readdir vacío) — el supervisor
+        // no interpreta el texto del mention, solo intenta publicar lo que
+        // haya quedado en test-results/ tras el review-request. Sin el gate
+        // de hasEvidenceComment: cada corrida disparada por mención postea su
+        // propio comentario, reutilizando el mismo EVIDENCE_COMMENT_MARKER
+        // que el path automático de arriba — así, la primera publicación
+        // disparada por mención también deja satisfecho permanentemente el
+        // hasEvidenceComment del path automático (inofensivo en la práctica:
+        // ese path solo necesitaba dispararse una vez, y su ventana ya suele
+        // haber pasado para cuando llega una mención, pero vale dejarlo
+        // anotado). Ver docs/superpowers/specs/2026-07-29-mention-e2e-evidence-design.md.
+        const evidencePaths = await publishEvidence(issue.number, pr.number, worktreeDirFor(pr.headRefName));
+        if (evidencePaths.length > 0) {
+          await postEvidenceComment(pr.number, evidencePaths.map(rawEvidenceUrl));
+        }
+      } catch (error) {
+        log.error(`evidence publish after review-request failed for PR #${pr.number}`, error);
       }
 
       for (const m of mentions) await addReaction(m.id, m.kind, 'eyes');
