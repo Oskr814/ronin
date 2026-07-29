@@ -210,6 +210,11 @@ export async function getPullRequestStatus(prNumber: number): Promise<PullReques
   };
 }
 
+async function listOpenPrsWithBase(baseBranch: string): Promise<number[]> {
+  const stdout = await gh(['pr', 'list', '--state', 'open', '--base', baseBranch, '--json', 'number']);
+  return (JSON.parse(stdout) as Array<{ number: number }>).map((p) => p.number);
+}
+
 // Hard gate lives here, not just in docs: refuses to merge anything without
 // an explicit human approval, regardless of what a caller passes in.
 export async function mergePullRequest(prNumber: number): Promise<void> {
@@ -222,11 +227,22 @@ export async function mergePullRequest(prNumber: number): Promise<void> {
   // "Squash merges are not allowed on this repository"). --merge is what's
   // actually enabled there (along with --rebase); hardcoded rather than
   // detected at runtime since PRODUCT_REPO is a single fixed target today.
-  // --delete-branch: dispara el auto-retarget nativo de GitHub del PR
-  // inmediatamente superior en el stack (su base pasa de este branch a
-  // `main` solo, sin que el supervisor tenga que tocar nada del lado de
-  // GitHub) — ver docs/superpowers/specs/2026-07-28-stacked-prs-design.md §1.
-  await gh(['pr', 'merge', String(prNumber), '--merge', '--delete-branch']);
+  await gh(['pr', 'merge', String(prNumber), '--merge']);
+
+  // Retarget any PR still based on this now-merged branch onto this PR's own
+  // base (always `main` in practice, since only the bottom of a stack ever
+  // merges — see docs/superpowers/specs/2026-07-28-stacked-prs-design.md §1)
+  // BEFORE deleting the branch. GitHub does NOT auto-retarget dependent PRs
+  // when their base branch is deleted, contrary to what this function used
+  // to assume — it auto-CLOSES them instead, even with a clean,
+  // conflict-free diff. Discovered live: PR #231 got closed this way when
+  // PR #230's branch was deleted by an earlier version of this function
+  // that passed `--delete-branch` straight to `gh pr merge`, racing
+  // GitHub's own (nonexistent) retarget behavior.
+  for (const dependent of await listOpenPrsWithBase(status.headRefName)) {
+    await gh(['pr', 'edit', String(dependent), '--base', status.baseRefName]);
+  }
+  await ghApi(['api', '--method', 'DELETE', `repos/${config.productRepo}/git/refs/heads/${status.headRefName}`]);
 }
 
 export function branchPrefix(issueNumber: number): string {
