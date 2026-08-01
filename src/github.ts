@@ -244,14 +244,12 @@ export async function mergePullRequest(prNumber: number): Promise<void> {
 
   // Retarget any PR still based on this now-merged branch onto this PR's own
   // base (always `main` in practice, since only the bottom of a stack ever
-  // merges — see docs/superpowers/specs/2026-07-28-stacked-prs-design.md §1)
-  // BEFORE deleting the branch. GitHub does NOT auto-retarget dependent PRs
-  // when their base branch is deleted, contrary to what this function used
-  // to assume — it auto-CLOSES them instead, even with a clean,
-  // conflict-free diff. Discovered live: PR #231 got closed this way when
-  // PR #230's branch was deleted by an earlier version of this function
-  // that passed `--delete-branch` straight to `gh pr merge`, racing
-  // GitHub's own (nonexistent) retarget behavior.
+  // merges — see docs/superpowers/specs/2026-07-28-stacked-prs-design.md §1).
+  // GitHub does NOT auto-retarget dependent PRs when their base branch is
+  // deleted, contrary to what this function used to assume — it auto-CLOSES
+  // them instead, even with a clean, conflict-free diff. Discovered live: PR
+  // #231 got closed this way when PR #230's branch was deleted, racing
+  // GitHub's own (nonexistent) retarget behavior. So this stays explicit.
   // REST, not `gh pr edit` — the latter also fetches the updated PR back
   // (including project-card fields) to print it, and that GraphQL query now
   // errors on any repo that ever touched Projects Classic, even though the
@@ -262,8 +260,8 @@ export async function mergePullRequest(prNumber: number): Promise<void> {
   // PR #239, which threw "422 Validation Failed" here yet ended up with the
   // right base anyway. So a throw doesn't necessarily mean the retarget
   // didn't happen: re-check the actual base before deciding whether to
-  // propagate the error, instead of costing a whole retry cycle (or worse,
-  // never running the branch delete below) over a response-layer flake.
+  // propagate the error, instead of costing a whole retry cycle over a
+  // response-layer flake.
   for (const dependent of await listOpenPrsWithBase(status.headRefName)) {
     try {
       await ghApi(['api', '--method', 'PATCH', `repos/${config.productRepo}/pulls/${dependent}`, '-f', `base=${status.baseRefName}`]);
@@ -272,7 +270,14 @@ export async function mergePullRequest(prNumber: number): Promise<void> {
       if (current.baseRefName !== status.baseRefName) throw error;
     }
   }
-  await ghApi(['api', '--method', 'DELETE', `repos/${config.productRepo}/git/refs/heads/${status.headRefName}`]);
+  // No manual branch delete here: PRODUCT_REPO has "Automatically delete
+  // head branches" enabled at the repo-settings level (confirmed live via
+  // `gh api repos/<repo> --jq .delete_branch_on_merge` → true), so GitHub
+  // deletes the branch itself right after the merge above. An earlier
+  // version of this function also issued its own
+  // `DELETE git/refs/heads/<branch>` call here as a safety net, but that
+  // raced GitHub's own automatic deletion and lost, throwing an unhandled
+  // "422 Reference does not exist" that crashed the run. Discovered live.
 }
 
 export function branchPrefix(issueNumber: number): string {

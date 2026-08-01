@@ -520,12 +520,26 @@ async function runIssueStep(issue: TrackingIssue, step: () => Promise<void>): Pr
       log.info(`issue #${issue.number}: límite de uso de Claude alcanzado, reintentando en un tick posterior`);
     } else {
       const reason = `Excepción no manejada procesando el issue: ${(error as Error).message}`;
-      const attempts = await incrementAttemptCount(issue.number);
-      if (attempts <= config.issueErrorRetryLimit) {
-        log.info(`issue #${issue.number}: ${reason} (intento ${attempts}/${config.issueErrorRetryLimit}, reintentando en un tick posterior)`);
-      } else {
-        await notifyBlocker({ issueUrl: issue.url, reason });
-        await setIssueState(issue.number, 'blocked');
+      // This escalation path itself calls gh (incrementAttemptCount,
+      // notifyBlocker, setIssueState), and gh can fail transiently too (e.g.
+      // a bare HTTP 499 from `gh issue view` — a client-closed-request-style
+      // network blip, not a real API error). Without this try/catch, that
+      // second failure went unhandled here, escaped this function, and
+      // escaped the uncaught `for` loop in tick() below — aborting the
+      // entire tick (every other in-progress issue skipped that cycle) over
+      // one transient network hiccup. Discovered live. Same treatment as
+      // ClaudeUsageLimitError above: log and let the next tick retry: it'll
+      // re-run step() from scratch, so this issue isn't stuck either way.
+      try {
+        const attempts = await incrementAttemptCount(issue.number);
+        if (attempts <= config.issueErrorRetryLimit) {
+          log.info(`issue #${issue.number}: ${reason} (intento ${attempts}/${config.issueErrorRetryLimit}, reintentando en un tick posterior)`);
+        } else {
+          await notifyBlocker({ issueUrl: issue.url, reason });
+          await setIssueState(issue.number, 'blocked');
+        }
+      } catch (escalationError) {
+        log.info(`issue #${issue.number}: ${reason} (además falló el manejo de la excepción: ${(escalationError as Error).message}; reintentando en un tick posterior)`);
       }
     }
   }
