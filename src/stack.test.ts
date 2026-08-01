@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { PullRequestStatus } from './github.js';
-import { sliceBranch, sliceIndexFromBranch, toStackedPrs, pickBottomPr, baseBranchFor } from './stack.js';
+import { sliceBranch, sliceIndexFromBranch, toStackedPrs, pickBottomPr, baseBranchFor, prsForIssue } from './stack.js';
 
 describe('sliceBranch / sliceIndexFromBranch', () => {
   it('round-trips a slice index through a branch name', () => {
@@ -53,6 +53,21 @@ describe('pickBottomPr', () => {
 
   it('returns null for an empty stack', () => {
     expect(pickBottomPr([])).toBeNull();
+  });
+});
+
+describe('prsForIssue', () => {
+  it('keeps only PRs whose branch belongs to the given issue', () => {
+    const prs = [
+      pr('valeria/228/slice-1', { number: 229 }),
+      pr('valeria/229/slice-1', { number: 300 }),
+    ];
+    expect(prsForIssue(prs, 228).map((p) => p.number)).toEqual([229]);
+  });
+
+  it('does not match another issue whose number is a prefix (228 vs. 2280)', () => {
+    const prs = [pr('valeria/2280/slice-1', { number: 300 })];
+    expect(prsForIssue(prs, 228)).toEqual([]);
   });
 });
 

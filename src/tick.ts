@@ -11,7 +11,7 @@ import {
   getSpecPathsFromPr,
   mergeSpecPr,
   commentOnSpecPr,
-  getOpenPrsForIssue,
+  listAllOpenValeriaPrs,
   mergePullRequest,
   setIssueState,
   incrementAttemptCount,
@@ -27,7 +27,7 @@ import { nextUnstartedSlice, hasRemainingSlices, recordSlicePr, markSliceMerged,
 import { notifyBlocker } from './notifier.js';
 import { runAgentTask, type AgentTask } from './agent-task.js';
 import { ClaudeUsageLimitError } from './claude-runner.js';
-import { toStackedPrs, pickBottomPr, type StackedPr } from './stack.js';
+import { toStackedPrs, pickBottomPr, prsForIssue, type StackedPr } from './stack.js';
 import { incrementChecksPendingCount, resetChecksPendingCount } from './local-state.js';
 import { tryClaim, releaseIfNoLongerInProgress, runnerLabel } from './claim.js';
 import { worktreeDirFor, isBehind, attemptRebase, removeWorktree } from './worktree.js';
@@ -448,8 +448,8 @@ interface DeferredSliceStart {
   stackSize: number;
 }
 
-async function processIssue(issue: TrackingIssue): Promise<DeferredSliceStart | null> {
-  const stack = toStackedPrs(await getOpenPrsForIssue(issue.number));
+async function processIssue(issue: TrackingIssue, allPrs: PullRequestStatus[]): Promise<DeferredSliceStart | null> {
+  const stack = toStackedPrs(prsForIssue(allPrs, issue.number));
 
   if (stack.length === 0) {
     const slice = await nextUnstartedSlice(issue.number);
@@ -556,6 +556,20 @@ export async function tick(): Promise<void> {
   const inProgress = await listTrackingIssues('in-progress');
   log.info(`${inProgress.length} issue(s) en progreso`);
 
+  // One batched read for every issue's stack instead of a `gh pr list` + a
+  // `gh pr view` per PR per issue — see
+  // docs/superpowers/specs/2026-08-01-pr-list-batching-design.md. A failure
+  // here is shared across every issue in this tick (not attributable to any
+  // one of them), so it gets the same treatment as ClaudeUsageLimitError:
+  // log and retry next tick, never escalate to a human over it.
+  let allPrs: PullRequestStatus[];
+  try {
+    allPrs = await listAllOpenValeriaPrs();
+  } catch (error) {
+    log.info(`tick: listAllOpenValeriaPrs falló, reintentando en el próximo tick: ${(error as Error).message}`);
+    return;
+  }
+
   // Two passes, not one per issue: an implement-slice/fix-bug run can take
   // up to AGENT_TASK_TIMEOUT_MINUTES, and starting one for issue A must
   // never delay a rebase/e2e/review fix that issue B needs right now — both
@@ -567,7 +581,7 @@ export async function tick(): Promise<void> {
   for (const issue of inProgress) {
     if (!(await tryClaim(issue.number))) continue; // another runner already owns this one
     await runIssueStep(issue, async () => {
-      const next = await processIssue(issue);
+      const next = await processIssue(issue, allPrs);
       if (next) deferred.push(next);
     });
   }

@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { config, LABEL_MANAGED, LABEL_STATES, LABEL_BUG, type SpecStatus } from './config.js';
 import { getInstallationToken } from './github-app-auth.js';
+import { log } from './logger.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -191,21 +192,25 @@ export interface PullRequestStatus {
   isDraft: boolean;
 }
 
-export async function getPullRequestStatus(prNumber: number): Promise<PullRequestStatus> {
-  const stdout = await gh([
-    'pr', 'view', String(prNumber),
-    '--json', 'number,state,reviewDecision,statusCheckRollup,mergeable,headRefName,baseRefName,isDraft',
-  ]);
-  const raw = JSON.parse(stdout) as {
-    number: number;
-    state: 'OPEN' | 'CLOSED' | 'MERGED';
-    reviewDecision: PullRequestStatus['reviewDecision'] | null;
-    statusCheckRollup: Array<{ conclusion: string | null }>;
-    mergeable: string;
-    headRefName: string;
-    baseRefName: string;
-    isDraft: boolean;
-  };
+// Same field set works for both `gh pr view` (one PR) and `gh pr list` (many)
+// — confirmed via `gh pr list --json` with no value, which prints the list of
+// valid fields and includes every one of these. Shared so the two call sites
+// (a single fresh re-read vs. the batched per-tick list) can never drift
+// apart and silently stop returning a field the other relies on.
+const PR_JSON_FIELDS = 'number,state,reviewDecision,statusCheckRollup,mergeable,headRefName,baseRefName,isDraft';
+
+interface RawPr {
+  number: number;
+  state: 'OPEN' | 'CLOSED' | 'MERGED';
+  reviewDecision: PullRequestStatus['reviewDecision'] | null;
+  statusCheckRollup: Array<{ conclusion: string | null }>;
+  mergeable: string;
+  headRefName: string;
+  baseRefName: string;
+  isDraft: boolean;
+}
+
+function toPullRequestStatus(raw: RawPr): PullRequestStatus {
   return {
     number: raw.number,
     state: raw.state,
@@ -221,6 +226,32 @@ export async function getPullRequestStatus(prNumber: number): Promise<PullReques
     baseRefName: raw.baseRefName,
     isDraft: raw.isDraft,
   };
+}
+
+export async function getPullRequestStatus(prNumber: number): Promise<PullRequestStatus> {
+  const stdout = await gh(['pr', 'view', String(prNumber), '--json', PR_JSON_FIELDS]);
+  return toPullRequestStatus(JSON.parse(stdout) as RawPr);
+}
+
+// Every open PR must fit in one page — gh pr list defaults to 30 results, far
+// below what a page of results returns once several specs are in flight at
+// once. No config knob: there's no legitimate reason to tune this per
+// environment, only room to raise it if the warning below ever fires.
+const PR_LIST_LIMIT = 300;
+
+// Single batched read behind tick()'s whole per-issue loop, replacing what
+// used to be one `gh pr list` + one `gh pr view` per PR per issue — see
+// docs/superpowers/specs/2026-08-01-pr-list-batching-design.md. Filters
+// client-side to ValerIA's own branches (`valeria/<issue>/slice-N` — see
+// stack.ts's sliceBranch) since PRODUCT_REPO also carries ordinary human PRs
+// under the same `--state open`.
+export async function listAllOpenValeriaPrs(): Promise<PullRequestStatus[]> {
+  const stdout = await gh(['pr', 'list', '--state', 'open', '--limit', String(PR_LIST_LIMIT), '--json', PR_JSON_FIELDS]);
+  const raw = (JSON.parse(stdout) as RawPr[]).filter((pr) => pr.headRefName.startsWith('valeria/'));
+  if (raw.length === PR_LIST_LIMIT) {
+    log.error(`listAllOpenValeriaPrs: alcanzó el límite de ${PR_LIST_LIMIT} — puede haber PRs no traídos, subir PR_LIST_LIMIT`);
+  }
+  return raw.map(toPullRequestStatus);
 }
 
 async function listOpenPrsWithBase(baseBranch: string): Promise<number[]> {
@@ -280,21 +311,6 @@ export async function mergePullRequest(prNumber: number): Promise<void> {
   // "422 Reference does not exist" that crashed the run. Discovered live.
 }
 
-export function branchPrefix(issueNumber: number): string {
-  return `valeria/${issueNumber}/`;
-}
-
-// Slice branches are created as `valeria/<issue>/<slice-slug>` (see agent-task.ts),
-// so every open PR for an issue's stack is found by branch prefix instead of
-// maintaining a separate mapping. Can return more than one now that several
-// slices of the same issue can be in flight at once (see
-// docs/superpowers/specs/2026-07-28-stacked-prs-design.md).
-export async function getOpenPrsForIssue(issueNumber: number): Promise<PullRequestStatus[]> {
-  const stdout = await gh(['pr', 'list', '--state', 'open', '--json', 'number,headRefName']);
-  const prs = JSON.parse(stdout) as Array<{ number: number; headRefName: string }>;
-  const matches = prs.filter((pr) => pr.headRefName.startsWith(branchPrefix(issueNumber)));
-  return Promise.all(matches.map((pr) => getPullRequestStatus(pr.number)));
-}
 
 // Opt-in only (config.requestCopilotReview) — requesting Copilot review
 // automatically is explicitly out of scope for the core loop for now.

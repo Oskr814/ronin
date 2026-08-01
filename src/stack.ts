@@ -18,6 +18,17 @@ export interface StackedPr extends PullRequestStatus {
   sliceIndex: number;
 }
 
+// Slice branches are created as `valeria/<issue>/<slice-slug>` (see
+// agent-task.ts's sliceBranch), so an issue's open PRs are found by branch
+// prefix out of the single batched list (see github.ts's
+// listAllOpenValeriaPrs) instead of a separate per-issue fetch — see
+// docs/superpowers/specs/2026-08-01-pr-list-batching-design.md. Pure: no I/O,
+// so it needs no mocking to test.
+export function prsForIssue(allPrs: PullRequestStatus[], issueNumber: number): PullRequestStatus[] {
+  const prefix = `valeria/${issueNumber}/`;
+  return allPrs.filter((pr) => pr.headRefName.startsWith(prefix));
+}
+
 // Ordena por índice de slice; descarta cualquier PR cuyo branch no matchee el
 // patrón valeria/<issue>/slice-N (ej. el branch de la tarea 'plan') — no
 // debería pasar en la práctica, pero mejor un PR ignorado que uno mal indexado.
