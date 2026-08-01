@@ -1,13 +1,33 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { existsSync } from 'node:fs';
-import { mkdir, readdir } from 'node:fs/promises';
+import { mkdir, readdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { createServer } from 'node:net';
 import { config } from './config.js';
 import { log } from './logger.js';
 import type { PullRequestStatus } from './github.js';
 
 const execFileAsync = promisify(execFile);
+
+// Asks the OS for a free ephemeral port (bind to 0, read back what it
+// assigned, release it) instead of guessing one — same trick most dev
+// tooling uses to sidestep a fixed-port collision. There's a small window
+// between releasing it here and whatever eventually binds it (e.g. the
+// agent's own `docker compose up -d`, which can run much later in a long
+// task) where another process could grab the same port first; acceptable
+// given the alternative was a guaranteed collision on a literal :5432.
+function getFreePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const server = createServer();
+    server.on('error', reject);
+    server.listen(0, () => {
+      const address = server.address();
+      const port = typeof address === 'object' && address !== null ? address.port : null;
+      server.close(() => (port !== null ? resolve(port) : reject(new Error('no port assigned'))));
+    });
+  });
+}
 
 // Exported so callers that need to find an already-created worktree's files
 // (e.g. evidence.ts reading Playwright's test-results/ after the fact) can
@@ -65,6 +85,17 @@ export async function ensureWorktree(branch: string, baseRef = config.worktreeBa
       ? ['worktree', 'add', '-b', branch, dir, `origin/${branch}`]
       : ['worktree', 'add', '-b', branch, dir, baseRef];
   await execFileAsync('git', args, { cwd: config.productRepoPath });
+
+  // A repo-root .env, auto-loaded by `docker compose` (see bmedical's own
+  // docker-compose.yml, which reads DB_PORT from here) — gives this
+  // worktree's Postgres stack its own host port instead of the fixed 5432
+  // default, so it never collides with another worktree's stack (or a
+  // human's own manual `docker compose up`) running at the same time. Only
+  // Postgres actually needs this, but ensureWorktree doesn't know which
+  // task type it's building for, and writing an unused .env is harmless.
+  const port = await getFreePort();
+  await writeFile(join(dir, '.env'), `DB_PORT=${port}\n`);
+
   return dir;
 }
 
