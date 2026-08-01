@@ -54,9 +54,13 @@ export const config = {
   // URL de configuración del App (Settings → Developer settings → GitHub Apps).
   githubAppSlug: requireEnv('VALERIA_GITHUB_APP_SLUG'),
   specDir: process.env.SPEC_DIR ?? 'docs/superpowers',
-  gmailUser: process.env.GMAIL_USER ?? '',
-  gmailAppPassword: process.env.GMAIL_APP_PASSWORD ?? '',
-  notifyTo: process.env.NOTIFY_TO ?? '',
+  // Required, not optional: per docs/BLOCKING.md, every blocker always
+  // includes an email — a missing value here used to fail lazily, mid
+  // incident, inside notifier.ts's transport()/notifyBlocker instead of at
+  // startup where a human would actually notice it.
+  gmailUser: requireEnv('GMAIL_USER'),
+  gmailAppPassword: requireEnv('GMAIL_APP_PASSWORD'),
+  notifyTo: requireEnv('NOTIFY_TO'),
   e2eRetryLimit: Number(process.env.E2E_RETRY_LIMIT ?? 2),
   // Separate, much larger budget for "CI hasn't reported anything yet"
   // (queued/in-progress) — per docs/BLOCKING.md, a running CI must never

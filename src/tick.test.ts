@@ -404,4 +404,18 @@ describe('discoverAssignedBugs', () => {
     expect(seedSingleSlice).not.toHaveBeenCalled();
     expect(setIssueState).not.toHaveBeenCalled();
   });
+
+  // Regression: this function runs directly in tick(), outside runIssueStep's
+  // safety net, so a failure processing one bug issue must not escape and
+  // abort the whole tick — it must escalate that one issue and move on.
+  it('escalates instead of throwing when processing a bug issue fails', async () => {
+    listAssignedBugIssues.mockResolvedValue([{ number: 501, title: 'Crashes on load' }]);
+    addIssueLabel.mockRejectedValueOnce(new Error('gh: HTTP 500'));
+    setIssueState.mockResolvedValue(undefined);
+
+    await expect(discoverAssignedBugs()).resolves.toBeUndefined();
+
+    expect(notifyBlocker).toHaveBeenCalled();
+    expect(setIssueState).toHaveBeenCalledWith(501, 'blocked');
+  });
 });

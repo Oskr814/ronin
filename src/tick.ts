@@ -212,16 +212,18 @@ function rootBranchName(): string {
 
 async function ensureBottomUpToDate(issue: TrackingIssue, pr: StackedPr): Promise<BottomStatus> {
   if (pr.baseRefName !== rootBranchName()) {
-    // GitHub auto-retargets the bottom PR's base to the root branch when its
-    // predecessor merges via mergePullRequest's --delete-branch. If that
-    // never fired (e.g. a human merged the predecessor from the GitHub UI
-    // without deleting its branch), this PR's base is still pointing at a
-    // now-dead branch — merging it would silently land it there instead of
-    // main. Never merge in that case; retry silently, then escalate like any
-    // other "needs a human eventually" case. See final review Fix 1.
+    // mergePullRequest retargets any dependent PR onto its own base itself
+    // (a manual PATCH — GitHub does not do this automatically, see the note
+    // there) before the merged branch goes away. If this PR's base still
+    // isn't the root branch, that retarget never ran (e.g. a human merged
+    // the predecessor from the GitHub UI, bypassing mergePullRequest
+    // entirely) and this PR's base is still pointing at a now-dead branch —
+    // merging it would silently land it there instead of main. Never merge
+    // in that case; retry silently, then escalate like any other "needs a
+    // human eventually" case. See final review Fix 1.
     const blocked = await blockOnAttemptLimit(
       issue, pr, config.rebaseRetryLimit,
-      `Base del PR del fondo del stack es "${pr.baseRefName}", no "${rootBranchName()}" — el auto-retarget de GitHub no ocurrió`,
+      `Base del PR del fondo del stack es "${pr.baseRefName}", no "${rootBranchName()}" — el retarget automático nunca corrió`,
     );
     return blocked ? 'blocked' : 'not-ready';
   }
