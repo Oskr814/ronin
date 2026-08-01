@@ -4,10 +4,61 @@ import { promisify } from 'node:util';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type { PullRequestStatus } from './github.js';
 
 vi.mock('./config.js', () => ({ config: {} }));
 
-const { isBehind, attemptRebase } = await import('./worktree.js');
+const { isBehind, attemptRebase, branchFromWorktreeDirName, branchesToSweep } = await import('./worktree.js');
+
+function pr(headRefName: string): PullRequestStatus {
+  return {
+    number: 1,
+    state: 'OPEN',
+    reviewDecision: '',
+    checksPassing: true,
+    checksPending: false,
+    mergeable: true,
+    headRefName,
+    baseRefName: 'main',
+    isDraft: false,
+  };
+}
+
+describe('branchFromWorktreeDirName', () => {
+  it('reconstructs a slice branch from its worktree dir name', () => {
+    expect(branchFromWorktreeDirName('valeria-228-slice-11')).toBe('valeria/228/slice-11');
+  });
+
+  it('reconstructs a plan branch from its worktree dir name', () => {
+    expect(branchFromWorktreeDirName('valeria-228-plan')).toBe('valeria/228/plan');
+  });
+
+  it('returns null for a dir that is not a ValerIA worktree', () => {
+    expect(branchFromWorktreeDirName('some-other-checkout')).toBeNull();
+  });
+});
+
+describe('branchesToSweep', () => {
+  it('always sweeps a plan worktree, regardless of open PRs', () => {
+    expect(branchesToSweep(['valeria-228-plan'], [])).toEqual(['valeria/228/plan']);
+  });
+
+  it('keeps a slice worktree whose branch still has an open PR', () => {
+    const dirs = ['valeria-228-slice-1'];
+    const allPrs = [pr('valeria/228/slice-1')];
+    expect(branchesToSweep(dirs, allPrs)).toEqual([]);
+  });
+
+  it('sweeps a slice worktree whose branch has no open PR (merged, closed, or blocked)', () => {
+    const dirs = ['valeria-228-slice-1', 'valeria-228-slice-2'];
+    const allPrs = [pr('valeria/228/slice-2')]; // only slice-2 still open
+    expect(branchesToSweep(dirs, allPrs)).toEqual(['valeria/228/slice-1']);
+  });
+
+  it('ignores a directory that is not a ValerIA worktree', () => {
+    expect(branchesToSweep(['some-other-checkout'], [])).toEqual([]);
+  });
+});
 
 const execFileAsync = promisify(execFile);
 

@@ -1,9 +1,11 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { existsSync } from 'node:fs';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { config } from './config.js';
+import { log } from './logger.js';
+import type { PullRequestStatus } from './github.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -77,17 +79,75 @@ export async function ensureWorktree(branch: string, baseRef = config.worktreeBa
 // compose project to tear down, and `docker compose down` against a missing
 // config/no running project just errors harmlessly.
 async function removeDockerStack(worktreeDir: string): Promise<void> {
-  await execFileAsync('docker', ['compose', 'down', '--volumes', '--remove-orphans'], { cwd: worktreeDir }).catch(() => {});
+  await execFileAsync('docker', ['compose', 'down', '--volumes', '--remove-orphans'], { cwd: worktreeDir })
+    .catch((error) => log.error(`removeDockerStack: 'docker compose down' falló en ${worktreeDir}, stack puede haber quedado corriendo`, error));
 }
 
-// Wired in at merge time only (see tick.ts's processSlicePr) — a PR that
-// never merges (closed, or the issue got blocked) keeps its worktree around
-// for a human to inspect, same open question the original unwired version of
-// this function left for "on terminal blocked state too?".
+// Called at merge time (tick.ts's processSlicePr), right after a 'plan' task
+// finishes (tick.ts's discoverAssignedSpecs — that branch never opens a PR,
+// so the merge-time call above never reaches it), and from
+// sweepOrphanedWorktrees below for anything either of those missed. Never
+// throws — every caller treats this as best-effort, but failures are logged
+// now instead of silently swallowed, so a repeat miss (like the one
+// discovered live: PR #239's worktree survived days after merging) is
+// visible in the tick log instead of invisible.
 export async function removeWorktree(branch: string): Promise<void> {
   const dir = worktreeDirFor(branch);
   await removeDockerStack(dir);
-  await execFileAsync('git', ['worktree', 'remove', dir, '--force'], { cwd: config.productRepoPath }).catch(() => {});
+  await execFileAsync('git', ['worktree', 'remove', dir, '--force'], { cwd: config.productRepoPath })
+    .catch((error) => log.error(`removeWorktree: 'git worktree remove' falló para ${dir}`, error));
+}
+
+const WORKTREE_DIR_RE = /^valeria-(\d+)-(.+)$/;
+
+// Reconstructs the branch name from a worktree directory name — the exact
+// inverse of worktreeDirFor's `branch.replaceAll('/', '-')`. Safe because
+// every ValerIA branch has exactly this shape (valeria/<issue>/<rest>, issue
+// always numeric — see stack.ts's sliceBranch/planBranch), so there's no
+// ambiguity to resolve. Exported for direct unit testing.
+export function branchFromWorktreeDirName(name: string): string | null {
+  const match = name.match(WORKTREE_DIR_RE);
+  return match ? `valeria/${match[1]}/${match[2]}` : null;
+}
+
+// Pure decision logic behind sweepOrphanedWorktrees below, split out so it's
+// testable without real git/Docker: which branches, out of a list of
+// worktree directory names, no longer earn their place on disk. Two cases —
+// a 'plan' worktree (never opens a PR, so it never earns removal any other
+// way — see agent-task.ts) always goes; a slice worktree goes once its
+// branch no longer has an open PR (covers a merge-time removeWorktree call
+// that failed, and — deliberately — PRs closed without merging or issues
+// that got blocked: nothing is lost by deleting a local worktree, the
+// branch and everything reviewable stays on GitHub, which is where a human
+// actually looks when something's blocked, not this filesystem).
+export function branchesToSweep(dirNames: string[], allPrs: PullRequestStatus[]): string[] {
+  const openBranches = new Set(allPrs.map((pr) => pr.headRefName));
+  return dirNames.flatMap((name) => {
+    const branch = branchFromWorktreeDirName(name);
+    if (!branch) return []; // not a ValerIA worktree dir — leave it alone
+    const isPlanWorktree = branch.endsWith('/plan');
+    return isPlanWorktree || !openBranches.has(branch) ? [branch] : [];
+  });
+}
+
+// The alternative to sweeping is an unbounded pile of stale checkouts and
+// their Docker stacks — a real problem now that tick() processes several
+// issues concurrently, so their Docker stacks can be up at the same time
+// too (see concurrency.ts). Reuses tick()'s already-batched allPrs — no
+// extra GitHub call. Called at the very start of tick(), before this tick's
+// own new worktrees exist, so it never races a worktree that's
+// mid-creation for work just starting.
+export async function sweepOrphanedWorktrees(allPrs: PullRequestStatus[]): Promise<void> {
+  let entries: string[];
+  try {
+    entries = await readdir(config.worktreeBasePath);
+  } catch {
+    return; // nothing created yet
+  }
+
+  for (const branch of branchesToSweep(entries, allPrs)) {
+    await removeWorktree(branch);
+  }
 }
 
 export async function isBehind(worktreeDir: string, ontoBranch: string): Promise<boolean> {

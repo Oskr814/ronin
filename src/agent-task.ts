@@ -5,7 +5,7 @@ import { runClaudeHeadless } from './claude-runner.js';
 import { getPullRequestStatus, type Comment } from './github.js';
 import { config } from './config.js';
 import { log } from './logger.js';
-import { sliceBranch, baseBranchFor } from './stack.js';
+import { sliceBranch, planBranch, baseBranchFor } from './stack.js';
 import { recordAgentRun } from './metrics.js';
 
 export type AgentTask =
@@ -25,7 +25,7 @@ async function buildTask(task: AgentTask): Promise<{ branch: string; prompt: str
   switch (task.type) {
     case 'plan':
       return {
-        branch: `valeria/${task.issueNumber}/plan`,
+        branch: planBranch(task.issueNumber),
         prompt: [
           `You are ValerIA, an autonomous agent working on tracking issue #${task.issueNumber} in ${repoUrl()}.`,
           `Read all of these spec files (inside this checkout) as context — together they describe the work, not just the first one:\n${task.specPaths.map((p) => `- ${p}`).join('\n')}`,

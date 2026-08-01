@@ -7,6 +7,13 @@ export function sliceBranch(issueNumber: number, sliceIndex: number): string {
   return `valeria/${issueNumber}/slice-${sliceIndex + 1}`;
 }
 
+// The 'plan' task's branch — never opens a PR (its job is to rewrite the
+// tracking issue's body, see agent-task.ts), so it's the one ValerIA branch
+// that never goes through the merge-time worktree cleanup in tick.ts.
+export function planBranch(issueNumber: number): string {
+  return `valeria/${issueNumber}/plan`;
+}
+
 const SLICE_BRANCH_RE = /^valeria\/\d+\/slice-(\d+)$/;
 
 export function sliceIndexFromBranch(branch: string): number | null {

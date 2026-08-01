@@ -29,10 +29,10 @@ import { resetTickMetrics, getTickAgentMetrics } from './metrics.js';
 import { runWithConcurrency } from './concurrency.js';
 import { runAgentTask, type AgentTask } from './agent-task.js';
 import { ClaudeUsageLimitError } from './claude-runner.js';
-import { toStackedPrs, pickBottomPr, prsForIssue, type StackedPr } from './stack.js';
+import { toStackedPrs, pickBottomPr, prsForIssue, planBranch, type StackedPr } from './stack.js';
 import { incrementChecksPendingCount, resetChecksPendingCount } from './local-state.js';
 import { tryClaim, releaseIfNoLongerInProgress, runnerLabel } from './claim.js';
-import { worktreeDirFor, isBehind, attemptRebase, removeWorktree } from './worktree.js';
+import { worktreeDirFor, isBehind, attemptRebase, removeWorktree, sweepOrphanedWorktrees } from './worktree.js';
 import { publishEvidence, rawEvidenceUrl } from './evidence.js';
 import { findUnprocessedMentions } from './mentions.js';
 import { config, LABEL_BUG, LABEL_MANAGED } from './config.js';
@@ -122,7 +122,17 @@ async function discoverAssignedSpecs(): Promise<void> {
       // finds out where the actual work moved to.
       await commentOnSpecPr(pr.number, `🚀 Started: tracked in ${issue.url}`);
       // The plan task rewrites the issue body with the real slice checklist.
-      await runAgentTask({ type: 'plan', issueNumber: issue.number, specPaths });
+      // Its worktree never has a PR (see stack.ts's planBranch), so unlike
+      // every other task type it never goes through the merge-time cleanup
+      // in processSlicePr below — clean it up here instead, right after,
+      // regardless of outcome. Nothing about a finished plan run needs to
+      // persist: a retry (including after ClaudeUsageLimitError) just
+      // recreates the worktree fresh via ensureWorktree.
+      try {
+        await runAgentTask({ type: 'plan', issueNumber: issue.number, specPaths });
+      } finally {
+        await removeWorktree(planBranch(issue.number));
+      }
     } catch (error) {
       // A monthly spend/usage cap is transient and resolves on its own —
       // never a reason to block on a human. Leave state as-is and retry on
@@ -574,6 +584,11 @@ export async function tick(): Promise<void> {
       log.info(`tick: listAllOpenValeriaPrs falló, reintentando en el próximo tick: ${(error as Error).message}`);
       return;
     }
+
+    // Best-effort, before any of this tick's own work starts (so it never
+    // races a worktree that's mid-creation for a task about to run) — see
+    // sweepOrphanedWorktrees's own comment for what this covers and why.
+    await sweepOrphanedWorktrees(allPrs);
 
     // Each issue's whole pipeline (fixes, then a possible new-slice start)
     // runs as one unit, up to config.tickConcurrency issues at once — no
