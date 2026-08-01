@@ -31,6 +31,7 @@ vi.mock('node:fs/promises', () => ({
 }));
 
 const { runAgentTask } = await import('./agent-task.js');
+const { resetTickMetrics, getTickAgentMetrics } = await import('./metrics.js');
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -71,5 +72,25 @@ describe('runAgentTask — other task types leave test-results/ untouched', () =
     await runAgentTask({ type: 'fix-review', issueNumber: 228, prNumber: 229 });
 
     expect(rm).not.toHaveBeenCalled();
+  });
+});
+
+describe('runAgentTask — agent-run metrics', () => {
+  beforeEach(() => {
+    resetTickMetrics();
+  });
+
+  it('records a run on success', async () => {
+    await runAgentTask({ type: 'fix-review', issueNumber: 228, prNumber: 229 });
+
+    expect(getTickAgentMetrics().agentRuns).toBe(1);
+  });
+
+  it('still records a run when the headless call fails', async () => {
+    runClaudeHeadless.mockRejectedValueOnce(new Error('boom'));
+
+    await expect(runAgentTask({ type: 'fix-review', issueNumber: 228, prNumber: 229 })).rejects.toThrow('boom');
+
+    expect(getTickAgentMetrics().agentRuns).toBe(1);
   });
 });

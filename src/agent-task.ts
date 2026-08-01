@@ -6,6 +6,7 @@ import { getPullRequestStatus, type Comment } from './github.js';
 import { config } from './config.js';
 import { log } from './logger.js';
 import { sliceBranch, baseBranchFor } from './stack.js';
+import { recordAgentRun } from './metrics.js';
 
 export type AgentTask =
   | { type: 'plan'; issueNumber: number; specPaths: string[] }
@@ -165,12 +166,20 @@ export async function runAgentTask(task: AgentTask): Promise<void> {
   }
 
   log.info(`starting ${task.type} for issue #${task.issueNumber} on branch ${branch}`);
+  const start = Date.now();
+  const prNumber = 'prNumber' in task ? task.prNumber : undefined;
   try {
     // Output streams live to the log as the agent works — see
     // claude-runner.ts — so nothing further to dump here once it's done.
     await runClaudeHeadless(worktreeDir, prompt, `${task.type} #${task.issueNumber}`);
+    const durationMs = Date.now() - start;
+    recordAgentRun(durationMs);
+    log.metric('agent_run', { taskType: task.type, issueNumber: task.issueNumber, prNumber, durationMs, success: true });
     log.info(`finished ${task.type} for issue #${task.issueNumber}`);
   } catch (error) {
+    const durationMs = Date.now() - start;
+    recordAgentRun(durationMs);
+    log.metric('agent_run', { taskType: task.type, issueNumber: task.issueNumber, prNumber, durationMs, success: false });
     log.error(`${task.type} for issue #${task.issueNumber} failed`, error);
     throw error;
   }

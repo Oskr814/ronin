@@ -25,6 +25,7 @@ import {
 import { fetchOriginMain, readSpecFile, extractTitle } from './spec-content.js';
 import { nextUnstartedSlice, hasRemainingSlices, recordSlicePr, markSliceMerged, seedSingleSlice, getSlices } from './checklist.js';
 import { notifyBlocker } from './notifier.js';
+import { resetTickMetrics, getTickAgentMetrics } from './metrics.js';
 import { runAgentTask, type AgentTask } from './agent-task.js';
 import { ClaudeUsageLimitError } from './claude-runner.js';
 import { toStackedPrs, pickBottomPr, prsForIssue, type StackedPr } from './stack.js';
@@ -549,6 +550,8 @@ async function runIssueStep(issue: TrackingIssue, step: () => Promise<void>): Pr
 }
 
 export async function tick(): Promise<void> {
+  const start = Date.now();
+  resetTickMetrics();
   log.info(`tick start (commit ${await currentCommit()})`);
   await discoverAssignedSpecs();
   await discoverAssignedBugs();
@@ -556,44 +559,53 @@ export async function tick(): Promise<void> {
   const inProgress = await listTrackingIssues('in-progress');
   log.info(`${inProgress.length} issue(s) en progreso`);
 
-  // One batched read for every issue's stack instead of a `gh pr list` + a
-  // `gh pr view` per PR per issue — see
-  // docs/superpowers/specs/2026-08-01-pr-list-batching-design.md. A failure
-  // here is shared across every issue in this tick (not attributable to any
-  // one of them), so it gets the same treatment as ClaudeUsageLimitError:
-  // log and retry next tick, never escalate to a human over it.
-  let allPrs: PullRequestStatus[];
   try {
-    allPrs = await listAllOpenValeriaPrs();
-  } catch (error) {
-    log.info(`tick: listAllOpenValeriaPrs falló, reintentando en el próximo tick: ${(error as Error).message}`);
-    return;
-  }
+    // One batched read for every issue's stack instead of a `gh pr list` + a
+    // `gh pr view` per PR per issue — see
+    // docs/superpowers/specs/2026-08-01-pr-list-batching-design.md. A failure
+    // here is shared across every issue in this tick (not attributable to any
+    // one of them), so it gets the same treatment as ClaudeUsageLimitError:
+    // log and retry next tick, never escalate to a human over it.
+    let allPrs: PullRequestStatus[];
+    try {
+      allPrs = await listAllOpenValeriaPrs();
+    } catch (error) {
+      log.info(`tick: listAllOpenValeriaPrs falló, reintentando en el próximo tick: ${(error as Error).message}`);
+      return;
+    }
 
-  // Two passes, not one per issue: an implement-slice/fix-bug run can take
-  // up to AGENT_TASK_TIMEOUT_MINUTES, and starting one for issue A must
-  // never delay a rebase/e2e/review fix that issue B needs right now — both
-  // would otherwise share this same single-flight tick (see run-tick.sh's
-  // flock). So every issue's fix work (rebase, e2e, review, merge) runs
-  // first, across the whole batch; only once that's done for everyone does
-  // any new (potentially long) slice actually start.
-  const deferred: DeferredSliceStart[] = [];
-  for (const issue of inProgress) {
-    if (!(await tryClaim(issue.number))) continue; // another runner already owns this one
-    await runIssueStep(issue, async () => {
-      const next = await processIssue(issue, allPrs);
-      if (next) deferred.push(next);
-    });
-  }
+    // Two passes, not one per issue: an implement-slice/fix-bug run can take
+    // up to AGENT_TASK_TIMEOUT_MINUTES, and starting one for issue A must
+    // never delay a rebase/e2e/review fix that issue B needs right now — both
+    // would otherwise share this same single-flight tick (see run-tick.sh's
+    // flock). So every issue's fix work (rebase, e2e, review, merge) runs
+    // first, across the whole batch; only once that's done for everyone does
+    // any new (potentially long) slice actually start.
+    const deferred: DeferredSliceStart[] = [];
+    for (const issue of inProgress) {
+      if (!(await tryClaim(issue.number))) continue; // another runner already owns this one
+      await runIssueStep(issue, async () => {
+        const next = await processIssue(issue, allPrs);
+        if (next) deferred.push(next);
+      });
+    }
 
-  for (const next of deferred) {
-    await runIssueStep(next.issue, async () => {
-      const context = next.stackSize === 0
-        ? 'sin PRs abiertos'
-        : `stack de ${next.stackSize} PR(s) abierto(s)`;
-      const suffix = next.stackSize === 0 ? '' : ' en paralelo';
-      log.info(`issue #${next.issue.number}: ${context}, arrancando slice ${next.index + 1} (${next.title})${suffix}`);
-      await runAgentTask(agentTaskFor(next.issue, next.index, next.title));
-    });
+    for (const next of deferred) {
+      await runIssueStep(next.issue, async () => {
+        const context = next.stackSize === 0
+          ? 'sin PRs abiertos'
+          : `stack de ${next.stackSize} PR(s) abierto(s)`;
+        const suffix = next.stackSize === 0 ? '' : ' en paralelo';
+        log.info(`issue #${next.issue.number}: ${context}, arrancando slice ${next.index + 1} (${next.title})${suffix}`);
+        await runAgentTask(agentTaskFor(next.issue, next.index, next.title));
+      });
+    }
+  } finally {
+    // Always emitted, even on the early return above — durationMs vs.
+    // agentRunsDurationMs is what tells whether a tick was mostly spent
+    // waiting on sequential `claude -p` runs (an argument for parallelizing
+    // them) or on something else entirely.
+    const { agentRuns, agentRunsDurationMs } = getTickAgentMetrics();
+    log.metric('tick_complete', { durationMs: Date.now() - start, issuesInProgress: inProgress.length, agentRuns, agentRunsDurationMs });
   }
 }
