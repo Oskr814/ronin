@@ -26,6 +26,7 @@ import { fetchOriginMain, readSpecFile, extractTitle } from './spec-content.js';
 import { nextUnstartedSlice, hasRemainingSlices, recordSlicePr, markSliceMerged, seedSingleSlice, getSlices } from './checklist.js';
 import { notifyBlocker } from './notifier.js';
 import { resetTickMetrics, getTickAgentMetrics } from './metrics.js';
+import { runWithConcurrency } from './concurrency.js';
 import { runAgentTask, type AgentTask } from './agent-task.js';
 import { ClaudeUsageLimitError } from './claude-runner.js';
 import { toStackedPrs, pickBottomPr, prsForIssue, type StackedPr } from './stack.js';
@@ -438,9 +439,9 @@ export async function processSlicePr(issue: TrackingIssue, pr: StackedPr, isBott
   return true;
 }
 
-// A slice ready to start, deferred rather than run immediately — see the
-// two-pass split in tick() below.
-interface DeferredSliceStart {
+// A slice ready to start, once processIssue has confirmed nothing else in
+// this issue's stack needs attention first.
+interface NextSliceStart {
   issue: TrackingIssue;
   index: number;
   title: string;
@@ -449,7 +450,7 @@ interface DeferredSliceStart {
   stackSize: number;
 }
 
-async function processIssue(issue: TrackingIssue, allPrs: PullRequestStatus[]): Promise<DeferredSliceStart | null> {
+async function processIssue(issue: TrackingIssue, allPrs: PullRequestStatus[]): Promise<NextSliceStart | null> {
   const stack = toStackedPrs(prsForIssue(allPrs, issue.number));
 
   if (stack.length === 0) {
@@ -574,32 +575,26 @@ export async function tick(): Promise<void> {
       return;
     }
 
-    // Two passes, not one per issue: an implement-slice/fix-bug run can take
-    // up to AGENT_TASK_TIMEOUT_MINUTES, and starting one for issue A must
-    // never delay a rebase/e2e/review fix that issue B needs right now — both
-    // would otherwise share this same single-flight tick (see run-tick.sh's
-    // flock). So every issue's fix work (rebase, e2e, review, merge) runs
-    // first, across the whole batch; only once that's done for everyone does
-    // any new (potentially long) slice actually start.
-    const deferred: DeferredSliceStart[] = [];
-    for (const issue of inProgress) {
-      if (!(await tryClaim(issue.number))) continue; // another runner already owns this one
+    // Each issue's whole pipeline (fixes, then a possible new-slice start)
+    // runs as one unit, up to config.tickConcurrency issues at once — no
+    // longer split into a fixes-first pass and a deferred slice-start pass:
+    // that split existed only to stop one issue's long implement-slice/
+    // fix-bug run from delaying another issue's quick rebase/e2e/review fix
+    // when everything ran strictly in sequence. Real concurrency removes the
+    // reason for it — issue B's fix now genuinely runs alongside issue A's
+    // slice start instead of waiting for it.
+    await runWithConcurrency(inProgress, config.tickConcurrency, async (issue) => {
+      if (!(await tryClaim(issue.number))) return; // another runner already owns this one
       await runIssueStep(issue, async () => {
         const next = await processIssue(issue, allPrs);
-        if (next) deferred.push(next);
-      });
-    }
-
-    for (const next of deferred) {
-      await runIssueStep(next.issue, async () => {
+        if (!next) return;
         const context = next.stackSize === 0
           ? 'sin PRs abiertos'
           : `stack de ${next.stackSize} PR(s) abierto(s)`;
-        const suffix = next.stackSize === 0 ? '' : ' en paralelo';
-        log.info(`issue #${next.issue.number}: ${context}, arrancando slice ${next.index + 1} (${next.title})${suffix}`);
+        log.info(`issue #${next.issue.number}: ${context}, arrancando slice ${next.index + 1} (${next.title})`);
         await runAgentTask(agentTaskFor(next.issue, next.index, next.title));
       });
-    }
+    });
   } finally {
     // Always emitted, even on the early return above — durationMs vs.
     // agentRunsDurationMs is what tells whether a tick was mostly spent

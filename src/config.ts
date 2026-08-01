@@ -80,6 +80,13 @@ export const config = {
   // ClaudeUsageLimitError, que reintenta indefinidamente porque ya se sabe
   // transitorio.
   issueErrorRetryLimit: Number(process.env.ISSUE_ERROR_RETRY_LIMIT ?? 3),
+  // How many issues' pipelines (fixes + a possible new-slice start) tick()
+  // runs at once — see tick.ts's runWithConcurrency call. Bounded on
+  // purpose, not left unlimited: each concurrent slot can mean its own
+  // `claude -p` process (against a Claude account with a shared, limited
+  // usage cap) and its own per-worktree Docker Compose stack for
+  // integration tests (RAM/CPU/ports).
+  tickConcurrency: Number(process.env.TICK_CONCURRENCY ?? 2),
   // Off by default: requesting Copilot review automatically is out of scope
   // for this skeleton, kept as an opt-in switch rather than baked into the
   // core loop. See docs/DESIGN.md §3.
