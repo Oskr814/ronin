@@ -27,6 +27,7 @@ Reducir el cuello de botella de PRs gigantes (+100 archivos) generados por imple
 5. `pnpm init-labels` — crea en `PRODUCT_REPO` los labels `valeria*` que usa el pipeline, incluida tu label de asignación `valeria:runner-<RUNNER_ID>`. Sin esto no vas a poder seleccionarla desde la UI de GitHub al asignarte un spec.
 6. Correr `pnpm build` (antes de instalar el cron por primera vez, y después de cualquier cambio de código posterior) — el cron corre el `dist/` compilado, nunca reconstruye solo. Sin un build nuevo, sigue corriendo la versión vieja (o corta si `dist/` nunca se generó).
 7. `pnpm cron:setup [minutos] [días_retención]` (default 5 min / 14 días) — instala el supervisor como cron job. `pnpm cron:remove` para sacarlo. Logs en `logs/tick-YYYY-MM-DD.log` (`tail -f logs/tick-$(date +%F).log` para seguir el de hoy).
+8. (Opcional, recomendado) Bootstrapear la convención de memoria persistente entre ticks en el repo del producto: crear `docs/agent-notes/INDEX.md` vacío y agregar una sección al `CLAUDE.md` del repo apuntando a él — ver [`docs/superpowers/specs/2026-08-18-agent-notes-design.md`](docs/superpowers/specs/2026-08-18-agent-notes-design.md). Sin este paso la convención queda inerte: el agente no encuentra dónde dejar constancia de lo que aprende y simplemente no hace nada, sin error ni flag.
 
 ### Asignarte un spec
 

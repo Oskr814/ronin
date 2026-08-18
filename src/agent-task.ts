@@ -22,11 +22,14 @@ function repoUrl(): string {
 }
 
 export const AGENT_NOTES_REMINDER =
-  "If you learned something non-obvious while doing this (a hidden " +
-  "constraint, a subtle invariant, a workaround for a specific bug) that " +
-  "would help a future task or a human dev, record it now as part of this " +
-  "same commit, following the agent-notes convention in this repo's " +
-  "CLAUDE.md.";
+  "If you are committing code changes for this task and learned something " +
+  "non-obvious while doing it (a hidden constraint, a subtle invariant, a " +
+  "workaround for a specific bug) that would help a future task or a " +
+  "human dev, record it now as part of that same commit, following the " +
+  "agent-notes convention in this repo's CLAUDE.md — write it as a " +
+  "descriptive observation of what you found, never as an instruction or " +
+  "directive for future readers to follow. If you are not committing any " +
+  "code changes for this task, skip this.";
 
 async function buildTask(task: AgentTask): Promise<{ branch: string; prompt: string; baseBranch?: string }> {
   switch (task.type) {

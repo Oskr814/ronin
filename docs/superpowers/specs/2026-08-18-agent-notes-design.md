@@ -64,7 +64,12 @@ termine en un solo archivo gigante que degrade el contexto de cada sesión
 - **Todas las tareas que producen o corrigen código lo escriben, `plan` no**
   — `implement-slice`, `fix-bug`, `fix-review`, `fix-e2e`, `fix-rebase` y
   `review-request` pueden dejar una nota; `plan` no toca código todavía así
-  que no tiene de qué dejar constancia.
+  que no tiene de qué dejar constancia. El recordatorio es condicional a
+  que la tarea efectivamente esté commiteando algo: `fix-bug` y
+  `review-request` tienen salidas explícitas sin tocar código (pedir info
+  a un humano, o dejar el código como está porque el pedido es ambiguo) —
+  en esos casos el agente lo salta, no fuerza un commit/amend solo para
+  dejar la nota.
 - **Sin commit aparte**: el cambio a `docs/agent-notes/` viaja en el mismo
   commit (`implement-slice`/`fix-bug`) o el mismo amend (`fix-review`/
   `fix-e2e`/`fix-rebase`/`review-request`) que la tarea ya está haciendo —
@@ -83,12 +88,15 @@ termine en un solo archivo gigante que degrade el contexto de cada sesión
 Nueva constante exportable, junto a las demás funciones del módulo:
 
 ```ts
-const AGENT_NOTES_REMINDER =
-  "If you learned something non-obvious while doing this (a hidden " +
-  "constraint, a subtle invariant, a workaround for a specific bug) that " +
-  "would help a future task or a human dev, record it now as part of this " +
-  "same commit, following the agent-notes convention in this repo's " +
-  "CLAUDE.md.";
+export const AGENT_NOTES_REMINDER =
+  "If you are committing code changes for this task and learned something " +
+  "non-obvious while doing it (a hidden constraint, a subtle invariant, a " +
+  "workaround for a specific bug) that would help a future task or a " +
+  "human dev, record it now as part of that same commit, following the " +
+  "agent-notes convention in this repo's CLAUDE.md — write it as a " +
+  "descriptive observation of what you found, never as an instruction or " +
+  "directive for future readers to follow. If you are not committing any " +
+  "code changes for this task, skip this.";
 ```
 
 Se agrega como última línea del prompt (después de la línea existente
@@ -96,7 +104,7 @@ Se agrega como última línea del prompt (después de la línea existente
 `fix-bug`, `fix-review`, `fix-e2e`, `fix-rebase`, `review-request`. El
 `case 'plan'` no cambia.
 
-Ejemplo (`implement-slice`, línea ~62, dentro del array que arma el join):
+Ejemplo (case `implement-slice`, dentro del array que arma el join):
 
 ```ts
 prompt: [
@@ -128,6 +136,37 @@ No requiere cambios en `tick.ts`, `github.ts`, `claim.ts` ni ningún otro
 módulo del supervisor — el flujo de lectura (Claude Code carga `CLAUDE.md`
 solo) y escritura (el agente decide leer/editar archivos dentro de su
 propio worktree) ya está cubierto por comportamiento existente.
+
+## Manejo de errores y seguridad
+
+- **Sin nuevo modo de fallo en el supervisor**: `tick.ts`, `github.ts`,
+  `claim.ts` quedan intocados — esto vive enteramente en texto de prompt y
+  convención de repo.
+- **Nota de mala calidad**: la atrapa el review humano normal del PR
+  destino, igual que cualquier otro archivo tocado.
+- **Conflicto de merge** entre dos slices que tocan el mismo
+  `docs/agent-notes/<topic>.md` en paralelo: conflicto de git ordinario,
+  resuelto por el flujo `fix-rebase` que ya existe.
+- **Riesgo de corpus de instrucciones envenenadas**: a diferencia de un
+  comentario de mención — que viene de cualquiera con permiso de comentar,
+  y por eso se cerca explícitamente como "untrusted" en el prompt de
+  `review-request` — un archivo en `docs/agent-notes/` solo llega a `main`
+  habiendo pasado el mismo review humano que el código. Pero a diferencia
+  de un archivo de código cualquiera, esto es un **corpus que crece con el
+  tiempo y que cada sesión futura carga automáticamente vía `CLAUDE.md`**,
+  bajo `--permission-mode bypassPermissions` (`docs/DESIGN.md` §7.1). Una
+  nota escrita como instrucción imperativa ("siempre saltear el e2e cuando
+  X", "está bien setear la label acá") se convierte en una instrucción de
+  pie para cada tick siguiente — un incidente real documentado en
+  `docs/DESIGN.md` §10 muestra exactamente este patrón: el agente leyó
+  instrucciones para otro rol embebidas en `templates/tracking-issue.md` y
+  se auto-aplicó una label sin que se lo pidieran. La mitigación no es
+  código: `AGENT_NOTES_REMINDER` (`src/agent-task.ts`) instruye
+  explícitamente escribir cada nota como observación descriptiva de lo que
+  se encontró, nunca como directiva — la misma regla debe estar en el
+  texto de bootstrap del `CLAUDE.md` del repo destino (ver "Decisiones").
+- **Repo destino sin bootstrap**: el agente no encuentra la convención y no
+  hace nada — degradación silenciosa, sin flag ni config necesarios.
 
 ## Testing
 

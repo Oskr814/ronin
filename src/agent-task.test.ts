@@ -101,6 +101,7 @@ describe('runAgentTask — agent-notes reminder', () => {
 
     const prompt = runClaudeHeadless.mock.calls[0][1] as string;
     expect(prompt).toContain(AGENT_NOTES_REMINDER);
+    expect(prompt.endsWith(AGENT_NOTES_REMINDER)).toBe(true);
   });
 
   it('is included for fix-bug', async () => {
@@ -108,6 +109,7 @@ describe('runAgentTask — agent-notes reminder', () => {
 
     const prompt = runClaudeHeadless.mock.calls[0][1] as string;
     expect(prompt).toContain(AGENT_NOTES_REMINDER);
+    expect(prompt.endsWith(AGENT_NOTES_REMINDER)).toBe(true);
   });
 
   it('is included for fix-review', async () => {
@@ -115,6 +117,7 @@ describe('runAgentTask — agent-notes reminder', () => {
 
     const prompt = runClaudeHeadless.mock.calls[0][1] as string;
     expect(prompt).toContain(AGENT_NOTES_REMINDER);
+    expect(prompt.endsWith(AGENT_NOTES_REMINDER)).toBe(true);
   });
 
   it('is included for fix-e2e', async () => {
@@ -122,6 +125,7 @@ describe('runAgentTask — agent-notes reminder', () => {
 
     const prompt = runClaudeHeadless.mock.calls[0][1] as string;
     expect(prompt).toContain(AGENT_NOTES_REMINDER);
+    expect(prompt.endsWith(AGENT_NOTES_REMINDER)).toBe(true);
   });
 
   it('is included for fix-rebase', async () => {
@@ -129,6 +133,7 @@ describe('runAgentTask — agent-notes reminder', () => {
 
     const prompt = runClaudeHeadless.mock.calls[0][1] as string;
     expect(prompt).toContain(AGENT_NOTES_REMINDER);
+    expect(prompt.endsWith(AGENT_NOTES_REMINDER)).toBe(true);
   });
 
   it('is included for review-request', async () => {
@@ -141,6 +146,7 @@ describe('runAgentTask — agent-notes reminder', () => {
 
     const prompt = runClaudeHeadless.mock.calls[0][1] as string;
     expect(prompt).toContain(AGENT_NOTES_REMINDER);
+    expect(prompt.endsWith(AGENT_NOTES_REMINDER)).toBe(true);
   });
 
   it('is NOT included for plan', async () => {
