@@ -30,7 +30,7 @@ vi.mock('node:fs/promises', () => ({
   rm: (...args: unknown[]) => rm(...args),
 }));
 
-const { runAgentTask } = await import('./agent-task.js');
+const { runAgentTask, AGENT_NOTES_REMINDER } = await import('./agent-task.js');
 const { resetTickMetrics, getTickAgentMetrics } = await import('./metrics.js');
 
 beforeEach(() => {
@@ -92,5 +92,67 @@ describe('runAgentTask — agent-run metrics', () => {
     await expect(runAgentTask({ type: 'fix-review', issueNumber: 228, prNumber: 229 })).rejects.toThrow('boom');
 
     expect(getTickAgentMetrics().agentRuns).toBe(1);
+  });
+});
+
+describe('runAgentTask — agent-notes reminder', () => {
+  it('is included for implement-slice', async () => {
+    await runAgentTask({ type: 'implement-slice', issueNumber: 228, sliceIndex: 0, sliceTitle: 'Add foo' });
+
+    const prompt = runClaudeHeadless.mock.calls[0][1] as string;
+    expect(prompt).toContain(AGENT_NOTES_REMINDER);
+    expect(prompt.endsWith(AGENT_NOTES_REMINDER)).toBe(true);
+  });
+
+  it('is included for fix-bug', async () => {
+    await runAgentTask({ type: 'fix-bug', issueNumber: 228, sliceIndex: 0, sliceTitle: 'Fix foo' });
+
+    const prompt = runClaudeHeadless.mock.calls[0][1] as string;
+    expect(prompt).toContain(AGENT_NOTES_REMINDER);
+    expect(prompt.endsWith(AGENT_NOTES_REMINDER)).toBe(true);
+  });
+
+  it('is included for fix-review', async () => {
+    await runAgentTask({ type: 'fix-review', issueNumber: 228, prNumber: 229 });
+
+    const prompt = runClaudeHeadless.mock.calls[0][1] as string;
+    expect(prompt).toContain(AGENT_NOTES_REMINDER);
+    expect(prompt.endsWith(AGENT_NOTES_REMINDER)).toBe(true);
+  });
+
+  it('is included for fix-e2e', async () => {
+    await runAgentTask({ type: 'fix-e2e', issueNumber: 228, prNumber: 229 });
+
+    const prompt = runClaudeHeadless.mock.calls[0][1] as string;
+    expect(prompt).toContain(AGENT_NOTES_REMINDER);
+    expect(prompt.endsWith(AGENT_NOTES_REMINDER)).toBe(true);
+  });
+
+  it('is included for fix-rebase', async () => {
+    await runAgentTask({ type: 'fix-rebase', issueNumber: 228, prNumber: 229 });
+
+    const prompt = runClaudeHeadless.mock.calls[0][1] as string;
+    expect(prompt).toContain(AGENT_NOTES_REMINDER);
+    expect(prompt.endsWith(AGENT_NOTES_REMINDER)).toBe(true);
+  });
+
+  it('is included for review-request', async () => {
+    await runAgentTask({
+      type: 'review-request',
+      issueNumber: 228,
+      prNumber: 229,
+      mentions: [{ id: 1, kind: 'issue' as const, body: 'test', reactionsEyes: 0 }],
+    });
+
+    const prompt = runClaudeHeadless.mock.calls[0][1] as string;
+    expect(prompt).toContain(AGENT_NOTES_REMINDER);
+    expect(prompt.endsWith(AGENT_NOTES_REMINDER)).toBe(true);
+  });
+
+  it('is NOT included for plan', async () => {
+    await runAgentTask({ type: 'plan', issueNumber: 228, specPaths: ['docs/superpowers/specs/foo.md'] });
+
+    const prompt = runClaudeHeadless.mock.calls[0][1] as string;
+    expect(prompt).not.toContain(AGENT_NOTES_REMINDER);
   });
 });
