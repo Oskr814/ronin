@@ -4,6 +4,7 @@ import { existsSync } from 'node:fs';
 import { mkdir, readdir, copyFile } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 import { config } from './config.js';
+import { activeRepo } from './repo-context.js';
 import { log } from './logger.js';
 
 const execFileAsync = promisify(execFile);
@@ -70,13 +71,12 @@ export async function publishEvidence(issueNumber: number, prNumber: number, wor
   // -c user.name/user.email rather than relying on this checkout (or the
   // host) having git identity configured globally — a fresh clone of
   // EVIDENCE_CHECKOUT_DIR has neither, and `git commit` refuses to guess.
-  // Same "${slug}[bot]" convention used for the GitHub App's PR/issue
-  // authorship elsewhere (see config.ts's githubAppSlug).
+  // Same RONIN_GITHUB_LOGIN identity used for gh calls elsewhere (github.ts).
   await execFileAsync('git', [
-    '-c', `user.name=${config.githubAppSlug}[bot]`,
-    '-c', `user.email=${config.githubAppId}+${config.githubAppSlug}[bot]@users.noreply.github.com`,
+    '-c', `user.name=${config.githubLogin}`,
+    '-c', `user.email=${config.githubLogin}@users.noreply.github.com`,
     'commit',
-    '-m', `evidence: e2e screenshots for ${config.productRepo} PR #${prNumber}`,
+    '-m', `evidence: e2e screenshots for ${activeRepo().productRepo} PR #${prNumber}`,
   ], { cwd: EVIDENCE_CHECKOUT_DIR });
   await execFileAsync('git', ['push', 'origin', 'main'], { cwd: EVIDENCE_CHECKOUT_DIR });
 

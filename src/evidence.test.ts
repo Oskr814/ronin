@@ -3,11 +3,13 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 vi.mock('./config.js', () => ({
   config: {
     valeriaRepo: 'Bmedical/ValerIA',
-    githubAppSlug: 'valeria',
-    githubAppId: '12345',
+    githubLogin: 'ronin',
     playwrightTestResultsDir: 'apps/webapp/test-results',
-    productRepo: 'bmedical/bmedical',
   },
+}));
+
+vi.mock('./repo-context.js', () => ({
+  activeRepo: () => ({ productRepo: 'bmedical/bmedical', productRepoPath: '/tmp/repo', worktreeBasePath: '/tmp/worktrees' }),
 }));
 
 const existsSync = vi.fn();
