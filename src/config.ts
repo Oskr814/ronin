@@ -6,14 +6,19 @@ function requireEnv(name: string): string {
   return value;
 }
 
-const productRepoPath = requireEnv('PRODUCT_REPO_PATH');
-
 export const config = {
-  productRepo: requireEnv('PRODUCT_REPO'),
-  productRepoPath,
-  // Sibling directory to the product repo checkout, not inside it — worktrees
-  // come and go per task and should never be mistaken for the main checkout.
-  worktreeBasePath: process.env.WORKTREE_BASE_PATH ?? join(productRepoPath, '..', 'valeria-worktrees'),
+  // Fine-grained PAT de la cuenta de GitHub dedicada `ronin`, invitada como
+  // colaboradora en cada repo de repos.json — reemplaza al GitHub App (ver
+  // docs/superpowers/specs/2026-08-19-multi-repo-pat-auth-design.md). Token
+  // estático: a diferencia del installation token que reemplaza, no hay
+  // nada que refrescar ni cachear.
+  githubToken: requireEnv('RONIN_GITHUB_TOKEN'),
+  // Username real de esa cuenta (sin sufijo "[bot]", no es un App). Usado
+  // tanto para detectar @menciones dirigidas al agente (mentions.ts) como
+  // para la identidad de los commits de evidencia (evidence.ts).
+  githubLogin: requireEnv('RONIN_GITHUB_LOGIN'),
+  // Dónde vive la lista de repos a supervisar — ver repos.ts.
+  reposConfigPath: process.env.REPOS_CONFIG_PATH ?? join(process.cwd(), 'repos.json'),
   // Ref every new task branch is created from. Defaults to the
   // remote-tracking origin/main (kept fresh by a `git fetch` before each
   // new worktree branch — see worktree.ts) rather than the local `main`
@@ -26,33 +31,14 @@ export const config = {
   // see docs/DESIGN.md §7.1. Containment relies on every task running
   // inside its own disposable git worktree, never the main checkout.
   agentTaskTimeoutMs: Number(process.env.AGENT_TASK_TIMEOUT_MINUTES ?? 30) * 60_000,
-  // Binary invoked for headless runs. Defaults to plain `claude`; only
-  // change this if a genuinely different binary/wrapper script is used.
+  // Binario invocado para las corridas headless. Defaults to plain `claude`;
+  // only change this if a genuinely different binary/wrapper script is used.
   claudeCommand: process.env.CLAUDE_COMMAND ?? 'claude',
-  // On a machine with multiple Claude accounts, `claude-bmedical` (etc.)
-  // usually isn't a separate binary at all — it's a shell alias
-  // (`CLAUDE_CONFIG_DIR=~/.claude-bmedical command claude`), invisible to
-  // execFile since that never goes through a shell. Setting
-  // CLAUDE_CONFIG_DIR directly in the child env reproduces the same effect
-  // without needing an alias at all. Empty means "use whatever's ambient".
+  // Default global de CLAUDE_CONFIG_DIR — una entrada de repos.json puede
+  // pisarlo por repo con su propio claudeConfigDir (ver repo-context.ts);
+  // esto es lo que se usa cuando esa entrada no trae el suyo. Empty means
+  // "use whatever's ambient".
   claudeConfigDir: process.env.CLAUDE_CONFIG_DIR ?? '',
-  // Dedicated ValerIA GitHub App — never the ambient `gh auth` session, so
-  // issues/PRs are authored by "ValerIA[bot]", not whoever is logged into
-  // `gh` on the box running the supervisor. See docs/DESIGN.md §7.
-  githubAppId: requireEnv('VALERIA_GITHUB_APP_ID'),
-  githubAppPrivateKeyPath: requireEnv('VALERIA_GITHUB_APP_PRIVATE_KEY_PATH'),
-  githubAppInstallationId: requireEnv('VALERIA_GITHUB_APP_INSTALLATION_ID'),
-  // Usuario dedicado (no el bot user del App) creado solo para que
-  // @mencionarlo dispare notificación real — mismo approach que usa la
-  // integración de Claude Code. Colaborador solo-lectura de PRODUCT_REPO;
-  // quien realmente postea reacciones/reviews sigue siendo el App vía
-  // installation token. Ver docs/superpowers/specs/2026-07-28-mention-review-design.md.
-  mentionHandle: process.env.VALERIA_MENTION_HANDLE ?? 'valeria-agent',
-  // Slug del GitHub App (no el usuario valeria-agent) — su bot user en la
-  // API es "${slug}[bot]". Necesario para distinguir "el App ya reaccionó a
-  // este comentario" de una reacción de cualquier otra persona. Se ve en la
-  // URL de configuración del App (Settings → Developer settings → GitHub Apps).
-  githubAppSlug: requireEnv('VALERIA_GITHUB_APP_SLUG'),
   specDir: process.env.SPEC_DIR ?? 'docs/superpowers',
   // Required, not optional: per docs/BLOCKING.md, every blocker always
   // includes an email — a missing value here used to fail lazily, mid
@@ -62,55 +48,28 @@ export const config = {
   gmailAppPassword: requireEnv('GMAIL_APP_PASSWORD'),
   notifyTo: requireEnv('NOTIFY_TO'),
   e2eRetryLimit: Number(process.env.E2E_RETRY_LIMIT ?? 2),
-  // Separate, much larger budget for "CI hasn't reported anything yet"
-  // (queued/in-progress) — per docs/BLOCKING.md, a running CI must never
-  // block on its own. This only exists as a safety net against a workflow
-  // that structurally never triggers for a given slice (e.g. path-filtered
-  // out), not to rush a real, still-running run — see the checksPending
-  // branch in tick.ts, discovered too tight at e2eRetryLimit's default of 2
-  // (i.e. 2 minutes at the 1-tick-per-minute cron cadence) on PR #239, whose
-  // Integration Tests run alone took several minutes.
   checksPendingRetryLimit: Number(process.env.CHECKS_PENDING_RETRY_LIMIT ?? 60),
   sliceAttemptLimit: Number(process.env.SLICE_ATTEMPT_LIMIT ?? 3),
-  // "Loop guard" de docs/BLOCKING.md: 3 intentos de dejar mergeable el fondo
-  // del stack antes de escalar a bloqueo por "conflicto de merge no mecánico".
   rebaseRetryLimit: Number(process.env.REBASE_RETRY_LIMIT ?? 3),
-  // Excepciones no manejadas en processIssue (p.ej. un glitch transitorio de
-  // la API de GitHub) antes de escalar a bloqueo — separado de
-  // ClaudeUsageLimitError, que reintenta indefinidamente porque ya se sabe
-  // transitorio.
   issueErrorRetryLimit: Number(process.env.ISSUE_ERROR_RETRY_LIMIT ?? 3),
   // How many issues' pipelines (fixes + a possible new-slice start) tick()
-  // runs at once — see tick.ts's runWithConcurrency call. Bounded on
-  // purpose, not left unlimited: each concurrent slot can mean its own
-  // `claude -p` process (against a Claude account with a shared, limited
-  // usage cap) and its own per-worktree Docker Compose stack for
-  // integration tests (RAM/CPU/ports).
+  // runs at once *within one active repo* — see repo-context.ts and
+  // tick.ts's outer loop for why this stays per-repo, not global-across-repos.
   tickConcurrency: Number(process.env.TICK_CONCURRENCY ?? 2),
-  // Off by default: requesting Copilot review automatically is out of scope
-  // for this skeleton, kept as an opt-in switch rather than baked into the
-  // core loop. See docs/DESIGN.md §3.
   requestCopilotReview: process.env.REQUEST_COPILOT_REVIEW === 'true',
   // A person's GitHub username, e.g. "oskr814" — not a machine hostname.
-  // Unified identity used both for spec-PR assignment (a human labels a spec
-  // PR `valeria:runner-<id>` to hand it to a specific runner) and for the
-  // per-issue claim lock (`valeria:runner-<id>`) once that runner picks up
-  // work — see docs/DESIGN.md §1 and §9. Required, no default: a hostname
-  // fallback wouldn't match anything a human would actually label a PR with.
+  // Same RUNNER_ID across every repo in repos.json (confirmed requirement:
+  // one operator, not one runner per repo) — see docs/DESIGN.md §1 and §9.
   runnerId: requireEnv('RUNNER_ID'),
-  // Per-machine cache of which issues this process already owns, so a claim
-  // already held doesn't need to be re-verified against GitHub every tick.
-  // Never committed — see .gitignore.
+  // Base path for the per-machine claim/checks-pending cache — namespaced
+  // per active repo by local-state.ts, never read directly as a file path
+  // here anymore.
   localStatePath: process.env.LOCAL_STATE_PATH ?? '.valeria-state.json',
   // ValerIA's own repo — e2e screenshot evidence is committed here (main),
-  // not to PRODUCT_REPO, so bmedical's history never picks up binary
-  // bloat from every PR. See docs/DESIGN.md §4.
+  // shared across every repo.json entry, not split per product repo. See
+  // docs/DESIGN.md §4.
   valeriaRepo: process.env.VALERIA_REPO ?? 'Bmedical/ValerIA',
-  // Playwright's screenshot output dir, relative to the product repo root
-  // (bmedical's apps/webapp/playwright.config.ts sets `screenshot: 'on'`).
-  // Gitignored there on purpose — evidence.ts reads straight off a
-  // worktree's disk instead of trying to get these into bmedical's git
-  // history at all.
+  // Playwright's screenshot output dir, relative to each active repo's root.
   playwrightTestResultsDir: process.env.PLAYWRIGHT_TEST_RESULTS_DIR ?? 'apps/webapp/test-results',
 } as const;
 
