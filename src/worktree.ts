@@ -5,6 +5,7 @@ import { mkdir, readdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createServer } from 'node:net';
 import { config } from './config.js';
+import { activeRepo } from './repo-context.js';
 import { log } from './logger.js';
 import type { PullRequestStatus } from './github.js';
 
@@ -33,11 +34,11 @@ function getFreePort(): Promise<number> {
 // (e.g. evidence.ts reading Playwright's test-results/ after the fact) can
 // derive the same path without duplicating the naming scheme.
 export function worktreeDirFor(branch: string): string {
-  return join(config.worktreeBasePath, branch.replaceAll('/', '-'));
+  return join(activeRepo().worktreeBasePath, branch.replaceAll('/', '-'));
 }
 
 async function branchExists(branch: string): Promise<boolean> {
-  return execFileAsync('git', ['rev-parse', '--verify', branch], { cwd: config.productRepoPath })
+  return execFileAsync('git', ['rev-parse', '--verify', branch], { cwd: activeRepo().productRepoPath })
     .then(() => true)
     .catch(() => false);
 }
@@ -49,7 +50,7 @@ async function branchExists(branch: string): Promise<boolean> {
 // agent-task.ts can make the same check before using a computed base branch
 // (see final review Fix 3).
 export async function remoteBranchExists(branch: string): Promise<boolean> {
-  return execFileAsync('git', ['ls-remote', '--exit-code', '--heads', 'origin', branch], { cwd: config.productRepoPath })
+  return execFileAsync('git', ['ls-remote', '--exit-code', '--heads', 'origin', branch], { cwd: activeRepo().productRepoPath })
     .then(() => true)
     .catch(() => false);
 }
@@ -61,7 +62,7 @@ export async function ensureWorktree(branch: string, baseRef = config.worktreeBa
   const dir = worktreeDirFor(branch);
   if (existsSync(dir)) return dir;
 
-  await mkdir(config.worktreeBasePath, { recursive: true });
+  await mkdir(activeRepo().worktreeBasePath, { recursive: true });
   const local = await branchExists(branch);
   // Only relevant when there's no local ref yet — ls-remote before any fetch
   // so this doesn't depend on local remote-tracking refs being fresh.
@@ -71,7 +72,7 @@ export async function ensureWorktree(branch: string, baseRef = config.worktreeBa
     // primary worktree — a plain `git fetch` never touches the working
     // directory or local branch refs. Also materializes origin/<branch>
     // locally so the remote-branch case below can reference it.
-    await execFileAsync('git', ['fetch', 'origin'], { cwd: config.productRepoPath }).catch(() => {});
+    await execFileAsync('git', ['fetch', 'origin'], { cwd: activeRepo().productRepoPath }).catch(() => {});
   }
   // Local branch: reuse it as-is. No local ref but it exists on origin
   // (e.g. a different machine/runner created it): check it out tracking the
@@ -84,7 +85,7 @@ export async function ensureWorktree(branch: string, baseRef = config.worktreeBa
     : remote
       ? ['worktree', 'add', '-b', branch, dir, `origin/${branch}`]
       : ['worktree', 'add', '-b', branch, dir, baseRef];
-  await execFileAsync('git', args, { cwd: config.productRepoPath });
+  await execFileAsync('git', args, { cwd: activeRepo().productRepoPath });
 
   // A repo-root .env, auto-loaded by `docker compose` (see bmedical's own
   // docker-compose.yml, which reads DB_PORT from here) — gives this
@@ -125,7 +126,7 @@ async function removeDockerStack(worktreeDir: string): Promise<void> {
 export async function removeWorktree(branch: string): Promise<void> {
   const dir = worktreeDirFor(branch);
   await removeDockerStack(dir);
-  await execFileAsync('git', ['worktree', 'remove', dir, '--force'], { cwd: config.productRepoPath })
+  await execFileAsync('git', ['worktree', 'remove', dir, '--force'], { cwd: activeRepo().productRepoPath })
     .catch((error) => log.error(`removeWorktree: 'git worktree remove' falló para ${dir}`, error));
 }
 
@@ -171,7 +172,7 @@ export function branchesToSweep(dirNames: string[], allPrs: PullRequestStatus[])
 export async function sweepOrphanedWorktrees(allPrs: PullRequestStatus[]): Promise<void> {
   let entries: string[];
   try {
-    entries = await readdir(config.worktreeBasePath);
+    entries = await readdir(activeRepo().worktreeBasePath);
   } catch {
     return; // nothing created yet
   }
