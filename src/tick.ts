@@ -36,6 +36,8 @@ import { worktreeDirFor, isBehind, attemptRebase, removeWorktree, sweepOrphanedW
 import { publishEvidence, rawEvidenceUrl } from './evidence.js';
 import { findUnprocessedMentions } from './mentions.js';
 import { config, LABEL_BUG, LABEL_MANAGED } from './config.js';
+import { activeRepo, withActiveRepo } from './repo-context.js';
+import { loadRepos } from './repos.js';
 import { log } from './logger.js';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -58,12 +60,12 @@ async function currentCommit(): Promise<string> {
 }
 
 function prUrl(prNumber: number): string {
-  return `https://github.com/${config.productRepo}/pull/${prNumber}`;
+  return `https://github.com/${activeRepo().productRepo}/pull/${prNumber}`;
 }
 
 async function renderTrackingIssueBody(specPaths: string[]): Promise<string> {
   const template = await readFile(join(process.cwd(), 'templates/tracking-issue.md'), 'utf8');
-  const repoUrl = `https://github.com/${config.productRepo}`;
+  const repoUrl = `https://github.com/${activeRepo().productRepo}`;
   const specLinks = specPaths.map((p) => `- [${p}](${repoUrl}/blob/main/${p})`).join('\n');
   return template.replaceAll('{{spec_links}}', specLinks);
 }
@@ -151,7 +153,7 @@ async function discoverAssignedSpecs(): Promise<void> {
 }
 
 function issueUrl(issueNumber: number): string {
-  return `https://github.com/${config.productRepo}/issues/${issueNumber}`;
+  return `https://github.com/${activeRepo().productRepo}/issues/${issueNumber}`;
 }
 
 // Discovery source: a human labels an existing bug-report issue (already
@@ -560,10 +562,10 @@ async function runIssueStep(issue: TrackingIssue, step: () => Promise<void>): Pr
   await releaseIfNoLongerInProgress(issue.number);
 }
 
-export async function tick(): Promise<void> {
+async function tickOneRepo(): Promise<void> {
   const start = Date.now();
   resetTickMetrics();
-  log.info(`tick start (commit ${await currentCommit()})`);
+  log.info(`tick start (commit ${await currentCommit()}, repo ${activeRepo().productRepo})`);
   await discoverAssignedSpecs();
   await discoverAssignedBugs();
 
@@ -616,6 +618,22 @@ export async function tick(): Promise<void> {
     // waiting on sequential `claude -p` runs (an argument for parallelizing
     // them) or on something else entirely.
     const { agentRuns, agentRunsDurationMs } = getTickAgentMetrics();
-    log.metric('tick_complete', { durationMs: Date.now() - start, issuesInProgress: inProgress.length, agentRuns, agentRunsDurationMs });
+    log.metric('tick_complete', { durationMs: Date.now() - start, issuesInProgress: inProgress.length, agentRuns, agentRunsDurationMs, repo: activeRepo().productRepo });
+  }
+}
+
+// Entry point invoked once per cron run (see index.ts). Repos run strictly
+// in sequence — see docs/superpowers/specs/2026-08-19-multi-repo-pat-auth-design.md
+// §3/§5 for why a mutable activeRepo() singleton is safe under that
+// constraint. A repo whose tick throws is logged and skipped for this run;
+// it never stops the rest of repos.json from ticking.
+export async function tick(): Promise<void> {
+  const repos = await loadRepos();
+  for (const repo of repos) {
+    try {
+      await withActiveRepo(repo, tickOneRepo);
+    } catch (error) {
+      log.error(`tick: ${repo.productRepo} falló, sigue con el resto: ${(error as Error).message}`);
+    }
   }
 }
