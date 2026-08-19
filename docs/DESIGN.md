@@ -131,21 +131,17 @@ Solo se notifica por email en bloqueos reales, no en progreso rutinario (para ev
 
 ### 7. Identidad del agente en GitHub
 
-Los issues/PRs los abre un **GitHub App dedicado a ValerIA** (aparece como `ValerIA[bot]`), no la cuenta personal de quien corre el supervisor — así el historial de autoría es honesto sobre qué hizo un humano y qué hizo el agente, y el approval-gate del merge (§ Principios de diseño) tiene sentido: el aprobador y el autor nunca pueden ser la misma persona por accidente.
+Los issues/PRs los abre la cuenta de GitHub dedicada `ronin` (no la cuenta personal de quien corre el supervisor) — así el historial de autoría es honesto sobre qué hizo un humano y qué hizo el agente, y el approval-gate del merge (§ Principios de diseño) tiene sentido: el aprobador y el autor nunca pueden ser la misma persona por accidente.
 
-Se eligió App sobre usuario/máquina + PAT por dos razones: permisos más finos (Contents/Issues/Pull requests por repo, sin ocupar un seat de la org) y revocación simple (desinstalar el App, sin rotar tokens a mano). El costo es que el App no usa un token estático — se autentica con una private key que firma un JWT, canjeado por un installation token de corta duración (~1h) vía la API de GitHub (`src/github-app-auth.ts`, con `@octokit/auth-app`). El supervisor nunca usa la sesión ambiente de `gh auth login` del host: cada llamada a `gh` fija `GH_TOKEN` con ese installation token (`src/github.ts`).
+Se eligió un token de cuenta dedicada (fine-grained PAT) sobre un GitHub App — ver docs/superpowers/specs/2026-08-19-multi-repo-pat-auth-design.md para el detalle completo de la decisión — por simplicidad de setup: sin registrar un App, sin private key, sin installation ID, y sin necesitar una segunda cuenta separada solo para ser mencionable (a diferencia del diseño original de este documento). El costo aceptado: el token es estático (sin JWT ni refresh automático — se rota a mano antes de que expire), y si algún repo futuro viviera en una org con billing por seat, la cuenta colaboradora consumiría uno.
 
-**Setup manual (no automatizable, pasos para el dueño de la org):**
+**Setup manual (no automatizable, pasos para el dueño de cada repo):**
 
-1. Registrar el GitHub App en `Bmedical` (Settings de la org → Developer settings → GitHub Apps → New GitHub App). Permisos: Contents, Issues, Pull requests en read/write.
-2. Generar y descargar la private key (`.pem`) al registrar el App — guardarla fuera del repo, nunca commitearla.
-3. Instalar el App en el repo `bmedical` (y en `ValerIA` si en algún momento gestiona issues propios) — esto da el installation ID.
-4. Setear `VALERIA_GITHUB_APP_ID`, `VALERIA_GITHUB_APP_PRIVATE_KEY_PATH`, `VALERIA_GITHUB_APP_INSTALLATION_ID` y `VALERIA_GITHUB_APP_SLUG` en el `.env` del supervisor — nunca commitear el `.env` (ya está en `.gitignore`). `VALERIA_GITHUB_APP_SLUG` es el slug del App tal como aparece en la URL de su página de configuración (`github.com/settings/apps/<slug>`); su bot user en la API es `<slug>[bot]`, y de ahí sale saber si el App ya reaccionó a un comentario (ver §7.2). Es **requerida sin default**: un deployment ya existente corta al arrancar hasta agregarla.
-5. Opcional: `VALERIA_MENTION_HANDLE` (default `valeria-agent`), solo si el usuario mencionable se llama distinto — ver §7.2.
+1. Crear la cuenta de GitHub dedicada `ronin` (o el nombre que prefieras) e invitarla como colaboradora en cada repo de `repos.json`.
+2. Generar un fine-grained PAT desde esa cuenta (Settings → Developer settings → Personal access tokens → Fine-grained tokens), scopeado a esos repos, permisos Contents/Issues/Pull requests en read-write, con expiración.
+3. Setear `RONIN_GITHUB_TOKEN` (el token) y `RONIN_GITHUB_LOGIN` (el username de la cuenta) en el `.env` del supervisor — nunca commitear el `.env` (ya está en `.gitignore`).
 
-`VALERIA_GITHUB_APP_INSTALLATION_ID` es **puramente numérico** (ej. `149492854`) — no confundir con ningún client secret u otro string alfanumérico de la pantalla de configuración del App. Si no es obvio cuál es, `pnpm find-installation-id` lo resuelve solo a partir del App ID + la private key (no necesita el installation ID de entrada).
-
-**Verificación:** `pnpm smoke-test` pide un installation token real, confirma lectura de `PRODUCT_REPO`, y valida que `VALERIA_GITHUB_APP_SLUG` coincida con el slug real del App (leído de `GET /app`, que se autentica con el JWT del App, no con el installation token) — correrlo después de cualquier cambio de credenciales antes de asumir que quedaron bien.
+**Verificación:** `pnpm smoke-test` confirma que el token autentica como `RONIN_GITHUB_LOGIN` y que puede leer cada repo de `repos.json` — correrlo después de cualquier cambio de credenciales antes de asumir que quedaron bien.
 
 ### 7.1 Permisos de las invocaciones headless
 
@@ -155,13 +151,9 @@ La única contención real es que **cada tarea corre en su propio git worktree d
 
 Segunda limitación encontrada en el primer dry run: el prompt de una tarea puntual no acota lo que el agente puede decidir hacer con `gh`/`git` más allá de esa tarea — si lee contexto que contiene instrucciones para *otras* situaciones (ej. el propio template del issue), puede actuar sobre ellas aunque no vengan de su prompt. Mitigado parcialmente pasando solo la información mínima necesaria en cada prompt (ver §9.1) en vez de decirle al agente que lea documentos completos con instrucciones para roles que no son el suyo.
 
-### 7.2 Usuario mencionable (`valeria-agent`)
+### 7.2 Usuario mencionable
 
-Un humano puede pedirle a ValerIA una review puntual sobre un PR que ella misma abrió escribiendo `@valeria-agent <pedido>` en un comentario (general o inline). Como GitHub no expone a apps de terceros el mecanismo nativo de "Reviewers" que usa Copilot, y el bot user de un App no siempre es mencionable/notificable de forma confiable, se usa un **usuario dedicado** — misma técnica que la integración de Claude Code.
-
-**Setup manual (una vez, por parte del dueño del repo):** crear el usuario de GitHub `valeria-agent` y agregarlo como colaborador **solo-lectura** de `PRODUCT_REPO`. No tiene ni necesita permisos de escritura: existe puramente para que la @mención dispare una notificación real. Quien postea las reacciones 👀 y la review sigue siendo el App vía su installation token, igual que todo lo demás. Si el usuario se llama distinto, setear `VALERIA_MENTION_HANDLE` en el `.env` (default `valeria-agent`).
-
-Detalle completo del flujo (dedup por reacción, exclusión de reviews en `PENDING`, review siempre `COMMENT`) en [`docs/superpowers/specs/2026-07-28-mention-review-design.md`](superpowers/specs/2026-07-28-mention-review-design.md).
+A diferencia de un GitHub App (cuyo bot user no siempre es confiablemente @mencionable/notificable), `ronin` es una cuenta real — la misma que abre los PRs es la que se @menciona para pedirle una review puntual (ver README.md, "Pedirle una review por @mención"). No hace falta ninguna cuenta ni setup adicional para esto.
 
 ### 9. Concurrencia entre múltiples supervisores
 
