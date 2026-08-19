@@ -1,5 +1,6 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { config } from './config.js';
+import { activeRepo } from './repo-context.js';
 
 // Per-machine cache, never the source of truth for anything GitHub already
 // tracks — see claim.ts's tryClaim for why a missing/corrupt file is always
@@ -35,9 +36,17 @@ export function withLocalStateLock<T>(fn: () => Promise<T>): Promise<T> {
   return result;
 }
 
+// Namespaced per active repo so an issue #12 in one repo.json entry never
+// shares claimedIssues/checksPendingCounts with a #12 in another — see
+// docs/superpowers/specs/2026-08-19-multi-repo-pat-auth-design.md §4.
+function statePath(): string {
+  const slug = activeRepo().productRepo.replaceAll('/', '-');
+  return `${config.localStatePath}.${slug}.json`;
+}
+
 export async function readLocalState(): Promise<LocalState> {
   try {
-    const raw = JSON.parse(await readFile(config.localStatePath, 'utf8')) as Partial<LocalState>;
+    const raw = JSON.parse(await readFile(statePath(), 'utf8')) as Partial<LocalState>;
     return { claimedIssues: raw.claimedIssues ?? [], checksPendingCounts: raw.checksPendingCounts ?? {} };
   } catch {
     return { claimedIssues: [], checksPendingCounts: {} };
@@ -45,7 +54,7 @@ export async function readLocalState(): Promise<LocalState> {
 }
 
 export async function writeLocalState(state: LocalState): Promise<void> {
-  await writeFile(config.localStatePath, JSON.stringify(state, null, 2));
+  await writeFile(statePath(), JSON.stringify(state, null, 2));
 }
 
 export async function incrementChecksPendingCount(prNumber: number): Promise<number> {

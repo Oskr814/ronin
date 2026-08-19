@@ -9,6 +9,7 @@ vi.mock('./config.js', () => ({
 }));
 
 const { incrementChecksPendingCount, resetChecksPendingCount, withLocalStateLock, readLocalState } = await import('./local-state.js');
+const { withActiveRepo } = await import('./repo-context.js');
 
 let dir: string;
 
@@ -20,6 +21,10 @@ beforeEach(async () => {
 afterEach(async () => {
   await rm(dir, { recursive: true, force: true });
 });
+
+function withRepo<T>(repo: string, fn: () => Promise<T>): Promise<T> {
+  return withActiveRepo({ productRepo: repo, productRepoPath: '/tmp/unused' }, fn);
+}
 
 describe('withLocalStateLock', () => {
   it('serializes overlapping critical sections instead of interleaving them', async () => {
@@ -45,30 +50,38 @@ describe('withLocalStateLock', () => {
   });
 });
 
-// Regression: concurrent read-modify-write on the same file used to be able
-// to lose an update (two callers both read before either writes) — this is
-// exactly the race that motivated withLocalStateLock once tick() started
-// running several issues' pipelines concurrently.
 describe('incrementChecksPendingCount — concurrent calls', () => {
   it('never loses an update under concurrent increments', async () => {
-    await Promise.all(Array.from({ length: 20 }, () => incrementChecksPendingCount(229)));
-
-    const state = await readLocalState();
-    expect(state.checksPendingCounts['229']).toBe(20);
+    await withRepo('owner/repo-a', async () => {
+      await Promise.all(Array.from({ length: 20 }, () => incrementChecksPendingCount(229)));
+      const state = await readLocalState();
+      expect(state.checksPendingCounts['229']).toBe(20);
+    });
   });
 
   it('a concurrent reset does not clobber an in-flight increment', async () => {
-    await Promise.all([
-      incrementChecksPendingCount(229),
-      incrementChecksPendingCount(229),
-      resetChecksPendingCount(229),
-      incrementChecksPendingCount(229),
-    ]);
+    await withRepo('owner/repo-a', async () => {
+      await Promise.all([
+        incrementChecksPendingCount(229),
+        incrementChecksPendingCount(229),
+        resetChecksPendingCount(229),
+        incrementChecksPendingCount(229),
+      ]);
 
-    // Whatever the final interleaving, the file itself must stay valid JSON
-    // reflecting a consistent state — never a torn write from two
-    // overlapping writeFile calls.
-    const raw = await readFile(localStatePath, 'utf8');
-    expect(() => JSON.parse(raw)).not.toThrow();
+      const raw = await readFile(join(dir, 'state.json.owner-repo-a.json'), 'utf8');
+      expect(() => JSON.parse(raw)).not.toThrow();
+    });
+  });
+});
+
+describe('per-repo namespacing', () => {
+  it('keeps checksPendingCounts separate between two repos', async () => {
+    await withRepo('owner/repo-a', () => incrementChecksPendingCount(229));
+
+    const stateA = await withRepo('owner/repo-a', readLocalState);
+    const stateB = await withRepo('owner/repo-b', readLocalState);
+
+    expect(stateA.checksPendingCounts['229']).toBe(1);
+    expect(stateB.checksPendingCounts['229']).toBeUndefined();
   });
 });
