@@ -4,8 +4,11 @@ vi.mock('./config.js', () => ({
   config: {
     playwrightTestResultsDir: 'apps/webapp/test-results',
     worktreeBaseRef: 'origin/main',
-    productRepo: 'bmedical/bmedical',
   },
+}));
+
+vi.mock('./repo-context.js', () => ({
+  activeRepo: () => ({ productRepo: 'bmedical/bmedical', productRepoPath: '/tmp/repo', worktreeBasePath: '/tmp/worktrees' }),
 }));
 
 const ensureWorktree = vi.fn();
