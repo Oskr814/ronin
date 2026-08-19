@@ -1,0 +1,11 @@
+[
+  {
+    "productRepo": "Oskr814/repo-a",
+    "productRepoPath": "/home/link/RM/repo-a",
+    "claudeConfigDir": "/home/link/.claude-repo-a"
+  },
+  {
+    "productRepo": "Oskr814/repo-b",
+    "productRepoPath": "/home/link/RM/repo-b"
+  }
+]
