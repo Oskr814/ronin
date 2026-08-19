@@ -4,21 +4,20 @@ import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { config, LABEL_MANAGED, LABEL_STATES, LABEL_BUG, type SpecStatus } from './config.js';
-import { getInstallationToken } from './github-app-auth.js';
+import { activeRepo } from './repo-context.js';
 import { log } from './logger.js';
 
 const execFileAsync = promisify(execFile);
 
 // All gh invocations use execFile with an argv array (never a shell string) so
 // issue/PR titles and bodies coming from spec content can't be interpreted as
-// shell syntax. GH_TOKEN is set explicitly per-call from the GitHub App
-// installation token rather than relying on `gh auth login` state on the
-// host, so every issue/PR is authored by "ValerIA[bot]" regardless of who
+// shell syntax. GH_TOKEN is set explicitly per-call from the dedicated
+// `ronin` account's PAT rather than relying on `gh auth login` state on the
+// host, so every issue/PR is authored by that account regardless of who
 // else is logged into `gh` there.
 async function gh(args: string[]): Promise<string> {
-  const token = await getInstallationToken();
-  const { stdout } = await execFileAsync('gh', [...args, '--repo', config.productRepo], {
-    env: { ...process.env, GH_TOKEN: token },
+  const { stdout } = await execFileAsync('gh', [...args, '--repo', activeRepo().productRepo], {
+    env: { ...process.env, GH_TOKEN: config.githubToken },
   });
   return stdout;
 }
@@ -29,11 +28,10 @@ async function gh(args: string[]): Promise<string> {
 // directory's git remote or $GH_REPO — and the supervisor's cwd is ValerIA's
 // own checkout, not PRODUCT_REPO_PATH, so those placeholders would target the
 // wrong repo anyway. Every caller therefore spells out
-// `repos/${config.productRepo}/...` literally instead.
+// `repos/${activeRepo().productRepo}/...` literally instead.
 async function ghApi(args: string[]): Promise<string> {
-  const token = await getInstallationToken();
   const { stdout } = await execFileAsync('gh', args, {
-    env: { ...process.env, GH_TOKEN: token },
+    env: { ...process.env, GH_TOKEN: config.githubToken },
   });
   return stdout;
 }
@@ -295,7 +293,7 @@ export async function mergePullRequest(prNumber: number): Promise<void> {
   // response-layer flake.
   for (const dependent of await listOpenPrsWithBase(status.headRefName)) {
     try {
-      await ghApi(['api', '--method', 'PATCH', `repos/${config.productRepo}/pulls/${dependent}`, '-f', `base=${status.baseRefName}`]);
+      await ghApi(['api', '--method', 'PATCH', `repos/${activeRepo().productRepo}/pulls/${dependent}`, '-f', `base=${status.baseRefName}`]);
     } catch (error) {
       const current = await getPullRequestStatus(dependent);
       if (current.baseRefName !== status.baseRefName) throw error;
@@ -498,7 +496,7 @@ function reactionsPath(kind: 'issue' | 'review'): string {
 // on a busy PR the newest ones — where a fresh mention lives — would fall on
 // a page never fetched, silently. 100 is the API maximum.
 export async function listIssueComments(prNumber: number): Promise<Comment[]> {
-  const stdout = await ghApi(['api', `repos/${config.productRepo}/issues/${prNumber}/comments?per_page=100`]);
+  const stdout = await ghApi(['api', `repos/${activeRepo().productRepo}/issues/${prNumber}/comments?per_page=100`]);
   const raw = JSON.parse(stdout) as RawApiComment[];
   return raw.map((c) => ({ id: c.id, kind: 'issue' as const, body: c.body, reactionsEyes: c.reactions.eyes }));
 }
@@ -513,8 +511,8 @@ interface RawReview {
 // publica. Ver docs/superpowers/specs/2026-07-28-mention-review-design.md.
 export async function listReviewComments(prNumber: number): Promise<Comment[]> {
   const [commentsStdout, reviewsStdout] = await Promise.all([
-    ghApi(['api', `repos/${config.productRepo}/pulls/${prNumber}/comments?per_page=100`]),
-    ghApi(['api', `repos/${config.productRepo}/pulls/${prNumber}/reviews?per_page=100`]),
+    ghApi(['api', `repos/${activeRepo().productRepo}/pulls/${prNumber}/comments?per_page=100`]),
+    ghApi(['api', `repos/${activeRepo().productRepo}/pulls/${prNumber}/reviews?per_page=100`]),
   ]);
   const rawComments = JSON.parse(commentsStdout) as RawApiComment[];
   const rawReviews = JSON.parse(reviewsStdout) as RawReview[];
@@ -528,7 +526,7 @@ export async function listReviewComments(prNumber: number): Promise<Comment[]> {
 export async function hasBotReaction(commentId: number, kind: 'issue' | 'review', botLogin: string): Promise<boolean> {
   const stdout = await ghApi([
     'api',
-    `repos/${config.productRepo}/${reactionsPath(kind)}/${commentId}/reactions?content=eyes&per_page=100`,
+    `repos/${activeRepo().productRepo}/${reactionsPath(kind)}/${commentId}/reactions?content=eyes&per_page=100`,
   ]);
   const raw = JSON.parse(stdout) as Array<{ user: { login: string } }>;
   return raw.some((r) => r.user.login === botLogin);
@@ -537,7 +535,7 @@ export async function hasBotReaction(commentId: number, kind: 'issue' | 'review'
 export async function addReaction(commentId: number, kind: 'issue' | 'review', content: 'eyes'): Promise<void> {
   await ghApi([
     'api',
-    `repos/${config.productRepo}/${reactionsPath(kind)}/${commentId}/reactions`,
+    `repos/${activeRepo().productRepo}/${reactionsPath(kind)}/${commentId}/reactions`,
     '-f',
     `content=${content}`,
   ]);
