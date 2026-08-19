@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { config } from './config.js';
-import { getInstallationToken } from './github-app-auth.js';
+import { activeRepo } from './repo-context.js';
 import { log } from './logger.js';
 
 const MAX_LOG_LINE = 2000;
@@ -90,9 +90,9 @@ function makeLineBuffer(onLine: (line: string) => void): (chunk: Buffer) => void
 //
 // GH_TOKEN is forwarded into the child process so that when the spawned
 // session itself shells out to `gh` (opening its PR, pushing, editing the
-// issue), it authenticates as ValerIA[bot] too — without this, those calls
-// fall back to whatever `gh auth` session is ambient on the host, silently
-// defeating the bot-identity work in github.ts.
+// issue), it authenticates as the `ronin` account too — without this, those
+// calls fall back to whatever `gh auth` session is ambient on the host,
+// silently defeating the bot-identity work in github.ts.
 //
 // Streamed line-by-line into the logger (instead of execFile buffering the
 // whole run and returning it only at the end) — a task can run up to
@@ -101,9 +101,12 @@ function makeLineBuffer(onLine: (line: string) => void): (chunk: Buffer) => void
 // (vs the default "text" format) is what makes that streaming show tool
 // calls and intermediate reasoning instead of just the final answer.
 export async function runClaudeHeadless(cwd: string, prompt: string, label: string): Promise<string> {
-  const token = await getInstallationToken();
-  const env: NodeJS.ProcessEnv = { ...process.env, GH_TOKEN: token };
-  if (config.claudeConfigDir) env.CLAUDE_CONFIG_DIR = config.claudeConfigDir;
+  const env: NodeJS.ProcessEnv = { ...process.env, GH_TOKEN: config.githubToken };
+  // A repos.json entry's own claudeConfigDir wins over the global default —
+  // lets each repo run under its own Claude account (docs/superpowers/specs/
+  // 2026-08-19-multi-repo-pat-auth-design.md §2).
+  const claudeConfigDir = activeRepo().claudeConfigDir ?? config.claudeConfigDir;
+  if (claudeConfigDir) env.CLAUDE_CONFIG_DIR = claudeConfigDir;
 
   return new Promise((resolve, reject) => {
     const child = spawn(
