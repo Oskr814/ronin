@@ -18,7 +18,7 @@ export const config = {
   // para la identidad de los commits de evidencia (evidence.ts).
   githubLogin: requireEnv('RONIN_GITHUB_LOGIN'),
   // Dónde vive la lista de repos a supervisar — ver repos.ts.
-  reposConfigPath: process.env.REPOS_CONFIG_PATH ?? join(process.cwd(), 'repos.json'),
+  reposConfigPath: process.env.REPOS_CONFIG_PATH || join(process.cwd(), 'repos.json'),
   // Ref every new task branch is created from. Defaults to the
   // remote-tracking origin/main (kept fresh by a `git fetch` before each
   // new worktree branch — see worktree.ts) rather than the local `main`

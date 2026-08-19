@@ -66,4 +66,17 @@ describe('loadRepos', () => {
     await writeFile(reposConfigPath, JSON.stringify([{ productRepo: 'a/b', productRepoPath: '/tmp/a', claudeConfigDir: 42 }]));
     await expect(loadRepos()).rejects.toThrow('claudeConfigDir');
   });
+
+  it('throws when productRepo is duplicated across entries', async () => {
+    await writeFile(
+      reposConfigPath,
+      JSON.stringify([
+        { productRepo: 'a/b', productRepoPath: '/tmp/a' },
+        { productRepo: 'c/d', productRepoPath: '/tmp/c' },
+        { productRepo: 'a/b', productRepoPath: '/tmp/other' },
+      ]),
+    );
+
+    await expect(loadRepos()).rejects.toThrow('tiene el repo "a/b" duplicado');
+  });
 });

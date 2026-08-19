@@ -16,7 +16,6 @@
     "cron:remove": "bash scripts/setup-cron.sh --remove"
   },
   "dependencies": {
-    "@octokit/auth-app": "^8.2.0",
     "gray-matter": "^4.0.3",
     "nodemailer": "^6.9.16"
   },

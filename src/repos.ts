@@ -21,7 +21,19 @@ export async function loadRepos(): Promise<RepoEntry[]> {
     throw new Error(`${config.reposConfigPath} debe ser un array con al menos un repo`);
   }
 
-  return parsed.map((entry, i) => validateEntry(entry, i));
+  const entries = parsed.map((entry, i) => validateEntry(entry, i));
+
+  const seen = new Set<string>();
+  for (const entry of entries) {
+    if (seen.has(entry.productRepo)) {
+      throw new Error(
+        `${config.reposConfigPath} tiene el repo "${entry.productRepo}" duplicado — cada productRepo debe aparecer una sola vez`,
+      );
+    }
+    seen.add(entry.productRepo);
+  }
+
+  return entries;
 }
 
 function validateEntry(entry: unknown, index: number): RepoEntry {
