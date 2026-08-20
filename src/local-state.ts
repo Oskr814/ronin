@@ -89,6 +89,22 @@ export async function getLastReviewedSha(prNumber: number): Promise<string | und
   return state.lastReviewedSha[prNumber];
 }
 
+// Without this, lastReviewedSha grows one permanent entry per external PR
+// ever reviewed — nothing else ever deletes from it. Called from
+// findPrsNeedingReview with the currently-open external PR numbers, so
+// merged/closed PRs drop out as a side effect of every discovery run (no
+// separate cron needed).
+export async function pruneLastReviewedSha(openPrNumbers: number[]): Promise<void> {
+  return withLocalStateLock(async () => {
+    const state = await readLocalState();
+    const keep = new Set(openPrNumbers.map(String));
+    for (const key of Object.keys(state.lastReviewedSha)) {
+      if (!keep.has(key)) delete state.lastReviewedSha[key];
+    }
+    await writeLocalState(state);
+  });
+}
+
 export async function setLastReviewedSha(prNumber: number, sha: string): Promise<void> {
   return withLocalStateLock(async () => {
     const state = await readLocalState();

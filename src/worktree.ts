@@ -130,6 +130,44 @@ export async function removeWorktree(branch: string): Promise<void> {
     .catch((error) => log.error(`removeWorktree: 'git worktree remove' falló para ${dir}`, error));
 }
 
+// External PRs are reviewed by commit SHA, not by branch name: a fork's head
+// branch can collide with any local ref (including ronin's own in-flight
+// branches, or the primary worktree's own checked-out `main`), and a
+// re-review must always see the PR's *current* head, not whatever was
+// checked out for a previous review of the same PR — see final review Fix 1,
+// docs/superpowers/specs/2026-08-20-external-pr-review-design.md.
+export function externalReviewWorktreeDirFor(prNumber: number): string {
+  return join(activeRepo().worktreeBasePath, `external-pr-${prNumber}`);
+}
+
+// Unlike ensureWorktree, this ALWAYS resyncs to headSha even when the
+// directory already exists — a stale reuse here is exactly the bug this
+// function exists to prevent.
+export async function ensureExternalReviewWorktree(prNumber: number, headSha: string): Promise<string> {
+  const dir = externalReviewWorktreeDirFor(prNumber);
+  // GitHub exposes every PR's head under refs/pull/<n>/head on the BASE
+  // repo regardless of which fork it lives on — this is what makes fork
+  // PRs reachable at all without adding the fork as a remote.
+  await execFileAsync('git', ['fetch', 'origin', `pull/${prNumber}/head`], { cwd: activeRepo().productRepoPath });
+
+  if (!existsSync(dir)) {
+    await mkdir(activeRepo().worktreeBasePath, { recursive: true });
+    await execFileAsync('git', ['worktree', 'add', '--detach', dir, headSha], { cwd: activeRepo().productRepoPath });
+  } else {
+    await execFileAsync('git', ['checkout', '--detach', headSha], { cwd: dir });
+  }
+  return dir;
+}
+
+// Counterpart cleanup — called after every external-review run (success or
+// failure) so these never accumulate the way final review Fix 3 describes.
+export async function removeExternalReviewWorktree(prNumber: number): Promise<void> {
+  const dir = externalReviewWorktreeDirFor(prNumber);
+  await removeDockerStack(dir);
+  await execFileAsync('git', ['worktree', 'remove', dir, '--force'], { cwd: activeRepo().productRepoPath })
+    .catch((error) => log.error(`removeExternalReviewWorktree: 'git worktree remove' falló para ${dir}`, error));
+}
+
 const WORKTREE_DIR_RE = /^ronin-(\d+)-(.+)$/;
 
 // Reconstructs the branch name from a worktree directory name — the exact

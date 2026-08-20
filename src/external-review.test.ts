@@ -12,8 +12,10 @@ vi.mock('./github.js', () => ({
 }));
 
 const getLastReviewedSha = vi.fn();
+const pruneLastReviewedSha = vi.fn();
 vi.mock('./local-state.js', () => ({
   getLastReviewedSha: (...args: unknown[]) => getLastReviewedSha(...args),
+  pruneLastReviewedSha: (...args: unknown[]) => pruneLastReviewedSha(...args),
 }));
 
 import { findPrsNeedingReview } from './external-review.js';
@@ -22,6 +24,7 @@ beforeEach(() => {
   listAllOpenExternalPrs.mockReset().mockResolvedValue([]);
   listBotOpenReviewThreads.mockReset().mockResolvedValue([]);
   getLastReviewedSha.mockReset().mockResolvedValue(undefined);
+  pruneLastReviewedSha.mockReset().mockResolvedValue(undefined);
 });
 
 describe('findPrsNeedingReview', () => {
@@ -84,5 +87,32 @@ describe('findPrsNeedingReview', () => {
 
     expect(result).toHaveLength(1);
     expect(result[0].prNumber).toBe(11);
+  });
+
+  it('keeps going when one PR fails, still returning the other candidates', async () => {
+    listAllOpenExternalPrs.mockResolvedValue([
+      { number: 10, headRefName: 'feature/x', headRefOid: 'sha-a' },
+      { number: 11, headRefName: 'feature/y', headRefOid: 'sha-b' },
+      { number: 12, headRefName: 'feature/z', headRefOid: 'sha-c' },
+    ]);
+    listBotOpenReviewThreads.mockImplementation(async (prNumber: number) => {
+      if (prNumber === 11) throw new Error('GraphQL flaked');
+      return [];
+    });
+
+    const result = await findPrsNeedingReview();
+
+    expect(result.map((c) => c.prNumber)).toEqual([10, 12]);
+  });
+
+  it('prunes local-state entries for PRs that are no longer open', async () => {
+    listAllOpenExternalPrs.mockResolvedValue([
+      { number: 10, headRefName: 'feature/x', headRefOid: 'sha-a' },
+      { number: 11, headRefName: 'feature/y', headRefOid: 'sha-b' },
+    ]);
+
+    await findPrsNeedingReview();
+
+    expect(pruneLastReviewedSha).toHaveBeenCalledWith([10, 11]);
   });
 });

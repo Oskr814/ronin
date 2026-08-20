@@ -8,7 +8,7 @@ vi.mock('./config.js', () => ({
   config: new Proxy({}, { get: (_t, prop) => (prop === 'localStatePath' ? localStatePath : undefined) }),
 }));
 
-const { incrementChecksPendingCount, resetChecksPendingCount, withLocalStateLock, readLocalState, getLastReviewedSha, setLastReviewedSha } = await import('./local-state.js');
+const { incrementChecksPendingCount, resetChecksPendingCount, withLocalStateLock, readLocalState, getLastReviewedSha, setLastReviewedSha, pruneLastReviewedSha } = await import('./local-state.js');
 const { withActiveRepo } = await import('./repo-context.js');
 
 let dir: string;
@@ -116,5 +116,40 @@ describe('getLastReviewedSha / setLastReviewedSha', () => {
 
     expect(shaA).toBe('abc123');
     expect(shaB).toBeUndefined();
+  });
+});
+
+describe('pruneLastReviewedSha', () => {
+  it('drops entries for PRs that are no longer open, keeping the rest', async () => {
+    await withRepo('owner/repo-a', async () => {
+      await setLastReviewedSha(305, 'abc123');
+      await setLastReviewedSha(306, 'def456');
+
+      await pruneLastReviewedSha([306]);
+
+      expect(await getLastReviewedSha(305)).toBeUndefined();
+      expect(await getLastReviewedSha(306)).toBe('def456');
+    });
+  });
+
+  it('clears everything when no external PR is open anymore', async () => {
+    await withRepo('owner/repo-a', async () => {
+      await setLastReviewedSha(305, 'abc123');
+
+      await pruneLastReviewedSha([]);
+
+      expect((await readLocalState()).lastReviewedSha).toEqual({});
+    });
+  });
+
+  it('leaves checksPendingCounts untouched', async () => {
+    await withRepo('owner/repo-a', async () => {
+      await incrementChecksPendingCount(229);
+      await setLastReviewedSha(305, 'abc123');
+
+      await pruneLastReviewedSha([]);
+
+      expect((await readLocalState()).checksPendingCounts['229']).toBe(1);
+    });
   });
 });

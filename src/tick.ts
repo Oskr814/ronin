@@ -584,6 +584,22 @@ export async function processExternalReviewCandidate(candidate: ReviewCandidate)
   }
 }
 
+// Deliberately its own exported function, called before (and independently
+// of) the ronin-PR loop: external review shares nothing with that flow, so a
+// transient `listAllOpenRoninPrs` failure — which returns early from the
+// issue pipeline — must not silently skip external review for the whole
+// tick. See final review Fix 4.
+export async function runExternalReviews(): Promise<void> {
+  let reviewCandidates: ReviewCandidate[];
+  try {
+    reviewCandidates = await findPrsNeedingReview();
+  } catch (error) {
+    log.info(`tick: findPrsNeedingReview falló, reintentando en el próximo tick: ${(error as Error).message}`);
+    reviewCandidates = [];
+  }
+  await runWithConcurrency(reviewCandidates, config.tickConcurrency, processExternalReviewCandidate);
+}
+
 async function tickOneRepo(): Promise<void> {
   const start = Date.now();
   resetTickMetrics();
@@ -595,6 +611,10 @@ async function tickOneRepo(): Promise<void> {
   log.info(`${inProgress.length} issue(s) en progreso`);
 
   try {
+    // Before the ronin-PR pipeline below, which can return early on a
+    // transient listing failure — the two flows are fully independent.
+    await runExternalReviews();
+
     // One batched read for every issue's stack instead of a `gh pr list` + a
     // `gh pr view` per PR per issue — see
     // docs/superpowers/specs/2026-08-01-pr-list-batching-design.md. A failure
@@ -634,15 +654,6 @@ async function tickOneRepo(): Promise<void> {
         await runAgentTask(agentTaskFor(next.issue, next.index, next.title));
       });
     });
-
-    let reviewCandidates: ReviewCandidate[];
-    try {
-      reviewCandidates = await findPrsNeedingReview();
-    } catch (error) {
-      log.info(`tick: findPrsNeedingReview falló, reintentando en el próximo tick: ${(error as Error).message}`);
-      reviewCandidates = [];
-    }
-    await runWithConcurrency(reviewCandidates, config.tickConcurrency, processExternalReviewCandidate);
   } finally {
     // Always emitted, even on the early return above — durationMs vs.
     // agentRunsDurationMs is what tells whether a tick was mostly spent

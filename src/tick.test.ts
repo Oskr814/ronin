@@ -14,6 +14,9 @@ vi.mock('./config.js', () => ({
     sliceAttemptLimit: 3,
     rebaseRetryLimit: 3,
     worktreeBaseRef: 'origin/main',
+    // Needed by runExternalReviews's runWithConcurrency call — with an
+    // undefined limit the pool spawns zero lanes and silently no-ops.
+    tickConcurrency: 2,
   },
   LABEL_BUG: 'bugfix',
   LABEL_MANAGED: 'ronin',
@@ -96,7 +99,12 @@ vi.mock('./notifier.js', () => ({
   notifyBlocker: (...args: unknown[]) => notifyBlocker(...args),
 }));
 
-const { processSlicePr, agentTaskFor, discoverAssignedBugs, processExternalReviewCandidate } = await import('./tick.js');
+const findPrsNeedingReview = vi.fn();
+vi.mock('./external-review.js', () => ({
+  findPrsNeedingReview: (...args: unknown[]) => findPrsNeedingReview(...args),
+}));
+
+const { processSlicePr, agentTaskFor, discoverAssignedBugs, processExternalReviewCandidate, runExternalReviews } = await import('./tick.js');
 
 function issue(overrides: Partial<TrackingIssue> = {}): TrackingIssue {
   return { number: 228, title: 'Test issue', url: 'https://github.com/x/y/issues/228', labels: [], ...overrides };
@@ -456,5 +464,44 @@ describe('processExternalReviewCandidate', () => {
     runAgentTask.mockRejectedValue(new Error('boom'));
 
     await expect(processExternalReviewCandidate(candidate)).resolves.not.toThrow();
+  });
+});
+
+// Wiring coverage for the extraction in final review Fix 4: external review
+// used to live inline in tickOneRepo, after an early `return` on an
+// unrelated listAllOpenRoninPrs failure — untestable on its own, and
+// silently skipped for a whole tick whenever that unrelated call flaked.
+describe('runExternalReviews', () => {
+  beforeEach(() => {
+    runAgentTask.mockResolvedValue(undefined);
+  });
+
+  it('runs one agent task per candidate findPrsNeedingReview returns', async () => {
+    findPrsNeedingReview.mockResolvedValue([
+      { prNumber: 305, headRefName: 'someone-else/feature-x', headSha: 'abc123', openThreads: [] },
+      { prNumber: 306, headRefName: 'other/feature-y', headSha: 'def456', openThreads: [] },
+    ]);
+
+    await runExternalReviews();
+
+    expect(runAgentTask).toHaveBeenCalledTimes(2);
+    expect(runAgentTask).toHaveBeenCalledWith(expect.objectContaining({ type: 'external-review', prNumber: 305, headSha: 'abc123' }));
+    expect(runAgentTask).toHaveBeenCalledWith(expect.objectContaining({ type: 'external-review', prNumber: 306, headSha: 'def456' }));
+  });
+
+  it('does not throw, and runs nothing, when discovery itself fails', async () => {
+    findPrsNeedingReview.mockRejectedValue(new Error('gh exploded'));
+
+    await expect(runExternalReviews()).resolves.toBeUndefined();
+
+    expect(runAgentTask).not.toHaveBeenCalled();
+  });
+
+  it('does nothing when there are no candidates', async () => {
+    findPrsNeedingReview.mockResolvedValue([]);
+
+    await runExternalReviews();
+
+    expect(runAgentTask).not.toHaveBeenCalled();
   });
 });
