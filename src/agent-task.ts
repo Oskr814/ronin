@@ -38,7 +38,7 @@ async function buildTask(task: AgentTask): Promise<{ branch: string; prompt: str
       return {
         branch: planBranch(task.issueNumber),
         prompt: [
-          `You are ValerIA, an autonomous agent working on tracking issue #${task.issueNumber} in ${repoUrl()}.`,
+          `You are ronin, an autonomous agent working on tracking issue #${task.issueNumber} in ${repoUrl()}.`,
           `Read all of these spec files (inside this checkout) as context — together they describe the work, not just the first one:\n${task.specPaths.map((p) => `- ${p}`).join('\n')}`,
           'Design the implementation plan, sliced into small, independently reviewable pieces (use the planning skill if one is available).',
           `Rewrite the body of issue #${task.issueNumber} (gh issue edit ${task.issueNumber} --body-file <file>), replacing the templates/tracking-issue.md checklist with the real slices, one line per slice in the format "- [ ] Slice N: <title> — PR: _pending_".`,
@@ -64,7 +64,7 @@ async function buildTask(task: AgentTask): Promise<{ branch: string; prompt: str
         branch: sliceBranch(task.issueNumber, task.sliceIndex),
         baseBranch: worktreeBase,
         prompt: [
-          `You are ValerIA, an autonomous agent working on tracking issue #${task.issueNumber} in ${repoUrl()}.`,
+          `You are ronin, an autonomous agent working on tracking issue #${task.issueNumber} in ${repoUrl()}.`,
           `Implement this single slice: "${task.sliceTitle}".`,
           "Follow this repo's CLAUDE.md conventions, including its testing requirements.",
           'If this slice touches user-facing behavior in apps/webapp, add or update a Playwright e2e spec under apps/webapp/e2e/ covering it, and run it (`pnpm --filter @bmedical/webapp exec playwright test`) until it passes — do not leave that for CI to catch. Leave the resulting output under apps/webapp/test-results/ as-is; do not move, copy, or commit it — the supervisor collects it separately.',
@@ -84,7 +84,7 @@ async function buildTask(task: AgentTask): Promise<{ branch: string; prompt: str
         branch: sliceBranch(task.issueNumber, task.sliceIndex),
         baseBranch: config.worktreeBaseRef,
         prompt: [
-          `You are ValerIA, an autonomous agent working on issue #${task.issueNumber} in ${repoUrl()}, labeled "bugfix".`,
+          `You are ronin, an autonomous agent working on issue #${task.issueNumber} in ${repoUrl()}, labeled "bugfix".`,
           `Read the full issue, including comments: "gh issue view ${task.issueNumber} --comments".`,
           'Explore the repository to find the root cause — do not guess or fabricate a fix without evidence. If the issue lacks enough information to reproduce the problem, or is ambiguous, comment on the issue asking for what you need ("gh issue comment") and stop without touching any code — that needs a human answer.',
           "Once you've found the root cause, fix it following this repo's CLAUDE.md conventions, including its testing requirements.",
@@ -101,7 +101,7 @@ async function buildTask(task: AgentTask): Promise<{ branch: string; prompt: str
       return {
         branch: pr.headRefName,
         prompt: [
-          `You are ValerIA. PR #${task.prNumber} (tracking issue #${task.issueNumber}) has unresolved review comments.`,
+          `You are ronin. PR #${task.prNumber} (tracking issue #${task.issueNumber}) has unresolved review comments.`,
           `Read them with "gh pr view ${task.prNumber} --comments", apply the necessary changes following this repo's CLAUDE.md conventions, then amend the existing commit (\`git commit --amend\`) — never create a new commit — and force-push (\`git push --force-with-lease\`) to this same branch.`,
           'The spec is a guide written before implementation started, not a contract that overrides a human catching something during review — if a comment gives a clear, concrete rationale for a change that deviates from what the spec says (e.g. it missed an edge case, or points out a real bug/gap), apply it using your own judgment. Only leave the PR as-is and defer to a human when the request is ambiguous, a matter of opinion, or needs a design decision the spec does not already resolve.',
           'Do not edit the tracking issue or change any labels, on either the issue or this PR — that is owned entirely by the supervisor, not by you.',
@@ -115,7 +115,7 @@ async function buildTask(task: AgentTask): Promise<{ branch: string; prompt: str
       return {
         branch: pr.headRefName,
         prompt: [
-          `You are ValerIA. CI/e2e checks (Playwright) are failing on PR #${task.prNumber} (tracking issue #${task.issueNumber}).`,
+          `You are ronin. CI/e2e checks (Playwright) are failing on PR #${task.prNumber} (tracking issue #${task.issueNumber}).`,
           'Investigate the cause, fix it, and confirm the affected e2e spec(s) pass by re-running them (`pnpm --filter @bmedical/webapp exec playwright test`), then amend the existing commit (`git commit --amend`) — never create a new commit — and force-push (`git push --force-with-lease`) to this same branch.',
           'Leave the resulting output under apps/webapp/test-results/ as-is; do not move, copy, or commit it — the supervisor collects it separately.',
           'Do not edit the tracking issue or change any labels, on either the issue or this PR — that is owned entirely by the supervisor, not by you.',
@@ -129,7 +129,7 @@ async function buildTask(task: AgentTask): Promise<{ branch: string; prompt: str
       return {
         branch: pr.headRefName,
         prompt: [
-          `You are ValerIA. PR #${task.prNumber} (tracking issue #${task.issueNumber}) is behind \`${config.worktreeBaseRef}\` and couldn't be rebased mechanically — it hit a real conflict.`,
+          `You are ronin. PR #${task.prNumber} (tracking issue #${task.issueNumber}) is behind \`${config.worktreeBaseRef}\` and couldn't be rebased mechanically — it hit a real conflict.`,
           `Run \`git fetch origin\` and \`git rebase ${config.worktreeBaseRef}\` in this worktree, and resolve the conflicts following this repo's CLAUDE.md conventions and the spec — do not deviate from what the spec explicitly requires.`,
           'Re-run the relevant tests after resolving, then amend the existing commit (`git commit --amend`) — never create a new commit — and force-push (`git push --force-with-lease`) to this same branch.',
           'If a conflict requires a decision the spec does not clearly resolve, stop and leave the branch as-is — that needs a human decision, do not guess.',
@@ -154,7 +154,7 @@ async function buildTask(task: AgentTask): Promise<{ branch: string; prompt: str
       return {
         branch: pr.headRefName,
         prompt: [
-          `You are ValerIA. A human left the following comment(s) on PR #${task.prNumber} (tracking issue #${task.issueNumber}), mentioning you and asking for a review:`,
+          `You are ronin. A human left the following comment(s) on PR #${task.prNumber} (tracking issue #${task.issueNumber}), mentioning you and asking for a review:`,
           mentionList,
           `Read the current diff ("gh pr diff ${task.prNumber}") and address what was asked.`,
           'If the request is concrete and actionable (e.g. delete a file, rename a variable, fix a specific line), apply it yourself: amend the existing commit (`git commit --amend`) — never create a new commit — and force-push (`git push --force-with-lease`) to this same branch, same as you would for `fix-review`. This includes requests that deviate from this repo\'s spec/plan for this slice, as long as the request itself gives a clear, concrete rationale (e.g. the spec missed an edge case, or it points out a real bug/gap) — the spec is a guide from before implementation started, not a contract that overrides a human catching something during review. Only leave the code untouched — that needs a human decision — when the request is ambiguous, a matter of opinion, or needs a design decision the spec does not already resolve.',

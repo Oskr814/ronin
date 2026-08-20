@@ -40,7 +40,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   ensureWorktree.mockResolvedValue('/tmp/worktree');
   runClaudeHeadless.mockResolvedValue(undefined);
-  getPullRequestStatus.mockResolvedValue({ headRefName: 'valeria/228/slice-1' });
+  getPullRequestStatus.mockResolvedValue({ headRefName: 'ronin/228/slice-1' });
   rm.mockResolvedValue(undefined);
 });
 
@@ -49,7 +49,7 @@ describe('runAgentTask — review-request', () => {
     type: 'review-request' as const,
     issueNumber: 228,
     prNumber: 229,
-    mentions: [{ id: 1, kind: 'issue' as const, body: '@valeria-agent corré los e2e y dejá evidencia', reactionsEyes: 0 }],
+    mentions: [{ id: 1, kind: 'issue' as const, body: '@ronin corré los e2e y dejá evidencia', reactionsEyes: 0 }],
   };
 
   it('clears test-results/ before invoking the headless run', async () => {

@@ -25,4 +25,4 @@ Cuando se dispara un bloqueo, el email incluye siempre:
 - El motivo concreto (una de las categorías de arriba), en una oración
 - El fragmento de log/comentario relevante que causó el bloqueo (no el log completo)
 
-El agente aplica la label `valeria:blocked` **en el mismo momento** en que completa la sección "Bloqueo" del issue (ver `templates/tracking-issue.md`) — nunca una sin la otra, para que el estado en GitHub y el email siempre cuenten la misma historia.
+El agente aplica la label `ronin:blocked` **en el mismo momento** en que completa la sección "Bloqueo" del issue (ver `templates/tracking-issue.md`) — nunca una sin la otra, para que el estado en GitHub y el email siempre cuenten la misma historia.

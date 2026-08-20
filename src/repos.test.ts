@@ -13,7 +13,7 @@ const { loadRepos } = await import('./repos.js');
 let dir: string;
 
 beforeEach(async () => {
-  dir = await mkdtemp(join(tmpdir(), 'valeria-repos-test-'));
+  dir = await mkdtemp(join(tmpdir(), 'ronin-repos-test-'));
   reposConfigPath = join(dir, 'repos.json');
 });
 

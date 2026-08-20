@@ -105,7 +105,7 @@ export async function ensureWorktree(branch: string, baseRef = config.worktreeBa
 // project name to the cwd's basename — which for a worktree is exactly this
 // dir's own name (see worktreeDirFor), giving every slice's worktree its own
 // isolated stack. Nothing ever tore these down: discovered live as
-// `valeria-228-slice-9-postgres-1` and `valeria-228-slice-10-postgres-1`
+// `ronin-228-slice-9-postgres-1` and `ronin-228-slice-10-postgres-1`
 // still running (one still "Up 12 hours (healthy)") long after their PRs
 // had merged. Best-effort — a worktree that never touched Docker has no
 // compose project to tear down, and `docker compose down` against a missing
@@ -130,16 +130,16 @@ export async function removeWorktree(branch: string): Promise<void> {
     .catch((error) => log.error(`removeWorktree: 'git worktree remove' falló para ${dir}`, error));
 }
 
-const WORKTREE_DIR_RE = /^valeria-(\d+)-(.+)$/;
+const WORKTREE_DIR_RE = /^ronin-(\d+)-(.+)$/;
 
 // Reconstructs the branch name from a worktree directory name — the exact
 // inverse of worktreeDirFor's `branch.replaceAll('/', '-')`. Safe because
-// every ValerIA branch has exactly this shape (valeria/<issue>/<rest>, issue
+// every ronin branch has exactly this shape (ronin/<issue>/<rest>, issue
 // always numeric — see stack.ts's sliceBranch/planBranch), so there's no
 // ambiguity to resolve. Exported for direct unit testing.
 export function branchFromWorktreeDirName(name: string): string | null {
   const match = name.match(WORKTREE_DIR_RE);
-  return match ? `valeria/${match[1]}/${match[2]}` : null;
+  return match ? `ronin/${match[1]}/${match[2]}` : null;
 }
 
 // Pure decision logic behind sweepOrphanedWorktrees below, split out so it's
@@ -156,7 +156,7 @@ export function branchesToSweep(dirNames: string[], allPrs: PullRequestStatus[])
   const openBranches = new Set(allPrs.map((pr) => pr.headRefName));
   return dirNames.flatMap((name) => {
     const branch = branchFromWorktreeDirName(name);
-    if (!branch) return []; // not a ValerIA worktree dir — leave it alone
+    if (!branch) return []; // not a ronin worktree dir — leave it alone
     const isPlanWorktree = branch.endsWith('/plan');
     return isPlanWorktree || !openBranches.has(branch) ? [branch] : [];
   });

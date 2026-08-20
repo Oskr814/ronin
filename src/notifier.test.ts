@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('./config.js', () => ({
   config: {
-    gmailUser: 'valeria@example.com',
+    gmailUser: 'ronin@example.com',
     gmailAppPassword: 'app-password',
     notifyTo: 'human@example.com',
   },

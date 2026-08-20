@@ -21,7 +21,7 @@ function transport() {
 //
 // Never throws: the reason is already logged below before the network call,
 // so a caller's own escalation bookkeeping (attempt counters, the
-// valeria:blocked label) still runs even if Gmail itself is unreachable.
+// ronin:blocked label) still runs even if Gmail itself is unreachable.
 // Discovered live: an earlier version let a transport failure here escape
 // call sites that have no safety net of their own (discoverAssignedSpecs/
 // discoverAssignedBugs in tick.ts, which run outside runIssueStep) —
@@ -47,7 +47,7 @@ export async function notifyBlocker(notification: BlockerNotification): Promise<
     await transport().sendMail({
       from: config.gmailUser,
       to: config.notifyTo,
-      subject: `[ValerIA] Bloqueo: ${notification.reason}`,
+      subject: `[ronin] Bloqueo: ${notification.reason}`,
       text: lines.join('\n'),
     });
   } catch (error) {

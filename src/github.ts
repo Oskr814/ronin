@@ -25,7 +25,7 @@ async function gh(args: string[]): Promise<string> {
 // `gh api` has no --repo/-R flag at all (unlike `gh pr`/`gh issue`), so it
 // can't go through gh() above: it would fail outright with "unknown flag:
 // --repo". It resolves the {owner}/{repo} placeholders from the current
-// directory's git remote or $GH_REPO — and the supervisor's cwd is ValerIA's
+// directory's git remote or $GH_REPO — and the supervisor's cwd is ronin's
 // own checkout, not PRODUCT_REPO_PATH, so those placeholders would target the
 // wrong repo anyway. Every caller therefore spells out
 // `repos/${activeRepo().productRepo}/...` literally instead.
@@ -68,7 +68,7 @@ export async function getIssueBody(issueNumber: number): Promise<string> {
 }
 
 export async function setIssueBody(issueNumber: number, body: string): Promise<void> {
-  const dir = await mkdtemp(join(tmpdir(), 'valeria-issue-body-'));
+  const dir = await mkdtemp(join(tmpdir(), 'ronin-issue-body-'));
   const bodyFile = join(dir, 'body.md');
   try {
     await writeFile(bodyFile, body, 'utf8');
@@ -78,7 +78,7 @@ export async function setIssueBody(issueNumber: number, body: string): Promise<v
   }
 }
 
-const ATTEMPT_LABEL_RE = /^valeria:attempts-(\d+)$/;
+const ATTEMPT_LABEL_RE = /^ronin:attempts-(\d+)$/;
 
 // Tracks how many fix attempts (review, e2e, rebase, or an issue-level
 // transient exception) a PR or tracking issue has been through, as a label
@@ -103,10 +103,10 @@ export async function getAttemptCount(prNumber: number): Promise<number> {
 export async function incrementAttemptCount(prNumber: number): Promise<number> {
   const current = await getAttemptCount(prNumber);
   const next = current + 1;
-  await ensureLabel(`valeria:attempts-${next}`);
+  await ensureLabel(`ronin:attempts-${next}`);
   // `gh issue edit`, not `gh pr edit` — see the note on setPrState below.
-  const args = ['issue', 'edit', String(prNumber), '--add-label', `valeria:attempts-${next}`];
-  if (current > 0) args.push('--remove-label', `valeria:attempts-${current}`);
+  const args = ['issue', 'edit', String(prNumber), '--add-label', `ronin:attempts-${next}`];
+  if (current > 0) args.push('--remove-label', `ronin:attempts-${current}`);
   await gh(args);
   return next;
 }
@@ -136,7 +136,7 @@ export async function listTrackingIssues(state: SpecStatus): Promise<TrackingIss
 }
 
 export async function createTrackingIssue(title: string, body: string): Promise<{ number: number; url: string }> {
-  const dir = await mkdtemp(join(tmpdir(), 'valeria-issue-'));
+  const dir = await mkdtemp(join(tmpdir(), 'ronin-issue-'));
   const bodyFile = join(dir, 'body.md');
   try {
     await writeFile(bodyFile, body, 'utf8');
@@ -157,7 +157,7 @@ export async function createTrackingIssue(title: string, body: string): Promise<
   }
 }
 
-// Swaps the current valeria:* state label for `next`. Only one state label is
+// Swaps the current ronin:* state label for `next`. Only one state label is
 // ever present at a time — see docs/DESIGN.md §2.1.
 export async function setIssueState(issueNumber: number, next: SpecStatus): Promise<void> {
   const current = await gh(['issue', 'view', String(issueNumber), '--json', 'labels']);
@@ -240,14 +240,14 @@ const PR_LIST_LIMIT = 300;
 // Single batched read behind tick()'s whole per-issue loop, replacing what
 // used to be one `gh pr list` + one `gh pr view` per PR per issue — see
 // docs/superpowers/specs/2026-08-01-pr-list-batching-design.md. Filters
-// client-side to ValerIA's own branches (`valeria/<issue>/slice-N` — see
+// client-side to ronin's own branches (`ronin/<issue>/slice-N` — see
 // stack.ts's sliceBranch) since PRODUCT_REPO also carries ordinary human PRs
 // under the same `--state open`.
-export async function listAllOpenValeriaPrs(): Promise<PullRequestStatus[]> {
+export async function listAllOpenRoninPrs(): Promise<PullRequestStatus[]> {
   const stdout = await gh(['pr', 'list', '--state', 'open', '--limit', String(PR_LIST_LIMIT), '--json', PR_JSON_FIELDS]);
-  const raw = (JSON.parse(stdout) as RawPr[]).filter((pr) => pr.headRefName.startsWith('valeria/'));
+  const raw = (JSON.parse(stdout) as RawPr[]).filter((pr) => pr.headRefName.startsWith('ronin/'));
   if (raw.length === PR_LIST_LIMIT) {
-    log.error(`listAllOpenValeriaPrs: alcanzó el límite de ${PR_LIST_LIMIT} — puede haber PRs no traídos, subir PR_LIST_LIMIT`);
+    log.error(`listAllOpenRoninPrs: alcanzó el límite de ${PR_LIST_LIMIT} — puede haber PRs no traídos, subir PR_LIST_LIMIT`);
   }
   return raw.map(toPullRequestStatus);
 }
@@ -320,7 +320,7 @@ export async function requestCopilotReview(prNumber: number): Promise<void> {
   await gh(['pr', 'edit', String(prNumber), '--add-reviewer', 'copilot']);
 }
 
-const EVIDENCE_COMMENT_MARKER = '<!-- valeria:e2e-evidence -->';
+const EVIDENCE_COMMENT_MARKER = '<!-- ronin:e2e-evidence -->';
 
 export async function hasEvidenceComment(prNumber: number): Promise<boolean> {
   const stdout = await gh(['pr', 'view', String(prNumber), '--json', 'comments']);
@@ -337,7 +337,7 @@ export async function hasEvidenceComment(prNumber: number): Promise<boolean> {
 // comment per publish). See
 // docs/superpowers/specs/2026-07-29-mention-e2e-evidence-design.md.
 export async function postEvidenceComment(prNumber: number, imageUrls: string[]): Promise<void> {
-  // Plain links, not `![]()` image embeds: ValerIA (where evidence lives) is
+  // Plain links, not `![]()` image embeds: ronin (where evidence lives) is
   // a private repo, and GitHub renders embedded images through its Camo
   // proxy, which fetches anonymously and can never authenticate to private
   // content — the image just fails to render for every viewer, regardless of
@@ -352,7 +352,7 @@ export async function postEvidenceComment(prNumber: number, imageUrls: string[])
     ...imageUrls.map((url, i) => `[Screenshot ${i + 1}](${url})`),
   ].join('\n\n');
 
-  const dir = await mkdtemp(join(tmpdir(), 'valeria-evidence-comment-'));
+  const dir = await mkdtemp(join(tmpdir(), 'ronin-evidence-comment-'));
   const bodyFile = join(dir, 'body.md');
   try {
     await writeFile(bodyFile, body, 'utf8');
@@ -396,7 +396,7 @@ export interface BugIssue {
 // this runner once a human has applied both bmedical's own `bugfix` label
 // and this runner's assignment label (see claim.ts's runnerLabel) — no
 // draft/ready step like a spec PR has, since a GitHub issue has no draft
-// state. Already-managed issues (label `valeria` present) or already in a
+// state. Already-managed issues (label `ronin` present) or already in a
 // tracked state (ready/in-progress/blocked/done) are excluded so an issue is
 // only ever picked up once — mirrors listAssignedSpecPrs's filter above. See
 // docs/superpowers/specs/2026-07-28-bug-issue-intake-design.md.
@@ -465,7 +465,7 @@ export async function mergeSpecPr(prNumber: number): Promise<void> {
 }
 
 export async function commentOnSpecPr(prNumber: number, body: string): Promise<void> {
-  const dir = await mkdtemp(join(tmpdir(), 'valeria-spec-pr-comment-'));
+  const dir = await mkdtemp(join(tmpdir(), 'ronin-spec-pr-comment-'));
   const bodyFile = join(dir, 'body.md');
   try {
     await writeFile(bodyFile, body, 'utf8');

@@ -2,7 +2,7 @@ import { config, LABEL_STATES } from './config.js';
 import { getIssueLabels, addIssueLabel, removeIssueLabel } from './github.js';
 import { readLocalState, writeLocalState, withLocalStateLock } from './local-state.js';
 
-const RUNNER_PREFIX = 'valeria:runner-';
+const RUNNER_PREFIX = 'ronin:runner-';
 
 // Same label prefix used for spec-PR assignment (applied manually by a
 // human) and the issue claim lock (applied automatically here) — see

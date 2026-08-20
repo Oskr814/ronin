@@ -4,17 +4,17 @@ import type { PullRequestStatus } from './github.js';
 // of the raw index, this and the regex below need to move to a slugify
 // scheme instead of a fixed-format parse.
 export function sliceBranch(issueNumber: number, sliceIndex: number): string {
-  return `valeria/${issueNumber}/slice-${sliceIndex + 1}`;
+  return `ronin/${issueNumber}/slice-${sliceIndex + 1}`;
 }
 
 // The 'plan' task's branch — never opens a PR (its job is to rewrite the
-// tracking issue's body, see agent-task.ts), so it's the one ValerIA branch
+// tracking issue's body, see agent-task.ts), so it's the one ronin branch
 // that never goes through the merge-time worktree cleanup in tick.ts.
 export function planBranch(issueNumber: number): string {
-  return `valeria/${issueNumber}/plan`;
+  return `ronin/${issueNumber}/plan`;
 }
 
-const SLICE_BRANCH_RE = /^valeria\/\d+\/slice-(\d+)$/;
+const SLICE_BRANCH_RE = /^ronin\/\d+\/slice-(\d+)$/;
 
 export function sliceIndexFromBranch(branch: string): number | null {
   const match = branch.match(SLICE_BRANCH_RE);
@@ -25,19 +25,19 @@ export interface StackedPr extends PullRequestStatus {
   sliceIndex: number;
 }
 
-// Slice branches are created as `valeria/<issue>/<slice-slug>` (see
+// Slice branches are created as `ronin/<issue>/<slice-slug>` (see
 // agent-task.ts's sliceBranch), so an issue's open PRs are found by branch
 // prefix out of the single batched list (see github.ts's
-// listAllOpenValeriaPrs) instead of a separate per-issue fetch — see
+// listAllOpenRoninPrs) instead of a separate per-issue fetch — see
 // docs/superpowers/specs/2026-08-01-pr-list-batching-design.md. Pure: no I/O,
 // so it needs no mocking to test.
 export function prsForIssue(allPrs: PullRequestStatus[], issueNumber: number): PullRequestStatus[] {
-  const prefix = `valeria/${issueNumber}/`;
+  const prefix = `ronin/${issueNumber}/`;
   return allPrs.filter((pr) => pr.headRefName.startsWith(prefix));
 }
 
 // Ordena por índice de slice; descarta cualquier PR cuyo branch no matchee el
-// patrón valeria/<issue>/slice-N (ej. el branch de la tarea 'plan') — no
+// patrón ronin/<issue>/slice-N (ej. el branch de la tarea 'plan') — no
 // debería pasar en la práctica, pero mejor un PR ignorado que uno mal indexado.
 export function toStackedPrs(prs: PullRequestStatus[]): StackedPr[] {
   return prs

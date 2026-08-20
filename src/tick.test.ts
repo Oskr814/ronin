@@ -16,7 +16,7 @@ vi.mock('./config.js', () => ({
     worktreeBaseRef: 'origin/main',
   },
   LABEL_BUG: 'bugfix',
-  LABEL_MANAGED: 'valeria',
+  LABEL_MANAGED: 'ronin',
 }));
 
 vi.mock('./repo-context.js', () => ({
@@ -108,8 +108,8 @@ function pr(overrides: Partial<StackedPr> = {}): StackedPr {
     checksPassing: false,
     checksPending: false,
     mergeable: true,
-    headRefName: 'valeria/228/slice-2',
-    baseRefName: 'valeria/228/slice-1',
+    headRefName: 'ronin/228/slice-2',
+    baseRefName: 'ronin/228/slice-1',
     isDraft: false,
     sliceIndex: 1,
     ...overrides,
@@ -162,7 +162,7 @@ describe('processSlicePr — bottom-of-stack PR (unchanged behavior)', () => {
       number: 229,
       sliceIndex: 0,
       baseRefName: 'main',
-      headRefName: 'valeria/228/slice-1',
+      headRefName: 'ronin/228/slice-1',
       checksPassing: true,
       checksPending: false,
       reviewDecision: 'APPROVED',
@@ -174,7 +174,7 @@ describe('processSlicePr — bottom-of-stack PR (unchanged behavior)', () => {
     expect(stillInProgress).toBe(true);
     expect(mergePullRequest).toHaveBeenCalledWith(229);
     expect(markSliceMerged).toHaveBeenCalledWith(228, 0);
-    expect(removeWorktree).toHaveBeenCalledWith('valeria/228/slice-1');
+    expect(removeWorktree).toHaveBeenCalledWith('ronin/228/slice-1');
   });
 
   it('escalates once checksPendingRetryLimit is exceeded when checks never report', async () => {
@@ -182,7 +182,7 @@ describe('processSlicePr — bottom-of-stack PR (unchanged behavior)', () => {
       number: 229,
       sliceIndex: 0,
       baseRefName: 'main',
-      headRefName: 'valeria/228/slice-1',
+      headRefName: 'ronin/228/slice-1',
       checksPending: true,
     });
     isBehind.mockResolvedValue(false);
@@ -205,7 +205,7 @@ describe('processSlicePr — bottom-of-stack PR (unchanged behavior)', () => {
       number: 229,
       sliceIndex: 0,
       baseRefName: 'main',
-      headRefName: 'valeria/228/slice-1',
+      headRefName: 'ronin/228/slice-1',
       checksPending: true,
     });
     isBehind.mockResolvedValue(false);
@@ -223,7 +223,7 @@ describe('processSlicePr — bottom-of-stack PR (unchanged behavior)', () => {
       number: 229,
       sliceIndex: 0,
       baseRefName: 'main',
-      headRefName: 'valeria/228/slice-1',
+      headRefName: 'ronin/228/slice-1',
       checksPassing: false,
       checksPending: false,
     });
@@ -247,11 +247,11 @@ describe('processSlicePr — mentions found on an already-mergeable bottom PR (r
       number: 229,
       sliceIndex: 0,
       baseRefName: 'main',
-      headRefName: 'valeria/228/slice-1',
+      headRefName: 'ronin/228/slice-1',
       checksPassing: false, // stale snapshot taken before the mention landed
       reviewDecision: '',
     });
-    findUnprocessedMentions.mockResolvedValue([{ id: 1, kind: 'issue', body: '@valeria-agent fijate esto', reactionsEyes: 0 }]);
+    findUnprocessedMentions.mockResolvedValue([{ id: 1, kind: 'issue', body: '@ronin fijate esto', reactionsEyes: 0 }]);
     getPullRequestStatus.mockResolvedValue({ ...bottomPr, checksPassing: true, reviewDecision: 'APPROVED' });
     isBehind.mockResolvedValue(false);
 
@@ -259,7 +259,7 @@ describe('processSlicePr — mentions found on an already-mergeable bottom PR (r
 
     expect(runAgentTask).toHaveBeenCalledWith({
       type: 'review-request', issueNumber: 228, prNumber: 229,
-      mentions: [{ id: 1, kind: 'issue', body: '@valeria-agent fijate esto', reactionsEyes: 0 }],
+      mentions: [{ id: 1, kind: 'issue', body: '@ronin fijate esto', reactionsEyes: 0 }],
     });
     expect(stillInProgress).toBe(true);
     expect(mergePullRequest).toHaveBeenCalledWith(229);
@@ -270,11 +270,11 @@ describe('processSlicePr — mentions found on an already-mergeable bottom PR (r
       number: 229,
       sliceIndex: 0,
       baseRefName: 'main',
-      headRefName: 'valeria/228/slice-1',
+      headRefName: 'ronin/228/slice-1',
       checksPassing: true,
       reviewDecision: 'APPROVED',
     });
-    findUnprocessedMentions.mockResolvedValue([{ id: 1, kind: 'issue', body: '@valeria-agent corré los e2e', reactionsEyes: 0 }]);
+    findUnprocessedMentions.mockResolvedValue([{ id: 1, kind: 'issue', body: '@ronin corré los e2e', reactionsEyes: 0 }]);
     getPullRequestStatus.mockResolvedValue(bottomPr);
     // hasEvidenceComment resolves true (beforeEach, line 119), so the
     // automatic-publish block above (gated on it) never calls
@@ -296,11 +296,11 @@ describe('processSlicePr — mentions found on an already-mergeable bottom PR (r
       number: 229,
       sliceIndex: 0,
       baseRefName: 'main',
-      headRefName: 'valeria/228/slice-1',
+      headRefName: 'ronin/228/slice-1',
       checksPassing: true,
       reviewDecision: 'APPROVED',
     });
-    findUnprocessedMentions.mockResolvedValue([{ id: 1, kind: 'issue', body: '@valeria-agent fijate esta línea', reactionsEyes: 0 }]);
+    findUnprocessedMentions.mockResolvedValue([{ id: 1, kind: 'issue', body: '@ronin fijate esta línea', reactionsEyes: 0 }]);
     getPullRequestStatus.mockResolvedValue(bottomPr);
     publishEvidence.mockResolvedValue([]);
     isBehind.mockResolvedValue(false);
@@ -316,11 +316,11 @@ describe('processSlicePr — mentions found on an already-mergeable bottom PR (r
       number: 229,
       sliceIndex: 0,
       baseRefName: 'main',
-      headRefName: 'valeria/228/slice-1',
+      headRefName: 'ronin/228/slice-1',
       checksPassing: true,
       reviewDecision: 'APPROVED',
     });
-    findUnprocessedMentions.mockResolvedValue([{ id: 1, kind: 'issue', body: '@valeria-agent corré los e2e', reactionsEyes: 0 }]);
+    findUnprocessedMentions.mockResolvedValue([{ id: 1, kind: 'issue', body: '@ronin corré los e2e', reactionsEyes: 0 }]);
     getPullRequestStatus.mockResolvedValue(bottomPr);
     publishEvidence.mockRejectedValue(new Error('push rejected'));
     isBehind.mockResolvedValue(false);
@@ -355,7 +355,7 @@ describe('processSlicePr — same-tick done transition on merge', () => {
       number: 229,
       sliceIndex: 0,
       baseRefName: 'main',
-      headRefName: 'valeria/228/slice-1',
+      headRefName: 'ronin/228/slice-1',
       checksPassing: true,
       checksPending: false,
       reviewDecision: 'APPROVED',
@@ -373,7 +373,7 @@ describe('processSlicePr — same-tick done transition on merge', () => {
       number: 229,
       sliceIndex: 0,
       baseRefName: 'main',
-      headRefName: 'valeria/228/slice-1',
+      headRefName: 'ronin/228/slice-1',
       checksPassing: true,
       checksPending: false,
       reviewDecision: 'APPROVED',
@@ -388,12 +388,12 @@ describe('processSlicePr — same-tick done transition on merge', () => {
 });
 
 describe('discoverAssignedBugs', () => {
-  it('labels, seeds, and starts a bug issue not yet valeria-managed', async () => {
+  it('labels, seeds, and starts a bug issue not yet ronin-managed', async () => {
     listAssignedBugIssues.mockResolvedValue([{ number: 500, title: 'Login redirects to 404' }]);
 
     await discoverAssignedBugs();
 
-    expect(addIssueLabel).toHaveBeenCalledWith(500, 'valeria');
+    expect(addIssueLabel).toHaveBeenCalledWith(500, 'ronin');
     expect(seedSingleSlice).toHaveBeenCalledWith(500, 'Fix — Login redirects to 404');
     expect(setIssueState).toHaveBeenCalledWith(500, 'in-progress');
   });

@@ -21,7 +21,7 @@ describe('withActiveRepo', () => {
 
   it('derives worktreeBasePath as a sibling of productRepoPath by default', async () => {
     await withActiveRepo({ productRepo: 'a/b', productRepoPath: '/tmp/a/checkout' }, async () => {
-      expect(activeRepo().worktreeBasePath).toBe('/tmp/a/valeria-worktrees');
+      expect(activeRepo().worktreeBasePath).toBe('/tmp/a/ronin-worktrees');
     });
   });
 
