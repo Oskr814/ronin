@@ -14,7 +14,7 @@ const { withActiveRepo } = await import('./repo-context.js');
 let dir: string;
 
 beforeEach(async () => {
-  dir = await mkdtemp(join(tmpdir(), 'valeria-local-state-test-'));
+  dir = await mkdtemp(join(tmpdir(), 'ronin-local-state-test-'));
   localStatePath = join(dir, 'state.json');
 });
 
