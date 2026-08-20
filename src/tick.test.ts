@@ -57,9 +57,11 @@ vi.mock('./github.js', () => ({
 
 const incrementChecksPendingCount = vi.fn();
 const resetChecksPendingCount = vi.fn();
+const setLastReviewedSha = vi.fn();
 vi.mock('./local-state.js', () => ({
   incrementChecksPendingCount: (...args: unknown[]) => incrementChecksPendingCount(...args),
   resetChecksPendingCount: (...args: unknown[]) => resetChecksPendingCount(...args),
+  setLastReviewedSha: (...args: unknown[]) => setLastReviewedSha(...args),
 }));
 
 const publishEvidence = vi.fn();
@@ -94,7 +96,7 @@ vi.mock('./notifier.js', () => ({
   notifyBlocker: (...args: unknown[]) => notifyBlocker(...args),
 }));
 
-const { processSlicePr, agentTaskFor, discoverAssignedBugs } = await import('./tick.js');
+const { processSlicePr, agentTaskFor, discoverAssignedBugs, processExternalReviewCandidate } = await import('./tick.js');
 
 function issue(overrides: Partial<TrackingIssue> = {}): TrackingIssue {
   return { number: 228, title: 'Test issue', url: 'https://github.com/x/y/issues/228', labels: [], ...overrides };
@@ -126,6 +128,7 @@ beforeEach(() => {
   existsSync.mockReturnValue(true);
   hasRemainingSlices.mockResolvedValue(true); // preserves pre-existing merge test behavior by default
   listAssignedBugIssues.mockResolvedValue([]);
+  setLastReviewedSha.mockResolvedValue(undefined);
 });
 
 describe('processSlicePr — non-bottom stacked PR', () => {
@@ -420,5 +423,38 @@ describe('discoverAssignedBugs', () => {
 
     expect(notifyBlocker).toHaveBeenCalled();
     expect(setIssueState).toHaveBeenCalledWith(501, 'blocked');
+  });
+});
+
+describe('processExternalReviewCandidate', () => {
+  const candidate = { prNumber: 305, headRefName: 'someone-else/feature-x', headSha: 'abc123', openThreads: [] };
+
+  it('runs the external-review agent task and records the reviewed SHA on success', async () => {
+    runAgentTask.mockResolvedValue(undefined);
+
+    await processExternalReviewCandidate(candidate);
+
+    expect(runAgentTask).toHaveBeenCalledWith({
+      type: 'external-review',
+      prNumber: 305,
+      headRefName: 'someone-else/feature-x',
+      headSha: 'abc123',
+      openThreads: [],
+    });
+    expect(setLastReviewedSha).toHaveBeenCalledWith(305, 'abc123');
+  });
+
+  it('does not record the SHA when the agent task throws', async () => {
+    runAgentTask.mockRejectedValue(new Error('claude -p timed out'));
+
+    await expect(processExternalReviewCandidate(candidate)).resolves.toBeUndefined();
+
+    expect(setLastReviewedSha).not.toHaveBeenCalled();
+  });
+
+  it('swallows the error instead of propagating it', async () => {
+    runAgentTask.mockRejectedValue(new Error('boom'));
+
+    await expect(processExternalReviewCandidate(candidate)).resolves.not.toThrow();
   });
 });

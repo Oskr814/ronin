@@ -30,11 +30,12 @@ import { runWithConcurrency } from './concurrency.js';
 import { runAgentTask, type AgentTask } from './agent-task.js';
 import { ClaudeUsageLimitError } from './claude-runner.js';
 import { toStackedPrs, pickBottomPr, prsForIssue, planBranch, type StackedPr } from './stack.js';
-import { incrementChecksPendingCount, resetChecksPendingCount } from './local-state.js';
+import { incrementChecksPendingCount, resetChecksPendingCount, setLastReviewedSha } from './local-state.js';
 import { tryClaim, releaseIfNoLongerInProgress, runnerLabel } from './claim.js';
 import { worktreeDirFor, isBehind, attemptRebase, removeWorktree, sweepOrphanedWorktrees } from './worktree.js';
 import { publishEvidence, rawEvidenceUrl } from './evidence.js';
 import { findUnprocessedMentions } from './mentions.js';
+import { findPrsNeedingReview, type ReviewCandidate } from './external-review.js';
 import { config, LABEL_BUG, LABEL_MANAGED } from './config.js';
 import { activeRepo, withActiveRepo } from './repo-context.js';
 import { loadRepos } from './repos.js';
@@ -562,6 +563,27 @@ async function runIssueStep(issue: TrackingIssue, step: () => Promise<void>): Pr
   await releaseIfNoLongerInProgress(issue.number);
 }
 
+// One PR's review is fully independent of every other's and of the
+// issue-tracking loop above — a failure here must never reach tick()'s
+// outer catch (which would mark an unrelated issue `blocked` and email a
+// human) nor stop the rest of this tick's candidates. See
+// docs/superpowers/specs/2026-08-20-external-pr-review-design.md.
+export async function processExternalReviewCandidate(candidate: ReviewCandidate): Promise<void> {
+  try {
+    await runAgentTask({
+      type: 'external-review',
+      prNumber: candidate.prNumber,
+      headRefName: candidate.headRefName,
+      headSha: candidate.headSha,
+      openThreads: candidate.openThreads,
+    });
+    await setLastReviewedSha(candidate.prNumber, candidate.headSha);
+  } catch (error) {
+    log.error(`external-review failed for PR #${candidate.prNumber}`, error);
+    // No SHA recorded → the next tick treats this PR as still unreviewed.
+  }
+}
+
 async function tickOneRepo(): Promise<void> {
   const start = Date.now();
   resetTickMetrics();
@@ -612,6 +634,15 @@ async function tickOneRepo(): Promise<void> {
         await runAgentTask(agentTaskFor(next.issue, next.index, next.title));
       });
     });
+
+    let reviewCandidates: ReviewCandidate[];
+    try {
+      reviewCandidates = await findPrsNeedingReview();
+    } catch (error) {
+      log.info(`tick: findPrsNeedingReview falló, reintentando en el próximo tick: ${(error as Error).message}`);
+      reviewCandidates = [];
+    }
+    await runWithConcurrency(reviewCandidates, config.tickConcurrency, processExternalReviewCandidate);
   } finally {
     // Always emitted, even on the early return above — durationMs vs.
     // agentRunsDurationMs is what tells whether a tick was mostly spent
