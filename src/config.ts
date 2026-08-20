@@ -64,25 +64,25 @@ export const config = {
   // Base path for the per-machine claim/checks-pending cache — namespaced
   // per active repo by local-state.ts, never read directly as a file path
   // here anymore.
-  localStatePath: process.env.LOCAL_STATE_PATH ?? '.valeria-state.json',
-  // ValerIA's own repo — e2e screenshot evidence is committed here (main),
+  localStatePath: process.env.LOCAL_STATE_PATH ?? '.ronin-state.json',
+  // ronin's own repo — e2e screenshot evidence is committed here (main),
   // shared across every repo.json entry, not split per product repo. See
   // docs/DESIGN.md §4.
-  valeriaRepo: process.env.VALERIA_REPO ?? 'Bmedical/ValerIA',
+  roninRepo: process.env.RONIN_REPO ?? 'Oskr814/ronin',
   // Playwright's screenshot output dir, relative to each active repo's root.
   playwrightTestResultsDir: process.env.PLAYWRIGHT_TEST_RESULTS_DIR ?? 'apps/webapp/test-results',
 } as const;
 
-export const LABEL_MANAGED = 'valeria';
+export const LABEL_MANAGED = 'ronin';
 export const LABEL_STATES = {
-  ready: 'valeria:ready',
-  'in-progress': 'valeria:in-progress',
-  blocked: 'valeria:blocked',
-  done: 'valeria:done',
+  ready: 'ronin:ready',
+  'in-progress': 'ronin:in-progress',
+  blocked: 'ronin:blocked',
+  done: 'ronin:done',
 } as const;
 
 // bmedical's own pre-existing label ("Something isn't working") — reused as
-// the bug-intake trigger instead of a new valeria:-prefixed label, see
+// the bug-intake trigger instead of a new ronin:-prefixed label, see
 // docs/superpowers/specs/2026-07-28-bug-issue-intake-design.md.
 export const LABEL_BUG = 'bugfix';
 
