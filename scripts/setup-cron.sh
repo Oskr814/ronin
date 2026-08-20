@@ -2,13 +2,13 @@
 # Installs (or removes) a crontab entry that runs `pnpm start` on a fixed
 # interval. Safe to re-run: replaces this repo's previous entry instead of
 # duplicating it, identified by a marker comment scoped to this repo's path
-# (so multiple ValerIA checkouts on the same host don't collide).
+# (so multiple ronin checkouts on the same host don't collide).
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LOG_DIR="$REPO_DIR/logs"
 WRAPPER="$REPO_DIR/scripts/run-tick.sh"
-MARKER="# valeria-tick:$REPO_DIR"
+MARKER="# ronin-tick:$REPO_DIR"
 
 if [[ "${1:-}" == "--remove" ]]; then
   EXISTING="$(crontab -l 2>/dev/null || true)"
@@ -53,7 +53,7 @@ find "\$LOG_DIR" -name 'tick-*.log' -mtime +$RETENTION_DAYS -delete
 # Single-flight: a tick can run for a while (a claude -p invocation can take
 # up to AGENT_TASK_TIMEOUT_MINUTES). If a previous run is still going, skip
 # this trigger instead of running a second tick concurrently against the
-# same local state (.valeria-state.json) — see docs/DESIGN.md §9.
+# same local state (.ronin-state.json) — see docs/DESIGN.md §9.
 exec 200>"$REPO_DIR/.tick.lock"
 flock -n 200 || { echo "\$(date -Is) [cron] tick ya en curso, salteando"; exit 0; }
 

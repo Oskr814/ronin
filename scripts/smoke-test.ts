@@ -34,7 +34,7 @@ async function main() {
       console.log(`   OK — ${stdout.trim()}`);
 
       const ready = await listTrackingIssues('ready');
-      console.log(`   OK — ${ready.length} issue(s) valeria:ready encontrados en ${repo.productRepo}`);
+      console.log(`   OK — ${ready.length} issue(s) ronin:ready encontrados en ${repo.productRepo}`);
     });
   }
 

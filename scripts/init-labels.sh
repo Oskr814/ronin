@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# One-time setup step (idempotent, safe to re-run): creates every valeria:*
+# One-time setup step (idempotent, safe to re-run): creates every ronin:*
 # label used by the pipeline in every repo listed in repos.json, including
-# this runner's own assignment label (valeria:runner-<RUNNER_ID>). Run
+# this runner's own assignment label (ronin:runner-<RUNNER_ID>). Run
 # manually, using your own `gh auth` session — this is a human setup step,
 # not something the supervisor does on its own. Without this, a fresh
 # RUNNER_ID has no label to pick from the GitHub UI when you go to assign
@@ -22,12 +22,12 @@ if [[ ! -f "$REPOS_CONFIG_PATH" ]]; then
 fi
 
 LABELS=(
-  "valeria|Gestionado por el supervisor ValerIA"
-  "valeria:ready|Spec listo para que un runner lo tome"
-  "valeria:in-progress|En curso"
-  "valeria:blocked|Esperando una decisión humana"
-  "valeria:done|Completado"
-  "valeria:runner-$RUNNER_ID|Asignado a este runner (ver docs/DESIGN.md §1 y §9)"
+  "ronin|Gestionado por el supervisor ronin"
+  "ronin:ready|Spec listo para que un runner lo tome"
+  "ronin:in-progress|En curso"
+  "ronin:blocked|Esperando una decisión humana"
+  "ronin:done|Completado"
+  "ronin:runner-$RUNNER_ID|Asignado a este runner (ver docs/DESIGN.md §1 y §9)"
 )
 
 for repo in $(jq -r '.[].productRepo' "$REPOS_CONFIG_PATH"); do
