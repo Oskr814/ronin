@@ -159,3 +159,59 @@ describe('runAgentTask — agent-notes reminder', () => {
     expect(prompt).not.toContain(AGENT_NOTES_REMINDER);
   });
 });
+
+describe('runAgentTask — external-review', () => {
+  const task = {
+    type: 'external-review' as const,
+    prNumber: 305,
+    headRefName: 'someone-else/feature-x',
+    headSha: 'abc123',
+    openThreads: [{ id: 'T1', body: 'stale finding about duplication' }],
+  };
+
+  it('uses headRefName directly as the worktree branch, without calling getPullRequestStatus', async () => {
+    await runAgentTask(task);
+
+    expect(ensureWorktree).toHaveBeenCalledWith('someone-else/feature-x', undefined);
+    expect(getPullRequestStatus).not.toHaveBeenCalled();
+  });
+
+  it('does not clear test-results/', async () => {
+    await runAgentTask(task);
+
+    expect(rm).not.toHaveBeenCalled();
+  });
+
+  it('lists the still-open bot threads in the prompt', async () => {
+    await runAgentTask(task);
+
+    const prompt = runClaudeHeadless.mock.calls[0][1] as string;
+    expect(prompt).toContain('T1');
+    expect(prompt).toContain('stale finding about duplication');
+  });
+
+  it('forbids APPROVE/REQUEST_CHANGES and requires event COMMENT', async () => {
+    await runAgentTask(task);
+
+    const prompt = runClaudeHeadless.mock.calls[0][1] as string;
+    expect(prompt).toMatch(/APPROVE/);
+    expect(prompt).toMatch(/REQUEST_CHANGES/);
+    expect(prompt).toContain('COMMENT');
+  });
+
+  it('includes the agent-notes reminder', async () => {
+    await runAgentTask(task);
+
+    const prompt = runClaudeHeadless.mock.calls[0][1] as string;
+    expect(prompt).toContain(AGENT_NOTES_REMINDER);
+    expect(prompt.endsWith(AGENT_NOTES_REMINDER)).toBe(true);
+  });
+
+  it('succeeds and records metrics for a task with no issueNumber field', async () => {
+    resetTickMetrics();
+
+    await runAgentTask(task);
+
+    expect(getTickAgentMetrics().agentRuns).toBe(1);
+  });
+});
