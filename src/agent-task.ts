@@ -4,6 +4,7 @@ import { ensureWorktree, remoteBranchExists } from './worktree.js';
 import { runClaudeHeadless } from './claude-runner.js';
 import { getPullRequestStatus, type Comment } from './github.js';
 import { config } from './config.js';
+import { activeRepo } from './repo-context.js';
 import { log } from './logger.js';
 import { sliceBranch, planBranch, baseBranchFor } from './stack.js';
 import { recordAgentRun } from './metrics.js';
@@ -18,7 +19,7 @@ export type AgentTask =
   | { type: 'review-request'; issueNumber: number; prNumber: number; mentions: Comment[] };
 
 function repoUrl(): string {
-  return `https://github.com/${config.productRepo}`;
+  return `https://github.com/${activeRepo().productRepo}`;
 }
 
 export const AGENT_NOTES_REMINDER =

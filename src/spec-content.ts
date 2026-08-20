@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { config } from './config.js';
+import { activeRepo } from './repo-context.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -8,14 +8,14 @@ const execFileAsync = promisify(execFile);
 // the primary checkout's working directory or index, so it's safe to call
 // regardless of what branch a human has checked out there.
 export async function fetchOriginMain(): Promise<void> {
-  await execFileAsync('git', ['fetch', 'origin', 'main'], { cwd: config.productRepoPath });
+  await execFileAsync('git', ['fetch', 'origin', 'main'], { cwd: activeRepo().productRepoPath });
 }
 
 // Reads a file's content as of origin/main via `git show`, not the
 // filesystem — same reasoning as fetchOriginMain: no dependency on what's
 // currently checked out. Caller must have fetched recently enough.
 export async function readSpecFile(specPath: string): Promise<string> {
-  const { stdout } = await execFileAsync('git', ['show', `origin/main:${specPath}`], { cwd: config.productRepoPath });
+  const { stdout } = await execFileAsync('git', ['show', `origin/main:${specPath}`], { cwd: activeRepo().productRepoPath });
   return stdout;
 }
 

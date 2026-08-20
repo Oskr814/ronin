@@ -3,19 +3,19 @@ import { config } from './config.js';
 
 function mentionsHandle(body: string, handle: string): boolean {
   // `handle` is not escaped for regex metacharacters on purpose: it comes from
-  // operator-supplied config (VALERIA_MENTION_HANDLE), never from a comment or
+  // operator-supplied config (RONIN_GITHUB_LOGIN), never from a comment or
   // any other attacker-controlled input, and a GitHub login can only contain
   // alphanumerics and hyphens — none of which are metacharacters.
   return new RegExp(`\\B@${handle}\\b`, 'i').test(body);
 }
 
 export async function findUnprocessedMentions(prNumber: number): Promise<Comment[]> {
-  const botLogin = `${config.githubAppSlug}[bot]`;
+  const botLogin = config.githubLogin;
   const [issueComments, reviewComments] = await Promise.all([
     listIssueComments(prNumber),
     listReviewComments(prNumber),
   ]);
-  const mentioned = [...issueComments, ...reviewComments].filter((c) => mentionsHandle(c.body, config.mentionHandle));
+  const mentioned = [...issueComments, ...reviewComments].filter((c) => mentionsHandle(c.body, botLogin));
 
   const unprocessed: Comment[] = [];
   for (const comment of mentioned) {

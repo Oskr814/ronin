@@ -6,11 +6,8 @@ vi.mock('./config.js', () => ({
     claudeCommand: 'claude',
     claudeConfigDir: '',
     agentTaskTimeoutMs: 30_000,
+    githubToken: 'fake-token',
   },
-}));
-
-vi.mock('./github-app-auth.js', () => ({
-  getInstallationToken: async () => 'fake-token',
 }));
 
 class FakeChildProcess extends EventEmitter {
@@ -24,18 +21,21 @@ vi.mock('node:child_process', () => ({
   spawn: () => spawn(),
 }));
 
-// runClaudeHeadless and its exported error class must be imported after the
-// mocks above are registered, since it calls spawn() at invocation time.
 const { runClaudeHeadless, ClaudeUsageLimitError } = await import('./claude-runner.js');
+const { withActiveRepo } = await import('./repo-context.js');
 
 function emitStdout(child: FakeChildProcess, text: string): void {
   child.stdout.emit('data', Buffer.from(`${text}\n`));
 }
 
+function runInRepo(cwd: string, prompt: string, label: string): Promise<string> {
+  return withActiveRepo({ productRepo: 'a/b', productRepoPath: '/tmp/a' }, () => runClaudeHeadless(cwd, prompt, label));
+}
+
 describe('runClaudeHeadless usage-limit detection', () => {
   it('throws ClaudeUsageLimitError when the notice is a bare non-JSON stdout line', async () => {
     fakeChild = new FakeChildProcess();
-    const promise = runClaudeHeadless('/tmp/wt', 'prompt', 'label');
+    const promise = runInRepo('/tmp/wt', 'prompt', 'label');
     await vi.waitFor(() => expect(spawn).toHaveBeenCalled());
     emitStdout(fakeChild, "You've hit your monthly spend limit · raise it at claude.ai/settings/usage");
     fakeChild.emit('close', 1);
@@ -44,7 +44,7 @@ describe('runClaudeHeadless usage-limit detection', () => {
 
   it('throws ClaudeUsageLimitError when the notice is embedded in a JSON stream-json event', async () => {
     fakeChild = new FakeChildProcess();
-    const promise = runClaudeHeadless('/tmp/wt', 'prompt', 'label');
+    const promise = runInRepo('/tmp/wt', 'prompt', 'label');
     await vi.waitFor(() => expect(spawn).toHaveBeenCalled());
     const jsonLine = JSON.stringify({
       type: 'assistant',

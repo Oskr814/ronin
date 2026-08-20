@@ -14,10 +14,13 @@ vi.mock('./config.js', () => ({
     sliceAttemptLimit: 3,
     rebaseRetryLimit: 3,
     worktreeBaseRef: 'origin/main',
-    productRepo: 'bmedical/bmedical',
   },
   LABEL_BUG: 'bugfix',
   LABEL_MANAGED: 'valeria',
+}));
+
+vi.mock('./repo-context.js', () => ({
+  activeRepo: () => ({ productRepo: 'bmedical/bmedical', productRepoPath: '/tmp/repo', worktreeBasePath: '/tmp/worktrees' }),
 }));
 
 const recordSlicePr = vi.fn();

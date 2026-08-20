@@ -6,14 +6,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { PullRequestStatus } from './github.js';
 
-// A getter (re-read on every `config.x` access) rather than a static
-// object, so the ensureWorktree describe block below can point
-// productRepoPath/worktreeBasePath at its own temp dirs per test while the
-// other describe blocks (which never touch config) keep the empty default.
-let mockConfig: Record<string, unknown> = {};
+// worktreeBaseRef is the only field these tests still read off config —
+// productRepoPath/worktreeBasePath now come from activeRepo() (see
+// repo-context.ts), set per test via withActiveRepo below.
+let mockConfig: Record<string, unknown> = { worktreeBaseRef: 'main' };
 vi.mock('./config.js', () => ({ get config() { return mockConfig; } }));
 
 const { isBehind, attemptRebase, branchFromWorktreeDirName, branchesToSweep, ensureWorktree } = await import('./worktree.js');
+const { withActiveRepo } = await import('./repo-context.js');
 
 function pr(headRefName: string): PullRequestStatus {
   return {
@@ -182,6 +182,7 @@ describe('ensureWorktree — per-worktree DB_PORT', () => {
     base = await mkdtemp(join(tmpdir(), 'valeria-ensure-worktree-test-'));
     productRepoPath = join(base, 'repo');
     worktreeBasePath = join(base, 'worktrees');
+    process.env.WORKTREE_BASE_PATH = worktreeBasePath;
 
     await mkdir(productRepoPath, { recursive: true });
     await initRepo(productRepoPath);
@@ -189,17 +190,19 @@ describe('ensureWorktree — per-worktree DB_PORT', () => {
     await git(productRepoPath, ['add', '.']);
     await git(productRepoPath, ['commit', '-q', '-m', 'initial']);
     await git(productRepoPath, ['branch', '-M', 'main']);
-
-    mockConfig = { productRepoPath, worktreeBasePath, worktreeBaseRef: 'main' };
   });
 
   afterEach(async () => {
-    mockConfig = {};
+    delete process.env.WORKTREE_BASE_PATH;
     await rm(base, { recursive: true, force: true });
   });
 
+  function withRepo<T>(fn: () => Promise<T>): Promise<T> {
+    return withActiveRepo({ productRepo: 'test/repo', productRepoPath }, fn);
+  }
+
   it('writes a repo-root .env with a real, listening-ready DB_PORT for a freshly created worktree', async () => {
-    const dir = await ensureWorktree('valeria/300/slice-1');
+    const dir = await withRepo(() => ensureWorktree('valeria/300/slice-1'));
 
     const envContents = await readFile(join(dir, '.env'), 'utf8');
     const match = envContents.match(/^DB_PORT=(\d+)$/m);
@@ -210,8 +213,8 @@ describe('ensureWorktree — per-worktree DB_PORT', () => {
   });
 
   it('gives two different worktrees different ports', async () => {
-    const dirA = await ensureWorktree('valeria/300/slice-1');
-    const dirB = await ensureWorktree('valeria/300/slice-2');
+    const dirA = await withRepo(() => ensureWorktree('valeria/300/slice-1'));
+    const dirB = await withRepo(() => ensureWorktree('valeria/300/slice-2'));
 
     const portA = (await readFile(join(dirA, '.env'), 'utf8')).match(/DB_PORT=(\d+)/)![1];
     const portB = (await readFile(join(dirB, '.env'), 'utf8')).match(/DB_PORT=(\d+)/)![1];
@@ -219,10 +222,10 @@ describe('ensureWorktree — per-worktree DB_PORT', () => {
   });
 
   it('does not rewrite .env when reusing an already-existing worktree', async () => {
-    const dir = await ensureWorktree('valeria/300/slice-1');
+    const dir = await withRepo(() => ensureWorktree('valeria/300/slice-1'));
     const first = await readFile(join(dir, '.env'), 'utf8');
 
-    const reused = await ensureWorktree('valeria/300/slice-1');
+    const reused = await withRepo(() => ensureWorktree('valeria/300/slice-1'));
     const second = await readFile(join(reused, '.env'), 'utf8');
 
     expect(reused).toBe(dir);
