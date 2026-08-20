@@ -30,11 +30,12 @@ import { runWithConcurrency } from './concurrency.js';
 import { runAgentTask, type AgentTask } from './agent-task.js';
 import { ClaudeUsageLimitError } from './claude-runner.js';
 import { toStackedPrs, pickBottomPr, prsForIssue, planBranch, type StackedPr } from './stack.js';
-import { incrementChecksPendingCount, resetChecksPendingCount } from './local-state.js';
+import { incrementChecksPendingCount, resetChecksPendingCount, setLastReviewedSha } from './local-state.js';
 import { tryClaim, releaseIfNoLongerInProgress, runnerLabel } from './claim.js';
 import { worktreeDirFor, isBehind, attemptRebase, removeWorktree, sweepOrphanedWorktrees } from './worktree.js';
 import { publishEvidence, rawEvidenceUrl } from './evidence.js';
 import { findUnprocessedMentions } from './mentions.js';
+import { findPrsNeedingReview, type ReviewCandidate } from './external-review.js';
 import { config, LABEL_BUG, LABEL_MANAGED } from './config.js';
 import { activeRepo, withActiveRepo } from './repo-context.js';
 import { loadRepos } from './repos.js';
@@ -562,6 +563,43 @@ async function runIssueStep(issue: TrackingIssue, step: () => Promise<void>): Pr
   await releaseIfNoLongerInProgress(issue.number);
 }
 
+// One PR's review is fully independent of every other's and of the
+// issue-tracking loop above — a failure here must never reach tick()'s
+// outer catch (which would mark an unrelated issue `blocked` and email a
+// human) nor stop the rest of this tick's candidates. See
+// docs/superpowers/specs/2026-08-20-external-pr-review-design.md.
+export async function processExternalReviewCandidate(candidate: ReviewCandidate): Promise<void> {
+  try {
+    await runAgentTask({
+      type: 'external-review',
+      prNumber: candidate.prNumber,
+      headRefName: candidate.headRefName,
+      headSha: candidate.headSha,
+      openThreads: candidate.openThreads,
+    });
+    await setLastReviewedSha(candidate.prNumber, candidate.headSha);
+  } catch (error) {
+    log.error(`external-review failed for PR #${candidate.prNumber}`, error);
+    // No SHA recorded → the next tick treats this PR as still unreviewed.
+  }
+}
+
+// Deliberately its own exported function, called before (and independently
+// of) the ronin-PR loop: external review shares nothing with that flow, so a
+// transient `listAllOpenRoninPrs` failure — which returns early from the
+// issue pipeline — must not silently skip external review for the whole
+// tick. See final review Fix 4.
+export async function runExternalReviews(): Promise<void> {
+  let reviewCandidates: ReviewCandidate[];
+  try {
+    reviewCandidates = await findPrsNeedingReview();
+  } catch (error) {
+    log.info(`tick: findPrsNeedingReview falló, reintentando en el próximo tick: ${(error as Error).message}`);
+    reviewCandidates = [];
+  }
+  await runWithConcurrency(reviewCandidates, config.tickConcurrency, processExternalReviewCandidate);
+}
+
 async function tickOneRepo(): Promise<void> {
   const start = Date.now();
   resetTickMetrics();
@@ -573,6 +611,10 @@ async function tickOneRepo(): Promise<void> {
   log.info(`${inProgress.length} issue(s) en progreso`);
 
   try {
+    // Before the ronin-PR pipeline below, which can return early on a
+    // transient listing failure — the two flows are fully independent.
+    await runExternalReviews();
+
     // One batched read for every issue's stack instead of a `gh pr list` + a
     // `gh pr view` per PR per issue — see
     // docs/superpowers/specs/2026-08-01-pr-list-batching-design.md. A failure

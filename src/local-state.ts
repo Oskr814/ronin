@@ -13,6 +13,10 @@ export interface LocalState {
   // timeline. Losing this on a process restart just means the wait starts
   // over with full patience, never less — harmless either way.
   checksPendingCounts: Record<string, number>;
+  // PR number -> last head SHA an external-review run actually completed
+  // for — see docs/superpowers/specs/2026-08-20-external-pr-review-design.md.
+  // A PR with no entry (or a stale one) is due for a fresh review next tick.
+  lastReviewedSha: Record<string, string>;
 }
 
 // In-process serialization for the read-modify-write span around this file:
@@ -47,9 +51,13 @@ function statePath(): string {
 export async function readLocalState(): Promise<LocalState> {
   try {
     const raw = JSON.parse(await readFile(statePath(), 'utf8')) as Partial<LocalState>;
-    return { claimedIssues: raw.claimedIssues ?? [], checksPendingCounts: raw.checksPendingCounts ?? {} };
+    return {
+      claimedIssues: raw.claimedIssues ?? [],
+      checksPendingCounts: raw.checksPendingCounts ?? {},
+      lastReviewedSha: raw.lastReviewedSha ?? {},
+    };
   } catch {
-    return { claimedIssues: [], checksPendingCounts: {} };
+    return { claimedIssues: [], checksPendingCounts: {}, lastReviewedSha: {} };
   }
 }
 
@@ -72,6 +80,35 @@ export async function resetChecksPendingCount(prNumber: number): Promise<void> {
     const state = await readLocalState();
     if (!(prNumber in state.checksPendingCounts)) return;
     delete state.checksPendingCounts[prNumber];
+    await writeLocalState(state);
+  });
+}
+
+export async function getLastReviewedSha(prNumber: number): Promise<string | undefined> {
+  const state = await readLocalState();
+  return state.lastReviewedSha[prNumber];
+}
+
+// Without this, lastReviewedSha grows one permanent entry per external PR
+// ever reviewed — nothing else ever deletes from it. Called from
+// findPrsNeedingReview with the currently-open external PR numbers, so
+// merged/closed PRs drop out as a side effect of every discovery run (no
+// separate cron needed).
+export async function pruneLastReviewedSha(openPrNumbers: number[]): Promise<void> {
+  return withLocalStateLock(async () => {
+    const state = await readLocalState();
+    const keep = new Set(openPrNumbers.map(String));
+    for (const key of Object.keys(state.lastReviewedSha)) {
+      if (!keep.has(key)) delete state.lastReviewedSha[key];
+    }
+    await writeLocalState(state);
+  });
+}
+
+export async function setLastReviewedSha(prNumber: number, sha: string): Promise<void> {
+  return withLocalStateLock(async () => {
+    const state = await readLocalState();
+    state.lastReviewedSha[prNumber] = sha;
     await writeLocalState(state);
   });
 }

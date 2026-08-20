@@ -8,7 +8,7 @@ vi.mock('./config.js', () => ({
   config: new Proxy({}, { get: (_t, prop) => (prop === 'localStatePath' ? localStatePath : undefined) }),
 }));
 
-const { incrementChecksPendingCount, resetChecksPendingCount, withLocalStateLock, readLocalState } = await import('./local-state.js');
+const { incrementChecksPendingCount, resetChecksPendingCount, withLocalStateLock, readLocalState, getLastReviewedSha, setLastReviewedSha, pruneLastReviewedSha } = await import('./local-state.js');
 const { withActiveRepo } = await import('./repo-context.js');
 
 let dir: string;
@@ -83,5 +83,73 @@ describe('per-repo namespacing', () => {
 
     expect(stateA.checksPendingCounts['229']).toBe(1);
     expect(stateB.checksPendingCounts['229']).toBeUndefined();
+  });
+});
+
+describe('getLastReviewedSha / setLastReviewedSha', () => {
+  it('returns undefined when no SHA was ever recorded for that PR', async () => {
+    await withRepo('owner/repo-a', async () => {
+      expect(await getLastReviewedSha(305)).toBeUndefined();
+    });
+  });
+
+  it('round-trips a recorded SHA', async () => {
+    await withRepo('owner/repo-a', async () => {
+      await setLastReviewedSha(305, 'abc123');
+      expect(await getLastReviewedSha(305)).toBe('abc123');
+    });
+  });
+
+  it('overwrites a previously recorded SHA for the same PR', async () => {
+    await withRepo('owner/repo-a', async () => {
+      await setLastReviewedSha(305, 'abc123');
+      await setLastReviewedSha(305, 'def456');
+      expect(await getLastReviewedSha(305)).toBe('def456');
+    });
+  });
+
+  it('keeps lastReviewedSha separate between two repos', async () => {
+    await withRepo('owner/repo-a', () => setLastReviewedSha(305, 'abc123'));
+
+    const shaA = await withRepo('owner/repo-a', () => getLastReviewedSha(305));
+    const shaB = await withRepo('owner/repo-b', () => getLastReviewedSha(305));
+
+    expect(shaA).toBe('abc123');
+    expect(shaB).toBeUndefined();
+  });
+});
+
+describe('pruneLastReviewedSha', () => {
+  it('drops entries for PRs that are no longer open, keeping the rest', async () => {
+    await withRepo('owner/repo-a', async () => {
+      await setLastReviewedSha(305, 'abc123');
+      await setLastReviewedSha(306, 'def456');
+
+      await pruneLastReviewedSha([306]);
+
+      expect(await getLastReviewedSha(305)).toBeUndefined();
+      expect(await getLastReviewedSha(306)).toBe('def456');
+    });
+  });
+
+  it('clears everything when no external PR is open anymore', async () => {
+    await withRepo('owner/repo-a', async () => {
+      await setLastReviewedSha(305, 'abc123');
+
+      await pruneLastReviewedSha([]);
+
+      expect((await readLocalState()).lastReviewedSha).toEqual({});
+    });
+  });
+
+  it('leaves checksPendingCounts untouched', async () => {
+    await withRepo('owner/repo-a', async () => {
+      await incrementChecksPendingCount(229);
+      await setLastReviewedSha(305, 'abc123');
+
+      await pruneLastReviewedSha([]);
+
+      expect((await readLocalState()).checksPendingCounts['229']).toBe(1);
+    });
   });
 });

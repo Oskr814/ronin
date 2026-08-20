@@ -12,7 +12,7 @@ import type { PullRequestStatus } from './github.js';
 let mockConfig: Record<string, unknown> = { worktreeBaseRef: 'main' };
 vi.mock('./config.js', () => ({ get config() { return mockConfig; } }));
 
-const { isBehind, attemptRebase, branchFromWorktreeDirName, branchesToSweep, ensureWorktree } = await import('./worktree.js');
+const { isBehind, attemptRebase, branchFromWorktreeDirName, branchesToSweep, ensureWorktree, ensureExternalReviewWorktree, externalReviewWorktreeDirFor } = await import('./worktree.js');
 const { withActiveRepo } = await import('./repo-context.js');
 
 function pr(headRefName: string): PullRequestStatus {
@@ -230,5 +230,110 @@ describe('ensureWorktree — per-worktree DB_PORT', () => {
 
     expect(reused).toBe(dir);
     expect(second).toBe(first);
+  });
+});
+
+// Real git plumbing, no mocks: the three scenarios final review Fix 1 calls
+// out — a re-review of the same PR after new commits, a fork PR whose head
+// branch does not exist in this repo, and a fork PR whose head branch is
+// named `main` (already checked out in the primary worktree, which is what
+// made the old branch-name-based path throw forever).
+describe('ensureExternalReviewWorktree — checkout by SHA', () => {
+  let base: string;
+  let originDir: string;
+  let productRepoPath: string;
+  let worktreeBasePath: string;
+  let forkWork: string;
+
+  async function pushPrHead(prNumber: number, branchName: string, content: string): Promise<string> {
+    await writeFile(join(forkWork, 'contributed.txt'), content);
+    await git(forkWork, ['add', '.']);
+    await git(forkWork, ['commit', '-q', '-m', `contribution: ${content.trim()}`]);
+    const sha = (await git(forkWork, ['rev-parse', 'HEAD'])).trim();
+    // Exactly how GitHub exposes a PR head on the base repo, fork or not.
+    await git(forkWork, ['push', '-q', '-f', 'origin', `HEAD:refs/pull/${prNumber}/head`]);
+    // …and, for the collision scenarios, also as a real branch name.
+    if (branchName) await git(forkWork, ['push', '-q', '-f', 'origin', `HEAD:refs/heads/${branchName}`]);
+    return sha;
+  }
+
+  beforeEach(async () => {
+    base = await mkdtemp(join(tmpdir(), 'ronin-external-worktree-test-'));
+    originDir = join(base, 'origin.git');
+    productRepoPath = join(base, 'repo');
+    worktreeBasePath = join(base, 'worktrees');
+    forkWork = join(base, 'fork');
+    process.env.WORKTREE_BASE_PATH = worktreeBasePath;
+
+    await execFileAsync('git', ['init', '-q', '--bare', originDir]);
+
+    const seed = join(base, 'seed');
+    await mkdir(seed, { recursive: true });
+    await initRepo(seed);
+    await writeFile(join(seed, 'README.md'), 'seed\n');
+    await git(seed, ['add', '.']);
+    await git(seed, ['commit', '-q', '-m', 'initial']);
+    await git(seed, ['branch', '-M', 'main']);
+    await git(seed, ['remote', 'add', 'origin', originDir]);
+    await git(seed, ['push', '-q', 'origin', 'main']);
+
+    await execFileAsync('git', ['clone', '-q', originDir, productRepoPath]);
+    await initRepo(productRepoPath);
+    await execFileAsync('git', ['clone', '-q', originDir, forkWork]);
+    await initRepo(forkWork);
+  });
+
+  afterEach(async () => {
+    delete process.env.WORKTREE_BASE_PATH;
+    await rm(base, { recursive: true, force: true });
+  });
+
+  function withRepo<T>(fn: () => Promise<T>): Promise<T> {
+    return withActiveRepo({ productRepo: 'test/repo', productRepoPath }, fn);
+  }
+
+  it('checks out the exact PR head even when its branch name does not exist in this repo', async () => {
+    const sha = await pushPrHead(305, '', 'fork work\n');
+
+    const dir = await withRepo(() => ensureExternalReviewWorktree(305, sha));
+
+    expect(dir).toBe(join(worktreeBasePath, 'external-pr-305'));
+    expect((await git(dir, ['rev-parse', 'HEAD'])).trim()).toBe(sha);
+    expect(await readFile(join(dir, 'contributed.txt'), 'utf8')).toBe('fork work\n');
+  });
+
+  it('resyncs an already-existing worktree to the PR\'s new head instead of reusing stale code', async () => {
+    const firstSha = await pushPrHead(305, '', 'first pass\n');
+    await withRepo(() => ensureExternalReviewWorktree(305, firstSha));
+
+    const secondSha = await pushPrHead(305, '', 'second pass\n');
+    const dir = await withRepo(() => ensureExternalReviewWorktree(305, secondSha));
+
+    expect(secondSha).not.toBe(firstSha);
+    expect((await git(dir, ['rev-parse', 'HEAD'])).trim()).toBe(secondSha);
+    expect(await readFile(join(dir, 'contributed.txt'), 'utf8')).toBe('second pass\n');
+  });
+
+  it('works for a PR whose head branch is named `main`, already checked out in the primary worktree', async () => {
+    const sha = await pushPrHead(305, 'main', 'fork main work\n');
+
+    const dir = await withRepo(() => ensureExternalReviewWorktree(305, sha));
+
+    expect((await git(dir, ['rev-parse', 'HEAD'])).trim()).toBe(sha);
+    // Detached: no local branch was created or moved for this checkout.
+    const head = await git(dir, ['rev-parse', '--abbrev-ref', 'HEAD']);
+    expect(head.trim()).toBe('HEAD');
+  });
+});
+
+describe('externalReviewWorktreeDirFor', () => {
+  it('names the directory by PR number, never by branch name', async () => {
+    process.env.WORKTREE_BASE_PATH = '/tmp/worktrees';
+    const dir = await withActiveRepo({ productRepo: 'test/repo', productRepoPath: '/tmp/repo' }, async () =>
+      externalReviewWorktreeDirFor(305),
+    );
+    delete process.env.WORKTREE_BASE_PATH;
+
+    expect(dir).toBe('/tmp/worktrees/external-pr-305');
   });
 });

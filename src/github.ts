@@ -252,6 +252,53 @@ export async function listAllOpenRoninPrs(): Promise<PullRequestStatus[]> {
   return raw.map(toPullRequestStatus);
 }
 
+export interface ExternalPr {
+  number: number;
+  headRefName: string;
+  headRefOid: string;
+}
+
+interface RawExternalPr {
+  number: number;
+  isDraft: boolean;
+  headRefName: string;
+  headRefOid: string;
+  author: { login: string } | null;
+}
+
+export interface RawExternalPrForFilter {
+  isDraft: boolean;
+  author: { login: string } | null;
+}
+
+// Extracted from listAllOpenExternalPrs's own filter so the two guards that
+// keep ronin from reviewing its own PRs and work-in-progress drafts are
+// directly testable — pure logic, no `gh` shelling. A null author (deleted
+// account / ghost) is never the bot, so it stays in.
+export function isExternalReviewable(pr: RawExternalPrForFilter, botLogin: string): boolean {
+  return !pr.isDraft && pr.author?.login !== botLogin;
+}
+
+// Counterpart to listAllOpenRoninPrs above, for the opposite set: every open
+// PR ronin did NOT open (author excluded, not branch-name-filtered — see
+// docs/superpowers/specs/2026-08-20-external-pr-review-design.md). Draft PRs
+// are excluded here too, same as the rest of the pipeline.
+export async function listAllOpenExternalPrs(): Promise<ExternalPr[]> {
+  const stdout = await gh([
+    'pr', 'list',
+    '--state', 'open',
+    '--limit', String(PR_LIST_LIMIT),
+    '--json', 'number,isDraft,headRefName,headRefOid,author',
+  ]);
+  const raw = JSON.parse(stdout) as RawExternalPr[];
+  if (raw.length === PR_LIST_LIMIT) {
+    log.error(`listAllOpenExternalPrs: alcanzó el límite de ${PR_LIST_LIMIT} — puede haber PRs no traídos, subir PR_LIST_LIMIT`);
+  }
+  return raw
+    .filter((pr) => isExternalReviewable(pr, config.githubLogin))
+    .map((pr) => ({ number: pr.number, headRefName: pr.headRefName, headRefOid: pr.headRefOid }));
+}
+
 async function listOpenPrsWithBase(baseBranch: string): Promise<number[]> {
   const stdout = await gh(['pr', 'list', '--state', 'open', '--base', baseBranch, '--json', 'number']);
   return (JSON.parse(stdout) as Array<{ number: number }>).map((p) => p.number);
@@ -539,4 +586,73 @@ export async function addReaction(commentId: number, kind: 'issue' | 'review', c
     '-f',
     `content=${content}`,
   ]);
+}
+
+const REVIEW_THREADS_PAGE_SIZE = 100;
+
+const REVIEW_THREADS_QUERY = `
+query($owner: String!, $repo: String!, $number: Int!) {
+  repository(owner: $owner, name: $repo) {
+    pullRequest(number: $number) {
+      reviewThreads(first: ${REVIEW_THREADS_PAGE_SIZE}) {
+        nodes {
+          id
+          isResolved
+          comments(first: 1) {
+            nodes { author { login } body }
+          }
+        }
+      }
+    }
+  }
+}`;
+
+interface RawReviewThreadsResponse {
+  data: {
+    repository: {
+      pullRequest: {
+        reviewThreads: {
+          nodes: Array<{
+            id: string;
+            isResolved: boolean;
+            comments: { nodes: Array<{ author: { login: string } | null; body: string }> };
+          }>;
+        };
+      };
+    };
+  };
+}
+
+export interface ReviewThread {
+  id: string;
+  body: string;
+}
+
+// Only threads ronin itself opened (first comment's author == botLogin) and
+// still unresolved — a human's own thread, or one already resolved, is never
+// something this bot should touch. GraphQL (not REST) because REST has no
+// resolved/unresolved field on review comments — see
+// docs/superpowers/specs/2026-08-20-external-pr-review-design.md.
+export async function listBotOpenReviewThreads(prNumber: number, botLogin: string): Promise<ReviewThread[]> {
+  const [owner, repo] = activeRepo().productRepo.split('/');
+  const stdout = await ghApi([
+    'api', 'graphql',
+    '-f', `query=${REVIEW_THREADS_QUERY}`,
+    '-f', `owner=${owner}`,
+    '-f', `repo=${repo}`,
+    '-F', `number=${prNumber}`,
+  ]);
+  const parsed = JSON.parse(stdout) as RawReviewThreadsResponse;
+  const nodes = parsed.data.repository.pullRequest.reviewThreads.nodes;
+  // The query asks for `first: 100` with no cursor follow-up — a PR past
+  // that many threads silently loses the tail, which would look like the bot
+  // "forgetting" its own older open threads. Not paginated (a PR with 100+
+  // threads is pathological), but at least visible in the log instead of
+  // silent — same treatment as PR_LIST_LIMIT above.
+  if (nodes.length === REVIEW_THREADS_PAGE_SIZE) {
+    log.error(`listBotOpenReviewThreads: PR #${prNumber} alcanzó el límite de ${REVIEW_THREADS_PAGE_SIZE} threads — puede haber threads no traídos`);
+  }
+  return nodes
+    .filter((t) => !t.isResolved && t.comments.nodes[0]?.author?.login === botLogin)
+    .map((t) => ({ id: t.id, body: t.comments.nodes[0].body }));
 }
