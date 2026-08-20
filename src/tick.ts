@@ -11,7 +11,7 @@ import {
   getSpecPathsFromPr,
   mergeSpecPr,
   commentOnSpecPr,
-  listAllOpenValeriaPrs,
+  listAllOpenRoninPrs,
   mergePullRequest,
   setIssueState,
   incrementAttemptCount,
@@ -114,7 +114,7 @@ async function discoverAssignedSpecs(): Promise<void> {
 
       const body = await renderTrackingIssueBody(specPaths);
       const issue = await createTrackingIssue(`[spec] ${title}`, body);
-      // Without this, the issue stays labeled valeria:ready forever and
+      // Without this, the issue stays labeled ronin:ready forever and
       // listTrackingIssues('in-progress') would never find it again.
       await setIssueState(issue.number, 'in-progress');
       await tryClaim(issue.number);
@@ -170,7 +170,7 @@ export async function discoverAssignedBugs(): Promise<void> {
   for (const bug of bugs) {
     try {
       // Added first, before anything else can fail, so a partial failure
-      // still leaves the issue valeria-managed (and therefore reachable via
+      // still leaves the issue ronin-managed (and therefore reachable via
       // listTrackingIssues once set to blocked below) instead of retried
       // forever as "not yet picked up".
       await addIssueLabel(bug.number, LABEL_MANAGED);
@@ -213,7 +213,7 @@ async function blockOnAttemptLimit(
 // or a rebase+force-push just happened and its CI hasn't run against the new
 // head yet; either way the next tick re-reads PR status fresh and evaluates
 // merge then, per docs/superpowers/specs/2026-07-28-stacked-prs-design.md
-// §5). 'blocked': the issue was just set to valeria:blocked by
+// §5). 'blocked': the issue was just set to ronin:blocked by
 // blockOnAttemptLimit.
 type BottomStatus = 'ready' | 'not-ready' | 'blocked';
 
@@ -272,7 +272,7 @@ async function ensureBottomUpToDate(issue: TrackingIssue, pr: StackedPr): Promis
 }
 
 // Returns whether the issue is still in-progress: false means this PR just
-// triggered blockOnAttemptLimit (issue set to valeria:blocked) and the caller
+// triggered blockOnAttemptLimit (issue set to ronin:blocked) and the caller
 // must stop processing the rest of the stack and skip starting new work.
 function logSliceOutcome(issue: TrackingIssue, pr: StackedPr, isBottom: boolean, outcome: string): void {
   log.info(`issue #${issue.number} slice ${pr.sliceIndex + 1} PR #${pr.number}${isBottom ? ' (bottom)' : ''}: ${outcome}`);
@@ -306,7 +306,7 @@ export async function processSlicePr(issue: TrackingIssue, pr: StackedPr, isBott
 
       // Nested in its own try, separate from the outer one below: a
       // publish/comment failure here (e.g. a non-fast-forward push race on
-      // ValerIA's own main, which also takes code commits — see
+      // ronin's own main, which also takes code commits — see
       // docs/DESIGN.md §4) must never prevent the reactions loop from
       // running, since a missing reaction is what makes
       // findUnprocessedMentions treat these same comments as unprocessed and
@@ -373,7 +373,7 @@ export async function processSlicePr(issue: TrackingIssue, pr: StackedPr, isBott
       // GitHub close the issue on merge, and listTrackingIssues filters
       // --state open — without this, the next tick would never see the
       // issue again to notice no slices remain, leaving it
-      // valeria:in-progress forever. Also shaves a tick off `done` for
+      // ronin:in-progress forever. Also shaves a tick off `done` for
       // ordinary specs, harmlessly.
       if (!(await hasRemainingSlices(issue.number))) await setIssueState(issue.number, 'done');
       logSliceOutcome(issue, pr, isBottom, 'mergeado');
@@ -472,7 +472,7 @@ async function processIssue(issue: TrackingIssue, allPrs: PullRequestStatus[]): 
     }
     // Checklist vacío del todo (nunca se sembró): el `plan` de un spec, o el
     // seedSingleSlice de un bug (ver discoverAssignedBugs), falló a mitad de
-    // camino y dejó el issue con el label `valeria` puesto pero sin ninguna
+    // camino y dejó el issue con el label `ronin` puesto pero sin ninguna
     // slice en el body. Sin este chequeo, el fallthrough de abajo lo
     // confundiría con "todo mergeó" y lo marcaría done sin que se haya
     // tocado nada — un humano que reintente pasándolo de blocked a
@@ -581,9 +581,9 @@ async function tickOneRepo(): Promise<void> {
     // log and retry next tick, never escalate to a human over it.
     let allPrs: PullRequestStatus[];
     try {
-      allPrs = await listAllOpenValeriaPrs();
+      allPrs = await listAllOpenRoninPrs();
     } catch (error) {
-      log.info(`tick: listAllOpenValeriaPrs falló, reintentando en el próximo tick: ${(error as Error).message}`);
+      log.info(`tick: listAllOpenRoninPrs falló, reintentando en el próximo tick: ${(error as Error).message}`);
       return;
     }
 
