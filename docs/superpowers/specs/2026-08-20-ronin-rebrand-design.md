@@ -59,6 +59,7 @@ Encaja con el tema del proyecto: un agente autónomo que no necesita que un huma
 | `src/stack.ts` | `prsForIssue` prefix | `` `valeria/${issueNumber}/` `` | `` `ronin/${issueNumber}/` `` |
 | `src/worktree.ts` | `WORKTREE_DIR_RE` | `/^valeria-(\d+)-(.+)$/` | `/^ronin-(\d+)-(.+)$/` |
 | `src/worktree.ts` | `branchFromWorktreeDirName` | reconstruye `valeria/...` | reconstruye `ronin/...` |
+| `src/repo-context.ts` | default de `worktreeBasePath` | sibling dir `valeria-worktrees` | sibling dir `ronin-worktrees` |
 | `src/evidence.ts` | `EVIDENCE_CHECKOUT_DIR` | `valeria-evidence-checkout` | `ronin-evidence-checkout` |
 | `src/evidence.ts` | usa `config.valeriaRepo` | — | usa `config.roninRepo` |
 | `src/notifier.ts` | asunto del email | `[ValerIA] Bloqueo: ...` | `[ronin] Bloqueo: ...` |
@@ -92,7 +93,7 @@ Debe devolver cero resultados (fuera de `docs/superpowers/specs/` y `docs/superp
 
 ## Archivos afectados
 
-- `src/config.ts`, `src/claim.ts`, `src/stack.ts`, `src/worktree.ts`, `src/evidence.ts`, `src/notifier.ts`, `src/github.ts`, `src/tick.ts`, `src/agent-task.ts` — símbolos y strings renombrados según la tabla de arriba.
+- `src/config.ts`, `src/claim.ts`, `src/stack.ts`, `src/worktree.ts`, `src/repo-context.ts`, `src/evidence.ts`, `src/notifier.ts`, `src/github.ts`, `src/tick.ts`, `src/agent-task.ts` — símbolos y strings renombrados según la tabla de arriba.
 - `src/stack.test.ts`, `src/worktree.test.ts`, `src/evidence.test.ts`, `src/notifier.test.ts`, `src/tick.test.ts`, `src/agent-task.test.ts`, `src/repos.test.ts`, `src/repo-context.test.ts`, `src/local-state.test.ts` — fixtures/assertions actualizados. (`config.ts` y `claim.ts` no tienen test file propio hoy — confirmado, no hay que crear uno.)
 - `package.json`, `.gitignore`, `templates/tracking-issue.md`.
 - `README.md`, `docs/DESIGN.md`, `docs/BLOCKING.md`.
