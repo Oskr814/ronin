@@ -31,36 +31,36 @@ function pr(headRefName: string): PullRequestStatus {
 
 describe('branchFromWorktreeDirName', () => {
   it('reconstructs a slice branch from its worktree dir name', () => {
-    expect(branchFromWorktreeDirName('valeria-228-slice-11')).toBe('valeria/228/slice-11');
+    expect(branchFromWorktreeDirName('ronin-228-slice-11')).toBe('ronin/228/slice-11');
   });
 
   it('reconstructs a plan branch from its worktree dir name', () => {
-    expect(branchFromWorktreeDirName('valeria-228-plan')).toBe('valeria/228/plan');
+    expect(branchFromWorktreeDirName('ronin-228-plan')).toBe('ronin/228/plan');
   });
 
-  it('returns null for a dir that is not a ValerIA worktree', () => {
+  it('returns null for a dir that is not a ronin worktree', () => {
     expect(branchFromWorktreeDirName('some-other-checkout')).toBeNull();
   });
 });
 
 describe('branchesToSweep', () => {
   it('always sweeps a plan worktree, regardless of open PRs', () => {
-    expect(branchesToSweep(['valeria-228-plan'], [])).toEqual(['valeria/228/plan']);
+    expect(branchesToSweep(['ronin-228-plan'], [])).toEqual(['ronin/228/plan']);
   });
 
   it('keeps a slice worktree whose branch still has an open PR', () => {
-    const dirs = ['valeria-228-slice-1'];
-    const allPrs = [pr('valeria/228/slice-1')];
+    const dirs = ['ronin-228-slice-1'];
+    const allPrs = [pr('ronin/228/slice-1')];
     expect(branchesToSweep(dirs, allPrs)).toEqual([]);
   });
 
   it('sweeps a slice worktree whose branch has no open PR (merged, closed, or blocked)', () => {
-    const dirs = ['valeria-228-slice-1', 'valeria-228-slice-2'];
-    const allPrs = [pr('valeria/228/slice-2')]; // only slice-2 still open
-    expect(branchesToSweep(dirs, allPrs)).toEqual(['valeria/228/slice-1']);
+    const dirs = ['ronin-228-slice-1', 'ronin-228-slice-2'];
+    const allPrs = [pr('ronin/228/slice-2')]; // only slice-2 still open
+    expect(branchesToSweep(dirs, allPrs)).toEqual(['ronin/228/slice-1']);
   });
 
-  it('ignores a directory that is not a ValerIA worktree', () => {
+  it('ignores a directory that is not a ronin worktree', () => {
     expect(branchesToSweep(['some-other-checkout'], [])).toEqual([]);
   });
 });
@@ -74,8 +74,8 @@ async function git(cwd: string, args: string[]): Promise<string> {
 
 async function initRepo(cwd: string): Promise<void> {
   await git(cwd, ['init', '-q']);
-  await git(cwd, ['config', 'user.email', 'valeria@example.com']);
-  await git(cwd, ['config', 'user.name', 'ValerIA']);
+  await git(cwd, ['config', 'user.email', 'ronin@example.com']);
+  await git(cwd, ['config', 'user.name', 'ronin']);
 }
 
 // Real git plumbing against local temp repos (a bare "origin" plus a
@@ -90,7 +90,7 @@ describe('isBehind / attemptRebase — real git rebase behavior', () => {
   let seed: string;
 
   beforeEach(async () => {
-    base = await mkdtemp(join(tmpdir(), 'valeria-worktree-test-'));
+    base = await mkdtemp(join(tmpdir(), 'ronin-worktree-test-'));
     originDir = join(base, 'origin.git');
     worktreeDir = join(base, 'worktree');
     seed = join(base, 'seed');
@@ -179,7 +179,7 @@ describe('ensureWorktree — per-worktree DB_PORT', () => {
   let worktreeBasePath: string;
 
   beforeEach(async () => {
-    base = await mkdtemp(join(tmpdir(), 'valeria-ensure-worktree-test-'));
+    base = await mkdtemp(join(tmpdir(), 'ronin-ensure-worktree-test-'));
     productRepoPath = join(base, 'repo');
     worktreeBasePath = join(base, 'worktrees');
     process.env.WORKTREE_BASE_PATH = worktreeBasePath;
@@ -202,7 +202,7 @@ describe('ensureWorktree — per-worktree DB_PORT', () => {
   }
 
   it('writes a repo-root .env with a real, listening-ready DB_PORT for a freshly created worktree', async () => {
-    const dir = await withRepo(() => ensureWorktree('valeria/300/slice-1'));
+    const dir = await withRepo(() => ensureWorktree('ronin/300/slice-1'));
 
     const envContents = await readFile(join(dir, '.env'), 'utf8');
     const match = envContents.match(/^DB_PORT=(\d+)$/m);
@@ -213,8 +213,8 @@ describe('ensureWorktree — per-worktree DB_PORT', () => {
   });
 
   it('gives two different worktrees different ports', async () => {
-    const dirA = await withRepo(() => ensureWorktree('valeria/300/slice-1'));
-    const dirB = await withRepo(() => ensureWorktree('valeria/300/slice-2'));
+    const dirA = await withRepo(() => ensureWorktree('ronin/300/slice-1'));
+    const dirB = await withRepo(() => ensureWorktree('ronin/300/slice-2'));
 
     const portA = (await readFile(join(dirA, '.env'), 'utf8')).match(/DB_PORT=(\d+)/)![1];
     const portB = (await readFile(join(dirB, '.env'), 'utf8')).match(/DB_PORT=(\d+)/)![1];
@@ -222,10 +222,10 @@ describe('ensureWorktree — per-worktree DB_PORT', () => {
   });
 
   it('does not rewrite .env when reusing an already-existing worktree', async () => {
-    const dir = await withRepo(() => ensureWorktree('valeria/300/slice-1'));
+    const dir = await withRepo(() => ensureWorktree('ronin/300/slice-1'));
     const first = await readFile(join(dir, '.env'), 'utf8');
 
-    const reused = await withRepo(() => ensureWorktree('valeria/300/slice-1'));
+    const reused = await withRepo(() => ensureWorktree('ronin/300/slice-1'));
     const second = await readFile(join(reused, '.env'), 'utf8');
 
     expect(reused).toBe(dir);
