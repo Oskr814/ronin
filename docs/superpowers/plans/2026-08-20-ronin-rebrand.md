@@ -1024,4 +1024,6 @@ Expected: no output. (If `docs/DESIGN.md`'s §10 dry-run log is the only remaini
 - [ ] **Step 5: Confirm historical specs/plans were never touched**
 
 Run: `git diff --stat main -- docs/superpowers/specs/ docs/superpowers/plans/`
-Expected: no output (zero changes to any file under those two directories across the whole plan).
+Expected: no output (zero changes to any file under those two directories across the whole plan, other than the two new files this plan itself added: the spec and this plan document).
+
+**Execution note:** Step 4's grep, when actually run, surfaced a real gap in Tasks 1–11: three files under `scripts/` (`smoke-test.ts`, `setup-cron.sh`, `init-labels.sh`) contained `valeria`/`ValerIA` strings that no task above covered — an oversight in the original file survey, even though `scripts/` was included in that survey's grep. Fixed inline during Task 12 execution (one additional commit) rather than amending Tasks 1–11 after the fact. Anyone re-running this plan from scratch should fold that fix into Task 10 (which already batches `scripts/`-adjacent config-file renames) instead of treating it as a separate step.
