@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('./config.js', () => ({
   config: {
-    valeriaRepo: 'Bmedical/ValerIA',
+    roninRepo: 'Oskr814/ronin',
     githubLogin: 'ronin',
     playwrightTestResultsDir: 'apps/webapp/test-results',
   },
@@ -73,6 +73,6 @@ describe('rawEvidenceUrl', () => {
   it('builds a github.com blob link, not a raw.githubusercontent.com one', () => {
     const url = rawEvidenceUrl('evidence/228/229/1234567890/shot.png');
 
-    expect(url).toBe('https://github.com/Bmedical/ValerIA/blob/main/evidence/228/229/1234567890/shot.png');
+    expect(url).toBe('https://github.com/Oskr814/ronin/blob/main/evidence/228/229/1234567890/shot.png');
   });
 });

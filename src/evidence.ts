@@ -9,12 +9,12 @@ import { log } from './logger.js';
 
 const execFileAsync = promisify(execFile);
 
-// A dedicated checkout of ValerIA's own repo, always reset to main, used
+// A dedicated checkout of ronin's own repo, always reset to main, used
 // only for evidence commits — never the primary checkout, which a human
 // (or Claude) might have on a feature branch mid-development. Sibling
-// directory to ValerIA's own repo root (process.cwd() when `pnpm tick`
+// directory to ronin's own repo root (process.cwd() when `pnpm tick`
 // runs, same assumption tick.ts already makes for templates/).
-const EVIDENCE_CHECKOUT_DIR = join(process.cwd(), '..', 'valeria-evidence-checkout');
+const EVIDENCE_CHECKOUT_DIR = join(process.cwd(), '..', 'ronin-evidence-checkout');
 
 async function ensureEvidenceCheckout(): Promise<void> {
   if (existsSync(EVIDENCE_CHECKOUT_DIR)) {
@@ -22,7 +22,7 @@ async function ensureEvidenceCheckout(): Promise<void> {
     await execFileAsync('git', ['reset', '--hard', 'origin/main'], { cwd: EVIDENCE_CHECKOUT_DIR });
     return;
   }
-  await execFileAsync('git', ['clone', `git@github.com:${config.valeriaRepo}.git`, EVIDENCE_CHECKOUT_DIR]);
+  await execFileAsync('git', ['clone', `git@github.com:${config.roninRepo}.git`, EVIDENCE_CHECKOUT_DIR]);
 }
 
 async function findScreenshots(dir: string): Promise<string[]> {
@@ -39,8 +39,8 @@ async function findScreenshots(dir: string): Promise<string[]> {
 }
 
 // Copies whatever Playwright screenshots exist in the given bmedical
-// worktree into ValerIA's own repo (evidence/<issue>/<pr>/...) and pushes
-// to main. Returns the committed paths (relative to the ValerIA repo root,
+// worktree into ronin's own repo (evidence/<issue>/<pr>/...) and pushes
+// to main. Returns the committed paths (relative to the ronin repo root,
 // for building raw URLs) — [] if there was nothing to publish, which is
 // the normal case for a slice that didn't touch e2e-covered behavior.
 export async function publishEvidence(issueNumber: number, prNumber: number, worktreeDir: string): Promise<string[]> {
@@ -80,7 +80,7 @@ export async function publishEvidence(issueNumber: number, prNumber: number, wor
   ], { cwd: EVIDENCE_CHECKOUT_DIR });
   await execFileAsync('git', ['push', 'origin', 'main'], { cwd: EVIDENCE_CHECKOUT_DIR });
 
-  log.info(`published ${committed.length} evidence screenshot(s) for PR #${prNumber} to ${config.valeriaRepo}`);
+  log.info(`published ${committed.length} evidence screenshot(s) for PR #${prNumber} to ${config.roninRepo}`);
   return committed;
 }
 
@@ -90,5 +90,5 @@ export async function publishEvidence(issueNumber: number, prNumber: number, wor
 // view is a normal github.com page, works with the viewer's existing repo
 // access, and still renders the PNG inline via GitHub's own image preview.
 export function rawEvidenceUrl(path: string): string {
-  return `https://github.com/${config.valeriaRepo}/blob/main/${path}`;
+  return `https://github.com/${config.roninRepo}/blob/main/${path}`;
 }
