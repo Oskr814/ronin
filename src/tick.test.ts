@@ -532,7 +532,7 @@ describe('processExternalReviewCandidate', () => {
     runAgentTask.mockResolvedValue(undefined);
     const withMentions = {
       ...candidate,
-      mentions: [{ id: 7, kind: 'issue' as const, body: '@ronin-agent revisá', reactionsEyes: 0, authorAssociation: 'MEMBER' }],
+      mentions: [{ id: 7, kind: 'issue' as const, body: '@ronin-agent revisá', reactionsEyes: 0, authorLogin: 'someone' }],
     };
 
     await processExternalReviewCandidate(withMentions);
@@ -544,7 +544,7 @@ describe('processExternalReviewCandidate', () => {
     runAgentTask.mockRejectedValue(new Error('boom'));
     const withMentions = {
       ...candidate,
-      mentions: [{ id: 7, kind: 'issue' as const, body: '@ronin-agent revisá', reactionsEyes: 0, authorAssociation: 'MEMBER' }],
+      mentions: [{ id: 7, kind: 'issue' as const, body: '@ronin-agent revisá', reactionsEyes: 0, authorLogin: 'someone' }],
     };
 
     await processExternalReviewCandidate(withMentions);
@@ -565,7 +565,7 @@ describe('processTrustedFixCandidate', () => {
   const candidate = {
     prNumber: 599,
     headRefName: 'feat/cambio-cliente',
-    trigger: [{ id: 9, kind: 'issue' as const, body: '@ronin /fix-comments', reactionsEyes: 0, authorAssociation: 'MEMBER' }],
+    trigger: [{ id: 9, kind: 'issue' as const, body: '@ronin /fix-comments', reactionsEyes: 0, authorLogin: 'someone' }],
     openThreads: [{ id: 'T5', body: 'BranchId reasignado incondicionalmente' }],
   };
 
@@ -656,7 +656,7 @@ describe('runExternalReviews', () => {
     findPrsNeedingReview.mockResolvedValue({
       reviewCandidates: [],
       trustedFixCandidates: [
-        { prNumber: 599, headRefName: 'feat/cambio-cliente', trigger: [{ id: 9, kind: 'issue' as const, body: '/fix-comments', reactionsEyes: 0, authorAssociation: 'MEMBER' }], openThreads: [] },
+        { prNumber: 599, headRefName: 'feat/cambio-cliente', trigger: [{ id: 9, kind: 'issue' as const, body: '/fix-comments', reactionsEyes: 0, authorLogin: 'someone' }], openThreads: [] },
       ],
     });
 

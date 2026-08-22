@@ -160,7 +160,7 @@ describe('runAgentTask — agent-notes reminder', () => {
       type: 'review-request',
       issueNumber: 228,
       prNumber: 229,
-      mentions: [{ id: 1, kind: 'issue' as const, body: 'test', reactionsEyes: 0, authorAssociation: 'MEMBER' }],
+      mentions: [{ id: 1, kind: 'issue' as const, body: 'test', reactionsEyes: 0, authorLogin: 'someone' }],
     });
 
     const prompt = runClaudeHeadless.mock.calls[0][1] as string;
@@ -297,7 +297,7 @@ describe('runAgentTask — external-review with mentions', () => {
     headRefName: 'someone-else/feature-x',
     headSha: 'abc123',
     openThreads: [],
-    mentions: [{ id: 42, kind: 'issue' as const, body: '@ronin-agent revisá esto de nuevo', reactionsEyes: 0, authorAssociation: 'MEMBER' }],
+    mentions: [{ id: 42, kind: 'issue' as const, body: '@ronin-agent revisá esto de nuevo', reactionsEyes: 0, authorLogin: 'someone' }],
   };
 
   it('includes the mention body in the prompt, fenced as untrusted', async () => {
@@ -331,7 +331,7 @@ describe('runAgentTask — fix-comments', () => {
     type: 'fix-comments' as const,
     issueNumber: 228,
     prNumber: 306,
-    trigger: [{ id: 9, kind: 'issue' as const, body: '@ronin-agent /fix-comments', reactionsEyes: 0, authorAssociation: 'MEMBER' }],
+    trigger: [{ id: 9, kind: 'issue' as const, body: '@ronin-agent /fix-comments', reactionsEyes: 0, authorLogin: 'someone' }],
     openThreads: [{ id: 'T5', body: 'Posible bug: no valida null' }],
   };
 
@@ -414,7 +414,7 @@ describe('runAgentTask — fix-comments-external', () => {
     type: 'fix-comments-external' as const,
     prNumber: 599,
     headRefName: 'feat/cambio-cliente-pedido-creado',
-    trigger: [{ id: 9, kind: 'issue' as const, body: '@ronin-agent /fix-comments', reactionsEyes: 0, authorAssociation: 'MEMBER' as const }],
+    trigger: [{ id: 9, kind: 'issue' as const, body: '@ronin-agent /fix-comments', reactionsEyes: 0, authorLogin: 'someone' }],
     openThreads: [{ id: 'T5', body: 'OrderService.ChangeClient reasigna BranchId incondicionalmente' }],
   };
 

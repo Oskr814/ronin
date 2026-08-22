@@ -7,11 +7,13 @@ vi.mock('./config.js', () => ({
 const issueComments = vi.fn();
 const reviewComments = vi.fn();
 const botReaction = vi.fn();
+const collaboratorPermission = vi.fn();
 
 vi.mock('./github.js', () => ({
   listIssueComments: (...args: unknown[]) => issueComments(...args),
   listReviewComments: (...args: unknown[]) => reviewComments(...args),
   hasBotReaction: (...args: unknown[]) => botReaction(...args),
+  getCollaboratorPermission: (...args: unknown[]) => collaboratorPermission(...args),
 }));
 
 import { findUnprocessedMentions, isFixCommentsCommand, findTrustedFixCommentsCommand } from './mentions.js';
@@ -20,6 +22,7 @@ beforeEach(() => {
   issueComments.mockReset().mockResolvedValue([]);
   reviewComments.mockReset().mockResolvedValue([]);
   botReaction.mockReset().mockResolvedValue(false);
+  collaboratorPermission.mockReset().mockResolvedValue('none');
 });
 
 describe('findUnprocessedMentions', () => {
@@ -94,29 +97,33 @@ describe('isFixCommentsCommand', () => {
 });
 
 describe('findTrustedFixCommentsCommand', () => {
-  it('returns a /fix-comments issue comment from a trusted author', async () => {
+  it('returns a /fix-comments issue comment from an author with write permission', async () => {
     issueComments.mockResolvedValue([
-      { id: 1, kind: 'issue', body: '@ronin /fix-comments', reactionsEyes: 0, authorAssociation: 'MEMBER' },
+      { id: 1, kind: 'issue', body: '@ronin /fix-comments', reactionsEyes: 0, authorLogin: 'someone' },
     ]);
+    collaboratorPermission.mockResolvedValue('write');
 
     const result = await findTrustedFixCommentsCommand(42);
-    expect(result).toEqual([{ id: 1, kind: 'issue', body: '@ronin /fix-comments', reactionsEyes: 0, authorAssociation: 'MEMBER' }]);
+    expect(result).toEqual([{ id: 1, kind: 'issue', body: '@ronin /fix-comments', reactionsEyes: 0, authorLogin: 'someone' }]);
+    expect(collaboratorPermission).toHaveBeenCalledWith('someone');
   });
 
-  it('accepts OWNER and COLLABORATOR too', async () => {
+  it('accepts admin and maintain too', async () => {
     issueComments.mockResolvedValue([
-      { id: 1, kind: 'issue', body: '@ronin /fix-comments', reactionsEyes: 0, authorAssociation: 'OWNER' },
-      { id: 2, kind: 'issue', body: '@ronin /fix-comments', reactionsEyes: 0, authorAssociation: 'COLLABORATOR' },
+      { id: 1, kind: 'issue', body: '@ronin /fix-comments', reactionsEyes: 0, authorLogin: 'owner-user' },
+      { id: 2, kind: 'issue', body: '@ronin /fix-comments', reactionsEyes: 0, authorLogin: 'maintainer-user' },
     ]);
+    collaboratorPermission.mockImplementation(async (login: string) => (login === 'owner-user' ? 'admin' : 'maintain'));
 
     const result = await findTrustedFixCommentsCommand(42);
     expect(result.map((c) => c.id)).toEqual([1, 2]);
   });
 
-  it('excludes a /fix-comments comment from an untrusted author', async () => {
+  it('excludes a /fix-comments comment from an author without write access', async () => {
     issueComments.mockResolvedValue([
-      { id: 1, kind: 'issue', body: '@ronin /fix-comments', reactionsEyes: 0, authorAssociation: 'CONTRIBUTOR' },
+      { id: 1, kind: 'issue', body: '@ronin /fix-comments', reactionsEyes: 0, authorLogin: 'outside-contributor' },
     ]);
+    collaboratorPermission.mockResolvedValue('read');
 
     const result = await findTrustedFixCommentsCommand(42);
     expect(result).toEqual([]);
@@ -124,29 +131,44 @@ describe('findTrustedFixCommentsCommand', () => {
 
   it('excludes a trusted comment that does not carry the command', async () => {
     issueComments.mockResolvedValue([
-      { id: 1, kind: 'issue', body: '@ronin can you take a look?', reactionsEyes: 0, authorAssociation: 'MEMBER' },
+      { id: 1, kind: 'issue', body: '@ronin can you take a look?', reactionsEyes: 0, authorLogin: 'someone' },
     ]);
+    collaboratorPermission.mockResolvedValue('write');
 
     const result = await findTrustedFixCommentsCommand(42);
     expect(result).toEqual([]);
+    expect(collaboratorPermission).not.toHaveBeenCalled();
   });
 
-  it('excludes an inline review comment even from a trusted author', async () => {
+  it('excludes an inline review comment even from an author with write access', async () => {
     reviewComments.mockResolvedValue([
-      { id: 5, kind: 'review', body: '@ronin /fix-comments', reactionsEyes: 0, authorAssociation: 'MEMBER' },
+      { id: 5, kind: 'review', body: '@ronin /fix-comments', reactionsEyes: 0, authorLogin: 'someone' },
     ]);
+    collaboratorPermission.mockResolvedValue('write');
 
     const result = await findTrustedFixCommentsCommand(42);
     expect(result).toEqual([]);
+    expect(collaboratorPermission).not.toHaveBeenCalled();
   });
 
   it('excludes a command already reacted to by the bot', async () => {
     issueComments.mockResolvedValue([
-      { id: 1, kind: 'issue', body: '@ronin /fix-comments', reactionsEyes: 1, authorAssociation: 'MEMBER' },
+      { id: 1, kind: 'issue', body: '@ronin /fix-comments', reactionsEyes: 1, authorLogin: 'someone' },
     ]);
     botReaction.mockResolvedValue(true);
 
     const result = await findTrustedFixCommentsCommand(42);
     expect(result).toEqual([]);
+    expect(collaboratorPermission).not.toHaveBeenCalled();
+  });
+
+  it('skips the permission lookup for a comment with no author (deleted/ghost account)', async () => {
+    issueComments.mockResolvedValue([
+      { id: 1, kind: 'issue', body: '@ronin /fix-comments', reactionsEyes: 0, authorLogin: '' },
+    ]);
+
+    const result = await findTrustedFixCommentsCommand(42);
+    expect(result).toEqual([]);
+    expect(collaboratorPermission).not.toHaveBeenCalled();
   });
 });

@@ -56,18 +56,18 @@ describe('findPrsNeedingReview — reviewCandidates (read-only path, unchanged b
   it('includes a PR with an unprocessed @mention even though its head SHA is unchanged', async () => {
     listAllOpenExternalPrs.mockResolvedValue([extPr()]);
     getLastReviewedSha.mockResolvedValue('sha-a');
-    findUnprocessedMentions.mockResolvedValue([{ id: 1, kind: 'issue', body: '@ronin fijate esto', reactionsEyes: 0, authorAssociation: 'NONE' }]);
+    findUnprocessedMentions.mockResolvedValue([{ id: 1, kind: 'issue', body: '@ronin fijate esto', reactionsEyes: 0, authorLogin: 'someone' }]);
 
     const { reviewCandidates } = await findPrsNeedingReview();
 
     expect(reviewCandidates).toHaveLength(1);
-    expect(reviewCandidates[0].mentions).toEqual([{ id: 1, kind: 'issue', body: '@ronin fijate esto', reactionsEyes: 0, authorAssociation: 'NONE' }]);
+    expect(reviewCandidates[0].mentions).toEqual([{ id: 1, kind: 'issue', body: '@ronin fijate esto', reactionsEyes: 0, authorLogin: 'someone' }]);
   });
 
   it('fetches review threads for a PR included only because of a mention', async () => {
     listAllOpenExternalPrs.mockResolvedValue([extPr()]);
     getLastReviewedSha.mockResolvedValue('sha-a');
-    findUnprocessedMentions.mockResolvedValue([{ id: 1, kind: 'issue', body: '@ronin fijate esto', reactionsEyes: 0, authorAssociation: 'NONE' }]);
+    findUnprocessedMentions.mockResolvedValue([{ id: 1, kind: 'issue', body: '@ronin fijate esto', reactionsEyes: 0, authorLogin: 'someone' }]);
 
     await findPrsNeedingReview();
 
@@ -121,20 +121,20 @@ describe('findPrsNeedingReview — reviewCandidates (read-only path, unchanged b
 describe('findPrsNeedingReview — trustedFixCandidates', () => {
   it('routes a non-fork PR with a trusted /fix-comments command to trustedFixCandidates, not reviewCandidates', async () => {
     listAllOpenExternalPrs.mockResolvedValue([extPr({ isCrossRepository: false })]);
-    findTrustedFixCommentsCommand.mockResolvedValue([{ id: 9, kind: 'issue', body: '@ronin /fix-comments', reactionsEyes: 0, authorAssociation: 'MEMBER' }]);
+    findTrustedFixCommentsCommand.mockResolvedValue([{ id: 9, kind: 'issue', body: '@ronin /fix-comments', reactionsEyes: 0, authorLogin: 'someone' }]);
     listExternalOpenReviewThreads.mockResolvedValue([{ id: 'T1', body: 'finding from Copilot' }]);
 
     const { reviewCandidates, trustedFixCandidates } = await findPrsNeedingReview();
 
     expect(trustedFixCandidates).toEqual([
-      { prNumber: 10, headRefName: 'feature/x', trigger: [{ id: 9, kind: 'issue', body: '@ronin /fix-comments', reactionsEyes: 0, authorAssociation: 'MEMBER' }], openThreads: [{ id: 'T1', body: 'finding from Copilot' }] },
+      { prNumber: 10, headRefName: 'feature/x', trigger: [{ id: 9, kind: 'issue', body: '@ronin /fix-comments', reactionsEyes: 0, authorLogin: 'someone' }], openThreads: [{ id: 'T1', body: 'finding from Copilot' }] },
     ]);
     expect(reviewCandidates).toEqual([]);
   });
 
   it('never routes a fork PR to trustedFixCandidates, even with a trusted command', async () => {
     listAllOpenExternalPrs.mockResolvedValue([extPr({ isCrossRepository: true })]);
-    findTrustedFixCommentsCommand.mockResolvedValue([{ id: 9, kind: 'issue', body: '@ronin /fix-comments', reactionsEyes: 0, authorAssociation: 'MEMBER' }]);
+    findTrustedFixCommentsCommand.mockResolvedValue([{ id: 9, kind: 'issue', body: '@ronin /fix-comments', reactionsEyes: 0, authorLogin: 'someone' }]);
 
     const { trustedFixCandidates } = await findPrsNeedingReview();
 
