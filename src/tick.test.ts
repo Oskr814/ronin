@@ -50,6 +50,7 @@ const setIssueState = vi.fn();
 const getPullRequestStatus = vi.fn();
 const addIssueLabel = vi.fn();
 const listAssignedBugIssues = vi.fn();
+const listExternalOpenReviewThreads = vi.fn();
 vi.mock('./github.js', () => ({
   addReaction: (...args: unknown[]) => addReaction(...args),
   mergePullRequest: (...args: unknown[]) => mergePullRequest(...args),
@@ -58,6 +59,7 @@ vi.mock('./github.js', () => ({
   getPullRequestStatus: (...args: unknown[]) => getPullRequestStatus(...args),
   addIssueLabel: (...args: unknown[]) => addIssueLabel(...args),
   listAssignedBugIssues: (...args: unknown[]) => listAssignedBugIssues(...args),
+  listExternalOpenReviewThreads: (...args: unknown[]) => listExternalOpenReviewThreads(...args),
 }));
 
 const incrementChecksPendingCount = vi.fn();
@@ -81,8 +83,10 @@ vi.mock('./worktree.js', () => ({
 }));
 
 const findUnprocessedMentions = vi.fn();
+const isFixCommentsCommand = vi.fn();
 vi.mock('./mentions.js', () => ({
   findUnprocessedMentions: (...args: unknown[]) => findUnprocessedMentions(...args),
+  isFixCommentsCommand: (...args: unknown[]) => isFixCommentsCommand(...args),
 }));
 
 const runAgentTask = vi.fn();
@@ -126,6 +130,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   recordSlicePr.mockResolvedValue(undefined);
   findUnprocessedMentions.mockResolvedValue([]);
+  isFixCommentsCommand.mockReturnValue(false);
+  listExternalOpenReviewThreads.mockResolvedValue([]);
   worktreeDirFor.mockReturnValue('/tmp/worktree');
   incrementAttemptCount.mockResolvedValue(1);
   existsSync.mockReturnValue(true);
@@ -298,6 +304,105 @@ describe('processSlicePr — mentions found on an already-mergeable bottom PR (r
 
 });
 
+describe('processSlicePr — /fix-comments command', () => {
+  beforeEach(() => {
+    worktreeDirFor.mockReturnValue('/tmp/worktree-bottom');
+  });
+
+  function bottomPrReadyToMerge(overrides: Partial<StackedPr> = {}): StackedPr {
+    return pr({
+      number: 229,
+      sliceIndex: 0,
+      baseRefName: 'main',
+      headRefName: 'ronin/228/slice-1',
+      checksPassing: true,
+      reviewDecision: 'APPROVED',
+      ...overrides,
+    });
+  }
+
+  it('runs fix-comments with the fetched external threads, and reacts to the command comment', async () => {
+    const commandComment = { id: 1, kind: 'issue' as const, body: '@ronin /fix-comments', reactionsEyes: 0 };
+    findUnprocessedMentions.mockResolvedValue([commandComment]);
+    isFixCommentsCommand.mockImplementation((body: string) => body.includes('/fix-comments'));
+    listExternalOpenReviewThreads.mockResolvedValue([{ id: 'T1', body: 'finding from Copilot' }]);
+    const bottomPr = bottomPrReadyToMerge();
+    getPullRequestStatus.mockResolvedValue(bottomPr);
+    isBehind.mockResolvedValue(false);
+
+    await processSlicePr(issue(), bottomPr, true);
+
+    expect(listExternalOpenReviewThreads).toHaveBeenCalledWith(229, undefined);
+    expect(runAgentTask).toHaveBeenCalledWith({
+      type: 'fix-comments', issueNumber: 228, prNumber: 229,
+      trigger: [commandComment], openThreads: [{ id: 'T1', body: 'finding from Copilot' }],
+    });
+    expect(addReaction).toHaveBeenCalledWith(1, 'issue', 'eyes');
+  });
+
+  it('does not route a command comment through review-request', async () => {
+    const commandComment = { id: 1, kind: 'issue' as const, body: '@ronin /fix-comments', reactionsEyes: 0 };
+    findUnprocessedMentions.mockResolvedValue([commandComment]);
+    isFixCommentsCommand.mockImplementation((body: string) => body.includes('/fix-comments'));
+    const bottomPr = bottomPrReadyToMerge();
+    getPullRequestStatus.mockResolvedValue(bottomPr);
+    isBehind.mockResolvedValue(false);
+
+    await processSlicePr(issue(), bottomPr, true);
+
+    expect(runAgentTask).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'review-request' }));
+  });
+
+  it('splits a plain mention and a command mention into review-request and fix-comments respectively', async () => {
+    const plainMention = { id: 1, kind: 'issue' as const, body: '@ronin fijate esto', reactionsEyes: 0 };
+    const commandComment = { id: 2, kind: 'issue' as const, body: '@ronin /fix-comments', reactionsEyes: 0 };
+    findUnprocessedMentions.mockResolvedValue([plainMention, commandComment]);
+    isFixCommentsCommand.mockImplementation((body: string) => body.includes('/fix-comments'));
+    const bottomPr = bottomPrReadyToMerge();
+    getPullRequestStatus.mockResolvedValue(bottomPr);
+    isBehind.mockResolvedValue(false);
+
+    await processSlicePr(issue(), bottomPr, true);
+
+    expect(runAgentTask).toHaveBeenCalledWith({
+      type: 'review-request', issueNumber: 228, prNumber: 229, mentions: [plainMention],
+    });
+    expect(runAgentTask).toHaveBeenCalledWith({
+      type: 'fix-comments', issueNumber: 228, prNumber: 229, trigger: [commandComment], openThreads: [],
+    });
+    expect(addReaction).toHaveBeenCalledWith(1, 'issue', 'eyes');
+    expect(addReaction).toHaveBeenCalledWith(2, 'issue', 'eyes');
+  });
+
+  it('does not react to the command comment when the fix-comments task throws, so the next tick retries it', async () => {
+    const commandComment = { id: 1, kind: 'issue' as const, body: '@ronin /fix-comments', reactionsEyes: 0 };
+    findUnprocessedMentions.mockResolvedValue([commandComment]);
+    isFixCommentsCommand.mockImplementation((body: string) => body.includes('/fix-comments'));
+    runAgentTask.mockImplementation(async (task) => {
+      if (task.type === 'fix-comments') throw new Error('boom');
+    });
+    const bottomPr = bottomPrReadyToMerge();
+    getPullRequestStatus.mockResolvedValue(bottomPr);
+    isBehind.mockResolvedValue(false);
+
+    await processSlicePr(issue(), bottomPr, true);
+
+    expect(addReaction).not.toHaveBeenCalledWith(1, 'issue', 'eyes');
+  });
+
+  it('does not fetch external threads or run fix-comments when there is no command mention', async () => {
+    findUnprocessedMentions.mockResolvedValue([]);
+    const bottomPr = bottomPrReadyToMerge();
+    getPullRequestStatus.mockResolvedValue(bottomPr);
+    isBehind.mockResolvedValue(false);
+
+    await processSlicePr(issue(), bottomPr, true);
+
+    expect(listExternalOpenReviewThreads).not.toHaveBeenCalled();
+    expect(runAgentTask).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'fix-comments' }));
+  });
+});
+
 describe('agentTaskFor', () => {
   it('routes to implement-slice for a tracking issue without the bugfix label', () => {
     expect(agentTaskFor(issue({ labels: [] }), 2, 'Tabla de citas')).toEqual({
@@ -427,7 +532,7 @@ describe('processExternalReviewCandidate', () => {
     runAgentTask.mockResolvedValue(undefined);
     const withMentions = {
       ...candidate,
-      mentions: [{ id: 7, kind: 'issue' as const, body: '@ronin-agent revisá', reactionsEyes: 0 }],
+      mentions: [{ id: 7, kind: 'issue' as const, body: '@ronin-agent revisá', reactionsEyes: 0, authorAssociation: 'MEMBER' }],
     };
 
     await processExternalReviewCandidate(withMentions);
@@ -439,7 +544,7 @@ describe('processExternalReviewCandidate', () => {
     runAgentTask.mockRejectedValue(new Error('boom'));
     const withMentions = {
       ...candidate,
-      mentions: [{ id: 7, kind: 'issue' as const, body: '@ronin-agent revisá', reactionsEyes: 0 }],
+      mentions: [{ id: 7, kind: 'issue' as const, body: '@ronin-agent revisá', reactionsEyes: 0, authorAssociation: 'MEMBER' }],
     };
 
     await processExternalReviewCandidate(withMentions);

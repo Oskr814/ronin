@@ -217,7 +217,15 @@ function toPullRequestStatus(raw: RawPr): PullRequestStatus {
     // null — discovered live on PR #238, where an in-progress "Integration
     // Tests" run got misread as an actual failure and spuriously triggered
     // fix-e2e. Treat both null and "" as "not concluded yet".
-    checksPassing: raw.statusCheckRollup.length > 0 && raw.statusCheckRollup.every((c) => c.conclusion === 'SUCCESS'),
+    //
+    // NEUTRAL and SKIPPED are concluded-but-not-a-failure (e.g. a workflow
+    // that no-ops on this diff, or a required-only check GitHub skips) —
+    // `gh pr checks` itself doesn't count them as failures. Discovered live
+    // on PR #601: a NEUTRAL/SKIPPED entry alongside otherwise-SUCCESS checks
+    // made checksPassing false while checksPending was also false, spuriously
+    // triggering fix-e2e on a PR with nothing actually failing.
+    checksPassing: raw.statusCheckRollup.length > 0
+      && raw.statusCheckRollup.every((c) => c.conclusion === 'SUCCESS' || c.conclusion === 'NEUTRAL' || c.conclusion === 'SKIPPED'),
     checksPending: raw.statusCheckRollup.length === 0 || raw.statusCheckRollup.some((c) => !c.conclusion),
     mergeable: raw.mergeable === 'MERGEABLE',
     headRefName: raw.headRefName,
@@ -256,6 +264,7 @@ export interface ExternalPr {
   number: number;
   headRefName: string;
   headRefOid: string;
+  isCrossRepository: boolean;
 }
 
 interface RawExternalPr {
@@ -264,6 +273,7 @@ interface RawExternalPr {
   headRefName: string;
   headRefOid: string;
   author: { login: string } | null;
+  isCrossRepository: boolean;
 }
 
 export interface RawExternalPrForFilter {
@@ -288,7 +298,7 @@ export async function listAllOpenExternalPrs(): Promise<ExternalPr[]> {
     'pr', 'list',
     '--state', 'open',
     '--limit', String(PR_LIST_LIMIT),
-    '--json', 'number,isDraft,headRefName,headRefOid,author',
+    '--json', 'number,isDraft,headRefName,headRefOid,author,isCrossRepository',
   ]);
   const raw = JSON.parse(stdout) as RawExternalPr[];
   if (raw.length === PR_LIST_LIMIT) {
@@ -296,7 +306,7 @@ export async function listAllOpenExternalPrs(): Promise<ExternalPr[]> {
   }
   return raw
     .filter((pr) => isExternalReviewable(pr, config.githubLogin))
-    .map((pr) => ({ number: pr.number, headRefName: pr.headRefName, headRefOid: pr.headRefOid }));
+    .map((pr) => ({ number: pr.number, headRefName: pr.headRefName, headRefOid: pr.headRefOid, isCrossRepository: pr.isCrossRepository }));
 }
 
 async function listOpenPrsWithBase(baseBranch: string): Promise<number[]> {
@@ -484,6 +494,7 @@ export interface Comment {
   kind: 'issue' | 'review';
   body: string;
   reactionsEyes: number;
+  authorAssociation: string;
 }
 
 interface RawApiComment {
@@ -491,6 +502,7 @@ interface RawApiComment {
   body: string;
   reactions: { eyes: number };
   pull_request_review_id?: number | null;
+  author_association: string;
 }
 
 function reactionsPath(kind: 'issue' | 'review'): string {
@@ -503,7 +515,7 @@ function reactionsPath(kind: 'issue' | 'review'): string {
 export async function listIssueComments(prNumber: number): Promise<Comment[]> {
   const stdout = await ghApi(['api', `repos/${activeRepo().productRepo}/issues/${prNumber}/comments?per_page=100`]);
   const raw = JSON.parse(stdout) as RawApiComment[];
-  return raw.map((c) => ({ id: c.id, kind: 'issue' as const, body: c.body, reactionsEyes: c.reactions.eyes }));
+  return raw.map((c) => ({ id: c.id, kind: 'issue' as const, body: c.body, reactionsEyes: c.reactions.eyes, authorAssociation: c.author_association }));
 }
 
 interface RawReview {
@@ -525,7 +537,7 @@ export async function listReviewComments(prNumber: number): Promise<Comment[]> {
 
   return rawComments
     .filter((c) => !(c.pull_request_review_id != null && pendingReviewIds.has(c.pull_request_review_id)))
-    .map((c) => ({ id: c.id, kind: 'review' as const, body: c.body, reactionsEyes: c.reactions.eyes }));
+    .map((c) => ({ id: c.id, kind: 'review' as const, body: c.body, reactionsEyes: c.reactions.eyes, authorAssociation: c.author_association }));
 }
 
 export async function hasBotReaction(commentId: number, kind: 'issue' | 'review', botLogin: string): Promise<boolean> {
@@ -586,12 +598,12 @@ export interface ReviewThread {
   body: string;
 }
 
-// Only threads ronin itself opened (first comment's author == botLogin) and
-// still unresolved — a human's own thread, or one already resolved, is never
-// something this bot should touch. GraphQL (not REST) because REST has no
-// resolved/unresolved field on review comments — see
+// Shared by listBotOpenReviewThreads/listExternalOpenReviewThreads: fetches
+// every unresolved review thread on the PR, unfiltered by author — each
+// caller applies its own author filter afterward. GraphQL (not REST) because
+// REST has no resolved/unresolved field on review comments — see
 // docs/superpowers/specs/2026-08-20-external-pr-review-design.md.
-export async function listBotOpenReviewThreads(prNumber: number, botLogin: string): Promise<ReviewThread[]> {
+async function fetchOpenReviewThreads(prNumber: number): Promise<Array<{ id: string; body: string; authorLogin: string | null }>> {
   const [owner, repo] = activeRepo().productRepo.split('/');
   const stdout = await ghApi([
     'api', 'graphql',
@@ -608,9 +620,27 @@ export async function listBotOpenReviewThreads(prNumber: number, botLogin: strin
   // threads is pathological), but at least visible in the log instead of
   // silent — same treatment as PR_LIST_LIMIT above.
   if (nodes.length === REVIEW_THREADS_PAGE_SIZE) {
-    log.error(`listBotOpenReviewThreads: PR #${prNumber} alcanzó el límite de ${REVIEW_THREADS_PAGE_SIZE} threads — puede haber threads no traídos`);
+    log.error(`fetchOpenReviewThreads: PR #${prNumber} alcanzó el límite de ${REVIEW_THREADS_PAGE_SIZE} threads — puede haber threads no traídos`);
   }
   return nodes
-    .filter((t) => !t.isResolved && t.comments.nodes[0]?.author?.login === botLogin)
-    .map((t) => ({ id: t.id, body: t.comments.nodes[0].body }));
+    .filter((t) => !t.isResolved && t.comments.nodes[0] != null)
+    .map((t) => ({ id: t.id, body: t.comments.nodes[0].body, authorLogin: t.comments.nodes[0].author?.login ?? null }));
+}
+
+// Only threads ronin itself opened (first comment's author == botLogin) and
+// still unresolved — a human's own thread, or one already resolved, is never
+// something this bot should touch.
+export async function listBotOpenReviewThreads(prNumber: number, botLogin: string): Promise<ReviewThread[]> {
+  const threads = await fetchOpenReviewThreads(prNumber);
+  return threads.filter((t) => t.authorLogin === botLogin).map((t) => ({ id: t.id, body: t.body }));
+}
+
+// Inverse of listBotOpenReviewThreads: every unresolved thread ronin did NOT
+// open (opened by a human, Copilot, or another bot) — the candidate set for
+// the /fix-comments command. A thread a human already resolved manually is
+// exactly how they opt a finding out of being auto-fixed, so this never
+// looks at resolved threads at all.
+export async function listExternalOpenReviewThreads(prNumber: number, botLogin: string): Promise<ReviewThread[]> {
+  const threads = await fetchOpenReviewThreads(prNumber);
+  return threads.filter((t) => t.authorLogin !== botLogin).map((t) => ({ id: t.id, body: t.body }));
 }
