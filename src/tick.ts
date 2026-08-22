@@ -31,7 +31,7 @@ import { runAgentTask, type AgentTask } from './agent-task.js';
 import { ClaudeUsageLimitError } from './claude-runner.js';
 import { toStackedPrs, pickBottomPr, prsForIssue, planBranch, type StackedPr } from './stack.js';
 import { incrementChecksPendingCount, resetChecksPendingCount, setLastReviewedSha } from './local-state.js';
-import { tryClaim, releaseIfNoLongerInProgress, runnerLabel } from './claim.js';
+import { tryClaim, releaseIfNoLongerInProgress } from './claim.js';
 import { worktreeDirFor, isBehind, attemptRebase, removeWorktree, sweepOrphanedWorktrees } from './worktree.js';
 import { findUnprocessedMentions, isFixCommentsCommand } from './mentions.js';
 import { findPrsNeedingReview, type ReviewCandidate, type TrustedFixCandidate } from './external-review.js';
@@ -95,13 +95,11 @@ export function agentTaskFor(issue: TrackingIssue, sliceIndex: number, sliceTitl
 }
 
 // Discovery source: a human writes the spec as a PR against the product
-// repo and labels it with this runner's identity (see claim.ts) once it's
-// ready to hand off — marking it ready for review (not draft) is the "go"
-// signal. This sidesteps the old race where two machines could each decide
-// independently to pick up the same spec: only one label, applied once, by
-// a human. See docs/DESIGN.md §1.
+// repo and assigns it to the `ronin` account (GitHub's native Assignees
+// field) once it's ready to hand off — marking it ready for review (not
+// draft) is the "go" signal. See docs/DESIGN.md §1.
 async function discoverAssignedSpecs(): Promise<void> {
-  const prs = await listAssignedSpecPrs(runnerLabel());
+  const prs = await listAssignedSpecPrs();
   for (const pr of prs) {
     try {
       // Claimed on the spec PR itself before doing anything else, so a
@@ -162,17 +160,17 @@ function issueUrl(issueNumber: number): string {
   return `https://github.com/${activeRepo().productRepo}/issues/${issueNumber}`;
 }
 
-// Discovery source: a human labels an existing bug-report issue (already
-// carrying bmedical's own `bugfix` label) with this runner's assignment
-// label — same "andá" signal as a spec PR's runner label, but without a
-// draft/ready step, since a GitHub issue has no draft state. Unlike specs,
-// no mirror tracking issue is created: the bug issue itself becomes the
-// tracked unit, seeded with a single-slice checklist so the rest of the
-// pipeline (merge gate, fix-review/fix-e2e cycles) treats it
+// Discovery source: a human assigns an existing bug-report issue (already
+// carrying bmedical's own `bugfix` label) to the `ronin` account (GitHub's
+// native Assignees field) — same "andá" signal as a spec PR's assignment,
+// but without a draft/ready step, since a GitHub issue has no draft state.
+// Unlike specs, no mirror tracking issue is created: the bug issue itself
+// becomes the tracked unit, seeded with a single-slice checklist so the rest
+// of the pipeline (merge gate, fix-review/fix-e2e cycles) treats it
 // exactly like a spec's tracking issue. See
 // docs/superpowers/specs/2026-07-28-bug-issue-intake-design.md.
 export async function discoverAssignedBugs(): Promise<void> {
-  const bugs = await listAssignedBugIssues(runnerLabel());
+  const bugs = await listAssignedBugIssues();
   for (const bug of bugs) {
     try {
       // Added first, before anything else can fail, so a partial failure

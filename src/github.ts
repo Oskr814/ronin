@@ -383,15 +383,15 @@ export interface SpecPr {
 }
 
 // Discovery source of truth: a spec PR is ready for this runner once a
-// human has applied `label` (see claim.ts's runnerLabel) AND marked it
-// ready for review. Still-draft PRs are excluded on purpose — the human
-// can keep iterating on the spec without the agent touching it. Already
-// in-progress/done ones are excluded so a spec PR is only ever picked up
-// once. See docs/DESIGN.md §1.
-export async function listAssignedSpecPrs(label: string): Promise<SpecPr[]> {
+// human has assigned it to the `ronin` account (GitHub's native Assignees
+// field, filtered server-side by `gh`) AND marked it ready for review.
+// Still-draft PRs are excluded on purpose — the human can keep iterating on
+// the spec without the agent touching it. Already in-progress/done ones are
+// excluded so a spec PR is only ever picked up once. See docs/DESIGN.md §1.
+export async function listAssignedSpecPrs(): Promise<SpecPr[]> {
   const stdout = await gh([
     'pr', 'list',
-    '--label', label,
+    '--assignee', config.githubLogin,
     '--state', 'open',
     '--json', 'number,isDraft,headRefName,labels',
   ]);
@@ -408,18 +408,19 @@ export interface BugIssue {
 }
 
 // Discovery source of truth for the bug-intake path: an issue is ready for
-// this runner once a human has applied both bmedical's own `bugfix` label
-// and this runner's assignment label (see claim.ts's runnerLabel) — no
-// draft/ready step like a spec PR has, since a GitHub issue has no draft
-// state. Already-managed issues (label `ronin` present) or already in a
-// tracked state (ready/in-progress/blocked/done) are excluded so an issue is
-// only ever picked up once — mirrors listAssignedSpecPrs's filter above. See
+// this runner once a human has applied bmedical's own `bugfix` label and
+// assigned it to the `ronin` account (GitHub's native Assignees field,
+// filtered server-side by `gh`) — no draft/ready step like a spec PR has,
+// since a GitHub issue has no draft state. Already-managed issues (label
+// `ronin` present) or already in a tracked state (ready/in-progress/blocked/
+// done) are excluded so an issue is only ever picked up once — mirrors
+// listAssignedSpecPrs's filter above. See
 // docs/superpowers/specs/2026-07-28-bug-issue-intake-design.md.
-export async function listAssignedBugIssues(label: string): Promise<BugIssue[]> {
+export async function listAssignedBugIssues(): Promise<BugIssue[]> {
   const stdout = await gh([
     'issue', 'list',
     '--label', LABEL_BUG,
-    '--label', label,
+    '--assignee', config.githubLogin,
     '--state', 'open',
     '--json', 'number,title,labels',
   ]);
