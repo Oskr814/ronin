@@ -14,7 +14,7 @@ vi.mock('./github.js', () => ({
   hasBotReaction: (...args: unknown[]) => botReaction(...args),
 }));
 
-import { findUnprocessedMentions } from './mentions.js';
+import { findUnprocessedMentions, isFixCommentsCommand, findTrustedFixCommentsCommand } from './mentions.js';
 
 beforeEach(() => {
   issueComments.mockReset().mockResolvedValue([]);
@@ -76,5 +76,77 @@ describe('findUnprocessedMentions', () => {
 
     await findUnprocessedMentions(42);
     expect(botReaction).not.toHaveBeenCalled();
+  });
+});
+
+describe('isFixCommentsCommand', () => {
+  it('matches the /fix-comments command', () => {
+    expect(isFixCommentsCommand('@ronin-agent /fix-comments')).toBe(true);
+  });
+
+  it('matches the command case-insensitively', () => {
+    expect(isFixCommentsCommand('@ronin-agent /FIX-Comments por favor')).toBe(true);
+  });
+
+  it('does not match a plain mention without the command', () => {
+    expect(isFixCommentsCommand('@ronin-agent fijate este comentario')).toBe(false);
+  });
+});
+
+describe('findTrustedFixCommentsCommand', () => {
+  it('returns a /fix-comments issue comment from a trusted author', async () => {
+    issueComments.mockResolvedValue([
+      { id: 1, kind: 'issue', body: '@ronin /fix-comments', reactionsEyes: 0, authorAssociation: 'MEMBER' },
+    ]);
+
+    const result = await findTrustedFixCommentsCommand(42);
+    expect(result).toEqual([{ id: 1, kind: 'issue', body: '@ronin /fix-comments', reactionsEyes: 0, authorAssociation: 'MEMBER' }]);
+  });
+
+  it('accepts OWNER and COLLABORATOR too', async () => {
+    issueComments.mockResolvedValue([
+      { id: 1, kind: 'issue', body: '@ronin /fix-comments', reactionsEyes: 0, authorAssociation: 'OWNER' },
+      { id: 2, kind: 'issue', body: '@ronin /fix-comments', reactionsEyes: 0, authorAssociation: 'COLLABORATOR' },
+    ]);
+
+    const result = await findTrustedFixCommentsCommand(42);
+    expect(result.map((c) => c.id)).toEqual([1, 2]);
+  });
+
+  it('excludes a /fix-comments comment from an untrusted author', async () => {
+    issueComments.mockResolvedValue([
+      { id: 1, kind: 'issue', body: '@ronin /fix-comments', reactionsEyes: 0, authorAssociation: 'CONTRIBUTOR' },
+    ]);
+
+    const result = await findTrustedFixCommentsCommand(42);
+    expect(result).toEqual([]);
+  });
+
+  it('excludes a trusted comment that does not carry the command', async () => {
+    issueComments.mockResolvedValue([
+      { id: 1, kind: 'issue', body: '@ronin can you take a look?', reactionsEyes: 0, authorAssociation: 'MEMBER' },
+    ]);
+
+    const result = await findTrustedFixCommentsCommand(42);
+    expect(result).toEqual([]);
+  });
+
+  it('excludes an inline review comment even from a trusted author', async () => {
+    reviewComments.mockResolvedValue([
+      { id: 5, kind: 'review', body: '@ronin /fix-comments', reactionsEyes: 0, authorAssociation: 'MEMBER' },
+    ]);
+
+    const result = await findTrustedFixCommentsCommand(42);
+    expect(result).toEqual([]);
+  });
+
+  it('excludes a command already reacted to by the bot', async () => {
+    issueComments.mockResolvedValue([
+      { id: 1, kind: 'issue', body: '@ronin /fix-comments', reactionsEyes: 1, authorAssociation: 'MEMBER' },
+    ]);
+    botReaction.mockResolvedValue(true);
+
+    const result = await findTrustedFixCommentsCommand(42);
+    expect(result).toEqual([]);
   });
 });
