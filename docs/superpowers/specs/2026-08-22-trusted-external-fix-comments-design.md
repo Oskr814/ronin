@@ -1,5 +1,18 @@
 # /fix-comments en PRs externos de colaboradores confiables
 
+> **Corrección post-implementación (2026-08-22):** este documento describe
+> la señal de confianza original, `author_association`. Se descubrió en vivo
+> (PR #599) que es inutilizable con el PAT fine-grained de ronin: ese token
+> no tiene visibilidad de membresía de organización, así que GitHub reporta
+> `CONTRIBUTOR` para un miembro/owner real en vez de `MEMBER`/`OWNER`,
+> rechazando comandos legítimos. La implementación real usa en su lugar
+> `GET /repos/{owner}/{repo}/collaborators/{login}/permission`
+> (`admin`/`maintain`/`write`), que lee el ACL real del repo y no depende de
+> esa visibilidad. `Comment.authorAssociation` no existe — el campo real es
+> `Comment.authorLogin`. El resto de este documento queda como registro del
+> diseño original; donde mencione `author_association`/`authorAssociation`,
+> léase como la verificación de permiso descrita arriba.
+
 ## Contexto
 
 `/fix-comments` hoy solo existe en `processSlicePr` (`tick.ts`), el pipeline
