@@ -25,6 +25,7 @@ vi.mock('./config.js', () => ({
   },
   LABEL_BUG: 'bugfix',
   LABEL_MANAGED: 'ronin',
+  LABEL_STACK_PRS: 'ronin:stack-prs',
 }));
 
 const activeRepo = vi.fn();
@@ -36,11 +37,15 @@ const recordSlicePr = vi.fn();
 const markSliceMerged = vi.fn();
 const hasRemainingSlices = vi.fn();
 const seedSingleSlice = vi.fn();
+const nextUnstartedSlice = vi.fn();
+const getSlices = vi.fn();
 vi.mock('./checklist.js', () => ({
   recordSlicePr: (...args: unknown[]) => recordSlicePr(...args),
   markSliceMerged: (...args: unknown[]) => markSliceMerged(...args),
   hasRemainingSlices: (...args: unknown[]) => hasRemainingSlices(...args),
   seedSingleSlice: (...args: unknown[]) => seedSingleSlice(...args),
+  nextUnstartedSlice: (...args: unknown[]) => nextUnstartedSlice(...args),
+  getSlices: (...args: unknown[]) => getSlices(...args),
 }));
 
 const addReaction = vi.fn();
@@ -104,7 +109,7 @@ vi.mock('./external-review.js', () => ({
   findPrsNeedingReview: (...args: unknown[]) => findPrsNeedingReview(...args),
 }));
 
-const { processSlicePr, agentTaskFor, discoverAssignedBugs, processExternalReviewCandidate, processTrustedFixCandidate, runExternalReviews, renderTrackingIssueBody } = await import('./tick.js');
+const { processSlicePr, processIssue, agentTaskFor, discoverAssignedBugs, processExternalReviewCandidate, processTrustedFixCandidate, runExternalReviews, renderTrackingIssueBody } = await import('./tick.js');
 
 function issue(overrides: Partial<TrackingIssue> = {}): TrackingIssue {
   return { number: 228, title: 'Test issue', url: 'https://github.com/x/y/issues/228', labels: [], ...overrides };
@@ -400,6 +405,38 @@ describe('processSlicePr — /fix-comments command', () => {
 
     expect(listExternalOpenReviewThreads).not.toHaveBeenCalled();
     expect(runAgentTask).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'fix-comments' }));
+  });
+});
+
+describe('processIssue — starting a next slice while the stack is still open', () => {
+  function openBottomPr(): StackedPr {
+    return pr({
+      number: 229,
+      sliceIndex: 0,
+      baseRefName: 'main',
+      headRefName: 'ronin/228/slice-1',
+      checksPassing: true,
+      checksPending: false,
+      reviewDecision: '', // not yet approved, so it stays open — stack.length stays 1
+    });
+  }
+
+  beforeEach(() => {
+    isBehind.mockResolvedValue(false);
+    nextUnstartedSlice.mockResolvedValue({ index: 1, title: 'Slice 2', checked: false, prNumber: null });
+  });
+
+  it('does not start the next slice when the issue lacks ronin:stack-prs', async () => {
+    const result = await processIssue(issue({ labels: [] }), [openBottomPr()]);
+
+    expect(result).toBeNull();
+    expect(runAgentTask).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'implement-slice' }));
+  });
+
+  it('starts the next slice, stacked, when the issue carries ronin:stack-prs', async () => {
+    const result = await processIssue(issue({ labels: ['ronin:stack-prs'] }), [openBottomPr()]);
+
+    expect(result).toEqual({ issue: issue({ labels: ['ronin:stack-prs'] }), index: 1, title: 'Slice 2', stackSize: 1 });
   });
 });
 

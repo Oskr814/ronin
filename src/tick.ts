@@ -35,7 +35,7 @@ import { tryClaim, releaseIfNoLongerInProgress } from './claim.js';
 import { worktreeDirFor, isBehind, attemptRebase, removeWorktree, sweepOrphanedWorktrees } from './worktree.js';
 import { findUnprocessedMentions, isFixCommentsCommand } from './mentions.js';
 import { findPrsNeedingReview, type ReviewCandidate, type TrustedFixCandidate } from './external-review.js';
-import { config, LABEL_BUG, LABEL_MANAGED } from './config.js';
+import { config, LABEL_BUG, LABEL_MANAGED, LABEL_STACK_PRS } from './config.js';
 import { activeRepo, withActiveRepo } from './repo-context.js';
 import { loadRepos } from './repos.js';
 import { log } from './logger.js';
@@ -459,7 +459,9 @@ interface NextSliceStart {
   stackSize: number;
 }
 
-async function processIssue(issue: TrackingIssue, allPrs: PullRequestStatus[]): Promise<NextSliceStart | null> {
+// Exported for direct unit testing — otherwise only reachable through
+// tickOneRepo, which needs a lot of unrelated mocking to exercise.
+export async function processIssue(issue: TrackingIssue, allPrs: PullRequestStatus[]): Promise<NextSliceStart | null> {
   const stack = toStackedPrs(prsForIssue(allPrs, issue.number));
 
   if (stack.length === 0) {
@@ -510,6 +512,13 @@ async function processIssue(issue: TrackingIssue, allPrs: PullRequestStatus[]): 
   if (waitingTurnPrs.length > 0) {
     log.info(`issue #${issue.number}: ${waitingTurnPrs.length} PR(s) esperando su turno (no son el fondo): ${waitingTurnPrs.map((n) => `#${n}`).join(', ')}`);
   }
+
+  // With the stack still non-empty, starting the next slice now means it
+  // gets stacked on top of the one(s) still in flight — only opt-in via
+  // ronin:stack-prs. Without the label, the default is sequential: wait for
+  // the stack to empty out (the top branch above, stack.length === 0) before
+  // starting anything new.
+  if (!issue.labels.includes(LABEL_STACK_PRS)) return null;
 
   const nextUnstarted = await nextUnstartedSlice(issue.number);
   if (nextUnstarted) {

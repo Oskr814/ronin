@@ -79,4 +79,9 @@ export const LABEL_STATES = {
 // docs/superpowers/specs/2026-07-28-bug-issue-intake-design.md.
 export const LABEL_BUG = 'bugfix';
 
+// Opt-in: without it, processIssue only starts a slice's PR once the issue
+// has no open PR at all (sequential). Applied by hand by a human on the
+// tracking issue, same as LABEL_BUG — the runner never adds it itself.
+export const LABEL_STACK_PRS = 'ronin:stack-prs';
+
 export type SpecStatus = keyof typeof LABEL_STATES;

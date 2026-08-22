@@ -44,13 +44,13 @@ tracking issue de un spec. Ver
 ### 2. Mapeo a GitHub
 
 - 1 spec → 1 issue de tracking, con checklist de slices (generado por el paso de planning).
-- 1 slice → 1 PR apilado sobre el anterior.
+- 1 slice → 1 PR. Por default **secuencial**: la siguiente slice recién arranca cuando no queda ningún PR abierto del issue (la anterior ya mergeó). Con el label `ronin:stack-prs` en el issue de tracking, **apilado**: cada PR se abre con `--base` el branch de la slice anterior, sin esperar a que mergee — ver [`docs/superpowers/specs/2026-07-28-stacked-prs-design.md`](superpowers/specs/2026-07-28-stacked-prs-design.md) para el rationale completo.
 - Estado inferido de GitHub, no de memoria del agente:
   - branch existe → spec empezado
-  - PR abierto → slice en curso (pueden ser varios PRs de un mismo issue abiertos a la vez, cada uno una slice apilada sobre la anterior — ver [`docs/superpowers/specs/2026-07-28-stacked-prs-design.md`](superpowers/specs/2026-07-28-stacked-prs-design.md) para el rationale completo)
+  - PR abierto → slice en curso (con `ronin:stack-prs`, pueden ser varios PRs de un mismo issue abiertos a la vez, cada uno una slice apilada sobre la anterior; sin el label, a lo sumo uno)
   - comentarios sin resolver → ciclo de fix
   - PR **approved** → candidato a merge automático
-  - PR abierto (aunque no esté mergeado) → arranca la siguiente slice apilada encima, sin esperar; solo el PR de menor índice del stack es candidato a merge
+  - Sin `ronin:stack-prs`: la siguiente slice recién arranca cuando el stack queda vacío. Con `ronin:stack-prs`: un PR abierto (aunque no esté mergeado) ya dispara la siguiente slice apilada encima; solo el PR de menor índice del stack es candidato a merge
 
 ### 2.1 Template del issue de tracking
 
@@ -60,6 +60,7 @@ El estado en sí **no se infiere parseando el body** — vive en labels, que son
 
 - `ronin` — marca el issue como gestionado por el agente (para poder filtrar sin ambigüedad entre issues del repo).
 - `ronin:ready | ronin:in-progress | ronin:blocked | ronin:done` — estado actual, mutuamente excluyente, la swap-ea el agente. Espejo 1:1 del `status` del frontmatter del spec.
+- `ronin:stack-prs` — opt-in, la pone un humano a mano en el issue de tracking: habilita el modo apilado (§2) para ese issue. Sin ella, el default es secuencial.
 
 El body queda como contexto legible para el humano (qué slice va, qué PR corresponde, por qué está bloqueado); las labels son lo que el supervisor realmente lee para decidir la próxima acción.
 
@@ -79,7 +80,7 @@ En cada tick:
 
 **Un tick a la vez por host**: como un tick puede tardar (una invocación de `claude -p` puede llegar a `AGENT_TASK_TIMEOUT_MINUTES`), el wrapper que genera `setup-cron.sh` usa `flock` para que un disparo de cron mientras el anterior sigue corriendo se salte en vez de arrancar en paralelo — evita que dos ticks concurrentes en el mismo host pisen `.ronin-state.json` a la vez. Esto es independiente del claim entre runners distintos (§9), que protege contra *otro host*, no contra el mismo proceso solapado consigo mismo.
 
-Concurrencia entre issues: un spec/issue a la vez por tick (dentro del mismo tick, secuencial; entre hosts, ver §9), pero *dentro* de un mismo issue pueden estar en vuelo varias slices/PRs a la vez, cada una apilada sobre la anterior — ya no se espera a que una slice mergee para arrancar la siguiente. Ver [`docs/superpowers/specs/2026-07-28-stacked-prs-design.md`](superpowers/specs/2026-07-28-stacked-prs-design.md) para el rationale completo. Specs independientes sí pueden correr en paralelo en worktrees separados.
+Concurrencia entre issues: un spec/issue a la vez por tick (dentro del mismo tick, secuencial; entre hosts, ver §9). *Dentro* de un mismo issue, el default es secuencial (una slice a la vez, se espera a que mergee para arrancar la siguiente); con el label `ronin:stack-prs` (§2.1) pueden estar en vuelo varias slices/PRs a la vez, cada una apilada sobre la anterior, sin esperar a que una mergee para arrancar la siguiente. Ver [`docs/superpowers/specs/2026-07-28-stacked-prs-design.md`](superpowers/specs/2026-07-28-stacked-prs-design.md) para el rationale completo. Specs independientes sí pueden correr en paralelo en worktrees separados.
 
 Convención de branches: `ronin/<issue>/<slice-slug>` — así el supervisor encuentra el PR de la slice en curso de un issue por prefijo de branch, sin mantener un mapeo aparte.
 
