@@ -40,7 +40,7 @@ function validateEntry(entry: unknown, index: number): RepoEntry {
   if (typeof entry !== 'object' || entry === null) {
     throw new Error(`${config.reposConfigPath}[${index}] no es un objeto`);
   }
-  const { productRepo, productRepoPath, claudeConfigDir } = entry as Record<string, unknown>;
+  const { productRepo, productRepoPath, claudeConfigDir, worktreeBaseRef } = entry as Record<string, unknown>;
   if (typeof productRepo !== 'string' || productRepo.length === 0) {
     throw new Error(`${config.reposConfigPath}[${index}].productRepo falta o no es un string`);
   }
@@ -50,5 +50,8 @@ function validateEntry(entry: unknown, index: number): RepoEntry {
   if (claudeConfigDir !== undefined && typeof claudeConfigDir !== 'string') {
     throw new Error(`${config.reposConfigPath}[${index}].claudeConfigDir debe ser un string si está presente`);
   }
-  return { productRepo, productRepoPath, claudeConfigDir };
+  if (worktreeBaseRef !== undefined && typeof worktreeBaseRef !== 'string') {
+    throw new Error(`${config.reposConfigPath}[${index}].worktreeBaseRef debe ser un string si está presente`);
+  }
+  return { productRepo, productRepoPath, claudeConfigDir, worktreeBaseRef };
 }

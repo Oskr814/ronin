@@ -64,10 +64,16 @@ function prUrl(prNumber: number): string {
   return `https://github.com/${activeRepo().productRepo}/pull/${prNumber}`;
 }
 
-async function renderTrackingIssueBody(specPaths: string[]): Promise<string> {
+// Exported for direct unit testing — otherwise only reachable through
+// discoverAssignedSpecs, which needs a lot of unrelated mocking to exercise.
+export async function renderTrackingIssueBody(specPaths: string[]): Promise<string> {
   const template = await readFile(join(process.cwd(), 'templates/tracking-issue.md'), 'utf8');
   const repoUrl = `https://github.com/${activeRepo().productRepo}`;
-  const specLinks = specPaths.map((p) => `- [${p}](${repoUrl}/blob/main/${p})`).join('\n');
+  // rootBranchName(), not a hardcoded "main": the spec file these links
+  // point at was just merged onto the active repo's own base branch, which
+  // isn't "main" for every repo (see worktreeBaseRef in repo-context.ts) —
+  // a hardcoded "main" here produced a 404 for any repo where it differs.
+  const specLinks = specPaths.map((p) => `- [${p}](${repoUrl}/blob/${rootBranchName()}/${p})`).join('\n');
   return template.replaceAll('{{spec_links}}', specLinks);
 }
 
@@ -222,7 +228,7 @@ type BottomStatus = 'ready' | 'not-ready' | 'blocked';
 // "origin/main" -> "main" — this codebase always uses "origin" as the
 // remote name elsewhere too (see worktree.ts).
 function rootBranchName(): string {
-  return config.worktreeBaseRef.replace(/^origin\//, '');
+  return (activeRepo().worktreeBaseRef ?? config.worktreeBaseRef).replace(/^origin\//, '');
 }
 
 async function ensureBottomUpToDate(issue: TrackingIssue, pr: StackedPr): Promise<BottomStatus> {
@@ -260,8 +266,9 @@ async function ensureBottomUpToDate(issue: TrackingIssue, pr: StackedPr): Promis
     );
     return blocked ? 'blocked' : 'not-ready';
   }
-  if (!(await isBehind(worktreeDir, config.worktreeBaseRef))) return 'ready';
-  if (await attemptRebase(worktreeDir, config.worktreeBaseRef, pr.headRefName)) return 'not-ready';
+  const baseRef = activeRepo().worktreeBaseRef ?? config.worktreeBaseRef;
+  if (!(await isBehind(worktreeDir, baseRef))) return 'ready';
+  if (await attemptRebase(worktreeDir, baseRef, pr.headRefName)) return 'not-ready';
 
   const blocked = await blockOnAttemptLimit(
     issue, pr, config.rebaseRetryLimit,
@@ -576,8 +583,14 @@ export async function processExternalReviewCandidate(candidate: ReviewCandidate)
       headRefName: candidate.headRefName,
       headSha: candidate.headSha,
       openThreads: candidate.openThreads,
+      mentions: candidate.mentions,
     });
     await setLastReviewedSha(candidate.prNumber, candidate.headSha);
+    // Only after a successful run: a missing reaction is what makes
+    // findUnprocessedMentions treat these same comments as unprocessed and
+    // retry them on the next tick — same reasoning as processSlicePr's own
+    // reactions loop above.
+    for (const m of candidate.mentions) await addReaction(m.id, m.kind, 'eyes');
   } catch (error) {
     log.error(`external-review failed for PR #${candidate.prNumber}`, error);
     // No SHA recorded → the next tick treats this PR as still unreviewed.

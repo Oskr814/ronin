@@ -7,6 +7,11 @@ vi.mock('node:fs', () => ({
   existsSync: (...args: unknown[]) => existsSync(...args),
 }));
 
+const readFile = vi.fn();
+vi.mock('node:fs/promises', () => ({
+  readFile: (...args: unknown[]) => readFile(...args),
+}));
+
 vi.mock('./config.js', () => ({
   config: {
     e2eRetryLimit: 2,
@@ -22,8 +27,9 @@ vi.mock('./config.js', () => ({
   LABEL_MANAGED: 'ronin',
 }));
 
+const activeRepo = vi.fn();
 vi.mock('./repo-context.js', () => ({
-  activeRepo: () => ({ productRepo: 'bmedical/bmedical', productRepoPath: '/tmp/repo', worktreeBasePath: '/tmp/worktrees' }),
+  activeRepo: (...args: unknown[]) => activeRepo(...args),
 }));
 
 const recordSlicePr = vi.fn();
@@ -104,7 +110,7 @@ vi.mock('./external-review.js', () => ({
   findPrsNeedingReview: (...args: unknown[]) => findPrsNeedingReview(...args),
 }));
 
-const { processSlicePr, agentTaskFor, discoverAssignedBugs, processExternalReviewCandidate, runExternalReviews } = await import('./tick.js');
+const { processSlicePr, agentTaskFor, discoverAssignedBugs, processExternalReviewCandidate, runExternalReviews, renderTrackingIssueBody } = await import('./tick.js');
 
 function issue(overrides: Partial<TrackingIssue> = {}): TrackingIssue {
   return { number: 228, title: 'Test issue', url: 'https://github.com/x/y/issues/228', labels: [], ...overrides };
@@ -137,6 +143,8 @@ beforeEach(() => {
   hasRemainingSlices.mockResolvedValue(true); // preserves pre-existing merge test behavior by default
   listAssignedBugIssues.mockResolvedValue([]);
   setLastReviewedSha.mockResolvedValue(undefined);
+  activeRepo.mockReturnValue({ productRepo: 'bmedical/bmedical', productRepoPath: '/tmp/repo', worktreeBasePath: '/tmp/worktrees' });
+  readFile.mockResolvedValue('body\n{{spec_links}}\n');
 });
 
 describe('processSlicePr — non-bottom stacked PR', () => {
@@ -186,6 +194,30 @@ describe('processSlicePr — bottom-of-stack PR (unchanged behavior)', () => {
     expect(mergePullRequest).toHaveBeenCalledWith(229);
     expect(markSliceMerged).toHaveBeenCalledWith(228, 0);
     expect(removeWorktree).toHaveBeenCalledWith('ronin/228/slice-1');
+  });
+
+  it("uses the active repo's own worktreeBaseRef override, not config's, to decide the bottom PR is up to date", async () => {
+    activeRepo.mockReturnValue({
+      productRepo: 'bmedical/bmedical',
+      productRepoPath: '/tmp/repo',
+      worktreeBasePath: '/tmp/worktrees',
+      worktreeBaseRef: 'origin/odoo-main',
+    });
+    const bottomPr = pr({
+      number: 229,
+      sliceIndex: 0,
+      baseRefName: 'odoo-main',
+      headRefName: 'ronin/228/slice-1',
+      checksPassing: true,
+      checksPending: false,
+      reviewDecision: 'APPROVED',
+    });
+    isBehind.mockResolvedValue(false);
+
+    await processSlicePr(issue(), bottomPr, true);
+
+    expect(isBehind).toHaveBeenCalledWith('/tmp/worktree-bottom', 'origin/odoo-main');
+    expect(mergePullRequest).toHaveBeenCalledWith(229);
   });
 
   it('escalates once checksPendingRetryLimit is exceeded when checks never report', async () => {
@@ -435,7 +467,7 @@ describe('discoverAssignedBugs', () => {
 });
 
 describe('processExternalReviewCandidate', () => {
-  const candidate = { prNumber: 305, headRefName: 'someone-else/feature-x', headSha: 'abc123', openThreads: [] };
+  const candidate = { prNumber: 305, headRefName: 'someone-else/feature-x', headSha: 'abc123', openThreads: [], mentions: [] };
 
   it('runs the external-review agent task and records the reviewed SHA on success', async () => {
     runAgentTask.mockResolvedValue(undefined);
@@ -448,6 +480,7 @@ describe('processExternalReviewCandidate', () => {
       headRefName: 'someone-else/feature-x',
       headSha: 'abc123',
       openThreads: [],
+      mentions: [],
     });
     expect(setLastReviewedSha).toHaveBeenCalledWith(305, 'abc123');
   });
@@ -464,6 +497,59 @@ describe('processExternalReviewCandidate', () => {
     runAgentTask.mockRejectedValue(new Error('boom'));
 
     await expect(processExternalReviewCandidate(candidate)).resolves.not.toThrow();
+  });
+
+  it('reacts with eyes on each mention that triggered the run, after a successful run', async () => {
+    runAgentTask.mockResolvedValue(undefined);
+    const withMentions = {
+      ...candidate,
+      mentions: [{ id: 7, kind: 'issue' as const, body: '@ronin-agent revisá', reactionsEyes: 0 }],
+    };
+
+    await processExternalReviewCandidate(withMentions);
+
+    expect(addReaction).toHaveBeenCalledWith(7, 'issue', 'eyes');
+  });
+
+  it('does not react to mentions when the agent task throws, so the next tick retries them', async () => {
+    runAgentTask.mockRejectedValue(new Error('boom'));
+    const withMentions = {
+      ...candidate,
+      mentions: [{ id: 7, kind: 'issue' as const, body: '@ronin-agent revisá', reactionsEyes: 0 }],
+    };
+
+    await processExternalReviewCandidate(withMentions);
+
+    expect(addReaction).not.toHaveBeenCalled();
+  });
+
+  it('does not react at all when there were no mentions', async () => {
+    runAgentTask.mockResolvedValue(undefined);
+
+    await processExternalReviewCandidate(candidate);
+
+    expect(addReaction).not.toHaveBeenCalled();
+  });
+});
+
+describe('renderTrackingIssueBody', () => {
+  it('links spec files against the global default branch when the active repo has no override', async () => {
+    const body = await renderTrackingIssueBody(['docs/superpowers/specs/foo.md']);
+
+    expect(body).toContain('https://github.com/bmedical/bmedical/blob/main/docs/superpowers/specs/foo.md');
+  });
+
+  it("links spec files against the active repo's own worktreeBaseRef override, not the global default", async () => {
+    activeRepo.mockReturnValue({
+      productRepo: 'redmotos/shoppingcart',
+      productRepoPath: '/tmp/repo',
+      worktreeBasePath: '/tmp/worktrees',
+      worktreeBaseRef: 'origin/odoo-main',
+    });
+
+    const body = await renderTrackingIssueBody(['docs/superpowers/specs/foo.md']);
+
+    expect(body).toContain('https://github.com/redmotos/shoppingcart/blob/odoo-main/docs/superpowers/specs/foo.md');
   });
 });
 

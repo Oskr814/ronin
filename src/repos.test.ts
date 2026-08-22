@@ -33,9 +33,24 @@ describe('loadRepos', () => {
 
     const repos = await loadRepos();
     expect(repos).toEqual([
-      { productRepo: 'a/b', productRepoPath: '/tmp/a', claudeConfigDir: undefined },
-      { productRepo: 'c/d', productRepoPath: '/tmp/c', claudeConfigDir: '/home/x/.claude-c' },
+      { productRepo: 'a/b', productRepoPath: '/tmp/a', claudeConfigDir: undefined, worktreeBaseRef: undefined },
+      { productRepo: 'c/d', productRepoPath: '/tmp/c', claudeConfigDir: '/home/x/.claude-c', worktreeBaseRef: undefined },
     ]);
+  });
+
+  it('loads worktreeBaseRef when an entry has one, e.g. a repo whose default branch is not main', async () => {
+    await writeFile(
+      reposConfigPath,
+      JSON.stringify([{ productRepo: 'a/b', productRepoPath: '/tmp/a', worktreeBaseRef: 'origin/odoo-main' }]),
+    );
+
+    const repos = await loadRepos();
+    expect(repos[0].worktreeBaseRef).toBe('origin/odoo-main');
+  });
+
+  it('throws when worktreeBaseRef is present but not a string', async () => {
+    await writeFile(reposConfigPath, JSON.stringify([{ productRepo: 'a/b', productRepoPath: '/tmp/a', worktreeBaseRef: 42 }]));
+    await expect(loadRepos()).rejects.toThrow('worktreeBaseRef');
   });
 
   it('throws when the file does not exist', async () => {

@@ -1,21 +1,33 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { activeRepo } from './repo-context.js';
+import { config } from './config.js';
 
 const execFileAsync = promisify(execFile);
 
-// Updates the local origin/main remote-tracking ref only — never touches
-// the primary checkout's working directory or index, so it's safe to call
-// regardless of what branch a human has checked out there.
-export async function fetchOriginMain(): Promise<void> {
-  await execFileAsync('git', ['fetch', 'origin', 'main'], { cwd: activeRepo().productRepoPath });
+// A repos.json entry's own worktreeBaseRef wins over the global default —
+// same override pattern as claudeConfigDir (see repo-context.ts). Needed
+// because not every product repo's default/active branch is named "main"
+// (e.g. a repo migrated to "odoo-main" while "main" stays around, stale).
+function baseRef(): string {
+  return activeRepo().worktreeBaseRef ?? config.worktreeBaseRef;
 }
 
-// Reads a file's content as of origin/main via `git show`, not the
-// filesystem — same reasoning as fetchOriginMain: no dependency on what's
-// currently checked out. Caller must have fetched recently enough.
+// Updates the local remote-tracking ref for the active repo's base branch
+// only — never touches the primary checkout's working directory or index,
+// so it's safe to call regardless of what branch a human has checked out
+// there.
+export async function fetchOriginMain(): Promise<void> {
+  const branch = baseRef().replace(/^origin\//, '');
+  await execFileAsync('git', ['fetch', 'origin', branch], { cwd: activeRepo().productRepoPath });
+}
+
+// Reads a file's content as of the active repo's base branch via `git
+// show`, not the filesystem — same reasoning as fetchOriginMain: no
+// dependency on what's currently checked out. Caller must have fetched
+// recently enough.
 export async function readSpecFile(specPath: string): Promise<string> {
-  const { stdout } = await execFileAsync('git', ['show', `origin/main:${specPath}`], { cwd: activeRepo().productRepoPath });
+  const { stdout } = await execFileAsync('git', ['show', `${baseRef()}:${specPath}`], { cwd: activeRepo().productRepoPath });
   return stdout;
 }
 

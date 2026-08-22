@@ -38,6 +38,18 @@ describe('withActiveRepo', () => {
     });
   });
 
+  it('carries worktreeBaseRef through when the entry has one', async () => {
+    await withActiveRepo({ productRepo: 'a/b', productRepoPath: '/tmp/a', worktreeBaseRef: 'origin/odoo-main' }, async () => {
+      expect(activeRepo().worktreeBaseRef).toBe('origin/odoo-main');
+    });
+  });
+
+  it('leaves worktreeBaseRef undefined when the entry has none', async () => {
+    await withActiveRepo({ productRepo: 'a/b', productRepoPath: '/tmp/a' }, async () => {
+      expect(activeRepo().worktreeBaseRef).toBeUndefined();
+    });
+  });
+
   it('resets to null after fn resolves, even when fn throws', async () => {
     await expect(
       withActiveRepo({ productRepo: 'a/b', productRepoPath: '/tmp/a' }, async () => {

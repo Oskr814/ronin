@@ -231,6 +231,21 @@ describe('ensureWorktree — per-worktree DB_PORT', () => {
     expect(reused).toBe(dir);
     expect(second).toBe(first);
   });
+
+  it("uses the active repo's own worktreeBaseRef override instead of config's, when the entry has one", async () => {
+    await git(productRepoPath, ['checkout', '-q', '-b', 'odoo-main']);
+    await writeFile(join(productRepoPath, 'ODOO_MARKER.md'), 'only on odoo-main\n');
+    await git(productRepoPath, ['add', '.']);
+    await git(productRepoPath, ['commit', '-q', '-m', 'odoo-main only commit']);
+    await git(productRepoPath, ['checkout', '-q', 'main']);
+
+    const dir = await withActiveRepo(
+      { productRepo: 'test/repo', productRepoPath, worktreeBaseRef: 'odoo-main' },
+      () => ensureWorktree('ronin/300/slice-1'),
+    );
+
+    await expect(readFile(join(dir, 'ODOO_MARKER.md'), 'utf8')).resolves.toBe('only on odoo-main\n');
+  });
 });
 
 // Real git plumbing, no mocks: the three scenarios final review Fix 1 calls

@@ -18,6 +18,11 @@ vi.mock('./local-state.js', () => ({
   pruneLastReviewedSha: (...args: unknown[]) => pruneLastReviewedSha(...args),
 }));
 
+const findUnprocessedMentions = vi.fn();
+vi.mock('./mentions.js', () => ({
+  findUnprocessedMentions: (...args: unknown[]) => findUnprocessedMentions(...args),
+}));
+
 import { findPrsNeedingReview } from './external-review.js';
 
 beforeEach(() => {
@@ -25,6 +30,7 @@ beforeEach(() => {
   listBotOpenReviewThreads.mockReset().mockResolvedValue([]);
   getLastReviewedSha.mockReset().mockResolvedValue(undefined);
   pruneLastReviewedSha.mockReset().mockResolvedValue(undefined);
+  findUnprocessedMentions.mockReset().mockResolvedValue([]);
 });
 
 describe('findPrsNeedingReview', () => {
@@ -34,7 +40,38 @@ describe('findPrsNeedingReview', () => {
 
     const result = await findPrsNeedingReview();
 
-    expect(result).toEqual([{ prNumber: 10, headRefName: 'feature/x', headSha: 'sha-a', openThreads: [] }]);
+    expect(result).toEqual([{ prNumber: 10, headRefName: 'feature/x', headSha: 'sha-a', openThreads: [], mentions: [] }]);
+  });
+
+  it('includes a PR with an unprocessed @mention even though its head SHA is unchanged', async () => {
+    listAllOpenExternalPrs.mockResolvedValue([{ number: 10, headRefName: 'feature/x', headRefOid: 'sha-a' }]);
+    getLastReviewedSha.mockResolvedValue('sha-a');
+    findUnprocessedMentions.mockResolvedValue([{ id: 1, kind: 'issue', body: '@ronin fijate esto', reactionsEyes: 0 }]);
+
+    const result = await findPrsNeedingReview();
+
+    expect(result).toHaveLength(1);
+    expect(result[0].mentions).toEqual([{ id: 1, kind: 'issue', body: '@ronin fijate esto', reactionsEyes: 0 }]);
+  });
+
+  it('fetches review threads for a PR included only because of a mention', async () => {
+    listAllOpenExternalPrs.mockResolvedValue([{ number: 10, headRefName: 'feature/x', headRefOid: 'sha-a' }]);
+    getLastReviewedSha.mockResolvedValue('sha-a');
+    findUnprocessedMentions.mockResolvedValue([{ id: 1, kind: 'issue', body: '@ronin fijate esto', reactionsEyes: 0 }]);
+
+    await findPrsNeedingReview();
+
+    expect(listBotOpenReviewThreads).toHaveBeenCalledWith(10, 'ronin');
+  });
+
+  it('attaches an empty mentions list to a candidate included only because of a new SHA', async () => {
+    listAllOpenExternalPrs.mockResolvedValue([{ number: 10, headRefName: 'feature/x', headRefOid: 'sha-b' }]);
+    getLastReviewedSha.mockResolvedValue('sha-a');
+    findUnprocessedMentions.mockResolvedValue([]);
+
+    const result = await findPrsNeedingReview();
+
+    expect(result[0].mentions).toEqual([]);
   });
 
   it('includes a PR whose head SHA changed since the last recorded review', async () => {

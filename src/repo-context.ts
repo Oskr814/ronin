@@ -4,6 +4,11 @@ export interface RepoEntry {
   productRepo: string;
   productRepoPath: string;
   claudeConfigDir?: string;
+  // Per-repo override for config.worktreeBaseRef (e.g. "origin/odoo-main"
+  // for a repo whose default/active branch isn't "main") — same override
+  // pattern as claudeConfigDir. Consumers read
+  // `activeRepo().worktreeBaseRef ?? config.worktreeBaseRef`.
+  worktreeBaseRef?: string;
 }
 
 interface ActiveRepo extends RepoEntry {
