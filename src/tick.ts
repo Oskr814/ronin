@@ -15,8 +15,6 @@ import {
   mergePullRequest,
   setIssueState,
   incrementAttemptCount,
-  hasEvidenceComment,
-  postEvidenceComment,
   addReaction,
   getPullRequestStatus,
   type TrackingIssue,
@@ -33,7 +31,6 @@ import { toStackedPrs, pickBottomPr, prsForIssue, planBranch, type StackedPr } f
 import { incrementChecksPendingCount, resetChecksPendingCount, setLastReviewedSha } from './local-state.js';
 import { tryClaim, releaseIfNoLongerInProgress, runnerLabel } from './claim.js';
 import { worktreeDirFor, isBehind, attemptRebase, removeWorktree, sweepOrphanedWorktrees } from './worktree.js';
-import { publishEvidence, rawEvidenceUrl } from './evidence.js';
 import { findUnprocessedMentions } from './mentions.js';
 import { findPrsNeedingReview, type ReviewCandidate } from './external-review.js';
 import { config, LABEL_BUG, LABEL_MANAGED } from './config.js';
@@ -169,7 +166,7 @@ function issueUrl(issueNumber: number): string {
 // draft/ready step, since a GitHub issue has no draft state. Unlike specs,
 // no mirror tracking issue is created: the bug issue itself becomes the
 // tracked unit, seeded with a single-slice checklist so the rest of the
-// pipeline (merge gate, fix-review/fix-e2e cycles, evidence) treats it
+// pipeline (merge gate, fix-review/fix-e2e cycles) treats it
 // exactly like a spec's tracking issue. See
 // docs/superpowers/specs/2026-07-28-bug-issue-intake-design.md.
 export async function discoverAssignedBugs(): Promise<void> {
@@ -289,15 +286,6 @@ function logSliceOutcome(issue: TrackingIssue, pr: StackedPr, isBottom: boolean,
 export async function processSlicePr(issue: TrackingIssue, pr: StackedPr, isBottom: boolean, waitingTurnPrs?: number[]): Promise<boolean> {
   await recordSlicePr(issue.number, pr.sliceIndex, pr.number);
 
-  // Checked every tick until it succeeds once (hasEvidenceComment gates the
-  // repeat work) — ver docs/DESIGN.md §4.
-  if (!(await hasEvidenceComment(pr.number))) {
-    const paths = await publishEvidence(issue.number, pr.number, worktreeDirFor(pr.headRefName));
-    if (paths.length > 0) {
-      await postEvidenceComment(pr.number, paths.map(rawEvidenceUrl));
-    }
-  }
-
   if (pr.isDraft) {
     logSliceOutcome(issue, pr, isBottom, 'draft, esperando');
     return true;
@@ -311,34 +299,6 @@ export async function processSlicePr(issue: TrackingIssue, pr: StackedPr, isBott
     const mentions = await findUnprocessedMentions(pr.number);
     if (mentions.length > 0) {
       await runAgentTask({ type: 'review-request', issueNumber: issue.number, prNumber: pr.number, mentions });
-
-      // Nested in its own try, separate from the outer one below: a
-      // publish/comment failure here (e.g. a non-fast-forward push race on
-      // ronin's own main, which also takes code commits — see
-      // docs/DESIGN.md §4) must never prevent the reactions loop from
-      // running, since a missing reaction is what makes
-      // findUnprocessedMentions treat these same comments as unprocessed and
-      // re-trigger the whole (expensive, side-effecting) review-request task
-      // on the next tick.
-      try {
-        // Barato cuando no hay .png nuevos (un readdir vacío) — el supervisor
-        // no interpreta el texto del mention, solo intenta publicar lo que
-        // haya quedado en test-results/ tras el review-request. Sin el gate
-        // de hasEvidenceComment: cada corrida disparada por mención postea su
-        // propio comentario, reutilizando el mismo EVIDENCE_COMMENT_MARKER
-        // que el path automático de arriba — así, la primera publicación
-        // disparada por mención también deja satisfecho permanentemente el
-        // hasEvidenceComment del path automático (inofensivo en la práctica:
-        // ese path solo necesitaba dispararse una vez, y su ventana ya suele
-        // haber pasado para cuando llega una mención, pero vale dejarlo
-        // anotado). Ver docs/superpowers/specs/2026-07-29-mention-e2e-evidence-design.md.
-        const evidencePaths = await publishEvidence(issue.number, pr.number, worktreeDirFor(pr.headRefName));
-        if (evidencePaths.length > 0) {
-          await postEvidenceComment(pr.number, evidencePaths.map(rawEvidenceUrl));
-        }
-      } catch (error) {
-        log.error(`evidence publish after review-request failed for PR #${pr.number}`, error);
-      }
 
       for (const m of mentions) await addReaction(m.id, m.kind, 'eyes');
       // `pr` was read before a claude -p run that can take up to 30

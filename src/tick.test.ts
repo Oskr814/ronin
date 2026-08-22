@@ -43,8 +43,6 @@ vi.mock('./checklist.js', () => ({
   seedSingleSlice: (...args: unknown[]) => seedSingleSlice(...args),
 }));
 
-const hasEvidenceComment = vi.fn();
-const postEvidenceComment = vi.fn();
 const addReaction = vi.fn();
 const mergePullRequest = vi.fn();
 const incrementAttemptCount = vi.fn();
@@ -53,8 +51,6 @@ const getPullRequestStatus = vi.fn();
 const addIssueLabel = vi.fn();
 const listAssignedBugIssues = vi.fn();
 vi.mock('./github.js', () => ({
-  hasEvidenceComment: (...args: unknown[]) => hasEvidenceComment(...args),
-  postEvidenceComment: (...args: unknown[]) => postEvidenceComment(...args),
   addReaction: (...args: unknown[]) => addReaction(...args),
   mergePullRequest: (...args: unknown[]) => mergePullRequest(...args),
   incrementAttemptCount: (...args: unknown[]) => incrementAttemptCount(...args),
@@ -71,12 +67,6 @@ vi.mock('./local-state.js', () => ({
   incrementChecksPendingCount: (...args: unknown[]) => incrementChecksPendingCount(...args),
   resetChecksPendingCount: (...args: unknown[]) => resetChecksPendingCount(...args),
   setLastReviewedSha: (...args: unknown[]) => setLastReviewedSha(...args),
-}));
-
-const publishEvidence = vi.fn();
-vi.mock('./evidence.js', () => ({
-  publishEvidence: (...args: unknown[]) => publishEvidence(...args),
-  rawEvidenceUrl: (p: string) => `https://raw/${p}`,
 }));
 
 const worktreeDirFor = vi.fn();
@@ -135,7 +125,6 @@ function pr(overrides: Partial<StackedPr> = {}): StackedPr {
 beforeEach(() => {
   vi.clearAllMocks();
   recordSlicePr.mockResolvedValue(undefined);
-  hasEvidenceComment.mockResolvedValue(true); // skip publishEvidence path
   findUnprocessedMentions.mockResolvedValue([]);
   worktreeDirFor.mockReturnValue('/tmp/worktree');
   incrementAttemptCount.mockResolvedValue(1);
@@ -282,7 +271,6 @@ describe('processSlicePr — bottom-of-stack PR (unchanged behavior)', () => {
 describe('processSlicePr — mentions found on an already-mergeable bottom PR (regression)', () => {
   beforeEach(() => {
     worktreeDirFor.mockReturnValue('/tmp/worktree-bottom');
-    publishEvidence.mockResolvedValue([]);
   });
 
   it('re-reads fresh PR state after review-request and merges in the same tick, instead of deferring', async () => {
@@ -308,70 +296,6 @@ describe('processSlicePr — mentions found on an already-mergeable bottom PR (r
     expect(mergePullRequest).toHaveBeenCalledWith(229);
   });
 
-  it('publishes fresh evidence and posts a new comment after a review-request that produced screenshots', async () => {
-    const bottomPr = pr({
-      number: 229,
-      sliceIndex: 0,
-      baseRefName: 'main',
-      headRefName: 'ronin/228/slice-1',
-      checksPassing: true,
-      reviewDecision: 'APPROVED',
-    });
-    findUnprocessedMentions.mockResolvedValue([{ id: 1, kind: 'issue', body: '@ronin corré los e2e', reactionsEyes: 0 }]);
-    getPullRequestStatus.mockResolvedValue(bottomPr);
-    // hasEvidenceComment resolves true (beforeEach, line 119), so the
-    // automatic-publish block above (gated on it) never calls
-    // publishEvidence — the describe's beforeEach default of `[]` would
-    // apply to it if it somehow did. This single mocked value is what the
-    // new post-review-request block (ungated) consumes.
-    publishEvidence.mockResolvedValueOnce(['evidence/228/229/999/shot.png']);
-    isBehind.mockResolvedValue(false);
-
-    await processSlicePr(issue(), bottomPr, true);
-
-    expect(publishEvidence).toHaveBeenLastCalledWith(228, 229, '/tmp/worktree-bottom');
-    expect(postEvidenceComment).toHaveBeenCalledWith(229, ['https://raw/evidence/228/229/999/shot.png']);
-    expect(addReaction).toHaveBeenCalledWith(1, 'issue', 'eyes');
-  });
-
-  it('does not post an evidence comment when the review-request produced no screenshots', async () => {
-    const bottomPr = pr({
-      number: 229,
-      sliceIndex: 0,
-      baseRefName: 'main',
-      headRefName: 'ronin/228/slice-1',
-      checksPassing: true,
-      reviewDecision: 'APPROVED',
-    });
-    findUnprocessedMentions.mockResolvedValue([{ id: 1, kind: 'issue', body: '@ronin fijate esta línea', reactionsEyes: 0 }]);
-    getPullRequestStatus.mockResolvedValue(bottomPr);
-    publishEvidence.mockResolvedValue([]);
-    isBehind.mockResolvedValue(false);
-
-    await processSlicePr(issue(), bottomPr, true);
-
-    expect(postEvidenceComment).not.toHaveBeenCalled();
-    expect(addReaction).toHaveBeenCalledWith(1, 'issue', 'eyes');
-  });
-
-  it('still adds the reaction when evidence publish throws (a publish failure must never re-trigger review-request)', async () => {
-    const bottomPr = pr({
-      number: 229,
-      sliceIndex: 0,
-      baseRefName: 'main',
-      headRefName: 'ronin/228/slice-1',
-      checksPassing: true,
-      reviewDecision: 'APPROVED',
-    });
-    findUnprocessedMentions.mockResolvedValue([{ id: 1, kind: 'issue', body: '@ronin corré los e2e', reactionsEyes: 0 }]);
-    getPullRequestStatus.mockResolvedValue(bottomPr);
-    publishEvidence.mockRejectedValue(new Error('push rejected'));
-    isBehind.mockResolvedValue(false);
-
-    await processSlicePr(issue(), bottomPr, true);
-
-    expect(addReaction).toHaveBeenCalledWith(1, 'issue', 'eyes');
-  });
 });
 
 describe('agentTaskFor', () => {

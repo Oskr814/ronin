@@ -31,8 +31,7 @@ function getFreePort(): Promise<number> {
 }
 
 // Exported so callers that need to find an already-created worktree's files
-// (e.g. evidence.ts reading Playwright's test-results/ after the fact) can
-// derive the same path without duplicating the naming scheme.
+// can derive the same path without duplicating the naming scheme.
 export function worktreeDirFor(branch: string): string {
   return join(activeRepo().worktreeBasePath, branch.replaceAll('/', '-'));
 }

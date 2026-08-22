@@ -14,8 +14,7 @@ export const config = {
   // nada que refrescar ni cachear.
   githubToken: requireEnv('RONIN_GITHUB_TOKEN'),
   // Username real de esa cuenta (sin sufijo "[bot]", no es un App). Usado
-  // tanto para detectar @menciones dirigidas al agente (mentions.ts) como
-  // para la identidad de los commits de evidencia (evidence.ts).
+  // para detectar @menciones dirigidas al agente (mentions.ts).
   githubLogin: requireEnv('RONIN_GITHUB_LOGIN'),
   // Dónde vive la lista de repos a supervisar — ver repos.ts.
   reposConfigPath: process.env.REPOS_CONFIG_PATH || join(process.cwd(), 'repos.json'),
@@ -65,12 +64,6 @@ export const config = {
   // per active repo by local-state.ts, never read directly as a file path
   // here anymore.
   localStatePath: process.env.LOCAL_STATE_PATH ?? '.ronin-state.json',
-  // ronin's own repo — e2e screenshot evidence is committed here (main),
-  // shared across every repo.json entry, not split per product repo. See
-  // docs/DESIGN.md §4.
-  roninRepo: process.env.RONIN_REPO ?? 'Oskr814/ronin',
-  // Playwright's screenshot output dir, relative to each active repo's root.
-  playwrightTestResultsDir: process.env.PLAYWRIGHT_TEST_RESULTS_DIR ?? 'apps/webapp/test-results',
 } as const;
 
 export const LABEL_MANAGED = 'ronin';

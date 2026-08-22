@@ -367,48 +367,6 @@ export async function requestCopilotReview(prNumber: number): Promise<void> {
   await gh(['pr', 'edit', String(prNumber), '--add-reviewer', 'copilot']);
 }
 
-const EVIDENCE_COMMENT_MARKER = '<!-- ronin:e2e-evidence -->';
-
-export async function hasEvidenceComment(prNumber: number): Promise<boolean> {
-  const stdout = await gh(['pr', 'view', String(prNumber), '--json', 'comments']);
-  const comments = (JSON.parse(stdout) as { comments: Array<{ body: string }> }).comments;
-  return comments.some((c) => c.body.includes(EVIDENCE_COMMENT_MARKER));
-}
-
-// Never edits an existing comment — gh has no direct "edit PR comment by id"
-// and posting fresh is simpler than resolving the REST comment id from gh's
-// GraphQL-shaped --json output. Two call sites, with different cadences:
-// the automatic slice-publish path in processSlicePr (still gated by
-// hasEvidenceComment, checked by that caller — once per PR), and the
-// mention-triggered path in tick.ts's mentions block (ungated — a fresh
-// comment per publish). See
-// docs/superpowers/specs/2026-07-29-mention-e2e-evidence-design.md.
-export async function postEvidenceComment(prNumber: number, imageUrls: string[]): Promise<void> {
-  // Plain links, not `![]()` image embeds: ronin (where evidence lives) is
-  // a private repo, and GitHub renders embedded images through its Camo
-  // proxy, which fetches anonymously and can never authenticate to private
-  // content — the image just fails to render for every viewer, regardless of
-  // their own repo access. A plain link instead sends the viewer's own
-  // browser (with their own github.com session) to the file's blob view —
-  // see evidence.ts's rawEvidenceUrl for why that's a `blob/main/...` URL,
-  // not raw.githubusercontent.com (a different domain with no session to
-  // share, so it can't authenticate to a private repo at all).
-  const body = [
-    EVIDENCE_COMMENT_MARKER,
-    '## Evidencia e2e (Playwright)',
-    ...imageUrls.map((url, i) => `[Screenshot ${i + 1}](${url})`),
-  ].join('\n\n');
-
-  const dir = await mkdtemp(join(tmpdir(), 'ronin-evidence-comment-'));
-  const bodyFile = join(dir, 'body.md');
-  try {
-    await writeFile(bodyFile, body, 'utf8');
-    await gh(['pr', 'comment', String(prNumber), '--body-file', bodyFile]);
-  } finally {
-    await rm(dir, { recursive: true, force: true });
-  }
-}
-
 export interface SpecPr {
   number: number;
   headRefName: string;

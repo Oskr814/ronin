@@ -2,7 +2,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('./config.js', () => ({
   config: {
-    playwrightTestResultsDir: 'apps/webapp/test-results',
     worktreeBaseRef: 'origin/main',
   },
 }));
@@ -60,16 +59,7 @@ describe('runAgentTask — review-request', () => {
     mentions: [{ id: 1, kind: 'issue' as const, body: '@ronin corré los e2e y dejá evidencia', reactionsEyes: 0 }],
   };
 
-  it('clears test-results/ before invoking the headless run', async () => {
-    await runAgentTask(task);
-
-    expect(rm).toHaveBeenCalledWith('/tmp/worktree/apps/webapp/test-results', { recursive: true, force: true });
-    const rmOrder = rm.mock.invocationCallOrder[0];
-    const headlessOrder = runClaudeHeadless.mock.invocationCallOrder[0];
-    expect(rmOrder).toBeLessThan(headlessOrder);
-  });
-
-  it('includes the conditional e2e-evidence instruction in the prompt', async () => {
+  it('includes the conditional e2e instruction in the prompt', async () => {
     await runAgentTask(task);
 
     const prompt = runClaudeHeadless.mock.calls[0][1] as string;
@@ -118,14 +108,6 @@ describe('runAgentTask — per-repo worktreeBaseRef override', () => {
     const prompt = runClaudeHeadless.mock.calls[0][1] as string;
     expect(prompt).toContain('origin/odoo-main');
     expect(prompt).not.toContain('origin/main');
-  });
-});
-
-describe('runAgentTask — other task types leave test-results/ untouched', () => {
-  it('does not clear test-results/ for fix-review', async () => {
-    await runAgentTask({ type: 'fix-review', issueNumber: 228, prNumber: 229 });
-
-    expect(rm).not.toHaveBeenCalled();
   });
 });
 
@@ -231,15 +213,6 @@ describe('runAgentTask — external-review', () => {
     expect(ensureExternalReviewWorktree).toHaveBeenCalledWith(305, 'abc123');
     expect(ensureWorktree).not.toHaveBeenCalled();
     expect(getPullRequestStatus).not.toHaveBeenCalled();
-  });
-
-  it('does not clear test-results/', async () => {
-    await runAgentTask(task);
-
-    expect(rm).not.toHaveBeenCalledWith(
-      expect.stringContaining('test-results'),
-      expect.anything(),
-    );
   });
 
   it('removes the worktree-local .claude/ and CLAUDE.md before the headless run', async () => {
