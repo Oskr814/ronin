@@ -1,4 +1,4 @@
-import { listAllOpenExternalPrs, listBotOpenReviewThreads, listExternalOpenReviewThreads, type Comment, type ReviewThread } from './github.js';
+import { listAllOpenExternalPrs, listBotOpenReviewThreads, listAllOpenReviewThreads, type Comment, type ReviewThread } from './github.js';
 import { getLastReviewedSha, pruneLastReviewedSha } from './local-state.js';
 import { findUnprocessedMentions, findTrustedFixCommentsCommand } from './mentions.js';
 import { config } from './config.js';
@@ -51,7 +51,12 @@ export async function findPrsNeedingReview(): Promise<{
       if (!pr.isCrossRepository) {
         const trigger = await findTrustedFixCommentsCommand(pr.number);
         if (trigger.length > 0) {
-          const openThreads = await listExternalOpenReviewThreads(pr.number, config.githubLogin);
+          // Every open thread, including ones ronin itself opened in an
+          // earlier automatic external-review pass — the trusted human
+          // triggering this command gets to decide the bot's own past
+          // findings are fair game too, unlike the internal fix-comments
+          // task (which only ever sees threads it didn't open itself).
+          const openThreads = await listAllOpenReviewThreads(pr.number);
           trustedFixCandidates.push({ prNumber: pr.number, headRefName: pr.headRefName, trigger, openThreads });
           continue;
         }

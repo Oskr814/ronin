@@ -658,3 +658,13 @@ export async function listExternalOpenReviewThreads(prNumber: number, botLogin: 
   const threads = await fetchOpenReviewThreads(prNumber);
   return threads.filter((t) => t.authorLogin !== botLogin).map((t) => ({ id: t.id, body: t.body }));
 }
+
+// Every unresolved thread regardless of who opened it — used by
+// fix-comments-external, where the human triggering it is trusted to decide
+// this PR's own bot-authored findings (e.g. from an earlier automatic
+// external-review pass) are fair game too, not just Copilot/human ones. See
+// docs/superpowers/specs/2026-08-22-trusted-external-fix-comments-design.md.
+export async function listAllOpenReviewThreads(prNumber: number): Promise<ReviewThread[]> {
+  const threads = await fetchOpenReviewThreads(prNumber);
+  return threads.map((t) => ({ id: t.id, body: t.body }));
+}

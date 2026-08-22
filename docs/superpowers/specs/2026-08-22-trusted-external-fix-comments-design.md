@@ -12,6 +12,17 @@
 > `Comment.authorLogin`. El resto de este documento queda como registro del
 > diseño original; donde mencione `author_association`/`authorAssociation`,
 > léase como la verificación de permiso descrita arriba.
+>
+> **Segunda corrección (2026-08-22):** `openThreads` para
+> `fix-comments-external` no usa `listExternalOpenReviewThreads` (hilos que
+> el bot no abrió) como dice el resto de este documento — usa
+> `listAllOpenReviewThreads`, sin filtrar por autor. Motivo: en el caso
+> real (PR #599) los únicos hilos abiertos eran hallazgos del propio
+> `ronin-agent` de una pasada previa de `external-review`, y el humano que
+> dispara `/fix-comments` en este camino confiable quiere que también se
+> corrijan esos, no solo los de Copilot o de otro humano. Esto es
+> exclusivo de `fix-comments-external`; el `/fix-comments` interno (PRs
+> propios de ronin) sigue excluyendo sus propios hilos, sin cambios.
 
 ## Contexto
 

@@ -437,6 +437,14 @@ describe('runAgentTask — fix-comments-external', () => {
     expect(getPullRequestStatus).not.toHaveBeenCalled();
   });
 
+  it('covers every open thread, not just ones it did not open itself', async () => {
+    await runAgentTask(task);
+
+    const prompt = runClaudeHeadless.mock.calls[0][1] as string;
+    expect(prompt).not.toContain("didn't open yourself");
+    expect(prompt).not.toContain('you didn\'t open');
+  });
+
   it('frames the PR as opened by a trusted human collaborator, without the internal task\'s issue-ownership language', async () => {
     await runAgentTask(task);
 
