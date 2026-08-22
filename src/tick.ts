@@ -17,8 +17,10 @@ import {
   incrementAttemptCount,
   addReaction,
   getPullRequestStatus,
+  listExternalOpenReviewThreads,
   type TrackingIssue,
   type PullRequestStatus,
+  type Comment,
 } from './github.js';
 import { fetchOriginMain, readSpecFile, extractTitle } from './spec-content.js';
 import { nextUnstartedSlice, hasRemainingSlices, recordSlicePr, markSliceMerged, seedSingleSlice, getSlices } from './checklist.js';
@@ -31,8 +33,8 @@ import { toStackedPrs, pickBottomPr, prsForIssue, planBranch, type StackedPr } f
 import { incrementChecksPendingCount, resetChecksPendingCount, setLastReviewedSha } from './local-state.js';
 import { tryClaim, releaseIfNoLongerInProgress, runnerLabel } from './claim.js';
 import { worktreeDirFor, isBehind, attemptRebase, removeWorktree, sweepOrphanedWorktrees } from './worktree.js';
-import { findUnprocessedMentions } from './mentions.js';
-import { findPrsNeedingReview, type ReviewCandidate } from './external-review.js';
+import { findUnprocessedMentions, isFixCommentsCommand } from './mentions.js';
+import { findPrsNeedingReview, type ReviewCandidate, type TrustedFixCandidate } from './external-review.js';
 import { config, LABEL_BUG, LABEL_MANAGED } from './config.js';
 import { activeRepo, withActiveRepo } from './repo-context.js';
 import { loadRepos } from './repos.js';
@@ -291,12 +293,24 @@ export async function processSlicePr(issue: TrackingIssue, pr: StackedPr, isBott
     return true;
   }
 
-  // The detection call itself is inside the try on purpose: a transient API
-  // failure reading comments must stay local to this secondary flow, never
-  // reach tick()'s catch and put the whole issue in `blocked` (which also
-  // emails a human). See docs/superpowers/specs/2026-07-28-mention-review-design.md.
+  // The detection call itself is wrapped on purpose: a transient API failure
+  // reading comments must stay local to these secondary flows, never reach
+  // tick()'s catch and put the whole issue in `blocked` (which also emails a
+  // human). See docs/superpowers/specs/2026-07-28-mention-review-design.md.
+  // A general comment mentioning the bot can instead carry /fix-comments —
+  // that one goes through the fix-comments batch flow below, never
+  // review-request, so it isn't double-processed.
+  let mentions: Comment[] = [];
+  let commandMentions: Comment[] = [];
   try {
-    const mentions = await findUnprocessedMentions(pr.number);
+    const allMentions = await findUnprocessedMentions(pr.number);
+    commandMentions = allMentions.filter((m) => m.kind === 'issue' && isFixCommentsCommand(m.body));
+    mentions = allMentions.filter((m) => !commandMentions.includes(m));
+  } catch (error) {
+    log.error(`findUnprocessedMentions failed for PR #${pr.number}`, error);
+  }
+
+  try {
     if (mentions.length > 0) {
       await runAgentTask({ type: 'review-request', issueNumber: issue.number, prNumber: pr.number, mentions });
 
@@ -316,6 +330,23 @@ export async function processSlicePr(issue: TrackingIssue, pr: StackedPr, isBott
     // that doesn't land shouldn't block the slice loop. No reaction was
     // added, so the next tick picks these same comments up again.
     log.error(`review-request failed for PR #${pr.number}`, error);
+  }
+
+  // Own try/catch, separate from review-request above: a failure here must
+  // never block the mention flow it doesn't depend on, and vice versa.
+  try {
+    if (commandMentions.length > 0) {
+      const openThreads = await listExternalOpenReviewThreads(pr.number, config.githubLogin);
+      await runAgentTask({ type: 'fix-comments', issueNumber: issue.number, prNumber: pr.number, trigger: commandMentions, openThreads });
+      for (const m of commandMentions) await addReaction(m.id, m.kind, 'eyes');
+      // Same staleness concern as the review-request re-read above: this run
+      // can push a commit, so re-fetch before the merge decision below.
+      pr = { ...pr, ...(await getPullRequestStatus(pr.number)) };
+    }
+  } catch (error) {
+    // No reaction added on failure, so the next tick re-processes the same
+    // command comment(s) — same trade-off as review-request above.
+    log.error(`fix-comments failed for PR #${pr.number}`, error);
   }
 
   // Solo el fondo del stack necesita estar al día con main antes de evaluar
@@ -557,6 +588,29 @@ export async function processExternalReviewCandidate(candidate: ReviewCandidate)
   }
 }
 
+// Counterpart to processExternalReviewCandidate for the trust-gated write
+// path — see docs/superpowers/specs/2026-08-22-trusted-external-fix-comments-design.md.
+// Same isolation rationale: a failure here must never reach tick()'s outer
+// catch, and must never block review of any other candidate this tick.
+export async function processTrustedFixCandidate(candidate: TrustedFixCandidate): Promise<void> {
+  try {
+    await runAgentTask({
+      type: 'fix-comments-external',
+      prNumber: candidate.prNumber,
+      headRefName: candidate.headRefName,
+      trigger: candidate.trigger,
+      openThreads: candidate.openThreads,
+    });
+    // Only after a successful run — same reasoning as processSlicePr's own
+    // reactions loop: a missing reaction is what makes
+    // findTrustedFixCommentsCommand treat this comment as unprocessed and
+    // retry it on the next tick.
+    for (const m of candidate.trigger) await addReaction(m.id, m.kind, 'eyes');
+  } catch (error) {
+    log.error(`fix-comments-external failed for PR #${candidate.prNumber}`, error);
+  }
+}
+
 // Deliberately its own exported function, called before (and independently
 // of) the ronin-PR loop: external review shares nothing with that flow, so a
 // transient `listAllOpenRoninPrs` failure — which returns early from the
@@ -564,13 +618,16 @@ export async function processExternalReviewCandidate(candidate: ReviewCandidate)
 // tick. See final review Fix 4.
 export async function runExternalReviews(): Promise<void> {
   let reviewCandidates: ReviewCandidate[];
+  let trustedFixCandidates: TrustedFixCandidate[];
   try {
-    reviewCandidates = await findPrsNeedingReview();
+    ({ reviewCandidates, trustedFixCandidates } = await findPrsNeedingReview());
   } catch (error) {
     log.info(`tick: findPrsNeedingReview falló, reintentando en el próximo tick: ${(error as Error).message}`);
     reviewCandidates = [];
+    trustedFixCandidates = [];
   }
   await runWithConcurrency(reviewCandidates, config.tickConcurrency, processExternalReviewCandidate);
+  await runWithConcurrency(trustedFixCandidates, config.tickConcurrency, processTrustedFixCandidate);
 }
 
 async function tickOneRepo(): Promise<void> {

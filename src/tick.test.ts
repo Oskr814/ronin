@@ -104,7 +104,7 @@ vi.mock('./external-review.js', () => ({
   findPrsNeedingReview: (...args: unknown[]) => findPrsNeedingReview(...args),
 }));
 
-const { processSlicePr, agentTaskFor, discoverAssignedBugs, processExternalReviewCandidate, runExternalReviews, renderTrackingIssueBody } = await import('./tick.js');
+const { processSlicePr, agentTaskFor, discoverAssignedBugs, processExternalReviewCandidate, processTrustedFixCandidate, runExternalReviews, renderTrackingIssueBody } = await import('./tick.js');
 
 function issue(overrides: Partial<TrackingIssue> = {}): TrackingIssue {
   return { number: 228, title: 'Test issue', url: 'https://github.com/x/y/issues/228', labels: [], ...overrides };
@@ -561,6 +561,51 @@ describe('processExternalReviewCandidate', () => {
   });
 });
 
+describe('processTrustedFixCandidate', () => {
+  const candidate = {
+    prNumber: 599,
+    headRefName: 'feat/cambio-cliente',
+    trigger: [{ id: 9, kind: 'issue' as const, body: '@ronin /fix-comments', reactionsEyes: 0, authorAssociation: 'MEMBER' }],
+    openThreads: [{ id: 'T5', body: 'BranchId reasignado incondicionalmente' }],
+  };
+
+  it('runs the fix-comments-external agent task', async () => {
+    runAgentTask.mockResolvedValue(undefined);
+
+    await processTrustedFixCandidate(candidate);
+
+    expect(runAgentTask).toHaveBeenCalledWith({
+      type: 'fix-comments-external',
+      prNumber: 599,
+      headRefName: 'feat/cambio-cliente',
+      trigger: candidate.trigger,
+      openThreads: candidate.openThreads,
+    });
+  });
+
+  it('reacts with eyes on the trigger comment(s), after a successful run', async () => {
+    runAgentTask.mockResolvedValue(undefined);
+
+    await processTrustedFixCandidate(candidate);
+
+    expect(addReaction).toHaveBeenCalledWith(9, 'issue', 'eyes');
+  });
+
+  it('does not react when the agent task throws, so the next tick retries it', async () => {
+    runAgentTask.mockRejectedValue(new Error('boom'));
+
+    await processTrustedFixCandidate(candidate);
+
+    expect(addReaction).not.toHaveBeenCalled();
+  });
+
+  it('swallows the error instead of propagating it', async () => {
+    runAgentTask.mockRejectedValue(new Error('boom'));
+
+    await expect(processTrustedFixCandidate(candidate)).resolves.not.toThrow();
+  });
+});
+
 describe('renderTrackingIssueBody', () => {
   it('links spec files against the global default branch when the active repo has no override', async () => {
     const body = await renderTrackingIssueBody(['docs/superpowers/specs/foo.md']);
@@ -591,17 +636,33 @@ describe('runExternalReviews', () => {
     runAgentTask.mockResolvedValue(undefined);
   });
 
-  it('runs one agent task per candidate findPrsNeedingReview returns', async () => {
-    findPrsNeedingReview.mockResolvedValue([
-      { prNumber: 305, headRefName: 'someone-else/feature-x', headSha: 'abc123', openThreads: [] },
-      { prNumber: 306, headRefName: 'other/feature-y', headSha: 'def456', openThreads: [] },
-    ]);
+  it('runs one agent task per read-only candidate findPrsNeedingReview returns', async () => {
+    findPrsNeedingReview.mockResolvedValue({
+      reviewCandidates: [
+        { prNumber: 305, headRefName: 'someone-else/feature-x', headSha: 'abc123', openThreads: [], mentions: [] },
+        { prNumber: 306, headRefName: 'other/feature-y', headSha: 'def456', openThreads: [], mentions: [] },
+      ],
+      trustedFixCandidates: [],
+    });
 
     await runExternalReviews();
 
     expect(runAgentTask).toHaveBeenCalledTimes(2);
     expect(runAgentTask).toHaveBeenCalledWith(expect.objectContaining({ type: 'external-review', prNumber: 305, headSha: 'abc123' }));
     expect(runAgentTask).toHaveBeenCalledWith(expect.objectContaining({ type: 'external-review', prNumber: 306, headSha: 'def456' }));
+  });
+
+  it('runs one fix-comments-external agent task per trusted-fix candidate', async () => {
+    findPrsNeedingReview.mockResolvedValue({
+      reviewCandidates: [],
+      trustedFixCandidates: [
+        { prNumber: 599, headRefName: 'feat/cambio-cliente', trigger: [{ id: 9, kind: 'issue' as const, body: '/fix-comments', reactionsEyes: 0, authorAssociation: 'MEMBER' }], openThreads: [] },
+      ],
+    });
+
+    await runExternalReviews();
+
+    expect(runAgentTask).toHaveBeenCalledWith(expect.objectContaining({ type: 'fix-comments-external', prNumber: 599, headRefName: 'feat/cambio-cliente' }));
   });
 
   it('does not throw, and runs nothing, when discovery itself fails', async () => {
@@ -612,8 +673,8 @@ describe('runExternalReviews', () => {
     expect(runAgentTask).not.toHaveBeenCalled();
   });
 
-  it('does nothing when there are no candidates', async () => {
-    findPrsNeedingReview.mockResolvedValue([]);
+  it('does nothing when there are no candidates of either kind', async () => {
+    findPrsNeedingReview.mockResolvedValue({ reviewCandidates: [], trustedFixCandidates: [] });
 
     await runExternalReviews();
 
