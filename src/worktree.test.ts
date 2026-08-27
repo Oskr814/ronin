@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { existsSync } from 'node:fs';
 import { mkdtemp, mkdir, rm, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -77,6 +78,10 @@ async function initRepo(cwd: string): Promise<void> {
   await git(cwd, ['config', 'user.email', 'ronin@example.com']);
   await git(cwd, ['config', 'user.name', 'ronin']);
 }
+
+// Root-owned-file cleanup only has real Docker to exercise it against — no
+// point failing the whole suite on a box (or CI image) without Docker.
+const dockerAvailable = await execFileAsync('docker', ['info']).then(() => true).catch(() => false);
 
 // Real git plumbing against local temp repos (a bare "origin" plus a
 // worktree-style clone) — no network, no mocking of git itself. This is the
@@ -302,6 +307,30 @@ describe('removeWorktree — orphaned directory (git metadata already gone)', ()
   it('is a no-op when the directory never existed at all', async () => {
     await expect(withRepo(() => removeWorktree('ronin/300/never-created'))).resolves.toBeUndefined();
   });
+
+  // Reproduces the follow-up live failure: a Docker container writes files
+  // as root inside a bind-mounted worktree (a build's obj/bin output, a
+  // Postgres data/init dir — this is the actual reason a prior
+  // `git worktree remove` couldn't finish deleting the directory in the
+  // first place), so the unprivileged `rm -rf` fallback above also hits
+  // EACCES on rmdir and gives up in exactly the same "fails forever" way.
+  it.skipIf(!dockerAvailable)(
+    'removes a root-owned leftover (created by a Docker container) that plain rm -rf cannot touch',
+    async () => {
+      const dir = await withRepo(() => ensureWorktree('ronin/300/slice-1'));
+      await git(productRepoPath, ['worktree', 'remove', dir, '--force']);
+      await mkdir(dir, { recursive: true });
+
+      // Root inside the container == root on the host for a bind mount.
+      await execFileAsync('docker', ['run', '--rm', '-v', `${dir}:/target`, 'busybox', 'sh', '-c', 'mkdir -p /target/Dumps/postgres && touch /target/Dumps/postgres/data']);
+      await expect(readFile(join(dir, 'Dumps/postgres/data'), 'utf8')).resolves.toBe('');
+
+      await expect(withRepo(() => removeWorktree('ronin/300/slice-1'))).resolves.toBeUndefined();
+
+      expect(existsSync(dir)).toBe(false);
+    },
+    30_000,
+  );
 });
 
 // Real git plumbing, no mocks: the three scenarios final review Fix 1 calls
