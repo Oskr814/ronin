@@ -12,7 +12,7 @@ import type { PullRequestStatus } from './github.js';
 let mockConfig: Record<string, unknown> = { worktreeBaseRef: 'main' };
 vi.mock('./config.js', () => ({ get config() { return mockConfig; } }));
 
-const { isBehind, attemptRebase, branchFromWorktreeDirName, branchesToSweep, ensureWorktree, ensureExternalReviewWorktree, externalReviewWorktreeDirFor } = await import('./worktree.js');
+const { isBehind, attemptRebase, branchFromWorktreeDirName, branchesToSweep, ensureWorktree, removeWorktree, ensureExternalReviewWorktree, externalReviewWorktreeDirFor } = await import('./worktree.js');
 const { withActiveRepo } = await import('./repo-context.js');
 
 function pr(headRefName: string): PullRequestStatus {
@@ -245,6 +245,62 @@ describe('ensureWorktree — per-worktree DB_PORT', () => {
     );
 
     await expect(readFile(join(dir, 'ODOO_MARKER.md'), 'utf8')).resolves.toBe('only on odoo-main\n');
+  });
+});
+
+// Reproduces the live bug: sweepOrphanedWorktrees rediscovering the same
+// directory every tick forever because `git worktree remove` categorically
+// cannot succeed on it (git's own metadata is already gone — the usual
+// cause is a prior removal that unregistered the worktree but couldn't
+// finish deleting the directory, e.g. a Docker bind mount still holding a
+// file busy), and the old code just logged the identical error and left the
+// directory in place for the next sweep to trip over again.
+describe('removeWorktree — orphaned directory (git metadata already gone)', () => {
+  let base: string;
+  let productRepoPath: string;
+  let worktreeBasePath: string;
+
+  beforeEach(async () => {
+    base = await mkdtemp(join(tmpdir(), 'ronin-remove-worktree-test-'));
+    productRepoPath = join(base, 'repo');
+    worktreeBasePath = join(base, 'worktrees');
+    process.env.WORKTREE_BASE_PATH = worktreeBasePath;
+
+    await mkdir(productRepoPath, { recursive: true });
+    await initRepo(productRepoPath);
+    await writeFile(join(productRepoPath, 'README.md'), 'seed\n');
+    await git(productRepoPath, ['add', '.']);
+    await git(productRepoPath, ['commit', '-q', '-m', 'initial']);
+    await git(productRepoPath, ['branch', '-M', 'main']);
+  });
+
+  afterEach(async () => {
+    delete process.env.WORKTREE_BASE_PATH;
+    await rm(base, { recursive: true, force: true });
+  });
+
+  function withRepo<T>(fn: () => Promise<T>): Promise<T> {
+    return withActiveRepo({ productRepo: 'test/repo', productRepoPath }, fn);
+  }
+
+  it('deletes the leftover directory instead of failing forever once git no longer recognizes it as a worktree', async () => {
+    const dir = await withRepo(() => ensureWorktree('ronin/300/slice-1'));
+
+    // Simulate what a prior partial removal leaves behind: git's own
+    // worktree registration is gone, but the directory (with real files
+    // still in it) survives on disk.
+    await git(productRepoPath, ['worktree', 'remove', dir, '--force']);
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, 'leftover.txt'), 'orphaned file\n');
+    await expect(git(productRepoPath, ['worktree', 'list'])).resolves.not.toContain(dir);
+
+    await expect(withRepo(() => removeWorktree('ronin/300/slice-1'))).resolves.toBeUndefined();
+
+    await expect(readFile(join(dir, 'leftover.txt'), 'utf8')).rejects.toThrow();
+  });
+
+  it('is a no-op when the directory never existed at all', async () => {
+    await expect(withRepo(() => removeWorktree('ronin/300/never-created'))).resolves.toBeUndefined();
   });
 });
 

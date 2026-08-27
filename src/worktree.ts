@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { existsSync } from 'node:fs';
-import { mkdir, readdir, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createServer } from 'node:net';
 import { config } from './config.js';
@@ -125,8 +125,30 @@ async function removeDockerStack(worktreeDir: string): Promise<void> {
 export async function removeWorktree(branch: string): Promise<void> {
   const dir = worktreeDirFor(branch);
   await removeDockerStack(dir);
+  await removeWorktreeDir(dir, 'removeWorktree');
+}
+
+// `git worktree remove` fails with "fatal: '<dir>' is not a working tree"
+// when git's own metadata for `dir` is already gone — the case discovered
+// live: an earlier removal had unregistered the worktree but failed to
+// finish deleting the directory itself (removeDockerStack above is
+// best-effort, so a stack that was still up could leave a bind-mounted file
+// busy mid-delete), leaving a real, non-empty directory that git no longer
+// considers a worktree at all. Without this fallback that directory is
+// unremovable forever: sweepOrphanedWorktrees rediscovers it every tick,
+// retries the same doomed git command, and logs the identical error again
+// (reproduced live: ronin-594-slice-1 through -6 failing every 5 minutes
+// for hours). Since git no longer tracks `dir` as a worktree in this case,
+// deleting it directly can't corrupt any git worktree state.
+async function removeWorktreeDir(dir: string, label: string): Promise<void> {
   await execFileAsync('git', ['worktree', 'remove', dir, '--force'], { cwd: activeRepo().productRepoPath })
-    .catch((error) => log.error(`removeWorktree: 'git worktree remove' falló para ${dir}`, error));
+    .catch(async (error) => {
+      log.error(`${label}: 'git worktree remove' falló para ${dir}`, error);
+      const stderr = typeof error === 'object' && error !== null ? String((error as { stderr?: unknown }).stderr ?? '') : '';
+      if (!/is not a working tree/.test(stderr) || !existsSync(dir)) return;
+      await rm(dir, { recursive: true, force: true })
+        .catch((rmError) => log.error(`${label}: no se pudo borrar el directorio huérfano ${dir}`, rmError));
+    });
 }
 
 // External PRs are reviewed by commit SHA, not by branch name: a fork's head
@@ -163,8 +185,7 @@ export async function ensureExternalReviewWorktree(prNumber: number, headSha: st
 export async function removeExternalReviewWorktree(prNumber: number): Promise<void> {
   const dir = externalReviewWorktreeDirFor(prNumber);
   await removeDockerStack(dir);
-  await execFileAsync('git', ['worktree', 'remove', dir, '--force'], { cwd: activeRepo().productRepoPath })
-    .catch((error) => log.error(`removeExternalReviewWorktree: 'git worktree remove' falló para ${dir}`, error));
+  await removeWorktreeDir(dir, 'removeExternalReviewWorktree');
 }
 
 const WORKTREE_DIR_RE = /^ronin-(\d+)-(.+)$/;
