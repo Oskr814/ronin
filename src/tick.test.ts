@@ -56,6 +56,7 @@ const getPullRequestStatus = vi.fn();
 const addIssueLabel = vi.fn();
 const listAssignedBugIssues = vi.fn();
 const listExternalOpenReviewThreads = vi.fn();
+const setReviewStatus = vi.fn();
 vi.mock('./github.js', () => ({
   addReaction: (...args: unknown[]) => addReaction(...args),
   mergePullRequest: (...args: unknown[]) => mergePullRequest(...args),
@@ -65,6 +66,7 @@ vi.mock('./github.js', () => ({
   addIssueLabel: (...args: unknown[]) => addIssueLabel(...args),
   listAssignedBugIssues: (...args: unknown[]) => listAssignedBugIssues(...args),
   listExternalOpenReviewThreads: (...args: unknown[]) => listExternalOpenReviewThreads(...args),
+  setReviewStatus: (...args: unknown[]) => setReviewStatus(...args),
 }));
 
 const incrementChecksPendingCount = vi.fn();
@@ -305,6 +307,28 @@ describe('processSlicePr — mentions found on an already-mergeable bottom PR (r
     });
     expect(stillInProgress).toBe(true);
     expect(mergePullRequest).toHaveBeenCalledWith(229);
+  });
+
+  it('posts a ronin/review commit status: pending before the agent run, success after', async () => {
+    const bottomPr = pr({ number: 229, sliceIndex: 0, baseRefName: 'main', headRefName: 'ronin/228/slice-1', reviewDecision: '' });
+    findUnprocessedMentions.mockResolvedValue([{ id: 1, kind: 'issue', body: '@ronin fijate esto', reactionsEyes: 0 }]);
+    getPullRequestStatus.mockResolvedValue({ ...bottomPr, checksPassing: true, reviewDecision: 'APPROVED' });
+    isBehind.mockResolvedValue(false);
+
+    await processSlicePr(issue(), bottomPr, true);
+
+    expect(setReviewStatus).toHaveBeenCalledWith(229, 'pending', expect.any(String));
+    expect(setReviewStatus).toHaveBeenCalledWith(229, 'success', expect.any(String));
+  });
+
+  it('posts a ronin/review error status when the review agent throws', async () => {
+    const bottomPr = pr({ number: 229, sliceIndex: 0, baseRefName: 'main', headRefName: 'ronin/228/slice-1', reviewDecision: '' });
+    findUnprocessedMentions.mockResolvedValue([{ id: 1, kind: 'issue', body: '@ronin fijate esto', reactionsEyes: 0 }]);
+    runAgentTask.mockRejectedValueOnce(new Error('claude -p timeout'));
+
+    await processSlicePr(issue(), bottomPr, true);
+
+    expect(setReviewStatus).toHaveBeenCalledWith(229, 'error', expect.any(String));
   });
 
 });
@@ -687,6 +711,9 @@ describe('runExternalReviews', () => {
     expect(runAgentTask).toHaveBeenCalledTimes(2);
     expect(runAgentTask).toHaveBeenCalledWith(expect.objectContaining({ type: 'external-review', prNumber: 305, headSha: 'abc123' }));
     expect(runAgentTask).toHaveBeenCalledWith(expect.objectContaining({ type: 'external-review', prNumber: 306, headSha: 'def456' }));
+    // Commit status keyed to the candidate's known head SHA, no extra `gh pr view`.
+    expect(setReviewStatus).toHaveBeenCalledWith(305, 'pending', expect.any(String), { sha: 'abc123' });
+    expect(setReviewStatus).toHaveBeenCalledWith(305, 'success', expect.any(String), { sha: 'abc123' });
   });
 
   it('runs one fix-comments-external agent task per trusted-fix candidate', async () => {

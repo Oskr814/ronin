@@ -17,6 +17,7 @@ import {
   incrementAttemptCount,
   addReaction,
   getPullRequestStatus,
+  setReviewStatus,
   listExternalOpenReviewThreads,
   type TrackingIssue,
   type PullRequestStatus,
@@ -310,7 +311,9 @@ export async function processSlicePr(issue: TrackingIssue, pr: StackedPr, isBott
 
   try {
     if (mentions.length > 0) {
+      await setReviewStatus(pr.number, 'pending', 'ronin está revisando el PR…');
       await runAgentTask({ type: 'review-request', issueNumber: issue.number, prNumber: pr.number, mentions });
+      await setReviewStatus(pr.number, 'success', 'Review posteada');
 
       for (const m of mentions) await addReaction(m.id, m.kind, 'eyes');
       // `pr` was read before a claude -p run that can take up to 30
@@ -327,6 +330,7 @@ export async function processSlicePr(issue: TrackingIssue, pr: StackedPr, isBott
     // Local failure, not the issue-wide catch in tick(): a review-request
     // that doesn't land shouldn't block the slice loop. No reaction was
     // added, so the next tick picks these same comments up again.
+    if (mentions.length > 0) await setReviewStatus(pr.number, 'error', 'La review falló — ver logs del tick');
     log.error(`review-request failed for PR #${pr.number}`, error);
   }
 
@@ -335,7 +339,9 @@ export async function processSlicePr(issue: TrackingIssue, pr: StackedPr, isBott
   try {
     if (commandMentions.length > 0) {
       const openThreads = await listExternalOpenReviewThreads(pr.number, config.githubLogin);
+      await setReviewStatus(pr.number, 'pending', 'ronin está resolviendo comentarios…', { context: 'ronin/fix-comments' });
       await runAgentTask({ type: 'fix-comments', issueNumber: issue.number, prNumber: pr.number, trigger: commandMentions, openThreads });
+      await setReviewStatus(pr.number, 'success', 'Comentarios atendidos', { context: 'ronin/fix-comments' });
       for (const m of commandMentions) await addReaction(m.id, m.kind, 'eyes');
       // Same staleness concern as the review-request re-read above: this run
       // can push a commit, so re-fetch before the merge decision below.
@@ -344,6 +350,7 @@ export async function processSlicePr(issue: TrackingIssue, pr: StackedPr, isBott
   } catch (error) {
     // No reaction added on failure, so the next tick re-processes the same
     // command comment(s) — same trade-off as review-request above.
+    if (commandMentions.length > 0) await setReviewStatus(pr.number, 'error', 'El fix-comments falló — ver logs del tick', { context: 'ronin/fix-comments' });
     log.error(`fix-comments failed for PR #${pr.number}`, error);
   }
 
@@ -575,6 +582,7 @@ async function runIssueStep(issue: TrackingIssue, step: () => Promise<void>): Pr
 // docs/superpowers/specs/2026-08-20-external-pr-review-design.md.
 export async function processExternalReviewCandidate(candidate: ReviewCandidate): Promise<void> {
   try {
+    await setReviewStatus(candidate.prNumber, 'pending', 'ronin está revisando el PR…', { sha: candidate.headSha });
     await runAgentTask({
       type: 'external-review',
       prNumber: candidate.prNumber,
@@ -583,6 +591,7 @@ export async function processExternalReviewCandidate(candidate: ReviewCandidate)
       openThreads: candidate.openThreads,
       mentions: candidate.mentions,
     });
+    await setReviewStatus(candidate.prNumber, 'success', 'Review posteada', { sha: candidate.headSha });
     await setLastReviewedSha(candidate.prNumber, candidate.headSha);
     // Only after a successful run: a missing reaction is what makes
     // findUnprocessedMentions treat these same comments as unprocessed and
@@ -590,6 +599,7 @@ export async function processExternalReviewCandidate(candidate: ReviewCandidate)
     // reactions loop above.
     for (const m of candidate.mentions) await addReaction(m.id, m.kind, 'eyes');
   } catch (error) {
+    await setReviewStatus(candidate.prNumber, 'error', 'La review falló — ver logs del tick', { sha: candidate.headSha });
     log.error(`external-review failed for PR #${candidate.prNumber}`, error);
     // No SHA recorded → the next tick treats this PR as still unreviewed.
   }
@@ -601,6 +611,7 @@ export async function processExternalReviewCandidate(candidate: ReviewCandidate)
 // catch, and must never block review of any other candidate this tick.
 export async function processTrustedFixCandidate(candidate: TrustedFixCandidate): Promise<void> {
   try {
+    await setReviewStatus(candidate.prNumber, 'pending', 'ronin está resolviendo comentarios…', { context: 'ronin/fix-comments' });
     await runAgentTask({
       type: 'fix-comments-external',
       prNumber: candidate.prNumber,
@@ -608,12 +619,14 @@ export async function processTrustedFixCandidate(candidate: TrustedFixCandidate)
       trigger: candidate.trigger,
       openThreads: candidate.openThreads,
     });
+    await setReviewStatus(candidate.prNumber, 'success', 'Comentarios atendidos', { context: 'ronin/fix-comments' });
     // Only after a successful run — same reasoning as processSlicePr's own
     // reactions loop: a missing reaction is what makes
     // findTrustedFixCommentsCommand treat this comment as unprocessed and
     // retry it on the next tick.
     for (const m of candidate.trigger) await addReaction(m.id, m.kind, 'eyes');
   } catch (error) {
+    await setReviewStatus(candidate.prNumber, 'error', 'El fix-comments falló — ver logs del tick', { context: 'ronin/fix-comments' });
     log.error(`fix-comments-external failed for PR #${candidate.prNumber}`, error);
   }
 }

@@ -669,3 +669,47 @@ export async function listAllOpenReviewThreads(prNumber: number): Promise<Review
   const threads = await fetchOpenReviewThreads(prNumber);
   return threads.map((t) => ({ id: t.id, body: t.body }));
 }
+
+export type ReviewStatusState = 'pending' | 'success' | 'error';
+
+// GitHub caps a commit status `description` at this many characters and
+// silently truncates past it — trim ourselves so the message stays legible.
+const STATUS_DESCRIPTION_MAX = 140;
+
+// Posts a commit status (context `ronin/review`) on a PR's head commit so a
+// human watching the PR can see in its checks box when ronin is running a
+// review and how it finished. Deliberately the Commit Status API, not Check
+// Runs: check runs are only writable by a GitHub App, and ronin
+// authenticates as a plain user PAT (the `ronin` account) — see
+// docs/superpowers/specs. The status is bound to one SHA, so a push after a
+// `pending` drops the row until the next tick re-posts it.
+//
+// Purely informational: a failure to post the status must never disturb the
+// review flow that called it, so this swallows its own errors after logging
+// rather than throwing. `sha` is passed by callers that already hold the
+// head oid (the external-review candidates); the slice flows let it resolve
+// the oid itself.
+export async function setReviewStatus(
+  prNumber: number,
+  state: ReviewStatusState,
+  description: string,
+  opts: { sha?: string; context?: string } = {},
+): Promise<void> {
+  const context = opts.context ?? 'ronin/review';
+  try {
+    let headSha = opts.sha;
+    if (headSha == null) {
+      const stdout = await gh(['pr', 'view', String(prNumber), '--json', 'headRefOid']);
+      headSha = (JSON.parse(stdout) as { headRefOid: string }).headRefOid;
+    }
+    await ghApi([
+      'api', '--method', 'POST',
+      `repos/${activeRepo().productRepo}/statuses/${headSha}`,
+      '-f', `state=${state}`,
+      '-f', `context=${context}`,
+      '-f', `description=${description.slice(0, STATUS_DESCRIPTION_MAX)}`,
+    ]);
+  } catch (error) {
+    log.error(`setReviewStatus(${prNumber}, ${context}, ${state}) failed`, error);
+  }
+}

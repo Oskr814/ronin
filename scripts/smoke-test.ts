@@ -35,6 +35,39 @@ async function main() {
 
       const ready = await listTrackingIssues('ready');
       console.log(`   OK — ${ready.length} issue(s) ronin:ready encontrados en ${repo.productRepo}`);
+
+      // Soft check: el commit status `ronin/review` (ver setReviewStatus) es
+      // puramente informativo, así que un PAT sin el permiso `Commit
+      // statuses: read and write` no bloquea el setup — solo se pierde el
+      // check en la caja del PR mientras ronin revisa. Se escribe sobre el
+      // tip del branch default con un context propio y estado `success`;
+      // queda ahí, inofensivo, y se mueve con el branch.
+      console.log(`4. Verificando permiso de commit statuses en ${repo.productRepo} (opcional)...`);
+      try {
+        const { stdout: shaStdout } = await execFileAsync(
+          'gh',
+          ['api', `repos/${repo.productRepo}/commits/HEAD`, '--jq', '.sha'],
+          { env: { ...process.env, GH_TOKEN: config.githubToken } },
+        );
+        await execFileAsync(
+          'gh',
+          [
+            'api', '--method', 'POST',
+            `repos/${repo.productRepo}/statuses/${shaStdout.trim()}`,
+            '-f', 'state=success',
+            '-f', 'context=ronin/smoke-test',
+            '-f', 'description=smoke test de commit status — ignorar',
+          ],
+          { env: { ...process.env, GH_TOKEN: config.githubToken } },
+        );
+        console.log('   OK — el PAT puede escribir commit statuses');
+      } catch {
+        console.warn(
+          '   AVISO — el PAT no puede escribir commit statuses. ronin va a funcionar igual, ' +
+            'pero no vas a ver el check "ronin/review" en el PR mientras corre una review. ' +
+            'Agregá el permiso "Commit statuses: read and write" al token si lo querés.',
+        );
+      }
     });
   }
 
