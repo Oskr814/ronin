@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { existsSync } from 'node:fs';
 import { mkdir, readdir, rm, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { createServer } from 'node:net';
 import { config } from './config.js';
 import { activeRepo } from './repo-context.js';
@@ -146,9 +146,30 @@ async function removeWorktreeDir(dir: string, label: string): Promise<void> {
       log.error(`${label}: 'git worktree remove' falló para ${dir}`, error);
       const stderr = typeof error === 'object' && error !== null ? String((error as { stderr?: unknown }).stderr ?? '') : '';
       if (!/is not a working tree/.test(stderr) || !existsSync(dir)) return;
-      await rm(dir, { recursive: true, force: true })
-        .catch((rmError) => log.error(`${label}: no se pudo borrar el directorio huérfano ${dir}`, rmError));
+      await forceRemoveOrphanedDir(dir, label);
     });
+}
+
+// Plain rm -rf, with a fallback for the case discovered live right after
+// the fix above shipped: a Docker container (removeDockerStack ran, or ran
+// too late) had written files as root inside this bind-mounted worktree —
+// build output, a Postgres data/init dir — so this unprivileged process
+// gets EACCES on rmdir and would otherwise leave the exact same
+// unremovable, rediscovered-every-tick directory this function exists to
+// prevent. A throwaway container mounting the worktree base runs as root
+// too, so it can remove its own leftovers; nothing else in `dir` needs
+// privilege, so this only reaches for Docker once the plain delete fails.
+async function forceRemoveOrphanedDir(dir: string, label: string): Promise<void> {
+  await rm(dir, { recursive: true, force: true }).catch(async (rmError) => {
+    const code = (rmError as NodeJS.ErrnoException).code;
+    if (code !== 'EACCES' && code !== 'EPERM') {
+      log.error(`${label}: no se pudo borrar el directorio huérfano ${dir}`, rmError);
+      return;
+    }
+    const worktreeBasePath = activeRepo().worktreeBasePath;
+    await execFileAsync('docker', ['run', '--rm', '-v', `${worktreeBasePath}:/work`, 'busybox', 'rm', '-rf', `/work/${basename(dir)}`])
+      .catch((dockerError) => log.error(`${label}: no se pudo borrar el directorio huérfano ${dir} (ni con docker)`, dockerError));
+  });
 }
 
 // External PRs are reviewed by commit SHA, not by branch name: a fork's head
