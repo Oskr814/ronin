@@ -144,8 +144,18 @@ async function removeWorktreeDir(dir: string, label: string): Promise<void> {
   await execFileAsync('git', ['worktree', 'remove', dir, '--force'], { cwd: activeRepo().productRepoPath })
     .catch(async (error) => {
       log.error(`${label}: 'git worktree remove' falló para ${dir}`, error);
-      const stderr = typeof error === 'object' && error !== null ? String((error as { stderr?: unknown }).stderr ?? '') : '';
-      if (!/is not a working tree/.test(stderr) || !existsSync(dir)) return;
+      if (!existsSync(dir)) return;
+      // Two shapes of failure land here, and neither leaves git tracking the
+      // directory: it was already unregistered by a prior partial removal
+      // ("is not a working tree"), or `git worktree remove` deletes its
+      // admin entry *before* the working tree and only the latter failed
+      // ("failed to delete '<dir>': Permission denied" — root-owned Docker
+      // build output, reproduced live on external-pr-614). The old code
+      // gated this fallback on the first stderr string only, so the second
+      // case looped forever. Confirm git no longer registers `dir` (so a
+      // direct delete can't strand worktree metadata), then force it.
+      const stillRegistered = existsSync(join(activeRepo().productRepoPath, '.git', 'worktrees', basename(dir)));
+      if (stillRegistered) return;
       await forceRemoveOrphanedDir(dir, label);
     });
 }
@@ -192,11 +202,25 @@ export async function ensureExternalReviewWorktree(prNumber: number, headSha: st
   // PRs reachable at all without adding the fork as a remote.
   await execFileAsync('git', ['fetch', 'origin', `pull/${prNumber}/head`], { cwd: activeRepo().productRepoPath });
 
-  if (!existsSync(dir)) {
+  // `existsSync` alone is not enough: a previous run's cleanup can leave a
+  // *non-git* directory behind (it unregisters the worktree and drops the
+  // .git link, then fails to delete root-owned Docker build output — see
+  // removeWorktreeDir). Checking out into that shell throws "not a git
+  // repository" every tick forever (reproduced live on external-pr-614), so
+  // only reuse the directory when git still sees it as a live worktree;
+  // otherwise clear it and add it back from scratch.
+  const isLiveWorktree =
+    existsSync(dir) &&
+    (await execFileAsync('git', ['rev-parse', '--is-inside-work-tree'], { cwd: dir })
+      .then(({ stdout }) => stdout.trim() === 'true')
+      .catch(() => false));
+
+  if (isLiveWorktree) {
+    await execFileAsync('git', ['checkout', '--detach', headSha], { cwd: dir });
+  } else {
+    if (existsSync(dir)) await removeExternalReviewWorktree(prNumber);
     await mkdir(activeRepo().worktreeBasePath, { recursive: true });
     await execFileAsync('git', ['worktree', 'add', '--detach', dir, headSha], { cwd: activeRepo().productRepoPath });
-  } else {
-    await execFileAsync('git', ['checkout', '--detach', headSha], { cwd: dir });
   }
   return dir;
 }

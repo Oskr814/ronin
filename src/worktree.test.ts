@@ -308,6 +308,26 @@ describe('removeWorktree — orphaned directory (git metadata already gone)', ()
     await expect(withRepo(() => removeWorktree('ronin/300/never-created'))).resolves.toBeUndefined();
   });
 
+  // Reproduces external-pr-614: `git worktree remove` was never run before
+  // by anyone, but it deletes its own admin entry *before* the working
+  // tree, so a permission failure on the second step ("failed to delete
+  // '<dir>': Permission denied", root-owned Docker build output) leaves an
+  // unregistered directory behind while its stderr does NOT say "is not a
+  // working tree". The old fallback matched only that string and looped
+  // forever.
+  it.skipIf(!dockerAvailable)(
+    'cleans up when git worktree remove fails on the delete step (never pre-unregistered)',
+    async () => {
+      const dir = await withRepo(() => ensureWorktree('ronin/300/slice-1'));
+      await execFileAsync('docker', ['run', '--rm', '-v', `${dir}:/target`, 'busybox', 'sh', '-c', 'mkdir -p /target/obj && touch /target/obj/build.o']);
+
+      await expect(withRepo(() => removeWorktree('ronin/300/slice-1'))).resolves.toBeUndefined();
+
+      expect(existsSync(dir)).toBe(false);
+    },
+    30_000,
+  );
+
   // Reproduces the follow-up live failure: a Docker container writes files
   // as root inside a bind-mounted worktree (a build's obj/bin output, a
   // Postgres data/init dir — this is the actual reason a prior
@@ -412,6 +432,27 @@ describe('ensureExternalReviewWorktree — checkout by SHA', () => {
     expect(secondSha).not.toBe(firstSha);
     expect((await git(dir, ['rev-parse', 'HEAD'])).trim()).toBe(secondSha);
     expect(await readFile(join(dir, 'contributed.txt'), 'utf8')).toBe('second pass\n');
+  });
+
+  it('rebuilds the worktree when a previous run left a non-git directory behind', async () => {
+    const firstSha = await pushPrHead(305, '', 'first pass\n');
+    const dir = await withRepo(() => ensureExternalReviewWorktree(305, firstSha));
+
+    // What external-pr-614's failed cleanup left on disk: git no longer
+    // registers the worktree and the .git link is gone, but the directory
+    // (with files) survives — here a plain dir stands in for the
+    // root-owned Docker leftovers that blocked the delete.
+    await git(productRepoPath, ['worktree', 'remove', dir, '--force']);
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, 'stale.txt'), 'left over\n');
+
+    const secondSha = await pushPrHead(305, '', 'second pass\n');
+    const out = await withRepo(() => ensureExternalReviewWorktree(305, secondSha));
+
+    expect(out).toBe(dir);
+    expect((await git(dir, ['rev-parse', 'HEAD'])).trim()).toBe(secondSha);
+    expect(await readFile(join(dir, 'contributed.txt'), 'utf8')).toBe('second pass\n');
+    expect(existsSync(join(dir, 'stale.txt'))).toBe(false);
   });
 
   it('works for a PR whose head branch is named `main`, already checked out in the primary worktree', async () => {
