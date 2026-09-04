@@ -541,20 +541,6 @@ export async function listReviewComments(prNumber: number): Promise<Comment[]> {
     .map((c) => ({ id: c.id, kind: 'review' as const, body: c.body, reactionsEyes: c.reactions.eyes, authorLogin: c.user?.login ?? '' }));
 }
 
-// Repo-level ACL, not org-membership-derived: GitHub's `author_association`
-// field is unreliable for this purpose with a fine-grained PAT, which lacks
-// organization-membership visibility — it silently downgrades a real
-// MEMBER/OWNER to CONTRIBUTOR when the PAT can't see their org membership
-// (discovered live against redmotos/shoppingcart#599, where the comment
-// author's real permission is admin but author_association reported
-// CONTRIBUTOR). This endpoint checks the actual collaborator permission on
-// the repo directly and isn't subject to that gap.
-export async function getCollaboratorPermission(login: string): Promise<string> {
-  const stdout = await ghApi(['api', `repos/${activeRepo().productRepo}/collaborators/${login}/permission`]);
-  const parsed = JSON.parse(stdout) as { permission: string };
-  return parsed.permission;
-}
-
 export async function hasBotReaction(commentId: number, kind: 'issue' | 'review', botLogin: string): Promise<boolean> {
   const stdout = await ghApi([
     'api',

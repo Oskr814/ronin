@@ -382,6 +382,25 @@ describe('processSlicePr — /fix-comments command', () => {
     expect(runAgentTask).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'review-request' }));
   });
 
+  it('routes an inline review-comment /fix-comments command through fix-comments, not review-request', async () => {
+    const commandComment = { id: 5, kind: 'review' as const, body: '@ronin /fix-comments', reactionsEyes: 0 };
+    findUnprocessedMentions.mockResolvedValue([commandComment]);
+    isFixCommentsCommand.mockImplementation((body: string) => body.includes('/fix-comments'));
+    listExternalOpenReviewThreads.mockResolvedValue([]);
+    const bottomPr = bottomPrReadyToMerge();
+    getPullRequestStatus.mockResolvedValue(bottomPr);
+    isBehind.mockResolvedValue(false);
+
+    await processSlicePr(issue(), bottomPr, true);
+
+    expect(runAgentTask).toHaveBeenCalledWith({
+      type: 'fix-comments', issueNumber: 228, prNumber: 229,
+      trigger: [commandComment], openThreads: [],
+    });
+    expect(runAgentTask).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'review-request' }));
+    expect(addReaction).toHaveBeenCalledWith(5, 'review', 'eyes');
+  });
+
   it('splits a plain mention and a command mention into review-request and fix-comments respectively', async () => {
     const plainMention = { id: 1, kind: 'issue' as const, body: '@ronin fijate esto', reactionsEyes: 0 };
     const commandComment = { id: 2, kind: 'issue' as const, body: '@ronin /fix-comments', reactionsEyes: 0 };

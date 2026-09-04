@@ -23,6 +23,34 @@
 > corrijan esos, no solo los de Copilot o de otro humano. Esto es
 > exclusivo de `fix-comments-external`; el `/fix-comments` interno (PRs
 > propios de ronin) sigue excluyendo sus propios hilos, sin cambios.
+>
+> **Tercera corrección (2026-09-02):** se eliminó por completo el chequeo de
+> `collaborators/{login}/permission` descrito en la primera corrección de
+> arriba. Ese endpoint requiere el permiso `Administration` del PAT
+> fine-grained, que en un repo de organización necesita aprobación de un
+> admin de la org y no está disponible de forma confiable — en vivo, causaba
+> que `findPrsNeedingReview` descartara el PR entero cada tick
+> (`external-review.ts`, catch por PR). Dado el tamaño del equipo (pocas
+> personas, casi todas con `write`), `findTrustedFixCommentsCommand` ahora
+> confía en cualquier autor con login real que comente `/fix-comments` en un
+> PR no-fork — sin llamar a la API de permisos en absoluto. El único gate que
+> queda es `!pr.isCrossRepository` (un PR de un fork nunca entra a este
+> camino, sin importar quién comente).
+>
+> **Cuarta corrección (2026-09-02):** el worktree de `fix-comments-external`
+> ya no se crea con `ensureWorktree` (checkout normal por nombre de rama).
+> Reproducido en vivo en PR #336 (rama `feat/prescription-frequency-input`):
+> esa rama es la del propio humano que dispara `/fix-comments`, y suele estar
+> checked out al mismo tiempo en el checkout principal — git rechaza
+> `worktree add <dir> <branch>` cuando la rama ya está en uso en otro
+> working tree, así que esto fallaba en cada tick mientras la persona
+> siguiera trabajando ahí. `ensureTrustedFixWorktree` (`worktree.ts`) resuelve
+> esto igual que `ensureExternalReviewWorktree` para forks: checkout
+> `--detach` en `origin/<branch>`, que nunca reclama la rama en exclusiva.
+> Como consecuencia, el prompt de este task ya no le dice al agente que haga
+> un `git push --force-with-lease` implícito a la rama actual — al estar en
+> detached HEAD sin upstream, necesita el refspec explícito
+> (`git push --force-with-lease origin HEAD:<branch>`).
 
 ## Contexto
 

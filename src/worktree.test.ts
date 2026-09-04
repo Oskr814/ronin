@@ -13,7 +13,7 @@ import type { PullRequestStatus } from './github.js';
 let mockConfig: Record<string, unknown> = { worktreeBaseRef: 'main' };
 vi.mock('./config.js', () => ({ get config() { return mockConfig; } }));
 
-const { isBehind, attemptRebase, branchFromWorktreeDirName, branchesToSweep, ensureWorktree, removeWorktree, ensureExternalReviewWorktree, externalReviewWorktreeDirFor } = await import('./worktree.js');
+const { isBehind, attemptRebase, branchFromWorktreeDirName, branchesToSweep, ensureWorktree, removeWorktree, ensureExternalReviewWorktree, externalReviewWorktreeDirFor, ensureTrustedFixWorktree, removeTrustedFixWorktree } = await import('./worktree.js');
 const { withActiveRepo } = await import('./repo-context.js');
 
 function pr(headRefName: string): PullRequestStatus {
@@ -464,6 +464,179 @@ describe('ensureExternalReviewWorktree — checkout by SHA', () => {
     // Detached: no local branch was created or moved for this checkout.
     const head = await git(dir, ['rev-parse', '--abbrev-ref', 'HEAD']);
     expect(head.trim()).toBe('HEAD');
+  });
+});
+
+// Real git plumbing, no mocks: reproduces PR #336 live — a trusted human's
+// /fix-comments target branch checked out in the primary worktree at the
+// same time ronin tries to work on it.
+describe('ensureTrustedFixWorktree — checkout by branch name, detached', () => {
+  let base: string;
+  let originDir: string;
+  let productRepoPath: string;
+  let worktreeBasePath: string;
+
+  beforeEach(async () => {
+    base = await mkdtemp(join(tmpdir(), 'ronin-trusted-fix-worktree-test-'));
+    originDir = join(base, 'origin.git');
+    productRepoPath = join(base, 'repo');
+    worktreeBasePath = join(base, 'worktrees');
+    process.env.WORKTREE_BASE_PATH = worktreeBasePath;
+
+    await execFileAsync('git', ['init', '-q', '--bare', originDir]);
+
+    const seed = join(base, 'seed');
+    await mkdir(seed, { recursive: true });
+    await initRepo(seed);
+    await writeFile(join(seed, 'README.md'), 'seed\n');
+    await git(seed, ['add', '.']);
+    await git(seed, ['commit', '-q', '-m', 'initial']);
+    await git(seed, ['branch', '-M', 'main']);
+    await git(seed, ['remote', 'add', 'origin', originDir]);
+    await git(seed, ['push', '-q', 'origin', 'main']);
+
+    await execFileAsync('git', ['clone', '-q', originDir, productRepoPath]);
+    await initRepo(productRepoPath);
+  });
+
+  afterEach(async () => {
+    delete process.env.WORKTREE_BASE_PATH;
+    await rm(base, { recursive: true, force: true });
+  });
+
+  function withRepo<T>(fn: () => Promise<T>): Promise<T> {
+    return withActiveRepo({ productRepo: 'test/repo', productRepoPath }, fn);
+  }
+
+  it('succeeds even when the branch is already checked out in the primary worktree', async () => {
+    await git(productRepoPath, ['checkout', '-q', '-b', 'feat/prescription-frequency-input']);
+    await writeFile(join(productRepoPath, 'contributed.txt'), 'human work\n');
+    await git(productRepoPath, ['add', '.']);
+    await git(productRepoPath, ['commit', '-q', '-m', 'human commit']);
+    await git(productRepoPath, ['push', '-q', 'origin', 'feat/prescription-frequency-input']);
+    const sha = (await git(productRepoPath, ['rev-parse', 'HEAD'])).trim();
+
+    const dir = await withRepo(() => ensureTrustedFixWorktree('feat/prescription-frequency-input'));
+
+    expect(dir).toBe(join(worktreeBasePath, 'feat-prescription-frequency-input'));
+    expect((await git(dir, ['rev-parse', 'HEAD'])).trim()).toBe(sha);
+    expect(await readFile(join(dir, 'contributed.txt'), 'utf8')).toBe('human work\n');
+    // Detached: no local branch was created or moved for this checkout.
+    const head = await git(dir, ['rev-parse', '--abbrev-ref', 'HEAD']);
+    expect(head.trim()).toBe('HEAD');
+  });
+
+  it("resyncs an already-existing worktree to the branch's new head instead of reusing stale code", async () => {
+    await git(productRepoPath, ['checkout', '-q', '-b', 'feat/x']);
+    await writeFile(join(productRepoPath, 'file.txt'), 'first pass\n');
+    await git(productRepoPath, ['add', '.']);
+    await git(productRepoPath, ['commit', '-q', '-m', 'first']);
+    await git(productRepoPath, ['push', '-q', 'origin', 'feat/x']);
+    await withRepo(() => ensureTrustedFixWorktree('feat/x'));
+
+    await writeFile(join(productRepoPath, 'file.txt'), 'second pass\n');
+    await git(productRepoPath, ['add', '.']);
+    await git(productRepoPath, ['commit', '-q', '-m', 'second']);
+    await git(productRepoPath, ['push', '-q', 'origin', 'feat/x']);
+    const secondSha = (await git(productRepoPath, ['rev-parse', 'HEAD'])).trim();
+
+    const dir = await withRepo(() => ensureTrustedFixWorktree('feat/x'));
+
+    expect((await git(dir, ['rev-parse', 'HEAD'])).trim()).toBe(secondSha);
+    expect(await readFile(join(dir, 'file.txt'), 'utf8')).toBe('second pass\n');
+  });
+
+  it('rebuilds the worktree when a previous run left a non-git directory behind', async () => {
+    await git(productRepoPath, ['checkout', '-q', '-b', 'feat/y']);
+    await writeFile(join(productRepoPath, 'file.txt'), 'first pass\n');
+    await git(productRepoPath, ['add', '.']);
+    await git(productRepoPath, ['commit', '-q', '-m', 'first']);
+    await git(productRepoPath, ['push', '-q', 'origin', 'feat/y']);
+    const dir = await withRepo(() => ensureTrustedFixWorktree('feat/y'));
+
+    await git(productRepoPath, ['worktree', 'remove', dir, '--force']);
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, 'stale.txt'), 'left over\n');
+
+    await writeFile(join(productRepoPath, 'file.txt'), 'second pass\n');
+    await git(productRepoPath, ['add', '.']);
+    await git(productRepoPath, ['commit', '-q', '-m', 'second']);
+    await git(productRepoPath, ['push', '-q', 'origin', 'feat/y']);
+    const secondSha = (await git(productRepoPath, ['rev-parse', 'HEAD'])).trim();
+
+    const out = await withRepo(() => ensureTrustedFixWorktree('feat/y'));
+
+    expect(out).toBe(dir);
+    expect((await git(dir, ['rev-parse', 'HEAD'])).trim()).toBe(secondSha);
+    expect(existsSync(join(dir, 'stale.txt'))).toBe(false);
+  });
+
+  it('writes a repo-root .env with a real DB_PORT, like ensureWorktree', async () => {
+    await git(productRepoPath, ['checkout', '-q', '-b', 'feat/z']);
+    await writeFile(join(productRepoPath, 'file.txt'), 'content\n');
+    await git(productRepoPath, ['add', '.']);
+    await git(productRepoPath, ['commit', '-q', '-m', 'commit']);
+    await git(productRepoPath, ['push', '-q', 'origin', 'feat/z']);
+
+    const dir = await withRepo(() => ensureTrustedFixWorktree('feat/z'));
+
+    const envContents = await readFile(join(dir, '.env'), 'utf8');
+    const match = envContents.match(/^DB_PORT=(\d+)$/m);
+    expect(match).not.toBeNull();
+  });
+});
+
+describe('removeTrustedFixWorktree', () => {
+  let base: string;
+  let originDir: string;
+  let productRepoPath: string;
+  let worktreeBasePath: string;
+
+  beforeEach(async () => {
+    base = await mkdtemp(join(tmpdir(), 'ronin-remove-trusted-fix-worktree-test-'));
+    originDir = join(base, 'origin.git');
+    productRepoPath = join(base, 'repo');
+    worktreeBasePath = join(base, 'worktrees');
+    process.env.WORKTREE_BASE_PATH = worktreeBasePath;
+
+    await execFileAsync('git', ['init', '-q', '--bare', originDir]);
+    const seed = join(base, 'seed');
+    await mkdir(seed, { recursive: true });
+    await initRepo(seed);
+    await writeFile(join(seed, 'README.md'), 'seed\n');
+    await git(seed, ['add', '.']);
+    await git(seed, ['commit', '-q', '-m', 'initial']);
+    await git(seed, ['branch', '-M', 'main']);
+    await git(seed, ['remote', 'add', 'origin', originDir]);
+    await git(seed, ['push', '-q', 'origin', 'main']);
+    await execFileAsync('git', ['clone', '-q', originDir, productRepoPath]);
+    await initRepo(productRepoPath);
+  });
+
+  afterEach(async () => {
+    delete process.env.WORKTREE_BASE_PATH;
+    await rm(base, { recursive: true, force: true });
+  });
+
+  function withRepo<T>(fn: () => Promise<T>): Promise<T> {
+    return withActiveRepo({ productRepo: 'test/repo', productRepoPath }, fn);
+  }
+
+  it('removes the worktree created by ensureTrustedFixWorktree', async () => {
+    await git(productRepoPath, ['checkout', '-q', '-b', 'feat/w']);
+    await writeFile(join(productRepoPath, 'file.txt'), 'content\n');
+    await git(productRepoPath, ['add', '.']);
+    await git(productRepoPath, ['commit', '-q', '-m', 'commit']);
+    await git(productRepoPath, ['push', '-q', 'origin', 'feat/w']);
+    const dir = await withRepo(() => ensureTrustedFixWorktree('feat/w'));
+
+    await withRepo(() => removeTrustedFixWorktree('feat/w'));
+
+    expect(existsSync(dir)).toBe(false);
+  });
+
+  it('is a no-op when the directory never existed at all', async () => {
+    await expect(withRepo(() => removeTrustedFixWorktree('feat/never-created'))).resolves.toBeUndefined();
   });
 });
 

@@ -233,6 +233,61 @@ export async function removeExternalReviewWorktree(prNumber: number): Promise<vo
   await removeWorktreeDir(dir, 'removeExternalReviewWorktree');
 }
 
+// fix-comments-external operates on a trusted human collaborator's own
+// branch — one that's routinely checked out in the primary worktree at the
+// exact moment ronin tries to work on it too, since that's normally the
+// human actively developing it (reproduced live on PR #336, branch
+// feat/prescription-frequency-input: `git worktree add <dir> <branch>`
+// failed with "already used by worktree" because the primary checkout had
+// it open). Same fix as ensureExternalReviewWorktree, same reason: `--detach`
+// never claims the branch ref, so it coexists with any other checkout of the
+// same branch. Unlike that function this isn't keyed by SHA (a trusted
+// TrustedFixCandidate deliberately carries no headSha — it always wants the
+// PR's current head), so it fetches and checks out `origin/<branch>`
+// instead. Always resyncs to that tip, same rationale as
+// ensureExternalReviewWorktree: a retried run should reflect the branch's
+// latest push, never a stale one from an earlier attempt.
+export async function ensureTrustedFixWorktree(branch: string): Promise<string> {
+  const dir = worktreeDirFor(branch);
+  await execFileAsync('git', ['fetch', 'origin'], { cwd: activeRepo().productRepoPath });
+  const ref = `origin/${branch}`;
+
+  const isLiveWorktree =
+    existsSync(dir) &&
+    (await execFileAsync('git', ['rev-parse', '--is-inside-work-tree'], { cwd: dir })
+      .then(({ stdout }) => stdout.trim() === 'true')
+      .catch(() => false));
+
+  if (isLiveWorktree) {
+    await execFileAsync('git', ['checkout', '--detach', ref], { cwd: dir });
+  } else {
+    // Same non-git-leftover recovery as ensureExternalReviewWorktree — a
+    // prior run's cleanup can unregister the worktree but fail to delete its
+    // directory (removeWorktreeDir), leaving a shell that throws "not a git
+    // repository" on every future attempt unless it's cleared first.
+    if (existsSync(dir)) await removeWorktreeDir(dir, 'ensureTrustedFixWorktree');
+    await mkdir(activeRepo().worktreeBasePath, { recursive: true });
+    await execFileAsync('git', ['worktree', 'add', '--detach', dir, ref], { cwd: activeRepo().productRepoPath });
+  }
+
+  // Same isolated Postgres port as ensureWorktree — this task type can run
+  // the app's own test/docker tooling, unlike the read-only external-review.
+  const port = await getFreePort();
+  await writeFile(join(dir, '.env'), `DB_PORT=${port}\n`);
+
+  return dir;
+}
+
+// Counterpart cleanup — mirrors removeExternalReviewWorktree. Not picked up
+// by sweepOrphanedWorktrees (branchesToSweep only recognizes ronin's own
+// `ronin-<issue>-<slice>` directory naming, never a human branch name), so
+// runAgentTask must call this itself after every fix-comments-external run.
+export async function removeTrustedFixWorktree(branch: string): Promise<void> {
+  const dir = worktreeDirFor(branch);
+  await removeDockerStack(dir);
+  await removeWorktreeDir(dir, 'removeTrustedFixWorktree');
+}
+
 const WORKTREE_DIR_RE = /^ronin-(\d+)-(.+)$/;
 
 // Reconstructs the branch name from a worktree directory name — the exact

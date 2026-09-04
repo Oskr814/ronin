@@ -296,14 +296,15 @@ export async function processSlicePr(issue: TrackingIssue, pr: StackedPr, isBott
   // reading comments must stay local to these secondary flows, never reach
   // tick()'s catch and put the whole issue in `blocked` (which also emails a
   // human). See docs/superpowers/specs/2026-07-28-mention-review-design.md.
-  // A general comment mentioning the bot can instead carry /fix-comments —
-  // that one goes through the fix-comments batch flow below, never
-  // review-request, so it isn't double-processed.
+  // A mention — general comment or inline review-comment reply, either
+  // counts — can instead carry /fix-comments: that one goes through the
+  // fix-comments batch flow below, never review-request, so it isn't
+  // double-processed.
   let mentions: Comment[] = [];
   let commandMentions: Comment[] = [];
   try {
     const allMentions = await findUnprocessedMentions(pr.number);
-    commandMentions = allMentions.filter((m) => m.kind === 'issue' && isFixCommentsCommand(m.body));
+    commandMentions = allMentions.filter((m) => isFixCommentsCommand(m.body));
     mentions = allMentions.filter((m) => !commandMentions.includes(m));
   } catch (error) {
     log.error(`findUnprocessedMentions failed for PR #${pr.number}`, error);

@@ -15,11 +15,15 @@ const ensureWorktree = vi.fn();
 const remoteBranchExists = vi.fn();
 const ensureExternalReviewWorktree = vi.fn();
 const removeExternalReviewWorktree = vi.fn();
+const ensureTrustedFixWorktree = vi.fn();
+const removeTrustedFixWorktree = vi.fn();
 vi.mock('./worktree.js', () => ({
   ensureWorktree: (...args: unknown[]) => ensureWorktree(...args),
   remoteBranchExists: (...args: unknown[]) => remoteBranchExists(...args),
   ensureExternalReviewWorktree: (...args: unknown[]) => ensureExternalReviewWorktree(...args),
   removeExternalReviewWorktree: (...args: unknown[]) => removeExternalReviewWorktree(...args),
+  ensureTrustedFixWorktree: (...args: unknown[]) => ensureTrustedFixWorktree(...args),
+  removeTrustedFixWorktree: (...args: unknown[]) => removeTrustedFixWorktree(...args),
 }));
 
 const runClaudeHeadless = vi.fn();
@@ -46,6 +50,8 @@ beforeEach(() => {
   ensureWorktree.mockResolvedValue('/tmp/worktree');
   ensureExternalReviewWorktree.mockResolvedValue('/tmp/worktree');
   removeExternalReviewWorktree.mockResolvedValue(undefined);
+  ensureTrustedFixWorktree.mockResolvedValue('/tmp/worktree');
+  removeTrustedFixWorktree.mockResolvedValue(undefined);
   runClaudeHeadless.mockResolvedValue(undefined);
   getPullRequestStatus.mockResolvedValue({ headRefName: 'ronin/228/slice-1' });
   rm.mockResolvedValue(undefined);
@@ -418,11 +424,44 @@ describe('runAgentTask — fix-comments-external', () => {
     openThreads: [{ id: 'T5', body: 'OrderService.ChangeClient reasigna BranchId incondicionalmente' }],
   };
 
-  it('checks out a normal worktree by branch name, never the external-review isolated one', async () => {
+  // Not a plain ensureWorktree checkout: this branch is a trusted human's
+  // own, routinely checked out in the primary worktree at the same time
+  // (reproduced live on PR #336) — a plain branch checkout would collide
+  // with that, so this uses the detached ensureTrustedFixWorktree instead,
+  // same fix class as external-review's SHA-based checkout above.
+  it('checks out the detached trusted-fix worktree by branch name, never a plain or external-review one', async () => {
     await runAgentTask(task);
 
-    expect(ensureWorktree).toHaveBeenCalledWith('feat/cambio-cliente-pedido-creado', undefined);
+    expect(ensureTrustedFixWorktree).toHaveBeenCalledWith('feat/cambio-cliente-pedido-creado');
+    expect(ensureWorktree).not.toHaveBeenCalled();
     expect(ensureExternalReviewWorktree).not.toHaveBeenCalled();
+  });
+
+  it('removes the trusted-fix worktree after a successful run', async () => {
+    await runAgentTask(task);
+
+    expect(removeTrustedFixWorktree).toHaveBeenCalledWith('feat/cambio-cliente-pedido-creado');
+  });
+
+  it('removes the trusted-fix worktree after a failed run, without masking the error', async () => {
+    runClaudeHeadless.mockRejectedValueOnce(new Error('boom'));
+
+    await expect(runAgentTask(task)).rejects.toThrow('boom');
+
+    expect(removeTrustedFixWorktree).toHaveBeenCalledWith('feat/cambio-cliente-pedido-creado');
+  });
+
+  it('does not fail the task when trusted-fix cleanup itself fails', async () => {
+    removeTrustedFixWorktree.mockRejectedValueOnce(new Error('cleanup exploded'));
+
+    await expect(runAgentTask(task)).resolves.toBeUndefined();
+  });
+
+  it('instructs the agent to push with an explicit refspec, since the checkout is detached', async () => {
+    await runAgentTask(task);
+
+    const prompt = runClaudeHeadless.mock.calls[0][1] as string;
+    expect(prompt).toContain('git push --force-with-lease origin HEAD:feat/cambio-cliente-pedido-creado');
   });
 
   it('does not strip .claude or CLAUDE.md from the worktree', async () => {
