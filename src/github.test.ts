@@ -9,7 +9,7 @@ vi.mock('./config.js', () => ({
   config: { githubLogin: 'ronin' },
   LABEL_MANAGED: 'ronin',
   LABEL_STATES: [],
-  LABEL_BUG: 'bugfix',
+  LABEL_DIRECT_ISSUE: 'ronin:issue-fix',
 }));
 
 vi.mock('./repo-context.js', () => ({

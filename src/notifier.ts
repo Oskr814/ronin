@@ -24,7 +24,7 @@ function transport() {
 // ronin:blocked label) still runs even if Gmail itself is unreachable.
 // Discovered live: an earlier version let a transport failure here escape
 // call sites that have no safety net of their own (discoverAssignedSpecs/
-// discoverAssignedBugs in tick.ts, which run outside runIssueStep) —
+// discoverAssignedIssues in tick.ts, which run outside runIssueStep) —
 // aborting the entire tick over a failed *notification about* an unrelated
 // failure, instead of just failing to send one email.
 export async function notifyBlocker(notification: BlockerNotification): Promise<void> {

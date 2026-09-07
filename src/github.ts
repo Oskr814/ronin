@@ -3,7 +3,7 @@ import { promisify } from 'node:util';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { config, LABEL_MANAGED, LABEL_STATES, LABEL_BUG, type SpecStatus } from './config.js';
+import { config, LABEL_MANAGED, LABEL_STATES, type SpecStatus } from './config.js';
 import { activeRepo } from './repo-context.js';
 import { log } from './logger.js';
 
@@ -407,19 +407,20 @@ export interface BugIssue {
   title: string;
 }
 
-// Discovery source of truth for the bug-intake path: an issue is ready for
-// this runner once a human has applied bmedical's own `bugfix` label and
-// assigned it to the `ronin` account (GitHub's native Assignees field,
-// filtered server-side by `gh`) — no draft/ready step like a spec PR has,
-// since a GitHub issue has no draft state. Already-managed issues (label
-// `ronin` present) or already in a tracked state (ready/in-progress/blocked/
-// done) are excluded so an issue is only ever picked up once — mirrors
-// listAssignedSpecPrs's filter above. See
-// docs/superpowers/specs/2026-07-28-bug-issue-intake-design.md.
-export async function listAssignedBugIssues(): Promise<BugIssue[]> {
+// Discovery source of truth for the direct-issue-intake path: any issue is
+// ready for this runner once a human has assigned it to the `ronin` account
+// (GitHub's native Assignees field, filtered server-side by `gh`) — no label
+// required, no draft/ready step like a spec PR has, since a GitHub issue has
+// no draft state. Already-managed issues (label `ronin` present) or already
+// in a tracked state (ready/in-progress/blocked/done) are excluded so an
+// issue is only ever picked up once — mirrors listAssignedSpecPrs's filter
+// above. See docs/superpowers/specs/2026-07-28-bug-issue-intake-design.md
+// (original design, since generalized from bug-only intake to any assigned
+// issue — clarity is now judged per-issue by the agent itself, see
+// agent-task.ts's 'fix-issue' prompt).
+export async function listAssignedIssues(): Promise<BugIssue[]> {
   const stdout = await gh([
     'issue', 'list',
-    '--label', LABEL_BUG,
     '--assignee', config.githubLogin,
     '--state', 'open',
     '--json', 'number,title,labels',

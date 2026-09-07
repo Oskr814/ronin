@@ -31,15 +31,31 @@ Flujo:
 
 Por qué asignación manual y no descubrimiento automático: dos runners corriendo en paralelo no pueden competir por "quién vio primero" un spec si solo uno de ellos tiene la label puesta — la decisión de quién lo procesa la toma un humano una sola vez, no una carrera entre máquinas. Ver §9 para el gap que esto todavía no resuelve (dos specs *distintos* asignados sin querer al mismo runner no es un problema; el problema real sería un humano poniendo la misma label en dos PRs que describen lo mismo — eso es un problema de proceso humano, no una condición de carrera en el código).
 
-**Variante: issues de bug.** Un issue ya existente en el repo del producto, etiquetado
-con la label propia de `bugfix` (ya existente en el repo) y `ronin:runner-<id>`, se
-toma con la misma señal de asignación manual que un spec PR, pero sin paso de
-draft/ready (un issue de GitHub no tiene estado draft). A diferencia de un spec, no se
-crea un issue de tracking espejo — el issue de bug pasa a ser directamente la unidad de
-tracking, sembrado con un checklist mecánico de una sola slice para que el resto del
+**Variante: issues asignados directamente.** Cualquier issue ya existente en el
+repo del producto, asignado a la cuenta `ronin` (Assignees nativo de GitHub —
+ver `listAssignedIssues` en `github.ts`), se toma con la misma señal de
+asignación manual que un spec PR, pero sin paso de draft/ready (un issue de
+GitHub no tiene estado draft) y sin requerir ningún label en particular — ya
+no hace falta la label `bugfix`, un humano puede asignar cualquier bug o
+pedido de cambio chico. A diferencia de un spec, no se crea un issue de
+tracking espejo — el issue pasa a ser directamente la unidad de tracking,
+sembrado con un checklist mecánico de una sola slice para que el resto del
 motor (merge gate, ciclos `fix-review`/`fix-e2e`) lo trate igual que la
-tracking issue de un spec. Ver
-[`docs/superpowers/specs/2026-07-28-bug-issue-intake-design.md`](superpowers/specs/2026-07-28-bug-issue-intake-design.md).
+tracking issue de un spec (ver `discoverAssignedIssues` y `agentTaskFor` en
+`tick.ts`, que distinguen esta ruta de la de specs por la label interna
+`ronin:issue-fix`, no por algo puesto por un humano).
+
+Como ya no hay una label humana curando qué issues son "chicos y accionables",
+el propio agente (tarea `fix-issue`, ver `agent-task.ts`) juzga la claridad del
+issue como parte de la misma corrida: si no tiene contexto suficiente para
+actuar sin adivinar, comenta en el issue pidiendo lo que falta y termina su
+respuesta con la línea `RONIN_STATUS: needs-info` en vez de abrir un PR
+(`RONIN_STATUS: done` si sí lo abrió). El supervisor lee ese marcador
+(`needsMoreInfo` en `tick.ts`) y marca el issue `ronin:blocked` cuando el
+agente se abstuvo — sin esto, el issue quedaría reintentándose sin límite en
+cada tick. Ver
+[`docs/superpowers/specs/2026-07-28-bug-issue-intake-design.md`](superpowers/specs/2026-07-28-bug-issue-intake-design.md)
+(diseño original, desde entonces generalizado de "solo bugs" a cualquier issue asignado).
 
 ### 2. Mapeo a GitHub
 

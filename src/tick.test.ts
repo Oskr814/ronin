@@ -23,7 +23,7 @@ vi.mock('./config.js', () => ({
     // undefined limit the pool spawns zero lanes and silently no-ops.
     tickConcurrency: 2,
   },
-  LABEL_BUG: 'bugfix',
+  LABEL_DIRECT_ISSUE: 'ronin:issue-fix',
   LABEL_MANAGED: 'ronin',
   LABEL_STACK_PRS: 'ronin:stack-prs',
 }));
@@ -54,7 +54,7 @@ const incrementAttemptCount = vi.fn();
 const setIssueState = vi.fn();
 const getPullRequestStatus = vi.fn();
 const addIssueLabel = vi.fn();
-const listAssignedBugIssues = vi.fn();
+const listAssignedIssues = vi.fn();
 const listExternalOpenReviewThreads = vi.fn();
 const setReviewStatus = vi.fn();
 vi.mock('./github.js', () => ({
@@ -64,7 +64,7 @@ vi.mock('./github.js', () => ({
   setIssueState: (...args: unknown[]) => setIssueState(...args),
   getPullRequestStatus: (...args: unknown[]) => getPullRequestStatus(...args),
   addIssueLabel: (...args: unknown[]) => addIssueLabel(...args),
-  listAssignedBugIssues: (...args: unknown[]) => listAssignedBugIssues(...args),
+  listAssignedIssues: (...args: unknown[]) => listAssignedIssues(...args),
   listExternalOpenReviewThreads: (...args: unknown[]) => listExternalOpenReviewThreads(...args),
   setReviewStatus: (...args: unknown[]) => setReviewStatus(...args),
 }));
@@ -111,7 +111,7 @@ vi.mock('./external-review.js', () => ({
   findPrsNeedingReview: (...args: unknown[]) => findPrsNeedingReview(...args),
 }));
 
-const { processSlicePr, processIssue, agentTaskFor, discoverAssignedBugs, processExternalReviewCandidate, processTrustedFixCandidate, runExternalReviews, renderTrackingIssueBody } = await import('./tick.js');
+const { processSlicePr, processIssue, agentTaskFor, needsMoreInfo, discoverAssignedIssues, processExternalReviewCandidate, processTrustedFixCandidate, runExternalReviews, renderTrackingIssueBody } = await import('./tick.js');
 
 function issue(overrides: Partial<TrackingIssue> = {}): TrackingIssue {
   return { number: 228, title: 'Test issue', url: 'https://github.com/x/y/issues/228', labels: [], ...overrides };
@@ -143,7 +143,7 @@ beforeEach(() => {
   incrementAttemptCount.mockResolvedValue(1);
   existsSync.mockReturnValue(true);
   hasRemainingSlices.mockResolvedValue(true); // preserves pre-existing merge test behavior by default
-  listAssignedBugIssues.mockResolvedValue([]);
+  listAssignedIssues.mockResolvedValue([]);
   setLastReviewedSha.mockResolvedValue(undefined);
   activeRepo.mockReturnValue({ productRepo: 'bmedical/bmedical', productRepoPath: '/tmp/repo', worktreeBasePath: '/tmp/worktrees' });
   readFile.mockResolvedValue('body\n{{spec_links}}\n');
@@ -484,16 +484,30 @@ describe('processIssue — starting a next slice while the stack is still open',
 });
 
 describe('agentTaskFor', () => {
-  it('routes to implement-slice for a tracking issue without the bugfix label', () => {
+  it('routes to implement-slice for a spec tracking issue without the direct-issue label', () => {
     expect(agentTaskFor(issue({ labels: [] }), 2, 'Tabla de citas')).toEqual({
       type: 'implement-slice', issueNumber: 228, sliceIndex: 2, sliceTitle: 'Tabla de citas',
     });
   });
 
-  it('routes to fix-bug for an issue labeled bugfix', () => {
-    expect(agentTaskFor(issue({ labels: ['bugfix'] }), 0, 'Fix — Login redirects to 404')).toEqual({
-      type: 'fix-bug', issueNumber: 228, sliceIndex: 0, sliceTitle: 'Fix — Login redirects to 404',
+  it('routes to fix-issue for an issue labeled ronin:issue-fix', () => {
+    expect(agentTaskFor(issue({ labels: ['ronin:issue-fix'] }), 0, 'Fix — Login redirects to 404')).toEqual({
+      type: 'fix-issue', issueNumber: 228, sliceIndex: 0, sliceTitle: 'Fix — Login redirects to 404',
     });
+  });
+});
+
+describe('needsMoreInfo', () => {
+  it('is true when the agent ends its response with RONIN_STATUS: needs-info', () => {
+    expect(needsMoreInfo('Some notes.\nRONIN_STATUS: needs-info')).toBe(true);
+  });
+
+  it('is false when the agent ends its response with RONIN_STATUS: done', () => {
+    expect(needsMoreInfo('Opened PR #42.\nRONIN_STATUS: done')).toBe(false);
+  });
+
+  it('is false when the marker is missing entirely', () => {
+    expect(needsMoreInfo('Opened PR #42.')).toBe(false);
   });
 });
 
@@ -539,21 +553,22 @@ describe('processSlicePr — same-tick done transition on merge', () => {
   });
 });
 
-describe('discoverAssignedBugs', () => {
-  it('labels, seeds, and starts a bug issue not yet ronin-managed', async () => {
-    listAssignedBugIssues.mockResolvedValue([{ number: 500, title: 'Login redirects to 404' }]);
+describe('discoverAssignedIssues', () => {
+  it('labels, seeds, and starts an assigned issue not yet ronin-managed', async () => {
+    listAssignedIssues.mockResolvedValue([{ number: 500, title: 'Login redirects to 404' }]);
 
-    await discoverAssignedBugs();
+    await discoverAssignedIssues();
 
     expect(addIssueLabel).toHaveBeenCalledWith(500, 'ronin');
+    expect(addIssueLabel).toHaveBeenCalledWith(500, 'ronin:issue-fix');
     expect(seedSingleSlice).toHaveBeenCalledWith(500, 'Fix — Login redirects to 404');
     expect(setIssueState).toHaveBeenCalledWith(500, 'in-progress');
   });
 
-  it('does nothing when there are no newly-assigned bug issues', async () => {
-    listAssignedBugIssues.mockResolvedValue([]);
+  it('does nothing when there are no newly-assigned issues', async () => {
+    listAssignedIssues.mockResolvedValue([]);
 
-    await discoverAssignedBugs();
+    await discoverAssignedIssues();
 
     expect(addIssueLabel).not.toHaveBeenCalled();
     expect(seedSingleSlice).not.toHaveBeenCalled();
@@ -561,14 +576,14 @@ describe('discoverAssignedBugs', () => {
   });
 
   // Regression: this function runs directly in tick(), outside runIssueStep's
-  // safety net, so a failure processing one bug issue must not escape and
+  // safety net, so a failure processing one issue must not escape and
   // abort the whole tick — it must escalate that one issue and move on.
-  it('escalates instead of throwing when processing a bug issue fails', async () => {
-    listAssignedBugIssues.mockResolvedValue([{ number: 501, title: 'Crashes on load' }]);
+  it('escalates instead of throwing when processing an assigned issue fails', async () => {
+    listAssignedIssues.mockResolvedValue([{ number: 501, title: 'Crashes on load' }]);
     addIssueLabel.mockRejectedValueOnce(new Error('gh: HTTP 500'));
     setIssueState.mockResolvedValue(undefined);
 
-    await expect(discoverAssignedBugs()).resolves.toBeUndefined();
+    await expect(discoverAssignedIssues()).resolves.toBeUndefined();
 
     expect(notifyBlocker).toHaveBeenCalled();
     expect(setIssueState).toHaveBeenCalledWith(501, 'blocked');

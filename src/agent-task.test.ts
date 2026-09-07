@@ -71,7 +71,7 @@ describe('runAgentTask — per-repo worktreeBaseRef override', () => {
     expect(ensureWorktree).toHaveBeenCalledWith('ronin/228/slice-1', 'origin/odoo-main');
   });
 
-  it("uses the active repo's own worktreeBaseRef as the fix-bug worktree base, not config's", async () => {
+  it("uses the active repo's own worktreeBaseRef as the fix-issue worktree base, not config's", async () => {
     activeRepo.mockReturnValue({
       productRepo: 'bmedical/bmedical',
       productRepoPath: '/tmp/repo',
@@ -79,7 +79,7 @@ describe('runAgentTask — per-repo worktreeBaseRef override', () => {
       worktreeBaseRef: 'origin/odoo-main',
     });
 
-    await runAgentTask({ type: 'fix-bug', issueNumber: 228, sliceIndex: 0, sliceTitle: 'Fix foo' });
+    await runAgentTask({ type: 'fix-issue', issueNumber: 228, sliceIndex: 0, sliceTitle: 'Fix foo' });
 
     expect(ensureWorktree).toHaveBeenCalledWith('ronin/228/slice-1', 'origin/odoo-main');
   });
@@ -97,6 +97,25 @@ describe('runAgentTask — per-repo worktreeBaseRef override', () => {
     const prompt = runClaudeHeadless.mock.calls[0][1] as string;
     expect(prompt).toContain('origin/odoo-main');
     expect(prompt).not.toContain('origin/main');
+  });
+});
+
+describe('runAgentTask — fix-issue prompt', () => {
+  it('does not claim the issue is labeled bugfix and ends with the RONIN_STATUS marker instruction', async () => {
+    await runAgentTask({ type: 'fix-issue', issueNumber: 228, sliceIndex: 0, sliceTitle: 'Fix foo' });
+
+    const prompt = runClaudeHeadless.mock.calls[0][1] as string;
+    expect(prompt).not.toContain('labeled "bugfix"');
+    expect(prompt).toContain('RONIN_STATUS: needs-info');
+    expect(prompt).toContain('RONIN_STATUS: done');
+  });
+
+  it('returns runClaudeHeadless\'s result so the caller can read the RONIN_STATUS marker', async () => {
+    runClaudeHeadless.mockResolvedValueOnce('Opened PR #42.\nRONIN_STATUS: done');
+
+    const result = await runAgentTask({ type: 'fix-issue', issueNumber: 228, sliceIndex: 0, sliceTitle: 'Fix foo' });
+
+    expect(result).toBe('Opened PR #42.\nRONIN_STATUS: done');
   });
 });
 
@@ -129,12 +148,12 @@ describe('runAgentTask — agent-notes reminder', () => {
     expect(prompt.endsWith(AGENT_NOTES_REMINDER)).toBe(true);
   });
 
-  it('is included for fix-bug', async () => {
-    await runAgentTask({ type: 'fix-bug', issueNumber: 228, sliceIndex: 0, sliceTitle: 'Fix foo' });
+  it('is included for fix-issue, before the final RONIN_STATUS marker line', async () => {
+    await runAgentTask({ type: 'fix-issue', issueNumber: 228, sliceIndex: 0, sliceTitle: 'Fix foo' });
 
     const prompt = runClaudeHeadless.mock.calls[0][1] as string;
     expect(prompt).toContain(AGENT_NOTES_REMINDER);
-    expect(prompt.endsWith(AGENT_NOTES_REMINDER)).toBe(true);
+    expect(prompt.endsWith(AGENT_NOTES_REMINDER)).toBe(false);
   });
 
   it('is included for fix-review', async () => {

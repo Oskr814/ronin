@@ -74,14 +74,16 @@ export const LABEL_STATES = {
   done: 'ronin:done',
 } as const;
 
-// bmedical's own pre-existing label ("Something isn't working") — reused as
-// the bug-intake trigger instead of a new ronin:-prefixed label, see
-// docs/superpowers/specs/2026-07-28-bug-issue-intake-design.md.
-export const LABEL_BUG = 'bugfix';
+// Applied by discoverAssignedIssues (tick.ts) to every issue picked up via
+// direct assignment (as opposed to a spec PR's mirror tracking issue) — lets
+// agentTaskFor tell the two apart without depending on a label a human may or
+// may not have set. See docs/superpowers/specs/2026-07-28-bug-issue-intake-design.md
+// (original design, since generalized from bug-only intake to any assigned issue).
+export const LABEL_DIRECT_ISSUE = 'ronin:issue-fix';
 
 // Opt-in: without it, processIssue only starts a slice's PR once the issue
 // has no open PR at all (sequential). Applied by hand by a human on the
-// tracking issue, same as LABEL_BUG — the runner never adds it itself.
+// tracking issue — the runner never adds it itself.
 export const LABEL_STACK_PRS = 'ronin:stack-prs';
 
 export type SpecStatus = keyof typeof LABEL_STATES;

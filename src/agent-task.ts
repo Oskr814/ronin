@@ -12,7 +12,7 @@ import { recordAgentRun } from './metrics.js';
 export type AgentTask =
   | { type: 'plan'; issueNumber: number; specPaths: string[] }
   | { type: 'implement-slice'; issueNumber: number; sliceIndex: number; sliceTitle: string }
-  | { type: 'fix-bug'; issueNumber: number; sliceIndex: number; sliceTitle: string }
+  | { type: 'fix-issue'; issueNumber: number; sliceIndex: number; sliceTitle: string }
   | { type: 'fix-review'; issueNumber: number; prNumber: number }
   | { type: 'fix-e2e'; issueNumber: number; prNumber: number }
   | { type: 'fix-rebase'; issueNumber: number; prNumber: number }
@@ -78,22 +78,24 @@ async function buildTask(task: AgentTask): Promise<{ branch: string; prompt: str
       };
     }
 
-    case 'fix-bug': {
-      // Always slice 0 — a bug issue is seeded with exactly one slice
-      // (checklist.ts's seedSingleSlice), so unlike implement-slice this
-      // never needs baseBranchFor's "stack on the previous slice" logic or
-      // its remote-branch-missing fallback.
+    case 'fix-issue': {
+      // Always slice 0 — a directly-assigned issue is seeded with exactly
+      // one slice (checklist.ts's seedSingleSlice), so unlike implement-slice
+      // this never needs baseBranchFor's "stack on the previous slice" logic
+      // or its remote-branch-missing fallback.
       return {
         branch: sliceBranch(task.issueNumber, task.sliceIndex),
         baseBranch: activeRepo().worktreeBaseRef ?? config.worktreeBaseRef,
         prompt: [
-          `You are ronin, an autonomous agent working on issue #${task.issueNumber} in ${repoUrl()}, labeled "bugfix".`,
+          `You are ronin, an autonomous agent working on issue #${task.issueNumber} in ${repoUrl()}.`,
           `Read the full issue, including comments: "gh issue view ${task.issueNumber} --comments".`,
-          'Explore the repository to find the root cause — do not guess or fabricate a fix without evidence. If the issue lacks enough information to reproduce the problem, or is ambiguous, comment on the issue asking for what you need ("gh issue comment") and stop without touching any code — that needs a human answer.',
-          "Once you've found the root cause, fix it following this repo's CLAUDE.md conventions, including its testing requirements.",
-          `When done: run the relevant tests, and make exactly one commit for this fix. Push this branch and open a PR ("gh pr create") with "Closes #${task.issueNumber}" in the body, describing the root cause and the fix.`,
-          'Scope: only touch files needed for this fix. Do not edit the tracking issue (body, labels, assignees, or anything else) — that is owned entirely by the supervisor, not by you.',
+          "Figure out what's being asked. If it's a bug report, explore the repository to find the root cause — do not guess or fabricate a fix without evidence. If it's a feature/change request, make sure the scope and approach are clear before writing any code.",
+          'If the issue lacks enough information to act on it (a bug you cannot reproduce, or a request whose scope/approach is ambiguous), comment on the issue asking precisely for what you need ("gh issue comment") and stop without touching any code — that needs a human answer.',
+          "Once you're confident in the fix or approach, implement it following this repo's CLAUDE.md conventions, including its testing requirements.",
+          `When done: run the relevant tests, and make exactly one commit. Push this branch and open a PR ("gh pr create") with "Closes #${task.issueNumber}" in the body, describing what was asked and how it was addressed.`,
+          'Scope: only touch files needed for this. Do not edit the tracking issue (body, labels, assignees, or anything else) — that is owned entirely by the supervisor, not by you.',
           AGENT_NOTES_REMINDER,
+          'Finally, end your entire response with exactly one line, and nothing after it: "RONIN_STATUS: needs-info" if you stopped without opening a PR because you needed clarification, or "RONIN_STATUS: done" if you opened the PR.',
         ].join('\n'),
       };
     }
@@ -322,7 +324,7 @@ function taskNumber(task: AgentTask): number {
   return 'issueNumber' in task ? task.issueNumber : task.prNumber;
 }
 
-export async function runAgentTask(task: AgentTask): Promise<void> {
+export async function runAgentTask(task: AgentTask): Promise<string> {
   const { branch, prompt, baseBranch } = await buildTask(task);
   // An external PR's head is resolved by SHA, never by branch name: a fork's
   // head branch may not exist in this repo at all (or may collide with a
@@ -364,11 +366,12 @@ export async function runAgentTask(task: AgentTask): Promise<void> {
   const issueNumber = 'issueNumber' in task ? task.issueNumber : undefined;
   const prNumber = 'prNumber' in task ? task.prNumber : undefined;
   try {
-    await runClaudeHeadless(worktreeDir, prompt, `${task.type} #${taskNumber(task)}`);
+    const result = await runClaudeHeadless(worktreeDir, prompt, `${task.type} #${taskNumber(task)}`);
     const durationMs = Date.now() - start;
     recordAgentRun(durationMs);
     log.metric('agent_run', { taskType: task.type, issueNumber, prNumber, durationMs, success: true });
     log.info(`finished ${task.type} for ${label}`);
+    return result;
   } catch (error) {
     const durationMs = Date.now() - start;
     recordAgentRun(durationMs);

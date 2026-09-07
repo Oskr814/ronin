@@ -5,7 +5,7 @@ import {
   createTrackingIssue,
   listTrackingIssues,
   listAssignedSpecPrs,
-  listAssignedBugIssues,
+  listAssignedIssues,
   addIssueLabel,
   setPrState,
   getSpecPathsFromPr,
@@ -36,7 +36,7 @@ import { tryClaim, releaseIfNoLongerInProgress } from './claim.js';
 import { worktreeDirFor, isBehind, attemptRebase, removeWorktree, sweepOrphanedWorktrees } from './worktree.js';
 import { findUnprocessedMentions, isFixCommentsCommand } from './mentions.js';
 import { findPrsNeedingReview, type ReviewCandidate, type TrustedFixCandidate } from './external-review.js';
-import { config, LABEL_BUG, LABEL_MANAGED, LABEL_STACK_PRS } from './config.js';
+import { config, LABEL_DIRECT_ISSUE, LABEL_MANAGED, LABEL_STACK_PRS } from './config.js';
 import { activeRepo, withActiveRepo } from './repo-context.js';
 import { loadRepos } from './repos.js';
 import { log } from './logger.js';
@@ -85,14 +85,27 @@ function primarySpecPath(specPaths: string[]): string {
   return specPaths.find((p) => p.includes('/specs/')) ?? specPaths[0];
 }
 
-// A bug issue (bugfix label — see docs/superpowers/specs/2026-07-28-bug-issue-intake-design.md)
-// and a spec's tracking issue share the exact same slice-checklist
-// machinery; this is the one place that decides which agent prompt a given
-// slice actually needs. Exported for direct unit testing.
+// A directly-assigned issue (see discoverAssignedIssues below) and a spec's
+// tracking issue share the exact same slice-checklist machinery; this is the
+// one place that decides which agent prompt a given slice actually needs.
+// LABEL_DIRECT_ISSUE (applied only by discoverAssignedIssues, never by a
+// human) is what tells the two apart — see
+// docs/superpowers/specs/2026-07-28-bug-issue-intake-design.md (original
+// design, since generalized from bug-only intake to any assigned issue).
+// Exported for direct unit testing.
 export function agentTaskFor(issue: TrackingIssue, sliceIndex: number, sliceTitle: string): AgentTask {
-  return issue.labels.includes(LABEL_BUG)
-    ? { type: 'fix-bug', issueNumber: issue.number, sliceIndex, sliceTitle }
+  return issue.labels.includes(LABEL_DIRECT_ISSUE)
+    ? { type: 'fix-issue', issueNumber: issue.number, sliceIndex, sliceTitle }
     : { type: 'implement-slice', issueNumber: issue.number, sliceIndex, sliceTitle };
+}
+
+// Reads the RONIN_STATUS marker a 'fix-issue' run ends its response with
+// (see its prompt in agent-task.ts) to tell "abstained, needs a human answer"
+// apart from "opened a PR normally" — the only way the supervisor finds out,
+// since runAgentTask's result is otherwise opaque. Exported for direct unit
+// testing.
+export function needsMoreInfo(agentResult: string): boolean {
+  return /RONIN_STATUS:\s*needs-info/i.test(agentResult);
 }
 
 // Discovery source: a human writes the spec as a PR against the product
@@ -161,32 +174,37 @@ function issueUrl(issueNumber: number): string {
   return `https://github.com/${activeRepo().productRepo}/issues/${issueNumber}`;
 }
 
-// Discovery source: a human assigns an existing bug-report issue (already
-// carrying bmedical's own `bugfix` label) to the `ronin` account (GitHub's
-// native Assignees field) — same "andá" signal as a spec PR's assignment,
-// but without a draft/ready step, since a GitHub issue has no draft state.
-// Unlike specs, no mirror tracking issue is created: the bug issue itself
-// becomes the tracked unit, seeded with a single-slice checklist so the rest
-// of the pipeline (merge gate, fix-review/fix-e2e cycles) treats it
-// exactly like a spec's tracking issue. See
-// docs/superpowers/specs/2026-07-28-bug-issue-intake-design.md.
-export async function discoverAssignedBugs(): Promise<void> {
-  const bugs = await listAssignedBugIssues();
-  for (const bug of bugs) {
+// Discovery source: a human assigns any open issue to the `ronin` account
+// (GitHub's native Assignees field) — same "andá" signal as a spec PR's
+// assignment, but without a draft/ready step or a required label, since a
+// GitHub issue has no draft state. Unlike specs, no mirror tracking issue is
+// created: the issue itself becomes the tracked unit, seeded with a
+// single-slice checklist so the rest of the pipeline (merge gate,
+// fix-review/fix-e2e cycles) treats it exactly like a spec's tracking issue.
+// Whether there's enough context to act on it is judged per-issue by the
+// agent itself (see agent-task.ts's 'fix-issue' prompt and its
+// RONIN_STATUS marker, read back in tickOneRepo below) rather than gated
+// here by a label. See
+// docs/superpowers/specs/2026-07-28-bug-issue-intake-design.md (original
+// design, since generalized from bug-only intake to any assigned issue).
+export async function discoverAssignedIssues(): Promise<void> {
+  const issues = await listAssignedIssues();
+  for (const issue of issues) {
     try {
       // Added first, before anything else can fail, so a partial failure
       // still leaves the issue ronin-managed (and therefore reachable via
       // listTrackingIssues once set to blocked below) instead of retried
       // forever as "not yet picked up".
-      await addIssueLabel(bug.number, LABEL_MANAGED);
-      await seedSingleSlice(bug.number, `Fix — ${bug.title}`);
-      await setIssueState(bug.number, 'in-progress');
+      await addIssueLabel(issue.number, LABEL_MANAGED);
+      await addIssueLabel(issue.number, LABEL_DIRECT_ISSUE);
+      await seedSingleSlice(issue.number, `Fix — ${issue.title}`);
+      await setIssueState(issue.number, 'in-progress');
     } catch (error) {
       await notifyBlocker({
-        issueUrl: issueUrl(bug.number),
-        reason: `Excepción no manejada procesando el issue de bug: ${(error as Error).message}`,
+        issueUrl: issueUrl(issue.number),
+        reason: `Excepción no manejada procesando el issue asignado: ${(error as Error).message}`,
       });
-      await setIssueState(bug.number, 'blocked').catch(() => {});
+      await setIssueState(issue.number, 'blocked').catch(() => {});
     }
   }
 }
@@ -478,7 +496,7 @@ export async function processIssue(issue: TrackingIssue, allPrs: PullRequestStat
       return { issue, index: slice.index, title: slice.title, stackSize: 0 };
     }
     // Checklist vacío del todo (nunca se sembró): el `plan` de un spec, o el
-    // seedSingleSlice de un bug (ver discoverAssignedBugs), falló a mitad de
+    // seedSingleSlice de un issue asignado (ver discoverAssignedIssues), falló a mitad de
     // camino y dejó el issue con el label `ronin` puesto pero sin ninguna
     // slice en el body. Sin este chequeo, el fallthrough de abajo lo
     // confundiría con "todo mergeó" y lo marcaría done sin que se haya
@@ -656,7 +674,7 @@ async function tickOneRepo(): Promise<void> {
   resetTickMetrics();
   log.info(`tick start (commit ${await currentCommit()}, repo ${activeRepo().productRepo})`);
   await discoverAssignedSpecs();
-  await discoverAssignedBugs();
+  await discoverAssignedIssues();
 
   const inProgress = await listTrackingIssues('in-progress');
   log.info(`${inProgress.length} issue(s) en progreso`);
@@ -689,7 +707,7 @@ async function tickOneRepo(): Promise<void> {
     // runs as one unit, up to config.tickConcurrency issues at once — no
     // longer split into a fixes-first pass and a deferred slice-start pass:
     // that split existed only to stop one issue's long implement-slice/
-    // fix-bug run from delaying another issue's quick rebase/e2e/review fix
+    // fix-issue run from delaying another issue's quick rebase/e2e/review fix
     // when everything ran strictly in sequence. Real concurrency removes the
     // reason for it — issue B's fix now genuinely runs alongside issue A's
     // slice start instead of waiting for it.
@@ -702,7 +720,16 @@ async function tickOneRepo(): Promise<void> {
           ? 'sin PRs abiertos'
           : `stack de ${next.stackSize} PR(s) abierto(s)`;
         log.info(`issue #${next.issue.number}: ${context}, arrancando slice ${next.index + 1} (${next.title})`);
-        await runAgentTask(agentTaskFor(next.issue, next.index, next.title));
+        const task = agentTaskFor(next.issue, next.index, next.title);
+        const result = await runAgentTask(task);
+        // fix-issue is the only task type that may legitimately abstain
+        // (issue lacks enough context — see its prompt in agent-task.ts) and
+        // end without opening a PR. Without this, the issue would stay
+        // labeled ronin:in-progress forever and get retried, unattended,
+        // every single tick — see the discoverAssignedIssues design note.
+        if (task.type === 'fix-issue' && needsMoreInfo(result)) {
+          await setIssueState(next.issue.number, 'blocked');
+        }
       });
     });
   } finally {

@@ -32,7 +32,7 @@ describe('notifyBlocker', () => {
 
   // Regression: an earlier version let a transport failure here propagate,
   // which crashed callers outside runIssueStep's safety net (e.g.
-  // discoverAssignedSpecs/discoverAssignedBugs in tick.ts) over nothing more
+  // discoverAssignedSpecs/discoverAssignedIssues in tick.ts) over nothing more
   // than a failed *notification about* an unrelated failure.
   it('never rejects when the mail transport fails', async () => {
     sendMail.mockRejectedValueOnce(new Error('SMTP timeout'));
