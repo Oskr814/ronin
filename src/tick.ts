@@ -36,7 +36,7 @@ import { tryClaim, releaseIfNoLongerInProgress } from './claim.js';
 import { worktreeDirFor, isBehind, attemptRebase, removeWorktree, sweepOrphanedWorktrees } from './worktree.js';
 import { findUnprocessedMentions, isFixCommentsCommand } from './mentions.js';
 import { findPrsNeedingReview, type ReviewCandidate, type TrustedFixCandidate } from './external-review.js';
-import { config, LABEL_DIRECT_ISSUE, LABEL_MANAGED, LABEL_STACK_PRS } from './config.js';
+import { config, LABEL_DIRECT_ISSUE, LABEL_MANAGED, LABEL_STACK_PRS, LABEL_STATES } from './config.js';
 import { activeRepo, withActiveRepo } from './repo-context.js';
 import { loadRepos } from './repos.js';
 import { log } from './logger.js';
@@ -112,7 +112,14 @@ export function needsMoreInfo(agentResult: string): boolean {
 // repo and assigns it to the `ronin` account (GitHub's native Assignees
 // field) once it's ready to hand off — marking it ready for review (not
 // draft) is the "go" signal. See docs/DESIGN.md §1.
-async function discoverAssignedSpecs(): Promise<void> {
+// Returns the tracking issues successfully planned this call — same reason
+// as discoverAssignedIssues's own return value: the plan task already ran
+// and seeded the slice checklist by the time this returns, but this same
+// tick's listTrackingIssues('in-progress') read can still miss the
+// just-created issue, delaying its first slice start by a whole tick for no
+// reason. See discoverAssignedIssues's doc comment.
+async function discoverAssignedSpecs(): Promise<TrackingIssue[]> {
+  const started: TrackingIssue[] = [];
   const prs = await listAssignedSpecPrs();
   for (const pr of prs) {
     try {
@@ -153,6 +160,7 @@ async function discoverAssignedSpecs(): Promise<void> {
       } finally {
         await removeWorktree(planBranch(issue.number));
       }
+      started.push({ number: issue.number, title: `[spec] ${title}`, url: issue.url, labels: [LABEL_MANAGED, LABEL_STATES['in-progress']] });
     } catch (error) {
       // A monthly spend/usage cap is transient and resolves on its own —
       // never a reason to block on a human. Leave state as-is and retry on
@@ -168,6 +176,7 @@ async function discoverAssignedSpecs(): Promise<void> {
       await setPrState(pr.number, 'blocked').catch(() => {});
     }
   }
+  return started;
 }
 
 function issueUrl(issueNumber: number): string {
@@ -187,7 +196,17 @@ function issueUrl(issueNumber: number): string {
 // here by a label. See
 // docs/superpowers/specs/2026-07-28-bug-issue-intake-design.md (original
 // design, since generalized from bug-only intake to any assigned issue).
-export async function discoverAssignedIssues(): Promise<void> {
+// Returns the issues successfully moved to in-progress this call — see
+// tickOneRepo, which merges these into its own listTrackingIssues('in-progress')
+// read instead of trusting that read alone. Needed because GitHub's
+// issue-list-by-label query can lag a few seconds behind a label this same
+// function just applied: without the merge, an issue assigned via webhook
+// got labeled ronin:in-progress but its first slice didn't start until the
+// *next* tick noticed it — silently defeating the point of reacting to the
+// webhook quickly. Discovered live once the cron's reconciliation interval
+// was widened (see README.md's Webhooks section) and the gap became visible.
+export async function discoverAssignedIssues(): Promise<TrackingIssue[]> {
+  const started: TrackingIssue[] = [];
   const issues = await listAssignedIssues();
   for (const issue of issues) {
     try {
@@ -199,6 +218,12 @@ export async function discoverAssignedIssues(): Promise<void> {
       await addIssueLabel(issue.number, LABEL_DIRECT_ISSUE);
       await seedSingleSlice(issue.number, `Fix — ${issue.title}`);
       await setIssueState(issue.number, 'in-progress');
+      started.push({
+        number: issue.number,
+        title: issue.title,
+        url: issueUrl(issue.number),
+        labels: [LABEL_MANAGED, LABEL_DIRECT_ISSUE, LABEL_STATES['in-progress']],
+      });
     } catch (error) {
       await notifyBlocker({
         issueUrl: issueUrl(issue.number),
@@ -207,6 +232,7 @@ export async function discoverAssignedIssues(): Promise<void> {
       await setIssueState(issue.number, 'blocked').catch(() => {});
     }
   }
+  return started;
 }
 
 async function blockOnAttemptLimit(
@@ -673,10 +699,19 @@ async function tickOneRepo(): Promise<void> {
   const start = Date.now();
   resetTickMetrics();
   log.info(`tick start (commit ${await currentCommit()}, repo ${activeRepo().productRepo})`);
-  await discoverAssignedSpecs();
-  await discoverAssignedIssues();
+  const justStarted = [...(await discoverAssignedSpecs()), ...(await discoverAssignedIssues())];
 
   const inProgress = await listTrackingIssues('in-progress');
+  // Merge in whatever this same tick just moved to in-progress — GitHub's
+  // issue-list-by-label query can lag a few seconds behind a label applied
+  // moments earlier by discoverAssignedSpecs/discoverAssignedIssues above,
+  // so a freshly-assigned issue could otherwise sit unstarted until the
+  // *next* tick noticed it, one tick's-worth of avoidable delay that
+  // defeats the point of a webhook waking this tick up early in the first
+  // place. See both functions' own doc comments.
+  for (const issue of justStarted) {
+    if (!inProgress.some((i) => i.number === issue.number)) inProgress.push(issue);
+  }
   log.info(`${inProgress.length} issue(s) en progreso`);
 
   try {

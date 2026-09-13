@@ -26,6 +26,7 @@ vi.mock('./config.js', () => ({
   LABEL_DIRECT_ISSUE: 'ronin:issue-fix',
   LABEL_MANAGED: 'ronin',
   LABEL_STACK_PRS: 'ronin:stack-prs',
+  LABEL_STATES: { ready: 'ronin:ready', 'in-progress': 'ronin:in-progress', blocked: 'ronin:blocked', done: 'ronin:done' },
 }));
 
 const activeRepo = vi.fn();
@@ -557,12 +558,18 @@ describe('discoverAssignedIssues', () => {
   it('labels, seeds, and starts an assigned issue not yet ronin-managed', async () => {
     listAssignedIssues.mockResolvedValue([{ number: 500, title: 'Login redirects to 404' }]);
 
-    await discoverAssignedIssues();
+    const started = await discoverAssignedIssues();
 
     expect(addIssueLabel).toHaveBeenCalledWith(500, 'ronin');
     expect(addIssueLabel).toHaveBeenCalledWith(500, 'ronin:issue-fix');
     expect(seedSingleSlice).toHaveBeenCalledWith(500, 'Fix — Login redirects to 404');
     expect(setIssueState).toHaveBeenCalledWith(500, 'in-progress');
+    // Returned so tickOneRepo can start this issue's first slice the same
+    // tick, instead of waiting for a listTrackingIssues re-read that can lag
+    // behind the label just applied above — see the function's doc comment.
+    expect(started).toEqual([
+      { number: 500, title: 'Login redirects to 404', url: expect.stringContaining('/issues/500'), labels: ['ronin', 'ronin:issue-fix', 'ronin:in-progress'] },
+    ]);
   });
 
   it('does nothing when there are no newly-assigned issues', async () => {
@@ -583,7 +590,7 @@ describe('discoverAssignedIssues', () => {
     addIssueLabel.mockRejectedValueOnce(new Error('gh: HTTP 500'));
     setIssueState.mockResolvedValue(undefined);
 
-    await expect(discoverAssignedIssues()).resolves.toBeUndefined();
+    await expect(discoverAssignedIssues()).resolves.toEqual([]);
 
     expect(notifyBlocker).toHaveBeenCalled();
     expect(setIssueState).toHaveBeenCalledWith(501, 'blocked');
