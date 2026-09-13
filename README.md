@@ -45,6 +45,20 @@ Mientras corre, ronin postea un commit status `ronin/review` (`pending` → `suc
 
 No hace falta ningún setup manual adicional para esto: la cuenta `ronin` invitada como colaboradora en el §Setup ya es la misma identidad que abre los PRs y la que se @menciona — a diferencia del diseño anterior (GitHub App + un segundo usuario mencionable separado), no hay una segunda cuenta que crear.
 
+### Webhooks (opcional) — reaccionar antes del próximo tick
+
+Por defecto, todo se descubre por polling cada 5 minutos vía el cron del §Setup. Si preferís reaccionar casi al instante a una asignación, un PR externo nuevo/actualizado, o un comentario/comando (`@ronin`, `/fix-comments`), podés levantar `webhook-server.ts`: un proceso separado que escucha webhooks de GitHub para esos tres eventos y dispara un tick anticipado (usando el mismo `flock` sobre `.tick.lock` que el cron, así nunca hay dos ticks corriendo a la vez) en vez de esperar al próximo slot del cron. La lógica de qué hacer sigue siendo exactamente la misma — los webhooks solo adelantan cuándo corre.
+
+Requiere que la máquina donde corre `ronin` sea alcanzable desde GitHub. Si no tiene IP pública, exponé `webhook-server` a través de lo que ya tengas (ej. un contenedor con `cloudflared` + nginx-proxy-manager: agregá un proxy host apuntando a `127.0.0.1:$WEBHOOK_PORT` y dejá que el túnel/certificado lo resuelva) — eso es infraestructura fuera de este repo, `ronin` solo necesita el puerto local.
+
+1. Generar un secreto: `openssl rand -hex 32` → completar `WEBHOOK_SECRET` en `.env` (y opcionalmente `WEBHOOK_PORT`/`WEBHOOK_DEBOUNCE_MS`, ver `.env.example`).
+2. `pnpm build` (igual que para el cron, `webhook-server` corre el `dist/` compilado).
+3. `pnpm webhook:setup` — instala `webhook-server` como servicio systemd `--user` (`ronin-webhook`), con reinicio automático. `pnpm webhook:remove` para sacarlo. Logs: `journalctl --user -u ronin-webhook -f`.
+4. Exponer ese puerto públicamente vía tu reverse proxy/túnel (ver arriba) bajo una URL HTTPS, ej. `https://ronin-webhooks.tudominio.com/webhook`.
+5. `pnpm init-webhooks https://ronin-webhooks.tudominio.com/webhook` — registra (o actualiza, es idempotente) el webhook en cada repo de `repos.json`, con los eventos `issues`, `pull_request`, `issue_comment` y `pull_request_review_comment`.
+
+Los webhooks pueden perderse (downtime del túnel, reinicio de la máquina, etc.), así que esto no reemplaza al cron — es un adelanto, no un sustituto. Con webhooks andando, tiene sentido bajarle la frecuencia al cron de reconciliación en vez de sacarlo: `pnpm cron:setup 30` (cada 30 min).
+
 ### Pedirle que resuelva varios comentarios de review de una — `/fix-comments`
 
 En un comentario general del PR (no inline), `@<RONIN_GITHUB_LOGIN> /fix-comments` le pide al agente que recorra en un solo pase todos los hilos de review todavía abiertos que él mismo no abrió (los de Copilot, un humano, u otro bot) y aplique los cambios que le parezcan concretos y accionables, respondiendo dentro de cada hilo y resolviendo los que efectivamente cambió. Los hilos ya resueltos no se listan: si no querés que toque una observación puntual del review, resolvela vos manualmente antes de pedirle el `/fix-comments` — esa es la forma de excluirla del batch.

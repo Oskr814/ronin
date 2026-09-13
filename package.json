@@ -13,7 +13,11 @@
     "smoke-test": "tsx scripts/smoke-test.ts",
     "init-labels": "bash scripts/init-labels.sh",
     "cron:setup": "bash scripts/setup-cron.sh",
-    "cron:remove": "bash scripts/setup-cron.sh --remove"
+    "cron:remove": "bash scripts/setup-cron.sh --remove",
+    "webhook-server": "tsx src/webhook-server.ts",
+    "init-webhooks": "bash scripts/init-webhooks.sh",
+    "webhook:setup": "bash scripts/setup-webhook-service.sh",
+    "webhook:remove": "bash scripts/setup-webhook-service.sh --remove"
   },
   "dependencies": {
     "gray-matter": "^4.0.3",

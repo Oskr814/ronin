@@ -64,6 +64,16 @@ export const config = {
   // per active repo by local-state.ts, never read directly as a file path
   // here anymore.
   localStatePath: process.env.LOCAL_STATE_PATH ?? '.ronin-state.json',
+  // The following three are only read by webhook-server.ts — deliberately
+  // not requireEnv'd here so `pnpm tick`/the cron path keeps working for
+  // anyone who never sets up webhooks. webhook-server.ts validates
+  // webhookSecret itself at startup.
+  webhookSecret: process.env.WEBHOOK_SECRET ?? '',
+  webhookPort: Number(process.env.WEBHOOK_PORT ?? 3939),
+  // How long to coalesce a burst of qualifying webhook deliveries (e.g.
+  // several PR comments in a row) into a single tick trigger — see
+  // webhook-server.ts's scheduleTick.
+  webhookDebounceMs: Number(process.env.WEBHOOK_DEBOUNCE_MS ?? 8000),
 } as const;
 
 export const LABEL_MANAGED = 'ronin';
