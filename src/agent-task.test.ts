@@ -434,6 +434,61 @@ describe('runAgentTask — fix-comments', () => {
   });
 });
 
+describe('runAgentTask — spike', () => {
+  const task = {
+    type: 'spike' as const,
+    issueNumber: 571,
+    appName: 'backoffice',
+    instruction: 'revisá el flujo de login',
+    trigger: [{ id: 7, kind: 'issue' as const, body: '@ronin /spike backoffice revisá el flujo de login', reactionsEyes: 0, authorLogin: 'someone' }],
+  };
+
+  it('checks out the dedicated spike branch off the root ref, never getPullRequestStatus', async () => {
+    await runAgentTask(task);
+
+    expect(ensureWorktree).toHaveBeenCalledWith('ronin/571/spike', 'origin/main');
+    expect(getPullRequestStatus).not.toHaveBeenCalled();
+  });
+
+  it('mentions the requested app_name and fences the trigger comment as untrusted', async () => {
+    await runAgentTask(task);
+
+    const prompt = runClaudeHeadless.mock.calls[0][1] as string;
+    expect(prompt).toContain('backoffice');
+    expect(prompt).toContain('(id 7)');
+    expect(prompt).toContain('<<<COMMENT_START>>>');
+  });
+
+  it('instructs investigation-only, never writing code', async () => {
+    await runAgentTask(task);
+
+    const prompt = runClaudeHeadless.mock.calls[0][1] as string;
+    expect(prompt).toMatch(/do not write, edit, or delete any code/i);
+  });
+
+  it('instructs appending a spike section to the issue body without removing the original', async () => {
+    await runAgentTask(task);
+
+    const prompt = runClaudeHeadless.mock.calls[0][1] as string;
+    expect(prompt).toContain('Contexto adicional (spike)');
+    expect(prompt).toMatch(/never remove or rewrite the original description/i);
+  });
+
+  it('forbids touching labels, assignees, or opening a PR', async () => {
+    await runAgentTask(task);
+
+    const prompt = runClaudeHeadless.mock.calls[0][1] as string;
+    expect(prompt).toMatch(/do not change any label, assignee, or open a pr/i);
+  });
+
+  it('does NOT include the agent-notes reminder — no code is ever committed', async () => {
+    await runAgentTask(task);
+
+    const prompt = runClaudeHeadless.mock.calls[0][1] as string;
+    expect(prompt).not.toContain(AGENT_NOTES_REMINDER);
+  });
+});
+
 describe('runAgentTask — fix-comments-external', () => {
   const task = {
     type: 'fix-comments-external' as const,
@@ -560,7 +615,7 @@ describe('runAgentTask — fix-comments-external', () => {
     expect(prompt.endsWith(AGENT_NOTES_REMINDER)).toBe(true);
   });
 
-  it('tells the agent there is nothing pending when openThreads is empty', async () => {
+  it('tells the agent there is nothing pending when openThreads is empty (fix-comments-external)', async () => {
     await runAgentTask({ ...task, openThreads: [] });
 
     const prompt = runClaudeHeadless.mock.calls[0][1] as string;

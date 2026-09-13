@@ -1,0 +1,84 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+const listOpenUnmanagedIssues = vi.fn();
+vi.mock('./github.js', () => ({
+  listOpenUnmanagedIssues: (...args: unknown[]) => listOpenUnmanagedIssues(...args),
+}));
+
+const findTrustedSpikeCommand = vi.fn();
+const parseSpikeCommand = vi.fn();
+vi.mock('./mentions.js', () => ({
+  findTrustedSpikeCommand: (...args: unknown[]) => findTrustedSpikeCommand(...args),
+  parseSpikeCommand: (...args: unknown[]) => parseSpikeCommand(...args),
+}));
+
+import { findIssuesNeedingSpike } from './spike.js';
+
+function issue(overrides: Partial<{ number: number; title: string }> = {}) {
+  return { number: 500, title: 'Login redirects to 404', ...overrides };
+}
+
+function comment(overrides: Partial<{ id: number; kind: 'issue' | 'review'; body: string; reactionsEyes: number; authorLogin: string }> = {}) {
+  return { id: 1, kind: 'issue' as const, body: '@ronin /spike backoffice', reactionsEyes: 0, authorLogin: 'someone', ...overrides };
+}
+
+beforeEach(() => {
+  listOpenUnmanagedIssues.mockReset().mockResolvedValue([]);
+  findTrustedSpikeCommand.mockReset().mockResolvedValue([]);
+  parseSpikeCommand.mockReset().mockReturnValue({ appName: 'backoffice', instruction: undefined });
+});
+
+describe('findIssuesNeedingSpike', () => {
+  it('returns a candidate for an issue with a valid trusted /spike command', async () => {
+    listOpenUnmanagedIssues.mockResolvedValue([issue()]);
+    findTrustedSpikeCommand.mockResolvedValue([comment()]);
+    parseSpikeCommand.mockReturnValue({ appName: 'backoffice', instruction: 'revisá el flujo de checkout' });
+
+    const result = await findIssuesNeedingSpike();
+
+    expect(result).toEqual([
+      { issueNumber: 500, appName: 'backoffice', instruction: 'revisá el flujo de checkout', trigger: [comment()] },
+    ]);
+  });
+
+  it('skips an issue with no /spike command at all', async () => {
+    listOpenUnmanagedIssues.mockResolvedValue([issue()]);
+    findTrustedSpikeCommand.mockResolvedValue([]);
+
+    const result = await findIssuesNeedingSpike();
+
+    expect(result).toEqual([]);
+  });
+
+  it('skips a malformed command missing app_name', async () => {
+    listOpenUnmanagedIssues.mockResolvedValue([issue()]);
+    findTrustedSpikeCommand.mockResolvedValue([comment({ body: '@ronin /spike' })]);
+    parseSpikeCommand.mockReturnValue(null);
+
+    const result = await findIssuesNeedingSpike();
+
+    expect(result).toEqual([]);
+  });
+
+  it('never sees an already ronin-managed issue — listOpenUnmanagedIssues already excludes it', async () => {
+    listOpenUnmanagedIssues.mockResolvedValue([]);
+
+    const result = await findIssuesNeedingSpike();
+
+    expect(result).toEqual([]);
+    expect(findTrustedSpikeCommand).not.toHaveBeenCalled();
+  });
+
+  it('isolates a failure on one issue from the rest', async () => {
+    listOpenUnmanagedIssues.mockResolvedValue([issue({ number: 500 }), issue({ number: 501, title: 'Other issue' })]);
+    findTrustedSpikeCommand
+      .mockRejectedValueOnce(new Error('gh: HTTP 500'))
+      .mockResolvedValueOnce([comment()]);
+
+    const result = await findIssuesNeedingSpike();
+
+    expect(result).toEqual([
+      { issueNumber: 501, appName: 'backoffice', instruction: undefined, trigger: [comment()] },
+    ]);
+  });
+});

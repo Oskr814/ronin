@@ -14,6 +14,14 @@ export function planBranch(issueNumber: number): string {
   return `ronin/${issueNumber}/plan`;
 }
 
+// The 'spike' task's branch — same reasoning as planBranch: only ever
+// rewrites the issue body (see agent-task.ts), never opens a PR, so its
+// caller (processSpikeCandidate in tick.ts) is responsible for cleaning up
+// the worktree itself, same as discoverAssignedSpecs does for planBranch.
+export function spikeBranch(issueNumber: number): string {
+  return `ronin/${issueNumber}/spike`;
+}
+
 const SLICE_BRANCH_RE = /^ronin\/\d+\/slice-(\d+)$/;
 
 export function sliceIndexFromBranch(branch: string): number | null {

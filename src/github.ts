@@ -432,6 +432,24 @@ export async function listAssignedIssues(): Promise<BugIssue[]> {
     .map((issue) => ({ number: issue.number, title: issue.title }));
 }
 
+// Discovery source for the `/spike` command (see spike.ts): every open issue
+// not yet in ronin's normal pipeline, regardless of assignee — unlike
+// listAssignedIssues above, /spike is meant to run *before* an issue is
+// handed off, so there's no --assignee filter here. Same LABEL_MANAGED
+// exclusion as listAssignedIssues: once an issue is ronin-managed, it's
+// tracked by the main pipeline instead and /spike no longer applies to it.
+export async function listOpenUnmanagedIssues(): Promise<BugIssue[]> {
+  const stdout = await gh([
+    'issue', 'list',
+    '--state', 'open',
+    '--json', 'number,title,labels',
+  ]);
+  const raw = JSON.parse(stdout) as Array<{ number: number; title: string; labels: Array<{ name: string }> }>;
+  return raw
+    .filter((issue) => !issue.labels.some((l) => l.name === LABEL_MANAGED))
+    .map((issue) => ({ number: issue.number, title: issue.title }));
+}
+
 // Swaps state labels on a spec PR the same way setIssueState does on a
 // tracking issue — same LABEL_STATES vocabulary applied to a different
 // resource type. PRs and issues share the same underlying label set (a PR

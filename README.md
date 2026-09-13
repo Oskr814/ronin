@@ -59,6 +59,12 @@ Requiere que la máquina donde corre `ronin` sea alcanzable desde GitHub. Si no 
 
 Los webhooks pueden perderse (downtime del túnel, reinicio de la máquina, etc.), así que esto no reemplaza al cron — es un adelanto, no un sustituto. Con webhooks andando, tiene sentido bajarle la frecuencia al cron de reconciliación en vez de sacarlo: `pnpm cron:setup 30` (cada 30 min).
 
+### Pedirle que investigue un issue crudo antes de asignarlo — `/spike`
+
+Si un issue tiene una descripción corta y todavía no querés asignárselo (asignarlo dispara el pipeline completo — ver §Asignarte un spec), podés dejarle un comentario general `@<RONIN_GITHUB_LOGIN> /spike <app_name> <instrucción opcional>` (ej. `@ronin /spike backoffice revisá el flujo de checkout`). En el próximo tick, el agente investiga en modo solo-lectura la parte del repo correspondiente a `<app_name>` (busca la carpeta/área por su cuenta, no depende de una convención fija) y agrega al body del issue una sección `## Contexto adicional (spike)` con archivos relevantes, una hipótesis de causa raíz o enfoque, y preguntas abiertas — sin borrar la descripción original.
+
+`/spike` nunca escribe código, nunca abre PR, y nunca cambia labels ni assignees — solo enriquece la descripción. Asignarle el issue a `ronin` después sigue siendo un paso manual aparte, exactamente igual que con cualquier otro issue (ver §Setup). Solo aplica a issues que todavía no están gestionados por `ronin` — uno ya asignado o bloqueado sigue el pipeline normal.
+
 ### Pedirle que resuelva varios comentarios de review de una — `/fix-comments`
 
 En un comentario general del PR (no inline), `@<RONIN_GITHUB_LOGIN> /fix-comments` le pide al agente que recorra en un solo pase todos los hilos de review todavía abiertos que él mismo no abrió (los de Copilot, un humano, u otro bot) y aplique los cambios que le parezcan concretos y accionables, respondiendo dentro de cada hilo y resolviendo los que efectivamente cambió. Los hilos ya resueltos no se listan: si no querés que toque una observación puntual del review, resolvela vos manualmente antes de pedirle el `/fix-comments` — esa es la forma de excluirla del batch.

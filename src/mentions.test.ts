@@ -14,7 +14,15 @@ vi.mock('./github.js', () => ({
   hasBotReaction: (...args: unknown[]) => botReaction(...args),
 }));
 
-import { findUnprocessedMentions, isFixCommentsCommand, findTrustedFixCommentsCommand } from './mentions.js';
+import {
+  findUnprocessedMentions,
+  isFixCommentsCommand,
+  findTrustedFixCommentsCommand,
+  isSpikeCommand,
+  parseSpikeCommand,
+  findUnprocessedIssueMentions,
+  findTrustedSpikeCommand,
+} from './mentions.js';
 
 beforeEach(() => {
   issueComments.mockReset().mockResolvedValue([]);
@@ -137,6 +145,103 @@ describe('findTrustedFixCommentsCommand', () => {
     ]);
 
     const result = await findTrustedFixCommentsCommand(42);
+    expect(result).toEqual([]);
+  });
+});
+
+describe('isSpikeCommand', () => {
+  it('matches the /spike command', () => {
+    expect(isSpikeCommand('@ronin /spike backoffice')).toBe(true);
+  });
+
+  it('matches the command case-insensitively', () => {
+    expect(isSpikeCommand('@ronin /SPIKE backoffice')).toBe(true);
+  });
+
+  it('does not match a plain mention without the command', () => {
+    expect(isSpikeCommand('@ronin can you look at this?')).toBe(false);
+  });
+});
+
+describe('parseSpikeCommand', () => {
+  it('parses the app_name with no instruction', () => {
+    expect(parseSpikeCommand('@ronin /spike backoffice')).toEqual({ appName: 'backoffice', instruction: undefined });
+  });
+
+  it('parses the app_name with a trailing instruction', () => {
+    expect(parseSpikeCommand('@ronin /spike backoffice mirá el flujo de checkout')).toEqual({
+      appName: 'backoffice',
+      instruction: 'mirá el flujo de checkout',
+    });
+  });
+
+  it('trims surrounding whitespace off the instruction', () => {
+    expect(parseSpikeCommand('/spike backoffice   revisá esto   ')).toEqual({
+      appName: 'backoffice',
+      instruction: 'revisá esto',
+    });
+  });
+
+  it('returns null when there is no app_name at all', () => {
+    expect(parseSpikeCommand('@ronin /spike')).toBeNull();
+  });
+
+  it('returns null when the command is absent', () => {
+    expect(parseSpikeCommand('@ronin can you take a look?')).toBeNull();
+  });
+});
+
+describe('findUnprocessedIssueMentions', () => {
+  it('returns an issue comment that mentions the handle and has no reactions yet', async () => {
+    issueComments.mockResolvedValue([
+      { id: 1, kind: 'issue', body: '@ronin /spike backoffice', reactionsEyes: 0 },
+    ]);
+
+    const result = await findUnprocessedIssueMentions(500);
+    expect(result).toEqual([{ id: 1, kind: 'issue', body: '@ronin /spike backoffice', reactionsEyes: 0 }]);
+  });
+
+  it('never calls listReviewComments — a plain issue has no inline review comments', async () => {
+    issueComments.mockResolvedValue([]);
+
+    await findUnprocessedIssueMentions(500);
+    expect(reviewComments).not.toHaveBeenCalled();
+  });
+
+  it('excludes a mention already reacted to by the bot', async () => {
+    issueComments.mockResolvedValue([{ id: 1, kind: 'issue', body: '@ronin /spike backoffice', reactionsEyes: 1 }]);
+    botReaction.mockResolvedValue(true);
+
+    const result = await findUnprocessedIssueMentions(500);
+    expect(result).toEqual([]);
+  });
+});
+
+describe('findTrustedSpikeCommand', () => {
+  it('returns a /spike issue comment from any author with a real login', async () => {
+    issueComments.mockResolvedValue([
+      { id: 1, kind: 'issue', body: '@ronin /spike backoffice', reactionsEyes: 0, authorLogin: 'someone' },
+    ]);
+
+    const result = await findTrustedSpikeCommand(500);
+    expect(result).toEqual([{ id: 1, kind: 'issue', body: '@ronin /spike backoffice', reactionsEyes: 0, authorLogin: 'someone' }]);
+  });
+
+  it('excludes a comment that does not carry the command', async () => {
+    issueComments.mockResolvedValue([
+      { id: 1, kind: 'issue', body: '@ronin can you take a look?', reactionsEyes: 0, authorLogin: 'someone' },
+    ]);
+
+    const result = await findTrustedSpikeCommand(500);
+    expect(result).toEqual([]);
+  });
+
+  it('excludes a comment with no author (deleted/ghost account)', async () => {
+    issueComments.mockResolvedValue([
+      { id: 1, kind: 'issue', body: '@ronin /spike backoffice', reactionsEyes: 0, authorLogin: '' },
+    ]);
+
+    const result = await findTrustedSpikeCommand(500);
     expect(result).toEqual([]);
   });
 });

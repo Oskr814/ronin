@@ -16,6 +16,24 @@ export function isFixCommentsCommand(body: string): boolean {
   return /\/fix-comments\b/i.test(body);
 }
 
+// Triggers the `spike` task on a plain issue — see spike.ts. Distinct from
+// isFixCommentsCommand's PR-only command: this one only ever fires on issue
+// comments (findTrustedSpikeCommand below never looks at review comments).
+export function isSpikeCommand(body: string): boolean {
+  return /\/spike\b/i.test(body);
+}
+
+const SPIKE_COMMAND_RE = /\/spike\s+(\S+)(?:\s+([\s\S]+))?/i;
+
+// null when the command is missing its required app_name — nothing
+// actionable to build a SpikeCandidate from in that case (see spike.ts).
+export function parseSpikeCommand(body: string): { appName: string; instruction?: string } | null {
+  const match = body.match(SPIKE_COMMAND_RE);
+  if (!match) return null;
+  const instruction = match[2]?.trim();
+  return { appName: match[1], instruction: instruction ? instruction : undefined };
+}
+
 // Subset of findUnprocessedMentions: a /fix-comments command — general
 // comment or inline review-comment reply, either counts, same as
 // processSlicePr — left by anyone with a real GitHub identity. This is the
@@ -35,6 +53,27 @@ export async function findTrustedFixCommentsCommand(prNumber: number): Promise<C
   return unprocessed.filter((c) => isFixCommentsCommand(c.body) && c.authorLogin !== '');
 }
 
+// Same trust criterion as findTrustedFixCommentsCommand — see its own doc
+// comment for why there's no collaborator-permission-tier check. A plain
+// issue has no fork/cross-repository concept the way a PR does, so unlike
+// fix-comments-external there's no separate "not a fork" precondition here:
+// being able to comment on a private repo's issue at all already implies
+// real access.
+export async function findTrustedSpikeCommand(issueNumber: number): Promise<Comment[]> {
+  const unprocessed = await findUnprocessedIssueMentions(issueNumber);
+  return unprocessed.filter((c) => isSpikeCommand(c.body) && c.authorLogin !== '');
+}
+
+async function filterUnprocessed(comments: Comment[]): Promise<Comment[]> {
+  const botLogin = config.githubLogin;
+  const unprocessed: Comment[] = [];
+  for (const comment of comments) {
+    const alreadyReacted = comment.reactionsEyes > 0 && (await hasBotReaction(comment.id, comment.kind, botLogin));
+    if (!alreadyReacted) unprocessed.push(comment);
+  }
+  return unprocessed;
+}
+
 export async function findUnprocessedMentions(prNumber: number): Promise<Comment[]> {
   const botLogin = config.githubLogin;
   const [issueComments, reviewComments] = await Promise.all([
@@ -42,11 +81,16 @@ export async function findUnprocessedMentions(prNumber: number): Promise<Comment
     listReviewComments(prNumber),
   ]);
   const mentioned = [...issueComments, ...reviewComments].filter((c) => mentionsHandle(c.body, botLogin));
+  return filterUnprocessed(mentioned);
+}
 
-  const unprocessed: Comment[] = [];
-  for (const comment of mentioned) {
-    const alreadyReacted = comment.reactionsEyes > 0 && (await hasBotReaction(comment.id, comment.kind, botLogin));
-    if (!alreadyReacted) unprocessed.push(comment);
-  }
-  return unprocessed;
+// Same as findUnprocessedMentions, but for a plain issue rather than a PR:
+// skips listReviewComments entirely — a plain issue never has inline review
+// comments, and that endpoint (pulls/{n}/comments) errors for a number that
+// isn't actually a pull request.
+export async function findUnprocessedIssueMentions(issueNumber: number): Promise<Comment[]> {
+  const botLogin = config.githubLogin;
+  const issueComments = await listIssueComments(issueNumber);
+  const mentioned = issueComments.filter((c) => mentionsHandle(c.body, botLogin));
+  return filterUnprocessed(mentioned);
 }

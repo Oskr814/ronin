@@ -30,12 +30,13 @@ import { resetTickMetrics, getTickAgentMetrics } from './metrics.js';
 import { runWithConcurrency } from './concurrency.js';
 import { runAgentTask, type AgentTask } from './agent-task.js';
 import { ClaudeUsageLimitError } from './claude-runner.js';
-import { toStackedPrs, pickBottomPr, prsForIssue, planBranch, type StackedPr } from './stack.js';
+import { toStackedPrs, pickBottomPr, prsForIssue, planBranch, spikeBranch, type StackedPr } from './stack.js';
 import { incrementChecksPendingCount, resetChecksPendingCount, setLastReviewedSha } from './local-state.js';
 import { tryClaim, releaseIfNoLongerInProgress } from './claim.js';
 import { worktreeDirFor, isBehind, attemptRebase, removeWorktree, sweepOrphanedWorktrees } from './worktree.js';
 import { findUnprocessedMentions, isFixCommentsCommand } from './mentions.js';
 import { findPrsNeedingReview, type ReviewCandidate, type TrustedFixCandidate } from './external-review.js';
+import { findIssuesNeedingSpike, type SpikeCandidate } from './spike.js';
 import { config, LABEL_DIRECT_ISSUE, LABEL_MANAGED, LABEL_STACK_PRS, LABEL_STATES } from './config.js';
 import { activeRepo, withActiveRepo } from './repo-context.js';
 import { loadRepos } from './repos.js';
@@ -695,6 +696,49 @@ export async function runExternalReviews(): Promise<void> {
   await runWithConcurrency(trustedFixCandidates, config.tickConcurrency, processTrustedFixCandidate);
 }
 
+// A /spike is fully independent of every other flow this tick runs — a
+// failure here must never reach tick()'s outer catch (which would mark an
+// unrelated issue `blocked` and email a human) nor block any other
+// candidate. Same isolation rationale as processExternalReviewCandidate.
+export async function processSpikeCandidate(candidate: SpikeCandidate): Promise<void> {
+  try {
+    await runAgentTask({
+      type: 'spike',
+      issueNumber: candidate.issueNumber,
+      appName: candidate.appName,
+      instruction: candidate.instruction,
+      trigger: candidate.trigger,
+    });
+    // Only after a successful run — a missing reaction is what makes
+    // findTrustedSpikeCommand treat this same comment as unprocessed and
+    // retry it on a later tick, same reasoning as every other command
+    // trigger in this file.
+    for (const m of candidate.trigger) await addReaction(m.id, m.kind, 'eyes');
+  } catch (error) {
+    log.error(`spike falló para issue #${candidate.issueNumber}`, error);
+  } finally {
+    // 'spike' never opens a PR (see agent-task.ts) so it never goes through
+    // the merge-time worktree cleanup below — same reasoning as
+    // discoverAssignedSpecs's own cleanup of planBranch.
+    await removeWorktree(spikeBranch(candidate.issueNumber)).catch(() => {});
+  }
+}
+
+// Deliberately its own exported function, called before (and independently
+// of) the ronin-PR loop — same reasoning as runExternalReviews: a transient
+// listOpenUnmanagedIssues failure must not silently skip every other flow
+// this tick.
+export async function runSpikes(): Promise<void> {
+  let candidates: SpikeCandidate[];
+  try {
+    candidates = await findIssuesNeedingSpike();
+  } catch (error) {
+    log.info(`tick: findIssuesNeedingSpike falló, reintentando en el próximo tick: ${(error as Error).message}`);
+    candidates = [];
+  }
+  await runWithConcurrency(candidates, config.tickConcurrency, processSpikeCandidate);
+}
+
 async function tickOneRepo(): Promise<void> {
   const start = Date.now();
   resetTickMetrics();
@@ -718,6 +762,8 @@ async function tickOneRepo(): Promise<void> {
     // Before the ronin-PR pipeline below, which can return early on a
     // transient listing failure — the two flows are fully independent.
     await runExternalReviews();
+    // Same reasoning — a /spike shares nothing with either flow above.
+    await runSpikes();
 
     // One batched read for every issue's stack instead of a `gh pr list` + a
     // `gh pr view` per PR per issue — see

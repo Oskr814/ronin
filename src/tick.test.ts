@@ -112,7 +112,12 @@ vi.mock('./external-review.js', () => ({
   findPrsNeedingReview: (...args: unknown[]) => findPrsNeedingReview(...args),
 }));
 
-const { processSlicePr, processIssue, agentTaskFor, needsMoreInfo, discoverAssignedIssues, processExternalReviewCandidate, processTrustedFixCandidate, runExternalReviews, renderTrackingIssueBody } = await import('./tick.js');
+const findIssuesNeedingSpike = vi.fn();
+vi.mock('./spike.js', () => ({
+  findIssuesNeedingSpike: (...args: unknown[]) => findIssuesNeedingSpike(...args),
+}));
+
+const { processSlicePr, processIssue, agentTaskFor, needsMoreInfo, discoverAssignedIssues, processExternalReviewCandidate, processTrustedFixCandidate, runExternalReviews, processSpikeCandidate, renderTrackingIssueBody } = await import('./tick.js');
 
 function issue(overrides: Partial<TrackingIssue> = {}): TrackingIssue {
   return { number: 228, title: 'Test issue', url: 'https://github.com/x/y/issues/228', labels: [], ...overrides };
@@ -146,6 +151,7 @@ beforeEach(() => {
   hasRemainingSlices.mockResolvedValue(true); // preserves pre-existing merge test behavior by default
   listAssignedIssues.mockResolvedValue([]);
   setLastReviewedSha.mockResolvedValue(undefined);
+  removeWorktree.mockResolvedValue(undefined);
   activeRepo.mockReturnValue({ productRepo: 'bmedical/bmedical', productRepoPath: '/tmp/repo', worktreeBasePath: '/tmp/worktrees' });
   readFile.mockResolvedValue('body\n{{spec_links}}\n');
 });
@@ -660,6 +666,60 @@ describe('processExternalReviewCandidate', () => {
     await processExternalReviewCandidate(candidate);
 
     expect(addReaction).not.toHaveBeenCalled();
+  });
+});
+
+describe('processSpikeCandidate', () => {
+  const candidate = {
+    issueNumber: 571,
+    appName: 'backoffice',
+    instruction: 'revisá el flujo de login',
+    trigger: [{ id: 7, kind: 'issue' as const, body: '@ronin /spike backoffice revisá el flujo de login', reactionsEyes: 0, authorLogin: 'someone' }],
+  };
+
+  it('runs the spike agent task and reacts to the trigger comment on success', async () => {
+    runAgentTask.mockResolvedValue(undefined);
+
+    await processSpikeCandidate(candidate);
+
+    expect(runAgentTask).toHaveBeenCalledWith({
+      type: 'spike',
+      issueNumber: 571,
+      appName: 'backoffice',
+      instruction: 'revisá el flujo de login',
+      trigger: candidate.trigger,
+    });
+    expect(addReaction).toHaveBeenCalledWith(7, 'issue', 'eyes');
+  });
+
+  it('cleans up the spike worktree on success', async () => {
+    runAgentTask.mockResolvedValue(undefined);
+
+    await processSpikeCandidate(candidate);
+
+    expect(removeWorktree).toHaveBeenCalledWith('ronin/571/spike');
+  });
+
+  it('does not react to the trigger when the agent task throws, so the next tick retries it', async () => {
+    runAgentTask.mockRejectedValue(new Error('boom'));
+
+    await processSpikeCandidate(candidate);
+
+    expect(addReaction).not.toHaveBeenCalled();
+  });
+
+  it('still cleans up the worktree when the agent task throws', async () => {
+    runAgentTask.mockRejectedValue(new Error('boom'));
+
+    await processSpikeCandidate(candidate);
+
+    expect(removeWorktree).toHaveBeenCalledWith('ronin/571/spike');
+  });
+
+  it('swallows the error instead of propagating it', async () => {
+    runAgentTask.mockRejectedValue(new Error('boom'));
+
+    await expect(processSpikeCandidate(candidate)).resolves.not.toThrow();
   });
 });
 
