@@ -40,7 +40,7 @@ function validateEntry(entry: unknown, index: number): RepoEntry {
   if (typeof entry !== 'object' || entry === null) {
     throw new Error(`${config.reposConfigPath}[${index}] no es un objeto`);
   }
-  const { productRepo, productRepoPath, claudeConfigDir, worktreeBaseRef } = entry as Record<string, unknown>;
+  const { productRepo, productRepoPath, claudeConfigDir, worktreeBaseRef, changelogRepo, changelogRepoPath } = entry as Record<string, unknown>;
   if (typeof productRepo !== 'string' || productRepo.length === 0) {
     throw new Error(`${config.reposConfigPath}[${index}].productRepo falta o no es un string`);
   }
@@ -53,5 +53,14 @@ function validateEntry(entry: unknown, index: number): RepoEntry {
   if (worktreeBaseRef !== undefined && typeof worktreeBaseRef !== 'string') {
     throw new Error(`${config.reposConfigPath}[${index}].worktreeBaseRef debe ser un string si está presente`);
   }
-  return { productRepo, productRepoPath, claudeConfigDir, worktreeBaseRef };
+  if (changelogRepo !== undefined && (typeof changelogRepo !== 'string' || changelogRepo.length === 0)) {
+    throw new Error(`${config.reposConfigPath}[${index}].changelogRepo debe ser un string si está presente`);
+  }
+  if (changelogRepoPath !== undefined && (typeof changelogRepoPath !== 'string' || changelogRepoPath.length === 0)) {
+    throw new Error(`${config.reposConfigPath}[${index}].changelogRepoPath debe ser un string si está presente`);
+  }
+  if ((changelogRepo === undefined) !== (changelogRepoPath === undefined)) {
+    throw new Error(`${config.reposConfigPath}[${index}]: changelogRepo y changelogRepoPath van juntos — falta uno de los dos`);
+  }
+  return { productRepo, productRepoPath, claudeConfigDir, worktreeBaseRef, changelogRepo, changelogRepoPath };
 }

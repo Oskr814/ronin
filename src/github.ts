@@ -718,3 +718,33 @@ export async function setReviewStatus(
     log.error(`setReviewStatus(${prNumber}, ${context}, ${state}) failed`, error);
   }
 }
+
+export interface Release {
+  tagName: string;
+  name: string;
+  url: string;
+  publishedAt: string;
+  isDraft: boolean;
+  isPrerelease: boolean;
+}
+
+interface RawRelease {
+  tagName: string;
+  name: string;
+  publishedAt: string;
+  isDraft: boolean;
+  isPrerelease: boolean;
+}
+
+// Used by changelog.ts's findReleasesNeedingChangelog — deliberately not
+// filtered here (draft/prerelease exclusion, and the "already handled"
+// comparison against lastChangelogRelease) so this stays a thin, testable
+// wrapper around the raw listing, same split as every other list* function
+// in this file. `gh release list --json` has no `url` field (unlike `gh pr
+// list`), so it's built by hand — GitHub's release URLs always follow this
+// exact shape.
+export async function listReleases(): Promise<Release[]> {
+  const stdout = await gh(['release', 'list', '--json', 'tagName,name,publishedAt,isDraft,isPrerelease']);
+  const raw = JSON.parse(stdout) as RawRelease[];
+  return raw.map((r) => ({ ...r, url: `https://github.com/${activeRepo().productRepo}/releases/tag/${r.tagName}` }));
+}

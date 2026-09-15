@@ -73,10 +73,12 @@ vi.mock('./github.js', () => ({
 const incrementChecksPendingCount = vi.fn();
 const resetChecksPendingCount = vi.fn();
 const setLastReviewedSha = vi.fn();
+const setLastChangelogRelease = vi.fn();
 vi.mock('./local-state.js', () => ({
   incrementChecksPendingCount: (...args: unknown[]) => incrementChecksPendingCount(...args),
   resetChecksPendingCount: (...args: unknown[]) => resetChecksPendingCount(...args),
   setLastReviewedSha: (...args: unknown[]) => setLastReviewedSha(...args),
+  setLastChangelogRelease: (...args: unknown[]) => setLastChangelogRelease(...args),
 }));
 
 const worktreeDirFor = vi.fn();
@@ -117,7 +119,12 @@ vi.mock('./spike.js', () => ({
   findIssuesNeedingSpike: (...args: unknown[]) => findIssuesNeedingSpike(...args),
 }));
 
-const { processSlicePr, processIssue, agentTaskFor, needsMoreInfo, discoverAssignedIssues, processExternalReviewCandidate, processTrustedFixCandidate, runExternalReviews, processSpikeCandidate, renderTrackingIssueBody } = await import('./tick.js');
+const findReleasesNeedingChangelog = vi.fn();
+vi.mock('./changelog.js', () => ({
+  findReleasesNeedingChangelog: (...args: unknown[]) => findReleasesNeedingChangelog(...args),
+}));
+
+const { processSlicePr, processIssue, agentTaskFor, needsMoreInfo, changelogNeedsReview, discoverAssignedIssues, processExternalReviewCandidate, processTrustedFixCandidate, runExternalReviews, processSpikeCandidate, processChangelogCandidate, runChangelogUpdates, renderTrackingIssueBody } = await import('./tick.js');
 
 function issue(overrides: Partial<TrackingIssue> = {}): TrackingIssue {
   return { number: 228, title: 'Test issue', url: 'https://github.com/x/y/issues/228', labels: [], ...overrides };
@@ -842,6 +849,101 @@ describe('runExternalReviews', () => {
     findPrsNeedingReview.mockResolvedValue({ reviewCandidates: [], trustedFixCandidates: [] });
 
     await runExternalReviews();
+
+    expect(runAgentTask).not.toHaveBeenCalled();
+  });
+});
+
+describe('changelogNeedsReview', () => {
+  it('extracts the reason after an em dash', () => {
+    expect(changelogNeedsReview('Done.\nRONIN_STATUS: needs-review — captura del PR #42 puede tener datos reales')).toBe(
+      'captura del PR #42 puede tener datos reales',
+    );
+  });
+
+  it('extracts the reason after a plain hyphen', () => {
+    expect(changelogNeedsReview('RONIN_STATUS: needs-review - captura dudosa')).toBe('captura dudosa');
+  });
+
+  it('falls back to a placeholder when no reason follows the marker', () => {
+    expect(changelogNeedsReview('RONIN_STATUS: needs-review')).toBe('sin detalle');
+  });
+
+  it('is null when the agent ends its response with RONIN_STATUS: done', () => {
+    expect(changelogNeedsReview('Pushed to main.\nRONIN_STATUS: done')).toBeNull();
+  });
+
+  it('is null when the marker is missing entirely', () => {
+    expect(changelogNeedsReview('Pushed to main.')).toBeNull();
+  });
+});
+
+describe('processChangelogCandidate', () => {
+  const release = {
+    tagName: 'v1.13.79-odoo',
+    name: 'v1.13.79',
+    url: 'https://github.com/redmotos/shoppingcart/releases/tag/v1.13.79-odoo',
+    publishedAt: '2026-09-12T17:06:10Z',
+    isDraft: false,
+    isPrerelease: false,
+  };
+
+  it('runs the update-changelog agent task and records the release as processed on success', async () => {
+    runAgentTask.mockResolvedValue('Pushed to main.\nRONIN_STATUS: done');
+
+    await processChangelogCandidate({ release });
+
+    expect(runAgentTask).toHaveBeenCalledWith({ type: 'update-changelog', release });
+    expect(notifyBlocker).not.toHaveBeenCalled();
+    expect(setLastChangelogRelease).toHaveBeenCalledWith('v1.13.79-odoo', '2026-09-12T17:06:10Z');
+  });
+
+  it('notifies a blocker (without touching any issue/PR state) when the agent flags a needs-review image', async () => {
+    runAgentTask.mockResolvedValue('Left out one screenshot.\nRONIN_STATUS: needs-review — captura del PR #42 puede tener datos reales');
+
+    await processChangelogCandidate({ release });
+
+    expect(notifyBlocker).toHaveBeenCalledWith(
+      expect.objectContaining({ issueUrl: release.url, reason: expect.stringContaining('captura del PR #42 puede tener datos reales') }),
+    );
+    expect(setLastChangelogRelease).toHaveBeenCalledWith('v1.13.79-odoo', '2026-09-12T17:06:10Z');
+  });
+
+  it('notifies a blocker and still records the release as processed when the agent task throws', async () => {
+    runAgentTask.mockRejectedValue(new Error('claude exploded'));
+
+    await processChangelogCandidate({ release });
+
+    expect(notifyBlocker).toHaveBeenCalledWith(expect.objectContaining({ issueUrl: release.url }));
+    expect(setLastChangelogRelease).toHaveBeenCalledWith('v1.13.79-odoo', '2026-09-12T17:06:10Z');
+  });
+});
+
+describe('runChangelogUpdates', () => {
+  it('processes every candidate returned by findReleasesNeedingChangelog', async () => {
+    const releaseA = { tagName: 'v1', name: 'v1', url: 'https://x/1', publishedAt: '2026-01-01T00:00:00Z', isDraft: false, isPrerelease: false };
+    const releaseB = { tagName: 'v2', name: 'v2', url: 'https://x/2', publishedAt: '2026-01-02T00:00:00Z', isDraft: false, isPrerelease: false };
+    findReleasesNeedingChangelog.mockResolvedValue([{ release: releaseA }, { release: releaseB }]);
+    runAgentTask.mockResolvedValue('RONIN_STATUS: done');
+
+    await runChangelogUpdates();
+
+    expect(runAgentTask).toHaveBeenNthCalledWith(1, { type: 'update-changelog', release: releaseA });
+    expect(runAgentTask).toHaveBeenNthCalledWith(2, { type: 'update-changelog', release: releaseB });
+  });
+
+  it('does not throw, and runs nothing, when discovery itself fails', async () => {
+    findReleasesNeedingChangelog.mockRejectedValue(new Error('gh exploded'));
+
+    await expect(runChangelogUpdates()).resolves.toBeUndefined();
+
+    expect(runAgentTask).not.toHaveBeenCalled();
+  });
+
+  it('does nothing when there are no candidates', async () => {
+    findReleasesNeedingChangelog.mockResolvedValue([]);
+
+    await runChangelogUpdates();
 
     expect(runAgentTask).not.toHaveBeenCalled();
   });

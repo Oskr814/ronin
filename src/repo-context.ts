@@ -9,6 +9,17 @@ export interface RepoEntry {
   // pattern as claudeConfigDir. Consumers read
   // `activeRepo().worktreeBaseRef ?? config.worktreeBaseRef`.
   worktreeBaseRef?: string;
+  // Opt-in: when both of these are set, a new release (webhook event
+  // release/released, or the tick reconciliation in changelog.ts) generates
+  // an entry in this "owner/repo" changelog repo (e.g. "redmotos/changelog")
+  // and pushes it straight to that repo's own main — see changelog.ts.
+  // Absent for every repo by default. Both fields travel together: either
+  // both are set or neither is (validated in repos.ts).
+  changelogRepo?: string;
+  // Local clone of changelogRepo, pre-created by a human exactly like
+  // productRepoPath — ronin never clones this itself, only fetches/resets it
+  // (see changelog.ts's ensureChangelogRepoUpToDate).
+  changelogRepoPath?: string;
 }
 
 interface ActiveRepo extends RepoEntry {

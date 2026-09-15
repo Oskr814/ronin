@@ -8,7 +8,7 @@ vi.mock('./config.js', () => ({
   config: new Proxy({}, { get: (_t, prop) => (prop === 'localStatePath' ? localStatePath : undefined) }),
 }));
 
-const { incrementChecksPendingCount, resetChecksPendingCount, withLocalStateLock, readLocalState, getLastReviewedSha, setLastReviewedSha, pruneLastReviewedSha } = await import('./local-state.js');
+const { incrementChecksPendingCount, resetChecksPendingCount, withLocalStateLock, readLocalState, getLastReviewedSha, setLastReviewedSha, pruneLastReviewedSha, getLastChangelogRelease, setLastChangelogRelease } = await import('./local-state.js');
 const { withActiveRepo } = await import('./repo-context.js');
 
 let dir: string;
@@ -151,5 +151,38 @@ describe('pruneLastReviewedSha', () => {
 
       expect((await readLocalState()).checksPendingCounts['229']).toBe(1);
     });
+  });
+});
+
+describe('getLastChangelogRelease / setLastChangelogRelease', () => {
+  it('returns undefined when nothing was ever recorded', async () => {
+    await withRepo('owner/repo-a', async () => {
+      expect(await getLastChangelogRelease()).toBeUndefined();
+    });
+  });
+
+  it('round-trips a recorded release', async () => {
+    await withRepo('owner/repo-a', async () => {
+      await setLastChangelogRelease('v1.13.79-odoo', '2026-09-12T17:06:10Z');
+      expect(await getLastChangelogRelease()).toEqual({ tag: 'v1.13.79-odoo', publishedAt: '2026-09-12T17:06:10Z' });
+    });
+  });
+
+  it('overwrites a previously recorded release', async () => {
+    await withRepo('owner/repo-a', async () => {
+      await setLastChangelogRelease('v1', '2026-01-01T00:00:00Z');
+      await setLastChangelogRelease('v2', '2026-01-02T00:00:00Z');
+      expect(await getLastChangelogRelease()).toEqual({ tag: 'v2', publishedAt: '2026-01-02T00:00:00Z' });
+    });
+  });
+
+  it('keeps lastChangelogRelease separate between two repos', async () => {
+    await withRepo('owner/repo-a', () => setLastChangelogRelease('v1', '2026-01-01T00:00:00Z'));
+
+    const a = await withRepo('owner/repo-a', getLastChangelogRelease);
+    const b = await withRepo('owner/repo-b', getLastChangelogRelease);
+
+    expect(a).toEqual({ tag: 'v1', publishedAt: '2026-01-01T00:00:00Z' });
+    expect(b).toBeUndefined();
   });
 });

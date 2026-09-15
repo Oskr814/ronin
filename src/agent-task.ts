@@ -1,8 +1,9 @@
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { ensureWorktree, remoteBranchExists, ensureExternalReviewWorktree, removeExternalReviewWorktree, ensureTrustedFixWorktree, removeTrustedFixWorktree } from './worktree.js';
+import { ensureChangelogRepoUpToDate } from './changelog.js';
 import { runClaudeHeadless } from './claude-runner.js';
-import { getPullRequestStatus, type Comment, type ReviewThread } from './github.js';
+import { getPullRequestStatus, type Comment, type ReviewThread, type Release } from './github.js';
 import { config } from './config.js';
 import { activeRepo } from './repo-context.js';
 import { log } from './logger.js';
@@ -20,7 +21,8 @@ export type AgentTask =
   | { type: 'fix-comments'; issueNumber: number; prNumber: number; trigger: Comment[]; openThreads: ReviewThread[] }
   | { type: 'fix-comments-external'; prNumber: number; headRefName: string; trigger: Comment[]; openThreads: ReviewThread[] }
   | { type: 'external-review'; prNumber: number; headRefName: string; headSha: string; openThreads: ReviewThread[]; mentions: Comment[] }
-  | { type: 'spike'; issueNumber: number; appName: string; instruction?: string; trigger: Comment[] };
+  | { type: 'spike'; issueNumber: number; appName: string; instruction?: string; trigger: Comment[] }
+  | { type: 'update-changelog'; release: Release };
 
 function repoUrl(): string {
   return `https://github.com/${activeRepo().productRepo}`;
@@ -315,6 +317,24 @@ async function buildTask(task: AgentTask): Promise<{ branch: string; prompt: str
       };
     }
 
+    case 'update-changelog': {
+      const changelogRepo = activeRepo().changelogRepo;
+      return {
+        // Not a branch to check out — this task type works directly on
+        // changelogRepoPath's main via ensureChangelogRepoUpToDate below.
+        // This value exists purely for the log line.
+        branch: `changelog@${task.release.tagName}`,
+        prompt: [
+          `You are ronin. ${repoUrl()} just published release "${task.release.name || task.release.tagName}" (tag ${task.release.tagName}, ${task.release.url}).`,
+          `This checkout is ${changelogRepo}, already up to date with its own main — add this release to it. Follow this repo's own AGENTS.md and README.md exactly as written (they already describe the full flow: fetching the real release/PR data with \`gh release view\`/\`gh pr view --repo ${activeRepo().productRepo}\`, the frontmatter schema, copy tone, image handling, and validating with \`pnpm build\`) — do not invent your own format or deviate from what those files say.`,
+          `Source release data: \`gh release view ${task.release.tagName} --repo ${activeRepo().productRepo} --json body,publishedAt,url\` for the body/timestamp, then \`gh pr view <n> --repo ${activeRepo().productRepo}\` per PR mentioned in it, exactly as AGENTS.md's own workflow section describes.`,
+          "This repo is public with no login (see AGENTS.md's privacy note) — for every screenshot you'd otherwise include, check it for real customer data (name, phone, address, email, or any other real record) before adding it. If a screenshot is clean, include it as AGENTS.md describes. If a screenshot might contain real customer data, or you can't tell, leave that image out of the entry entirely (keep the surrounding text) rather than guessing — there's nobody to ask right now.",
+          `Once the entry is written and \`pnpm build\` passes, commit and push straight to main (\`git add -A && git commit && git push origin main\`) — this repo's own AGENTS.md documents that as its normal flow, no PR needed.`,
+          'Finally, end your entire response with exactly one line, and nothing after it: "RONIN_STATUS: needs-review — <what was left out and why>" if you omitted one or more images because of possible real customer data, or "RONIN_STATUS: done" if the entry was published with no reservations.',
+        ].join('\n'),
+      };
+    }
+
     case 'spike': {
       // Same untrusted-data fencing as every other command trigger — the
       // comment body is written by whoever left it, not by the supervisor.
@@ -342,10 +362,12 @@ async function buildTask(task: AgentTask): Promise<{ branch: string; prompt: str
 }
 
 function taskLabel(task: AgentTask): string {
+  if (task.type === 'update-changelog') return `release ${task.release.tagName}`;
   return 'issueNumber' in task ? `issue #${task.issueNumber}` : `PR #${task.prNumber}`;
 }
 
-function taskNumber(task: AgentTask): number {
+function taskNumber(task: AgentTask): string | number {
+  if (task.type === 'update-changelog') return task.release.tagName;
   return 'issueNumber' in task ? task.issueNumber : task.prNumber;
 }
 
@@ -368,7 +390,9 @@ export async function runAgentTask(task: AgentTask): Promise<string> {
     ? await ensureExternalReviewWorktree(task.prNumber, task.headSha)
     : task.type === 'fix-comments-external'
       ? await ensureTrustedFixWorktree(branch)
-      : await ensureWorktree(branch, baseBranch);
+      : task.type === 'update-changelog'
+        ? await ensureChangelogRepoUpToDate()
+        : await ensureWorktree(branch, baseBranch);
 
   // external-review is the only task type that points `claude -p
   // --permission-mode bypassPermissions` at a tree an arbitrary external

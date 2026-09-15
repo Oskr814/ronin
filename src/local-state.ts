@@ -17,6 +17,13 @@ export interface LocalState {
   // for — see docs/superpowers/specs/2026-08-20-external-pr-review-design.md.
   // A PR with no entry (or a stale one) is due for a fresh review next tick.
   lastReviewedSha: Record<string, string>;
+  // Most recent release changelog.ts has already handled (successfully,
+  // needs-review, or failed-and-notified — see processChangelogCandidate)
+  // for this repo. Compared by publishedAt, not by tag, since tags aren't
+  // reliably sortable. Undefined means "never seeded" — findReleasesNeeding
+  // Changelog treats that as "mark the current latest as the baseline,
+  // generate nothing" rather than backfilling every release ever published.
+  lastChangelogRelease?: { tag: string; publishedAt: string };
 }
 
 // In-process serialization for the read-modify-write span around this file:
@@ -55,6 +62,7 @@ export async function readLocalState(): Promise<LocalState> {
       claimedIssues: raw.claimedIssues ?? [],
       checksPendingCounts: raw.checksPendingCounts ?? {},
       lastReviewedSha: raw.lastReviewedSha ?? {},
+      lastChangelogRelease: raw.lastChangelogRelease,
     };
   } catch {
     return { claimedIssues: [], checksPendingCounts: {}, lastReviewedSha: {} };
@@ -109,6 +117,19 @@ export async function setLastReviewedSha(prNumber: number, sha: string): Promise
   return withLocalStateLock(async () => {
     const state = await readLocalState();
     state.lastReviewedSha[prNumber] = sha;
+    await writeLocalState(state);
+  });
+}
+
+export async function getLastChangelogRelease(): Promise<{ tag: string; publishedAt: string } | undefined> {
+  const state = await readLocalState();
+  return state.lastChangelogRelease;
+}
+
+export async function setLastChangelogRelease(tag: string, publishedAt: string): Promise<void> {
+  return withLocalStateLock(async () => {
+    const state = await readLocalState();
+    state.lastChangelogRelease = { tag, publishedAt };
     await writeLocalState(state);
   });
 }

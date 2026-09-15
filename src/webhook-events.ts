@@ -22,6 +22,11 @@ const RELEVANT: Record<string, string[]> = {
   pull_request: ['assigned', 'ready_for_review', 'opened', 'synchronize', 'reopened'],
   issue_comment: ['created'],
   pull_request_review_comment: ['created'],
+  // GitHub's "released" action fires only for a real, non-draft,
+  // non-prerelease publish — unlike "published" (fires for pre-releases too)
+  // or "created" (fires for drafts). Exactly the trigger changelog.ts wants;
+  // see docs on the release event's action types.
+  release: ['released'],
 };
 
 // `payload` is untyped GitHub webhook JSON on purpose — we only ever read a

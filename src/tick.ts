@@ -37,6 +37,8 @@ import { worktreeDirFor, isBehind, attemptRebase, removeWorktree, sweepOrphanedW
 import { findUnprocessedMentions, isFixCommentsCommand } from './mentions.js';
 import { findPrsNeedingReview, type ReviewCandidate, type TrustedFixCandidate } from './external-review.js';
 import { findIssuesNeedingSpike, type SpikeCandidate } from './spike.js';
+import { findReleasesNeedingChangelog, type ChangelogCandidate } from './changelog.js';
+import { setLastChangelogRelease } from './local-state.js';
 import { config, LABEL_DIRECT_ISSUE, LABEL_MANAGED, LABEL_STACK_PRS, LABEL_STATES } from './config.js';
 import { activeRepo, withActiveRepo } from './repo-context.js';
 import { loadRepos } from './repos.js';
@@ -107,6 +109,16 @@ export function agentTaskFor(issue: TrackingIssue, sliceIndex: number, sliceTitl
 // testing.
 export function needsMoreInfo(agentResult: string): boolean {
   return /RONIN_STATUS:\s*needs-info/i.test(agentResult);
+}
+
+// Counterpart for 'update-changelog' (see agent-task.ts's prompt) — the
+// entry was still published, minus one or more images the agent couldn't
+// clear for real customer data. Captures the reason so notifyBlocker's email
+// tells a human exactly what to go check, instead of just "something was
+// left out". Exported for direct unit testing, same reasoning as needsMoreInfo.
+export function changelogNeedsReview(agentResult: string): string | null {
+  const match = agentResult.match(/RONIN_STATUS:\s*needs-review\s*(?:—|-)?\s*(.*)/i);
+  return match ? match[1].trim() || 'sin detalle' : null;
 }
 
 // Discovery source: a human writes the spec as a PR against the product
@@ -739,6 +751,62 @@ export async function runSpikes(): Promise<void> {
   await runWithConcurrency(candidates, config.tickConcurrency, processSpikeCandidate);
 }
 
+// A release's changelog entry is fully independent of every other flow this
+// tick runs — a failure here must never reach tick()'s outer catch (which
+// would mark an unrelated issue `blocked` and email a human) nor block any
+// other candidate. Same isolation rationale as processExternalReviewCandidate/
+// processSpikeCandidate. Unlike those, this always advances
+// lastChangelogRelease regardless of outcome (success, needs-review, or a
+// thrown error) — there's no meaningful retry here (nothing about a later
+// tick would make an unclear screenshot clearer, or an already-published
+// entry need re-publishing), so the alternative is re-processing — and
+// re-emailing — the same release forever.
+export async function processChangelogCandidate(candidate: ChangelogCandidate): Promise<void> {
+  const { release } = candidate;
+  try {
+    const result = await runAgentTask({ type: 'update-changelog', release });
+    const reason = changelogNeedsReview(result);
+    if (reason) {
+      await notifyBlocker({
+        issueUrl: release.url,
+        reason: `Entrada de changelog publicada sin una o más capturas — revisar y agregarlas a mano: ${reason}`,
+      });
+    }
+  } catch (error) {
+    log.error(`update-changelog falló para release ${release.tagName}`, error);
+    await notifyBlocker({
+      issueUrl: release.url,
+      reason: `Excepción no manejada generando la entrada de changelog: ${(error as Error).message}`,
+    });
+  } finally {
+    await setLastChangelogRelease(release.tagName, release.publishedAt);
+  }
+}
+
+// Deliberately its own exported function, called before (and independently
+// of) the ronin-PR loop — same reasoning as runExternalReviews/runSpikes. A
+// transient findReleasesNeedingChangelog failure must not silently skip
+// every other flow this tick, and must not advance lastChangelogRelease
+// (the next tick just re-lists and retries). No-op for a repo without
+// changelogRepo configured — see findReleasesNeedingChangelog.
+//
+// Sequential on purpose, not runWithConcurrency: every candidate here shares
+// the same changelogRepoPath checkout (see changelog.ts's
+// ensureChangelogRepoUpToDate), so two running at once would race the same
+// working tree and clobber each other's commit.
+export async function runChangelogUpdates(): Promise<void> {
+  let candidates: ChangelogCandidate[];
+  try {
+    candidates = await findReleasesNeedingChangelog();
+  } catch (error) {
+    log.info(`tick: findReleasesNeedingChangelog falló, reintentando en el próximo tick: ${(error as Error).message}`);
+    return;
+  }
+  for (const candidate of candidates) {
+    await processChangelogCandidate(candidate);
+  }
+}
+
 async function tickOneRepo(): Promise<void> {
   const start = Date.now();
   resetTickMetrics();
@@ -764,6 +832,9 @@ async function tickOneRepo(): Promise<void> {
     await runExternalReviews();
     // Same reasoning — a /spike shares nothing with either flow above.
     await runSpikes();
+    // Same reasoning — a release's changelog entry shares nothing with any
+    // flow above (and is a no-op unless this repo has changelogRepo set).
+    await runChangelogUpdates();
 
     // One batched read for every issue's stack instead of a `gh pr list` + a
     // `gh pr view` per PR per issue — see

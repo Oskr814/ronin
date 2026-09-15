@@ -66,6 +66,18 @@ describe('shouldTriggerTick', () => {
     expect(shouldTriggerTick('pull_request_review_comment', { action: 'created', repository: { full_name: 'acme/product' } }, trackedRepos)).toBe(true);
   });
 
+  it('triggers on a published (non-prerelease) release', () => {
+    expect(shouldTriggerTick('release', { action: 'released', repository: { full_name: 'acme/product' } }, trackedRepos)).toBe(true);
+  });
+
+  it('ignores a pre-release publish', () => {
+    expect(shouldTriggerTick('release', { action: 'prereleased', repository: { full_name: 'acme/product' } }, trackedRepos)).toBe(false);
+  });
+
+  it('ignores a draft release being created', () => {
+    expect(shouldTriggerTick('release', { action: 'created', repository: { full_name: 'acme/product' } }, trackedRepos)).toBe(false);
+  });
+
   it('ignores an irrelevant event type', () => {
     expect(shouldTriggerTick('push', { repository: { full_name: 'acme/product' } }, trackedRepos)).toBe(false);
   });

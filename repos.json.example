@@ -3,7 +3,9 @@
     "productRepo": "Oskr814/repo-a",
     "productRepoPath": "/home/link/RM/repo-a",
     "claudeConfigDir": "/home/link/.claude-repo-a",
-    "worktreeBaseRef": "origin/odoo-main"
+    "worktreeBaseRef": "origin/odoo-main",
+    "changelogRepo": "redmotos/changelog",
+    "changelogRepoPath": "/home/link/RM/changelog"
   },
   {
     "productRepo": "Oskr814/repo-b",
