@@ -124,7 +124,7 @@ vi.mock('./changelog.js', () => ({
   findReleasesNeedingChangelog: (...args: unknown[]) => findReleasesNeedingChangelog(...args),
 }));
 
-const { processSlicePr, processIssue, agentTaskFor, needsMoreInfo, changelogNeedsReview, discoverAssignedIssues, processExternalReviewCandidate, processTrustedFixCandidate, runExternalReviews, processSpikeCandidate, processChangelogCandidate, runChangelogUpdates, renderTrackingIssueBody } = await import('./tick.js');
+const { processSlicePr, processIssue, agentTaskFor, needsMoreInfo, discoverAssignedIssues, processExternalReviewCandidate, processTrustedFixCandidate, runExternalReviews, processSpikeCandidate, processChangelogCandidate, runChangelogUpdates, renderTrackingIssueBody } = await import('./tick.js');
 
 function issue(overrides: Partial<TrackingIssue> = {}): TrackingIssue {
   return { number: 228, title: 'Test issue', url: 'https://github.com/x/y/issues/228', labels: [], ...overrides };
@@ -854,30 +854,6 @@ describe('runExternalReviews', () => {
   });
 });
 
-describe('changelogNeedsReview', () => {
-  it('extracts the reason after an em dash', () => {
-    expect(changelogNeedsReview('Done.\nRONIN_STATUS: needs-review — captura del PR #42 puede tener datos reales')).toBe(
-      'captura del PR #42 puede tener datos reales',
-    );
-  });
-
-  it('extracts the reason after a plain hyphen', () => {
-    expect(changelogNeedsReview('RONIN_STATUS: needs-review - captura dudosa')).toBe('captura dudosa');
-  });
-
-  it('falls back to a placeholder when no reason follows the marker', () => {
-    expect(changelogNeedsReview('RONIN_STATUS: needs-review')).toBe('sin detalle');
-  });
-
-  it('is null when the agent ends its response with RONIN_STATUS: done', () => {
-    expect(changelogNeedsReview('Pushed to main.\nRONIN_STATUS: done')).toBeNull();
-  });
-
-  it('is null when the marker is missing entirely', () => {
-    expect(changelogNeedsReview('Pushed to main.')).toBeNull();
-  });
-});
-
 describe('processChangelogCandidate', () => {
   const release = {
     tagName: 'v1.13.79-odoo',
@@ -895,17 +871,6 @@ describe('processChangelogCandidate', () => {
 
     expect(runAgentTask).toHaveBeenCalledWith({ type: 'update-changelog', release });
     expect(notifyBlocker).not.toHaveBeenCalled();
-    expect(setLastChangelogRelease).toHaveBeenCalledWith('v1.13.79-odoo', '2026-09-12T17:06:10Z');
-  });
-
-  it('notifies a blocker (without touching any issue/PR state) when the agent flags a needs-review image', async () => {
-    runAgentTask.mockResolvedValue('Left out one screenshot.\nRONIN_STATUS: needs-review — captura del PR #42 puede tener datos reales');
-
-    await processChangelogCandidate({ release });
-
-    expect(notifyBlocker).toHaveBeenCalledWith(
-      expect.objectContaining({ issueUrl: release.url, reason: expect.stringContaining('captura del PR #42 puede tener datos reales') }),
-    );
     expect(setLastChangelogRelease).toHaveBeenCalledWith('v1.13.79-odoo', '2026-09-12T17:06:10Z');
   });
 

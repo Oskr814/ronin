@@ -328,9 +328,9 @@ async function buildTask(task: AgentTask): Promise<{ branch: string; prompt: str
           `You are ronin. ${repoUrl()} just published release "${task.release.name || task.release.tagName}" (tag ${task.release.tagName}, ${task.release.url}).`,
           `This checkout is ${changelogRepo}, already up to date with its own main — add this release to it. Follow this repo's own AGENTS.md and README.md exactly as written (they already describe the full flow: fetching the real release/PR data with \`gh release view\`/\`gh pr view --repo ${activeRepo().productRepo}\`, the frontmatter schema, copy tone, image handling, and validating with \`pnpm build\`) — do not invent your own format or deviate from what those files say.`,
           `Source release data: \`gh release view ${task.release.tagName} --repo ${activeRepo().productRepo} --json body,publishedAt,url\` for the body/timestamp, then \`gh pr view <n> --repo ${activeRepo().productRepo}\` per PR mentioned in it, exactly as AGENTS.md's own workflow section describes.`,
-          "This repo is public with no login (see AGENTS.md's privacy note) — for every screenshot you'd otherwise include, check it for real customer data (name, phone, address, email, or any other real record) before adding it. If a screenshot is clean, include it as AGENTS.md describes. If a screenshot might contain real customer data, or you can't tell, leave that image out of the entry entirely (keep the surrounding text) rather than guessing — there's nobody to ask right now.",
+          `Include the screenshots each PR shows — images uploaded to a PR are valid to use as-is, exactly as AGENTS.md's image-handling section describes.`,
           `Once the entry is written and \`pnpm build\` passes, commit and push straight to main (\`git add -A && git commit && git push origin main\`) — this repo's own AGENTS.md documents that as its normal flow, no PR needed.`,
-          'Finally, end your entire response with exactly one line, and nothing after it: "RONIN_STATUS: needs-review — <what was left out and why>" if you omitted one or more images because of possible real customer data, or "RONIN_STATUS: done" if the entry was published with no reservations.',
+          'Finally, end your entire response with exactly one line, and nothing after it: "RONIN_STATUS: done".',
         ].join('\n'),
       };
     }

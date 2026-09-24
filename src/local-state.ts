@@ -17,9 +17,9 @@ export interface LocalState {
   // for — see docs/superpowers/specs/2026-08-20-external-pr-review-design.md.
   // A PR with no entry (or a stale one) is due for a fresh review next tick.
   lastReviewedSha: Record<string, string>;
-  // Most recent release changelog.ts has already handled (successfully,
-  // needs-review, or failed-and-notified — see processChangelogCandidate)
-  // for this repo. Compared by publishedAt, not by tag, since tags aren't
+  // Most recent release changelog.ts has already handled (successfully, or
+  // failed-and-notified — see processChangelogCandidate) for this repo.
+  // Compared by publishedAt, not by tag, since tags aren't
   // reliably sortable. Undefined means "never seeded" — findReleasesNeeding
   // Changelog treats that as "mark the current latest as the baseline,
   // generate nothing" rather than backfilling every release ever published.

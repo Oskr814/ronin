@@ -111,16 +111,6 @@ export function needsMoreInfo(agentResult: string): boolean {
   return /RONIN_STATUS:\s*needs-info/i.test(agentResult);
 }
 
-// Counterpart for 'update-changelog' (see agent-task.ts's prompt) — the
-// entry was still published, minus one or more images the agent couldn't
-// clear for real customer data. Captures the reason so notifyBlocker's email
-// tells a human exactly what to go check, instead of just "something was
-// left out". Exported for direct unit testing, same reasoning as needsMoreInfo.
-export function changelogNeedsReview(agentResult: string): string | null {
-  const match = agentResult.match(/RONIN_STATUS:\s*needs-review\s*(?:—|-)?\s*(.*)/i);
-  return match ? match[1].trim() || 'sin detalle' : null;
-}
-
 // Discovery source: a human writes the spec as a PR against the product
 // repo and assigns it to the `ronin` account (GitHub's native Assignees
 // field) once it's ready to hand off — marking it ready for review (not
@@ -756,22 +746,14 @@ export async function runSpikes(): Promise<void> {
 // would mark an unrelated issue `blocked` and email a human) nor block any
 // other candidate. Same isolation rationale as processExternalReviewCandidate/
 // processSpikeCandidate. Unlike those, this always advances
-// lastChangelogRelease regardless of outcome (success, needs-review, or a
-// thrown error) — there's no meaningful retry here (nothing about a later
-// tick would make an unclear screenshot clearer, or an already-published
-// entry need re-publishing), so the alternative is re-processing — and
-// re-emailing — the same release forever.
+// lastChangelogRelease regardless of outcome (success or a thrown error) —
+// there's no meaningful retry here (an already-published entry doesn't need
+// re-publishing), so the alternative is re-processing — and re-emailing —
+// the same release forever.
 export async function processChangelogCandidate(candidate: ChangelogCandidate): Promise<void> {
   const { release } = candidate;
   try {
-    const result = await runAgentTask({ type: 'update-changelog', release });
-    const reason = changelogNeedsReview(result);
-    if (reason) {
-      await notifyBlocker({
-        issueUrl: release.url,
-        reason: `Entrada de changelog publicada sin una o más capturas — revisar y agregarlas a mano: ${reason}`,
-      });
-    }
+    await runAgentTask({ type: 'update-changelog', release });
   } catch (error) {
     log.error(`update-changelog falló para release ${release.tagName}`, error);
     await notifyBlocker({
