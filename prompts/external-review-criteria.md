@@ -32,8 +32,6 @@ con acceso al resto del repositorio.
   tomar el lock deben revalidarse después**.
 - Transacciones: alcance, operaciones lentas o remotas (llamadas HTTP, RPC)
   dentro de una transacción o de un lock, commits parciales.
-- Migraciones que bloquean tablas en producción (p. ej. índices sin
-  `CONCURRENTLY` sobre tablas grandes).
 - Tests de concurrencia que dependen de tiempos fijos (`Task.Delay`,
   `sleep`) en vez de sincronización explícita.
 
@@ -61,6 +59,24 @@ con acceso al resto del repositorio.
 - Duplicación introducida dentro del propio PR.
 - Funciones o clases que acumulan responsabilidades, condicionales difíciles
   de seguir, nombres engañosos.
+
+### Migraciones
+
+Aplicar esta lista a **cada** migración que toque el diff, una por una, aunque
+el resto del PR no tenga nada de base de datos:
+
+- ¿Crea un índice sobre una tabla existente sin `CONCURRENTLY`? En PostgreSQL
+  eso bloquea las escrituras sobre la tabla mientras se construye. Si la
+  migración corre dentro de una transacción (el default de EF Core),
+  `CONCURRENTLY` no se puede usar ahí: hay que sacarla de la transacción.
+- ¿Hace un `ALTER TABLE` que reescribe la tabla o toma un lock exclusivo
+  largo (cambiar el tipo de una columna, agregar una columna `NOT NULL` con
+  default volátil, agregar una constraint sin `NOT VALID`)?
+- ¿Puede fallar con los datos que ya hay en producción (unicidad sobre datos
+  duplicados, `NOT NULL` sobre columnas con nulos)? ¿Qué pasa con el
+  despliegue si falla?
+- ¿El `Down` deshace exactamente lo que hace el `Up`, y es idempotente como
+  las demás migraciones del repo?
 
 ## Tipos
 
@@ -96,6 +112,16 @@ La severidad nunca puede quedar por debajo de estos pisos:
 - Artefacto generado roto (XML, migración, build) → al menos **important**.
 - Cambio de contrato de API observable por un cliente (código HTTP, forma de
   la respuesta) → al menos **important**.
+- Chequeo de autorización o de rol ausente en un camino cuando un camino
+  hermano (otro endpoint, otra server action, otra variante del mismo método)
+  sí lo hace → tipo **bug**, al menos **important**; **critical** si expone
+  datos de otro cliente o permite una operación que el rol no debería poder
+  hacer. Nunca **improvement**.
+- Datos que se pierden, se truncan o se omiten sin que el usuario se entere
+  (un límite fijo de filas sin paginar, registros que se descartan ante un
+  error) → al menos **important**.
+- DDL que bloquea una tabla existente en producción (ver "Migraciones") → al
+  menos **important**.
 
 ## Clases sistémicas
 

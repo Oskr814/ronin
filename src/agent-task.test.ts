@@ -300,6 +300,13 @@ describe('runAgentTask — external-review', () => {
     expect(prompt).toContain('assign the final type and severity yourself');
   });
 
+  it('asks for every human-facing field in Spanish', async () => {
+    await runAgentTask(task);
+
+    const prompt = runClaudeHeadless.mock.calls[0][1] as string;
+    expect(prompt).toContain('in Spanish, the same language as the criteria');
+  });
+
   it('forbids running tests, builds or installs during the review', async () => {
     await runAgentTask(task);
 
