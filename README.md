@@ -16,6 +16,7 @@ Todo se pide desde GitHub, mencionando a [`@ronin-agent`](https://github.com/ron
 | PR de un humano | `@ronin-agent <pedido>` | Corre una review de solo lectura, enfocada en tu pedido. |
 | Cualquier PR (no fork) | `@ronin-agent /fix-comments` | Aplica en un solo pase los hilos de review abiertos, responde en cada uno y resuelve los que cambió. Para excluir un hilo, resolvelo antes. |
 | Issue sin asignar | `@ronin-agent /spike <app> [instrucción]` | Investiga en solo lectura y agrega una sección `## Contexto adicional (spike)` al issue. |
+| PR o issue | `@ronin-agent /help` | Responde con los comandos que se pueden usar ahí. Si escribís mal un comando, te sugiere el correcto. |
 
 **Asignarle trabajo:**
 - **Spec:** PR draft con el `.md` en `docs/superpowers/specs/`, asignado a `ronin-agent`. Cuando lo marcás *ready for review*, arranca.

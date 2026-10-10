@@ -24,6 +24,7 @@ function pr(headRefName: string, overrides: Partial<PullRequestStatus> = {}): Pu
     headRefName,
     baseRefName: 'main',
     isDraft: false,
+    body: '',
     ...overrides,
   };
 }

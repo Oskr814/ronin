@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { TrackingIssue } from './github.js';
 import type { StackedPr } from './stack.js';
+import { HELP_FOOTER_MARKER } from './help.js';
 
 const existsSync = vi.fn();
 vi.mock('node:fs', () => ({
@@ -19,6 +20,7 @@ vi.mock('./config.js', () => ({
     sliceAttemptLimit: 3,
     rebaseRetryLimit: 3,
     worktreeBaseRef: 'origin/main',
+    githubLogin: 'ronin',
     // Needed by runExternalReviews's runWithConcurrency call — with an
     // undefined limit the pool spawns zero lanes and silently no-ops.
     tickConcurrency: 2,
@@ -58,6 +60,7 @@ const addIssueLabel = vi.fn();
 const listAssignedIssues = vi.fn();
 const listExternalOpenReviewThreads = vi.fn();
 const setReviewStatus = vi.fn();
+const setPullRequestBody = vi.fn();
 vi.mock('./github.js', () => ({
   addReaction: (...args: unknown[]) => addReaction(...args),
   mergePullRequest: (...args: unknown[]) => mergePullRequest(...args),
@@ -68,6 +71,7 @@ vi.mock('./github.js', () => ({
   listAssignedIssues: (...args: unknown[]) => listAssignedIssues(...args),
   listExternalOpenReviewThreads: (...args: unknown[]) => listExternalOpenReviewThreads(...args),
   setReviewStatus: (...args: unknown[]) => setReviewStatus(...args),
+  setPullRequestBody: (...args: unknown[]) => setPullRequestBody(...args),
 }));
 
 const incrementChecksPendingCount = vi.fn();
@@ -141,6 +145,9 @@ function pr(overrides: Partial<StackedPr> = {}): StackedPr {
     headRefName: 'ronin/228/slice-2',
     baseRefName: 'ronin/228/slice-1',
     isDraft: false,
+    // Already carries the cheat sheet, so tests about anything else don't
+    // also exercise the footer write — see the 'command cheat sheet' tests.
+    body: `Slice description\n\n${HELP_FOOTER_MARKER}`,
     sliceIndex: 1,
     ...overrides,
   };
@@ -149,6 +156,7 @@ function pr(overrides: Partial<StackedPr> = {}): StackedPr {
 beforeEach(() => {
   vi.clearAllMocks();
   recordSlicePr.mockResolvedValue(undefined);
+  setPullRequestBody.mockResolvedValue(undefined);
   findUnprocessedMentions.mockResolvedValue([]);
   isFixCommentsCommand.mockReturnValue(false);
   listExternalOpenReviewThreads.mockResolvedValue([]);
@@ -161,6 +169,37 @@ beforeEach(() => {
   removeWorktree.mockResolvedValue(undefined);
   activeRepo.mockReturnValue({ productRepo: 'bmedical/bmedical', productRepoPath: '/tmp/repo', worktreeBasePath: '/tmp/worktrees' });
   readFile.mockResolvedValue('body\n{{spec_links}}\n');
+});
+
+describe('processSlicePr — command cheat sheet', () => {
+  it('appends the cheat sheet to a PR body that does not have it yet', async () => {
+    await processSlicePr(issue(), pr({ body: 'Slice description', checksPending: true }), false);
+
+    expect(setPullRequestBody).toHaveBeenCalledTimes(1);
+    const [prNumber, body] = setPullRequestBody.mock.calls[0];
+    expect(prNumber).toBe(230);
+    expect(body).toMatch(/^Slice description\n\n/);
+    expect(body).toContain(HELP_FOOTER_MARKER);
+  });
+
+  it('leaves a PR body that already has the cheat sheet untouched', async () => {
+    await processSlicePr(issue(), pr({ checksPending: true }), false);
+
+    expect(setPullRequestBody).not.toHaveBeenCalled();
+  });
+
+  it('keeps processing the slice when the body edit fails', async () => {
+    setPullRequestBody.mockRejectedValue(new Error('gh exploded'));
+
+    const stillInProgress = await processSlicePr(
+      issue(),
+      pr({ body: 'Slice description', checksPending: true, reviewDecision: 'CHANGES_REQUESTED' }),
+      false,
+    );
+
+    expect(stillInProgress).toBe(true);
+    expect(runAgentTask).toHaveBeenCalledWith({ type: 'fix-review', issueNumber: 228, prNumber: 230 });
+  });
 });
 
 describe('processSlicePr — non-bottom stacked PR', () => {
@@ -375,7 +414,7 @@ describe('processSlicePr — /fix-comments command', () => {
 
     await processSlicePr(issue(), bottomPr, true);
 
-    expect(listExternalOpenReviewThreads).toHaveBeenCalledWith(229, undefined);
+    expect(listExternalOpenReviewThreads).toHaveBeenCalledWith(229, 'ronin');
     expect(runAgentTask).toHaveBeenCalledWith({
       type: 'fix-comments', issueNumber: 228, prNumber: 229,
       trigger: [commandComment], openThreads: [{ id: 'T1', body: 'finding from Copilot' }],

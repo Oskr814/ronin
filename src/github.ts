@@ -188,6 +188,9 @@ export interface PullRequestStatus {
   // final review Fix 1.
   baseRefName: string;
   isDraft: boolean;
+  // Read so the supervisor can tell whether a ronin PR already carries the
+  // command cheat sheet (see help.ts's withHelpFooter) without a per-PR call.
+  body: string;
 }
 
 // Same field set works for both `gh pr view` (one PR) and `gh pr list` (many)
@@ -195,7 +198,7 @@ export interface PullRequestStatus {
 // valid fields and includes every one of these. Shared so the two call sites
 // (a single fresh re-read vs. the batched per-tick list) can never drift
 // apart and silently stop returning a field the other relies on.
-const PR_JSON_FIELDS = 'number,state,reviewDecision,statusCheckRollup,mergeable,headRefName,baseRefName,isDraft';
+const PR_JSON_FIELDS = 'number,state,reviewDecision,statusCheckRollup,mergeable,headRefName,baseRefName,isDraft,body';
 
 interface RawPr {
   number: number;
@@ -206,6 +209,7 @@ interface RawPr {
   headRefName: string;
   baseRefName: string;
   isDraft: boolean;
+  body: string | null;
 }
 
 function toPullRequestStatus(raw: RawPr): PullRequestStatus {
@@ -231,6 +235,7 @@ function toPullRequestStatus(raw: RawPr): PullRequestStatus {
     headRefName: raw.headRefName,
     baseRefName: raw.baseRefName,
     isDraft: raw.isDraft,
+    body: raw.body ?? '',
   };
 }
 
@@ -576,6 +581,24 @@ export async function addReaction(commentId: number, kind: 'issue' | 'review', c
     '-f',
     `content=${content}`,
   ]);
+}
+
+// Replies where the comment was left: inside its own thread for an inline
+// review comment, or as a new general comment otherwise. `number` is the PR
+// or issue the comment belongs to — issues/{n}/comments works for both,
+// since a PR is an issue under the hood.
+export async function replyToComment(number: number, comment: Pick<Comment, 'id' | 'kind'>, body: string): Promise<void> {
+  const path = comment.kind === 'review'
+    ? `repos/${activeRepo().productRepo}/pulls/${number}/comments/${comment.id}/replies`
+    : `repos/${activeRepo().productRepo}/issues/${number}/comments`;
+  await ghApi(['api', path, '-f', `body=${body}`]);
+}
+
+// REST, not `gh pr edit --body-file`: `gh pr edit` fails on this org with a
+// GraphQL error from a deprecated Projects (classic) field it queries
+// internally — see the note on setPrState.
+export async function setPullRequestBody(prNumber: number, body: string): Promise<void> {
+  await ghApi(['api', '-X', 'PATCH', `repos/${activeRepo().productRepo}/pulls/${prNumber}`, '-f', `body=${body}`]);
 }
 
 const REVIEW_THREADS_PAGE_SIZE = 100;

@@ -1,5 +1,7 @@
-import { listIssueComments, listReviewComments, hasBotReaction, type Comment } from './github.js';
+import { listIssueComments, listReviewComments, hasBotReaction, replyToComment, addReaction, type Comment } from './github.js';
+import { classifyMetaCommand, renderMetaReply, type CommandContext } from './help.js';
 import { config } from './config.js';
+import { log } from './logger.js';
 
 function mentionsHandle(body: string, handle: string): boolean {
   // `handle` is not escaped for regex metacharacters on purpose: it comes from
@@ -68,12 +70,46 @@ async function filterUnprocessed(comments: Comment[]): Promise<Comment[]> {
   const botLogin = config.githubLogin;
   const unprocessed: Comment[] = [];
   for (const comment of comments) {
+    // ronin's own comments are never requests to itself — and its /help
+    // reply shows "@<login> /fix-comments" as an example, which would
+    // otherwise be picked up as a fresh mention on the next tick, forever.
+    if ((comment.authorLogin ?? '').toLowerCase() === botLogin.toLowerCase()) continue;
     const alreadyReacted = comment.reactionsEyes > 0 && (await hasBotReaction(comment.id, comment.kind, botLogin));
     if (!alreadyReacted) unprocessed.push(comment);
   }
   return unprocessed;
 }
 
+// Answers /help and misspelled or misplaced commands right here, without
+// Claude, and drops them from what the caller gets back — see help.ts. Every
+// flow that acts on a mention reads it through findUnprocessedMentions or
+// findUnprocessedIssueMentions, so this is the one place that keeps a typo
+// from costing a full review-request/external-review/spike run.
+//
+// A meta-command is dropped even when its reply fails: it's retried as a
+// meta-command next tick (no 👀 was added), never handed to a flow that
+// would spend an agent run on it.
+async function handleMetaCommands(number: number, context: CommandContext, comments: Comment[]): Promise<Comment[]> {
+  const login = config.githubLogin;
+  const rest: Comment[] = [];
+  for (const comment of comments) {
+    const meta = classifyMetaCommand(comment.body, login, context);
+    if (!meta) {
+      rest.push(comment);
+      continue;
+    }
+    try {
+      await replyToComment(number, comment, renderMetaReply(meta, login, context));
+      await addReaction(comment.id, comment.kind, 'eyes');
+    } catch (error) {
+      log.error(`respuesta al meta-comando del comentario ${comment.id} falló en #${number}`, error);
+    }
+  }
+  return rest;
+}
+
+// Side effect: answers any meta-command among the mentions (see
+// handleMetaCommands above) and leaves it out of the result.
 export async function findUnprocessedMentions(prNumber: number): Promise<Comment[]> {
   const botLogin = config.githubLogin;
   const [issueComments, reviewComments] = await Promise.all([
@@ -81,10 +117,11 @@ export async function findUnprocessedMentions(prNumber: number): Promise<Comment
     listReviewComments(prNumber),
   ]);
   const mentioned = [...issueComments, ...reviewComments].filter((c) => mentionsHandle(c.body, botLogin));
-  return filterUnprocessed(mentioned);
+  return handleMetaCommands(prNumber, 'pr', await filterUnprocessed(mentioned));
 }
 
-// Same as findUnprocessedMentions, but for a plain issue rather than a PR:
+// Same as findUnprocessedMentions (including its meta-command side effect,
+// with 'issue' as the context), but for a plain issue rather than a PR:
 // skips listReviewComments entirely — a plain issue never has inline review
 // comments, and that endpoint (pulls/{n}/comments) errors for a number that
 // isn't actually a pull request.
@@ -92,5 +129,5 @@ export async function findUnprocessedIssueMentions(issueNumber: number): Promise
   const botLogin = config.githubLogin;
   const issueComments = await listIssueComments(issueNumber);
   const mentioned = issueComments.filter((c) => mentionsHandle(c.body, botLogin));
-  return filterUnprocessed(mentioned);
+  return handleMetaCommands(issueNumber, 'issue', await filterUnprocessed(mentioned));
 }

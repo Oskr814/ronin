@@ -7,12 +7,18 @@ vi.mock('./config.js', () => ({
 const issueComments = vi.fn();
 const reviewComments = vi.fn();
 const botReaction = vi.fn();
+const replyToComment = vi.fn();
+const addReaction = vi.fn();
 
 vi.mock('./github.js', () => ({
   listIssueComments: (...args: unknown[]) => issueComments(...args),
   listReviewComments: (...args: unknown[]) => reviewComments(...args),
   hasBotReaction: (...args: unknown[]) => botReaction(...args),
+  replyToComment: (...args: unknown[]) => replyToComment(...args),
+  addReaction: (...args: unknown[]) => addReaction(...args),
 }));
+
+vi.mock('./logger.js', () => ({ log: { error: vi.fn(), info: vi.fn() } }));
 
 import {
   findUnprocessedMentions,
@@ -28,6 +34,80 @@ beforeEach(() => {
   issueComments.mockReset().mockResolvedValue([]);
   reviewComments.mockReset().mockResolvedValue([]);
   botReaction.mockReset().mockResolvedValue(false);
+  replyToComment.mockReset().mockResolvedValue(undefined);
+  addReaction.mockReset().mockResolvedValue(undefined);
+});
+
+describe('meta-commands (/help, typos, wrong place)', () => {
+  it('answers /help on a PR without handing it to any flow, and marks it processed', async () => {
+    issueComments.mockResolvedValue([{ id: 1, kind: 'issue', body: '@ronin /help', reactionsEyes: 0, authorLogin: 'someone' }]);
+
+    const result = await findUnprocessedMentions(42);
+
+    expect(result).toEqual([]);
+    expect(replyToComment).toHaveBeenCalledWith(42, expect.objectContaining({ id: 1 }), expect.stringContaining('/fix-comments'));
+    expect(addReaction).toHaveBeenCalledWith(1, 'issue', 'eyes');
+  });
+
+  it('suggests the closest command for a typo, replying inside an inline thread', async () => {
+    reviewComments.mockResolvedValue([{ id: 5, kind: 'review', body: '@ronin /fix-coments', reactionsEyes: 0, authorLogin: 'someone' }]);
+
+    const result = await findUnprocessedMentions(42);
+
+    expect(result).toEqual([]);
+    expect(replyToComment).toHaveBeenCalledWith(42, expect.objectContaining({ id: 5, kind: 'review' }), expect.stringContaining('¿Quisiste decir `/fix-comments`?'));
+  });
+
+  it('treats /spike on a PR as a command in the wrong place', async () => {
+    issueComments.mockResolvedValue([{ id: 1, kind: 'issue', body: '@ronin /spike backoffice', reactionsEyes: 0, authorLogin: 'someone' }]);
+
+    const result = await findUnprocessedMentions(42);
+
+    expect(result).toEqual([]);
+    expect(replyToComment).toHaveBeenCalledWith(42, expect.anything(), expect.stringContaining('`/spike` solo funciona en issues'));
+  });
+
+  it('treats /fix-comments on a plain issue as a command in the wrong place', async () => {
+    issueComments.mockResolvedValue([{ id: 1, kind: 'issue', body: '@ronin /fix-comments', reactionsEyes: 0, authorLogin: 'someone' }]);
+
+    const result = await findUnprocessedIssueMentions(7);
+
+    expect(result).toEqual([]);
+    expect(replyToComment).toHaveBeenCalledWith(7, expect.anything(), expect.stringContaining('`/fix-comments` solo funciona en PRs'));
+  });
+
+  it('lets a real command and free text through untouched', async () => {
+    issueComments.mockResolvedValue([
+      { id: 1, kind: 'issue', body: '@ronin /fix-comments', reactionsEyes: 0, authorLogin: 'someone' },
+      { id: 2, kind: 'issue', body: '@ronin revisá /src/foo.ts por favor', reactionsEyes: 0, authorLogin: 'someone' },
+    ]);
+
+    const result = await findUnprocessedMentions(42);
+
+    expect(result.map((c) => c.id)).toEqual([1, 2]);
+    expect(replyToComment).not.toHaveBeenCalled();
+  });
+
+  it('drops a meta-command even when the reply fails, without marking it processed', async () => {
+    issueComments.mockResolvedValue([{ id: 1, kind: 'issue', body: '@ronin /help', reactionsEyes: 0, authorLogin: 'someone' }]);
+    replyToComment.mockRejectedValue(new Error('gh exploded'));
+
+    const result = await findUnprocessedMentions(42);
+
+    expect(result).toEqual([]);
+    expect(addReaction).not.toHaveBeenCalled();
+  });
+
+  it("ignores ronin's own comments, even when they mention it", async () => {
+    issueComments.mockResolvedValue([
+      { id: 1, kind: 'issue', body: 'Podés usar `@ronin /fix-comments`', reactionsEyes: 0, authorLogin: 'Ronin' },
+    ]);
+
+    const result = await findUnprocessedMentions(42);
+
+    expect(result).toEqual([]);
+    expect(replyToComment).not.toHaveBeenCalled();
+  });
 });
 
 describe('findUnprocessedMentions', () => {

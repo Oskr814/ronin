@@ -19,6 +19,7 @@ import {
   getPullRequestStatus,
   setReviewStatus,
   listExternalOpenReviewThreads,
+  setPullRequestBody,
   type TrackingIssue,
   type PullRequestStatus,
   type Comment,
@@ -35,6 +36,7 @@ import { incrementChecksPendingCount, resetChecksPendingCount, setLastReviewedSh
 import { tryClaim, releaseIfNoLongerInProgress } from './claim.js';
 import { worktreeDirFor, isBehind, attemptRebase, removeWorktree, sweepOrphanedWorktrees } from './worktree.js';
 import { findUnprocessedMentions, isFixCommentsCommand } from './mentions.js';
+import { withHelpFooter } from './help.js';
 import { findPrsNeedingReview, type ReviewCandidate, type TrustedFixCandidate } from './external-review.js';
 import { findIssuesNeedingSpike, type SpikeCandidate } from './spike.js';
 import { findReleasesNeedingChangelog, type ChangelogCandidate } from './changelog.js';
@@ -333,6 +335,19 @@ function logSliceOutcome(issue: TrackingIssue, pr: StackedPr, isBottom: boolean,
 
 export async function processSlicePr(issue: TrackingIssue, pr: StackedPr, isBottom: boolean, waitingTurnPrs?: number[]): Promise<boolean> {
   await recordSlicePr(issue.number, pr.sliceIndex, pr.number);
+
+  // Cheat sheet of commands at the bottom of every PR ronin opens — see
+  // help.ts. Idempotent (withHelpFooter returns the body unchanged once its
+  // marker is there), and best-effort: a failed edit only means the PR goes
+  // without it until the next tick, never a blocked slice.
+  const bodyWithHelp = withHelpFooter(pr.body, config.githubLogin);
+  if (bodyWithHelp !== pr.body) {
+    try {
+      await setPullRequestBody(pr.number, bodyWithHelp);
+    } catch (error) {
+      log.error(`no se pudo agregar la chuleta de comandos al PR #${pr.number}`, error);
+    }
+  }
 
   if (pr.isDraft) {
     logSliceOutcome(issue, pr, isBottom, 'draft, esperando');
