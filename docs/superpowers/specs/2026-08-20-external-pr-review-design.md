@@ -1,5 +1,12 @@
 # Review automática (estilo Copilot) de PRs externos
 
+> **Reemplazado en parte** por
+> [`2026-10-10-exhaustive-external-review-design.md`](2026-10-10-exhaustive-external-review-design.md):
+> el agente ya no publica en GitHub (escribe `findings.json` y ronin valida y
+> publica), el template del comentario cambió, y el criterio vive en
+> `prompts/external-review-criteria.md`. El resto de este documento
+> (elegibilidad, trigger por SHA, aislamiento) sigue vigente.
+
 ## Contexto
 
 Hoy `tick.ts` solo procesa PRs que ronin abrió (`listAllOpenRoninPrs`, filtrado
