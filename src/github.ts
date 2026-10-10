@@ -269,6 +269,7 @@ export interface ExternalPr {
   number: number;
   headRefName: string;
   headRefOid: string;
+  baseRefName: string;
   isCrossRepository: boolean;
 }
 
@@ -277,6 +278,7 @@ interface RawExternalPr {
   isDraft: boolean;
   headRefName: string;
   headRefOid: string;
+  baseRefName: string;
   author: { login: string } | null;
   isCrossRepository: boolean;
 }
@@ -303,7 +305,7 @@ export async function listAllOpenExternalPrs(): Promise<ExternalPr[]> {
     'pr', 'list',
     '--state', 'open',
     '--limit', String(PR_LIST_LIMIT),
-    '--json', 'number,isDraft,headRefName,headRefOid,author,isCrossRepository',
+    '--json', 'number,isDraft,headRefName,headRefOid,baseRefName,author,isCrossRepository',
   ]);
   const raw = JSON.parse(stdout) as RawExternalPr[];
   if (raw.length === PR_LIST_LIMIT) {
@@ -311,7 +313,7 @@ export async function listAllOpenExternalPrs(): Promise<ExternalPr[]> {
   }
   return raw
     .filter((pr) => isExternalReviewable(pr, config.githubLogin))
-    .map((pr) => ({ number: pr.number, headRefName: pr.headRefName, headRefOid: pr.headRefOid, isCrossRepository: pr.isCrossRepository }));
+    .map((pr) => ({ number: pr.number, headRefName: pr.headRefName, headRefOid: pr.headRefOid, baseRefName: pr.baseRefName, isCrossRepository: pr.isCrossRepository }));
 }
 
 async function listOpenPrsWithBase(baseBranch: string): Promise<number[]> {
@@ -612,7 +614,7 @@ query($owner: String!, $repo: String!, $number: Int!) {
           id
           isResolved
           comments(first: 1) {
-            nodes { author { login } body }
+            nodes { author { login } body url }
           }
         }
       }
@@ -628,7 +630,7 @@ interface RawReviewThreadsResponse {
           nodes: Array<{
             id: string;
             isResolved: boolean;
-            comments: { nodes: Array<{ author: { login: string } | null; body: string }> };
+            comments: { nodes: Array<{ author: { login: string } | null; body: string; url?: string }> };
           }>;
         };
       };
@@ -639,6 +641,9 @@ interface RawReviewThreadsResponse {
 export interface ReviewThread {
   id: string;
   body: string;
+  // Link to the thread's first comment — used by the external review's
+  // closing message to list what is still open.
+  url?: string;
 }
 
 // Shared by listBotOpenReviewThreads/listExternalOpenReviewThreads: fetches
@@ -646,7 +651,7 @@ export interface ReviewThread {
 // caller applies its own author filter afterward. GraphQL (not REST) because
 // REST has no resolved/unresolved field on review comments — see
 // docs/superpowers/specs/2026-08-20-external-pr-review-design.md.
-async function fetchOpenReviewThreads(prNumber: number): Promise<Array<{ id: string; body: string; authorLogin: string | null }>> {
+async function fetchOpenReviewThreads(prNumber: number): Promise<Array<{ id: string; body: string; url?: string; authorLogin: string | null }>> {
   const [owner, repo] = activeRepo().productRepo.split('/');
   const stdout = await ghApi([
     'api', 'graphql',
@@ -667,7 +672,7 @@ async function fetchOpenReviewThreads(prNumber: number): Promise<Array<{ id: str
   }
   return nodes
     .filter((t) => !t.isResolved && t.comments.nodes[0] != null)
-    .map((t) => ({ id: t.id, body: t.comments.nodes[0].body, authorLogin: t.comments.nodes[0].author?.login ?? null }));
+    .map((t) => ({ id: t.id, body: t.comments.nodes[0].body, url: t.comments.nodes[0].url, authorLogin: t.comments.nodes[0].author?.login ?? null }));
 }
 
 // Only threads ronin itself opened (first comment's author == botLogin) and
@@ -675,7 +680,7 @@ async function fetchOpenReviewThreads(prNumber: number): Promise<Array<{ id: str
 // something this bot should touch.
 export async function listBotOpenReviewThreads(prNumber: number, botLogin: string): Promise<ReviewThread[]> {
   const threads = await fetchOpenReviewThreads(prNumber);
-  return threads.filter((t) => t.authorLogin === botLogin).map((t) => ({ id: t.id, body: t.body }));
+  return threads.filter((t) => t.authorLogin === botLogin).map((t) => ({ id: t.id, body: t.body, url: t.url }));
 }
 
 // Inverse of listBotOpenReviewThreads: every unresolved thread ronin did NOT
@@ -696,6 +701,54 @@ export async function listExternalOpenReviewThreads(prNumber: number, botLogin: 
 export async function listAllOpenReviewThreads(prNumber: number): Promise<ReviewThread[]> {
   const threads = await fetchOpenReviewThreads(prNumber);
   return threads.map((t) => ({ id: t.id, body: t.body }));
+}
+
+export interface ReviewCommentInput {
+  path: string;
+  line: number;
+  startLine?: number;
+  body: string;
+}
+
+// A review with inline comments needs a JSON array body, which `gh api -f`
+// can't express — the payload goes through --input from a temp file instead.
+// `event` is hardcoded on purpose and has no parameter: a bot review never
+// gates the merge (docs/superpowers/specs/2026-08-20-external-pr-review-design.md,
+// "Nunca APPROVE ni REQUEST_CHANGES"). `commit_id` pins the review to the
+// exact commit that was reviewed — the external review's "last reviewed SHA"
+// is read back from it.
+export async function postReview(
+  prNumber: number,
+  review: { commitId: string; body: string; comments: ReviewCommentInput[] },
+): Promise<void> {
+  const payload = {
+    commit_id: review.commitId,
+    event: 'COMMENT',
+    body: review.body,
+    comments: review.comments.map((c) => ({
+      path: c.path,
+      line: c.line,
+      side: 'RIGHT',
+      ...(c.startLine != null && c.startLine < c.line ? { start_line: c.startLine, start_side: 'RIGHT' } : {}),
+      body: c.body,
+    })),
+  };
+  const dir = await mkdtemp(join(tmpdir(), 'ronin-review-'));
+  const file = join(dir, 'review.json');
+  try {
+    await writeFile(file, JSON.stringify(payload));
+    await ghApi(['api', '--method', 'POST', `repos/${activeRepo().productRepo}/pulls/${prNumber}/reviews`, '--input', file]);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
+export async function resolveReviewThread(threadId: string): Promise<void> {
+  await ghApi([
+    'api', 'graphql',
+    '-f', 'query=mutation($id: ID!) { resolveReviewThread(input: { threadId: $id }) { thread { id } } }',
+    '-f', `id=${threadId}`,
+  ]);
 }
 
 export type ReviewStatusState = 'pending' | 'success' | 'error';
