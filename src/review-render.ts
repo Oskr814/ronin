@@ -1,4 +1,4 @@
-import type { ReviewFinding, FindingType, FindingSeverity } from './review-output.js';
+import type { ReviewFinding, FindingType, FindingSeverity, FindingOrigin, CodeLocation } from './review-output.js';
 
 // Every comment the external review publishes is rendered here from the
 // validated findings.json fields — never free-form text from the model — so
@@ -21,6 +21,12 @@ const TYPE_EMOJI: Record<FindingType, string> = { bug: '🐞', decision: '❓', 
 const TYPE_LABEL: Record<FindingType, string> = { bug: 'Defecto', decision: 'Decisión', improvement: 'Mejora' };
 const SEVERITY_EMOJI: Record<FindingSeverity, string> = { critical: '🔴', important: '🟠', minor: '🟡' };
 const SEVERITY_LABEL: Record<FindingSeverity, string> = { critical: 'Crítico', important: 'Importante', minor: 'Menor' };
+
+const ORIGIN_LABEL: Record<FindingOrigin, string> = {
+  new: 'Lo introduce este PR',
+  worsened: 'Lo empeora este PR',
+  preexisting: 'Ya existía antes de este PR',
+};
 
 const PROMPT_TYPE_LINE: Record<FindingType, string> = {
   bug: 'Tipo: defecto — hay un escenario de falla concreto.',
@@ -97,18 +103,62 @@ export function findingMarker(finding: ReviewFinding, ctx: RenderContext): strin
   );
 }
 
-function verificationLine(finding: ReviewFinding): string {
-  if (finding.verification.status === 'verified') return '**Verificación:** comprobado con un test que falla (ver abajo).';
-  // The line ends with its own period, so one the model already put at the
-  // end of the reason would double it.
+function sentence(text: string): string {
+  const t = inline(text);
+  return /[.!?…]$/.test(t) ? t : `${t}.`;
+}
+
+function originLine(finding: ReviewFinding): string | undefined {
+  if (!finding.origin) return undefined;
+  const label = ORIGIN_LABEL[finding.origin.kind];
+  return finding.origin.note ? `**${label}:** ${sentence(finding.origin.note)}` : `**${label}.**`;
+}
+
+// "→ result. Se esperaba: expected." — the outcome of the steps, or the
+// whole scenario when the model gave no steps.
+function scenarioOutcome(finding: ReviewFinding): string {
+  const { result, expected } = finding.scenario!;
+  return `${sentence(result)}${expected ? ` Se esperaba: ${sentence(expected)}` : ''}`;
+}
+
+function scenarioBlock(finding: ReviewFinding): string {
+  const { steps } = finding.scenario!;
+  if (steps.length === 0) return `**Cómo pasa:** ${scenarioOutcome(finding)}`;
+  return ['**Cómo pasa:**', '', ...steps.map((step, i) => `${i + 1}. ${inline(step)}`), '', `→ ${scenarioOutcome(finding)}`].join('\n');
+}
+
+function sameLocation(a: CodeLocation, b: CodeLocation): boolean {
+  return a.path === b.path && a.line === b.line;
+}
+
+// Evidence and the other instances in one line; an instance already linked
+// as evidence (or the anchor itself) is not repeated.
+function whereLine(finding: ReviewFinding, ctx: RenderContext): string | undefined {
+  const parts = finding.evidence.map((e) => `${locationLink(ctx, e.path, e.line)} ${inline(e.note)}`);
+  const anchor = { path: finding.path, line: finding.line };
+  const extra = (finding.extraLocations ?? []).filter(
+    (l) => !sameLocation(l, anchor) && !finding.evidence.some((e) => sameLocation(e, l)),
+  );
+  if (extra.length > 0) parts.push(`también ${extra.map((l) => locationLink(ctx, l.path, l.line)).join(', ')}`);
+  return parts.length > 0 ? `**Dónde:** ${parts.join(' · ')}` : undefined;
+}
+
+// Only a test that was actually run earns a visible line; a reasoned
+// finding says so inside the detail.
+function reasonedNote(finding: ReviewFinding): string | undefined {
+  if (finding.verification.status === 'verified') return undefined;
   const reason = finding.verification.reason ? ` — ${inline(finding.verification.reason).replace(/[.\s]+$/, '')}` : '';
   return `**Verificación:** razonado, no ejecutado${reason}.`;
 }
 
-function suggestionBlock(finding: ReviewFinding): string | undefined {
-  if (!finding.suggestion) return undefined;
-  if (finding.suggestion.kind === 'replace') return fenced(neutralizeMentions(finding.suggestion.code), 'suggestion');
-  return `**Corrección:** ${neutralizeMentions(finding.suggestion.text)}`;
+function fixBlock(finding: ReviewFinding): string | undefined {
+  const parts: string[] = [];
+  if (finding.fix) parts.push(`**Corrección:** ${neutralizeMentions(finding.fix)}`);
+  if (finding.suggestion) {
+    const info = finding.suggestion.kind === 'replace' ? 'suggestion' : languageOf(finding.path);
+    parts.push(fenced(neutralizeMentions(finding.suggestion.code), info));
+  }
+  return parts.length > 0 ? parts.join('\n') : undefined;
 }
 
 function details(summary: string, body: string): string {
@@ -124,13 +174,16 @@ function agentPromptBody(finding: ReviewFinding): string {
   if (finding.extraLocations?.length) {
     lines.push(`También aplica en: ${finding.extraLocations.map((l) => `\`${l.path}:${l.line}\``).join(', ')}.`);
   }
-  lines.push('', PROMPT_TYPE_LINE[finding.type], '');
-  if (finding.scenario) lines.push(`Escenario: ${inline(finding.scenario)}`);
+  lines.push('', PROMPT_TYPE_LINE[finding.type]);
+  if (finding.origin) lines.push(`Origen: ${ORIGIN_LABEL[finding.origin.kind]}${finding.origin.note ? ` — ${sentence(finding.origin.note)}` : '.'}`);
+  lines.push('');
+  if (finding.scenario) {
+    lines.push('Escenario:', ...finding.scenario.steps.map((step, i) => `${i + 1}. ${inline(step)}`), `Resultado: ${scenarioOutcome(finding)}`);
+  }
   lines.push(`Impacto: ${inline(finding.impact)}`, '', 'Código actual:', fenced(neutralizeMentions(finding.affectedCode), languageOf(finding.path)));
-  if (finding.suggestion?.kind === 'replace') {
-    lines.push('', 'Corrección propuesta:', fenced(neutralizeMentions(finding.suggestion.code), languageOf(finding.path)));
-  } else if (finding.suggestion?.kind === 'text') {
-    lines.push('', `Corrección propuesta: ${neutralizeMentions(finding.suggestion.text)}`);
+  if (finding.fix) lines.push('', `Corrección propuesta: ${neutralizeMentions(finding.fix)}`);
+  if (finding.suggestion) {
+    lines.push('', finding.fix ? 'Código:' : 'Corrección propuesta:', fenced(neutralizeMentions(finding.suggestion.code), languageOf(finding.path)));
   }
   lines.push('', PROMPT_VERIFY_FIRST);
   return lines.join('\n');
@@ -161,28 +214,34 @@ export function renderFindingComment(finding: ReviewFinding, ctx: RenderContext,
     '',
   ];
   const visible: string[] = [];
-  if (finding.scenario) visible.push(`**Escenario:** ${inline(finding.scenario)}`);
-  visible.push(`**Impacto:** ${inline(finding.impact)}`);
-  if (finding.evidence.length > 0) {
-    visible.push(`**Evidencia:** ${finding.evidence.map((e) => `${locationLink(ctx, e.path, e.line)} ${inline(e.note)}`).join(' · ')}`);
-  }
-  if (finding.extraLocations?.length) {
-    visible.push(`**También en:** ${finding.extraLocations.map((l) => locationLink(ctx, l.path, l.line)).join(' · ')}`);
-  }
-  visible.push(verificationLine(finding));
+  const origin = originLine(finding);
+  if (origin) visible.push(origin, '');
+  visible.push(finding.scenario ? scenarioBlock(finding) : `**Impacto:** ${inline(finding.impact)}`);
+  const where = whereLine(finding, ctx);
+  if (where) visible.push('', where);
+  if (finding.verification.status === 'verified') visible.push('**Verificación:** ✅ comprobado con un test que falla (ver abajo).');
   if (finding.type === 'decision') visible.push('**Si es intencional:** resolvé el hilo.');
   parts.push(visible.join('\n'));
 
-  const suggestion = suggestionBlock(finding);
-  if (suggestion) parts.push('', suggestion);
+  const fix = fixBlock(finding);
+  if (fix) parts.push('', fix);
 
   if (finding.verification.status === 'verified' && finding.verification.test) {
     const { test } = finding.verification;
     parts.push('', details(`Test que lo comprueba (\`${test.path}\`)`, `${fenced(neutralizeMentions(test.code), languageOf(test.path))}\n\n${fenced(neutralizeMentions(test.output))}`));
   }
-  if (includeDetail && finding.detail) parts.push('', details('Detalle', neutralizeMentions(finding.detail)));
+  if (includeDetail) {
+    const body = [finding.detail ? neutralizeMentions(finding.detail) : undefined, reasonedNote(finding)].filter(Boolean).join('\n\n');
+    if (body) parts.push('', details('Detalle', body));
+  }
   if (includePrompt) parts.push('', details('Prompt para agentes de IA 🤖', renderAgentPrompt(finding)));
   return parts.join('\n');
+}
+
+const SEVERITY_ORDER: FindingSeverity[] = ['critical', 'important', 'minor'];
+
+function bySeverity(findings: ReviewFinding[]): ReviewFinding[] {
+  return [...findings].sort((a, b) => SEVERITY_ORDER.indexOf(a.severity) - SEVERITY_ORDER.indexOf(b.severity));
 }
 
 function tableCell(text: string): string {
@@ -201,7 +260,7 @@ function buildSummary(
     '',
     '| | Severidad | Hallazgo |',
     '|---|---|---|',
-    ...all.map((f) => `| ${TYPE_EMOJI[f.type]} | ${SEVERITY_EMOJI[f.severity]} ${SEVERITY_LABEL[f.severity]} | ${tableCell(f.title)} (${locationLink(ctx, f.path, f.line)}) |`),
+    ...bySeverity(all).map((f) => `| ${TYPE_EMOJI[f.type]} | ${SEVERITY_EMOJI[f.severity]} ${SEVERITY_LABEL[f.severity]} | ${tableCell(f.title)} (${locationLink(ctx, f.path, f.line)}) |`),
   ];
   if (findings.outOfDiff.length > 0) {
     lines.push('', '### Fuera del diff', '', 'Estos hallazgos apuntan a líneas que el PR no modifica, así que no se pueden anclar como comentario en la línea.');

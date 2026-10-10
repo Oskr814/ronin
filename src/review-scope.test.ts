@@ -53,7 +53,7 @@ function finding(overrides: Partial<ReviewFinding> = {}): ReviewFinding {
     severity: 'important',
     category: 'Bug',
     title: 't',
-    scenario: 's',
+    scenario: { steps: [], result: 's' },
     impact: 'i',
     evidence: [],
     verification: { status: 'reasoned' },
@@ -123,11 +123,16 @@ describe('placeFindings', () => {
     expect(placeFindings([f], commentable).inline).toEqual([f]);
   });
 
+  it('turns the suggestion of an out-of-diff finding into a snippet', () => {
+    const { outOfDiff } = placeFindings([finding({ path: 'nowhere.cs', line: 1, suggestion: { kind: 'replace', code: 'x()' } })], new Map());
+    expect(outOfDiff[0].suggestion).toEqual({ kind: 'snippet', code: 'x()' });
+  });
+
   it('falls back to the last line and degrades the suggestion when the range is not fully commentable', () => {
     const f = finding({ startLine: 13, line: 41, suggestion: { kind: 'replace', code: 'x()' } });
     const [placed] = placeFindings([f], commentable).inline;
     expect(placed.startLine).toBeUndefined();
     expect(placed.line).toBe(41);
-    expect(placed.suggestion).toEqual({ kind: 'text', text: '```\nx()\n```' });
+    expect(placed.suggestion).toEqual({ kind: 'snippet', code: 'x()' });
   });
 });

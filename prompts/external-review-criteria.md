@@ -92,6 +92,23 @@ Cada hallazgo tiene un tipo según la acción que le pide a quien lo lee.
 - **improvement** (🧹 Mejora) — smell, duplicación, estilo, legibilidad. Es
   opcional por definición.
 
+## Origen
+
+Cada hallazgo dice si lo trae el PR, comparando contra el merge base:
+
+- **new** — el PR introduce el problema.
+- **worsened** — el problema ya existía, pero el PR lo hace más probable o
+  más grave. Decir cómo. Es **worsened** siempre que el PR quite o debilite
+  una protección que lo cubría (una validación, un lock, una recarga), deje
+  ese punto como la única barrera, o modifique el código donde ocurre.
+- **preexisting** — el PR no toca ni el código del problema ni ninguna de sus
+  protecciones; el riesgo es exactamente el mismo que antes. Se publica como
+  **minor** (🟡), como contexto, sin importar los pisos. Si la nota necesita
+  un "pero el PR…", no es preexisting.
+
+Un problema que ya existía nunca se presenta como si lo hubiera traído el PR:
+el escenario elegido tiene que mostrar lo que el PR cambió.
+
 ## Severidad
 
 - **critical** (🔴) — pérdida o corrupción de datos, agujero de seguridad,
@@ -127,14 +144,18 @@ La severidad nunca puede quedar por debajo de estos pisos:
 
 Cuando un hallazgo es una instancia de alguna de estas clases, buscar **todas**
 las instancias de la misma clase en el PR y reportar **un único** hallazgo con
-todas las ubicaciones y el arreglo de fondo:
+todas las ubicaciones y el arreglo de fondo. "La misma clase" es el mismo
+mecanismo con el mismo arreglo; mecanismos distintos, aunque estén
+relacionados, son hallazgos separados, para que cada uno se acepte o se
+descarte por su cuenta:
 
 - Check-then-act y carreras.
 - Una validación que se puede saltear por algún camino.
 - Datos no revalidados tras tomar un lock: enumerar todos los datos leídos
   antes del lock de los que depende la decisión (cliente, flags como
   `IgnoreCreditLimit`, líneas, costos, estado) y decir cuáles se revalidan y
-  cuáles no.
+  cuáles no. Cada dato no revalidado con un arreglo propio es un hallazgo; el
+  mismo dato sin revalidar en varios métodos es uno solo.
 - Un chequeo de autorización o de rol presente en un endpoint y ausente en sus
   hermanos.
 

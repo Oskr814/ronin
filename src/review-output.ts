@@ -8,6 +8,16 @@
 
 export type FindingType = 'bug' | 'decision' | 'improvement';
 export type FindingSeverity = 'critical' | 'important' | 'minor';
+// Whether the PR brought the problem in. It is the first thing a reader
+// needs to accept or dismiss a finding, so it is a field, not prose.
+export type FindingOrigin = 'new' | 'worsened' | 'preexisting';
+
+// A race or a failure path reads as numbered steps, not one long sentence.
+export interface Scenario {
+  steps: string[];
+  result: string;
+  expected?: string;
+}
 
 export interface CodeLocation {
   path: string;
@@ -22,11 +32,16 @@ export interface ReviewFinding {
   severity: FindingSeverity;
   category: string;
   title: string;
-  scenario?: string;
+  origin?: { kind: FindingOrigin; note?: string };
+  scenario?: Scenario;
   impact: string;
   evidence: Array<CodeLocation & { note: string }>;
   verification: { status: 'verified' | 'reasoned'; reason?: string; test?: { path: string; code: string; output: string } };
-  suggestion?: { kind: 'replace'; code: string } | { kind: 'text'; text: string };
+  // One sentence saying what to change; the code, when there is some, goes
+  // in suggestion — "replace" is GitHub's one-click block, "snippet" is plain
+  // code for a fix that doesn't fit the anchored lines.
+  fix?: string;
+  suggestion?: { kind: 'replace' | 'snippet'; code: string };
   affectedCode: string;
   extraLocations?: CodeLocation[];
   detail?: string;
@@ -50,15 +65,21 @@ export const FINDINGS_JSON_CONTRACT = `{
       "type": "bug" | "decision" | "improvement",
       "severity": "critical" | "important" | "minor",
       "category": "short free text, e.g. Concurrencia",
-      "title": "the problem in one sentence (max 120 chars)",
-      "scenario": "Given X, when Y, Z happens; W was expected (max 400 chars; required for bug and decision)",
+      "title": "the consequence, not the mechanism, in one sentence (max 90 chars)",
+      "origin": { "kind": "new" | "worsened" | "preexisting", "note": "one line: what the PR changed about it (required for worsened and preexisting)" },
+      "scenario": {                      // required for bug and decision
+        "steps": ["1st concrete step", "2nd", "..."],   // max 5, one action each
+        "result": "what happens",
+        "expected": "what should have happened"
+      },
       "impact": "what breaks and for whom, one line (max 200 chars)",
-      "evidence": [{ "path": "...", "line": 45, "note": "why this line matters" }],
+      "evidence": [{ "path": "...", "line": 45, "note": "why this line matters (max 100 chars)" }],   // max 3
       "verification": { "status": "reasoned", "reason": "optional, one line" },
+      "fix": "one concrete fix in one sentence, no alternatives",   // optional
       "suggestion": { "kind": "replace", "code": "exact replacement for lines startLine..line" }
-                  | { "kind": "text", "text": "one concrete fix, no alternatives" },   // optional
+                  | { "kind": "snippet", "code": "the key code of a fix that does not fit the anchored lines" },   // optional
       "affectedCode": "the current code at the anchor, a few lines",
-      "extraLocations": [{ "path": "...", "line": 7 }],   // optional: other instances of a systemic finding
+      "extraLocations": [{ "path": "...", "line": 7 }],   // optional: other instances of the same mechanism
       "detail": "optional longer explanation (max 1500 chars)",
       "mentionId": 123                   // optional: id of the mention that asked for this
     }
@@ -68,11 +89,15 @@ export const FINDINGS_JSON_CONTRACT = `{
 }`;
 
 export const LIMITS = {
-  title: 120,
+  title: 90,
   category: 40,
-  scenario: 400,
+  step: 200,
+  steps: 5,
+  scenarioResult: 200,
+  originNote: 200,
   impact: 200,
-  note: 200,
+  note: 100,
+  fix: 400,
   affectedCode: 1200,
   suggestion: 2000,
   detail: 1500,
@@ -80,7 +105,7 @@ export const LIMITS = {
   testCode: 3000,
   testOutput: 1500,
   replyBody: 2000,
-  evidence: 6,
+  evidence: 3,
   extraLocations: 20,
 } as const;
 
@@ -155,17 +180,21 @@ function parseFinding(raw: unknown, mentionIds: Set<number>): ReviewFinding {
   const startLine = raw.startLine == null ? undefined : posInt(raw.startLine, 'startLine');
   if (startLine != null && startLine > line) throw new InvalidField('startLine posterior a line');
 
-  const scenario = optStr(raw.scenario, LIMITS.scenario);
+  const scenario = parseScenario(raw.scenario);
   if (type !== 'improvement' && scenario == null) throw new InvalidField(`scenario obligatorio para ${type}`);
+  const origin = parseOrigin(raw.origin);
 
   const finding: ReviewFinding = {
     path: repoPath(raw.path, 'path'),
     line,
     ...(startLine != null ? { startLine } : {}),
     type,
-    severity: oneOf(raw.severity, SEVERITIES, 'severity'),
+    // A problem the PR found but did not touch is context, not a reason to
+    // block it — whatever the agent proposed.
+    severity: origin?.kind === 'preexisting' ? 'minor' : oneOf(raw.severity, SEVERITIES, 'severity'),
     category: str(raw.category, 'category', LIMITS.category),
     title: str(raw.title, 'title', LIMITS.title),
+    ...(origin != null ? { origin } : {}),
     ...(scenario != null ? { scenario } : {}),
     impact: str(raw.impact, 'impact', LIMITS.impact),
     evidence: locations(raw.evidence, LIMITS.evidence, (e) => ({
@@ -177,6 +206,10 @@ function parseFinding(raw: unknown, mentionIds: Set<number>): ReviewFinding {
     affectedCode: str(raw.affectedCode, 'affectedCode', LIMITS.affectedCode),
   };
 
+  // The previous contract put the fix sentence in a "text" suggestion.
+  const legacyFix = isObject(raw.suggestion) && raw.suggestion.kind === 'text' ? raw.suggestion.text : undefined;
+  const fix = optStr(raw.fix, LIMITS.fix) ?? optStr(legacyFix, LIMITS.fix);
+  if (fix) finding.fix = fix;
   const suggestion = parseSuggestion(raw.suggestion, startLine ?? line, line);
   if (suggestion) finding.suggestion = suggestion;
   if (raw.extraLocations != null) {
@@ -191,6 +224,30 @@ function parseFinding(raw: unknown, mentionIds: Set<number>): ReviewFinding {
   // point at a mention that actually triggered this run.
   if (typeof raw.mentionId === 'number' && mentionIds.has(raw.mentionId)) finding.mentionId = raw.mentionId;
   return finding;
+}
+
+// Lenient about the shape: a model that still writes the scenario as one
+// sentence gets it rendered as the result, not the whole finding dropped.
+function parseScenario(raw: unknown): Scenario | undefined {
+  const text = optStr(raw, LIMITS.scenarioResult * 2);
+  if (text) return { steps: [], result: text };
+  if (!isObject(raw)) return undefined;
+  const result = optStr(raw.result, LIMITS.scenarioResult);
+  if (!result) return undefined;
+  const steps = asArray(raw.steps)
+    .map((step) => optStr(step, LIMITS.step))
+    .filter((step): step is string => step != null)
+    .slice(0, LIMITS.steps);
+  const expected = optStr(raw.expected, LIMITS.scenarioResult);
+  return expected ? { steps, result, expected } : { steps, result };
+}
+
+const ORIGINS: readonly FindingOrigin[] = ['new', 'worsened', 'preexisting'];
+
+function parseOrigin(raw: unknown): ReviewFinding['origin'] {
+  if (!isObject(raw) || !ORIGINS.includes(raw.kind as FindingOrigin)) return undefined;
+  const note = optStr(raw.note, LIMITS.originNote);
+  return note ? { kind: raw.kind as FindingOrigin, note } : { kind: raw.kind as FindingOrigin };
 }
 
 function parseVerification(raw: unknown): ReviewFinding['verification'] {
@@ -216,13 +273,10 @@ function parseVerification(raw: unknown): ReviewFinding['verification'] {
 }
 
 function parseSuggestion(raw: unknown, startLine: number, line: number): ReviewFinding['suggestion'] {
-  if (!isObject(raw)) return undefined;
-  if (raw.kind === 'replace' && typeof raw.code === 'string') {
-    const code = truncate(raw.code, LIMITS.suggestion);
-    return line - startLine > MAX_SUGGESTION_SPAN ? { kind: 'text', text: `\`\`\`\n${code}\n\`\`\`` } : { kind: 'replace', code };
-  }
-  const text = optStr(raw.text, LIMITS.suggestion);
-  return raw.kind === 'text' && text ? { kind: 'text', text } : undefined;
+  if (!isObject(raw) || (raw.kind !== 'replace' && raw.kind !== 'snippet')) return undefined;
+  const code = optStr(raw.code, LIMITS.suggestion);
+  if (!code) return undefined;
+  return raw.kind === 'replace' && line - startLine <= MAX_SUGGESTION_SPAN ? { kind: 'replace', code } : { kind: 'snippet', code };
 }
 
 export function parseReviewOutput(

@@ -174,11 +174,27 @@ documentación mal formado, como 🟡.
 
 ### Formato del comentario
 
-- **Lo necesario para decidir, visible sin expandir.** Título (el problema en
-  una frase), Escenario ("dado X, cuando Y, pasa Z; se esperaba W"),
-  Impacto (una línea), Evidencia (links a líneas exactas, incluidos tests o
-  comentarios que lo contradigan), Verificación. Parte visible acotada a ~6
-  líneas.
+- **Lo necesario para decidir, visible sin expandir, en el orden en que se
+  decide** (ajustado tras la primera publicación real en #774, donde el
+  comentario era más detallado pero no más claro):
+  1. Título: la consecuencia, no el mecanismo (≤90).
+  2. Origen: **Lo introduce / Lo empeora / Ya existía antes de este PR**, con
+     una nota de qué cambió el PR. En #774 el dato de que la carrera ya
+     existía estaba colapsado en el detalle y contradecía al 🔴.
+  3. **Cómo pasa:** pasos numerados (≤5, una acción cada uno) y
+     "→ resultado. Se esperaba: …". Impacto solo en las 🧹, que no tienen
+     escenario.
+  4. **Dónde:** como mucho 3 links con notas cortas, y "también …" con las
+     otras instancias que no estén ya enlazadas.
+  5. **Corrección:** una oración y, si entra en el rango anclado, el bloque
+     ` ```suggestion `.
+  La verificación solo es visible si es ✅ comprobada; la razonada va en el
+  detalle colapsado.
+- **Un mecanismo por hallazgo.** "Clase sistémica" es el mismo mecanismo con
+  el mismo arreglo en varios lugares; mecanismos relacionados pero distintos
+  son hallazgos separados, cada uno con su origen, para aceptarlos o
+  descartarlos por separado. Un hallazgo `preexisting` se publica como 🟡
+  (lo fuerza el supervisor).
 - **Tipo según la acción que pide**, en el título junto a la severidad:
   - 🐞 **Defecto** — escenario de falla concreto. Aceptar o descartar.
   - ❓ **Decisión** — el comportamiento puede ser intencional (un test, un
@@ -326,12 +342,14 @@ interface ExternalReviewOutput {
     type: 'bug' | 'decision' | 'improvement';
     severity: 'critical' | 'important' | 'minor';
     category: string;
-    title: string;                 // ≤ 120
-    scenario: string;              // ≤ 400, obligatorio salvo improvement
+    title: string;                 // ≤ 90, la consecuencia
+    origin?: { kind: 'new' | 'worsened' | 'preexisting'; note?: string }; // preexisting → minor
+    scenario?: { steps: string[]; result: string; expected?: string }; // ≤5 pasos, obligatorio salvo improvement
     impact: string;                // ≤ 200
-    evidence: Array<{ path: string; line: number; note: string }>;
+    evidence: Array<{ path: string; line: number; note: string }>; // ≤ 3, notas ≤ 100
     verification: { status: 'verified' | 'reasoned'; reason?: string; test?: { path: string; code: string; output: string } };
-    suggestion?: { kind: 'replace'; code: string } | { kind: 'text'; text: string };
+    fix?: string;                  // una oración
+    suggestion?: { kind: 'replace' | 'snippet'; code: string }; // replace = bloque suggestion
     affectedCode: string;          // snippet para el prompt de IA
     extraLocations?: Array<{ path: string; line: number }>; // hallazgos sistémicos
     detail?: string;               // ≤ 1500, colapsado
@@ -345,7 +363,7 @@ interface ExternalReviewOutput {
 Validación a mano (sin dependencia nueva): campos obligatorios, enums, largos
 máximos (se truncan con "…"), `path` existente en el worktree, `line` dentro
 del archivo, `suggestion.kind === 'replace'` solo si `line - startLine ≤ 10`
-y el rango está en el diff. Un JSON inválido o ausente es un fallo de la
+y el rango está en el diff (si no, pasa a `snippet`). Un JSON inválido o ausente es un fallo de la
 tarea (log, status `error`, reintento el próximo tick, igual que hoy). Un
 hallazgo individual inválido se descarta con log, sin tirar el resto.
 

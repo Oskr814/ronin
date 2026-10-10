@@ -11,7 +11,7 @@ function finding(overrides: Record<string, unknown> = {}) {
     severity: 'important',
     category: 'Concurrencia',
     title: 'Carrera en X',
-    scenario: 'Dado A, cuando B, pasa C; se esperaba D.',
+    scenario: { steps: ['A confirma', 'B agrega'], result: 'pasa C', expected: 'D' },
     impact: 'Se pierde el pedido.',
     evidence: [{ path: 'src/a.ts', line: 10, note: 'acá' }],
     verification: { status: 'reasoned' },
@@ -81,9 +81,48 @@ describe('parseReviewOutput — findings', () => {
     expect(output.findings[0].title.endsWith('…')).toBe(true);
   });
 
-  it('degrades a replace suggestion spanning more than 10 lines to text', () => {
+  it('degrades a replace suggestion spanning more than 10 lines to a snippet', () => {
     const { output } = parse({ findings: [finding({ startLine: 1, line: 20, suggestion: { kind: 'replace', code: 'a();' } })] });
-    expect(output.findings[0].suggestion).toEqual({ kind: 'text', text: '```\na();\n```' });
+    expect(output.findings[0].suggestion).toEqual({ kind: 'snippet', code: 'a();' });
+  });
+
+  it('keeps the fix sentence, and reads it from a legacy text suggestion', () => {
+    const { output } = parse({
+      findings: [finding({ fix: 'Tomar el lock.' }), finding({ suggestion: { kind: 'text', text: 'Reintentar.' } })],
+    });
+    expect(output.findings.map((f) => f.fix)).toEqual(['Tomar el lock.', 'Reintentar.']);
+    expect(output.findings[1].suggestion).toBeUndefined();
+  });
+
+  it('parses the scenario steps, capped, and accepts a one-sentence scenario as the result', () => {
+    const { output } = parse({
+      findings: [
+        finding({ scenario: { steps: ['1', '', 2, '3', '4', '5', '6', '7'], result: 'r', expected: 'e' } }),
+        finding({ scenario: 'Dado A, cuando B, pasa C.' }),
+      ],
+    });
+    expect(output.findings[0].scenario).toEqual({ steps: ['1', '3', '4', '5', '6'], result: 'r', expected: 'e' });
+    expect(output.findings[1].scenario).toEqual({ steps: [], result: 'Dado A, cuando B, pasa C.' });
+  });
+
+  it('drops a bug whose scenario has no result', () => {
+    const { output } = parse({ findings: [finding({ scenario: { steps: ['a'] } })] });
+    expect(output.findings).toEqual([]);
+  });
+
+  it('keeps the origin and publishes a preexisting problem as minor whatever the agent proposed', () => {
+    const { output } = parse({
+      findings: [
+        finding({ severity: 'critical', origin: { kind: 'worsened', note: 'quitó la otra validación' } }),
+        finding({ severity: 'critical', origin: { kind: 'preexisting' } }),
+        finding({ origin: { kind: 'maybe' } }),
+      ],
+    });
+    expect(output.findings.map((f) => [f.severity, f.origin])).toEqual([
+      ['critical', { kind: 'worsened', note: 'quitó la otra validación' }],
+      ['minor', { kind: 'preexisting' }],
+      ['important', undefined],
+    ]);
   });
 
   it('keeps a replace suggestion within 10 lines', () => {
