@@ -13,7 +13,7 @@ import type { PullRequestStatus } from './github.js';
 let mockConfig: Record<string, unknown> = { worktreeBaseRef: 'main' };
 vi.mock('./config.js', () => ({ get config() { return mockConfig; } }));
 
-const { isBehind, attemptRebase, branchFromWorktreeDirName, branchesToSweep, ensureWorktree, removeWorktree, ensureExternalReviewWorktree, externalReviewWorktreeDirFor, ensureTrustedFixWorktree, removeTrustedFixWorktree } = await import('./worktree.js');
+const { isBehind, attemptRebase, branchFromWorktreeDirName, branchesToSweep, ensureWorktree, removeWorktree, ensureExternalReviewWorktree, externalReviewWorktreeDirFor, ensureTrustedFixWorktree, removeTrustedFixWorktree, isCommitAvailable, pinReviewedSha, pruneReviewedPins } = await import('./worktree.js');
 const { withActiveRepo } = await import('./repo-context.js');
 
 function pr(headRefName: string): PullRequestStatus {
@@ -650,5 +650,53 @@ describe('externalReviewWorktreeDirFor', () => {
     delete process.env.WORKTREE_BASE_PATH;
 
     expect(dir).toBe('/tmp/worktrees/external-pr-305');
+  });
+});
+
+describe('reviewed-SHA pins — real git', () => {
+  let repo: string;
+  let first: string;
+
+  async function commit(content: string): Promise<string> {
+    await writeFile(join(repo, 'f.txt'), content);
+    await git(repo, ['add', '.']);
+    await git(repo, ['commit', '-q', '-m', content]);
+    return (await git(repo, ['rev-parse', 'HEAD'])).trim();
+  }
+
+  const inRepo = <T>(fn: () => Promise<T>) => withActiveRepo({ productRepo: 'test/repo', productRepoPath: repo }, fn);
+
+  beforeEach(async () => {
+    repo = await mkdtemp(join(tmpdir(), 'ronin-pin-test-'));
+    await initRepo(repo);
+    first = await commit('one\n');
+  });
+
+  afterEach(async () => {
+    await rm(repo, { recursive: true, force: true });
+  });
+
+  it('keeps an amended-away commit reachable, and prunes the pins of closed PRs only', async () => {
+    await inRepo(async () => {
+      await pinReviewedSha(7, first);
+      await pinReviewedSha(8, first);
+      // The amend leaves `first` unreachable from any branch.
+      await writeFile(join(repo, 'f.txt'), 'amended\n');
+      await git(repo, ['commit', '-q', '-a', '--amend', '-m', 'amended']);
+      await git(repo, ['reflog', 'expire', '--expire=now', '--all']);
+      await git(repo, ['gc', '-q', '--prune=now']);
+
+      expect(await isCommitAvailable(first)).toBe(true);
+
+      await pruneReviewedPins([7]);
+      const refs = (await git(repo, ['for-each-ref', '--format=%(refname)', 'refs/ronin/reviewed/'])).trim();
+      expect(refs).toBe('refs/ronin/reviewed/7');
+    });
+  });
+
+  it('reports a commit the repo does not have as unavailable', async () => {
+    await inRepo(async () => {
+      expect(await isCommitAvailable('0123456789abcdef0123456789abcdef01234567')).toBe(false);
+    });
   });
 });

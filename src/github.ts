@@ -604,6 +604,9 @@ export async function setPullRequestBody(prNumber: number, body: string): Promis
 }
 
 const REVIEW_THREADS_PAGE_SIZE = 100;
+// Comments fetched per thread: the opening comment plus the replies the
+// external review reads as history (a human's reason for dismissing it).
+const THREAD_COMMENTS_PAGE_SIZE = 20;
 
 const REVIEW_THREADS_QUERY = `
 query($owner: String!, $repo: String!, $number: Int!) {
@@ -613,14 +616,30 @@ query($owner: String!, $repo: String!, $number: Int!) {
         nodes {
           id
           isResolved
-          comments(first: 1) {
-            nodes { author { login } body url }
+          isOutdated
+          path
+          line
+          originalLine
+          comments(first: ${THREAD_COMMENTS_PAGE_SIZE}) {
+            nodes {
+              author { login }
+              body
+              url
+              reactionGroups { content reactors { totalCount } }
+            }
           }
         }
       }
     }
   }
 }`;
+
+interface RawThreadComment {
+  author: { login: string } | null;
+  body: string;
+  url?: string;
+  reactionGroups?: Array<{ content: string; reactors: { totalCount: number } }>;
+}
 
 interface RawReviewThreadsResponse {
   data: {
@@ -630,7 +649,11 @@ interface RawReviewThreadsResponse {
           nodes: Array<{
             id: string;
             isResolved: boolean;
-            comments: { nodes: Array<{ author: { login: string } | null; body: string; url?: string }> };
+            isOutdated?: boolean;
+            path?: string | null;
+            line?: number | null;
+            originalLine?: number | null;
+            comments: { nodes: RawThreadComment[] };
           }>;
         };
       };
@@ -646,12 +669,34 @@ export interface ReviewThread {
   url?: string;
 }
 
-// Shared by listBotOpenReviewThreads/listExternalOpenReviewThreads: fetches
-// every unresolved review thread on the PR, unfiltered by author — each
-// caller applies its own author filter afterward. GraphQL (not REST) because
-// REST has no resolved/unresolved field on review comments — see
+// A thread the bot opened, open or resolved, with what the external review
+// needs to avoid re-raising it or contradicting it: where it is now, what
+// people answered and how they reacted to it.
+export interface BotThread extends ReviewThread {
+  isResolved: boolean;
+  isOutdated: boolean;
+  path: string | null;
+  // The line on the current head; null once the code under it changed.
+  line: number | null;
+  originalLine: number | null;
+  replies: Array<{ authorLogin: string; body: string }>;
+  thumbsUp: number;
+  thumbsDown: number;
+}
+
+interface FetchedThread extends BotThread {
+  authorLogin: string | null;
+}
+
+function reactionCount(comment: RawThreadComment, content: string): number {
+  return comment.reactionGroups?.find((g) => g.content === content)?.reactors.totalCount ?? 0;
+}
+
+// Every review thread on the PR, open and resolved, unfiltered by author —
+// each caller applies its own filters. GraphQL (not REST) because REST has
+// no resolved/unresolved field on review comments — see
 // docs/superpowers/specs/2026-08-20-external-pr-review-design.md.
-async function fetchOpenReviewThreads(prNumber: number): Promise<Array<{ id: string; body: string; url?: string; authorLogin: string | null }>> {
+async function fetchReviewThreads(prNumber: number): Promise<FetchedThread[]> {
   const [owner, repo] = activeRepo().productRepo.split('/');
   const stdout = await ghApi([
     'api', 'graphql',
@@ -668,11 +713,38 @@ async function fetchOpenReviewThreads(prNumber: number): Promise<Array<{ id: str
   // threads is pathological), but at least visible in the log instead of
   // silent — same treatment as PR_LIST_LIMIT above.
   if (nodes.length === REVIEW_THREADS_PAGE_SIZE) {
-    log.error(`fetchOpenReviewThreads: PR #${prNumber} alcanzó el límite de ${REVIEW_THREADS_PAGE_SIZE} threads — puede haber threads no traídos`);
+    log.error(`fetchReviewThreads: PR #${prNumber} alcanzó el límite de ${REVIEW_THREADS_PAGE_SIZE} threads — puede haber threads no traídos`);
   }
   return nodes
-    .filter((t) => !t.isResolved && t.comments.nodes[0] != null)
-    .map((t) => ({ id: t.id, body: t.comments.nodes[0].body, url: t.comments.nodes[0].url, authorLogin: t.comments.nodes[0].author?.login ?? null }));
+    .filter((t) => t.comments.nodes[0] != null)
+    .map((t) => {
+      const [first, ...rest] = t.comments.nodes;
+      return {
+        id: t.id,
+        body: first.body,
+        url: first.url,
+        authorLogin: first.author?.login ?? null,
+        isResolved: t.isResolved,
+        isOutdated: t.isOutdated ?? false,
+        path: t.path ?? null,
+        line: t.line ?? null,
+        originalLine: t.originalLine ?? null,
+        replies: rest.map((c) => ({ authorLogin: c.author?.login ?? '', body: c.body })),
+        thumbsUp: reactionCount(first, 'THUMBS_UP'),
+        thumbsDown: reactionCount(first, 'THUMBS_DOWN'),
+      };
+    });
+}
+
+async function fetchOpenReviewThreads(prNumber: number): Promise<FetchedThread[]> {
+  return (await fetchReviewThreads(prNumber)).filter((t) => !t.isResolved);
+}
+
+// Every thread the bot opened, open and resolved — the external review's
+// history of its own findings on this PR.
+export async function listBotReviewThreads(prNumber: number, botLogin: string): Promise<BotThread[]> {
+  const threads = await fetchReviewThreads(prNumber);
+  return threads.filter((t) => t.authorLogin === botLogin).map(({ authorLogin: _author, ...thread }) => thread);
 }
 
 // Only threads ronin itself opened (first comment's author == botLogin) and
@@ -703,6 +775,41 @@ export async function listAllOpenReviewThreads(prNumber: number): Promise<Review
   return threads.map((t) => ({ id: t.id, body: t.body }));
 }
 
+// The SHA the external review last reviewed, as ronin itself recorded it in
+// the body of the review (renderReviewMarker). Only reviews carrying that
+// marker count: the bot's replies to inline comments (/fix-comments,
+// mentions) create review objects too, with whatever commit was current then.
+const REVIEW_MARKER_SHA_RE = /<!-- ronin:review v=2 sha=([0-9a-f]{7,40})\b/;
+
+export interface RawReviewForMarker {
+  login: string | null;
+  body: string | null;
+  submittedAt: string | null;
+}
+
+export function lastMarkedReviewSha(reviews: RawReviewForMarker[], botLogin: string): string | undefined {
+  let latest: { sha: string; at: string } | undefined;
+  for (const review of reviews) {
+    if (review.login !== botLogin || !review.body || !review.submittedAt) continue;
+    const sha = REVIEW_MARKER_SHA_RE.exec(review.body)?.[1];
+    if (sha && (!latest || review.submittedAt > latest.at)) latest = { sha, at: review.submittedAt };
+  }
+  return latest?.sha;
+}
+
+export async function getLastReviewedShaFromGitHub(prNumber: number, botLogin: string): Promise<string | undefined> {
+  // --jq prints one compact JSON object per line across every page.
+  const stdout = await ghApi([
+    'api', '--paginate', `repos/${activeRepo().productRepo}/pulls/${prNumber}/reviews?per_page=100`,
+    '--jq', '.[] | {login: .user.login, body: .body, submittedAt: .submitted_at}',
+  ]);
+  const reviews = stdout
+    .split('\n')
+    .filter((line) => line.trim() !== '')
+    .map((line) => JSON.parse(line) as RawReviewForMarker);
+  return lastMarkedReviewSha(reviews, botLogin);
+}
+
 export interface ReviewCommentInput {
   path: string;
   line: number;
@@ -715,8 +822,8 @@ export interface ReviewCommentInput {
 // `event` is hardcoded on purpose and has no parameter: a bot review never
 // gates the merge (docs/superpowers/specs/2026-08-20-external-pr-review-design.md,
 // "Nunca APPROVE ni REQUEST_CHANGES"). `commit_id` pins the review to the
-// exact commit that was reviewed — the external review's "last reviewed SHA"
-// is read back from it.
+// exact commit that was reviewed; the "last reviewed SHA" is read back from
+// the review marker in the body instead (getLastReviewedShaFromGitHub).
 export async function postReview(
   prNumber: number,
   review: { commitId: string; body: string; comments: ReviewCommentInput[] },
