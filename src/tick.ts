@@ -30,6 +30,7 @@ import { notifyBlocker } from './notifier.js';
 import { resetTickMetrics, getTickAgentMetrics } from './metrics.js';
 import { runWithConcurrency } from './concurrency.js';
 import { runAgentTask, type AgentTask } from './agent-task.js';
+import { runExternalReview } from './review-publish.js';
 import { ClaudeUsageLimitError } from './claude-runner.js';
 import { toStackedPrs, pickBottomPr, prsForIssue, planBranch, spikeBranch, type StackedPr } from './stack.js';
 import { incrementChecksPendingCount, resetChecksPendingCount, setLastReviewedSha } from './local-state.js';
@@ -646,14 +647,10 @@ async function runIssueStep(issue: TrackingIssue, step: () => Promise<void>): Pr
 export async function processExternalReviewCandidate(candidate: ReviewCandidate): Promise<void> {
   try {
     await setReviewStatus(candidate.prNumber, 'pending', 'ronin está revisando el PR…', { sha: candidate.headSha });
-    await runAgentTask({
-      type: 'external-review',
-      prNumber: candidate.prNumber,
-      headRefName: candidate.headRefName,
-      headSha: candidate.headSha,
-      openThreads: candidate.openThreads,
-      mentions: candidate.mentions,
-    });
+    // The agent only writes findings.json; validating and publishing it
+    // happens in review-publish.ts. See
+    // docs/superpowers/specs/2026-10-10-exhaustive-external-review-design.md.
+    await runExternalReview(candidate);
     await setReviewStatus(candidate.prNumber, 'success', 'Review posteada', { sha: candidate.headSha });
     await setLastReviewedSha(candidate.prNumber, candidate.headSha);
     // Only after a successful run: a missing reaction is what makes

@@ -39,6 +39,34 @@ export interface ExternalReviewOutput {
   mentionReplies: Array<{ commentId: number; kind: 'issue' | 'review'; body: string }>;
 }
 
+// The shape above, as the external-review prompt shows it to the agent. Kept
+// next to the types so a contract change updates both in the same diff.
+export const FINDINGS_JSON_CONTRACT = `{
+  "findings": [
+    {
+      "path": "repo-relative path of the file the finding is anchored to",
+      "line": 123,                       // line in the PR head version of that file
+      "startLine": 120,                  // optional, for a multi-line range (max 10 lines for a replace suggestion)
+      "type": "bug" | "decision" | "improvement",
+      "severity": "critical" | "important" | "minor",
+      "category": "short free text, e.g. Concurrencia",
+      "title": "the problem in one sentence (max 120 chars)",
+      "scenario": "Given X, when Y, Z happens; W was expected (max 400 chars; required for bug and decision)",
+      "impact": "what breaks and for whom, one line (max 200 chars)",
+      "evidence": [{ "path": "...", "line": 45, "note": "why this line matters" }],
+      "verification": { "status": "reasoned", "reason": "optional, one line" },
+      "suggestion": { "kind": "replace", "code": "exact replacement for lines startLine..line" }
+                  | { "kind": "text", "text": "one concrete fix, no alternatives" },   // optional
+      "affectedCode": "the current code at the anchor, a few lines",
+      "extraLocations": [{ "path": "...", "line": 7 }],   // optional: other instances of a systemic finding
+      "detail": "optional longer explanation (max 1500 chars)",
+      "mentionId": 123                   // optional: id of the mention that asked for this
+    }
+  ],
+  "resolveThreads": [{ "threadId": "id of one of your open threads listed above", "reason": "what code change addressed it" }],
+  "mentionReplies": [{ "commentId": 123, "kind": "issue" | "review", "body": "your reply" }]
+}`;
+
 export const LIMITS = {
   title: 120,
   category: 40,

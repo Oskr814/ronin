@@ -103,6 +103,9 @@ vi.mock('./mentions.js', () => ({
   isFixCommentsCommand: (...args: unknown[]) => isFixCommentsCommand(...args),
 }));
 
+const runExternalReview = vi.fn();
+vi.mock('./review-publish.js', () => ({ runExternalReview }));
+
 const runAgentTask = vi.fn();
 vi.mock('./agent-task.js', () => ({
   runAgentTask: (...args: unknown[]) => runAgentTask(...args),
@@ -650,26 +653,19 @@ describe('discoverAssignedIssues', () => {
 });
 
 describe('processExternalReviewCandidate', () => {
-  const candidate = { prNumber: 305, headRefName: 'someone-else/feature-x', headSha: 'abc123', openThreads: [], mentions: [] };
+  const candidate = { prNumber: 305, headRefName: 'someone-else/feature-x', headSha: 'abc123', baseRefName: 'main', openThreads: [], mentions: [] };
 
-  it('runs the external-review agent task and records the reviewed SHA on success', async () => {
-    runAgentTask.mockResolvedValue(undefined);
+  it('runs the external review and records the reviewed SHA on success', async () => {
+    runExternalReview.mockResolvedValue(undefined);
 
     await processExternalReviewCandidate(candidate);
 
-    expect(runAgentTask).toHaveBeenCalledWith({
-      type: 'external-review',
-      prNumber: 305,
-      headRefName: 'someone-else/feature-x',
-      headSha: 'abc123',
-      openThreads: [],
-      mentions: [],
-    });
+    expect(runExternalReview).toHaveBeenCalledWith(candidate);
     expect(setLastReviewedSha).toHaveBeenCalledWith(305, 'abc123');
   });
 
-  it('does not record the SHA when the agent task throws', async () => {
-    runAgentTask.mockRejectedValue(new Error('claude -p timed out'));
+  it('does not record the SHA when the review throws', async () => {
+    runExternalReview.mockRejectedValue(new Error('claude -p timed out'));
 
     await expect(processExternalReviewCandidate(candidate)).resolves.toBeUndefined();
 
@@ -677,13 +673,13 @@ describe('processExternalReviewCandidate', () => {
   });
 
   it('swallows the error instead of propagating it', async () => {
-    runAgentTask.mockRejectedValue(new Error('boom'));
+    runExternalReview.mockRejectedValue(new Error('boom'));
 
     await expect(processExternalReviewCandidate(candidate)).resolves.not.toThrow();
   });
 
   it('reacts with eyes on each mention that triggered the run, after a successful run', async () => {
-    runAgentTask.mockResolvedValue(undefined);
+    runExternalReview.mockResolvedValue(undefined);
     const withMentions = {
       ...candidate,
       mentions: [{ id: 7, kind: 'issue' as const, body: '@ronin-agent revisá', reactionsEyes: 0, authorLogin: 'someone' }],
@@ -694,8 +690,8 @@ describe('processExternalReviewCandidate', () => {
     expect(addReaction).toHaveBeenCalledWith(7, 'issue', 'eyes');
   });
 
-  it('does not react to mentions when the agent task throws, so the next tick retries them', async () => {
-    runAgentTask.mockRejectedValue(new Error('boom'));
+  it('does not react to mentions when the review throws, so the next tick retries them', async () => {
+    runExternalReview.mockRejectedValue(new Error('boom'));
     const withMentions = {
       ...candidate,
       mentions: [{ id: 7, kind: 'issue' as const, body: '@ronin-agent revisá', reactionsEyes: 0, authorLogin: 'someone' }],
@@ -707,7 +703,7 @@ describe('processExternalReviewCandidate', () => {
   });
 
   it('does not react at all when there were no mentions', async () => {
-    runAgentTask.mockResolvedValue(undefined);
+    runExternalReview.mockResolvedValue(undefined);
 
     await processExternalReviewCandidate(candidate);
 
@@ -842,22 +838,23 @@ describe('renderTrackingIssueBody', () => {
 describe('runExternalReviews', () => {
   beforeEach(() => {
     runAgentTask.mockResolvedValue(undefined);
+    runExternalReview.mockResolvedValue(undefined);
   });
 
-  it('runs one agent task per read-only candidate findPrsNeedingReview returns', async () => {
+  it('runs one external review per read-only candidate findPrsNeedingReview returns', async () => {
     findPrsNeedingReview.mockResolvedValue({
       reviewCandidates: [
-        { prNumber: 305, headRefName: 'someone-else/feature-x', headSha: 'abc123', openThreads: [], mentions: [] },
-        { prNumber: 306, headRefName: 'other/feature-y', headSha: 'def456', openThreads: [], mentions: [] },
+        { prNumber: 305, headRefName: 'someone-else/feature-x', headSha: 'abc123', baseRefName: 'main', openThreads: [], mentions: [] },
+        { prNumber: 306, headRefName: 'other/feature-y', headSha: 'def456', baseRefName: 'main', openThreads: [], mentions: [] },
       ],
       trustedFixCandidates: [],
     });
 
     await runExternalReviews();
 
-    expect(runAgentTask).toHaveBeenCalledTimes(2);
-    expect(runAgentTask).toHaveBeenCalledWith(expect.objectContaining({ type: 'external-review', prNumber: 305, headSha: 'abc123' }));
-    expect(runAgentTask).toHaveBeenCalledWith(expect.objectContaining({ type: 'external-review', prNumber: 306, headSha: 'def456' }));
+    expect(runExternalReview).toHaveBeenCalledTimes(2);
+    expect(runExternalReview).toHaveBeenCalledWith(expect.objectContaining({ prNumber: 305, headSha: 'abc123' }));
+    expect(runExternalReview).toHaveBeenCalledWith(expect.objectContaining({ prNumber: 306, headSha: 'def456' }));
     // Commit status keyed to the candidate's known head SHA, no extra `gh pr view`.
     expect(setReviewStatus).toHaveBeenCalledWith(305, 'pending', expect.any(String), { sha: 'abc123' });
     expect(setReviewStatus).toHaveBeenCalledWith(305, 'success', expect.any(String), { sha: 'abc123' });
