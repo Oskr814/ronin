@@ -22,10 +22,15 @@ const loadReviewCriteria = vi.fn();
 vi.mock('./review-criteria.js', () => ({ loadReviewCriteria }));
 
 const commentableLines = vi.fn();
+const changedLinesSince = vi.fn();
 vi.mock('./review-scope.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./review-scope.js')>()),
   commentableLines,
+  changedLinesSince,
 }));
+
+const pinReviewedSha = vi.fn();
+vi.mock('./worktree.js', () => ({ pinReviewedSha }));
 
 const logInfo = vi.fn();
 const logError = vi.fn();
@@ -36,15 +41,20 @@ const { runExternalReview, threadTitle, closingState } = await import('./review-
 
 const OUTPUT_PATH = '/tmp/wt/external-review-out/305-abc123def.json';
 
+const openThreads = [
+  { id: 'T1', body: '<!-- marker -->\n### 🟠 **Carrera en X**\n...', url: 'https://github.com/x/pull/305#discussion_r1' },
+  { id: 'T2', body: '### 🟡 **Otro**', url: 'https://github.com/x/pull/305#discussion_r2' },
+];
+
+const historyEntry = { isResolved: false, isOutdated: false, path: null, line: null, originalLine: null, replies: [], thumbsUp: 0, thumbsDown: 0 };
+
 const candidate = {
   prNumber: 305,
   headRefName: 'feat/x',
   headSha: 'abc123def',
   baseRefName: 'odoo-main',
-  openThreads: [
-    { id: 'T1', body: '<!-- marker -->\n### 🟠 **Carrera en X**\n...', url: 'https://github.com/x/pull/305#discussion_r1' },
-    { id: 'T2', body: '### 🟡 **Otro**', url: 'https://github.com/x/pull/305#discussion_r2' },
-  ],
+  threadHistory: openThreads.map((t) => ({ ...t, ...historyEntry })),
+  openThreads,
   mentions: [{ id: 42, kind: 'issue' as const, body: '@ronin mirá', reactionsEyes: 0, authorLogin: 'dev' }],
 };
 
@@ -80,7 +90,16 @@ beforeEach(() => {
   postReview.mockResolvedValue(undefined);
   resolveReviewThread.mockResolvedValue(undefined);
   replyToComment.mockResolvedValue(undefined);
+  pinReviewedSha.mockResolvedValue(undefined);
 });
+
+// Every review body starts with ronin's review marker; most tests only care
+// about what follows it.
+function bodyAfterMarker(body: string): string {
+  const [first, ...rest] = body.split('\n');
+  expect(first).toMatch(/^<!-- ronin:review v=2 sha=abc123def /);
+  return rest.join('\n');
+}
 
 describe('runExternalReview — running the agent', () => {
   it('passes the criteria and an output path outside the worktree, clearing any leftover first', async () => {
@@ -185,7 +204,7 @@ describe('runExternalReview — publishing', () => {
 
     const review = postReview.mock.calls[0][1];
     expect(review.comments).toEqual([]);
-    expect(review.body).toBe('Sin observaciones nuevas; queda 1 abierta:\n\n- [🟡 Otro](https://github.com/x/pull/305#discussion_r2)');
+    expect(bodyAfterMarker(review.body)).toBe('Sin observaciones nuevas; queda 1 abierta:\n\n- [🟡 Otro](https://github.com/x/pull/305#discussion_r2)');
   });
 
   it('confirms the fixes when every open thread was resolved', async () => {
@@ -193,15 +212,15 @@ describe('runExternalReview — publishing', () => {
 
     await runExternalReview(candidate);
 
-    expect(postReview.mock.calls[0][1].body).toBe('✅ Ajustes confirmados, no quedan observaciones pendientes.');
+    expect(bodyAfterMarker(postReview.mock.calls[0][1].body)).toBe('✅ Ajustes confirmados, no quedan observaciones pendientes.');
   });
 
   it('says LGTM only when there was nothing open and nothing new', async () => {
     agentWrites({});
 
-    await runExternalReview({ ...candidate, openThreads: [] });
+    await runExternalReview({ ...candidate, threadHistory: [], openThreads: [] });
 
-    expect(postReview.mock.calls[0][1].body).toBe('LGTM 🚀');
+    expect(bodyAfterMarker(postReview.mock.calls[0][1].body)).toBe('LGTM 🚀');
   });
 
   it('replies to each mention with mentions neutralized', async () => {
@@ -230,6 +249,97 @@ describe('runExternalReview — publishing', () => {
   });
 });
 
+describe('runExternalReview — review marker and pin', () => {
+  it('starts every review body with the marker carrying the reviewed SHA, mode and criteria', async () => {
+    agentWrites({ findings: [finding()] });
+
+    await runExternalReview(candidate);
+
+    expect(postReview.mock.calls[0][1].body.split('\n')[0]).toBe('<!-- ronin:review v=2 sha=abc123def mode=full criteria=cafebabe00 -->');
+  });
+
+  it('pins the reviewed SHA after publishing', async () => {
+    agentWrites({});
+
+    await runExternalReview(candidate);
+
+    expect(pinReviewedSha).toHaveBeenCalledWith(305, 'abc123def');
+    expect(pinReviewedSha.mock.invocationCallOrder[0]).toBeGreaterThan(postReview.mock.invocationCallOrder[0]);
+  });
+
+  it('does not fail the review when the pin fails', async () => {
+    pinReviewedSha.mockRejectedValue(new Error('locked'));
+    agentWrites({});
+
+    await expect(runExternalReview(candidate)).resolves.toBeUndefined();
+    expect(logError).toHaveBeenCalled();
+  });
+});
+
+describe('runExternalReview — incremental mode', () => {
+  const incremental = { ...candidate, previousSha: 'prev999' };
+
+  beforeEach(() => {
+    changedLinesSince.mockResolvedValue(new Map([['src/a.ts', new Set([11])]]));
+  });
+
+  it('runs in full mode, without computing changed lines, when there is no previous SHA', async () => {
+    agentWrites({});
+
+    await runExternalReview(candidate);
+
+    expect(changedLinesSince).not.toHaveBeenCalled();
+    expect(runAgentTask).toHaveBeenCalledWith(expect.objectContaining({ scope: { mode: 'full' } }));
+  });
+
+  it('gives the agent the previous SHA and the changed lines', async () => {
+    agentWrites({});
+
+    await runExternalReview(incremental);
+
+    expect(changedLinesSince).toHaveBeenCalledWith('prev999', 'abc123def', 'odoo-main');
+    expect(runAgentTask).toHaveBeenCalledWith(
+      expect.objectContaining({ scope: { mode: 'incremental', previousSha: 'prev999', changedLines: 'src/a.ts: 11' }, threadHistory: candidate.threadHistory }),
+    );
+  });
+
+  it('drops minor findings on reviewed code, keeps them on changed code, and marks the scope', async () => {
+    agentWrites({
+      findings: [
+        finding({ severity: 'minor', title: 'Nuevo' }),
+        finding({ severity: 'minor', line: 12, title: 'Viejo' }),
+      ],
+    });
+
+    await runExternalReview(incremental);
+
+    const review = postReview.mock.calls[0][1];
+    expect(review.comments).toHaveLength(1);
+    expect(review.comments[0].body).toContain('mode=incremental scope=changed');
+    expect(review.body.split('\n')[0]).toContain('mode=incremental');
+    expect(logInfo).toHaveBeenCalledWith(expect.stringContaining('descartado por alcance (menor o mejora sobre código ya revisado): Viejo'));
+    expect(logMetric).toHaveBeenCalledWith('external_review_published', expect.objectContaining({ mode: 'incremental', findings: 1, droppedByScope: 1 }));
+  });
+
+  it('closes like a review with nothing new when every finding was dropped', async () => {
+    agentWrites({ findings: [finding({ severity: 'minor', line: 12 })] });
+
+    await runExternalReview({ ...incremental, threadHistory: [], openThreads: [] });
+
+    expect(bodyAfterMarker(postReview.mock.calls[0][1].body)).toBe('LGTM 🚀');
+  });
+
+  it('drops a finding that repeats an open thread', async () => {
+    const marked = { ...historyEntry, id: 'T9', body: '<!-- ronin:finding v=2 type=bug severity=important category=bug -->\n### x', path: 'src/a.ts', line: 12 };
+    agentWrites({ findings: [finding()] });
+
+    await runExternalReview({ ...incremental, threadHistory: [marked] });
+
+    expect(postReview.mock.calls[0][1].comments).toEqual([]);
+    expect(logMetric).toHaveBeenCalledWith('external_review_published', expect.objectContaining({ droppedAsDuplicate: 1 }));
+  });
+});
+
 describe('runExternalReview — dry run', () => {
   it('writes everything to a Markdown file and publishes nothing', async () => {
     agentWrites({ findings: [finding()], resolveThreads: [{ threadId: 'T1', reason: 'arreglado' }], mentionReplies: [{ commentId: 42, kind: 'issue', body: 'ok' }] });
@@ -246,6 +356,19 @@ describe('runExternalReview — dry run', () => {
     expect(content).toContain('## Comentario en `src/a.ts:11`');
     expect(content).toContain('T1: arreglado');
     expect(content).toContain('## Respuesta a la mención 42');
+    expect(content).toContain('- Modo: completo');
+    expect(pinReviewedSha).not.toHaveBeenCalled();
+  });
+
+  it('lists the mode and what the scope rules dropped', async () => {
+    changedLinesSince.mockResolvedValue(new Map([['src/a.ts', new Set([11])]]));
+    agentWrites({ findings: [finding({ severity: 'minor', line: 12, title: 'Viejo' })] });
+
+    await runExternalReview({ ...candidate, previousSha: 'prev999' }, { dryRun: { outFile: 'x.md' } });
+
+    const content = writeFile.mock.calls[0][1] as string;
+    expect(content).toContain('- Modo: incremental desde `prev999` (1 líneas cambiadas en 1 archivos)');
+    expect(content).toContain('  - Viejo — menor o mejora sobre código ya revisado');
   });
 });
 

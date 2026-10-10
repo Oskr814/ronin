@@ -233,6 +233,47 @@ export async function removeExternalReviewWorktree(prNumber: number): Promise<vo
   await removeWorktreeDir(dir, 'removeExternalReviewWorktree');
 }
 
+// The external review's incremental mode diffs the head against the SHA it
+// last reviewed, so that commit has to stay in the product repo's object
+// store even after an amend or a force-push leaves it unreachable. A ref
+// under refs/ronin/reviewed/ keeps it from `git gc`; normally the object is
+// still there anyway, the pin is insurance. See
+// docs/superpowers/specs/2026-10-10-exhaustive-external-review-design.md.
+const REVIEWED_PIN_PREFIX = 'refs/ronin/reviewed/';
+
+function productGit(args: string[]) {
+  return execFileAsync('git', args, { cwd: activeRepo().productRepoPath });
+}
+
+export async function isCommitAvailable(sha: string): Promise<boolean> {
+  return productGit(['cat-file', '-e', `${sha}^{commit}`]).then(() => true, () => false);
+}
+
+// Best effort: GitHub serves an unreachable commit by SHA for a while, not
+// forever.
+export async function fetchCommit(sha: string): Promise<void> {
+  await productGit(['fetch', 'origin', sha]).catch(() => {});
+}
+
+export async function pinReviewedSha(prNumber: number, sha: string): Promise<void> {
+  await productGit(['update-ref', `${REVIEWED_PIN_PREFIX}${prNumber}`, sha]);
+}
+
+// Drops the pins of PRs that are no longer open. Never throws: a stale pin
+// only costs disk.
+export async function pruneReviewedPins(openPrNumbers: number[]): Promise<void> {
+  try {
+    const { stdout } = await productGit(['for-each-ref', '--format=%(refname)', REVIEWED_PIN_PREFIX]);
+    const open = new Set(openPrNumbers.map(String));
+    for (const ref of stdout.split('\n').map((l) => l.trim()).filter(Boolean)) {
+      if (open.has(ref.slice(REVIEWED_PIN_PREFIX.length))) continue;
+      await productGit(['update-ref', '-d', ref]).catch((error) => log.error(`pruneReviewedPins: no se pudo borrar ${ref}`, error));
+    }
+  } catch (error) {
+    log.error('pruneReviewedPins falló', error);
+  }
+}
+
 // fix-comments-external operates on a trusted human collaborator's own
 // branch — one that's routinely checked out in the primary worktree at the
 // exact moment ronin tries to work on it too, since that's normally the
