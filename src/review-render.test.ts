@@ -77,6 +77,11 @@ describe('renderFindingComment', () => {
     expect(visible).toContain('**Verificación:** razonado, no ejecutado.');
   });
 
+  it('does not double the period when the verification reason already ends with one', () => {
+    const body = renderFindingComment(finding({ verification: { status: 'reasoned', reason: 'Leí UpdateQty en el head del PR.' } }), ctx);
+    expect(body).toContain('**Verificación:** razonado, no ejecutado — Leí UpdateQty en el head del PR.\n');
+  });
+
   it('tells the reader how to dismiss a decision', () => {
     expect(renderFindingComment(finding({ type: 'decision' }), ctx)).toContain('**Si es intencional:** resolvé el hilo.');
     expect(renderFindingComment(finding({ type: 'bug' }), ctx)).not.toContain('Si es intencional');

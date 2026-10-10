@@ -99,7 +99,9 @@ export function findingMarker(finding: ReviewFinding, ctx: RenderContext): strin
 
 function verificationLine(finding: ReviewFinding): string {
   if (finding.verification.status === 'verified') return '**Verificación:** comprobado con un test que falla (ver abajo).';
-  const reason = finding.verification.reason ? ` — ${inline(finding.verification.reason)}` : '';
+  // The line ends with its own period, so one the model already put at the
+  // end of the reason would double it.
+  const reason = finding.verification.reason ? ` — ${inline(finding.verification.reason).replace(/[.\s]+$/, '')}` : '';
   return `**Verificación:** razonado, no ejecutado${reason}.`;
 }
 
