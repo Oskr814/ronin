@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 vi.mock('./config.js', () => ({
   config: {
     worktreeBaseRef: 'origin/main',
+    externalReviewWorkerModel: 'sonnet',
   },
 }));
 
@@ -281,12 +282,29 @@ describe('runAgentTask — external-review', () => {
     expect(prompt).toContain('written by the supervisor, trusted');
   });
 
-  it('asks for one subagent per dimension, each carrying the untrusted-content warning', async () => {
+  it('launches one worker per dimension on the cheaper model, each carrying the untrusted-content warning', async () => {
     await runAgentTask(task);
 
     const prompt = runClaudeHeadless.mock.calls[0][1] as string;
-    expect(prompt).toContain('one subagent (Agent tool) per dimension');
+    expect(prompt).toContain('You are the orchestrator of this review');
+    expect(prompt).toContain('Launch one worker (Agent tool, with model "sonnet") per dimension');
     expect(prompt).toContain('the untrusted-content warning above, verbatim');
+    expect(prompt).toContain("A worker's job is recall");
+  });
+
+  it('keeps verification and the final type/severity with the orchestrator', async () => {
+    await runAgentTask(task);
+
+    const prompt = runClaudeHeadless.mock.calls[0][1] as string;
+    expect(prompt).toContain('Your job is judgment, and it is not delegable');
+    expect(prompt).toContain('assign the final type and severity yourself');
+  });
+
+  it('forbids running tests, builds or installs during the review', async () => {
+    await runAgentTask(task);
+
+    const prompt = runClaudeHeadless.mock.calls[0][1] as string;
+    expect(prompt).toContain('run tests, builds, or package installs');
   });
 
   it('requires full coverage, minor findings included, and systemic findings', async () => {
@@ -294,7 +312,7 @@ describe('runAgentTask — external-review', () => {
 
     const prompt = runClaudeHeadless.mock.calls[0][1] as string;
     expect(prompt).toContain('First list every file the diff touches');
-    expect(prompt).toContain('Do not finish until every changed file has been covered');
+    expect(prompt).toContain('cover every changed file for its dimension');
     expect(prompt).toContain('including minor ones');
     expect(prompt).toContain('every other instance in extraLocations');
   });

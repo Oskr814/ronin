@@ -56,6 +56,12 @@ export const config = {
   // tick.ts's outer loop for why this stays per-repo, not global-across-repos.
   tickConcurrency: Number(process.env.TICK_CONCURRENCY ?? 2),
   requestCopilotReview: process.env.REQUEST_COPILOT_REVIEW === 'true',
+  // Model for the external review's worker subagents (one per criteria
+  // dimension). They only gather candidates; the orchestrating session —
+  // whatever model the run's Claude config uses — verifies and decides what
+  // gets published, so a cheaper model here costs recall at most, not
+  // precision. See docs/superpowers/specs/2026-10-10-exhaustive-external-review-design.md.
+  externalReviewWorkerModel: process.env.EXTERNAL_REVIEW_WORKER_MODEL ?? 'sonnet',
   // A person's GitHub username, e.g. "oskr814" — not a machine hostname.
   // Same RUNNER_ID across every repo in repos.json (confirmed requirement:
   // one operator, not one runner per repo) — see docs/DESIGN.md §1 and §9.

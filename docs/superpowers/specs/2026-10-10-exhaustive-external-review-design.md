@@ -88,15 +88,24 @@ documentación mal formado, como 🟡.
   de threads y las respuestas a menciones. Mismo principio que el gate de
   `mergePullRequest`: la regla está en código. Esto reemplaza la decisión del
   spec anterior de que "quien publica es el propio `claude -p`".
-- **Exhaustividad por subagentes, decidida en el prompt.** El agente lanza un
-  subagente (tool `Agent`) por dimensión — correctitud/bugs,
-  concurrencia/transacciones, seguridad, cobertura de tests,
-  duplicación/smells —, luego consolida: deduplica, verifica contra el código
-  y descarta lo que no se sostiene. El prompt exige enumerar todos los
-  archivos del diff y no terminar sin cubrirlos. Cada subagente recibe la
+- **Exhaustividad con orquestador y workers, decidida en el prompt.** El
+  `claude -p` principal es el orquestador: lanza un worker (tool `Agent`) por
+  dimensión — correctitud/bugs, concurrencia/transacciones, seguridad,
+  cobertura de tests, duplicación/smells — con un modelo más barato
+  (`EXTERNAL_REVIEW_WORKER_MODEL`, default `sonnet`). Los workers buscan
+  *recall*: cubren todos los archivos de su dimensión y devuelven todos los
+  candidatos, incluidos los dudosos, con escenario y evidencia. El
+  orquestador hace el *juicio*, que no delega: verifica cada candidato contra
+  el código, descarta lo que no se sostiene o cae en "No marcar", fusiona
+  duplicados e instancias sistémicas, y asigna tipo y severidad finales. Un
+  modelo más barato en los workers cuesta, como mucho, recall; la precisión
+  queda en el orquestador. Ni el orquestador ni los workers corren tests,
+  builds ni instalan nada en las etapas 1 a 3. Cada worker recibe la
   advertencia de contenido no confiable. Se descarta el fan-out de N
   `claude -p` desde el supervisor (más código, N× costo); se revisita si no
-  alcanza.
+  alcanza. Motivo: la primera prueba con 5 subagentes en el modelo del
+  orquestador agotó el límite de sesión de la cuenta con tres reviews en
+  paralelo.
 - **Hallazgos sistémicos.** Cuando un hallazgo es instancia de una clase
   (carrera / check-then-act, validación que se puede saltear, input no
   revalidado tras un lock, chequeo de autorización faltante), el agente
