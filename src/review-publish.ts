@@ -60,6 +60,7 @@ export async function runExternalReview(candidate: ReviewCandidate, opts: RunExt
       prNumber: candidate.prNumber,
       headRefName: candidate.headRefName,
       headSha: candidate.headSha,
+      baseRefName: candidate.baseRefName,
       openThreads: candidate.openThreads,
       mentions: candidate.mentions,
       criteriaText: criteria.text,
