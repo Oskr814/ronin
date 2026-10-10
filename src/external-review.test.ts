@@ -29,8 +29,8 @@ vi.mock('./mentions.js', () => ({
 
 import { findPrsNeedingReview } from './external-review.js';
 
-function extPr(overrides: Partial<{ number: number; headRefName: string; headRefOid: string; isCrossRepository: boolean }> = {}) {
-  return { number: 10, headRefName: 'feature/x', headRefOid: 'sha-a', isCrossRepository: false, ...overrides };
+function extPr(overrides: Partial<{ number: number; headRefName: string; headRefOid: string; baseRefName: string; isCrossRepository: boolean }> = {}) {
+  return { number: 10, headRefName: 'feature/x', headRefOid: 'sha-a', baseRefName: 'main', isCrossRepository: false, ...overrides };
 }
 
 beforeEach(() => {
@@ -50,7 +50,7 @@ describe('findPrsNeedingReview — reviewCandidates (read-only path, unchanged b
 
     const { reviewCandidates } = await findPrsNeedingReview();
 
-    expect(reviewCandidates).toEqual([{ prNumber: 10, headRefName: 'feature/x', headSha: 'sha-a', openThreads: [], mentions: [] }]);
+    expect(reviewCandidates).toEqual([{ prNumber: 10, headRefName: 'feature/x', headSha: 'sha-a', baseRefName: 'main', openThreads: [], mentions: [] }]);
   });
 
   it('includes a PR with an unprocessed @mention even though its head SHA is unchanged', async () => {

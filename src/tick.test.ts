@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { TrackingIssue } from './github.js';
 import type { StackedPr } from './stack.js';
+import { HELP_FOOTER_MARKER } from './help.js';
 
 const existsSync = vi.fn();
 vi.mock('node:fs', () => ({
@@ -19,6 +20,7 @@ vi.mock('./config.js', () => ({
     sliceAttemptLimit: 3,
     rebaseRetryLimit: 3,
     worktreeBaseRef: 'origin/main',
+    githubLogin: 'ronin',
     // Needed by runExternalReviews's runWithConcurrency call — with an
     // undefined limit the pool spawns zero lanes and silently no-ops.
     tickConcurrency: 2,
@@ -58,6 +60,7 @@ const addIssueLabel = vi.fn();
 const listAssignedIssues = vi.fn();
 const listExternalOpenReviewThreads = vi.fn();
 const setReviewStatus = vi.fn();
+const setPullRequestBody = vi.fn();
 vi.mock('./github.js', () => ({
   addReaction: (...args: unknown[]) => addReaction(...args),
   mergePullRequest: (...args: unknown[]) => mergePullRequest(...args),
@@ -68,6 +71,7 @@ vi.mock('./github.js', () => ({
   listAssignedIssues: (...args: unknown[]) => listAssignedIssues(...args),
   listExternalOpenReviewThreads: (...args: unknown[]) => listExternalOpenReviewThreads(...args),
   setReviewStatus: (...args: unknown[]) => setReviewStatus(...args),
+  setPullRequestBody: (...args: unknown[]) => setPullRequestBody(...args),
 }));
 
 const incrementChecksPendingCount = vi.fn();
@@ -98,6 +102,9 @@ vi.mock('./mentions.js', () => ({
   findUnprocessedMentions: (...args: unknown[]) => findUnprocessedMentions(...args),
   isFixCommentsCommand: (...args: unknown[]) => isFixCommentsCommand(...args),
 }));
+
+const runExternalReview = vi.fn();
+vi.mock('./review-publish.js', () => ({ runExternalReview }));
 
 const runAgentTask = vi.fn();
 vi.mock('./agent-task.js', () => ({
@@ -141,6 +148,9 @@ function pr(overrides: Partial<StackedPr> = {}): StackedPr {
     headRefName: 'ronin/228/slice-2',
     baseRefName: 'ronin/228/slice-1',
     isDraft: false,
+    // Already carries the cheat sheet, so tests about anything else don't
+    // also exercise the footer write — see the 'command cheat sheet' tests.
+    body: `Slice description\n\n${HELP_FOOTER_MARKER}`,
     sliceIndex: 1,
     ...overrides,
   };
@@ -149,6 +159,7 @@ function pr(overrides: Partial<StackedPr> = {}): StackedPr {
 beforeEach(() => {
   vi.clearAllMocks();
   recordSlicePr.mockResolvedValue(undefined);
+  setPullRequestBody.mockResolvedValue(undefined);
   findUnprocessedMentions.mockResolvedValue([]);
   isFixCommentsCommand.mockReturnValue(false);
   listExternalOpenReviewThreads.mockResolvedValue([]);
@@ -161,6 +172,37 @@ beforeEach(() => {
   removeWorktree.mockResolvedValue(undefined);
   activeRepo.mockReturnValue({ productRepo: 'bmedical/bmedical', productRepoPath: '/tmp/repo', worktreeBasePath: '/tmp/worktrees' });
   readFile.mockResolvedValue('body\n{{spec_links}}\n');
+});
+
+describe('processSlicePr — command cheat sheet', () => {
+  it('appends the cheat sheet to a PR body that does not have it yet', async () => {
+    await processSlicePr(issue(), pr({ body: 'Slice description', checksPending: true }), false);
+
+    expect(setPullRequestBody).toHaveBeenCalledTimes(1);
+    const [prNumber, body] = setPullRequestBody.mock.calls[0];
+    expect(prNumber).toBe(230);
+    expect(body).toMatch(/^Slice description\n\n/);
+    expect(body).toContain(HELP_FOOTER_MARKER);
+  });
+
+  it('leaves a PR body that already has the cheat sheet untouched', async () => {
+    await processSlicePr(issue(), pr({ checksPending: true }), false);
+
+    expect(setPullRequestBody).not.toHaveBeenCalled();
+  });
+
+  it('keeps processing the slice when the body edit fails', async () => {
+    setPullRequestBody.mockRejectedValue(new Error('gh exploded'));
+
+    const stillInProgress = await processSlicePr(
+      issue(),
+      pr({ body: 'Slice description', checksPending: true, reviewDecision: 'CHANGES_REQUESTED' }),
+      false,
+    );
+
+    expect(stillInProgress).toBe(true);
+    expect(runAgentTask).toHaveBeenCalledWith({ type: 'fix-review', issueNumber: 228, prNumber: 230 });
+  });
 });
 
 describe('processSlicePr — non-bottom stacked PR', () => {
@@ -375,7 +417,7 @@ describe('processSlicePr — /fix-comments command', () => {
 
     await processSlicePr(issue(), bottomPr, true);
 
-    expect(listExternalOpenReviewThreads).toHaveBeenCalledWith(229, undefined);
+    expect(listExternalOpenReviewThreads).toHaveBeenCalledWith(229, 'ronin');
     expect(runAgentTask).toHaveBeenCalledWith({
       type: 'fix-comments', issueNumber: 228, prNumber: 229,
       trigger: [commandComment], openThreads: [{ id: 'T1', body: 'finding from Copilot' }],
@@ -611,26 +653,19 @@ describe('discoverAssignedIssues', () => {
 });
 
 describe('processExternalReviewCandidate', () => {
-  const candidate = { prNumber: 305, headRefName: 'someone-else/feature-x', headSha: 'abc123', openThreads: [], mentions: [] };
+  const candidate = { prNumber: 305, headRefName: 'someone-else/feature-x', headSha: 'abc123', baseRefName: 'main', openThreads: [], mentions: [] };
 
-  it('runs the external-review agent task and records the reviewed SHA on success', async () => {
-    runAgentTask.mockResolvedValue(undefined);
+  it('runs the external review and records the reviewed SHA on success', async () => {
+    runExternalReview.mockResolvedValue(undefined);
 
     await processExternalReviewCandidate(candidate);
 
-    expect(runAgentTask).toHaveBeenCalledWith({
-      type: 'external-review',
-      prNumber: 305,
-      headRefName: 'someone-else/feature-x',
-      headSha: 'abc123',
-      openThreads: [],
-      mentions: [],
-    });
+    expect(runExternalReview).toHaveBeenCalledWith(candidate);
     expect(setLastReviewedSha).toHaveBeenCalledWith(305, 'abc123');
   });
 
-  it('does not record the SHA when the agent task throws', async () => {
-    runAgentTask.mockRejectedValue(new Error('claude -p timed out'));
+  it('does not record the SHA when the review throws', async () => {
+    runExternalReview.mockRejectedValue(new Error('claude -p timed out'));
 
     await expect(processExternalReviewCandidate(candidate)).resolves.toBeUndefined();
 
@@ -638,13 +673,13 @@ describe('processExternalReviewCandidate', () => {
   });
 
   it('swallows the error instead of propagating it', async () => {
-    runAgentTask.mockRejectedValue(new Error('boom'));
+    runExternalReview.mockRejectedValue(new Error('boom'));
 
     await expect(processExternalReviewCandidate(candidate)).resolves.not.toThrow();
   });
 
   it('reacts with eyes on each mention that triggered the run, after a successful run', async () => {
-    runAgentTask.mockResolvedValue(undefined);
+    runExternalReview.mockResolvedValue(undefined);
     const withMentions = {
       ...candidate,
       mentions: [{ id: 7, kind: 'issue' as const, body: '@ronin-agent revisá', reactionsEyes: 0, authorLogin: 'someone' }],
@@ -655,8 +690,8 @@ describe('processExternalReviewCandidate', () => {
     expect(addReaction).toHaveBeenCalledWith(7, 'issue', 'eyes');
   });
 
-  it('does not react to mentions when the agent task throws, so the next tick retries them', async () => {
-    runAgentTask.mockRejectedValue(new Error('boom'));
+  it('does not react to mentions when the review throws, so the next tick retries them', async () => {
+    runExternalReview.mockRejectedValue(new Error('boom'));
     const withMentions = {
       ...candidate,
       mentions: [{ id: 7, kind: 'issue' as const, body: '@ronin-agent revisá', reactionsEyes: 0, authorLogin: 'someone' }],
@@ -668,7 +703,7 @@ describe('processExternalReviewCandidate', () => {
   });
 
   it('does not react at all when there were no mentions', async () => {
-    runAgentTask.mockResolvedValue(undefined);
+    runExternalReview.mockResolvedValue(undefined);
 
     await processExternalReviewCandidate(candidate);
 
@@ -803,22 +838,23 @@ describe('renderTrackingIssueBody', () => {
 describe('runExternalReviews', () => {
   beforeEach(() => {
     runAgentTask.mockResolvedValue(undefined);
+    runExternalReview.mockResolvedValue(undefined);
   });
 
-  it('runs one agent task per read-only candidate findPrsNeedingReview returns', async () => {
+  it('runs one external review per read-only candidate findPrsNeedingReview returns', async () => {
     findPrsNeedingReview.mockResolvedValue({
       reviewCandidates: [
-        { prNumber: 305, headRefName: 'someone-else/feature-x', headSha: 'abc123', openThreads: [], mentions: [] },
-        { prNumber: 306, headRefName: 'other/feature-y', headSha: 'def456', openThreads: [], mentions: [] },
+        { prNumber: 305, headRefName: 'someone-else/feature-x', headSha: 'abc123', baseRefName: 'main', openThreads: [], mentions: [] },
+        { prNumber: 306, headRefName: 'other/feature-y', headSha: 'def456', baseRefName: 'main', openThreads: [], mentions: [] },
       ],
       trustedFixCandidates: [],
     });
 
     await runExternalReviews();
 
-    expect(runAgentTask).toHaveBeenCalledTimes(2);
-    expect(runAgentTask).toHaveBeenCalledWith(expect.objectContaining({ type: 'external-review', prNumber: 305, headSha: 'abc123' }));
-    expect(runAgentTask).toHaveBeenCalledWith(expect.objectContaining({ type: 'external-review', prNumber: 306, headSha: 'def456' }));
+    expect(runExternalReview).toHaveBeenCalledTimes(2);
+    expect(runExternalReview).toHaveBeenCalledWith(expect.objectContaining({ prNumber: 305, headSha: 'abc123' }));
+    expect(runExternalReview).toHaveBeenCalledWith(expect.objectContaining({ prNumber: 306, headSha: 'def456' }));
     // Commit status keyed to the candidate's known head SHA, no extra `gh pr view`.
     expect(setReviewStatus).toHaveBeenCalledWith(305, 'pending', expect.any(String), { sha: 'abc123' });
     expect(setReviewStatus).toHaveBeenCalledWith(305, 'success', expect.any(String), { sha: 'abc123' });

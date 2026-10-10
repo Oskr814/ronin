@@ -8,6 +8,9 @@ export interface ReviewCandidate {
   prNumber: number;
   headRefName: string;
   headSha: string;
+  // The branch the PR merges into — its merge base with headSha is what the
+  // review's commentable lines are computed against (review-scope.ts).
+  baseRefName: string;
   openThreads: ReviewThread[];
   mentions: Comment[];
 }
@@ -70,7 +73,7 @@ export async function findPrsNeedingReview(): Promise<{
       const mentions = await findUnprocessedMentions(pr.number);
       if (lastSha === pr.headRefOid && mentions.length === 0) continue;
       const openThreads = await listBotOpenReviewThreads(pr.number, config.githubLogin);
-      reviewCandidates.push({ prNumber: pr.number, headRefName: pr.headRefName, headSha: pr.headRefOid, openThreads, mentions });
+      reviewCandidates.push({ prNumber: pr.number, headRefName: pr.headRefName, headSha: pr.headRefOid, baseRefName: pr.baseRefName, openThreads, mentions });
     } catch (error) {
       log.error(`findPrsNeedingReview: PR #${pr.number} falló al evaluar elegibilidad, se salta este tick`, error);
     }

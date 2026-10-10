@@ -19,6 +19,7 @@ import {
   getPullRequestStatus,
   setReviewStatus,
   listExternalOpenReviewThreads,
+  setPullRequestBody,
   type TrackingIssue,
   type PullRequestStatus,
   type Comment,
@@ -29,12 +30,14 @@ import { notifyBlocker } from './notifier.js';
 import { resetTickMetrics, getTickAgentMetrics } from './metrics.js';
 import { runWithConcurrency } from './concurrency.js';
 import { runAgentTask, type AgentTask } from './agent-task.js';
+import { runExternalReview } from './review-publish.js';
 import { ClaudeUsageLimitError } from './claude-runner.js';
 import { toStackedPrs, pickBottomPr, prsForIssue, planBranch, spikeBranch, type StackedPr } from './stack.js';
 import { incrementChecksPendingCount, resetChecksPendingCount, setLastReviewedSha } from './local-state.js';
 import { tryClaim, releaseIfNoLongerInProgress } from './claim.js';
 import { worktreeDirFor, isBehind, attemptRebase, removeWorktree, sweepOrphanedWorktrees } from './worktree.js';
 import { findUnprocessedMentions, isFixCommentsCommand } from './mentions.js';
+import { withHelpFooter } from './help.js';
 import { findPrsNeedingReview, type ReviewCandidate, type TrustedFixCandidate } from './external-review.js';
 import { findIssuesNeedingSpike, type SpikeCandidate } from './spike.js';
 import { findReleasesNeedingChangelog, type ChangelogCandidate } from './changelog.js';
@@ -334,6 +337,19 @@ function logSliceOutcome(issue: TrackingIssue, pr: StackedPr, isBottom: boolean,
 export async function processSlicePr(issue: TrackingIssue, pr: StackedPr, isBottom: boolean, waitingTurnPrs?: number[]): Promise<boolean> {
   await recordSlicePr(issue.number, pr.sliceIndex, pr.number);
 
+  // Cheat sheet of commands at the bottom of every PR ronin opens — see
+  // help.ts. Idempotent (withHelpFooter returns the body unchanged once its
+  // marker is there), and best-effort: a failed edit only means the PR goes
+  // without it until the next tick, never a blocked slice.
+  const bodyWithHelp = withHelpFooter(pr.body, config.githubLogin);
+  if (bodyWithHelp !== pr.body) {
+    try {
+      await setPullRequestBody(pr.number, bodyWithHelp);
+    } catch (error) {
+      log.error(`no se pudo agregar la chuleta de comandos al PR #${pr.number}`, error);
+    }
+  }
+
   if (pr.isDraft) {
     logSliceOutcome(issue, pr, isBottom, 'draft, esperando');
     return true;
@@ -631,14 +647,10 @@ async function runIssueStep(issue: TrackingIssue, step: () => Promise<void>): Pr
 export async function processExternalReviewCandidate(candidate: ReviewCandidate): Promise<void> {
   try {
     await setReviewStatus(candidate.prNumber, 'pending', 'ronin está revisando el PR…', { sha: candidate.headSha });
-    await runAgentTask({
-      type: 'external-review',
-      prNumber: candidate.prNumber,
-      headRefName: candidate.headRefName,
-      headSha: candidate.headSha,
-      openThreads: candidate.openThreads,
-      mentions: candidate.mentions,
-    });
+    // The agent only writes findings.json; validating and publishing it
+    // happens in review-publish.ts. See
+    // docs/superpowers/specs/2026-10-10-exhaustive-external-review-design.md.
+    await runExternalReview(candidate);
     await setReviewStatus(candidate.prNumber, 'success', 'Review posteada', { sha: candidate.headSha });
     await setLastReviewedSha(candidate.prNumber, candidate.headSha);
     // Only after a successful run: a missing reaction is what makes

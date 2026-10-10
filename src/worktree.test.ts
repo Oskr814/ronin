@@ -27,6 +27,7 @@ function pr(headRefName: string): PullRequestStatus {
     headRefName,
     baseRefName: 'main',
     isDraft: false,
+    body: '',
   };
 }
 
