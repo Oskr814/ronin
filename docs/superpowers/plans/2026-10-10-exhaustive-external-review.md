@@ -367,6 +367,12 @@ Usage: `pnpm review:dry-run --repo redmotos/shoppingcart --pr 746 --sha 62b66af 
 
 Branch `feat/incremental-external-review`, stacked on Stage 1's branch.
 
+Implemented as planned, with these differences:
+- The task carries `threadHistory` and a `scope` object instead of `openThreads` / `mode` / `changedLines`; the open threads are derived from the history in the prompt.
+- Thread history in the prompt shows only the visible part of each thread (up to the first `<details>`), and replies are capped at 600 characters each.
+- Sanity check on real commits: `#760 a24aef3 → 66d85a6` reports only `DraftOrderCreditLockTests.cs: 259, 288-289`.
+- Validation (2026-10-10): `#774 8949cab → 28d0917` with the real thread history — 3 🟡 on lines new in that round, none of the resolved threads re-raised (the previous full round had 7 findings, one 🔴); `#760 a24aef3 → 66d85a6` — one 🧹 on the edited test. The #753 pairs and `66d85a6 → afff1ea` could not run: those heads are now ancestors of `odoo-main`, so their merge base is the commit itself and the diff is empty (impossible for an open PR).
+
 Lessons from the Stage 1 dry-runs that shape this stage:
 - Every SHA reviewed in #746/#753/#760 was still in the local object store — the pin is insurance against `git gc`, not the normal path.
 - The bot's own replies to inline comments (`/fix-comments`, mention replies) also create review objects with a `commit_id`. "Last review by the bot" is therefore ambiguous: only reviews carrying ronin's review marker count.
@@ -376,48 +382,48 @@ Lessons from the Stage 1 dry-runs that shape this stage:
 
 **Files:** `src/review-render.ts`, `src/github.ts`, `src/worktree.ts`, `src/external-review.ts` (+ tests)
 
-- [ ] `review-render.ts`: `reviewMarker({ headSha, mode, criteriaHash })` → `<!-- ronin:review v=2 sha=<headSha> mode=<mode> criteria=<hash> -->`; `review-publish.ts` prepends it to every review body (summary and closing). Test: marker first line of both kinds of body.
-- [ ] `github.ts`: `getLastReviewedShaFromGitHub(prNumber, botLogin)` — `gh api --paginate repos/<repo>/pulls/<n>/reviews`, keep reviews by `botLogin` whose body contains `<!-- ronin:review v=2 sha=`, return the `sha=` of the last one by `submitted_at` (read from the marker, not `commit_id`: same value today, but the marker is what ronin wrote). Pure helper `lastMarkedReviewSha(reviews, botLogin)` tested in `github.test.ts` (fits the "pure logic only" exception).
-- [ ] `worktree.ts`: `isCommitAvailable(sha)` (`git cat-file -e <sha>^{commit}`), `fetchCommit(sha)` (`git fetch origin <sha>`, best effort), `pinReviewedSha(n, sha)` (`git update-ref refs/ronin/reviewed/<n> <sha>`), `pruneReviewedPins(openPrNumbers)` (`for-each-ref refs/ronin/reviewed/`, delete the ones not open; errors logged, never thrown).
-- [ ] `external-review.ts`: `ReviewCandidate.previousSha?: string`. Resolution order: GitHub marker → local `lastReviewedSha` cache (covers reviews published before this stage). Then `isCommitAvailable`, else `fetchCommit` + re-check; unavailable → no `previousSha` + `log.info`. Prune also calls `pruneReviewedPins`.
-- [ ] `review-publish.ts`: after a real (non-dry-run) publish, `pinReviewedSha`; failure logged, never fails the review.
+- [x] `review-render.ts`: `reviewMarker({ headSha, mode, criteriaHash })` → `<!-- ronin:review v=2 sha=<headSha> mode=<mode> criteria=<hash> -->`; `review-publish.ts` prepends it to every review body (summary and closing). Test: marker first line of both kinds of body.
+- [x] `github.ts`: `getLastReviewedShaFromGitHub(prNumber, botLogin)` — `gh api --paginate repos/<repo>/pulls/<n>/reviews`, keep reviews by `botLogin` whose body contains `<!-- ronin:review v=2 sha=`, return the `sha=` of the last one by `submitted_at` (read from the marker, not `commit_id`: same value today, but the marker is what ronin wrote). Pure helper `lastMarkedReviewSha(reviews, botLogin)` tested in `github.test.ts` (fits the "pure logic only" exception).
+- [x] `worktree.ts`: `isCommitAvailable(sha)` (`git cat-file -e <sha>^{commit}`), `fetchCommit(sha)` (`git fetch origin <sha>`, best effort), `pinReviewedSha(n, sha)` (`git update-ref refs/ronin/reviewed/<n> <sha>`), `pruneReviewedPins(openPrNumbers)` (`for-each-ref refs/ronin/reviewed/`, delete the ones not open; errors logged, never thrown).
+- [x] `external-review.ts`: `ReviewCandidate.previousSha?: string`. Resolution order: GitHub marker → local `lastReviewedSha` cache (covers reviews published before this stage). Then `isCommitAvailable`, else `fetchCommit` + re-check; unavailable → no `previousSha` + `log.info`. Prune also calls `pruneReviewedPins`.
+- [x] `review-publish.ts`: after a real (non-dry-run) publish, `pinReviewedSha`; failure logged, never fails the review.
 
 ### Task 11: Content-based scope
 
 **Files:** `src/review-scope.ts` (+ tests)
 
-- [ ] `parseAddedLines(unifiedDiff): Map<path, Array<{ line; content }>>` — `+` lines on the new side only.
-- [ ] `classifyChanged(prevDiff, headDiff): Map<path, Set<number>>` (pure) — a head added line is *changed* when its normalized content (trimmed; blank lines ignored) is not among the previous diff's added contents for the same path. Lines the PR does not add are, by definition, not changed.
-- [ ] `changedLinesSince(prevSha, headSha, baseRefName)` — both diffs with `-U0` against their own merge base with `origin/<base>`, then `classifyChanged`.
-- [ ] Tests (pure, fixture diffs): amend that edits one line; new line inserted shifting the rest (only the new one is changed); rebase/merge noise (base-only changes absent from both PR diffs → not changed); moved identical line (counts as reviewed — documented limitation); renamed file (all lines changed — documented limitation).
-- [ ] Sanity check on real commits: `#760 a24aef3 → 66d85a6` (rebase + one test edited) must report changed lines only in `DraftOrderCreditLockTests.cs`.
+- [x] `parseAddedLines(unifiedDiff): Map<path, Array<{ line; content }>>` — `+` lines on the new side only.
+- [x] `classifyChanged(prevDiff, headDiff): Map<path, Set<number>>` (pure) — a head added line is *changed* when its normalized content (trimmed; blank lines ignored) is not among the previous diff's added contents for the same path. Lines the PR does not add are, by definition, not changed.
+- [x] `changedLinesSince(prevSha, headSha, baseRefName)` — both diffs with `-U0` against their own merge base with `origin/<base>`, then `classifyChanged`.
+- [x] Tests (pure, fixture diffs): amend that edits one line; new line inserted shifting the rest (only the new one is changed); rebase/merge noise (base-only changes absent from both PR diffs → not changed); moved identical line (counts as reviewed — documented limitation); renamed file (all lines changed — documented limitation).
+- [x] Sanity check on real commits: `#760 a24aef3 → 66d85a6` (rebase + one test edited) must report changed lines only in `DraftOrderCreditLockTests.cs`.
 
 ### Task 12: Scope rules and dedupe in code
 
 **Files:** `src/review-scope.ts`, `src/review-publish.ts`, `src/review-render.ts` (+ tests)
 
-- [ ] `isOnChangedCode(finding, changed)` — any line of `startLine..line`, or any `extraLocations` entry, in the changed set.
-- [ ] `applyScopeRules(findings, { mode, changed })` → `{ kept, dropped: [{ finding, reason }] }`. In `incremental`, on reviewed code: drop `minor` and every `improvement`; drop `critical`/`important` without evidence; findings with `mentionId` are exempt. `full`: keep everything.
-- [ ] `dedupeAgainstOpenThreads(findings, openThreads)` — drop a finding with the same path, the same category (read from the thread's `ronin:finding` marker) and |Δline| ≤ 5 of a still-open bot thread. Threads without a marker (pre-Stage 1) or without a current line (outdated) are never matched — the agent sees them in the prompt.
-- [ ] `RenderContext.scopeOf` wired to `isOnChangedCode`, so the marker's `scope=` is real.
-- [ ] `review-publish.ts`: rules applied after parsing, before placement; every drop logged; `external_review_published` metric gains `mode`, `droppedByScope`, `droppedAsDuplicate`.
+- [x] `isOnChangedCode(finding, changed)` — any line of `startLine..line`, or any `extraLocations` entry, in the changed set.
+- [x] `applyScopeRules(findings, { mode, changed })` → `{ kept, dropped: [{ finding, reason }] }`. In `incremental`, on reviewed code: drop `minor` and every `improvement`; drop `critical`/`important` without evidence; findings with `mentionId` are exempt. `full`: keep everything.
+- [x] `dedupeAgainstOpenThreads(findings, openThreads)` — drop a finding with the same path, the same category (read from the thread's `ronin:finding` marker) and |Δline| ≤ 5 of a still-open bot thread. Threads without a marker (pre-Stage 1) or without a current line (outdated) are never matched — the agent sees them in the prompt.
+- [x] `RenderContext.scopeOf` wired to `isOnChangedCode`, so the marker's `scope=` is real.
+- [x] `review-publish.ts`: rules applied after parsing, before placement; every drop logged; `external_review_published` metric gains `mode`, `droppedByScope`, `droppedAsDuplicate`.
 
 ### Task 13: Full thread history
 
 **Files:** `src/github.ts`, `src/external-review.ts`, `src/agent-task.ts` (+ tests)
 
-- [ ] GraphQL thread query gains `isOutdated`, `path`, `line`, `originalLine`, up to 20 comments (author, body, url) and the first comment's `reactionGroups { content reactors { totalCount } }`. `fetchOpenReviewThreads` becomes `fetchReviewThreads` (all threads); the three existing `list*` functions filter `!isResolved` themselves — behavior unchanged.
-- [ ] `listBotReviewThreads(prNumber, botLogin): Promise<BotThread[]>` — every bot thread, open and resolved, with location, outdated flag, human replies, 👍/👎 counts.
-- [ ] `ReviewCandidate.threadHistory: BotThread[]`; `openThreads` derived from it (one GraphQL call per candidate, not two).
-- [ ] Prompt: open threads now show `path:line` (or "outdated"); a new section lists resolved threads (fenced, untrusted) with location, human replies and reactions, and the rules: never re-raise a resolved thread unless the code regressed to what motivated it; never propose the opposite of an earlier suggestion unless critical, saying why; treat a 👎 or a human dismissal reason as a signal the finding was not wanted.
+- [x] GraphQL thread query gains `isOutdated`, `path`, `line`, `originalLine`, up to 20 comments (author, body, url) and the first comment's `reactionGroups { content reactors { totalCount } }`. `fetchOpenReviewThreads` becomes `fetchReviewThreads` (all threads); the three existing `list*` functions filter `!isResolved` themselves — behavior unchanged.
+- [x] `listBotReviewThreads(prNumber, botLogin): Promise<BotThread[]>` — every bot thread, open and resolved, with location, outdated flag, human replies, 👍/👎 counts.
+- [x] `ReviewCandidate.threadHistory: BotThread[]`; `openThreads` derived from it (one GraphQL call per candidate, not two).
+- [x] Prompt: open threads now show `path:line` (or "outdated"); a new section lists resolved threads (fenced, untrusted) with location, human replies and reactions, and the rules: never re-raise a resolved thread unless the code regressed to what motivated it; never propose the opposite of an earlier suggestion unless critical, saying why; treat a 👎 or a human dismissal reason as a signal the finding was not wanted.
 
 ### Task 14: Delta worker, incremental prompt, validation
 
 **Files:** `src/agent-task.ts`, `src/review-publish.ts`, `scripts/review-dry-run.ts` (+ tests)
 
-- [ ] Task variant gains `mode` and `changedLines?: string` (rendered by the supervisor as `path: 10-14, 30` per file). Incremental prompt: the previous SHA, the changed-line list, one extra worker dedicated to those lines and their interaction with surrounding code and callers, and the note that minor/improvement findings on reviewed code are discarded by the supervisor (don't spend effort on them). The "this is the one pass for minor observations" line stays only in `full`.
-- [ ] Dry-run script: `--prev <sha>` sets `previousSha`; no thread history (historical threads would leak later rounds' findings into the run).
-- [ ] Validation, run one at a time:
+- [x] Task variant gains `mode` and `changedLines?: string` (rendered by the supervisor as `path: 10-14, 30` per file). Incremental prompt: the previous SHA, the changed-line list, one extra worker dedicated to those lines and their interaction with surrounding code and callers, and the note that minor/improvement findings on reviewed code are discarded by the supervisor (don't spend effort on them). The "this is the one pass for minor observations" line stays only in `full`.
+- [x] Dry-run script: `--prev <sha>` sets `previousSha`; no thread history by default (historical threads would leak later rounds' findings into the run). `--threads` loads the current history, for a run on the PR's current head.
+- [x] Validation, run one at a time:
   - `#753`: `be8d2ad→c8ad91b`, `c8ad91b→eaf0f6b`, `eaf0f6b→80a1bf9`, `80a1bf9→da2cecf`.
   - `#760`: `a24aef3→66d85a6` (only a test changed — expect nothing or only findings on that test), `66d85a6→afff1ea`.
   - Success: no 🟡/🧹 published on reviewed code (guaranteed by code — check the drop log), and the late 🟠 that ended up fixed in #753 (`Update` swallowing the conflict, the migration constant, `Update` returning 500) still published.
