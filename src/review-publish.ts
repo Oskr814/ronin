@@ -6,12 +6,23 @@ import { activeRepo } from './repo-context.js';
 import { log } from './logger.js';
 import { loadReviewCriteria } from './review-criteria.js';
 import { parseReviewOutput, type ReviewFinding } from './review-output.js';
-import { commentableLines, placeFindings } from './review-scope.js';
+import {
+  applyScopeRules,
+  changedLinesSince,
+  commentableLines,
+  dedupeAgainstOpenThreads,
+  formatChangedLines,
+  isOnChangedCode,
+  placeFindings,
+  type ReviewMode,
+} from './review-scope.js';
+import { pinReviewedSha } from './worktree.js';
 import {
   neutralizeMentions,
   renderClosing,
   renderFindingComment,
   renderReviewSummary,
+  reviewMarker,
   type ClosingState,
   type RenderContext,
 } from './review-render.js';
@@ -55,16 +66,26 @@ export async function runExternalReview(candidate: ReviewCandidate, opts: RunExt
   await rm(outputPath, { force: true });
 
   try {
+    // Incremental against the last reviewed SHA when there is one: the
+    // changed lines go into the prompt, and the scope rules below use them.
+    const scope: ReviewMode = candidate.previousSha
+      ? { mode: 'incremental', changed: await changedLinesSince(candidate.previousSha, candidate.headSha, candidate.baseRefName) }
+      : { mode: 'full' };
+
     await runAgentTask({
       type: 'external-review',
       prNumber: candidate.prNumber,
       headRefName: candidate.headRefName,
       headSha: candidate.headSha,
       baseRefName: candidate.baseRefName,
-      openThreads: candidate.openThreads,
+      threadHistory: candidate.threadHistory,
       mentions: candidate.mentions,
       criteriaText: criteria.text,
       outputPath,
+      scope:
+        scope.mode === 'incremental'
+          ? { mode: 'incremental', previousSha: candidate.previousSha!, changedLines: formatChangedLines(scope.changed) }
+          : { mode: 'full' },
     });
 
     let raw: string;
@@ -79,15 +100,30 @@ export async function runExternalReview(candidate: ReviewCandidate, opts: RunExt
     });
     for (const d of dropped) log.info(`external-review PR #${candidate.prNumber}: descartado (${d.index >= 0 ? `hallazgo ${d.index}` : 'entrada'}): ${d.reason}`);
 
-    const placed = placeFindings(output.findings, await commentableLines(candidate.headSha, candidate.baseRefName));
+    // The scope rules and the dedupe are enforced here, whatever the agent
+    // did with the same instructions in its prompt.
+    const scoped = applyScopeRules(output.findings, scope);
+    const deduped = dedupeAgainstOpenThreads(scoped.kept, candidate.threadHistory);
+    for (const d of scoped.dropped) log.info(`external-review PR #${candidate.prNumber}: descartado por alcance (${d.reason}): ${d.finding.title}`);
+    for (const d of deduped.dropped) log.info(`external-review PR #${candidate.prNumber}: descartado, repite el thread ${d.threadId}: ${d.finding.title}`);
+    const findings = deduped.kept;
+
+    const placed = placeFindings(findings, await commentableLines(candidate.headSha, candidate.baseRefName));
     const repo = activeRepo().productRepo;
-    const ctx: RenderContext = { repo, headSha: candidate.headSha, criteriaHash: criteria.blobHash, mode: 'full' };
+    const ctx: RenderContext = {
+      repo,
+      headSha: candidate.headSha,
+      criteriaHash: criteria.blobHash,
+      mode: scope.mode,
+      ...(scope.mode === 'incremental' ? { scopeOf: (f: ReviewFinding) => (isOnChangedCode(f, scope.changed) ? 'changed' : 'reviewed') } : {}),
+    };
     const resolvedIds = new Set(output.resolveThreads.map((r) => r.threadId));
     const prUrl = `https://github.com/${repo}/pull/${candidate.prNumber}`;
 
-    const body = output.findings.length > 0
-      ? renderReviewSummary(placed, ctx)
-      : renderClosing(closingState(candidate.openThreads, resolvedIds, prUrl));
+    const body = [
+      reviewMarker(ctx),
+      findings.length > 0 ? renderReviewSummary(placed, ctx) : renderClosing(closingState(candidate.openThreads, resolvedIds, prUrl)),
+    ].join('\n');
     const comments = placed.inline.map((f) => ({
       path: f.path,
       line: f.line,
@@ -98,16 +134,32 @@ export async function runExternalReview(candidate: ReviewCandidate, opts: RunExt
 
     log.metric('external_review_published', {
       prNumber: candidate.prNumber,
-      findings: output.findings.length,
+      mode: scope.mode,
+      findings: findings.length,
       inline: placed.inline.length,
       outOfDiff: placed.outOfDiff.length,
       dropped: dropped.length,
+      droppedByScope: scoped.dropped.length,
+      droppedAsDuplicate: deduped.dropped.length,
       resolved: resolvedIds.size,
       dryRun: opts.dryRun != null,
     });
 
     if (opts.dryRun) {
-      await writeDryRun(opts.dryRun.outFile, { candidate, body, comments, placed, resolveThreads: output.resolveThreads, replies, dropped });
+      await writeDryRun(opts.dryRun.outFile, {
+        candidate,
+        scope,
+        body,
+        comments,
+        placed,
+        resolveThreads: output.resolveThreads,
+        replies,
+        dropped,
+        droppedByScope: [
+          ...scoped.dropped.map((d) => `${d.finding.title} — ${d.reason}`),
+          ...deduped.dropped.map((d) => `${d.finding.title} — repite el thread ${d.threadId}`),
+        ],
+      });
       return;
     }
 
@@ -124,6 +176,11 @@ export async function runExternalReview(candidate: ReviewCandidate, opts: RunExt
     for (const reply of replies) {
       await replyToComment(candidate.prNumber, { id: reply.commentId, kind: reply.kind }, reply.body);
     }
+    // Keeps the reviewed commit around for the next incremental review; the
+    // review is already published, so a failure here only costs that.
+    await pinReviewedSha(candidate.prNumber, candidate.headSha).catch((error) =>
+      log.error(`external-review PR #${candidate.prNumber}: no se pudo fijar el SHA revisado`, error),
+    );
   } finally {
     await rm(outputPath, { force: true }).catch(() => {});
   }
@@ -133,20 +190,27 @@ async function writeDryRun(
   outFile: string,
   data: {
     candidate: ReviewCandidate;
+    scope: ReviewMode;
     body: string;
     comments: Array<{ path: string; line: number; startLine?: number; body: string }>;
     placed: { inline: ReviewFinding[]; outOfDiff: ReviewFinding[] };
     resolveThreads: Array<{ threadId: string; reason: string }>;
     replies: Array<{ commentId: number; body: string }>;
     dropped: Array<{ index: number; reason: string }>;
+    droppedByScope: string[];
   },
 ): Promise<void> {
   const sections = [
     `# Dry-run: PR #${data.candidate.prNumber} @ ${data.candidate.headSha.slice(0, 7)}`,
     '',
+    data.scope.mode === 'incremental'
+      ? `- Modo: incremental desde \`${data.candidate.previousSha?.slice(0, 7)}\` (${[...data.scope.changed.values()].reduce((n, l) => n + l.size, 0)} líneas cambiadas en ${data.scope.changed.size} archivos)`
+      : '- Modo: completo',
     `- Hallazgos: ${data.placed.inline.length + data.placed.outOfDiff.length} (${data.placed.inline.length} inline, ${data.placed.outOfDiff.length} fuera del diff)`,
     `- Descartados por validación: ${data.dropped.length}`,
     ...data.dropped.map((d) => `  - ${d.index >= 0 ? `hallazgo ${d.index}` : 'entrada'}: ${d.reason}`),
+    `- Descartados por alcance o por repetir un thread: ${data.droppedByScope.length}`,
+    ...data.droppedByScope.map((d) => `  - ${d}`),
     `- Threads a resolver: ${data.resolveThreads.length}`,
     ...data.resolveThreads.map((r) => `  - ${r.threadId}: ${r.reason}`),
     '',

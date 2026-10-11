@@ -5,13 +5,26 @@ vi.mock('./config.js', () => ({
 }));
 
 const listAllOpenExternalPrs = vi.fn();
-const listBotOpenReviewThreads = vi.fn();
+const listBotReviewThreads = vi.fn();
 const listAllOpenReviewThreads = vi.fn();
+const getLastReviewedShaFromGitHub = vi.fn();
 vi.mock('./github.js', () => ({
   listAllOpenExternalPrs: (...args: unknown[]) => listAllOpenExternalPrs(...args),
-  listBotOpenReviewThreads: (...args: unknown[]) => listBotOpenReviewThreads(...args),
+  listBotReviewThreads: (...args: unknown[]) => listBotReviewThreads(...args),
   listAllOpenReviewThreads: (...args: unknown[]) => listAllOpenReviewThreads(...args),
+  getLastReviewedShaFromGitHub: (...args: unknown[]) => getLastReviewedShaFromGitHub(...args),
 }));
+
+const isCommitAvailable = vi.fn();
+const fetchCommit = vi.fn();
+const pruneReviewedPins = vi.fn();
+vi.mock('./worktree.js', () => ({
+  isCommitAvailable: (...args: unknown[]) => isCommitAvailable(...args),
+  fetchCommit: (...args: unknown[]) => fetchCommit(...args),
+  pruneReviewedPins: (...args: unknown[]) => pruneReviewedPins(...args),
+}));
+
+vi.mock('./logger.js', () => ({ log: { info: vi.fn(), error: vi.fn() } }));
 
 const getLastReviewedSha = vi.fn();
 const pruneLastReviewedSha = vi.fn();
@@ -35,7 +48,11 @@ function extPr(overrides: Partial<{ number: number; headRefName: string; headRef
 
 beforeEach(() => {
   listAllOpenExternalPrs.mockReset().mockResolvedValue([]);
-  listBotOpenReviewThreads.mockReset().mockResolvedValue([]);
+  listBotReviewThreads.mockReset().mockResolvedValue([]);
+  getLastReviewedShaFromGitHub.mockReset().mockResolvedValue(undefined);
+  isCommitAvailable.mockReset().mockResolvedValue(true);
+  fetchCommit.mockReset().mockResolvedValue(undefined);
+  pruneReviewedPins.mockReset().mockResolvedValue(undefined);
   listAllOpenReviewThreads.mockReset().mockResolvedValue([]);
   getLastReviewedSha.mockReset().mockResolvedValue(undefined);
   pruneLastReviewedSha.mockReset().mockResolvedValue(undefined);
@@ -50,7 +67,9 @@ describe('findPrsNeedingReview — reviewCandidates (read-only path, unchanged b
 
     const { reviewCandidates } = await findPrsNeedingReview();
 
-    expect(reviewCandidates).toEqual([{ prNumber: 10, headRefName: 'feature/x', headSha: 'sha-a', baseRefName: 'main', openThreads: [], mentions: [] }]);
+    expect(reviewCandidates).toEqual([
+      { prNumber: 10, headRefName: 'feature/x', headSha: 'sha-a', baseRefName: 'main', threadHistory: [], openThreads: [], mentions: [] },
+    ]);
   });
 
   it('includes a PR with an unprocessed @mention even though its head SHA is unchanged', async () => {
@@ -71,7 +90,7 @@ describe('findPrsNeedingReview — reviewCandidates (read-only path, unchanged b
 
     await findPrsNeedingReview();
 
-    expect(listBotOpenReviewThreads).toHaveBeenCalledWith(10, 'ronin');
+    expect(listBotReviewThreads).toHaveBeenCalledWith(10, 'ronin');
   });
 
   it('excludes a PR whose head SHA matches the last recorded review and has no mention', async () => {
@@ -93,13 +112,69 @@ describe('findPrsNeedingReview — reviewCandidates (read-only path, unchanged b
     expect(reviewCandidates[0].headSha).toBe('sha-b');
   });
 
+  it('splits the thread history into the open threads the run can resolve', async () => {
+    listAllOpenExternalPrs.mockResolvedValue([extPr()]);
+    const open = { id: 'T1', body: 'abierto', url: 'u1', isResolved: false };
+    const resolved = { id: 'T2', body: 'resuelto', url: 'u2', isResolved: true };
+    listBotReviewThreads.mockResolvedValue([open, resolved]);
+
+    const { reviewCandidates } = await findPrsNeedingReview();
+
+    expect(reviewCandidates[0].threadHistory).toEqual([open, resolved]);
+    expect(reviewCandidates[0].openThreads).toEqual([{ id: 'T1', body: 'abierto', url: 'u1' }]);
+  });
+
+  describe('previousSha', () => {
+    it('comes from the review marker on GitHub first', async () => {
+      listAllOpenExternalPrs.mockResolvedValue([extPr({ headRefOid: 'sha-c' })]);
+      getLastReviewedSha.mockResolvedValue('sha-a');
+      getLastReviewedShaFromGitHub.mockResolvedValue('sha-b');
+
+      const { reviewCandidates } = await findPrsNeedingReview();
+
+      expect(getLastReviewedShaFromGitHub).toHaveBeenCalledWith(10, 'ronin');
+      expect(reviewCandidates[0].previousSha).toBe('sha-b');
+    });
+
+    it('falls back to the local cache when GitHub has no marked review', async () => {
+      listAllOpenExternalPrs.mockResolvedValue([extPr({ headRefOid: 'sha-c' })]);
+      getLastReviewedSha.mockResolvedValue('sha-a');
+
+      const { reviewCandidates } = await findPrsNeedingReview();
+
+      expect(reviewCandidates[0].previousSha).toBe('sha-a');
+    });
+
+    it('is absent on a PR never reviewed', async () => {
+      listAllOpenExternalPrs.mockResolvedValue([extPr()]);
+
+      const { reviewCandidates } = await findPrsNeedingReview();
+
+      expect(reviewCandidates[0]).not.toHaveProperty('previousSha');
+    });
+
+    it('fetches a missing commit once, and goes full review when it is still missing', async () => {
+      listAllOpenExternalPrs.mockResolvedValue([extPr({ headRefOid: 'sha-c' }), extPr({ number: 11, headRefOid: 'sha-d' })]);
+      getLastReviewedShaFromGitHub.mockImplementation(async (n: number) => (n === 10 ? 'gone' : 'late'));
+      const fetched = new Set<string>();
+      fetchCommit.mockImplementation(async (sha: string) => void fetched.add(sha));
+      isCommitAvailable.mockImplementation(async (sha: string) => sha === 'late' && fetched.has('late'));
+
+      const { reviewCandidates } = await findPrsNeedingReview();
+
+      expect(fetchCommit).toHaveBeenCalledWith('gone');
+      expect(reviewCandidates[0]).not.toHaveProperty('previousSha');
+      expect(reviewCandidates[1].previousSha).toBe('late');
+    });
+  });
+
   it('keeps going when one PR fails, still returning the other candidates', async () => {
     listAllOpenExternalPrs.mockResolvedValue([
       extPr({ number: 10 }),
       extPr({ number: 11, headRefName: 'feature/y' }),
       extPr({ number: 12, headRefName: 'feature/z' }),
     ]);
-    listBotOpenReviewThreads.mockImplementation(async (prNumber: number) => {
+    listBotReviewThreads.mockImplementation(async (prNumber: number) => {
       if (prNumber === 11) throw new Error('GraphQL flaked');
       return [];
     });
@@ -107,6 +182,14 @@ describe('findPrsNeedingReview — reviewCandidates (read-only path, unchanged b
     const { reviewCandidates } = await findPrsNeedingReview();
 
     expect(reviewCandidates.map((c) => c.prNumber)).toEqual([10, 12]);
+  });
+
+  it('prunes the reviewed-SHA pins of PRs that are no longer open', async () => {
+    listAllOpenExternalPrs.mockResolvedValue([extPr({ number: 7 })]);
+
+    await findPrsNeedingReview();
+
+    expect(pruneReviewedPins).toHaveBeenCalledWith([7]);
   });
 
   it('prunes local-state entries for PRs that are no longer open', async () => {

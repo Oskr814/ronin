@@ -1,4 +1,13 @@
-import { listAllOpenExternalPrs, listBotOpenReviewThreads, listAllOpenReviewThreads, type Comment, type ReviewThread } from './github.js';
+import {
+  listAllOpenExternalPrs,
+  listBotReviewThreads,
+  listAllOpenReviewThreads,
+  getLastReviewedShaFromGitHub,
+  type BotThread,
+  type Comment,
+  type ReviewThread,
+} from './github.js';
+import { isCommitAvailable, fetchCommit, pruneReviewedPins } from './worktree.js';
 import { getLastReviewedSha, pruneLastReviewedSha } from './local-state.js';
 import { findUnprocessedMentions, findTrustedFixCommentsCommand } from './mentions.js';
 import { config } from './config.js';
@@ -11,8 +20,26 @@ export interface ReviewCandidate {
   // The branch the PR merges into — its merge base with headSha is what the
   // review's commentable lines are computed against (review-scope.ts).
   baseRefName: string;
+  // The SHA the last review of this PR looked at, when there is one and its
+  // commit is available locally — the review is incremental against it.
+  previousSha?: string;
+  // Every thread the bot opened on this PR, open and resolved.
+  threadHistory: BotThread[];
   openThreads: ReviewThread[];
   mentions: Comment[];
+}
+
+// The last reviewed SHA as GitHub shows it (ronin's review marker), else the
+// local cache — which also covers reviews published before the marker
+// existed. Unusable unless the commit is in the local object store.
+async function resolvePreviousSha(prNumber: number, localSha: string | undefined): Promise<string | undefined> {
+  const sha = (await getLastReviewedShaFromGitHub(prNumber, config.githubLogin)) ?? localSha;
+  if (!sha) return undefined;
+  if (await isCommitAvailable(sha)) return sha;
+  await fetchCommit(sha);
+  if (await isCommitAvailable(sha)) return sha;
+  log.info(`external-review PR #${prNumber}: el último SHA revisado (${sha.slice(0, 7)}) no está disponible, se revisa completo`);
+  return undefined;
 }
 
 // A non-fork PR with a trusted /fix-comments command — see
@@ -41,6 +68,7 @@ export async function findPrsNeedingReview(): Promise<{
   // rather than in a separate cron; this is the one place that already knows
   // the full set of currently-open external PRs.
   await pruneLastReviewedSha(prs.map((pr) => pr.number));
+  await pruneReviewedPins(prs.map((pr) => pr.number));
   const reviewCandidates: ReviewCandidate[] = [];
   const trustedFixCandidates: TrustedFixCandidate[] = [];
   for (const pr of prs) {
@@ -72,8 +100,19 @@ export async function findPrsNeedingReview(): Promise<{
       // stack).
       const mentions = await findUnprocessedMentions(pr.number);
       if (lastSha === pr.headRefOid && mentions.length === 0) continue;
-      const openThreads = await listBotOpenReviewThreads(pr.number, config.githubLogin);
-      reviewCandidates.push({ prNumber: pr.number, headRefName: pr.headRefName, headSha: pr.headRefOid, baseRefName: pr.baseRefName, openThreads, mentions });
+      const threadHistory = await listBotReviewThreads(pr.number, config.githubLogin);
+      const openThreads = threadHistory.filter((t) => !t.isResolved).map((t) => ({ id: t.id, body: t.body, url: t.url }));
+      const previousSha = await resolvePreviousSha(pr.number, lastSha);
+      reviewCandidates.push({
+        prNumber: pr.number,
+        headRefName: pr.headRefName,
+        headSha: pr.headRefOid,
+        baseRefName: pr.baseRefName,
+        ...(previousSha ? { previousSha } : {}),
+        threadHistory,
+        openThreads,
+        mentions,
+      });
     } catch (error) {
       log.error(`findPrsNeedingReview: PR #${pr.number} falló al evaluar elegibilidad, se salta este tick`, error);
     }

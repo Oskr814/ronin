@@ -86,13 +86,21 @@ function locationLink(ctx: RenderContext, path: string, line: number): string {
 
 // Kept to characters that can't end an HTML comment ("--", ">") or split
 // the key=value list (spaces).
-function slug(text: string): string {
+export function slug(text: string): string {
   return text
     .toLowerCase()
     .normalize('NFD')
     .replace(/[̀-ͯ]/g, '')
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-|-$/g, '') || 'otro';
+}
+
+// The review-level marker, first line of every review body ronin publishes:
+// the last reviewed SHA is read back from it (github.ts,
+// getLastReviewedShaFromGitHub), since the bot's other reviews — replies to
+// inline comments — carry a commit_id too.
+export function reviewMarker(ctx: RenderContext): string {
+  return `<!-- ronin:review v=2 sha=${ctx.headSha} mode=${ctx.mode} criteria=${ctx.criteriaHash} -->`;
 }
 
 export function findingMarker(finding: ReviewFinding, ctx: RenderContext): string {
