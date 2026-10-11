@@ -236,6 +236,7 @@ describe('runAgentTask — external-review', () => {
     criteriaText: '# Criterio\n## Dimensiones\n### Seguridad',
     outputPath: '/tmp/worktrees/external-review-out/305-abc123.json',
     scope: { mode: 'full' as const },
+    canExecute: false,
   };
 
   // Replaces the original "uses headRefName directly as the worktree branch"
@@ -473,6 +474,27 @@ describe('runAgentTask — external-review', () => {
     expect(prompt).not.toContain('including minor ones');
   });
 
+  it('on a non-fork PR, verifies the worst bugs with a test, with commands from the base branch\'s CLAUDE.md', async () => {
+    await runAgentTask({ ...task, canExecute: true });
+
+    const prompt = runClaudeHeadless.mock.calls[0][1] as string;
+    expect(prompt).toContain('The workers never run anything');
+    expect(prompt).toContain('severity critical or important, critical first, at most 3');
+    expect(prompt).toContain('git show origin/odoo-main:CLAUDE.md');
+    expect(prompt).toContain('never change the code under review');
+    expect(prompt).toContain('If it passes, the scenario does not hold: drop the finding');
+    expect(prompt).toContain('at most 15 minutes');
+    expect(prompt).not.toContain('read the code only. This PR comes from a fork');
+  });
+
+  it('on a fork, never executes anything', async () => {
+    await runAgentTask(task);
+
+    const prompt = runClaudeHeadless.mock.calls[0][1] as string;
+    expect(prompt).toContain('This PR comes from a fork, so its code is never executed');
+    expect(prompt).not.toContain('verify with a test');
+  });
+
   it('in full mode, says nothing about changed lines', async () => {
     await runAgentTask(task);
     const prompt = runClaudeHeadless.mock.calls[0][1] as string;
@@ -490,6 +512,7 @@ describe('runAgentTask — external-review with mentions', () => {
     baseRefName: 'main',
     threadHistory: [],
     scope: { mode: 'full' as const },
+    canExecute: false,
     mentions: [{ id: 42, kind: 'issue' as const, body: '@ronin-agent revisá esto de nuevo', reactionsEyes: 0, authorLogin: 'someone' }],
     criteriaText: '# Criterio',
     outputPath: '/tmp/out.json',

@@ -653,7 +653,7 @@ describe('discoverAssignedIssues', () => {
 });
 
 describe('processExternalReviewCandidate', () => {
-  const candidate = { prNumber: 305, headRefName: 'someone-else/feature-x', headSha: 'abc123', baseRefName: 'main', threadHistory: [], openThreads: [], mentions: [] };
+  const candidate = { prNumber: 305, headRefName: 'someone-else/feature-x', headSha: 'abc123', baseRefName: 'main', threadHistory: [], openThreads: [], mentions: [], canExecute: true };
 
   it('runs the external review and records the reviewed SHA on success', async () => {
     runExternalReview.mockResolvedValue(undefined);
@@ -844,8 +844,8 @@ describe('runExternalReviews', () => {
   it('runs one external review per read-only candidate findPrsNeedingReview returns', async () => {
     findPrsNeedingReview.mockResolvedValue({
       reviewCandidates: [
-        { prNumber: 305, headRefName: 'someone-else/feature-x', headSha: 'abc123', baseRefName: 'main', threadHistory: [], openThreads: [], mentions: [] },
-        { prNumber: 306, headRefName: 'other/feature-y', headSha: 'def456', baseRefName: 'main', threadHistory: [], openThreads: [], mentions: [] },
+        { prNumber: 305, headRefName: 'someone-else/feature-x', headSha: 'abc123', baseRefName: 'main', threadHistory: [], openThreads: [], mentions: [], canExecute: true },
+        { prNumber: 306, headRefName: 'other/feature-y', headSha: 'def456', baseRefName: 'main', threadHistory: [], openThreads: [], mentions: [], canExecute: true },
       ],
       trustedFixCandidates: [],
     });

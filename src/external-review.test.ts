@@ -68,7 +68,7 @@ describe('findPrsNeedingReview — reviewCandidates (read-only path, unchanged b
     const { reviewCandidates } = await findPrsNeedingReview();
 
     expect(reviewCandidates).toEqual([
-      { prNumber: 10, headRefName: 'feature/x', headSha: 'sha-a', baseRefName: 'main', threadHistory: [], openThreads: [], mentions: [] },
+      { prNumber: 10, headRefName: 'feature/x', headSha: 'sha-a', baseRefName: 'main', threadHistory: [], openThreads: [], mentions: [], canExecute: true },
     ]);
   });
 
@@ -122,6 +122,14 @@ describe('findPrsNeedingReview — reviewCandidates (read-only path, unchanged b
 
     expect(reviewCandidates[0].threadHistory).toEqual([open, resolved]);
     expect(reviewCandidates[0].openThreads).toEqual([{ id: 'T1', body: 'abierto', url: 'u1' }]);
+  });
+
+  it('lets the review execute code only on a branch of this same repo, never on a fork', async () => {
+    listAllOpenExternalPrs.mockResolvedValue([extPr({ number: 10 }), extPr({ number: 11, isCrossRepository: true })]);
+
+    const { reviewCandidates } = await findPrsNeedingReview();
+
+    expect(reviewCandidates.map((c) => [c.prNumber, c.canExecute])).toEqual([[10, true], [11, false]]);
   });
 
   describe('previousSha', () => {

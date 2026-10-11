@@ -74,7 +74,8 @@ export const FINDINGS_JSON_CONTRACT = `{
       },
       "impact": "what breaks and for whom, one line (max 200 chars)",
       "evidence": [{ "path": "...", "line": 45, "note": "why this line matters (max 100 chars)" }],   // max 3
-      "verification": { "status": "reasoned", "reason": "optional, one line" },
+      "verification": { "status": "reasoned", "reason": "optional, one line" }
+                    | { "status": "verified", "test": { "path": "...", "code": "the test", "output": "the failing assertion and its message" } },   // verified only for a test you ran and saw fail
       "fix": "one concrete fix in one sentence, no alternatives",   // optional
       "suggestion": { "kind": "replace", "code": "exact replacement for lines startLine..line" }
                   | { "kind": "snippet", "code": "the key code of a fix that does not fit the anchored lines" },   // optional
@@ -173,7 +174,7 @@ function locations<T>(value: unknown, max: number, parse: (raw: Record<string, u
   return result;
 }
 
-function parseFinding(raw: unknown, mentionIds: Set<number>): ReviewFinding {
+function parseFinding(raw: unknown, mentionIds: Set<number>, allowVerified: boolean): ReviewFinding {
   if (!isObject(raw)) throw new InvalidField('no es un objeto');
   const type = oneOf(raw.type, TYPES, 'type');
   const line = posInt(raw.line, 'line');
@@ -202,7 +203,7 @@ function parseFinding(raw: unknown, mentionIds: Set<number>): ReviewFinding {
       line: posInt(e.line, 'evidence.line'),
       note: str(e.note, 'evidence.note', LIMITS.note),
     })),
-    verification: parseVerification(raw.verification),
+    verification: parseVerification(raw.verification, allowVerified),
     affectedCode: str(raw.affectedCode, 'affectedCode', LIMITS.affectedCode),
   };
 
@@ -250,7 +251,9 @@ function parseOrigin(raw: unknown): ReviewFinding['origin'] {
   return note ? { kind: raw.kind as FindingOrigin, note } : { kind: raw.kind as FindingOrigin };
 }
 
-function parseVerification(raw: unknown): ReviewFinding['verification'] {
+function parseVerification(raw: unknown, allowVerified: boolean): ReviewFinding['verification'] {
+  // A run that was not allowed to execute anything cannot have run a test.
+  if (!allowVerified && isObject(raw) && raw.status === 'verified') return { status: 'reasoned' };
   if (!isObject(raw) || raw.status !== 'verified') {
     const reason = isObject(raw) ? optStr(raw.reason, LIMITS.reason) : undefined;
     return reason ? { status: 'reasoned', reason } : { status: 'reasoned' };
@@ -281,7 +284,7 @@ function parseSuggestion(raw: unknown, startLine: number, line: number): ReviewF
 
 export function parseReviewOutput(
   raw: string,
-  ctx: { mentionIds: Set<number>; openThreadIds: Set<string> },
+  ctx: { mentionIds: Set<number>; openThreadIds: Set<string>; allowVerified?: boolean },
 ): { output: ExternalReviewOutput; dropped: Array<{ index: number; reason: string }> } {
   const parsed: unknown = JSON.parse(raw);
   if (!isObject(parsed)) throw new Error('findings.json no contiene un objeto JSON');
@@ -290,7 +293,7 @@ export function parseReviewOutput(
   const findings: ReviewFinding[] = [];
   asArray(parsed.findings).forEach((rawFinding, index) => {
     try {
-      findings.push(parseFinding(rawFinding, ctx.mentionIds));
+      findings.push(parseFinding(rawFinding, ctx.mentionIds, ctx.allowVerified ?? false));
     } catch (error) {
       dropped.push({ index, reason: (error as Error).message });
     }
