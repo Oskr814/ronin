@@ -26,6 +26,10 @@ export interface ReviewCandidate {
   // Every thread the bot opened on this PR, open and resolved.
   threadHistory: BotThread[];
   openThreads: ReviewThread[];
+  // Whether the review may run the PR's code to verify a finding with a
+  // test: only for a branch on this same repo, whose author already has
+  // write access. A fork's code is never executed.
+  canExecute: boolean;
   mentions: Comment[];
 }
 
@@ -112,6 +116,7 @@ export async function findPrsNeedingReview(): Promise<{
         threadHistory,
         openThreads,
         mentions,
+        canExecute: !pr.isCrossRepository,
       });
     } catch (error) {
       log.error(`findPrsNeedingReview: PR #${pr.number} falló al evaluar elegibilidad, se salta este tick`, error);

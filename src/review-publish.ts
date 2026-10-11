@@ -80,6 +80,7 @@ export async function runExternalReview(candidate: ReviewCandidate, opts: RunExt
       baseRefName: candidate.baseRefName,
       threadHistory: candidate.threadHistory,
       mentions: candidate.mentions,
+      canExecute: candidate.canExecute,
       criteriaText: criteria.text,
       outputPath,
       scope:
@@ -97,6 +98,7 @@ export async function runExternalReview(candidate: ReviewCandidate, opts: RunExt
     const { output, dropped } = parseReviewOutput(raw, {
       mentionIds: new Set(candidate.mentions.map((m) => m.id)),
       openThreadIds: new Set(candidate.openThreads.map((t) => t.id)),
+      allowVerified: candidate.canExecute,
     });
     for (const d of dropped) log.info(`external-review PR #${candidate.prNumber}: descartado (${d.index >= 0 ? `hallazgo ${d.index}` : 'entrada'}): ${d.reason}`);
 

@@ -167,3 +167,22 @@ describe('parseReviewOutput — threads and mention replies', () => {
     expect(output.mentionReplies).toEqual([{ commentId: 111, kind: 'issue', body: 'hecho' }]);
   });
 });
+
+describe('parseReviewOutput — verification', () => {
+  const test = { path: 'tests/X.cs', code: 'Assert.True(false);', output: 'FAILED' };
+
+  it('keeps a verified finding with its test when execution was allowed', () => {
+    const { output } = parseReviewOutput(JSON.stringify({ findings: [finding({ verification: { status: 'verified', test } })] }), { ...ctx, allowVerified: true });
+    expect(output.findings[0].verification).toEqual({ status: 'verified', test });
+  });
+
+  it('downgrades it to reasoned on a run that could not execute anything (a fork)', () => {
+    const { output } = parseReviewOutput(JSON.stringify({ findings: [finding({ verification: { status: 'verified', test } })] }), { ...ctx, allowVerified: false });
+    expect(output.findings[0].verification).toEqual({ status: 'reasoned' });
+  });
+
+  it('downgrades a verified claim without the test attached, even when execution was allowed', () => {
+    const { output } = parseReviewOutput(JSON.stringify({ findings: [finding({ verification: { status: 'verified' } })] }), { ...ctx, allowVerified: true });
+    expect(output.findings[0].verification).toEqual({ status: 'reasoned' });
+  });
+});

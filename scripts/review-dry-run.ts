@@ -63,16 +63,16 @@ await withActiveRepo(repo, async () => {
   const headSha = await resolve(values.sha!);
   const previousSha = values.prev ? await resolve(values.prev) : undefined;
 
-  const { stdout } = await execFileAsync('gh', ['pr', 'view', String(prNumber), '--repo', repo.productRepo, '--json', 'baseRefName,headRefName'], { env: ghEnv });
-  const { baseRefName, headRefName } = JSON.parse(stdout) as { baseRefName: string; headRefName: string };
+  const { stdout } = await execFileAsync('gh', ['pr', 'view', String(prNumber), '--repo', repo.productRepo, '--json', 'baseRefName,headRefName,isCrossRepository'], { env: ghEnv });
+  const { baseRefName, headRefName, isCrossRepository } = JSON.parse(stdout) as { baseRefName: string; headRefName: string; isCrossRepository: boolean };
 
   const outFile = values.out ?? `logs/dry-run/${prNumber}-${headSha.slice(0, 7)}.md`;
   const threadHistory = values.threads ? await listBotReviewThreads(prNumber, config.githubLogin) : [];
   const openThreads = threadHistory.filter((t) => !t.isResolved).map((t) => ({ id: t.id, body: t.body, url: t.url }));
   const mode = previousSha ? `incremental desde ${previousSha.slice(0, 7)}` : 'completo';
-  console.log(`Revisando PR #${prNumber} @ ${headSha.slice(0, 7)} (base ${baseRefName}, ${mode}, ${threadHistory.length} threads) — salida en ${outFile}`);
+  console.log(`Revisando PR #${prNumber} @ ${headSha.slice(0, 7)} (base ${baseRefName}, ${mode}, ${threadHistory.length} threads, ${isCrossRepository ? 'fork: sin ejecutar' : 'con verificación por tests'}) — salida en ${outFile}`);
   await runExternalReview(
-    { prNumber, headRefName, headSha, baseRefName, ...(previousSha ? { previousSha } : {}), threadHistory, openThreads, mentions: [] },
+    { prNumber, headRefName, headSha, baseRefName, ...(previousSha ? { previousSha } : {}), threadHistory, openThreads, mentions: [], canExecute: !isCrossRepository },
     { dryRun: { outFile } },
   );
   console.log(`Listo: ${outFile}`);

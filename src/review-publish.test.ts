@@ -55,6 +55,7 @@ const candidate = {
   baseRefName: 'odoo-main',
   threadHistory: openThreads.map((t) => ({ ...t, ...historyEntry })),
   openThreads,
+  canExecute: true,
   mentions: [{ id: 42, kind: 'issue' as const, body: '@ronin mirá', reactionsEyes: 0, authorLogin: 'dev' }],
 };
 
@@ -246,6 +247,28 @@ describe('runExternalReview — publishing', () => {
     await runExternalReview(candidate);
 
     expect(logMetric).toHaveBeenCalledWith('external_review_published', expect.objectContaining({ prNumber: 305, findings: 1, inline: 1, outOfDiff: 0, dryRun: false }));
+  });
+});
+
+describe('runExternalReview — test verification', () => {
+  const verified = { status: 'verified', test: { path: 'tests/X.cs', code: 'Assert.True(false);', output: 'FAILED' } };
+
+  it('tells the agent whether it may execute the PR and publishes a verified finding with its test', async () => {
+    agentWrites({ findings: [finding({ verification: verified })] });
+
+    await runExternalReview(candidate);
+
+    expect(runAgentTask).toHaveBeenCalledWith(expect.objectContaining({ canExecute: true }));
+    expect(postReview.mock.calls[0][1].comments[0].body).toContain('✅ comprobado con un test que falla');
+  });
+
+  it('never publishes a verified finding on a fork', async () => {
+    agentWrites({ findings: [finding({ verification: verified })] });
+
+    await runExternalReview({ ...candidate, canExecute: false });
+
+    expect(runAgentTask).toHaveBeenCalledWith(expect.objectContaining({ canExecute: false }));
+    expect(postReview.mock.calls[0][1].comments[0].body).not.toContain('comprobado con un test');
   });
 });
 
