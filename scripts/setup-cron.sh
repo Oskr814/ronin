@@ -51,11 +51,19 @@ exec >> "\$LOG_DIR/tick-\$(date +%F).log" 2>&1
 find "\$LOG_DIR" -name 'tick-*.log' -mtime +$RETENTION_DAYS -delete
 
 # Single-flight: a tick can run for a while (a claude -p invocation can take
-# up to AGENT_TASK_TIMEOUT_MINUTES). If a previous run is still going, skip
-# this trigger instead of running a second tick concurrently against the
-# same local state (.ronin-state.json) — see docs/DESIGN.md §9.
+# up to AGENT_TASK_TIMEOUT_MINUTES). If a previous run is still going, don't
+# run a second tick concurrently against the same local state
+# (.ronin-state.json) — see docs/DESIGN.md §9. The trigger is not dropped
+# either: it leaves a pending mark that the running tick picks up when it
+# ends, so a webhook event that lands mid-tick (a PR opened while the tick
+# already listed PRs) is handled right away instead of at the next cron slot.
+PENDING="$REPO_DIR/.tick.pending"
 exec 200>"$REPO_DIR/.tick.lock"
-flock -n 200 || { echo "\$(date -Is) [cron] tick ya en curso, salteando"; exit 0; }
+if ! flock -n 200; then
+  touch "\$PENDING"
+  echo "\$(date -Is) [cron] tick ya en curso, queda pendiente para cuando termine"
+  exit 0
+fi
 
 set -a
 source "$REPO_DIR/.env"
@@ -68,7 +76,22 @@ fi
 if [ -n "\$(find src -newer dist/index.js)" ]; then
   echo "\$(date -Is) [cron] WARN: src/ tiene cambios más nuevos que dist/ — considerar pnpm build"
 fi
-pnpm start
+status=0
+while :; do
+  rm -f "\$PENDING"
+  pnpm start || status=\$?
+  [ -e "\$PENDING" ] || break
+  echo "\$(date -Is) [cron] hubo disparos durante el tick, corriendo otro"
+done
+
+# A trigger can still land between the last check and the lock release;
+# re-check once the lock is free. Re-running this script either takes the
+# lock or, if some other trigger got it first, leaves the mark for that one.
+exec 200>&-
+if [ -e "\$PENDING" ]; then
+  exec "\$0"
+fi
+exit "\$status"
 EOF
 chmod +x "$WRAPPER"
 

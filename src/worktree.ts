@@ -109,9 +109,24 @@ export async function ensureWorktree(branch: string, baseRef = activeRepo().work
 // had merged. Best-effort — a worktree that never touched Docker has no
 // compose project to tear down, and `docker compose down` against a missing
 // config/no running project just errors harmlessly.
+//
+// Every compose file at the worktree root, not just the default one: a bare
+// `docker compose down` only reads docker-compose.yml, and shoppingcart only
+// has docker-compose.dev.yml — so its stacks were never torn down
+// (discovered live: postgres-ecommerce from ronin-709-slice-1 still up days
+// later), and every cleanup logged a spurious error.
+const COMPOSE_FILE_RE = /^(docker-)?compose(\.[\w-]+)?\.ya?ml$/;
+
+export function composeFilesIn(fileNames: string[]): string[] {
+  return fileNames.filter((name) => COMPOSE_FILE_RE.test(name)).sort();
+}
+
 async function removeDockerStack(worktreeDir: string): Promise<void> {
-  await execFileAsync('docker', ['compose', 'down', '--volumes', '--remove-orphans'], { cwd: worktreeDir })
-    .catch((error) => log.error(`removeDockerStack: 'docker compose down' falló en ${worktreeDir}, stack puede haber quedado corriendo`, error));
+  const files = composeFilesIn(await readdir(worktreeDir).catch(() => []));
+  for (const file of files) {
+    await execFileAsync('docker', ['compose', '-f', file, 'down', '--volumes', '--remove-orphans'], { cwd: worktreeDir })
+      .catch((error) => log.error(`removeDockerStack: 'docker compose -f ${file} down' falló en ${worktreeDir}, stack puede haber quedado corriendo`, error));
+  }
 }
 
 // Called at merge time (tick.ts's processSlicePr), right after a 'plan' task
