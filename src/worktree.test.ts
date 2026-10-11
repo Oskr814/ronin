@@ -13,7 +13,7 @@ import type { PullRequestStatus } from './github.js';
 let mockConfig: Record<string, unknown> = { worktreeBaseRef: 'main' };
 vi.mock('./config.js', () => ({ get config() { return mockConfig; } }));
 
-const { isBehind, attemptRebase, branchFromWorktreeDirName, branchesToSweep, ensureWorktree, removeWorktree, ensureExternalReviewWorktree, externalReviewWorktreeDirFor, ensureTrustedFixWorktree, removeTrustedFixWorktree, isCommitAvailable, pinReviewedSha, pruneReviewedPins } = await import('./worktree.js');
+const { isBehind, attemptRebase, branchFromWorktreeDirName, branchesToSweep, ensureWorktree, removeWorktree, ensureExternalReviewWorktree, externalReviewWorktreeDirFor, ensureTrustedFixWorktree, removeTrustedFixWorktree, isCommitAvailable, pinReviewedSha, pruneReviewedPins, composeFilesIn } = await import('./worktree.js');
 const { withActiveRepo } = await import('./repo-context.js');
 
 function pr(headRefName: string): PullRequestStatus {
@@ -698,5 +698,17 @@ describe('reviewed-SHA pins — real git', () => {
     await inRepo(async () => {
       expect(await isCommitAvailable('0123456789abcdef0123456789abcdef01234567')).toBe(false);
     });
+  });
+});
+
+describe('composeFilesIn', () => {
+  it('finds every compose file at the worktree root, not only the default one', () => {
+    expect(
+      composeFilesIn(['docker-compose.dev.yml', 'README.md', 'compose.yaml', 'docker-compose.yml', 'docker-compose.override.yaml', 'mycompose.yml', 'Dockerfile']),
+    ).toEqual(['compose.yaml', 'docker-compose.dev.yml', 'docker-compose.override.yaml', 'docker-compose.yml']);
+  });
+
+  it('finds nothing in a repo without Docker', () => {
+    expect(composeFilesIn(['package.json', 'src'])).toEqual([]);
   });
 });
