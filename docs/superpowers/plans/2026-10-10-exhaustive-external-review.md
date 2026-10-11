@@ -445,11 +445,22 @@ Branch `feat/fix-self-review`, stacked on Stage 2's branch.
 - [x] Validation: #753 @ `c8ad91b`, trigger `4170981750` on thread `4169591567` (the bot's own review suggested a constant "referenced from both files"; the original fix put `Constants.Indexes.USERS_USERNAME_LOWER` into the migration, flagged 🟠 one round later). Expected: the constant does not end up in the migration.
   - Result (2026-10-11): passed. The fix put `Constants.DbConstraints.USERS_USERNAME_LOWER` in `AuthService` and its test and left the literal in the migration, citing the criteria — so it was the criteria in the prompt that prevented it, before the self-review ran. The self-review subagent ran, found no bug, and raised two minor points the agent checked and dismissed with reasons. This case does not exercise the self-review catching something; a fix that introduces a bug the criteria do not name up front would.
 
-## Stage 4 — Test-based verification (outline)
+## Stage 4 — Test-based verification
 
-### Task 16
-- `ReviewCandidate.isCrossRepository` → task `canExecute`.
-- Prompt (only when `canExecute`): for up to 3 `bug` findings with severity `critical`/`important` (critical first), write a test in the worktree, run it with the repo's documented test command, and fill `verification` — fails → `verified` with the test attached; passes → drop the finding; not reasonably testable or could not run → `reasoned` with the reason.
-- Render: `Comprobado` + collapsed test code and output.
-- Fork PRs: prompt has no execution section; any `verified` in the output is downgraded to `reasoned` by the supervisor.
-- Validation: dry-run on #760 @ `66d85a6`; the `ChangeClient` race is expected to stay `reasoned` (non-deterministic interleaving), simpler bugs from #753 to reach `verified`.
+Branch `feat/review-test-verification`.
+
+### Task 16: Verify the worst bugs with a test
+
+**Files:** `src/external-review.ts`, `src/agent-task.ts`, `src/review-output.ts`, `src/review-publish.ts`, `scripts/review-dry-run.ts` (+ tests)
+
+- [x] `ReviewCandidate.canExecute = !pr.isCrossRepository`, passed to the task.
+- [x] Prompt, only when `canExecute`: after the judgment pass, the orchestrator (never the workers) verifies up to 3 `bug` findings with severity `critical`/`important`, critical first. It writes the smallest test next to the existing ones, without touching the code under review, and runs only that test with the commands from `git show origin/<base>:CLAUDE.md` (never the PR's own files). Fails → `verified` with the test path, code and output; passes → drop the finding; not reasonably testable (a race, an external service) or the environment fails → `reasoned` with the reason. 15 minutes in total, no retry after an environment failure, no system packages.
+- [x] Fork PRs: the prompt says nothing is executed, and `parseFinding` downgrades any `verified` to `reasoned` (`allowVerified` = `canExecute`).
+- [x] Render: "**Verificación:** ✅ comprobado con un test que falla (ver abajo)" plus a collapsed block with the test and its output.
+- [x] Validation (2026-10-11):
+  - The first runs came out at 25–40 s with no workers: a `/model` in an interactive session had saved Sonnet as the default of the shared `CLAUDE_CONFIG_DIR`. Fixed by pinning `--model`/`--effort` in every headless run (PR #9); the runs below are with Opus.
+  - #753 @ `be8d2ad`: 3 🟠, all kept `reasoned` with valid reasons (two races, one depending on production data). No test was run.
+  - #774 @ `8949cab`: only 🟡 this time (the earlier 🔴 on credit did not come back, at medium or high effort), so nothing to verify.
+  - #760 @ `66d85a6`: the race came out as a 🟡 `decision`, so it was not verified either.
+  - Planted bug (a local commit on `odoo-main` that "extracts the rounding" in `credit.ts` and silently drops the ISV from `available`, run with `--pr 774 --sha <commit>`): 🟠 `verified`. The orchestrator wrote `credit.isv.test.ts`, ran it with `pnpm --filter backoffice exec vitest run …`, both cases failed (`expected 500 to be 485`), and the comment shows the test and its output. The minor finding next to it stayed `reasoned`.
+  - Not exercised: a test that passes (finding dropped) and a backend test through `docker compose run` (the PRs at hand had no deterministic backend bug).
