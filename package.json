@@ -12,6 +12,7 @@
     "start": "node dist/index.js",
     "smoke-test": "tsx scripts/smoke-test.ts",
     "review:dry-run": "tsx scripts/review-dry-run.ts",
+    "fix:replay": "tsx scripts/fix-replay.ts",
     "init-labels": "bash scripts/init-labels.sh",
     "cron:setup": "bash scripts/setup-cron.sh",
     "cron:remove": "bash scripts/setup-cron.sh --remove",

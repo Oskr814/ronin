@@ -44,10 +44,14 @@ vi.mock('node:fs/promises', () => ({
   rm: (...args: unknown[]) => rm(...args),
 }));
 
+const loadReviewCriteria = vi.fn();
+vi.mock('./review-criteria.js', () => ({ loadReviewCriteria: (...args: unknown[]) => loadReviewCriteria(...args) }));
+
 const { runAgentTask, AGENT_NOTES_REMINDER } = await import('./agent-task.js');
 const { resetTickMetrics, getTickAgentMetrics } = await import('./metrics.js');
 
 beforeEach(() => {
+  loadReviewCriteria.mockResolvedValue({ text: '# Criterio\n## No marcar\n- sin constantes en migraciones', blobHash: 'h' });
   vi.clearAllMocks();
   activeRepo.mockReturnValue({ productRepo: 'bmedical/bmedical', productRepoPath: '/tmp/repo', worktreeBasePath: '/tmp/worktrees' });
   ensureWorktree.mockResolvedValue('/tmp/worktree');
@@ -785,5 +789,54 @@ describe('runAgentTask — fix-comments-external', () => {
 
     const prompt = runClaudeHeadless.mock.calls[0][1] as string;
     expect(prompt).toMatch(/no.*(pending|open|unresolved)/i);
+  });
+});
+
+describe('runAgentTask — self-review in fix tasks', () => {
+  const prompts = async (task: Parameters<typeof runAgentTask>[0]) => {
+    runClaudeHeadless.mockClear();
+    getPullRequestStatus.mockResolvedValue({ headRefName: 'ronin/228/slice-1' });
+    await runAgentTask(task);
+    return runClaudeHeadless.mock.calls[0][1] as string;
+  };
+  const trigger = [{ id: 9, kind: 'issue' as const, body: '/fix-comments', reactionsEyes: 0, authorLogin: 'someone' }];
+  const fixTasks = {
+    'fix-review': { type: 'fix-review' as const, issueNumber: 228, prNumber: 229 },
+    'fix-comments': { type: 'fix-comments' as const, issueNumber: 228, prNumber: 229, trigger, openThreads: [] },
+    'fix-comments-external': { type: 'fix-comments-external' as const, prNumber: 229, headRefName: 'feat/x', trigger, openThreads: [] },
+    'review-request': { type: 'review-request' as const, issueNumber: 228, prNumber: 229, mentions: trigger },
+  };
+
+  for (const [name, task] of Object.entries(fixTasks)) {
+    it(`${name}: records the pre-fix HEAD and has a fresh subagent review the change with the criteria before pushing`, async () => {
+      const prompt = await prompts(task);
+      expect(prompt).toContain('git rev-parse HEAD');
+      expect(prompt).toContain('model "sonnet"');
+      expect(prompt).toContain('"git diff <that SHA> HEAD"');
+      expect(prompt).toContain('repos/{owner}/{repo}/pulls/229/comments');
+      expect(prompt).toContain('<<<CRITERIA_START>>>\n# Criterio\n## No marcar\n- sin constantes en migraciones\n<<<CRITERIA_END>>>');
+      expect(prompt).toContain('do not push that part of the change');
+    });
+  }
+
+  it('asks for the self-review before the push instruction is carried out, right after the amend instruction', async () => {
+    const prompt = await prompts(fixTasks['fix-comments']);
+    expect(prompt.indexOf('Apply every fix you decide on')).toBeLessThan(prompt.indexOf('Self-review, after amending and before pushing'));
+    expect(prompt.indexOf('Self-review, after amending and before pushing')).toBeLessThan(prompt.indexOf('For each thread above: reply'));
+  });
+
+  it('only applies to review-request when it changes code', async () => {
+    expect(await prompts(fixTasks['review-request'])).toContain('If you change code: before you edit anything');
+  });
+
+  it('says where to report what could not be fixed', async () => {
+    expect(await prompts(fixTasks['fix-review'])).toContain('say so in a PR comment ("gh pr comment 229');
+    expect(await prompts(fixTasks['fix-comments'])).toContain('say so in your reply to that thread, and do not resolve it');
+  });
+
+  it('is not added to tasks that do not answer a review', async () => {
+    const prompt = await prompts({ type: 'fix-e2e', issueNumber: 228, prNumber: 229 });
+    expect(prompt).not.toContain('Self-review');
+    expect(loadReviewCriteria).not.toHaveBeenCalled();
   });
 });

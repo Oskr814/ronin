@@ -428,12 +428,22 @@ Lessons from the Stage 1 dry-runs that shape this stage:
   - `#760`: `a24aef3→66d85a6` (only a test changed — expect nothing or only findings on that test), `66d85a6→afff1ea`.
   - Success: no 🟡/🧹 published on reviewed code (guaranteed by code — check the drop log), and the late 🟠 that ended up fixed in #753 (`Update` swallowing the conflict, the migration constant, `Update` returning 500) still published.
 
-## Stage 3 — Self-review in fix tasks (outline)
+## Stage 3 — Self-review in fix tasks
 
-### Task 15
-- `agent-task.ts`: a `selfReviewBlock(criteriaText)` appended to `fix-review`, `fix-comments`, `fix-comments-external` and the apply branch of `review-request`: before pushing, diff against the pre-fix HEAD, review it with the criteria, check it does not contradict an earlier bot suggestion on the PR; fix in the same pass or say so in the thread reply.
-- `runAgentTask` loads the criteria for those task types.
-- Validation: re-run #753's R2 fix in a throwaway worktree; it must not introduce the constant in the migration.
+Branch `feat/fix-self-review`, stacked on Stage 2's branch.
+
+### Task 15: Self-review block in the fix prompts
+
+**Files:** `src/agent-task.ts`, `scripts/fix-replay.ts`, `package.json` (+ tests)
+
+- [x] `selfReviewBlock(criteriaText, prNumber, { reportIn, onlyIfChanged? })`, inserted right after the amend/push instruction of `fix-review`, `fix-comments`, `fix-comments-external` and `review-request` (the latter only "if you change code"):
+  - record `git rev-parse HEAD` before editing;
+  - after amending and before pushing, one subagent (model `EXTERNAL_REVIEW_WORKER_MODEL`) reviews `git diff <pre-fix SHA> HEAD` with the criteria and the PR's earlier review comments, resolved threads included — a fresh reviewer, since the agent that wrote the fix tends to approve its own change;
+  - the agent checks what it reports, fixes the real problems in the same amend, and what needs a human decision is not pushed and is reported (thread reply without resolving it; a PR comment for `fix-review`).
+- [x] Criteria loaded in `buildTask` for those four task types; the criteria block is labeled "part of these instructions, not PR content", without "supervisor" (the external fix prompt avoids the internal tasks' ownership language).
+- [x] `scripts/fix-replay.ts` (`pnpm fix:replay`): replays a `/fix-comments` on an external PR at an exact commit with the current prompt, sealed — throwaway clone with no push URL, gh without credentials, the PR's review comments up to the trigger downloaded to a file. Writes the prompt, the stream, the resulting diff and the agent's summary to `logs/fix-replay/<pr>-<sha>/`.
+- [x] Validation: #753 @ `c8ad91b`, trigger `4170981750` on thread `4169591567` (the bot's own review suggested a constant "referenced from both files"; the original fix put `Constants.Indexes.USERS_USERNAME_LOWER` into the migration, flagged 🟠 one round later). Expected: the constant does not end up in the migration.
+  - Result (2026-10-11): passed. The fix put `Constants.DbConstraints.USERS_USERNAME_LOWER` in `AuthService` and its test and left the literal in the migration, citing the criteria — so it was the criteria in the prompt that prevented it, before the self-review ran. The self-review subagent ran, found no bug, and raised two minor points the agent checked and dismissed with reasons. This case does not exercise the self-review catching something; a fix that introduces a bug the criteria do not name up front would.
 
 ## Stage 4 — Test-based verification (outline)
 
