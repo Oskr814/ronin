@@ -22,7 +22,7 @@ function finding(overrides: Partial<ReviewFinding> = {}): ReviewFinding {
     severity: 'important',
     category: 'Concurrencia / lógica',
     title: 'Agregar líneas omite el crédito',
-    scenario: 'A confirma; B agrega 50×100 → B inserta 5000 sin validar.',
+    scenario: { steps: ['A confirma el pedido.', 'B agrega 50×100'], result: 'B inserta 5000 sin validar', expected: 'que B falle' },
     impact: 'Reabre el agujero de crédito.',
     evidence: [{ path: 'apps/api/Services/OrderService.cs', line: 1299, note: 'solo valida en DRAFT' }],
     verification: { status: 'reasoned' },
@@ -66,20 +66,36 @@ describe('renderFindingComment', () => {
     expect(lines[2]).toBe('<sub>Decisión · Crítico · Concurrencia / lógica</sub>');
   });
 
-  it('shows scenario, impact, evidence links and verification without expanding anything', () => {
+  it('shows the scenario as numbered steps with its outcome, and the evidence links, without expanding anything', () => {
     const body = renderFindingComment(finding(), ctx);
     const visible = body.split('<details>')[0];
-    expect(visible).toContain('**Escenario:** A confirma; B agrega 50×100');
-    expect(visible).toContain('**Impacto:** Reabre el agujero de crédito.');
+    expect(visible).toContain('**Cómo pasa:**\n\n1. A confirma el pedido.\n2. B agrega 50×100\n\n→ B inserta 5000 sin validar. Se esperaba: que B falle.');
     expect(visible).toContain(
-      '**Evidencia:** [`apps/api/Services/OrderService.cs:1299`](https://github.com/redmotos/shoppingcart/blob/abcdef1234567890/apps/api/Services/OrderService.cs#L1299) solo valida en DRAFT',
+      '**Dónde:** [`apps/api/Services/OrderService.cs:1299`](https://github.com/redmotos/shoppingcart/blob/abcdef1234567890/apps/api/Services/OrderService.cs#L1299) solo valida en DRAFT',
     );
-    expect(visible).toContain('**Verificación:** razonado, no ejecutado.');
+    expect(visible).not.toContain('**Impacto:**');
+    expect(visible).not.toContain('**Verificación:**');
   });
 
-  it('does not double the period when the verification reason already ends with one', () => {
-    const body = renderFindingComment(finding({ verification: { status: 'reasoned', reason: 'Leí UpdateQty en el head del PR.' } }), ctx);
-    expect(body).toContain('**Verificación:** razonado, no ejecutado — Leí UpdateQty en el head del PR.\n');
+  it('renders a one-sentence scenario inline', () => {
+    const body = renderFindingComment(finding({ scenario: { steps: [], result: 'Dado A, pasa C.' } }), ctx);
+    expect(body).toContain('**Cómo pasa:** Dado A, pasa C.\n');
+  });
+
+  it('shows the impact instead when there is no scenario', () => {
+    expect(renderFindingComment(finding({ type: 'improvement', scenario: undefined }), ctx)).toContain('**Impacto:** Reabre el agujero de crédito.');
+  });
+
+  it('says first whether the PR brought the problem in', () => {
+    const body = renderFindingComment(finding({ origin: { kind: 'worsened', note: 'la carrera ya existía, pero ahora es la única validación' } }), ctx);
+    const visible = body.split('\n').slice(4).join('\n');
+    expect(visible.startsWith('**Lo empeora este PR:** la carrera ya existía, pero ahora es la única validación.\n')).toBe(true);
+    expect(renderFindingComment(finding({ origin: { kind: 'new' } }), ctx)).toContain('**Lo introduce este PR.**\n');
+  });
+
+  it('keeps a reasoned verification inside the detail, without a doubled period', () => {
+    const body = renderFindingComment(finding({ detail: 'Más.', verification: { status: 'reasoned', reason: 'Leí UpdateQty en el head del PR.' } }), ctx);
+    expect(body).toContain('<summary>Detalle</summary>\n\nMás.\n\n**Verificación:** razonado, no ejecutado — Leí UpdateQty en el head del PR.\n');
   });
 
   it('tells the reader how to dismiss a decision', () => {
@@ -87,9 +103,9 @@ describe('renderFindingComment', () => {
     expect(renderFindingComment(finding({ type: 'bug' }), ctx)).not.toContain('Si es intencional');
   });
 
-  it('renders a replace suggestion as a one-click suggestion block', () => {
-    const body = renderFindingComment(finding({ suggestion: { kind: 'replace', code: 'throw new Retry();' } }), ctx);
-    expect(body).toContain('```suggestion\nthrow new Retry();\n```');
+  it('puts the fix sentence right above a one-click suggestion block', () => {
+    const body = renderFindingComment(finding({ fix: 'Reintentar.', suggestion: { kind: 'replace', code: 'throw new Retry();' } }), ctx);
+    expect(body).toContain('**Corrección:** Reintentar.\n```suggestion\nthrow new Retry();\n```');
   });
 
   it('uses a longer fence when the suggested code contains backticks', () => {
@@ -97,19 +113,27 @@ describe('renderFindingComment', () => {
     expect(body).toContain('`````suggestion\n');
   });
 
-  it('renders a text suggestion as a paragraph', () => {
-    expect(renderFindingComment(finding({ suggestion: { kind: 'text', text: 'Abortar con reintento.' } }), ctx)).toContain('**Corrección:** Abortar con reintento.');
+  it('renders a snippet as plain code in the file language', () => {
+    expect(renderFindingComment(finding({ suggestion: { kind: 'snippet', code: 'Lock();' } }), ctx)).toContain('```csharp\nLock();\n```');
   });
 
-  it('lists every location of a systemic finding', () => {
-    const body = renderFindingComment(finding({ extraLocations: [{ path: 'a.cs', line: 3 }, { path: 'b.cs', line: 9 }] }), ctx);
-    expect(body).toContain('**También en:** [`a.cs:3`]');
-    expect(body).toContain('[`b.cs:9`]');
+  it('lists the other locations once, skipping the anchor and the evidence', () => {
+    const body = renderFindingComment(
+      finding({
+        extraLocations: [
+          { path: 'a.cs', line: 3 },
+          { path: 'apps/api/Services/OrderService.cs', line: 1299 },
+          { path: 'b.cs', line: 9 },
+        ],
+      }),
+      ctx,
+    );
+    expect(body).toMatch(/solo valida en DRAFT · también \[`a\.cs:3`\]\([^)]+\), \[`b\.cs:9`\]/);
+    expect(body.split('<details>')[0].split('OrderService.cs:1299`]').length - 1).toBe(1);
   });
 
-  it('collapses the detail and omits it when absent', () => {
+  it('collapses the detail', () => {
     expect(renderFindingComment(finding({ detail: 'Más contexto.' }), ctx)).toContain('<summary>Detalle</summary>\n\nMás contexto.');
-    expect(renderFindingComment(finding(), ctx)).not.toContain('<summary>Detalle</summary>');
   });
 
   it('attaches the failing test when verified', () => {
@@ -117,7 +141,7 @@ describe('renderFindingComment', () => {
       finding({ verification: { status: 'verified', test: { path: 'tests/X.cs', code: 'Assert.True(false);', output: 'FAILED' } } }),
       ctx,
     );
-    expect(body).toContain('**Verificación:** comprobado con un test que falla');
+    expect(body).toContain('**Verificación:** ✅ comprobado con un test que falla');
     expect(body).toContain('Assert.True(false);');
     expect(body).toContain('FAILED');
   });
@@ -130,7 +154,7 @@ describe('renderFindingComment', () => {
 
   it('neutralizes mentions in every model-written field', () => {
     const body = renderFindingComment(
-      finding({ title: 'ver @a', scenario: 'según @b', impact: '@c', detail: '@d', suggestion: { kind: 'text', text: '@e' } }),
+      finding({ title: 'ver @a', scenario: { steps: ['según @b'], result: '@c' }, detail: '@d', fix: '@e' }),
       ctx,
     );
     expect(body).not.toMatch(/@[a-e]\b/);
@@ -139,13 +163,14 @@ describe('renderFindingComment', () => {
 
 describe('renderAgentPrompt', () => {
   it('is a self-contained, copyable block that asks to verify before changing', () => {
-    const prompt = renderAgentPrompt(finding({ suggestion: { kind: 'replace', code: 'throw new Retry();' } }));
+    const prompt = renderAgentPrompt(finding({ fix: 'Reintentar.', suggestion: { kind: 'replace', code: 'throw new Retry();' }, origin: { kind: 'new' } }));
     expect(prompt.startsWith('````markdown\n')).toBe(true);
     expect(prompt.endsWith('\n````')).toBe(true);
     expect(prompt).toContain('`apps/api/Services/OrderService.cs` (línea 1299)');
-    expect(prompt).toContain('Escenario: A confirma;');
+    expect(prompt).toContain('Origen: Lo introduce este PR.');
+    expect(prompt).toContain('Escenario:\n1. A confirma el pedido.\n2. B agrega 50×100\nResultado: B inserta 5000 sin validar. Se esperaba: que B falle.');
     expect(prompt).toContain('```csharp\nif (state == DRAFT) Validate();\n```');
-    expect(prompt).toContain('Corrección propuesta:\n```csharp\nthrow new Retry();\n```');
+    expect(prompt).toContain('Corrección propuesta: Reintentar.\n\nCódigo:\n```csharp\nthrow new Retry();\n```');
     expect(prompt).toContain('Antes de cambiar: confirmá que el escenario es posible');
   });
 
@@ -162,6 +187,11 @@ describe('renderReviewSummary', () => {
     const body = renderReviewSummary({ inline: [inlineFinding], outOfDiff: [] }, ctx);
     expect(body).toContain('1 hallazgo · commit `abcdef1` · criterio `a6bbe98`');
     expect(body).toContain('| 🐞 | 🟠 Importante | Inline \\| con barra (');
+  });
+
+  it('orders the table by severity', () => {
+    const body = renderReviewSummary({ inline: [finding({ title: 'Menor', severity: 'minor' })], outOfDiff: [finding({ title: 'Grave', severity: 'critical' })] }, ctx);
+    expect(body.indexOf('Grave')).toBeLessThan(body.indexOf('Menor'));
   });
 
   it('renders out-of-diff findings in full inside the summary', () => {

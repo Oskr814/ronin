@@ -56,7 +56,7 @@ function finding(overrides: Record<string, unknown> = {}) {
     severity: 'important',
     category: 'Bug',
     title: 'Hallazgo',
-    scenario: 'Dado A, cuando B, pasa C.',
+    scenario: { steps: ['A', 'B'], result: 'pasa C' },
     impact: 'Rompe algo.',
     evidence: [],
     verification: { status: 'reasoned' },

@@ -82,7 +82,9 @@ export function placeFindings(
   for (const finding of findings) {
     const lines = commentable.get(finding.path);
     if (!lines?.has(finding.line)) {
-      outOfDiff.push(finding);
+      // Out of the diff it goes in the review body, where a suggestion
+      // block can't be applied.
+      outOfDiff.push(finding.suggestion?.kind === 'replace' ? { ...finding, suggestion: { kind: 'snippet', code: finding.suggestion.code } } : finding);
       continue;
     }
     if (finding.startLine == null) {
@@ -101,9 +103,7 @@ export function placeFindings(
       continue;
     }
     const { startLine: _dropped, ...single } = finding;
-    if (single.suggestion?.kind === 'replace') {
-      single.suggestion = { kind: 'text', text: `\`\`\`\n${single.suggestion.code}\n\`\`\`` };
-    }
+    if (single.suggestion?.kind === 'replace') single.suggestion = { kind: 'snippet', code: single.suggestion.code };
     inline.push(single);
   }
   return { inline, outOfDiff };
