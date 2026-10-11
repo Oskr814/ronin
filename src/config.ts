@@ -33,6 +33,14 @@ export const config = {
   // Binario invocado para las corridas headless. Defaults to plain `claude`;
   // only change this if a genuinely different binary/wrapper script is used.
   claudeCommand: process.env.CLAUDE_COMMAND ?? 'claude',
+  // Model and effort of every headless run, passed as --model/--effort. Set
+  // here, not left to CLAUDE_CONFIG_DIR's settings.json: that file is shared
+  // with interactive sessions, and a /model there saves itself as the
+  // default — one did on 2026-10-11 and silently moved every agent to Sonnet
+  // with medium effort, which made the review orchestrator skip its workers.
+  // Empty means "whatever the Claude config says".
+  agentModel: process.env.AGENT_MODEL ?? 'opus',
+  agentEffort: process.env.AGENT_EFFORT ?? 'high',
   // Default global de CLAUDE_CONFIG_DIR — una entrada de repos.json puede
   // pisarlo por repo con su propio claudeConfigDir (ver repo-context.ts);
   // esto es lo que se usa cuando esa entrada no trae el suyo. Empty means

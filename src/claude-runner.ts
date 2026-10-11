@@ -100,6 +100,18 @@ function makeLineBuffer(onLine: (line: string) => void): (chunk: Buffer) => void
 // that entire window with nothing to show it was still alive. stream-json
 // (vs the default "text" format) is what makes that streaming show tool
 // calls and intermediate reasoning instead of just the final answer.
+// The arguments of every headless run; shared with scripts/fix-replay.ts so
+// a replay runs on the same model and effort as the real task.
+export function claudeHeadlessArgs(prompt: string): string[] {
+  return [
+    '-p', prompt,
+    '--permission-mode', 'bypassPermissions',
+    '--output-format', 'stream-json', '--verbose',
+    ...(config.agentModel ? ['--model', config.agentModel] : []),
+    ...(config.agentEffort ? ['--effort', config.agentEffort] : []),
+  ];
+}
+
 export async function runClaudeHeadless(cwd: string, prompt: string, label: string): Promise<string> {
   const env: NodeJS.ProcessEnv = { ...process.env, GH_TOKEN: config.githubToken };
   // A repos.json entry's own claudeConfigDir wins over the global default —
@@ -111,7 +123,7 @@ export async function runClaudeHeadless(cwd: string, prompt: string, label: stri
   return new Promise((resolve, reject) => {
     const child = spawn(
       config.claudeCommand,
-      ['-p', prompt, '--permission-mode', 'bypassPermissions', '--output-format', 'stream-json', '--verbose'],
+      claudeHeadlessArgs(prompt),
       // stdin explicitly closed ('ignore'): an unset stdio here defaults to
       // an open, never-written pipe, which makes `claude -p` wait ~3s for
       // input before warning and proceeding without it on every single run.

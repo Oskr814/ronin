@@ -21,6 +21,7 @@ import { config } from '../src/config.js';
 import { loadRepos } from '../src/repos.js';
 import { withActiveRepo } from '../src/repo-context.js';
 import { buildTask } from '../src/agent-task.js';
+import { claudeHeadlessArgs } from '../src/claude-runner.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -127,7 +128,7 @@ await withActiveRepo(repo, async () => {
   if (claudeConfigDir) env.CLAUDE_CONFIG_DIR = claudeConfigDir;
 
   const result = await new Promise<string>((resolve, reject) => {
-    const child = spawn(config.claudeCommand, ['-p', replayPrompt, '--permission-mode', 'bypassPermissions', '--output-format', 'stream-json', '--verbose'], {
+    const child = spawn(config.claudeCommand, claudeHeadlessArgs(replayPrompt), {
       cwd: clone,
       env,
       stdio: ['ignore', 'pipe', 'pipe'],

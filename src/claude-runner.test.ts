@@ -7,6 +7,8 @@ vi.mock('./config.js', () => ({
     claudeConfigDir: '',
     agentTaskTimeoutMs: 30_000,
     githubToken: 'fake-token',
+    agentModel: 'opus',
+    agentEffort: 'high',
   },
 }));
 
@@ -21,7 +23,10 @@ vi.mock('node:child_process', () => ({
   spawn: () => spawn(),
 }));
 
-const { runClaudeHeadless, ClaudeUsageLimitError } = await import('./claude-runner.js');
+const { runClaudeHeadless, ClaudeUsageLimitError, claudeHeadlessArgs } = await import('./claude-runner.js');
+const { config } = await import('./config.js');
+// The mock above is a plain object; the real config is typed read-only.
+const mutableConfig = config as { agentModel: string; agentEffort: string };
 const { withActiveRepo } = await import('./repo-context.js');
 
 function emitStdout(child: FakeChildProcess, text: string): void {
@@ -53,5 +58,28 @@ describe('runClaudeHeadless usage-limit detection', () => {
     emitStdout(fakeChild, jsonLine);
     fakeChild.emit('close', 1);
     await expect(promise).rejects.toBeInstanceOf(ClaudeUsageLimitError);
+  });
+});
+
+describe('claudeHeadlessArgs', () => {
+  it('pins the model and effort instead of inheriting the shared Claude config', () => {
+    const args = claudeHeadlessArgs('do it');
+    expect(args.slice(0, 2)).toEqual(['-p', 'do it']);
+    expect(args.join(' ')).toContain('--model opus');
+    expect(args.join(' ')).toContain('--effort high');
+  });
+
+  it('leaves them to the Claude config when set empty', () => {
+    const saved = { model: mutableConfig.agentModel, effort: mutableConfig.agentEffort };
+    mutableConfig.agentModel = '';
+    mutableConfig.agentEffort = '';
+    try {
+      const args = claudeHeadlessArgs('do it');
+      expect(args).not.toContain('--model');
+      expect(args).not.toContain('--effort');
+    } finally {
+      mutableConfig.agentModel = saved.model;
+      mutableConfig.agentEffort = saved.effort;
+    }
   });
 });
