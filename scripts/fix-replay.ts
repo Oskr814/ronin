@@ -17,7 +17,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseArgs, promisify } from 'node:util';
-import { config } from '../src/config.js';
+import { config, agentModelFor, agentEffortFor } from '../src/config.js';
 import { loadRepos } from '../src/repos.js';
 import { withActiveRepo } from '../src/repo-context.js';
 import { buildTask } from '../src/agent-task.js';
@@ -128,7 +128,7 @@ await withActiveRepo(repo, async () => {
   if (claudeConfigDir) env.CLAUDE_CONFIG_DIR = claudeConfigDir;
 
   const result = await new Promise<string>((resolve, reject) => {
-    const child = spawn(config.claudeCommand, claudeHeadlessArgs(replayPrompt), {
+    const child = spawn(config.claudeCommand, claudeHeadlessArgs(replayPrompt, { model: agentModelFor('fix-comments-external'), effort: agentEffortFor('fix-comments-external') }), {
       cwd: clone,
       env,
       stdio: ['ignore', 'pipe', 'pipe'],

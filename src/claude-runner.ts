@@ -100,19 +100,31 @@ function makeLineBuffer(onLine: (line: string) => void): (chunk: Buffer) => void
 // that entire window with nothing to show it was still alive. stream-json
 // (vs the default "text" format) is what makes that streaming show tool
 // calls and intermediate reasoning instead of just the final answer.
+// What a single run may set on top of the defaults: the model and effort of
+// its task type (config.ts's agentModelFor/agentEffortFor), and a file with
+// the subagents it may launch (`--agents`, the external review's workers).
+export interface HeadlessRunOptions {
+  model?: string;
+  effort?: string;
+  agentsFile?: string;
+}
+
 // The arguments of every headless run; shared with scripts/fix-replay.ts so
 // a replay runs on the same model and effort as the real task.
-export function claudeHeadlessArgs(prompt: string): string[] {
+export function claudeHeadlessArgs(prompt: string, opts: HeadlessRunOptions = {}): string[] {
+  const model = opts.model ?? config.agentModel;
+  const effort = opts.effort ?? config.agentEffort;
   return [
     '-p', prompt,
     '--permission-mode', 'bypassPermissions',
     '--output-format', 'stream-json', '--verbose',
-    ...(config.agentModel ? ['--model', config.agentModel] : []),
-    ...(config.agentEffort ? ['--effort', config.agentEffort] : []),
+    ...(model ? ['--model', model] : []),
+    ...(effort ? ['--effort', effort] : []),
+    ...(opts.agentsFile ? ['--agents', opts.agentsFile] : []),
   ];
 }
 
-export async function runClaudeHeadless(cwd: string, prompt: string, label: string): Promise<string> {
+export async function runClaudeHeadless(cwd: string, prompt: string, label: string, opts: HeadlessRunOptions = {}): Promise<string> {
   const env: NodeJS.ProcessEnv = { ...process.env, GH_TOKEN: config.githubToken };
   // A repos.json entry's own claudeConfigDir wins over the global default —
   // lets each repo run under its own Claude account (docs/superpowers/specs/
@@ -123,7 +135,7 @@ export async function runClaudeHeadless(cwd: string, prompt: string, label: stri
   return new Promise((resolve, reject) => {
     const child = spawn(
       config.claudeCommand,
-      claudeHeadlessArgs(prompt),
+      claudeHeadlessArgs(prompt, opts),
       // stdin explicitly closed ('ignore'): an unset stdio here defaults to
       // an open, never-written pipe, which makes `claude -p` wait ~3s for
       // input before warning and proceeding without it on every single run.

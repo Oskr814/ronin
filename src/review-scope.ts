@@ -70,6 +70,22 @@ export async function commentableLines(headSha: string, baseRefName: string): Pr
   return parseCommentableLines(await git(['diff', '-U3', mergeBase, headSha]));
 }
 
+const DIFF_STAT_MAX_LINES = 300;
+
+// What the review orchestrator needs to start working without rediscovering
+// it: the merge base and the diff's file list. Fetches the PR head and the
+// base first, so every later git call on headSha (changedLinesSince,
+// commentableLines) finds both.
+export async function diffContext(prNumber: number, headSha: string, baseRefName: string): Promise<{ mergeBase: string; stat: string }> {
+  await git(['fetch', 'origin', baseRefName, `pull/${prNumber}/head`]);
+  const mergeBase = (await git(['merge-base', `origin/${baseRefName}`, headSha])).trim();
+  const lines = (await git(['diff', '--stat=200', mergeBase, headSha])).trimEnd().split('\n');
+  const stat = lines.length > DIFF_STAT_MAX_LINES
+    ? [...lines.slice(0, DIFF_STAT_MAX_LINES), `… (${lines.length - DIFF_STAT_MAX_LINES} líneas más: "git diff --stat ${mergeBase} HEAD")`].join('\n')
+    : lines.join('\n');
+  return { mergeBase, stat };
+}
+
 // A multi-line anchor is only valid when every line in the range is
 // commentable; otherwise the comment falls back to its last line alone. A
 // suggestion block replaces exactly the anchored range, so a "replace"

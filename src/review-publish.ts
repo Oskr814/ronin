@@ -11,6 +11,7 @@ import {
   changedLinesSince,
   commentableLines,
   dedupeAgainstOpenThreads,
+  diffContext,
   formatChangedLines,
   isOnChangedCode,
   placeFindings,
@@ -58,8 +59,10 @@ export function closingState(openThreads: ReviewThread[], resolvedIds: Set<strin
 }
 
 export async function runExternalReview(candidate: ReviewCandidate, opts: RunExternalReviewOptions = {}): Promise<void> {
+  const start = Date.now();
   const criteria = await loadReviewCriteria();
   const outputPath = outputPathFor(candidate);
+  const agentsPath = outputPath.replace(/\.json$/, '.agents.json');
   await mkdir(dirname(outputPath), { recursive: true });
   // A leftover from an earlier failed run must never be mistaken for this
   // run's output.
@@ -68,10 +71,14 @@ export async function runExternalReview(candidate: ReviewCandidate, opts: RunExt
   try {
     // Incremental against the last reviewed SHA when there is one: the
     // changed lines go into the prompt, and the scope rules below use them.
+    // diffContext fetches the PR head and the base: it goes first so every
+    // other git call on headSha finds it.
+    const diff = await diffContext(candidate.prNumber, candidate.headSha, candidate.baseRefName);
     const scope: ReviewMode = candidate.previousSha
       ? { mode: 'incremental', changed: await changedLinesSince(candidate.previousSha, candidate.headSha, candidate.baseRefName) }
       : { mode: 'full' };
 
+    const agentStart = Date.now();
     await runAgentTask({
       type: 'external-review',
       prNumber: candidate.prNumber,
@@ -81,13 +88,17 @@ export async function runExternalReview(candidate: ReviewCandidate, opts: RunExt
       threadHistory: candidate.threadHistory,
       mentions: candidate.mentions,
       canExecute: candidate.canExecute,
-      criteriaText: criteria.text,
+      criteria,
+      diff,
       outputPath,
+      agentsPath,
       scope:
         scope.mode === 'incremental'
           ? { mode: 'incremental', previousSha: candidate.previousSha!, changedLines: formatChangedLines(scope.changed) }
           : { mode: 'full' },
     });
+
+    const agentMs = Date.now() - agentStart;
 
     let raw: string;
     try {
@@ -145,6 +156,11 @@ export async function runExternalReview(candidate: ReviewCandidate, opts: RunExt
       droppedAsDuplicate: deduped.dropped.length,
       resolved: resolvedIds.size,
       dryRun: opts.dryRun != null,
+      // Where the time went: preparing (git, criteria) vs. the agent run vs.
+      // validating and rendering up to here. Publishing is not included.
+      prepMs: agentStart - start,
+      agentMs,
+      postAgentMs: Date.now() - agentStart - agentMs,
     });
 
     if (opts.dryRun) {

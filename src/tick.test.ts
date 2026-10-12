@@ -21,9 +21,10 @@ vi.mock('./config.js', () => ({
     rebaseRetryLimit: 3,
     worktreeBaseRef: 'origin/main',
     githubLogin: 'ronin',
-    // Needed by runExternalReviews's runWithConcurrency call — with an
-    // undefined limit the pool spawns zero lanes and silently no-ops.
-    tickConcurrency: 2,
+    // Needed by runJobs — with an undefined limit the pool starts nothing
+    // and silently no-ops.
+    tickConcurrency: 3,
+    externalReviewConcurrency: 1,
   },
   LABEL_DIRECT_ISSUE: 'ronin:issue-fix',
   LABEL_MANAGED: 'ronin',
@@ -871,6 +872,28 @@ describe('runExternalReviews', () => {
     await runExternalReviews();
 
     expect(runAgentTask).toHaveBeenCalledWith(expect.objectContaining({ type: 'fix-comments-external', prNumber: 599, headRefName: 'feat/cambio-cliente' }));
+  });
+
+  it('runs at most config.externalReviewConcurrency reviews at once, leaving the other slots to other work', async () => {
+    const review = (prNumber: number) => ({ prNumber, headRefName: 'x', headSha: `sha${prNumber}`, baseRefName: 'main', threadHistory: [], openThreads: [], mentions: [], canExecute: true });
+    findPrsNeedingReview.mockResolvedValue({
+      reviewCandidates: [review(305), review(306)],
+      trustedFixCandidates: [{ prNumber: 599, headRefName: 'feat/y', trigger: [], openThreads: [] }],
+    });
+    let reviewsInFlight = 0;
+    let maxReviews = 0;
+    runExternalReview.mockImplementation(async () => {
+      reviewsInFlight++;
+      maxReviews = Math.max(maxReviews, reviewsInFlight);
+      await new Promise((r) => setTimeout(r, 5));
+      reviewsInFlight--;
+    });
+
+    await runExternalReviews();
+
+    expect(runExternalReview).toHaveBeenCalledTimes(2);
+    expect(maxReviews).toBe(1);
+    expect(runAgentTask).toHaveBeenCalledWith(expect.objectContaining({ type: 'fix-comments-external', prNumber: 599 }));
   });
 
   it('does not throw, and runs nothing, when discovery itself fails', async () => {

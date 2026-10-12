@@ -23,10 +23,12 @@ vi.mock('./review-criteria.js', () => ({ loadReviewCriteria }));
 
 const commentableLines = vi.fn();
 const changedLinesSince = vi.fn();
+const diffContext = vi.fn();
 vi.mock('./review-scope.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./review-scope.js')>()),
   commentableLines,
   changedLinesSince,
+  diffContext,
 }));
 
 const pinReviewedSha = vi.fn();
@@ -82,7 +84,8 @@ function agentWrites(output: unknown) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  loadReviewCriteria.mockResolvedValue({ text: '# Criterio', blobHash: 'cafebabe00' });
+  loadReviewCriteria.mockResolvedValue({ text: '# Criterio', common: '# Común', agents: [], blobHash: 'cafebabe00' });
+  diffContext.mockResolvedValue({ mergeBase: 'mb1', stat: ' src/a.ts | 2 +-' });
   commentableLines.mockResolvedValue(new Map([['src/a.ts', new Set([10, 11, 12])]]));
   runAgentTask.mockResolvedValue('');
   mkdir.mockResolvedValue(undefined);
@@ -115,9 +118,12 @@ describe('runExternalReview — running the agent', () => {
       type: 'external-review',
       prNumber: 305,
       headSha: 'abc123def',
-      criteriaText: '# Criterio',
+      criteria: expect.objectContaining({ text: '# Criterio' }),
+      diff: { mergeBase: 'mb1', stat: ' src/a.ts | 2 +-' },
       outputPath: OUTPUT_PATH,
+      agentsPath: '/tmp/wt/external-review-out/305-abc123def.agents.json',
     }));
+    expect(diffContext).toHaveBeenCalledWith(305, 'abc123def', 'odoo-main');
   });
 
   it('fails the task when the agent wrote no output, and still cleans up', async () => {

@@ -59,10 +59,16 @@ export const config = {
   sliceAttemptLimit: Number(process.env.SLICE_ATTEMPT_LIMIT ?? 3),
   rebaseRetryLimit: Number(process.env.REBASE_RETRY_LIMIT ?? 3),
   issueErrorRetryLimit: Number(process.env.ISSUE_ERROR_RETRY_LIMIT ?? 3),
-  // How many issues' pipelines (fixes + a possible new-slice start) tick()
-  // runs at once *within one active repo* — see repo-context.ts and
-  // tick.ts's outer loop for why this stays per-repo, not global-across-repos.
-  tickConcurrency: Number(process.env.TICK_CONCURRENCY ?? 2),
+  // How many jobs tick() runs at once *within one active repo* — see
+  // repo-context.ts and tick.ts's outer loop for why this stays per-repo, not
+  // global-across-repos. Every flow shares one job pool (tick.ts's runJobs),
+  // so this bounds issues, external reviews, /spikes and changelog entries
+  // together.
+  tickConcurrency: Number(process.env.TICK_CONCURRENCY ?? 3),
+  // Of those, how many external reviews at once: each one is an orchestrator
+  // plus its workers, and three at once exhausted the account's session
+  // limit (docs/superpowers/specs/2026-10-10-exhaustive-external-review-design.md).
+  externalReviewConcurrency: Number(process.env.EXTERNAL_REVIEW_CONCURRENCY ?? 2),
   requestCopilotReview: process.env.REQUEST_COPILOT_REVIEW === 'true',
   // Model for the external review's worker subagents (one per criteria
   // dimension). They only gather candidates; the orchestrating session —
@@ -89,6 +95,30 @@ export const config = {
   // webhook-server.ts's scheduleTick.
   webhookDebounceMs: Number(process.env.WEBHOOK_DEBOUNCE_MS ?? 8000),
 } as const;
+
+// Per task type, the model a run uses when its env var isn't set — anything
+// not listed falls back to config.agentModel. Haiku only where the output is
+// bounded and checked by something else (update-changelog: the changelog
+// repo's own `pnpm build` and AGENTS.md format).
+const TASK_MODEL_DEFAULTS: Record<string, string> = {
+  'update-changelog': 'haiku',
+};
+
+function taskEnv(prefix: string, taskType: string): string | undefined {
+  return process.env[`${prefix}_${taskType.toUpperCase().replace(/-/g, '_')}`];
+}
+
+// AGENT_MODEL_<TASK_TYPE> / AGENT_EFFORT_<TASK_TYPE> (e.g.
+// AGENT_MODEL_UPDATE_CHANGELOG=sonnet) override one task type without
+// touching the rest; empty means "whatever the Claude config says", same as
+// the global ones.
+export function agentModelFor(taskType: string): string {
+  return taskEnv('AGENT_MODEL', taskType) ?? TASK_MODEL_DEFAULTS[taskType] ?? config.agentModel;
+}
+
+export function agentEffortFor(taskType: string): string {
+  return taskEnv('AGENT_EFFORT', taskType) ?? config.agentEffort;
+}
 
 export const LABEL_MANAGED = 'ronin';
 export const LABEL_STATES = {
