@@ -1,5 +1,6 @@
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { extname, join } from 'node:path';
+import { existsSync } from 'node:fs';
 import { runAgentTask } from './agent-task.js';
 import { appDown, appUp } from './app-runtime.js';
 import { loginAllUsers, renderHtmlToPng } from './app-browser.js';
@@ -8,7 +9,7 @@ import { log } from './logger.js';
 import { evidenceUrl, publishEvidence } from './evidence-store.js';
 import { findingFileName, loadMemory, parseFinding, serializeFinding } from './exploration-memory.js';
 import { explorationOutDir } from './exploration-inventory.js';
-import { parseRedoResult, replaceAfterImage } from './exploration-output.js';
+import { afterImagePath, parseRedoResult, replaceAfterImage, replaceDraftPatch } from './exploration-output.js';
 import { ensureCleanCheckout, mcpServer, originsOf } from './exploration-run.js';
 
 // A reviewer said a finding's "after" image is wrong (exploration-flow.ts's
@@ -20,6 +21,16 @@ import { ensureCleanCheckout, mcpServer, originsOf } from './exploration-run.js'
 export interface RedoRequest {
   findingId: string;
   instruction: string;
+}
+
+// The new after replaces the old one in the evidence branch: same file, a
+// new commit. The finding's link still changes (links are pinned to a
+// commit), but the branch keeps one after per finding. A finding with no
+// after yet gets one next to where a run would have put it.
+export function redoPath(body: string, appName: string, findingId: string, ext: string): string {
+  const current = afterImagePath(body);
+  if (!current) return `${appName}/redo/${findingId}/despues${ext}`;
+  return `${current.slice(0, current.length - extname(current).length)}${ext}`;
 }
 
 // Returns the ids whose after was redone; the others failed and were logged.
@@ -65,10 +76,13 @@ export async function redoAfterImages(opts: { appName: string; codeDir: string; 
           src = join(outDir, 'despues.png');
           await renderHtmlToPng(result.imagen, src, app.viewports[meta.viewport]);
         }
-        const path = `${opts.appName}/redo/${meta.id}/despues-${Date.now()}${extname(src).toLowerCase()}`;
-        const sha = await publishEvidence(opts.codeDir, [{ src, path }], `después rehecho de ${meta.id}`);
         const finding = parseFinding(await readFile(findingFile, 'utf8'));
-        const body = replaceAfterImage(finding.body, { url: evidenceUrl(sha, path), ...(result.nota ? { nota: result.nota } : {}) }, meta.viewport);
+        const path = redoPath(finding.body, opts.appName, meta.id, extname(src).toLowerCase());
+        const sha = await publishEvidence(opts.codeDir, [{ src, path }], `después rehecho de ${meta.id}`);
+        let body = replaceAfterImage(finding.body, { url: evidenceUrl(sha, path), ...(result.nota ? { nota: result.nota } : {}) }, meta.viewport);
+        const patchFile = join(outDir, 'despues.patch');
+        const patch = existsSync(patchFile) ? (await readFile(patchFile, 'utf8')).trim() : '';
+        if (patch) body = replaceDraftPatch(body, patch);
         await writeFile(findingFile, serializeFinding({ ...finding, body }));
         done.push(meta.id);
       } catch (error) {

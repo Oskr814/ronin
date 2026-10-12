@@ -3,7 +3,7 @@ import { classifyMetaCommand, renderMetaReply, type CommandContext } from './hel
 import { config } from './config.js';
 import { log } from './logger.js';
 
-function mentionsHandle(body: string, handle: string): boolean {
+export function mentionsHandle(body: string, handle: string): boolean {
   // `handle` is not escaped for regex metacharacters on purpose: it comes from
   // operator-supplied config (RONIN_GITHUB_LOGIN), never from a comment or
   // any other attacker-controlled input, and a GitHub login can only contain
