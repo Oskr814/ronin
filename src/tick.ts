@@ -42,6 +42,7 @@ import { findPrsNeedingReview, type ReviewCandidate, type TrustedFixCandidate } 
 import { findIssueCommands, type ExploreCandidate, type SpikeCandidate } from './spike.js';
 import { explorationPrs, exploreWorkerBusy, launchExploreWorker, processExplorationPr } from './exploration-flow.js';
 import { maybeLaunchNightlyExploration } from './exploration-schedule.js';
+import { checkInterviews, startInterview } from './interview.js';
 import { findReleasesNeedingChangelog, type ChangelogCandidate } from './changelog.js';
 import { setLastChangelogRelease } from './local-state.js';
 import { config, LABEL_DIRECT_ISSUE, LABEL_MANAGED, LABEL_STACK_PRS, LABEL_STATES } from './config.js';
@@ -911,6 +912,9 @@ async function issueJobs(inProgress: TrackingIssue[]): Promise<Job[]> {
         // every single tick — see the discoverAssignedIssues design note.
         if (task.type === 'fix-issue' && needsMoreInfo(result)) {
           await setIssueState(next.issue.number, 'blocked');
+          // A faster channel for the answers than waiting on comments — see
+          // interview.ts. Best effort: the questions are on the issue anyway.
+          await startInterview(next.issue.number, next.issue.url).catch((error) => log.error(`issue #${next.issue.number}: no se pudo abrir la entrevista`, error));
         }
       });
     },
@@ -921,6 +925,9 @@ async function tickOneRepo(): Promise<void> {
   const start = Date.now();
   resetTickMetrics();
   log.info(`tick start (commit ${await currentCommit()}, repo ${activeRepo().productRepo})`);
+  // Closes answered or expired Remote Control interviews; an answered one
+  // puts its issue back in progress before this tick lists the work.
+  await checkInterviews().catch((error) => log.error('entrevistas: no se pudieron revisar', error));
   const justStarted = [...(await discoverAssignedSpecs()), ...(await discoverAssignedIssues())];
 
   const inProgress = await listTrackingIssues('in-progress');

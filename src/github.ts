@@ -1004,3 +1004,7 @@ export async function listIssuesWithLabel(label: string): Promise<Array<{ number
   const stdout = await gh(['issue', 'list', '--state', 'all', '--label', label, '--limit', '1000', '--json', 'number,body,state']);
   return JSON.parse(stdout) as Array<{ number: number; body: string; state: string }>;
 }
+
+export async function commentOnIssue(issueNumber: number, body: string): Promise<void> {
+  await ghApi(['api', `repos/${activeRepo().productRepo}/issues/${issueNumber}/comments`, '-f', `body=${body}`]);
+}

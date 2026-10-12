@@ -88,6 +88,12 @@ export const config = {
   // so it's capped by EXPLORE_FUNCTIONS_PER_NIGHT, not "use everything".
   exploreNightWindow: process.env.EXPLORE_NIGHT_WINDOW ?? '01:00-06:00',
   exploreFunctionsPerNight: Number(process.env.EXPLORE_FUNCTIONS_PER_NIGHT ?? 3),
+  // When a task ends in needs-info, also open a Remote Control session that
+  // interviews the runner's owner and writes the answers into the issue —
+  // see interview.ts. Only the Claude account of CLAUDE_CONFIG_DIR can open
+  // it; everyone else answers by commenting on the issue, as always.
+  remoteInterviews: process.env.REMOTE_INTERVIEWS !== 'false',
+  interviewTimeoutHours: Number(process.env.INTERVIEW_TIMEOUT_HOURS ?? 24),
   // Model for the external review's worker subagents (one per criteria
   // dimension). They only gather candidates; the orchestrating session —
   // whatever model the run's Claude config uses — verifies and decides what
