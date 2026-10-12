@@ -4,7 +4,9 @@ let interviews: Record<string, any> = {};
 const cfg = vi.hoisted(() => ({ remoteInterviews: true, interviewTimeoutHours: 24, githubLogin: 'ronin-agent', githubToken: 't', agentModel: 'opus' }));
 vi.mock('./config.js', () => ({ config: cfg }));
 vi.mock('./repo-context.js', () => ({ activeRepo: () => ({ productRepo: 'redmotos/shoppingcart', productRepoPath: '/repo' }) }));
+const addPendingSpec = vi.hoisted(() => vi.fn());
 vi.mock('./local-state.js', () => ({
+  addPendingSpec: (...a: unknown[]) => addPendingSpec(...a),
   getInterviews: async () => ({ ...interviews }),
   setInterview: async (n: number, v: unknown) => { if (v) interviews[n] = v; else delete interviews[n]; },
 }));
@@ -83,6 +85,14 @@ describe('checkInterviews', () => {
     expect(removeSession).toHaveBeenCalledWith('abc');
     expect(setIssueState).toHaveBeenCalledWith(812, 'in-progress');
     expect(interviews[812]).toBeUndefined();
+  });
+
+  it('redoes the /spec instead of touching the issue state when that is what waited', async () => {
+    interviews[812] = { sessionId: 'abc', startedAt: '2026-10-12T10:00:00Z', nonce: 'n1', resume: { kind: 'spec', appName: 'backoffice' } };
+    listIssueComments.mockResolvedValue([{ authorLogin: 'ronin-agent', body: answersMarker('n1') }]);
+    await checkInterviews(now);
+    expect(addPendingSpec).toHaveBeenCalledWith({ issueNumber: 812, appName: 'backoffice' });
+    expect(setIssueState).not.toHaveBeenCalled();
   });
 
   it('ignores a marker someone else posted, or another interview’s', async () => {

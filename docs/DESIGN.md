@@ -355,7 +355,7 @@ Piloto: el backoffice de shoppingcart (herramienta interna, se levanta entero co
 **Pendiente, fuera de este scaffold:**
 
 - Nunca se probó en vivo contra un PR real con specs de e2e afectados (el dry run de §10 usó un spec sin ningún componente de UI)
-- Exploración y propuestas de mejora (§11): diseño cerrado, implementación por etapas desde `app:up` (§11.10)
+- Exploración y propuestas de mejora (§11): implementadas las etapas 1 a 5 (`app:up` y smoke, memoria, inventario y selección, exploración con navegadores y evaluador, PR semanal, ventana nocturna, entrevistas por Remote Control y `/spec`). Pendiente: calibrar la calidad de las propuestas con varias corridas a mano antes de activar la exploración nocturna (`explore` en `repos.json`)
 
 - Backoff específico para rate-limit/cuota de `claude`: hoy ese fallo cae en el catch-all de `tick.ts` como cualquier otra excepción → bloqueo + email, en vez de reintentarse solo más tarde sin marcar el issue como bloqueado
 - Cuándo limpiar un worktree (`removeWorktree` existe pero no está conectado a nada todavía — ¿al mergear? ¿al llegar a `blocked`?)

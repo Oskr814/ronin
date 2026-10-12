@@ -1,8 +1,15 @@
 import { listOpenUnmanagedIssues, type Comment } from './github.js';
-import { findTrustedIssueCommands, parseExploreCommand, parseSpikeCommand } from './mentions.js';
+import { findTrustedIssueCommands, parseExploreCommand, parseSpecCommand, parseSpikeCommand } from './mentions.js';
 import { log } from './logger.js';
 
 export interface SpikeCandidate {
+  issueNumber: number;
+  appName: string;
+  instruction?: string;
+  trigger: Comment[];
+}
+
+export interface SpecCandidate {
   issueNumber: number;
   appName: string;
   instruction?: string;
@@ -22,18 +29,19 @@ export async function findIssuesNeedingSpike(): Promise<SpikeCandidate[]> {
   return (await findIssueCommands()).spikes;
 }
 
-// /spike and /explore, found in one pass over the open unmanaged issues.
-export async function findIssueCommands(): Promise<{ spikes: SpikeCandidate[]; explores: ExploreCandidate[] }> {
+// /spike, /explore and /spec, found in one pass over the open unmanaged issues.
+export async function findIssueCommands(): Promise<{ spikes: SpikeCandidate[]; explores: ExploreCandidate[]; specs: SpecCandidate[] }> {
   const issues = await listOpenUnmanagedIssues();
   const spikes: SpikeCandidate[] = [];
   const explores: ExploreCandidate[] = [];
+  const specs: SpecCandidate[] = [];
   for (const issue of issues) {
     // Per-issue isolation: one flaky comment-listing call or malformed
     // comment must not throw out of the whole loop and zero out /spike for
     // every other candidate this tick — same reasoning as
     // findPrsNeedingReview's own per-PR try/catch.
     try {
-      const { spike, explore } = await findTrustedIssueCommands(issue.number);
+      const { spike, explore, spec } = await findTrustedIssueCommands(issue.number);
       // Uses the first unprocessed command's params — the common case is
       // exactly one. A malformed command (missing app_name) has nothing
       // actionable to build a candidate from, so it's skipped rather than
@@ -43,9 +51,11 @@ export async function findIssueCommands(): Promise<{ spikes: SpikeCandidate[]; e
       if (parsedSpike) spikes.push({ issueNumber: issue.number, appName: parsedSpike.appName, instruction: parsedSpike.instruction, trigger: spike });
       const parsedExplore = explore.length > 0 ? parseExploreCommand(explore[0].body) : null;
       if (parsedExplore) explores.push({ issueNumber: issue.number, ...parsedExplore, trigger: explore });
+      const parsedSpec = spec.length > 0 ? parseSpecCommand(spec[0].body) : null;
+      if (parsedSpec) specs.push({ issueNumber: issue.number, appName: parsedSpec.appName, instruction: parsedSpec.instruction, trigger: spec });
     } catch (error) {
       log.error(`findIssueCommands: issue #${issue.number} falló al evaluar, se salta este tick`, error);
     }
   }
-  return { spikes, explores };
+  return { spikes, explores, specs };
 }

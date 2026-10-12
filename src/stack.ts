@@ -22,6 +22,13 @@ export function spikeBranch(issueNumber: number): string {
   return `ronin/${issueNumber}/spike`;
 }
 
+// The 'write-spec' task's branch: it does open a PR (the spec, as a draft),
+// but that PR is a spec PR — merged by discoverAssignedSpecs once a human
+// marks it ready — never a slice of a tracking issue.
+export function specBranch(issueNumber: number): string {
+  return `ronin/${issueNumber}/spec`;
+}
+
 const SLICE_BRANCH_RE = /^ronin\/\d+\/slice-(\d+)$/;
 
 export function sliceIndexFromBranch(branch: string): number | null {
