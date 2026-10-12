@@ -110,7 +110,6 @@ export function renderFindingIssue(appName: string, finding: Finding, fileUrl: s
   const body = [
     finding.body.replace(/^## .*\n+/, ''),
     '',
-    ...(finding.mockup ? [`**Mockup:** ${finding.mockup}`, ''] : []),
     `Encontrado por la exploración de ronin en \`${appName}\` (charter \`${finding.charter}\`, ${finding.viewport}, rol ${finding.rol}, semilla ${finding.semilla}). Ficha: [${finding.id}](${fileUrl}).`,
     '',
     `Para que lo implemente, asignámelo. \`${findingIssueKey(appName, finding.id)}\``,
@@ -188,7 +187,7 @@ export function renderDigest(opts: {
     DIGEST_MARKER,
     `# Exploración de ronin — semana ${opts.week}`,
     '',
-    'ronin levantó la app, la usó como cada rol en desktop y mobile y propone lo de abajo. Cada propuesta tiene su ficha en el repo (memoria de la exploración) y, si ayuda a decidir, un mockup.',
+    'ronin levantó la app, la usó como cada rol en desktop y mobile y propone lo de abajo. Cada propuesta tiene su ficha en el repo (memoria de la exploración), con las capturas del antes y, si ayuda a decidir, del después: abrí la ficha desde la tabla para verlas.',
     '',
     '**Cómo revisar:**',
     '- **Para rechazar una propuesta**, comentá en su ficha (en "Files changed") con el motivo, por ejemplo: "ya está cubierto". La marco como rechazada y la sumo a `knowledge.md` para no volver a proponerla.',
@@ -202,11 +201,11 @@ export function renderDigest(opts: {
     if (thisWeek.length === 0) {
       lines.push('Sin propuestas esta semana.', '');
     } else {
-      lines.push('| Ficha | Tipo | Gravedad | Propuesta | Función | Estado | Mockup |', '|---|---|---|---|---|---|---|');
+      lines.push('| Ficha | Tipo | Gravedad | Propuesta | Función | Estado |', '|---|---|---|---|---|---|');
       for (const f of thisWeek) {
         const file = `https://github.com/${opts.repo}/blob/${opts.branch}/${EXPLORATION_DIR}/${appName}/findings/${findingFileName(f)}`;
         const estado = f.estado === 'rechazado' ? `rechazada${f.motivo ? `: ${f.motivo}` : ''}` : f.issue ? `issue #${f.issue}` : f.estado;
-        lines.push(`| [${f.id}](${file}) | ${f.tipo} | \`${f.gravedad}\` | ${f.titulo.replace(/\|/g, '/')} | \`${f.funcion}\` | ${estado.replace(/\|/g, '/')} | ${f.mockup ? `[ver](${f.mockup})` : '—'} |`);
+        lines.push(`| [${f.id}](${file}) | ${f.tipo} | \`${f.gravedad}\` | ${f.titulo.replace(/\|/g, '/')} | \`${f.funcion}\` | ${estado.replace(/\|/g, '/')} |`);
       }
       lines.push('');
     }

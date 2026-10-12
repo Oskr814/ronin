@@ -99,7 +99,7 @@ export function renderRunReply(appName: string, run: PublishedRun): string {
     lines.push(`Propuestas (${summary.findings.length}):`, '');
     for (const f of summary.findings) {
       const issue = run.urgentIssues.find((u) => u.id === f.id);
-      lines.push(`- **${f.id}** ${f.titulo} — \`${f.gravedad}\`${f.mockup ? ` · [mockup](${f.mockup})` : ''}${issue ? ` · issue #${issue.issue}` : ''}`);
+      lines.push(`- **${f.id}** ${f.titulo} — \`${f.gravedad}\`${issue ? ` · issue #${issue.issue}` : ''}`);
     }
   }
   lines.push('', `Están en el PR de exploración de la semana: #${run.prNumber}. Revisalas ahí.`);

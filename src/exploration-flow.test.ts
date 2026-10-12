@@ -54,9 +54,9 @@ describe('renderRunReply', () => {
   });
 
   it('says what was explored, what it proposes with links, and where to review', () => {
-    const reply = renderRunReply('backoffice', run([{ id: 'F-0001', titulo: 'Doble toque', gravedad: 'bug', mockup: 'https://claude.ai/artifact/x' }]));
+    const reply = renderRunReply('backoffice', run([{ id: 'F-0001', titulo: 'Doble toque', gravedad: 'bug' }]));
     expect(reply).toContain('`pedidos.confirmar` (interrupciones); fallaron `pedidos.surtir`');
-    expect(reply).toContain('**F-0001** Doble toque — `bug` · [mockup](https://claude.ai/artifact/x) · issue #821');
+    expect(reply).toContain('**F-0001** Doble toque — `bug` · issue #821');
     expect(reply).toContain('#820');
   });
 

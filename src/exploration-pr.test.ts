@@ -32,12 +32,12 @@ describe('isoWeek', () => {
 });
 
 describe('renderFindingIssue', () => {
-  it('carries the finding, its mockup, where it came from and a searchable key', () => {
-    const finding: Finding = { ...meta({ mockup: 'https://claude.ai/artifact/x' }), body: '## Doble toque duplica el pedido\n\n### Cómo reproducirlo\n\n1. Tocar dos veces' };
+  it('carries the finding with its images, where it came from and a searchable key', () => {
+    const finding: Finding = { ...meta(), body: '## Doble toque duplica el pedido\n\n### Cómo reproducirlo\n\n1. Tocar dos veces\n\n<img src="https://github.com/o/r/blob/abc/a.png?raw=true" alt="dos filas" width="320">' };
     const { title, body } = renderFindingIssue('backoffice', finding, 'https://github.com/o/r/blob/b/f.md');
     expect(title).toBe('Doble toque duplica el pedido');
     expect(body.startsWith('### Cómo reproducirlo')).toBe(true);
-    expect(body).toContain('**Mockup:** https://claude.ai/artifact/x');
+    expect(body).toContain('<img src="https://github.com/o/r/blob/abc/a.png?raw=true"');
     expect(body).toContain('semilla 83121');
     expect(body).toContain(findingIssueKey('backoffice', 'F-0007'));
     expect(findingIssueKey('backoffice', 'F-0007')).toBe('ronin-ficha:backoffice/F-0007');
