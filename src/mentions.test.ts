@@ -337,3 +337,13 @@ describe('parseExploreCommand', () => {
     expect(isExploreCommand('@ronin /explorer')).toBe(false);
   });
 });
+
+describe('parseSpecCommand', () => {
+  it('reads the app and an optional instruction, and is told apart from other commands', async () => {
+    const { parseSpecCommand, isSpecCommand } = await import('./mentions.js');
+    expect(parseSpecCommand('@ronin /spec backoffice')).toEqual({ appName: 'backoffice', instruction: undefined });
+    expect(parseSpecCommand('@ronin /spec backoffice que bodega pueda escanear')).toEqual({ appName: 'backoffice', instruction: 'que bodega pueda escanear' });
+    expect(parseSpecCommand('@ronin /spec')).toBeNull();
+    expect(isSpecCommand('@ronin /specs')).toBe(false);
+  });
+});

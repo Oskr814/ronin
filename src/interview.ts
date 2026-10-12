@@ -4,7 +4,7 @@ import { activeRepo } from './repo-context.js';
 import { log } from './logger.js';
 import { commentOnIssue, listIssueComments, setIssueState } from './github.js';
 import { notifyBlocker } from './notifier.js';
-import { getInterviews, setInterview } from './local-state.js';
+import { addPendingSpec, getInterviews, setInterview, type InterviewResume } from './local-state.js';
 import { removeSession, sessionLogs, sessionState, startBackgroundSession } from './bg-session.js';
 
 // When a task stops on RONIN_STATUS: needs-info, the questions are already
@@ -43,7 +43,7 @@ async function waitForSessionUrl(sessionId: string, timeoutMs = 90_000): Promise
   return undefined;
 }
 
-export async function startInterview(issueNumber: number, issueUrl: string): Promise<void> {
+export async function startInterview(issueNumber: number, issueUrl: string, resume: InterviewResume = { kind: 'issue' }): Promise<void> {
   if (!config.remoteInterviews) return;
   if ((await getInterviews())[issueNumber]) return;
   const nonce = randomBytes(6).toString('hex');
@@ -65,7 +65,7 @@ export async function startInterview(issueNumber: number, issueUrl: string): Pro
     await removeSession(sessionId);
     return;
   }
-  await setInterview(issueNumber, { sessionId, startedAt: new Date().toISOString(), url, nonce });
+  await setInterview(issueNumber, { sessionId, startedAt: new Date().toISOString(), url, nonce, resume });
   await commentOnIssue(issueNumber, [
     `Si te resulta más ágil, podés contestarme estas preguntas en una conversación: ${url}`,
     '',
@@ -81,7 +81,7 @@ export async function checkInterviews(now = new Date()): Promise<void> {
   const interviews = await getInterviews();
   for (const [key, interview] of Object.entries(interviews)) {
     const issueNumber = Number(key);
-    const { sessionId, startedAt, nonce } = interview;
+    const { sessionId, startedAt, nonce, resume } = interview;
     try {
       const comments = await listIssueComments(issueNumber);
       const answered = !!nonce && comments.some((c) => c.authorLogin.toLowerCase() === config.githubLogin.toLowerCase() && c.body.includes(answersMarker(nonce)));
@@ -89,8 +89,13 @@ export async function checkInterviews(now = new Date()): Promise<void> {
       if (answered) {
         await removeSession(sessionId);
         await setInterview(issueNumber, null);
-        await setIssueState(issueNumber, 'in-progress');
-        log.info(`entrevista del issue #${issueNumber}: respondida, el issue vuelve a en progreso`);
+        if (resume?.kind === 'spec') {
+          await addPendingSpec({ issueNumber, appName: resume.appName, ...(resume.instruction ? { instruction: resume.instruction } : {}) });
+          log.info(`entrevista del issue #${issueNumber}: respondida, rehago el /spec`);
+        } else {
+          await setIssueState(issueNumber, 'in-progress');
+          log.info(`entrevista del issue #${issueNumber}: respondida, el issue vuelve a en progreso`);
+        }
       } else if (expired) {
         await removeSession(sessionId);
         await setInterview(issueNumber, null);

@@ -13,8 +13,10 @@ vi.mock('./mentions.js', () => ({
   findTrustedIssueCommands: async (...args: unknown[]) => ({
     spike: await findTrustedSpikeCommand(...args),
     explore: await findTrustedExploreCommand(...args),
+    spec: [],
   }),
   parseSpikeCommand: (...args: unknown[]) => parseSpikeCommand(...args),
+  parseSpecCommand: () => null,
   parseExploreCommand: (body: string) => {
     const match = body.match(/\/explore\s+(\S+)(?:\s+(\d+))?/);
     return match ? { appName: match[1], ...(match[2] ? { maxFunctions: Number(match[2]) } : {}) } : null;

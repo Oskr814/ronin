@@ -30,8 +30,14 @@ export interface LocalState {
   nightlyExploration: Record<string, string>;
   // Issue → the Remote Control interview session open for it (interview.ts),
   // so a later tick can close it even after a restart.
-  interviews: Record<string, { sessionId: string; startedAt: string; url?: string; nonce?: string }>;
+  interviews: Record<string, { sessionId: string; startedAt: string; url?: string; nonce?: string; resume?: InterviewResume }>;
+  // /spec runs to redo now that an interview got the answers they lacked.
+  pendingSpecs: Array<{ issueNumber: number; appName: string; instruction?: string }>;
 }
+
+// What to do once an interview gets its answers: put a ronin issue back in
+// progress (the default), or redo a /spec on an issue ronin doesn't manage.
+export type InterviewResume = { kind: 'issue' } | { kind: 'spec'; appName: string; instruction?: string };
 
 // In-process serialization for the read-modify-write span around this file:
 // tick() now runs several issues' pipelines concurrently (see
@@ -72,9 +78,10 @@ export async function readLocalState(): Promise<LocalState> {
       lastChangelogRelease: raw.lastChangelogRelease,
       nightlyExploration: raw.nightlyExploration ?? {},
       interviews: raw.interviews ?? {},
+      pendingSpecs: raw.pendingSpecs ?? [],
     };
   } catch {
-    return { claimedIssues: [], checksPendingCounts: {}, lastReviewedSha: {}, nightlyExploration: {}, interviews: {} };
+    return { claimedIssues: [], checksPendingCounts: {}, lastReviewedSha: {}, nightlyExploration: {}, interviews: {}, pendingSpecs: [] };
   }
 }
 
@@ -165,5 +172,23 @@ export async function setInterview(issueNumber: number, interview: LocalState['i
     if (interview) state.interviews[issueNumber] = interview;
     else delete state.interviews[issueNumber];
     await writeLocalState(state);
+  });
+}
+
+export async function addPendingSpec(spec: LocalState['pendingSpecs'][number]): Promise<void> {
+  return withLocalStateLock(async () => {
+    const state = await readLocalState();
+    if (!state.pendingSpecs.some((p) => p.issueNumber === spec.issueNumber)) state.pendingSpecs.push(spec);
+    await writeLocalState(state);
+  });
+}
+
+export async function takePendingSpecs(): Promise<LocalState['pendingSpecs']> {
+  return withLocalStateLock(async () => {
+    const state = await readLocalState();
+    const taken = state.pendingSpecs;
+    state.pendingSpecs = [];
+    await writeLocalState(state);
+    return taken;
   });
 }

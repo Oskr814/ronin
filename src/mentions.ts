@@ -27,6 +27,21 @@ export function isSpikeCommand(body: string): boolean {
 
 const SPIKE_COMMAND_RE = /\/spike\s+(\S+)(?:\s+([\s\S]+))?/i;
 
+// Turns the issue into a spec PR — see agent-task.ts's write-spec. Same
+// arguments as /spike: an app and an optional instruction.
+export function isSpecCommand(body: string): boolean {
+  return /\/spec\b/i.test(body);
+}
+
+const SPEC_COMMAND_RE = /\/spec\s+(\S+)(?:\s+([\s\S]+))?/i;
+
+export function parseSpecCommand(body: string): { appName: string; instruction?: string } | null {
+  const match = body.match(SPEC_COMMAND_RE);
+  if (!match) return null;
+  const instruction = match[2]?.trim();
+  return { appName: match[1], instruction: instruction ? instruction : undefined };
+}
+
 // Triggers an exploration run of one app — see exploration-flow.ts. Issue
 // comments only, same as /spike.
 export function isExploreCommand(body: string): boolean {
@@ -88,11 +103,12 @@ export async function findTrustedSpikeCommand(issueNumber: number): Promise<Comm
 
 // Both issue commands from one read of the issue's comments — the tick
 // checks every open unmanaged issue for either, every time.
-export async function findTrustedIssueCommands(issueNumber: number): Promise<{ spike: Comment[]; explore: Comment[] }> {
+export async function findTrustedIssueCommands(issueNumber: number): Promise<{ spike: Comment[]; explore: Comment[]; spec: Comment[] }> {
   const unprocessed = (await findUnprocessedIssueMentions(issueNumber)).filter((c) => c.authorLogin !== '');
   return {
     spike: unprocessed.filter((c) => isSpikeCommand(c.body)),
     explore: unprocessed.filter((c) => isExploreCommand(c.body) && !isSpikeCommand(c.body)),
+    spec: unprocessed.filter((c) => isSpecCommand(c.body) && !isSpikeCommand(c.body) && !isExploreCommand(c.body)),
   };
 }
 

@@ -39,7 +39,9 @@ import { worktreeDirFor, isBehind, attemptRebase, removeWorktree, sweepOrphanedW
 import { findUnprocessedMentions, isFixCommentsCommand } from './mentions.js';
 import { withHelpFooter } from './help.js';
 import { findPrsNeedingReview, type ReviewCandidate, type TrustedFixCandidate } from './external-review.js';
-import { findIssueCommands, type ExploreCandidate, type SpikeCandidate } from './spike.js';
+import { findIssueCommands, type ExploreCandidate, type SpecCandidate, type SpikeCandidate } from './spike.js';
+import { processSpecCandidate } from './spec-flow.js';
+import { takePendingSpecs } from './local-state.js';
 import { explorationPrs, exploreWorkerBusy, launchExploreWorker, processExplorationPr } from './exploration-flow.js';
 import { maybeLaunchNightlyExploration } from './exploration-schedule.js';
 import { checkInterviews, startInterview } from './interview.js';
@@ -753,14 +755,20 @@ export async function processSpikeCandidate(candidate: SpikeCandidate): Promise<
 export async function spikeJobs(): Promise<Job[]> {
   let candidates: SpikeCandidate[];
   let explores: ExploreCandidate[];
+  let specs: SpecCandidate[];
   try {
-    ({ spikes: candidates, explores } = await findIssueCommands());
+    ({ spikes: candidates, explores, specs } = await findIssueCommands());
   } catch (error) {
     log.info(`tick: findIssueCommands falló, reintentando en el próximo tick: ${(error as Error).message}`);
     return [];
   }
+  // /spec runs whose interview just got its answers (see interview.ts).
+  const resumed: SpecCandidate[] = (await takePendingSpecs().catch(() => []))
+    .filter((p) => !specs.some((s) => s.issueNumber === p.issueNumber))
+    .map((p) => ({ ...p, trigger: [] }));
   return [
     ...candidates.map((c) => ({ kind: 'spike', label: `issue #${c.issueNumber}`, run: () => processSpikeCandidate(c) })),
+    ...[...specs, ...resumed].map((c) => ({ kind: 'spec', label: `issue #${c.issueNumber}`, run: () => processSpecCandidate(c) })),
     ...explores.slice(0, 1).map((c) => ({ kind: 'explore-launch', label: `issue #${c.issueNumber}`, run: () => launchExploreCandidate(c) })),
   ];
 }
