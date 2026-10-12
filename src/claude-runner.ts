@@ -101,12 +101,16 @@ function makeLineBuffer(onLine: (line: string) => void): (chunk: Buffer) => void
 // (vs the default "text" format) is what makes that streaming show tool
 // calls and intermediate reasoning instead of just the final answer.
 // What a single run may set on top of the defaults: the model and effort of
-// its task type (config.ts's agentModelFor/agentEffortFor), and a file with
-// the subagents it may launch (`--agents`, the external review's workers).
+// its task type (config.ts's agentModelFor/agentEffortFor), a file with
+// the subagents it may launch (`--agents`, the external review's workers),
+// and the MCP servers it gets (`--mcp-config`, exploration's browsers) — only
+// those: --strict-mcp-config keeps out whatever MCP servers the account's
+// Claude config has, which a headless task has no business reaching.
 export interface HeadlessRunOptions {
   model?: string;
   effort?: string;
   agentsFile?: string;
+  mcpConfigFile?: string;
 }
 
 // The arguments of every headless run; shared with scripts/fix-replay.ts so
@@ -121,6 +125,7 @@ export function claudeHeadlessArgs(prompt: string, opts: HeadlessRunOptions = {}
     ...(model ? ['--model', model] : []),
     ...(effort ? ['--effort', effort] : []),
     ...(opts.agentsFile ? ['--agents', opts.agentsFile] : []),
+    ...(opts.mcpConfigFile ? ['--mcp-config', opts.mcpConfigFile, '--strict-mcp-config'] : []),
   ];
 }
 

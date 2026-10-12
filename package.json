@@ -15,6 +15,7 @@
     "fix:replay": "tsx scripts/fix-replay.ts",
     "app": "tsx --env-file=.env scripts/app.ts",
     "explore": "tsx --env-file=.env scripts/explore.ts",
+    "browsers:install": "playwright install chromium && playwright-mcp install-browser chrome-for-testing",
     "init-labels": "bash scripts/init-labels.sh",
     "cron:setup": "bash scripts/setup-cron.sh",
     "cron:remove": "bash scripts/setup-cron.sh --remove",
@@ -24,6 +25,7 @@
     "webhook:remove": "bash scripts/setup-webhook-service.sh --remove"
   },
   "dependencies": {
+    "@playwright/mcp": "0.0.83",
     "gray-matter": "^4.0.3",
     "nodemailer": "^6.9.16",
     "playwright": "1.64.0",

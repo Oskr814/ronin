@@ -148,9 +148,9 @@ describe('recordCoverage', () => {
 
 describe('findings', () => {
   it('round-trips a finding, with "señal" as the key in the file', () => {
-    const text = serializeFinding(finding({ issue: 812, mockup: 'https://claude.ai/artifact/x' }));
+    const text = serializeFinding(finding({ issue: 812, motivo: 'ya cubierto' }));
     expect(text).toMatch(/^---\nid: F-0007\ntipo: hallazgo\nseñal: bug\n/);
-    expect(parseFinding(text)).toEqual(finding({ issue: 812, mockup: 'https://claude.ai/artifact/x' }));
+    expect(parseFinding(text)).toEqual(finding({ issue: 812, motivo: 'ya cubierto' }));
   });
 
   it('rejects a file without frontmatter or without its key fields', () => {
