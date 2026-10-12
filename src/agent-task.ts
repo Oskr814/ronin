@@ -48,7 +48,18 @@ export type AgentTask =
       scope: { mode: 'full' } | { mode: 'incremental'; previousSha: string; changedLines: string };
     }
   | { type: 'spike'; issueNumber: number; appName: string; instruction?: string; trigger: Comment[] }
-  | { type: 'update-changelog'; release: Release };
+  | { type: 'update-changelog'; release: Release }
+  | {
+      // Lists the functions of an app from its code — see
+      // exploration-inventory.ts. Read-only, runs on the app's own checkout.
+      type: 'explore-inventory';
+      appName: string;
+      appPath: string;
+      checkoutDir: string;
+      outputPath: string;
+      roles: string[];
+      known: Array<{ id: string; nombre: string; rutas: string[] }>;
+    };
 
 // What the external review needs from one of its own past threads: where it
 // sits now, its title and visible part (not the collapsed detail and agent
@@ -460,6 +471,25 @@ export async function buildTask(task: AgentTask): Promise<{ branch: string; prom
       };
     }
 
+    case 'explore-inventory': {
+      const known = task.known.length > 0
+        ? task.known.map((f) => `- ${f.id} — ${f.nombre} (${f.rutas.join(', ')})`).join('\n')
+        : '(none yet: this is the first inventory)';
+      return {
+        // Not a branch to check out — runs on the app's checkout as is.
+        branch: `explore@${task.appName}`,
+        prompt: [
+          `You are ronin. You are building the inventory of user-facing functions of the app "${task.appName}" in ${repoUrl()}, whose code lives under ${task.appPath}/ in this checkout. A later exploration uses this inventory to decide which parts of the app to try out as a real user, a few per run.`,
+          'A function is one task a person accomplishes in the app, the way they would name it: "Crear pedido borrador", "Confirmar pedido", "Surtir pedido", "Asignar catálogos a un cliente", "Reemplazar la imagen de un producto". Not a component, not an API call, not a page that only shows navigation. A page that serves several tasks is several functions; a task that spans pages is one.',
+          'Find them from the code: the router and its route definitions, the navigation, the access rules (which roles reach each route), and the pages and their actions (buttons, forms, modals). Read only — do not edit, create or delete anything, and do not run builds, tests or the app.',
+          `The roles this app logs in as: ${task.roles.join(', ')}. For each function list the roles that can actually reach it, using those names.`,
+          `Functions already in the inventory — keep the same id for the same function, even if its routes or files moved; only use a new id for a genuinely new function:\n${known}`,
+          `Output: write exactly one JSON object to ${task.outputPath} with the Write tool, shaped {"functions": [{"id": "<module>.<function>", "nombre": "<name in Spanish, as a user would say it>", "rutas": ["/route/:param"], "roles": ["Sales"], "archivos": ["${task.appPath}/src/..."]}]}. ids are lowercase "<module>.<function>" with hyphens (e.g. "pedidos.confirmar"). "archivos" are repo-relative paths of the page and the components that implement that function's behavior (at most 8, most important first) — they are used to notice when the function changed. List every function you find; the inventory has no size limit.`,
+          'That file is the only output of this task. Never write to GitHub.',
+        ].join('\n'),
+      };
+    }
+
     case 'spike': {
       // Same untrusted-data fencing as every other command trigger — the
       // comment body is written by whoever left it, not by the supervisor.
@@ -488,11 +518,13 @@ export async function buildTask(task: AgentTask): Promise<{ branch: string; prom
 
 function taskLabel(task: AgentTask): string {
   if (task.type === 'update-changelog') return `release ${task.release.tagName}`;
+  if (task.type === 'explore-inventory') return `app ${task.appName}`;
   return 'issueNumber' in task ? `issue #${task.issueNumber}` : `PR #${task.prNumber}`;
 }
 
 function taskNumber(task: AgentTask): string | number {
   if (task.type === 'update-changelog') return task.release.tagName;
+  if (task.type === 'explore-inventory') return task.appName;
   return 'issueNumber' in task ? task.issueNumber : task.prNumber;
 }
 
@@ -517,7 +549,9 @@ export async function runAgentTask(task: AgentTask): Promise<string> {
       ? await ensureTrustedFixWorktree(branch)
       : task.type === 'update-changelog'
         ? await ensureChangelogRepoUpToDate()
-        : await ensureWorktree(branch, baseBranch);
+        : task.type === 'explore-inventory'
+          ? task.checkoutDir
+          : await ensureWorktree(branch, baseBranch);
 
   // external-review is the only task type that points `claude -p
   // --permission-mode bypassPermissions` at a tree an arbitrary external
