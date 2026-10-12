@@ -82,4 +82,10 @@ describe('claudeHeadlessArgs', () => {
       mutableConfig.agentEffort = saved.effort;
     }
   });
+
+  it('passes an MCP config, and only that one', () => {
+    const args = claudeHeadlessArgs('do it', { mcpConfigFile: '/tmp/mcp.json' });
+    expect(args.join(' ')).toContain('--mcp-config /tmp/mcp.json --strict-mcp-config');
+    expect(claudeHeadlessArgs('do it')).not.toContain('--mcp-config');
+  });
 });
