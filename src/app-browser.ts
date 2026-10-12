@@ -1,5 +1,6 @@
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { chromium, type Browser, type BrowserContext } from 'playwright';
 import type { AppSession } from './app-runtime.js';
 import type { AppUser, LoginStep, Viewport } from './app-manifest.js';
@@ -103,6 +104,24 @@ export async function smokeScreenshots(session: AppSession, authStates: Record<s
       }
     }
     return shots;
+  } finally {
+    await browser.close();
+  }
+}
+
+// A self-contained HTML the explorer drew (an "after" it couldn't make on
+// the real app) as a PNG at the app's viewport. It only loads local files:
+// whatever else it asks for is blocked.
+export async function renderHtmlToPng(htmlPath: string, pngPath: string, viewport: Viewport): Promise<void> {
+  const browser = await chromium.launch();
+  try {
+    // Not emulating a phone: a drawn page rarely has a viewport meta tag, and
+    // a phone would lay it out 980px wide.
+    const context = await browser.newContext({ viewport: { width: viewport.width, height: viewport.height }, deviceScaleFactor: viewport.isMobile ? 2 : 1 });
+    await context.route('**/*', (route) => (/^(file|data):/.test(route.request().url()) ? route.continue() : route.abort()));
+    const page = await context.newPage();
+    await page.goto(pathToFileURL(htmlPath).href);
+    await page.screenshot({ path: pngPath, fullPage: true });
   } finally {
     await browser.close();
   }

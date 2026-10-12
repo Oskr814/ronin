@@ -176,7 +176,7 @@ Misma identidad que la asignación de specs (§1): `RUNNER_ID` (el usuario de Gi
 
 ### 11. Exploración: ronin usa la app y propone mejoras
 
-Hasta acá ronin solo reacciona: implementa lo que se le asigna y revisa lo que se le pide. Esta sección le agrega la parte que hace un dev senior o un QA por iniciativa propia: **usar la app, encontrar dónde duele y proponer cómo mejorarlo**, con evidencia y un mockup. El humano sigue decidiendo qué se hace, igual que en el resto del sistema.
+Hasta acá ronin solo reacciona: implementa lo que se le asigna y revisa lo que se le pide. Esta sección le agrega la parte que hace un dev senior o un QA por iniciativa propia: **usar la app, encontrar dónde duele y proponer cómo mejorarlo**, con evidencia y el antes/después. El humano sigue decidiendo qué se hace, igual que en el resto del sistema.
 
 #### 11.1 Principios
 
@@ -209,7 +209,7 @@ Siempre contra datos de seed, nunca contra producción. El seed tiene que inclui
 | 6 | UI inconsistente | la misma acción resuelta distinto en pantallas distintas |
 | 7 | UI muerta | elementos que parecen interactivos y no hacen nada, rutas placeholder |
 
-Además de **hallazgos** (fricción observada), ronin puede proponer **ideas**: oportunidades de mejorar un flujo ("repetir el último pedido del cliente", "escanear el código de barras al surtir"). Una idea tiene que estar atada a una función explorada en esa corrida, lleva mockup obligatorio, va con label propio (`ronin:idea`), tiene tope de 1–2 por corrida y nunca desplaza a un hallazgo con evidencia.
+Además de **hallazgos** (fricción observada), ronin puede proponer **ideas**: oportunidades de mejorar un flujo ("repetir el último pedido del cliente", "escanear el código de barras al surtir"). Una idea tiene que estar atada a una función explorada en esa corrida, lleva imagen del después obligatoria, va con label propio (`ronin:idea`), tiene tope de 1–2 por corrida y nunca desplaza a un hallazgo con evidencia.
 
 Gravedad, en orden: bug → fricción que bloquea la tarea → fricción que la hace más lenta → inconsistencia → pulido. Si una corrida no encuentra nada de los primeros niveles, publica menos; no rellena el cupo con pulido.
 
@@ -243,11 +243,13 @@ Gravedad, en orden: bug → fricción que bloquea la tarea → fricción que la 
 
 Los datos concretos (cliente, productos, cantidades) también se eligen al azar dentro del seed. **Toda la aleatoriedad usa una semilla registrada en el run y en cada hallazgo**: un bug encontrado al azar que no se puede reproducir no sirve. No se hace monkey testing puro (clicks al azar), salvo como presupuesto chico para detectar crashes sin proponer nada.
 
-#### 11.5 Mockups: Artifacts publicados desde una sesión `--bg`
+#### 11.5 Antes y después: capturas en una rama huérfana
 
-Cada propuesta lleva antes/después. El "después" se arma preferentemente aplicando un parche borrador en el worktree (sin pushear) y sacando screenshot de la app real, con el design system real; si no es viable, un mockup en HTML.
+Cada propuesta lleva antes/después. El "antes" son las capturas que el explorador sacó usando la app (hasta 3 por ficha). El "después" se arma preferentemente aplicando un parche borrador en el worktree (sin pushear) y sacando screenshot de la app real, con el design system real; si no es viable, el explorador dibuja la pantalla en HTML y ronin la renderiza a PNG con Playwright, al viewport del hallazgo y sin red.
 
-Se publica como **Claude Artifact** (privado por defecto, interactivo, versionable, con comentarios). Verificado en el spike de 2026-10-11: `claude -p` **no** tiene la herramienta Artifact, pero una sesión `claude --bg` sí. El worker de `-p` genera el HTML; el supervisor lanza una sesión `--bg` corta cuyo único trabajo es publicarlo e imprimir `RONIN_ARTIFACT_URL=<url>`, la lee con `claude logs <id>` y la borra con `claude stop` + `claude rm`. Así el modelo de `claude-runner.ts` (timeout, output, exit code) no cambia.
+Las imágenes van a la rama huérfana **`ronin/evidence`** del repo del producto, que no se mergea nunca: un commit por corrida, armado con plumbing de git sobre un índice temporal (sin worktree), en `<app>/<corrida>/<ficha>/antes-N.png|despues.png`. La ficha y el PR las muestran con `<img>` apuntando a `github.com/<repo>/blob/<sha>/…?raw=true`: GitHub no las pasa por su proxy, así que solo las ve quien tiene acceso al repo, y como el link apunta a un commit no se mueve. Si el push falla, la ficha se escribe igual con las capturas descritas en texto.
+
+Primero se probaron Claude Artifacts (desde una sesión `claude --bg`, porque `claude -p` no tiene la herramienta): solo los veía la cuenta del runner, abrían un segundo canal de comentarios que ronin no lee y eran la parte más frágil del flujo. Se descartaron.
 
 #### 11.6 Memoria en el repo del producto
 
@@ -292,14 +294,13 @@ viewport: mobile
 semilla: 83121
 estado: propuesto         # propuesto | aprobado → issue #N | rechazado | resuelto
 huella: confirmar|doble-click|pedido-duplicado
-mockup: https://claude.ai/artifact/…
 ---
-Qué pasó, cómo reproducirlo, evidencia y propuesta.
+Qué pasó, cómo reproducirlo, evidencia (con las capturas del antes) y propuesta (con la del después).
 ```
 
 - La **huella** es lo que evita repetir: antes de proponer, ronin compara contra las huellas de todas las fichas (incluidas las rechazadas) y `knowledge.md`, leyendo solo el frontmatter.
 - `runs/` es para auditoría humana; ronin no lo lee para decidir, así la memoria no crece en tokens con cada corrida.
-- Imágenes fuera del repo: screenshots y mockups viven en Artifacts, la ficha guarda el link y la evidencia descrita en texto.
+- Imágenes fuera de la rama principal: viven en `ronin/evidence` (§11.5) y la ficha las enlaza por sha.
 
 #### 11.7 Flujo: un PR por semana
 
@@ -331,7 +332,7 @@ Cuando cualquier tarea termina en `RONIN_STATUS: needs-info`, además de dejar l
 
 0. ~~Spike: Artifacts desde headless, captura del link de Remote Control, quién puede abrir cada cosa~~ — hecho 2026-10-11 (resultados en §11.5 y §11.9)
 1. `app:up` para el backoffice de shoppingcart: manifiesto, override de compose, seed, login por rol, desktop + mobile
-2. `/explore` a pedido (por mención): inventario, charters, hallazgos e ideas, mockups en Artifacts, memoria en `docs/exploration/` — iterar la calidad a mano antes de programarlo
+2. `/explore` a pedido (por mención): inventario, charters, hallazgos e ideas, antes/después en `ronin/evidence`, memoria en `docs/exploration/` — iterar la calidad a mano antes de programarlo
 3. Programación nocturna + PR semanal
 4. Preguntas por Remote Control para `needs-info`
 5. `/spec`: de un pedido en bruto (o una propuesta aprobada) a un PR draft de spec

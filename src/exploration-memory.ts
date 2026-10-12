@@ -92,7 +92,6 @@ export interface FindingMeta {
   estado: FindingState;
   huella: string;
   issue?: number;
-  mockup?: string;
   motivo?: string;
 }
 
@@ -188,7 +187,6 @@ export function parseFinding(raw: string): Finding {
     estado: (FINDING_STATES as readonly string[]).includes(meta.estado) ? meta.estado : 'propuesto',
     huella: meta.huella,
     ...(typeof meta.issue === 'number' ? { issue: meta.issue } : {}),
-    ...(typeof meta.mockup === 'string' ? { mockup: meta.mockup } : {}),
     ...(typeof meta.motivo === 'string' ? { motivo: meta.motivo } : {}),
     body: match[2].trim(),
   };

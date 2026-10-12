@@ -28,9 +28,9 @@ describe('parseCandidate', () => {
   });
 
   it('never lets a path escape the output dir', () => {
-    const c = parseCandidate(raw({ evidencia: [{ tipo: 'screenshot', detalle: '../../../../.env' }, { tipo: 'consola', detalle: 'TypeError' }], mockup: '/etc/passwd' }), 'pedidos.confirmar', out);
+    const c = parseCandidate(raw({ evidencia: [{ tipo: 'screenshot', detalle: '../../../../.env' }, { tipo: 'consola', detalle: 'TypeError' }], despues: { imagen: '/etc/passwd.png' } }), 'pedidos.confirmar', out);
     expect(c.evidencia).toEqual([{ tipo: 'consola', detalle: 'TypeError' }]);
-    expect(c.mockup).toBeUndefined();
+    expect(c.despues).toBeUndefined();
   });
 
   it('prefixes the function id to the huella when the agent left it out', () => {
@@ -42,10 +42,11 @@ describe('parseCandidate', () => {
     expect(() => parseCandidate(raw({ evidencia: [] }), 'f', out)).toThrow(/evidencia/);
   });
 
-  it('rejects an idea without a mockup and forces its severity to pulido', () => {
-    expect(() => parseCandidate(raw({ tipo: 'idea', mockup: undefined }), 'f', out)).toThrow(/mockup/);
-    const idea = parseCandidate(raw({ tipo: 'idea', mockup: 'idea.html', pasos: [], evidencia: [], gravedad: 'bug' }), 'f', out);
-    expect(idea).toMatchObject({ senal: 'idea', gravedad: 'pulido', mockup: `${out}/idea.html` });
+  it('rejects an idea without an after image and forces its severity to pulido', () => {
+    expect(() => parseCandidate(raw({ tipo: 'idea' }), 'f', out)).toThrow(/después/);
+    expect(() => parseCandidate(raw({ tipo: 'idea', despues: { imagen: 'despues/idea.txt' } }), 'f', out)).toThrow(/después/);
+    const idea = parseCandidate(raw({ tipo: 'idea', despues: { imagen: 'despues/idea.html', nota: 'con escáner' }, pasos: [], evidencia: [], gravedad: 'bug' }), 'f', out);
+    expect(idea).toMatchObject({ senal: 'idea', gravedad: 'pulido', despues: { imagen: `${out}/despues/idea.html`, nota: 'con escáner' } });
   });
 
   it('rejects unknown enums', () => {
@@ -97,12 +98,25 @@ describe('capCandidates', () => {
 });
 
 describe('renderFindingBody', () => {
-  it('renders steps, evidence without image paths, the proposal and the draft patch', () => {
+  it('renders steps, evidence, the proposal and the draft patch, captions only when there are no images', () => {
     const body = renderFindingBody(parseCandidate(raw(), 'pedidos.confirmar', out), { functionName: 'Confirmar pedido', patch: '-a\n+b' });
     expect(body).toContain('1. Abrir un pedido creado');
     expect(body).toContain('- red: POST /Orders/Confirm x2');
-    expect(body).toContain('1 captura(s) en el mockup: dos filas');
+    expect(body).toContain('- captura: dos filas');
     expect(body).not.toContain('despues.png');
+    expect(body).not.toContain('<img');
     expect(body).toContain('```diff\n-a\n+b\n```');
+  });
+
+  it('shows the published before and after images, sized for the viewport', () => {
+    const body = renderFindingBody(parseCandidate(raw(), 'pedidos.confirmar', out), {
+      functionName: 'Confirmar pedido',
+      antes: [{ url: 'https://github.com/o/r/blob/abc/a.png?raw=true', nota: 'dos filas' }],
+      despues: { url: 'https://github.com/o/r/blob/abc/d.png?raw=true', nota: 'botón deshabilitado' },
+    });
+    expect(body).toContain('**Antes**: dos filas\n\n<img src="https://github.com/o/r/blob/abc/a.png?raw=true" alt="dos filas" width="320">');
+    expect(body).toContain('**Después**: botón deshabilitado\n\n<img src="https://github.com/o/r/blob/abc/d.png?raw=true"');
+    expect(body).not.toContain('- captura');
+    expect(body.indexOf('### Propuesta')).toBeLessThan(body.indexOf('**Después**'));
   });
 });

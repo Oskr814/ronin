@@ -1,12 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { mkdtemp, readFile, rm, writeFile, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 let base = '';
 vi.mock('./repo-context.js', () => ({ activeRepo: () => ({ worktreeBasePath: base, productRepo: 'o/r' }) }));
 vi.mock('./config.js', () => ({
-  config: { exploreFunctionsPerRun: 3, exploreFindingsPerRun: 5, exploreIdeasPerRun: 1, explorePublishMockups: true, claudeCommand: 'claude', claudeConfigDir: '' },
+  config: { exploreFunctionsPerRun: 3, exploreFindingsPerRun: 5, exploreIdeasPerRun: 1, explorePublishEvidence: true, claudeCommand: 'claude', claudeConfigDir: '' },
 }));
 const app = {
   path: 'apps/backoffice',
@@ -23,9 +23,16 @@ vi.mock('./app-runtime.js', () => ({
   appUp: async (dir: string) => ({ appName: 'backoffice', app, dir, baseUrl: 'http://127.0.0.1:5173', ctx: { ports: { web: { '80': 4000 } }, port: { web: 5173 }, compose: '', dir }, stateDir: '/s' }),
   appDown: (...args: unknown[]) => appDown(...args),
 }));
-vi.mock('./app-browser.js', () => ({ loginAllUsers: async () => ({ Sales: '/s/auth/Sales.json' }) }));
-const publishArtifact = vi.fn();
-vi.mock('./artifact-publisher.js', () => ({ publishArtifact: (...args: unknown[]) => publishArtifact(...args) }));
+const renderHtmlToPng = vi.fn();
+vi.mock('./app-browser.js', () => ({
+  loginAllUsers: async () => ({ Sales: '/s/auth/Sales.json' }),
+  renderHtmlToPng: (...args: unknown[]) => renderHtmlToPng(...args),
+}));
+const publishEvidence = vi.fn();
+vi.mock('./evidence-store.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./evidence-store.js')>()),
+  publishEvidence: (...args: unknown[]) => publishEvidence(...args),
+}));
 vi.mock('./exploration-plan.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./exploration-plan.js')>()),
   changedFunctions: async () => new Set<string>(),
@@ -71,16 +78,22 @@ beforeEach(async () => {
   await ensureMemoryDir(memoryDir);
   await saveInventory(memoryDir, { funciones: [fnFixture('pedidos.confirmar'), fnFixture('pedidos.surtir')] as any });
   runAgentTask.mockReset();
-  publishArtifact.mockReset().mockResolvedValue('https://claude.ai/artifact/abc');
+  publishEvidence.mockReset().mockResolvedValue('abc123');
+  renderHtmlToPng.mockReset().mockImplementation(async (_html: string, png: string) => writeFile(png, 'png'));
   appDown.mockReset();
   return () => rm(base, { recursive: true, force: true });
 });
 
-function agentBehaviour(results: Record<string, unknown>, verdicts: (candidates: Array<{ titulo: string }>) => unknown) {
+// files: what each function's explorer leaves in its output dir, by function id.
+function agentBehaviour(results: Record<string, unknown>, verdicts: (candidates: Array<{ titulo: string }>) => unknown, files: Record<string, string[]> = {}) {
   runAgentTask.mockImplementation(async (task: any) => {
     if (task.type === 'explore-function') {
       const result = results[task.fn.id];
       if (result instanceof Error) throw result;
+      for (const file of files[task.fn.id] ?? []) {
+        await mkdir(dirname(join(task.outDir, file)), { recursive: true });
+        await writeFile(join(task.outDir, file), 'img');
+      }
       await writeFile(task.outputPath, JSON.stringify(result));
     } else if (task.type === 'explore-evaluate') {
       const candidates = JSON.parse(await readFile(task.candidatesPath, 'utf8'));
@@ -91,17 +104,18 @@ function agentBehaviour(results: Record<string, unknown>, verdicts: (candidates:
 
 describe('runExploration', () => {
   it('explores each planned function, keeps what the evaluator keeps and writes the memory', async () => {
-    const mockupDir = join(base, 'exploration-out', '2026-10-12-7', 'pedidos.surtir', 'mockups');
     agentBehaviour(
       {
-        'pedidos.confirmar': { tareas: [{ viewport: 'desktop', tarea: 'Confirmar', completada: true, pasos: 5 }], candidatos: [candidate()] },
-        'pedidos.surtir': { tareas: [], candidatos: [candidate({ tipo: 'idea', titulo: 'Escanear el código al surtir', huella: 'pedidos.surtir|escanear|menos-tipeo', mockup: 'mockups/idea.html' })] },
+        'pedidos.confirmar': {
+          tareas: [{ viewport: 'desktop', tarea: 'Confirmar', completada: true, pasos: 5 }],
+          candidatos: [candidate({ evidencia: [{ tipo: 'screenshot', detalle: 'mobile/aviso.png', nota: 'sin aviso' }, { tipo: 'screenshot', detalle: 'mobile/falta.png' }] })],
+        },
+        'pedidos.surtir': { tareas: [], candidatos: [candidate({ tipo: 'idea', titulo: 'Escanear el código al surtir', huella: 'pedidos.surtir|escanear|menos-tipeo', despues: { imagen: 'despues/idea.html', nota: 'con escáner' } })] },
       },
       (candidates) => ({ veredictos: candidates.map((_, index) => ({ index, veredicto: 'mantener', motivo: 'ok' })) }),
+      // mobile/falta.png is reported but was never taken.
+      { 'pedidos.confirmar': ['mobile/aviso.png'], 'pedidos.surtir': ['despues/idea.html'] },
     );
-    // The idea's mockup file has to exist for the explorer to reference it.
-    await mkdir(mockupDir, { recursive: true });
-    await writeFile(join(mockupDir, 'idea.html'), '<html></html>');
 
     const summary = await runExploration({ appName: 'backoffice', codeDir: '/code', memoryDir, today: '2026-10-12', seed: 7, maxFunctions: 2 });
 
@@ -109,7 +123,16 @@ describe('runExploration', () => {
     expect(summary.findings.map((f) => [f.id, f.tipo, f.funcion])).toEqual(
       expect.arrayContaining([['F-0001', 'hallazgo', 'pedidos.confirmar'], ['F-0002', 'idea', 'pedidos.surtir']]),
     );
-    expect(summary.findings.find((f) => f.tipo === 'idea')!.mockup).toBe('https://claude.ai/artifact/abc');
+    const [repoDir, files] = publishEvidence.mock.calls[0];
+    expect(repoDir).toBe('/code');
+    const byId = Object.fromEntries(summary.findings.map((f) => [f.tipo, f.id]));
+    expect(files.map((f: { path: string }) => f.path).sort()).toEqual([
+      `backoffice/2026-10-12-7/${byId.hallazgo}/antes-1.png`,
+      `backoffice/2026-10-12-7/${byId.idea}/despues.png`,
+    ]);
+    const idea = summary.findings.find((f) => f.tipo === 'idea')!;
+    expect(idea.body).toContain(`**Después**: con escáner\n\n<img src="https://github.com/o/r/blob/abc123/backoffice/2026-10-12-7/${idea.id}/despues.png?raw=true"`);
+    expect(summary.findings.find((f) => f.tipo === 'hallazgo')!.body).toContain('**Antes**: sin aviso');
 
     const memory = await loadMemory(memoryDir);
     expect(memory.findings).toHaveLength(2);
@@ -126,6 +149,29 @@ describe('runExploration', () => {
     expect(Object.keys(mcp.mcpServers)).toEqual(['desktop', 'mobile']);
     expect(mcp.mcpServers.mobile.args).toEqual(expect.arrayContaining(['--device', 'iPhone 13', '--storage-state', '/s/auth/Sales.json']));
     expect(mcp.mcpServers.desktop.args.join(' ')).toContain('http://127.0.0.1:4000');
+  });
+
+  it('still writes the findings, describing their screenshots, when the push fails', async () => {
+    publishEvidence.mockRejectedValue(new Error('push rechazado'));
+    agentBehaviour(
+      { 'pedidos.confirmar': { tareas: [], candidatos: [candidate({ evidencia: [{ tipo: 'screenshot', detalle: 'a.png', nota: 'sin aviso' }] })] }, 'pedidos.surtir': { tareas: [], candidatos: [] } },
+      (candidates) => ({ veredictos: candidates.map((_, index) => ({ index, veredicto: 'mantener', motivo: 'ok' })) }),
+      { 'pedidos.confirmar': ['a.png'] },
+    );
+    const summary = await runExploration({ appName: 'backoffice', codeDir: '/code', memoryDir, today: '2026-10-12', seed: 7, maxFunctions: 2 });
+    expect(summary.findings).toHaveLength(1);
+    expect(summary.findings[0].body).toContain('- captura: sin aviso');
+    expect(summary.findings[0].body).not.toContain('<img');
+  });
+
+  it('publishes nothing for a dry run', async () => {
+    agentBehaviour(
+      { 'pedidos.confirmar': { tareas: [], candidatos: [candidate({ evidencia: [{ tipo: 'screenshot', detalle: 'a.png' }] })] }, 'pedidos.surtir': { tareas: [], candidatos: [] } },
+      (candidates) => ({ veredictos: candidates.map((_, index) => ({ index, veredicto: 'mantener', motivo: 'ok' })) }),
+      { 'pedidos.confirmar': ['a.png'] },
+    );
+    await runExploration({ appName: 'backoffice', codeDir: '/code', memoryDir, today: '2026-10-12', seed: 7, maxFunctions: 2, publishEvidence: false });
+    expect(publishEvidence).not.toHaveBeenCalled();
   });
 
   it('drops repeats of the memory before the evaluator, and what the evaluator discards', async () => {

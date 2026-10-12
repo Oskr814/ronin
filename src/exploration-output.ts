@@ -24,8 +24,9 @@ export interface Candidate {
   esperado: string;
   evidencia: Evidence[];
   propuesta: string;
-  // A self-contained HTML before/after, inside the run's output dir.
-  mockup?: string;
+  // The "after" of the proposal, inside the run's output dir: a screenshot
+  // of the app with a draft change, or a self-contained HTML drawing it.
+  despues?: { imagen: string; nota?: string };
   // The draft change used for the "after" screenshot, if one was made.
   parche?: string;
 }
@@ -60,7 +61,7 @@ export const RESULT_JSON_CONTRACT = `{
       "esperado": "<what should have happened>",
       "evidencia": [{ "tipo": "screenshot" | "consola" | "red" | "medicion", "detalle": "<screenshot path, or what you saw>", "nota": "<optional>" }],
       "propuesta": "<one concrete improvement, in Spanish>",
-      "mockup": "<optional: path of a self-contained HTML file with the before/after>",
+      "despues": { "imagen": "<optional: path of the after — a screenshot of the app with your draft change, or a self-contained .html drawing it>", "nota": "<one-line caption, in Spanish>" },
       "parche": "<optional: path of the .patch with the draft change used for the after screenshot>"
     }
   ]
@@ -112,8 +113,11 @@ export function parseCandidate(raw: unknown, functionId: string, outDir: string)
     return [{ tipo: kind, detalle, ...(typeof e.nota === 'string' && e.nota.trim() ? { nota: e.nota.trim().slice(0, LIMITS.paso) } : {}) }];
   });
   if (tipo === 'hallazgo' && evidencia.length === 0) throw new Error('un hallazgo necesita evidencia observada usando la app');
-  const mockup = insideDir(raw.mockup, outDir);
-  if (tipo === 'idea' && !mockup) throw new Error('una idea necesita mockup');
+  const despuesPath = isObject(raw.despues) ? insideDir(raw.despues.imagen, outDir) : undefined;
+  const despues = despuesPath && /\.(png|jpe?g|html?)$/i.test(despuesPath)
+    ? { imagen: despuesPath, ...(typeof raw.despues.nota === 'string' && raw.despues.nota.trim() ? { nota: raw.despues.nota.trim().slice(0, LIMITS.paso) } : {}) }
+    : undefined;
+  if (tipo === 'idea' && !despues) throw new Error('una idea necesita la imagen del después');
   const huellaParts = String(raw.huella ?? '').split('|').map((p) => p.trim()).filter(Boolean);
   if (huellaParts.length < 2) throw new Error('"huella" necesita al menos "<función>|<qué falla>"');
   if (huellaParts[0] !== functionId) huellaParts.unshift(functionId);
@@ -129,7 +133,7 @@ export function parseCandidate(raw: unknown, functionId: string, outDir: string)
     esperado: tipo === 'idea' ? (typeof raw.esperado === 'string' ? raw.esperado.trim().slice(0, LIMITS.texto) : '') : text(raw.esperado, 'esperado', LIMITS.texto),
     evidencia,
     propuesta: text(raw.propuesta, 'propuesta', LIMITS.propuesta),
-    ...(mockup ? { mockup } : {}),
+    ...(despues ? { despues } : {}),
     ...(insideDir(raw.parche, outDir) ? { parche: insideDir(raw.parche, outDir) } : {}),
   };
 }
@@ -214,9 +218,24 @@ const SIGNAL_LABEL: Record<Signal | 'idea', string> = {
   idea: 'Idea',
 };
 
-// The body of the finding's file in the repo: readable on its own, without
-// the screenshots (those live in the mockup Artifact).
-export function renderFindingBody(c: Candidate, opts: { functionName: string; patch?: string }): string {
+export interface FindingImage {
+  url: string;
+  nota?: string;
+}
+
+// Shown at a readable size: a full-page phone screenshot is very tall.
+function image(img: FindingImage, viewport: ViewportName): string {
+  const alt = (img.nota ?? 'captura').replace(/"/g, "'");
+  return `<img src="${img.url}" alt="${alt}" width="${viewport === 'mobile' ? 320 : 720}">`;
+}
+
+// The body of the finding's file in the repo. The screenshots are linked
+// from the evidence branch (evidence-store.ts); without them (not published)
+// their captions still say what they showed.
+export function renderFindingBody(
+  c: Candidate,
+  opts: { functionName: string; patch?: string; antes?: FindingImage[]; despues?: FindingImage },
+): string {
   const lines = [`## ${c.titulo}`, '', `**${SIGNAL_LABEL[c.senal]}** · gravedad \`${c.gravedad}\` · ${c.viewport} · ${opts.functionName}`, ''];
   if (c.pasos.length > 0) lines.push('### Cómo reproducirlo', '', ...c.pasos.map((p, i) => `${i + 1}. ${p}`), '');
   if (c.observado) lines.push(`**Qué pasa:** ${c.observado}`, '');
@@ -226,10 +245,16 @@ export function renderFindingBody(c: Candidate, opts: { functionName: string; pa
   if (evidence.length > 0 || shots.length > 0) {
     lines.push('### Evidencia', '');
     for (const e of evidence) lines.push(`- ${e.tipo}: ${e.detalle}${e.nota ? ` — ${e.nota}` : ''}`);
-    if (shots.length > 0) lines.push(`- ${shots.length} captura(s) en el mockup${shots.some((s) => s.nota) ? `: ${shots.flatMap((s) => (s.nota ? [s.nota] : [])).join('; ')}` : ''}`);
-    lines.push('');
+    if (opts.antes?.length) {
+      lines.push('');
+      for (const img of opts.antes) lines.push(`**Antes**${img.nota ? `: ${img.nota}` : ''}`, '', image(img, c.viewport), '');
+    } else {
+      for (const s of shots) lines.push(`- captura${s.nota ? `: ${s.nota}` : ''}`);
+      lines.push('');
+    }
   }
   lines.push('### Propuesta', '', c.propuesta, '');
-  if (opts.patch) lines.push('<details><summary>Cambio borrador usado para el mockup</summary>', '', '```diff', opts.patch.trim(), '```', '', '</details>', '');
+  if (opts.despues) lines.push(`**Después**${opts.despues.nota ? `: ${opts.despues.nota}` : ''}`, '', image(opts.despues, c.viewport), '');
+  if (opts.patch) lines.push('<details><summary>Cambio borrador usado para el después</summary>', '', '```diff', opts.patch.trim(), '```', '', '</details>', '');
   return lines.join('\n');
 }

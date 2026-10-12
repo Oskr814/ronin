@@ -1,14 +1,14 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { access, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { extname, join } from 'node:path';
 import { runAgentTask, type ExistingFindingSummary } from './agent-task.js';
 import { appDown, appUp } from './app-runtime.js';
-import { loginAllUsers } from './app-browser.js';
+import { loginAllUsers, renderHtmlToPng } from './app-browser.js';
 import { loadAppDefinition, type AppDefinition } from './app-manifest.js';
 import { config } from './config.js';
 import { log } from './logger.js';
-import { publishArtifact } from './artifact-publisher.js';
+import { evidenceUrl, publishEvidence, type EvidenceFile } from './evidence-store.js';
 import {
   ensureMemoryDir,
   findDuplicate,
@@ -24,17 +24,17 @@ import {
 } from './exploration-memory.js';
 import { refreshInventory, explorationOutDir } from './exploration-inventory.js';
 import { changedFunctions, newSeed, planRun, riskByFunction, type ExplorationPlan, type PlannedFunction } from './exploration-plan.js';
-import { capCandidates, parseFunctionResult, parseVerdicts, renderFindingBody, type Candidate, type TriedTask } from './exploration-output.js';
+import { capCandidates, parseFunctionResult, parseVerdicts, renderFindingBody, type Candidate, type FindingImage, type TriedTask } from './exploration-output.js';
 
 const execFileAsync = promisify(execFile);
 
 // One exploration run end to end — docs/DESIGN.md §11.3–11.6: refresh the
 // inventory, plan, bring the app up, explore each planned function in its
 // own headless session (with a desktop and a mobile browser), then dedupe,
-// evaluate and cap what came back, publish mockups, and write the findings,
-// the coverage and the run file into the memory directory. Nothing here
-// touches GitHub: the weekly PR flow (exploration-pr.ts) commits the memory
-// directory and opens the PR.
+// evaluate and cap what came back, push the screenshots of what was kept to
+// the evidence branch, and write the findings, the coverage and the run file
+// into the memory directory. The weekly PR flow (exploration-pr.ts) commits
+// the memory directory and opens the PR.
 
 export interface RunOptions {
   appName: string;
@@ -46,7 +46,9 @@ export interface RunOptions {
   today: string;
   seed?: number;
   maxFunctions?: number;
-  publishMockups?: boolean;
+  // Push the kept findings' screenshots to the evidence branch (off for a
+  // dry run nobody else will see).
+  publishEvidence?: boolean;
   // Checked before each function: false stops the run there (a more urgent
   // task arrived, or the night window closed). What was explored is kept.
   shouldContinue?: () => boolean | Promise<boolean>;
@@ -162,7 +164,7 @@ export async function runExploration(opts: RunOptions): Promise<RunSummary> {
       }
       const fn = inventory.funciones.find((f) => f.id === planned.functionId)!;
       const fnOut = join(outRoot, fn.id);
-      await mkdir(join(fnOut, 'mockups'), { recursive: true });
+      await mkdir(join(fnOut, 'despues'), { recursive: true });
       await mkdir(join(fnOut, 'patches'), { recursive: true });
       const mcpConfigPath = join(fnOut, 'mcp.json');
       await writeFile(mcpConfigPath, JSON.stringify({
@@ -243,16 +245,21 @@ export async function runExploration(opts: RunOptions): Promise<RunSummary> {
   for (const c of capped.cut) discarded.push({ titulo: c.titulo, funcion: c.functionId, motivo: 'fuera del tope de la corrida' });
   kept = capped.kept;
 
+  const ids: string[] = [];
+  for (const _ of kept) ids.push(nextFindingId([...memory.findings, ...ids.map((id) => ({ id }))]));
+  const images = await publishImages({
+    appName,
+    app,
+    codeDir,
+    runId,
+    outRoot,
+    items: kept.map((c, i) => ({ id: ids[i], candidate: c })),
+    publish: opts.publishEvidence ?? config.explorePublishEvidence,
+  });
+
   const findings: Finding[] = [];
-  for (const c of kept) {
-    const id = nextFindingId([...memory.findings, ...findings]);
-    let mockup: string | undefined;
-    if (c.mockup && (opts.publishMockups ?? config.explorePublishMockups)) {
-      mockup = await publishArtifact(c.mockup, { title: `${id} · ${c.titulo}` }).catch((error) => {
-        log.error(`exploración: no se pudo publicar el mockup de ${id}`, error);
-        return undefined;
-      });
-    }
+  for (const [i, c] of kept.entries()) {
+    const id = ids[i];
     const patch = c.parche ? await readFile(c.parche, 'utf8').catch(() => undefined) : undefined;
     const finding: Finding = {
       id,
@@ -268,8 +275,7 @@ export async function runExploration(opts: RunOptions): Promise<RunSummary> {
       fecha: today,
       estado: 'propuesto',
       huella: c.huella,
-      ...(mockup ? { mockup } : {}),
-      body: renderFindingBody(c, { functionName: c.functionName, ...(patch ? { patch } : {}) }),
+      body: renderFindingBody(c, { functionName: c.functionName, ...(patch ? { patch } : {}), ...images.get(id) }),
     };
     await writeFinding(memoryDir, finding);
     findings.push(finding);
@@ -290,6 +296,73 @@ export async function runExploration(opts: RunOptions): Promise<RunSummary> {
   const summary: RunSummary = { runId, seed, plan, outcomes, findings, discarded, runFile, inventory: { added: refreshed.added, retired: refreshed.retired, refreshed: refreshed.refreshed } };
   await writeFile(runFile, renderRunFile(appName, summary, inventory));
   return summary;
+}
+
+// At most this many "before" screenshots per finding reach the team.
+const MAX_BEFORE = 3;
+
+async function exists(path: string): Promise<boolean> {
+  return access(path).then(() => true, () => false);
+}
+
+// The kept findings' screenshots, pushed to the evidence branch in one
+// commit: the "before" ones the explorer took, and the "after" — rendered to
+// PNG first when the explorer drew it in HTML. Returns finding id → its
+// images; empty when nothing was published (disabled or the push failed),
+// and the findings then describe their screenshots in text.
+async function publishImages(opts: {
+  appName: string;
+  app: AppDefinition;
+  codeDir: string;
+  runId: string;
+  outRoot: string;
+  items: Array<{ id: string; candidate: Candidate }>;
+  publish: boolean;
+}): Promise<Map<string, { antes?: FindingImage[]; despues?: FindingImage }>> {
+  const result = new Map<string, { antes?: FindingImage[]; despues?: FindingImage }>();
+  if (!opts.publish) return result;
+  const files: EvidenceFile[] = [];
+  const planned: Array<{ id: string; antes: Array<{ path: string; nota?: string }>; despues?: { path: string; nota?: string } }> = [];
+  for (const { id, candidate: c } of opts.items) {
+    const prefix = `${opts.appName}/${opts.runId}/${id}`;
+    const antes: Array<{ path: string; nota?: string }> = [];
+    for (const shot of c.evidencia.filter((e) => e.tipo === 'screenshot')) {
+      if (antes.length >= MAX_BEFORE || !(await exists(shot.detalle))) continue;
+      const path = `${prefix}/antes-${antes.length + 1}${extname(shot.detalle).toLowerCase()}`;
+      files.push({ src: shot.detalle, path });
+      antes.push({ path, ...(shot.nota ? { nota: shot.nota } : {}) });
+    }
+    let despues: { path: string; nota?: string } | undefined;
+    if (c.despues && (await exists(c.despues.imagen))) {
+      let src = c.despues.imagen;
+      if (/\.html?$/i.test(src)) {
+        const png = join(opts.outRoot, `${id}-despues.png`);
+        src = await renderHtmlToPng(src, png, opts.app.viewports[c.viewport]).then(() => png, (error) => {
+          log.error(`exploración: no se pudo renderizar el después de ${id}`, error);
+          return '';
+        });
+      }
+      if (src) {
+        const path = `${prefix}/despues${extname(src).toLowerCase()}`;
+        files.push({ src, path });
+        despues = { path, ...(c.despues.nota ? { nota: c.despues.nota } : {}) };
+      }
+    }
+    planned.push({ id, antes, ...(despues ? { despues } : {}) });
+  }
+  if (files.length === 0) return result;
+  const sha = await publishEvidence(opts.codeDir, files, `exploración ${opts.appName} ${opts.runId}`).catch((error) => {
+    log.error('exploración: no se pudieron publicar las capturas', error);
+    return undefined;
+  });
+  if (!sha) return result;
+  for (const p of planned) {
+    result.set(p.id, {
+      ...(p.antes.length ? { antes: p.antes.map((a) => ({ url: evidenceUrl(sha, a.path), ...(a.nota ? { nota: a.nota } : {}) })) } : {}),
+      ...(p.despues ? { despues: { url: evidenceUrl(sha, p.despues.path), ...(p.despues.nota ? { nota: p.despues.nota } : {}) } } : {}),
+    });
+  }
+  return result;
 }
 
 export function renderRunFile(appName: string, s: RunSummary, inventory: Inventory): string {
@@ -314,7 +387,7 @@ export function renderRunFile(appName: string, s: RunSummary, inventory: Invento
   }
   lines.push('## Propuestas', '');
   if (s.findings.length === 0) lines.push('Ninguna: nada de lo encontrado pasó el filtro.', '');
-  for (const f of s.findings) lines.push(`- **${f.id}** (${f.tipo}, \`${f.gravedad}\`) ${f.titulo} — \`${f.funcion}\`${f.mockup ? ` · [mockup](${f.mockup})` : ''}`);
+  for (const f of s.findings) lines.push(`- **${f.id}** (${f.tipo}, \`${f.gravedad}\`) ${f.titulo} — \`${f.funcion}\``);
   if (s.findings.length > 0) lines.push('');
   if (s.discarded.length > 0) {
     lines.push('## Descartado', '');

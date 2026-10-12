@@ -72,12 +72,12 @@ export const config = {
   requestCopilotReview: process.env.REQUEST_COPILOT_REVIEW === 'true',
   // Exploration (docs/DESIGN.md §11): how many functions one run tests, and
   // how much of what it finds gets published — findings most severe first,
-  // ideas never in a finding's place. Mockups go out as Claude Artifacts
-  // unless EXPLORE_PUBLISH_MOCKUPS=false.
+  // ideas never in a finding's place. Their screenshots go to the product
+  // repo's evidence branch unless EXPLORE_PUBLISH_EVIDENCE=false.
   exploreFunctionsPerRun: Number(process.env.EXPLORE_FUNCTIONS_PER_RUN ?? 3),
   exploreFindingsPerRun: Number(process.env.EXPLORE_FINDINGS_PER_RUN ?? 5),
   exploreIdeasPerRun: Number(process.env.EXPLORE_IDEAS_PER_RUN ?? 2),
-  explorePublishMockups: process.env.EXPLORE_PUBLISH_MOCKUPS !== 'false',
+  explorePublishEvidence: process.env.EXPLORE_PUBLISH_EVIDENCE !== 'false',
   // Model for the external review's worker subagents (one per criteria
   // dimension). They only gather candidates; the orchestrating session —
   // whatever model the run's Claude config uses — verifies and decides what

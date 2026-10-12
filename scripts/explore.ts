@@ -5,7 +5,7 @@
 // docs/exploration/<app>/ the first time.
 //
 //   pnpm explore plan --repo redmotos/shoppingcart --app backoffice [--seed 123] [--max 3] [--memory <dir>] [--ref <ref>]
-//   pnpm explore run  --repo redmotos/shoppingcart --app backoffice [--seed 123] [--max 3] [--memory <dir>] [--ref <ref>] [--no-mockups]
+//   pnpm explore run  --repo redmotos/shoppingcart --app backoffice [--seed 123] [--max 3] [--memory <dir>] [--ref <ref>] [--no-evidence]
 //
 // `plan` refreshes the inventory (an agent run, only when the app's code
 // changed) and prints the functions, charters and roles one run would test.
@@ -33,13 +33,13 @@ const { values, positionals } = parseArgs({
     seed: { type: 'string' },
     max: { type: 'string' },
     memory: { type: 'string' },
-    'no-mockups': { type: 'boolean' },
+    'no-evidence': { type: 'boolean' },
   },
 });
 
 const command = positionals[0];
 if ((command !== 'plan' && command !== 'run') || !values.repo || !values.app) {
-  console.error('Uso: pnpm explore <plan|run> --repo <owner/name> --app <nombre> [--seed <n>] [--max <n>] [--memory <dir>] [--ref <ref>] [--no-mockups]');
+  console.error('Uso: pnpm explore <plan|run> --repo <owner/name> --app <nombre> [--seed <n>] [--max <n>] [--memory <dir>] [--ref <ref>] [--no-evidence]');
   process.exit(1);
 }
 
@@ -66,11 +66,11 @@ await withActiveRepo(entry, async () => {
       today,
       ...(values.seed ? { seed: Number(values.seed) } : {}),
       ...(values.max ? { maxFunctions: Number(values.max) } : {}),
-      publishMockups: !values['no-mockups'],
+      publishEvidence: !values['no-evidence'],
     });
     console.log(`corrida ${summary.runId}: ${summary.findings.length} propuesta(s), ${summary.discarded.length} descartada(s)`);
     for (const o of summary.outcomes) console.log(`- ${o.planned.functionId} (${o.planned.charter}, ${o.planned.role}): ${o.status}${o.error ? ` — ${o.error}` : ''}`);
-    for (const f of summary.findings) console.log(`  ${f.id} [${f.tipo}/${f.gravedad}] ${f.titulo}${f.mockup ? ` — ${f.mockup}` : ''}`);
+    for (const f of summary.findings) console.log(`  ${f.id} [${f.tipo}/${f.gravedad}] ${f.titulo}`);
     console.log(`detalle: ${summary.runFile}`);
     return;
   }
