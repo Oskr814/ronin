@@ -26,7 +26,7 @@ Todo se pide desde GitHub, mencionando a [`@ronin-agent`](https://github.com/ron
 
 Detalle de cada comando: [wiki → Comandos](https://github.com/Oskr814/ronin/wiki/Comandos).
 
-**Exploración y propuestas de mejora** ([`docs/DESIGN.md` §11](docs/DESIGN.md)): con un `ronin.app.json` en el repo del producto, ronin levanta la app, la usa como cada rol y propone mejoras con evidencia y mockups. Cada semana abre un PR de exploración (`ronin/exploration/<año>-W<semana>`): para rechazar una propuesta, comentá en su ficha con el motivo; al aprobar y mergear, abre un issue por cada propuesta que quedó en pie. Las apps listadas en `explore` de `repos.json` se exploran solas de noche (`EXPLORE_NIGHT_WINDOW`).
+**Exploración y propuestas de mejora** ([`docs/DESIGN.md` §11](docs/DESIGN.md)): con un `ronin.app.json` en el repo del producto, ronin levanta la app, la usa como cada rol y propone mejoras con capturas del antes y del después (en la rama huérfana `ronin/evidence` del repo del producto). Cada semana abre un PR de exploración (`ronin/exploration/<año>-W<semana>`): para rechazar una propuesta, comentá en su ficha con el motivo; al aprobar y mergear, abre un issue por cada propuesta que quedó en pie. Las apps listadas en `explore` de `repos.json` se exploran solas de noche (`EXPLORE_NIGHT_WINDOW`).
 
 ## Operar un runner
 

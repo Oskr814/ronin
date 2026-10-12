@@ -57,7 +57,7 @@ export type AgentTask =
       appName: string;
       instruction?: string;
       trigger: Comment[];
-      // Where to leave an optional mockup.html for the supervisor to publish.
+      // Where to leave an optional mockup.html; the supervisor renders it and shows it on the PR.
       outDir: string;
     }
   | { type: 'update-changelog'; release: Release }
@@ -651,7 +651,7 @@ export async function buildTask(task: AgentTask): Promise<{ branch: string; prom
           'Investigate like a senior would before proposing anything: the relevant code, existing patterns, data model and API, related past specs and their decisions, edge cases, and what could break. Read only while investigating; you may run the existing tests if it helps to understand behavior.',
           `If something essential is missing — a decision only the team can make, an ambiguity where guessing would likely be wrong — do not write the spec. Comment on the issue ("gh issue comment ${task.issueNumber} --body-file <file>") with your findings so far and the specific questions (numbered, each with the options you see when there are some), and end your response with exactly "RONIN_STATUS: needs-info".`,
           `Otherwise write the spec as one Markdown file at ${specDir}/${today}-<short-slug>-design.md, in the same language and style as the existing specs in ${specDir} (read one or two recent ones first). It must cover: context and problem (what the issue asks and why), goal and non-goals, the design (components, data, API, UI behavior, states and errors), a Mermaid diagram when there is a flow or architecture worth seeing, how it will be sliced into small reviewable PRs, acceptance criteria, risks, and open questions. No frontmatter. Decisions you made on your own go under a heading the reviewer can't miss, with the alternatives you discarded.`,
-          `If the change has UI, you may also write a self-contained HTML mockup at ${task.outDir}/mockup.html (plain HTML/CSS imitating the app); it gets published for the reviewer. Do not commit it.`,
+          `If the change has UI, you may also write a self-contained HTML mockup at ${task.outDir}/mockup.html (plain HTML/CSS imitating the app, no external resources); it gets rendered to an image and shown on the spec PR. Do not commit it.`,
           `Then make exactly one commit with only the spec file, push this branch, and open a draft PR assigned to the ronin account: gh pr create --draft --assignee ${config.githubLogin} --title "[spec] <title>" --body-file <file>. The body: a short summary, "Refs #${task.issueNumber}", the decisions you made on your own, and this note, verbatim: "Revisá y editá el spec en este PR. Marcalo como *ready for review* solo cuando quieras que arranque a implementarlo: esa es la señal."`,
           `Reply once to the comment that asked for this ("gh issue comment ${task.issueNumber} --body <text>"), with the PR link and two or three lines on the approach. Never write "@" followed by a name. Do not change labels or assignees of the issue.`,
           'End your response with exactly "RONIN_STATUS: done" once the PR is open.',
