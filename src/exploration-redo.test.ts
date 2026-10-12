@@ -24,7 +24,7 @@ vi.mock('./evidence-store.js', async (importOriginal) => ({
 vi.mock('./exploration-inventory.js', () => ({ explorationOutDir: () => join(base, 'out') }));
 vi.mock('./exploration-run.js', () => ({ ensureCleanCheckout: async () => {}, mcpServer: () => ({ command: 'mcp', args: [] }), originsOf: () => [] }));
 
-import { redoAfterImages } from './exploration-redo.js';
+import { redoAfterImages, redoPath } from './exploration-redo.js';
 import { ensureMemoryDir, loadMemory, writeFinding } from './exploration-memory.js';
 
 const memoryDir = () => join(base, 'memory');
@@ -58,12 +58,43 @@ describe('redoAfterImages', () => {
     expect(task).toMatchObject({ type: 'explore-redo-after', role: 'Sales', viewport: 'desktop', findingId: 'F-0002', instruction: 'alinear' });
     expect(JSON.parse(await readFile(task.mcpConfigPath, 'utf8').catch(() => '{}'))).toEqual({});
     const [, files] = publishEvidence.mock.calls[0];
-    expect(files[0].path).toMatch(/^backoffice\/redo\/F-0002\/despues-\d+\.png$/);
+    expect(files[0].path).toBe('backoffice/redo/F-0002/despues.png');
     const finding = (await loadMemory(memoryDir())).findings[0];
     expect(finding.id).toBe('F-0002');
     const body = await readFile(join(memoryDir(), 'findings', 'F-0002-busqueda.md'), 'utf8');
     expect(body).toContain(`**Después**: Agregar alineado\n\n<img src="https://github.com/redmotos/shoppingcart/blob/abc123/${files[0].path}?raw=true"`);
     expect(body).not.toContain('src="old"');
     expect(appDown).toHaveBeenCalledWith('/code');
+  });
+});
+
+describe('redoAfterImages — replacing the previous after', () => {
+  const oldUrl = 'https://github.com/redmotos/shoppingcart/blob/d97e66e/backoffice/2026-10-12-223801/F-0002/despues.png?raw=true';
+
+  it('overwrites the after file the finding already links to, and swaps in the new draft patch', async () => {
+    await writeFinding(memoryDir(), {
+      id: 'F-0002', tipo: 'hallazgo', titulo: 'Búsqueda', funcion: 'f', senal: 'bug', gravedad: 'bug', charter: 'camino-feliz', viewport: 'desktop',
+      rol: 'Sales', semilla: 1, fecha: '2026-10-12', estado: 'propuesto', huella: 'f|x|y',
+      body: `## Búsqueda\n\n### Propuesta\n\nAvisar\n\n**Después**: viejo\n\n<img src="${oldUrl}" alt="viejo" width="720">\n\n<details><summary>Cambio borrador usado para el después</summary>\n\n\`\`\`diff\nparche viejo\n\`\`\`\n\n</details>\n`,
+    });
+    runAgentTask.mockImplementation(async (task: any) => {
+      await mkdir(join(task.outDir, 'desktop'), { recursive: true });
+      await writeFile(join(task.outDir, 'desktop/despues.png'), 'img');
+      await writeFile(join(task.outDir, 'despues.patch'), 'parche nuevo\n');
+      await writeFile(task.outputPath, JSON.stringify({ imagen: 'desktop/despues.png' }));
+    });
+
+    await redoAfterImages({ appName: 'backoffice', codeDir: '/code', memoryDir: memoryDir(), requests: [{ findingId: 'F-0002', instruction: 'alinear' }] });
+
+    expect(publishEvidence.mock.calls[0][1][0].path).toBe('backoffice/2026-10-12-223801/F-0002/despues.png');
+    const body = await readFile(join(memoryDir(), 'findings', 'F-0002-busqueda.md'), 'utf8');
+    expect(body).toContain('blob/abc123/backoffice/2026-10-12-223801/F-0002/despues.png?raw=true');
+    expect(body).toContain('```diff\nparche nuevo\n```');
+    expect(body).not.toContain('parche viejo');
+    expect(body.match(/<details>/g)).toHaveLength(1);
+  });
+
+  it('keeps the old path but takes the new extension', () => {
+    expect(redoPath(`**Después**\n\n<img src="${oldUrl}" alt="x" width="720">\n`, 'backoffice', 'F-0002', '.jpg')).toBe('backoffice/2026-10-12-223801/F-0002/despues.jpg');
   });
 });

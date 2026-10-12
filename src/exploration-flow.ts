@@ -37,6 +37,7 @@ import {
 } from './exploration-pr.js';
 import { replaceProposal } from './exploration-output.js';
 import { redoAfterImages } from './exploration-redo.js';
+import { mentionsHandle } from './mentions.js';
 
 // Exploration's moving parts glued to GitHub — docs/DESIGN.md §11.7:
 // - exploreAndPublish: one run of one app, committed to the open
@@ -121,15 +122,34 @@ export function renderRunReply(appName: string, run: PublishedRun): string {
 
 const FINDING_PATH_RE = new RegExp(`^${EXPLORATION_DIR}/([^/]+)/findings/(F-\\d+)[^/]*\\.md$`);
 
-async function pendingFeedback(pr: PullRequestStatus): Promise<Array<{ commentId: number; app: string; findingId: string; body: string }>> {
+interface PendingFeedback {
+  commentId: number;
+  app: string;
+  findingId: string;
+  body: string;
+  conversacion: NonNullable<FindingFeedback['conversacion']>;
+}
+
+// A new comment on a finding file is feedback; inside a thread, a reply is
+// only when it mentions ronin — people also talk among themselves there.
+async function pendingFeedback(pr: PullRequestStatus): Promise<PendingFeedback[]> {
   const comments = await listFileReviewComments(pr.number);
-  const result = [];
+  const isBot = (login: string) => login.toLowerCase() === config.githubLogin.toLowerCase();
+  const rootOf = (c: { id: number; inReplyToId?: number }) => c.inReplyToId ?? c.id;
+  const findingOf = (path: string) => path.match(FINDING_PATH_RE);
+  const result: PendingFeedback[] = [];
   for (const c of comments) {
-    if (c.inReplyToId || c.authorLogin.toLowerCase() === config.githubLogin.toLowerCase() || !c.authorLogin) continue;
-    const match = c.path.match(FINDING_PATH_RE);
+    if (isBot(c.authorLogin) || !c.authorLogin) continue;
+    if (c.inReplyToId && !mentionsHandle(c.body, config.githubLogin)) continue;
+    const match = findingOf(c.path);
     if (!match) continue;
     if (c.reactionsEyes > 0 && (await hasBotReaction(c.id, 'review', config.githubLogin))) continue;
-    result.push({ commentId: c.id, app: match[1], findingId: match[2], body: c.body });
+    // Matched by app and id, not path: an edited title renames the file.
+    const conversacion = comments
+      .filter((o) => o.id < c.id && findingOf(o.path)?.[1] === match[1] && findingOf(o.path)?.[2] === match[2])
+      .sort((a, b) => a.id - b.id)
+      .map((o) => ({ autor: isBot(o.authorLogin) ? ('ronin' as const) : ('persona' as const), texto: o.body, mismoHilo: rootOf(o) === rootOf(c) }));
+    result.push({ commentId: c.id, app: match[1], findingId: match[2], body: c.body, conversacion });
   }
   return result;
 }
@@ -168,7 +188,7 @@ async function applyFeedback(pr: PullRequestStatus, batch: string): Promise<Redo
   for (const p of pending) {
     const memory = await loadMemory(memoryDirFor(batchDir, p.app));
     const meta = memory.findings.find((f) => f.id === p.findingId);
-    comments.push({ commentId: p.commentId, findingId: p.findingId, titulo: meta?.titulo ?? p.findingId, body: p.body });
+    comments.push({ commentId: p.commentId, findingId: p.findingId, titulo: meta?.titulo ?? p.findingId, body: p.body, conversacion: p.conversacion });
   }
   await mkdir(explorationOutDir(), { recursive: true });
   const outputPath = join(explorationOutDir(), `feedback-${pr.number}.json`);

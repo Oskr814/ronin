@@ -17,9 +17,12 @@ const gh = vi.hoisted(() => ({
   listOpenPrsByHeadPrefix: vi.fn(),
 }));
 vi.mock('./github.js', () => gh);
-const actions = vi.hoisted(() => ({ value: [] as unknown[] }));
+const actions = vi.hoisted(() => ({ value: [] as unknown[], tasks: [] as any[] }));
 vi.mock('./agent-task.js', () => ({
-  runAgentTask: async (task: { outputPath: string }) => writeFile(task.outputPath, JSON.stringify({ acciones: actions.value })),
+  runAgentTask: async (task: { outputPath: string }) => {
+    actions.tasks.push(task);
+    return writeFile(task.outputPath, JSON.stringify({ acciones: actions.value }));
+  },
 }));
 vi.mock('./app-runtime.js', () => ({ ensureAppWorktree: async () => '/code' }));
 vi.mock('./exploration-run.js', () => ({}));
@@ -53,8 +56,8 @@ function finding(id: string, titulo: string): Finding {
   };
 }
 
-function comment(id: number, findingId: string, body: string) {
-  return { id, path: `docs/exploration/backoffice/findings/${findingId}-x.md`, body, authorLogin: 'Oskr814', reactionsEyes: 0 };
+function comment(id: number, findingId: string, body: string, extra: Record<string, unknown> = {}) {
+  return { id, path: `docs/exploration/backoffice/findings/${findingId}-x.md`, body, authorLogin: 'Oskr814', reactionsEyes: 0, ...extra };
 }
 
 beforeEach(async () => {
@@ -63,6 +66,7 @@ beforeEach(async () => {
   for (const f of Object.values(gh)) f.mockReset();
   for (const f of Object.values(prMod)) f.mockReset();
   spawn.mockReset().mockReturnValue({ pid: 1, unref: () => {} });
+  actions.tasks = [];
   gh.createIssue.mockResolvedValue({ number: 795, url: 'u' });
   gh.replyToComment.mockResolvedValue(undefined);
   gh.addReaction.mockResolvedValue(undefined);
@@ -119,5 +123,44 @@ describe('processExplorationPr feedback', () => {
     await processExplorationPr(pr({ reviewDecision: 'APPROVED' }));
     expect(gh.mergePullRequest).toHaveBeenCalledWith(794);
     expect(prMod.openFindingIssues).toHaveBeenCalled();
+  });
+});
+
+describe('processExplorationPr feedback — threads and earlier conversation', () => {
+  it('handles a reply inside a thread when it mentions ronin, and ignores one that does not', async () => {
+    gh.listFileReviewComments.mockResolvedValue([
+      comment(10, 'F-0003', 'esto no aplica', { reactionsEyes: 1 }),
+      comment(11, 'F-0003', 'ronin ya respondió', { authorLogin: 'ronin-agent', inReplyToId: 10 }),
+      comment(12, 'F-0003', 'coincido con lo de arriba', { authorLogin: 'otra', inReplyToId: 10 }),
+      comment(13, 'F-0003', '@ronin-agent creá un issue para el endpoint', { inReplyToId: 10 }),
+    ]);
+    gh.hasBotReaction.mockImplementation(async (id: number) => id === 10);
+    actions.value = [{ commentId: 13, accion: 'crear-issue', issue: { titulo: 'Endpoint', cuerpo: 'x' }, respuesta: 'Listo' }];
+
+    await processExplorationPr(pr({ reviewDecision: '' }));
+
+    expect(actions.tasks[0].comments.map((c: any) => c.commentId)).toEqual([13]);
+    expect(gh.createIssue).toHaveBeenCalled();
+    expect(gh.replyToComment).toHaveBeenCalledWith(794, { id: 13, kind: 'review' }, 'Listo\n\nAbrí #795.');
+  });
+
+  it('gives the agent what was said before on the same finding, across threads', async () => {
+    gh.listFileReviewComments.mockResolvedValue([
+      comment(20, 'F-0002', 'el botón Agregar del después está desalineado', { reactionsEyes: 1 }),
+      comment(21, 'F-0002', 'propongo items-start en la fila', { authorLogin: 'ronin-agent', inReplyToId: 20 }),
+      comment(22, 'F-0003', 'otra ficha', { reactionsEyes: 1 }),
+      comment(30, 'F-0002', '@ronin-agent vuelve a generar el después con la corrección'),
+    ]);
+    gh.hasBotReaction.mockImplementation(async (id: number) => id !== 30);
+    actions.value = [];
+
+    await processExplorationPr(pr());
+
+    const sent = actions.tasks[0].comments;
+    expect(sent.map((c: any) => c.commentId)).toEqual([30]);
+    expect(sent[0].conversacion).toEqual([
+      { autor: 'persona', texto: 'el botón Agregar del después está desalineado', mismoHilo: false },
+      { autor: 'ronin', texto: 'propongo items-start en la fila', mismoHilo: false },
+    ]);
   });
 });

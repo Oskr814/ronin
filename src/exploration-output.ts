@@ -274,6 +274,23 @@ export function replaceAfterImage(body: string, img: FindingImage, viewport: Vie
   return next < 0 ? `${body.trimEnd()}\n\n${block}` : `${body.slice(0, next).trimEnd()}\n\n${block}${body.slice(next)}`;
 }
 
+// Where the finding's current after lives in the evidence branch, read off
+// its link — so a redo overwrites that file instead of adding a second one.
+export function afterImagePath(body: string): string | undefined {
+  const block = body.match(AFTER_RE)?.[0];
+  const src = block?.match(/<img src="https:\/\/github\.com\/[^/]+\/[^/]+\/blob\/[0-9a-f]+\/([^"?]+)/)?.[1];
+  return src ? src.split('/').map(decodeURIComponent).join('/') : undefined;
+}
+
+const PATCH_RE = /<details><summary>Cambio borrador usado para el después<\/summary>[\s\S]*?<\/details>\n?/;
+
+// The finding body with the draft change behind a new after, so the diff
+// shown always matches the image above it.
+export function replaceDraftPatch(body: string, patch: string): string {
+  const block = ['<details><summary>Cambio borrador usado para el después</summary>', '', '```diff', patch.trim(), '```', '', '</details>', ''].join('\n');
+  return PATCH_RE.test(body) ? body.replace(PATCH_RE, block) : `${body.trimEnd()}\n\n${block}`;
+}
+
 // The proposal section of a finding body with new text.
 export function replaceProposal(body: string, propuesta: string): string {
   return body.replace(/(### Propuesta\n\n)[\s\S]*?(?=\n\*\*Después\*\*|\n<details>|$)/, (_m, head: string) => `${head}${propuesta.trim()}\n`);
