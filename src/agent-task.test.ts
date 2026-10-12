@@ -717,6 +717,54 @@ describe('runAgentTask — spike', () => {
   });
 });
 
+describe('runAgentTask — thread-reply-external', () => {
+  const mention = {
+    id: 30,
+    kind: 'review' as const,
+    body: '@ronin-agent aplicá esto',
+    reactionsEyes: 0,
+    authorLogin: 'someone',
+    thread: {
+      path: 'src/Orders/OrderService.cs',
+      line: 42,
+      diffHunk: '@@ -40,3 +40,3 @@\n-  old();\n+  order.BranchId = branchId;',
+      comments: [
+        { id: 10, authorLogin: 'copilot', body: 'Esto reasigna BranchId sin validar' },
+        { id: 30, authorLogin: 'someone', body: '@ronin-agent aplicá esto' },
+        { id: 31, authorLogin: 'someone', body: 'comentario posterior' },
+      ],
+    },
+  };
+  const task = { type: 'thread-reply-external' as const, prNumber: 600, headRefName: 'feat/z', mentions: [mention] };
+
+  it('uses the detached trusted-fix worktree and cleans it up after', async () => {
+    await runAgentTask(task);
+
+    expect(ensureTrustedFixWorktree).toHaveBeenCalledWith('feat/z');
+    expect(ensureWorktree).not.toHaveBeenCalled();
+    expect(removeTrustedFixWorktree).toHaveBeenCalledWith('feat/z');
+  });
+
+  it('gives the agent the thread: location, code and the comments before the mention', async () => {
+    await runAgentTask(task);
+
+    const prompt = runClaudeHeadless.mock.calls[0][1] as string;
+    expect(prompt).toContain('review thread on src/Orders/OrderService.cs:42');
+    expect(prompt).toContain('+  order.BranchId = branchId;');
+    expect(prompt).toContain('Someone else (id 10): <<<REPLY_START>>>Esto reasigna BranchId sin validar<<<REPLY_END>>>');
+    expect(prompt).not.toContain('comentario posterior');
+  });
+
+  it('replies in the thread, pushes with an explicit refspec and never resolves the thread', async () => {
+    await runAgentTask(task);
+
+    const prompt = runClaudeHeadless.mock.calls[0][1] as string;
+    expect(prompt).toContain('pulls/600/comments/<comment id>/replies');
+    expect(prompt).toContain('git push --force-with-lease origin HEAD:feat/z');
+    expect(prompt).toContain('Never resolve the thread');
+  });
+});
+
 describe('runAgentTask — fix-comments-external', () => {
   const task = {
     type: 'fix-comments-external' as const,
@@ -864,6 +912,7 @@ describe('runAgentTask — self-review in fix tasks', () => {
     'fix-comments': { type: 'fix-comments' as const, issueNumber: 228, prNumber: 229, trigger, openThreads: [] },
     'fix-comments-external': { type: 'fix-comments-external' as const, prNumber: 229, headRefName: 'feat/x', trigger, openThreads: [] },
     'review-request': { type: 'review-request' as const, issueNumber: 228, prNumber: 229, mentions: trigger },
+    'thread-reply-external': { type: 'thread-reply-external' as const, prNumber: 229, headRefName: 'feat/x', mentions: trigger },
   };
 
   for (const [name, task] of Object.entries(fixTasks)) {

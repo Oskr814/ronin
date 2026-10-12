@@ -9,7 +9,7 @@ import {
 } from './github.js';
 import { isCommitAvailable, fetchCommit, pruneReviewedPins } from './worktree.js';
 import { getLastReviewedSha, pruneLastReviewedSha } from './local-state.js';
-import { findUnprocessedMentions, trustedFixCommands } from './mentions.js';
+import { findUnprocessedMentions, trustedFixCommands, trustedThreadMentions } from './mentions.js';
 import { runWithConcurrency } from './concurrency.js';
 import { config } from './config.js';
 import { log } from './logger.js';
@@ -60,6 +60,15 @@ export interface TrustedFixCandidate {
   openThreads: ReviewThread[];
 }
 
+// A non-fork PR where someone mentioned ronin inside a review thread — each
+// mention is handled in its own thread by thread-reply-external, instead of
+// triggering a review of the whole PR.
+export interface ThreadMentionCandidate {
+  prNumber: number;
+  headRefName: string;
+  mentions: Comment[];
+}
+
 // How many open PRs findPrsNeedingReview evaluates at once — only `gh` reads,
 // well under GitHub's secondary rate limits.
 const DISCOVERY_CONCURRENCY = 6;
@@ -71,6 +80,7 @@ const DISCOVERY_CONCURRENCY = 6;
 export async function findPrsNeedingReview(): Promise<{
   reviewCandidates: ReviewCandidate[];
   trustedFixCandidates: TrustedFixCandidate[];
+  threadMentionCandidates: ThreadMentionCandidate[];
 }> {
   const start = Date.now();
   const prs = await listAllOpenExternalPrs();
@@ -82,7 +92,7 @@ export async function findPrsNeedingReview(): Promise<{
   // Every PR is evaluated independently, several at once: each costs a
   // handful of sequential `gh` calls, and one after another they were most of
   // an idle tick. Results are kept in the PRs' own order.
-  const results: Array<{ review?: ReviewCandidate; fix?: TrustedFixCandidate }> = prs.map(() => ({}));
+  const results: Array<{ review?: ReviewCandidate; fix?: TrustedFixCandidate; thread?: ThreadMentionCandidate }> = prs.map(() => ({}));
   await runWithConcurrency(prs.map((pr, index) => ({ pr, index })), DISCOVERY_CONCURRENCY, async ({ pr, index }) => {
     // Per-PR isolation: one flaky GraphQL/API call or malformed response must
     // not throw out of the whole loop and zero out review for every other
@@ -103,6 +113,15 @@ export async function findPrsNeedingReview(): Promise<{
           // task (which only ever sees threads it didn't open itself).
           const openThreads = await listAllOpenReviewThreads(pr.number);
           results[index].fix = { prNumber: pr.number, headRefName: pr.headRefName, trigger, openThreads };
+          return;
+        }
+        // One write flow per PR per tick, same as /fix-comments above: a
+        // review running alongside would read a head this run is about to
+        // amend. Any general mention waits for the next tick, still
+        // unprocessed (no 👀 yet).
+        const threadMentions = trustedThreadMentions(mentions);
+        if (threadMentions.length > 0) {
+          results[index].thread = { prNumber: pr.number, headRefName: pr.headRefName, mentions: threadMentions };
           return;
         }
       }
@@ -134,6 +153,13 @@ export async function findPrsNeedingReview(): Promise<{
   });
   const reviewCandidates = results.flatMap((r) => (r.review ? [r.review] : []));
   const trustedFixCandidates = results.flatMap((r) => (r.fix ? [r.fix] : []));
-  log.metric('review_discovery', { durationMs: Date.now() - start, openPrs: prs.length, reviewCandidates: reviewCandidates.length, trustedFixCandidates: trustedFixCandidates.length });
-  return { reviewCandidates, trustedFixCandidates };
+  const threadMentionCandidates = results.flatMap((r) => (r.thread ? [r.thread] : []));
+  log.metric('review_discovery', {
+    durationMs: Date.now() - start,
+    openPrs: prs.length,
+    reviewCandidates: reviewCandidates.length,
+    trustedFixCandidates: trustedFixCandidates.length,
+    threadMentionCandidates: threadMentionCandidates.length,
+  });
+  return { reviewCandidates, trustedFixCandidates, threadMentionCandidates };
 }

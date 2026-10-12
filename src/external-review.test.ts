@@ -34,10 +34,14 @@ vi.mock('./local-state.js', () => ({
 }));
 
 const findUnprocessedMentions = vi.fn();
-vi.mock('./mentions.js', async (importOriginal) => ({
-  findUnprocessedMentions: (...args: unknown[]) => findUnprocessedMentions(...args),
-  trustedFixCommands: (await importOriginal<typeof import('./mentions.js')>()).trustedFixCommands,
-}));
+vi.mock('./mentions.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./mentions.js')>();
+  return {
+    findUnprocessedMentions: (...args: unknown[]) => findUnprocessedMentions(...args),
+    trustedFixCommands: actual.trustedFixCommands,
+    trustedThreadMentions: actual.trustedThreadMentions,
+  };
+});
 
 import { findPrsNeedingReview } from './external-review.js';
 
@@ -277,5 +281,60 @@ describe('findPrsNeedingReview — trustedFixCandidates', () => {
     const { trustedFixCandidates } = await findPrsNeedingReview();
 
     expect(trustedFixCandidates).toEqual([]);
+  });
+});
+
+describe('findPrsNeedingReview — threadMentionCandidates', () => {
+  const threadMention = { id: 7, kind: 'review' as const, body: '@ronin aplicá esta sugerencia', reactionsEyes: 0, authorLogin: 'someone' };
+
+  it('routes a mention inside a review thread of a non-fork PR to threadMentionCandidates, not reviewCandidates', async () => {
+    listAllOpenExternalPrs.mockResolvedValue([extPr({ isCrossRepository: false })]);
+    getLastReviewedSha.mockResolvedValue('sha-a');
+    findUnprocessedMentions.mockResolvedValue([threadMention]);
+
+    const { reviewCandidates, threadMentionCandidates } = await findPrsNeedingReview();
+
+    expect(threadMentionCandidates).toEqual([{ prNumber: 10, headRefName: 'feature/x', mentions: [threadMention] }]);
+    expect(reviewCandidates).toEqual([]);
+  });
+
+  it('leaves a general mention on the same PR for a later tick, unprocessed', async () => {
+    const general = { id: 8, kind: 'issue' as const, body: '@ronin revisá todo', reactionsEyes: 0, authorLogin: 'someone' };
+    listAllOpenExternalPrs.mockResolvedValue([extPr({ isCrossRepository: false })]);
+    findUnprocessedMentions.mockResolvedValue([general, threadMention]);
+
+    const { reviewCandidates, threadMentionCandidates } = await findPrsNeedingReview();
+
+    expect(threadMentionCandidates[0].mentions).toEqual([threadMention]);
+    expect(reviewCandidates).toEqual([]);
+  });
+
+  it('gives /fix-comments precedence over a thread mention', async () => {
+    listAllOpenExternalPrs.mockResolvedValue([extPr({ isCrossRepository: false })]);
+    findUnprocessedMentions.mockResolvedValue([threadMention, { id: 9, kind: 'review', body: '@ronin /fix-comments', reactionsEyes: 0, authorLogin: 'someone' }]);
+
+    const { trustedFixCandidates, threadMentionCandidates } = await findPrsNeedingReview();
+
+    expect(trustedFixCandidates.map((c) => c.trigger.map((m) => m.id))).toEqual([[9]]);
+    expect(threadMentionCandidates).toEqual([]);
+  });
+
+  it('keeps a thread mention on a fork PR in the read-only review', async () => {
+    listAllOpenExternalPrs.mockResolvedValue([extPr({ isCrossRepository: true })]);
+    findUnprocessedMentions.mockResolvedValue([threadMention]);
+
+    const { reviewCandidates, threadMentionCandidates } = await findPrsNeedingReview();
+
+    expect(threadMentionCandidates).toEqual([]);
+    expect(reviewCandidates.map((c) => c.mentions.map((m) => m.id))).toEqual([[7]]);
+  });
+
+  it('ignores a thread mention with no author identity', async () => {
+    listAllOpenExternalPrs.mockResolvedValue([extPr({ isCrossRepository: false })]);
+    findUnprocessedMentions.mockResolvedValue([{ ...threadMention, authorLogin: '' }]);
+
+    const { threadMentionCandidates } = await findPrsNeedingReview();
+
+    expect(threadMentionCandidates).toEqual([]);
   });
 });

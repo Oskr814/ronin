@@ -68,7 +68,7 @@ const COMMANDS: CommandSpec[] = [
 ];
 
 const FREE_TEXT_PR_SUMMARY =
-  'En un PR mío: si el pedido es concreto lo aplico, si no te respondo por qué. En un PR de otra persona: review de solo lectura enfocada en tu pedido.';
+  'En un PR mío, o en un hilo de review de cualquier PR (no fork): si el pedido es concreto lo aplico y respondo en ese hilo, si no te respondo por qué. En un comentario general del PR de otra persona: review de solo lectura enfocada en tu pedido.';
 
 export type MetaCommand =
   | { kind: 'help' }

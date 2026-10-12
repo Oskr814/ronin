@@ -5,7 +5,8 @@ import { describe, it, expect, vi } from 'vitest';
 // it is the only guard keeping ronin from auto-reviewing its own PRs and
 // other people's drafts — see final review Fix 6. Nothing else in github.ts
 // is tested here, except lastMarkedReviewSha — pure too, and the only thing
-// deciding which commit the incremental review diffs against.
+// deciding which commit the incremental review diffs against, and threadOf —
+// pure too, and what tells the agent which thread a mention lives in.
 vi.mock('./config.js', () => ({
   config: { githubLogin: 'ronin' },
   LABEL_MANAGED: 'ronin',
@@ -17,7 +18,7 @@ vi.mock('./repo-context.js', () => ({
   activeRepo: () => ({ productRepo: 'bmedical/bmedical', productRepoPath: '/tmp/repo', worktreeBasePath: '/tmp/worktrees' }),
 }));
 
-const { isExternalReviewable, lastMarkedReviewSha } = await import('./github.js');
+const { isExternalReviewable, lastMarkedReviewSha, threadOf } = await import('./github.js');
 
 describe('isExternalReviewable', () => {
   it('excludes a draft PR', () => {
@@ -74,5 +75,33 @@ describe('lastMarkedReviewSha', () => {
 
   it('is undefined when nothing matches', () => {
     expect(lastMarkedReviewSha([], 'ronin')).toBeUndefined();
+  });
+});
+
+describe('threadOf', () => {
+  const raw = (id: number, extra: Record<string, unknown> = {}) => ({ id, body: `c${id}`, reactions: { eyes: 0 }, user: { login: `u${id}` }, ...extra });
+  const root = raw(10, { path: 'a.ts', line: 7, diff_hunk: '@@ hunk' });
+  const reply = raw(20, { path: 'a.ts', line: null, in_reply_to_id: 10 });
+  const other = raw(15, { path: 'b.ts', line: 3, diff_hunk: '@@ other' });
+  const all = [reply, other, root];
+
+  it('rebuilds a reply\'s thread from its root, oldest first, without other threads', () => {
+    expect(threadOf(reply, all)).toEqual({
+      path: 'a.ts',
+      line: 7,
+      diffHunk: '@@ hunk',
+      comments: [
+        { id: 10, authorLogin: 'u10', body: 'c10' },
+        { id: 20, authorLogin: 'u20', body: 'c20' },
+      ],
+    });
+  });
+
+  it('gives a thread\'s first comment the same thread', () => {
+    expect(threadOf(root, all)).toEqual(threadOf(reply, all));
+  });
+
+  it('falls back to the comment itself when its root is not in the list', () => {
+    expect(threadOf(reply, [reply])).toMatchObject({ path: 'a.ts', line: null, comments: [{ id: 20 }] });
   });
 });

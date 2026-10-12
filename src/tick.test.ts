@@ -849,6 +849,7 @@ describe('runExternalReviews', () => {
         { prNumber: 306, headRefName: 'other/feature-y', headSha: 'def456', baseRefName: 'main', threadHistory: [], openThreads: [], mentions: [], canExecute: true },
       ],
       trustedFixCandidates: [],
+      threadMentionCandidates: [],
     });
 
     await runExternalReviews();
@@ -867,6 +868,7 @@ describe('runExternalReviews', () => {
       trustedFixCandidates: [
         { prNumber: 599, headRefName: 'feat/cambio-cliente', trigger: [{ id: 9, kind: 'issue' as const, body: '/fix-comments', reactionsEyes: 0, authorLogin: 'someone' }], openThreads: [] },
       ],
+      threadMentionCandidates: [],
     });
 
     await runExternalReviews();
@@ -879,6 +881,7 @@ describe('runExternalReviews', () => {
     findPrsNeedingReview.mockResolvedValue({
       reviewCandidates: [review(305), review(306)],
       trustedFixCandidates: [{ prNumber: 599, headRefName: 'feat/y', trigger: [], openThreads: [] }],
+      threadMentionCandidates: [],
     });
     let reviewsInFlight = 0;
     let maxReviews = 0;
@@ -896,6 +899,33 @@ describe('runExternalReviews', () => {
     expect(runAgentTask).toHaveBeenCalledWith(expect.objectContaining({ type: 'fix-comments-external', prNumber: 599 }));
   });
 
+  it('runs one thread-reply-external agent task per thread-mention candidate, and marks each mention 👀 after', async () => {
+    const mention = { id: 7, kind: 'review' as const, body: '@ronin aplicá esto', reactionsEyes: 0, authorLogin: 'someone' };
+    findPrsNeedingReview.mockResolvedValue({
+      reviewCandidates: [],
+      trustedFixCandidates: [],
+      threadMentionCandidates: [{ prNumber: 600, headRefName: 'feat/z', mentions: [mention] }],
+    });
+
+    await runExternalReviews();
+
+    expect(runAgentTask).toHaveBeenCalledWith({ type: 'thread-reply-external', prNumber: 600, headRefName: 'feat/z', mentions: [mention] });
+    expect(addReaction).toHaveBeenCalledWith(7, 'review', 'eyes');
+  });
+
+  it('leaves a thread mention without 👀 when its run fails, so the next tick retries it', async () => {
+    runAgentTask.mockRejectedValue(new Error('boom'));
+    findPrsNeedingReview.mockResolvedValue({
+      reviewCandidates: [],
+      trustedFixCandidates: [],
+      threadMentionCandidates: [{ prNumber: 600, headRefName: 'feat/z', mentions: [{ id: 7, kind: 'review' as const, body: '@ronin x', reactionsEyes: 0, authorLogin: 'someone' }] }],
+    });
+
+    await expect(runExternalReviews()).resolves.toBeUndefined();
+
+    expect(addReaction).not.toHaveBeenCalled();
+  });
+
   it('does not throw, and runs nothing, when discovery itself fails', async () => {
     findPrsNeedingReview.mockRejectedValue(new Error('gh exploded'));
 
@@ -905,7 +935,7 @@ describe('runExternalReviews', () => {
   });
 
   it('does nothing when there are no candidates of either kind', async () => {
-    findPrsNeedingReview.mockResolvedValue({ reviewCandidates: [], trustedFixCandidates: [] });
+    findPrsNeedingReview.mockResolvedValue({ reviewCandidates: [], trustedFixCandidates: [], threadMentionCandidates: [] });
 
     await runExternalReviews();
 
@@ -954,6 +984,33 @@ describe('runChangelogUpdates', () => {
 
     expect(runAgentTask).toHaveBeenNthCalledWith(1, { type: 'update-changelog', release: releaseA });
     expect(runAgentTask).toHaveBeenNthCalledWith(2, { type: 'update-changelog', release: releaseB });
+  });
+
+  it('runs one thread-reply-external agent task per thread-mention candidate, and marks each mention 👀 after', async () => {
+    const mention = { id: 7, kind: 'review' as const, body: '@ronin aplicá esto', reactionsEyes: 0, authorLogin: 'someone' };
+    findPrsNeedingReview.mockResolvedValue({
+      reviewCandidates: [],
+      trustedFixCandidates: [],
+      threadMentionCandidates: [{ prNumber: 600, headRefName: 'feat/z', mentions: [mention] }],
+    });
+
+    await runExternalReviews();
+
+    expect(runAgentTask).toHaveBeenCalledWith({ type: 'thread-reply-external', prNumber: 600, headRefName: 'feat/z', mentions: [mention] });
+    expect(addReaction).toHaveBeenCalledWith(7, 'review', 'eyes');
+  });
+
+  it('leaves a thread mention without 👀 when its run fails, so the next tick retries it', async () => {
+    runAgentTask.mockRejectedValue(new Error('boom'));
+    findPrsNeedingReview.mockResolvedValue({
+      reviewCandidates: [],
+      trustedFixCandidates: [],
+      threadMentionCandidates: [{ prNumber: 600, headRefName: 'feat/z', mentions: [{ id: 7, kind: 'review' as const, body: '@ronin x', reactionsEyes: 0, authorLogin: 'someone' }] }],
+    });
+
+    await expect(runExternalReviews()).resolves.toBeUndefined();
+
+    expect(addReaction).not.toHaveBeenCalled();
   });
 
   it('does not throw, and runs nothing, when discovery itself fails', async () => {
