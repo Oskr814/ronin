@@ -91,6 +91,13 @@ export function trustedFixCommands(unprocessed: Comment[]): Comment[] {
   return unprocessed.filter((c) => isFixCommentsCommand(c.body) && c.authorLogin !== '');
 }
 
+// Mentions left inside a review thread (an inline comment or a reply to
+// one), minus /fix-comments commands, which have their own flow. Same trust
+// criterion as trustedFixCommands: a real GitHub identity on a non-fork PR.
+export function trustedThreadMentions(unprocessed: Comment[]): Comment[] {
+  return unprocessed.filter((c) => c.kind === 'review' && !isFixCommentsCommand(c.body) && c.authorLogin !== '');
+}
+
 // Same trust criterion as findTrustedFixCommentsCommand — see its own doc
 // comment for why there's no collaborator-permission-tier check. A plain
 // issue has no fork/cross-repository concept the way a PR does, so unlike

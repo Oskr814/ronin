@@ -522,14 +522,32 @@ export interface Comment {
   body: string;
   reactionsEyes: number;
   authorLogin: string;
+  // Inline review comments only: the thread the comment lives in, so a
+  // mention like "@ronin arreglá esto" in a reply can be understood without
+  // the agent rediscovering what "esto" points at.
+  thread?: CommentThread;
 }
 
-interface RawApiComment {
+export interface CommentThread {
+  path: string;
+  // null when the thread is outdated (its line no longer exists in the diff).
+  line: number | null;
+  diffHunk: string;
+  // Every published comment in the thread, oldest first, including the one
+  // this thread is attached to.
+  comments: Array<{ id: number; authorLogin: string; body: string }>;
+}
+
+export interface RawApiComment {
   id: number;
   body: string;
   reactions: { eyes: number };
   pull_request_review_id?: number | null;
   user: { login: string } | null;
+  path?: string;
+  line?: number | null;
+  diff_hunk?: string;
+  in_reply_to_id?: number;
 }
 
 function reactionsPath(kind: 'issue' | 'review'): string {
@@ -562,9 +580,28 @@ export async function listReviewComments(prNumber: number): Promise<Comment[]> {
   const rawReviews = JSON.parse(reviewsStdout) as RawReview[];
   const pendingReviewIds = new Set(rawReviews.filter((r) => r.state === 'PENDING').map((r) => r.id));
 
-  return rawComments
-    .filter((c) => !(c.pull_request_review_id != null && pendingReviewIds.has(c.pull_request_review_id)))
-    .map((c) => ({ id: c.id, kind: 'review' as const, body: c.body, reactionsEyes: c.reactions.eyes, authorLogin: c.user?.login ?? '' }));
+  const published = rawComments.filter((c) => !(c.pull_request_review_id != null && pendingReviewIds.has(c.pull_request_review_id)));
+  return published.map((c) => ({
+    id: c.id,
+    kind: 'review' as const,
+    body: c.body,
+    reactionsEyes: c.reactions.eyes,
+    authorLogin: c.user?.login ?? '',
+    thread: threadOf(c, published),
+  }));
+}
+
+// GitHub replies always point at the thread's first comment (in_reply_to_id
+// is never a reply's own id), so grouping by that root rebuilds the thread.
+// The root itself carries path/line/diff_hunk for the whole thread.
+export function threadOf(comment: RawApiComment, all: RawApiComment[]): CommentThread {
+  const rootId = comment.in_reply_to_id ?? comment.id;
+  const root = all.find((c) => c.id === rootId) ?? comment;
+  const comments = all
+    .filter((c) => c.id === rootId || c.in_reply_to_id === rootId)
+    .sort((a, b) => a.id - b.id)
+    .map((c) => ({ id: c.id, authorLogin: c.user?.login ?? '', body: c.body }));
+  return { path: root.path ?? comment.path ?? '', line: root.line ?? null, diffHunk: root.diff_hunk ?? comment.diff_hunk ?? '', comments };
 }
 
 export async function hasBotReaction(commentId: number, kind: 'issue' | 'review', botLogin: string): Promise<boolean> {

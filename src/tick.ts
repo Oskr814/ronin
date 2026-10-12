@@ -38,7 +38,7 @@ import { tryClaim, releaseIfNoLongerInProgress } from './claim.js';
 import { worktreeDirFor, isBehind, attemptRebase, removeWorktree, sweepOrphanedWorktrees } from './worktree.js';
 import { findUnprocessedMentions, isFixCommentsCommand } from './mentions.js';
 import { withHelpFooter } from './help.js';
-import { findPrsNeedingReview, type ReviewCandidate, type TrustedFixCandidate } from './external-review.js';
+import { findPrsNeedingReview, type ReviewCandidate, type ThreadMentionCandidate, type TrustedFixCandidate } from './external-review.js';
 import { findIssueCommands, type ExploreCandidate, type SpecCandidate, type SpikeCandidate } from './spike.js';
 import { processSpecCandidate } from './spec-flow.js';
 import { takePendingSpecs } from './local-state.js';
@@ -696,6 +696,26 @@ export async function processTrustedFixCandidate(candidate: TrustedFixCandidate)
   }
 }
 
+// Mentions inside review threads of a non-fork PR ronin didn't open — each
+// one is handled in its own thread. Same isolation as
+// processTrustedFixCandidate, and the same retry: no 👀 on failure.
+export async function processThreadMentionCandidate(candidate: ThreadMentionCandidate): Promise<void> {
+  try {
+    await setReviewStatus(candidate.prNumber, 'pending', 'ronin está atendiendo comentarios…', { context: 'ronin/thread-reply' });
+    await runAgentTask({
+      type: 'thread-reply-external',
+      prNumber: candidate.prNumber,
+      headRefName: candidate.headRefName,
+      mentions: candidate.mentions,
+    });
+    await setReviewStatus(candidate.prNumber, 'success', 'Comentarios atendidos', { context: 'ronin/thread-reply' });
+    for (const m of candidate.mentions) await addReaction(m.id, m.kind, 'eyes');
+  } catch (error) {
+    await setReviewStatus(candidate.prNumber, 'error', 'La respuesta en el hilo falló — ver logs del tick', { context: 'ronin/thread-reply' });
+    log.error(`thread-reply-external failed for PR #${candidate.prNumber}`, error);
+  }
+}
+
 // Deliberately its own exported function, called before (and independently
 // of) the ronin-PR loop: external review shares nothing with that flow, so a
 // transient `listAllOpenRoninPrs` failure — which returns early from the
@@ -704,14 +724,16 @@ export async function processTrustedFixCandidate(candidate: TrustedFixCandidate)
 export async function externalReviewJobs(): Promise<Job[]> {
   let reviewCandidates: ReviewCandidate[];
   let trustedFixCandidates: TrustedFixCandidate[];
+  let threadMentionCandidates: ThreadMentionCandidate[];
   try {
-    ({ reviewCandidates, trustedFixCandidates } = await findPrsNeedingReview());
+    ({ reviewCandidates, trustedFixCandidates, threadMentionCandidates } = await findPrsNeedingReview());
   } catch (error) {
     log.info(`tick: findPrsNeedingReview falló, reintentando en el próximo tick: ${(error as Error).message}`);
     return [];
   }
   return [
     ...trustedFixCandidates.map((c) => ({ kind: 'fix-comments-external', label: `PR #${c.prNumber}`, run: () => processTrustedFixCandidate(c) })),
+    ...threadMentionCandidates.map((c) => ({ kind: 'thread-reply-external', label: `PR #${c.prNumber}`, run: () => processThreadMentionCandidate(c) })),
     ...reviewCandidates.map((c) => ({ kind: 'external-review', label: `PR #${c.prNumber}`, run: () => processExternalReviewCandidate(c) })),
   ];
 }
