@@ -1,4 +1,5 @@
 import { join } from 'node:path';
+import { assertTimezone } from './timezone.js';
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -78,6 +79,15 @@ export const config = {
   exploreFindingsPerRun: Number(process.env.EXPLORE_FINDINGS_PER_RUN ?? 5),
   exploreIdeasPerRun: Number(process.env.EXPLORE_IDEAS_PER_RUN ?? 2),
   explorePublishEvidence: process.env.EXPLORE_PUBLISH_EVIDENCE !== 'false',
+  // Exploration's clock (timezone.ts): the night window, a run's date and
+  // its week. Logs and the rest of ronin keep the server's time.
+  exploreTimezone: assertTimezone(process.env.EXPLORE_TIMEZONE || 'America/Tegucigalpa'),
+  // When nightly exploration runs, in EXPLORE_TIMEZONE ("HH:MM-HH:MM",
+  // may cross midnight). No new function starts after its end; one already
+  // running finishes. The quota it uses is the account's weekly limit too,
+  // so it's capped by EXPLORE_FUNCTIONS_PER_NIGHT, not "use everything".
+  exploreNightWindow: process.env.EXPLORE_NIGHT_WINDOW ?? '01:00-06:00',
+  exploreFunctionsPerNight: Number(process.env.EXPLORE_FUNCTIONS_PER_NIGHT ?? 3),
   // Model for the external review's worker subagents (one per criteria
   // dimension). They only gather candidates; the orchestrating session —
   // whatever model the run's Claude config uses — verifies and decides what

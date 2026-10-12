@@ -5,7 +5,10 @@
     "claudeConfigDir": "/home/link/.claude-repo-a",
     "worktreeBaseRef": "origin/odoo-main",
     "changelogRepo": "redmotos/changelog",
-    "changelogRepoPath": "/home/link/RM/changelog"
+    "changelogRepoPath": "/home/link/RM/changelog",
+    "explore": [
+      "backoffice"
+    ]
   },
   {
     "productRepo": "Oskr814/repo-b",

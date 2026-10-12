@@ -40,7 +40,7 @@ function validateEntry(entry: unknown, index: number): RepoEntry {
   if (typeof entry !== 'object' || entry === null) {
     throw new Error(`${config.reposConfigPath}[${index}] no es un objeto`);
   }
-  const { productRepo, productRepoPath, claudeConfigDir, worktreeBaseRef, changelogRepo, changelogRepoPath } = entry as Record<string, unknown>;
+  const { productRepo, productRepoPath, claudeConfigDir, worktreeBaseRef, changelogRepo, changelogRepoPath, explore } = entry as Record<string, unknown>;
   if (typeof productRepo !== 'string' || productRepo.length === 0) {
     throw new Error(`${config.reposConfigPath}[${index}].productRepo falta o no es un string`);
   }
@@ -62,5 +62,11 @@ function validateEntry(entry: unknown, index: number): RepoEntry {
   if ((changelogRepo === undefined) !== (changelogRepoPath === undefined)) {
     throw new Error(`${config.reposConfigPath}[${index}]: changelogRepo y changelogRepoPath van juntos — falta uno de los dos`);
   }
-  return { productRepo, productRepoPath, claudeConfigDir, worktreeBaseRef, changelogRepo, changelogRepoPath };
+  if (explore !== undefined && (!Array.isArray(explore) || explore.some((a) => typeof a !== 'string' || a.length === 0))) {
+    throw new Error(`${config.reposConfigPath}[${index}].explore debe ser una lista de nombres de apps (de ronin.app.json)`);
+  }
+  return {
+    productRepo, productRepoPath, claudeConfigDir, worktreeBaseRef, changelogRepo, changelogRepoPath,
+    ...(explore !== undefined ? { explore: explore as string[] } : {}),
+  };
 }

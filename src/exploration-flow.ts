@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { activeRepo } from './repo-context.js';
 import { config } from './config.js';
 import { log } from './logger.js';
+import { dayIn } from './timezone.js';
 import { runAgentTask, type FindingFeedback } from './agent-task.js';
 import {
   addReaction,
@@ -52,16 +53,21 @@ export interface PublishedRun {
   urgentIssues: Array<{ id: string; issue: number }>;
 }
 
+// Today in the exploration's zone (EXPLORE_TIMEZONE): the date of a run and,
+// from it, the week its PR belongs to.
+export function explorationDay(now: Date): string {
+  return dayIn(now, config.exploreTimezone);
+}
+
 export async function exploreAndPublish(opts: {
   appName: string;
   maxFunctions?: number;
   shouldContinue?: () => boolean | Promise<boolean>;
   now?: Date;
 }): Promise<PublishedRun> {
-  const now = opts.now ?? new Date();
-  const week = isoWeek(now);
+  const today = explorationDay(opts.now ?? new Date());
+  const week = isoWeek(new Date(`${today}T12:00:00`));
   const branch = explorationBranch(week);
-  const today = now.toISOString().slice(0, 10);
   const weekDir = await ensureWeekWorktree(week);
   const codeDir = await ensureAppWorktree(opts.appName);
   const memoryDir = memoryDirFor(weekDir, opts.appName);
@@ -177,7 +183,7 @@ export async function processExplorationPr(pr: PullRequestStatus, now = new Date
   if (await exploreWorkerBusy()) return; // the worker is writing this branch right now
   await applyFeedback(pr, week);
   if (pr.isDraft) {
-    if (week < isoWeek(now)) {
+    if (week < isoWeek(new Date(`${explorationDay(now)}T12:00:00`))) {
       await markPullRequestReady(pr.number);
       log.info(`exploración: PR semanal #${pr.number} (${week}) listo para revisar`);
     }

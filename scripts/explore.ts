@@ -23,6 +23,7 @@ import { ensureMemoryDir, loadMemory, memoryDirFor } from '../src/exploration-me
 import { refreshInventory } from '../src/exploration-inventory.js';
 import { changedFunctions, newSeed, planRun, riskByFunction } from '../src/exploration-plan.js';
 import { runExploration } from '../src/exploration-run.js';
+import { explorationDay } from '../src/exploration-flow.js';
 
 const { values, positionals } = parseArgs({
   allowPositionals: true,
@@ -50,7 +51,7 @@ if (!entry) {
 }
 
 const appName = values.app;
-const today = new Date().toISOString().slice(0, 10);
+const today = explorationDay(new Date());
 await withActiveRepo(entry, async () => {
   const codeDir = await ensureAppWorktree(appName, values.ref);
   const app = await loadAppDefinition(codeDir, appName);
