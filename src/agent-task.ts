@@ -110,6 +110,7 @@ const REVIEW_WORKER_CONTRACT = [
   'Read only: never create, edit or delete files, never run tests, builds, installs or services, and never write to GitHub (no gh pr comment, gh pr review, gh api writes or GraphQL mutations). git commands, grep and reading files are fine, and so is "gh pr view" for the title and body.',
   'Your job is recall: cover every changed file for your dimension and report every candidate you find, uncertain ones included — the orchestrator checks each one, and a candidate you leave out is lost for this round. Do not report what belongs to another dimension unless it also causes a concrete problem in yours.',
   'Report, for each candidate: file and line (or range) at the PR head; proposed type and severity per the shared criteria; origin (new / worsened / preexisting) and why; the scenario as numbered steps, then the result and what was expected; the evidence as file:line references; and the fix in one sentence. Then end with a coverage list: every changed file, and for each one whether you reviewed it for your dimension or why it does not apply.',
+  'Write the report in Spanish, the language of the shared criteria and of the review that gets published, whatever the language of these instructions, the code or the PR. Code, identifiers, file paths and the type, severity and origin values stay as they are.',
 ].join('\n\n');
 
 export interface ReviewAgentDefinition {

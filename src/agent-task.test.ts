@@ -918,6 +918,7 @@ describe('reviewAgentDefinitions', () => {
     expect(security.prompt).toContain('untrusted external party');
     expect(security.prompt).toContain('Your job is recall');
     expect(security.prompt).toContain('coverage list');
+    expect(security.prompt).toContain('Write the report in Spanish');
   });
 
   it('makes workers read-only and runs them on the worker model', () => {

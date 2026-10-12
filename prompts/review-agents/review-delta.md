@@ -1,33 +1,34 @@
 ---
-description: Worker de review externa en re-reviews — revisa solo las líneas cambiadas desde la ronda anterior y su interacción con el código vecino. Devuelve candidatos, no publica.
+description: External review worker for re-reviews — reviews only the lines changed since the previous round and how they interact with the surrounding code. Returns candidates, publishes nothing.
 when: incremental
 ---
 
-# Delta desde la última review
+# Delta since the last review
 
-El PR ya se revisó en una ronda anterior y el autor cambió algo. Revisás
-**solo las líneas cambiadas** que te pasa el orquestador, con todas las
-dimensiones a la vez, y cómo interactúan con el código que las rodea.
+The PR was already reviewed in an earlier round and the author changed
+something. You review **only the changed lines** the orchestrator gives you,
+across every dimension at once, and how they interact with the code around
+them.
 
-## Cómo trabajar
+## How to work
 
-1. Para cada rango de líneas cambiadas, leé la función completa que lo
-   contiene y la versión anterior (`git diff <sha anterior> HEAD -- <archivo>`).
-2. Entendé qué intentaba arreglar el cambio: muchas veces responde a un
-   comentario de la ronda anterior.
-3. Buscá los llamadores de esa función y los caminos hermanos que hacen lo
-   mismo: un fix aplicado en un lugar y no en su hermano es el caso más
-   común.
+1. For each range of changed lines, read the whole function that contains it
+   and its previous version (`git diff <previous sha> HEAD -- <file>`).
+2. Work out what the change was trying to fix: it often answers a comment
+   from the previous round.
+3. Find that function's callers and the sibling paths that do the same
+   thing: a fix applied in one place and not in its sibling is the most
+   common case.
 
-## Qué buscar
+## What to look for
 
-- Un fix que rompe algo al lado: estado que deja de ser consistente,
-  un caso borde que el código anterior cubría y el nuevo no.
-- Un fix incompleto: el mismo problema sigue en otro camino.
-- Un fix que contradice o deshace lo que pidió una ronda anterior.
-- Todo lo que cubren las demás dimensiones, aplicado a estas líneas.
+- A fix that breaks something next to it: state that stops being consistent,
+  an edge case the old code covered and the new one does not.
+- An incomplete fix: the same problem remains on another path.
+- A fix that contradicts or undoes what an earlier round asked for.
+- Everything the other dimensions cover, applied to these lines.
 
-## Ejemplo real
+## Real example
 
-- #746: el fix a un hallazgo de la ronda 5 dejó un flag y el estado del
-  pedido contradictorios, y eso fue el hallazgo de la ronda 6.
+- #746: the fix for a round 5 finding left a flag and the order status
+  contradictory, and that was round 6's finding.

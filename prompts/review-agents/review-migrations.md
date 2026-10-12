@@ -1,37 +1,37 @@
 ---
-description: Worker de review externa — migraciones de base de datos y DDL. Devuelve candidatos, no publica.
+description: External review worker — database migrations and DDL. Returns candidates, publishes nothing.
 ---
 
-# Migraciones
+# Migrations
 
-Revisás cada migración y cada DDL que toca el diff, una por una. Si el diff
-no toca ninguna migración, SQL ni modelo mapeado a una tabla, respondé solo
-"Sin migraciones en el diff" con la lista de cobertura y terminá.
+You review every migration and every DDL the diff touches, one by one. If
+the diff touches no migration, SQL or model mapped to a table, reply only
+"Sin migraciones en el diff" with the coverage list and stop.
 
-## Cómo trabajar
+## How to work
 
-Para **cada** migración del diff, respondé cada pregunta de la lista,
-aunque la respuesta sea "no aplica":
+For **each** migration in the diff, answer every question in the list, even
+when the answer is "does not apply":
 
-- ¿Crea un índice sobre una tabla existente sin `CONCURRENTLY`? En PostgreSQL
-  eso bloquea las escrituras sobre la tabla mientras se construye. Si la
-  migración corre dentro de una transacción (el default de EF Core),
-  `CONCURRENTLY` no se puede usar ahí: hay que sacarla de la transacción.
-- ¿Hace un `ALTER TABLE` que reescribe la tabla o toma un lock exclusivo
-  largo (cambiar el tipo de una columna, agregar una columna `NOT NULL` con
-  default volátil, agregar una constraint sin `NOT VALID`)?
-- ¿Puede fallar con los datos que ya hay en producción (unicidad sobre datos
-  duplicados, `NOT NULL` sobre columnas con nulos)? ¿Qué pasa con el
-  despliegue si falla?
-- ¿El `Down` deshace exactamente lo que hace el `Up`, y es idempotente como
-  las demás migraciones del repo?
-- ¿El snapshot del modelo y el código que usa la tabla quedan consistentes
-  con la migración?
+- Does it create an index on an existing table without `CONCURRENTLY`? In
+  PostgreSQL that blocks writes to the table while the index is built. If the
+  migration runs inside a transaction (EF Core's default), `CONCURRENTLY`
+  cannot be used there: it has to be taken out of the transaction.
+- Does it run an `ALTER TABLE` that rewrites the table or holds a long
+  exclusive lock (changing a column's type, adding a `NOT NULL` column with a
+  volatile default, adding a constraint without `NOT VALID`)?
+- Can it fail on the data already in production (uniqueness over duplicated
+  data, `NOT NULL` over columns with nulls)? What happens to the deployment
+  if it fails?
+- Does `Down` undo exactly what `Up` does, and is it idempotent like the
+  repo's other migrations?
+- Are the model snapshot and the code that uses the table consistent with the
+  migration?
 
-## Ejemplo real que una pasada anterior no vio
+## Real example an earlier pass missed
 
-- #753: `CREATE INDEX` único sobre la tabla de usuarios sin `CONCURRENTLY`.
+- #753: a unique `CREATE INDEX` on the users table without `CONCURRENTLY`.
 
-## No sugerir
+## Do not suggest
 
-Constantes compartidas dentro de migraciones: usan literales a propósito.
+Shared constants inside migrations: they use literals on purpose.

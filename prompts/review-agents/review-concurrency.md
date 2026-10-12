@@ -1,49 +1,50 @@
 ---
-description: Worker de review externa — concurrencia, locks y transacciones. Devuelve candidatos, no publica.
+description: External review worker — concurrency, locks and transactions. Returns candidates, publishes nothing.
 ---
 
-# Concurrencia y transacciones
+# Concurrency and transactions
 
-Buscás lo que se rompe cuando dos requests, jobs o usuarios actúan sobre el
-mismo dato al mismo tiempo.
+You look for what breaks when two requests, jobs or users act on the same
+data at the same time.
 
-## Cómo trabajar
+## How to work
 
-1. Encontrá todo lo que el diff toca relacionado con locks, transacciones,
-   `SELECT … FOR UPDATE`, versiones/concurrency tokens, colas o reintentos.
-2. Para **cada lock o transacción**, armá la lista completa de datos que la
-   operación leyó **antes** de tomarlo y de los que depende la decisión
-   (cliente, flags como `IgnoreCreditLimit`, líneas, costos, estado, totales).
-   Para cada uno, decí si se relee o revalida después de tomar el lock. Cada
-   dato que no se revalida y puede cambiar en el medio es un candidato.
-3. Para cada validación seguida de una escritura, preguntate qué impide que
-   el dato validado cambie entre las dos (check-then-act).
-4. Mirá qué hay dentro de cada transacción o lock: una llamada HTTP, RPC o
-   cualquier operación lenta adentro es un candidato.
+1. Find everything the diff touches related to locks, transactions,
+   `SELECT … FOR UPDATE`, versions/concurrency tokens, queues or retries.
+2. For **each lock or transaction**, build the complete list of data the
+   operation read **before** taking it and that the decision depends on
+   (customer, flags such as `IgnoreCreditLimit`, lines, costs, status,
+   totals). For each one, say whether it is re-read or revalidated after the
+   lock is taken. Every piece of data that is not revalidated and can change
+   in between is a candidate.
+3. For every validation followed by a write, ask what prevents the validated
+   data from changing between the two (check-then-act).
+4. Look at what runs inside each transaction or lock: an HTTP call, an RPC or
+   any slow operation inside is a candidate.
 
-## Qué buscar
+## What to look for
 
-- Check-then-act: validar algo y actuar después sin que nada impida que cambie
-  en el medio.
-- Locks: qué protege cada uno, qué queda afuera, y qué datos leídos antes de
-  tomarlo deben revalidarse después.
-- Transacciones: alcance, operaciones lentas o remotas adentro, commits
-  parciales, un error a mitad de camino que deja datos a medio escribir.
-- Caminos hermanos: si un método toma el lock y otro que modifica lo mismo no
-  lo toma, la protección no existe.
-- Tests de concurrencia que dependen de tiempos fijos (`Task.Delay`, `sleep`)
-  en vez de sincronización explícita.
+- Check-then-act: validating something and acting later with nothing to stop
+  it from changing in between.
+- Locks: what each one protects, what is left outside, and which data read
+  before taking it must be revalidated after.
+- Transactions: scope, slow or remote operations inside, partial commits, an
+  error halfway that leaves data half written.
+- Sibling paths: if one method takes the lock and another that modifies the
+  same data does not, the protection does not exist.
+- Concurrency tests that depend on fixed timings (`Task.Delay`, `sleep`)
+  instead of explicit synchronization.
 
-## Ejemplos reales que una pasada anterior no vio
+## Real examples an earlier pass missed
 
-- #760: el lock del pedido más la revalidación del crédito produjo un hallazgo
-  distinto en cuatro rondas seguidas, todos "no todo se revalida tras tomar el
-  lock". La lista completa del paso 2 los hubiera mostrado juntos en la
-  primera.
-- #760: un test de concurrencia usaba `Task.Delay` para ordenar las dos
-  operaciones; pasa o falla según la carga de la máquina.
+- #760: the order lock plus the credit revalidation produced a different
+  finding in four consecutive rounds, all of them "not everything is
+  revalidated after taking the lock". The complete list from step 2 would
+  have shown them together in the first round.
+- #760: a concurrency test used `Task.Delay` to order the two operations; it
+  passes or fails depending on the machine's load.
 
-## Fuera de tu dimensión
+## Outside your dimension
 
-Bugs funcionales sin componente concurrente, permisos, duplicación y
-migraciones (salvo el lock que toma un DDL): los cubren otros workers.
+Functional bugs with no concurrent component, permissions, duplication and
+migrations (except the lock a DDL takes): other workers cover them.
