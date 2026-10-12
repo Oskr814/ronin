@@ -92,6 +92,9 @@ export interface FindingMeta {
   estado: FindingState;
   huella: string;
   issue?: number;
+  // A problem of the dev environment ronin ran (seed data, stubs), not of
+  // the app: recorded and reviewed, but never an issue before the review.
+  entorno?: boolean;
   motivo?: string;
 }
 
@@ -187,6 +190,7 @@ export function parseFinding(raw: string): Finding {
     estado: (FINDING_STATES as readonly string[]).includes(meta.estado) ? meta.estado : 'propuesto',
     huella: meta.huella,
     ...(typeof meta.issue === 'number' ? { issue: meta.issue } : {}),
+    ...(meta.entorno === true ? { entorno: true } : {}),
     ...(typeof meta.motivo === 'string' ? { motivo: meta.motivo } : {}),
     body: match[2].trim(),
   };

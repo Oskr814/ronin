@@ -168,11 +168,12 @@ export interface Verdict {
   veredicto: 'mantener' | 'descartar';
   motivo: string;
   gravedad?: Severity;
+  entorno?: boolean;
 }
 
 export const VERDICTS_JSON_CONTRACT = `{
   "veredictos": [
-    { "index": <candidate index>, "veredicto": "mantener" | "descartar", "motivo": "<one sentence, in Spanish>", "gravedad": "<optional corrected severity: ${SEVERITIES.join(' | ')}>" }
+    { "index": <candidate index>, "veredicto": "mantener" | "descartar", "motivo": "<one sentence, in Spanish>", "gravedad": "<optional corrected severity: ${SEVERITIES.join(' | ')}>", "entorno": <optional: true when it is a problem of the dev environment, not of the app> }
   ]
 }`;
 
@@ -190,6 +191,7 @@ export function parseVerdicts(raw: string, count: number): Verdict[] {
       veredicto: v.veredicto,
       motivo: typeof v.motivo === 'string' ? v.motivo.trim().slice(0, LIMITS.paso) : '',
       ...(SEVERITIES.includes(v.gravedad) ? { gravedad: v.gravedad } : {}),
+      ...(v.entorno === true ? { entorno: true } : {}),
     });
   }
   return Array.from({ length: count }, (_, index) => byIndex.get(index) ?? { index, veredicto: 'descartar', motivo: 'el evaluador no dio veredicto' });
@@ -224,7 +226,7 @@ export interface FindingImage {
 }
 
 // Shown at a readable size: a full-page phone screenshot is very tall.
-function image(img: FindingImage, viewport: ViewportName): string {
+export function image(img: FindingImage, viewport: ViewportName): string {
   const alt = (img.nota ?? 'captura').replace(/"/g, "'");
   return `<img src="${img.url}" alt="${alt}" width="${viewport === 'mobile' ? 320 : 720}">`;
 }
@@ -257,4 +259,31 @@ export function renderFindingBody(
   if (opts.despues) lines.push(`**Después**${opts.despues.nota ? `: ${opts.despues.nota}` : ''}`, '', image(opts.despues, c.viewport), '');
   if (opts.patch) lines.push('<details><summary>Cambio borrador usado para el después</summary>', '', '```diff', opts.patch.trim(), '```', '', '</details>', '');
   return lines.join('\n');
+}
+
+const AFTER_RE = /\*\*Después\*\*[^\n]*\n\n<img [^\n]*>\n?/;
+
+// The finding body with its "after" replaced by a new image — or added at
+// the end of the proposal when it had none.
+export function replaceAfterImage(body: string, img: FindingImage, viewport: ViewportName): string {
+  const block = `**Después**${img.nota ? `: ${img.nota}` : ''}\n\n${image(img, viewport)}\n`;
+  if (AFTER_RE.test(body)) return body.replace(AFTER_RE, block);
+  const proposal = body.indexOf('### Propuesta');
+  if (proposal < 0) return `${body.trimEnd()}\n\n${block}`;
+  const next = body.indexOf('\n<details>', proposal);
+  return next < 0 ? `${body.trimEnd()}\n\n${block}` : `${body.slice(0, next).trimEnd()}\n\n${block}${body.slice(next)}`;
+}
+
+// The proposal section of a finding body with new text.
+export function replaceProposal(body: string, propuesta: string): string {
+  return body.replace(/(### Propuesta\n\n)[\s\S]*?(?=\n\*\*Después\*\*|\n<details>|$)/, (_m, head: string) => `${head}${propuesta.trim()}\n`);
+}
+
+// What explore-redo-after writes: the new after, inside its output dir.
+export function parseRedoResult(raw: string, outDir: string): { imagen: string; nota?: string } {
+  const parsed: unknown = JSON.parse(raw);
+  if (!isObject(parsed)) throw new Error('el resultado no es un objeto JSON');
+  const imagen = insideDir(parsed.imagen, outDir);
+  if (!imagen || !/\.(png|jpe?g|html?)$/i.test(imagen)) throw new Error('el resultado no trae la imagen del después');
+  return { imagen, ...(typeof parsed.nota === 'string' && parsed.nota.trim() ? { nota: parsed.nota.trim().slice(0, LIMITS.paso) } : {}) };
 }

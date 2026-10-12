@@ -1,7 +1,9 @@
 // One exploration run in its own process — started by the tick (see
 // exploration-flow.ts's launchExploreWorker), never inside it. Takes the
 // request as a JSON argument, holds the per-repo exploration lock while it
-// runs, and answers the /explore comment that asked for it, if any.
+// runs, and answers the /explore comment that asked for it, if any. The
+// same process redoes the after images reviewers asked for, which also need
+// the app up.
 import { loadRepos } from './repos.js';
 import { withActiveRepo } from './repo-context.js';
 import { replyToComment } from './github.js';
@@ -10,6 +12,7 @@ import {
   acquireExploreLock,
   exploreAndPublish,
   reactToTrigger,
+  redoAndPublish,
   releaseExploreLock,
   renderRunReply,
   type ExploreWorkerRequest,
@@ -23,6 +26,16 @@ async function main(): Promise<void> {
   await withActiveRepo(entry, async () => {
     if (!(await acquireExploreLock())) {
       log.info(`exploración ${request.appName}: ya hay otra corrida en este repo, no arranco`);
+      return;
+    }
+    if (request.redo) {
+      try {
+        await redoAndPublish(request.redo);
+      } catch (error) {
+        log.error(`exploración: rehacer los después del PR #${request.redo.prNumber} falló`, error);
+      } finally {
+        await releaseExploreLock();
+      }
       return;
     }
     try {

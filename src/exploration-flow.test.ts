@@ -40,7 +40,7 @@ describe('explore lock', () => {
 describe('renderRunReply', () => {
   const run = (findings: unknown[], discarded = 0): PublishedRun => ({
     prNumber: 820,
-    week: '2026-W42',
+    batch: '2026-10-12',
     urgentIssues: [{ id: 'F-0001', issue: 821 }],
     summary: {
       runId: '2026-10-12-7', seed: 7, plan: { seed: 7, functions: [] }, runFile: '/r.md', inventory: { added: [], retired: [], refreshed: false },

@@ -11,6 +11,7 @@ import {
   createPullRequest,
   findOpenPrByHead,
   listIssuesWithLabel,
+  listOpenPrsByHeadPrefix,
   setPullRequestBody,
 } from './github.js';
 import {
@@ -26,32 +27,27 @@ import {
 
 const execFileAsync = promisify(execFile);
 
-// The weekly PR of docs/DESIGN.md §11.7: every run of the week commits its
-// memory changes to ronin/exploration/<year>-W<week>, the PR's body is the
-// digest, a human reviews the findings there, and approving + merging it is
-// what turns the surviving findings into issues.
+// The rolling exploration PR of docs/DESIGN.md §11.7: one open at a time per
+// repo, ready for review as soon as a run lands. Each run commits its memory
+// changes to that PR's branch — or, when none is open, starts a new one,
+// ronin/exploration/<date> — and refreshes its body, the digest. A human
+// reviews the findings there whenever it suits them; approving + merging it
+// turns the surviving findings into issues, and the next run opens the next
+// PR. One at a time keeps the memory in one place: two open PRs would edit
+// the same inventory and miss each other's findings when deduping.
 
 export const EXPLORATION_BRANCH_PREFIX = 'ronin/exploration/';
 export const LABEL_PROPOSAL = 'ronin:propuesta';
 export const LABEL_IDEA = 'ronin:idea';
 
-// ISO 8601 week, e.g. "2026-W42": weeks start on Monday and belong to the
-// year of their Thursday.
-export function isoWeek(date: Date): string {
-  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
-  const day = d.getUTCDay() || 7;
-  d.setUTCDate(d.getUTCDate() + 4 - day);
-  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-  const week = Math.ceil(((d.getTime() - yearStart.getTime()) / 86_400_000 + 1) / 7);
-  return `${d.getUTCFullYear()}-W${String(week).padStart(2, '0')}`;
-}
-
-export function explorationBranch(week: string): string {
-  return `${EXPLORATION_BRANCH_PREFIX}${week}`;
-}
-
-export function weekOfBranch(branch: string): string | undefined {
+// The batch a branch belongs to: the suffix after the prefix — a date, or
+// the ISO week of PRs opened before batches were rolling.
+export function batchOfBranch(branch: string): string | undefined {
   return branch.startsWith(EXPLORATION_BRANCH_PREFIX) ? branch.slice(EXPLORATION_BRANCH_PREFIX.length) : undefined;
+}
+
+export function explorationBranch(batch: string): string {
+  return `${EXPLORATION_BRANCH_PREFIX}${batch}`;
 }
 
 function baseRef(): string {
@@ -71,11 +67,25 @@ async function remoteBranchExists(branch: string): Promise<boolean> {
   return git(activeRepo().productRepoPath, ['ls-remote', '--exit-code', '--heads', 'origin', branch]).then(() => true, () => false);
 }
 
-// The checkout of the week's branch, synced with origin: every run of the
-// week (on this runner or another) builds on what's already there.
-export async function ensureWeekWorktree(week: string): Promise<string> {
-  const branch = explorationBranch(week);
-  const dir = join(activeRepo().worktreeBasePath, `exploration-${week}`);
+// The batch the next run goes to: the open exploration PR's (the oldest, if
+// somehow there are more), or a new one named after today — "<today>-2" and
+// on when a merged PR already used that name.
+export async function currentBatch(today: string): Promise<{ batch: string; prNumber?: number }> {
+  const open = (await listOpenPrsByHeadPrefix(EXPLORATION_BRANCH_PREFIX)).sort((a, b) => a.number - b.number)[0];
+  const openBatch = open && batchOfBranch(open.headRefName);
+  if (open && openBatch) return { batch: openBatch, prNumber: open.number };
+  await git(activeRepo().productRepoPath, ['fetch', 'origin']);
+  for (let n = 1; ; n++) {
+    const batch = n === 1 ? today : `${today}-${n}`;
+    if (!(await remoteBranchExists(explorationBranch(batch)))) return { batch };
+  }
+}
+
+// The checkout of the batch's branch, synced with origin: every run of the
+// batch (on this runner or another) builds on what's already there.
+export async function ensureBatchWorktree(batch: string): Promise<string> {
+  const branch = explorationBranch(batch);
+  const dir = join(activeRepo().worktreeBasePath, `exploration-${batch}`);
   const repo = activeRepo().productRepoPath;
   await git(repo, ['fetch', 'origin']);
   const remote = await remoteBranchExists(branch);
@@ -154,9 +164,9 @@ export async function openFindingIssues(
   return opened;
 }
 
-// After a week's PR merged, its findings that nobody rejected are approved:
-// marks them so in the memory (on the current week's branch, which starts
-// from the base). A finding counts as merged once its file exists on the
+// After an exploration PR merged, its findings that nobody rejected are
+// approved: marks them so in the memory (on the next batch's branch, which
+// starts from the base). A finding counts as merged once its file exists on the
 // base branch.
 export async function reconcileApproved(appName: string, memoryDir: string, checkoutDir: string): Promise<string[]> {
   const memory = await loadMemory(memoryDir);
@@ -169,43 +179,46 @@ export async function reconcileApproved(appName: string, memoryDir: string, chec
     await writeFile(path, serializeFinding({ ...finding, estado: 'aprobado' }));
     changed.push(meta.id);
   }
-  if (changed.length > 0) log.info(`exploración ${appName}: aprobadas por el merge del PR semanal: ${changed.join(', ')}`);
+  if (changed.length > 0) log.info(`exploración ${appName}: aprobadas por el merge del PR de exploración: ${changed.join(', ')}`);
   await openFindingIssues(appName, memoryDir, checkoutDir, baseBranchName(), (f) => changed.includes(f.id));
   return changed;
 }
 
 const DIGEST_MARKER = '<!-- ronin:exploration-digest -->';
 
-export function renderDigest(opts: {
-  week: string;
-  branch: string;
-  repo: string;
-  apps: Array<{ appName: string; memory: ExplorationMemory; runs: string[] }>;
-  login: string;
-}): string {
+export interface DigestApp {
+  appName: string;
+  memory: ExplorationMemory;
+  // The findings and runs this PR adds (the rest are on the base already).
+  findingIds: Set<string>;
+  runs: string[];
+}
+
+export function renderDigest(opts: { since: string; branch: string; repo: string; apps: DigestApp[] }): string {
   const lines = [
     DIGEST_MARKER,
-    `# Exploración de ronin — semana ${opts.week}`,
+    `# Exploración de ronin — desde ${opts.since}`,
     '',
-    'ronin levantó la app, la usó como cada rol en desktop y mobile y propone lo de abajo. Cada propuesta tiene su ficha en el repo (memoria de la exploración), con las capturas del antes y, si ayuda a decidir, del después: abrí la ficha desde la tabla para verlas.',
+    'ronin levantó la app, la usó como cada rol en desktop y mobile y propone lo de abajo. Cada propuesta tiene su ficha en el repo (memoria de la exploración), con las capturas del antes y, si ayuda a decidir, del después: abrí la ficha desde la tabla para verlas. Mientras este PR siga abierto, las corridas de cada noche se suman acá.',
     '',
     '**Cómo revisar:**',
     '- **Para rechazar una propuesta**, comentá en su ficha (en "Files changed") con el motivo, por ejemplo: "ya está cubierto". La marco como rechazada y la sumo a `knowledge.md` para no volver a proponerla.',
-    '- **Para aceptar el resto**, aprobá el PR. Al mergearlo, abro un issue por cada propuesta que siga en pie; asignándome ese issue, la implemento.',
-    '- Los bugs de gravedad alta ya tienen su issue abierto desde que se encontraron.',
+    '- **Para corregir una propuesta**, comentá qué cambiar: ajusto la ficha y, si hace falta, rehago la captura del después. **Para pedir un issue aparte** a partir de una ficha, pedímelo en el comentario.',
+    '- **Para aceptar el resto**, aprobá el PR cuando quieras. Al mergearlo, abro un issue por cada propuesta que siga en pie; asignándome ese issue, la implemento.',
+    '- Los bugs de la app de gravedad alta ya tienen su issue abierto desde que se encontraron.',
     '',
   ];
-  for (const { appName, memory, runs } of opts.apps) {
-    const thisWeek = memory.findings.filter((f) => f.fecha && isoWeek(new Date(`${f.fecha}T12:00:00`)) === opts.week);
+  for (const { appName, memory, findingIds, runs } of opts.apps) {
+    const mine = memory.findings.filter((f) => findingIds.has(f.id));
     lines.push(`## ${appName}`, '');
-    if (thisWeek.length === 0) {
-      lines.push('Sin propuestas esta semana.', '');
+    if (mine.length === 0) {
+      lines.push('Sin propuestas en este PR.', '');
     } else {
       lines.push('| Ficha | Tipo | Gravedad | Propuesta | Función | Estado |', '|---|---|---|---|---|---|');
-      for (const f of thisWeek) {
+      for (const f of mine) {
         const file = `https://github.com/${opts.repo}/blob/${opts.branch}/${EXPLORATION_DIR}/${appName}/findings/${findingFileName(f)}`;
         const estado = f.estado === 'rechazado' ? `rechazada${f.motivo ? `: ${f.motivo}` : ''}` : f.issue ? `issue #${f.issue}` : f.estado;
-        lines.push(`| [${f.id}](${file}) | ${f.tipo} | \`${f.gravedad}\` | ${f.titulo.replace(/\|/g, '/')} | \`${f.funcion}\` | ${estado.replace(/\|/g, '/')} |`);
+        lines.push(`| [${f.id}](${file}) | ${f.tipo} | \`${f.gravedad}\` | ${f.titulo.replace(/\|/g, '/')}${f.entorno ? ' _(entorno de dev)_' : ''} | \`${f.funcion}\` | ${estado.replace(/\|/g, '/')} |`);
       }
       lines.push('');
     }
@@ -216,13 +229,12 @@ export function renderDigest(opts: {
   return lines.join('\n');
 }
 
-export async function weekRuns(memoryDir: string, week: string): Promise<string[]> {
-  const files = await readdir(join(memoryDir, 'runs')).catch(() => [] as string[]);
-  return files
-    .filter((f) => f.endsWith('.md'))
-    .map((f) => f.slice(0, -3))
-    .filter((runId) => isoWeek(new Date(`${runId.slice(0, 10)}T12:00:00`)) === week)
-    .sort();
+// What the batch's branch adds over the base, per app: finding ids and run ids.
+async function addedByBranch(dir: string, appName: string): Promise<{ findingIds: Set<string>; runs: string[] }> {
+  const files = (await git(dir, ['diff', '--name-only', `${baseRef()}...HEAD`, '--', `${EXPLORATION_DIR}/${appName}`]).catch(() => '')).split('\n').filter(Boolean);
+  const findingIds = new Set(files.flatMap((f) => f.match(/\/findings\/(F-\d+)[^/]*\.md$/)?.[1] ?? []));
+  const runs = files.flatMap((f) => f.match(/\/runs\/([^/]+)\.md$/)?.[1] ?? []).sort();
+  return { findingIds, runs };
 }
 
 export async function appsWithMemory(checkoutDir: string): Promise<string[]> {
@@ -230,23 +242,24 @@ export async function appsWithMemory(checkoutDir: string): Promise<string[]> {
   return entries.filter((e) => e.isDirectory()).map((e) => e.name).sort();
 }
 
-export async function renderDigestFor(week: string, weekDir: string): Promise<string> {
-  const apps = [];
-  for (const appName of await appsWithMemory(weekDir)) {
-    const memoryDir = join(weekDir, EXPLORATION_DIR, appName);
-    apps.push({ appName, memory: await loadMemory(memoryDir), runs: await weekRuns(memoryDir, week) });
+export async function renderDigestFor(batch: string, batchDir: string): Promise<string> {
+  const apps: DigestApp[] = [];
+  for (const appName of await appsWithMemory(batchDir)) {
+    const memoryDir = join(batchDir, EXPLORATION_DIR, appName);
+    apps.push({ appName, memory: await loadMemory(memoryDir), ...(await addedByBranch(batchDir, appName)) });
   }
-  return renderDigest({ week, branch: explorationBranch(week), repo: activeRepo().productRepo, apps, login: config.githubLogin });
+  return renderDigest({ since: batch, branch: explorationBranch(batch), repo: activeRepo().productRepo, apps });
 }
 
-// Opens the week's PR as a draft the first time, refreshes its body after.
-export async function upsertWeeklyPr(week: string, weekDir: string): Promise<number> {
-  const branch = explorationBranch(week);
-  const body = await renderDigestFor(week, weekDir);
+// Opens the batch's PR the first time — ready for review, not a draft —
+// and refreshes its body after.
+export async function upsertExplorationPr(batch: string, batchDir: string): Promise<number> {
+  const branch = explorationBranch(batch);
+  const body = await renderDigestFor(batch, batchDir);
   const open = await findOpenPrByHead(branch);
   if (open) {
     if (open.body !== body) await setPullRequestBody(open.number, body);
     return open.number;
   }
-  return createPullRequest({ head: branch, base: baseBranchName(), title: `Exploración de ronin — semana ${week}`, body, draft: true });
+  return createPullRequest({ head: branch, base: baseBranchName(), title: `Exploración de ronin — desde ${batch}`, body, draft: false });
 }
