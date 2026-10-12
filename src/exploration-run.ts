@@ -73,12 +73,13 @@ export interface RunSummary {
 }
 
 interface PendingCandidate extends Candidate {
+  entorno?: boolean;
   functionId: string;
   functionName: string;
   planned: PlannedFunction;
 }
 
-function mcpServer(app: AppDefinition, viewport: 'desktop' | 'mobile', storageState: string, outputDir: string, origins: string[]) {
+export function mcpServer(app: AppDefinition, viewport: 'desktop' | 'mobile', storageState: string, outputDir: string, origins: string[]) {
   const vp = app.viewports[viewport];
   return {
     command: join(process.cwd(), 'node_modules', '.bin', 'playwright-mcp'),
@@ -98,7 +99,7 @@ function mcpServer(app: AppDefinition, viewport: 'desktop' | 'mobile', storageSt
   };
 }
 
-function originsOf(baseUrl: string, ports: Record<string, Record<string, number>>, named: Record<string, number>): string[] {
+export function originsOf(baseUrl: string, ports: Record<string, Record<string, number>>, named: Record<string, number>): string[] {
   const origins = new Set([new URL(baseUrl).origin]);
   for (const byTarget of Object.values(ports)) for (const port of Object.values(byTarget)) origins.add(`http://127.0.0.1:${port}`);
   for (const port of Object.values(named)) origins.add(`http://127.0.0.1:${port}`);
@@ -107,7 +108,7 @@ function originsOf(baseUrl: string, ports: Record<string, Record<string, number>
 
 // The explorer edits code to take its "after" screenshots and is told to
 // revert; this makes sure of it, so the next function starts from the base.
-async function ensureCleanCheckout(dir: string, appPath: string): Promise<void> {
+export async function ensureCleanCheckout(dir: string, appPath: string): Promise<void> {
   const { stdout } = await execFileAsync('git', ['status', '--porcelain'], { cwd: dir });
   if (!stdout.trim()) return;
   log.info(`exploración: el explorador dejó cambios en el checkout, revirtiendo:\n${stdout.trim()}`);
@@ -231,7 +232,7 @@ export async function runExploration(opts: RunOptions): Promise<RunSummary> {
       const verdicts = parseVerdicts(await readFile(verdictsPath, 'utf8'), fresh.length);
       for (const v of verdicts) {
         const c = fresh[v.index];
-        if (v.veredicto === 'mantener') kept.push(v.gravedad && c.tipo === 'hallazgo' ? { ...c, gravedad: v.gravedad } : c);
+        if (v.veredicto === 'mantener') kept.push({ ...c, ...(v.gravedad && c.tipo === 'hallazgo' ? { gravedad: v.gravedad } : {}), ...(v.entorno ? { entorno: true } : {}) });
         else discarded.push({ titulo: c.titulo, funcion: c.functionId, motivo: `evaluador: ${v.motivo}` });
       }
     } catch (error) {
@@ -275,6 +276,7 @@ export async function runExploration(opts: RunOptions): Promise<RunSummary> {
       fecha: today,
       estado: 'propuesto',
       huella: c.huella,
+      ...(c.entorno ? { entorno: true } : {}),
       body: renderFindingBody(c, { functionName: c.functionName, ...(patch ? { patch } : {}), ...images.get(id) }),
     };
     await writeFinding(memoryDir, finding);

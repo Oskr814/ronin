@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { capCandidates, parseCandidate, parseFunctionResult, parseVerdicts, renderFindingBody, type Candidate } from './exploration-output.js';
+import { capCandidates, parseCandidate, parseFunctionResult, parseRedoResult, parseVerdicts, renderFindingBody, replaceAfterImage, replaceProposal, type Candidate } from './exploration-output.js';
 
 const out = '/w/exploration-out/run-1/pedidos.confirmar';
 
@@ -118,5 +118,35 @@ describe('renderFindingBody', () => {
     expect(body).toContain('**Después**: botón deshabilitado\n\n<img src="https://github.com/o/r/blob/abc/d.png?raw=true"');
     expect(body).not.toContain('- captura');
     expect(body.indexOf('### Propuesta')).toBeLessThan(body.indexOf('**Después**'));
+  });
+});
+
+describe('editing a finding body', () => {
+  const body = '## T\n\n### Propuesta\n\nVieja propuesta\n\n**Después**: viejo\n\n<img src="old" alt="viejo" width="720">\n\n<details><summary>Cambio borrador usado para el después</summary>\n\n</details>\n';
+
+  it('swaps the after image, or adds one after the proposal', () => {
+    const swapped = replaceAfterImage(body, { url: 'new', nota: 'nuevo' }, 'mobile');
+    expect(swapped).toContain('**Después**: nuevo\n\n<img src="new" alt="nuevo" width="320">');
+    expect(swapped).not.toContain('old');
+    expect(swapped).toContain('<details>');
+    const added = replaceAfterImage('## T\n\n### Propuesta\n\nAlgo\n', { url: 'new' }, 'desktop');
+    expect(added).toBe('## T\n\n### Propuesta\n\nAlgo\n\n**Después**\n\n<img src="new" alt="captura" width="720">\n');
+  });
+
+  it('replaces only the proposal text', () => {
+    const edited = replaceProposal(body, 'Nueva propuesta');
+    expect(edited).toContain('### Propuesta\n\nNueva propuesta\n\n**Después**: viejo');
+    expect(edited).not.toContain('Vieja propuesta');
+  });
+
+  it('reads the redo result, keeping its path inside the output dir', () => {
+    expect(parseRedoResult('{"imagen":"desktop/despues.png","nota":"alineado"}', out)).toEqual({ imagen: `${out}/desktop/despues.png`, nota: 'alineado' });
+    expect(() => parseRedoResult('{"imagen":"../../x.png"}', out)).toThrow(/después/);
+  });
+});
+
+describe('parseVerdicts entorno', () => {
+  it('carries the dev-environment mark', () => {
+    expect(parseVerdicts('{"veredictos":[{"index":0,"veredicto":"mantener","motivo":"ok","entorno":true}]}', 1)[0]).toMatchObject({ entorno: true });
   });
 });

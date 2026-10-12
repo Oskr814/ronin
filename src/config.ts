@@ -76,7 +76,7 @@ export const config = {
   // ideas never in a finding's place. Their screenshots go to the product
   // repo's evidence branch unless EXPLORE_PUBLISH_EVIDENCE=false.
   exploreFunctionsPerRun: Number(process.env.EXPLORE_FUNCTIONS_PER_RUN ?? 3),
-  exploreFindingsPerRun: Number(process.env.EXPLORE_FINDINGS_PER_RUN ?? 5),
+  exploreFindingsPerRun: Number(process.env.EXPLORE_FINDINGS_PER_RUN ?? 8),
   exploreIdeasPerRun: Number(process.env.EXPLORE_IDEAS_PER_RUN ?? 2),
   explorePublishEvidence: process.env.EXPLORE_PUBLISH_EVIDENCE !== 'false',
   // Exploration's clock (timezone.ts): the night window, a run's date and
@@ -131,6 +131,8 @@ const TASK_MODEL_DEFAULTS: Record<string, string> = {
   'explore-inventory': 'sonnet',
   // Classifying a handful of review comments; the supervisor applies them.
   'explore-feedback': 'sonnet',
+  // One screenshot of a draft change on the running app.
+  'explore-redo-after': 'sonnet',
 };
 
 function taskEnv(prefix: string, taskType: string): string | undefined {

@@ -302,17 +302,21 @@ Qué pasó, cómo reproducirlo, evidencia (con las capturas del antes) y propues
 - `runs/` es para auditoría humana; ronin no lo lee para decidir, así la memoria no crece en tokens con cada corrida.
 - Imágenes fuera de la rama principal: viven en `ronin/evidence` (§11.5) y la ficha las enlaza por sha.
 
-#### 11.7 Flujo: un PR por semana
+#### 11.7 Flujo: un PR rodante
 
-1. Cada corrida commitea en `ronin/exploration/<año>-W<semana>` (run + fichas + inventario). La primera de la semana abre un **PR draft**; las siguientes leen la memoria de esa misma rama.
-2. Al cierre de la semana el PR pasa a *ready for review*. **El body del PR es el digest semanal.**
-3. El humano revisa en el PR. Un comentario sobre una ficha ("ya está cubierto") lo aplica ronin con el mecanismo de comentarios existente: estado `rechazado` + motivo, y a `knowledge.md` si corresponde.
-4. Approve + merge (mismo gate que el resto): ronin crea issues **solo para las fichas en `aprobado`**. Asignar ese issue a ronin lo mete en el flujo de `fix-issue` o de spec de siempre.
-5. Excepción: un bug de gravedad alta abre su issue en el momento, sin esperar al cierre; igual queda registrado en su ficha.
+1. Hay **un solo PR de exploración abierto** por repo. Cada corrida commitea en su rama (run + fichas + inventario) y refresca su body, que es el digest. Si no hay ninguno abierto, la corrida abre uno nuevo en `ronin/exploration/<fecha>`.
+2. El PR sale **listo para revisar** apenas termina la corrida, sin draft ni corte semanal: el humano revisa y mergea cuando le conviene, y mientras tanto las corridas de las noches siguientes se suman al mismo PR. Uno solo a la vez porque dos PRs abiertos editarían el mismo inventario y no verían los hallazgos del otro al deduplicar.
+3. El humano revisa en el PR, comentando sobre las fichas. ronin clasifica cada comentario y aplica el cambio él mismo:
+   - **rechazar**: estado `rechazado` + motivo, y el motivo a `knowledge.md`;
+   - **editar**: nuevo título o propuesta; si la imagen del después está mal, el worker levanta la app, rehace la captura con un cambio borrador y la reemplaza en la ficha;
+   - **crear un issue** aparte a partir del comentario;
+   - **responder** una pregunta.
+4. Approve + merge (mismo gate que el resto): ronin crea issues **para las fichas que siguen en pie**, y la corrida siguiente abre el PR nuevo. Asignar ese issue a ronin lo mete en el flujo de `fix-issue` o de spec de siempre.
+5. Excepción: un bug de la app de gravedad `bug` abre su issue en el momento, sin esperar la revisión; igual queda registrado en su ficha. Los problemas del **entorno de desarrollo** (seed, stubs), que el evaluador marca con `entorno`, se registran y se revisan pero nunca abren issue antes de la revisión.
 
 #### 11.8 Programación nocturna
 
-Sin cron aparte: el tick evalúa `es de noche (ventana configurable, p. ej. 01:00–06:00) && la corrida de hoy no está hecha → explorar`. "Hecha" se infiere del repo (existe `runs/<fecha>.md` en la rama de la semana), en línea con "GitHub como máquina de estados": si un corte de cuota interrumpe la corrida, el tick siguiente la retoma.
+Sin cron aparte: el tick evalúa `es de noche (ventana configurable, p. ej. 01:00–06:00) && la corrida de hoy no está hecha → explorar`. "Hecha" se infiere del repo (existe `runs/<fecha>.md` en la rama del PR de exploración), en línea con "GitHub como máquina de estados": si un corte de cuota interrumpe la corrida, el tick siguiente la retoma.
 
 - **Lo urgente primero**: un issue asignado o una mención que llega de noche se procesa antes; la exploración es la prioridad más baja y es interrumpible entre funciones.
 - **Presupuesto por noche, no "usar todo"**: la noche aprovecha la ventana de 5 h de Claude que nadie usa, pero el límite **semanal** es compartido con el trabajo de día. Tope de tiempo y modelo de los workers configurables (como `EXTERNAL_REVIEW_WORKER_MODEL`).
@@ -333,7 +337,7 @@ Cuando cualquier tarea termina en `RONIN_STATUS: needs-info`, además de dejar l
 0. ~~Spike: Artifacts desde headless, captura del link de Remote Control, quién puede abrir cada cosa~~ — hecho 2026-10-11 (resultados en §11.5 y §11.9)
 1. `app:up` para el backoffice de shoppingcart: manifiesto, override de compose, seed, login por rol, desktop + mobile
 2. `/explore` a pedido (por mención): inventario, charters, hallazgos e ideas, antes/después en `ronin/evidence`, memoria en `docs/exploration/` — iterar la calidad a mano antes de programarlo
-3. Programación nocturna + PR semanal
+3. Programación nocturna + PR de exploración
 4. Preguntas por Remote Control para `needs-info`
 5. `/spec`: de un pedido en bruto (o una propuesta aprobada) a un PR draft de spec
 
@@ -355,7 +359,7 @@ Piloto: el backoffice de shoppingcart (herramienta interna, se levanta entero co
 **Pendiente, fuera de este scaffold:**
 
 - Nunca se probó en vivo contra un PR real con specs de e2e afectados (el dry run de §10 usó un spec sin ningún componente de UI)
-- Exploración y propuestas de mejora (§11): implementadas las etapas 1 a 5 (`app:up` y smoke, memoria, inventario y selección, exploración con navegadores y evaluador, PR semanal, ventana nocturna, entrevistas por Remote Control y `/spec`). Pendiente: calibrar la calidad de las propuestas con varias corridas a mano antes de activar la exploración nocturna (`explore` en `repos.json`)
+- Exploración y propuestas de mejora (§11): implementadas las etapas 1 a 5 (`app:up` y smoke, memoria, inventario y selección, exploración con navegadores y evaluador, PR de exploración rodante, ventana nocturna, entrevistas por Remote Control y `/spec`). Pendiente: calibrar la calidad de las propuestas con varias corridas a mano antes de activar la exploración nocturna (`explore` en `repos.json`)
 
 - Backoff específico para rate-limit/cuota de `claude`: hoy ese fallo cae en el catch-all de `tick.ts` como cualquier otra excepción → bloqueo + email, en vez de reintentarse solo más tarde sin marcar el issue como bloqueado
 - Cuándo limpiar un worktree (`removeWorktree` existe pero no está conectado a nada todavía — ¿al mergear? ¿al llegar a `blocked`?)

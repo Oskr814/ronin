@@ -790,8 +790,8 @@ export async function launchExploreCandidate(candidate: ExploreCandidate): Promi
   });
 }
 
-// The weekly exploration PRs: reviewers' comments on findings, last week's
-// PR marked ready, an approved one merged into issues — see
+// The open exploration PR: reviewers' comments on findings applied (and
+// after images redone by the worker), merged into issues once approved — see
 // exploration-flow.ts's processExplorationPr. Each PR isolated like every
 // other flow here.
 export async function explorationPrJobs(): Promise<Job[]> {
@@ -805,7 +805,7 @@ export async function explorationPrJobs(): Promise<Job[]> {
   return prs.map((pr) => ({
     kind: 'exploration-pr',
     label: `PR #${pr.number}`,
-    run: () => processExplorationPr(pr).catch((error) => log.error(`exploración: PR semanal #${pr.number} falló`, error)),
+    run: () => processExplorationPr(pr).catch((error) => log.error(`exploración: PR #${pr.number} falló`, error)),
   }));
 }
 

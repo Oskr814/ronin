@@ -10,6 +10,7 @@ import { dayIn } from './timezone.js';
 import { runAgentTask, type FindingFeedback } from './agent-task.js';
 import {
   addReaction,
+  createIssue,
   listFileReviewComments,
   listOpenPrsByHeadPrefix,
   markPullRequestReady,
@@ -24,24 +25,27 @@ import { explorationOutDir } from './exploration-inventory.js';
 import { runExploration, type RunSummary } from './exploration-run.js';
 import {
   appsWithMemory,
+  batchOfBranch,
   commitAndPush,
-  ensureWeekWorktree,
+  currentBatch,
+  ensureBatchWorktree,
   explorationBranch,
   EXPLORATION_BRANCH_PREFIX,
-  isoWeek,
   openFindingIssues,
   reconcileApproved,
-  upsertWeeklyPr,
-  weekOfBranch,
+  upsertExplorationPr,
 } from './exploration-pr.js';
+import { replaceProposal } from './exploration-output.js';
+import { redoAfterImages } from './exploration-redo.js';
 
 // Exploration's moving parts glued to GitHub — docs/DESIGN.md §11.7:
-// - exploreAndPublish: one run of one app, committed to the week's branch,
-//   with the weekly PR opened or refreshed, and an issue right away for
-//   every bug-severity finding.
-// - explorationPrJobs: what each tick does with the open weekly PRs —
-//   apply the reviewers' comments on findings, mark last week's PR ready,
-//   merge an approved one and open the issues of its findings.
+// - exploreAndPublish: one run of one app, committed to the open
+//   exploration PR's branch (or a new one), with that PR opened or
+//   refreshed, and an issue right away for every bug of the app.
+// - explorationPrJobs: what each tick does with the open exploration PR —
+//   apply the reviewers' comments on findings (reject, edit, redo an after
+//   image, open a follow-up issue), merge it once approved and open the
+//   issues of its findings.
 // - the worker: a run can take an hour, so it never runs inside a tick
 //   (ticks are single-flight: everything else would wait). The tick starts
 //   it as a separate process with its own lock — see launchExploreWorker.
@@ -49,12 +53,12 @@ import {
 export interface PublishedRun {
   summary: RunSummary;
   prNumber: number;
-  week: string;
+  batch: string;
   urgentIssues: Array<{ id: string; issue: number }>;
 }
 
-// Today in the exploration's zone (EXPLORE_TIMEZONE): the date of a run and,
-// from it, the week its PR belongs to.
+// Today in the exploration's zone (EXPLORE_TIMEZONE): the date of a run, and
+// the name of the batch a new PR starts.
 export function explorationDay(now: Date): string {
   return dayIn(now, config.exploreTimezone);
 }
@@ -66,13 +70,13 @@ export async function exploreAndPublish(opts: {
   now?: Date;
 }): Promise<PublishedRun> {
   const today = explorationDay(opts.now ?? new Date());
-  const week = isoWeek(new Date(`${today}T12:00:00`));
-  const branch = explorationBranch(week);
-  const weekDir = await ensureWeekWorktree(week);
+  const { batch } = await currentBatch(today);
+  const branch = explorationBranch(batch);
+  const batchDir = await ensureBatchWorktree(batch);
   const codeDir = await ensureAppWorktree(opts.appName);
-  const memoryDir = memoryDirFor(weekDir, opts.appName);
+  const memoryDir = memoryDirFor(batchDir, opts.appName);
 
-  await reconcileApproved(opts.appName, memoryDir, weekDir).catch((error) => log.error('exploración: no se pudo reconciliar lo aprobado', error));
+  await reconcileApproved(opts.appName, memoryDir, batchDir).catch((error) => log.error('exploración: no se pudo reconciliar lo aprobado', error));
   const summary = await runExploration({
     appName: opts.appName,
     codeDir,
@@ -82,13 +86,14 @@ export async function exploreAndPublish(opts: {
     ...(opts.shouldContinue ? { shouldContinue: opts.shouldContinue } : {}),
   });
 
-  // A bug doesn't wait for the end of the week (§11.7, point 5).
+  // A bug of the app doesn't wait for the review (§11.7, point 5); one of
+  // the dev environment does.
   const newIds = new Set(summary.findings.map((f) => f.id));
-  const urgentIssues = await openFindingIssues(opts.appName, memoryDir, weekDir, branch, (f) => newIds.has(f.id) && f.gravedad === 'bug');
+  const urgentIssues = await openFindingIssues(opts.appName, memoryDir, batchDir, branch, (f) => newIds.has(f.id) && f.gravedad === 'bug' && !f.entorno);
 
-  await commitAndPush(weekDir, branch, `exploración ${opts.appName}: corrida ${summary.runId} (${summary.findings.length} propuesta(s))`);
-  const prNumber = await upsertWeeklyPr(week, weekDir);
-  return { summary, prNumber, week, urgentIssues };
+  await commitAndPush(batchDir, branch, `exploración ${opts.appName}: corrida ${summary.runId} (${summary.findings.length} propuesta(s))`);
+  const prNumber = await upsertExplorationPr(batch, batchDir);
+  return { summary, prNumber, batch, urgentIssues };
 }
 
 export function renderRunReply(appName: string, run: PublishedRun): string {
@@ -108,11 +113,11 @@ export function renderRunReply(appName: string, run: PublishedRun): string {
       lines.push(`- **${f.id}** ${f.titulo} — \`${f.gravedad}\`${issue ? ` · issue #${issue.issue}` : ''}`);
     }
   }
-  lines.push('', `Están en el PR de exploración de la semana: #${run.prNumber}. Revisalas ahí.`);
+  lines.push('', `Están en el PR de exploración: #${run.prNumber}. Revisalas ahí.`);
   return lines.join('\n');
 }
 
-// --- weekly PR maintenance, run from the tick ---
+// --- exploration PR maintenance, run from the tick ---
 
 const FINDING_PATH_RE = new RegExp(`^${EXPLORATION_DIR}/([^/]+)/findings/(F-\\d+)[^/]*\\.md$`);
 
@@ -129,67 +134,134 @@ async function pendingFeedback(pr: PullRequestStatus): Promise<Array<{ commentId
   return result;
 }
 
-async function applyFeedback(pr: PullRequestStatus, week: string): Promise<void> {
+export interface RedoItem {
+  app: string;
+  findingId: string;
+  instruction: string;
+  commentId: number;
+}
+
+interface FeedbackAction {
+  commentId: number;
+  accion: string;
+  motivo?: string;
+  titulo?: string;
+  propuesta?: string;
+  rehacerDespues?: string;
+  issue?: { titulo?: string; cuerpo?: string };
+  respuesta?: string;
+}
+
+function clean(text: string): string {
+  return text.replace(/@(?=\w)/g, '');
+}
+
+// Applies what each new comment on a finding asks for — the agent only
+// classifies it, the changes are made here: reject (finding + knowledge),
+// edit (title, proposal), open a follow-up issue. Redoing an after image
+// needs the app running, so those come back for the worker.
+async function applyFeedback(pr: PullRequestStatus, batch: string): Promise<RedoItem[]> {
   const pending = await pendingFeedback(pr);
-  if (pending.length === 0) return;
-  const weekDir = await ensureWeekWorktree(week);
+  if (pending.length === 0) return [];
+  const batchDir = await ensureBatchWorktree(batch);
   const comments: FindingFeedback[] = [];
   for (const p of pending) {
-    const memory = await loadMemory(memoryDirFor(weekDir, p.app));
+    const memory = await loadMemory(memoryDirFor(batchDir, p.app));
     const meta = memory.findings.find((f) => f.id === p.findingId);
     comments.push({ commentId: p.commentId, findingId: p.findingId, titulo: meta?.titulo ?? p.findingId, body: p.body });
   }
   await mkdir(explorationOutDir(), { recursive: true });
   const outputPath = join(explorationOutDir(), `feedback-${pr.number}.json`);
   await rm(outputPath, { force: true });
-  await runAgentTask({ type: 'explore-feedback', prNumber: pr.number, checkoutDir: weekDir, comments, outputPath });
-  const parsed = JSON.parse(await readFile(outputPath, 'utf8')) as { acciones?: Array<{ commentId: number; accion: string; motivo?: string; respuesta?: string }> };
+  await runAgentTask({ type: 'explore-feedback', prNumber: pr.number, checkoutDir: batchDir, comments, outputPath });
+  const parsed = JSON.parse(await readFile(outputPath, 'utf8')) as { acciones?: FeedbackAction[] };
 
   const replies: Array<{ commentId: number; body: string }> = [];
+  const redo: RedoItem[] = [];
   for (const p of pending) {
     const action = parsed.acciones?.find((a) => a.commentId === p.commentId);
     if (!action) continue;
-    if (action.accion === 'rechazar' && action.motivo) {
-      const memoryDir = memoryDirFor(weekDir, p.app);
-      const meta = (await loadMemory(memoryDir)).findings.find((f) => f.id === p.findingId);
-      if (meta) {
-        const path = join(memoryDir, 'findings', findingFileName(meta));
-        const finding = parseFinding(await readFile(path, 'utf8'));
-        const motivo = action.motivo.trim().slice(0, 300);
-        await writeFile(path, serializeFinding({ ...finding, estado: 'rechazado', motivo }));
-        await appendKnowledge(memoryDir, `${motivo} (${p.findingId}, rechazada en #${pr.number})`);
-      }
+    const memoryDir = memoryDirFor(batchDir, p.app);
+    const meta = (await loadMemory(memoryDir)).findings.find((f) => f.id === p.findingId);
+    const path = meta ? join(memoryDir, 'findings', findingFileName(meta)) : undefined;
+    let reply = action.respuesta ? clean(action.respuesta) : '';
+    if (action.accion === 'rechazar' && action.motivo && path) {
+      const finding = parseFinding(await readFile(path, 'utf8'));
+      const motivo = action.motivo.trim().slice(0, 300);
+      await writeFile(path, serializeFinding({ ...finding, estado: 'rechazado', motivo }));
+      await appendKnowledge(memoryDir, `${motivo} (${p.findingId}, rechazada en #${pr.number})`);
+    } else if (action.accion === 'editar' && path) {
+      const finding = parseFinding(await readFile(path, 'utf8'));
+      const titulo = action.titulo?.trim() ? action.titulo.trim().slice(0, 120) : finding.titulo;
+      let body = action.propuesta?.trim() ? replaceProposal(finding.body, action.propuesta.slice(0, 1600)) : finding.body;
+      if (titulo !== finding.titulo) body = body.replace(/^## .*$/m, `## ${titulo}`);
+      // The file name follows the title: a new title moves the file.
+      await rm(path, { force: true });
+      await writeFile(join(memoryDir, 'findings', findingFileName({ id: finding.id, titulo })), serializeFinding({ ...finding, titulo, body }));
+      if (action.rehacerDespues?.trim()) redo.push({ app: p.app, findingId: p.findingId, instruction: action.rehacerDespues.trim().slice(0, 1200), commentId: p.commentId });
+    } else if (action.accion === 'crear-issue' && action.issue?.titulo?.trim()) {
+      const ref = `Pedido en un comentario sobre la ficha ${p.findingId} del PR de exploración #${pr.number}.`;
+      const created = await createIssue(clean(action.issue.titulo.trim()).slice(0, 200), `${clean(action.issue.cuerpo?.trim() ?? '')}\n\n${ref}`, []).catch((error) => {
+        log.error(`exploración: no se pudo crear el issue pedido en el comentario ${p.commentId}`, error);
+        return undefined;
+      });
+      reply = created ? `${reply}\n\nAbrí #${created.number}.`.trim() : `${reply}\n\nNo pude abrir el issue; el detalle está en el log del runner.`.trim();
     }
-    if (action.respuesta) replies.push({ commentId: p.commentId, body: action.respuesta.replace(/@(?=\w)/g, '') });
+    if (reply) replies.push({ commentId: p.commentId, body: reply });
   }
-  if (await commitAndPush(weekDir, explorationBranch(week), `exploración: feedback del PR #${pr.number}`)) await upsertWeeklyPr(week, weekDir);
+  if (await commitAndPush(batchDir, explorationBranch(batch), `exploración: feedback del PR #${pr.number}`)) await upsertExplorationPr(batch, batchDir);
   for (const r of replies) await replyToComment(pr.number, { id: r.commentId, kind: 'review' }, r.body).catch((error) => log.error(`exploración: no se pudo responder el comentario ${r.commentId}`, error));
   for (const p of pending) await addReaction(p.commentId, 'review', 'eyes').catch(() => {});
+  return redo;
 }
 
-async function mergeAndOpenIssues(pr: PullRequestStatus, week: string): Promise<void> {
-  const weekDir = await ensureWeekWorktree(week);
+async function mergeAndOpenIssues(pr: PullRequestStatus, batch: string): Promise<void> {
+  const batchDir = await ensureBatchWorktree(batch);
   await mergePullRequest(pr.number);
-  log.info(`exploración: PR semanal #${pr.number} mergeado, abriendo issues de sus propuestas`);
+  log.info(`exploración: PR #${pr.number} mergeado, abriendo issues de sus propuestas`);
   const base = (activeRepo().worktreeBaseRef ?? config.worktreeBaseRef).replace(/^origin\//, '');
-  for (const app of await appsWithMemory(weekDir)) {
-    await openFindingIssues(app, memoryDirFor(weekDir, app), weekDir, base, (f) => f.estado === 'propuesto');
+  for (const app of await appsWithMemory(batchDir)) {
+    await openFindingIssues(app, memoryDirFor(batchDir, app), batchDir, base, (f) => f.estado === 'propuesto');
   }
 }
 
-export async function processExplorationPr(pr: PullRequestStatus, now = new Date()): Promise<void> {
-  const week = weekOfBranch(pr.headRefName);
-  if (!week) return;
+export async function processExplorationPr(pr: PullRequestStatus): Promise<void> {
+  const batch = batchOfBranch(pr.headRefName);
+  if (!batch) return;
   if (await exploreWorkerBusy()) return; // the worker is writing this branch right now
-  await applyFeedback(pr, week);
+  const redo = await applyFeedback(pr, batch);
+  if (redo.length > 0) {
+    launchExploreWorker({ repo: activeRepo().productRepo, appName: redo[0].app, redo: { prNumber: pr.number, batch, items: redo } });
+    return; // the worker now owns the branch; merging waits for the next tick
+  }
+  // PRs opened as drafts before batches were rolling.
   if (pr.isDraft) {
-    if (week < isoWeek(new Date(`${explorationDay(now)}T12:00:00`))) {
-      await markPullRequestReady(pr.number);
-      log.info(`exploración: PR semanal #${pr.number} (${week}) listo para revisar`);
-    }
+    await markPullRequestReady(pr.number);
+    log.info(`exploración: PR #${pr.number} listo para revisar`);
     return;
   }
-  if (pr.reviewDecision === 'APPROVED') await mergeAndOpenIssues(pr, week);
+  if (pr.reviewDecision === 'APPROVED') await mergeAndOpenIssues(pr, batch);
+}
+
+// The redo half of the feedback, in the worker: new after images for the
+// findings a reviewer asked to fix, committed to the PR, and a reply on
+// each comment.
+export async function redoAndPublish(redo: NonNullable<ExploreWorkerRequest['redo']>): Promise<void> {
+  const batchDir = await ensureBatchWorktree(redo.batch);
+  const done = new Set<string>();
+  for (const app of [...new Set(redo.items.map((i) => i.app))]) {
+    const items = redo.items.filter((i) => i.app === app);
+    const codeDir = await ensureAppWorktree(app);
+    for (const id of await redoAfterImages({ appName: app, codeDir, memoryDir: memoryDirFor(batchDir, app), requests: items })) done.add(`${app}/${id}`);
+  }
+  if (await commitAndPush(batchDir, explorationBranch(redo.batch), `exploración: después rehecho (${[...done].join(', ') || 'ninguno'})`)) await upsertExplorationPr(redo.batch, batchDir);
+  for (const item of redo.items) {
+    const ok = done.has(`${item.app}/${item.findingId}`);
+    const body = ok
+      ? `Rehice la imagen del después de ${item.findingId}; ya está en la ficha.`
+      : `No pude rehacer la imagen del después de ${item.findingId}; el detalle está en el log del runner.`;
+    await replyToComment(redo.prNumber, { id: item.commentId, kind: 'review' }, body).catch((error) => log.error(`exploración: no se pudo responder el comentario ${item.commentId}`, error));
+  }
 }
 
 export async function explorationPrs(): Promise<PullRequestStatus[]> {
@@ -206,6 +278,8 @@ export interface ExploreWorkerRequest {
   trigger?: { issueNumber: number; commentIds: number[] };
   // Nightly runs stop starting new functions once the window closes.
   until?: string;
+  // Instead of a run: redo the after images reviewers asked for.
+  redo?: { prNumber: number; batch: string; items: RedoItem[] };
 }
 
 function lockPath(): string {

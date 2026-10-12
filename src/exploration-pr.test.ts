@@ -2,9 +2,10 @@ import { describe, it, expect, vi } from 'vitest';
 
 vi.mock('./config.js', () => ({ config: { worktreeBaseRef: 'origin/main', githubLogin: 'ronin-agent' } }));
 vi.mock('./repo-context.js', () => ({ activeRepo: () => ({ productRepo: 'redmotos/shoppingcart', worktreeBaseRef: 'origin/odoo-main' }) }));
-vi.mock('./github.js', () => ({}));
+const listOpenPrsByHeadPrefix = vi.hoisted(() => vi.fn());
+vi.mock('./github.js', () => ({ listOpenPrsByHeadPrefix: (...a: unknown[]) => listOpenPrsByHeadPrefix(...a) }));
 
-import { explorationBranch, findingIssueKey, isoWeek, renderDigest, renderFindingIssue, weekOfBranch } from './exploration-pr.js';
+import { batchOfBranch, currentBatch, explorationBranch, findingIssueKey, renderDigest, renderFindingIssue } from './exploration-pr.js';
 import type { Finding, FindingMeta } from './exploration-memory.js';
 
 function meta(overrides: Partial<FindingMeta> = {}): FindingMeta {
@@ -15,19 +16,22 @@ function meta(overrides: Partial<FindingMeta> = {}): FindingMeta {
   };
 }
 
-describe('isoWeek', () => {
-  it('follows ISO 8601: weeks start on Monday and belong to their Thursday’s year', () => {
-    expect(isoWeek(new Date('2026-10-12T03:00:00'))).toBe('2026-W42');
-    expect(isoWeek(new Date('2026-10-18T23:00:00'))).toBe('2026-W42');
-    expect(isoWeek(new Date('2026-10-19T00:30:00'))).toBe('2026-W43');
-    expect(isoWeek(new Date('2027-01-01T12:00:00'))).toBe('2026-W53');
-    expect(isoWeek(new Date('2025-12-29T12:00:00'))).toBe('2026-W01');
+describe('batches', () => {
+  it('names the branch after the batch and reads it back, old weekly ones included', () => {
+    expect(explorationBranch('2026-10-12')).toBe('ronin/exploration/2026-10-12');
+    expect(batchOfBranch('ronin/exploration/2026-10-12-2')).toBe('2026-10-12-2');
+    expect(batchOfBranch('ronin/exploration/2026-W42')).toBe('2026-W42');
+    expect(batchOfBranch('ronin/42/slice-1')).toBeUndefined();
   });
+});
 
-  it('names the branch after the week and reads it back', () => {
-    expect(explorationBranch('2026-W42')).toBe('ronin/exploration/2026-W42');
-    expect(weekOfBranch('ronin/exploration/2026-W42')).toBe('2026-W42');
-    expect(weekOfBranch('ronin/42/slice-1')).toBeUndefined();
+describe('currentBatch', () => {
+  it('goes to the open exploration PR, the oldest if there are more', async () => {
+    listOpenPrsByHeadPrefix.mockResolvedValue([
+      { number: 801, headRefName: 'ronin/exploration/2026-10-14' },
+      { number: 794, headRefName: 'ronin/exploration/2026-W42' },
+    ]);
+    expect(await currentBatch('2026-10-15')).toEqual({ batch: '2026-W42', prNumber: 794 });
   });
 });
 
@@ -45,7 +49,7 @@ describe('renderFindingIssue', () => {
 });
 
 describe('renderDigest', () => {
-  it('lists this week’s findings per app with their state, and how to review', () => {
+  it('lists the findings this PR adds per app with their state, and how to review', () => {
     const memory = {
       dir: '/m',
       inventory: { funciones: [] },
@@ -54,28 +58,31 @@ describe('renderDigest', () => {
         meta(),
         meta({ id: 'F-0008', titulo: 'Idea: escanear | código', tipo: 'idea', gravedad: 'pulido', estado: 'rechazado', motivo: 'no hay lectores' }),
         meta({ id: 'F-0009', titulo: 'Con issue', issue: 812 }),
-        meta({ id: 'F-0001', titulo: 'De otra semana', fecha: '2026-10-01' }),
+        meta({ id: 'F-0010', titulo: 'Seed roto', entorno: true }),
+        meta({ id: 'F-0001', titulo: 'De un PR anterior', fecha: '2026-10-01' }),
       ],
     };
     const digest = renderDigest({
-      week: '2026-W42', branch: 'ronin/exploration/2026-W42', repo: 'o/r', login: 'ronin-agent',
-      apps: [{ appName: 'backoffice', memory, runs: ['2026-10-14-123'] }],
+      since: '2026-10-12', branch: 'ronin/exploration/2026-10-12', repo: 'o/r',
+      apps: [{ appName: 'backoffice', memory, findingIds: new Set(['F-0007', 'F-0008', 'F-0009', 'F-0010']), runs: ['2026-10-14-123'] }],
     });
-    expect(digest).toContain('# Exploración de ronin — semana 2026-W42');
+    expect(digest).toContain('# Exploración de ronin — desde 2026-10-12');
     expect(digest).toContain('comentá en su ficha');
-    expect(digest).toContain('[F-0007](https://github.com/o/r/blob/ronin/exploration/2026-W42/docs/exploration/backoffice/findings/F-0007-doble-toque-duplica-el-pedido.md)');
+    expect(digest).toContain('rehago la captura del después');
+    expect(digest).toContain('[F-0007](https://github.com/o/r/blob/ronin/exploration/2026-10-12/docs/exploration/backoffice/findings/F-0007-doble-toque-duplica-el-pedido.md)');
     expect(digest).toContain('Idea: escanear / código');
     expect(digest).toContain('rechazada: no hay lectores');
     expect(digest).toContain('issue #812');
-    expect(digest).not.toContain('De otra semana');
+    expect(digest).toContain('Seed roto _(entorno de dev)_');
+    expect(digest).not.toContain('De un PR anterior');
     expect(digest).toContain('runs/2026-10-14-123.md');
   });
 
-  it('says so when an app has nothing this week', () => {
+  it('says so when an app has nothing in this PR', () => {
     const digest = renderDigest({
-      week: '2026-W42', branch: 'b', repo: 'o/r', login: 'x',
-      apps: [{ appName: 'backoffice', memory: { dir: '', inventory: { funciones: [] }, knowledge: '', findings: [] }, runs: [] }],
+      since: '2026-10-12', branch: 'b', repo: 'o/r',
+      apps: [{ appName: 'backoffice', memory: { dir: '', inventory: { funciones: [] }, knowledge: '', findings: [] }, findingIds: new Set(), runs: [] }],
     });
-    expect(digest).toContain('Sin propuestas esta semana.');
+    expect(digest).toContain('Sin propuestas en este PR.');
   });
 });
