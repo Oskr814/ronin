@@ -48,6 +48,14 @@ describe('loadRepos', () => {
     expect(repos[0].worktreeBaseRef).toBe('origin/odoo-main');
   });
 
+  it('loads the apps to explore every night, and rejects anything but a list of names', async () => {
+    await writeFile(reposConfigPath, JSON.stringify([{ productRepo: 'a/b', productRepoPath: '/tmp/a', explore: ['backoffice'] }]));
+    expect((await loadRepos())[0].explore).toEqual(['backoffice']);
+
+    await writeFile(reposConfigPath, JSON.stringify([{ productRepo: 'a/b', productRepoPath: '/tmp/a', explore: 'backoffice' }]));
+    await expect(loadRepos()).rejects.toThrow('explore');
+  });
+
   it('throws when worktreeBaseRef is present but not a string', async () => {
     await writeFile(reposConfigPath, JSON.stringify([{ productRepo: 'a/b', productRepoPath: '/tmp/a', worktreeBaseRef: 42 }]));
     await expect(loadRepos()).rejects.toThrow('worktreeBaseRef');

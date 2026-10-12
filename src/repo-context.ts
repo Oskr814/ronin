@@ -20,6 +20,10 @@ export interface RepoEntry {
   // productRepoPath — ronin never clones this itself, only fetches/resets it
   // (see changelog.ts's ensureChangelogRepoUpToDate).
   changelogRepoPath?: string;
+  // Apps of this repo's ronin.app.json that get explored every night — see
+  // exploration-schedule.ts. Absent: no nightly exploration (/explore still
+  // works on demand).
+  explore?: string[];
 }
 
 interface ActiveRepo extends RepoEntry {

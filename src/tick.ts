@@ -41,6 +41,7 @@ import { withHelpFooter } from './help.js';
 import { findPrsNeedingReview, type ReviewCandidate, type TrustedFixCandidate } from './external-review.js';
 import { findIssueCommands, type ExploreCandidate, type SpikeCandidate } from './spike.js';
 import { explorationPrs, exploreWorkerBusy, launchExploreWorker, processExplorationPr } from './exploration-flow.js';
+import { maybeLaunchNightlyExploration } from './exploration-schedule.js';
 import { findReleasesNeedingChangelog, type ChangelogCandidate } from './changelog.js';
 import { setLastChangelogRelease } from './local-state.js';
 import { config, LABEL_DIRECT_ISSUE, LABEL_MANAGED, LABEL_STACK_PRS, LABEL_STATES } from './config.js';
@@ -941,6 +942,9 @@ async function tickOneRepo(): Promise<void> {
     // /spike or a changelog entry, and nothing waits for a whole other flow
     // to finish first. The flows share nothing, and each discovery handles
     // its own failure — one of them failing only leaves its own jobs out.
+    // Only starts a separate process (see exploration-schedule.ts), so it
+    // never holds this tick up; a failure here is logged, never escalated.
+    await maybeLaunchNightlyExploration().catch((error) => log.error('exploración nocturna: no se pudo lanzar', error));
     const [issues, reviews, spikes, changelog, exploration] = await Promise.all([
       issueJobs(inProgress),
       externalReviewJobs(),

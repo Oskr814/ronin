@@ -24,6 +24,10 @@ export interface LocalState {
   // Changelog treats that as "mark the current latest as the baseline,
   // generate nothing" rather than backfilling every release ever published.
   lastChangelogRelease?: { tag: string; publishedAt: string };
+  // App → the night (local date) its nightly exploration was last started.
+  // One start per app per night, success or not: a run that fails must not
+  // be relaunched every tick until morning — see exploration-schedule.ts.
+  nightlyExploration: Record<string, string>;
 }
 
 // In-process serialization for the read-modify-write span around this file:
@@ -63,9 +67,10 @@ export async function readLocalState(): Promise<LocalState> {
       checksPendingCounts: raw.checksPendingCounts ?? {},
       lastReviewedSha: raw.lastReviewedSha ?? {},
       lastChangelogRelease: raw.lastChangelogRelease,
+      nightlyExploration: raw.nightlyExploration ?? {},
     };
   } catch {
-    return { claimedIssues: [], checksPendingCounts: {}, lastReviewedSha: {} };
+    return { claimedIssues: [], checksPendingCounts: {}, lastReviewedSha: {}, nightlyExploration: {} };
   }
 }
 
@@ -130,6 +135,18 @@ export async function setLastChangelogRelease(tag: string, publishedAt: string):
   return withLocalStateLock(async () => {
     const state = await readLocalState();
     state.lastChangelogRelease = { tag, publishedAt };
+    await writeLocalState(state);
+  });
+}
+
+export async function getNightlyExploration(): Promise<Record<string, string>> {
+  return (await readLocalState()).nightlyExploration;
+}
+
+export async function setNightlyExploration(appName: string, night: string): Promise<void> {
+  return withLocalStateLock(async () => {
+    const state = await readLocalState();
+    state.nightlyExploration[appName] = night;
     await writeLocalState(state);
   });
 }
