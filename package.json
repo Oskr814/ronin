@@ -24,7 +24,8 @@
   },
   "dependencies": {
     "gray-matter": "^4.0.3",
-    "nodemailer": "^6.9.16"
+    "nodemailer": "^6.9.16",
+    "playwright": "1.64.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
