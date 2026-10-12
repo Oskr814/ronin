@@ -325,3 +325,15 @@ describe('findTrustedSpikeCommand', () => {
     expect(result).toEqual([]);
   });
 });
+
+describe('parseExploreCommand', () => {
+  it('reads the app and an optional function count, capped at 10', async () => {
+    const { parseExploreCommand, isExploreCommand } = await import('./mentions.js');
+    expect(parseExploreCommand('@ronin /explore backoffice')).toEqual({ appName: 'backoffice' });
+    expect(parseExploreCommand('@ronin /explore backoffice 2')).toEqual({ appName: 'backoffice', maxFunctions: 2 });
+    expect(parseExploreCommand('@ronin /explore backoffice 50')).toEqual({ appName: 'backoffice', maxFunctions: 10 });
+    expect(parseExploreCommand('@ronin /explore')).toBeNull();
+    expect(isExploreCommand('@ronin /explore backoffice')).toBe(true);
+    expect(isExploreCommand('@ronin /explorer')).toBe(false);
+  });
+});
