@@ -174,6 +174,170 @@ Misma identidad que la asignación de specs (§1): `RUNNER_ID` (el usuario de Gi
 
 **El gap de descubrimiento duplicado que documentábamos acá (dos máquinas creando dos issues para el mismo spec) queda resuelto por el cambio de §1**: como la asignación de qué runner procesa un spec la hace un humano poniendo una sola label en un solo PR, no hay dos runners compitiendo por "descubrir" lo mismo — solo uno tiene la label. Lo que sigue siendo un problema de **proceso humano, no de concurrencia**: si alguien pone la misma label en dos PRs que describen el mismo trabajo, eso lo procesan igual como dos specs distintos — no hay nada en el código que detecte esa duplicación de contenido.
 
+### 11. Exploración: ronin usa la app y propone mejoras
+
+Hasta acá ronin solo reacciona: implementa lo que se le asigna y revisa lo que se le pide. Esta sección le agrega la parte que hace un dev senior o un QA por iniciativa propia: **usar la app, encontrar dónde duele y proponer cómo mejorarlo**, con evidencia y un mockup. El humano sigue decidiendo qué se hace, igual que en el resto del sistema.
+
+#### 11.1 Principios
+
+- **Autodescubrimiento anclado en tareas.** No hay un archivo de objetivos: definir el objetivo suele traer la solución adentro, y entonces no queda nada por descubrir. Una propuesta tiene que nacer de **fricción observada mientras se completaba una tarea real en la app** (crear un borrador, confirmar, surtir…), no de una opinión estética.
+- **La evidencia sale de usar la app, no de leer el código.** El código y el historial de git sirven para decidir *dónde* mirar (dónde se concentran los fixes, qué cambió hace poco), pero no alcanzan para justificar una propuesta. En la exploración que llevó a este diseño, un análisis estático ("estas pantallas no tienen clases responsive") concluyó que el flujo de pedidos no funcionaba en mobile, y era falso.
+- **Acotado por corrida.** La app crece; ronin nunca la prueba entera. Cada corrida explora como máximo N funciones, y la rotación (§11.4) cubre el resto con el tiempo.
+- **Lo que ya se decidió no vuelve.** Cada rechazo, con su motivo, queda en la memoria (§11.6) y se tiene en cuenta en las corridas siguientes.
+
+#### 11.2 Correr la app (`app:up`)
+
+Requisito para todo lo demás. Un manifiesto por repo (en `repos.json` o en `ronin.app.json` del repo del producto) dice cómo levantar la app en un worktree aislado:
+
+- archivo(s) de compose y override generado por ronin para no chocar con el stack de desarrollo de un humano (puertos y `container_name` fijos — p. ej. `web` / `postgres-ecommerce` / 5000 / 5434 en shoppingcart, mismo problema que ya resuelve `DB_PORT` en bmedical)
+- paso de seed (en shoppingcart los seeds de `Dumps/postgres/` se montan pero no corren solos)
+- URL base y healthcheck
+- credenciales de prueba por rol — siempre de seed, nunca reales
+- viewports: desktop y mobile
+
+Siempre contra datos de seed, nunca contra producción. El seed tiene que incluir casos de volumen realista (un pedido de 3 líneas no muestra los problemas de uno de 80). La baja reusa `removeDockerStack` de `worktree.ts`. Si `app:up` falla, la corrida lo reporta como primer hallazgo en vez de bloquearse.
+
+#### 11.3 Qué se busca: las 7 señales
+
+| # | Señal | Cómo se observa usando la app |
+|---|---|---|
+| 1 | Muchos pasos para completar una tarea | pasos, clicks/taps, pantallas y campos contados al completarla |
+| 2 | Idas y vueltas | navegación atrás/adelante necesaria para terminar la tarea |
+| 3 | Pantalla cargada | densidad, elementos fuera de pantalla, scroll excesivo, juicio visual del screenshot |
+| 4 | Componente con bugs | errores de consola, 4xx/5xx, interacciones que fallan — se confirma con un test que lo reproduce (mismo criterio que la Etapa 4 de la review externa) |
+| 5 | Mal patrón de UX global | el mismo problema en N pantallas → una sola propuesta transversal |
+| 6 | UI inconsistente | la misma acción resuelta distinto en pantallas distintas |
+| 7 | UI muerta | elementos que parecen interactivos y no hacen nada, rutas placeholder |
+
+Además de **hallazgos** (fricción observada), ronin puede proponer **ideas**: oportunidades de mejorar un flujo ("repetir el último pedido del cliente", "escanear el código de barras al surtir"). Una idea tiene que estar atada a una función explorada en esa corrida, lleva mockup obligatorio, va con label propio (`ronin:idea`), tiene tope de 1–2 por corrida y nunca desplaza a un hallazgo con evidencia.
+
+Gravedad, en orden: bug → fricción que bloquea la tarea → fricción que la hace más lenta → inconsistencia → pulido. Si una corrida no encuentra nada de los primeros niveles, publica menos; no rellena el cupo con pulido.
+
+**Analítica real** (Clarity, GA4) queda como fuente de confirmación opcional, no como base: en apps internas con pocos usuarios los números son ruido, y en apps con datos de salud (bmedical) no se agrega analítica de terceros.
+
+#### 11.4 Qué se explora en cada corrida
+
+**Inventario de funciones** (`inventory.yml`, §11.6): cada corrida arranca comparando rutas y navegación de la app contra el inventario; lo nuevo se agrega solo, lo eliminado se marca retirado. El equipo puede editarlo para excluir funciones, subirles prioridad o anotar contexto que la app no muestra ("bodega la usa desde el teléfono").
+
+**Selección** de hasta N funciones (p. ej. 3), cada una en desktop y mobile:
+
+1. nueva, nunca explorada
+2. cambiada desde su última exploración (`git log` sobre sus archivos desde esa fecha — lo recién mergeado se revisa pronto)
+3. marcada `alta` por el equipo
+4. la que hace más tiempo que no se explora
+
+**Un cupo por corrida es aleatorio**, ponderado por riesgo (historial de fixes, cantidad de lógica), aunque no le toque por fecha — para encontrar lo que la rotación ordenada tardaría meses en cubrir.
+
+**Charters** (técnica de exploratory testing): a cada función seleccionada se le sortea un ángulo, favoreciendo los que todavía no se le aplicaron, hasta cubrir la matriz función × charter:
+
+| Charter | Qué hace |
+|---|---|
+| camino-feliz | completar la tarea con la menor cantidad de pasos |
+| datos-hostiles | vacíos, límites, textos largos, caracteres raros, negativos |
+| interrupciones | atrás, recargar, doble envío, red lenta, sesión vencida a mitad del flujo |
+| concurrencia | dos sesiones sobre el mismo registro |
+| volumen | registros con muchas líneas o mucho historial |
+| primera-vez | usar la app solo con lo que dice la UI, sin conocer el dominio |
+| recorrido-completo | la función como parte de un flujo de punta a punta |
+| cambio-de-dispositivo | la misma tarea en desktop y mobile, comparando |
+
+Los datos concretos (cliente, productos, cantidades) también se eligen al azar dentro del seed. **Toda la aleatoriedad usa una semilla registrada en el run y en cada hallazgo**: un bug encontrado al azar que no se puede reproducir no sirve. No se hace monkey testing puro (clicks al azar), salvo como presupuesto chico para detectar crashes sin proponer nada.
+
+#### 11.5 Mockups: Artifacts publicados desde una sesión `--bg`
+
+Cada propuesta lleva antes/después. El "después" se arma preferentemente aplicando un parche borrador en el worktree (sin pushear) y sacando screenshot de la app real, con el design system real; si no es viable, un mockup en HTML.
+
+Se publica como **Claude Artifact** (privado por defecto, interactivo, versionable, con comentarios). Verificado en el spike de 2026-10-11: `claude -p` **no** tiene la herramienta Artifact, pero una sesión `claude --bg` sí. El worker de `-p` genera el HTML; el supervisor lanza una sesión `--bg` corta cuyo único trabajo es publicarlo e imprimir `RONIN_ARTIFACT_URL=<url>`, la lee con `claude logs <id>` y la borra con `claude stop` + `claude rm`. Así el modelo de `claude-runner.ts` (timeout, output, exit code) no cambia.
+
+#### 11.6 Memoria en el repo del producto
+
+```
+docs/exploration/
+├── README.md          # qué es esto y cómo leerlo
+├── inventory.yml      # índice: funciones, cobertura y hallazgos
+├── knowledge.md       # decisiones del equipo: "ya cubierto", "descartado", con motivo
+├── findings/
+│   └── F-0007-confirmar-doble-envio.md
+└── runs/
+    └── 2026-10-14.md  # plan (funciones, charters, semilla) y resumen de la corrida
+```
+
+`inventory.yml` — lo único que ronin lee entero en cada corrida:
+
+```yaml
+- id: pedidos.confirmar
+  nombre: Confirmar pedido
+  rutas: [/pedidos/:orderId/confirmar]
+  roles: [Sales, Admin]
+  archivos: [apps/backoffice/src/modules/pedidos/pages/orders/ConfirmOrderPage.tsx]
+  notas: bodega también la usa desde el teléfono
+  prioridad: normal                 # normal | alta | excluida
+  cobertura:                        # charter → última fecha, por viewport
+    desktop: { camino-feliz: 2026-10-14, datos-hostiles: 2026-10-21 }
+    mobile:  { interrupciones: 2026-10-14 }
+  hallazgos: [F-0007, F-0012]
+```
+
+`findings/F-NNNN-<slug>.md` — una ficha por hallazgo o idea:
+
+```markdown
+---
+id: F-0007
+tipo: hallazgo            # hallazgo | idea
+funcion: pedidos.confirmar
+señal: bug
+gravedad: alta
+charter: interrupciones
+viewport: mobile
+semilla: 83121
+estado: propuesto         # propuesto | aprobado → issue #N | rechazado | resuelto
+huella: confirmar|doble-click|pedido-duplicado
+mockup: https://claude.ai/artifact/…
+---
+Qué pasó, cómo reproducirlo, evidencia y propuesta.
+```
+
+- La **huella** es lo que evita repetir: antes de proponer, ronin compara contra las huellas de todas las fichas (incluidas las rechazadas) y `knowledge.md`, leyendo solo el frontmatter.
+- `runs/` es para auditoría humana; ronin no lo lee para decidir, así la memoria no crece en tokens con cada corrida.
+- Imágenes fuera del repo: screenshots y mockups viven en Artifacts, la ficha guarda el link y la evidencia descrita en texto.
+
+#### 11.7 Flujo: un PR por semana
+
+1. Cada corrida commitea en `ronin/exploration/<año>-W<semana>` (run + fichas + inventario). La primera de la semana abre un **PR draft**; las siguientes leen la memoria de esa misma rama.
+2. Al cierre de la semana el PR pasa a *ready for review*. **El body del PR es el digest semanal.**
+3. El humano revisa en el PR. Un comentario sobre una ficha ("ya está cubierto") lo aplica ronin con el mecanismo de comentarios existente: estado `rechazado` + motivo, y a `knowledge.md` si corresponde.
+4. Approve + merge (mismo gate que el resto): ronin crea issues **solo para las fichas en `aprobado`**. Asignar ese issue a ronin lo mete en el flujo de `fix-issue` o de spec de siempre.
+5. Excepción: un bug de gravedad alta abre su issue en el momento, sin esperar al cierre; igual queda registrado en su ficha.
+
+#### 11.8 Programación nocturna
+
+Sin cron aparte: el tick evalúa `es de noche (ventana configurable, p. ej. 01:00–06:00) && la corrida de hoy no está hecha → explorar`. "Hecha" se infiere del repo (existe `runs/<fecha>.md` en la rama de la semana), en línea con "GitHub como máquina de estados": si un corte de cuota interrumpe la corrida, el tick siguiente la retoma.
+
+- **Lo urgente primero**: un issue asignado o una mención que llega de noche se procesa antes; la exploración es la prioridad más baja y es interrumpible entre funciones.
+- **Presupuesto por noche, no "usar todo"**: la noche aprovecha la ventana de 5 h de Claude que nadie usa, pero el límite **semanal** es compartido con el trabajo de día. Tope de tiempo y modelo de los workers configurables (como `EXTERNAL_REVIEW_WORKER_MODEL`).
+- **Prompt injection desde la app**: el contenido de páginas y datos se trata como dato, con los mismos marcadores `<<<…>>>` que los comentarios.
+
+#### 11.9 Preguntas por Remote Control
+
+Cuando cualquier tarea termina en `RONIN_STATUS: needs-info`, además de dejar las preguntas en el issue, el supervisor puede abrir una sesión `claude --bg --remote-control <nombre>` con el contexto (issue, lo investigado, las preguntas) cuyo único trabajo es entrevistar al humano y escribir `## Respuestas` en el issue. El link (`https://claude.ai/code/session_…`) se lee de `claude logs <id>` y se publica en el issue + email. Al terminar, o tras un timeout (p. ej. 24 h), `claude stop` + `claude rm`; el tick siguiente ve las respuestas y retoma con un worker nuevo.
+
+- Es una sesión **aparte**, no el worker esperando: un worker bloqueado retendría el `flock` del tick, el worktree y el stack de docker.
+- Modo `plan`/solo lectura; lo único que hace es comentar en ese issue. Las respuestas siempre quedan en el issue, porque la sesión se borra.
+- Debe correr desde un directorio con trust ya dado: sin TTY, `remote-control` no puede preguntarlo y falla con `Workspace not trusted` (los worktrees nuevos no lo tienen).
+- **Solo sirve a la cuenta de claude.ai del runner** (Remote Control no se comparte entre cuentas), así que responder por comentario en el issue sigue siendo el canal para el resto del equipo.
+- Sin verificar: si `claude rm` también archiva la sesión en claude.ai/code.
+
+#### 11.10 Etapas
+
+0. ~~Spike: Artifacts desde headless, captura del link de Remote Control, quién puede abrir cada cosa~~ — hecho 2026-10-11 (resultados en §11.5 y §11.9)
+1. `app:up` para el backoffice de shoppingcart: manifiesto, override de compose, seed, login por rol, desktop + mobile
+2. `/explore` a pedido (por mención): inventario, charters, hallazgos e ideas, mockups en Artifacts, memoria en `docs/exploration/` — iterar la calidad a mano antes de programarlo
+3. Programación nocturna + PR semanal
+4. Preguntas por Remote Control para `needs-info`
+5. `/spec`: de un pedido en bruto (o una propuesta aprobada) a un PR draft de spec
+
+Piloto: el backoffice de shoppingcart (herramienta interna, se levanta entero con stubs de Odoo/GCP, usuarios con el mismo rol `Sales` pero dos usos distintos — vendedores en desktop y bodega en el teléfono). El mecanismo se evalúa por la calidad de lo que encuentra: ¿detecta lo que el equipo ya sabía?, ¿encuentra algo nuevo?, ¿cuántas propuestas se descartan?
+
 ## Estado actual
 
 - [x] Definir el esqueleto del supervisor (script + estructura de tick) — ver §3.1 y `src/`
@@ -190,6 +354,7 @@ Misma identidad que la asignación de specs (§1): `RUNNER_ID` (el usuario de Gi
 **Pendiente, fuera de este scaffold:**
 
 - Nunca se probó en vivo contra un PR real con specs de e2e afectados (el dry run de §10 usó un spec sin ningún componente de UI)
+- Exploración y propuestas de mejora (§11): diseño cerrado, implementación por etapas desde `app:up` (§11.10)
 
 - Backoff específico para rate-limit/cuota de `claude`: hoy ese fallo cae en el catch-all de `tick.ts` como cualquier otra excepción → bloqueo + email, en vez de reintentarse solo más tarde sin marcar el issue como bloqueado
 - Cuándo limpiar un worktree (`removeWorktree` existe pero no está conectado a nada todavía — ¿al mergear? ¿al llegar a `blocked`?)
