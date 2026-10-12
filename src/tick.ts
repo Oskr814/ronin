@@ -39,7 +39,8 @@ import { worktreeDirFor, isBehind, attemptRebase, removeWorktree, sweepOrphanedW
 import { findUnprocessedMentions, isFixCommentsCommand } from './mentions.js';
 import { withHelpFooter } from './help.js';
 import { findPrsNeedingReview, type ReviewCandidate, type TrustedFixCandidate } from './external-review.js';
-import { findIssuesNeedingSpike, type SpikeCandidate } from './spike.js';
+import { findIssueCommands, type ExploreCandidate, type SpikeCandidate } from './spike.js';
+import { explorationPrs, exploreWorkerBusy, launchExploreWorker, processExplorationPr } from './exploration-flow.js';
 import { findReleasesNeedingChangelog, type ChangelogCandidate } from './changelog.js';
 import { setLastChangelogRelease } from './local-state.js';
 import { config, LABEL_DIRECT_ISSUE, LABEL_MANAGED, LABEL_STACK_PRS, LABEL_STATES } from './config.js';
@@ -749,13 +750,53 @@ export async function processSpikeCandidate(candidate: SpikeCandidate): Promise<
 // this tick.
 export async function spikeJobs(): Promise<Job[]> {
   let candidates: SpikeCandidate[];
+  let explores: ExploreCandidate[];
   try {
-    candidates = await findIssuesNeedingSpike();
+    ({ spikes: candidates, explores } = await findIssueCommands());
   } catch (error) {
-    log.info(`tick: findIssuesNeedingSpike falló, reintentando en el próximo tick: ${(error as Error).message}`);
+    log.info(`tick: findIssueCommands falló, reintentando en el próximo tick: ${(error as Error).message}`);
     return [];
   }
-  return candidates.map((c) => ({ kind: 'spike', label: `issue #${c.issueNumber}`, run: () => processSpikeCandidate(c) }));
+  return [
+    ...candidates.map((c) => ({ kind: 'spike', label: `issue #${c.issueNumber}`, run: () => processSpikeCandidate(c) })),
+    ...explores.slice(0, 1).map((c) => ({ kind: 'explore-launch', label: `issue #${c.issueNumber}`, run: () => launchExploreCandidate(c) })),
+  ];
+}
+
+// An /explore never runs inside the tick: it can take an hour, and the tick
+// is single-flight. It starts a separate worker process (see
+// exploration-flow.ts) — one per repo at a time; while one runs, the next
+// command waits for a later tick (no 👀 yet, so it's picked up again).
+export async function launchExploreCandidate(candidate: ExploreCandidate): Promise<void> {
+  if (await exploreWorkerBusy()) {
+    log.info(`issue #${candidate.issueNumber}: /explore esperando, ya hay una exploración corriendo en este repo`);
+    return;
+  }
+  launchExploreWorker({
+    repo: activeRepo().productRepo,
+    appName: candidate.appName,
+    ...(candidate.maxFunctions ? { maxFunctions: candidate.maxFunctions } : {}),
+    trigger: { issueNumber: candidate.issueNumber, commentIds: candidate.trigger.map((c) => c.id) },
+  });
+}
+
+// The weekly exploration PRs: reviewers' comments on findings, last week's
+// PR marked ready, an approved one merged into issues — see
+// exploration-flow.ts's processExplorationPr. Each PR isolated like every
+// other flow here.
+export async function explorationPrJobs(): Promise<Job[]> {
+  let prs;
+  try {
+    prs = await explorationPrs();
+  } catch (error) {
+    log.info(`tick: explorationPrs falló, reintentando en el próximo tick: ${(error as Error).message}`);
+    return [];
+  }
+  return prs.map((pr) => ({
+    kind: 'exploration-pr',
+    label: `PR #${pr.number}`,
+    run: () => processExplorationPr(pr).catch((error) => log.error(`exploración: PR semanal #${pr.number} falló`, error)),
+  }));
 }
 
 export async function runSpikes(): Promise<void> {
@@ -821,6 +862,9 @@ const JOB_CAPS: Record<string, number> = {
     return config.externalReviewConcurrency;
   },
   changelog: 1,
+  // Both write the same week's exploration checkout.
+  'exploration-pr': 1,
+  'explore-launch': 1,
 };
 
 // One job per in-progress issue: its whole pipeline (fixes, then a possible
@@ -897,13 +941,14 @@ async function tickOneRepo(): Promise<void> {
     // /spike or a changelog entry, and nothing waits for a whole other flow
     // to finish first. The flows share nothing, and each discovery handles
     // its own failure — one of them failing only leaves its own jobs out.
-    const [issues, reviews, spikes, changelog] = await Promise.all([
+    const [issues, reviews, spikes, changelog, exploration] = await Promise.all([
       issueJobs(inProgress),
       externalReviewJobs(),
       spikeJobs(),
       changelogJobs(),
+      explorationPrJobs(),
     ]);
-    await runJobs([...issues, ...reviews, ...spikes, ...changelog], config.tickConcurrency, JOB_CAPS);
+    await runJobs([...issues, ...reviews, ...spikes, ...changelog, ...exploration], config.tickConcurrency, JOB_CAPS);
   } finally {
     // Always emitted, even when a discovery failed — durationMs vs.
     // agentRunsDurationMs is what tells whether a tick was mostly spent

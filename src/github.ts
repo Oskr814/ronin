@@ -931,3 +931,76 @@ export async function listReleases(): Promise<Release[]> {
   const raw = JSON.parse(stdout) as RawRelease[];
   return raw.map((r) => ({ ...r, url: `https://github.com/${activeRepo().productRepo}/releases/tag/${r.tagName}` }));
 }
+
+// Exploration's weekly PR (exploration-pr.ts) — see docs/DESIGN.md §11.7.
+
+export async function findOpenPrByHead(headBranch: string): Promise<PullRequestStatus | null> {
+  const stdout = await gh(['pr', 'list', '--state', 'open', '--head', headBranch, '--json', PR_JSON_FIELDS]);
+  const raw = JSON.parse(stdout) as RawPr[];
+  return raw.length > 0 ? toPullRequestStatus(raw[0]) : null;
+}
+
+export async function listOpenPrsByHeadPrefix(prefix: string): Promise<PullRequestStatus[]> {
+  const stdout = await gh(['pr', 'list', '--state', 'open', '--limit', String(PR_LIST_LIMIT), '--json', PR_JSON_FIELDS]);
+  return (JSON.parse(stdout) as RawPr[]).filter((pr) => pr.headRefName.startsWith(prefix)).map(toPullRequestStatus);
+}
+
+// REST, not `gh pr create`: same deprecated-Projects GraphQL failure as `gh
+// pr edit` (see setPullRequestBody).
+export async function createPullRequest(opts: { head: string; base: string; title: string; body: string; draft: boolean }): Promise<number> {
+  const stdout = await ghApi([
+    'api', '-X', 'POST', `repos/${activeRepo().productRepo}/pulls`,
+    '-f', `head=${opts.head}`, '-f', `base=${opts.base}`, '-f', `title=${opts.title}`, '-f', `body=${opts.body}`,
+    '-F', `draft=${opts.draft}`,
+  ]);
+  return (JSON.parse(stdout) as { number: number }).number;
+}
+
+export async function markPullRequestReady(prNumber: number): Promise<void> {
+  await gh(['pr', 'ready', String(prNumber)]);
+}
+
+export interface FileReviewComment {
+  id: number;
+  path: string;
+  body: string;
+  authorLogin: string;
+  reactionsEyes: number;
+  // Replies inside a thread point at its first comment; only first comments
+  // carry feedback on a file.
+  inReplyToId?: number;
+}
+
+export async function listFileReviewComments(prNumber: number): Promise<FileReviewComment[]> {
+  const stdout = await ghApi(['api', `repos/${activeRepo().productRepo}/pulls/${prNumber}/comments?per_page=100`]);
+  const raw = JSON.parse(stdout) as Array<RawApiComment & { path: string; in_reply_to_id?: number }>;
+  return raw.map((c) => ({
+    id: c.id,
+    path: c.path,
+    body: c.body,
+    authorLogin: c.user?.login ?? '',
+    reactionsEyes: c.reactions.eyes,
+    ...(c.in_reply_to_id ? { inReplyToId: c.in_reply_to_id } : {}),
+  }));
+}
+
+export async function createIssue(title: string, body: string, labels: string[]): Promise<{ number: number; url: string }> {
+  const dir = await mkdtemp(join(tmpdir(), 'ronin-issue-'));
+  const bodyFile = join(dir, 'body.md');
+  try {
+    await writeFile(bodyFile, body, 'utf8');
+    for (const label of labels) await ensureLabel(label);
+    const stdout = await gh(['issue', 'create', '--title', title, '--body-file', bodyFile, ...labels.flatMap((l) => ['--label', l])]);
+    const url = stdout.trim();
+    return { number: Number(url.split('/').pop()), url };
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
+// Every issue (open or closed) with this label, with its body — how
+// exploration finds the issue it already opened for a finding.
+export async function listIssuesWithLabel(label: string): Promise<Array<{ number: number; body: string; state: string }>> {
+  const stdout = await gh(['issue', 'list', '--state', 'all', '--label', label, '--limit', '1000', '--json', 'number,body,state']);
+  return JSON.parse(stdout) as Array<{ number: number; body: string; state: string }>;
+}

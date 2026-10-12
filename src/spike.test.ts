@@ -6,13 +6,22 @@ vi.mock('./github.js', () => ({
 }));
 
 const findTrustedSpikeCommand = vi.fn();
+const findTrustedExploreCommand = vi.fn();
 const parseSpikeCommand = vi.fn();
 vi.mock('./mentions.js', () => ({
-  findTrustedSpikeCommand: (...args: unknown[]) => findTrustedSpikeCommand(...args),
+  // One read per issue now returns both commands; the tests drive each half.
+  findTrustedIssueCommands: async (...args: unknown[]) => ({
+    spike: await findTrustedSpikeCommand(...args),
+    explore: await findTrustedExploreCommand(...args),
+  }),
   parseSpikeCommand: (...args: unknown[]) => parseSpikeCommand(...args),
+  parseExploreCommand: (body: string) => {
+    const match = body.match(/\/explore\s+(\S+)(?:\s+(\d+))?/);
+    return match ? { appName: match[1], ...(match[2] ? { maxFunctions: Number(match[2]) } : {}) } : null;
+  },
 }));
 
-import { findIssuesNeedingSpike } from './spike.js';
+import { findIssueCommands, findIssuesNeedingSpike } from './spike.js';
 
 function issue(overrides: Partial<{ number: number; title: string }> = {}) {
   return { number: 500, title: 'Login redirects to 404', ...overrides };
@@ -25,6 +34,7 @@ function comment(overrides: Partial<{ id: number; kind: 'issue' | 'review'; body
 beforeEach(() => {
   listOpenUnmanagedIssues.mockReset().mockResolvedValue([]);
   findTrustedSpikeCommand.mockReset().mockResolvedValue([]);
+  findTrustedExploreCommand.mockReset().mockResolvedValue([]);
   parseSpikeCommand.mockReset().mockReturnValue({ appName: 'backoffice', instruction: undefined });
 });
 
@@ -80,5 +90,18 @@ describe('findIssuesNeedingSpike', () => {
     expect(result).toEqual([
       { issueNumber: 501, appName: 'backoffice', instruction: undefined, trigger: [comment()] },
     ]);
+  });
+});
+
+describe('findIssueCommands', () => {
+  it('finds /explore with its app and optional function count, next to /spike', async () => {
+    listOpenUnmanagedIssues.mockResolvedValue([issue({ number: 500 }), issue({ number: 501 })]);
+    findTrustedSpikeCommand.mockResolvedValueOnce([comment()]).mockResolvedValueOnce([]);
+    findTrustedExploreCommand.mockResolvedValueOnce([]).mockResolvedValueOnce([comment({ id: 9, body: '@ronin /explore backoffice 2' })]);
+
+    const { spikes, explores } = await findIssueCommands();
+
+    expect(spikes.map((s) => s.issueNumber)).toEqual([500]);
+    expect(explores).toEqual([{ issueNumber: 501, appName: 'backoffice', maxFunctions: 2, trigger: [comment({ id: 9, body: '@ronin /explore backoffice 2' })] }]);
   });
 });

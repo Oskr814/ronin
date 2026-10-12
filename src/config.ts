@@ -113,6 +113,8 @@ const TASK_MODEL_DEFAULTS: Record<string, string> = {
   // Reading routes and pages into a list: checked by parseDiscoveredFunctions
   // and merged by code, so a mid-size model is enough.
   'explore-inventory': 'sonnet',
+  // Classifying a handful of review comments; the supervisor applies them.
+  'explore-feedback': 'sonnet',
 };
 
 function taskEnv(prefix: string, taskType: string): string | undefined {

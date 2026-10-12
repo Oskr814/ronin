@@ -27,6 +27,21 @@ export function isSpikeCommand(body: string): boolean {
 
 const SPIKE_COMMAND_RE = /\/spike\s+(\S+)(?:\s+([\s\S]+))?/i;
 
+// Triggers an exploration run of one app — see exploration-flow.ts. Issue
+// comments only, same as /spike.
+export function isExploreCommand(body: string): boolean {
+  return /\/explore\b/i.test(body);
+}
+
+const EXPLORE_COMMAND_RE = /\/explore\s+([\w.-]+)(?:\s+(\d+))?/i;
+
+export function parseExploreCommand(body: string): { appName: string; maxFunctions?: number } | null {
+  const match = body.match(EXPLORE_COMMAND_RE);
+  if (!match) return null;
+  const max = match[2] ? Number(match[2]) : undefined;
+  return { appName: match[1], ...(max && max > 0 ? { maxFunctions: Math.min(max, 10) } : {}) };
+}
+
 // null when the command is missing its required app_name — nothing
 // actionable to build a SpikeCandidate from in that case (see spike.ts).
 export function parseSpikeCommand(body: string): { appName: string; instruction?: string } | null {
@@ -68,8 +83,17 @@ export function trustedFixCommands(unprocessed: Comment[]): Comment[] {
 // being able to comment on a private repo's issue at all already implies
 // real access.
 export async function findTrustedSpikeCommand(issueNumber: number): Promise<Comment[]> {
-  const unprocessed = await findUnprocessedIssueMentions(issueNumber);
-  return unprocessed.filter((c) => isSpikeCommand(c.body) && c.authorLogin !== '');
+  return (await findTrustedIssueCommands(issueNumber)).spike;
+}
+
+// Both issue commands from one read of the issue's comments — the tick
+// checks every open unmanaged issue for either, every time.
+export async function findTrustedIssueCommands(issueNumber: number): Promise<{ spike: Comment[]; explore: Comment[] }> {
+  const unprocessed = (await findUnprocessedIssueMentions(issueNumber)).filter((c) => c.authorLogin !== '');
+  return {
+    spike: unprocessed.filter((c) => isSpikeCommand(c.body)),
+    explore: unprocessed.filter((c) => isExploreCommand(c.body) && !isSpikeCommand(c.body)),
+  };
 }
 
 async function filterUnprocessed(comments: Comment[]): Promise<Comment[]> {
