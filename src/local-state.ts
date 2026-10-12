@@ -28,6 +28,9 @@ export interface LocalState {
   // One start per app per night, success or not: a run that fails must not
   // be relaunched every tick until morning — see exploration-schedule.ts.
   nightlyExploration: Record<string, string>;
+  // Issue → the Remote Control interview session open for it (interview.ts),
+  // so a later tick can close it even after a restart.
+  interviews: Record<string, { sessionId: string; startedAt: string; url?: string; nonce?: string }>;
 }
 
 // In-process serialization for the read-modify-write span around this file:
@@ -68,9 +71,10 @@ export async function readLocalState(): Promise<LocalState> {
       lastReviewedSha: raw.lastReviewedSha ?? {},
       lastChangelogRelease: raw.lastChangelogRelease,
       nightlyExploration: raw.nightlyExploration ?? {},
+      interviews: raw.interviews ?? {},
     };
   } catch {
-    return { claimedIssues: [], checksPendingCounts: {}, lastReviewedSha: {}, nightlyExploration: {} };
+    return { claimedIssues: [], checksPendingCounts: {}, lastReviewedSha: {}, nightlyExploration: {}, interviews: {} };
   }
 }
 
@@ -147,6 +151,19 @@ export async function setNightlyExploration(appName: string, night: string): Pro
   return withLocalStateLock(async () => {
     const state = await readLocalState();
     state.nightlyExploration[appName] = night;
+    await writeLocalState(state);
+  });
+}
+
+export async function getInterviews(): Promise<LocalState['interviews']> {
+  return (await readLocalState()).interviews;
+}
+
+export async function setInterview(issueNumber: number, interview: LocalState['interviews'][string] | null): Promise<void> {
+  return withLocalStateLock(async () => {
+    const state = await readLocalState();
+    if (interview) state.interviews[issueNumber] = interview;
+    else delete state.interviews[issueNumber];
     await writeLocalState(state);
   });
 }
