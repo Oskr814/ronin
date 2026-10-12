@@ -102,6 +102,9 @@ export const config = {
 // repo's own `pnpm build` and AGENTS.md format).
 const TASK_MODEL_DEFAULTS: Record<string, string> = {
   'update-changelog': 'haiku',
+  // Reading routes and pages into a list: checked by parseDiscoveredFunctions
+  // and merged by code, so a mid-size model is enough.
+  'explore-inventory': 'sonnet',
 };
 
 function taskEnv(prefix: string, taskType: string): string | undefined {
