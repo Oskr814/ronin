@@ -24,7 +24,7 @@ vi.mock('./worktree.js', () => ({
   pruneReviewedPins: (...args: unknown[]) => pruneReviewedPins(...args),
 }));
 
-vi.mock('./logger.js', () => ({ log: { info: vi.fn(), error: vi.fn() } }));
+vi.mock('./logger.js', () => ({ log: { info: vi.fn(), error: vi.fn(), metric: vi.fn() } }));
 
 const getLastReviewedSha = vi.fn();
 const pruneLastReviewedSha = vi.fn();
@@ -34,10 +34,9 @@ vi.mock('./local-state.js', () => ({
 }));
 
 const findUnprocessedMentions = vi.fn();
-const findTrustedFixCommentsCommand = vi.fn();
-vi.mock('./mentions.js', () => ({
+vi.mock('./mentions.js', async (importOriginal) => ({
   findUnprocessedMentions: (...args: unknown[]) => findUnprocessedMentions(...args),
-  findTrustedFixCommentsCommand: (...args: unknown[]) => findTrustedFixCommentsCommand(...args),
+  trustedFixCommands: (await importOriginal<typeof import('./mentions.js')>()).trustedFixCommands,
 }));
 
 import { findPrsNeedingReview } from './external-review.js';
@@ -57,7 +56,6 @@ beforeEach(() => {
   getLastReviewedSha.mockReset().mockResolvedValue(undefined);
   pruneLastReviewedSha.mockReset().mockResolvedValue(undefined);
   findUnprocessedMentions.mockReset().mockResolvedValue([]);
-  findTrustedFixCommentsCommand.mockReset().mockResolvedValue([]);
 });
 
 describe('findPrsNeedingReview — reviewCandidates (read-only path, unchanged behavior)', () => {
@@ -212,7 +210,7 @@ describe('findPrsNeedingReview — reviewCandidates (read-only path, unchanged b
 describe('findPrsNeedingReview — trustedFixCandidates', () => {
   it('routes a non-fork PR with a trusted /fix-comments command to trustedFixCandidates, not reviewCandidates', async () => {
     listAllOpenExternalPrs.mockResolvedValue([extPr({ isCrossRepository: false })]);
-    findTrustedFixCommentsCommand.mockResolvedValue([{ id: 9, kind: 'issue', body: '@ronin /fix-comments', reactionsEyes: 0, authorLogin: 'someone' }]);
+    findUnprocessedMentions.mockResolvedValue([{ id: 9, kind: 'issue', body: '@ronin /fix-comments', reactionsEyes: 0, authorLogin: 'someone' }]);
     listAllOpenReviewThreads.mockResolvedValue([{ id: 'T1', body: 'finding from Copilot' }]);
 
     const { reviewCandidates, trustedFixCandidates } = await findPrsNeedingReview();
@@ -226,7 +224,7 @@ describe('findPrsNeedingReview — trustedFixCandidates', () => {
 
   it('includes threads the bot opened itself in an earlier automatic review pass', async () => {
     listAllOpenExternalPrs.mockResolvedValue([extPr({ isCrossRepository: false })]);
-    findTrustedFixCommentsCommand.mockResolvedValue([{ id: 9, kind: 'issue', body: '@ronin /fix-comments', reactionsEyes: 0, authorLogin: 'someone' }]);
+    findUnprocessedMentions.mockResolvedValue([{ id: 9, kind: 'issue', body: '@ronin /fix-comments', reactionsEyes: 0, authorLogin: 'someone' }]);
     listAllOpenReviewThreads.mockResolvedValue([{ id: 'T1', body: 'finding ronin itself posted earlier' }]);
 
     const { trustedFixCandidates } = await findPrsNeedingReview();
@@ -236,25 +234,45 @@ describe('findPrsNeedingReview — trustedFixCandidates', () => {
 
   it('never routes a fork PR to trustedFixCandidates, even with a trusted command', async () => {
     listAllOpenExternalPrs.mockResolvedValue([extPr({ isCrossRepository: true })]);
-    findTrustedFixCommentsCommand.mockResolvedValue([{ id: 9, kind: 'issue', body: '@ronin /fix-comments', reactionsEyes: 0, authorLogin: 'someone' }]);
+    findUnprocessedMentions.mockResolvedValue([{ id: 9, kind: 'issue', body: '@ronin /fix-comments', reactionsEyes: 0, authorLogin: 'someone' }]);
 
     const { trustedFixCandidates } = await findPrsNeedingReview();
 
     expect(trustedFixCandidates).toEqual([]);
-    expect(findTrustedFixCommentsCommand).not.toHaveBeenCalled();
+    expect(listAllOpenReviewThreads).not.toHaveBeenCalled();
   });
 
-  it('does not call findTrustedFixCommentsCommand for a fork PR at all', async () => {
+  it('treats a /fix-comments mention on a fork PR as a plain review request', async () => {
     listAllOpenExternalPrs.mockResolvedValue([extPr({ isCrossRepository: true })]);
+    findUnprocessedMentions.mockResolvedValue([{ id: 9, kind: 'issue', body: '@ronin /fix-comments', reactionsEyes: 0, authorLogin: 'someone' }]);
+
+    const { reviewCandidates } = await findPrsNeedingReview();
+
+    expect(reviewCandidates.map((c) => c.mentions.map((m) => m.id))).toEqual([[9]]);
+  });
+
+  it('lists each PR\'s mentions only once', async () => {
+    listAllOpenExternalPrs.mockResolvedValue([extPr({ number: 10 }), extPr({ number: 11 })]);
 
     await findPrsNeedingReview();
 
-    expect(findTrustedFixCommentsCommand).not.toHaveBeenCalled();
+    expect(findUnprocessedMentions.mock.calls).toEqual([[10], [11]]);
+  });
+
+  it('keeps the PRs\' own order when they finish out of order', async () => {
+    listAllOpenExternalPrs.mockResolvedValue([extPr({ number: 10 }), extPr({ number: 11 })]);
+    listBotReviewThreads.mockImplementation(async (n: number) => {
+      if (n === 10) await new Promise((r) => setTimeout(r, 5));
+      return [];
+    });
+
+    const { reviewCandidates } = await findPrsNeedingReview();
+
+    expect(reviewCandidates.map((c) => c.prNumber)).toEqual([10, 11]);
   });
 
   it('leaves a non-fork PR with no trusted command out of trustedFixCandidates', async () => {
     listAllOpenExternalPrs.mockResolvedValue([extPr({ isCrossRepository: false })]);
-    findTrustedFixCommentsCommand.mockResolvedValue([]);
 
     const { trustedFixCandidates } = await findPrsNeedingReview();
 

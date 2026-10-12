@@ -28,7 +28,7 @@ import { fetchOriginMain, readSpecFile, extractTitle } from './spec-content.js';
 import { nextUnstartedSlice, hasRemainingSlices, recordSlicePr, markSliceMerged, seedSingleSlice, getSlices } from './checklist.js';
 import { notifyBlocker } from './notifier.js';
 import { resetTickMetrics, getTickAgentMetrics } from './metrics.js';
-import { runWithConcurrency } from './concurrency.js';
+import { runJobs, type Job } from './concurrency.js';
 import { runAgentTask, type AgentTask } from './agent-task.js';
 import { runExternalReview } from './review-publish.js';
 import { ClaudeUsageLimitError } from './claude-runner.js';
@@ -696,18 +696,23 @@ export async function processTrustedFixCandidate(candidate: TrustedFixCandidate)
 // transient `listAllOpenRoninPrs` failure — which returns early from the
 // issue pipeline — must not silently skip external review for the whole
 // tick. See final review Fix 4.
-export async function runExternalReviews(): Promise<void> {
+export async function externalReviewJobs(): Promise<Job[]> {
   let reviewCandidates: ReviewCandidate[];
   let trustedFixCandidates: TrustedFixCandidate[];
   try {
     ({ reviewCandidates, trustedFixCandidates } = await findPrsNeedingReview());
   } catch (error) {
     log.info(`tick: findPrsNeedingReview falló, reintentando en el próximo tick: ${(error as Error).message}`);
-    reviewCandidates = [];
-    trustedFixCandidates = [];
+    return [];
   }
-  await runWithConcurrency(reviewCandidates, config.tickConcurrency, processExternalReviewCandidate);
-  await runWithConcurrency(trustedFixCandidates, config.tickConcurrency, processTrustedFixCandidate);
+  return [
+    ...trustedFixCandidates.map((c) => ({ kind: 'fix-comments-external', label: `PR #${c.prNumber}`, run: () => processTrustedFixCandidate(c) })),
+    ...reviewCandidates.map((c) => ({ kind: 'external-review', label: `PR #${c.prNumber}`, run: () => processExternalReviewCandidate(c) })),
+  ];
+}
+
+export async function runExternalReviews(): Promise<void> {
+  await runJobs(await externalReviewJobs(), config.tickConcurrency, JOB_CAPS);
 }
 
 // A /spike is fully independent of every other flow this tick runs — a
@@ -742,15 +747,19 @@ export async function processSpikeCandidate(candidate: SpikeCandidate): Promise<
 // of) the ronin-PR loop — same reasoning as runExternalReviews: a transient
 // listOpenUnmanagedIssues failure must not silently skip every other flow
 // this tick.
-export async function runSpikes(): Promise<void> {
+export async function spikeJobs(): Promise<Job[]> {
   let candidates: SpikeCandidate[];
   try {
     candidates = await findIssuesNeedingSpike();
   } catch (error) {
     log.info(`tick: findIssuesNeedingSpike falló, reintentando en el próximo tick: ${(error as Error).message}`);
-    candidates = [];
+    return [];
   }
-  await runWithConcurrency(candidates, config.tickConcurrency, processSpikeCandidate);
+  return candidates.map((c) => ({ kind: 'spike', label: `issue #${c.issueNumber}`, run: () => processSpikeCandidate(c) }));
+}
+
+export async function runSpikes(): Promise<void> {
+  await runJobs(await spikeJobs(), config.tickConcurrency, JOB_CAPS);
 }
 
 // A release's changelog entry is fully independent of every other flow this
@@ -784,21 +793,83 @@ export async function processChangelogCandidate(candidate: ChangelogCandidate): 
 // (the next tick just re-lists and retries). No-op for a repo without
 // changelogRepo configured — see findReleasesNeedingChangelog.
 //
-// Sequential on purpose, not runWithConcurrency: every candidate here shares
+// Sequential on purpose (JOB_CAPS.changelog = 1): every candidate here shares
 // the same changelogRepoPath checkout (see changelog.ts's
 // ensureChangelogRepoUpToDate), so two running at once would race the same
 // working tree and clobber each other's commit.
-export async function runChangelogUpdates(): Promise<void> {
+export async function changelogJobs(): Promise<Job[]> {
   let candidates: ChangelogCandidate[];
   try {
     candidates = await findReleasesNeedingChangelog();
   } catch (error) {
     log.info(`tick: findReleasesNeedingChangelog falló, reintentando en el próximo tick: ${(error as Error).message}`);
-    return;
+    return [];
   }
-  for (const candidate of candidates) {
-    await processChangelogCandidate(candidate);
+  return candidates.map((c) => ({ kind: 'changelog', label: c.release.tagName, run: () => processChangelogCandidate(c) }));
+}
+
+export async function runChangelogUpdates(): Promise<void> {
+  await runJobs(await changelogJobs(), config.tickConcurrency, JOB_CAPS);
+}
+
+// Per-kind limits inside a tick's single job pool (config.tickConcurrency
+// overall): external reviews are the heaviest run on the account's quota —
+// three at once once exhausted its session limit — and changelog jobs share
+// one checkout.
+const JOB_CAPS: Record<string, number> = {
+  get 'external-review'() {
+    return config.externalReviewConcurrency;
+  },
+  changelog: 1,
+};
+
+// One job per in-progress issue: its whole pipeline (fixes, then a possible
+// new-slice start) as one unit. Returns no jobs when the open PRs can't be
+// listed — that failure is shared by every issue (not attributable to any
+// one of them), so it gets the same treatment as ClaudeUsageLimitError: log
+// and retry next tick, never escalate to a human over it.
+async function issueJobs(inProgress: TrackingIssue[]): Promise<Job[]> {
+  // One batched read for every issue's stack instead of a `gh pr list` + a
+  // `gh pr view` per PR per issue — see
+  // docs/superpowers/specs/2026-08-01-pr-list-batching-design.md.
+  let allPrs: PullRequestStatus[];
+  try {
+    allPrs = await listAllOpenRoninPrs();
+  } catch (error) {
+    log.info(`tick: listAllOpenRoninPrs falló, reintentando en el próximo tick: ${(error as Error).message}`);
+    return [];
   }
+
+  // Best-effort, before any of this tick's own work starts (so it never
+  // races a worktree that's mid-creation for a task about to run) — see
+  // sweepOrphanedWorktrees's own comment for what this covers and why.
+  await sweepOrphanedWorktrees(allPrs);
+
+  return inProgress.map((issue) => ({
+    kind: 'issue',
+    label: `#${issue.number}`,
+    run: async () => {
+      if (!(await tryClaim(issue.number))) return; // another runner already owns this one
+      await runIssueStep(issue, async () => {
+        const next = await processIssue(issue, allPrs);
+        if (!next) return;
+        const context = next.stackSize === 0
+          ? 'sin PRs abiertos'
+          : `stack de ${next.stackSize} PR(s) abierto(s)`;
+        log.info(`issue #${next.issue.number}: ${context}, arrancando slice ${next.index + 1} (${next.title})`);
+        const task = agentTaskFor(next.issue, next.index, next.title);
+        const result = await runAgentTask(task);
+        // fix-issue is the only task type that may legitimately abstain
+        // (issue lacks enough context — see its prompt in agent-task.ts) and
+        // end without opening a PR. Without this, the issue would stay
+        // labeled ronin:in-progress forever and get retried, unattended,
+        // every single tick — see the discoverAssignedIssues design note.
+        if (task.type === 'fix-issue' && needsMoreInfo(result)) {
+          await setIssueState(next.issue.number, 'blocked');
+        }
+      });
+    },
+  }));
 }
 
 async function tickOneRepo(): Promise<void> {
@@ -821,65 +892,20 @@ async function tickOneRepo(): Promise<void> {
   log.info(`${inProgress.length} issue(s) en progreso`);
 
   try {
-    // Before the ronin-PR pipeline below, which can return early on a
-    // transient listing failure — the two flows are fully independent.
-    await runExternalReviews();
-    // Same reasoning — a /spike shares nothing with either flow above.
-    await runSpikes();
-    // Same reasoning — a release's changelog entry shares nothing with any
-    // flow above (and is a no-op unless this repo has changelogRepo set).
-    await runChangelogUpdates();
-
-    // One batched read for every issue's stack instead of a `gh pr list` + a
-    // `gh pr view` per PR per issue — see
-    // docs/superpowers/specs/2026-08-01-pr-list-batching-design.md. A failure
-    // here is shared across every issue in this tick (not attributable to any
-    // one of them), so it gets the same treatment as ClaudeUsageLimitError:
-    // log and retry next tick, never escalate to a human over it.
-    let allPrs: PullRequestStatus[];
-    try {
-      allPrs = await listAllOpenRoninPrs();
-    } catch (error) {
-      log.info(`tick: listAllOpenRoninPrs falló, reintentando en el próximo tick: ${(error as Error).message}`);
-      return;
-    }
-
-    // Best-effort, before any of this tick's own work starts (so it never
-    // races a worktree that's mid-creation for a task about to run) — see
-    // sweepOrphanedWorktrees's own comment for what this covers and why.
-    await sweepOrphanedWorktrees(allPrs);
-
-    // Each issue's whole pipeline (fixes, then a possible new-slice start)
-    // runs as one unit, up to config.tickConcurrency issues at once — no
-    // longer split into a fixes-first pass and a deferred slice-start pass:
-    // that split existed only to stop one issue's long implement-slice/
-    // fix-issue run from delaying another issue's quick rebase/e2e/review fix
-    // when everything ran strictly in sequence. Real concurrency removes the
-    // reason for it — issue B's fix now genuinely runs alongside issue A's
-    // slice start instead of waiting for it.
-    await runWithConcurrency(inProgress, config.tickConcurrency, async (issue) => {
-      if (!(await tryClaim(issue.number))) return; // another runner already owns this one
-      await runIssueStep(issue, async () => {
-        const next = await processIssue(issue, allPrs);
-        if (!next) return;
-        const context = next.stackSize === 0
-          ? 'sin PRs abiertos'
-          : `stack de ${next.stackSize} PR(s) abierto(s)`;
-        log.info(`issue #${next.issue.number}: ${context}, arrancando slice ${next.index + 1} (${next.title})`);
-        const task = agentTaskFor(next.issue, next.index, next.title);
-        const result = await runAgentTask(task);
-        // fix-issue is the only task type that may legitimately abstain
-        // (issue lacks enough context — see its prompt in agent-task.ts) and
-        // end without opening a PR. Without this, the issue would stay
-        // labeled ronin:in-progress forever and get retried, unattended,
-        // every single tick — see the discoverAssignedIssues design note.
-        if (task.type === 'fix-issue' && needsMoreInfo(result)) {
-          await setIssueState(next.issue.number, 'blocked');
-        }
-      });
-    });
+    // Every flow's discovery at once, then all of their work in one pool:
+    // a long external review no longer holds back an issue's quick fix, a
+    // /spike or a changelog entry, and nothing waits for a whole other flow
+    // to finish first. The flows share nothing, and each discovery handles
+    // its own failure — one of them failing only leaves its own jobs out.
+    const [issues, reviews, spikes, changelog] = await Promise.all([
+      issueJobs(inProgress),
+      externalReviewJobs(),
+      spikeJobs(),
+      changelogJobs(),
+    ]);
+    await runJobs([...issues, ...reviews, ...spikes, ...changelog], config.tickConcurrency, JOB_CAPS);
   } finally {
-    // Always emitted, even on the early return above — durationMs vs.
+    // Always emitted, even when a discovery failed — durationMs vs.
     // agentRunsDurationMs is what tells whether a tick was mostly spent
     // waiting on sequential `claude -p` runs (an argument for parallelizing
     // them) or on something else entirely.

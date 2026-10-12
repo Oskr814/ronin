@@ -51,7 +51,13 @@ export function parseSpikeCommand(body: string): { appName: string; instruction?
 // permission tier isn't worth that dependency — a non-fork PR already means
 // the commenter has real repo access.
 export async function findTrustedFixCommentsCommand(prNumber: number): Promise<Comment[]> {
-  const unprocessed = await findUnprocessedMentions(prNumber);
+  return trustedFixCommands(await findUnprocessedMentions(prNumber));
+}
+
+// The filter half of findTrustedFixCommentsCommand, for a caller that
+// already has the PR's unprocessed mentions and needs them for something
+// else too (findPrsNeedingReview) — saves listing them twice.
+export function trustedFixCommands(unprocessed: Comment[]): Comment[] {
   return unprocessed.filter((c) => isFixCommentsCommand(c.body) && c.authorLogin !== '');
 }
 
@@ -68,16 +74,14 @@ export async function findTrustedSpikeCommand(issueNumber: number): Promise<Comm
 
 async function filterUnprocessed(comments: Comment[]): Promise<Comment[]> {
   const botLogin = config.githubLogin;
-  const unprocessed: Comment[] = [];
-  for (const comment of comments) {
-    // ronin's own comments are never requests to itself — and its /help
-    // reply shows "@<login> /fix-comments" as an example, which would
-    // otherwise be picked up as a fresh mention on the next tick, forever.
-    if ((comment.authorLogin ?? '').toLowerCase() === botLogin.toLowerCase()) continue;
-    const alreadyReacted = comment.reactionsEyes > 0 && (await hasBotReaction(comment.id, comment.kind, botLogin));
-    if (!alreadyReacted) unprocessed.push(comment);
-  }
-  return unprocessed;
+  // ronin's own comments are never requests to itself — and its /help
+  // reply shows "@<login> /fix-comments" as an example, which would
+  // otherwise be picked up as a fresh mention on the next tick, forever.
+  const others = comments.filter((c) => (c.authorLogin ?? '').toLowerCase() !== botLogin.toLowerCase());
+  // One reaction lookup per already-👀'd mention, every tick for as long as
+  // the PR is open — in parallel, so a long-lived PR doesn't add them up.
+  const reacted = await Promise.all(others.map((c) => c.reactionsEyes > 0 && hasBotReaction(c.id, c.kind, botLogin)));
+  return others.filter((_, i) => !reacted[i]);
 }
 
 // Answers /help and misspelled or misplaced commands right here, without
