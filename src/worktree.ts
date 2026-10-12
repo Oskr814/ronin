@@ -18,7 +18,7 @@ const execFileAsync = promisify(execFile);
 // agent's own `docker compose up -d`, which can run much later in a long
 // task) where another process could grab the same port first; acceptable
 // given the alternative was a guaranteed collision on a literal :5432.
-function getFreePort(): Promise<number> {
+export function getFreePort(): Promise<number> {
   return new Promise((resolve, reject) => {
     const server = createServer();
     server.on('error', reject);
