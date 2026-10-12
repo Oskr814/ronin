@@ -5,14 +5,14 @@ import { join } from 'node:path';
 
 let base = '';
 vi.mock('./repo-context.js', () => ({ activeRepo: () => ({ productRepo: 'redmotos/shoppingcart', worktreeBasePath: base }) }));
-vi.mock('./config.js', () => ({ config: { githubLogin: 'ronin-agent', worktreeBaseRef: 'origin/main' } }));
+vi.mock('./config.js', () => ({ config: { githubLogin: 'ronin-agent', worktreeBaseRef: 'origin/main', exploreTimezone: 'America/Tegucigalpa' } }));
 vi.mock('./github.js', () => ({}));
 vi.mock('./agent-task.js', () => ({}));
 vi.mock('./app-runtime.js', () => ({}));
 vi.mock('./exploration-run.js', () => ({}));
 vi.mock('./exploration-inventory.js', () => ({ explorationOutDir: () => base }));
 
-import { acquireExploreLock, exploreWorkerBusy, releaseExploreLock, renderRunReply, type PublishedRun } from './exploration-flow.js';
+import { acquireExploreLock, explorationDay, exploreWorkerBusy, releaseExploreLock, renderRunReply, type PublishedRun } from './exploration-flow.js';
 
 beforeEach(async () => {
   base = await mkdtemp(join(tmpdir(), 'ronin-flow-'));
@@ -62,5 +62,11 @@ describe('renderRunReply', () => {
 
   it('is honest when nothing made it', () => {
     expect(renderRunReply('backoffice', run([], 3))).toContain('No encontré nada que valga la pena proponer (descarté 3 candidato(s)');
+  });
+});
+
+describe('explorationDay', () => {
+  it('dates a run in the exploration zone: 02:00 UTC Monday is still Sunday in Tegucigalpa', () => {
+    expect(explorationDay(new Date('2026-10-19T02:00:00Z'))).toBe('2026-10-18');
   });
 });
