@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { closeSync, existsSync, mkdirSync, openSync } from 'node:fs';
 import { mkdir, readFile, rm, writeFile, open as openFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -244,18 +244,28 @@ export async function releaseExploreLock(): Promise<void> {
 }
 
 // Starts the worker detached from the tick: same runtime (node on dist/, or
-// tsx in development), same environment, its own log lines in the tick log.
+// tsx in development), same environment. Its output goes to the same daily
+// log the cron wrapper writes the tick to (scripts/setup-cron.sh), so its
+// lines sit next to the tick's.
 export function launchExploreWorker(request: ExploreWorkerRequest): void {
   const here = fileURLToPath(import.meta.url);
   const worker = join(dirname(here), `explore-worker${here.endsWith('.ts') ? '.ts' : '.js'}`);
-  const child = spawn(process.execPath, [...process.execArgv, worker, JSON.stringify(request)], {
-    cwd: process.cwd(),
-    env: process.env,
-    detached: true,
-    stdio: 'ignore',
-  });
-  child.unref();
-  log.info(`exploración: worker lanzado para ${request.appName} (pid ${child.pid})`);
+  const now = new Date();
+  const day = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  mkdirSync(join(process.cwd(), 'logs'), { recursive: true });
+  const out = openSync(join(process.cwd(), 'logs', `tick-${day}.log`), 'a');
+  try {
+    const child = spawn(process.execPath, [...process.execArgv, worker, JSON.stringify(request)], {
+      cwd: process.cwd(),
+      env: process.env,
+      detached: true,
+      stdio: ['ignore', out, out],
+    });
+    child.unref();
+    log.info(`exploración: worker lanzado para ${request.appName} (pid ${child.pid})`);
+  } finally {
+    closeSync(out);
+  }
 }
 
 export async function reactToTrigger(trigger: ExploreWorkerRequest['trigger']): Promise<void> {
