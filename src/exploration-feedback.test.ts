@@ -164,3 +164,27 @@ describe('processExplorationPr feedback — threads and earlier conversation', (
     ]);
   });
 });
+
+describe('exploration commit changes', async () => {
+  const { runCommitChange, feedbackCommitChange, redoCommitChange, idList } = await import('./exploration-flow.js');
+
+  it('lists a few ids and ranges many', () => {
+    expect(idList(['F-0002', 'F-0001'])).toBe('F-0001, F-0002');
+    expect(idList(['F-0001', 'F-0002', 'F-0003', 'F-0008'])).toBe('F-0001–F-0008');
+  });
+
+  it('describes what a run, a feedback pass and a redo changed, with fallbacks in both languages', () => {
+    const run = runCommitChange('webapp', 'r1', [{ id: 'F-0001', titulo: 'El owner se elimina', gravedad: 'bug' }]);
+    expect(run.description).toContain('- F-0001 [bug] El owner se elimina');
+    expect(run.fallback).toEqual({ en: 'add 1 webapp finding (F-0001)', es: 'agregar 1 hallazgo de webapp (F-0001)' });
+
+    const feedback = feedbackCommitChange(351, [
+      { findingId: 'F-0003', titulo: 'Formulario', kind: 'rechazada', detail: 'ya cubierto' },
+      { findingId: 'F-0005', titulo: 'Botón', kind: 'editada', detail: 'new title "x"', redo: true },
+    ]);
+    expect(feedback.description).toContain('- F-0005 ("Botón") edited: new title "x" (its after image will be redone)');
+    expect(feedback.fallback).toEqual({ en: 'reject F-0003 and update F-0005 from PR #351 review', es: 'rechazar F-0003 y corregir F-0005 según la review del PR #351' });
+
+    expect(redoCommitChange([{ id: 'F-0006', titulo: 'Cola' }]).fallback.en).toBe('redo the after image of F-0006');
+  });
+});

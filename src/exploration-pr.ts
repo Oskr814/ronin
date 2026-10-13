@@ -6,7 +6,8 @@ import { join, relative } from 'node:path';
 import { activeRepo } from './repo-context.js';
 import { config } from './config.js';
 import { log } from './logger.js';
-import { docsSubject, repoCommitStyle } from './commit-style.js';
+import { acceptSubject, repoCommitConvention, type CommitChange, type CommitConvention } from './commit-style.js';
+import { runAgentTask } from './agent-task.js';
 import {
   createIssue,
   createPullRequest,
@@ -101,14 +102,34 @@ export async function ensureBatchWorktree(batch: string): Promise<string> {
   return dir;
 }
 
-// false when there was nothing to commit. `text` is the subject without its
-// prefix, which follows the product repo's convention (commit-style.ts).
-export async function commitAndPush(dir: string, branch: string, text: string): Promise<boolean> {
+function subjectPrefix(convention: CommitConvention): string {
+  if (convention.style === 'conventional') return 'docs(exploration): ';
+  return convention.language === 'es' ? 'exploración: ' : 'exploration: ';
+}
+
+// The subject of a commit to the exploration memory: written by a small
+// model from what changed, in the repo's convention and language, or the
+// change's own fallback when that fails.
+export async function explorationCommitSubject(dir: string, change: CommitChange): Promise<string> {
+  const convention = await repoCommitConvention(dir, baseRef());
+  const prefix = subjectPrefix(convention);
+  try {
+    const raw = await runAgentTask({ type: 'commit-subject', checkoutDir: dir, prefix, language: convention.language, examples: convention.examples, description: change.description });
+    const subject = acceptSubject(raw, prefix);
+    if (subject) return subject;
+    log.info(`exploración: el asunto propuesto no sirve (${raw.trim().slice(0, 120)}), uso el de respaldo`);
+  } catch (error) {
+    log.error('exploración: no se pudo escribir el asunto del commit, uso el de respaldo', error);
+  }
+  return `${prefix}${change.fallback[convention.language]}`;
+}
+
+// false when there was nothing to commit.
+export async function commitAndPush(dir: string, branch: string, change: CommitChange): Promise<boolean> {
   await git(dir, ['add', '--', EXPLORATION_DIR]);
   const staged = await git(dir, ['diff', '--cached', '--name-only']);
   if (!staged) return false;
-  const style = await repoCommitStyle(dir, baseRef());
-  await git(dir, ['commit', '-m', docsSubject(style, 'exploration', 'exploración', text)]);
+  await git(dir, ['commit', '-m', await explorationCommitSubject(dir, change)]);
   await git(dir, ['push', 'origin', `${branch}:${branch}`]);
   return true;
 }
@@ -264,7 +285,8 @@ export async function upsertExplorationPr(batch: string, batchDir: string): Prom
     if (open.body !== body) await setPullRequestBody(open.number, body);
     return open.number;
   }
-  const style = await repoCommitStyle(batchDir, baseRef());
-  const title = style === 'conventional' ? `docs(exploration): exploración de ronin desde ${batch}` : `Exploración de ronin — desde ${batch}`;
+  const convention = await repoCommitConvention(batchDir, baseRef());
+  const text = convention.language === 'es' ? `exploración de ronin desde ${batch}` : `ronin exploration since ${batch}`;
+  const title = convention.style === 'conventional' ? `docs(exploration): ${text}` : `${text[0].toUpperCase()}${text.slice(1)}`;
   return createPullRequest({ head: branch, base: baseBranchName(), title, body, draft: false });
 }
