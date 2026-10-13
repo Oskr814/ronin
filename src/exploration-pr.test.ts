@@ -5,7 +5,7 @@ vi.mock('./repo-context.js', () => ({ activeRepo: () => ({ productRepo: 'redmoto
 const listOpenPrsByHeadPrefix = vi.hoisted(() => vi.fn());
 vi.mock('./github.js', () => ({ listOpenPrsByHeadPrefix: (...a: unknown[]) => listOpenPrsByHeadPrefix(...a) }));
 
-import { batchOfBranch, currentBatch, explorationBranch, findingIssueKey, renderDigest, renderFindingIssue } from './exploration-pr.js';
+import { batchOfBranch, currentBatch, explorationBranch, findingIssueKey, findingsAddedOverBase, renderDigest, renderFindingIssue } from './exploration-pr.js';
 import type { Finding, FindingMeta } from './exploration-memory.js';
 
 function meta(overrides: Partial<FindingMeta> = {}): FindingMeta {
@@ -84,5 +84,24 @@ describe('renderDigest', () => {
       apps: [{ appName: 'backoffice', memory: { dir: '', inventory: { funciones: [] }, knowledge: '', findings: [] }, findingIds: new Set(), runs: [] }],
     });
     expect(digest).toContain('Sin propuestas en este PR.');
+  });
+});
+
+describe('findingsAddedOverBase', () => {
+  const dir = 'docs/exploration/backoffice';
+  it('leaves out findings an earlier, merged PR already brought, even when this branch updates them (redmotos/shoppingcart#810)', () => {
+    const changed = [
+      `${dir}/findings/F-0001-agregar-un-producto.md`,
+      `${dir}/findings/F-0005-reconteo.md`,
+      `${dir}/findings/F-0006-ultimo-grupo.md`,
+      `${dir}/inventory.yml`,
+      `${dir}/runs/2026-10-13-691034.md`,
+    ];
+    const base = [`${dir}/findings/F-0001-agregar-un-producto.md`, `${dir}/findings/F-0005-reconteo.md`];
+    expect(findingsAddedOverBase(changed, base)).toEqual(new Set(['F-0006']));
+  });
+
+  it('matches by id, so an old finding whose file was renamed is still old', () => {
+    expect(findingsAddedOverBase([`${dir}/findings/F-0002-titulo-nuevo.md`], [`${dir}/findings/F-0002-titulo-viejo.md`])).toEqual(new Set());
   });
 });
