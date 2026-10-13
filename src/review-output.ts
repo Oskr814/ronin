@@ -90,7 +90,9 @@ export const FINDINGS_JSON_CONTRACT = `{
 }`;
 
 export const LIMITS = {
-  title: 90,
+  // The prompt asks for 90; this is only a backstop, so a title that runs a
+  // few characters over is published whole instead of cut mid-word.
+  title: 140,
   category: 40,
   step: 200,
   steps: 5,
@@ -123,8 +125,13 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+// Cut at the last word boundary when there's one near the limit, so the text
+// doesn't end in half a word.
 function truncate(text: string, max: number): string {
-  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+  if (text.length <= max) return text;
+  const cut = text.slice(0, max - 1);
+  const space = cut.lastIndexOf(' ');
+  return `${(space >= max * 0.7 ? cut.slice(0, space) : cut).trimEnd()}…`;
 }
 
 function str(value: unknown, field: string, max: number): string {
