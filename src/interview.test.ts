@@ -95,12 +95,16 @@ describe('checkInterviews', () => {
     expect(setIssueState).not.toHaveBeenCalled();
   });
 
-  it('ignores a marker someone else posted, or another interview’s', async () => {
+  it('takes the answers whichever account posted them (redmotos/shoppingcart#797)', async () => {
     interviews[812] = { sessionId: 'abc', startedAt: '2026-10-12T10:00:00Z', nonce: 'n1' };
-    listIssueComments.mockResolvedValue([
-      { authorLogin: 'someone', body: answersMarker('n1') },
-      { authorLogin: 'ronin-agent', body: answersMarker('otro') },
-    ]);
+    listIssueComments.mockResolvedValue([{ authorLogin: 'Oskr814', body: `## Respuestas\n...\n${answersMarker('n1')}` }]);
+    await checkInterviews(now);
+    expect(setIssueState).toHaveBeenCalledWith(812, 'in-progress');
+  });
+
+  it('ignores another interview’s marker', async () => {
+    interviews[812] = { sessionId: 'abc', startedAt: '2026-10-12T10:00:00Z', nonce: 'n1' };
+    listIssueComments.mockResolvedValue([{ authorLogin: 'ronin-agent', body: answersMarker('otro') }]);
     await checkInterviews(now);
     expect(setIssueState).not.toHaveBeenCalled();
     expect(interviews[812]).toBeDefined();
