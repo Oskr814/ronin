@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { docsSubject, styleOf } from './commit-style.js';
+import { acceptSubject, languageOf, styleOf } from './commit-style.js';
 
 describe('styleOf', () => {
   it('reads a conventional-commits history, squash suffixes and scopes included', () => {
@@ -30,9 +30,21 @@ describe('styleOf', () => {
   });
 });
 
-describe('docsSubject', () => {
-  it('prefixes per style', () => {
-    expect(docsSubject('conventional', 'exploration', 'exploración', 'feedback del PR #351')).toBe('docs(exploration): feedback del PR #351');
-    expect(docsSubject('plain', 'exploration', 'exploración', 'feedback del PR #351')).toBe('exploración: feedback del PR #351');
+describe('languageOf', () => {
+  it('reads Spanish and English histories past the type and scope', () => {
+    expect(languageOf(['fix(backoffice): recargar la app cuando falla un chunk', 'feat(ui): ampliar Drawer con placements', 'fix(api): add hr_employee to the stub'])).toBe('es');
+    expect(languageOf(['refactor(deploy): dedupe Dockerfiles and build jobs', 'fix(ci): optimizar CI y Deploy QA', 'feat(webapp): put the app shell on a fixed rail'])).toBe('en');
+  });
+});
+
+describe('acceptSubject', () => {
+  const prefix = 'docs(exploration): ';
+  it('takes a single line with the prefix, stripping quotes', () => {
+    expect(acceptSubject('"docs(exploration): add findings on owner self-deletion"\n', prefix)).toBe('docs(exploration): add findings on owner self-deletion');
+  });
+  it('rejects a wrong prefix, an empty description or an overlong line', () => {
+    expect(acceptSubject('feat: add findings', prefix)).toBeUndefined();
+    expect(acceptSubject('docs(exploration): x', prefix)).toBeUndefined();
+    expect(acceptSubject(`docs(exploration): ${'a'.repeat(120)}`, prefix)).toBeUndefined();
   });
 });

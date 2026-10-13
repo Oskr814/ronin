@@ -133,6 +133,8 @@ const TASK_MODEL_DEFAULTS: Record<string, string> = {
   'explore-feedback': 'sonnet',
   // One screenshot of a draft change on the running app.
   'explore-redo-after': 'sonnet',
+  // One commit subject line.
+  'commit-subject': 'haiku',
 };
 
 function taskEnv(prefix: string, taskType: string): string | undefined {

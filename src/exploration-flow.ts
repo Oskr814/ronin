@@ -38,6 +38,7 @@ import {
 import { replaceProposal } from './exploration-output.js';
 import { redoAfterImages } from './exploration-redo.js';
 import { mentionsHandle } from './mentions.js';
+import type { CommitChange } from './commit-style.js';
 
 // Exploration's moving parts glued to GitHub — docs/DESIGN.md §11.7:
 // - exploreAndPublish: one run of one app, committed to the open
@@ -92,7 +93,7 @@ export async function exploreAndPublish(opts: {
   const newIds = new Set(summary.findings.map((f) => f.id));
   const urgentIssues = await openFindingIssues(opts.appName, memoryDir, batchDir, branch, (f) => newIds.has(f.id) && f.gravedad === 'bug' && !f.entorno);
 
-  await commitAndPush(batchDir, branch, `corrida de ${opts.appName} ${summary.runId} (${summary.findings.length} propuesta(s))`);
+  await commitAndPush(batchDir, branch, runCommitChange(opts.appName, summary.runId, summary.findings));
   const prNumber = await upsertExplorationPr(batch, batchDir);
   return { summary, prNumber, batch, urgentIssues };
 }
@@ -116,6 +117,57 @@ export function renderRunReply(appName: string, run: PublishedRun): string {
   }
   lines.push('', `Están en el PR de exploración: #${run.prNumber}. Revisalas ahí.`);
   return lines.join('\n');
+}
+
+// "F-0001, F-0002" for a few ids, "F-0001–F-0008" for many.
+export function idList(ids: string[]): string {
+  const sorted = [...ids].sort();
+  return sorted.length <= 3 ? sorted.join(', ') : `${sorted[0]}–${sorted[sorted.length - 1]}`;
+}
+
+function joinParts(parts: string[], and: string): string {
+  return parts.length <= 1 ? parts.join('') : `${parts.slice(0, -1).join(', ')} ${and} ${parts[parts.length - 1]}`;
+}
+
+export function runCommitChange(appName: string, runId: string, findings: Array<{ id: string; titulo: string; gravedad: string }>): CommitChange {
+  const ids = findings.map((f) => f.id);
+  return {
+    description: findings.length > 0
+      ? `An exploration run (${runId}) of the app "${appName}" adds these findings to the exploration memory:\n${findings.map((f) => `- ${f.id} [${f.gravedad}] ${f.titulo}`).join('\n')}`
+      : `An exploration run (${runId}) of the app "${appName}" found nothing new; only its run record and the app's function inventory change.`,
+    fallback: findings.length > 0
+      ? { en: `add ${findings.length} ${appName} finding${findings.length === 1 ? '' : 's'} (${idList(ids)})`, es: `agregar ${findings.length} hallazgo${findings.length === 1 ? '' : 's'} de ${appName} (${idList(ids)})` }
+      : { en: `record ${appName} run ${runId} with no new findings`, es: `registrar la corrida ${runId} de ${appName} sin hallazgos nuevos` },
+  };
+}
+
+export interface FeedbackChange {
+  findingId: string;
+  titulo: string;
+  kind: 'rechazada' | 'editada';
+  detail: string;
+  redo?: boolean;
+}
+
+export function feedbackCommitChange(prNumber: number, changes: FeedbackChange[]): CommitChange {
+  const rejected = changes.filter((c) => c.kind === 'rechazada').map((c) => c.findingId);
+  const edited = changes.filter((c) => c.kind === 'editada').map((c) => c.findingId);
+  const en = [...(rejected.length ? [`reject ${idList(rejected)}`] : []), ...(edited.length ? [`update ${idList(edited)}`] : [])];
+  const es = [...(rejected.length ? [`rechazar ${idList(rejected)}`] : []), ...(edited.length ? [`corregir ${idList(edited)}`] : [])];
+  return {
+    description: `Applies review feedback from PR #${prNumber} to findings of the exploration memory:\n${changes
+      .map((c) => `- ${c.findingId} ("${c.titulo}") ${c.kind === 'rechazada' ? 'rejected' : 'edited'}: ${c.detail}${c.redo ? ' (its after image will be redone)' : ''}`)
+      .join('\n')}`,
+    fallback: { en: `${joinParts(en, 'and')} from PR #${prNumber} review`, es: `${joinParts(es, 'y')} según la review del PR #${prNumber}` },
+  };
+}
+
+export function redoCommitChange(redone: Array<{ id: string; titulo: string }>): CommitChange {
+  const ids = redone.map((r) => r.id);
+  return {
+    description: `Replaces the "after" screenshot of these findings with a new one that applies the review's corrections:\n${redone.map((r) => `- ${r.id} ${r.titulo}`).join('\n')}`,
+    fallback: { en: `redo the after image of ${idList(ids)}`, es: `rehacer la imagen del después de ${idList(ids)}` },
+  };
 }
 
 // --- exploration PR maintenance, run from the tick ---
@@ -198,6 +250,7 @@ async function applyFeedback(pr: PullRequestStatus, batch: string): Promise<Redo
 
   const replies: Array<{ commentId: number; body: string }> = [];
   const redo: RedoItem[] = [];
+  const changes: FeedbackChange[] = [];
   for (const p of pending) {
     const action = parsed.acciones?.find((a) => a.commentId === p.commentId);
     if (!action) continue;
@@ -210,6 +263,7 @@ async function applyFeedback(pr: PullRequestStatus, batch: string): Promise<Redo
       const motivo = action.motivo.trim().slice(0, 300);
       await writeFile(path, serializeFinding({ ...finding, estado: 'rechazado', motivo }));
       await appendKnowledge(memoryDir, `${motivo} (${p.findingId}, rechazada en #${pr.number})`);
+      changes.push({ findingId: p.findingId, titulo: finding.titulo, kind: 'rechazada', detail: motivo });
     } else if (action.accion === 'editar' && path) {
       const finding = parseFinding(await readFile(path, 'utf8'));
       const titulo = action.titulo?.trim() ? action.titulo.trim().slice(0, 120) : finding.titulo;
@@ -219,6 +273,8 @@ async function applyFeedback(pr: PullRequestStatus, batch: string): Promise<Redo
       await rm(path, { force: true });
       await writeFile(join(memoryDir, 'findings', findingFileName({ id: finding.id, titulo })), serializeFinding({ ...finding, titulo, body }));
       if (action.rehacerDespues?.trim()) redo.push({ app: p.app, findingId: p.findingId, instruction: action.rehacerDespues.trim().slice(0, 1200), commentId: p.commentId });
+      const what = [titulo !== finding.titulo ? `new title "${titulo}"` : '', action.propuesta?.trim() ? `new proposal: ${action.propuesta.trim().slice(0, 300)}` : ''].filter(Boolean).join('; ');
+      changes.push({ findingId: p.findingId, titulo, kind: 'editada', detail: what || 'proposal adjusted', redo: Boolean(action.rehacerDespues?.trim()) });
     } else if (action.accion === 'crear-issue' && action.issue?.titulo?.trim()) {
       const ref = `Pedido en un comentario sobre la ficha ${p.findingId} del PR de exploración #${pr.number}.`;
       const created = await createIssue(clean(action.issue.titulo.trim()).slice(0, 200), `${clean(action.issue.cuerpo?.trim() ?? '')}\n\n${ref}`, []).catch((error) => {
@@ -229,7 +285,7 @@ async function applyFeedback(pr: PullRequestStatus, batch: string): Promise<Redo
     }
     if (reply) replies.push({ commentId: p.commentId, body: reply });
   }
-  if (await commitAndPush(batchDir, explorationBranch(batch), `feedback del PR #${pr.number}`)) await upsertExplorationPr(batch, batchDir);
+  if (changes.length > 0 && (await commitAndPush(batchDir, explorationBranch(batch), feedbackCommitChange(pr.number, changes)))) await upsertExplorationPr(batch, batchDir);
   for (const r of replies) await replyToComment(pr.number, { id: r.commentId, kind: 'review' }, r.body).catch((error) => log.error(`exploración: no se pudo responder el comentario ${r.commentId}`, error));
   for (const p of pending) await addReaction(p.commentId, 'review', 'eyes').catch(() => {});
   return redo;
@@ -274,7 +330,13 @@ export async function redoAndPublish(redo: NonNullable<ExploreWorkerRequest['red
     const codeDir = await ensureAppWorktree(app);
     for (const id of await redoAfterImages({ appName: app, codeDir, memoryDir: memoryDirFor(batchDir, app), requests: items })) done.add(`${app}/${id}`);
   }
-  if (await commitAndPush(batchDir, explorationBranch(redo.batch), `después rehecho (${[...done].join(', ') || 'ninguno'})`)) await upsertExplorationPr(redo.batch, batchDir);
+  const redone: Array<{ id: string; titulo: string }> = [];
+  for (const key of done) {
+    const [app, id] = key.split('/');
+    const meta = (await loadMemory(memoryDirFor(batchDir, app))).findings.find((f) => f.id === id);
+    redone.push({ id, titulo: meta?.titulo ?? id });
+  }
+  if (redone.length > 0 && (await commitAndPush(batchDir, explorationBranch(redo.batch), redoCommitChange(redone)))) await upsertExplorationPr(redo.batch, batchDir);
   for (const item of redo.items) {
     const ok = done.has(`${item.app}/${item.findingId}`);
     const body = ok
