@@ -1,16 +1,17 @@
 import { describe, it, expect, vi } from 'vitest';
 import { EventEmitter } from 'node:events';
 
-vi.mock('./config.js', () => ({
-  config: {
+vi.mock('./config.js', () => {
+  const config = {
     claudeCommand: 'claude',
     claudeConfigDir: '',
     agentTaskTimeoutMs: 30_000,
     githubToken: 'fake-token',
     agentModel: 'opus',
     agentEffort: 'high',
-  },
-}));
+  };
+  return { config, defaultAgentModel: () => config.agentModel, defaultAgentEffort: () => config.agentEffort };
+});
 
 class FakeChildProcess extends EventEmitter {
   stdout = new EventEmitter();

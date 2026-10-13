@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { config } from './config.js';
-import type { RepoEntry } from './repo-context.js';
+import type { RepoEntry, AgentDefaults } from './repo-context.js';
 
 export async function loadRepos(): Promise<RepoEntry[]> {
   let raw: string;
@@ -40,7 +40,7 @@ function validateEntry(entry: unknown, index: number): RepoEntry {
   if (typeof entry !== 'object' || entry === null) {
     throw new Error(`${config.reposConfigPath}[${index}] no es un objeto`);
   }
-  const { productRepo, productRepoPath, claudeConfigDir, worktreeBaseRef, changelogRepo, changelogRepoPath, explore } = entry as Record<string, unknown>;
+  const { productRepo, productRepoPath, claudeConfigDir, worktreeBaseRef, changelogRepo, changelogRepoPath, explore, agent } = entry as Record<string, unknown>;
   if (typeof productRepo !== 'string' || productRepo.length === 0) {
     throw new Error(`${config.reposConfigPath}[${index}].productRepo falta o no es un string`);
   }
@@ -68,5 +68,25 @@ function validateEntry(entry: unknown, index: number): RepoEntry {
   return {
     productRepo, productRepoPath, claudeConfigDir, worktreeBaseRef, changelogRepo, changelogRepoPath,
     ...(explore !== undefined ? { explore: explore as string[] } : {}),
+    ...(agent !== undefined ? { agent: validateAgent(agent, `${config.reposConfigPath}[${index}].agent`) } : {}),
   };
+}
+
+const isStringMap = (value: unknown): value is Record<string, string> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value) && Object.values(value).every((v) => typeof v === 'string');
+
+// An empty string is allowed everywhere, like in the env vars: "whatever the
+// Claude config of this account says".
+function validateAgent(agent: unknown, where: string): AgentDefaults {
+  if (typeof agent !== 'object' || agent === null || Array.isArray(agent)) throw new Error(`${where} debe ser un objeto`);
+  const { model, effort, models, efforts, reviewWorkerModel, ...rest } = agent as Record<string, unknown>;
+  const unknownKeys = Object.keys(rest);
+  if (unknownKeys.length > 0) throw new Error(`${where} tiene campos desconocidos: ${unknownKeys.join(', ')} (válidos: model, effort, models, efforts, reviewWorkerModel)`);
+  for (const [name, value] of Object.entries({ model, effort, reviewWorkerModel })) {
+    if (value !== undefined && typeof value !== 'string') throw new Error(`${where}.${name} debe ser un string si está presente`);
+  }
+  for (const [name, value] of Object.entries({ models, efforts })) {
+    if (value !== undefined && !isStringMap(value)) throw new Error(`${where}.${name} debe ser un objeto de tipo de tarea → string`);
+  }
+  return agent as AgentDefaults;
 }

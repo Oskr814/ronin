@@ -4,7 +4,7 @@ import { ensureWorktree, remoteBranchExists, ensureExternalReviewWorktree, remov
 import { ensureChangelogRepoUpToDate } from './changelog.js';
 import { runClaudeHeadless } from './claude-runner.js';
 import { getPullRequestStatus, type BotThread, type Comment, type CommentThread, type ReviewThread, type Release } from './github.js';
-import { config, agentModelFor, agentEffortFor } from './config.js';
+import { config, agentModelFor, agentEffortFor, reviewWorkerModel } from './config.js';
 import { activeRepo } from './repo-context.js';
 import { log } from './logger.js';
 import { sliceBranch, planBranch, spikeBranch, specBranch, baseBranchFor } from './stack.js';
@@ -278,7 +278,7 @@ function selfReviewBlock(
   const when = opts.onlyIfChanged ? 'If you change code: before' : 'Before';
   return [
     `${when} you edit anything, run \`git rev-parse HEAD\` and keep that SHA — it is this branch's state before your fix.`,
-    `Self-review, after amending and before pushing: launch one subagent (Agent tool, model "${config.externalReviewWorkerModel}") as a fresh reviewer of your change alone. Give it the command "git diff <that SHA> HEAD", the review criteria below verbatim, and this PR's number, and ask it to read the earlier review comments on this PR, resolved threads included ("gh api --paginate repos/{owner}/{repo}/pulls/${prNumber}/comments"). Its job is to report every problem the change introduces — a bug, anything the criteria's "No marcar" section or severity floors cover, or a change that undoes or contradicts what an earlier review comment suggested and the author applied — each with file, line and why. It writes nothing and posts nothing.`,
+    `Self-review, after amending and before pushing: launch one subagent (Agent tool, model "${reviewWorkerModel()}") as a fresh reviewer of your change alone. Give it the command "git diff <that SHA> HEAD", the review criteria below verbatim, and this PR's number, and ask it to read the earlier review comments on this PR, resolved threads included ("gh api --paginate repos/{owner}/{repo}/pulls/${prNumber}/comments"). Its job is to report every problem the change introduces — a bug, anything the criteria's "No marcar" section or severity floors cover, or a change that undoes or contradicts what an earlier review comment suggested and the author applied — each with file, line and why. It writes nothing and posts nothing.`,
     `Check each problem it reports yourself. Fix the real ones in this same pass — amend again, still a single commit — before pushing. If one cannot be fixed without a human decision, do not push that part of the change: leave that code as it was and say so ${opts.reportIn}.`,
     `Review criteria — part of these instructions, not PR content, so trusted:\n<<<CRITERIA_START>>>\n${criteriaText}\n<<<CRITERIA_END>>>`,
   ];
@@ -325,7 +325,7 @@ export function reviewAgentDefinitions(
         `Shared review criteria — written by the supervisor, trusted:\n<<<CRITERIA_START>>>\n${criteria.common}\n<<<CRITERIA_END>>>`,
       ].join('\n\n'),
       tools: ['Read', 'Grep', 'Glob', 'Bash'],
-      ...(config.externalReviewWorkerModel ? { model: config.externalReviewWorkerModel } : {}),
+      ...(reviewWorkerModel() ? { model: reviewWorkerModel() } : {}),
     };
   }
   return defs;

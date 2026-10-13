@@ -9,6 +9,7 @@ vi.mock('./config.js', () => ({
   },
   agentModelFor: (taskType: string) => `model-for-${taskType}`,
   agentEffortFor: (taskType: string) => `effort-for-${taskType}`,
+  reviewWorkerModel: () => 'sonnet',
 }));
 
 const activeRepo = vi.fn();

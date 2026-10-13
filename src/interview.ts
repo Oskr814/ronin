@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { config } from './config.js';
+import { config, defaultAgentModel } from './config.js';
 import { activeRepo } from './repo-context.js';
 import { log } from './logger.js';
 import { commentOnIssue, listIssueComments, setIssueState } from './github.js';
@@ -53,7 +53,7 @@ export async function startInterview(issueNumber: number, issueUrl: string, resu
     // Not bypassPermissions: a person is on the other end, and the only
     // things pre-approved are reading and commenting on this one issue.
     permissionMode: 'default',
-    model: config.agentModel || undefined,
+    model: defaultAgentModel() || undefined,
     allowedTools: [`Bash(gh issue view ${issueNumber}:*)`, `Bash(gh issue comment ${issueNumber}:*)`, 'Read', 'Grep', 'Glob'],
     addDirs: [activeRepo().productRepoPath],
     env: { GH_TOKEN: config.githubToken, GH_REPO: activeRepo().productRepo },

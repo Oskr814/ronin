@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 let interviews: Record<string, any> = {};
 const cfg = vi.hoisted(() => ({ remoteInterviews: true, interviewTimeoutHours: 24, githubLogin: 'ronin-agent', githubToken: 't', agentModel: 'opus' }));
-vi.mock('./config.js', () => ({ config: cfg }));
+vi.mock('./config.js', () => ({ config: cfg, defaultAgentModel: () => cfg.agentModel }));
 vi.mock('./repo-context.js', () => ({ activeRepo: () => ({ productRepo: 'redmotos/shoppingcart', productRepoPath: '/repo' }) }));
 const addPendingSpec = vi.hoisted(() => vi.fn());
 vi.mock('./local-state.js', () => ({

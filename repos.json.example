@@ -12,6 +12,15 @@
   },
   {
     "productRepo": "Oskr814/repo-b",
-    "productRepoPath": "/home/link/RM/repo-b"
+    "productRepoPath": "/home/link/RM/repo-b",
+    "claudeConfigDir": "/home/link/.claude-repo-b",
+    "agent": {
+      "model": "sonnet",
+      "effort": "high",
+      "models": {
+        "external-review": "opus"
+      },
+      "reviewWorkerModel": "haiku"
+    }
   }
 ]
