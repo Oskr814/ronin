@@ -66,6 +66,15 @@ describe('shouldTriggerTick', () => {
     expect(shouldTriggerTick('pull_request_review_comment', { action: 'created', repository: { full_name: 'acme/product' } }, trackedRepos)).toBe(true);
   });
 
+  it('triggers on a submitted review (an approval, or changes requested without inline comments)', () => {
+    expect(shouldTriggerTick('pull_request_review', { action: 'submitted', repository: { full_name: 'acme/product' } }, trackedRepos)).toBe(true);
+  });
+
+  it('ignores a review being edited or dismissed', () => {
+    expect(shouldTriggerTick('pull_request_review', { action: 'edited', repository: { full_name: 'acme/product' } }, trackedRepos)).toBe(false);
+    expect(shouldTriggerTick('pull_request_review', { action: 'dismissed', repository: { full_name: 'acme/product' } }, trackedRepos)).toBe(false);
+  });
+
   it('triggers on a published (non-prerelease) release', () => {
     expect(shouldTriggerTick('release', { action: 'released', repository: { full_name: 'acme/product' } }, trackedRepos)).toBe(true);
   });
