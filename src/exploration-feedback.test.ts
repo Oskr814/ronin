@@ -8,6 +8,7 @@ vi.mock('./repo-context.js', () => ({ activeRepo: () => ({ productRepo: 'redmoto
 vi.mock('./config.js', () => ({ config: { githubLogin: 'ronin-agent', worktreeBaseRef: 'origin/main', exploreTimezone: 'America/Tegucigalpa' } }));
 const gh = vi.hoisted(() => ({
   listFileReviewComments: vi.fn(),
+  listIssueComments: vi.fn(),
   hasBotReaction: vi.fn(),
   createIssue: vi.fn(),
   replyToComment: vi.fn(),
@@ -65,6 +66,7 @@ beforeEach(async () => {
   vi.spyOn(process, 'cwd').mockReturnValue(base);
   for (const f of Object.values(gh)) f.mockReset();
   for (const f of Object.values(prMod)) f.mockReset();
+  gh.listIssueComments.mockResolvedValue([]);
   spawn.mockReset().mockReturnValue({ pid: 1, unref: () => {} });
   actions.tasks = [];
   gh.createIssue.mockResolvedValue({ number: 795, url: 'u' });
@@ -162,6 +164,62 @@ describe('processExplorationPr feedback — threads and earlier conversation', (
       { autor: 'persona', texto: 'el botón Agregar del después está desalineado', mismoHilo: false },
       { autor: 'ronin', texto: 'propongo items-start en la fila', mismoHilo: false },
     ]);
+  });
+});
+
+describe('processExplorationPr feedback — general comments', () => {
+  const general = (id: number, body: string, extra: Record<string, unknown> = {}) => ({ id, kind: 'issue', body, authorLogin: 'Oskr814', reactionsEyes: 0, ...extra });
+
+  it('rejects the findings a general comment covers, notes it in the knowledge, and answers before merging', async () => {
+    gh.listFileReviewComments.mockResolvedValue([]);
+    gh.listIssueComments.mockResolvedValue([
+      general(40, 'sin mención, entre nosotros'),
+      general(41, '@ronin-agent los de mobile se resuelven con F-0003, que no se vuelvan a proponer'),
+      general(42, 'ronin respondió', { authorLogin: 'ronin-agent' }),
+    ]);
+    actions.value = [{
+      commentId: 41,
+      fichas: [{ app: 'backoffice', findingId: 'F-0002', accion: 'rechazar', motivo: 'Se resuelve con F-0003 mientras no haya soporte móvil' }],
+      conocimiento: [{ app: 'backoffice', texto: 'Mientras no haya soporte móvil, no proponer arreglos de mobile' }],
+      respuesta: 'Rechacé F-0002 y lo anoté',
+    }];
+
+    await processExplorationPr(pr({ reviewDecision: 'APPROVED' }));
+
+    const task = actions.tasks[0];
+    expect(task.comments).toEqual([]);
+    expect(task.general.map((g: any) => g.commentId)).toEqual([41]);
+    expect(task.general[0].conversacion.map((m: any) => m.texto)).toEqual(['sin mención, entre nosotros']);
+    expect(task.fichas.map((f: any) => `${f.app}/${f.id}`)).toEqual(['backoffice/F-0002', 'backoffice/F-0003']);
+    const memory = await loadMemory(memoryDir());
+    expect(memory.findings.find((f) => f.id === 'F-0002')!.estado).toBe('rechazado');
+    expect(memory.findings.find((f) => f.id === 'F-0003')!.estado).toBe('propuesto');
+    expect(memory.knowledge).toContain('Mientras no haya soporte móvil, no proponer arreglos de mobile (pedido en #794)');
+    expect(prMod.commitAndPush.mock.calls[0][2].description).toContain('added to the backoffice knowledge file');
+    expect(gh.replyToComment).toHaveBeenCalledWith(794, { id: 41, kind: 'issue' }, 'Rechacé F-0002 y lo anoté');
+    expect(gh.addReaction).toHaveBeenCalledWith(41, 'issue', 'eyes');
+    expect(gh.mergePullRequest).toHaveBeenCalledWith(794);
+  });
+
+  it('skips a general comment it already reacted to', async () => {
+    gh.listFileReviewComments.mockResolvedValue([]);
+    gh.listIssueComments.mockResolvedValue([general(41, '@ronin-agent los de mobile no', { reactionsEyes: 1 })]);
+    gh.hasBotReaction.mockResolvedValue(true);
+
+    await processExplorationPr(pr());
+
+    expect(actions.tasks).toHaveLength(0);
+  });
+
+  it('hands an after image asked for in a general comment to the worker, answered as a general comment', async () => {
+    gh.listFileReviewComments.mockResolvedValue([]);
+    gh.listIssueComments.mockResolvedValue([general(43, '@ronin-agent en F-0003 el botón quedó corrido')]);
+    actions.value = [{ commentId: 43, fichas: [{ findingId: 'F-0003', accion: 'editar', rehacerDespues: 'alinear el botón' }], respuesta: 'Lo corrijo' }];
+
+    await processExplorationPr(pr());
+
+    const request = JSON.parse(spawn.mock.calls[0][1].at(-1));
+    expect(request.redo.items).toEqual([{ app: 'backoffice', findingId: 'F-0003', instruction: 'alinear el botón', commentId: 43, kind: 'issue' }]);
   });
 });
 
