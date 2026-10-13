@@ -45,15 +45,17 @@ beforeEach(() => {
 });
 
 describe('parsePreviewCommand', () => {
-  it('reads an optional app name', () => {
+  it('keeps everything after the command, other lines included, as its arguments', () => {
     expect(parsePreviewCommand('@ronin /preview', 'ronin')).toEqual({ action: 'up' });
-    expect(parsePreviewCommand('@ronin /preview backoffice', 'ronin')).toEqual({ action: 'up', appName: 'backoffice' });
-    expect(parsePreviewCommand('@Ronin /PREVIEW backoffice\notra línea', 'ronin')).toEqual({ action: 'up', appName: 'backoffice' });
+    expect(parsePreviewCommand('@ronin /preview backoffice', 'ronin')).toEqual({ action: 'up', args: 'backoffice' });
+    expect(parsePreviewCommand('@Ronin /PREVIEW backoffice\nun cliente con 40 catálogos', 'ronin'))
+      .toEqual({ action: 'up', args: 'backoffice\nun cliente con 40 catálogos' });
   });
 
-  it('reads stop and its synonyms', () => {
+  it('reads stop and its synonyms, only on their own', () => {
     expect(parsePreviewCommand('@ronin /preview stop', 'ronin')).toEqual({ action: 'stop' });
-    expect(parsePreviewCommand('@ronin /preview OFF', 'ronin')).toEqual({ action: 'stop' });
+    expect(parsePreviewCommand('@ronin /preview OFF ', 'ronin')).toEqual({ action: 'stop' });
+    expect(parsePreviewCommand('@ronin /preview down to 3 clientes', 'ronin')).toEqual({ action: 'up', args: 'down to 3 clientes' });
   });
 
   it('only counts right after the mention, never inside a plain request', () => {
@@ -74,7 +76,7 @@ describe('findUnprocessedMentions with /preview', () => {
     const result = await findUnprocessedMentions(42);
     expect(result.map((c) => c.id)).toEqual([2]);
     expect(launchPreviewWorker).toHaveBeenCalledWith({
-      repo: 'acme/product', prNumber: 42, action: 'up', appName: 'backoffice', comment: { id: 1, kind: 'issue' },
+      repo: 'acme/product', prNumber: 42, action: 'up', args: 'backoffice', comment: { id: 1, kind: 'issue' },
     });
     expect(addReaction).toHaveBeenCalledWith(1, 'issue', 'eyes');
   });

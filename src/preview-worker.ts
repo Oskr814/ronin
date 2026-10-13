@@ -40,8 +40,8 @@ async function run(): Promise<void> {
     await reply('No levanto previews de PRs que vienen de un fork: su código no corre en el runner.');
     return;
   }
-  await reply(renderPreviewStarting(request.appName, pr.headRefOid));
-  await reply(renderPreviewReady(await startPreview(request.prNumber, pr.headRefOid, request.appName), config.githubLogin));
+  await reply(renderPreviewStarting(pr.headRefOid, config.previewPrepareData));
+  await reply(renderPreviewReady(await startPreview(request.prNumber, pr, request.args), config.githubLogin));
 }
 
 async function main(): Promise<void> {
@@ -56,7 +56,7 @@ async function main(): Promise<void> {
       await run();
     } catch (error) {
       log.error(`preview PR #${request.prNumber} falló`, error);
-      await reply(renderPreviewFailed(request.appName, error as Error));
+      await reply(renderPreviewFailed(error as Error));
     } finally {
       await releasePreviewLock(request.prNumber);
     }

@@ -76,6 +76,11 @@ describe('renderTemplate', () => {
       .toBe('http://127.0.0.1:41234 http://127.0.0.1:5173 127.0.0.1');
   });
 
+  it('renders the port a local one is published on, when it has one', () => {
+    expect(renderTemplate('{{public.ports.web.80}} {{public.port.backoffice}}', { ...ctx, publicHost: 'h.ts.net', publicPorts: { '41234': 20001 } }))
+      .toBe('https://h.ts.net:20001 https://h.ts.net:5173');
+  });
+
   it('renders public URLs over HTTPS on the public host when there is one', () => {
     expect(renderTemplate('{{public.ports.web.80}} {{public.port.backoffice}} {{publicHost}}', { ...ctx, publicHost: 'runner.tail.ts.net' }))
       .toBe('https://runner.tail.ts.net:41234 https://runner.tail.ts.net:5173 runner.tail.ts.net');

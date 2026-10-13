@@ -326,11 +326,14 @@ export async function listOpenPrNumbers(): Promise<number[]> {
 export interface PrHead {
   state: 'OPEN' | 'CLOSED' | 'MERGED';
   headRefOid: string;
+  baseRefName: string;
   isCrossRepository: boolean;
+  title: string;
+  body: string;
 }
 
 export async function getPrHead(prNumber: number): Promise<PrHead> {
-  return JSON.parse(await gh(['pr', 'view', String(prNumber), '--json', 'state,headRefOid,isCrossRepository'])) as PrHead;
+  return JSON.parse(await gh(['pr', 'view', String(prNumber), '--json', 'state,headRefOid,baseRefName,isCrossRepository,title,body'])) as PrHead;
 }
 
 async function listOpenPrsWithBase(baseBranch: string): Promise<number[]> {

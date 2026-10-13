@@ -9,3 +9,4 @@ scripts/run-tick.sh
 .worktrees/
 repos.json
 .tick.pending
+.preview-reservations/

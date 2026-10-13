@@ -65,14 +65,19 @@ export function parseExploreCommand(body: string): { appName: string; maxFunctio
 // help.ts's commandToken: "/preview" also shows up in paths
 // ("revisá src/preview/card.tsx"), and that's a plain request. `login` isn't
 // escaped, same reasoning as mentionsHandle.
+//
+// `args` is everything after the command, other lines included: an app name
+// and/or what the data should look like ("un cliente con 40 catálogos") —
+// the worker tells them apart once it knows the manifest's apps (see
+// preview.ts's resolvePreviewArgs).
 const PREVIEW_STOP_WORDS = ['stop', 'off', 'down'];
 
-export function parsePreviewCommand(body: string, login: string): { action: 'up'; appName?: string } | { action: 'stop' } | null {
-  const match = body.match(new RegExp(`\\B@${login}\\s+/preview(?![\\w/-])(?:[ \\t]+([\\w.-]+))?`, 'i'));
+export function parsePreviewCommand(body: string, login: string): { action: 'up'; args?: string } | { action: 'stop' } | null {
+  const match = body.match(new RegExp(`\\B@${login}\\s+/preview(?![\\w/-])([\\s\\S]*)$`, 'i'));
   if (!match) return null;
-  const arg = match[1];
-  if (arg && PREVIEW_STOP_WORDS.includes(arg.toLowerCase())) return { action: 'stop' };
-  return arg ? { action: 'up', appName: arg } : { action: 'up' };
+  const args = match[1].trim();
+  if (PREVIEW_STOP_WORDS.includes(args.toLowerCase())) return { action: 'stop' };
+  return args ? { action: 'up', args } : { action: 'up' };
 }
 
 // null when the command is missing its required app_name — nothing

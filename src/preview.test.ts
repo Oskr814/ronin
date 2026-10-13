@@ -3,7 +3,7 @@ import { describe, it, expect, vi } from 'vitest';
 vi.mock('./logger.js', () => ({ log: { error: vi.fn(), info: vi.fn() } }));
 vi.mock('./config.js', () => ({ config: { githubLogin: 'ronin-agent' } }));
 
-import { previewPorts, previewPrFromDirName, renderPreviewFailed, renderPreviewReady } from './preview.js';
+import { parsePreviewData, previewPorts, previewPrFromDirName, renderPreviewFailed, renderPreviewReady, resolvePreviewArgs } from './preview.js';
 import type { AppDefinition, TemplateContext } from './app-manifest.js';
 
 const app = {
@@ -72,15 +72,59 @@ describe('renderPreviewReady', () => {
   });
 });
 
+describe('renderPreviewReady with prepared data', () => {
+  const base = { appName: 'backoffice', sha: 'abcdef1234567', url: 'https://h:1', users: [] };
+
+  it('lists what was prepared and what was not', () => {
+    const body = renderPreviewReady({ ...base, data: { preparado: ['Cliente Default Dev (/clientes/15) con 30 catálogos, 4 vencidos'], noPreparado: ['Un catálogo sin productos: la API no lo permite'] } }, 'ronin-agent');
+    expect(body).toContain('**Datos listos para probar el PR**\n- Cliente Default Dev (/clientes/15) con 30 catálogos, 4 vencidos');
+    expect(body).toContain('**Lo que no pude preparar**\n- Un catálogo sin productos: la API no lo permite');
+  });
+
+  it('says when nothing was needed, and when the preparation failed', () => {
+    expect(renderPreviewReady({ ...base, data: { preparado: [], noPreparado: [] } }, 'r')).toContain('No hizo falta preparar datos');
+    expect(renderPreviewReady({ ...base, data: { error: 'timed out' } }, 'r')).toContain('No pude preparar los datos para probar el PR (timed out)');
+  });
+
+  it('says nothing about data when it was not attempted', () => {
+    expect(renderPreviewReady(base, 'r')).not.toMatch(/datos/i);
+  });
+});
+
+describe('parsePreviewData', () => {
+  it('keeps only non-empty strings and tolerates missing fields', () => {
+    expect(parsePreviewData('{"preparado": ["a", "", 3, " b "]}')).toEqual({ preparado: ['a', 'b'], noPreparado: [] });
+  });
+});
+
+describe('resolvePreviewArgs', () => {
+  it('uses the only app when nothing is said', () => {
+    expect(resolvePreviewArgs(undefined, ['backoffice'])).toEqual({ appName: 'backoffice' });
+  });
+
+  it('takes the first word as the app only when the manifest has it', () => {
+    expect(resolvePreviewArgs('Backoffice', ['backoffice', 'web'])).toEqual({ appName: 'backoffice' });
+    expect(resolvePreviewArgs('web un cliente con 40 catálogos', ['backoffice', 'web'])).toEqual({ appName: 'web', instruction: 'un cliente con 40 catálogos' });
+  });
+
+  it('treats everything as the instruction when the first word is not an app', () => {
+    expect(resolvePreviewArgs('un cliente\ncon 40 catálogos', ['backoffice'])).toEqual({ appName: 'backoffice', instruction: 'un cliente\ncon 40 catálogos' });
+  });
+
+  it('asks for the app when there are several and none was named', () => {
+    expect(() => resolvePreviewArgs('un cliente', ['backoffice', 'web'])).toThrow(/backoffice, web/);
+  });
+});
+
 describe('renderPreviewFailed', () => {
   it('puts the first line inline and the log tail in a collapsed block', () => {
-    const body = renderPreviewFailed('backoffice', new Error('"pnpm install" salió con código 1\nERR_PNPM_X\nmore'));
-    expect(body).toContain('No pude levantar `backoffice`: "pnpm install" salió con código 1');
+    const body = renderPreviewFailed(new Error('"pnpm install" salió con código 1\nERR_PNPM_X\nmore'));
+    expect(body).toContain('No pude levantar la app: "pnpm install" salió con código 1');
     expect(body).toContain('<details>');
     expect(body).toContain('ERR_PNPM_X\nmore');
   });
 
   it('skips the block when there is no detail', () => {
-    expect(renderPreviewFailed(undefined, new Error('no hay tailscale'))).not.toContain('<details>');
+    expect(renderPreviewFailed(new Error('no hay tailscale'))).not.toContain('<details>');
   });
 });
