@@ -20,6 +20,7 @@ import {
   setReviewStatus,
   listExternalOpenReviewThreads,
   setPullRequestBody,
+  changesRequestedOnHead,
   type TrackingIssue,
   type PullRequestStatus,
   type Comment,
@@ -455,6 +456,10 @@ export async function processSlicePr(issue: TrackingIssue, pr: StackedPr, isBott
   }
 
   if (pr.reviewDecision === 'CHANGES_REQUESTED') {
+    if (!(await changesRequestedOnHead(pr.number))) {
+      logSliceOutcome(issue, pr, isBottom, 'changes requested sobre un commit anterior, esperando re-review');
+      return true;
+    }
     const blocked = await blockOnAttemptLimit(
       issue, pr, config.sliceAttemptLimit,
       'Feedback de review sin converger tras el límite de intentos',

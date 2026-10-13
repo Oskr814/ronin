@@ -73,6 +73,7 @@ vi.mock('./github.js', () => ({
   listExternalOpenReviewThreads: (...args: unknown[]) => listExternalOpenReviewThreads(...args),
   setReviewStatus: (...args: unknown[]) => setReviewStatus(...args),
   setPullRequestBody: (...args: unknown[]) => setPullRequestBody(...args),
+  changesRequestedOnHead: (...args: unknown[]) => changesRequestedOnHead(...args),
 }));
 
 const incrementChecksPendingCount = vi.fn();
@@ -107,6 +108,7 @@ vi.mock('./mentions.js', () => ({
 const runExternalReview = vi.fn();
 vi.mock('./review-publish.js', () => ({ runExternalReview }));
 
+const changesRequestedOnHead = vi.fn();
 const runAgentTask = vi.fn();
 vi.mock('./agent-task.js', () => ({
   runAgentTask: (...args: unknown[]) => runAgentTask(...args),
@@ -166,6 +168,7 @@ beforeEach(() => {
   listExternalOpenReviewThreads.mockResolvedValue([]);
   worktreeDirFor.mockReturnValue('/tmp/worktree');
   incrementAttemptCount.mockResolvedValue(1);
+  changesRequestedOnHead.mockResolvedValue(true);
   existsSync.mockReturnValue(true);
   hasRemainingSlices.mockResolvedValue(true); // preserves pre-existing merge test behavior by default
   listAssignedIssues.mockResolvedValue([]);
@@ -227,6 +230,20 @@ describe('processSlicePr — non-bottom stacked PR (regression)', () => {
 
     expect(stillInProgress).toBe(true);
     expect(runAgentTask).toHaveBeenCalledWith({ type: 'fix-review', issueNumber: 228, prNumber: 230 });
+  });
+});
+
+describe('processSlicePr — changes requested on an older commit', () => {
+  it('waits for a re-review instead of running fix-review or counting an attempt', async () => {
+    changesRequestedOnHead.mockResolvedValue(false);
+
+    const stillInProgress = await processSlicePr(issue(), pr({ reviewDecision: 'CHANGES_REQUESTED' }), false);
+
+    expect(stillInProgress).toBe(true);
+    expect(changesRequestedOnHead).toHaveBeenCalledWith(230);
+    expect(incrementAttemptCount).not.toHaveBeenCalled();
+    expect(runAgentTask).not.toHaveBeenCalled();
+    expect(notifyBlocker).not.toHaveBeenCalled();
   });
 });
 

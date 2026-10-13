@@ -568,6 +568,38 @@ interface RawReview {
   state: string;
 }
 
+interface RawReviewWithCommit {
+  login: string;
+  state: string;
+  commitId: string;
+}
+
+// True when some reviewer's standing review (their latest APPROVED,
+// CHANGES_REQUESTED or DISMISSED one, which is what GitHub's reviewDecision
+// counts) asks for changes on `headSha` itself. A CHANGES_REQUESTED review on
+// an older commit means ronin already pushed after it (fix-review, or the
+// mention flow answering that same review's inline comments) and GitHub keeps
+// the decision until the reviewer re-reviews — firing fix-review again only
+// finds nothing to change and burns attempts. Discovered live on
+// redmotos/shoppingcart#802.
+export function changesRequestedOn(reviews: RawReviewWithCommit[], headSha: string): boolean {
+  const standing = new Map<string, RawReviewWithCommit>();
+  for (const review of reviews) {
+    if (!['APPROVED', 'CHANGES_REQUESTED', 'DISMISSED'].includes(review.state)) continue;
+    standing.set(review.login, review);
+  }
+  return [...standing.values()].some((r) => r.state === 'CHANGES_REQUESTED' && r.commitId === headSha);
+}
+
+export async function changesRequestedOnHead(prNumber: number): Promise<boolean> {
+  const [prStdout, reviewsStdout] = await Promise.all([
+    ghApi(['api', `repos/${activeRepo().productRepo}/pulls/${prNumber}`, '--jq', '.head.sha']),
+    ghApi(['api', '--paginate', `repos/${activeRepo().productRepo}/pulls/${prNumber}/reviews?per_page=100`, '--jq', '.[] | {login: .user.login, state: .state, commitId: .commit_id}']),
+  ]);
+  const reviews = reviewsStdout.split('\n').filter((line) => line.trim() !== '').map((line) => JSON.parse(line) as RawReviewWithCommit);
+  return changesRequestedOn(reviews, prStdout.trim());
+}
+
 // Excluye comentarios que pertenecen a una review todavía en borrador
 // (PENDING, no enviada) — no son un pedido real hasta que su autor la
 // publica. Ver docs/superpowers/specs/2026-07-28-mention-review-design.md.
