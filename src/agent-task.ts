@@ -390,6 +390,7 @@ export async function buildTask(task: AgentTask): Promise<{ branch: string; prom
           'If the issue lacks enough information to act on it (a bug you cannot reproduce, or a request whose scope/approach is ambiguous), comment on the issue asking precisely for what you need ("gh issue comment") and stop without touching any code — that needs a human answer.',
           "Once you're confident in the fix or approach, implement it following this repo's CLAUDE.md conventions, including its testing requirements.",
           `When done: run the relevant tests, and make exactly one commit. Push this branch and open a PR ("gh pr create") with "Closes #${task.issueNumber}" in the body, describing what was asked and how it was addressed.`,
+          'If the issue shows images (e.g. the "before" and "after" of an exploration finding), put them in the PR body too, wherever it shows screenshots, reusing the same image URLs and captions exactly as the issue has them — never just say they are in the issue.',
           COMMIT_STYLE_RULE,
           'Scope: only touch files needed for this. Do not edit the tracking issue (body, labels, assignees, or anything else) — that is owned entirely by the supervisor, not by you.',
           AGENT_NOTES_REMINDER,
