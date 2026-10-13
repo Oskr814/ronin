@@ -92,7 +92,7 @@ export async function exploreAndPublish(opts: {
   const newIds = new Set(summary.findings.map((f) => f.id));
   const urgentIssues = await openFindingIssues(opts.appName, memoryDir, batchDir, branch, (f) => newIds.has(f.id) && f.gravedad === 'bug' && !f.entorno);
 
-  await commitAndPush(batchDir, branch, `exploración ${opts.appName}: corrida ${summary.runId} (${summary.findings.length} propuesta(s))`);
+  await commitAndPush(batchDir, branch, `corrida de ${opts.appName} ${summary.runId} (${summary.findings.length} propuesta(s))`);
   const prNumber = await upsertExplorationPr(batch, batchDir);
   return { summary, prNumber, batch, urgentIssues };
 }
@@ -229,7 +229,7 @@ async function applyFeedback(pr: PullRequestStatus, batch: string): Promise<Redo
     }
     if (reply) replies.push({ commentId: p.commentId, body: reply });
   }
-  if (await commitAndPush(batchDir, explorationBranch(batch), `exploración: feedback del PR #${pr.number}`)) await upsertExplorationPr(batch, batchDir);
+  if (await commitAndPush(batchDir, explorationBranch(batch), `feedback del PR #${pr.number}`)) await upsertExplorationPr(batch, batchDir);
   for (const r of replies) await replyToComment(pr.number, { id: r.commentId, kind: 'review' }, r.body).catch((error) => log.error(`exploración: no se pudo responder el comentario ${r.commentId}`, error));
   for (const p of pending) await addReaction(p.commentId, 'review', 'eyes').catch(() => {});
   return redo;
@@ -274,7 +274,7 @@ export async function redoAndPublish(redo: NonNullable<ExploreWorkerRequest['red
     const codeDir = await ensureAppWorktree(app);
     for (const id of await redoAfterImages({ appName: app, codeDir, memoryDir: memoryDirFor(batchDir, app), requests: items })) done.add(`${app}/${id}`);
   }
-  if (await commitAndPush(batchDir, explorationBranch(redo.batch), `exploración: después rehecho (${[...done].join(', ') || 'ninguno'})`)) await upsertExplorationPr(redo.batch, batchDir);
+  if (await commitAndPush(batchDir, explorationBranch(redo.batch), `después rehecho (${[...done].join(', ') || 'ninguno'})`)) await upsertExplorationPr(redo.batch, batchDir);
   for (const item of redo.items) {
     const ok = done.has(`${item.app}/${item.findingId}`);
     const body = ok

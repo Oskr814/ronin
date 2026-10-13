@@ -236,6 +236,13 @@ function repoUrl(): string {
   return `https://github.com/${activeRepo().productRepo}`;
 }
 
+// Commits and PR titles follow the product repo's own convention, not a
+// default: a squash merge turns the PR title into the commit on main.
+export const COMMIT_STYLE_RULE =
+  'Commit messages and PR titles follow this repo\'s own convention: before committing, read the recent subjects on the base branch ' +
+  '("git log --format=%s -20 <base branch>") and its CLAUDE.md, and match them — format (e.g. "type(scope): description"), scope names and language. ' +
+  'The PR title follows the same format as a commit subject, since a squash merge turns it into the commit on the base branch.';
+
 export const AGENT_NOTES_REMINDER =
   "If you are committing code changes for this task and learned something " +
   "non-obvious while doing it (a hidden constraint, a subtle invariant, a " +
@@ -350,6 +357,7 @@ export async function buildTask(task: AgentTask): Promise<{ branch: string; prom
           `Implement this single slice: "${task.sliceTitle}".`,
           "Follow this repo's CLAUDE.md conventions, including its testing requirements.",
           `When done: run the relevant tests, and make exactly one commit for this slice (squash any work-in-progress commits into one before pushing). Push this branch and open a PR (\`${prCommand}\`) describing the slice.`,
+          COMMIT_STYLE_RULE,
           'Scope: only touch files needed for this slice. Do not edit the tracking issue (body, labels, assignees, or anything else) — that is owned entirely by the supervisor, not by you.',
           AGENT_NOTES_REMINDER,
         ].join('\n'),
@@ -371,6 +379,7 @@ export async function buildTask(task: AgentTask): Promise<{ branch: string; prom
           'If the issue lacks enough information to act on it (a bug you cannot reproduce, or a request whose scope/approach is ambiguous), comment on the issue asking precisely for what you need ("gh issue comment") and stop without touching any code — that needs a human answer.',
           "Once you're confident in the fix or approach, implement it following this repo's CLAUDE.md conventions, including its testing requirements.",
           `When done: run the relevant tests, and make exactly one commit. Push this branch and open a PR ("gh pr create") with "Closes #${task.issueNumber}" in the body, describing what was asked and how it was addressed.`,
+          COMMIT_STYLE_RULE,
           'Scope: only touch files needed for this. Do not edit the tracking issue (body, labels, assignees, or anything else) — that is owned entirely by the supervisor, not by you.',
           AGENT_NOTES_REMINDER,
           'Finally, end your entire response with exactly one line, and nothing after it: "RONIN_STATUS: needs-info" if you stopped without opening a PR because you needed clarification, or "RONIN_STATUS: done" if you opened the PR.',
@@ -717,7 +726,8 @@ export async function buildTask(task: AgentTask): Promise<{ branch: string; prom
           `If something essential is missing — a decision only the team can make, an ambiguity where guessing would likely be wrong — do not write the spec. Comment on the issue ("gh issue comment ${task.issueNumber} --body-file <file>") with your findings so far and the specific questions (numbered, each with the options you see when there are some), and end your response with exactly "RONIN_STATUS: needs-info".`,
           `Otherwise write the spec as one Markdown file at ${specDir}/${today}-<short-slug>-design.md, in the same language and style as the existing specs in ${specDir} (read one or two recent ones first). It must cover: context and problem (what the issue asks and why), goal and non-goals, the design (components, data, API, UI behavior, states and errors), a Mermaid diagram when there is a flow or architecture worth seeing, how it will be sliced into small reviewable PRs, acceptance criteria, risks, and open questions. No frontmatter. Decisions you made on your own go under a heading the reviewer can't miss, with the alternatives you discarded.`,
           `If the change has UI, you may also write a self-contained HTML mockup at ${task.outDir}/mockup.html (plain HTML/CSS imitating the app, no external resources); it gets rendered to an image and shown on the spec PR. Do not commit it.`,
-          `Then make exactly one commit with only the spec file, push this branch, and open a draft PR assigned to the ronin account: gh pr create --draft --assignee ${config.githubLogin} --title "[spec] <title>" --body-file <file>. The body: a short summary, "Refs #${task.issueNumber}", the decisions you made on your own, and this note, verbatim: "Revisá y editá el spec en este PR. Marcalo como *ready for review* solo cuando quieras que arranque a implementarlo: esa es la señal."`,
+          `Then make exactly one commit with only the spec file, push this branch, and open a draft PR assigned to the ronin account: gh pr create --draft --assignee ${config.githubLogin} --title "<title>" --body-file <file>. The body: a short summary, "Refs #${task.issueNumber}", the decisions you made on your own, and this note, verbatim: "Revisá y editá el spec en este PR. Marcalo como *ready for review* solo cuando quieras que arranque a implementarlo: esa es la señal."`,
+          COMMIT_STYLE_RULE,
           `Reply once to the comment that asked for this ("gh issue comment ${task.issueNumber} --body <text>"), with the PR link and two or three lines on the approach. Never write "@" followed by a name. Do not change labels or assignees of the issue.`,
           'End your response with exactly "RONIN_STATUS: done" once the PR is open.',
         ].join('\n\n'),

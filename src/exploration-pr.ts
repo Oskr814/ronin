@@ -6,6 +6,7 @@ import { join, relative } from 'node:path';
 import { activeRepo } from './repo-context.js';
 import { config } from './config.js';
 import { log } from './logger.js';
+import { docsSubject, repoCommitStyle } from './commit-style.js';
 import {
   createIssue,
   createPullRequest,
@@ -100,12 +101,14 @@ export async function ensureBatchWorktree(batch: string): Promise<string> {
   return dir;
 }
 
-// false when there was nothing to commit.
-export async function commitAndPush(dir: string, branch: string, message: string): Promise<boolean> {
+// false when there was nothing to commit. `text` is the subject without its
+// prefix, which follows the product repo's convention (commit-style.ts).
+export async function commitAndPush(dir: string, branch: string, text: string): Promise<boolean> {
   await git(dir, ['add', '--', EXPLORATION_DIR]);
   const staged = await git(dir, ['diff', '--cached', '--name-only']);
   if (!staged) return false;
-  await git(dir, ['commit', '-m', message]);
+  const style = await repoCommitStyle(dir, baseRef());
+  await git(dir, ['commit', '-m', docsSubject(style, 'exploration', 'exploración', text)]);
   await git(dir, ['push', 'origin', `${branch}:${branch}`]);
   return true;
 }
@@ -261,5 +264,7 @@ export async function upsertExplorationPr(batch: string, batchDir: string): Prom
     if (open.body !== body) await setPullRequestBody(open.number, body);
     return open.number;
   }
-  return createPullRequest({ head: branch, base: baseBranchName(), title: `Exploración de ronin — desde ${batch}`, body, draft: false });
+  const style = await repoCommitStyle(batchDir, baseRef());
+  const title = style === 'conventional' ? `docs(exploration): exploración de ronin desde ${batch}` : `Exploración de ronin — desde ${batch}`;
+  return createPullRequest({ head: branch, base: baseBranchName(), title, body, draft: false });
 }
