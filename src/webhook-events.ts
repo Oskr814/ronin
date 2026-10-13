@@ -22,6 +22,9 @@ const RELEVANT: Record<string, string[]> = {
   pull_request: ['assigned', 'ready_for_review', 'opened', 'synchronize', 'reopened'],
   issue_comment: ['created'],
   pull_request_review_comment: ['created'],
+  // An approval (an exploration PR merges on it) or a request for changes
+  // with no inline comment wouldn't wake a tick otherwise.
+  pull_request_review: ['submitted'],
   // GitHub's "released" action fires only for a real, non-draft,
   // non-prerelease publish — unlike "published" (fires for pre-releases too)
   // or "created" (fires for drafts). Exactly the trigger changelog.ts wants;
