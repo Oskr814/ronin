@@ -81,6 +81,14 @@ describe('parseReviewOutput — findings', () => {
     expect(output.findings[0].title.endsWith('…')).toBe(true);
   });
 
+  it('cuts an over-long title at a word boundary, and keeps one slightly over 90 whole', () => {
+    const slightlyLong = '¿`docker:dev` y `db:setup:dev` deben respetar el slot del worktree en vez de ir por su cuenta?';
+    const { output } = parse({ findings: [finding({ title: slightlyLong }), finding({ title: 'palabra '.repeat(40) })] });
+    expect(output.findings[0].title).toBe(slightlyLong);
+    expect(output.findings[1].title).toMatch(/ palabra…$/);
+    expect(output.findings[1].title.length).toBeLessThanOrEqual(LIMITS.title);
+  });
+
   it('degrades a replace suggestion spanning more than 10 lines to a snippet', () => {
     const { output } = parse({ findings: [finding({ startLine: 1, line: 20, suggestion: { kind: 'replace', code: 'a();' } })] });
     expect(output.findings[0].suggestion).toEqual({ kind: 'snippet', code: 'a();' });

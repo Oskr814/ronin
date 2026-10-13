@@ -17,7 +17,9 @@ export interface RenderContext {
 
 export type ClosingState = 'lgtm' | 'confirmed' | { open: Array<{ url: string; title: string }> };
 
-const TYPE_EMOJI: Record<FindingType, string> = { bug: '🐞', decision: '❓', improvement: '🧹' };
+// A decision's title is already a yes/no question ("¿…?"), so a ❓ in front
+// of it says nothing new.
+const TYPE_EMOJI: Record<FindingType, string> = { bug: '🐞', decision: '', improvement: '💡' };
 const TYPE_LABEL: Record<FindingType, string> = { bug: 'Defecto', decision: 'Decisión', improvement: 'Mejora' };
 const SEVERITY_EMOJI: Record<FindingSeverity, string> = { critical: '🔴', important: '🟠', minor: '🟡' };
 const SEVERITY_LABEL: Record<FindingSeverity, string> = { critical: 'Crítico', important: 'Importante', minor: 'Menor' };
@@ -266,9 +268,9 @@ function buildSummary(
     '## Review de ronin',
     `${all.length} ${all.length === 1 ? 'hallazgo' : 'hallazgos'} · commit \`${ctx.headSha.slice(0, 7)}\` · criterio \`${ctx.criteriaHash.slice(0, 7)}\``,
     '',
-    '| | Severidad | Hallazgo |',
+    '| Tipo | Severidad | Hallazgo |',
     '|---|---|---|',
-    ...bySeverity(all).map((f) => `| ${TYPE_EMOJI[f.type]} | ${SEVERITY_EMOJI[f.severity]} ${SEVERITY_LABEL[f.severity]} | ${tableCell(f.title)} (${locationLink(ctx, f.path, f.line)}) |`),
+    ...bySeverity(all).map((f) => `| ${`${TYPE_EMOJI[f.type]} ${TYPE_LABEL[f.type]}`.trim()} | ${SEVERITY_EMOJI[f.severity]} ${SEVERITY_LABEL[f.severity]} | ${tableCell(f.title)} (${locationLink(ctx, f.path, f.line)}) |`),
   ];
   if (findings.outOfDiff.length > 0) {
     lines.push('', '### Fuera del diff', '', 'Estos hallazgos apuntan a líneas que el PR no modifica, así que no se pueden anclar como comentario en la línea.');

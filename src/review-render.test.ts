@@ -62,7 +62,7 @@ describe('renderFindingComment', () => {
     const body = renderFindingComment(finding({ type: 'decision', severity: 'critical' }), ctx);
     const lines = body.split('\n');
     expect(lines[0]).toMatch(/^<!-- ronin:finding /);
-    expect(lines[1]).toBe('### ❓🔴 Agregar líneas omite el crédito');
+    expect(lines[1]).toBe('### 🔴 Agregar líneas omite el crédito');
     expect(lines[2]).toBe('<sub>Decisión · Crítico · Concurrencia / lógica</sub>');
   });
 
@@ -186,7 +186,7 @@ describe('renderReviewSummary', () => {
   it('lists every finding in a table, escaping pipes', () => {
     const body = renderReviewSummary({ inline: [inlineFinding], outOfDiff: [] }, ctx);
     expect(body).toContain('1 hallazgo · commit `abcdef1` · criterio `a6bbe98`');
-    expect(body).toContain('| 🐞 | 🟠 Importante | Inline \\| con barra (');
+    expect(body).toContain('| 🐞 Defecto | 🟠 Importante | Inline \\| con barra (');
   });
 
   it('orders the table by severity', () => {
@@ -197,7 +197,7 @@ describe('renderReviewSummary', () => {
   it('renders out-of-diff findings in full inside the summary', () => {
     const body = renderReviewSummary({ inline: [inlineFinding], outOfDiff: [outFinding] }, ctx);
     expect(body).toContain('### Fuera del diff');
-    expect(body).toContain('### 🧹🟡 Afuera');
+    expect(body).toContain('### 💡🟡 Afuera');
   });
 
   it('includes one combined prompt covering every finding', () => {
