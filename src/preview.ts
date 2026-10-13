@@ -7,7 +7,7 @@ import { activeRepo } from './repo-context.js';
 import { appDown, appUp, APP_STATE_DIR, type AppSession } from './app-runtime.js';
 import { APP_MANIFEST_FILE, parseAppManifest, publicizeTemplate, publicPortsIn, publicUrl, type AppStep, type AppUser, type TemplateContext } from './app-manifest.js';
 import { removeWorktreeDir } from './worktree.js';
-import { listOpenPrNumbers, type PrHead } from './github.js';
+import { commentOnSpecPr, listOpenPrHeads, type PrHead } from './github.js';
 import { runAgentTask } from './agent-task.js';
 import { HELP_FOOTER_MARKER } from './help.js';
 import { config } from './config.js';
@@ -109,6 +109,9 @@ interface PreviewState {
   published?: Array<{ public: number; local: number }>;
   // Before the preview range: published on the local port itself.
   ports?: number[];
+  // Set once the PR was told this preview is behind its commits — at most
+  // one notice per preview; a new /preview starts a fresh state.
+  staleNotified?: boolean;
 }
 
 const reservations = (): PreviewReservations => new PreviewReservations(config.previewReservationsDir);
@@ -360,6 +363,10 @@ export async function stopPreview(prNumber: number): Promise<boolean> {
 // Costs nothing when there are no previews: the PR list is only read if
 // there's a preview worktree on disk. A preview whose worker is still running
 // waits for the next tick.
+//
+// A preview stays on the commit it was asked for: once its PR has newer
+// ones (ronin applying a requested change, or anyone's push), the PR is
+// told — once per preview — that `/preview` again brings it up to date.
 export async function sweepPreviews(): Promise<void> {
   let entries: string[];
   try {
@@ -372,15 +379,37 @@ export async function sweepPreviews(): Promise<void> {
     return pr === null ? [] : [pr];
   });
   if (previews.length === 0) return;
-  const open = new Set(await listOpenPrNumbers());
+  const heads = new Map((await listOpenPrHeads()).map((p) => [p.number, p.headRefOid]));
   for (const pr of previews) {
-    if (open.has(pr) || (await previewWorkerBusy(pr))) continue;
-    log.info(`preview PR #${pr}: el PR ya no está abierto, bajando su preview`);
-    await stopPreview(pr);
+    if (await previewWorkerBusy(pr)) continue;
+    const head = heads.get(pr);
+    if (head === undefined) {
+      log.info(`preview PR #${pr}: el PR ya no está abierto, bajando su preview`);
+      await stopPreview(pr);
+    } else {
+      await noticeIfStale(pr, head);
+    }
+  }
+}
+
+async function noticeIfStale(prNumber: number, head: string): Promise<void> {
+  const dir = previewDirFor(prNumber);
+  const state = await readPreviewState(dir);
+  if (!state || state.staleNotified || state.sha === head) return;
+  try {
+    await commentOnSpecPr(prNumber, renderPreviewStale(state.sha, config.githubLogin));
+    await writeFile(previewStatePath(dir), JSON.stringify({ ...state, staleNotified: true }, null, 2));
+    log.info(`preview PR #${prNumber}: quedó atrás de ${head.slice(0, 7)}, avisado en el PR`);
+  } catch (error) {
+    log.error(`preview PR #${prNumber}: no se pudo avisar que quedó desactualizada`, error);
   }
 }
 
 // --- replies ---
+
+export function renderPreviewStale(previewSha: string, login: string): string {
+  return `🔄 La preview de este PR sigue en \`${previewSha.slice(0, 7)}\` y el PR ya tiene commits nuevos. Pedí \`@${login} /preview\` para actualizarla.`;
+}
 
 export function renderPreviewStarting(sha: string, withData: boolean): string {
   const data = withData ? ', y después preparo los datos para probar este PR' : '';
