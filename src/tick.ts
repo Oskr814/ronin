@@ -12,7 +12,7 @@ import {
   mergeSpecPr,
   commentOnSpecPr,
   listAllOpenRoninPrs,
-  mergePullRequest,
+  retargetDependents,
   setIssueState,
   incrementAttemptCount,
   addReaction,
@@ -286,12 +286,11 @@ function rootBranchName(): string {
 
 async function ensureBottomUpToDate(issue: TrackingIssue, pr: StackedPr): Promise<BottomStatus> {
   if (pr.baseRefName !== rootBranchName()) {
-    // mergePullRequest retargets any dependent PR onto its own base itself
-    // (a manual PATCH — GitHub does not do this automatically, see the note
-    // there) before the merged branch goes away. If this PR's base still
-    // isn't the root branch, that retarget never ran (e.g. a human merged
-    // the predecessor from the GitHub UI, bypassing mergePullRequest
-    // entirely) and this PR's base is still pointing at a now-dead branch —
+    // syncMergedSlices retargets any dependent PR onto the merged PR's base
+    // (a manual PATCH — GitHub does not do this automatically, see
+    // retargetDependents). If this PR's base still isn't the root branch,
+    // that retarget never ran or failed, and this PR's base is still
+    // pointing at a now-dead branch —
     // merging it would silently land it there instead of main. Never merge
     // in that case; retry silently, then escalate like any other "needs a
     // human eventually" case. See final review Fix 1.
@@ -433,23 +432,12 @@ export async function processSlicePr(issue: TrackingIssue, pr: StackedPr, isBott
       return true;
     }
 
+    // ronin never merges a slice PR: the human who approved it merges it
+    // whenever it suits them, and syncMergedSlices picks that up on the next
+    // tick. A merge that landed minutes after the approval, on ronin's own
+    // schedule, was confusing.
     if (pr.checksPassing && pr.reviewDecision === 'APPROVED') {
-      await mergePullRequest(pr.number);
-      await markSliceMerged(issue.number, pr.sliceIndex);
-      // Merged branch's worktree (and any Docker Compose stack it spun up,
-      // e.g. a per-slice Postgres for integration tests) has no further use
-      // once its PR is merged — see worktree.ts's removeWorktree. Best-effort:
-      // never lets a leftover worktree/container block the rest of this tick.
-      await removeWorktree(pr.headRefName);
-      // Closes a one-tick gap: a bug-fix PR's "Closes #N" (see
-      // docs/superpowers/specs/2026-07-28-bug-issue-intake-design.md) makes
-      // GitHub close the issue on merge, and listTrackingIssues filters
-      // --state open — without this, the next tick would never see the
-      // issue again to notice no slices remain, leaving it
-      // ronin:in-progress forever. Also shaves a tick off `done` for
-      // ordinary specs, harmlessly.
-      if (!(await hasRemainingSlices(issue.number))) await setIssueState(issue.number, 'done');
-      logSliceOutcome(issue, pr, isBottom, 'mergeado');
+      logSliceOutcome(issue, pr, isBottom, 'aprobado y en verde, esperando el merge de un humano');
       return true;
     }
   }
@@ -535,9 +523,32 @@ interface NextSliceStart {
   stackSize: number;
 }
 
+// Slice PRs are merged by a human (see processSlicePr), so ronin finds out
+// here instead of at merge time: a slice whose PR is no longer open and was
+// merged gets checked off, and any PR stacked on it moves to its base before
+// ensureBottomUpToDate looks at it. Returns allPrs with those new bases. The
+// merged branch's worktree goes with the next sweepOrphanedWorktrees. A PR
+// closed without merging is left alone, so the empty-stack check below still
+// escalates it.
+async function syncMergedSlices(issue: TrackingIssue, allPrs: PullRequestStatus[]): Promise<PullRequestStatus[]> {
+  const open = new Set(allPrs.map((p) => p.number));
+  let prs = allPrs;
+  for (const slice of await getSlices(issue.number)) {
+    if (slice.checked || slice.prNumber === null || open.has(slice.prNumber)) continue;
+    const merged = await getPullRequestStatus(slice.prNumber);
+    if (merged.state !== 'MERGED') continue;
+    await markSliceMerged(issue.number, slice.index);
+    await retargetDependents(merged.headRefName, merged.baseRefName);
+    prs = prs.map((p) => (p.baseRefName === merged.headRefName ? { ...p, baseRefName: merged.baseRefName } : p));
+    log.info(`issue #${issue.number}: slice ${slice.index + 1} mergeada (PR #${merged.number})`);
+  }
+  return prs;
+}
+
 // Exported for direct unit testing — otherwise only reachable through
 // tickOneRepo, which needs a lot of unrelated mocking to exercise.
-export async function processIssue(issue: TrackingIssue, allPrs: PullRequestStatus[]): Promise<NextSliceStart | null> {
+export async function processIssue(issue: TrackingIssue, openPrs: PullRequestStatus[]): Promise<NextSliceStart | null> {
+  const allPrs = await syncMergedSlices(issue, openPrs);
   const stack = toStackedPrs(prsForIssue(allPrs, issue.number));
 
   if (stack.length === 0) {
@@ -951,6 +962,22 @@ async function issueJobs(inProgress: TrackingIssue[]): Promise<Job[]> {
   }));
 }
 
+// A bug-fix PR's "Closes #N" (see
+// docs/superpowers/specs/2026-07-28-bug-issue-intake-design.md) makes GitHub
+// close the issue as soon as a human merges it, and listTrackingIssues only
+// reads open issues, so processIssue never sees it again to mark it done.
+// This finishes those off. One closed with slices still unmerged (closed by
+// hand mid-work) keeps its label: that's a human's call.
+async function finishClosedIssues(): Promise<void> {
+  for (const issue of await listTrackingIssues('in-progress', 'closed')) {
+    await syncMergedSlices(issue, []);
+    if (!(await hasRemainingSlices(issue.number))) {
+      await setIssueState(issue.number, 'done');
+      log.info(`issue #${issue.number}: cerrado con todas sus slices mergeadas, done`);
+    }
+  }
+}
+
 async function tickOneRepo(): Promise<void> {
   const start = Date.now();
   resetTickMetrics();
@@ -960,6 +987,7 @@ async function tickOneRepo(): Promise<void> {
   await checkInterviews().catch((error) => log.error('entrevistas: no se pudieron revisar', error));
   const justStarted = [...(await discoverAssignedSpecs()), ...(await discoverAssignedIssues())];
 
+  await finishClosedIssues().catch((error) => log.error('no se pudieron cerrar los issues ya mergeados', error));
   const inProgress = await listTrackingIssues('in-progress');
   // Merge in whatever this same tick just moved to in-progress — GitHub's
   // issue-list-by-label query can lag a few seconds behind a label applied
