@@ -20,7 +20,12 @@ vi.mock('./github.js', () => ({
 
 vi.mock('./logger.js', () => ({ log: { error: vi.fn(), info: vi.fn() } }));
 
+const launchPreviewWorker = vi.fn();
+vi.mock('./preview.js', () => ({ launchPreviewWorker: (...args: unknown[]) => launchPreviewWorker(...args) }));
+vi.mock('./repo-context.js', () => ({ activeRepo: () => ({ productRepo: 'acme/product' }) }));
+
 import {
+  parsePreviewCommand,
   findUnprocessedMentions,
   isFixCommentsCommand,
   findTrustedFixCommentsCommand,
@@ -36,6 +41,58 @@ beforeEach(() => {
   botReaction.mockReset().mockResolvedValue(false);
   replyToComment.mockReset().mockResolvedValue(undefined);
   addReaction.mockReset().mockResolvedValue(undefined);
+  launchPreviewWorker.mockReset();
+});
+
+describe('parsePreviewCommand', () => {
+  it('reads an optional app name', () => {
+    expect(parsePreviewCommand('@ronin /preview', 'ronin')).toEqual({ action: 'up' });
+    expect(parsePreviewCommand('@ronin /preview backoffice', 'ronin')).toEqual({ action: 'up', appName: 'backoffice' });
+    expect(parsePreviewCommand('@Ronin /PREVIEW backoffice\notra línea', 'ronin')).toEqual({ action: 'up', appName: 'backoffice' });
+  });
+
+  it('reads stop and its synonyms', () => {
+    expect(parsePreviewCommand('@ronin /preview stop', 'ronin')).toEqual({ action: 'stop' });
+    expect(parsePreviewCommand('@ronin /preview OFF', 'ronin')).toEqual({ action: 'stop' });
+  });
+
+  it('only counts right after the mention, never inside a plain request', () => {
+    expect(parsePreviewCommand('@ronin revisá src/preview/card.tsx', 'ronin')).toBeNull();
+    expect(parsePreviewCommand('@ronin /preview/card.tsx', 'ronin')).toBeNull();
+    expect(parsePreviewCommand('@ronin /previews', 'ronin')).toBeNull();
+    expect(parsePreviewCommand('/preview backoffice', 'ronin')).toBeNull();
+  });
+});
+
+describe('findUnprocessedMentions with /preview', () => {
+  it('launches the preview worker, reacts, and keeps the command away from the other flows', async () => {
+    issueComments.mockResolvedValue([
+      { id: 1, kind: 'issue', body: '@ronin /preview backoffice', reactionsEyes: 0, authorLogin: 'ana' },
+      { id: 2, kind: 'issue', body: '@ronin revisá esto', reactionsEyes: 0, authorLogin: 'ana' },
+    ]);
+
+    const result = await findUnprocessedMentions(42);
+    expect(result.map((c) => c.id)).toEqual([2]);
+    expect(launchPreviewWorker).toHaveBeenCalledWith({
+      repo: 'acme/product', prNumber: 42, action: 'up', appName: 'backoffice', comment: { id: 1, kind: 'issue' },
+    });
+    expect(addReaction).toHaveBeenCalledWith(1, 'issue', 'eyes');
+  });
+
+  it('answers in the thread when /preview came in a review comment', async () => {
+    reviewComments.mockResolvedValue([{ id: 7, kind: 'review', body: '@ronin /preview stop', reactionsEyes: 0, authorLogin: 'ana' }]);
+
+    await findUnprocessedMentions(42);
+    expect(launchPreviewWorker).toHaveBeenCalledWith(expect.objectContaining({ action: 'stop', comment: { id: 7, kind: 'review' } }));
+  });
+
+  it('does not react when the worker could not be launched, so the next tick retries', async () => {
+    issueComments.mockResolvedValue([{ id: 1, kind: 'issue', body: '@ronin /preview', reactionsEyes: 0, authorLogin: 'ana' }]);
+    launchPreviewWorker.mockImplementation(() => { throw new Error('spawn failed'); });
+
+    expect(await findUnprocessedMentions(42)).toEqual([]);
+    expect(addReaction).not.toHaveBeenCalled();
+  });
 });
 
 describe('meta-commands (/help, typos, wrong place)', () => {

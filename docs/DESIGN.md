@@ -345,6 +345,17 @@ Cuando cualquier tarea termina en `RONIN_STATUS: needs-info`, además de dejar l
 
 Piloto: el backoffice de shoppingcart (herramienta interna, se levanta entero con stubs de Odoo/GCP, usuarios con el mismo rol `Sales` pero dos usos distintos — vendedores en desktop y bodega en el teléfono). El mecanismo se evalúa por la calidad de lo que encuentra: ¿detecta lo que el equipo ya sabía?, ¿encuentra algo nuevo?, ¿cuántas propuestas se descartan?
 
+### 12. Previews por PR en la tailnet (`/preview`)
+
+Para probar un PR sin entrar al server, armar el worktree y levantar la app a mano. `@ronin-agent /preview [app]` en un PR (no fork) hace eso mismo con el `ronin.app.json` del head del PR (§11.2) y responde con una URL de la tailnet y los usuarios de seed. La app es opcional cuando el manifiesto define una sola.
+
+- **Dónde corre.** Un worker aparte (`preview-worker.ts`), como el de exploración: levantar la app tarda minutos y no puede retener el tick. El comando se intercepta en `findUnprocessedMentions`, así que nunca llega a la review ni a fix-comments. El 👀 se pone al lanzar el worker, y el worker contesta en el mismo lugar del comentario. Hay un lock por PR, así que dos `/preview` seguidos no se pisan.
+- **Aislamiento.** Worktree `preview-pr-<n>` detached en el SHA del head (vía `refs/pull/<n>/head`) y proyecto compose `ronin-app-<repo>-<app>-pr-<n>`, que corre al lado del de exploración y del de otros PRs. Los puertos siguen en `127.0.0.1`.
+- **Publicación.** `tailscale serve --https=<puerto>` → `http://127.0.0.1:<puerto>`, usando el mismo número de puerto: serve escucha en la IP de la tailnet y no choca con el bind local. Solo la tailnet, nunca `funnel`. Se publica el puerto del `baseUrl` más los que el manifiesto marca como públicos.
+- **Lo que llama el navegador.** Un frontend que le pega a `http://127.0.0.1:<api>` no funciona desde otra máquina. Por eso el manifiesto declara esas URLs con `{{public.ports.<servicio>.<puerto>}}` o `{{public.port.<nombre>}}`: fuera de una preview rinden `http://127.0.0.1:<puerto>` (la exploración no cambia), y en una preview rinden `https://<host>.ts.net:<puerto>`, que además se publica. `{{publicHost}}` sirve para un dev server que valida el header `Host` (Vite ≥5.4.12: `__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS`).
+- **Vida útil = la del PR.** `sweepPreviews` corre en cada tick: si hay worktrees de preview cuyo PR ya no está abierto, despublica los puertos, baja la app y borra el worktree. El webhook despierta un tick con `pull_request.closed`, así que esto pasa apenas se mergea o se cierra el PR. Lo mismo vale para el worktree de la slice mergeada (`sweepOrphanedWorktrees`) y para el retarget del stack. `/preview stop` la baja antes.
+- **Commits nuevos.** La preview no se actualiza sola, porque reinstalar en cada push sería caro. Un nuevo `/preview` la mueve al head actual y reusa los `node_modules` del worktree.
+
 ## Estado actual
 
 - [x] Definir el esqueleto del supervisor (script + estructura de tick) — ver §3.1 y `src/`

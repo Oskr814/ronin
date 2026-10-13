@@ -222,19 +222,57 @@ export async function loadAppDefinition(checkoutDir: string, appName: string): P
 // `{{port.<name>}}` (a free port reserved by name, e.g. for a dev server),
 // `{{compose}}` (the docker compose command for this app's stack, with its
 // project and file) and `{{dir}}` (the checkout's absolute path).
+//
+// For whatever a browser reaches — the page itself, and the API it calls —
+// `{{public.ports.<service>.<port>}}` and `{{public.port.<name>}}` render
+// the URL that port answers on for whoever is looking at the app, and
+// `{{publicHost}}` its host (for a dev server that checks the Host header).
+// Normally that's http://127.0.0.1:<port>; in a /preview it's the runner's
+// tailnet name over HTTPS, so another machine can use the app (see
+// preview.ts).
 export interface TemplateContext {
   ports: Record<string, Record<string, number>>;
   port: Record<string, number>;
   compose: string;
   dir: string;
+  publicHost?: string;
 }
 
 const TEMPLATE_RE = /\{\{\s*([\w.-]+)\s*\}\}/g;
 
-// Names of the `{{port.<name>}}` a template uses, so the caller can reserve
-// those ports before rendering it.
+function templateKeys(template: string): string[] {
+  return [...template.matchAll(TEMPLATE_RE)].map((m) => m[1]);
+}
+
+// Names of the `{{port.<name>}}` (and `{{public.port.<name>}}`) a template
+// uses, so the caller can reserve those ports before rendering it.
 export function namedPortsIn(template: string): string[] {
-  return [...template.matchAll(TEMPLATE_RE)].map((m) => m[1]).flatMap((key) => (key.startsWith('port.') ? [key.slice(5)] : []));
+  return templateKeys(template).flatMap((key) => {
+    const bare = key.startsWith('public.') ? key.slice(7) : key;
+    return bare.startsWith('port.') ? [bare.slice(5)] : [];
+  });
+}
+
+function portOf(key: string[], ctx: TemplateContext): number | undefined {
+  const [head, ...rest] = key;
+  if (head === 'port' && rest.length === 1) return ctx.port[rest[0]];
+  if (head === 'ports' && rest.length === 2) return ctx.ports[rest[0]]?.[rest[1]];
+  return undefined;
+}
+
+export function publicUrl(port: number, ctx: Pick<TemplateContext, 'publicHost'>): string {
+  return ctx.publicHost ? `https://${ctx.publicHost}:${port}` : `http://127.0.0.1:${port}`;
+}
+
+// The ports a template exposes through `{{public.…}}` — what a preview has
+// to publish on the tailnet for the app to work from another machine.
+export function publicPortsIn(template: string, ctx: TemplateContext): number[] {
+  return templateKeys(template).flatMap((key) => {
+    const [head, ...rest] = key.split('.');
+    if (head !== 'public') return [];
+    const port = portOf(rest, ctx);
+    return port === undefined ? [] : [port];
+  });
 }
 
 export function renderTemplate(template: string, ctx: TemplateContext): string {
@@ -243,8 +281,11 @@ export function renderTemplate(template: string, ctx: TemplateContext): string {
     let value: unknown;
     if (head === 'compose' && rest.length === 0) value = ctx.compose;
     else if (head === 'dir' && rest.length === 0) value = ctx.dir;
-    else if (head === 'port' && rest.length === 1) value = ctx.port[rest[0]];
-    else if (head === 'ports' && rest.length === 2) value = ctx.ports[rest[0]]?.[rest[1]];
+    else if (head === 'publicHost' && rest.length === 0) value = ctx.publicHost ?? '127.0.0.1';
+    else if (head === 'public') {
+      const port = portOf(rest, ctx);
+      value = port === undefined ? undefined : publicUrl(port, ctx);
+    } else value = portOf([head, ...rest], ctx);
     if (value === undefined) throw new Error(`variable de plantilla desconocida: {{${key}}}`);
     return String(value);
   });

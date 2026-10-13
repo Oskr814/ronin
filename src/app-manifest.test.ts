@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { DEFAULT_VIEWPORTS, namedPortsIn, parseAppManifest, renderTemplate } from './app-manifest.js';
+import { DEFAULT_VIEWPORTS, namedPortsIn, parseAppManifest, publicPortsIn, renderTemplate } from './app-manifest.js';
 
 function manifest(app: Record<string, unknown> = {}) {
   return JSON.stringify({
@@ -68,11 +68,30 @@ describe('renderTemplate', () => {
   it('throws on an unknown variable instead of leaving it in place', () => {
     expect(() => renderTemplate('{{ports.api.80}}', ctx)).toThrow(/ports.api.80/);
     expect(() => renderTemplate('{{secret}}', ctx)).toThrow(/secret/);
+    expect(() => renderTemplate('{{public.ports.api.80}}', ctx)).toThrow(/public.ports.api.80/);
+  });
+
+  it('renders public URLs on loopback when there is no public host', () => {
+    expect(renderTemplate('{{public.ports.web.80}} {{public.port.backoffice}} {{publicHost}}', ctx))
+      .toBe('http://127.0.0.1:41234 http://127.0.0.1:5173 127.0.0.1');
+  });
+
+  it('renders public URLs over HTTPS on the public host when there is one', () => {
+    expect(renderTemplate('{{public.ports.web.80}} {{public.port.backoffice}} {{publicHost}}', { ...ctx, publicHost: 'runner.tail.ts.net' }))
+      .toBe('https://runner.tail.ts.net:41234 https://runner.tail.ts.net:5173 runner.tail.ts.net');
+  });
+});
+
+describe('publicPortsIn', () => {
+  it('lists the ports a template exposes through public variables only', () => {
+    const ctx = { ports: { web: { '80': 41234 } }, port: { backoffice: 5173, admin: 6000 }, compose: '', dir: '/w' };
+    expect(publicPortsIn('{{public.ports.web.80}} {{port.admin}} {{public.port.backoffice}} {{ports.web.80}}', ctx)).toEqual([41234, 5173]);
   });
 });
 
 describe('namedPortsIn', () => {
   it('lists only the named ports a template references', () => {
     expect(namedPortsIn('{{port.web}} {{ports.api.80}} {{port.admin}} {{dir}}')).toEqual(['web', 'admin']);
+    expect(namedPortsIn('{{public.port.web}} {{public.ports.api.80}}')).toEqual(['web']);
   });
 });

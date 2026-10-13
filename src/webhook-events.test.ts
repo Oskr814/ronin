@@ -92,7 +92,11 @@ describe('shouldTriggerTick', () => {
   });
 
   it('ignores an irrelevant action on a relevant event type', () => {
-    expect(shouldTriggerTick('pull_request', { action: 'closed', repository: { full_name: 'acme/product' } }, trackedRepos)).toBe(false);
+    expect(shouldTriggerTick('pull_request', { action: 'labeled', repository: { full_name: 'acme/product' } }, trackedRepos)).toBe(false);
+  });
+
+  it('wakes a tick when a PR is closed or merged, to clean up after it right away', () => {
+    expect(shouldTriggerTick('pull_request', { action: 'closed', repository: { full_name: 'acme/product' } }, trackedRepos)).toBe(true);
   });
 
   it('ignores an edited comment (not a new one)', () => {

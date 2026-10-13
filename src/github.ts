@@ -316,6 +316,23 @@ export async function listAllOpenExternalPrs(): Promise<ExternalPr[]> {
     .map((pr) => ({ number: pr.number, headRefName: pr.headRefName, headRefOid: pr.headRefOid, baseRefName: pr.baseRefName, isCrossRepository: pr.isCrossRepository }));
 }
 
+// Every open PR, drafts and forks included — what decides which /preview
+// worktrees still have a PR to show (see preview.ts's sweepPreviews).
+export async function listOpenPrNumbers(): Promise<number[]> {
+  const stdout = await gh(['pr', 'list', '--state', 'open', '--limit', String(PR_LIST_LIMIT), '--json', 'number']);
+  return (JSON.parse(stdout) as Array<{ number: number }>).map((p) => p.number);
+}
+
+export interface PrHead {
+  state: 'OPEN' | 'CLOSED' | 'MERGED';
+  headRefOid: string;
+  isCrossRepository: boolean;
+}
+
+export async function getPrHead(prNumber: number): Promise<PrHead> {
+  return JSON.parse(await gh(['pr', 'view', String(prNumber), '--json', 'state,headRefOid,isCrossRepository'])) as PrHead;
+}
+
 async function listOpenPrsWithBase(baseBranch: string): Promise<number[]> {
   const stdout = await gh(['pr', 'list', '--state', 'open', '--base', baseBranch, '--json', 'number']);
   return (JSON.parse(stdout) as Array<{ number: number }>).map((p) => p.number);

@@ -155,7 +155,7 @@ export async function removeWorktree(branch: string): Promise<void> {
 // (reproduced live: ronin-594-slice-1 through -6 failing every 5 minutes
 // for hours). Since git no longer tracks `dir` as a worktree in this case,
 // deleting it directly can't corrupt any git worktree state.
-async function removeWorktreeDir(dir: string, label: string): Promise<void> {
+export async function removeWorktreeDir(dir: string, label: string): Promise<void> {
   await execFileAsync('git', ['worktree', 'remove', dir, '--force'], { cwd: activeRepo().productRepoPath })
     .catch(async (error) => {
       log.error(`${label}: 'git worktree remove' falló para ${dir}`, error);
