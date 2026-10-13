@@ -7,7 +7,7 @@ import { activeRepo } from './repo-context.js';
 import { config } from './config.js';
 import { getFreePort } from './worktree.js';
 import { log } from './logger.js';
-import { loadAppDefinition, namedPortsIn, renderTemplate, type AppDefinition, type TemplateContext } from './app-manifest.js';
+import { loadAppDefinition, namedPortsIn, publicizeTemplate, renderTemplate, type AppDefinition, type TemplateContext } from './app-manifest.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -224,7 +224,9 @@ export async function appUp(dir: string, appName: string, options: AppUpOptions 
         await runCommand(renderTemplate(step.run, ctx), join(dir, step.cwd ?? '.'), appEnv(env), logFile, (step.timeoutSeconds ?? 600) * 1000);
       } else if ('start' in step) {
         await reserveNamedPorts([step.start, ...Object.values(step.env ?? {})], ctx);
-        const env = Object.fromEntries(Object.entries(step.env ?? {}).map(([k, v]) => [k, renderTemplate(v, ctx)]));
+        // A no-op without a public host: {{public.…}} renders the same
+        // loopback URL — see publicizeTemplate.
+        const env = Object.fromEntries(Object.entries(step.env ?? {}).map(([k, v]) => [k, renderTemplate(publicizeTemplate(v), ctx)]));
         log.info(`app ${appName}: arrancando ${step.name}`);
         const pid = startProcess(renderTemplate(step.start, ctx), join(dir, step.cwd ?? '.'), appEnv(env), join(stateDir, `${step.name}.log`));
         state.processes.push({ name: step.name, pid });

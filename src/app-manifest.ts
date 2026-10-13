@@ -275,6 +275,20 @@ export function publicPortsIn(template: string, ctx: TemplateContext): number[] 
   });
 }
 
+// A loopback URL to one of the app's ports, written as a template:
+// `http://127.0.0.1:{{ports.web.80}}`, `http://localhost:{{port.api}}`.
+const LOOPBACK_URL_RE = /https?:\/\/(?:127\.0\.0\.1|localhost):\{\{\s*(ports?\.[\w.-]+)\s*\}\}/g;
+
+// What a preview does to the env of a `start` step: a loopback URL there is
+// one the process hands to a browser (an SPA's API URL), and a browser on
+// another machine can't reach this host's 127.0.0.1 — so it becomes the
+// port's public URL, without the manifest having to say so. Only `start`
+// env: `run`/`wait` steps talk to the app from this host, before anything is
+// published.
+export function publicizeTemplate(template: string): string {
+  return template.replace(LOOPBACK_URL_RE, (_, key: string) => `{{public.${key}}}`);
+}
+
 export function renderTemplate(template: string, ctx: TemplateContext): string {
   return template.replace(TEMPLATE_RE, (_, key: string) => {
     const [head, ...rest] = key.split('.');

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { DEFAULT_VIEWPORTS, namedPortsIn, parseAppManifest, publicPortsIn, renderTemplate } from './app-manifest.js';
+import { DEFAULT_VIEWPORTS, namedPortsIn, parseAppManifest, publicizeTemplate, publicPortsIn, renderTemplate } from './app-manifest.js';
 
 function manifest(app: Record<string, unknown> = {}) {
   return JSON.stringify({
@@ -79,6 +79,19 @@ describe('renderTemplate', () => {
   it('renders public URLs over HTTPS on the public host when there is one', () => {
     expect(renderTemplate('{{public.ports.web.80}} {{public.port.backoffice}} {{publicHost}}', { ...ctx, publicHost: 'runner.tail.ts.net' }))
       .toBe('https://runner.tail.ts.net:41234 https://runner.tail.ts.net:5173 runner.tail.ts.net');
+  });
+});
+
+describe('publicizeTemplate', () => {
+  it('turns loopback URLs to the app ports into public ones', () => {
+    expect(publicizeTemplate('http://127.0.0.1:{{ports.web.80}}/api')).toBe('{{public.ports.web.80}}/api');
+    expect(publicizeTemplate('http://localhost:{{ port.api }}')).toBe('{{public.port.api}}');
+  });
+
+  it('leaves everything else alone', () => {
+    expect(publicizeTemplate('postgres://root@127.0.0.1:{{ports.db.5432}}/x')).toBe('postgres://root@127.0.0.1:{{ports.db.5432}}/x');
+    expect(publicizeTemplate('http://127.0.0.1:5000')).toBe('http://127.0.0.1:5000');
+    expect(publicizeTemplate('{{public.ports.web.80}}')).toBe('{{public.ports.web.80}}');
   });
 });
 

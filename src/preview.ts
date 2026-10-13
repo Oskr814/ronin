@@ -5,7 +5,7 @@ import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { activeRepo } from './repo-context.js';
 import { appDown, appUp, APP_STATE_DIR, type AppSession } from './app-runtime.js';
-import { APP_MANIFEST_FILE, parseAppManifest, publicPortsIn, publicUrl, type AppStep, type AppUser } from './app-manifest.js';
+import { APP_MANIFEST_FILE, parseAppManifest, publicizeTemplate, publicPortsIn, publicUrl, type AppStep, type AppUser } from './app-manifest.js';
 import { removeWorktreeDir } from './worktree.js';
 import { listOpenPrNumbers } from './github.js';
 import { acquireLock, launchWorker, lockHeld } from './worker-launch.js';
@@ -115,17 +115,19 @@ async function readPreviewState(dir: string): Promise<PreviewState | null> {
   }
 }
 
+// Read the way appUp renders them: a `start` step's env goes through
+// publicizeTemplate.
 function stepTemplates(step: AppStep): string[] {
-  const env = 'env' in step ? Object.values(step.env ?? {}) : [];
-  if ('run' in step) return [step.run, ...env];
-  if ('start' in step) return [step.start, ...env];
+  if ('run' in step) return [step.run, ...Object.values(step.env ?? {})];
+  if ('start' in step) return [step.start, ...Object.values(step.env ?? {}).map(publicizeTemplate)];
   if ('wait' in step) return [step.wait];
   return [];
 }
 
 // What has to be on the tailnet for the app to work from another machine:
-// the page itself (baseUrl's port) first, then every port the manifest marks
-// as `{{public.…}}` — the API the page calls, for one.
+// the page itself (baseUrl's port) first, then every port the app hands to
+// the browser — a loopback URL in a `start` step's env (the API an SPA
+// calls), or anything the manifest marks `{{public.…}}` explicitly.
 export function previewPorts(session: Pick<AppSession, 'app' | 'ctx' | 'baseUrl'>): number[] {
   const basePort = Number(new URL(session.baseUrl).port);
   if (!basePort) throw new Error(`el baseUrl de la app (${session.baseUrl}) no tiene un puerto explícito`);

@@ -28,6 +28,16 @@ describe('previewPorts', () => {
     expect(previewPorts({ app, ctx, baseUrl: 'http://127.0.0.1:5173' })).toEqual([5173, 41234]);
   });
 
+  it('also publishes a loopback URL a start step hands to the browser, with no public marker', () => {
+    const loopback = {
+      steps: [
+        { run: 'curl http://127.0.0.1:{{ports.postgres.5432}}' },
+        { start: 'vite', name: 'backoffice', env: { VITE_API_URL: 'http://127.0.0.1:{{ports.web.80}}' } },
+      ],
+    } as unknown as AppDefinition;
+    expect(previewPorts({ app: loopback, ctx, baseUrl: 'http://127.0.0.1:5173' })).toEqual([5173, 41234]);
+  });
+
   it('does not list the page twice when it is also marked public', () => {
     const both = { ...app, steps: [{ start: 'x', name: 'x', env: { SELF: '{{public.port.backoffice}}' } }] } as unknown as AppDefinition;
     expect(previewPorts({ app: both, ctx, baseUrl: 'http://127.0.0.1:5173' })).toEqual([5173]);
