@@ -50,6 +50,7 @@ vi.mock('node:fs/promises', () => ({
 }));
 
 const loadReviewCriteria = vi.fn();
+vi.mock('./changelog.js', () => ({ ensureChangelogRepoUpToDate: vi.fn().mockResolvedValue('/tmp/changelog') }));
 vi.mock('./review-criteria.js', () => ({ loadReviewCriteria: (...args: unknown[]) => loadReviewCriteria(...args) }));
 
 const { runAgentTask, AGENT_NOTES_REMINDER, COMMIT_STYLE_RULE, reviewAgentDefinitions } = await import('./agent-task.js');
@@ -129,6 +130,17 @@ describe('runAgentTask — fix-issue prompt', () => {
     const prompt = runClaudeHeadless.mock.calls[0][1] as string;
     expect(prompt).toContain('reusing the same image URLs');
     expect(prompt).toContain('never just say they are in the issue');
+    expect(prompt).toContain('Leave out the "before" of an exploration finding');
+    expect(prompt).toContain('/antes-<n>.<ext>');
+  });
+
+  it('leaves the "before" of exploration findings out of the changelog', async () => {
+    await runAgentTask({ type: 'update-changelog', release: { tagName: 'v1.2.0', name: 'v1.2.0', url: 'https://example.com/r', publishedAt: '2026-10-13T00:00:00Z', isDraft: false, isPrerelease: false, body: '' } as never });
+
+    const prompt = runClaudeHeadless.mock.calls[0][1] as string;
+    expect(prompt).toContain('Include the screenshots each PR shows');
+    expect(prompt).toContain('except the "before" of an exploration finding');
+    expect(prompt).toContain('/antes-<n>.<ext>');
   });
 
   it('returns runClaudeHeadless\'s result so the caller can read the RONIN_STATUS marker', async () => {
