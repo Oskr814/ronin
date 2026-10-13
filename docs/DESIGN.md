@@ -313,7 +313,7 @@ Qué pasó, cómo reproducirlo, evidencia (con las capturas del antes) y propues
    - **responder** una pregunta.
 
    Un comentario general del PR que menciona a ronin también se aplica: puede cubrir varias fichas a la vez ("los de mobile se resuelven con F-0003"), que se rechazan o corrigen como arriba, y dejar en `knowledge.md` lo que las exploraciones siguientes no deben volver a proponer. Se procesa antes del merge, así que no se abren issues de fichas que ese comentario descartó.
-4. Approve + merge (mismo gate que el resto): ronin crea issues **para las fichas que siguen en pie**, y la corrida siguiente abre el PR nuevo. Asignar ese issue a ronin lo mete en el flujo de `fix-issue` o de spec de siempre.
+4. Approve + merge (mismo gate que el resto): al ver el PR aprobado, ronin marca como `aprobado` **las fichas que siguen en pie**, les crea su issue, commitea ambos al PR y recién entonces lo mergea (si sigue aprobado), así la base queda con el estado y el número de issue de cada ficha. La corrida siguiente abre el PR nuevo. Asignar ese issue a ronin lo mete en el flujo de `fix-issue` o de spec de siempre.
 5. Excepción: un bug de la app de gravedad `bug` abre su issue en el momento, sin esperar la revisión; igual queda registrado en su ficha. Los problemas del **entorno de desarrollo** (seed, stubs), que el evaluador marca con `entorno`, se registran y se revisan pero nunca abren issue antes de la revisión.
 
 #### 11.8 Programación nocturna

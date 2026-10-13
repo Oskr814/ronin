@@ -126,6 +126,23 @@ describe('processExplorationPr feedback', () => {
     expect(gh.mergePullRequest).toHaveBeenCalledWith(794);
     expect(prMod.openFindingIssues).toHaveBeenCalled();
   });
+
+  it('marks the findings still standing approved, commits them and only then merges', async () => {
+    gh.listFileReviewComments.mockResolvedValue([]);
+    const rejected = { ...finding('F-0004', 'Ya cubierto'), estado: 'rechazado' as const, motivo: 'ya está' };
+    await writeFinding(memoryDir(), rejected);
+    const order: string[] = [];
+    prMod.commitAndPush.mockImplementation(async () => (order.push('commit'), true));
+    gh.mergePullRequest.mockImplementation(async () => void order.push('merge'));
+
+    await processExplorationPr(pr({ reviewDecision: 'APPROVED' }));
+
+    const estados = Object.fromEntries((await loadMemory(memoryDir())).findings.map((f) => [f.id, f.estado]));
+    expect(estados).toEqual({ 'F-0002': 'aprobado', 'F-0003': 'aprobado', 'F-0004': 'rechazado' });
+    expect(order).toEqual(['commit', 'merge']);
+    expect(prMod.commitAndPush.mock.calls[0][2].fallback.es).toBe('aprobar F-0002, F-0003 del PR #794');
+    expect(prMod.upsertExplorationPr).toHaveBeenCalled();
+  });
 });
 
 describe('processExplorationPr feedback — threads and earlier conversation', () => {
@@ -193,7 +210,7 @@ describe('processExplorationPr feedback — general comments', () => {
     expect(task.fichas.map((f: any) => `${f.app}/${f.id}`)).toEqual(['backoffice/F-0002', 'backoffice/F-0003']);
     const memory = await loadMemory(memoryDir());
     expect(memory.findings.find((f) => f.id === 'F-0002')!.estado).toBe('rechazado');
-    expect(memory.findings.find((f) => f.id === 'F-0003')!.estado).toBe('propuesto');
+    expect(memory.findings.find((f) => f.id === 'F-0003')!.estado).toBe('aprobado');
     expect(memory.knowledge).toContain('Mientras no haya soporte móvil, no proponer arreglos de mobile (pedido en #794)');
     expect(prMod.commitAndPush.mock.calls[0][2].description).toContain('added to the backoffice knowledge file');
     expect(gh.replyToComment).toHaveBeenCalledWith(794, { id: 41, kind: 'issue' }, 'Rechacé F-0002 y lo anoté');

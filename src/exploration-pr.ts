@@ -188,21 +188,27 @@ export async function openFindingIssues(
   return opened;
 }
 
-// After an exploration PR merged, its findings that nobody rejected are
-// approved: marks them so in the memory (on the next batch's branch, which
-// starts from the base). A finding counts as merged once its file exists on the
-// base branch.
-export async function reconcileApproved(appName: string, memoryDir: string, checkoutDir: string): Promise<string[]> {
+// Marks as approved every proposed finding `select` picks. Returns their ids.
+export async function approveFindings(memoryDir: string, select: (f: FindingMeta) => boolean | Promise<boolean>): Promise<string[]> {
   const memory = await loadMemory(memoryDir);
   const changed: string[] = [];
   for (const meta of memory.findings.filter((f) => f.estado === 'propuesto')) {
+    if (!(await select(meta))) continue;
     const path = findingPath(memoryDir, meta);
-    const onBase = await git(checkoutDir, ['cat-file', '-e', `${baseRef()}:${relative(checkoutDir, path)}`]).then(() => true, () => false);
-    if (!onBase) continue;
-    const finding = parseFinding(await readFile(path, 'utf8'));
-    await writeFile(path, serializeFinding({ ...finding, estado: 'aprobado' }));
+    await writeFile(path, serializeFinding({ ...parseFinding(await readFile(path, 'utf8')), estado: 'aprobado' }));
     changed.push(meta.id);
   }
+  return changed;
+}
+
+// After an exploration PR merged, its findings that nobody rejected are
+// approved: marks them so in the memory (on the next batch's branch, which
+// starts from the base). A finding counts as merged once its file exists on the
+// base branch. ronin's own merge already marked them before merging (see
+// exploration-flow.ts's approveAndMerge); this covers a PR a human merged.
+export async function reconcileApproved(appName: string, memoryDir: string, checkoutDir: string): Promise<string[]> {
+  const onBase = (meta: FindingMeta) => git(checkoutDir, ['cat-file', '-e', `${baseRef()}:${relative(checkoutDir, findingPath(memoryDir, meta))}`]).then(() => true, () => false);
+  const changed = await approveFindings(memoryDir, onBase);
   if (changed.length > 0) log.info(`exploración ${appName}: aprobadas por el merge del PR de exploración: ${changed.join(', ')}`);
   await openFindingIssues(appName, memoryDir, checkoutDir, baseBranchName(), (f) => changed.includes(f.id));
   return changed;
@@ -229,7 +235,7 @@ export function renderDigest(opts: { since: string; branch: string; repo: string
     '- **Para rechazar una propuesta**, comentá en su ficha (en "Files changed") con el motivo, por ejemplo: "ya está cubierto". La marco como rechazada y la sumo a `knowledge.md` para no volver a proponerla.',
     '- **Para corregir una propuesta**, comentá qué cambiar: ajusto la ficha y, si hace falta, rehago la captura del después. **Para pedir un issue aparte** a partir de una ficha, pedímelo en el comentario.',
     `- **Para decidir sobre varias propuestas a la vez** (por ejemplo, "los de mobile se resuelven con F-0003") o sobre lo que no querés que vuelva a proponer, dejá un comentario general en el PR mencionándome. Rechazo o corrijo las fichas que cubre y lo sumo a \`knowledge.md\`.`,
-    '- **Para aceptar el resto**, aprobá el PR cuando quieras. Al mergearlo, abro un issue por cada propuesta que siga en pie; asignándome ese issue, la implemento.',
+    '- **Para aceptar el resto**, aprobá el PR cuando quieras. Marco como aprobadas las propuestas que sigan en pie, abro un issue por cada una y mergeo el PR; asignándome ese issue, la implemento.',
     '- Los bugs de la app de gravedad alta ya tienen su issue abierto desde que se encontraron.',
     '',
   ];

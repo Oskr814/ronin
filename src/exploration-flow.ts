@@ -26,6 +26,7 @@ import { explorationOutDir } from './exploration-inventory.js';
 import { runExploration, type RunSummary } from './exploration-run.js';
 import {
   appsWithMemory,
+  approveFindings,
   batchOfBranch,
   commitAndPush,
   currentBatch,
@@ -47,8 +48,8 @@ import type { CommitChange } from './commit-style.js';
 //   refreshed, and an issue right away for every bug of the app.
 // - explorationPrJobs: what each tick does with the open exploration PR —
 //   apply the reviewers' comments on findings (reject, edit, redo an after
-//   image, open a follow-up issue), merge it once approved and open the
-//   issues of its findings.
+//   image, open a follow-up issue), and once approved mark its findings
+//   approved, open their issues and merge it.
 // - the worker: a run can take an hour, so it never runs inside a tick
 //   (ticks are single-flight: everything else would wait). The tick starts
 //   it as a separate process with its own lock — see launchExploreWorker.
@@ -163,6 +164,16 @@ export function feedbackCommitChange(prNumber: number, changes: FeedbackChange[]
   return {
     description: `Applies review feedback from PR #${prNumber} to the exploration memory:\n${lines.join('\n')}`,
     fallback: { en: `${joinParts(en, 'and')} from PR #${prNumber} review`, es: `${joinParts(es, 'y')} según la review del PR #${prNumber}` },
+  };
+}
+
+export function approveCommitChange(prNumber: number, approved: Array<{ id: string; titulo: string }>): CommitChange {
+  const ids = approved.map((a) => a.id);
+  return {
+    description: `PR #${prNumber} was approved: marks its findings still standing as approved and records the issue opened for each one:\n${approved.map((a) => `- ${a.id} ${a.titulo}`).join('\n')}`,
+    fallback: ids.length > 0
+      ? { en: `approve ${idList(ids)} from PR #${prNumber}`, es: `aprobar ${idList(ids)} del PR #${prNumber}` }
+      : { en: `record the issues of PR #${prNumber}`, es: `anotar los issues del PR #${prNumber}` },
   };
 }
 
@@ -360,14 +371,27 @@ async function applyFeedback(pr: PullRequestStatus, batch: string): Promise<Redo
   return redo;
 }
 
-async function mergeAndOpenIssues(pr: PullRequestStatus, batch: string): Promise<void> {
+// Accepting the PR: its findings still standing are marked approved and get
+// their issue, committed to the PR so the base keeps both, and only then
+// does the PR merge — mergePullRequest checks again that it's still
+// approved. A retry after a failed merge has nothing left to mark and
+// doesn't open a second issue (openFindingIssues looks for it first).
+async function approveAndMerge(pr: PullRequestStatus, batch: string): Promise<void> {
   const batchDir = await ensureBatchWorktree(batch);
-  await mergePullRequest(pr.number);
-  log.info(`exploración: PR #${pr.number} mergeado, abriendo issues de sus propuestas`);
+  // The issues link to the finding on the base, where it lands with the merge.
   const base = (activeRepo().worktreeBaseRef ?? config.worktreeBaseRef).replace(/^origin\//, '');
+  const approved: Array<{ id: string; titulo: string }> = [];
   for (const app of await appsWithMemory(batchDir)) {
-    await openFindingIssues(app, memoryDirFor(batchDir, app), batchDir, base, (f) => f.estado === 'propuesto');
+    const memoryDir = memoryDirFor(batchDir, app);
+    const ids = await approveFindings(memoryDir, () => true);
+    await openFindingIssues(app, memoryDir, batchDir, base, (f) => f.estado === 'aprobado');
+    const { findings } = await loadMemory(memoryDir);
+    approved.push(...ids.map((id) => ({ id, titulo: findings.find((f) => f.id === id)?.titulo ?? id })));
   }
+  if (approved.length > 0) log.info(`exploración: PR #${pr.number} aprobado, fichas aprobadas: ${approved.map((a) => a.id).join(', ')}`);
+  if (await commitAndPush(batchDir, explorationBranch(batch), approveCommitChange(pr.number, approved))) await upsertExplorationPr(batch, batchDir);
+  await mergePullRequest(pr.number);
+  log.info(`exploración: PR #${pr.number} mergeado`);
 }
 
 export async function processExplorationPr(pr: PullRequestStatus): Promise<void> {
@@ -385,7 +409,7 @@ export async function processExplorationPr(pr: PullRequestStatus): Promise<void>
     log.info(`exploración: PR #${pr.number} listo para revisar`);
     return;
   }
-  if (pr.reviewDecision === 'APPROVED') await mergeAndOpenIssues(pr, batch);
+  if (pr.reviewDecision === 'APPROVED') await approveAndMerge(pr, batch);
 }
 
 // The redo half of the feedback, in the worker: new after images for the
