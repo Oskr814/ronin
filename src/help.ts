@@ -41,8 +41,8 @@ const COMMANDS: CommandSpec[] = [
   {
     name: 'preview',
     scopes: ['pr'],
-    usage: '/preview [app]',
-    summary: 'Levanto la app con el código del PR, su base y sus seeds, y te paso una URL de la tailnet para probarla. Se baja sola al mergear o cerrar el PR; `/preview stop` la baja antes. No en PRs de forks.',
+    usage: '/preview [app] [qué datos querés]',
+    summary: 'Levanto la app con el código del PR, su base y sus seeds, preparo los datos que piden sus pasos de prueba (más lo que me pidas) y te paso una URL de la tailnet para probarla. Se baja sola al mergear o cerrar el PR; `/preview stop` la baja antes. No en PRs de forks.',
   },
   {
     name: 'spike',

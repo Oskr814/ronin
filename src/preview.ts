@@ -5,9 +5,12 @@ import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { activeRepo } from './repo-context.js';
 import { appDown, appUp, APP_STATE_DIR, type AppSession } from './app-runtime.js';
-import { APP_MANIFEST_FILE, parseAppManifest, publicizeTemplate, publicPortsIn, publicUrl, type AppStep, type AppUser } from './app-manifest.js';
+import { APP_MANIFEST_FILE, parseAppManifest, publicizeTemplate, publicPortsIn, publicUrl, type AppStep, type AppUser, type TemplateContext } from './app-manifest.js';
 import { removeWorktreeDir } from './worktree.js';
-import { listOpenPrNumbers } from './github.js';
+import { listOpenPrNumbers, type PrHead } from './github.js';
+import { runAgentTask } from './agent-task.js';
+import { HELP_FOOTER_MARKER } from './help.js';
+import { config } from './config.js';
 import { acquireLock, launchWorker, lockHeld } from './worker-launch.js';
 import { log } from './logger.js';
 
@@ -23,7 +26,9 @@ export interface PreviewWorkerRequest {
   repo: string;
   prNumber: number;
   action: 'up' | 'stop';
-  appName?: string;
+  // What followed the command: an app and/or what the data should look
+  // like — see resolvePreviewArgs.
+  args?: string;
   // The /preview comment, to answer in its own place.
   comment: { id: number; kind: 'issue' | 'review' };
 }
@@ -135,16 +140,32 @@ export function previewPorts(session: Pick<AppSession, 'app' | 'ctx' | 'baseUrl'
   return [...new Set([basePort, ...declared])];
 }
 
-async function defaultAppName(dir: string): Promise<string> {
+async function manifestAppNames(dir: string): Promise<string[]> {
   let raw: string;
   try {
     raw = await readFile(join(dir, APP_MANIFEST_FILE), 'utf8');
   } catch {
     throw new Error(`este PR no tiene un ${APP_MANIFEST_FILE}: no sé cómo levantar la app`);
   }
-  const names = Object.keys(parseAppManifest(raw).apps);
-  if (names.length === 1) return names[0];
-  throw new Error(`hay varias apps en ${APP_MANIFEST_FILE} (${names.join(', ')}): pedí \`/preview <app>\``);
+  return Object.keys(parseAppManifest(raw).apps);
+}
+
+// `/preview backoffice un cliente con 40 catálogos`, `/preview un cliente
+// con 40 catálogos` and `/preview` all work: the first word is the app only
+// when the manifest has an app by that name; otherwise the manifest's only
+// app is used and everything is the instruction for the data.
+export function resolvePreviewArgs(args: string | undefined, appNames: string[]): { appName: string; instruction?: string } {
+  const text = (args ?? '').trim();
+  const first = text.split(/\s+/)[0];
+  const named = appNames.find((name) => name.toLowerCase() === first.toLowerCase());
+  if (named) {
+    const instruction = text.slice(first.length).trim();
+    return instruction ? { appName: named, instruction } : { appName: named };
+  }
+  if (appNames.length !== 1) {
+    throw new Error(`hay varias apps en ${APP_MANIFEST_FILE} (${appNames.join(', ')}): pedí \`/preview <app>\``);
+  }
+  return text ? { appName: appNames[0], instruction: text } : { appName: appNames[0] };
 }
 
 function isLiveWorktree(dir: string): Promise<boolean> {
@@ -179,35 +200,108 @@ async function takeDownPreviewApp(dir: string): Promise<void> {
   await rm(previewStatePath(dir), { force: true });
 }
 
+// What prepare-preview-data left ready, or why it couldn't run — the preview
+// is delivered either way.
+export type PreviewData =
+  | { preparado: string[]; noPreparado: string[] }
+  | { error: string };
+
 export interface PreviewResult {
   appName: string;
   sha: string;
   url: string;
   users: AppUser[];
+  data?: PreviewData;
 }
 
-export async function startPreview(prNumber: number, sha: string, appName?: string): Promise<PreviewResult> {
+export function parsePreviewData(raw: string): { preparado: string[]; noPreparado: string[] } {
+  const parsed = JSON.parse(raw) as { preparado?: unknown; noPreparado?: unknown };
+  const lines = (value: unknown) => (Array.isArray(value) ? value.filter((l): l is string => typeof l === 'string' && l.trim() !== '').map((l) => l.trim()) : []);
+  return { preparado: lines(parsed.preparado), noPreparado: lines(parsed.noPreparado) };
+}
+
+function describeServices(ctx: TemplateContext): string {
+  const compose = Object.entries(ctx.ports).flatMap(([service, byTarget]) =>
+    Object.entries(byTarget).map(([target, port]) => `- ${service}:${target} → http://127.0.0.1:${port}`));
+  const named = Object.entries(ctx.port).map(([name, port]) => `- ${name} → http://127.0.0.1:${port}`);
+  return [...compose, ...named].join('\n');
+}
+
+// After the app is up with its base seeds, an agent reads the PR (its
+// testing steps, its diff) and whatever the requester asked for, and leaves
+// the data that exercises the change — see agent-task.ts. Never fails the
+// preview: an app without the extra data is still worth handing over.
+async function prepareData(opts: {
+  prNumber: number;
+  pr: Pick<PrHead, 'title' | 'body' | 'baseRefName' | 'headRefOid'>;
+  session: AppSession;
+  instruction?: string;
+}): Promise<PreviewData> {
+  const { prNumber, pr, session } = opts;
+  const dir = session.dir;
+  const outputPath = join(session.stateDir, 'preview-data.json');
+  try {
+    await rm(outputPath, { force: true });
+    await execFileAsync('git', ['fetch', 'origin', pr.baseRefName], { cwd: activeRepo().productRepoPath });
+    const mergeBase = (await execFileAsync('git', ['merge-base', `origin/${pr.baseRefName}`, pr.headRefOid], { cwd: dir })).stdout.trim();
+    const stat = (await execFileAsync('git', ['diff', '--stat', mergeBase, pr.headRefOid], { cwd: dir })).stdout.trim();
+    await runAgentTask({
+      type: 'prepare-preview-data',
+      prNumber,
+      appName: session.appName,
+      appPath: session.app.path,
+      checkoutDir: dir,
+      outputPath,
+      title: pr.title,
+      // The cheat sheet ronin appends to its own PRs says nothing about the data.
+      body: pr.body.split(HELP_FOOTER_MARKER)[0],
+      ...(opts.instruction ? { instruction: opts.instruction } : {}),
+      diff: { mergeBase, stat },
+      baseUrl: session.baseUrl,
+      services: describeServices(session.ctx),
+      compose: session.ctx.compose,
+      users: session.app.users,
+    });
+    return parsePreviewData(await readFile(outputPath, 'utf8'));
+  } catch (error) {
+    log.error(`preview PR #${prNumber}: no se pudieron preparar los datos`, error);
+    return { error: (error as Error).message.split('\n')[0].slice(0, 300) };
+  } finally {
+    // The agent is told never to touch the code, and the dev server is
+    // serving it: make sure of it. Ignored files (node_modules, .ronin-app)
+    // stay.
+    await execFileAsync('git', ['checkout', '--force', '--detach', pr.headRefOid], { cwd: dir })
+      .then(() => execFileAsync('git', ['clean', '-fd'], { cwd: dir }))
+      .catch((error) => log.error(`preview PR #${prNumber}: no se pudo limpiar el checkout`, error));
+  }
+}
+
+export async function startPreview(prNumber: number, pr: PrHead, args?: string): Promise<PreviewResult> {
   const host = await tailnetHost();
+  const sha = pr.headRefOid;
   const existing = previewDirFor(prNumber);
   if (existsSync(existing)) await takeDownPreviewApp(existing);
   const dir = await ensurePreviewWorktree(prNumber, sha);
-  const name = appName ?? (await defaultAppName(dir));
+  const { appName, instruction } = resolvePreviewArgs(args, await manifestAppNames(dir));
   // appUp tears down what it started if it fails.
-  const session = await appUp(dir, name, { instance: `pr-${prNumber}`, publicHost: host });
+  const session = await appUp(dir, appName, { instance: `pr-${prNumber}`, publicHost: host });
+  let result: PreviewResult;
   try {
     const ports = previewPorts(session);
     const url = publicUrl(ports[0], { publicHost: host });
     // Written before publishing, so a failure halfway still knows which
     // ports to unpublish.
-    const state: PreviewState = { prNumber, appName: name, sha, url, ports };
+    const state: PreviewState = { prNumber, appName, sha, url, ports };
     await writeFile(previewStatePath(dir), JSON.stringify(state, null, 2));
     for (const port of ports) await servePort(port);
-    log.info(`preview PR #${prNumber}: ${name} arriba en ${url}`);
-    return { appName: name, sha, url, users: session.app.users };
+    log.info(`preview PR #${prNumber}: ${appName} arriba en ${url}`);
+    result = { appName, sha, url, users: session.app.users };
   } catch (error) {
     await takeDownPreviewApp(dir);
     throw error;
   }
+  if (!config.previewPrepareData) return result;
+  return { ...result, data: await prepareData({ prNumber, pr, session, ...(instruction ? { instruction } : {}) }) };
 }
 
 // Unpublishes, stops and deletes the PR's preview. False when there was none.
@@ -248,9 +342,19 @@ export async function sweepPreviews(): Promise<void> {
 
 // --- replies ---
 
-export function renderPreviewStarting(appName: string | undefined, sha: string): string {
-  const what = appName ? `\`${appName}\`` : 'la app';
-  return `⏳ Levantando ${what} con el código de \`${sha.slice(0, 7)}\` (dependencias, base y seeds). Te aviso acá cuando esté.`;
+export function renderPreviewStarting(sha: string, withData: boolean): string {
+  const data = withData ? ', y después preparo los datos para probar este PR' : '';
+  return `⏳ Levantando la app con el código de \`${sha.slice(0, 7)}\` (dependencias, base y seeds${data}). Te aviso acá cuando esté.`;
+}
+
+function renderData(data: PreviewData | undefined): string[] {
+  if (!data) return [];
+  if ('error' in data) return [`⚠️ No pude preparar los datos para probar el PR (${data.error}): la app tiene solo los seeds base.`, ''];
+  if (data.preparado.length === 0 && data.noPreparado.length === 0) return ['No hizo falta preparar datos: el PR se prueba con los seeds base.', ''];
+  return [
+    ...(data.preparado.length > 0 ? ['**Datos listos para probar el PR**', ...data.preparado.map((l) => `- ${l}`), ''] : []),
+    ...(data.noPreparado.length > 0 ? ['**Lo que no pude preparar**', ...data.noPreparado.map((l) => `- ${l}`), ''] : []),
+  ];
 }
 
 export function renderPreviewReady(result: PreviewResult, login: string): string {
@@ -260,20 +364,20 @@ export function renderPreviewReady(result: PreviewResult, login: string): string
     '',
     `Commit \`${result.sha.slice(0, 7)}\`. Solo se abre desde la tailnet.`,
     '',
+    ...renderData(result.data),
     '| Rol | Usuario | Contraseña |',
     '|---|---|---|',
     ...users,
     '',
-    `Se baja sola cuando el PR se mergea o se cierra. Para bajarla antes: \`@${login} /preview stop\`. Con commits nuevos en el PR, volvé a pedir \`/preview\` para actualizarla.`,
+    `Se baja sola cuando el PR se mergea o se cierra. Para bajarla antes: \`@${login} /preview stop\`. Con commits nuevos en el PR, volvé a pedir \`/preview\` para actualizarla; lo que escribas después del comando (\`/preview un cliente con 40 catálogos\`) se suma a lo que piden los pasos de prueba.`,
   ].join('\n');
 }
 
-export function renderPreviewFailed(appName: string | undefined, error: Error): string {
-  const what = appName ? `\`${appName}\`` : 'la app';
+export function renderPreviewFailed(error: Error): string {
   const [first, ...rest] = error.message.split('\n');
   const detail = rest.join('\n').trim();
   return [
-    `❌ No pude levantar ${what}: ${first.slice(0, 300)}`,
+    `❌ No pude levantar la app: ${first.slice(0, 300)}`,
     ...(detail ? ['', '<details><summary>Últimas líneas del log</summary>', '', '```', detail.slice(-3000), '```', '</details>'] : []),
   ].join('\n');
 }

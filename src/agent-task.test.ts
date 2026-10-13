@@ -738,6 +738,61 @@ describe('runAgentTask — spike', () => {
   });
 });
 
+describe('runAgentTask — prepare-preview-data', () => {
+  const task = {
+    type: 'prepare-preview-data' as const,
+    prNumber: 818,
+    appName: 'backoffice',
+    appPath: 'apps/backoffice',
+    checkoutDir: '/tmp/worktrees/preview-pr-818',
+    outputPath: '/tmp/worktrees/preview-pr-818/.ronin-app/preview-data.json',
+    title: 'fix: mostrar todos los catálogos',
+    body: '## ¿Cómo probar?\n1. Asignar más de 12 catálogos a un cliente',
+    instruction: 'que algunos estén vencidos',
+    diff: { mergeBase: 'abc123', stat: ' 4 files changed' },
+    baseUrl: 'http://127.0.0.1:5173',
+    services: '- web:80 → http://127.0.0.1:41234',
+    compose: 'docker compose -p p -f f.json',
+    users: [{ role: 'Admin', username: 'admin@x.com', password: 'password' }],
+  };
+
+  it('runs in the preview checkout, never a worktree of its own', async () => {
+    await runAgentTask(task);
+
+    expect(ensureWorktree).not.toHaveBeenCalled();
+    expect(runClaudeHeadless.mock.calls[0][0]).toBe('/tmp/worktrees/preview-pr-818');
+  });
+
+  it('gives the PR, the request and the running stack, fencing what people wrote', async () => {
+    await runAgentTask(task);
+
+    const prompt = runClaudeHeadless.mock.calls[0][1] as string;
+    expect(prompt).toContain('<<<PR_START>>>\n# fix: mostrar todos los catálogos\n\n## ¿Cómo probar?');
+    expect(prompt).toContain('<<<REQUEST_START>>>\nque algunos estén vencidos\n<<<REQUEST_END>>>');
+    expect(prompt).toContain('git diff abc123..HEAD');
+    expect(prompt).toContain('- web:80 → http://127.0.0.1:41234');
+    expect(prompt).toContain('docker compose -p p -f f.json exec -T');
+    expect(prompt).toContain('Admin: admin@x.com / password');
+    expect(prompt).toContain(task.outputPath);
+  });
+
+  it('forbids touching code, the stack or GitHub', async () => {
+    await runAgentTask(task);
+
+    const prompt = runClaudeHeadless.mock.calls[0][1] as string;
+    expect(prompt).toMatch(/never edit, commit or push code/i);
+    expect(prompt).toMatch(/do not stop, restart or rebuild the app/i);
+    expect(prompt).toMatch(/never write to github/i);
+  });
+
+  it('leaves out the request block when nothing was asked', async () => {
+    const { instruction: _, ...withoutRequest } = task;
+    await runAgentTask(withoutRequest);
+
+    expect(runClaudeHeadless.mock.calls[0][1]).not.toContain('REQUEST_START');
+  });
+});
+
 describe('runAgentTask — thread-reply-external', () => {
   const mention = {
     id: 30,

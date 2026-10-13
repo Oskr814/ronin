@@ -94,6 +94,9 @@ export const config = {
   // see interview.ts. Only the Claude account of CLAUDE_CONFIG_DIR can open
   // it; everyone else answers by commenting on the issue, as always.
   remoteInterviews: process.env.REMOTE_INTERVIEWS !== 'false',
+  // /preview: after the base seeds, an agent prepares the data the PR needs
+  // to be tried out (preview.ts). Off = just the app with its seeds.
+  previewPrepareData: process.env.PREVIEW_PREPARE_DATA !== 'false',
   interviewTimeoutHours: Number(process.env.INTERVIEW_TIMEOUT_HOURS ?? 24),
   // Model for the external review's worker subagents (one per criteria
   // dimension). They only gather candidates; the orchestrating session —
@@ -136,6 +139,9 @@ const TASK_MODEL_DEFAULTS: Record<string, string> = {
   'explore-redo-after': 'sonnet',
   // One commit subject line.
   'commit-subject': 'haiku',
+  // Reading a PR and its seeds, then a few API calls or inserts, checked by
+  // reading them back.
+  'prepare-preview-data': 'sonnet',
 };
 
 function taskEnv(prefix: string, taskType: string): string | undefined {
