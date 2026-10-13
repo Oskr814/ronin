@@ -318,9 +318,11 @@ export async function listAllOpenExternalPrs(): Promise<ExternalPr[]> {
 
 // Every open PR, drafts and forks included — what decides which /preview
 // worktrees still have a PR to show (see preview.ts's sweepPreviews).
-export async function listOpenPrNumbers(): Promise<number[]> {
-  const stdout = await gh(['pr', 'list', '--state', 'open', '--limit', String(PR_LIST_LIMIT), '--json', 'number']);
-  return (JSON.parse(stdout) as Array<{ number: number }>).map((p) => p.number);
+// …and the commit each one is at, to notice a preview left behind by new
+// commits.
+export async function listOpenPrHeads(): Promise<Array<{ number: number; headRefOid: string }>> {
+  const stdout = await gh(['pr', 'list', '--state', 'open', '--limit', String(PR_LIST_LIMIT), '--json', 'number,headRefOid']);
+  return JSON.parse(stdout) as Array<{ number: number; headRefOid: string }>;
 }
 
 export interface PrHead {
