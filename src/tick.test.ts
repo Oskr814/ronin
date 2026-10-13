@@ -53,7 +53,7 @@ vi.mock('./checklist.js', () => ({
 }));
 
 const addReaction = vi.fn();
-const mergePullRequest = vi.fn();
+const retargetDependents = vi.fn();
 const incrementAttemptCount = vi.fn();
 const setIssueState = vi.fn();
 const getPullRequestStatus = vi.fn();
@@ -64,7 +64,7 @@ const setReviewStatus = vi.fn();
 const setPullRequestBody = vi.fn();
 vi.mock('./github.js', () => ({
   addReaction: (...args: unknown[]) => addReaction(...args),
-  mergePullRequest: (...args: unknown[]) => mergePullRequest(...args),
+  retargetDependents: (...args: unknown[]) => retargetDependents(...args),
   incrementAttemptCount: (...args: unknown[]) => incrementAttemptCount(...args),
   setIssueState: (...args: unknown[]) => setIssueState(...args),
   getPullRequestStatus: (...args: unknown[]) => getPullRequestStatus(...args),
@@ -167,6 +167,7 @@ beforeEach(() => {
   worktreeDirFor.mockReturnValue('/tmp/worktree');
   incrementAttemptCount.mockResolvedValue(1);
   existsSync.mockReturnValue(true);
+  getSlices.mockResolvedValue([]);
   hasRemainingSlices.mockResolvedValue(true); // preserves pre-existing merge test behavior by default
   listAssignedIssues.mockResolvedValue([]);
   setLastReviewedSha.mockResolvedValue(undefined);
@@ -235,7 +236,7 @@ describe('processSlicePr — bottom-of-stack PR (unchanged behavior)', () => {
     worktreeDirFor.mockReturnValue('/tmp/worktree-bottom');
   });
 
-  it('merges when checks pass and review is approved', async () => {
+  it('never merges an approved, green PR: waits for a human to merge it', async () => {
     const bottomPr = pr({
       number: 229,
       sliceIndex: 0,
@@ -250,9 +251,9 @@ describe('processSlicePr — bottom-of-stack PR (unchanged behavior)', () => {
     const stillInProgress = await processSlicePr(issue(), bottomPr, true);
 
     expect(stillInProgress).toBe(true);
-    expect(mergePullRequest).toHaveBeenCalledWith(229);
-    expect(markSliceMerged).toHaveBeenCalledWith(228, 0);
-    expect(removeWorktree).toHaveBeenCalledWith('ronin/228/slice-1');
+    expect(markSliceMerged).not.toHaveBeenCalled();
+    expect(removeWorktree).not.toHaveBeenCalled();
+    expect(setIssueState).not.toHaveBeenCalled();
   });
 
   it("uses the active repo's own worktreeBaseRef override, not config's, to decide the bottom PR is up to date", async () => {
@@ -276,7 +277,6 @@ describe('processSlicePr — bottom-of-stack PR (unchanged behavior)', () => {
     await processSlicePr(issue(), bottomPr, true);
 
     expect(isBehind).toHaveBeenCalledWith('/tmp/worktree-bottom', 'origin/odoo-main');
-    expect(mergePullRequest).toHaveBeenCalledWith(229);
   });
 
   it('escalates once checksPendingRetryLimit is exceeded when checks never report', async () => {
@@ -343,7 +343,7 @@ describe('processSlicePr — mentions found on an already-mergeable bottom PR (r
     worktreeDirFor.mockReturnValue('/tmp/worktree-bottom');
   });
 
-  it('re-reads fresh PR state after review-request and merges in the same tick, instead of deferring', async () => {
+  it('re-reads fresh PR state after review-request, instead of acting on the stale snapshot', async () => {
     const bottomPr = pr({
       number: 229,
       sliceIndex: 0,
@@ -363,7 +363,7 @@ describe('processSlicePr — mentions found on an already-mergeable bottom PR (r
       mentions: [{ id: 1, kind: 'issue', body: '@ronin fijate esto', reactionsEyes: 0 }],
     });
     expect(stillInProgress).toBe(true);
-    expect(mergePullRequest).toHaveBeenCalledWith(229);
+    expect(getPullRequestStatus).toHaveBeenCalledWith(229);
   });
 
   it('posts a ronin/review commit status: pending before the agent run, success after', async () => {
@@ -568,45 +568,50 @@ describe('needsMoreInfo', () => {
   });
 });
 
-describe('processSlicePr — same-tick done transition on merge', () => {
-  beforeEach(() => {
-    worktreeDirFor.mockReturnValue('/tmp/worktree-bottom');
-  });
+describe('processIssue — slices merged by a human', () => {
+  const merged = { number: 229, state: 'MERGED', headRefName: 'ronin/228/slice-1', baseRefName: 'main' };
 
-  it('marks the issue done in the same tick when the merged slice was the last one', async () => {
-    const bottomPr = pr({
-      number: 229,
-      sliceIndex: 0,
-      baseRefName: 'main',
-      headRefName: 'ronin/228/slice-1',
-      checksPassing: true,
-      checksPending: false,
-      reviewDecision: 'APPROVED',
-    });
-    isBehind.mockResolvedValue(false);
+  it('checks off the merged slice, retargets what was stacked on it, and marks the issue done when it was the last', async () => {
+    getSlices.mockResolvedValue([{ index: 0, title: 'Slice 1', checked: false, prNumber: 229 }]);
+    getPullRequestStatus.mockResolvedValue(merged);
+    nextUnstartedSlice.mockResolvedValue(null);
     hasRemainingSlices.mockResolvedValue(false);
 
-    await processSlicePr(issue(), bottomPr, true);
+    await processIssue(issue(), []);
 
+    expect(markSliceMerged).toHaveBeenCalledWith(228, 0);
+    expect(retargetDependents).toHaveBeenCalledWith('ronin/228/slice-1', 'main');
     expect(setIssueState).toHaveBeenCalledWith(228, 'done');
   });
 
-  it('does not mark done while another slice is still pending', async () => {
-    const bottomPr = pr({
-      number: 229,
-      sliceIndex: 0,
-      baseRefName: 'main',
-      headRefName: 'ronin/228/slice-1',
-      checksPassing: true,
-      checksPending: false,
-      reviewDecision: 'APPROVED',
-    });
+  it('hands the next slice its new base in the same tick', async () => {
+    getSlices.mockResolvedValue([
+      { index: 0, title: 'Slice 1', checked: false, prNumber: 229 },
+      { index: 1, title: 'Slice 2', checked: false, prNumber: 230 },
+    ]);
+    getPullRequestStatus.mockResolvedValue(merged);
+    worktreeDirFor.mockReturnValue('/tmp/worktree');
     isBehind.mockResolvedValue(false);
+
+    await processIssue(issue(), [pr({ number: 230, sliceIndex: 1, baseRefName: 'ronin/228/slice-1', headRefName: 'ronin/228/slice-2', checksPending: true })]);
+
+    expect(markSliceMerged).toHaveBeenCalledWith(228, 0);
+    expect(markSliceMerged).not.toHaveBeenCalledWith(228, 1);
+    // Only reached once the bottom's base is the root branch.
+    expect(isBehind).toHaveBeenCalledWith('/tmp/worktree', 'origin/main');
+  });
+
+  it('leaves a slice whose PR was closed without merging for the empty-stack check to escalate', async () => {
+    getSlices.mockResolvedValue([{ index: 0, title: 'Slice 1', checked: false, prNumber: 229 }]);
+    getPullRequestStatus.mockResolvedValue({ ...merged, state: 'CLOSED' });
+    nextUnstartedSlice.mockResolvedValue(null);
     hasRemainingSlices.mockResolvedValue(true);
 
-    await processSlicePr(issue(), bottomPr, true);
+    await processIssue(issue(), []);
 
-    expect(setIssueState).not.toHaveBeenCalledWith(228, 'done');
+    expect(markSliceMerged).not.toHaveBeenCalled();
+    expect(notifyBlocker).toHaveBeenCalled();
+    expect(setIssueState).toHaveBeenCalledWith(228, 'blocked');
   });
 });
 

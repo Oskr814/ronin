@@ -118,12 +118,12 @@ export interface TrackingIssue {
   labels: string[];
 }
 
-export async function listTrackingIssues(state: SpecStatus): Promise<TrackingIssue[]> {
+export async function listTrackingIssues(state: SpecStatus, issueState: 'open' | 'closed' = 'open'): Promise<TrackingIssue[]> {
   const stdout = await gh([
     'issue', 'list',
     '--label', LABEL_MANAGED,
     '--label', LABEL_STATES[state],
-    '--state', 'open',
+    '--state', issueState,
     '--json', 'number,title,url,labels',
   ]);
   const raw = JSON.parse(stdout) as Array<{ number: number; title: string; url: string; labels: Array<{ name: string }> }>;
@@ -321,22 +321,11 @@ async function listOpenPrsWithBase(baseBranch: string): Promise<number[]> {
   return (JSON.parse(stdout) as Array<{ number: number }>).map((p) => p.number);
 }
 
-// Hard gate lives here, not just in docs: refuses to merge anything without
-// an explicit human approval, regardless of what a caller passes in.
-export async function mergePullRequest(prNumber: number): Promise<void> {
-  const status = await getPullRequestStatus(prNumber);
-  if (status.reviewDecision !== 'APPROVED') {
-    throw new Error(`Refusing to merge PR #${prNumber}: reviewDecision is "${status.reviewDecision}", not APPROVED`);
-  }
-  // --squash fails outright on bmedical — squash merges are disabled at the
-  // repo settings level (found live: `gh pr merge --squash` errors with
-  // "Squash merges are not allowed on this repository"). --merge is what's
-  // actually enabled there (along with --rebase); hardcoded rather than
-  // detected at runtime since PRODUCT_REPO is a single fixed target today.
-  await gh(['pr', 'merge', String(prNumber), '--merge']);
-
-  // Retarget any PR still based on this now-merged branch onto this PR's own
-  // base (always `main` in practice, since only the bottom of a stack ever
+// Called after ronin's own merges (mergePullRequest) and after a human
+// merges a slice PR (tick.ts's syncMergedSlices).
+export async function retargetDependents(mergedBranch: string, newBase: string): Promise<void> {
+  // Retargets any PR still based on this now-merged branch onto the merged
+  // PR's own base (always `main` in practice, since only the bottom of a stack ever
   // merges — see docs/superpowers/specs/2026-07-28-stacked-prs-design.md §1).
   // GitHub does NOT auto-retarget dependent PRs when their base branch is
   // deleted, contrary to what this function used to assume — it auto-CLOSES
@@ -355,14 +344,31 @@ export async function mergePullRequest(prNumber: number): Promise<void> {
   // didn't happen: re-check the actual base before deciding whether to
   // propagate the error, instead of costing a whole retry cycle over a
   // response-layer flake.
-  for (const dependent of await listOpenPrsWithBase(status.headRefName)) {
+  for (const dependent of await listOpenPrsWithBase(mergedBranch)) {
     try {
-      await ghApi(['api', '--method', 'PATCH', `repos/${activeRepo().productRepo}/pulls/${dependent}`, '-f', `base=${status.baseRefName}`]);
+      await ghApi(['api', '--method', 'PATCH', `repos/${activeRepo().productRepo}/pulls/${dependent}`, '-f', `base=${newBase}`]);
     } catch (error) {
       const current = await getPullRequestStatus(dependent);
-      if (current.baseRefName !== status.baseRefName) throw error;
+      if (current.baseRefName !== newBase) throw error;
     }
   }
+}
+
+// Hard gate lives here, not just in docs: refuses to merge anything without
+// an explicit human approval, regardless of what a caller passes in.
+export async function mergePullRequest(prNumber: number): Promise<void> {
+  const status = await getPullRequestStatus(prNumber);
+  if (status.reviewDecision !== 'APPROVED') {
+    throw new Error(`Refusing to merge PR #${prNumber}: reviewDecision is "${status.reviewDecision}", not APPROVED`);
+  }
+  // --squash fails outright on bmedical — squash merges are disabled at the
+  // repo settings level (found live: `gh pr merge --squash` errors with
+  // "Squash merges are not allowed on this repository"). --merge is what's
+  // actually enabled there (along with --rebase); hardcoded rather than
+  // detected at runtime since PRODUCT_REPO is a single fixed target today.
+  await gh(['pr', 'merge', String(prNumber), '--merge']);
+
+  await retargetDependents(status.headRefName, status.baseRefName);
   // No manual branch delete here: PRODUCT_REPO has "Automatically delete
   // head branches" enabled at the repo-settings level (confirmed live via
   // `gh api repos/<repo> --jq .delete_branch_on_merge` → true), so GitHub
