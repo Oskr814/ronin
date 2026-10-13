@@ -322,6 +322,18 @@ async function ensureBottomUpToDate(issue: TrackingIssue, pr: StackedPr): Promis
   }
   const baseRef = activeRepo().worktreeBaseRef ?? config.worktreeBaseRef;
   if (!(await isBehind(worktreeDir, baseRef))) return 'ready';
+  // `pr` was read at the start of the tick. A human merging it since then
+  // also moves the base forward, so it now looks behind: rebasing it would
+  // fail against its own squashed commit (and count an attempt, and run
+  // fix-rebase on a merged PR — seen live on #818), or worse, succeed and
+  // force-push the branch the merge just deleted back to life. Only when
+  // it's behind, so the usual tick pays nothing extra; the next tick's
+  // syncMergedSlices takes it from there.
+  const current = await getPullRequestStatus(pr.number);
+  if (current.state !== 'OPEN') {
+    logSliceOutcome(issue, pr, true, `ya no está abierto (${current.state}), no se rebasea`);
+    return 'not-ready';
+  }
   if (await attemptRebase(worktreeDir, baseRef, pr.headRefName)) return 'not-ready';
 
   const blocked = await blockOnAttemptLimit(

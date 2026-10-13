@@ -273,6 +273,32 @@ describe('processSlicePr — bottom-of-stack PR (unchanged behavior)', () => {
     expect(setIssueState).not.toHaveBeenCalled();
   });
 
+  it('never rebases a bottom PR that got merged since the tick read it, even though it now looks behind', async () => {
+    const bottomPr = pr({ number: 229, sliceIndex: 0, baseRefName: 'main', headRefName: 'ronin/228/slice-1' });
+    isBehind.mockResolvedValue(true);
+    getPullRequestStatus.mockResolvedValue({ ...bottomPr, state: 'MERGED' });
+
+    const stillInProgress = await processSlicePr(issue(), bottomPr, true);
+
+    expect(stillInProgress).toBe(true);
+    expect(getPullRequestStatus).toHaveBeenCalledWith(229);
+    expect(attemptRebase).not.toHaveBeenCalled();
+    expect(incrementAttemptCount).not.toHaveBeenCalled();
+    expect(runAgentTask).not.toHaveBeenCalled();
+  });
+
+  it('rebases a bottom PR that is behind and still open', async () => {
+    const bottomPr = pr({ number: 229, sliceIndex: 0, baseRefName: 'main', headRefName: 'ronin/228/slice-1' });
+    isBehind.mockResolvedValue(true);
+    getPullRequestStatus.mockResolvedValue({ ...bottomPr, state: 'OPEN' });
+    attemptRebase.mockResolvedValue(true);
+
+    await processSlicePr(issue(), bottomPr, true);
+
+    expect(attemptRebase).toHaveBeenCalledWith('/tmp/worktree-bottom', 'origin/main', 'ronin/228/slice-1');
+    expect(runAgentTask).not.toHaveBeenCalled();
+  });
+
   it("uses the active repo's own worktreeBaseRef override, not config's, to decide the bottom PR is up to date", async () => {
     activeRepo.mockReturnValue({
       productRepo: 'bmedical/bmedical',
