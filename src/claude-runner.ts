@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { config } from './config.js';
+import { config, defaultAgentModel, defaultAgentEffort } from './config.js';
 import { activeRepo } from './repo-context.js';
 import { log } from './logger.js';
 
@@ -116,8 +116,8 @@ export interface HeadlessRunOptions {
 // The arguments of every headless run; shared with scripts/fix-replay.ts so
 // a replay runs on the same model and effort as the real task.
 export function claudeHeadlessArgs(prompt: string, opts: HeadlessRunOptions = {}): string[] {
-  const model = opts.model ?? config.agentModel;
-  const effort = opts.effort ?? config.agentEffort;
+  const model = opts.model ?? defaultAgentModel();
+  const effort = opts.effort ?? defaultAgentEffort();
   return [
     '-p', prompt,
     '--permission-mode', 'bypassPermissions',

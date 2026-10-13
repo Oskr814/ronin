@@ -102,4 +102,16 @@ describe('loadRepos', () => {
 
     await expect(loadRepos()).rejects.toThrow('tiene el repo "a/b" duplicado');
   });
+
+  it('keeps a valid agent block and rejects a malformed one', async () => {
+    const agent = { model: 'sonnet', effort: '', models: { 'external-review': 'opus' } };
+    await writeFile(reposConfigPath, JSON.stringify([{ productRepo: 'a/b', productRepoPath: '/tmp/a', agent }]));
+    expect((await loadRepos())[0].agent).toEqual(agent);
+
+    await writeFile(reposConfigPath, JSON.stringify([{ productRepo: 'a/b', productRepoPath: '/tmp/a', agent: { modle: 'sonnet' } }]));
+    await expect(loadRepos()).rejects.toThrow(/campos desconocidos: modle/);
+
+    await writeFile(reposConfigPath, JSON.stringify([{ productRepo: 'a/b', productRepoPath: '/tmp/a', agent: { models: { 'fix-review': 3 } } }]));
+    await expect(loadRepos()).rejects.toThrow(/agent\.models/);
+  });
 });

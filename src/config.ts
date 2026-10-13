@@ -1,5 +1,6 @@
 import { join } from 'node:path';
 import { assertTimezone } from './timezone.js';
+import { currentRepo } from './repo-context.js';
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -141,16 +142,30 @@ function taskEnv(prefix: string, taskType: string): string | undefined {
   return process.env[`${prefix}_${taskType.toUpperCase().replace(/-/g, '_')}`];
 }
 
+// Most specific first: the active repo's own per-task value (its `agent`
+// block in repos.json, for an account with tighter limits), then
 // AGENT_MODEL_<TASK_TYPE> / AGENT_EFFORT_<TASK_TYPE> (e.g.
-// AGENT_MODEL_UPDATE_CHANGELOG=sonnet) override one task type without
-// touching the rest; empty means "whatever the Claude config says", same as
-// the global ones.
+// AGENT_MODEL_UPDATE_CHANGELOG=sonnet), then TASK_MODEL_DEFAULTS, then the
+// repo's default, then the global one. Empty means "whatever the Claude
+// config says" at every level.
 export function agentModelFor(taskType: string): string {
-  return taskEnv('AGENT_MODEL', taskType) ?? TASK_MODEL_DEFAULTS[taskType] ?? config.agentModel;
+  return currentRepo()?.agent?.models?.[taskType] ?? taskEnv('AGENT_MODEL', taskType) ?? TASK_MODEL_DEFAULTS[taskType] ?? defaultAgentModel();
 }
 
 export function agentEffortFor(taskType: string): string {
-  return taskEnv('AGENT_EFFORT', taskType) ?? config.agentEffort;
+  return currentRepo()?.agent?.efforts?.[taskType] ?? taskEnv('AGENT_EFFORT', taskType) ?? defaultAgentEffort();
+}
+
+export function defaultAgentModel(): string {
+  return currentRepo()?.agent?.model ?? config.agentModel;
+}
+
+export function defaultAgentEffort(): string {
+  return currentRepo()?.agent?.effort ?? config.agentEffort;
+}
+
+export function reviewWorkerModel(): string {
+  return currentRepo()?.agent?.reviewWorkerModel ?? config.externalReviewWorkerModel;
 }
 
 export const LABEL_MANAGED = 'ronin';

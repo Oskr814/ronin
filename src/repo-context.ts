@@ -24,6 +24,22 @@ export interface RepoEntry {
   // exploration-schedule.ts. Absent: no nightly exploration (/explore still
   // works on demand).
   explore?: string[];
+  // Model/effort defaults for the Claude account this entry runs under
+  // (claudeConfigDir), for when that account can't afford the global ones —
+  // see config.ts's agentModelFor for how they combine with the env vars.
+  agent?: AgentDefaults;
+}
+
+export interface AgentDefaults {
+  // Replace AGENT_MODEL / AGENT_EFFORT for this repo.
+  model?: string;
+  effort?: string;
+  // Per task type ("external-review", "fix-review", …): win over everything,
+  // AGENT_MODEL_<TASK_TYPE> included.
+  models?: Record<string, string>;
+  efforts?: Record<string, string>;
+  // Replaces EXTERNAL_REVIEW_WORKER_MODEL (also the self-review subagent).
+  reviewWorkerModel?: string;
 }
 
 interface ActiveRepo extends RepoEntry {
@@ -41,6 +57,12 @@ let current: ActiveRepo | null = null;
 // Null outside an active withActiveRepo call is intentional: anything that
 // tries to read repo state outside the loop should crash loudly instead of
 // silently reusing a previous repo's context.
+// For code that also runs outside the loop (scripts, config defaults) and
+// just falls back to the global value there.
+export function currentRepo(): ActiveRepo | null {
+  return current;
+}
+
 export function activeRepo(): ActiveRepo {
   if (!current) throw new Error('activeRepo() called outside withActiveRepo()');
   return current;
