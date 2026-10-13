@@ -51,7 +51,7 @@ vi.mock('node:fs/promises', () => ({
 const loadReviewCriteria = vi.fn();
 vi.mock('./review-criteria.js', () => ({ loadReviewCriteria: (...args: unknown[]) => loadReviewCriteria(...args) }));
 
-const { runAgentTask, AGENT_NOTES_REMINDER, reviewAgentDefinitions } = await import('./agent-task.js');
+const { runAgentTask, AGENT_NOTES_REMINDER, COMMIT_STYLE_RULE, reviewAgentDefinitions } = await import('./agent-task.js');
 const { resetTickMetrics, getTickAgentMetrics } = await import('./metrics.js');
 
 beforeEach(() => {
@@ -987,5 +987,18 @@ describe('runAgentTask — model and effort per task type', () => {
   it("runs each task on its own type's model and effort", async () => {
     await runAgentTask({ type: 'fix-review', issueNumber: 1, prNumber: 2 });
     expect(runClaudeHeadless.mock.calls[0][3]).toEqual({ model: 'model-for-fix-review', effort: 'effort-for-fix-review' });
+  });
+});
+
+describe('runAgentTask — commit style', () => {
+  it('tells every task that opens a PR to follow the repo\'s commit and PR-title convention', async () => {
+    for (const task of [
+      { type: 'fix-issue' as const, issueNumber: 5, sliceIndex: 0, sliceTitle: 'x' },
+      { type: 'implement-slice' as const, issueNumber: 5, sliceIndex: 0, sliceTitle: 'x' },
+    ]) {
+      runClaudeHeadless.mockClear();
+      await runAgentTask(task);
+      expect(runClaudeHeadless.mock.calls[0][1]).toContain(COMMIT_STYLE_RULE);
+    }
   });
 });
