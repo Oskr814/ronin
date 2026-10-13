@@ -24,6 +24,12 @@ describe('classifyMetaCommand', () => {
     expect(classifyMetaCommand('@ronin /spike backoffice revisá el checkout', 'ronin', 'issue')).toBeNull();
   });
 
+  it('lets /preview through on a PR, with or without an app', () => {
+    expect(classifyMetaCommand('@ronin /preview', 'ronin', 'pr')).toBeNull();
+    expect(classifyMetaCommand('@ronin /preview backoffice', 'ronin', 'pr')).toBeNull();
+    expect(classifyMetaCommand('@ronin /preview', 'ronin', 'issue')).toEqual({ kind: 'wrong-context', command: 'preview' });
+  });
+
   it('flags a command used in the wrong place', () => {
     expect(classifyMetaCommand('@ronin /spike backoffice', 'ronin', 'pr')).toEqual({ kind: 'wrong-context', command: 'spike' });
     expect(classifyMetaCommand('@ronin /fix-comments', 'ronin', 'issue')).toEqual({ kind: 'wrong-context', command: 'fix-comments' });

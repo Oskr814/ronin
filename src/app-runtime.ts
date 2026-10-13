@@ -7,7 +7,7 @@ import { activeRepo } from './repo-context.js';
 import { config } from './config.js';
 import { getFreePort } from './worktree.js';
 import { log } from './logger.js';
-import { loadAppDefinition, namedPortsIn, renderTemplate, type AppDefinition, type TemplateContext } from './app-manifest.js';
+import { loadAppDefinition, namedPortsIn, publicizeTemplate, renderTemplate, type AppDefinition, type TemplateContext } from './app-manifest.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -49,10 +49,19 @@ function appEnv(extra: Record<string, string> = {}): NodeJS.ProcessEnv {
 
 // A compose project per app, not per run: the images it builds (the API's
 // Dockerfile, for one) are tagged with the project name, so a stable name
-// keeps them cached between runs. One instance of each app at a time.
-export function appProjectName(appName: string): string {
-  const slug = `${activeRepo().productRepo}-${appName}`.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+// keeps them cached between runs. One instance of each app at a time, unless
+// the caller names its own (a /preview runs one per PR, next to exploration).
+export function appProjectName(appName: string, instance?: string): string {
+  const slug = [activeRepo().productRepo, appName, instance].filter(Boolean).join('-').toLowerCase().replace(/[^a-z0-9]+/g, '-');
   return `ronin-app-${slug}`;
+}
+
+export interface AppUpOptions {
+  // Suffix for the compose project, so this instance runs next to the app's
+  // default one.
+  instance?: string;
+  // Host the `{{public.…}}` templates render with — see app-manifest.ts.
+  publicHost?: string;
 }
 
 // Takes `docker compose config --format json` (every path already absolute,
@@ -176,7 +185,7 @@ async function reserveNamedPorts(templates: string[], ctx: TemplateContext): Pro
 // Brings the app up in `dir` (any checkout of the product repo: an
 // exploration worktree today, a slice's own worktree later). On failure it
 // tears down whatever it already started before rethrowing.
-export async function appUp(dir: string, appName: string): Promise<AppSession> {
+export async function appUp(dir: string, appName: string, options: AppUpOptions = {}): Promise<AppSession> {
   const app = await loadAppDefinition(dir, appName);
   const stateDir = stateDirOf(dir);
   await mkdir(stateDir, { recursive: true });
@@ -186,8 +195,8 @@ export async function appUp(dir: string, appName: string): Promise<AppSession> {
   await excludeFromGit(dir);
   if (await readState(dir)) await appDown(dir);
 
-  const state: AppState = { appName, project: appProjectName(appName), processes: [] };
-  const ctx: TemplateContext = { ports: {}, port: {}, compose: '', dir };
+  const state: AppState = { appName, project: appProjectName(appName, options.instance), processes: [] };
+  const ctx: TemplateContext = { ports: {}, port: {}, compose: '', dir, ...(options.publicHost ? { publicHost: options.publicHost } : {}) };
   const logFile = join(stateDir, 'up.log');
   await writeFile(logFile, '');
   await writeState(dir, state);
@@ -215,7 +224,9 @@ export async function appUp(dir: string, appName: string): Promise<AppSession> {
         await runCommand(renderTemplate(step.run, ctx), join(dir, step.cwd ?? '.'), appEnv(env), logFile, (step.timeoutSeconds ?? 600) * 1000);
       } else if ('start' in step) {
         await reserveNamedPorts([step.start, ...Object.values(step.env ?? {})], ctx);
-        const env = Object.fromEntries(Object.entries(step.env ?? {}).map(([k, v]) => [k, renderTemplate(v, ctx)]));
+        // A no-op without a public host: {{public.…}} renders the same
+        // loopback URL — see publicizeTemplate.
+        const env = Object.fromEntries(Object.entries(step.env ?? {}).map(([k, v]) => [k, renderTemplate(publicizeTemplate(v), ctx)]));
         log.info(`app ${appName}: arrancando ${step.name}`);
         const pid = startProcess(renderTemplate(step.start, ctx), join(dir, step.cwd ?? '.'), appEnv(env), join(stateDir, `${step.name}.log`));
         state.processes.push({ name: step.name, pid });

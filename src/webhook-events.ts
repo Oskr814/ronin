@@ -19,7 +19,10 @@ export function verifySignature(rawBody: Buffer, signatureHeader: string | undef
 // wake a tick up for.
 const RELEVANT: Record<string, string[]> = {
   issues: ['assigned'],
-  pull_request: ['assigned', 'ready_for_review', 'opened', 'synchronize', 'reopened'],
+  // "closed" covers a merge too: the merged slice is checked off, its stack
+  // retargeted, and its worktree and /preview taken down right away instead
+  // of on the next cron tick.
+  pull_request: ['assigned', 'ready_for_review', 'opened', 'synchronize', 'reopened', 'closed'],
   issue_comment: ['created'],
   pull_request_review_comment: ['created'],
   // An approval (an exploration PR merges on it) or a request for changes

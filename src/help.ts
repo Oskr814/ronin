@@ -39,6 +39,12 @@ const COMMANDS: CommandSpec[] = [
     summary: 'Aplico en un solo pase los hilos de review abiertos, respondo en cada uno y resuelvo los que cambié. Para excluir un hilo, resolvelo antes.',
   },
   {
+    name: 'preview',
+    scopes: ['pr'],
+    usage: '/preview [app]',
+    summary: 'Levanto la app con el código del PR, su base y sus seeds, y te paso una URL de la tailnet para probarla. Se baja sola al mergear o cerrar el PR; `/preview stop` la baja antes. No en PRs de forks.',
+  },
+  {
     name: 'spike',
     scopes: ['issue'],
     usage: '/spike <app> [instrucción]',

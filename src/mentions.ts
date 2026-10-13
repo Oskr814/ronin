@@ -1,6 +1,8 @@
 import { listIssueComments, listReviewComments, hasBotReaction, replyToComment, addReaction, type Comment } from './github.js';
 import { classifyMetaCommand, renderMetaReply, type CommandContext } from './help.js';
 import { config } from './config.js';
+import { activeRepo } from './repo-context.js';
+import { launchPreviewWorker } from './preview.js';
 import { log } from './logger.js';
 
 export function mentionsHandle(body: string, handle: string): boolean {
@@ -55,6 +57,22 @@ export function parseExploreCommand(body: string): { appName: string; maxFunctio
   if (!match) return null;
   const max = match[2] ? Number(match[2]) : undefined;
   return { appName: match[1], ...(max && max > 0 ? { maxFunctions: Math.min(max, 10) } : {}) };
+}
+
+// Brings the PR's app up on the tailnet, or takes it down — see preview.ts.
+// PRs only: handled right here, in findUnprocessedMentions, so it never
+// reaches a review or fix-comments flow. Only right after the mention, like
+// help.ts's commandToken: "/preview" also shows up in paths
+// ("revisá src/preview/card.tsx"), and that's a plain request. `login` isn't
+// escaped, same reasoning as mentionsHandle.
+const PREVIEW_STOP_WORDS = ['stop', 'off', 'down'];
+
+export function parsePreviewCommand(body: string, login: string): { action: 'up'; appName?: string } | { action: 'stop' } | null {
+  const match = body.match(new RegExp(`\\B@${login}\\s+/preview(?![\\w/-])(?:[ \\t]+([\\w.-]+))?`, 'i'));
+  if (!match) return null;
+  const arg = match[1];
+  if (arg && PREVIEW_STOP_WORDS.includes(arg.toLowerCase())) return { action: 'stop' };
+  return arg ? { action: 'up', appName: arg } : { action: 'up' };
 }
 
 // null when the command is missing its required app_name — nothing
@@ -159,8 +177,38 @@ async function handleMetaCommands(number: number, context: CommandContext, comme
   return rest;
 }
 
+// Hands every /preview among the mentions to its own worker (preview.ts) and
+// drops it from what the caller gets back — same interception point as
+// handleMetaCommands, so a preview never costs a review run. The 👀 goes on
+// once the worker is launched, which keeps the next tick from launching it
+// again; the worker answers in the comment's own place. A launch that fails
+// gets no 👀 and is retried next tick.
+async function handlePreviewCommands(prNumber: number, comments: Comment[]): Promise<Comment[]> {
+  const rest: Comment[] = [];
+  for (const comment of comments) {
+    const command = comment.authorLogin !== '' ? parsePreviewCommand(comment.body, config.githubLogin) : null;
+    if (!command) {
+      rest.push(comment);
+      continue;
+    }
+    try {
+      launchPreviewWorker({
+        repo: activeRepo().productRepo,
+        prNumber,
+        ...command,
+        comment: { id: comment.id, kind: comment.kind },
+      });
+      await addReaction(comment.id, comment.kind, 'eyes');
+    } catch (error) {
+      log.error(`no se pudo lanzar la preview del comentario ${comment.id} en #${prNumber}`, error);
+    }
+  }
+  return rest;
+}
+
 // Side effect: answers any meta-command among the mentions (see
-// handleMetaCommands above) and leaves it out of the result.
+// handleMetaCommands above), launches any /preview (handlePreviewCommands),
+// and leaves both out of the result.
 export async function findUnprocessedMentions(prNumber: number): Promise<Comment[]> {
   const botLogin = config.githubLogin;
   const [issueComments, reviewComments] = await Promise.all([
@@ -168,7 +216,7 @@ export async function findUnprocessedMentions(prNumber: number): Promise<Comment
     listReviewComments(prNumber),
   ]);
   const mentioned = [...issueComments, ...reviewComments].filter((c) => mentionsHandle(c.body, botLogin));
-  return handleMetaCommands(prNumber, 'pr', await filterUnprocessed(mentioned));
+  return handlePreviewCommands(prNumber, await handleMetaCommands(prNumber, 'pr', await filterUnprocessed(mentioned)));
 }
 
 // Same as findUnprocessedMentions (including its meta-command side effect,

@@ -1,9 +1,7 @@
-import { spawn } from 'node:child_process';
-import { closeSync, existsSync, mkdirSync, openSync } from 'node:fs';
-import { mkdir, readFile, rm, writeFile, open as openFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { activeRepo } from './repo-context.js';
+import { acquireLock, launchWorker, lockHeld } from './worker-launch.js';
 import { config } from './config.js';
 import { log } from './logger.js';
 import { dayIn } from './timezone.js';
@@ -462,65 +460,22 @@ function lockPath(): string {
   return join(activeRepo().worktreeBasePath, `.explore-${slug}.lock`);
 }
 
-function pidAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 export async function exploreWorkerBusy(): Promise<boolean> {
-  try {
-    const pid = Number((await readFile(lockPath(), 'utf8')).trim());
-    return Number.isInteger(pid) && pid > 0 && pidAlive(pid);
-  } catch {
-    return false;
-  }
+  return lockHeld(lockPath());
 }
 
-// Exclusive create; a lock left by a dead process is taken over.
 export async function acquireExploreLock(): Promise<boolean> {
-  await mkdir(dirname(lockPath()), { recursive: true });
-  if (existsSync(lockPath()) && !(await exploreWorkerBusy())) await rm(lockPath(), { force: true });
-  try {
-    const handle = await openFile(lockPath(), 'wx');
-    await handle.writeFile(String(process.pid));
-    await handle.close();
-    return true;
-  } catch {
-    return false;
-  }
+  return acquireLock(lockPath());
 }
 
 export async function releaseExploreLock(): Promise<void> {
   await rm(lockPath(), { force: true });
 }
 
-// Starts the worker detached from the tick: same runtime (node on dist/, or
-// tsx in development), same environment. Its output goes to the same daily
-// log the cron wrapper writes the tick to (scripts/setup-cron.sh), so its
-// lines sit next to the tick's.
+// Starts the worker detached from the tick — see worker-launch.ts.
 export function launchExploreWorker(request: ExploreWorkerRequest): void {
-  const here = fileURLToPath(import.meta.url);
-  const worker = join(dirname(here), `explore-worker${here.endsWith('.ts') ? '.ts' : '.js'}`);
-  const now = new Date();
-  const day = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-  mkdirSync(join(process.cwd(), 'logs'), { recursive: true });
-  const out = openSync(join(process.cwd(), 'logs', `tick-${day}.log`), 'a');
-  try {
-    const child = spawn(process.execPath, [...process.execArgv, worker, JSON.stringify(request)], {
-      cwd: process.cwd(),
-      env: process.env,
-      detached: true,
-      stdio: ['ignore', out, out],
-    });
-    child.unref();
-    log.info(`exploración: worker lanzado para ${request.appName} (pid ${child.pid})`);
-  } finally {
-    closeSync(out);
-  }
+  const pid = launchWorker('explore-worker', request);
+  log.info(`exploración: worker lanzado para ${request.appName} (pid ${pid})`);
 }
 
 export async function reactToTrigger(trigger: ExploreWorkerRequest['trigger']): Promise<void> {
