@@ -122,6 +122,14 @@ describe('runAgentTask — fix-issue prompt', () => {
     expect(prompt).toContain('RONIN_STATUS: done');
   });
 
+  it("asks to repeat the issue's images in the PR body instead of pointing to the issue", async () => {
+    await runAgentTask({ type: 'fix-issue', issueNumber: 228, sliceIndex: 0, sliceTitle: 'Fix foo' });
+
+    const prompt = runClaudeHeadless.mock.calls[0][1] as string;
+    expect(prompt).toContain('reusing the same image URLs');
+    expect(prompt).toContain('never just say they are in the issue');
+  });
+
   it('returns runClaudeHeadless\'s result so the caller can read the RONIN_STATUS marker', async () => {
     runClaudeHeadless.mockResolvedValueOnce('Opened PR #42.\nRONIN_STATUS: done');
 
