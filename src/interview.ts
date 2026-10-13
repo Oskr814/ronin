@@ -84,7 +84,14 @@ export async function checkInterviews(now = new Date()): Promise<void> {
     const { sessionId, startedAt, nonce, resume } = interview;
     try {
       const comments = await listIssueComments(issueNumber);
-      const answered = !!nonce && comments.some((c) => c.authorLogin.toLowerCase() === config.githubLogin.toLowerCase() && c.body.includes(answersMarker(nonce)));
+      // The nonce alone proves the comment came from this interview: it's
+      // random and only ronin and the session know it until it's posted.
+      // Not the author: the session is started by Claude's daemon, which
+      // doesn't inherit the GH_TOKEN passed to `claude --bg`, so its `gh`
+      // posts as whatever account the machine is logged into — found live
+      // on redmotos/shoppingcart#797, answered as the runner's owner and
+      // left blocked.
+      const answered = !!nonce && comments.some((c) => c.body.includes(answersMarker(nonce)));
       const expired = now.getTime() - Date.parse(startedAt) > config.interviewTimeoutHours * 3_600_000;
       if (answered) {
         await removeSession(sessionId);
