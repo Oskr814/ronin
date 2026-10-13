@@ -7,7 +7,7 @@ import { activeRepo } from './repo-context.js';
 import { config } from './config.js';
 import { getFreePort } from './worktree.js';
 import { log } from './logger.js';
-import { loadAppDefinition, namedPortsIn, publicizeTemplate, renderTemplate, type AppDefinition, type TemplateContext } from './app-manifest.js';
+import { loadAppDefinition, namedPortsIn, publicizeTemplate, publicPortsIn, renderTemplate, type AppDefinition, type TemplateContext } from './app-manifest.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -62,6 +62,10 @@ export interface AppUpOptions {
   instance?: string;
   // Host the `{{public.…}}` templates render with — see app-manifest.ts.
   publicHost?: string;
+  // Gives the port a local one will be published on, when the caller
+  // publishes in a range of its own; without it the public port is the
+  // local one.
+  publicPort?: (localPort: number) => Promise<number>;
 }
 
 // Takes `docker compose config --format json` (every path already absolute,
@@ -176,9 +180,17 @@ export async function waitForUrl(url: string, timeoutMs: number, intervalMs = 20
   throw new Error(`${url} no respondió en ${Math.round(timeoutMs / 1000)}s (último error: ${lastError})`);
 }
 
-async function reserveNamedPorts(templates: string[], ctx: TemplateContext): Promise<void> {
+// Everything a template needs before it can render: its named ports, and —
+// when the caller publishes the app on ports of its own — the public port
+// of every `{{public.…}}` it references.
+async function reservePorts(templates: string[], ctx: TemplateContext, options: AppUpOptions): Promise<void> {
   for (const name of templates.flatMap(namedPortsIn)) {
     if (ctx.port[name] === undefined) ctx.port[name] = await getFreePort();
+  }
+  if (!options.publicPort) return;
+  for (const local of templates.flatMap((t) => publicPortsIn(t, ctx))) {
+    ctx.publicPorts ??= {};
+    ctx.publicPorts[String(local)] ??= await options.publicPort(local);
   }
 }
 
@@ -218,28 +230,29 @@ export async function appUp(dir: string, appName: string, options: AppUpOptions 
         log.info(`app ${appName}: docker compose up (${state.project})`);
         await runCommand(`docker ${composeArgs(state).join(' ')} up -d --build`, dir, appEnv(), logFile, 20 * 60_000);
       } else if ('run' in step) {
-        await reserveNamedPorts([step.run, ...Object.values(step.env ?? {})], ctx);
+        await reservePorts([step.run, ...Object.values(step.env ?? {})], ctx, options);
         const env = Object.fromEntries(Object.entries(step.env ?? {}).map(([k, v]) => [k, renderTemplate(v, ctx)]));
         log.info(`app ${appName}: ${step.name ?? step.run}`);
         await runCommand(renderTemplate(step.run, ctx), join(dir, step.cwd ?? '.'), appEnv(env), logFile, (step.timeoutSeconds ?? 600) * 1000);
       } else if ('start' in step) {
-        await reserveNamedPorts([step.start, ...Object.values(step.env ?? {})], ctx);
         // A no-op without a public host: {{public.…}} renders the same
         // loopback URL — see publicizeTemplate.
-        const env = Object.fromEntries(Object.entries(step.env ?? {}).map(([k, v]) => [k, renderTemplate(publicizeTemplate(v), ctx)]));
+        const envTemplates = Object.entries(step.env ?? {}).map(([k, v]) => [k, publicizeTemplate(v)] as const);
+        await reservePorts([step.start, ...envTemplates.map(([, v]) => v)], ctx, options);
+        const env = Object.fromEntries(envTemplates.map(([k, v]) => [k, renderTemplate(v, ctx)]));
         log.info(`app ${appName}: arrancando ${step.name}`);
         const pid = startProcess(renderTemplate(step.start, ctx), join(dir, step.cwd ?? '.'), appEnv(env), join(stateDir, `${step.name}.log`));
         state.processes.push({ name: step.name, pid });
         await writeState(dir, state);
       } else {
-        await reserveNamedPorts([step.wait], ctx);
+        await reservePorts([step.wait], ctx, options);
         const url = renderTemplate(step.wait, ctx);
         log.info(`app ${appName}: esperando ${step.name ?? url}`);
         await waitForUrl(url, (step.timeoutSeconds ?? 300) * 1000);
       }
     }
 
-    await reserveNamedPorts([app.baseUrl], ctx);
+    await reservePorts([app.baseUrl], ctx, options);
     const baseUrl = renderTemplate(app.baseUrl, ctx).replace(/\/$/, '');
     await waitForUrl(baseUrl, 120_000);
     await writeState(dir, { ...state, baseUrl, ctx });

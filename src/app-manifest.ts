@@ -236,6 +236,9 @@ export interface TemplateContext {
   compose: string;
   dir: string;
   publicHost?: string;
+  // The port each local one is published on, when that isn't the same
+  // number: a preview publishes in its own range (preview.ts).
+  publicPorts?: Record<string, number>;
 }
 
 const TEMPLATE_RE = /\{\{\s*([\w.-]+)\s*\}\}/g;
@@ -260,8 +263,8 @@ function portOf(key: string[], ctx: TemplateContext): number | undefined {
   return undefined;
 }
 
-export function publicUrl(port: number, ctx: Pick<TemplateContext, 'publicHost'>): string {
-  return ctx.publicHost ? `https://${ctx.publicHost}:${port}` : `http://127.0.0.1:${port}`;
+export function publicUrl(port: number, ctx: Pick<TemplateContext, 'publicHost' | 'publicPorts'>): string {
+  return ctx.publicHost ? `https://${ctx.publicHost}:${ctx.publicPorts?.[String(port)] ?? port}` : `http://127.0.0.1:${port}`;
 }
 
 // The ports a template exposes through `{{public.…}}` — what a preview has

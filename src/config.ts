@@ -97,6 +97,15 @@ export const config = {
   // /preview: after the base seeds, an agent prepares the data the PR needs
   // to be tried out (preview.ts). Off = just the app with its seeds.
   previewPrepareData: process.env.PREVIEW_PREPARE_DATA !== 'false',
+  // Tailnet ports previews are published on — what a tailnet policy can open
+  // to someone outside without opening anything else. Outside the kernel's
+  // ephemeral range (32768-60999 on Linux), where Docker and the slices'
+  // Postgres land: one of those could otherwise fall inside it.
+  previewPortRange: process.env.PREVIEW_PORT_RANGE || '20000-20999',
+  previewMaxPerRepo: Number(process.env.PREVIEW_MAX_PER_REPO || 2),
+  // Shared by every repo and worker on this runner: the reservations of
+  // public ports and per-app slots (preview-reservations.ts).
+  previewReservationsDir: process.env.PREVIEW_RESERVATIONS_DIR || '.preview-reservations',
   interviewTimeoutHours: Number(process.env.INTERVIEW_TIMEOUT_HOURS ?? 24),
   // Model for the external review's worker subagents (one per criteria
   // dimension). They only gather candidates; the orchestrating session —

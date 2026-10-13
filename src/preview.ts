@@ -12,6 +12,7 @@ import { runAgentTask } from './agent-task.js';
 import { HELP_FOOTER_MARKER } from './help.js';
 import { config } from './config.js';
 import { acquireLock, launchWorker, lockHeld } from './worker-launch.js';
+import { parsePortRange, PreviewReservations } from './preview-reservations.js';
 import { log } from './logger.js';
 
 const execFileAsync = promisify(execFile);
@@ -85,12 +86,12 @@ export async function tailnetHost(): Promise<string> {
   return name;
 }
 
-// HTTPS on the same port number the app listens on locally: tailscale serve
-// listens on the tailnet address and proxies to loopback, so the two never
-// collide, and the public URL is the local one with another host. Tailnet
-// only — never `funnel`.
-async function servePort(port: number): Promise<void> {
-  await execFileAsync('tailscale', ['serve', '--bg', `--https=${port}`, `http://127.0.0.1:${port}`]);
+// HTTPS on a port of the preview range (PREVIEW_PORT_RANGE), proxied to the
+// one the app listens on in loopback. The range is what a tailnet policy
+// opens to someone outside, so they reach previews and nothing else on this
+// host. Tailnet only — never `funnel`.
+async function servePort(publicPort: number, localPort: number): Promise<void> {
+  await execFileAsync('tailscale', ['serve', '--bg', `--https=${publicPort}`, `http://127.0.0.1:${localPort}`]);
 }
 
 async function unservePort(port: number): Promise<void> {
@@ -105,7 +106,17 @@ interface PreviewState {
   appName: string;
   sha: string;
   url: string;
-  ports: number[];
+  published?: Array<{ public: number; local: number }>;
+  // Before the preview range: published on the local port itself.
+  ports?: number[];
+}
+
+const reservations = (): PreviewReservations => new PreviewReservations(config.previewReservationsDir);
+
+// Per repo, not per app: a repo with several apps still runs at most
+// PREVIEW_MAX_PER_REPO previews, whichever apps they are.
+function slotKey(): string {
+  return activeRepo().productRepo.toLowerCase().replace(/[^a-z0-9]+/g, '-');
 }
 
 function previewStatePath(dir: string): string {
@@ -195,8 +206,10 @@ async function ensurePreviewWorktree(prNumber: number, sha: string): Promise<str
 // Never throws, like appDown.
 async function takeDownPreviewApp(dir: string): Promise<void> {
   const state = await readPreviewState(dir);
-  for (const port of state?.ports ?? []) await unservePort(port);
+  const published = state?.published?.map((p) => p.public) ?? state?.ports ?? [];
+  for (const port of published) await unservePort(port);
   await appDown(dir);
+  await reservations().releasePorts(dir);
   await rm(previewStatePath(dir), { force: true });
 }
 
@@ -283,21 +296,47 @@ export async function startPreview(prNumber: number, pr: PrHead, args?: string):
   if (existsSync(existing)) await takeDownPreviewApp(existing);
   const dir = await ensurePreviewWorktree(prNumber, sha);
   const { appName, instruction } = resolvePreviewArgs(args, await manifestAppNames(dir));
-  // appUp tears down what it started if it fails.
-  const session = await appUp(dir, appName, { instance: `pr-${prNumber}`, publicHost: host });
+  // Checked before anything starts: a preview is a whole stack, and this
+  // host runs a handful at most. A second /preview on the same PR keeps its
+  // slot.
+  const owner = { dir, prNumber };
+  const slot = await reservations().acquireSlot(slotKey(), config.previewMaxPerRepo, owner);
+  if (!slot.ok) {
+    // Nothing of this PR is running: don't leave its checkout behind until
+    // the PR closes.
+    await removeWorktreeDir(dir, 'startPreview');
+    const holders = slot.holders.map((n) => `#${n}`).join(', ');
+    const max = config.previewMaxPerRepo;
+    throw new Error(`ya hay ${max} ${max === 1 ? 'preview activa' : 'previews activas'} en este repo (${holders}). Bajá una con \`/preview stop\` en su PR, o esperá a que se mergee o se cierre`);
+  }
+  const range = parsePortRange(config.previewPortRange);
+  const publicPort = () => reservations().allocatePort(range, owner);
+  let session: AppSession;
+  try {
+    // appUp tears down what it started if it fails.
+    session = await appUp(dir, appName, { instance: `pr-${prNumber}`, publicHost: host, publicPort });
+  } catch (error) {
+    await reservations().releasePorts(dir);
+    await reservations().releaseSlots(dir);
+    throw error;
+  }
   let result: PreviewResult;
   try {
-    const ports = previewPorts(session);
-    const url = publicUrl(ports[0], { publicHost: host });
+    const locals = previewPorts(session);
+    const publicPorts = (session.ctx.publicPorts ??= {});
+    for (const local of locals) publicPorts[String(local)] ??= await publicPort();
+    const published = locals.map((local) => ({ public: publicPorts[String(local)], local }));
+    const url = publicUrl(locals[0], session.ctx);
     // Written before publishing, so a failure halfway still knows which
     // ports to unpublish.
-    const state: PreviewState = { prNumber, appName, sha, url, ports };
+    const state: PreviewState = { prNumber, appName, sha, url, published };
     await writeFile(previewStatePath(dir), JSON.stringify(state, null, 2));
-    for (const port of ports) await servePort(port);
+    for (const p of published) await servePort(p.public, p.local);
     log.info(`preview PR #${prNumber}: ${appName} arriba en ${url}`);
     result = { appName, sha, url, users: session.app.users };
   } catch (error) {
     await takeDownPreviewApp(dir);
+    await reservations().releaseSlots(dir);
     throw error;
   }
   if (!config.previewPrepareData) return result;
@@ -309,6 +348,7 @@ export async function stopPreview(prNumber: number): Promise<boolean> {
   const dir = previewDirFor(prNumber);
   if (!existsSync(dir)) return false;
   await takeDownPreviewApp(dir);
+  await reservations().releaseSlots(dir);
   await removeWorktreeDir(dir, 'stopPreview');
   log.info(`preview PR #${prNumber}: bajada y worktree borrado`);
   return true;
