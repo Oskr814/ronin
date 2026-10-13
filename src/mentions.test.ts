@@ -58,6 +58,13 @@ describe('parsePreviewCommand', () => {
     expect(parsePreviewCommand('@ronin /preview down to 3 clientes', 'ronin')).toEqual({ action: 'up', args: 'down to 3 clientes' });
   });
 
+  it('reads /preview-stop and its hyphenated synonyms as stop', () => {
+    expect(parsePreviewCommand('@ronin /preview-stop', 'ronin')).toEqual({ action: 'stop' });
+    expect(parsePreviewCommand('@ronin /Preview-Off gracias', 'ronin')).toEqual({ action: 'stop' });
+    expect(parsePreviewCommand('@ronin /preview-stopped', 'ronin')).toBeNull();
+    expect(parsePreviewCommand('@ronin /preview-foo', 'ronin')).toBeNull();
+  });
+
   it('only counts right after the mention, never inside a plain request', () => {
     expect(parsePreviewCommand('@ronin revisá src/preview/card.tsx', 'ronin')).toBeNull();
     expect(parsePreviewCommand('@ronin /preview/card.tsx', 'ronin')).toBeNull();

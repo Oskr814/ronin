@@ -72,10 +72,13 @@ export function parseExploreCommand(body: string): { appName: string; maxFunctio
 // preview.ts's resolvePreviewArgs).
 const PREVIEW_STOP_WORDS = ['stop', 'off', 'down'];
 
+// "/preview-stop" (and -off, -down) is the same as "/preview stop": it's how
+// people tend to write it, and help.ts lists those as aliases.
 export function parsePreviewCommand(body: string, login: string): { action: 'up'; args?: string } | { action: 'stop' } | null {
-  const match = body.match(new RegExp(`\\B@${login}\\s+/preview(?![\\w/-])([\\s\\S]*)$`, 'i'));
+  const match = body.match(new RegExp(`\\B@${login}\\s+/preview(?:-(${PREVIEW_STOP_WORDS.join('|')}))?(?![\\w/-])([\\s\\S]*)$`, 'i'));
   if (!match) return null;
-  const args = match[1].trim();
+  if (match[1]) return { action: 'stop' };
+  const args = match[2].trim();
   if (PREVIEW_STOP_WORDS.includes(args.toLowerCase())) return { action: 'stop' };
   return args ? { action: 'up', args } : { action: 'up' };
 }

@@ -30,6 +30,12 @@ describe('classifyMetaCommand', () => {
     expect(classifyMetaCommand('@ronin /preview', 'ronin', 'issue')).toEqual({ kind: 'wrong-context', command: 'preview' });
   });
 
+  it('accepts a command alias as the command itself', () => {
+    expect(classifyMetaCommand('@ronin /preview-stop', 'ronin', 'pr')).toBeNull();
+    expect(classifyMetaCommand('@ronin /preview-stop', 'ronin', 'issue')).toEqual({ kind: 'wrong-context', command: 'preview' });
+    expect(renderMetaReply({ kind: 'help' }, 'ronin', 'pr')).not.toContain('preview-stop');
+  });
+
   it('flags a command used in the wrong place', () => {
     expect(classifyMetaCommand('@ronin /spike backoffice', 'ronin', 'pr')).toEqual({ kind: 'wrong-context', command: 'spike' });
     expect(classifyMetaCommand('@ronin /fix-comments', 'ronin', 'issue')).toEqual({ kind: 'wrong-context', command: 'fix-comments' });

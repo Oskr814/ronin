@@ -16,6 +16,9 @@ interface CommandSpec {
   // for a bare "/spike"). Omitted for a command with no required
   // arguments — fix-comments and help both take none.
   validateArgs?: (rest: string) => boolean;
+  // Other spellings people reach for that mean the same command
+  // ("/preview-stop" for "/preview stop"). Not listed in the table.
+  aliases?: string[];
 }
 
 // /spike's one required argument — mirrors mentions.ts's SPIKE_COMMAND_RE,
@@ -42,6 +45,7 @@ const COMMANDS: CommandSpec[] = [
     name: 'preview',
     scopes: ['pr'],
     usage: '/preview [app] [qué datos querés]',
+    aliases: ['preview-stop', 'preview-off', 'preview-down'],
     summary: 'Levanto la app con el código del PR, su base y sus seeds, preparo los datos que piden sus pasos de prueba (más lo que me pidas) y te paso una URL de la tailnet para probarla. Se baja sola al mergear o cerrar el PR; `/preview stop` la baja antes. No en PRs de forks.',
   },
   {
@@ -100,7 +104,7 @@ export function classifyMetaCommand(body: string, login: string, context: Comman
   if (parsed === null) return null;
   const { token, rest } = parsed;
   if (token === 'help') return { kind: 'help' };
-  const command = COMMANDS.find((c) => c.name === token);
+  const command = COMMANDS.find((c) => c.name === token || c.aliases?.includes(token));
   if (command) {
     if (!command.scopes.includes(context)) return { kind: 'wrong-context', command: command.name };
     if (command.validateArgs && !command.validateArgs(rest)) return { kind: 'bad-usage', command: command.name };
