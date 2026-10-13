@@ -6,7 +6,9 @@ import { describe, it, expect, vi } from 'vitest';
 // other people's drafts — see final review Fix 6. Nothing else in github.ts
 // is tested here, except lastMarkedReviewSha — pure too, and the only thing
 // deciding which commit the incremental review diffs against, and threadOf —
-// pure too, and what tells the agent which thread a mention lives in.
+// pure too, and what tells the agent which thread a mention lives in, and
+// changesRequestedOn — pure too, and what keeps fix-review from looping on a
+// review ronin already answered.
 vi.mock('./config.js', () => ({
   config: { githubLogin: 'ronin' },
   LABEL_MANAGED: 'ronin',
@@ -18,7 +20,30 @@ vi.mock('./repo-context.js', () => ({
   activeRepo: () => ({ productRepo: 'bmedical/bmedical', productRepoPath: '/tmp/repo', worktreeBasePath: '/tmp/worktrees' }),
 }));
 
-const { isExternalReviewable, lastMarkedReviewSha, threadOf } = await import('./github.js');
+const { isExternalReviewable, lastMarkedReviewSha, threadOf, changesRequestedOn } = await import('./github.js');
+
+describe('changesRequestedOn', () => {
+  const review = (login: string, state: string, commitId: string) => ({ login, state, commitId });
+
+  it('is true when the standing review asks for changes on the head', () => {
+    expect(changesRequestedOn([review('ana', 'CHANGES_REQUESTED', 'head')], 'head')).toBe(true);
+  });
+
+  it('is false when the changes were requested on an older commit (redmotos/shoppingcart#802)', () => {
+    const reviews = [review('ana', 'CHANGES_REQUESTED', 'old'), review('ronin', 'COMMENTED', 'head')];
+    expect(changesRequestedOn(reviews, 'head')).toBe(false);
+  });
+
+  it('ignores a later plain comment from the same reviewer, like GitHub does', () => {
+    const reviews = [review('ana', 'CHANGES_REQUESTED', 'head'), review('ana', 'COMMENTED', 'head')];
+    expect(changesRequestedOn(reviews, 'head')).toBe(true);
+  });
+
+  it('is false once that reviewer approves', () => {
+    const reviews = [review('ana', 'CHANGES_REQUESTED', 'head'), review('ana', 'APPROVED', 'head')];
+    expect(changesRequestedOn(reviews, 'head')).toBe(false);
+  });
+});
 
 describe('isExternalReviewable', () => {
   it('excludes a draft PR', () => {
