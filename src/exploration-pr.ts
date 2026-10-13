@@ -254,12 +254,29 @@ export function renderDigest(opts: { since: string; branch: string; repo: string
   return lines.join('\n');
 }
 
+const findingIdOf = (path: string): string[] => {
+  const id = path.match(/\/findings\/(F-\d+)[^/]*\.md$/)?.[1];
+  return id ? [id] : [];
+};
+
+// The findings a batch's PR brings: those its branch touches whose id isn't
+// on the base yet. A finding from an earlier, merged PR also shows up in the
+// branch's diff — the next batch marks it approved and writes its issue
+// number (reconcileApproved) — but it isn't this PR's to review: listing it
+// made redmotos/shoppingcart#810 offer F-0001…F-0005 again, issues and all.
+// By id, not path, so an old finding whose file was renamed still counts as old.
+export function findingsAddedOverBase(changedFiles: string[], baseFiles: string[]): Set<string> {
+  const onBase = new Set(baseFiles.flatMap(findingIdOf));
+  return new Set(changedFiles.flatMap(findingIdOf).filter((id) => !onBase.has(id)));
+}
+
 // What the batch's branch adds over the base, per app: finding ids and run ids.
 async function addedByBranch(dir: string, appName: string): Promise<{ findingIds: Set<string>; runs: string[] }> {
-  const files = (await git(dir, ['diff', '--name-only', `${baseRef()}...HEAD`, '--', `${EXPLORATION_DIR}/${appName}`]).catch(() => '')).split('\n').filter(Boolean);
-  const findingIds = new Set(files.flatMap((f) => f.match(/\/findings\/(F-\d+)[^/]*\.md$/)?.[1] ?? []));
+  const lines = (out: string) => out.split('\n').filter(Boolean);
+  const files = lines(await git(dir, ['diff', '--name-only', `${baseRef()}...HEAD`, '--', `${EXPLORATION_DIR}/${appName}`]).catch(() => ''));
+  const baseFiles = lines(await git(dir, ['ls-tree', '-r', '--name-only', baseRef(), '--', `${EXPLORATION_DIR}/${appName}/findings`]).catch(() => ''));
   const runs = files.flatMap((f) => f.match(/\/runs\/([^/]+)\.md$/)?.[1] ?? []).sort();
-  return { findingIds, runs };
+  return { findingIds: findingsAddedOverBase(files, baseFiles), runs };
 }
 
 export async function appsWithMemory(checkoutDir: string): Promise<string[]> {
