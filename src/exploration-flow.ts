@@ -7,11 +7,12 @@ import { activeRepo } from './repo-context.js';
 import { config } from './config.js';
 import { log } from './logger.js';
 import { dayIn } from './timezone.js';
-import { runAgentTask, type FindingFeedback } from './agent-task.js';
+import { runAgentTask, type FindingFeedback, type FindingSummary, type GeneralFeedback } from './agent-task.js';
 import {
   addReaction,
   createIssue,
   listFileReviewComments,
+  listIssueComments,
   listOpenPrsByHeadPrefix,
   markPullRequestReady,
   mergePullRequest,
@@ -149,15 +150,18 @@ export interface FeedbackChange {
   redo?: boolean;
 }
 
-export function feedbackCommitChange(prNumber: number, changes: FeedbackChange[]): CommitChange {
+export function feedbackCommitChange(prNumber: number, changes: FeedbackChange[], knowledge: Array<{ app: string; texto: string }> = []): CommitChange {
   const rejected = changes.filter((c) => c.kind === 'rechazada').map((c) => c.findingId);
   const edited = changes.filter((c) => c.kind === 'editada').map((c) => c.findingId);
-  const en = [...(rejected.length ? [`reject ${idList(rejected)}`] : []), ...(edited.length ? [`update ${idList(edited)}`] : [])];
-  const es = [...(rejected.length ? [`rechazar ${idList(rejected)}`] : []), ...(edited.length ? [`corregir ${idList(edited)}`] : [])];
+  const apps = [...new Set(knowledge.map((k) => k.app))].sort();
+  const en = [...(rejected.length ? [`reject ${idList(rejected)}`] : []), ...(edited.length ? [`update ${idList(edited)}`] : []), ...(apps.length ? [`note team decisions for ${apps.join(', ')}`] : [])];
+  const es = [...(rejected.length ? [`rechazar ${idList(rejected)}`] : []), ...(edited.length ? [`corregir ${idList(edited)}`] : []), ...(apps.length ? [`anotar decisiones del equipo para ${apps.join(', ')}`] : [])];
+  const lines = [
+    ...changes.map((c) => `- ${c.findingId} ("${c.titulo}") ${c.kind === 'rechazada' ? 'rejected' : 'edited'}: ${c.detail}${c.redo ? ' (its after image will be redone)' : ''}`),
+    ...knowledge.map((k) => `- added to the ${k.app} knowledge file, so later explorations leave it alone: ${k.texto}`),
+  ];
   return {
-    description: `Applies review feedback from PR #${prNumber} to findings of the exploration memory:\n${changes
-      .map((c) => `- ${c.findingId} ("${c.titulo}") ${c.kind === 'rechazada' ? 'rejected' : 'edited'}: ${c.detail}${c.redo ? ' (its after image will be redone)' : ''}`)
-      .join('\n')}`,
+    description: `Applies review feedback from PR #${prNumber} to the exploration memory:\n${lines.join('\n')}`,
     fallback: { en: `${joinParts(en, 'and')} from PR #${prNumber} review`, es: `${joinParts(es, 'y')} según la review del PR #${prNumber}` },
   };
 }
@@ -182,11 +186,12 @@ interface PendingFeedback {
   conversacion: NonNullable<FindingFeedback['conversacion']>;
 }
 
+const isBot = (login: string) => login.toLowerCase() === config.githubLogin.toLowerCase();
+
 // A new comment on a finding file is feedback; inside a thread, a reply is
 // only when it mentions ronin — people also talk among themselves there.
 async function pendingFeedback(pr: PullRequestStatus): Promise<PendingFeedback[]> {
   const comments = await listFileReviewComments(pr.number);
-  const isBot = (login: string) => login.toLowerCase() === config.githubLogin.toLowerCase();
   const rootOf = (c: { id: number; inReplyToId?: number }) => c.inReplyToId ?? c.id;
   const findingOf = (path: string) => path.match(FINDING_PATH_RE);
   const result: PendingFeedback[] = [];
@@ -206,65 +211,96 @@ async function pendingFeedback(pr: PullRequestStatus): Promise<PendingFeedback[]
   return result;
 }
 
+// A general comment on the PR that mentions ronin is feedback too: it can
+// speak about several findings at once ("los de mobile") or about what the
+// next explorations should leave alone.
+async function pendingGeneralFeedback(pr: PullRequestStatus): Promise<GeneralFeedback[]> {
+  const comments = (await listIssueComments(pr.number)).sort((a, b) => a.id - b.id);
+  const result: GeneralFeedback[] = [];
+  for (const c of comments) {
+    if (isBot(c.authorLogin) || !c.authorLogin || !mentionsHandle(c.body, config.githubLogin)) continue;
+    if (c.reactionsEyes > 0 && (await hasBotReaction(c.id, 'issue', config.githubLogin))) continue;
+    const conversacion = comments
+      .filter((o) => o.id < c.id)
+      .map((o) => ({ autor: isBot(o.authorLogin) ? ('ronin' as const) : ('persona' as const), texto: o.body, mismoHilo: true }));
+    result.push({ commentId: c.id, body: c.body, conversacion });
+  }
+  return result;
+}
+
 export interface RedoItem {
   app: string;
   findingId: string;
   instruction: string;
   commentId: number;
+  // A general PR comment is answered as a new comment, not in a thread.
+  kind?: 'issue' | 'review';
 }
 
-interface FeedbackAction {
-  commentId: number;
+interface FindingAction {
   accion: string;
   motivo?: string;
   titulo?: string;
   propuesta?: string;
   rehacerDespues?: string;
+}
+
+interface FeedbackAction extends FindingAction {
+  commentId: number;
   issue?: { titulo?: string; cuerpo?: string };
   respuesta?: string;
+  // Only for a general comment: what it does to each finding it covers, and
+  // what goes to the team's knowledge.
+  fichas?: Array<FindingAction & { app?: string; findingId?: string }>;
+  conocimiento?: Array<{ app?: string; texto?: string }>;
 }
 
 function clean(text: string): string {
   return text.replace(/@(?=\w)/g, '');
 }
 
-// Applies what each new comment on a finding asks for — the agent only
-// classifies it, the changes are made here: reject (finding + knowledge),
-// edit (title, proposal), open a follow-up issue. Redoing an after image
-// needs the app running, so those come back for the worker.
+// Applies what each new comment asks for — the agent only classifies it,
+// the changes are made here: reject (finding + knowledge), edit (title,
+// proposal), add to the knowledge, open a follow-up issue. Redoing an after
+// image needs the app running, so those come back for the worker.
 async function applyFeedback(pr: PullRequestStatus, batch: string): Promise<RedoItem[]> {
-  const pending = await pendingFeedback(pr);
-  if (pending.length === 0) return [];
+  const [pending, general] = await Promise.all([pendingFeedback(pr), pendingGeneralFeedback(pr)]);
+  if (pending.length === 0 && general.length === 0) return [];
   const batchDir = await ensureBatchWorktree(batch);
+  const apps = await appsWithMemory(batchDir);
   const comments: FindingFeedback[] = [];
   for (const p of pending) {
     const memory = await loadMemory(memoryDirFor(batchDir, p.app));
     const meta = memory.findings.find((f) => f.id === p.findingId);
     comments.push({ commentId: p.commentId, findingId: p.findingId, titulo: meta?.titulo ?? p.findingId, body: p.body, conversacion: p.conversacion });
   }
+  const fichas: FindingSummary[] = [];
+  if (general.length > 0) {
+    for (const app of apps) for (const f of (await loadMemory(memoryDirFor(batchDir, app))).findings) fichas.push({ app, id: f.id, titulo: f.titulo, estado: f.estado, viewport: f.viewport });
+  }
   await mkdir(explorationOutDir(), { recursive: true });
   const outputPath = join(explorationOutDir(), `feedback-${pr.number}.json`);
   await rm(outputPath, { force: true });
-  await runAgentTask({ type: 'explore-feedback', prNumber: pr.number, checkoutDir: batchDir, comments, outputPath });
+  await runAgentTask({ type: 'explore-feedback', prNumber: pr.number, checkoutDir: batchDir, comments, ...(general.length > 0 ? { general, fichas } : {}), outputPath });
   const parsed = JSON.parse(await readFile(outputPath, 'utf8')) as { acciones?: FeedbackAction[] };
 
-  const replies: Array<{ commentId: number; body: string }> = [];
+  const replies: Array<{ commentId: number; kind: 'issue' | 'review'; body: string }> = [];
   const redo: RedoItem[] = [];
   const changes: FeedbackChange[] = [];
-  for (const p of pending) {
-    const action = parsed.acciones?.find((a) => a.commentId === p.commentId);
-    if (!action) continue;
-    const memoryDir = memoryDirFor(batchDir, p.app);
-    const meta = (await loadMemory(memoryDir)).findings.find((f) => f.id === p.findingId);
-    const path = meta ? join(memoryDir, 'findings', findingFileName(meta)) : undefined;
-    let reply = action.respuesta ? clean(action.respuesta) : '';
-    if (action.accion === 'rechazar' && action.motivo && path) {
+  const knowledge: Array<{ app: string; texto: string }> = [];
+
+  const applyToFinding = async (app: string, findingId: string, action: FindingAction, commentId: number, kind: 'issue' | 'review'): Promise<void> => {
+    const memoryDir = memoryDirFor(batchDir, app);
+    const meta = (await loadMemory(memoryDir)).findings.find((f) => f.id === findingId);
+    if (!meta) return;
+    const path = join(memoryDir, 'findings', findingFileName(meta));
+    if (action.accion === 'rechazar' && action.motivo) {
       const finding = parseFinding(await readFile(path, 'utf8'));
       const motivo = action.motivo.trim().slice(0, 300);
       await writeFile(path, serializeFinding({ ...finding, estado: 'rechazado', motivo }));
-      await appendKnowledge(memoryDir, `${motivo} (${p.findingId}, rechazada en #${pr.number})`);
-      changes.push({ findingId: p.findingId, titulo: finding.titulo, kind: 'rechazada', detail: motivo });
-    } else if (action.accion === 'editar' && path) {
+      await appendKnowledge(memoryDir, `${motivo} (${findingId}, rechazada en #${pr.number})`);
+      changes.push({ findingId, titulo: finding.titulo, kind: 'rechazada', detail: motivo });
+    } else if (action.accion === 'editar') {
       const finding = parseFinding(await readFile(path, 'utf8'));
       const titulo = action.titulo?.trim() ? action.titulo.trim().slice(0, 120) : finding.titulo;
       let body = action.propuesta?.trim() ? replaceProposal(finding.body, action.propuesta.slice(0, 1600)) : finding.body;
@@ -272,22 +308,55 @@ async function applyFeedback(pr: PullRequestStatus, batch: string): Promise<Redo
       // The file name follows the title: a new title moves the file.
       await rm(path, { force: true });
       await writeFile(join(memoryDir, 'findings', findingFileName({ id: finding.id, titulo })), serializeFinding({ ...finding, titulo, body }));
-      if (action.rehacerDespues?.trim()) redo.push({ app: p.app, findingId: p.findingId, instruction: action.rehacerDespues.trim().slice(0, 1200), commentId: p.commentId });
+      if (action.rehacerDespues?.trim()) redo.push({ app, findingId, instruction: action.rehacerDespues.trim().slice(0, 1200), commentId, ...(kind === 'issue' ? { kind } : {}) });
       const what = [titulo !== finding.titulo ? `new title "${titulo}"` : '', action.propuesta?.trim() ? `new proposal: ${action.propuesta.trim().slice(0, 300)}` : ''].filter(Boolean).join('; ');
-      changes.push({ findingId: p.findingId, titulo, kind: 'editada', detail: what || 'proposal adjusted', redo: Boolean(action.rehacerDespues?.trim()) });
-    } else if (action.accion === 'crear-issue' && action.issue?.titulo?.trim()) {
-      const ref = `Pedido en un comentario sobre la ficha ${p.findingId} del PR de exploración #${pr.number}.`;
-      const created = await createIssue(clean(action.issue.titulo.trim()).slice(0, 200), `${clean(action.issue.cuerpo?.trim() ?? '')}\n\n${ref}`, []).catch((error) => {
-        log.error(`exploración: no se pudo crear el issue pedido en el comentario ${p.commentId}`, error);
-        return undefined;
-      });
-      reply = created ? `${reply}\n\nAbrí #${created.number}.`.trim() : `${reply}\n\nNo pude abrir el issue; el detalle está en el log del runner.`.trim();
+      changes.push({ findingId, titulo, kind: 'editada', detail: what || 'proposal adjusted', redo: Boolean(action.rehacerDespues?.trim()) });
     }
-    if (reply) replies.push({ commentId: p.commentId, body: reply });
+  };
+
+  const openIssue = async (action: FeedbackAction, ref: string, reply: string): Promise<string> => {
+    if (!action.issue?.titulo?.trim()) return reply;
+    const created = await createIssue(clean(action.issue.titulo.trim()).slice(0, 200), `${clean(action.issue.cuerpo?.trim() ?? '')}\n\n${ref}`, []).catch((error) => {
+      log.error(`exploración: no se pudo crear el issue pedido en el comentario ${action.commentId}`, error);
+      return undefined;
+    });
+    return created ? `${reply}\n\nAbrí #${created.number}.`.trim() : `${reply}\n\nNo pude abrir el issue; el detalle está en el log del runner.`.trim();
+  };
+
+  for (const p of pending) {
+    const action = parsed.acciones?.find((a) => a.commentId === p.commentId);
+    if (!action) continue;
+    let reply = action.respuesta ? clean(action.respuesta) : '';
+    if (action.accion === 'crear-issue') reply = await openIssue(action, `Pedido en un comentario sobre la ficha ${p.findingId} del PR de exploración #${pr.number}.`, reply);
+    else await applyToFinding(p.app, p.findingId, action, p.commentId, 'review');
+    if (reply) replies.push({ commentId: p.commentId, kind: 'review', body: reply });
   }
-  if (changes.length > 0 && (await commitAndPush(batchDir, explorationBranch(batch), feedbackCommitChange(pr.number, changes)))) await upsertExplorationPr(batch, batchDir);
-  for (const r of replies) await replyToComment(pr.number, { id: r.commentId, kind: 'review' }, r.body).catch((error) => log.error(`exploración: no se pudo responder el comentario ${r.commentId}`, error));
+
+  for (const g of general) {
+    const action = parsed.acciones?.find((a) => a.commentId === g.commentId);
+    if (!action) continue;
+    let reply = action.respuesta ? clean(action.respuesta) : '';
+    // The app is only needed to tell apart findings of different apps.
+    const appOf = (app?: string) => (app && apps.includes(app) ? app : apps.length === 1 ? apps[0] : undefined);
+    for (const f of action.fichas ?? []) {
+      const app = appOf(f.app);
+      if (app && f.findingId) await applyToFinding(app, f.findingId, f, g.commentId, 'issue');
+    }
+    for (const k of action.conocimiento ?? []) {
+      const app = appOf(k.app);
+      const texto = k.texto?.trim().slice(0, 300);
+      if (!app || !texto) continue;
+      await appendKnowledge(memoryDirFor(batchDir, app), `${texto} (pedido en #${pr.number})`);
+      knowledge.push({ app, texto });
+    }
+    if (action.issue) reply = await openIssue(action, `Pedido en un comentario del PR de exploración #${pr.number}.`, reply);
+    if (reply) replies.push({ commentId: g.commentId, kind: 'issue', body: reply });
+  }
+
+  if ((changes.length > 0 || knowledge.length > 0) && (await commitAndPush(batchDir, explorationBranch(batch), feedbackCommitChange(pr.number, changes, knowledge)))) await upsertExplorationPr(batch, batchDir);
+  for (const r of replies) await replyToComment(pr.number, { id: r.commentId, kind: r.kind }, r.body).catch((error) => log.error(`exploración: no se pudo responder el comentario ${r.commentId}`, error));
   for (const p of pending) await addReaction(p.commentId, 'review', 'eyes').catch(() => {});
+  for (const g of general) await addReaction(g.commentId, 'issue', 'eyes').catch(() => {});
   return redo;
 }
 
@@ -342,7 +411,7 @@ export async function redoAndPublish(redo: NonNullable<ExploreWorkerRequest['red
     const body = ok
       ? `Rehice la imagen del después de ${item.findingId}; ya está en la ficha.`
       : `No pude rehacer la imagen del después de ${item.findingId}; el detalle está en el log del runner.`;
-    await replyToComment(redo.prNumber, { id: item.commentId, kind: 'review' }, body).catch((error) => log.error(`exploración: no se pudo responder el comentario ${item.commentId}`, error));
+    await replyToComment(redo.prNumber, { id: item.commentId, kind: item.kind ?? 'review' }, body).catch((error) => log.error(`exploración: no se pudo responder el comentario ${item.commentId}`, error));
   }
 }
 

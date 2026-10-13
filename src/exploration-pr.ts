@@ -228,6 +228,7 @@ export function renderDigest(opts: { since: string; branch: string; repo: string
     '**Cómo revisar:**',
     '- **Para rechazar una propuesta**, comentá en su ficha (en "Files changed") con el motivo, por ejemplo: "ya está cubierto". La marco como rechazada y la sumo a `knowledge.md` para no volver a proponerla.',
     '- **Para corregir una propuesta**, comentá qué cambiar: ajusto la ficha y, si hace falta, rehago la captura del después. **Para pedir un issue aparte** a partir de una ficha, pedímelo en el comentario.',
+    `- **Para decidir sobre varias propuestas a la vez** (por ejemplo, "los de mobile se resuelven con F-0003") o sobre lo que no querés que vuelva a proponer, dejá un comentario general en el PR mencionándome. Rechazo o corrijo las fichas que cubre y lo sumo a \`knowledge.md\`.`,
     '- **Para aceptar el resto**, aprobá el PR cuando quieras. Al mergearlo, abro un issue por cada propuesta que siga en pie; asignándome ese issue, la implemento.',
     '- Los bugs de la app de gravedad alta ya tienen su issue abierto desde que se encontraron.',
     '',
