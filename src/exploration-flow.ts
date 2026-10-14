@@ -8,6 +8,7 @@ import { dayIn } from './timezone.js';
 import { runAgentTask, type FindingFeedback, type FindingSummary, type GeneralFeedback } from './agent-task.js';
 import {
   addReaction,
+  closeIssueNotPlanned,
   createIssue,
   listFileReviewComments,
   listIssueComments,
@@ -268,9 +269,14 @@ function clean(text: string): string {
   return text.replace(/@(?=\w)/g, '');
 }
 
+export function renderRejectedIssueClose(findingId: string, prNumber: number, motivo: string): string {
+  return `Cierro este issue: la ficha ${findingId} se rechazó en el PR de exploración #${prNumber}. Motivo: ${motivo}\n\nSi igual hace falta, reabrilo.`;
+}
+
 // Applies what each new comment asks for — the agent only classifies it,
-// the changes are made here: reject (finding + knowledge), edit (title,
-// proposal), add to the knowledge, open a follow-up issue. Redoing an after
+// the changes are made here: reject (finding + knowledge, and its issue
+// closed if it had one), edit (title, proposal), add to the knowledge, open
+// a follow-up issue. Redoing an after
 // image needs the app running, so those come back for the worker.
 async function applyFeedback(pr: PullRequestStatus, batch: string): Promise<RedoItem[]> {
   const [pending, general] = await Promise.all([pendingFeedback(pr), pendingGeneralFeedback(pr)]);
@@ -297,6 +303,9 @@ async function applyFeedback(pr: PullRequestStatus, batch: string): Promise<Redo
   const redo: RedoItem[] = [];
   const changes: FeedbackChange[] = [];
   const knowledge: Array<{ app: string; texto: string }> = [];
+  // A rejected finding that already had its issue (a bug opens one right
+  // away): closed once the rejection is committed.
+  const toClose: Array<{ issue: number; findingId: string; motivo: string }> = [];
 
   const applyToFinding = async (app: string, findingId: string, action: FindingAction, commentId: number, kind: 'issue' | 'review'): Promise<void> => {
     const memoryDir = memoryDirFor(batchDir, app);
@@ -309,6 +318,7 @@ async function applyFeedback(pr: PullRequestStatus, batch: string): Promise<Redo
       await writeFile(path, serializeFinding({ ...finding, estado: 'rechazado', motivo }));
       await appendKnowledge(memoryDir, `${motivo} (${findingId}, rechazada en #${pr.number})`);
       changes.push({ findingId, titulo: finding.titulo, kind: 'rechazada', detail: motivo });
+      if (finding.issue) toClose.push({ issue: finding.issue, findingId, motivo });
     } else if (action.accion === 'editar') {
       const finding = parseFinding(await readFile(path, 'utf8'));
       const titulo = action.titulo?.trim() ? clip(action.titulo, LIMITS.titulo) : finding.titulo;
@@ -363,6 +373,11 @@ async function applyFeedback(pr: PullRequestStatus, batch: string): Promise<Redo
   }
 
   if ((changes.length > 0 || knowledge.length > 0) && (await commitAndPush(batchDir, explorationBranch(batch), feedbackCommitChange(pr.number, changes, knowledge)))) await upsertExplorationPr(batch, batchDir);
+  for (const c of toClose) {
+    await closeIssueNotPlanned(c.issue, renderRejectedIssueClose(c.findingId, pr.number, c.motivo))
+      .then((closed) => closed && log.info(`exploración: issue #${c.issue} cerrado, ${c.findingId} se rechazó en #${pr.number}`))
+      .catch((error) => log.error(`exploración: no se pudo cerrar el issue #${c.issue} de ${c.findingId}, rechazada`, error));
+  }
   for (const r of replies) await replyToComment(pr.number, { id: r.commentId, kind: r.kind }, r.body).catch((error) => log.error(`exploración: no se pudo responder el comentario ${r.commentId}`, error));
   for (const p of pending) await addReaction(p.commentId, 'review', 'eyes').catch(() => {});
   for (const g of general) await addReaction(g.commentId, 'issue', 'eyes').catch(() => {});

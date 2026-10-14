@@ -1102,6 +1102,19 @@ export async function listFileReviewComments(prNumber: number): Promise<FileRevi
   }));
 }
 
+// Closes an issue as "not planned", leaving `comment` on it first. False,
+// with nothing posted, when it was already closed. REST rather than `gh issue
+// close`/`comment`, same reason as setPrState: those go through the GraphQL
+// path that trips over Projects (classic).
+export async function closeIssueNotPlanned(issueNumber: number, comment: string): Promise<boolean> {
+  const path = `repos/${activeRepo().productRepo}/issues/${issueNumber}`;
+  const { state } = JSON.parse(await ghApi(['api', path])) as { state: string };
+  if (state !== 'open') return false;
+  await ghApi(['api', '--method', 'POST', `${path}/comments`, '-f', `body=${comment}`]);
+  await ghApi(['api', '--method', 'PATCH', path, '-f', 'state=closed', '-f', 'state_reason=not_planned']);
+  return true;
+}
+
 export async function createIssue(title: string, body: string, labels: string[]): Promise<{ number: number; url: string }> {
   const dir = await mkdtemp(join(tmpdir(), 'ronin-issue-'));
   const bodyFile = join(dir, 'body.md');

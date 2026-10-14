@@ -11,6 +11,7 @@ const gh = vi.hoisted(() => ({
   listIssueComments: vi.fn(),
   hasBotReaction: vi.fn(),
   createIssue: vi.fn(),
+  closeIssueNotPlanned: vi.fn(),
   replyToComment: vi.fn(),
   addReaction: vi.fn(),
   markPullRequestReady: vi.fn(),
@@ -70,6 +71,7 @@ beforeEach(async () => {
   spawn.mockReset().mockReturnValue({ pid: 1, unref: () => {} });
   actions.tasks = [];
   gh.createIssue.mockResolvedValue({ number: 795, url: 'u' });
+  gh.closeIssueNotPlanned.mockResolvedValue(true);
   gh.replyToComment.mockResolvedValue(undefined);
   gh.addReaction.mockResolvedValue(undefined);
   prMod.commitAndPush.mockResolvedValue(true);
@@ -216,6 +218,20 @@ describe('processExplorationPr feedback — general comments', () => {
     expect(gh.replyToComment).toHaveBeenCalledWith(794, { id: 41, kind: 'issue' }, 'Rechacé F-0002 y lo anoté');
     expect(gh.addReaction).toHaveBeenCalledWith(41, 'issue', 'eyes');
     expect(gh.mergePullRequest).toHaveBeenCalledWith(794);
+    expect(gh.closeIssueNotPlanned).not.toHaveBeenCalled();
+  });
+
+  it('closes the issue of a rejected finding that already had one, after committing the rejection', async () => {
+    await writeFinding(memoryDir(), { ...finding('F-0002', 'La búsqueda falla en silencio'), issue: 837 });
+    gh.listFileReviewComments.mockResolvedValue([]);
+    gh.listIssueComments.mockResolvedValue([general(41, '@ronin-agent F-0002 no se va a atender')]);
+    actions.value = [{ commentId: 41, fichas: [{ app: 'backoffice', findingId: 'F-0002', accion: 'rechazar', motivo: 'No se van a atender ediciones concurrentes' }], respuesta: 'Listo' }];
+
+    await processExplorationPr(pr());
+
+    expect(gh.closeIssueNotPlanned).toHaveBeenCalledTimes(1);
+    expect(gh.closeIssueNotPlanned).toHaveBeenCalledWith(837, expect.stringContaining('la ficha F-0002 se rechazó en el PR de exploración #794. Motivo: No se van a atender ediciones concurrentes'));
+    expect(prMod.commitAndPush.mock.invocationCallOrder[0]).toBeLessThan(gh.closeIssueNotPlanned.mock.invocationCallOrder[0]);
   });
 
   it('skips a general comment it already reacted to', async () => {
