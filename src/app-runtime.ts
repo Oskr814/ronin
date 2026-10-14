@@ -66,6 +66,8 @@ export interface AppUpOptions {
   // publishes in a range of its own; without it the public port is the
   // local one.
   publicPort?: (localPort: number) => Promise<number>;
+  // The manifest's text, instead of the checkout's ronin.app.json.
+  manifest?: string;
 }
 
 // Takes `docker compose config --format json` (every path already absolute,
@@ -198,7 +200,7 @@ async function reservePorts(templates: string[], ctx: TemplateContext, options: 
 // exploration worktree today, a slice's own worktree later). On failure it
 // tears down whatever it already started before rethrowing.
 export async function appUp(dir: string, appName: string, options: AppUpOptions = {}): Promise<AppSession> {
-  const app = await loadAppDefinition(dir, appName);
+  const app = await loadAppDefinition(dir, appName, options.manifest);
   const stateDir = stateDirOf(dir);
   await mkdir(stateDir, { recursive: true });
   // Never committed by accident: a task that runs `git add -A` in this

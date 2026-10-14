@@ -205,10 +205,12 @@ export function parseAppManifest(raw: string): AppManifest {
   return { apps };
 }
 
-export async function loadAppDefinition(checkoutDir: string, appName: string): Promise<AppDefinition> {
+// `manifest`: the manifest's text, when the caller read it from somewhere
+// other than the checkout (a preview, from the PR's base — see preview.ts).
+export async function loadAppDefinition(checkoutDir: string, appName: string, manifest?: string): Promise<AppDefinition> {
   let raw: string;
   try {
-    raw = await readFile(join(checkoutDir, APP_MANIFEST_FILE), 'utf8');
+    raw = manifest ?? await readFile(join(checkoutDir, APP_MANIFEST_FILE), 'utf8');
   } catch {
     throw new Error(`no hay ${APP_MANIFEST_FILE} en ${checkoutDir} — ver docs/DESIGN.md §11.2`);
   }
