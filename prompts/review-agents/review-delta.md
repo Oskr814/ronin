@@ -30,5 +30,5 @@ them.
 
 ## Real example
 
-- #746: the fix for a round 5 finding left a flag and the order status
+- The fix for a round 5 finding left a flag and the record status
   contradictory, and that was round 6's finding.

@@ -32,5 +32,5 @@ Almost everything you find is an **improvement** (🧹) and **minor**. It is a
 ## Do not suggest
 
 - Shared constants inside migrations: they are immutable snapshots and use
-  literals (#753: suggesting it caused a round that reverted it).
+  literals (suggesting it has caused a round that reverted it).
 - Abstractions for two simple uses, or refactors outside what the PR touches.

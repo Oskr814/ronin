@@ -31,7 +31,7 @@ do not prove what they claim to.
 ## Severity
 
 A missing test is **minor** unless the uncovered path is one where the PR
-introduces a concrete risk (credit, permissions, concurrency): then describe
+introduces a concrete risk (business rules, permissions, concurrency): then describe
 the scenario the test would have caught.
 
 ## Outside your dimension

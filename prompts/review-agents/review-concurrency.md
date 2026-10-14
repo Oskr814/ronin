@@ -13,7 +13,7 @@ data at the same time.
    `SELECT … FOR UPDATE`, versions/concurrency tokens, queues or retries.
 2. For **each lock or transaction**, build the complete list of data the
    operation read **before** taking it and that the decision depends on
-   (customer, flags such as `IgnoreCreditLimit`, lines, costs, status,
+   (the parent entity, flags that skip a rule, items, amounts, status,
    totals). For each one, say whether it is re-read or revalidated after the
    lock is taken. Every piece of data that is not revalidated and can change
    in between is a candidate.
@@ -37,11 +37,11 @@ data at the same time.
 
 ## Real examples an earlier pass missed
 
-- #760: the order lock plus the credit revalidation produced a different
+- A lock on a record plus the revalidation of a limit produced a different
   finding in four consecutive rounds, all of them "not everything is
   revalidated after taking the lock". The complete list from step 2 would
   have shown them together in the first round.
-- #760: a concurrency test used `Task.Delay` to order the two operations; it
+- A concurrency test used a fixed delay to order the two operations; it
   passes or fails depending on the machine's load.
 
 ## Outside your dimension

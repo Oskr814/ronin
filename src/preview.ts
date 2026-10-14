@@ -438,7 +438,7 @@ export function renderPreviewReady(result: PreviewResult, login: string): string
     '|---|---|---|',
     ...users,
     '',
-    `Se baja sola cuando el PR se mergea o se cierra. Para bajarla antes: \`@${login} /preview stop\`. Con commits nuevos en el PR, volvé a pedir \`/preview\` para actualizarla; lo que escribas después del comando (\`/preview un cliente con 40 catálogos\`) se suma a lo que piden los pasos de prueba.`,
+    `Se baja sola cuando el PR se mergea o se cierra. Para bajarla antes: \`@${login} /preview stop\`. Con commits nuevos en el PR, volvé a pedir \`/preview\` para actualizarla; lo que escribas después del comando (\`/preview <qué preparar>\`) se suma a lo que piden los pasos de prueba.`,
   ].join('\n');
 }
 

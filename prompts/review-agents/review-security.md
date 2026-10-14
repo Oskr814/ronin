@@ -15,25 +15,25 @@ should not, or bypass a business rule that costs money.
    controller or module, the other variants of the same method. Compare the
    role, owner or permission checks each one makes. A check present in one
    sibling and missing in another is a candidate.
-3. For each business rule with economic impact the diff touches (credit,
-   prices, discounts, stock), list **every** path that reaches the protected
+3. For each business rule with economic impact the diff touches (limits,
+   prices, discounts, balances), list **every** path that reaches the protected
    operation and check that each one goes through the rule.
 
 ## What to look for
 
 - Authorization: paths that do not check role, owner or permission,
   especially when a sibling does.
-- Another customer's data reachable by changing an id in the request.
+- Another user's or tenant's data reachable by changing an id in the request.
 - Input validation and injection (SQL, commands, paths).
 - Sensitive data in logs, errors or responses.
-- Business rules (credit, prices, discounts, stock) that some path can
+- Business rules (limits, prices, discounts, balances) that some path can
   bypass: a flag the client can send, an alternative endpoint, an
   intermediate state.
 
 ## Real example
 
-- #760/#774: lines could be added to an order without validating the
-  customer's credit, through a path other than confirming it.
+- Items could be added to a record without validating a limit that the
+  main path enforces, through a path other than the main one.
 
 ## Outside your dimension
 

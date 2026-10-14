@@ -30,7 +30,7 @@ when the answer is "does not apply":
 
 ## Real example an earlier pass missed
 
-- #753: a unique `CREATE INDEX` on the users table without `CONCURRENTLY`.
+- A unique `CREATE INDEX` on the users table without `CONCURRENTLY`.
 
 ## Do not suggest
 
