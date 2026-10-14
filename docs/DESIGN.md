@@ -330,7 +330,7 @@ Qué pasó, cómo reproducirlo, evidencia (con las capturas del antes) y propues
 1. Hay **un solo PR de exploración abierto** por repo. Cada corrida commitea en su rama (run + fichas + inventario) y refresca su body, que es el digest. Si no hay ninguno abierto, la corrida abre uno nuevo en `ronin/exploration/<fecha>`.
 2. El PR sale **listo para revisar** apenas termina la corrida, sin draft ni corte semanal: el humano revisa y mergea cuando le conviene, y mientras tanto las corridas de las noches siguientes se suman al mismo PR. Uno solo a la vez porque dos PRs abiertos editarían el mismo inventario y no verían los hallazgos del otro al deduplicar.
 3. El humano revisa en el PR, comentando sobre las fichas. ronin clasifica cada comentario y aplica el cambio él mismo:
-   - **rechazar**: estado `rechazado` + motivo, y el motivo a `knowledge.md`;
+   - **rechazar**: estado `rechazado` + motivo, y el motivo a `knowledge.md`; si la ficha ya tenía issue (un bug lo abre en el momento, ver el punto 5), ronin lo cierra como *not planned* con un comentario con el motivo, una vez commiteado el rechazo;
    - **editar**: nuevo título o propuesta; si la imagen del después está mal, el worker levanta la app, rehace la captura con un cambio borrador y la reemplaza en la ficha;
    - **crear un issue** aparte a partir del comentario;
    - **responder** una pregunta.
