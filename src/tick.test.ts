@@ -130,7 +130,7 @@ vi.mock('./changelog.js', () => ({
   findReleasesNeedingChangelog: (...args: unknown[]) => findReleasesNeedingChangelog(...args),
 }));
 
-const { processSlicePr, processIssue, agentTaskFor, needsMoreInfo, discoverAssignedIssues, processExternalReviewCandidate, processTrustedFixCandidate, runExternalReviews, processSpikeCandidate, processChangelogCandidate, runChangelogUpdates, renderTrackingIssueBody } = await import('./tick.js');
+const { handleCommandsOnIdleSlicePrs, processSlicePr, processIssue, agentTaskFor, needsMoreInfo, discoverAssignedIssues, processExternalReviewCandidate, processTrustedFixCandidate, runExternalReviews, processSpikeCandidate, processChangelogCandidate, runChangelogUpdates, renderTrackingIssueBody } = await import('./tick.js');
 
 function issue(overrides: Partial<TrackingIssue> = {}): TrackingIssue {
   return { number: 228, title: 'Test issue', url: 'https://github.com/x/y/issues/228', labels: [], ...overrides };
@@ -1069,5 +1069,28 @@ describe('runChangelogUpdates', () => {
     await runChangelogUpdates();
 
     expect(runAgentTask).not.toHaveBeenCalled();
+  });
+});
+
+describe('handleCommandsOnIdleSlicePrs', () => {
+  it('reads the commands on slice PRs whose issue is not in progress, and only those', async () => {
+    findUnprocessedMentions.mockReset().mockResolvedValue([]);
+    const prs = [
+      { number: 367, headRefName: 'ronin/350/slice-1' },
+      { number: 374, headRefName: 'ronin/361/slice-1' },
+      { number: 380, headRefName: 'ronin/exploration/2026-10-14' },
+    ] as any[];
+
+    await handleCommandsOnIdleSlicePrs(prs, [{ number: 361 }] as any[]);
+
+    expect(findUnprocessedMentions.mock.calls).toEqual([[367]]);
+  });
+
+  it('keeps going when one PR fails', async () => {
+    findUnprocessedMentions.mockReset().mockRejectedValueOnce(new Error('gh down')).mockResolvedValue([]);
+
+    await handleCommandsOnIdleSlicePrs([{ number: 1, headRefName: 'ronin/10/slice-1' }, { number: 2, headRefName: 'ronin/11/slice-2' }] as any[], []);
+
+    expect(findUnprocessedMentions.mock.calls).toEqual([[1], [2]]);
   });
 });

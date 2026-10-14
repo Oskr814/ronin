@@ -38,6 +38,14 @@ export function specBranch(issueNumber: number): string {
 
 const SLICE_BRANCH_RE = /^ronin\/\d+\/slice-(\d+)$/;
 
+const SLICE_ISSUE_RE = /^ronin\/(\d+)\/slice-\d+$/;
+
+// The issue a slice branch belongs to: `ronin/350/slice-1` → 350.
+export function issueFromSliceBranch(branch: string): number | null {
+  const match = branch.match(SLICE_ISSUE_RE);
+  return match ? Number(match[1]) : null;
+}
+
 export function sliceIndexFromBranch(branch: string): number | null {
   const match = branch.match(SLICE_BRANCH_RE);
   return match ? Number(match[1]) - 1 : null;
