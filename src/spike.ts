@@ -1,5 +1,5 @@
 import { listOpenUnmanagedIssues, type Comment } from './github.js';
-import { findTrustedIssueCommands, parseExploreCommand, parseSpecCommand, parseSpikeCommand } from './mentions.js';
+import { findTrustedIssueCommands, parseExploreCommand, parsePrototypeCommand, parseSpecCommand, parseSpikeCommand } from './mentions.js';
 import { log } from './logger.js';
 
 export interface SpikeCandidate {
@@ -23,25 +23,50 @@ export interface ExploreCandidate {
   trigger: Comment[];
 }
 
+export interface PrototypeCandidate {
+  issueNumber: number;
+  appName: string;
+  instruction?: string;
+  trigger: Comment[];
+}
+
+// Every plain-words mention on one issue, oldest first: handled one after
+// the other, since they share the issue's body and request worktree.
+export interface RequestCandidate {
+  issueNumber: number;
+  trigger: Comment[];
+}
+
+export interface IssueCommandCandidates {
+  spikes: SpikeCandidate[];
+  explores: ExploreCandidate[];
+  specs: SpecCandidate[];
+  prototypes: PrototypeCandidate[];
+  requests: RequestCandidate[];
+}
+
 // Separate module from tick.ts (orchestrator) and github.ts (low-level `gh`
 // layer) — same split as external-review.ts and mentions.ts.
 export async function findIssuesNeedingSpike(): Promise<SpikeCandidate[]> {
   return (await findIssueCommands()).spikes;
 }
 
-// /spike, /explore and /spec, found in one pass over the open unmanaged issues.
-export async function findIssueCommands(): Promise<{ spikes: SpikeCandidate[]; explores: ExploreCandidate[]; specs: SpecCandidate[] }> {
+// /spike, /explore, /spec, /prototype and plain-words requests, found in one
+// pass over the open unmanaged issues.
+export async function findIssueCommands(): Promise<IssueCommandCandidates> {
   const issues = await listOpenUnmanagedIssues();
   const spikes: SpikeCandidate[] = [];
   const explores: ExploreCandidate[] = [];
   const specs: SpecCandidate[] = [];
+  const prototypes: PrototypeCandidate[] = [];
+  const requests: RequestCandidate[] = [];
   for (const issue of issues) {
     // Per-issue isolation: one flaky comment-listing call or malformed
     // comment must not throw out of the whole loop and zero out /spike for
     // every other candidate this tick — same reasoning as
     // findPrsNeedingReview's own per-PR try/catch.
     try {
-      const { spike, explore, spec } = await findTrustedIssueCommands(issue.number);
+      const { spike, explore, spec, prototype, request } = await findTrustedIssueCommands(issue.number);
       // Uses the first unprocessed command's params — the common case is
       // exactly one. A malformed command (missing app_name) has nothing
       // actionable to build a candidate from, so it's skipped rather than
@@ -53,9 +78,12 @@ export async function findIssueCommands(): Promise<{ spikes: SpikeCandidate[]; e
       if (parsedExplore) explores.push({ issueNumber: issue.number, ...parsedExplore, trigger: explore });
       const parsedSpec = spec.length > 0 ? parseSpecCommand(spec[0].body) : null;
       if (parsedSpec) specs.push({ issueNumber: issue.number, appName: parsedSpec.appName, instruction: parsedSpec.instruction, trigger: spec });
+      const parsedPrototype = prototype.length > 0 ? parsePrototypeCommand(prototype[0].body) : null;
+      if (parsedPrototype) prototypes.push({ issueNumber: issue.number, ...parsedPrototype, trigger: prototype });
+      if (request.length > 0) requests.push({ issueNumber: issue.number, trigger: request });
     } catch (error) {
       log.error(`findIssueCommands: issue #${issue.number} falló al evaluar, se salta este tick`, error);
     }
   }
-  return { spikes, explores, specs };
+  return { spikes, explores, specs, prototypes, requests };
 }

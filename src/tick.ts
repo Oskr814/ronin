@@ -40,7 +40,9 @@ import { worktreeDirFor, isBehind, attemptRebase, removeWorktree, sweepOrphanedW
 import { findUnprocessedMentions, isFixCommentsCommand } from './mentions.js';
 import { withHelpFooter } from './help.js';
 import { findPrsNeedingReview, type ReviewCandidate, type ThreadMentionCandidate, type TrustedFixCandidate } from './external-review.js';
-import { findIssueCommands, type ExploreCandidate, type SpecCandidate, type SpikeCandidate } from './spike.js';
+import { findIssueCommands, type ExploreCandidate, type PrototypeCandidate, type RequestCandidate, type SpecCandidate, type SpikeCandidate } from './spike.js';
+import { processIssueRequest } from './issue-request.js';
+import { launchPrototypeWorker } from './prototype.js';
 import { processSpecCandidate } from './spec-flow.js';
 import { takePendingSpecs } from './local-state.js';
 import { explorationPrs, exploreWorkerBusy, launchExploreWorker, processExplorationPr } from './exploration-flow.js';
@@ -807,8 +809,10 @@ export async function spikeJobs(): Promise<Job[]> {
   let candidates: SpikeCandidate[];
   let explores: ExploreCandidate[];
   let specs: SpecCandidate[];
+  let prototypes: PrototypeCandidate[];
+  let requests: RequestCandidate[];
   try {
-    ({ spikes: candidates, explores, specs } = await findIssueCommands());
+    ({ spikes: candidates, explores, specs, prototypes, requests } = await findIssueCommands());
   } catch (error) {
     log.info(`tick: findIssueCommands falló, reintentando en el próximo tick: ${(error as Error).message}`);
     return [];
@@ -821,7 +825,35 @@ export async function spikeJobs(): Promise<Job[]> {
     ...candidates.map((c) => ({ kind: 'spike', label: `issue #${c.issueNumber}`, run: () => processSpikeCandidate(c) })),
     ...[...specs, ...resumed].map((c) => ({ kind: 'spec', label: `issue #${c.issueNumber}`, run: () => processSpecCandidate(c) })),
     ...explores.slice(0, 1).map((c) => ({ kind: 'explore-launch', label: `issue #${c.issueNumber}`, run: () => launchExploreCandidate(c) })),
+    ...prototypes.map((c) => ({ kind: 'prototype-launch', label: `issue #${c.issueNumber}`, run: () => launchPrototypeCandidate(c) })),
+    ...requests.map((c) => ({ kind: 'issue-request', label: `issue #${c.issueNumber}`, run: () => processRequestCandidate(c) })),
   ];
+}
+
+// Plain-words mentions on one issue, one after the other: they share the
+// issue's body and the request worktree. Each is answered on its own (see
+// issue-request.ts, which never throws).
+export async function processRequestCandidate(candidate: RequestCandidate): Promise<void> {
+  for (const comment of candidate.trigger) await processIssueRequest({ issueNumber: candidate.issueNumber, trigger: comment });
+}
+
+// A /prototype never runs inside the tick: it brings a whole app up. Its
+// worker waits for the per-repo prototype lock itself, so it's launched
+// right away; the 👀 goes on once it is, which keeps the next tick from
+// launching it again. A launch that fails gets no 👀 and is retried.
+export async function launchPrototypeCandidate(candidate: PrototypeCandidate): Promise<void> {
+  try {
+    launchPrototypeWorker({
+      repo: activeRepo().productRepo,
+      issueNumber: candidate.issueNumber,
+      appName: candidate.appName,
+      ...(candidate.instruction ? { instruction: candidate.instruction } : {}),
+      commentId: candidate.trigger[0].id,
+    });
+    for (const m of candidate.trigger) await addReaction(m.id, m.kind, 'eyes');
+  } catch (error) {
+    log.error(`issue #${candidate.issueNumber}: no se pudo lanzar el prototipo`, error);
+  }
 }
 
 // An /explore never runs inside the tick: it can take an hour, and the tick

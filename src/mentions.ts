@@ -44,6 +44,21 @@ export function parseSpecCommand(body: string): { appName: string; instruction?:
   return { appName: match[1], instruction: instruction ? instruction : undefined };
 }
 
+// Before/after images of a draft change on the running app, posted on the
+// issue — see prototype.ts. Same arguments as /spike, issues only.
+export function isPrototypeCommand(body: string): boolean {
+  return /\/prototype\b/i.test(body);
+}
+
+const PROTOTYPE_COMMAND_RE = /\/prototype\s+(\S+)(?:\s+([\s\S]+))?/i;
+
+export function parsePrototypeCommand(body: string): { appName: string; instruction?: string } | null {
+  const match = body.match(PROTOTYPE_COMMAND_RE);
+  if (!match) return null;
+  const instruction = match[2]?.trim();
+  return { appName: match[1], instruction: instruction ? instruction : undefined };
+}
+
 // Triggers an exploration run of one app — see exploration-flow.ts. Issue
 // comments only, same as /spike.
 export function isExploreCommand(body: string): boolean {
@@ -134,15 +149,32 @@ export async function findTrustedSpikeCommand(issueNumber: number): Promise<Comm
   return (await findTrustedIssueCommands(issueNumber)).spike;
 }
 
-// Both issue commands from one read of the issue's comments — the tick
-// checks every open unmanaged issue for either, every time.
-export async function findTrustedIssueCommands(issueNumber: number): Promise<{ spike: Comment[]; explore: Comment[]; spec: Comment[] }> {
+export interface IssueCommands {
+  spike: Comment[];
+  explore: Comment[];
+  spec: Comment[];
+  prototype: Comment[];
+  // Mentions with no command: a request in plain words (change the scope,
+  // look into something, draw a prototype, a question) — see
+  // issue-request.ts.
+  request: Comment[];
+}
+
+// Every issue command from one read of the issue's comments — the tick
+// checks every open unmanaged issue for all of them, every time. Each
+// mention lands in exactly one bucket, the first command it carries in this
+// order.
+export async function findTrustedIssueCommands(issueNumber: number): Promise<IssueCommands> {
   const unprocessed = (await findUnprocessedIssueMentions(issueNumber)).filter((c) => c.authorLogin !== '');
-  return {
-    spike: unprocessed.filter((c) => isSpikeCommand(c.body)),
-    explore: unprocessed.filter((c) => isExploreCommand(c.body) && !isSpikeCommand(c.body)),
-    spec: unprocessed.filter((c) => isSpecCommand(c.body) && !isSpikeCommand(c.body) && !isExploreCommand(c.body)),
-  };
+  const commands: IssueCommands = { spike: [], explore: [], spec: [], prototype: [], request: [] };
+  for (const c of unprocessed) {
+    if (isSpikeCommand(c.body)) commands.spike.push(c);
+    else if (isExploreCommand(c.body)) commands.explore.push(c);
+    else if (isSpecCommand(c.body)) commands.spec.push(c);
+    else if (isPrototypeCommand(c.body)) commands.prototype.push(c);
+    else commands.request.push(c);
+  }
+  return commands;
 }
 
 async function filterUnprocessed(comments: Comment[]): Promise<Comment[]> {
