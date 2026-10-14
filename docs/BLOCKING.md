@@ -2,26 +2,33 @@
 
 "Bloqueado" significa **el agente no puede seguir sin una decisión humana**. Es distinto de "esperando" — un PR esperando review o un CI corriendo no son bloqueos, son parte normal del ciclo y no generan notificación.
 
-## Dispara `status:blocked` + email
+## Dispara `ronin:blocked` + email
 
-- **Spec ambiguo**: el paso de planning no puede producir un plan/checklist de slices sin inventar requisitos que no están en el spec.
-- **E2E fallando persistentemente**: los tests de Playwright de una slice fallan después de **2 intentos de fix** por el propio agente sobre la misma causa.
-- **Feedback de review que contradice el spec**: un reviewer (humano o Copilot) pide un cambio que va en contra de lo que el spec define explícitamente. El agente no decide unilateralmente desviarse del spec.
-- **Loop guard**: se agotan **3 intentos** de abrir un PR mergeable para la misma slice (CI rojo repetido, revert de fixes previos, etc.) sin converger.
+Los límites se cuentan por PR (con el label `ronin:attempts-N`, salvo el de CI pendiente, que vive en `.ronin-state.json`) y se configuran en `.env`; entre paréntesis, el valor por defecto.
+
+- **E2E fallando persistentemente**: los checks de una slice siguen fallando después de `E2E_RETRY_LIMIT` (2) corridas de `fix-e2e`.
+- **Feedback de review que no converge**: el PR sigue con *changes requested* sobre su último commit después de `SLICE_ATTEMPT_LIMIT` (3) corridas de `fix-review`. Un pedido que contradice el spec no bloquea por sí solo: si trae una razón concreta, el agente lo aplica; si es ambiguo o de opinión, deja el código como está y responde por qué.
+- **CI que nunca termina**: el PR sigue con checks pendientes (sin reportar, o todavía corriendo) durante `CHECKS_PENDING_RETRY_LIMIT` (60) ticks, unas 5 h con el cron cada 5 minutos. Es la red de seguridad contra un workflow que nunca dispara; un CI que solo tarda no llega a esto.
+- **Stack sin retarget**: el PR del fondo del stack sigue apuntando a una rama que no es la raíz después de `RETARGET_RETRY_LIMIT` (3) ticks.
+- **Excepciones repetidas**: procesar un issue falla con un error no manejado más de `ISSUE_ERROR_RETRY_LIMIT` (3) veces. Un error al tomar un spec o un issue asignado bloquea en el momento. Un error al generar una entrada de changelog solo manda el email, sin label: ese release no se vuelve a procesar.
+- **Plan vacío**: el issue de tracking no tiene ninguna slice en su checklist, porque el plan nunca llegó a escribirse.
+- **Slices huérfanas**: quedan slices sin mergear pero ningún PR abierto (normalmente, un PR se cerró sin mergear), así que nada va a avanzar solo.
+- **Falta información** (`RONIN_STATUS: needs-info`): un issue asignado directamente no tiene contexto suficiente para actuar sin adivinar. El agente comenta en el issue qué necesita. Con `REMOTE_INTERVIEWS`, ronin abre además una conversación de Remote Control para contestarlo (`docs/DESIGN.md` §11.9) y el email lleva ese link; sin ella, el issue queda en `ronin:blocked` sin email, con las preguntas en el issue.
 
 ## NO dispara bloqueo (estado normal, sin notificación)
 
 - PR abierto esperando review/approval humano — el humano ya sabe que tiene PRs pendientes, no hace falta avisarle de nuevo.
+- PR aprobado y en verde esperando que un humano lo mergee.
 - CI corriendo o en cola.
 - Comentarios de review mecánicos/accionables (el agente los resuelve y sigue).
-- Cuota/rate-limit de Claude agotada — se maneja con backoff en el supervisor, es un estado transitorio, no una decisión pendiente.
+- Límite de uso de Claude agotado (`ClaudeUsageLimitError`) — la tarea queda como está y se retoma en un tick posterior, cuando vuelve la cuota. Es un estado transitorio, no una decisión pendiente.
 
 ## Contenido de la notificación
 
-Cuando se dispara un bloqueo, el email incluye siempre:
+Cuando se dispara un bloqueo, el email (`src/notifier.ts`) incluye:
 
-- Link al issue de tracking y al PR/slice afectado (si aplica)
+- Link al issue de tracking y, si aplica, al PR afectado
 - El motivo concreto (una de las categorías de arriba), en una oración
-- El fragmento de log/comentario relevante que causó el bloqueo (no el log completo)
+- Cuando lo hay, un fragmento relevante (p. ej. cuántos intentos lleva el PR contra qué límite), no el log completo
 
-El agente aplica la label `ronin:blocked` **en el mismo momento** en que completa la sección "Bloqueo" del issue (ver `templates/tracking-issue.md`) — nunca una sin la otra, para que el estado en GitHub y el email siempre cuenten la misma historia.
+El label `ronin:blocked` y el email salen juntos. El motivo vive en el email y en el log del tick: el supervisor no llena todavía la sección "Blocker" del issue de tracking (`templates/tracking-issue.md`). Para retomar, un humano resuelve lo que falta y vuelve a pasar el issue a `ronin:in-progress`.
