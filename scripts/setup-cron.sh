@@ -79,7 +79,11 @@ fi
 status=0
 while :; do
   rm -f "\$PENDING"
-  pnpm start || status=\$?
+  # 200>&-: the lock stays with this shell only. Whatever the tick launches
+  # and outlives it (a /preview's vite, a worker) would otherwise inherit fd
+  # 200 and keep the flock held after the tick ends — every later tick then
+  # sees "ya en curso" and skips, until that process dies.
+  pnpm start 200>&- || status=\$?
   [ -e "\$PENDING" ] || break
   echo "\$(date -Is) [cron] hubo disparos durante el tick, corriendo otro"
 done
