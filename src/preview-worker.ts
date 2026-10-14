@@ -41,7 +41,7 @@ async function run(): Promise<void> {
     return;
   }
   await reply(renderPreviewStarting(pr.headRefOid, config.previewPrepareData));
-  await reply(renderPreviewReady(await startPreview(request.prNumber, pr, request.args), config.githubLogin));
+  await reply(renderPreviewReady(await startPreview(request.prNumber, pr, request.args), config.githubLogin, config.previewTtlMinutes));
 }
 
 async function main(): Promise<void> {

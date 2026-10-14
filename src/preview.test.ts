@@ -3,7 +3,7 @@ import { describe, it, expect, vi } from 'vitest';
 vi.mock('./logger.js', () => ({ log: { error: vi.fn(), info: vi.fn() } }));
 vi.mock('./config.js', () => ({ config: { githubLogin: 'ronin-agent' } }));
 
-import { parsePreviewData, previewPorts, previewPrFromDirName, renderPreviewFailed, renderPreviewReady, resolvePreviewArgs } from './preview.js';
+import { describeTtl, parsePreviewData, previewPorts, previewPrFromDirName, renderPreviewFailed, renderPreviewReady, resolvePreviewArgs } from './preview.js';
 import type { AppDefinition, TemplateContext } from './app-manifest.js';
 
 const app = {
@@ -69,6 +69,21 @@ describe('renderPreviewReady', () => {
     expect(body).toContain('`abcdef1`');
     expect(body).toContain('| Admin | `admin@x.com` | `password` |');
     expect(body).toContain('`@ronin-agent /preview stop`');
+  });
+
+  it('says when it goes on its own', () => {
+    const result = { appName: 'backoffice', sha: 'abcdef1234567', url: 'https://h:20001', users: [] };
+    expect(renderPreviewReady(result, 'r', 60)).toContain('Se baja sola en 1 hora, o antes si el PR se mergea o se cierra.');
+    expect(renderPreviewReady(result, 'r', 0)).toContain('Se baja sola cuando el PR se mergea o se cierra.');
+  });
+});
+
+describe('describeTtl', () => {
+  it('reads in hours when it can', () => {
+    expect(describeTtl(60)).toBe('1 hora');
+    expect(describeTtl(120)).toBe('2 horas');
+    expect(describeTtl(90)).toBe('90 minutos');
+    expect(describeTtl(1)).toBe('1 minuto');
   });
 });
 

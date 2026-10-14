@@ -6,7 +6,8 @@ import { join } from 'node:path';
 vi.mock('./logger.js', () => ({ log: { error: vi.fn(), info: vi.fn() } }));
 
 let base: string;
-vi.mock('./config.js', () => ({ config: { githubLogin: 'ronin-agent', previewReservationsDir: '/nonexistent' } }));
+const config = { githubLogin: 'ronin-agent', previewReservationsDir: '/nonexistent', previewTtlMinutes: 60 };
+vi.mock('./config.js', () => ({ config }));
 vi.mock('./repo-context.js', () => ({ activeRepo: () => ({ productRepo: 'acme/product', productRepoPath: '/repo', worktreeBasePath: base }) }));
 
 const listOpenPrHeads = vi.fn();
@@ -26,7 +27,7 @@ const { sweepPreviews } = await import('./preview.js');
 async function writePreview(pr: number, state: object): Promise<string> {
   const dir = join(base, `preview-pr-${pr}`, '.ronin-app');
   await mkdir(dir, { recursive: true });
-  await writeFile(join(dir, 'preview.json'), JSON.stringify({ prNumber: pr, appName: 'backoffice', url: 'https://h:20001', published: [], ...state }));
+  await writeFile(join(dir, 'preview.json'), JSON.stringify({ prNumber: pr, appName: 'backoffice', url: 'https://h:20001', published: [], startedAt: new Date().toISOString(), ...state }));
   return join(dir, 'preview.json');
 }
 
@@ -34,6 +35,7 @@ beforeEach(async () => {
   base = await mkdtemp(join(tmpdir(), 'preview-sweep-'));
   vi.clearAllMocks();
   commentOnSpecPr.mockResolvedValue(undefined);
+  config.previewTtlMinutes = 60;
 });
 
 afterEach(async () => {
@@ -82,5 +84,47 @@ describe('sweepPreviews', () => {
 
     expect(commentOnSpecPr).not.toHaveBeenCalled();
     expect(removeWorktreeDir).toHaveBeenCalledWith(join(base, 'preview-pr-818'), 'stopPreview');
+  });
+
+  it('takes down a preview that has been up past its TTL and tells the PR', async () => {
+    await writePreview(818, { sha: 'aaaaaaa1111', startedAt: '2026-10-14T10:00:00.000Z' });
+    listOpenPrHeads.mockResolvedValue([{ number: 818, headRefOid: 'bbbbbbb2222' }]);
+
+    await sweepPreviews(new Date('2026-10-14T11:00:00.000Z'));
+
+    expect(removeWorktreeDir).toHaveBeenCalledWith(join(base, 'preview-pr-818'), 'stopPreview');
+    expect(commentOnSpecPr).toHaveBeenCalledTimes(1);
+    expect(commentOnSpecPr).toHaveBeenCalledWith(818, expect.stringContaining('llevaba 1 hora arriba'));
+    expect(commentOnSpecPr.mock.calls[0][1]).toContain('`@ronin-agent /preview`');
+  });
+
+  it('leaves a preview alone before its TTL', async () => {
+    await writePreview(818, { sha: 'aaaaaaa1111', startedAt: '2026-10-14T10:00:00.000Z' });
+    listOpenPrHeads.mockResolvedValue([{ number: 818, headRefOid: 'aaaaaaa1111' }]);
+
+    await sweepPreviews(new Date('2026-10-14T10:59:00.000Z'));
+
+    expect(removeWorktreeDir).not.toHaveBeenCalled();
+    expect(commentOnSpecPr).not.toHaveBeenCalled();
+  });
+
+  it('starts the count for a preview from before the TTL instead of taking it down', async () => {
+    const statePath = await writePreview(818, { sha: 'aaaaaaa1111', startedAt: undefined });
+    listOpenPrHeads.mockResolvedValue([{ number: 818, headRefOid: 'aaaaaaa1111' }]);
+
+    await sweepPreviews(new Date('2026-10-14T10:00:00.000Z'));
+
+    expect(removeWorktreeDir).not.toHaveBeenCalled();
+    expect(JSON.parse(await readFile(statePath, 'utf8')).startedAt).toBe('2026-10-14T10:00:00.000Z');
+  });
+
+  it('never expires with PREVIEW_TTL_MINUTES=0', async () => {
+    config.previewTtlMinutes = 0;
+    await writePreview(818, { sha: 'aaaaaaa1111', startedAt: '2020-01-01T00:00:00.000Z' });
+    listOpenPrHeads.mockResolvedValue([{ number: 818, headRefOid: 'aaaaaaa1111' }]);
+
+    await sweepPreviews();
+
+    expect(removeWorktreeDir).not.toHaveBeenCalled();
   });
 });

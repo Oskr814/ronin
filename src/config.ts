@@ -103,6 +103,9 @@ export const config = {
   // Postgres land: one of those could otherwise fall inside it.
   previewPortRange: process.env.PREVIEW_PORT_RANGE || '20000-20999',
   previewMaxPerRepo: Number(process.env.PREVIEW_MAX_PER_REPO || 2),
+  // A preview nobody took down goes on its own this long after it came up
+  // (sweepPreviews). 0 = only on /preview stop or when the PR merges/closes.
+  previewTtlMinutes: Number(process.env.PREVIEW_TTL_MINUTES ?? 60),
   // Shared by every repo and worker on this runner: the reservations of
   // public ports and per-app slots (preview-reservations.ts).
   previewReservationsDir: process.env.PREVIEW_RESERVATIONS_DIR || '.preview-reservations',

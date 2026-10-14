@@ -21,7 +21,8 @@ const execFileAsync = promisify(execFile);
 // its seeds, in a worktree of its own, and publishes it on the tailnet with
 // `tailscale serve` so whoever asked can try it from their own machine. It
 // lives until the PR merges or closes (sweepPreviews, on the tick that
-// event wakes up) or until `/preview stop`. See docs/DESIGN.md §12.
+// event wakes up), until `/preview stop`, or until PREVIEW_TTL_MINUTES after
+// it came up. See docs/DESIGN.md §12.
 
 export interface PreviewWorkerRequest {
   repo: string;
@@ -112,6 +113,9 @@ interface PreviewState {
   // Set once the PR was told this preview is behind its commits — at most
   // one notice per preview; a new /preview starts a fresh state.
   staleNotified?: boolean;
+  // When it came up (ISO), what PREVIEW_TTL_MINUTES counts from. A state
+  // from before the TTL has none: the sweep stamps it on first sight.
+  startedAt?: string;
 }
 
 const reservations = (): PreviewReservations => new PreviewReservations(config.previewReservationsDir);
@@ -332,7 +336,7 @@ export async function startPreview(prNumber: number, pr: PrHead, args?: string):
     const url = publicUrl(locals[0], session.ctx);
     // Written before publishing, so a failure halfway still knows which
     // ports to unpublish.
-    const state: PreviewState = { prNumber, appName, sha, url, published };
+    const state: PreviewState = { prNumber, appName, sha, url, published, startedAt: new Date().toISOString() };
     await writeFile(previewStatePath(dir), JSON.stringify(state, null, 2));
     for (const p of published) await servePort(p.public, p.local);
     log.info(`preview PR #${prNumber}: ${appName} arriba en ${url}`);
@@ -367,7 +371,10 @@ export async function stopPreview(prNumber: number): Promise<boolean> {
 // A preview stays on the commit it was asked for: once its PR has newer
 // ones (ronin applying a requested change, or anyone's push), the PR is
 // told — once per preview — that `/preview` again brings it up to date.
-export async function sweepPreviews(): Promise<void> {
+//
+// Nor does it hold a stack forever on an open PR: PREVIEW_TTL_MINUTES after
+// it came up it goes, and the PR is told `/preview` brings it back.
+export async function sweepPreviews(now: Date = new Date()): Promise<void> {
   let entries: string[];
   try {
     entries = await readdir(activeRepo().worktreeBasePath);
@@ -386,10 +393,30 @@ export async function sweepPreviews(): Promise<void> {
     if (head === undefined) {
       log.info(`preview PR #${pr}: el PR ya no está abierto, bajando su preview`);
       await stopPreview(pr);
-    } else {
+    } else if (!(await expireIfDue(pr, now))) {
       await noticeIfStale(pr, head);
     }
   }
+}
+
+// True when it took the preview down.
+async function expireIfDue(prNumber: number, now: Date): Promise<boolean> {
+  const ttlMinutes = config.previewTtlMinutes;
+  if (!(ttlMinutes > 0)) return false;
+  const dir = previewDirFor(prNumber);
+  const state = await readPreviewState(dir);
+  if (!state) return false;
+  const startedAt = state.startedAt ? Date.parse(state.startedAt) : NaN;
+  if (Number.isNaN(startedAt)) {
+    await writeFile(previewStatePath(dir), JSON.stringify({ ...state, startedAt: now.toISOString() }, null, 2));
+    return false;
+  }
+  if (now.getTime() - startedAt < ttlMinutes * 60_000) return false;
+  log.info(`preview PR #${prNumber}: pasaron ${ttlMinutes} min desde que se levantó, bajándola`);
+  await stopPreview(prNumber);
+  await commentOnSpecPr(prNumber, renderPreviewExpired(ttlMinutes, config.githubLogin))
+    .catch((error) => log.error(`preview PR #${prNumber}: no se pudo avisar que venció`, error));
+  return true;
 }
 
 async function noticeIfStale(prNumber: number, head: string): Promise<void> {
@@ -406,6 +433,15 @@ async function noticeIfStale(prNumber: number, head: string): Promise<void> {
 }
 
 // --- replies ---
+
+export function describeTtl(minutes: number): string {
+  if (minutes % 60 === 0) return minutes === 60 ? '1 hora' : `${minutes / 60} horas`;
+  return minutes === 1 ? '1 minuto' : `${minutes} minutos`;
+}
+
+export function renderPreviewExpired(ttlMinutes: number, login: string): string {
+  return `⌛ Bajé la preview de este PR: llevaba ${describeTtl(ttlMinutes)} arriba. Pedí \`@${login} /preview\` para levantarla de nuevo.`;
+}
 
 export function renderPreviewStale(previewSha: string, login: string): string {
   return `🔄 La preview de este PR sigue en \`${previewSha.slice(0, 7)}\` y el PR ya tiene commits nuevos. Pedí \`@${login} /preview\` para actualizarla.`;
@@ -426,7 +462,10 @@ function renderData(data: PreviewData | undefined): string[] {
   ];
 }
 
-export function renderPreviewReady(result: PreviewResult, login: string): string {
+export function renderPreviewReady(result: PreviewResult, login: string, ttlMinutes = 0): string {
+  const lifetime = ttlMinutes > 0
+    ? `Se baja sola en ${describeTtl(ttlMinutes)}, o antes si el PR se mergea o se cierra.`
+    : 'Se baja sola cuando el PR se mergea o se cierra.';
   const users = result.users.map((u) => `| ${u.role} | \`${u.username}\` | \`${u.password}\` |`);
   return [
     `🚀 Preview de \`${result.appName}\` lista: **${result.url}**`,
@@ -438,7 +477,7 @@ export function renderPreviewReady(result: PreviewResult, login: string): string
     '|---|---|---|',
     ...users,
     '',
-    `Se baja sola cuando el PR se mergea o se cierra. Para bajarla antes: \`@${login} /preview stop\`. Con commits nuevos en el PR, volvé a pedir \`/preview\` para actualizarla; lo que escribas después del comando (\`/preview <qué preparar>\`) se suma a lo que piden los pasos de prueba.`,
+    `${lifetime} Para bajarla antes: \`@${login} /preview stop\`. Con commits nuevos en el PR, volvé a pedir \`/preview\` para actualizarla; lo que escribas después del comando (\`/preview <qué preparar>\`) se suma a lo que piden los pasos de prueba.`,
   ].join('\n');
 }
 
