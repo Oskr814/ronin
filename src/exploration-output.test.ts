@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { capCandidates, parseCandidate, parseFunctionResult, parseRedoResult, parseVerdicts, renderFindingBody, replaceAfterImage, replaceProposal, type Candidate } from './exploration-output.js';
+import { capCandidates, clip, parseCandidate, parseFunctionResult, parseRedoResult, parseVerdicts, renderFindingBody, replaceAfterImage, replaceProposal, type Candidate } from './exploration-output.js';
 
 const out = '/w/exploration-out/run-1/pedidos.confirmar';
 
@@ -31,6 +31,12 @@ describe('parseCandidate', () => {
     const c = parseCandidate(raw({ evidencia: [{ tipo: 'screenshot', detalle: '../../../../.env' }, { tipo: 'consola', detalle: 'TypeError' }], despues: { imagen: '/etc/passwd.png' } }), 'pedidos.confirmar', out);
     expect(c.evidencia).toEqual([{ tipo: 'consola', detalle: 'TypeError' }]);
     expect(c.despues).toBeUndefined();
+  });
+
+  it('keeps a title a bit over the 120 the prompt asks for whole', () => {
+    const titulo = "En el teléfono, el desglose de pagos muestra solo la fecha: el monto y la referencia quedan fuera de pantalla, y también el pendiente de la factura";
+    expect(titulo.length).toBe(147);
+    expect(parseCandidate(raw({ titulo }), 'pedidos.confirmar', out).titulo).toBe(titulo);
   });
 
   it('prefixes the function id to the huella when the agent left it out', () => {
@@ -148,5 +154,20 @@ describe('editing a finding body', () => {
 describe('parseVerdicts entorno', () => {
   it('carries the dev-environment mark', () => {
     expect(parseVerdicts('{"veredictos":[{"index":0,"veredicto":"mantener","motivo":"ok","entorno":true}]}', 1)[0]).toMatchObject({ entorno: true });
+  });
+});
+
+describe('clip', () => {
+  it('leaves text within the limit alone', () => {
+    expect(clip('  corto  ', 10)).toBe('corto');
+  });
+
+  it('cuts at a word, never mid-word, and drops the trailing punctuation', () => {
+    expect(clip('el monto y la referencia quedan fuera', 20)).toBe('el monto y la…');
+    expect(clip('uno, dos: tres cuatro cinco', 12)).toBe('uno, dos…');
+  });
+
+  it('cuts mid-word only when there is no space to cut at', () => {
+    expect(clip('supercalifragilisticoespialidoso', 10)).toBe('supercali…');
   });
 });

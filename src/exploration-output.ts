@@ -51,7 +51,7 @@ export const RESULT_JSON_CONTRACT = `{
   "candidatos": [
     {
       "tipo": "hallazgo" | "idea",
-      "titulo": "<the consequence a user would notice, in Spanish, max 120 chars>",
+      "titulo": "<the consequence a user would notice, in Spanish, ideally under 120 chars and never over 200>",
       "senal": "${SIGNALS.join('" | "')}" | "idea",
       "gravedad": "${SEVERITIES.join('" | "')}",
       "viewport": "desktop" | "mobile",
@@ -67,16 +67,28 @@ export const RESULT_JSON_CONTRACT = `{
   ]
 }`;
 
-export const LIMITS = { titulo: 120, texto: 1200, paso: 300, pasos: 8, evidencia: 6, propuesta: 800 };
+// The prompt asks for titles under 120 chars, but the agent often writes a
+// few more; cutting there left issues and fichas titled "…vuelve a activarse"
+// as "…vuelve…" (redmotos/shoppingcart#840). The title goes whole up to
+// 200, which still fits a GitHub issue title (256).
+export const LIMITS = { titulo: 200, texto: 1200, paso: 300, pasos: 8, evidencia: 6, propuesta: 800 };
 
 function isObject(value: unknown): value is Record<string, any> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+// Over `max`, cut at the last space that fits, never mid-word.
+export function clip(value: string, max: number): string {
+  const trimmed = value.trim();
+  if (trimmed.length <= max) return trimmed;
+  const cut = trimmed.slice(0, max - 1);
+  const space = cut.lastIndexOf(' ');
+  return `${(space > max / 2 ? cut.slice(0, space) : cut).replace(/[\s,;:.—-]+$/, '')}…`;
+}
+
 function text(value: unknown, field: string, max: number): string {
   if (typeof value !== 'string' || value.trim().length === 0) throw new Error(`falta "${field}"`);
-  const trimmed = value.trim();
-  return trimmed.length > max ? `${trimmed.slice(0, max - 1)}…` : trimmed;
+  return clip(value, max);
 }
 
 function oneOf<T extends string>(value: unknown, options: readonly T[], field: string): T {

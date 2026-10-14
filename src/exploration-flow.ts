@@ -35,7 +35,7 @@ import {
   reconcileApproved,
   upsertExplorationPr,
 } from './exploration-pr.js';
-import { replaceProposal } from './exploration-output.js';
+import { clip, LIMITS, replaceProposal } from './exploration-output.js';
 import { redoAfterImages } from './exploration-redo.js';
 import { mentionsHandle } from './mentions.js';
 import type { CommitChange } from './commit-style.js';
@@ -311,7 +311,7 @@ async function applyFeedback(pr: PullRequestStatus, batch: string): Promise<Redo
       changes.push({ findingId, titulo: finding.titulo, kind: 'rechazada', detail: motivo });
     } else if (action.accion === 'editar') {
       const finding = parseFinding(await readFile(path, 'utf8'));
-      const titulo = action.titulo?.trim() ? action.titulo.trim().slice(0, 120) : finding.titulo;
+      const titulo = action.titulo?.trim() ? clip(action.titulo, LIMITS.titulo) : finding.titulo;
       let body = action.propuesta?.trim() ? replaceProposal(finding.body, action.propuesta.slice(0, 1600)) : finding.body;
       if (titulo !== finding.titulo) body = body.replace(/^## .*$/m, `## ${titulo}`);
       // The file name follows the title: a new title moves the file.
