@@ -35,11 +35,11 @@ breaks in a case the author did not consider.
 
 ## Real examples an earlier pass missed
 
-- #746: a listing returned at most 200 rows with no paging or warning; the
+- A listing returned at most 200 rows with no paging or warning; the
   user with the most records saw incomplete data.
-- #753: `Update` started returning 500 on a validation error that used to
+- An update endpoint started returning 500 on a validation error that used to
   return 400.
-- #746: after a fix, a flag and the order status were left contradictory on
+- After a fix, a flag and the record status were left contradictory on
   one of the two paths that modify them.
 
 ## Outside your dimension

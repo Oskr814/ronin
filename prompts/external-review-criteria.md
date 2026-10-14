@@ -48,8 +48,8 @@ el escenario elegido tiene que mostrar lo que el PR cambió.
 ## Severidad
 
 - **critical** (🔴) — pérdida o corrupción de datos, agujero de seguridad,
-  bypass de una regla de negocio, caída en un camino común. Ejemplo: agregar
-  líneas a un pedido sin validar el crédito del cliente.
+  bypass de una regla de negocio, caída en un camino común. Ejemplo: una operación
+  que saltea un límite o una validación por un camino distinto al principal.
 - **important** (🟠) — bug real en un camino menos común, regresión de
   contrato, problema operativo concreto. Ejemplo: un endpoint que devolvía 400
   ante un error de validación ahora devuelve 500.
@@ -60,7 +60,7 @@ el escenario elegido tiene que mostrar lo que el PR cambió.
 
 La severidad nunca puede quedar por debajo de estos pisos:
 
-- Bypass de una regla de negocio (crédito, permisos, precios, stock) →
+- Bypass de una regla de negocio (permisos, límites, precios, saldos) →
   **critical**.
 - Artefacto generado roto (XML, migración, build) → al menos **important**.
 - Cambio de contrato de API observable por un cliente (código HTTP, forma de
@@ -68,7 +68,7 @@ La severidad nunca puede quedar por debajo de estos pisos:
 - Chequeo de autorización o de rol ausente en un camino cuando un camino
   hermano (otro endpoint, otra server action, otra variante del mismo método)
   sí lo hace → tipo **bug**, al menos **important**; **critical** si expone
-  datos de otro cliente o permite una operación que el rol no debería poder
+  datos de otro usuario o de otro tenant, o permite una operación que el rol no debería poder
   hacer. Nunca **improvement**.
 - Datos que se pierden, se truncan o se omiten sin que el usuario se entere
   (un límite fijo de filas sin paginar, registros que se descartan ante un
@@ -88,8 +88,8 @@ descarte por su cuenta:
 - Check-then-act y carreras.
 - Una validación que se puede saltear por algún camino.
 - Datos no revalidados tras tomar un lock: enumerar todos los datos leídos
-  antes del lock de los que depende la decisión (cliente, flags como
-  `IgnoreCreditLimit`, líneas, costos, estado) y decir cuáles se revalidan y
+  antes del lock de los que depende la decisión (la entidad padre,
+  flags que saltean una regla, ítems, montos, estado) y decir cuáles se revalidan y
   cuáles no. Cada dato no revalidado con un arreglo propio es un hallazgo; el
   mismo dato sin revalidar en varios métodos es uno solo.
 - Un chequeo de autorización o de rol presente en un endpoint y ausente en sus
