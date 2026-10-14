@@ -13,6 +13,10 @@ export function verifySignature(rawBody: Buffer, signatureHeader: string | undef
   return timingSafeEqual(expectedBuf, actualBuf);
 }
 
+// config.ts's LABEL_AUTO_MERGE — not imported: this module stays free of
+// config.ts, which requires the runner's env vars just to load.
+const LABEL_AUTO_MERGE = 'ronin:auto-merge';
+
 // Event/action combos that actually move the needle for tick()'s three
 // discovery paths (see docs — assignment, external-PR review, mentions/
 // commands). Everything else (push, label, etc.) is noise we don't need to
@@ -28,6 +32,9 @@ const RELEVANT: Record<string, string[]> = {
   // An approval (an exploration PR merges on it) or a request for changes
   // with no inline comment wouldn't wake a tick otherwise.
   pull_request_review: ['submitted'],
+  // CI finishing on a PR: one with ronin:auto-merge merges right then
+  // instead of on the next cron tick (auto-merge.ts).
+  check_suite: ['completed'],
   // GitHub's "released" action fires only for a real, non-draft,
   // non-prerelease publish — unlike "published" (fires for pre-releases too)
   // or "created" (fires for drafts). Exactly the trigger changelog.ts wants;
@@ -39,9 +46,19 @@ const RELEVANT: Record<string, string[]> = {
 // couple of well-known fields off it, never trust it for anything beyond
 // "is this worth waking a tick up for". The actual work still re-reads fresh
 // state from GitHub inside tick() itself.
-export function shouldTriggerTick(eventName: string, payload: { action?: string; repository?: { full_name?: string } }, trackedRepos: string[]): boolean {
+export function shouldTriggerTick(
+  eventName: string,
+  payload: { action?: string; repository?: { full_name?: string }; label?: { name?: string }; check_suite?: { pull_requests?: unknown[] } },
+  trackedRepos: string[],
+): boolean {
   const repo = payload.repository?.full_name;
   if (!repo || !trackedRepos.includes(repo)) return false;
+  // Only ronin:auto-merge going on (by hand or by /auto-merge): ronin changes
+  // other labels on its own PRs during a tick, and each of those would wake
+  // another one.
+  if (eventName === 'pull_request' && payload.action === 'labeled') return payload.label?.name === LABEL_AUTO_MERGE;
+  // A suite on a branch with no PR (a push to main) has nothing to merge.
+  if (eventName === 'check_suite' && (payload.check_suite?.pull_requests?.length ?? 0) === 0) return false;
 
   const actions = RELEVANT[eventName];
   if (!actions) return false;

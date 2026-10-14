@@ -206,4 +206,9 @@ export const LABEL_DIRECT_ISSUE = 'ronin:issue-fix';
 // tracking issue — the runner never adds it itself.
 export const LABEL_STACK_PRS = 'ronin:stack-prs';
 
+// On a PR: merge it as soon as it's approved and green — see auto-merge.ts.
+// `/auto-merge` puts it on, `/auto-merge off` takes it off, and a human can
+// set it by hand; the label itself is the state.
+export const LABEL_AUTO_MERGE = 'ronin:auto-merge';
+
 export type SpecStatus = keyof typeof LABEL_STATES;

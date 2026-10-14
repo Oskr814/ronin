@@ -375,6 +375,23 @@ Para probar un PR sin entrar al server, armar el worktree y levantar la app a ma
 - **Datos para probar el PR.** Los seeds base casi nunca alcanzan para lo que cambia un PR (el #818 necesitaba un cliente con más de 12 catálogos, algunos vencidos). Con la app arriba y publicada, una tarea de agente (`prepare-preview-data`, sonnet por defecto) corre en el worktree de la preview. Lee el título y la descripción del PR (los pasos de "¿Cómo probar?"), su diff contra la base y lo que se haya escrito después del comando (`/preview un cliente con 40 catálogos`), y deja esos datos. Prefiere la API de la app (logueándose con un usuario de seed) y cae a SQL por el stack de compose para lo que la API no permite, como fechas vencidas. Después verifica leyendo de vuelta. La respuesta con la URL lista lo que quedó listo y dónde encontrarlo, y lo que no pudo preparar. Si falla, la preview se entrega igual, con un aviso. No toca código: al terminar, ronin devuelve el checkout al SHA del PR. Se apaga con `PREVIEW_PREPARE_DATA=false`.
 - **Commits nuevos.** La preview no se actualiza sola, porque reinstalar en cada push sería caro. Un nuevo `/preview` la mueve al head actual y reusa los `node_modules` del worktree. Cuando el PR recibe commits después de la preview (ronin aplicando un pedido, o el push de quien sea), `sweepPreviews` lo nota en el próximo tick y comenta en el PR que la preview quedó en el commit anterior y que `/preview` la actualiza. El aviso sale una vez por preview (`staleNotified` en `preview.json`) y vuelve a estar disponible con el siguiente `/preview`.
 
+### 13. Auto-merge por PR (`/auto-merge`, label `ronin:auto-merge`)
+
+Lo mismo que el auto-merge de GitHub, que es de los planes pagos: el PR se mergea solo apenas está aprobado y con los checks en verde, sin que alguien tenga que volver a apretar el botón.
+
+- **El label es el estado.** `ronin:auto-merge` en el PR significa "mergealo cuando se pueda". `@ronin-agent /auto-merge` lo pone y `/auto-merge off` (o `stop`, `cancel`, `/auto-merge-off`) lo saca. También se puede poner o sacar a mano. El comando se intercepta en `findUnprocessedMentions`, como `/preview`, y contesta en el mismo lugar con lo que falta para el merge. Si el PR ya tiene conflictos, no lo activa y explica por qué. ronin solo lee comandos en sus propios PRs y en los PRs de humanos que no son draft. En el resto (un draft de un humano, por ejemplo), el label a mano funciona igual.
+- **Cuándo mergea.** `sweepAutoMerge` corre en cada tick, antes de los flujos, así que un merge no espera detrás de una review larga. Lee todos los PRs abiertos con un solo `gh pr list` y mergea los que tienen el label y cumplen todo esto:
+  - no es draft;
+  - `reviewDecision` es `APPROVED`, que exige que el repo pida reviews en la protección de la rama;
+  - los checks terminaron y ninguno falló (el mismo criterio que `checksPassing`, así que un PR sin ningún check espera);
+  - GitHub lo da por mergeable;
+  - su base no es la rama de otro PR abierto. Un PR de un stack espera a que se mergee el de abajo, para no terminar mergeado en esa rama en vez de en la raíz.
+
+  Mergea con `mergePullRequest`, que vuelve a exigir la aprobación y reacomoda los PRs que dependían de la rama mergeada. Mientras espera, solo lo anota en el log. En el PR comenta únicamente el merge o la desactivación.
+- **Cuándo se desactiva.** Igual que en GitHub: si el PR tiene conflictos con su base, o si el merge falla. ronin saca el label y comenta el motivo, así no lo reintenta en cada tick. Para volver a activarlo hay que pedir otra vez `/auto-merge`.
+- **Una excepción explícita.** ronin nunca mergea por su cuenta una slice aprobada: la mergea el humano que la aprobó, cuando le conviene. El auto-merge es ese mismo humano pidiéndolo de antemano para un PR puntual. ronin nunca pone el label por iniciativa propia.
+- **Rapidez.** El webhook despierta un tick cuando se pone el label (`pull_request.labeled`, solo con `ronin:auto-merge`), cuando termina el CI de un PR (`check_suite.completed`) y con una aprobación (`pull_request_review.submitted`). Así el merge sale casi en el momento, sin esperar al cron. `check_suite` hay que sumarlo a los webhooks ya creados volviendo a correr `scripts/init-webhooks.sh`.
+
 ## Estado actual
 
 - [x] Definir el esqueleto del supervisor (script + estructura de tick) — ver §3.1 y `src/`

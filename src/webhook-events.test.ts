@@ -111,6 +111,19 @@ describe('shouldTriggerTick', () => {
     expect(shouldTriggerTick('ping', { repository: { full_name: 'acme/product' } }, trackedRepos)).toBe(false);
   });
 
+  it('triggers when ronin:auto-merge goes on a PR, and only that label', () => {
+    const repo = { full_name: 'acme/product' };
+    expect(shouldTriggerTick('pull_request', { action: 'labeled', label: { name: 'ronin:auto-merge' }, repository: repo }, trackedRepos)).toBe(true);
+    expect(shouldTriggerTick('pull_request', { action: 'labeled', label: { name: 'ronin:attempts-2' }, repository: repo }, trackedRepos)).toBe(false);
+  });
+
+  it('triggers when CI finishes on a PR, not on a branch without one', () => {
+    const repo = { full_name: 'acme/product' };
+    expect(shouldTriggerTick('check_suite', { action: 'completed', check_suite: { pull_requests: [{ number: 1 }] }, repository: repo }, trackedRepos)).toBe(true);
+    expect(shouldTriggerTick('check_suite', { action: 'completed', check_suite: { pull_requests: [] }, repository: repo }, trackedRepos)).toBe(false);
+    expect(shouldTriggerTick('check_suite', { action: 'requested', check_suite: { pull_requests: [{ number: 1 }] }, repository: repo }, trackedRepos)).toBe(false);
+  });
+
   it('ignores a payload with no repository field', () => {
     expect(shouldTriggerTick('issues', { action: 'assigned' }, trackedRepos)).toBe(false);
   });

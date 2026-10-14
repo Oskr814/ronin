@@ -334,6 +334,27 @@ export interface PrHead {
   body: string;
 }
 
+// Every open PR, with what auto-merge.ts decides on: its review and checks
+// (read the same way as listAllOpenRoninPrs), whether it conflicts with its
+// base, and its labels. All of them, not just the labeled ones: a PR whose
+// base is another open PR's branch is part of a stack, and merging it would
+// land it in that branch instead of the root.
+export interface AutoMergeCandidate {
+  status: PullRequestStatus;
+  conflicting: boolean;
+  labels: string[];
+}
+
+export async function listOpenPrsForAutoMerge(): Promise<AutoMergeCandidate[]> {
+  const stdout = await gh(['pr', 'list', '--state', 'open', '--limit', String(PR_LIST_LIMIT), '--json', `${PR_JSON_FIELDS},labels`]);
+  const raw = JSON.parse(stdout) as Array<RawPr & { labels: Array<{ name: string }> }>;
+  return raw.map((pr) => ({
+    status: toPullRequestStatus(pr),
+    conflicting: pr.mergeable === 'CONFLICTING',
+    labels: pr.labels.map((l) => l.name),
+  }));
+}
+
 export async function getPrHead(prNumber: number): Promise<PrHead> {
   return JSON.parse(await gh(['pr', 'view', String(prNumber), '--json', 'state,headRefOid,baseRefName,isCrossRepository,title,body'])) as PrHead;
 }

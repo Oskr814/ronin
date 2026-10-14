@@ -47,6 +47,7 @@ import { takePendingSpecs } from './local-state.js';
 import { explorationPrs, exploreWorkerBusy, launchExploreWorker, processExplorationPr } from './exploration-flow.js';
 import { maybeLaunchNightlyExploration } from './exploration-schedule.js';
 import { sweepPreviews } from './preview.js';
+import { sweepAutoMerge } from './auto-merge.js';
 import { checkInterviews, startInterview } from './interview.js';
 import { findReleasesNeedingChangelog, type ChangelogCandidate } from './changelog.js';
 import { setLastChangelogRelease } from './local-state.js';
@@ -985,6 +986,8 @@ async function tickOneRepo(): Promise<void> {
 
   await finishClosedIssues().catch((error) => log.error('no se pudieron cerrar los issues ya mergeados', error));
   await sweepPreviews().catch((error) => log.error('previews: no se pudieron barrer las de PRs cerrados', error));
+  // Before the flows, so a merge doesn't wait behind a long review run.
+  await sweepAutoMerge().catch((error) => log.error('auto-merge: no se pudieron revisar los PRs con el label', error));
   const inProgress = await listTrackingIssues('in-progress');
   // Merge in whatever this same tick just moved to in-progress — GitHub's
   // issue-list-by-label query can lag a few seconds behind a label applied
