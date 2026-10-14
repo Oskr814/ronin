@@ -13,7 +13,7 @@ import type { PullRequestStatus } from './github.js';
 let mockConfig: Record<string, unknown> = { worktreeBaseRef: 'main' };
 vi.mock('./config.js', () => ({ get config() { return mockConfig; } }));
 
-const { isBehind, attemptRebase, branchFromWorktreeDirName, branchesToSweep, ensureWorktree, removeWorktree, ensureExternalReviewWorktree, externalReviewWorktreeDirFor, ensureTrustedFixWorktree, removeTrustedFixWorktree, isCommitAvailable, pinReviewedSha, pruneReviewedPins, composeFilesIn } = await import('./worktree.js');
+const { branchFromWorktreeDirName, branchesToSweep, ensureWorktree, removeWorktree, ensureExternalReviewWorktree, externalReviewWorktreeDirFor, ensureTrustedFixWorktree, removeTrustedFixWorktree, isCommitAvailable, pinReviewedSha, pruneReviewedPins, composeFilesIn } = await import('./worktree.js');
 const { withActiveRepo } = await import('./repo-context.js');
 
 function pr(headRefName: string): PullRequestStatus {
@@ -83,101 +83,6 @@ async function initRepo(cwd: string): Promise<void> {
 // Root-owned-file cleanup only has real Docker to exercise it against — no
 // point failing the whole suite on a box (or CI image) without Docker.
 const dockerAvailable = await execFileAsync('docker', ['info']).then(() => true).catch(() => false);
-
-// Real git plumbing against local temp repos (a bare "origin" plus a
-// worktree-style clone) — no network, no mocking of git itself. This is the
-// "real vs. mechanical conflict" coverage that
-// docs/superpowers/specs/2026-07-28-stacked-prs-design.md §7 explicitly left
-// as a manual dry-run gap, now that fix-rebase is a live, exercised path.
-describe('isBehind / attemptRebase — real git rebase behavior', () => {
-  let base: string;
-  let originDir: string;
-  let worktreeDir: string;
-  let seed: string;
-
-  beforeEach(async () => {
-    base = await mkdtemp(join(tmpdir(), 'ronin-worktree-test-'));
-    originDir = join(base, 'origin.git');
-    worktreeDir = join(base, 'worktree');
-    seed = join(base, 'seed');
-
-    await execFileAsync('git', ['init', '-q', '--bare', originDir]);
-
-    await mkdir(seed, { recursive: true });
-    await initRepo(seed);
-    await writeFile(join(seed, 'README.md'), 'seed\n');
-    await git(seed, ['add', '.']);
-    await git(seed, ['commit', '-q', '-m', 'initial']);
-    await git(seed, ['branch', '-M', 'main']);
-    await git(seed, ['remote', 'add', 'origin', originDir]);
-    await git(seed, ['push', '-q', 'origin', 'main']);
-
-    await execFileAsync('git', ['clone', '-q', originDir, worktreeDir]);
-    await initRepo(worktreeDir);
-    await git(worktreeDir, ['checkout', '-q', '-b', 'feature']);
-    await writeFile(join(worktreeDir, 'feature.txt'), 'feature work\n');
-    await git(worktreeDir, ['add', '.']);
-    await git(worktreeDir, ['commit', '-q', '-m', 'feature commit']);
-    await git(worktreeDir, ['push', '-q', '-u', 'origin', 'feature']);
-
-    // Advance main on origin behind the worktree's back, as the real
-    // scenario does (a stack's bottom PR merges while a sibling slice's
-    // worktree sits untouched) — always via the seed clone, mirroring
-    // main only ever moving through a real merge, never edited in-place.
-    await writeFile(join(seed, 'other.txt'), 'unrelated change\n');
-    await git(seed, ['add', '.']);
-    await git(seed, ['commit', '-q', '-m', 'advance main']);
-    await git(seed, ['push', '-q', 'origin', 'main']);
-  });
-
-  afterEach(async () => {
-    await rm(base, { recursive: true, force: true });
-  });
-
-  it('isBehind reports true once origin/main has moved past the worktree', async () => {
-    await expect(isBehind(worktreeDir, 'origin/main')).resolves.toBe(true);
-  });
-
-  it('mechanically rebases and force-pushes when there is no real conflict', async () => {
-    await git(worktreeDir, ['fetch', 'origin']);
-
-    await expect(attemptRebase(worktreeDir, 'origin/main', 'feature')).resolves.toBe(true);
-
-    // Rebase actually landed: feature.txt survives on top of the advanced main.
-    const log = await git(worktreeDir, ['log', '--oneline', 'origin/main..HEAD']);
-    expect(log).toContain('feature commit');
-    await expect(isBehind(worktreeDir, 'origin/main')).resolves.toBe(false);
-
-    // Force-pushed: origin's feature ref matches the rebased local HEAD.
-    const originFeature = await git(worktreeDir, ['rev-parse', 'origin/feature']);
-    const localHead = await git(worktreeDir, ['rev-parse', 'HEAD']);
-    expect(originFeature.trim()).toBe(localHead.trim());
-  });
-
-  it('aborts and returns false on a real conflict, leaving the worktree clean', async () => {
-    // Make main's advance conflict with the feature branch's own change to
-    // the same file (both branches touch feature.txt).
-    await writeFile(join(seed, 'feature.txt'), 'main also touched this\n');
-    await git(seed, ['add', '.']);
-    await git(seed, ['commit', '-q', '-m', 'conflicting main change']);
-    await git(seed, ['push', '-q', 'origin', 'main']);
-    await git(worktreeDir, ['fetch', 'origin']);
-
-    await expect(attemptRebase(worktreeDir, 'origin/main', 'feature')).resolves.toBe(false);
-
-    // Left in a clean, non-rebasing state — never a half-finished rebase for
-    // a later tick (or a human) to trip over.
-    const status = await git(worktreeDir, ['status', '--porcelain']);
-    expect(status.trim()).toBe('');
-    const branch = await git(worktreeDir, ['rev-parse', '--abbrev-ref', 'HEAD']);
-    expect(branch.trim()).toBe('feature');
-
-    // origin/feature was never force-pushed with the (abandoned) rebase.
-    const originFeature = await git(worktreeDir, ['rev-parse', 'origin/feature']);
-    const localHead = await git(worktreeDir, ['rev-parse', 'HEAD']);
-    expect(originFeature.trim()).toBe(localHead.trim());
-  });
-});
 
 describe('ensureWorktree — per-worktree DB_PORT', () => {
   let base: string;

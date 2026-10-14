@@ -1,4 +1,3 @@
-import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
@@ -36,7 +35,7 @@ import { ClaudeUsageLimitError } from './claude-runner.js';
 import { toStackedPrs, pickBottomPr, prsForIssue, planBranch, spikeBranch, type StackedPr } from './stack.js';
 import { incrementChecksPendingCount, resetChecksPendingCount, setLastReviewedSha } from './local-state.js';
 import { tryClaim, releaseIfNoLongerInProgress } from './claim.js';
-import { worktreeDirFor, isBehind, attemptRebase, removeWorktree, sweepOrphanedWorktrees } from './worktree.js';
+import { removeWorktree, sweepOrphanedWorktrees } from './worktree.js';
 import { findUnprocessedMentions, isFixCommentsCommand } from './mentions.js';
 import { withHelpFooter } from './help.js';
 import { findPrsNeedingReview, type ReviewCandidate, type ThreadMentionCandidate, type TrustedFixCandidate } from './external-review.js';
@@ -270,17 +269,6 @@ async function blockOnAttemptLimit(
   return true;
 }
 
-// 'ready': at or already merged onto worktreeBaseRef, safe to evaluate merge
-// this tick. 'not-ready': nothing wrong, just nothing more to do for this PR
-// this tick (worktree dir missing so far — retried silently up to
-// rebaseRetryLimit ticks in case it's transient, e.g. a runner mid-restart —
-// or a rebase+force-push just happened and its CI hasn't run against the new
-// head yet; either way the next tick re-reads PR status fresh and evaluates
-// merge then, per docs/superpowers/specs/2026-07-28-stacked-prs-design.md
-// §5). 'blocked': the issue was just set to ronin:blocked by
-// blockOnAttemptLimit.
-type BottomStatus = 'ready' | 'not-ready' | 'blocked';
-
 // Bare branch name a bottom-of-stack PR's base should point at, e.g.
 // "origin/main" -> "main" — this codebase always uses "origin" as the
 // remote name elsewhere too (see worktree.ts).
@@ -288,63 +276,23 @@ function rootBranchName(): string {
   return (activeRepo().worktreeBaseRef ?? config.worktreeBaseRef).replace(/^origin\//, '');
 }
 
-async function ensureBottomUpToDate(issue: TrackingIssue, pr: StackedPr): Promise<BottomStatus> {
-  if (pr.baseRefName !== rootBranchName()) {
-    // syncMergedSlices retargets any dependent PR onto the merged PR's base
-    // (a manual PATCH — GitHub does not do this automatically, see
-    // retargetDependents). If this PR's base still isn't the root branch,
-    // that retarget never ran or failed, and this PR's base is still
-    // pointing at a now-dead branch —
-    // merging it would silently land it there instead of main. Never merge
-    // in that case; retry silently, then escalate like any other "needs a
-    // human eventually" case. See final review Fix 1.
-    const blocked = await blockOnAttemptLimit(
-      issue, pr, config.rebaseRetryLimit,
-      `Base del PR del fondo del stack es "${pr.baseRefName}", no "${rootBranchName()}" — el retarget automático nunca corrió`,
-    );
-    return blocked ? 'blocked' : 'not-ready';
-  }
-
-  const worktreeDir = worktreeDirFor(pr.headRefName);
-  if (!existsSync(worktreeDir)) {
-    // Still deliberately NOT auto-recreated via ensureWorktree here, even
-    // though the root cause that originally justified this (branchExists
-    // only checking local refs, never origin/<branch>) was fixed by adding
-    // remoteBranchExists to worktree.ts (final review Fix 2) — re-wiring
-    // this call site wasn't part of that fix's scope, so it's left as-is:
-    // treated as a mechanical failure like a rebase conflict, retried
-    // silently via the same attempt counter, then escalated to a real
-    // human-visible block — never a silent-forever stall, never fabricated
-    // git state.
-    const blocked = await blockOnAttemptLimit(
-      issue, pr, config.rebaseRetryLimit,
-      'Worktree del fondo del stack no encontrado en disco tras el límite de reintentos',
-    );
-    return blocked ? 'blocked' : 'not-ready';
-  }
-  const baseRef = activeRepo().worktreeBaseRef ?? config.worktreeBaseRef;
-  if (!(await isBehind(worktreeDir, baseRef))) return 'ready';
-  // `pr` was read at the start of the tick. A human merging it since then
-  // also moves the base forward, so it now looks behind: rebasing it would
-  // fail against its own squashed commit (and count an attempt, and run
-  // fix-rebase on a merged PR — seen live on #818), or worse, succeed and
-  // force-push the branch the merge just deleted back to life. Only when
-  // it's behind, so the usual tick pays nothing extra; the next tick's
-  // syncMergedSlices takes it from there.
-  const current = await getPullRequestStatus(pr.number);
-  if (current.state !== 'OPEN') {
-    logSliceOutcome(issue, pr, true, `ya no está abierto (${current.state}), no se rebasea`);
-    return 'not-ready';
-  }
-  if (await attemptRebase(worktreeDir, baseRef, pr.headRefName)) return 'not-ready';
-
+// ronin no longer rebases the bottom PR onto main: a human merges it, and
+// GitHub's "Update branch" covers keeping it current when that matters.
+// What's left is making sure its base is the root branch. syncMergedSlices
+// retargets any dependent PR onto the merged PR's base (a manual PATCH —
+// GitHub does not do this automatically, see retargetDependents). If this
+// PR's base still isn't the root branch, that retarget never ran or failed:
+// CI only runs against main, and a human merging it would land it on a
+// now-dead branch. Retry silently, then escalate like any other "needs a
+// human eventually" case. 'blocked' means the issue was just set to
+// ronin:blocked by blockOnAttemptLimit.
+async function bottomBaseIsRoot(issue: TrackingIssue, pr: StackedPr): Promise<'ok' | 'waiting' | 'blocked'> {
+  if (pr.baseRefName === rootBranchName()) return 'ok';
   const blocked = await blockOnAttemptLimit(
-    issue, pr, config.rebaseRetryLimit,
-    'Rebase con conflicto real tras el límite de reintentos',
+    issue, pr, config.retargetRetryLimit,
+    `Base del PR del fondo del stack es "${pr.baseRefName}", no "${rootBranchName()}" — el retarget automático nunca corrió`,
   );
-  if (blocked) return 'blocked';
-  await runAgentTask({ type: 'fix-rebase', issueNumber: issue.number, prNumber: pr.number });
-  return 'not-ready';
+  return blocked ? 'blocked' : 'waiting';
 }
 
 // Returns whether the issue is still in-progress: false means this PR just
@@ -438,13 +386,11 @@ export async function processSlicePr(issue: TrackingIssue, pr: StackedPr, isBott
     log.error(`fix-comments failed for PR #${pr.number}`, error);
   }
 
-  // Solo el fondo del stack necesita estar al día con main antes de evaluar
-  // merge — ver docs/superpowers/specs/2026-07-28-stacked-prs-design.md §5.
   if (isBottom) {
-    const status = await ensureBottomUpToDate(issue, pr);
+    const status = await bottomBaseIsRoot(issue, pr);
     if (status === 'blocked') return false;
-    if (status === 'not-ready') {
-      logSliceOutcome(issue, pr, isBottom, 'poniéndose al día con main, esperando');
+    if (status === 'waiting') {
+      logSliceOutcome(issue, pr, isBottom, `base "${pr.baseRefName}" en vez de "${rootBranchName()}", esperando el retarget`);
       return true;
     }
 
@@ -546,7 +492,7 @@ interface NextSliceStart {
 // Slice PRs are merged by a human (see processSlicePr), so ronin finds out
 // here instead of at merge time: a slice whose PR is no longer open and was
 // merged gets checked off, and any PR stacked on it moves to its base before
-// ensureBottomUpToDate looks at it. Returns allPrs with those new bases. The
+// bottomBaseIsRoot looks at it. Returns allPrs with those new bases. The
 // merged branch's worktree goes with the next sweepOrphanedWorktrees. A PR
 // closed without merging is left alone, so the empty-stack check below still
 // escalates it.

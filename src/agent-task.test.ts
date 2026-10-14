@@ -97,21 +97,6 @@ describe('runAgentTask — per-repo worktreeBaseRef override', () => {
 
     expect(ensureWorktree).toHaveBeenCalledWith('ronin/228/slice-1', 'origin/odoo-main');
   });
-
-  it("mentions the active repo's own worktreeBaseRef in the fix-rebase prompt, not config's", async () => {
-    activeRepo.mockReturnValue({
-      productRepo: 'bmedical/bmedical',
-      productRepoPath: '/tmp/repo',
-      worktreeBasePath: '/tmp/worktrees',
-      worktreeBaseRef: 'origin/odoo-main',
-    });
-
-    await runAgentTask({ type: 'fix-rebase', issueNumber: 228, prNumber: 229 });
-
-    const prompt = runClaudeHeadless.mock.calls[0][1] as string;
-    expect(prompt).toContain('origin/odoo-main');
-    expect(prompt).not.toContain('origin/main');
-  });
 });
 
 describe('runAgentTask — fix-issue prompt', () => {
@@ -199,14 +184,6 @@ describe('runAgentTask — agent-notes reminder', () => {
 
   it('is included for fix-e2e', async () => {
     await runAgentTask({ type: 'fix-e2e', issueNumber: 228, prNumber: 229 });
-
-    const prompt = runClaudeHeadless.mock.calls[0][1] as string;
-    expect(prompt).toContain(AGENT_NOTES_REMINDER);
-    expect(prompt.endsWith(AGENT_NOTES_REMINDER)).toBe(true);
-  });
-
-  it('is included for fix-rebase', async () => {
-    await runAgentTask({ type: 'fix-rebase', issueNumber: 228, prNumber: 229 });
 
     const prompt = runClaudeHeadless.mock.calls[0][1] as string;
     expect(prompt).toContain(AGENT_NOTES_REMINDER);

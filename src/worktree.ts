@@ -395,37 +395,3 @@ export async function sweepOrphanedWorktrees(allPrs: PullRequestStatus[]): Promi
     await removeWorktree(branch);
   }
 }
-
-export async function isBehind(worktreeDir: string, ontoBranch: string): Promise<boolean> {
-  await execFileAsync('git', ['fetch', 'origin'], { cwd: worktreeDir });
-  return execFileAsync('git', ['merge-base', '--is-ancestor', ontoBranch, 'HEAD'], { cwd: worktreeDir })
-    .then(() => false)
-    .catch(() => true);
-}
-
-// Best-effort: usado solo para el fondo del stack, después de que su
-// predecesor mergea (ver docs/superpowers/specs/2026-07-28-stacked-prs-design.md
-// §5). Un conflicto real es un resultado esperado a veces — el caller cae a
-// una tarea de agente fix-rebase cuando esto devuelve false, nunca propaga el
-// error crudo de git.
-//
-// `branch` is required (not inferred) because a bare `git push
-// --force-with-lease` has no reliable default upstream in either
-// branch-creation path: slice 0's branch gets its upstream auto-set to
-// origin/main (name mismatch under push.default=simple), and slice N>0's
-// branch (created from a local branch) gets no upstream at all. Explicit
-// refspec sidesteps both. See final review Fix 4.
-export async function attemptRebase(worktreeDir: string, ontoBranch: string, branch: string): Promise<boolean> {
-  try {
-    await execFileAsync('git', ['rebase', ontoBranch], { cwd: worktreeDir });
-  } catch {
-    await execFileAsync('git', ['rebase', '--abort'], { cwd: worktreeDir }).catch(() => {});
-    return false;
-  }
-  try {
-    await execFileAsync('git', ['push', '--force-with-lease', 'origin', `${branch}:${branch}`], { cwd: worktreeDir });
-  } catch {
-    return false;
-  }
-  return true;
-}
