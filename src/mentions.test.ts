@@ -22,9 +22,12 @@ vi.mock('./logger.js', () => ({ log: { error: vi.fn(), info: vi.fn() } }));
 
 const launchPreviewWorker = vi.fn();
 vi.mock('./preview.js', () => ({ launchPreviewWorker: (...args: unknown[]) => launchPreviewWorker(...args) }));
+const applyAutoMergeCommand = vi.fn();
+vi.mock('./auto-merge.js', () => ({ applyAutoMergeCommand: (...args: unknown[]) => applyAutoMergeCommand(...args) }));
 vi.mock('./repo-context.js', () => ({ activeRepo: () => ({ productRepo: 'acme/product' }) }));
 
 import {
+  parseAutoMergeCommand,
   parsePreviewCommand,
   findUnprocessedMentions,
   isFixCommentsCommand,
@@ -42,6 +45,7 @@ beforeEach(() => {
   replyToComment.mockReset().mockResolvedValue(undefined);
   addReaction.mockReset().mockResolvedValue(undefined);
   launchPreviewWorker.mockReset();
+  applyAutoMergeCommand.mockReset().mockResolvedValue(undefined);
 });
 
 describe('parsePreviewCommand', () => {
@@ -101,6 +105,44 @@ describe('findUnprocessedMentions with /preview', () => {
 
     expect(await findUnprocessedMentions(42)).toEqual([]);
     expect(addReaction).not.toHaveBeenCalled();
+  });
+});
+
+describe('parseAutoMergeCommand', () => {
+  it('reads it on and off, in its usual spellings', () => {
+    expect(parseAutoMergeCommand('@ronin /auto-merge', 'ronin')).toBe('on');
+    expect(parseAutoMergeCommand('@Ronin /AutoMerge cuando esté', 'ronin')).toBe('on');
+    expect(parseAutoMergeCommand('@ronin /auto-merge off', 'ronin')).toBe('off');
+    expect(parseAutoMergeCommand('@ronin /auto-merge Cancel por ahora', 'ronin')).toBe('off');
+    expect(parseAutoMergeCommand('@ronin /auto-merge-stop', 'ronin')).toBe('off');
+    expect(parseAutoMergeCommand('@ronin /automerge-off', 'ronin')).toBe('off');
+    expect(parseAutoMergeCommand('@ronin /auto-merge.', 'ronin')).toBe('on');
+    expect(parseAutoMergeCommand('@ronin /auto-merge off.', 'ronin')).toBe('off');
+  });
+
+  it('is only the command right after the mention', () => {
+    expect(parseAutoMergeCommand('@ronin revisá src/auto-merge.ts', 'ronin')).toBeNull();
+    expect(parseAutoMergeCommand('@ronin /auto-merge.ts', 'ronin')).toBeNull();
+    expect(parseAutoMergeCommand('@ronin /auto-merged', 'ronin')).toBeNull();
+    expect(parseAutoMergeCommand('/auto-merge', 'ronin')).toBeNull();
+  });
+});
+
+describe('findUnprocessedMentions with /auto-merge', () => {
+  it('applies it and keeps it away from the other flows', async () => {
+    reviewComments.mockResolvedValue([{ id: 7, kind: 'review', body: '@ronin /auto-merge off', reactionsEyes: 0, authorLogin: 'ana' }]);
+    issueComments.mockResolvedValue([{ id: 2, kind: 'issue', body: '@ronin revisá esto', reactionsEyes: 0, authorLogin: 'ana' }]);
+
+    const result = await findUnprocessedMentions(42);
+    expect(result.map((c) => c.id)).toEqual([2]);
+    expect(applyAutoMergeCommand).toHaveBeenCalledWith(42, expect.objectContaining({ id: 7, kind: 'review' }), 'off');
+  });
+
+  it('drops it even when applying failed (no 👀, retried next tick)', async () => {
+    issueComments.mockResolvedValue([{ id: 1, kind: 'issue', body: '@ronin /auto-merge', reactionsEyes: 0, authorLogin: 'ana' }]);
+    applyAutoMergeCommand.mockRejectedValue(new Error('gh down'));
+
+    expect(await findUnprocessedMentions(42)).toEqual([]);
   });
 });
 

@@ -46,7 +46,14 @@ const COMMANDS: CommandSpec[] = [
     scopes: ['pr'],
     usage: '/preview [app] [qué datos querés]',
     aliases: ['preview-stop', 'preview-off', 'preview-down'],
-    summary: 'Levanto la app con el código del PR, su base y sus seeds, preparo los datos que piden sus pasos de prueba (más lo que me pidas) y te paso una URL de la tailnet para probarla. Se baja sola al mergear o cerrar el PR; `/preview stop` la baja antes. No en PRs de forks.',
+    summary: 'Levanto la app con el código del PR, su base y sus seeds, preparo los datos que piden sus pasos de prueba (más lo que me pidas) y te paso una URL de la tailnet para probarla. Se baja sola a la hora o al mergear o cerrar el PR; `/preview stop` la baja antes. No en PRs de forks.',
+  },
+  {
+    name: 'auto-merge',
+    scopes: ['pr'],
+    usage: '/auto-merge [off]',
+    aliases: ['automerge', ...['off', 'stop', 'cancel'].flatMap((w) => [`auto-merge-${w}`, `automerge-${w}`])],
+    summary: 'Mergeo el PR apenas esté aprobado y con los checks en verde (le pongo el label `ronin:auto-merge`, que también podés poner a mano). `/auto-merge off` o sacar el label lo cancela. Se desactiva solo si el PR tiene conflictos o el merge falla.',
   },
   {
     name: 'spike',

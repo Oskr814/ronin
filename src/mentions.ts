@@ -3,6 +3,7 @@ import { classifyMetaCommand, renderMetaReply, type CommandContext } from './hel
 import { config } from './config.js';
 import { activeRepo } from './repo-context.js';
 import { launchPreviewWorker } from './preview.js';
+import { applyAutoMergeCommand, type AutoMergeAction } from './auto-merge.js';
 import { log } from './logger.js';
 
 export function mentionsHandle(body: string, handle: string): boolean {
@@ -96,6 +97,17 @@ export function parsePreviewCommand(body: string, login: string): { action: 'up'
   const args = match[2].trim();
   if (PREVIEW_STOP_WORDS.includes(args.toLowerCase())) return { action: 'stop' };
   return args ? { action: 'up', args } : { action: 'up' };
+}
+
+// Turns the PR's auto-merge on or off — see auto-merge.ts. Same placement
+// rule as /preview: only right after the mention. "/automerge" and
+// "/auto-merge-off" (or -stop, -cancel) are read too.
+const AUTO_MERGE_OFF_WORDS = ['off', 'stop', 'cancel'];
+
+export function parseAutoMergeCommand(body: string, login: string): AutoMergeAction | null {
+  const match = body.match(new RegExp(`\\B@${login}\\s+/auto-?merge(?:-(${AUTO_MERGE_OFF_WORDS.join('|')}))?(?![\\w/-]|\\.\\w)[ \\t]*(\\S*)`, 'i'));
+  if (!match) return null;
+  return match[1] || AUTO_MERGE_OFF_WORDS.includes(match[2].toLowerCase().replace(/\W+$/, '')) ? 'off' : 'on';
 }
 
 // null when the command is missing its required app_name — nothing
@@ -246,9 +258,31 @@ async function handlePreviewCommands(prNumber: number, comments: Comment[]): Pro
   return rest;
 }
 
+// Applies every /auto-merge among the mentions right here (it's a label and
+// a reply, no worker needed) and drops it from what the caller gets back,
+// like handlePreviewCommands. One that fails gets no 👀 and is retried next
+// tick.
+async function handleAutoMergeCommands(prNumber: number, comments: Comment[]): Promise<Comment[]> {
+  const rest: Comment[] = [];
+  for (const comment of comments) {
+    const action = comment.authorLogin !== '' ? parseAutoMergeCommand(comment.body, config.githubLogin) : null;
+    if (!action) {
+      rest.push(comment);
+      continue;
+    }
+    try {
+      await applyAutoMergeCommand(prNumber, comment, action);
+    } catch (error) {
+      log.error(`no se pudo aplicar el /auto-merge del comentario ${comment.id} en #${prNumber}`, error);
+    }
+  }
+  return rest;
+}
+
 // Side effect: answers any meta-command among the mentions (see
 // handleMetaCommands above), launches any /preview (handlePreviewCommands),
-// and leaves both out of the result.
+// applies any /auto-merge (handleAutoMergeCommands), and leaves them all out
+// of the result.
 export async function findUnprocessedMentions(prNumber: number): Promise<Comment[]> {
   const botLogin = config.githubLogin;
   const [issueComments, reviewComments] = await Promise.all([
@@ -256,7 +290,8 @@ export async function findUnprocessedMentions(prNumber: number): Promise<Comment
     listReviewComments(prNumber),
   ]);
   const mentioned = [...issueComments, ...reviewComments].filter((c) => mentionsHandle(c.body, botLogin));
-  return handlePreviewCommands(prNumber, await handleMetaCommands(prNumber, 'pr', await filterUnprocessed(mentioned)));
+  const rest = await handleMetaCommands(prNumber, 'pr', await filterUnprocessed(mentioned));
+  return handleAutoMergeCommands(prNumber, await handlePreviewCommands(prNumber, rest));
 }
 
 // Same as findUnprocessedMentions (including its meta-command side effect,

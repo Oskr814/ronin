@@ -27,6 +27,7 @@ LABELS=(
   "ronin:in-progress|En curso"
   "ronin:blocked|Esperando una decisión humana"
   "ronin:done|Completado"
+  "ronin:auto-merge|Mergear apenas esté aprobado y en verde (ver docs/DESIGN.md §13)"
   "ronin:runner-$RUNNER_ID|Asignado a este runner (ver docs/DESIGN.md §1 y §9)"
 )
 
