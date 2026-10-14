@@ -19,7 +19,6 @@ export type AgentTask =
   | { type: 'fix-issue'; issueNumber: number; sliceIndex: number; sliceTitle: string }
   | { type: 'fix-review'; issueNumber: number; prNumber: number }
   | { type: 'fix-e2e'; issueNumber: number; prNumber: number }
-  | { type: 'fix-rebase'; issueNumber: number; prNumber: number }
   | { type: 'review-request'; issueNumber: number; prNumber: number; mentions: Comment[] }
   | { type: 'fix-comments'; issueNumber: number; prNumber: number; trigger: Comment[]; openThreads: ReviewThread[] }
   | { type: 'fix-comments-external'; prNumber: number; headRefName: string; trigger: Comment[]; openThreads: ReviewThread[] }
@@ -496,22 +495,6 @@ export async function buildTask(task: AgentTask): Promise<{ branch: string; prom
         prompt: [
           `You are ronin. CI checks are failing on PR #${task.prNumber} (tracking issue #${task.issueNumber}).`,
           'Investigate the cause, fix it, and confirm the affected test(s) pass by re-running them, then amend the existing commit (`git commit --amend`) — never create a new commit — and force-push (`git push --force-with-lease`) to this same branch.',
-          'Do not edit the tracking issue or change any labels, on either the issue or this PR — that is owned entirely by the supervisor, not by you.',
-          AGENT_NOTES_REMINDER,
-        ].join('\n'),
-      };
-    }
-
-    case 'fix-rebase': {
-      const pr = await getPullRequestStatus(task.prNumber);
-      const rootBaseRef = activeRepo().worktreeBaseRef ?? config.worktreeBaseRef;
-      return {
-        branch: pr.headRefName,
-        prompt: [
-          `You are ronin. PR #${task.prNumber} (tracking issue #${task.issueNumber}) is behind \`${rootBaseRef}\` and couldn't be rebased mechanically — it hit a real conflict.`,
-          `Run \`git fetch origin\` and \`git rebase ${rootBaseRef}\` in this worktree, and resolve the conflicts following this repo's CLAUDE.md conventions and the spec — do not deviate from what the spec explicitly requires.`,
-          'Re-run the relevant tests after resolving, then amend the existing commit (`git commit --amend`) — never create a new commit — and force-push (`git push --force-with-lease`) to this same branch.',
-          'If a conflict requires a decision the spec does not clearly resolve, stop and leave the branch as-is — that needs a human decision, do not guess.',
           'Do not edit the tracking issue or change any labels, on either the issue or this PR — that is owned entirely by the supervisor, not by you.',
           AGENT_NOTES_REMINDER,
         ].join('\n'),

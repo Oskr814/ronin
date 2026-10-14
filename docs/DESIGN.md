@@ -66,7 +66,7 @@ cada tick. Ver
   - PR abierto → slice en curso (con `ronin:stack-prs`, pueden ser varios PRs de un mismo issue abiertos a la vez, cada uno una slice apilada sobre la anterior; sin el label, a lo sumo uno)
   - comentarios sin resolver → ciclo de fix
   - PR **approved** y en verde → espera a que un humano lo mergee; al tick siguiente ronin marca la slice como mergeada (`syncMergedSlices`), mueve a su base los PRs apilados encima y, si era la última, pasa el issue a `done`
-  - Sin `ronin:stack-prs`: la siguiente slice recién arranca cuando el stack queda vacío. Con `ronin:stack-prs`: un PR abierto (aunque no esté mergeado) ya dispara la siguiente slice apilada encima; solo el PR de menor índice del stack se mantiene al día con `main` para que se pueda mergear
+  - Sin `ronin:stack-prs`: la siguiente slice recién arranca cuando el stack queda vacío. Con `ronin:stack-prs`: un PR abierto (aunque no esté mergeado) ya dispara la siguiente slice apilada encima. ronin no rebasea ningún PR contra `main`: si hace falta ponerlo al día, lo hace el humano que mergea (p. ej. con "Update branch" de GitHub). Solo vigila que el PR de menor índice apunte a `main` después del retarget
 
 ### 2.1 Template del issue de tracking
 

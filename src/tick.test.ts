@@ -18,7 +18,7 @@ vi.mock('./config.js', () => ({
     e2eRetryLimit: 2,
     checksPendingRetryLimit: 60,
     sliceAttemptLimit: 3,
-    rebaseRetryLimit: 3,
+    retargetRetryLimit: 3,
     worktreeBaseRef: 'origin/main',
     githubLogin: 'ronin',
     // Needed by runJobs — with an undefined limit the pool starts nothing
@@ -88,13 +88,9 @@ vi.mock('./local-state.js', () => ({
 }));
 
 const worktreeDirFor = vi.fn();
-const isBehind = vi.fn();
-const attemptRebase = vi.fn();
 const removeWorktree = vi.fn();
 vi.mock('./worktree.js', () => ({
   worktreeDirFor: (...args: unknown[]) => worktreeDirFor(...args),
-  isBehind: (...args: unknown[]) => isBehind(...args),
-  attemptRebase: (...args: unknown[]) => attemptRebase(...args),
   removeWorktree: (...args: unknown[]) => removeWorktree(...args),
 }));
 
@@ -263,7 +259,6 @@ describe('processSlicePr — bottom-of-stack PR (unchanged behavior)', () => {
       checksPending: false,
       reviewDecision: 'APPROVED',
     });
-    isBehind.mockResolvedValue(false);
 
     const stillInProgress = await processSlicePr(issue(), bottomPr, true);
 
@@ -273,33 +268,46 @@ describe('processSlicePr — bottom-of-stack PR (unchanged behavior)', () => {
     expect(setIssueState).not.toHaveBeenCalled();
   });
 
-  it('never rebases a bottom PR that got merged since the tick read it, even though it now looks behind', async () => {
-    const bottomPr = pr({ number: 229, sliceIndex: 0, baseRefName: 'main', headRefName: 'ronin/228/slice-1' });
-    isBehind.mockResolvedValue(true);
-    getPullRequestStatus.mockResolvedValue({ ...bottomPr, state: 'MERGED' });
+  it('waits without rebasing when the bottom PR is approved and green, even if main moved', async () => {
+    const bottomPr = pr({
+      number: 229,
+      sliceIndex: 0,
+      baseRefName: 'main',
+      headRefName: 'ronin/228/slice-1',
+      checksPassing: true,
+      reviewDecision: 'APPROVED',
+    });
 
     const stillInProgress = await processSlicePr(issue(), bottomPr, true);
 
     expect(stillInProgress).toBe(true);
-    expect(getPullRequestStatus).toHaveBeenCalledWith(229);
-    expect(attemptRebase).not.toHaveBeenCalled();
     expect(incrementAttemptCount).not.toHaveBeenCalled();
     expect(runAgentTask).not.toHaveBeenCalled();
   });
 
-  it('rebases a bottom PR that is behind and still open', async () => {
-    const bottomPr = pr({ number: 229, sliceIndex: 0, baseRefName: 'main', headRefName: 'ronin/228/slice-1' });
-    isBehind.mockResolvedValue(true);
-    getPullRequestStatus.mockResolvedValue({ ...bottomPr, state: 'OPEN' });
-    attemptRebase.mockResolvedValue(true);
+  it("waits for the retarget when the bottom PR's base is not the root branch", async () => {
+    const bottomPr = pr({ number: 229, sliceIndex: 0, baseRefName: 'ronin/228/slice-0', headRefName: 'ronin/228/slice-1' });
+    incrementAttemptCount.mockResolvedValue(1);
 
-    await processSlicePr(issue(), bottomPr, true);
+    const stillInProgress = await processSlicePr(issue(), bottomPr, true);
 
-    expect(attemptRebase).toHaveBeenCalledWith('/tmp/worktree-bottom', 'origin/main', 'ronin/228/slice-1');
+    expect(stillInProgress).toBe(true);
+    expect(incrementAttemptCount).toHaveBeenCalledWith(229);
+    expect(setIssueState).not.toHaveBeenCalled();
     expect(runAgentTask).not.toHaveBeenCalled();
   });
 
-  it("uses the active repo's own worktreeBaseRef override, not config's, to decide the bottom PR is up to date", async () => {
+  it('blocks the issue once the bottom PR has sat on the wrong base past retargetRetryLimit', async () => {
+    const bottomPr = pr({ number: 229, sliceIndex: 0, baseRefName: 'ronin/228/slice-0', headRefName: 'ronin/228/slice-1' });
+    incrementAttemptCount.mockResolvedValue(4);
+
+    const stillInProgress = await processSlicePr(issue(), bottomPr, true);
+
+    expect(stillInProgress).toBe(false);
+    expect(setIssueState).toHaveBeenCalledWith(228, 'blocked');
+  });
+
+  it("uses the active repo's own worktreeBaseRef override, not config's, as the bottom PR's expected base", async () => {
     activeRepo.mockReturnValue({
       productRepo: 'bmedical/bmedical',
       productRepoPath: '/tmp/repo',
@@ -315,11 +323,10 @@ describe('processSlicePr — bottom-of-stack PR (unchanged behavior)', () => {
       checksPending: false,
       reviewDecision: 'APPROVED',
     });
-    isBehind.mockResolvedValue(false);
 
     await processSlicePr(issue(), bottomPr, true);
 
-    expect(isBehind).toHaveBeenCalledWith('/tmp/worktree-bottom', 'origin/odoo-main');
+    expect(incrementAttemptCount).not.toHaveBeenCalled();
   });
 
   it('escalates once checksPendingRetryLimit is exceeded when checks never report', async () => {
@@ -330,7 +337,6 @@ describe('processSlicePr — bottom-of-stack PR (unchanged behavior)', () => {
       headRefName: 'ronin/228/slice-1',
       checksPending: true,
     });
-    isBehind.mockResolvedValue(false);
     incrementChecksPendingCount.mockResolvedValue(61); // > checksPendingRetryLimit (60)
 
     const stillInProgress = await processSlicePr(issue(), bottomPr, true);
@@ -353,7 +359,6 @@ describe('processSlicePr — bottom-of-stack PR (unchanged behavior)', () => {
       headRefName: 'ronin/228/slice-1',
       checksPending: true,
     });
-    isBehind.mockResolvedValue(false);
     incrementChecksPendingCount.mockResolvedValue(3); // well under checksPendingRetryLimit (60)
 
     const stillInProgress = await processSlicePr(issue(), bottomPr, true);
@@ -372,7 +377,6 @@ describe('processSlicePr — bottom-of-stack PR (unchanged behavior)', () => {
       checksPassing: false,
       checksPending: false,
     });
-    isBehind.mockResolvedValue(false);
     incrementAttemptCount.mockResolvedValue(1);
 
     await processSlicePr(issue(), bottomPr, true);
@@ -397,7 +401,6 @@ describe('processSlicePr — mentions found on an already-mergeable bottom PR (r
     });
     findUnprocessedMentions.mockResolvedValue([{ id: 1, kind: 'issue', body: '@ronin fijate esto', reactionsEyes: 0 }]);
     getPullRequestStatus.mockResolvedValue({ ...bottomPr, checksPassing: true, reviewDecision: 'APPROVED' });
-    isBehind.mockResolvedValue(false);
 
     const stillInProgress = await processSlicePr(issue(), bottomPr, true);
 
@@ -413,7 +416,6 @@ describe('processSlicePr — mentions found on an already-mergeable bottom PR (r
     const bottomPr = pr({ number: 229, sliceIndex: 0, baseRefName: 'main', headRefName: 'ronin/228/slice-1', reviewDecision: '' });
     findUnprocessedMentions.mockResolvedValue([{ id: 1, kind: 'issue', body: '@ronin fijate esto', reactionsEyes: 0 }]);
     getPullRequestStatus.mockResolvedValue({ ...bottomPr, checksPassing: true, reviewDecision: 'APPROVED' });
-    isBehind.mockResolvedValue(false);
 
     await processSlicePr(issue(), bottomPr, true);
 
@@ -457,7 +459,6 @@ describe('processSlicePr — /fix-comments command', () => {
     listExternalOpenReviewThreads.mockResolvedValue([{ id: 'T1', body: 'finding from Copilot' }]);
     const bottomPr = bottomPrReadyToMerge();
     getPullRequestStatus.mockResolvedValue(bottomPr);
-    isBehind.mockResolvedValue(false);
 
     await processSlicePr(issue(), bottomPr, true);
 
@@ -475,7 +476,6 @@ describe('processSlicePr — /fix-comments command', () => {
     isFixCommentsCommand.mockImplementation((body: string) => body.includes('/fix-comments'));
     const bottomPr = bottomPrReadyToMerge();
     getPullRequestStatus.mockResolvedValue(bottomPr);
-    isBehind.mockResolvedValue(false);
 
     await processSlicePr(issue(), bottomPr, true);
 
@@ -489,7 +489,6 @@ describe('processSlicePr — /fix-comments command', () => {
     listExternalOpenReviewThreads.mockResolvedValue([]);
     const bottomPr = bottomPrReadyToMerge();
     getPullRequestStatus.mockResolvedValue(bottomPr);
-    isBehind.mockResolvedValue(false);
 
     await processSlicePr(issue(), bottomPr, true);
 
@@ -508,7 +507,6 @@ describe('processSlicePr — /fix-comments command', () => {
     isFixCommentsCommand.mockImplementation((body: string) => body.includes('/fix-comments'));
     const bottomPr = bottomPrReadyToMerge();
     getPullRequestStatus.mockResolvedValue(bottomPr);
-    isBehind.mockResolvedValue(false);
 
     await processSlicePr(issue(), bottomPr, true);
 
@@ -531,7 +529,6 @@ describe('processSlicePr — /fix-comments command', () => {
     });
     const bottomPr = bottomPrReadyToMerge();
     getPullRequestStatus.mockResolvedValue(bottomPr);
-    isBehind.mockResolvedValue(false);
 
     await processSlicePr(issue(), bottomPr, true);
 
@@ -542,7 +539,6 @@ describe('processSlicePr — /fix-comments command', () => {
     findUnprocessedMentions.mockResolvedValue([]);
     const bottomPr = bottomPrReadyToMerge();
     getPullRequestStatus.mockResolvedValue(bottomPr);
-    isBehind.mockResolvedValue(false);
 
     await processSlicePr(issue(), bottomPr, true);
 
@@ -565,7 +561,6 @@ describe('processIssue — starting a next slice while the stack is still open',
   }
 
   beforeEach(() => {
-    isBehind.mockResolvedValue(false);
     nextUnstartedSlice.mockResolvedValue({ index: 1, title: 'Slice 2', checked: false, prNumber: null });
   });
 
@@ -634,14 +629,13 @@ describe('processIssue — slices merged by a human', () => {
     ]);
     getPullRequestStatus.mockResolvedValue(merged);
     worktreeDirFor.mockReturnValue('/tmp/worktree');
-    isBehind.mockResolvedValue(false);
 
     await processIssue(issue(), [pr({ number: 230, sliceIndex: 1, baseRefName: 'ronin/228/slice-1', headRefName: 'ronin/228/slice-2', checksPending: true })]);
 
     expect(markSliceMerged).toHaveBeenCalledWith(228, 0);
     expect(markSliceMerged).not.toHaveBeenCalledWith(228, 1);
-    // Only reached once the bottom's base is the root branch.
-    expect(isBehind).toHaveBeenCalledWith('/tmp/worktree', 'origin/main');
+    // The retargeted base already counts as the root branch: no attempt spent waiting on it.
+    expect(incrementAttemptCount).not.toHaveBeenCalled();
   });
 
   it('leaves a slice whose PR was closed without merging for the empty-stack check to escalate', async () => {

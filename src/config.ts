@@ -59,7 +59,7 @@ export const config = {
   e2eRetryLimit: Number(process.env.E2E_RETRY_LIMIT ?? 2),
   checksPendingRetryLimit: Number(process.env.CHECKS_PENDING_RETRY_LIMIT ?? 60),
   sliceAttemptLimit: Number(process.env.SLICE_ATTEMPT_LIMIT ?? 3),
-  rebaseRetryLimit: Number(process.env.REBASE_RETRY_LIMIT ?? 3),
+  retargetRetryLimit: Number(process.env.RETARGET_RETRY_LIMIT ?? 3),
   issueErrorRetryLimit: Number(process.env.ISSUE_ERROR_RETRY_LIMIT ?? 3),
   // How many jobs tick() runs at once *within one active repo* — see
   // repo-context.ts and tick.ts's outer loop for why this stays per-repo, not

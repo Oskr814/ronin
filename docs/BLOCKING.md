@@ -6,7 +6,6 @@
 
 - **Spec ambiguo**: el paso de planning no puede producir un plan/checklist de slices sin inventar requisitos que no están en el spec.
 - **E2E fallando persistentemente**: los tests de Playwright de una slice fallan después de **2 intentos de fix** por el propio agente sobre la misma causa.
-- **Conflicto de merge no mecánico**: rebase de una slice contra su base falla con conflictos en lógica (no solo shift de líneas) — resolverlo a ciegas puede introducir un bug que el agente no puede validar solo.
 - **Feedback de review que contradice el spec**: un reviewer (humano o Copilot) pide un cambio que va en contra de lo que el spec define explícitamente. El agente no decide unilateralmente desviarse del spec.
 - **Loop guard**: se agotan **3 intentos** de abrir un PR mergeable para la misma slice (CI rojo repetido, revert de fixes previos, etc.) sin converger.
 
