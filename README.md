@@ -51,4 +51,4 @@ pnpm app smoke --repo <owner/name> --app <app>   # levanta la app, entra con cad
 pnpm explore run --repo <owner/name> --app <app> # una corrida de exploración local, sin tocar GitHub
 ```
 
-La arquitectura y las decisiones de diseño están en [`docs/DESIGN.md`](docs/DESIGN.md), y hay un documento por feature en [`docs/superpowers/specs/`](docs/superpowers/specs/).
+La arquitectura y las decisiones de diseño están en [`docs/DESIGN.md`](docs/DESIGN.md), y el criterio de bloqueo en [`docs/BLOCKING.md`](docs/BLOCKING.md). Los features más viejos tienen además su documento de diseño en [`docs/superpowers/specs/`](docs/superpowers/specs/); los nuevos se documentan directo en `DESIGN.md`.
