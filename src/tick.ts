@@ -32,7 +32,7 @@ import { runJobs, type Job } from './concurrency.js';
 import { runAgentTask, type AgentTask } from './agent-task.js';
 import { runExternalReview } from './review-publish.js';
 import { ClaudeUsageLimitError } from './claude-runner.js';
-import { toStackedPrs, pickBottomPr, prsForIssue, planBranch, spikeBranch, type StackedPr } from './stack.js';
+import { toStackedPrs, pickBottomPr, prsForIssue, planBranch, spikeBranch, issueFromSliceBranch, type StackedPr } from './stack.js';
 import { incrementChecksPendingCount, resetChecksPendingCount, setLastReviewedSha } from './local-state.js';
 import { tryClaim, releaseIfNoLongerInProgress } from './claim.js';
 import { removeWorktree, sweepOrphanedWorktrees } from './worktree.js';
@@ -959,6 +959,24 @@ async function issueJobs(inProgress: TrackingIssue[]): Promise<Job[]> {
   }));
 }
 
+// A slice PR is only processed while its issue is in progress, and that's
+// where its mentions are read. Once the issue is blocked (or done with a PR
+// left open), nothing read them: a /preview on Bmedical/bmedical#367, whose
+// issue a transient gh error had blocked, went unanswered. Commands don't
+// depend on the issue — findUnprocessedMentions answers /help and typos,
+// launches /preview and applies /auto-merge on its own — so they're handled
+// here for those PRs. A request in plain words waits for the issue to be
+// back in progress, as before.
+export async function handleCommandsOnIdleSlicePrs(allPrs: PullRequestStatus[], inProgress: TrackingIssue[]): Promise<void> {
+  const active = new Set(inProgress.map((issue) => issue.number));
+  for (const pr of allPrs) {
+    const issue = issueFromSliceBranch(pr.headRefName);
+    if (issue === null || active.has(issue)) continue;
+    await findUnprocessedMentions(pr.number)
+      .catch((error) => log.error(`PR #${pr.number}: no se pudieron leer los comandos (issue #${issue} no está en curso)`, error));
+  }
+}
+
 // A bug-fix PR's "Closes #N" (see
 // docs/superpowers/specs/2026-07-28-bug-issue-intake-design.md) makes GitHub
 // close the issue as soon as a human merges it, and listTrackingIssues only
@@ -1000,6 +1018,9 @@ async function tickOneRepo(): Promise<void> {
     if (!inProgress.some((i) => i.number === issue.number)) inProgress.push(issue);
   }
   log.info(`${inProgress.length} issue(s) en progreso`);
+  await listAllOpenRoninPrs()
+    .then((prs) => handleCommandsOnIdleSlicePrs(prs, inProgress))
+    .catch((error) => log.error('comandos en PRs de issues que no están en curso: no se pudieron revisar', error));
 
   try {
     // Every flow's discovery at once, then all of their work in one pool:
