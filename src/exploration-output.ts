@@ -86,7 +86,7 @@ function oneOf<T extends string>(value: unknown, options: readonly T[], field: s
 
 // A path the agent reports must stay inside the run's own output dir: it is
 // later read and published, so "../../.env" must never get through.
-function insideDir(path: unknown, outDir: string): string | undefined {
+export function insideDir(path: unknown, outDir: string): string | undefined {
   if (typeof path !== 'string' || path.length === 0) return undefined;
   const absolute = path.startsWith('/') ? path : `${outDir}/${path}`;
   const normalized = absolute.split('/').reduce<string[]>((acc, part) => {

@@ -345,6 +345,16 @@ Cuando cualquier tarea termina en `RONIN_STATUS: needs-info`, además de dejar l
 
 Piloto: el backoffice de shoppingcart (herramienta interna, se levanta entero con stubs de Odoo/GCP, usuarios con el mismo rol `Sales` pero dos usos distintos — vendedores en desktop y bodega en el teléfono). El mecanismo se evalúa por la calidad de lo que encuentra: ¿detecta lo que el equipo ya sabía?, ¿encuentra algo nuevo?, ¿cuántas propuestas se descartan?
 
+#### 11.11 Pedidos en un issue: alcance, investigación y prototipos
+
+Antes de asignárselo a ronin, el issue se puede ir dando forma con él: cualquier mención sin comando en un issue sin `ronin:managed` es un pedido en palabras. Nunca termina en un PR. Para eso está asignar el issue o `/spec`.
+
+- **Un agente de solo lectura decide, el supervisor escribe** (`issue-request.ts`). El agente lee el issue y el código y deja en un JSON lo que pide el comentario: un alcance nuevo, una investigación, un prototipo y/o la respuesta. El supervisor compone el cuerpo nuevo (`issue-sections.ts`), así la descripción original nunca cambia, diga lo que diga el agente.
+- **Alcance:** la sección `## Alcance` (entre marcadores `<!-- ronin:alcance -->`) tiene el alcance vigente completo y se reemplaza en cada cambio. `## Cambios de alcance` suma una línea por cambio, con fecha y link al comentario que lo pidió. Cuando el cambio amplía el alcance ("aplica a otras vistas"), el agente nombra los lugares concretos.
+- **Investigación:** se agrega al final como `## Contexto adicional (<fecha>)`, sin reemplazar las anteriores, igual que `/spike`.
+- **Prototipo** (`/prototype <app> [instrucción]`, o pedido en palabras): corre en un worker aparte (`prototype-worker.ts`), uno a la vez por repo, que espera su turno en lugar de descartar el pedido. Levanta la app desde la rama base en un worktree propio (`prototype-issue-<n>`) con una instancia de compose propia. El agente tiene un navegador por rol y viewport. Saca el antes, hace un cambio borrador, saca el después (o un HTML si el cambio real no es práctico) y deja el cambio sin revertir. El supervisor toma el diff del checkout, sube las capturas a `ronin/evidence` (§11.5) y responde en el issue con antes, después y diff. Después tira el worktree: no queda rama ni PR.
+- Cada comentario recibe 👀 aunque falle, y la falla se responde. Así un pedido roto no se reintenta en cada tick. En un issue que ronin ya está implementando, estas menciones no se leen: el cambio se pide en el PR.
+
 ### 12. Previews por PR en la tailnet (`/preview`)
 
 Para probar un PR sin entrar al server, armar el worktree y levantar la app a mano. `@ronin-agent /preview [app]` en un PR (no fork) hace eso mismo con el `ronin.app.json` del head del PR (§11.2) y responde con una URL de la tailnet y los usuarios de seed. La app es opcional cuando el manifiesto define una sola.

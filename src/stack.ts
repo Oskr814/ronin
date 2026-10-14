@@ -22,6 +22,13 @@ export function spikeBranch(issueNumber: number): string {
   return `ronin/${issueNumber}/spike`;
 }
 
+// The 'issue-request' task's branch — read only like spikeBranch: the
+// supervisor applies what the agent says (issue-request.ts), and cleans the
+// worktree up itself.
+export function requestBranch(issueNumber: number): string {
+  return `ronin/${issueNumber}/request`;
+}
+
 // The 'write-spec' task's branch: it does open a PR (the spec, as a draft),
 // but that PR is a spec PR — merged by discoverAssignedSpecs once a human
 // marks it ready — never a slice of a tracking issue.

@@ -41,6 +41,18 @@ describe('classifyMetaCommand', () => {
     expect(classifyMetaCommand('@ronin /fix-comments', 'ronin', 'issue')).toEqual({ kind: 'wrong-context', command: 'fix-comments' });
   });
 
+  it('knows /prototype: through on an issue with an app, usage without one, wrong place on a PR', () => {
+    expect(classifyMetaCommand('@ronin /prototype backoffice el modal', 'ronin', 'issue')).toBeNull();
+    expect(classifyMetaCommand('@ronin /prototype', 'ronin', 'issue')).toEqual({ kind: 'bad-usage', command: 'prototype' });
+    expect(classifyMetaCommand('@ronin /prototype backoffice', 'ronin', 'pr')).toEqual({ kind: 'wrong-context', command: 'prototype' });
+  });
+
+  it('lists the plain-words request in both tables, each with its own meaning', () => {
+    expect(renderCommandTable('ronin', 'issue')).toContain('`@ronin <pedido>`');
+    expect(renderCommandTable('ronin', 'issue')).toContain('alcance');
+    expect(renderCommandTable('ronin', 'pr')).not.toContain('alcance');
+  });
+
   it('flags /spike with no app_name instead of letting it through silently', () => {
     expect(classifyMetaCommand('@ronin /spike', 'ronin', 'issue')).toEqual({ kind: 'bad-usage', command: 'spike' });
     expect(classifyMetaCommand('@ronin /spike   ', 'ronin', 'issue')).toEqual({ kind: 'bad-usage', command: 'spike' });

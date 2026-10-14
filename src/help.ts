@@ -63,6 +63,13 @@ const COMMANDS: CommandSpec[] = [
     validateArgs: (rest) => SPIKE_HAS_APP_NAME_RE.test(rest),
   },
   {
+    name: 'prototype',
+    scopes: ['issue'],
+    usage: '/prototype <app> [instrucción]',
+    summary: 'Levanto la app, aplico un cambio borrador con lo que pide el issue y dejo en el issue las capturas del antes y el después, con el diff. No abro rama ni PR. Solo en issues que todavía no me asignaron.',
+    validateArgs: (rest) => SPIKE_HAS_APP_NAME_RE.test(rest),
+  },
+  {
     name: 'explore',
     scopes: ['issue'],
     usage: '/explore <app> [cantidad de funciones]',
@@ -79,6 +86,9 @@ const COMMANDS: CommandSpec[] = [
 
 const FREE_TEXT_PR_SUMMARY =
   'En un PR mío, o en un hilo de review de cualquier PR (no fork): si el pedido es concreto lo aplico y respondo en ese hilo, si no te respondo por qué. En un comentario general del PR de otra persona: review de solo lectura enfocada en tu pedido.';
+
+const FREE_TEXT_ISSUE_SUMMARY =
+  'En un issue que todavía no me asignaron: si pedís cambiar el alcance lo reescribo en el issue (la descripción original queda) y dejo registro del cambio; si pedís investigar algo agrego el contexto; si pedís un prototipo lo hago como `/prototype`; si es una pregunta, la respondo. Nunca abro un PR desde acá.';
 
 export type MetaCommand =
   | { kind: 'help' }
@@ -145,7 +155,7 @@ function scopeLabel(scopes: CommandContext[]): string {
 
 export function renderCommandTable(login: string, context: CommandContext): string {
   const rows = COMMANDS.filter((c) => c.scopes.includes(context)).map((c) => `| \`@${login} ${c.usage}\` | ${c.summary} |`);
-  if (context === 'pr') rows.unshift(`| \`@${login} <pedido>\` | ${FREE_TEXT_PR_SUMMARY} |`);
+  rows.unshift(`| \`@${login} <pedido>\` | ${context === 'pr' ? FREE_TEXT_PR_SUMMARY : FREE_TEXT_ISSUE_SUMMARY} |`);
   return ['| Comando | Qué hace |', '|---|---|', ...rows].join('\n');
 }
 
