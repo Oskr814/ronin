@@ -14,6 +14,9 @@ import {
   retargetDependents,
   setIssueState,
   incrementAttemptCount,
+  attemptCountFromLabels,
+  resetAttemptCount,
+  isTransientGhError,
   addReaction,
   getPullRequestStatus,
   setReviewStatus,
@@ -585,15 +588,26 @@ export async function processIssue(issue: TrackingIssue, openPrs: PullRequestSta
 // retries forever, any other unhandled exception counts against
 // issueErrorRetryLimit before escalating to a human block. Used by both
 // passes in tick() below so neither has to duplicate this policy.
-async function runIssueStep(issue: TrackingIssue, step: () => Promise<void>): Promise<void> {
+//
+// The limit counts errors in a row: a step that goes through resets the
+// counter, so errors days apart never add up to a block.
+export async function runIssueStep(issue: TrackingIssue, step: () => Promise<void>): Promise<void> {
   try {
     await step();
+    const attempts = attemptCountFromLabels(issue.labels);
+    if (attempts > 0) {
+      await resetAttemptCount(issue.number, attempts)
+        .catch((error) => log.info(`issue #${issue.number}: no se pudo reiniciar el contador de errores (${(error as Error).message.split('\n')[0]})`));
+    }
   } catch (error) {
     // A monthly spend/usage cap is transient and resolves on its own —
     // skip this issue for this tick instead of blocking it on a human;
     // quota comes back and a later tick picks up where this left off.
     if (error instanceof ClaudeUsageLimitError) {
       log.info(`issue #${issue.number}: límite de uso de Claude alcanzado, reintentando en un tick posterior`);
+    } else if (isTransientGhError(error)) {
+      // Same for GitHub or the network failing for a moment: not counted.
+      log.info(`issue #${issue.number}: GitHub falló de forma pasajera (${(error as Error).message.split('\n').slice(0, 2).join(' — ')}), reintentando en un tick posterior`);
     } else {
       const reason = `Excepción no manejada procesando el issue: ${(error as Error).message}`;
       // This escalation path itself calls gh (incrementAttemptCount,

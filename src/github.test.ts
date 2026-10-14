@@ -20,7 +20,7 @@ vi.mock('./repo-context.js', () => ({
   activeRepo: () => ({ productRepo: 'bmedical/bmedical', productRepoPath: '/tmp/repo', worktreeBasePath: '/tmp/worktrees' }),
 }));
 
-const { isExternalReviewable, lastMarkedReviewSha, threadOf, changesRequestedOn } = await import('./github.js');
+const { attemptCountFromLabels, isTransientGhError, isExternalReviewable, lastMarkedReviewSha, threadOf, changesRequestedOn } = await import('./github.js');
 
 describe('changesRequestedOn', () => {
   const review = (login: string, state: string, commitId: string) => ({ login, state, commitId });
@@ -128,5 +128,26 @@ describe('threadOf', () => {
 
   it('falls back to the comment itself when its root is not in the list', () => {
     expect(threadOf(reply, [reply])).toMatchObject({ path: 'a.ts', line: null, comments: [{ id: 20 }] });
+  });
+});
+
+describe('isTransientGhError', () => {
+  it('recognizes GitHub or the network failing for a moment', () => {
+    expect(isTransientGhError(new Error('Command failed: gh issue view 350 --json body --repo Bmedical/bmedical\nHTTP 500: 500 Internal Server Error (https://api.github.com/graphql)'))).toBe(true);
+    expect(isTransientGhError(new Error('Command failed: gh pr list\nHTTP 502: Bad Gateway'))).toBe(true);
+    expect(isTransientGhError(new Error('Command failed: gh api repos/x\nPost "https://api.github.com/graphql": read tcp: connection reset by peer'))).toBe(true);
+  });
+
+  it('leaves real errors and other commands out', () => {
+    expect(isTransientGhError(new Error('Command failed: gh issue view 9\nGraphQL: Could not resolve to an issue'))).toBe(false);
+    expect(isTransientGhError(new Error('Command failed: gh pr edit 3\nHTTP 422: Validation Failed'))).toBe(false);
+    expect(isTransientGhError(new Error('claude exited with code 1: HTTP 500'))).toBe(false);
+  });
+});
+
+describe('attemptCountFromLabels', () => {
+  it('reads the counter, or 0 without one', () => {
+    expect(attemptCountFromLabels(['ronin', 'ronin:attempts-5'])).toBe(5);
+    expect(attemptCountFromLabels(['ronin'])).toBe(0);
   });
 });

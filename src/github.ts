@@ -93,6 +93,28 @@ const ATTEMPT_LABEL_RE = /^ronin:attempts-(\d+)$/;
 // every tick floods the issue's activity timeline with noise. This one stays
 // label-based because its limits are small (2-3), so the escalation history
 // staying visible on the issue is actually useful.
+// The counter as `labels` show it: 0 without one.
+export function attemptCountFromLabels(labels: string[]): number {
+  const match = labels.map((l) => l.match(ATTEMPT_LABEL_RE)).find((m) => m !== null);
+  return match ? Number(match[1]) : 0;
+}
+
+// Back to 0: the issue-level error counter counts errors in a row, not ever.
+export async function resetAttemptCount(number: number, current: number): Promise<void> {
+  await gh(['issue', 'edit', String(number), '--remove-label', `ronin:attempts-${current}`]);
+}
+
+// A failure of `gh` that a later retry fixes on its own: GitHub answering
+// 5xx, 429 or 499, or the network between here and GitHub. Never a reason
+// to block on a human — Bmedical/bmedical#350 was blocked by one
+// `HTTP 500: 500 Internal Server Error (https://api.github.com/graphql)`.
+const TRANSIENT_GH_RE = /HTTP (5\d\d|429|499)\b|secondary rate limit|ETIMEDOUT|ECONNRESET|ECONNREFUSED|EAI_AGAIN|i\/o timeout|TLS handshake timeout|connection reset|unexpected EOF|could not resolve host|Bad Gateway|Service Unavailable|Gateway Timeout/i;
+
+export function isTransientGhError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /Command failed: gh\b/.test(message) && TRANSIENT_GH_RE.test(message);
+}
+
 export async function getAttemptCount(prNumber: number): Promise<number> {
   const stdout = await gh(['issue', 'view', String(prNumber), '--json', 'labels']);
   const labels = (JSON.parse(stdout) as { labels: Array<{ name: string }> }).labels.map((l) => l.name);

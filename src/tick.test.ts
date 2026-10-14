@@ -62,7 +62,13 @@ const listAssignedIssues = vi.fn();
 const listExternalOpenReviewThreads = vi.fn();
 const setReviewStatus = vi.fn();
 const setPullRequestBody = vi.fn();
+const resetAttemptCount = vi.fn();
+const isTransientGhError = vi.fn();
 vi.mock('./github.js', () => ({
+  attemptCountFromLabels: (labels: string[]) => Number(labels.map((l) => l.match(/^ronin:attempts-(\d+)$/)?.[1]).find(Boolean) ?? 0),
+  resetAttemptCount: (...args: unknown[]) => resetAttemptCount(...args),
+  isTransientGhError: (...args: unknown[]) => isTransientGhError(...args),
+  getIssueLabels: async () => ['ronin', 'ronin:in-progress'],
   addReaction: (...args: unknown[]) => addReaction(...args),
   retargetDependents: (...args: unknown[]) => retargetDependents(...args),
   incrementAttemptCount: (...args: unknown[]) => incrementAttemptCount(...args),
@@ -130,7 +136,7 @@ vi.mock('./changelog.js', () => ({
   findReleasesNeedingChangelog: (...args: unknown[]) => findReleasesNeedingChangelog(...args),
 }));
 
-const { handleCommandsOnIdleSlicePrs, processSlicePr, processIssue, agentTaskFor, needsMoreInfo, discoverAssignedIssues, processExternalReviewCandidate, processTrustedFixCandidate, runExternalReviews, processSpikeCandidate, processChangelogCandidate, runChangelogUpdates, renderTrackingIssueBody } = await import('./tick.js');
+const { runIssueStep, handleCommandsOnIdleSlicePrs, processSlicePr, processIssue, agentTaskFor, needsMoreInfo, discoverAssignedIssues, processExternalReviewCandidate, processTrustedFixCandidate, runExternalReviews, processSpikeCandidate, processChangelogCandidate, runChangelogUpdates, renderTrackingIssueBody } = await import('./tick.js');
 
 function issue(overrides: Partial<TrackingIssue> = {}): TrackingIssue {
   return { number: 228, title: 'Test issue', url: 'https://github.com/x/y/issues/228', labels: [], ...overrides };
@@ -1092,5 +1098,39 @@ describe('handleCommandsOnIdleSlicePrs', () => {
     await handleCommandsOnIdleSlicePrs([{ number: 1, headRefName: 'ronin/10/slice-1' }, { number: 2, headRefName: 'ronin/11/slice-2' }] as any[], []);
 
     expect(findUnprocessedMentions.mock.calls).toEqual([[1], [2]]);
+  });
+});
+
+describe('runIssueStep', () => {
+  const issue = { number: 350, title: 't', url: 'u', labels: ['ronin', 'ronin:attempts-3'] };
+
+  beforeEach(() => {
+    resetAttemptCount.mockReset().mockResolvedValue(undefined);
+    isTransientGhError.mockReset().mockReturnValue(false);
+    incrementAttemptCount.mockReset().mockResolvedValue(1);
+    setIssueState.mockReset().mockResolvedValue(undefined);
+  });
+
+  it('resets the error counter when the step goes through', async () => {
+    await runIssueStep(issue, async () => {});
+    expect(resetAttemptCount).toHaveBeenCalledWith(350, 3);
+  });
+
+  it('leaves an issue without a counter alone', async () => {
+    await runIssueStep({ ...issue, labels: ['ronin'] }, async () => {});
+    expect(resetAttemptCount).not.toHaveBeenCalled();
+  });
+
+  it('does not count a transient GitHub error, nor block on it', async () => {
+    isTransientGhError.mockReturnValue(true);
+    await runIssueStep(issue, async () => { throw new Error('Command failed: gh issue view 350\nHTTP 500: 500 Internal Server Error'); });
+    expect(incrementAttemptCount).not.toHaveBeenCalled();
+    expect(setIssueState).not.toHaveBeenCalled();
+    expect(resetAttemptCount).not.toHaveBeenCalled();
+  });
+
+  it('still counts any other error', async () => {
+    await runIssueStep(issue, async () => { throw new Error('claude exited with code 1'); });
+    expect(incrementAttemptCount).toHaveBeenCalledWith(350);
   });
 });
