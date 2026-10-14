@@ -3,7 +3,7 @@ import { describe, it, expect, vi } from 'vitest';
 vi.mock('./logger.js', () => ({ log: { error: vi.fn(), info: vi.fn() } }));
 vi.mock('./config.js', () => ({ config: { githubLogin: 'ronin-agent' } }));
 
-import { describeTtl, parsePreviewData, previewPorts, previewPrFromDirName, renderPreviewFailed, renderPreviewReady, resolvePreviewArgs } from './preview.js';
+import { chooseManifest, describeTtl, parsePreviewData, previewPorts, previewPrFromDirName, renderPreviewFailed, renderPreviewReady, resolvePreviewArgs } from './preview.js';
 import type { AppDefinition, TemplateContext } from './app-manifest.js';
 
 const app = {
@@ -141,5 +141,18 @@ describe('renderPreviewFailed', () => {
 
   it('skips the block when there is no detail', () => {
     expect(renderPreviewFailed(new Error('no hay tailscale'))).not.toContain('<details>');
+  });
+});
+
+describe('chooseManifest', () => {
+  it("takes the base's manifest unless the PR changes it", () => {
+    expect(chooseManifest(false, 'base', 'pr')).toEqual({ raw: 'base', from: 'base' });
+    expect(chooseManifest(true, 'base', 'pr')).toEqual({ raw: 'pr', from: 'pr' });
+  });
+
+  it('falls back to whichever exists', () => {
+    expect(chooseManifest(false, null, 'pr')).toEqual({ raw: 'pr', from: 'pr' });
+    expect(chooseManifest(true, 'base', null)).toEqual({ raw: 'base', from: 'base' });
+    expect(chooseManifest(false, null, null)).toBeNull();
   });
 });

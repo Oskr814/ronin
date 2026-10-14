@@ -18,7 +18,7 @@ import { log } from './logger.js';
 const execFileAsync = promisify(execFile);
 
 // `/preview [app]` on a PR: ronin brings the app up from the PR's head, with
-// its seeds, in a worktree of its own, and publishes it on the tailnet with
+// its seeds (and the base's ronin.app.json unless the PR changes it), in a worktree of its own, and publishes it on the tailnet with
 // `tailscale serve` so whoever asked can try it from their own machine. It
 // lives until the PR merges or closes (sweepPreviews, on the tick that
 // event wakes up), until `/preview stop`, or until PREVIEW_TTL_MINUTES after
@@ -158,14 +158,32 @@ export function previewPorts(session: Pick<AppSession, 'app' | 'ctx' | 'baseUrl'
   return [...new Set([basePort, ...declared])];
 }
 
-async function manifestAppNames(dir: string): Promise<string[]> {
-  let raw: string;
-  try {
-    raw = await readFile(join(dir, APP_MANIFEST_FILE), 'utf8');
-  } catch {
-    throw new Error(`este PR no tiene un ${APP_MANIFEST_FILE}: no sé cómo levantar la app`);
-  }
-  return Object.keys(parseAppManifest(raw).apps);
+// Which ronin.app.json brings the preview up: the PR's own when the PR
+// changes it, and otherwise its base's. A PR branched before a fix to the
+// manifest (Bmedical/bmedical#367, from before ALLOWED_DEV_ORIGINS) would
+// otherwise bring the app up broken, and ronin never brings its own PRs up
+// to date with their base.
+export function chooseManifest(changedByPr: boolean, base: string | null, head: string | null): { raw: string; from: 'pr' | 'base' } | null {
+  if (changedByPr && head !== null) return { raw: head, from: 'pr' };
+  if (base !== null) return { raw: base, from: 'base' };
+  return head !== null ? { raw: head, from: 'pr' } : null;
+}
+
+async function previewManifest(dir: string, pr: Pick<PrHead, 'baseRefName' | 'headRefOid'>): Promise<string> {
+  const repo = activeRepo().productRepoPath;
+  await execFileAsync('git', ['fetch', 'origin', pr.baseRefName], { cwd: repo });
+  const baseRef = `origin/${pr.baseRefName}`;
+  const mergeBase = (await execFileAsync('git', ['merge-base', baseRef, pr.headRefOid], { cwd: dir })).stdout.trim();
+  // Exit code 1 means there's a difference.
+  const changedByPr = await execFileAsync('git', ['diff', '--quiet', mergeBase, pr.headRefOid, '--', APP_MANIFEST_FILE], { cwd: dir })
+    .then(() => false, () => true);
+  const base = await execFileAsync('git', ['show', `${baseRef}:${APP_MANIFEST_FILE}`], { cwd: dir, maxBuffer: 10 * 1024 * 1024 })
+    .then(({ stdout }) => stdout, () => null);
+  const head = await readFile(join(dir, APP_MANIFEST_FILE), 'utf8').catch(() => null);
+  const chosen = chooseManifest(changedByPr, base, head);
+  if (!chosen) throw new Error(`ni este PR ni \`${pr.baseRefName}\` tienen un ${APP_MANIFEST_FILE}: no sé cómo levantar la app`);
+  log.info(`preview: ${APP_MANIFEST_FILE} ${chosen.from === 'pr' ? 'del PR' : `de ${pr.baseRefName}`}`);
+  return chosen.raw;
 }
 
 // `/preview backoffice un cliente con 40 catálogos`, `/preview un cliente
@@ -302,7 +320,8 @@ export async function startPreview(prNumber: number, pr: PrHead, args?: string):
   const existing = previewDirFor(prNumber);
   if (existsSync(existing)) await takeDownPreviewApp(existing);
   const dir = await ensurePreviewWorktree(prNumber, sha);
-  const { appName, instruction } = resolvePreviewArgs(args, await manifestAppNames(dir));
+  const manifest = await previewManifest(dir, pr);
+  const { appName, instruction } = resolvePreviewArgs(args, Object.keys(parseAppManifest(manifest).apps));
   // Checked before anything starts: a preview is a whole stack, and this
   // host runs a handful at most. A second /preview on the same PR keeps its
   // slot.
@@ -321,7 +340,7 @@ export async function startPreview(prNumber: number, pr: PrHead, args?: string):
   let session: AppSession;
   try {
     // appUp tears down what it started if it fails.
-    session = await appUp(dir, appName, { instance: `pr-${prNumber}`, publicHost: host, publicPort });
+    session = await appUp(dir, appName, { instance: `pr-${prNumber}`, publicHost: host, publicPort, manifest });
   } catch (error) {
     await reservations().releasePorts(dir);
     await reservations().releaseSlots(dir);

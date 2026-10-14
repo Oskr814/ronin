@@ -382,8 +382,9 @@ Antes de asignárselo a ronin, el issue se puede ir dando forma con él: cualqui
 
 ### 12. Previews por PR en la tailnet (`/preview`)
 
-Para probar un PR sin entrar al server, armar el worktree y levantar la app a mano. `@ronin-agent /preview [app]` en un PR (no fork) hace eso mismo con el `ronin.app.json` del head del PR (§11.2) y responde con una URL de la tailnet y los usuarios de seed. La app es opcional cuando el manifiesto define una sola.
+Para probar un PR sin entrar al server, armar el worktree y levantar la app a mano. `@ronin-agent /preview [app]` en un PR (no fork) hace eso mismo con el código del head del PR y responde con una URL de la tailnet y los usuarios de seed. La app es opcional cuando el manifiesto define una sola.
 
+- **Qué manifiesto.** El `ronin.app.json` (§11.2) de la rama base del PR, salvo que el PR lo modifique: en ese caso, el del PR. Un PR que salió de la base antes de un arreglo al manifiesto (como #367 de bmedical, de antes de `ALLOWED_DEV_ORIGINS`) levantaría la app rota, y ronin no pone al día sus propios PRs con la base.
 - **Dónde corre.** Un worker aparte (`preview-worker.ts`), como el de exploración: levantar la app tarda minutos y no puede retener el tick. El comando se intercepta en `findUnprocessedMentions`, así que nunca llega a la review ni a fix-comments. El 👀 se pone al lanzar el worker, y el worker contesta en el mismo lugar del comentario. Hay un lock por PR, así que dos `/preview` seguidos no se pisan.
 - **Aislamiento.** Worktree `preview-pr-<n>` detached en el SHA del head (vía `refs/pull/<n>/head`) y proyecto compose `ronin-app-<repo>-<app>-pr-<n>`, que corre al lado del de exploración y del de otros PRs. Los puertos siguen en `127.0.0.1`.
 - **Publicación.** `tailscale serve --https=<puerto público>` → `http://127.0.0.1:<puerto local>`, solo en la tailnet, nunca `funnel`. Se publica el puerto del `baseUrl` más los que la página usa (ver abajo). Los puertos públicos salen de un rango fijo, `PREVIEW_PORT_RANGE` (por defecto 20000-20999), que es lo único que una política de Tailscale le abre a alguien de afuera:
