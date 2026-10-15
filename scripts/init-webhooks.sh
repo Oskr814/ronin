@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # One-time (idempotent, safe to re-run) setup step: registers a GitHub
-# webhook in every repo listed in repos.json, pointing at webhook-server.ts's
+# webhook in every repo listed in repos.json, pointing at webhooks/server.ts's
 # public URL (see scripts/setup-webhook-service.sh for running that server,
 # and the wiki (https://github.com/Oskr814/ronin/wiki/Webhooks) for exposing it via a reverse proxy/tunnel). Run manually,
 # using your own `gh auth` session — same convention as init-labels.sh.

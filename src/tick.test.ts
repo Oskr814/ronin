@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { TrackingIssue } from './github.js';
-import type { StackedPr } from './stack.js';
-import { HELP_FOOTER_MARKER } from './help.js';
+import type { TrackingIssue } from './core/github.js';
+import type { StackedPr } from './slices/stack.js';
+import { HELP_FOOTER_MARKER } from './commands/help.js';
 
 const existsSync = vi.fn();
 vi.mock('node:fs', () => ({
@@ -13,7 +13,7 @@ vi.mock('node:fs/promises', () => ({
   readFile: (...args: unknown[]) => readFile(...args),
 }));
 
-vi.mock('./config.js', () => ({
+vi.mock('./core/config.js', () => ({
   config: {
     e2eRetryLimit: 2,
     e2eAttemptHardLimit: 5,
@@ -34,7 +34,7 @@ vi.mock('./config.js', () => ({
 }));
 
 const activeRepo = vi.fn();
-vi.mock('./repo-context.js', () => ({
+vi.mock('./core/repo-context.js', () => ({
   activeRepo: (...args: unknown[]) => activeRepo(...args),
 }));
 
@@ -44,7 +44,7 @@ const hasRemainingSlices = vi.fn();
 const seedSingleSlice = vi.fn();
 const nextUnstartedSlice = vi.fn();
 const getSlices = vi.fn();
-vi.mock('./checklist.js', () => ({
+vi.mock('./slices/checklist.js', () => ({
   recordSlicePr: (...args: unknown[]) => recordSlicePr(...args),
   markSliceMerged: (...args: unknown[]) => markSliceMerged(...args),
   hasRemainingSlices: (...args: unknown[]) => hasRemainingSlices(...args),
@@ -66,7 +66,7 @@ const setPullRequestBody = vi.fn();
 const resetAttemptCount = vi.fn();
 const isTransientGhError = vi.fn();
 const getFailedChecks = vi.fn();
-vi.mock('./github.js', () => ({
+vi.mock('./core/github.js', () => ({
   attemptCountFromLabels: (labels: string[]) => Number(labels.map((l) => l.match(/^ronin:attempts-(\d+)$/)?.[1]).find(Boolean) ?? 0),
   resetAttemptCount: (...args: unknown[]) => resetAttemptCount(...args),
   isTransientGhError: (...args: unknown[]) => isTransientGhError(...args),
@@ -90,7 +90,7 @@ const resetChecksPendingCount = vi.fn();
 const setLastReviewedSha = vi.fn();
 const setLastChangelogRelease = vi.fn();
 const recordFailureSignature = vi.fn();
-vi.mock('./local-state.js', () => ({
+vi.mock('./core/local-state.js', () => ({
   incrementChecksPendingCount: (...args: unknown[]) => incrementChecksPendingCount(...args),
   resetChecksPendingCount: (...args: unknown[]) => resetChecksPendingCount(...args),
   setLastReviewedSha: (...args: unknown[]) => setLastReviewedSha(...args),
@@ -101,44 +101,44 @@ vi.mock('./local-state.js', () => ({
 
 const worktreeDirFor = vi.fn();
 const removeWorktree = vi.fn();
-vi.mock('./worktree.js', () => ({
+vi.mock('./core/worktree.js', () => ({
   worktreeDirFor: (...args: unknown[]) => worktreeDirFor(...args),
   removeWorktree: (...args: unknown[]) => removeWorktree(...args),
 }));
 
 const findUnprocessedMentions = vi.fn();
 const isFixCommentsCommand = vi.fn();
-vi.mock('./mentions.js', () => ({
+vi.mock('./commands/mentions.js', () => ({
   findUnprocessedMentions: (...args: unknown[]) => findUnprocessedMentions(...args),
   isFixCommentsCommand: (...args: unknown[]) => isFixCommentsCommand(...args),
 }));
 
 const runExternalReview = vi.fn();
-vi.mock('./review-publish.js', () => ({ runExternalReview }));
+vi.mock('./review/publish.js', () => ({ runExternalReview }));
 
 const changesRequestedOnHead = vi.fn();
 const runAgentTask = vi.fn();
-vi.mock('./agent-task.js', () => ({
+vi.mock('./core/agent-task.js', () => ({
   runAgentTask: (...args: unknown[]) => runAgentTask(...args),
 }));
 
 const notifyBlocker = vi.fn();
-vi.mock('./notifier.js', () => ({
+vi.mock('./core/notifier.js', () => ({
   notifyBlocker: (...args: unknown[]) => notifyBlocker(...args),
 }));
 
 const findPrsNeedingReview = vi.fn();
-vi.mock('./external-review.js', () => ({
+vi.mock('./review/external.js', () => ({
   findPrsNeedingReview: (...args: unknown[]) => findPrsNeedingReview(...args),
 }));
 
 const findIssuesNeedingSpike = vi.fn();
-vi.mock('./spike.js', () => ({
+vi.mock('./commands/spike.js', () => ({
   findIssuesNeedingSpike: (...args: unknown[]) => findIssuesNeedingSpike(...args),
 }));
 
 const findReleasesNeedingChangelog = vi.fn();
-vi.mock('./changelog.js', () => ({
+vi.mock('./changelog/changelog.js', () => ({
   findReleasesNeedingChangelog: (...args: unknown[]) => findReleasesNeedingChangelog(...args),
 }));
 

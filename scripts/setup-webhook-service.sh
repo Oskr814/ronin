@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Installs (or removes) webhook-server.ts as a systemd --user service — unlike
+# Installs (or removes) webhooks/server.ts as a systemd --user service — unlike
 # tick (a one-shot cron job, see setup-cron.sh), this has to stay up
 # permanently to accept incoming webhook deliveries. Safe to re-run.
 set -euo pipefail
@@ -17,8 +17,8 @@ if [[ "${1:-}" == "--remove" ]]; then
   exit 0
 fi
 
-if [ ! -f "$REPO_DIR/dist/webhook-server.js" ]; then
-  echo "$REPO_DIR/dist/webhook-server.js no existe — correr 'pnpm build' primero" >&2
+if [ ! -f "$REPO_DIR/dist/webhooks/server.js" ]; then
+  echo "$REPO_DIR/dist/webhooks/server.js no existe — correr 'pnpm build' primero" >&2
   exit 1
 fi
 
@@ -39,7 +39,7 @@ Type=simple
 WorkingDirectory=$REPO_DIR
 Environment=PATH=$FULL_PATH
 EnvironmentFile=$REPO_DIR/.env
-ExecStart=$NODE_BIN $REPO_DIR/dist/webhook-server.js
+ExecStart=$NODE_BIN $REPO_DIR/dist/webhooks/server.js
 Restart=on-failure
 RestartSec=5
 

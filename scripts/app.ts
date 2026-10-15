@@ -12,10 +12,10 @@
 // running or bringing one up and down for the occasion (--keep leaves it up).
 import { parseArgs } from 'node:util';
 import { join } from 'node:path';
-import { loadRepos } from '../src/repos.js';
-import { withActiveRepo } from '../src/repo-context.js';
-import { appDown, appUp, appWorktreeDirFor, attachApp, ensureAppWorktree, type AppSession } from '../src/app-runtime.js';
-import { loginAllUsers, smokeScreenshots } from '../src/app-browser.js';
+import { loadRepos } from '../src/core/repos.js';
+import { withActiveRepo } from '../src/core/repo-context.js';
+import { appDown, appUp, appWorktreeDirFor, attachApp, ensureAppWorktree, type AppSession } from '../src/app/index.js';
+import { loginAllUsers, smokeScreenshots } from '../src/app/index.js';
 
 const { values, positionals } = parseArgs({
   allowPositionals: true,

@@ -15,15 +15,15 @@ import { parseArgs } from 'node:util';
 import { cp } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { loadRepos } from '../src/repos.js';
-import { withActiveRepo } from '../src/repo-context.js';
-import { ensureAppWorktree } from '../src/app-runtime.js';
-import { loadAppDefinition } from '../src/app-manifest.js';
-import { ensureMemoryDir, loadMemory, memoryDirFor } from '../src/exploration-memory.js';
-import { refreshInventory } from '../src/exploration-inventory.js';
-import { changedFunctions, newSeed, planRun, riskByFunction } from '../src/exploration-plan.js';
-import { runExploration } from '../src/exploration-run.js';
-import { explorationDay } from '../src/exploration-flow.js';
+import { loadRepos } from '../src/core/repos.js';
+import { withActiveRepo } from '../src/core/repo-context.js';
+import { ensureAppWorktree } from '../src/app/index.js';
+import { loadAppDefinition } from '../src/app/index.js';
+import { ensureMemoryDir, loadMemory, memoryDirFor } from '../src/exploration/index.js';
+import { refreshInventory } from '../src/exploration/index.js';
+import { changedFunctions, newSeed, planRun, riskByFunction } from '../src/exploration/index.js';
+import { runExploration } from '../src/exploration/index.js';
+import { explorationDay } from '../src/exploration/index.js';
 
 const { values, positionals } = parseArgs({
   allowPositionals: true,
