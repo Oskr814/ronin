@@ -41,7 +41,6 @@ describe('renderRunReply', () => {
   const run = (findings: unknown[], discarded = 0): PublishedRun => ({
     prNumber: 820,
     batch: '2026-10-12',
-    urgentIssues: [{ id: 'F-0001', issue: 821 }],
     summary: {
       runId: '2026-10-12-7', seed: 7, plan: { seed: 7, functions: [] }, runFile: '/r.md', inventory: { added: [], retired: [], refreshed: false },
       outcomes: [
@@ -53,11 +52,12 @@ describe('renderRunReply', () => {
     },
   });
 
-  it('says what was explored, what it proposes with links, and where to review', () => {
+  it('says what was explored, what it proposes, and that issues wait for the approval', () => {
     const reply = renderRunReply('backoffice', run([{ id: 'F-0001', titulo: 'Doble toque', gravedad: 'bug' }]));
     expect(reply).toContain('`pedidos.confirmar` (interrupciones); fallaron `pedidos.surtir`');
-    expect(reply).toContain('**F-0001** Doble toque — `bug` · issue #821');
-    expect(reply).toContain('#820');
+    expect(reply).toContain('- **F-0001** Doble toque — `bug`\n');
+    expect(reply).not.toContain('issue #');
+    expect(reply).toContain('#820. Revisalas ahí: al aprobarlo abro un issue por cada una que siga en pie.');
   });
 
   it('is honest when nothing made it', () => {
