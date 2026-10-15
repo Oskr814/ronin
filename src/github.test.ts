@@ -8,7 +8,8 @@ import { describe, it, expect, vi } from 'vitest';
 // deciding which commit the incremental review diffs against, and threadOf —
 // pure too, and what tells the agent which thread a mention lives in, and
 // changesRequestedOn — pure too, and what keeps fix-review from looping on a
-// review ronin already answered.
+// review ronin already answered, and checksStatus — pure too, and what every
+// CI decision on a slice PR reads.
 vi.mock('./config.js', () => ({
   config: { githubLogin: 'ronin' },
   LABEL_MANAGED: 'ronin',
@@ -20,7 +21,7 @@ vi.mock('./repo-context.js', () => ({
   activeRepo: () => ({ productRepo: 'bmedical/bmedical', productRepoPath: '/tmp/repo', worktreeBasePath: '/tmp/worktrees' }),
 }));
 
-const { attemptCountFromLabels, isTransientGhError, isExternalReviewable, lastMarkedReviewSha, threadOf, changesRequestedOn } = await import('./github.js');
+const { attemptCountFromLabels, isTransientGhError, isExternalReviewable, lastMarkedReviewSha, threadOf, changesRequestedOn, checksStatus } = await import('./github.js');
 
 describe('changesRequestedOn', () => {
   const review = (login: string, state: string, commitId: string) => ({ login, state, commitId });
@@ -149,5 +150,41 @@ describe('attemptCountFromLabels', () => {
   it('reads the counter, or 0 without one', () => {
     expect(attemptCountFromLabels(['ronin', 'ronin:attempts-5'])).toBe(5);
     expect(attemptCountFromLabels(['ronin'])).toBe(0);
+  });
+});
+
+describe('checksStatus', () => {
+  const run = (conclusion: string | null) => ({ __typename: 'CheckRun' as const, conclusion });
+  const status = (context: string, state: string) => ({ __typename: 'StatusContext' as const, context, state });
+
+  it('passes when every check run succeeded, neutral and skipped included', () => {
+    expect(checksStatus([run('SUCCESS'), run('NEUTRAL'), run('SKIPPED')])).toEqual({ checksPassing: true, checksPending: false });
+  });
+
+  it('is pending while a check run has no conclusion yet, null or empty', () => {
+    expect(checksStatus([run('SUCCESS'), run(null)])).toEqual({ checksPassing: false, checksPending: true });
+    expect(checksStatus([run('')]).checksPending).toBe(true);
+  });
+
+  it('fails on a failed check run', () => {
+    expect(checksStatus([run('SUCCESS'), run('FAILURE')])).toEqual({ checksPassing: false, checksPending: false });
+  });
+
+  it('reads a commit status by its state, not by a conclusion it never has', () => {
+    expect(checksStatus([run('SUCCESS'), status('vercel', 'SUCCESS')])).toEqual({ checksPassing: true, checksPending: false });
+    expect(checksStatus([status('vercel', 'PENDING')]).checksPending).toBe(true);
+    expect(checksStatus([run('SUCCESS'), status('vercel', 'ERROR')])).toEqual({ checksPassing: false, checksPending: false });
+  });
+
+  it("ignores ronin's own statuses: a slice PR it reviewed is still green (Bmedical/bmedical#401)", () => {
+    expect(checksStatus([run('SUCCESS'), run('SUCCESS'), status('ronin/review', 'SUCCESS')]))
+      .toEqual({ checksPassing: true, checksPending: false });
+    expect(checksStatus([run('SUCCESS'), status('ronin/fix-comments', 'ERROR')]))
+      .toEqual({ checksPassing: true, checksPending: false });
+  });
+
+  it('is pending with no CI at all, even when ronin left a status', () => {
+    expect(checksStatus([])).toEqual({ checksPassing: false, checksPending: true });
+    expect(checksStatus([status('ronin/review', 'SUCCESS')])).toEqual({ checksPassing: false, checksPending: true });
   });
 });

@@ -226,7 +226,7 @@ interface RawPr {
   number: number;
   state: 'OPEN' | 'CLOSED' | 'MERGED';
   reviewDecision: PullRequestStatus['reviewDecision'] | null;
-  statusCheckRollup: Array<{ conclusion: string | null }>;
+  statusCheckRollup: RollupEntry[];
   mergeable: string;
   headRefName: string;
   baseRefName: string;
@@ -234,25 +234,62 @@ interface RawPr {
   body: string | null;
 }
 
+// One entry of a PR's statusCheckRollup. GitHub mixes two kinds: a CheckRun
+// (GitHub Actions and Checks-API apps) reports `conclusion`, a
+// StatusContext (the commit statuses API) reports `state` and has no
+// `conclusion` at all.
+export interface RollupEntry {
+  __typename?: 'CheckRun' | 'StatusContext';
+  conclusion?: string | null;
+  context?: string;
+  state?: string;
+}
+
+type CheckOutcome = 'passed' | 'pending' | 'failed';
+
+function checkOutcome(c: RollupEntry): CheckOutcome {
+  if (c.__typename === 'StatusContext') {
+    if (c.state === 'SUCCESS') return 'passed';
+    if (c.state === 'FAILURE' || c.state === 'ERROR') return 'failed';
+    return 'pending'; // PENDING, EXPECTED
+  }
+  // A still-running CheckRun reports conclusion as "" (empty string), not
+  // null — discovered live on PR #238, where an in-progress "Integration
+  // Tests" run got misread as an actual failure and spuriously triggered
+  // fix-e2e. Treat both null and "" as "not concluded yet".
+  if (!c.conclusion) return 'pending';
+  // NEUTRAL and SKIPPED are concluded-but-not-a-failure (e.g. a workflow
+  // that no-ops on this diff, or a required-only check GitHub skips) —
+  // `gh pr checks` itself doesn't count them as failures. Discovered live
+  // on PR #601: a NEUTRAL/SKIPPED entry alongside otherwise-SUCCESS checks
+  // made checksPassing false while checksPending was also false, spuriously
+  // triggering fix-e2e on a PR with nothing actually failing.
+  return c.conclusion === 'SUCCESS' || c.conclusion === 'NEUTRAL' || c.conclusion === 'SKIPPED' ? 'passed' : 'failed';
+}
+
+// What the PR's CI says about its code. ronin's own statuses (ronin/review,
+// ronin/fix-comments, ronin/thread-reply — tick.ts's setReviewStatus) are
+// left out: they report ronin's work on the PR, not the code. Read as CI, a
+// StatusContext (no `conclusion`) used to keep checksPending true forever
+// once ronin had reviewed a slice PR (Bmedical/bmedical#401,
+// redmotos/shoppingcart#849), and a ronin/* "error" would have sent
+// fix-e2e after a CI failure that doesn't exist.
+export function checksStatus(rollup: RollupEntry[]): { checksPassing: boolean; checksPending: boolean } {
+  const outcomes = rollup
+    .filter((c) => !(c.__typename === 'StatusContext' && c.context?.startsWith('ronin/')))
+    .map(checkOutcome);
+  return {
+    checksPassing: outcomes.length > 0 && outcomes.every((o) => o === 'passed'),
+    checksPending: outcomes.length === 0 || outcomes.includes('pending'),
+  };
+}
+
 function toPullRequestStatus(raw: RawPr): PullRequestStatus {
   return {
     number: raw.number,
     state: raw.state,
     reviewDecision: raw.reviewDecision ?? '',
-    // A still-running CheckRun reports conclusion as "" (empty string), not
-    // null — discovered live on PR #238, where an in-progress "Integration
-    // Tests" run got misread as an actual failure and spuriously triggered
-    // fix-e2e. Treat both null and "" as "not concluded yet".
-    //
-    // NEUTRAL and SKIPPED are concluded-but-not-a-failure (e.g. a workflow
-    // that no-ops on this diff, or a required-only check GitHub skips) —
-    // `gh pr checks` itself doesn't count them as failures. Discovered live
-    // on PR #601: a NEUTRAL/SKIPPED entry alongside otherwise-SUCCESS checks
-    // made checksPassing false while checksPending was also false, spuriously
-    // triggering fix-e2e on a PR with nothing actually failing.
-    checksPassing: raw.statusCheckRollup.length > 0
-      && raw.statusCheckRollup.every((c) => c.conclusion === 'SUCCESS' || c.conclusion === 'NEUTRAL' || c.conclusion === 'SKIPPED'),
-    checksPending: raw.statusCheckRollup.length === 0 || raw.statusCheckRollup.some((c) => !c.conclusion),
+    ...checksStatus(raw.statusCheckRollup),
     mergeable: raw.mergeable === 'MERGEABLE',
     headRefName: raw.headRefName,
     baseRefName: raw.baseRefName,
