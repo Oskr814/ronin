@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { config, LABEL_MANAGED, LABEL_STATES, type SpecStatus } from './config.js';
 import { activeRepo } from './repo-context.js';
 import { log } from './logger.js';
+import type { FailedCheck } from './failure-signature.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -259,6 +260,50 @@ function toPullRequestStatus(raw: RawPr): PullRequestStatus {
     isDraft: raw.isDraft,
     body: raw.body ?? '',
   };
+}
+
+// The checks failing on a PR, each with its job log when it's a GitHub
+// Actions job — what failure-signature.ts fingerprints. A log that can't be
+// read leaves that check with its name alone, never fails the whole read.
+const FAILED_CHECKS_MAX = 10;
+const JOB_LOG_MAX_BUFFER = 64 * 1024 * 1024;
+const ACTIONS_JOB_URL = /\/actions\/runs\/\d+\/job\/(\d+)/;
+
+interface RawCheck {
+  __typename: 'CheckRun' | 'StatusContext';
+  name?: string;
+  conclusion?: string | null;
+  detailsUrl?: string;
+  context?: string;
+  state?: string;
+}
+
+export async function getFailedChecks(prNumber: number): Promise<FailedCheck[]> {
+  const stdout = await gh(['pr', 'view', String(prNumber), '--json', 'statusCheckRollup']);
+  const rollup = (JSON.parse(stdout) as { statusCheckRollup: RawCheck[] }).statusCheckRollup;
+  // Same reading of "failed" as toPullRequestStatus's checksPassing; ronin's
+  // own statuses (ronin/review, ronin/fix-comments) report its work on the
+  // PR, not the code, so they're no part of why CI fails.
+  const failed = rollup
+    .filter((c) => (c.__typename === 'StatusContext'
+      ? (c.state === 'FAILURE' || c.state === 'ERROR') && !c.context?.startsWith('ronin/')
+      : !!c.conclusion && !['SUCCESS', 'NEUTRAL', 'SKIPPED'].includes(c.conclusion)))
+    .slice(0, FAILED_CHECKS_MAX);
+  return Promise.all(failed.map(async (c) => {
+    const name = c.name ?? c.context ?? '?';
+    const jobId = c.detailsUrl?.match(ACTIONS_JOB_URL)?.[1];
+    if (!jobId) return { name, log: '' };
+    try {
+      const { stdout: jobLog } = await execFileAsync('gh', ['api', `repos/${activeRepo().productRepo}/actions/jobs/${jobId}/logs`], {
+        env: { ...process.env, GH_TOKEN: config.githubToken },
+        maxBuffer: JOB_LOG_MAX_BUFFER,
+      });
+      return { name, log: jobLog };
+    } catch (error) {
+      log.info(`getFailedChecks: no se pudo leer el log del job ${jobId} (PR #${prNumber}): ${(error as Error).message}`);
+      return { name, log: '' };
+    }
+  }));
 }
 
 export async function getPullRequestStatus(prNumber: number): Promise<PullRequestStatus> {

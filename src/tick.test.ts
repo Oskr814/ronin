@@ -16,6 +16,7 @@ vi.mock('node:fs/promises', () => ({
 vi.mock('./config.js', () => ({
   config: {
     e2eRetryLimit: 2,
+    e2eAttemptHardLimit: 5,
     checksPendingRetryLimit: 60,
     sliceAttemptLimit: 3,
     retargetRetryLimit: 3,
@@ -64,6 +65,7 @@ const setReviewStatus = vi.fn();
 const setPullRequestBody = vi.fn();
 const resetAttemptCount = vi.fn();
 const isTransientGhError = vi.fn();
+const getFailedChecks = vi.fn();
 vi.mock('./github.js', () => ({
   attemptCountFromLabels: (labels: string[]) => Number(labels.map((l) => l.match(/^ronin:attempts-(\d+)$/)?.[1]).find(Boolean) ?? 0),
   resetAttemptCount: (...args: unknown[]) => resetAttemptCount(...args),
@@ -80,17 +82,21 @@ vi.mock('./github.js', () => ({
   setReviewStatus: (...args: unknown[]) => setReviewStatus(...args),
   setPullRequestBody: (...args: unknown[]) => setPullRequestBody(...args),
   changesRequestedOnHead: (...args: unknown[]) => changesRequestedOnHead(...args),
+  getFailedChecks: (...args: unknown[]) => getFailedChecks(...args),
 }));
 
 const incrementChecksPendingCount = vi.fn();
 const resetChecksPendingCount = vi.fn();
 const setLastReviewedSha = vi.fn();
 const setLastChangelogRelease = vi.fn();
+const recordFailureSignature = vi.fn();
 vi.mock('./local-state.js', () => ({
   incrementChecksPendingCount: (...args: unknown[]) => incrementChecksPendingCount(...args),
   resetChecksPendingCount: (...args: unknown[]) => resetChecksPendingCount(...args),
   setLastReviewedSha: (...args: unknown[]) => setLastReviewedSha(...args),
   setLastChangelogRelease: (...args: unknown[]) => setLastChangelogRelease(...args),
+  recordFailureSignature: (...args: unknown[]) => recordFailureSignature(...args),
+  pruneFailureSignatures: vi.fn(),
 }));
 
 const worktreeDirFor = vi.fn();
@@ -170,6 +176,8 @@ beforeEach(() => {
   listExternalOpenReviewThreads.mockResolvedValue([]);
   worktreeDirFor.mockReturnValue('/tmp/worktree');
   incrementAttemptCount.mockResolvedValue(1);
+  getFailedChecks.mockResolvedValue([{ name: 'CI', log: '##[error]boom' }]);
+  recordFailureSignature.mockResolvedValue(1);
   changesRequestedOnHead.mockResolvedValue(true);
   existsSync.mockReturnValue(true);
   getSlices.mockResolvedValue([]);
@@ -388,6 +396,68 @@ describe('processSlicePr — bottom-of-stack PR (unchanged behavior)', () => {
     await processSlicePr(issue(), bottomPr, true);
 
     expect(resetChecksPendingCount).toHaveBeenCalledWith(229);
+  });
+});
+
+describe('processSlicePr — failing checks, by failure signature', () => {
+  const failingBottom = () => pr({ number: 229, sliceIndex: 0, baseRefName: 'main', headRefName: 'ronin/228/slice-1' });
+
+  it('runs fix-e2e while a failure has not repeated past the limit', async () => {
+    recordFailureSignature.mockResolvedValue(2);
+
+    const stillInProgress = await processSlicePr(issue(), failingBottom(), true);
+
+    expect(stillInProgress).toBe(true);
+    expect(getFailedChecks).toHaveBeenCalledWith(229);
+    expect(recordFailureSignature).toHaveBeenCalledWith(229, expect.stringMatching(/^[0-9a-f]{16}$/));
+    expect(runAgentTask).toHaveBeenCalledWith({ type: 'fix-e2e', issueNumber: 228, prNumber: 229 });
+    expect(notifyBlocker).not.toHaveBeenCalled();
+  });
+
+  it('blocks when the same failure comes back past the limit, naming what keeps failing', async () => {
+    getFailedChecks.mockResolvedValue([{ name: 'CI', log: ' FAIL  src/a.spec.ts > guarda el pedido' }]);
+    recordFailureSignature.mockResolvedValue(3);
+
+    const stillInProgress = await processSlicePr(issue(), failingBottom(), true);
+
+    expect(stillInProgress).toBe(false);
+    expect(setIssueState).toHaveBeenCalledWith(228, 'blocked');
+    expect(runAgentTask).not.toHaveBeenCalled();
+    const blocker = notifyBlocker.mock.calls[0][0];
+    expect(blocker.reason).toMatch(/misma falla/);
+    expect(blocker.excerpt).toContain('fail src/a.spec.ts > guarda el pedido');
+  });
+
+  it('keeps going past E2E_RETRY_LIMIT attempts while each one fails differently', async () => {
+    incrementAttemptCount.mockResolvedValue(4);
+    recordFailureSignature.mockResolvedValue(1);
+
+    const stillInProgress = await processSlicePr(issue(), failingBottom(), true);
+
+    expect(stillInProgress).toBe(true);
+    expect(runAgentTask).toHaveBeenCalledWith({ type: 'fix-e2e', issueNumber: 228, prNumber: 229 });
+  });
+
+  it('blocks at the hard limit even when every failure is new', async () => {
+    incrementAttemptCount.mockResolvedValue(6);
+    recordFailureSignature.mockResolvedValue(1);
+
+    const stillInProgress = await processSlicePr(issue(), failingBottom(), true);
+
+    expect(stillInProgress).toBe(false);
+    expect(notifyBlocker.mock.calls[0][0].reason).toMatch(/sin converger/);
+    expect(setIssueState).toHaveBeenCalledWith(228, 'blocked');
+  });
+
+  it('falls back to counting attempts against E2E_RETRY_LIMIT when the checks cannot be read', async () => {
+    getFailedChecks.mockRejectedValue(new Error('HTTP 502'));
+    incrementAttemptCount.mockResolvedValue(3);
+
+    const stillInProgress = await processSlicePr(issue(), failingBottom(), true);
+
+    expect(stillInProgress).toBe(false);
+    expect(recordFailureSignature).not.toHaveBeenCalled();
+    expect(notifyBlocker.mock.calls[0][0].reason).toBe('E2E fallando persistentemente tras el límite de reintentos');
   });
 });
 
