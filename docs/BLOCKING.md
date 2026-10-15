@@ -6,7 +6,7 @@
 
 Los límites se cuentan por PR (con el label `ronin:attempts-N`, salvo el de CI pendiente y las firmas de falla, que viven en `.ronin-state.json`) y se configuran en `.env`; entre paréntesis, el valor por defecto.
 
-- **E2E fallando persistentemente**: ronin distingue entre un `fix-e2e` que no cambió nada y uno que avanzó. Para eso, a cada falla de los checks le saca una firma (`src/failure-signature.ts`): las anotaciones `##[error]` del log del job y los tests que fallan, normalizados para que números, duraciones y hashes no cuenten. Bloquea en dos casos:
+- **E2E fallando persistentemente**: ronin distingue entre un `fix-e2e` que no cambió nada y uno que avanzó. Para eso, a cada falla de los checks le saca una firma (`src/core/failure-signature.ts`): las anotaciones `##[error]` del log del job y los tests que fallan, normalizados para que números, duraciones y hashes no cuenten. Bloquea en dos casos:
   - **La misma falla se repite**: la misma firma aparece más de `E2E_RETRY_LIMIT` (2) veces en el PR. Se cuenta aunque el CI haya pasado en el medio, y el email dice qué falla.
   - **No converge**: cada intento falla distinto, pero el PR llega a `E2E_ATTEMPT_HARD_LIMIT` (5) intentos.
 
@@ -29,7 +29,7 @@ Los límites se cuentan por PR (con el label `ronin:attempts-N`, salvo el de CI 
 
 ## Contenido de la notificación
 
-Cuando se dispara un bloqueo, el email (`src/notifier.ts`) incluye:
+Cuando se dispara un bloqueo, el email (`src/core/notifier.ts`) incluye:
 
 - Link al issue de tracking y, si aplica, al PR afectado
 - El motivo concreto (una de las categorías de arriba), en una oración

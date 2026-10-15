@@ -27,39 +27,39 @@ import {
   type TrackingIssue,
   type PullRequestStatus,
   type Comment,
-} from './github.js';
-import { fetchOriginMain, readSpecFile, extractTitle } from './spec-content.js';
-import { nextUnstartedSlice, hasRemainingSlices, recordSlicePr, markSliceMerged, seedSingleSlice, getSlices } from './checklist.js';
-import { notifyBlocker } from './notifier.js';
-import { resetTickMetrics, getTickAgentMetrics } from './metrics.js';
-import { runJobs, type Job } from './concurrency.js';
-import { runAgentTask, type AgentTask } from './agent-task.js';
-import { runExternalReview } from './review-publish.js';
-import { ClaudeUsageLimitError } from './claude-runner.js';
-import { toStackedPrs, pickBottomPr, prsForIssue, planBranch, spikeBranch, issueFromSliceBranch, type StackedPr } from './stack.js';
-import { incrementChecksPendingCount, resetChecksPendingCount, setLastReviewedSha, recordFailureSignature, pruneFailureSignatures } from './local-state.js';
-import { failureSignature, type FailureSignature } from './failure-signature.js';
-import { tryClaim, releaseIfNoLongerInProgress } from './claim.js';
-import { removeWorktree, sweepOrphanedWorktrees } from './worktree.js';
-import { findUnprocessedMentions, isFixCommentsCommand } from './mentions.js';
-import { withHelpFooter } from './help.js';
-import { findPrsNeedingReview, type ReviewCandidate, type ThreadMentionCandidate, type TrustedFixCandidate } from './external-review.js';
-import { findIssueCommands, type ExploreCandidate, type PrototypeCandidate, type RequestCandidate, type SpecCandidate, type SpikeCandidate } from './spike.js';
-import { processIssueRequest } from './issue-request.js';
-import { launchPrototypeWorker } from './prototype.js';
-import { processSpecCandidate } from './spec-flow.js';
-import { takePendingSpecs } from './local-state.js';
-import { explorationPrs, exploreWorkerBusy, launchExploreWorker, processExplorationPr } from './exploration-flow.js';
-import { maybeLaunchNightlyExploration } from './exploration-schedule.js';
-import { sweepPreviews } from './preview.js';
-import { sweepAutoMerge } from './auto-merge.js';
-import { checkInterviews, startInterview } from './interview.js';
-import { findReleasesNeedingChangelog, type ChangelogCandidate } from './changelog.js';
-import { setLastChangelogRelease } from './local-state.js';
-import { config, LABEL_DIRECT_ISSUE, LABEL_MANAGED, LABEL_STACK_PRS, LABEL_STATES } from './config.js';
-import { activeRepo, withActiveRepo } from './repo-context.js';
-import { loadRepos } from './repos.js';
-import { log } from './logger.js';
+} from './core/github.js';
+import { fetchOriginMain, readSpecFile, extractTitle } from './slices/index.js';
+import { nextUnstartedSlice, hasRemainingSlices, recordSlicePr, markSliceMerged, seedSingleSlice, getSlices } from './slices/index.js';
+import { notifyBlocker } from './core/notifier.js';
+import { resetTickMetrics, getTickAgentMetrics } from './core/metrics.js';
+import { runJobs, type Job } from './core/concurrency.js';
+import { runAgentTask, type AgentTask } from './core/agent-task.js';
+import { runExternalReview } from './review/index.js';
+import { ClaudeUsageLimitError } from './core/claude-runner.js';
+import { toStackedPrs, pickBottomPr, prsForIssue, planBranch, spikeBranch, issueFromSliceBranch, type StackedPr } from './slices/index.js';
+import { incrementChecksPendingCount, resetChecksPendingCount, setLastReviewedSha, recordFailureSignature, pruneFailureSignatures } from './core/local-state.js';
+import { failureSignature, type FailureSignature } from './core/failure-signature.js';
+import { tryClaim, releaseIfNoLongerInProgress } from './core/claim.js';
+import { removeWorktree, sweepOrphanedWorktrees } from './core/worktree.js';
+import { findUnprocessedMentions, isFixCommentsCommand } from './commands/index.js';
+import { withHelpFooter } from './commands/index.js';
+import { findPrsNeedingReview, type ReviewCandidate, type ThreadMentionCandidate, type TrustedFixCandidate } from './review/index.js';
+import { findIssueCommands, type ExploreCandidate, type PrototypeCandidate, type RequestCandidate, type SpecCandidate, type SpikeCandidate } from './commands/index.js';
+import { processIssueRequest } from './commands/index.js';
+import { launchPrototypeWorker } from './commands/index.js';
+import { processSpecCandidate } from './slices/index.js';
+import { takePendingSpecs } from './core/local-state.js';
+import { explorationPrs, exploreWorkerBusy, launchExploreWorker, processExplorationPr } from './exploration/index.js';
+import { maybeLaunchNightlyExploration } from './exploration/index.js';
+import { sweepPreviews } from './preview/index.js';
+import { sweepAutoMerge } from './commands/index.js';
+import { checkInterviews, startInterview } from './slices/index.js';
+import { findReleasesNeedingChangelog, type ChangelogCandidate } from './changelog/index.js';
+import { setLastChangelogRelease } from './core/local-state.js';
+import { config, LABEL_DIRECT_ISSUE, LABEL_MANAGED, LABEL_STACK_PRS, LABEL_STATES } from './core/config.js';
+import { activeRepo, withActiveRepo } from './core/repo-context.js';
+import { loadRepos } from './core/repos.js';
+import { log } from './core/logger.js';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
@@ -679,7 +679,7 @@ export async function processExternalReviewCandidate(candidate: ReviewCandidate)
   try {
     await setReviewStatus(candidate.prNumber, 'pending', 'ronin está revisando el PR…', { sha: candidate.headSha });
     // The agent only writes findings.json; validating and publishing it
-    // happens in review-publish.ts. See
+    // happens in review/publish.ts. See
     // docs/superpowers/specs/2026-10-10-exhaustive-external-review-design.md.
     await runExternalReview(candidate);
     await setReviewStatus(candidate.prNumber, 'success', 'Review posteada', { sha: candidate.headSha });
@@ -853,7 +853,7 @@ export async function launchPrototypeCandidate(candidate: PrototypeCandidate): P
 
 // An /explore never runs inside the tick: it can take an hour, and the tick
 // is single-flight. It starts a separate worker process (see
-// exploration-flow.ts) — one per repo at a time; while one runs, the next
+// exploration/flow.ts) — one per repo at a time; while one runs, the next
 // command waits for a later tick (no 👀 yet, so it's picked up again).
 export async function launchExploreCandidate(candidate: ExploreCandidate): Promise<void> {
   if (await exploreWorkerBusy()) {
@@ -870,7 +870,7 @@ export async function launchExploreCandidate(candidate: ExploreCandidate): Promi
 
 // The open exploration PR: reviewers' comments on findings applied (and
 // after images redone by the worker), merged into issues once approved — see
-// exploration-flow.ts's processExplorationPr. Each PR isolated like every
+// exploration/flow.ts's processExplorationPr. Each PR isolated like every
 // other flow here.
 export async function explorationPrJobs(): Promise<Job[]> {
   let prs;
@@ -1077,7 +1077,7 @@ async function tickOneRepo(): Promise<void> {
     // /spike or a changelog entry, and nothing waits for a whole other flow
     // to finish first. The flows share nothing, and each discovery handles
     // its own failure — one of them failing only leaves its own jobs out.
-    // Only starts a separate process (see exploration-schedule.ts), so it
+    // Only starts a separate process (see exploration/schedule.ts), so it
     // never holds this tick up; a failure here is logged, never escalated.
     await maybeLaunchNightlyExploration().catch((error) => log.error('exploración nocturna: no se pudo lanzar', error));
     const [issues, reviews, spikes, changelog, exploration] = await Promise.all([

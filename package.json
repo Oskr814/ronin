@@ -8,7 +8,7 @@
     "tick": "tsx src/index.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "build": "tsc -p tsconfig.build.json",
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
     "start": "node dist/index.js",
     "smoke-test": "tsx scripts/smoke-test.ts",
     "review:dry-run": "tsx scripts/review-dry-run.ts",
@@ -19,7 +19,7 @@
     "init-labels": "bash scripts/init-labels.sh",
     "cron:setup": "bash scripts/setup-cron.sh",
     "cron:remove": "bash scripts/setup-cron.sh --remove",
-    "webhook-server": "tsx src/webhook-server.ts",
+    "webhook-server": "tsx src/webhooks/server.ts",
     "init-webhooks": "bash scripts/init-webhooks.sh",
     "webhook:setup": "bash scripts/setup-webhook-service.sh",
     "webhook:remove": "bash scripts/setup-webhook-service.sh --remove"
