@@ -53,7 +53,7 @@ const loadReviewCriteria = vi.fn();
 vi.mock('./changelog.js', () => ({ ensureChangelogRepoUpToDate: vi.fn().mockResolvedValue('/tmp/changelog') }));
 vi.mock('./review-criteria.js', () => ({ loadReviewCriteria: (...args: unknown[]) => loadReviewCriteria(...args) }));
 
-const { runAgentTask, AGENT_NOTES_REMINDER, COMMIT_STYLE_RULE, reviewAgentDefinitions } = await import('./agent-task.js');
+const { runAgentTask, buildTask, AGENT_NOTES_REMINDER, COMMIT_STYLE_RULE, reviewAgentDefinitions } = await import('./agent-task.js');
 const { resetTickMetrics, getTickAgentMetrics } = await import('./metrics.js');
 
 beforeEach(() => {
@@ -1053,5 +1053,14 @@ describe('runAgentTask — commit style', () => {
       await runAgentTask(task);
       expect(runClaudeHeadless.mock.calls[0][1]).toContain(COMMIT_STYLE_RULE);
     }
+  });
+});
+
+describe('buildTask — resolve-conflicts', () => {
+  it('lists the conflicted files and leaves the commit and push to the supervisor', async () => {
+    const { prompt } = await buildTask({ type: 'resolve-conflicts', prNumber: 7, checkoutDir: '/tmp/w', outputPath: '/tmp/o.json', headRefName: 'feat/x', baseRefName: 'main', title: 'Feat', body: '', conflictedFiles: ['src/a.ts', 'src/b.ts'] });
+    expect(prompt).toContain('- src/a.ts\n- src/b.ts');
+    expect(prompt).toContain('Do not commit, do not abort the merge, never push');
+    expect(prompt).toContain('/tmp/o.json');
   });
 });

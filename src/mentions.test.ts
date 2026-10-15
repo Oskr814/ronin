@@ -25,10 +25,13 @@ vi.mock('./preview.js', () => ({ launchPreviewWorker: (...args: unknown[]) => la
 const applyAutoMergeCommand = vi.fn();
 vi.mock('./auto-merge.js', () => ({ applyAutoMergeCommand: (...args: unknown[]) => applyAutoMergeCommand(...args) }));
 vi.mock('./repo-context.js', () => ({ activeRepo: () => ({ productRepo: 'acme/product' }) }));
+const launchConflictsWorker = vi.fn();
+vi.mock('./conflicts.js', () => ({ launchConflictsWorker: (...args: unknown[]) => launchConflictsWorker(...args) }));
 
 import {
   parseAutoMergeCommand,
   parsePreviewCommand,
+  isResolveConflictsCommand,
   findUnprocessedMentions,
   isFixCommentsCommand,
   findTrustedFixCommentsCommand,
@@ -45,6 +48,7 @@ beforeEach(() => {
   replyToComment.mockReset().mockResolvedValue(undefined);
   addReaction.mockReset().mockResolvedValue(undefined);
   launchPreviewWorker.mockReset();
+  launchConflictsWorker.mockReset();
   applyAutoMergeCommand.mockReset().mockResolvedValue(undefined);
 });
 
@@ -102,6 +106,45 @@ describe('findUnprocessedMentions with /preview', () => {
   it('does not react when the worker could not be launched, so the next tick retries', async () => {
     issueComments.mockResolvedValue([{ id: 1, kind: 'issue', body: '@ronin /preview', reactionsEyes: 0, authorLogin: 'ana' }]);
     launchPreviewWorker.mockImplementation(() => { throw new Error('spawn failed'); });
+
+    expect(await findUnprocessedMentions(42)).toEqual([]);
+    expect(addReaction).not.toHaveBeenCalled();
+  });
+});
+
+describe('isResolveConflictsCommand', () => {
+  it('reads the command and its aliases right after the mention', () => {
+    expect(isResolveConflictsCommand('@ronin /resolve-conflicts', 'ronin')).toBe(true);
+    expect(isResolveConflictsCommand('@Ronin /Resolve-Conflict por favor', 'ronin')).toBe(true);
+    expect(isResolveConflictsCommand('@ronin /fix-conflicts', 'ronin')).toBe(true);
+    expect(isResolveConflictsCommand('@ronin /conflicts', 'ronin')).toBe(true);
+  });
+
+  it('ignores it anywhere else, and paths that only start like it', () => {
+    expect(isResolveConflictsCommand('/resolve-conflicts', 'ronin')).toBe(false);
+    expect(isResolveConflictsCommand('@ronin mirá /conflicts', 'ronin')).toBe(false);
+    expect(isResolveConflictsCommand('@ronin /conflicts/merge.ts', 'ronin')).toBe(false);
+    expect(isResolveConflictsCommand('@ronin /conflicts.ts', 'ronin')).toBe(false);
+    expect(isResolveConflictsCommand('@ronin /fix-comments', 'ronin')).toBe(false);
+  });
+});
+
+describe('findUnprocessedMentions with /resolve-conflicts', () => {
+  it('launches the conflicts worker, reacts, and keeps the command away from the other flows', async () => {
+    reviewComments.mockResolvedValue([
+      { id: 3, kind: 'review', body: '@ronin /resolve-conflicts', reactionsEyes: 0, authorLogin: 'ana' },
+      { id: 4, kind: 'review', body: '@ronin /fix-comments', reactionsEyes: 0, authorLogin: 'ana' },
+    ]);
+
+    const result = await findUnprocessedMentions(42);
+    expect(result.map((c) => c.id)).toEqual([4]);
+    expect(launchConflictsWorker).toHaveBeenCalledWith({ repo: 'acme/product', prNumber: 42, comment: { id: 3, kind: 'review' } });
+    expect(addReaction).toHaveBeenCalledWith(3, 'review', 'eyes');
+  });
+
+  it('does not react when the worker could not be launched, so the next tick retries', async () => {
+    issueComments.mockResolvedValue([{ id: 1, kind: 'issue', body: '@ronin /resolve-conflicts', reactionsEyes: 0, authorLogin: 'ana' }]);
+    launchConflictsWorker.mockImplementation(() => { throw new Error('spawn failed'); });
 
     expect(await findUnprocessedMentions(42)).toEqual([]);
     expect(addReaction).not.toHaveBeenCalled();
