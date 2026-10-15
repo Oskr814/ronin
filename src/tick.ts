@@ -23,6 +23,7 @@ import {
   listExternalOpenReviewThreads,
   setPullRequestBody,
   changesRequestedOnHead,
+  getFailedChecks,
   type TrackingIssue,
   type PullRequestStatus,
   type Comment,
@@ -36,7 +37,8 @@ import { runAgentTask, type AgentTask } from './agent-task.js';
 import { runExternalReview } from './review-publish.js';
 import { ClaudeUsageLimitError } from './claude-runner.js';
 import { toStackedPrs, pickBottomPr, prsForIssue, planBranch, spikeBranch, issueFromSliceBranch, type StackedPr } from './stack.js';
-import { incrementChecksPendingCount, resetChecksPendingCount, setLastReviewedSha } from './local-state.js';
+import { incrementChecksPendingCount, resetChecksPendingCount, setLastReviewedSha, recordFailureSignature, pruneFailureSignatures } from './local-state.js';
+import { failureSignature, type FailureSignature } from './failure-signature.js';
 import { tryClaim, releaseIfNoLongerInProgress } from './claim.js';
 import { removeWorktree, sweepOrphanedWorktrees } from './worktree.js';
 import { findUnprocessedMentions, isFixCommentsCommand } from './mentions.js';
@@ -273,6 +275,42 @@ async function blockOnAttemptLimit(
   return true;
 }
 
+// Failing CI blocks on one of two things (docs/BLOCKING.md): the same
+// failure coming back E2E_RETRY_LIMIT+1 times — fix-e2e isn't changing it —
+// or E2E_ATTEMPT_HARD_LIMIT attempts in all, when every attempt fails a
+// different way (progress, but not converging). Telling those apart takes
+// the failure's signature; when the checks can't be read it falls back to
+// counting attempts against E2E_RETRY_LIMIT, as before signatures existed.
+async function blockOnFailingChecks(issue: TrackingIssue, pr: PullRequestStatus): Promise<boolean> {
+  let signature: FailureSignature | undefined;
+  try {
+    signature = failureSignature(await getFailedChecks(pr.number));
+  } catch (error) {
+    log.info(`PR #${pr.number}: no se pudo leer la falla de los checks, se cuentan solo los intentos: ${(error as Error).message}`);
+  }
+  if (!signature) {
+    return blockOnAttemptLimit(issue, pr, config.e2eRetryLimit, 'E2E fallando persistentemente tras el límite de reintentos');
+  }
+
+  const attempts = await incrementAttemptCount(pr.number);
+  const seen = await recordFailureSignature(pr.number, signature.hash);
+  log.info(`PR #${pr.number}: falla ${signature.hash} vista ${seen} ${seen === 1 ? 'vez' : 'veces'}, intento ${attempts} — ${signature.sample}`);
+  let reason: string | undefined;
+  let excerpt = '';
+  if (seen > config.e2eRetryLimit) {
+    reason = 'La misma falla de CI se repite: fix-e2e no la está cambiando';
+    excerpt = `PR #${pr.number}, la misma falla ${seen} veces (límite ${config.e2eRetryLimit}): ${signature.sample}`;
+  } else if (attempts > config.e2eAttemptHardLimit) {
+    reason = 'E2E sin converger: cada intento falla distinto, pero se agotó el tope de intentos';
+    excerpt = `PR #${pr.number}, ${attempts} intentos (tope ${config.e2eAttemptHardLimit}). Última falla: ${signature.sample}`;
+  }
+  if (!reason) return false;
+
+  await notifyBlocker({ issueUrl: issue.url, prUrl: prUrl(pr.number), reason, excerpt });
+  await setIssueState(issue.number, 'blocked');
+  return true;
+}
+
 // Bare branch name a bottom-of-stack PR's base should point at, e.g.
 // "origin/main" -> "main" — this codebase always uses "origin" as the
 // remote name elsewhere too (see worktree.ts).
@@ -466,11 +504,7 @@ export async function processSlicePr(issue: TrackingIssue, pr: StackedPr, isBott
   await resetChecksPendingCount(pr.number);
 
   if (!pr.checksPassing) {
-    const blocked = await blockOnAttemptLimit(
-      issue, pr, config.e2eRetryLimit,
-      'E2E fallando persistentemente tras el límite de reintentos',
-    );
-    if (blocked) return false;
+    if (await blockOnFailingChecks(issue, pr)) return false;
     logSliceOutcome(issue, pr, isBottom, 'checks fallando, disparando fix-e2e');
     await runAgentTask({ type: 'fix-e2e', issueNumber: issue.number, prNumber: pr.number });
     return true;
@@ -942,6 +976,7 @@ async function issueJobs(inProgress: TrackingIssue[]): Promise<Job[]> {
   // races a worktree that's mid-creation for a task about to run) — see
   // sweepOrphanedWorktrees's own comment for what this covers and why.
   await sweepOrphanedWorktrees(allPrs);
+  await pruneFailureSignatures(allPrs.map((pr) => pr.number));
 
   return inProgress.map((issue) => ({
     kind: 'issue',

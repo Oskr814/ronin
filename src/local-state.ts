@@ -17,6 +17,12 @@ export interface LocalState {
   // for — see docs/superpowers/specs/2026-08-20-external-pr-review-design.md.
   // A PR with no entry (or a stale one) is due for a fresh review next tick.
   lastReviewedSha: Record<string, string>;
+  // PR number -> failure signature (failure-signature.ts) -> how many times
+  // its checks were seen failing that way. Never reset on a green run, like
+  // fabro's circuit breaker: "fix, pass, break the same way again" is still
+  // not converging. Losing it only means more patience, never less — the
+  // attempts label keeps the hard limit (docs/BLOCKING.md).
+  failureSignatures: Record<string, Record<string, number>>;
   // Most recent release changelog.ts has already handled (successfully, or
   // failed-and-notified — see processChangelogCandidate) for this repo.
   // Compared by publishedAt, not by tag, since tags aren't
@@ -75,13 +81,14 @@ export async function readLocalState(): Promise<LocalState> {
       claimedIssues: raw.claimedIssues ?? [],
       checksPendingCounts: raw.checksPendingCounts ?? {},
       lastReviewedSha: raw.lastReviewedSha ?? {},
+      failureSignatures: raw.failureSignatures ?? {},
       lastChangelogRelease: raw.lastChangelogRelease,
       nightlyExploration: raw.nightlyExploration ?? {},
       interviews: raw.interviews ?? {},
       pendingSpecs: raw.pendingSpecs ?? [],
     };
   } catch {
-    return { claimedIssues: [], checksPendingCounts: {}, lastReviewedSha: {}, nightlyExploration: {}, interviews: {}, pendingSpecs: [] };
+    return { claimedIssues: [], checksPendingCounts: {}, lastReviewedSha: {}, failureSignatures: {}, nightlyExploration: {}, interviews: {}, pendingSpecs: [] };
   }
 }
 
@@ -104,6 +111,30 @@ export async function resetChecksPendingCount(prNumber: number): Promise<void> {
     const state = await readLocalState();
     if (!(prNumber in state.checksPendingCounts)) return;
     delete state.checksPendingCounts[prNumber];
+    await writeLocalState(state);
+  });
+}
+
+// How many times, this one included, the PR's checks failed with this signature.
+export async function recordFailureSignature(prNumber: number, hash: string): Promise<number> {
+  return withLocalStateLock(async () => {
+    const state = await readLocalState();
+    const seen = state.failureSignatures[prNumber] ?? {};
+    seen[hash] = (seen[hash] ?? 0) + 1;
+    state.failureSignatures[prNumber] = seen;
+    await writeLocalState(state);
+    return seen[hash];
+  });
+}
+
+// Called with every open ronin PR, so a merged or closed one drops out.
+export async function pruneFailureSignatures(openPrNumbers: number[]): Promise<void> {
+  return withLocalStateLock(async () => {
+    const state = await readLocalState();
+    const keep = new Set(openPrNumbers.map(String));
+    const stale = Object.keys(state.failureSignatures).filter((key) => !keep.has(key));
+    if (stale.length === 0) return;
+    for (const key of stale) delete state.failureSignatures[key];
     await writeLocalState(state);
   });
 }

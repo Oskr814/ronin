@@ -57,6 +57,9 @@ export const config = {
   gmailAppPassword: requireEnv('GMAIL_APP_PASSWORD'),
   notifyTo: requireEnv('NOTIFY_TO'),
   e2eRetryLimit: Number(process.env.E2E_RETRY_LIMIT ?? 2),
+  // fix-e2e runs on failures that keep changing (progress, per
+  // failure-signature.ts) still stop here — see docs/BLOCKING.md.
+  e2eAttemptHardLimit: Number(process.env.E2E_ATTEMPT_HARD_LIMIT ?? 5),
   checksPendingRetryLimit: Number(process.env.CHECKS_PENDING_RETRY_LIMIT ?? 60),
   sliceAttemptLimit: Number(process.env.SLICE_ATTEMPT_LIMIT ?? 3),
   retargetRetryLimit: Number(process.env.RETARGET_RETRY_LIMIT ?? 3),

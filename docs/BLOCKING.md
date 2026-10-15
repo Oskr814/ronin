@@ -4,9 +4,13 @@
 
 ## Dispara `ronin:blocked` + email
 
-Los límites se cuentan por PR (con el label `ronin:attempts-N`, salvo el de CI pendiente, que vive en `.ronin-state.json`) y se configuran en `.env`; entre paréntesis, el valor por defecto.
+Los límites se cuentan por PR (con el label `ronin:attempts-N`, salvo el de CI pendiente y las firmas de falla, que viven en `.ronin-state.json`) y se configuran en `.env`; entre paréntesis, el valor por defecto.
 
-- **E2E fallando persistentemente**: los checks de una slice siguen fallando después de `E2E_RETRY_LIMIT` (2) corridas de `fix-e2e`.
+- **E2E fallando persistentemente**: ronin distingue entre un `fix-e2e` que no cambió nada y uno que avanzó. Para eso, a cada falla de los checks le saca una firma (`src/failure-signature.ts`): las anotaciones `##[error]` del log del job y los tests que fallan, normalizados para que números, duraciones y hashes no cuenten. Bloquea en dos casos:
+  - **La misma falla se repite**: la misma firma aparece más de `E2E_RETRY_LIMIT` (2) veces en el PR. Se cuenta aunque el CI haya pasado en el medio, y el email dice qué falla.
+  - **No converge**: cada intento falla distinto, pero el PR llega a `E2E_ATTEMPT_HARD_LIMIT` (5) intentos.
+
+  Si no puede leer los checks, cuenta solo los intentos contra `E2E_RETRY_LIMIT`, como antes. Las firmas viven en `.ronin-state.json`: si se pierden, ronin solo tiene más paciencia, porque el tope duro sigue en el label.
 - **Feedback de review que no converge**: el PR sigue con *changes requested* sobre su último commit después de `SLICE_ATTEMPT_LIMIT` (3) corridas de `fix-review`. Un pedido que contradice el spec no bloquea por sí solo: si trae una razón concreta, el agente lo aplica; si es ambiguo o de opinión, deja el código como está y responde por qué.
 - **CI que nunca termina**: el PR sigue con checks pendientes (sin reportar, o todavía corriendo) durante `CHECKS_PENDING_RETRY_LIMIT` (60) ticks, unas 5 h con el cron cada 5 minutos. Es la red de seguridad contra un workflow que nunca dispara; un CI que solo tarda no llega a esto.
 - **Stack sin retarget**: el PR del fondo del stack sigue apuntando a una rama que no es la raíz después de `RETARGET_RETRY_LIMIT` (3) ticks.
