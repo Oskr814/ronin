@@ -48,7 +48,12 @@ WantedBy=default.target
 EOF
 
 systemctl --user daemon-reload
-systemctl --user enable --now "$SERVICE_NAME.service"
+systemctl --user enable "$SERVICE_NAME.service"
+# restart, not `enable --now`: --now doesn't touch a service that's already
+# running, so a re-run after a deploy would leave the old code in memory —
+# and once `pnpm build` has removed the old dist/ files, it would fail on its
+# next restart.
+systemctl --user restart "$SERVICE_NAME.service"
 
 echo "Servicio $SERVICE_NAME instalado y corriendo"
 echo "Logs: journalctl --user -u $SERVICE_NAME -f"
