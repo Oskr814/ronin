@@ -56,6 +56,13 @@ const COMMANDS: CommandSpec[] = [
     summary: 'Mergeo el PR apenas esté aprobado y con los checks en verde (le pongo el label `ronin:auto-merge`, que también podés poner a mano). `/auto-merge off` o sacar el label lo cancela. Se desactiva solo si el PR tiene conflictos o el merge falla.',
   },
   {
+    name: 'resolve-conflicts',
+    scopes: ['pr'],
+    usage: '/resolve-conflicts',
+    aliases: ['conflicts', 'fix-conflicts', 'resolve-conflict'],
+    summary: 'Traigo la base al PR con un merge (como "Update branch" de GitHub, sin reescribir la historia) y resuelvo los conflictos manteniendo lo que cambian los dos lados. Corro las verificaciones del repo, subo el merge y te cuento cómo quedó cada archivo. Si un conflicto necesita una decisión del equipo, no subo nada y te explico por qué. No en PRs de forks.',
+  },
+  {
     name: 'spike',
     scopes: ['issue'],
     usage: '/spike <app> [instrucción]',

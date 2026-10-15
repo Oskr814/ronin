@@ -350,6 +350,7 @@ export async function listOpenPrHeads(): Promise<Array<{ number: number; headRef
 export interface PrHead {
   state: 'OPEN' | 'CLOSED' | 'MERGED';
   headRefOid: string;
+  headRefName: string;
   baseRefName: string;
   isCrossRepository: boolean;
   title: string;
@@ -378,7 +379,7 @@ export async function listOpenPrsForAutoMerge(): Promise<AutoMergeCandidate[]> {
 }
 
 export async function getPrHead(prNumber: number): Promise<PrHead> {
-  return JSON.parse(await gh(['pr', 'view', String(prNumber), '--json', 'state,headRefOid,baseRefName,isCrossRepository,title,body'])) as PrHead;
+  return JSON.parse(await gh(['pr', 'view', String(prNumber), '--json', 'state,headRefOid,headRefName,baseRefName,isCrossRepository,title,body'])) as PrHead;
 }
 
 async function listOpenPrsWithBase(baseBranch: string): Promise<number[]> {

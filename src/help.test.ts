@@ -30,6 +30,13 @@ describe('classifyMetaCommand', () => {
     expect(classifyMetaCommand('@ronin /preview', 'ronin', 'issue')).toEqual({ kind: 'wrong-context', command: 'preview' });
   });
 
+  it('lets /resolve-conflicts and its aliases through on a PR only', () => {
+    expect(classifyMetaCommand('@ronin /resolve-conflicts', 'ronin', 'pr')).toBeNull();
+    expect(classifyMetaCommand('@ronin /fix-conflicts', 'ronin', 'pr')).toBeNull();
+    expect(classifyMetaCommand('@ronin /resolve-conflicts', 'ronin', 'issue')).toEqual({ kind: 'wrong-context', command: 'resolve-conflicts' });
+    expect(classifyMetaCommand('@ronin /resolve-conflcts', 'ronin', 'pr')).toEqual({ kind: 'unknown', token: 'resolve-conflcts', suggestion: 'resolve-conflicts' });
+  });
+
   it('accepts a command alias as the command itself', () => {
     expect(classifyMetaCommand('@ronin /preview-stop', 'ronin', 'pr')).toBeNull();
     expect(classifyMetaCommand('@ronin /preview-stop', 'ronin', 'issue')).toEqual({ kind: 'wrong-context', command: 'preview' });

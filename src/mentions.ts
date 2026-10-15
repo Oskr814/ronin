@@ -4,6 +4,7 @@ import { config } from './config.js';
 import { activeRepo } from './repo-context.js';
 import { launchPreviewWorker } from './preview.js';
 import { applyAutoMergeCommand, type AutoMergeAction } from './auto-merge.js';
+import { launchConflictsWorker } from './conflicts.js';
 import { log } from './logger.js';
 
 export function mentionsHandle(body: string, handle: string): boolean {
@@ -108,6 +109,14 @@ export function parseAutoMergeCommand(body: string, login: string): AutoMergeAct
   const match = body.match(new RegExp(`\\B@${login}\\s+/auto-?merge(?:-(${AUTO_MERGE_OFF_WORDS.join('|')}))?(?![\\w/-]|\\.\\w)[ \\t]*(\\S*)`, 'i'));
   if (!match) return null;
   return match[1] || AUTO_MERGE_OFF_WORDS.includes(match[2].toLowerCase().replace(/\W+$/, '')) ? 'off' : 'on';
+}
+
+// Merges the base into the PR's branch and resolves the conflicts — see
+// conflicts.ts. Same placement rule as /preview: only right after the
+// mention. "/conflicts", "/fix-conflicts" and "/resolve-conflict" are read
+// too, as help.ts lists.
+export function isResolveConflictsCommand(body: string, login: string): boolean {
+  return new RegExp(`\\B@${login}\\s+/(?:resolve-conflicts?|fix-conflicts|conflicts)(?![\\w/-]|\\.\\w)`, 'i').test(body);
 }
 
 // null when the command is missing its required app_name — nothing
@@ -258,6 +267,26 @@ async function handlePreviewCommands(prNumber: number, comments: Comment[]): Pro
   return rest;
 }
 
+// Hands every /resolve-conflicts to its own worker (conflicts-worker.ts),
+// exactly like handlePreviewCommands: 👀 once it's launched, retried next
+// tick if the launch fails.
+async function handleConflictsCommands(prNumber: number, comments: Comment[]): Promise<Comment[]> {
+  const rest: Comment[] = [];
+  for (const comment of comments) {
+    if (comment.authorLogin === '' || !isResolveConflictsCommand(comment.body, config.githubLogin)) {
+      rest.push(comment);
+      continue;
+    }
+    try {
+      launchConflictsWorker({ repo: activeRepo().productRepo, prNumber, comment: { id: comment.id, kind: comment.kind } });
+      await addReaction(comment.id, comment.kind, 'eyes');
+    } catch (error) {
+      log.error(`no se pudo lanzar /resolve-conflicts del comentario ${comment.id} en #${prNumber}`, error);
+    }
+  }
+  return rest;
+}
+
 // Applies every /auto-merge among the mentions right here (it's a label and
 // a reply, no worker needed) and drops it from what the caller gets back,
 // like handlePreviewCommands. One that fails gets no 👀 and is retried next
@@ -280,9 +309,9 @@ async function handleAutoMergeCommands(prNumber: number, comments: Comment[]): P
 }
 
 // Side effect: answers any meta-command among the mentions (see
-// handleMetaCommands above), launches any /preview (handlePreviewCommands),
-// applies any /auto-merge (handleAutoMergeCommands), and leaves them all out
-// of the result.
+// handleMetaCommands above), launches any /preview (handlePreviewCommands)
+// or /resolve-conflicts (handleConflictsCommands), applies any /auto-merge
+// (handleAutoMergeCommands), and leaves them all out of the result.
 export async function findUnprocessedMentions(prNumber: number): Promise<Comment[]> {
   const botLogin = config.githubLogin;
   const [issueComments, reviewComments] = await Promise.all([
@@ -291,7 +320,7 @@ export async function findUnprocessedMentions(prNumber: number): Promise<Comment
   ]);
   const mentioned = [...issueComments, ...reviewComments].filter((c) => mentionsHandle(c.body, botLogin));
   const rest = await handleMetaCommands(prNumber, 'pr', await filterUnprocessed(mentioned));
-  return handleAutoMergeCommands(prNumber, await handlePreviewCommands(prNumber, rest));
+  return handleAutoMergeCommands(prNumber, await handleConflictsCommands(prNumber, await handlePreviewCommands(prNumber, rest)));
 }
 
 // Same as findUnprocessedMentions (including its meta-command side effect,

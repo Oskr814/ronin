@@ -1056,6 +1056,15 @@ describe('runAgentTask — commit style', () => {
   });
 });
 
+describe('buildTask — resolve-conflicts', () => {
+  it('lists the conflicted files and leaves the commit and push to the supervisor', async () => {
+    const { prompt } = await buildTask({ type: 'resolve-conflicts', prNumber: 7, checkoutDir: '/tmp/w', outputPath: '/tmp/o.json', headRefName: 'feat/x', baseRefName: 'main', title: 'Feat', body: '', conflictedFiles: ['src/a.ts', 'src/b.ts'] });
+    expect(prompt).toContain('- src/a.ts\n- src/b.ts');
+    expect(prompt).toContain('Do not commit, do not abort the merge, never push');
+    expect(prompt).toContain('/tmp/o.json');
+  });
+});
+
 describe('buildTask — data the team sees in screenshots', () => {
   const app = { appName: 'backoffice', appPath: 'apps/backoffice', checkoutDir: '/tmp/w', outDir: '/tmp/out', outputPath: '/tmp/out/r.json', mcpConfigPath: '/tmp/mcp.json', baseUrl: 'http://127.0.0.1:1', homePath: '/' };
 
