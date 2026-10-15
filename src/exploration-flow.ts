@@ -57,7 +57,6 @@ export interface PublishedRun {
   summary: RunSummary;
   prNumber: number;
   batch: string;
-  urgentIssues: Array<{ id: string; issue: number }>;
 }
 
 // Today in the exploration's zone (EXPLORE_TIMEZONE): the date of a run, and
@@ -89,14 +88,12 @@ export async function exploreAndPublish(opts: {
     ...(opts.shouldContinue ? { shouldContinue: opts.shouldContinue } : {}),
   });
 
-  // A bug of the app doesn't wait for the review (§11.7, point 5); one of
-  // the dev environment does.
-  const newIds = new Set(summary.findings.map((f) => f.id));
-  const urgentIssues = await openFindingIssues(opts.appName, memoryDir, batchDir, branch, (f) => newIds.has(f.id) && f.gravedad === 'bug' && !f.entorno);
-
+  // No issues here, not even for a bug: a finding gets its issue only once
+  // the PR is approved and it's still standing (approveAndMerge,
+  // reconcileApproved), so a rejected one never leaves an issue behind.
   await commitAndPush(batchDir, branch, runCommitChange(opts.appName, summary.runId, summary.findings));
   const prNumber = await upsertExplorationPr(batch, batchDir);
-  return { summary, prNumber, batch, urgentIssues };
+  return { summary, prNumber, batch };
 }
 
 export function renderRunReply(appName: string, run: PublishedRun): string {
@@ -112,11 +109,10 @@ export function renderRunReply(appName: string, run: PublishedRun): string {
   } else {
     lines.push(`Propuestas (${summary.findings.length}):`, '');
     for (const f of summary.findings) {
-      const issue = run.urgentIssues.find((u) => u.id === f.id);
-      lines.push(`- **${f.id}** ${f.titulo} — \`${f.gravedad}\`${issue ? ` · issue #${issue.issue}` : ''}`);
+      lines.push(`- **${f.id}** ${f.titulo} — \`${f.gravedad}\``);
     }
   }
-  lines.push('', `Están en el PR de exploración: #${run.prNumber}. Revisalas ahí.`);
+  lines.push('', `Están en el PR de exploración: #${run.prNumber}. Revisalas ahí: al aprobarlo abro un issue por cada una que siga en pie.`);
   return lines.join('\n');
 }
 
