@@ -256,7 +256,7 @@ Gravedad, en orden: bug → fricción que bloquea la tarea → fricción que la 
 | Charter | Qué hace |
 |---|---|
 | camino-feliz | completar la tarea con la menor cantidad de pasos |
-| datos-hostiles | vacíos, límites, textos largos, caracteres raros, negativos |
+| datos-hostiles | vacíos, límites, textos largos, caracteres raros que los usuarios sí escriben (acentos, ñ, símbolos), negativos |
 | interrupciones | atrás, recargar, doble envío, red lenta, sesión vencida a mitad del flujo |
 | concurrencia | dos sesiones sobre el mismo registro |
 | volumen | registros con muchas líneas o mucho historial |

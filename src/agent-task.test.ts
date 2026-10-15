@@ -53,7 +53,7 @@ const loadReviewCriteria = vi.fn();
 vi.mock('./changelog.js', () => ({ ensureChangelogRepoUpToDate: vi.fn().mockResolvedValue('/tmp/changelog') }));
 vi.mock('./review-criteria.js', () => ({ loadReviewCriteria: (...args: unknown[]) => loadReviewCriteria(...args) }));
 
-const { runAgentTask, buildTask, AGENT_NOTES_REMINDER, COMMIT_STYLE_RULE, reviewAgentDefinitions } = await import('./agent-task.js');
+const { runAgentTask, buildTask, AGENT_NOTES_REMINDER, COMMIT_STYLE_RULE, REALISTIC_DATA_RULE, CHARTER_MISSIONS, reviewAgentDefinitions } = await import('./agent-task.js');
 const { resetTickMetrics, getTickAgentMetrics } = await import('./metrics.js');
 
 beforeEach(() => {
@@ -1062,5 +1062,22 @@ describe('buildTask — resolve-conflicts', () => {
     expect(prompt).toContain('- src/a.ts\n- src/b.ts');
     expect(prompt).toContain('Do not commit, do not abort the merge, never push');
     expect(prompt).toContain('/tmp/o.json');
+  });
+});
+
+describe('buildTask — data the team sees in screenshots', () => {
+  const app = { appName: 'backoffice', appPath: 'apps/backoffice', checkoutDir: '/tmp/w', outDir: '/tmp/out', outputPath: '/tmp/out/r.json', mcpConfigPath: '/tmp/mcp.json', baseUrl: 'http://127.0.0.1:1', homePath: '/' };
+
+  it('asks every agent that creates data in the app for realistic data', async () => {
+    const prompts = await Promise.all([
+      buildTask({ type: 'explore-function', ...app, fn: { id: 'pedidos.surtir', nombre: 'Surtir', rutas: ['/pedidos'] }, charter: 'datos-hostiles', role: 'Admin', seed: 1, knowledge: '', existing: [], maxIdeas: 1 }),
+      buildTask({ type: 'explore-redo-after', ...app, role: 'Admin', viewport: 'desktop', findingId: 'F-0001', findingFile: 'f.md', instruction: 'x' }),
+      buildTask({ type: 'prototype', issueNumber: 1, ...app, browsers: [{ server: 'admin-desktop', role: 'Admin', viewport: 'desktop' }] }),
+    ]);
+    for (const { prompt } of prompts) expect(prompt).toContain(REALISTIC_DATA_RULE);
+  });
+
+  it('keeps the hostile-data charter to characters the app\'s users could type', () => {
+    expect(CHARTER_MISSIONS['datos-hostiles']).toContain("unusual characters this app's users could really type");
   });
 });
