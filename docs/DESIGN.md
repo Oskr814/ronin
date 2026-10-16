@@ -490,7 +490,7 @@ Una página para ver qué está haciendo ronin sin recorrer GitHub issue por iss
   - El motivo de un bloqueo y cómo destrabarlo.
   - El árbol de slices con sus PRs, checks y reviews.
   - Los checks del PR que está avanzando.
-  - La preview, con su URL y cuánto le queda.
+  - La preview, con su URL y cuánto le queda. Mientras ronin prepara los datos que piden los pasos de prueba, lo dice y todavía no ofrece la URL para abrir.
   - Los datos de la corrida: tarea, modelo, cuenta, duración, costo y worktree.
 - **Barra de estado.** El uso de cada cuenta de Claude en la ventana de 5 horas y en la semanal, los cupos de agentes ocupados, la cola, las previews, el último tick y si GitHub no responde.
 - ***Hoy*, la vista de inicio.** Los totales del día (corridas, cuántas terminaron bien, duración mediana y p90, costo, errores; con las de ayer al lado) y una línea de las últimas 12 horas, con un carril por repo y cada corrida como una barra. Al hacerle clic, se abre esa corrida.

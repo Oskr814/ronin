@@ -32,6 +32,8 @@ export interface PreviewView {
   url: string;
   startedAt?: string;
   expiresAt?: string;
+  // Still making the PR's test data (preview.ts).
+  preparing?: boolean;
 }
 
 export interface RepoGithub {
@@ -72,6 +74,7 @@ async function fetchRepo(entry: RepoEntry): Promise<RepoGithub> {
         url: p.url,
         ...(p.startedAt ? { startedAt: p.startedAt } : {}),
         ...(p.startedAt && ttl > 0 ? { expiresAt: new Date(Date.parse(p.startedAt) + ttl * 60_000).toISOString() } : {}),
+        ...(p.preparing ? { preparing: true } : {}),
       })),
       blocks,
     };

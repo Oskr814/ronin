@@ -1297,11 +1297,16 @@ function ctxHTML(item) {
   return html;
 }
 
+// While its test data is being prepared, the preview is up but not ready to
+// try: the URL is shown as such, not as a link to open yet.
 function previewHTML(preview) {
   const left = preview.expiresAt ? Date.parse(preview.expiresAt) - Date.now() : null;
   const safe = /^https?:\/\//.test(preview.url);
+  const host = esc(preview.url.replace(/^https?:\/\//, ''));
   return `<section><h3>Preview</h3><div class="pv">${esc(preview.appName)} con #${esc(preview.prNumber)}</div>
-    ${safe ? `<a class="url" href="${esc(preview.url)}" target="_blank" rel="noopener">${esc(preview.url.replace(/^https?:\/\//, ''))}</a>` : ''}
+    ${preview.preparing
+      ? `<div class="pv-prep">${dotClass('live')}<span>Preparando los datos para probar el PR. La URL queda lista cuando termine.</span></div>${safe ? `<span class="url off">${host}</span>` : ''}`
+      : safe ? `<a class="url" href="${esc(preview.url)}" target="_blank" rel="noopener">${host}</a>` : ''}
     ${left !== null ? `<dl class="kv" style="margin-top:8px"><dt>Se baja en</dt><dd data-until="${esc(preview.expiresAt)}">${esc(clock(left))}</dd></dl><div class="ttl"><span style="width:${Math.max(0, Math.min(100, (left / (60 * MIN)) * 100))}%"></span></div>` : ''}
     <p class="note">Los usuarios de prueba están en el comentario de la preview, en el PR.</p></section>`;
 }
@@ -1318,7 +1323,7 @@ function renderCtx() {
     <dt>Último tick</dt><dd>${tick.lastTickAt ? `hace ${esc(short(Date.now() - Date.parse(tick.lastTickAt)))}, duró ${esc(duration(tick.lastTickDurationMs ?? 0))}` : 'sin datos hoy'}</dd>
     <dt>Último evento</dt><dd>${tick.lastEventAt ? `hace ${esc(short(Date.now() - Date.parse(tick.lastEventAt)))}` : 'sin datos hoy'}</dd>
     <dt>Repos</dt><dd>${S.snap.repos.map((repo) => `<span class="repo-tag"><i style="background:${repoColor(repo)}"></i>${esc(repo)}</span>`).join('<br>')}</dd></dl></section>
-    <section><h3>Previews arriba</h3>${S.snap.previews.length ? S.snap.previews.map((p) => `<div class="pv-row"><div>${esc(p.appName)} con #${esc(p.prNumber)} <span class="m">${esc(repoShort(p.repo))}</span></div>${/^https?:\/\//.test(p.url) ? `<a class="url" href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.url.replace(/^https?:\/\//, ''))}</a>` : ''}</div>`).join('') : '<p class="note">Ninguna.</p>'}</section>
+    <section><h3>Previews arriba</h3>${S.snap.previews.length ? S.snap.previews.map((p) => `<div class="pv-row"><div>${esc(p.appName)} con #${esc(p.prNumber)} <span class="m">${esc(repoShort(p.repo))}${p.preparing ? ', preparando datos' : ''}</span></div>${/^https?:\/\//.test(p.url) ? (p.preparing ? `<span class="url off">${esc(p.url.replace(/^https?:\/\//, ''))}</span>` : `<a class="url" href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.url.replace(/^https?:\/\//, ''))}</a>`) : ''}</div>`).join('') : '<p class="note">Ninguna.</p>'}</section>
     <section><h3>GitHub</h3><dl class="kv">${S.snap.github.map((g) => `<dt>${esc(repoShort(g.repo))}</dt><dd>${g.error ? `<span class="bad">no se pudo leer: ${esc(g.error)}</span>${g.fetchedAt ? `, datos de hace ${esc(short(Date.now() - Date.parse(g.fetchedAt)))}` : ''}` : g.fetchedAt ? `leído hace ${esc(short(Date.now() - Date.parse(g.fetchedAt)))}` : 'sin leer'}</dd>`).join('')}</dl></section>`;
 }
 

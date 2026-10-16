@@ -116,6 +116,10 @@ export interface PreviewState {
   // When it came up (ISO), what PREVIEW_TTL_MINUTES counts from. A state
   // from before the TTL has none: the sweep stamps it on first sight.
   startedAt?: string;
+  // Up, but prepare-preview-data is still making the data the PR's test
+  // steps need: the dashboard says so instead of offering a URL that would
+  // be tried without them. Cleared once the data is done (or failed).
+  preparing?: boolean;
 }
 
 const reservations = (): PreviewReservations => new PreviewReservations(config.previewReservationsDir);
@@ -355,7 +359,7 @@ export async function startPreview(prNumber: number, pr: PrHead, args?: string):
     const url = publicUrl(locals[0], session.ctx);
     // Written before publishing, so a failure halfway still knows which
     // ports to unpublish.
-    const state: PreviewState = { prNumber, appName, sha, url, published, startedAt: new Date().toISOString() };
+    const state: PreviewState = { prNumber, appName, sha, url, published, startedAt: new Date().toISOString(), ...(config.previewPrepareData ? { preparing: true } : {}) };
     await writeFile(previewStatePath(dir), JSON.stringify(state, null, 2));
     for (const p of published) await servePort(p.public, p.local);
     log.info(`preview PR #${prNumber}: ${appName} arriba en ${url}`);
@@ -366,7 +370,16 @@ export async function startPreview(prNumber: number, pr: PrHead, args?: string):
     throw error;
   }
   if (!config.previewPrepareData) return result;
-  return { ...result, data: await prepareData({ prNumber, pr, session, ...(instruction ? { instruction } : {}) }) };
+  const data = await prepareData({ prNumber, pr, session, ...(instruction ? { instruction } : {}) });
+  await markPrepared(dir);
+  return { ...result, data };
+}
+
+async function markPrepared(dir: string): Promise<void> {
+  const state = await readPreviewState(dir);
+  if (!state?.preparing) return;
+  delete state.preparing;
+  await writeFile(previewStatePath(dir), JSON.stringify(state, null, 2)).catch((error) => log.error('preview: no se pudo marcar los datos como listos', error));
 }
 
 // Unpublishes, stops and deletes the PR's preview. False when there was none.
@@ -408,7 +421,11 @@ export async function listPreviewStates(): Promise<PreviewState[]> {
     const pr = previewPrFromDirName(name);
     if (pr === null) continue;
     const state = await readPreviewState(previewDirFor(pr));
-    if (state) states.push(state);
+    if (!state) continue;
+    // A worker that died mid-preparation never cleared it: nothing is
+    // preparing anymore.
+    if (state.preparing && !(await previewWorkerBusy(pr))) delete state.preparing;
+    states.push(state);
   }
   return states;
 }
