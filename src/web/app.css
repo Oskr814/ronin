@@ -175,6 +175,7 @@ a { color: inherit; }
 .md input[type="checkbox"] { margin: 0 6px 0 0; vertical-align: -2px; accent-color: var(--ok); }
 .md a { color: var(--run); text-decoration: none; }
 .md a:hover { text-decoration: underline; }
+.md img.ev { display: block; max-width: 100%; height: auto; margin: 6px 0; border: 1px solid var(--rule); border-radius: 6px; background: var(--raise); }
 .md code { font: 12px "JetBrains Mono", monospace; background: var(--raise); border: 1px solid var(--rule); border-radius: 4px; padding: 0 4px; color: var(--ink); }
 .md pre { background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; padding: 10px 12px; overflow: auto; }
 .md pre code { background: none; border: 0; padding: 0; font-size: 12px; line-height: 1.5; }

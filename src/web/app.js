@@ -172,8 +172,10 @@ function renderTree() {
 // ---------- markdown from GitHub
 // Whatever comes from GitHub (a PR from anyone, a comment) is untrusted: it's
 // parsed by marked and then cleaned by DOMPurify before it reaches the page.
-// Images become links (the CSP wouldn't load them anyway), links open
-// outside, and a #123 opens that item here when the sidebar has it.
+// Images become links (the CSP wouldn't load them anyway), except the
+// screenshots ronin publishes, which the server reads from its own clone
+// (/api/evidence); links open outside, and a #123 opens that item here when
+// the sidebar has it.
 DOMPurify.addHook('afterSanitizeAttributes', (node) => {
   if (node.tagName === 'A') {
     node.setAttribute('target', '_blank');
@@ -182,6 +184,14 @@ DOMPurify.addHook('afterSanitizeAttributes', (node) => {
   if (node.tagName === 'INPUT') node.setAttribute('disabled', '');
 });
 const mdCache = new Map();
+
+// A screenshot ronin published (evidenceUrl in src/app/evidence-store.ts) of
+// a repo on the dashboard, as the server serves it from its clone.
+function evidenceSrc(src) {
+  const m = /^https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/blob\/([0-9a-f]{7,40})\/([^?#]+)\?raw=true$/.exec(src ?? '');
+  if (!m || !S.snap?.repos?.includes(m[1])) return null;
+  return `/api/evidence/${m[1]}/${m[2]}/${m[3]}`;
+}
 
 function md(text, repo) {
   const key = `${repo}\n${text}`;
@@ -194,8 +204,21 @@ function md(text, repo) {
     link.href = img.getAttribute('src') ?? '#';
     link.target = '_blank';
     link.rel = 'noopener noreferrer';
-    link.textContent = `[imagen${img.alt ? `: ${img.alt}` : ''}]`;
-    img.replaceWith(link);
+    const label = `[imagen${img.alt ? `: ${img.alt}` : ''}]`;
+    const local = evidenceSrc(img.getAttribute('src'));
+    if (local) {
+      // The link still opens it on GitHub; if it doesn't load here, the label
+      // takes its place (the 'error' listener in boot).
+      img.src = local;
+      img.className = 'ev';
+      img.loading = 'lazy';
+      img.dataset.label = label;
+      img.replaceWith(link);
+      link.append(img);
+    } else {
+      link.textContent = label;
+      img.replaceWith(link);
+    }
   }
   if (safeRepo(repo)) linkRefs(tpl.content, repo);
   const html = tpl.innerHTML;
@@ -1018,6 +1041,11 @@ function selectedFromPath() {
 }
 
 async function boot() {
+  // A screenshot that didn't load (md) goes back to being a label.
+  document.addEventListener('error', (event) => {
+    const img = event.target;
+    if (img instanceof HTMLImageElement && img.classList.contains('ev')) img.replaceWith(img.dataset.label ?? '[imagen]');
+  }, true);
   try {
     await api('/api/auth/me');
   } catch {

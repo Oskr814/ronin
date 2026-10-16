@@ -8,6 +8,7 @@ import { buildItems, itemRunKeys } from './dashboard-items.js';
 import { forgetDetails, itemDetail, resolveItem } from './dashboard-detail.js';
 import { ActionError, listActions, runAction } from './dashboard-actions.js';
 import { today } from './dashboard-today.js';
+import { readEvidence } from './dashboard-evidence.js';
 
 // The dashboard's data (#65), all behind the session (tailnet.ts checks it
 // before any of this runs):
@@ -18,6 +19,7 @@ import { today } from './dashboard-today.js';
 //   POST /api/items/<id>/actions     asks for one of those (dashboard-actions.ts)
 //   GET /api/runs/<runId>            one run's transcript
 //   GET /api/runs/<runId>/stream     the rest of it as it happens (SSE)
+//   GET /api/evidence/<owner>/<repo>/<sha>/<path>  a screenshot ronin published (dashboard-evidence.ts)
 
 // How far back the sidebar and an item's history look. Run records are kept
 // 14 days (scripts/setup-cron.sh).
@@ -150,7 +152,26 @@ function streamRun(req: IncomingMessage, res: ServerResponse, path: string, from
   req.on('close', () => clearInterval(timer));
 }
 
-// /api/snapshot, /api/today, /api/items/*, /api/runs/*. Returns false for a
+// Segments arrive one by one URI-encoded, as evidenceUrl writes them.
+async function serveEvidence(res: ServerResponse, raw: string): Promise<void> {
+  let parts: string[];
+  try {
+    parts = raw.split('/').map(decodeURIComponent);
+  } catch {
+    parts = [];
+  }
+  const [owner, name, sha, ...segments] = parts;
+  const entry = (await loadRepos()).find((repo) => repo.productRepo === `${owner}/${name}`);
+  const image = entry && (await readEvidence(entry, sha ?? '', segments));
+  if (!image) {
+    json(res, 404, { error: 'no existe esa imagen' });
+    return;
+  }
+  // A sha never changes what it points to.
+  res.writeHead(200, { 'Content-Type': image.type, 'Cache-Control': 'private, max-age=31536000, immutable' }).end(image.data);
+}
+
+// /api/snapshot, /api/today, /api/items/*, /api/runs/*, /api/evidence/*. Returns false for a
 // path it doesn't own.
 export async function handleDashboard(req: IncomingMessage, res: ServerResponse, path: string, login: string): Promise<boolean> {
   const action = /^\/api\/items\/(.+)\/actions$/.exec(path);
@@ -186,6 +207,11 @@ export async function handleDashboard(req: IncomingMessage, res: ServerResponse,
     const entry = (await loadRepos()).find((repo) => id.startsWith(`${repo.productRepo}#`));
     const keys = itemRunKeys(id, entry ? await repoGithub(entry) : undefined);
     json(res, 200, { id, runs: listRuns(HISTORY_DAYS).filter((run) => keys.includes(itemKey(run))) });
+    return true;
+  }
+
+  if (path.startsWith('/api/evidence/')) {
+    await serveEvidence(res, path.slice('/api/evidence/'.length));
     return true;
   }
 
