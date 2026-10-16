@@ -54,7 +54,7 @@ function duration(ms) {
 const money = (usd) => (usd < 0.01 ? 'menos de US$0,01' : `US$${usd.toFixed(2).replace('.', ',')}`);
 const pct = (fraction) => `${Math.round(fraction * 100)}%`;
 
-const S = { snap: null, sel: null, open: [], runIdx: {}, filter: null, q: '', itemRuns: {}, run: null, stream: null };
+const S = { snap: null, today: null, sel: null, open: [], runIdx: {}, pendingRun: null, filter: null, q: '', itemRuns: {}, run: null, stream: null };
 
 class Unauthorized extends Error {}
 
@@ -106,8 +106,10 @@ function renderQuick() {
   const running = S.snap.items.filter((item) => item.status === 'running').length;
   const queued = S.snap.runner.queue.length;
   $('#quick').innerHTML = `
-    <button data-filter="running" aria-pressed="${S.filter === 'running'}"><svg viewBox="0 0 24 24"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>Corriendo ahora<span class="c">${running}</span></button>
+    <button data-home aria-pressed="${!S.sel}"><svg viewBox="0 0 24 24"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>Hoy</button>
+    <button data-filter="running" aria-pressed="${S.filter === 'running'}"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg>Corriendo ahora<span class="c">${running}</span></button>
     <button data-filter="queue" aria-pressed="${S.filter === 'queue'}"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg>En cola<span class="c">${queued}</span></button>`;
+  $('#quick').querySelector('[data-home]').onclick = goHome;
   for (const button of $('#quick').querySelectorAll('[data-filter]')) {
     button.onclick = () => {
       S.filter = S.filter === button.dataset.filter ? null : button.dataset.filter;
@@ -195,9 +197,9 @@ function renderCenter() {
 
   const item = S.sel && itemById(S.sel);
   if (!item) {
-    const running = S.snap.items.filter((i) => i.status === 'running').length;
-    center.innerHTML = tabs + `<div class="empty"><b>${running ? `${running} ${running === 1 ? 'agente trabajando' : 'agentes trabajando'}` : 'Ningún agente trabajando ahora'}</b>Elegí algo de la izquierda para ver lo que hizo el agente, paso a paso.</div>`;
+    center.innerHTML = tabs + backBar('Hoy') + renderToday();
     wireCenter();
+    wireToday();
     return;
   }
 
@@ -259,6 +261,93 @@ function wireCenter() {
     $('#shell').dataset.m = 'list';
     scrollTo(0, 0);
   };
+}
+
+// ---------- today
+const tipEl = () => document.getElementById('tip') ?? Object.assign(document.body.appendChild(document.createElement('div')), { id: 'tip', className: 'tip', role: 'tooltip' });
+
+function renderToday() {
+  const t = S.today;
+  const running = S.snap.items.filter((i) => i.status === 'running').length;
+  const blocked = S.snap.items.filter((i) => i.status === 'blocked').length;
+  const previews = S.snap.previews.length;
+  const lead = [
+    running ? `${running} ${running === 1 ? 'agente trabajando' : 'agentes trabajando'}` : 'ningún agente trabajando',
+    blocked ? `${blocked} ${blocked === 1 ? 'issue espera' : 'issues esperan'} a alguien` : null,
+    previews ? `${previews} ${previews === 1 ? 'preview arriba' : 'previews arriba'}` : null,
+  ].filter(Boolean).join(', ');
+  if (!t) return `<div class="today"><h1>Hoy</h1><p class="lead">${esc(lead[0].toUpperCase() + lead.slice(1))}.</p><div class="empty">Cargando…</div></div>`;
+  const d = t.today;
+  const okPct = d.finished ? `${Math.round((d.ok / d.finished) * 100)}%` : '—';
+  const kpis = `<div class="kpis">
+    <div class="kpi"><div class="v">${d.runs}</div><div class="l">corridas hoy</div><div class="d">${t.yesterday.runs} ayer</div></div>
+    <div class="kpi"><div class="v">${okPct}</div><div class="l">terminaron bien</div><div class="d">${d.finished ? `${d.ok} de ${d.finished} terminadas` : 'ninguna terminada todavía'}</div></div>
+    <div class="kpi"><div class="v">${d.medianMs !== null ? esc(duration(d.medianMs)) : '—'}</div><div class="l">duración mediana</div><div class="d">${d.p90Ms !== null ? `p90: ${esc(duration(d.p90Ms))}` : '&nbsp;'}</div></div>
+    <div class="kpi"><div class="v">${d.costUsd ? esc(money(d.costUsd)) : 'US$0'}</div><div class="l">costo hoy</div><div class="d">${[d.failed ? `${d.failed} con error` : null, d.usageLimit ? `${d.usageLimit} sin cuota` : null].filter(Boolean).join(', ') || 'sin errores'}</div></div>
+  </div>`;
+
+  const from = Date.parse(t.from);
+  const to = Date.now();
+  const span = to - from;
+  const pos = (ms) => Math.max(0, Math.min(100, ((ms - from) / span) * 100));
+  const lanes = S.snap.repos.map((repo) => {
+    const rows = [];
+    const bars = t.timeline.filter((run) => run.repo === repo).map((run) => {
+      const start = pos(Date.parse(run.startedAt));
+      const end = run.state === 'running' ? 100 : pos(Date.parse(run.endedAt ?? run.startedAt));
+      let row = rows.findIndex((last) => last < start - 0.4);
+      if (row < 0) row = rows.push(-1) - 1;
+      rows[row] = Math.max(end, start + 0.4);
+      const item = itemById(run.itemId);
+      const [, , label] = STATE[run.state] ?? STATE.error;
+      const when = `${hhmm(run.startedAt)}${run.endedAt ? `–${hhmm(run.endedAt)}` : ', en curso'}`;
+      const tip = `${typeName(run.taskType)}${item ? `\n${item.title}` : ''}\n${when}, ${label}`;
+      const cls = run.state === 'running' ? 'live' : ['error', 'timeout', 'cut'].includes(run.state) ? 'fail' : run.state === 'usage_limit' ? 'quota' : '';
+      return `<button class="bar ${cls}" style="left:${start}%;width:max(6px,${end - start}%);top:${6 + row * 15}px;background-color:${repoColor(repo)}" data-item="${esc(run.itemId)}" data-run="${esc(run.runId)}" data-tip="${esc(tip)}" aria-label="${esc(tip.replace(/\n/g, ', '))}"></button>`;
+    }).join('');
+    const height = Math.max(1, rows.length) * 15 + 10;
+    return `<div class="lane"><span class="nm">${esc(repoShort(repo))}</span><div class="track" style="height:${height}px">${bars}<span class="nowl"></span></div></div>`;
+  }).join('');
+  const ticks = [0, 2, 4, 6, 8, 10, 12].map((h) => `<span class="${h % 4 === 2 ? 'minor' : ''}" style="left:${(h / 12) * 100}%">${h === 12 ? 'ahora' : esc(hhmm(new Date(from + h * 60 * MIN).toISOString()))}</span>`).join('');
+  const legend = S.snap.repos.map((repo) => `<span><i style="background:${repoColor(repo)}"></i>${esc(repoShort(repo))}</span>`).join('') + '<span><i class="lg-fail"></i>terminó con error</span>';
+  const timeline = `<div class="day"><h2>Últimas 12 horas<span class="legend">${legend}</span></h2>
+    ${t.timeline.length ? '' : '<p class="note" style="margin:0 0 8px">Ninguna corrida de agentes en las últimas 12 horas.</p>'}
+    ${lanes}<div class="axis"><span></span><div class="ticks">${ticks}</div></div></div>`;
+  return `<div class="today"><h1>Hoy</h1><p class="lead">${esc(lead[0].toUpperCase() + lead.slice(1))}.</p>${kpis}${timeline}</div>`;
+}
+
+function wireToday() {
+  const tip = tipEl();
+  const show = (bar, x, y) => {
+    tip.textContent = bar.dataset.tip;
+    tip.style.opacity = '1';
+    tip.style.left = `${Math.min(x + 14, innerWidth - 300)}px`;
+    tip.style.top = `${y + 14}px`;
+  };
+  const hide = () => { tip.style.opacity = '0'; };
+  for (const bar of document.querySelectorAll('.bar[data-run]')) {
+    bar.onpointermove = (e) => show(bar, e.clientX, e.clientY);
+    bar.onpointerleave = hide;
+    bar.onfocus = () => { const r = bar.getBoundingClientRect(); show(bar, r.left, r.bottom); };
+    bar.onblur = hide;
+    bar.onclick = () => {
+      hide();
+      S.pendingRun = bar.dataset.run;
+      select(bar.dataset.item);
+    };
+  }
+}
+
+function goHome() {
+  S.sel = null;
+  stopStream();
+  if (location.pathname !== '/') history.pushState(null, '', '/');
+  renderAll();
+  if (isMobile()) {
+    $('#shell').dataset.m = 'detail';
+    scrollTo(0, 0);
+  }
+  refresh();
 }
 
 // ---------- context
@@ -431,6 +520,11 @@ async function loadItem(id) {
   try {
     const { runs } = await api(`/api/items/${encodeURIComponent(id)}`);
     S.itemRuns[id] = runs;
+    if (S.pendingRun) {
+      const index = runs.findIndex((run) => run.runId === S.pendingRun);
+      if (index >= 0) S.runIdx[id] = index;
+      S.pendingRun = null;
+    }
   } catch (error) {
     if (error instanceof Unauthorized) return showLogin();
   }
@@ -453,7 +547,7 @@ async function select(id) {
 
 async function refresh() {
   try {
-    S.snap = await api('/api/snapshot');
+    [S.snap, S.today] = await Promise.all([api('/api/snapshot'), S.sel ? Promise.resolve(S.today) : api('/api/today')]);
   } catch (error) {
     if (error instanceof Unauthorized) showLogin();
     return;
