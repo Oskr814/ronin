@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { IncomingMessage } from 'node:http';
-import { missingAuthConfig, parseCookies, sessionLogin, signSession, SESSION_COOKIE, type AuthConfig } from './auth.js';
+import { createHmac } from 'node:crypto';
+import { missingAuthConfig, parseCookies, readSession, sealSession, sessionLogin, SESSION_COOKIE, type AuthConfig } from './auth.js';
 
 const CONFIG: AuthConfig = {
   url: 'https://media.example.ts.net:8443',
@@ -34,28 +35,40 @@ describe('parseCookies', () => {
 
 describe('sessions', () => {
   const now = Date.parse('2026-10-16T12:00:00Z');
+  const seal = (login = 'oskr814', secret = CONFIG.sessionSecret) => sealSession({ login, token: 'gho_secreto' }, secret, 7, now);
 
-  it('lets in a signed, current session of someone on the allowlist', () => {
-    const value = signSession('Oskr814', CONFIG.sessionSecret, 7, now);
+  it('lets in a current session of someone on the allowlist, with the GitHub token', () => {
+    const value = seal('Oskr814');
+    expect(readSession(request(`${SESSION_COOKIE}=${value}`), CONFIG, now + 60_000)).toEqual({ login: 'oskr814', token: 'gho_secreto' });
     expect(sessionLogin(request(`${SESSION_COOKIE}=${value}`), CONFIG, now + 60_000)).toBe('oskr814');
   });
 
-  it('turns away an expired session', () => {
-    const value = signSession('oskr814', CONFIG.sessionSecret, 7, now);
-    expect(sessionLogin(request(`${SESSION_COOKIE}=${value}`), CONFIG, now + 8 * 24 * 60 * 60 * 1000)).toBeNull();
+  it('never carries the token in the clear', () => {
+    const value = seal();
+    expect(value).not.toContain('gho_secreto');
+    expect(Buffer.from(value.split('.')[2], 'base64url').toString('latin1')).not.toContain('gho_secreto');
   });
 
-  it('turns away a session signed with another secret, or changed by hand', () => {
-    const other = signSession('oskr814', 'y'.repeat(40), 7, now);
-    expect(sessionLogin(request(`${SESSION_COOKIE}=${other}`), CONFIG, now)).toBeNull();
-    const [, signature] = signSession('oskr814', CONFIG.sessionSecret, 7, now).split('.');
-    const forged = Buffer.from(JSON.stringify({ login: 'oskr814', exp: now + 1e12 })).toString('base64url');
-    expect(sessionLogin(request(`${SESSION_COOKIE}=${forged}.${signature}`), CONFIG, now)).toBeNull();
+  it('turns away an expired session', () => {
+    expect(readSession(request(`${SESSION_COOKIE}=${seal()}`), CONFIG, now + 8 * 24 * 60 * 60 * 1000)).toBeNull();
+  });
+
+  it('turns away a session sealed with another secret, or changed by hand', () => {
+    expect(readSession(request(`${SESSION_COOKIE}=${seal('oskr814', 'y'.repeat(40))}`), CONFIG, now)).toBeNull();
+    const [version, iv, sealed, tag] = seal().split('.');
+    const flipped = Buffer.from(sealed, 'base64url');
+    flipped[0] ^= 1;
+    expect(readSession(request(`${SESSION_COOKIE}=${[version, iv, flipped.toString('base64url'), tag].join('.')}`), CONFIG, now)).toBeNull();
+  });
+
+  it('turns away a cookie of the older format, signed but without a token', () => {
+    const payload = Buffer.from(JSON.stringify({ login: 'oskr814', exp: now + 1e9 })).toString('base64url');
+    const signature = createHmac('sha256', CONFIG.sessionSecret).update(payload).digest('base64url');
+    expect(readSession(request(`${SESSION_COOKIE}=${payload}.${signature}`), CONFIG, now)).toBeNull();
   });
 
   it('turns away someone taken off the allowlist, even with a valid session', () => {
-    const value = signSession('oskr814', CONFIG.sessionSecret, 7, now);
-    expect(sessionLogin(request(`${SESSION_COOKIE}=${value}`), { ...CONFIG, allowedUsers: ['otra'] }, now)).toBeNull();
+    expect(readSession(request(`${SESSION_COOKIE}=${seal()}`), { ...CONFIG, allowedUsers: ['otra'] }, now)).toBeNull();
   });
 
   it('is null without a cookie or with garbage', () => {
