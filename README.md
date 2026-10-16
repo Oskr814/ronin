@@ -34,10 +34,19 @@ Detalle de cada comando: [wiki → Comandos](https://github.com/Oskr814/ronin/wi
 
 **Exploración y propuestas de mejora** ([`docs/DESIGN.md` §11](docs/DESIGN.md)): con un `ronin.app.json` en el repo del producto, ronin levanta la app, la usa como cada rol y propone mejoras con capturas del antes y del después (en la rama huérfana `ronin/evidence` del repo del producto). Las propuestas van a un PR de exploración (`ronin/exploration/<fecha>`), listo para revisar apenas termina cada corrida; mientras siga abierto, las corridas siguientes se suman a él. Comentando en una ficha podés rechazarla, pedir que la corrija (incluso rehacer la captura del después, que reemplaza a la anterior) o pedir un issue aparte. Dentro de un hilo, ronin solo atiende las respuestas que lo mencionan (`@ronin-agent`), y siempre lee lo que ya se habló sobre esa ficha; al aprobar y mergear, abre un issue por cada propuesta que quedó en pie y la próxima corrida abre un PR nuevo. Las apps listadas en `explore` de `repos.json` se exploran solas de noche (`EXPLORE_NIGHT_WINDOW`).
 
+**Tablero** ([`docs/DESIGN.md` §15](docs/DESIGN.md)): una página de solo lectura, que se ve solo por la tailnet y pide entrar con GitHub. Muestra:
+- qué agentes están corriendo, con su transcript en vivo;
+- qué issues esperan a alguien y por qué;
+- cómo va cada stack de slices, con sus checks;
+- las previews arriba;
+- el uso de cada cuenta de Claude;
+- en *Hoy*, las corridas de las últimas 12 horas y los totales del día.
+
 ## Operar un runner
 
 - [Setup](https://github.com/Oskr814/ronin/wiki/Setup): instalación, cuenta de GitHub, cron
-- [Webhooks](https://github.com/Oskr814/ronin/wiki/Webhooks): reaccionar al instante en vez de esperar al próximo tick
+- [Webhooks](https://github.com/Oskr814/ronin/wiki/Webhooks): el servidor de ronin (`pnpm server:setup`), para reaccionar al instante en vez de esperar al próximo tick
+- [Tablero](https://github.com/Oskr814/ronin/wiki/Tablero): activarlo y entrar desde la tailnet
 - [Changelog](https://github.com/Oskr814/ronin/wiki/Changelog): publicación automática de releases
 - [Bloqueos](https://github.com/Oskr814/ronin/wiki/Bloqueos): cuándo ronin se detiene y avisa por email
 
@@ -47,6 +56,7 @@ Detalle de cada comando: [wiki → Comandos](https://github.com/Oskr814/ronin/wi
 pnpm install
 pnpm test
 pnpm build   # el cron corre dist/, así que hay que reconstruir después de cada cambio
+pnpm server  # el servidor de ronin sin compilar: webhooks y, con su .env, el tablero
 pnpm browsers:install          # una vez por runner: navegadores para la exploración
 pnpm app smoke --repo <owner/name> --app <app>   # levanta la app, entra con cada rol y saca capturas
 pnpm explore run --repo <owner/name> --app <app> # una corrida de exploración local, sin tocar GitHub

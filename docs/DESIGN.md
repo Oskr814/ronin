@@ -125,10 +125,11 @@ Scaffold en TypeScript (`pnpm tick` corre un tick y termina — lo invoca el cro
 | `app/` | levantar y manejar la app del producto, y la rama de evidencia (§11.2, §11.5) |
 | `preview/` | `/preview` (§12) |
 | `exploration/` | exploración y su PR rodante (§11) |
-| `webhooks/` | el servidor de webhooks, el dispatcher de eventos y el handler por evento (§14) |
+| `server/` | el servidor de ronin: su API (los webhooks, con el dispatcher de eventos y el handler por evento, §14; el login y los datos del tablero, §15) y los dos listeners |
+| `web/` | la aplicación web del tablero, archivos estáticos sin build (§15) |
 | `changelog/` | publicación del changelog en cada release |
 
-**Imports:** dentro de una carpeta se importa el archivo directo (`./flow.js`); entre features, por el barrel de la carpeta (`../review/index.js`), que reexporta todo lo que no es entrada. `core/` no tiene barrel y se importa por archivo (`../core/config.js`): `config.ts` falla al cargar si faltan env vars, y módulos como `webhooks/events.ts` tienen que poder cargarse sin ellas. Los workers (`*-worker.ts`, `*/worker.ts`) y `webhooks/server.ts` son procesos aparte: no van en los barrels y se lanzan por su ruta relativa a `src/` (`launchWorker('preview/worker', …)`). Los tests importan y mockean el archivo concreto, no el barrel.
+**Imports:** dentro de una carpeta se importa el archivo directo (`./flow.js`); entre features, por el barrel de la carpeta (`../review/index.js`), que reexporta todo lo que no es entrada. `core/` no tiene barrel y se importa por archivo (`../core/config.js`): `config.ts` falla al cargar si faltan env vars, y módulos como `server/api/webhooks/events.ts` tienen que poder cargarse sin ellas. Los workers (`*-worker.ts`, `*/worker.ts`), el handler por evento (`server/api/webhooks/handler.ts`) y el servidor (`server/index.ts`) son procesos aparte: no van en los barrels y se lanzan por su ruta relativa a `src/` (`launchWorker('preview/worker', …)`). Los tests importan y mockean el archivo concreto, no el barrel.
 
 Los módulos del núcleo (en `core/` salvo que se indique otra carpeta); los de cada feature se describen en su sección:
 
@@ -142,6 +143,8 @@ Los módulos del núcleo (en `core/` salvo que se indique otra carpeta); los de 
 - `claude-runner.ts` — invoca `claude -p` con `--permission-mode bypassPermissions`, reenviando el PAT de la cuenta `ronin` como `GH_TOKEN` al proceso hijo (así los `gh` que el propio Claude headless corra también quedan a nombre de esa cuenta)
 - `agent-task.ts` — arma el prompt (en inglés, ver §8) según el tipo de tarea (`plan`, `implement-slice`, `fix-review`, `fix-e2e`, `fix-issue`, y los de cada feature: reviews, `fix-comments`, spikes, specs, exploración, previews, changelog) y orquesta worktree + invocación; salvo en `plan`, recuerda al agente dejar constancia de aprendizajes no-obvios en `docs/agent-notes/` del repo destino — ver [`docs/superpowers/specs/2026-08-18-agent-notes-design.md`](superpowers/specs/2026-08-18-agent-notes-design.md)
 - `claim.ts` — lock por label (`ronin:runner-<runner-id>`) + cache local (`.ronin-state.json`) para que dos supervisores no procesen el mismo issue — ver §9
+- `run-record.ts` — el registro de cada corrida de agente en `logs/runs/`, que lee el tablero (§15.5)
+- `claude-usage.ts` — el uso de cada cuenta de Claude, del `rate_limit_event` de cada corrida (§15.6)
 - `tick.ts` (raíz) — el loop de decisión: descubre specs asignados, y por cada issue `in-progress` decide la próxima acción leyendo el checklist y el contador de intentos por PR contra los límites de `docs/BLOCKING.md`
 
 ### 4. Testing y review externo
@@ -441,11 +444,11 @@ Antes, cada evento de GitHub que importaba despertaba un tick completo (todos lo
 
 Ahora cada evento tiene su handler:
 
-- **Dispatcher** (`webhooks/events.ts`, `scopeForEvent`): traduce el evento a un *scope*: los flujos que ese evento puede mover y los recursos que toca. Por ejemplo, un comentario en un PR mueve `issues`, `idle-commands`, `review` y `exploration` sobre `pr-N`; el CI que termina mueve `auto-merge` e `issues` sobre cada PR de la suite; un PR en una rama `ronin/<issue>/…` suma `issue-<issue>`. Un evento que nada mueve se ignora.
+- **Dispatcher** (`server/api/webhooks/events.ts`, `scopeForEvent`): traduce el evento a un *scope*: los flujos que ese evento puede mover y los recursos que toca. Por ejemplo, un comentario en un PR mueve `issues`, `idle-commands`, `review` y `exploration` sobre `pr-N`; el CI que termina mueve `auto-merge` e `issues` sobre cada PR de la suite; un PR en una rama `ronin/<issue>/…` suma `issue-<issue>`. Un evento que nada mueve se ignora.
 - **Comandos directos**: un comando en un PR (`/help` y comandos mal escritos, `/preview`, `/resolve-conflicts`, `/auto-merge`) va solo al flujo `pr-commands`, que corre `findUnprocessedMentions` de ese PR y nada más: no lista issues ni PRs ni corre el pipeline. `/fix-comments` sí sigue por su flujo, porque lo atiende el pipeline del issue o la review. Como ese handler no toma el issue, el tick puede estar leyendo el mismo comando: cada comentario se toma con un lock propio y, una vez tomado, se vuelve a mirar si ya está procesado (`claimComment` en `mentions.ts`), así nunca se responde dos veces.
 - **Lo propio no cuenta**: los comentarios y reviews de la cuenta de ronin no lanzan nada; sus PRs sí (uno recién abierto es parte del stack de un issue).
-- **Servidor** (`webhooks/server.ts`): pone 👀 en un comentario que menciona a ronin apenas llega (`addAckReaction`), antes de procesarlo. Junta los eventos sobre lo mismo durante `WEBHOOK_DEBOUNCE_MS` (1 s: lo que llega después lo junta el handler que espera) y lanza un handler. Distintos PRs o issues tienen handlers propios, a la vez.
-- **Handler** (`webhooks/handler.ts`): un proceso por evento, como los workers. Corre los mismos flujos que el tick (`runScoped` en `tick.ts`), pero solo los del scope y solo los jobs que tocan sus recursos, con un discovery acotado (`findPrsNeedingReview([N])`, `findIssueCommands([N])`). A un comentario en un PR, que llega sin rama, le busca el issue del PR. Si ya hay otro handler esperando para el mismo scope, no hace falta otro: el que espera va a leer todo cuando le toque.
+- **Servidor** (`server/api/webhooks/github.ts`, en el servidor de ronin, §15.2): recibe los eventos en `POST /api/webhooks/github`, pone 👀 en un comentario que menciona a ronin apenas llega (`addAckReaction`), antes de procesarlo. Junta los eventos sobre lo mismo durante `WEBHOOK_DEBOUNCE_MS` (1 s: lo que llega después lo junta el handler que espera) y lanza un handler. Distintos PRs o issues tienen handlers propios, a la vez.
+- **Handler** (`server/api/webhooks/handler.ts`): un proceso por evento, como los workers. Corre los mismos flujos que el tick (`runScoped` en `tick.ts`), pero solo los del scope y solo los jobs que tocan sus recursos, con un discovery acotado (`findPrsNeedingReview([N])`, `findIssueCommands([N])`). A un comentario en un PR, que llega sin rama, le busca el issue del PR. Si ya hay otro handler esperando para el mismo scope, no hace falta otro: el que espera va a leer todo cuando le toque.
 - **Tick** (cron): sigue corriendo todos los flujos sobre todo, como conciliación. Levanta lo que ningún handler hizo (un webhook que no llegó, un runner apagado) y el trabajo periódico (entrevistas, exploración nocturna, poda de estado).
 
 **Un solo emoji, "procesado" aparte** (`core/processed-comments.ts`): el 👀 de ronin solo dice "recibido" — lo pone el servidor al llegar el comentario, o el flujo que lo procesa si el webhook nunca llegó. Que un comentario ya está atendido se guarda en el estado local (`processedComments`, por repo), y solo cuando el trabajo salió bien: una falla no se anota y se reintenta, como antes. Un comentario de antes de este cambio cuenta como atendido si el 👀 de ronin es anterior a `ACK_EYES_SINCE` (el deploy en el runner, 2026-10-16T01:03:19Z), que es cuando el 👀 todavía significaba "procesado"; el 👀 de acuse, posterior, no cuenta. Es una fecha fija a propósito: tomarla de la primera lectura del estado dejaba afuera el acuse que el servidor pone segundos antes de esa lectura, y ese comentario se daba por atendido sin responderse. Uno de más de 180 días cuenta como atendido siempre, y por eso las entradas de más de 180 días se podan. Es estado de este runner: con un solo runner por repo (hoy `ronin-agent`) no hace falta compartirlo; varios runners sobre el mismo repo necesitarían volver a guardarlo en GitHub.
@@ -461,6 +464,138 @@ Ahora cada evento tiene su handler:
 
 **Métricas**: el handler loguea `event_start` con `delayMs` (desde que llegó el evento hasta que tiene sus recursos) y `event_complete` al terminar, junto al `tick_complete` del tick.
 
+### 15. Tablero web (#65)
+
+Una página para ver qué está haciendo ronin sin recorrer GitHub issue por issue ni leer el log: qué agentes corren y qué hacen paso a paso, qué issues esperan a alguien y por qué, cómo va cada stack de slices, qué previews están arriba y cuánto le queda a cada cuenta de Claude. Es de solo lectura y se ve solo por la tailnet.
+
+#### 15.1 Qué muestra
+
+- **Barra lateral.** Arriba, *Hoy*, *Corriendo ahora* y *En cola*. Después, *Necesitan a alguien* con los issues en `ronin:blocked`, y cada repo de `repos.json` con:
+  - Sus issues de tracking en curso, aunque no haya corrido un agente.
+  - El PR de exploración abierto.
+  - Lo demás que corrió en los últimos 3 días: la review de un PR de un humano, un pedido en un issue, el changelog.
+
+  Cada fila lleva un punto de estado, el número, cuántas slices van mergeadas, la última línea del agente (o lo que espera: "esperando review en #881", "aprobado, falta el merge de #401") y hace cuánto. Un issue elegido, corriendo o bloqueado se despliega en sus slices.
+- **Centro.** Pestañas, una por ítem abierto; al cargar se abren las de los agentes que corren. Cada una muestra el transcript de una corrida, con los textos del agente y sus pasos (leyó, buscó, editó, corrió). Arriba van las corridas de ese ítem de los últimos 14 días, y abajo el estado, el reloj, el modelo y el worktree.
+  - Una corrida en curso se sigue en vivo.
+  - Si arranca una nueva sobre el ítem abierto, aparece sola.
+- **Contexto, a la derecha.**
+  - El motivo de un bloqueo y cómo destrabarlo.
+  - El árbol de slices con sus PRs, checks y reviews.
+  - Los checks del PR que está avanzando.
+  - La preview, con su URL y cuánto le queda.
+  - Los datos de la corrida: tarea, modelo, cuenta, duración, costo y worktree.
+- **Barra de estado.** El uso de cada cuenta de Claude en la ventana de 5 horas y en la semanal, los cupos de agentes ocupados, la cola, las previews, el último tick y si GitHub no responde.
+- ***Hoy*, la vista de inicio.** Los totales del día (corridas, cuántas terminaron bien, duración mediana y p90, costo, errores; con las de ayer al lado) y una línea de las últimas 12 horas, con un carril por repo y cada corrida como una barra. Al hacerle clic, se abre esa corrida.
+- **Celular.** La barra lateral es la lista principal, y un ítem abre el transcript con el contexto debajo.
+- **Actualización.** La página pide el snapshot cada 5 segundos mientras está visible, y el transcript de una corrida en curso le llega por *server-sent events*. No hace falta recargar.
+
+#### 15.2 El servidor de ronin: API y aplicación web
+
+El servidor que recibía los webhooks pasó a ser el servidor web de ronin (`src/server/`, servicio `ronin-server`), con una **API** en `/api/*` y la **aplicación web** del tablero en todo lo demás. Los webhooks son parte de la API.
+
+```
+src/server/
+  index.ts             el proceso: los dos listeners
+  public.ts            lo que atiende el listener público: solo los webhooks
+  tailnet.ts           lo que atiende el de la tailnet: la app y toda la API
+  api/
+    webhooks/          POST /api/webhooks/github: github.ts, events.ts, handler.ts (§14)
+    auth.ts            /api/auth/login, /callback, /logout y /me
+    dashboard*.ts      los datos del tablero
+src/web/               la aplicación: HTML, CSS, JS y fuentes, sin build
+```
+
+- **Listener público** (`SERVER_PORT`, 3939; `WEBHOOK_PORT` se sigue leyendo si no está). Es al que llega `https://ronin-agent.redmotoshn.com`, por el túnel de Cloudflare y nginx-proxy-manager. Atiende solo `POST /api/webhooks/github`, más el alias `/webhook` de la ruta anterior; cualquier otra ruta responde 404. La restricción está en el código, así que no depende de cómo esté configurado el proxy.
+- **Listener de la tailnet** (`127.0.0.1:SERVER_TAILNET_PORT`, 3940).
+  - **Solo en `127.0.0.1`:** no se ve desde la LAN ni desde otra interfaz.
+  - **Publicación:** `pnpm server:setup` lo publica con `tailscale serve --bg --https=8443` (`DASHBOARD_TAILNET_HTTPS_PORT`), nunca con `funnel`.
+  - **Quién lo ve:** el 8443 queda fuera de `PREVIEW_PORT_RANGE`, lo único que la política de Tailscale les abre a externos (§12), así que solo lo ve el dueño, que tiene `*` sobre `tag:media`.
+  - **HTTPS y LAN:** `tailscale serve` pone el HTTPS que necesita la cookie de sesión. Desde la LAN se entra por la misma URL, con Tailscale en el equipo.
+  - **Solo con login configurado:** arranca solo si están las variables del login (15.3); sin ellas, el servidor atiende únicamente los webhooks.
+- **La aplicación** son archivos estáticos sin datos adentro: todo lo pide a la API. Se sirve sin sesión, y cuando la API responde 401 muestra *Entrar con GitHub*. Una ruta que no es un archivo (`/i/<ítem>`) devuelve la app. `pnpm build` copia `src/web/` a `dist/web/`.
+- **Errores aislados.** Un pedido que tira un error responde 500 y se loguea, sin tirar el proceso que recibe los webhooks. Si igual se cae, systemd lo reinicia y el tick levanta lo que llegó mientras tanto.
+- **La ruta de los webhooks.** Pasó de `/webhook` a `/api/webhooks/github`. `scripts/init-webhooks.sh <url>` busca el hook de ronin por la URL nueva o por la vieja del mismo dominio y le cambia la URL, en vez de crear un segundo hook que entregaría todo dos veces. El alias `/webhook` se puede sacar cuando ningún hook apunte ahí.
+
+#### 15.3 Login con GitHub
+
+La tailnet ya limita quién llega. El login suma una segunda barrera y la identidad que van a necesitar las acciones, cuando las haya.
+
+- **OAuth App de la cuenta del dueño, sin scopes:** solo hace falta saber quién es. Se configura con `DASHBOARD_GITHUB_CLIENT_ID` y `DASHBOARD_GITHUB_CLIENT_SECRET`, y su callback es `<DASHBOARD_URL>/api/auth/callback`. Funciona aunque esa URL solo se vea en la tailnet, porque la redirección la sigue el navegador.
+- **Flujo.** `/api/auth/login` redirige a GitHub con un `state` al azar en una cookie de corta vida. `/api/auth/callback` verifica el `state`, canjea el código desde el servidor, lee `GET /user` y descarta el token de GitHub: no se guarda.
+- **Quién entra.** Solo los logins de `DASHBOARD_ALLOWED_USERS`, separados por coma. La lista se vuelve a mirar en cada pedido, así que sacar a alguien lo deja afuera en el momento.
+- **Sesión.** Es una cookie firmada con HMAC (`DASHBOARD_SESSION_SECRET`) que lleva el login y el vencimiento (`DASHBOARD_SESSION_DAYS`, 7). Es `HttpOnly`, `Secure` y `SameSite=Lax`, y no hay estado de sesión en el servidor. Cambiar el secreto cierra todas las sesiones.
+- **Lo demás:**
+  - Un pedido que no es `GET` y trae un `Origin` de otro sitio recibe 403.
+  - La app se sirve con una CSP que solo permite scripts propios (`script-src 'self'`, `frame-ancestors 'none'`). Por eso las fuentes van en `src/web/fonts/` y no se cargan de Google Fonts.
+  - Todo lo que viene de los agentes se escapa antes de insertarse en la página, y además ya pasó por `redact()` al escribirse.
+
+#### 15.4 De dónde sale cada dato
+
+| Dato | Fuente |
+|---|---|
+| Corridas, transcripts, *Hoy* | El registro por corrida, `logs/runs/` (15.5) |
+| Uso de cada cuenta de Claude | `logs/usage/<cuenta>.json` (15.6) |
+| Motivo de un bloqueo | `blocks` en el estado local del repo (15.7) |
+| Lo que espera un cupo | `.ronin-slots/waiting/` (15.7) |
+| Cupos ocupados | `.ronin-slots/all-*.lock` con un pid vivo |
+| Issues, slices, PRs, checks | GitHub, dos llamadas por repo (15.8) |
+| Previews | El `preview.json` de cada worktree de preview |
+| Último tick y último evento | `tick_complete` y `event_complete` en `logs/tick-*.log` |
+
+#### 15.5 Registro por corrida (`core/run-record.ts`)
+
+Cada corrida de agente escribe `logs/runs/<día>/<runId>.jsonl`, con una línea JSON por evento:
+
+- **`run_start`:** repo, tipo de tarea, issue o PR, slice, modelo, effort, cuenta, worktree, `pid` y hora de inicio. Lo escribe `runAgentTask`.
+- **`text`, `tool` y `tool_error`,** a medida que pasan. Es lo mismo que va al log diario, con la misma truncación y sin el contenido de los `tool_result`. `runClaudeHeadless` se los pasa al registro además de loguearlos.
+- **`run_end`:** el resultado (`ok`, `error`, `timeout` o `usage_limit`), la duración y los totales del evento `result` de `claude -p` (costo, tokens, turnos, `session_id`).
+
+Cada campo pasa por `redact()` antes de escribirse. Una corrida sin `run_end` cuyo `pid` ya no vive se muestra como cortada. Si el registro no se puede escribir, la corrida sigue igual. `run-tick.sh` (generado por `scripts/setup-cron.sh`) borra las carpetas de más de 14 días, como los `tick-*.log`. El transcript completo que Claude Code guarda en `<claudeConfigDir>/projects/` no se usa, porque trae los `tool_result` enteros, sin redactar.
+
+#### 15.6 Uso de cada cuenta (`core/claude-usage.ts`)
+
+Cada corrida de `claude -p` emite en el stream un `rate_limit_event` con el uso de la cuenta en la ventana de 5 horas y en la semanal, y cuándo se reinicia cada una. `runClaudeHeadless` guarda el último en `logs/usage/<cuenta>.json`, con la hora en que se midió. La cuenta se nombra por su `claudeConfigDir` (`.claude-redmotos` → `redmotos`). Cuando una corrida termina por límite de uso, la cuenta queda marcada sin cuota (`limitHitAt`) hasta la próxima medición.
+
+Una cuenta sin corridas recientes muestra un dato viejo, con su antigüedad a la vista. No se usa el endpoint que lee `/usage` de Claude Code (`/api/oauth/usage`): no está documentado, y con un token vencido habría que refrescarlo, compitiendo con Claude Code por el mismo `.credentials.json`.
+
+#### 15.7 Motivo de bloqueo y cola
+
+- **Motivo.** `notifyBlocker`, por donde pasan todos los bloqueos, lo guarda en el estado local del repo antes del email: `blocks[<número>] = { reason, url, prUrl, excerpt, at }`, con el número sacado de la URL del issue o PR. El tablero lo muestra solo mientras el ítem tenga `ronin:blocked`, así que no hace falta borrarlo al destrabar. Las entradas de más de 180 días se podan. Un bloqueo de un release (el changelog) no se guarda, porque no lleva label.
+- **Cola.** Mientras un job espera un cupo, `withSlots` (`core/locks.ts`) deja `.ronin-slots/waiting/<pid>-<n>.json` con el tipo de job, su etiqueta, el repo y desde cuándo. Lo borra apenas consigue el cupo. Una marca de un pid muerto se ignora.
+
+#### 15.8 Datos de GitHub (`server/api/dashboard-github.ts`)
+
+Por repo, dos llamadas:
+- Los issues abiertos con el label `ronin`, con su descripción, de donde salen las slices (`parseSlices`).
+- Todos los PRs abiertos, con cada check (`listOpenPrsWithChecks`).
+
+A eso se suman los motivos de bloqueo y las previews arriba.
+
+Cada repo se vuelve a leer a los `DASHBOARD_GITHUB_TTL_SECONDS` (60), o antes si una corrida suya empezó o terminó después de la última lectura. Mientras tanto se muestra la lectura anterior, así que varias pestañas abiertas no multiplican las llamadas. Si GitHub falla, se conserva la última lectura con el error, que la página muestra, y las corridas locales se siguen viendo.
+
+`dashboard-items.ts` arma los ítems de la barra lateral con eso y con las corridas: estado, lo que espera cada issue, slices, el PR que avanza y su preview.
+
+#### 15.9 API
+
+Todo, salvo los webhooks y `/api/auth/*`, pide sesión:
+
+| Ruta | Qué devuelve |
+|---|---|
+| `GET /api/snapshot` | Los ítems, el uso de cada cuenta, los cupos, la cola, el último tick, las previews y el estado de la lectura de GitHub |
+| `GET /api/today` | Las corridas de las últimas 12 horas y los totales de hoy y de ayer |
+| `GET /api/items/<id>` | Las corridas de un ítem en los últimos 14 días |
+| `GET /api/runs/<runId>` | El transcript de una corrida |
+| `GET /api/runs/<runId>/stream` | Lo que se le agrega, por *server-sent events*, hasta que termina |
+
+#### 15.10 Activarlo
+
+1. Crear una OAuth App en GitHub (*Settings → Developer settings → OAuth Apps*) con callback `<DASHBOARD_URL>/api/auth/callback`.
+2. Completar en `.env` `DASHBOARD_GITHUB_CLIENT_ID`, `DASHBOARD_GITHUB_CLIENT_SECRET`, `DASHBOARD_SESSION_SECRET` (`openssl rand -hex 32`), `DASHBOARD_ALLOWED_USERS` y `DASHBOARD_URL` (por ejemplo `https://<host>.<tailnet>.ts.net:8443`).
+3. `pnpm build && pnpm server:setup`. `server:setup` instala `ronin-server` (y desinstala el `ronin-webhook` de antes si lo encuentra) y publica el 8443 en la tailnet.
+
+**Pendiente:** acciones desde la página (cancelar, reintentar, bajar una preview), una vista de varios runners juntos y sacar el alias `/webhook`.
+
 ## Estado actual
 
 - [x] Definir el esqueleto del supervisor (script + estructura de tick) — ver §3.1 y `src/`
@@ -474,7 +609,8 @@ Ahora cada evento tiene su handler:
 - [x] Recurrencia vía cron (no tmux) — `scripts/setup-cron.sh`, con `flock` para que un host nunca corra dos ticks solapados
 - [x] Límite de uso de Claude como estado transitorio, no como bloqueo — `ClaudeUsageLimitError` (§3)
 - [x] Limpieza de worktrees cuando su PR ya no está abierto — `sweepOrphanedWorktrees` (§3.1)
-- [x] Reacción por evento: un handler por evento de GitHub, el tick como conciliación — `webhooks/handler.ts`, `core/locks.ts` (§14)
+- [x] Reacción por evento: un handler por evento de GitHub, el tick como conciliación — `server/api/webhooks/handler.ts`, `core/locks.ts` (§14)
+- [x] Tablero web de solo lectura, en la tailnet, con login de GitHub — `server/`, `web/`, `core/run-record.ts`, `core/claude-usage.ts` (§15)
 - [x] ~~Evidencia visual de e2e en el PR~~ — eliminado (el `src/evidence.ts` de entonces; el `evidence-store.ts` actual es el de la exploración, §11.5); no reemplazaba la supervisión humana y la calidad no era suficiente — ver [issue #4](https://github.com/Oskr814/ronin/issues/4)
 
 **Pendiente, fuera de este scaffold:**
