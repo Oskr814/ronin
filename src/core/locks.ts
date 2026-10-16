@@ -6,7 +6,7 @@ import { activeRepo } from './repo-context.js';
 
 // Who works on what, across every ronin process on this runner: the cron
 // tick and the event handlers the webhook server starts
-// (webhooks/handler.ts) can run at the same time, so two of them must never
+// (server/api/webhooks/handler.ts) can run at the same time, so two of them must never
 // take the same issue or PR at once. Each lock is a file holding its
 // process's pid (worker-launch.ts's acquireLock), so one left behind by a
 // process that died is taken over instead of blocking forever. See

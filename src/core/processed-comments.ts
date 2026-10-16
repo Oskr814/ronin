@@ -4,7 +4,7 @@ import { getProcessedComments, recordProcessedComment } from './local-state.js';
 
 // Which mentions ronin is done with. ronin's 👀 on a comment only says "got
 // it": the webhook server puts it there the moment the comment arrives
-// (webhooks/server.ts). Done is recorded here, in the local state, once the
+// (server/api/webhooks/github.ts). Done is recorded here, in the local state, once the
 // work went through — a failure records nothing and is retried, as before.
 //
 // Before this, the 👀 itself meant done. A comment from back then still

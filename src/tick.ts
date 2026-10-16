@@ -1057,7 +1057,7 @@ export function idleCommandJobs(allPrs: PullRequestStatus[], inProgress: Trackin
 }
 
 // A command on a PR (help, /preview, /resolve-conflicts, /auto-merge — see
-// webhooks/events.ts), straight to what answers it: findUnprocessedMentions,
+// server/api/webhooks/events.ts), straight to what answers it: findUnprocessedMentions,
 // nothing else. Any plain-words mention it leaves is picked up by its usual
 // flow; mentions.ts's claimComment keeps the two from answering one twice.
 function commandJob(prNumber: number): TickJob {
@@ -1083,8 +1083,8 @@ async function finishClosedIssues(): Promise<void> {
 }
 
 // The flows a run goes through. The cron tick runs every one of them, over
-// everything; an event handler (webhooks/handler.ts) only the ones its event
-// can move — see webhooks/events.ts's scopeForEvent.
+// everything; an event handler (server/api/webhooks/handler.ts) only the ones its event
+// can move — see server/api/webhooks/events.ts's scopeForEvent.
 export type Flow =
   | 'interviews'
   | 'assign'
@@ -1234,7 +1234,7 @@ export async function tick(): Promise<void> {
   }
 }
 
-// One event's run, in its own process (webhooks/handler.ts) inside
+// One event's run, in its own process (server/api/webhooks/handler.ts) inside
 // withActiveRepo. Takes every resource of the scope first, waiting for
 // whoever holds them, so everything it reads after is fresh. `onPinned`
 // runs once it has them, before reading anything.

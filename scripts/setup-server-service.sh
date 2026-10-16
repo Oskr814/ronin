@@ -1,25 +1,38 @@
 #!/usr/bin/env bash
-# Installs (or removes) webhooks/server.ts as a systemd --user service — unlike
-# tick (a one-shot cron job, see setup-cron.sh), this has to stay up
-# permanently to accept incoming webhook deliveries. Safe to re-run.
+# Installs (or removes) the ronin server (src/server/index.ts) as a systemd
+# --user service — unlike tick (a one-shot cron job, see setup-cron.sh), this
+# has to stay up permanently to accept incoming webhook deliveries. Safe to
+# re-run.
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SERVICE_NAME="ronin-webhook"
+SERVICE_NAME="ronin-server"
+# The same server's old name: installing the new one removes it, since both
+# listen on the same port.
+OLD_SERVICE_NAME="ronin-webhook"
 UNIT_DIR="$HOME/.config/systemd/user"
 UNIT_FILE="$UNIT_DIR/$SERVICE_NAME.service"
 
+remove_service() {
+  systemctl --user disable --now "$1.service" 2>/dev/null || true
+  rm -f "$UNIT_DIR/$1.service"
+}
+
 if [[ "${1:-}" == "--remove" ]]; then
-  systemctl --user disable --now "$SERVICE_NAME.service" 2>/dev/null || true
-  rm -f "$UNIT_FILE"
+  remove_service "$SERVICE_NAME"
   systemctl --user daemon-reload
   echo "Servicio $SERVICE_NAME removido"
   exit 0
 fi
 
-if [ ! -f "$REPO_DIR/dist/webhooks/server.js" ]; then
-  echo "$REPO_DIR/dist/webhooks/server.js no existe — correr 'pnpm build' primero" >&2
+if [ ! -f "$REPO_DIR/dist/server/index.js" ]; then
+  echo "$REPO_DIR/dist/server/index.js no existe — correr 'pnpm build' primero" >&2
   exit 1
+fi
+
+if [ -f "$UNIT_DIR/$OLD_SERVICE_NAME.service" ]; then
+  remove_service "$OLD_SERVICE_NAME"
+  echo "Servicio viejo $OLD_SERVICE_NAME removido"
 fi
 
 # Cron runs with a minimal environment (no .bashrc/.profile sourced), so
@@ -31,7 +44,7 @@ NODE_BIN="$(command -v node)"
 mkdir -p "$UNIT_DIR"
 cat > "$UNIT_FILE" <<EOF
 [Unit]
-Description=ronin webhook server
+Description=ronin server
 After=network.target
 
 [Service]
@@ -39,7 +52,7 @@ Type=simple
 WorkingDirectory=$REPO_DIR
 Environment=PATH=$FULL_PATH
 EnvironmentFile=$REPO_DIR/.env
-ExecStart=$NODE_BIN $REPO_DIR/dist/webhooks/server.js
+ExecStart=$NODE_BIN $REPO_DIR/dist/server/index.js
 Restart=on-failure
 RestartSec=5
 
