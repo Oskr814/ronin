@@ -2,12 +2,14 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { existsSync } from 'node:fs';
 import { config } from '../../core/config.js';
 import { loadRepos } from '../../core/repos.js';
-import { groupItems, itemKey, listRuns, readQueue, readRunLines, readTickInfo, readUsage, runPath, slotsInUse, summarizeRun } from './dashboard-data.js';
+import { itemKey, listRuns, readQueue, readRunLines, readTickInfo, readUsage, runPath, slotsInUse, summarizeRun } from './dashboard-data.js';
+import { repoGithub } from './dashboard-github.js';
+import { buildItems } from './dashboard-items.js';
 
 // The dashboard's data (#65), all behind the session (tailnet.ts checks it
 // before any of this runs):
 //   GET /api/snapshot                the sidebar and the status bar
-//   GET /api/items/<id>              one item's runs
+//   GET /api/items/<id>              one item's runs (14 days)
 //   GET /api/runs/<runId>            one run's transcript
 //   GET /api/runs/<runId>/stream     the rest of it as it happens (SSE)
 
@@ -23,12 +25,20 @@ function json(res: ServerResponse, status: number, body: unknown): void {
 }
 
 export async function snapshot(login: string): Promise<unknown> {
+  const entries = await loadRepos();
+  const repos = entries.map((repo) => repo.productRepo);
+  const runs = listRuns(SIDEBAR_DAYS);
+  // A repo's GitHub read is stale once one of its runs started or ended after it.
+  const changedSince = (repo: string) => Math.max(0, ...runs.filter((run) => run.repo === repo).map((run) => Date.parse(run.endedAt ?? run.startedAt)));
+  const github = await Promise.all(entries.map((entry) => repoGithub(entry, changedSince(entry.productRepo))));
   return {
     me: login,
-    repos: (await loadRepos()).map((repo) => repo.productRepo),
+    repos,
     runner: { slots: { used: slotsInUse(), limit: config.tickConcurrency }, queue: readQueue(), tick: readTickInfo() },
     usage: readUsage(),
-    items: groupItems(listRuns(SIDEBAR_DAYS)),
+    items: buildItems(repos, runs, github),
+    previews: github.flatMap((gh) => (gh ? gh.previews.map((p) => ({ ...p, repo: gh.repo })) : [])),
+    github: github.map((gh, i) => ({ repo: repos[i], fetchedAt: gh?.fetchedAt ?? null, ...(gh?.error ? { error: gh.error } : {}) })),
   };
 }
 
@@ -78,9 +88,8 @@ export async function handleDashboard(req: IncomingMessage, res: ServerResponse,
   const item = /^\/api\/items\/(.+)$/.exec(path);
   if (item) {
     const id = decodeURIComponent(item[1]);
-    const runs = listRuns(HISTORY_DAYS).filter((run) => itemKey(run) === id);
-    if (runs.length === 0) json(res, 404, { error: 'sin corridas para ese ítem en los últimos 14 días' });
-    else json(res, 200, { id, runs });
+    // An issue ronin manages can have no runs in that window: an empty list.
+    json(res, 200, { id, runs: listRuns(HISTORY_DAYS).filter((run) => itemKey(run) === id) });
     return true;
   }
 

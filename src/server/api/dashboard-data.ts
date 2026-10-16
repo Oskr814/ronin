@@ -146,49 +146,6 @@ export function itemKey(run: Pick<RunSummary, 'repo' | 'issueNumber' | 'prNumber
   return number !== undefined ? `${run.repo}#${number}` : `${run.repo}:${run.taskType}:${run.label}`;
 }
 
-export interface Item {
-  id: string;
-  repo: string;
-  number?: number;
-  kind: 'issue' | 'pr' | 'other';
-  title: string;
-  state: RunState;
-  lastRun: RunSummary;
-  runs: number;
-}
-
-function itemTitle(run: RunSummary): string {
-  if (run.sliceTitle) return run.sliceTitle;
-  if (run.issueNumber !== undefined) return `Issue #${run.issueNumber}`;
-  if (run.prNumber !== undefined) return `PR #${run.prNumber}`;
-  return run.label;
-}
-
-// Most recent activity first; what's running at the top.
-export function groupItems(runs: RunSummary[]): Item[] {
-  const items = new Map<string, Item>();
-  for (const run of runs) {
-    const id = itemKey(run);
-    const item = items.get(id);
-    if (item) {
-      item.runs += 1;
-      if (run.state === 'running') item.state = 'running';
-      continue;
-    }
-    items.set(id, {
-      id,
-      repo: run.repo,
-      ...(run.issueNumber ?? run.prNumber) !== undefined ? { number: run.issueNumber ?? run.prNumber } : {},
-      kind: run.issueNumber !== undefined ? 'issue' : run.prNumber !== undefined ? 'pr' : 'other',
-      title: itemTitle(run),
-      state: run.state,
-      lastRun: run,
-      runs: 1,
-    });
-  }
-  return [...items.values()].sort((a, b) => Number(b.state === 'running') - Number(a.state === 'running') || b.lastRun.startedAt.localeCompare(a.lastRun.startedAt));
-}
-
 export function readUsage(): AccountUsage[] {
   const dir = join(logsDir(), 'usage');
   if (!existsSync(dir)) return [];

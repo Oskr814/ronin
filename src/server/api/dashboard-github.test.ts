@@ -1,0 +1,51 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+const listOpenManagedIssues = vi.fn();
+const listOpenPrsWithChecks = vi.fn();
+vi.mock('../../core/github.js', () => ({
+  listOpenManagedIssues: () => listOpenManagedIssues(),
+  listOpenPrsWithChecks: () => listOpenPrsWithChecks(),
+}));
+vi.mock('../../core/local-state.js', () => ({ getBlocks: async () => ({}) }));
+vi.mock('../../preview/index.js', () => ({ listPreviewStates: async () => [] }));
+
+const { repoGithub, resetGithubCache } = await import('./dashboard-github.js');
+
+const ENTRY = { productRepo: 'acme/product', productRepoPath: '/tmp/x' };
+
+beforeEach(() => {
+  resetGithubCache();
+  listOpenManagedIssues.mockReset().mockResolvedValue([
+    { number: 879, title: 'Validar stock', url: 'u', labels: ['ronin', 'ronin:in-progress'], body: '- [x] Slice 1: Reserva — PR: #881\n- [ ] Slice 2: Validar — PR: _pending_' },
+  ]);
+  listOpenPrsWithChecks.mockReset().mockResolvedValue([]);
+});
+
+describe('repoGithub', () => {
+  it('reads the issues with their slices', async () => {
+    const data = await repoGithub(ENTRY);
+    expect(data?.issues).toEqual([{ number: 879, title: 'Validar stock', url: 'u', status: 'in-progress', direct: false, slices: [
+      { index: 0, title: 'Reserva', checked: true, prNumber: 881 },
+      { index: 1, title: 'Validar', checked: false, prNumber: null },
+    ] }]);
+  });
+
+  it('reuses a read while it is fresh, and reads again once a run changed after it', async () => {
+    const now = Date.now();
+    await repoGithub(ENTRY, 0, now);
+    await repoGithub(ENTRY, 0, now + 1000);
+    expect(listOpenManagedIssues).toHaveBeenCalledTimes(1);
+
+    // A run ended after the read: the next call serves the old read and starts a new one.
+    await repoGithub(ENTRY, now + 60_000, now + 2000);
+    await vi.waitFor(() => expect(listOpenManagedIssues).toHaveBeenCalledTimes(2));
+  });
+
+  it('keeps the last good read when GitHub fails, with the error', async () => {
+    await repoGithub(ENTRY);
+    listOpenManagedIssues.mockRejectedValueOnce(new Error('HTTP 502: Bad Gateway\nmore'));
+    await repoGithub(ENTRY, Date.now() + 60_000);
+    await vi.waitFor(async () => expect((await repoGithub(ENTRY))?.error).toBe('HTTP 502: Bad Gateway'));
+    expect((await repoGithub(ENTRY))?.issues).toHaveLength(1);
+  });
+});

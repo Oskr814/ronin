@@ -31,9 +31,14 @@ function renderLine(slice: Slice): string {
   return `- [${check}] Slice ${slice.index + 1}: ${slice.title} — PR: ${pr}`;
 }
 
-export async function getSlices(issueNumber: number): Promise<Slice[]> {
-  const body = await getIssueBody(issueNumber);
+// The slices of a tracking issue's body — for a caller that already has it
+// (the dashboard reads every issue's body in one call).
+export function parseSlices(body: string): Slice[] {
   return body.split('\n').map(parseLine).filter((s): s is Slice => s !== null);
+}
+
+export async function getSlices(issueNumber: number): Promise<Slice[]> {
+  return parseSlices(await getIssueBody(issueNumber));
 }
 
 // First unchecked slice, or null if every slice is checked — at that point

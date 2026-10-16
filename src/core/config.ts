@@ -156,6 +156,8 @@ export const config = {
     // GitHub logins allowed in, comma-separated.
     allowedUsers: (process.env.DASHBOARD_ALLOWED_USERS ?? '').split(',').map((u) => u.trim().toLowerCase()).filter(Boolean),
     sessionDays: Number(process.env.DASHBOARD_SESSION_DAYS ?? 7),
+    // How long a repo's GitHub read is reused (server/api/dashboard-github.ts).
+    githubTtlSeconds: Number(process.env.DASHBOARD_GITHUB_TTL_SECONDS ?? 60),
   },
 } as const;
 

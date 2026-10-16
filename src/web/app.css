@@ -114,7 +114,7 @@ a { color: inherit; }
 .foot { display: flex; gap: 14px; align-items: center; padding: 6px 16px; border-top: 1px solid var(--rule); font: 12px "JetBrains Mono", monospace; color: var(--muted); flex: none; white-space: nowrap; overflow: hidden; }
 .foot .w { color: var(--run); }
 .foot .r { margin-left: auto; overflow: hidden; text-overflow: ellipsis; }
-.empty { margin: auto; max-width: 44ch; text-align: center; color: var(--muted); font-size: 14px; padding: 40px 20px; }
+.empty { margin: auto; max-width: 44ch; text-align: center; color: var(--muted); font: 14px/1.5 "Schibsted Grotesk", system-ui, sans-serif; padding: 40px 20px; }
 .empty b { display: block; color: var(--ink); font-size: 15px; margin-bottom: 4px; }
 
 /* context */
@@ -135,6 +135,40 @@ a { color: inherit; }
 .kv { display: grid; grid-template-columns: auto 1fr; gap: 5px 14px; font-size: 13px; margin: 0; }
 .kv dt { color: var(--muted); }
 .kv dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+
+.grp .n.alert { color: var(--crit); font-weight: 600; }
+.kids { margin: 0 0 4px 14px; border-left: 1px dashed var(--rule); padding-left: 6px; }
+.kid { display: grid; grid-template-columns: 12px minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 3px 8px; font-size: 12.5px; color: var(--ink-2); border-radius: 5px; width: 100%; }
+.kid:hover { background: var(--hover); }
+.kid .t { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.kid .age { font-size: 11.5px; color: var(--muted); }
+.kid .dot { margin-top: 0; width: 7px; height: 7px; }
+.kid .dot.live { width: 9px; height: 9px; }
+.note { margin: 8px 0 0; font-size: 12.5px; color: var(--muted); }
+.why { background: var(--crit-bg); border-radius: 6px; padding: 10px 12px; font-size: 13px; color: var(--ink); overflow-wrap: anywhere; }
+.why b { color: var(--crit); }
+.why .ask { display: block; margin-top: 6px; color: var(--muted); font-size: 12.5px; }
+.why code { font-family: "JetBrains Mono", monospace; font-size: 12px; }
+.orch .parent { background: var(--raise); border: 1px solid var(--rule); border-radius: 7px; padding: 8px 10px; display: grid; grid-template-columns: 12px 1fr; gap: 2px 8px; }
+.orch .parent small { grid-column: 2; color: var(--muted); font-size: 12px; }
+.orch .kidsx { margin-left: 16px; border-left: 1px dashed var(--muted); padding-top: 6px; }
+.orch .sl { position: relative; margin: 0 0 6px 14px; background: var(--panel); border: 1px solid var(--rule); border-radius: 7px; padding: 7px 10px; display: grid; grid-template-columns: 12px 1fr auto; gap: 2px 8px; align-items: center; }
+.orch .sl::before { content: ""; position: absolute; left: -15px; top: 50%; width: 14px; border-top: 1px dashed var(--muted); }
+.orch .sl .dot { margin-top: 0; }
+.orch .sl small { grid-column: 2 / -1; color: var(--muted); font-size: 12px; }
+.orch .sl a { font-size: 12px; color: var(--muted); }
+.orch .sl.pending { border-style: dashed; background: transparent; color: var(--muted); }
+.checks { list-style: none; margin: 0; padding: 0; font-size: 13px; }
+.checks li { display: flex; gap: 8px; align-items: center; padding: 2px 0; }
+.checks .dot { margin-top: 0; }
+.checks .m { margin-left: auto; color: var(--muted); font-size: 12px; }
+.pv { font-weight: 500; margin-bottom: 2px; }
+.pv-row { margin-bottom: 8px; }
+.pv-row .m { color: var(--muted); font-size: 12px; }
+.url { font: 12.5px "JetBrains Mono", monospace; color: var(--run); word-break: break-all; }
+.ttl { height: 4px; background: var(--hover); border-radius: 2px; margin-top: 8px; overflow: hidden; }
+.ttl span { display: block; height: 100%; background: var(--ink-2); }
+.bad { color: var(--crit); }
 
 /* status bar */
 .bar-s { grid-column: 1 / -1; grid-row: 2; display: flex; align-items: center; gap: 18px; padding: 0 12px; border-top: 1px solid var(--rule); background: var(--side); font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; }
