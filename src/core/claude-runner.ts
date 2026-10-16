@@ -2,6 +2,8 @@ import { spawn } from 'node:child_process';
 import { config, defaultAgentModel, defaultAgentEffort } from './config.js';
 import { activeRepo } from './repo-context.js';
 import { log } from './logger.js';
+import { recordRateLimit, recordUsageLimitHit } from './claude-usage.js';
+import type { RunResult, RunSink, RunStep } from './run-record.js';
 
 const MAX_LOG_LINE = 2000;
 
@@ -13,6 +15,10 @@ const MAX_LOG_LINE = 2000;
 const USAGE_LIMIT_PATTERN = /usage limit|spend limit/i;
 
 export class ClaudeUsageLimitError extends Error {}
+
+// The run went past agentTaskTimeoutMs and was killed. Its own class so the
+// run record can tell a timeout from any other failure (run-record.ts).
+export class ClaudeTimeoutError extends Error {}
 
 function truncate(text: string): string {
   const oneLine = text.replace(/\s+/g, ' ').trim();
@@ -42,20 +48,21 @@ function summarizeToolUse(name: string, input: Record<string, unknown>): string 
   }
 }
 
-// Parses one `--output-format stream-json` event and logs the parts that
-// tell a human what the agent is doing right now — tool calls (with a
-// short summary of their input) and the assistant's own text turns.
-// Session bookkeeping (system/init, hook events, rate-limit pings) and raw
-// tool_result payloads (often full file contents or command output) are
-// deliberately not logged — they'd drown out the useful signal; a failed
-// tool_result still gets a truncated line so errors aren't invisible.
-function logStreamEvent(label: string, event: any): void {
+// Parses one `--output-format stream-json` event into the parts that tell a
+// human what the agent is doing right now — tool calls (with a short summary
+// of their input) and the assistant's own text turns. Session bookkeeping
+// (system/init, hook events, rate-limit pings) and raw tool_result payloads
+// (often full file contents or command output) are deliberately left out —
+// they'd drown out the useful signal; a failed tool_result still gets a
+// truncated step so errors aren't invisible.
+export function streamSteps(event: any): RunStep[] {
+  const steps: RunStep[] = [];
   if (event.type === 'assistant') {
     for (const block of event.message?.content ?? []) {
       if (block.type === 'text' && block.text?.trim()) {
-        log.info(`[${label}] ${truncate(block.text)}`);
+        steps.push({ kind: 'text', text: truncate(block.text) });
       } else if (block.type === 'tool_use') {
-        log.info(`[${label}] → ${block.name}: ${summarizeToolUse(block.name, block.input ?? {})}`);
+        steps.push({ kind: 'tool', name: block.name, summary: summarizeToolUse(block.name, block.input ?? {}) });
       }
     }
   } else if (event.type === 'user') {
@@ -64,10 +71,31 @@ function logStreamEvent(label: string, event: any): void {
         const text = Array.isArray(block.content)
           ? block.content.map((c: any) => c.text ?? '').join(' ')
           : String(block.content ?? '');
-        log.error(`[${label}] tool error: ${truncate(text)}`);
+        steps.push({ kind: 'tool_error', text: truncate(text) });
       }
     }
   }
+  return steps;
+}
+
+function logStep(label: string, step: RunStep): void {
+  if (step.kind === 'text') log.info(`[${label}] ${step.text}`);
+  else if (step.kind === 'tool') log.info(`[${label}] → ${step.name}: ${step.summary}`);
+  else log.error(`[${label}] tool error: ${step.text}`);
+}
+
+// The run's totals, from its final `result` event.
+export function resultStats(event: any): RunResult {
+  const usage = event.usage ?? {};
+  const stats: RunResult = {};
+  if (typeof event.session_id === 'string') stats.sessionId = event.session_id;
+  if (typeof event.total_cost_usd === 'number') stats.costUsd = event.total_cost_usd;
+  if (typeof event.num_turns === 'number') stats.numTurns = event.num_turns;
+  if (typeof usage.input_tokens === 'number') stats.inputTokens = usage.input_tokens;
+  if (typeof usage.output_tokens === 'number') stats.outputTokens = usage.output_tokens;
+  if (typeof usage.cache_read_input_tokens === 'number') stats.cacheReadTokens = usage.cache_read_input_tokens;
+  if (typeof usage.cache_creation_input_tokens === 'number') stats.cacheCreationTokens = usage.cache_creation_input_tokens;
+  return stats;
 }
 
 // Buffers partial chunks into complete lines: stream-json emits one JSON
@@ -129,7 +157,10 @@ export function claudeHeadlessArgs(prompt: string, opts: HeadlessRunOptions = {}
   ];
 }
 
-export async function runClaudeHeadless(cwd: string, prompt: string, label: string, opts: HeadlessRunOptions = {}): Promise<string> {
+// `sink`, when given, gets every step and the final totals as they stream
+// (the run's record, run-record.ts). Every run also leaves its account's
+// usage behind, from the rate_limit_event (claude-usage.ts).
+export async function runClaudeHeadless(cwd: string, prompt: string, label: string, opts: HeadlessRunOptions = {}, sink?: RunSink): Promise<string> {
   const env: NodeJS.ProcessEnv = { ...process.env, GH_TOKEN: config.githubToken };
   // A repos.json entry's own claudeConfigDir wins over the global default —
   // lets each repo run under its own Claude account (docs/superpowers/specs/
@@ -168,8 +199,17 @@ export async function runClaudeHeadless(cwd: string, prompt: string, label: stri
         log.info(`[${label}] ${line}`); // non-JSON stray output — surface it as-is rather than drop it
         return;
       }
-      if (event.type === 'result') finalResult = String(event.result ?? '');
-      else logStreamEvent(label, event);
+      if (event.type === 'result') {
+        finalResult = String(event.result ?? '');
+        sink?.result(resultStats(event));
+      } else if (event.type === 'rate_limit_event') {
+        recordRateLimit(claudeConfigDir ?? '', event.rate_limit_info);
+      } else {
+        for (const step of streamSteps(event)) {
+          logStep(label, step);
+          sink?.step(step);
+        }
+      }
     };
     const handleStderrLine = (line: string) => {
       if (USAGE_LIMIT_PATTERN.test(line)) usageLimitHit = true;
@@ -184,8 +224,11 @@ export async function runClaudeHeadless(cwd: string, prompt: string, label: stri
     child.on('close', (code) => {
       clearTimeout(timer);
       if (code === 0) resolve(finalResult);
-      else if (timedOut) reject(new Error(`${config.claudeCommand} timed out after ${config.agentTaskTimeoutMs}ms`));
-      else if (usageLimitHit) reject(new ClaudeUsageLimitError(`${config.claudeCommand} hit its usage/spend limit`));
+      else if (timedOut) reject(new ClaudeTimeoutError(`${config.claudeCommand} timed out after ${config.agentTaskTimeoutMs}ms`));
+      else if (usageLimitHit) {
+        recordUsageLimitHit(claudeConfigDir ?? '');
+        reject(new ClaudeUsageLimitError(`${config.claudeCommand} hit its usage/spend limit`));
+      }
       else reject(new Error(`${config.claudeCommand} exited with code ${code}: ${stderr.slice(-2000)}`));
     });
   });
