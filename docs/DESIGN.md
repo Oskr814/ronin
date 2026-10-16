@@ -461,6 +461,95 @@ Ahora cada evento tiene su handler:
 
 **Métricas**: el handler loguea `event_start` con `delayMs` (desde que llegó el evento hasta que tiene sus recursos) y `event_complete` al terminar, junto al `tick_complete` del tick.
 
+### 15. Tablero web (#65)
+
+Hoy, para saber qué está haciendo ronin hay que mirar GitHub issue por issue, el log diario o `.ronin-state.json.*`. El tablero junta todo en una página: qué agentes están corriendo y qué hacen paso a paso, qué issues esperan a alguien y por qué, cómo va cada stack de slices, qué previews están arriba y cuánto le queda a cada cuenta de Claude. Es de solo lectura: cancelar, reintentar o bajar una preview quedan para después (ver abajo).
+
+El diseño sale del prototipo [`docs/dashboard/prototype.html`](dashboard/prototype.html). Se navega como el trabajo de ronin: repo → issue o PR → slices y agentes, con el estado y la última acción a la vista, el transcript en el centro y el uso de cada cuenta en la barra de estado. No hay terminal, editor ni diff: al agente no lo maneja una persona, y lo que se le pide pasa en GitHub. Se eligió el 2026-10-16 frente a una versión con cinco secciones separadas.
+
+#### 15.1 Qué muestra
+
+- **Barra lateral.** Arriba, *Necesitan a alguien*: los issues en `ronin:blocked`. Después cada repo de `repos.json` con sus issues de tracking, los PRs de humanos que ronin está revisando y el PR de exploración. Cada fila tiene un punto de estado (trabajando, bloqueado, esperando a alguien, en cola, al día), el número, cuántas slices van mergeadas, la última línea del agente y hace cuánto. Un issue activo o bloqueado se despliega en sus slices. Arriba de todo, un buscador por número o título y el acceso a *Hoy*.
+- **Centro.** Pestañas, una por ítem abierto; al cargar se abren las de los agentes que están corriendo. Cada una muestra el transcript de una corrida: los textos del agente y sus pasos (leyó, buscó, editó, corrió) con un resumen de la entrada y, si falló, el error. Arriba, las corridas de ese ítem (*Slice 2 en curso*, *Intento 1 22:20, 35 min*…); abajo, el estado, el reloj, el tipo de tarea, el modelo y el worktree. La corrida en curso se sigue en vivo.
+- **Contexto (derecha).** El estado, el motivo del bloqueo con lo que hay que hacer para destrabarlo, el árbol de slices con sus PRs, los checks del último PR, la preview (URL, usuarios, cuánto le queda) y los datos del agente (tarea, modelo, cuenta, worktree).
+- **Barra de estado.** El uso de cada cuenta de Claude (5 h y semanal), los cupos de agentes ocupados (`3/4`), las previews arriba, el último tick y el runner.
+- ***Hoy*.** La línea de las últimas 12 horas, un carril por repo y cada corrida como una barra (las que fallaron con la punta roja), y los totales del día: corridas, cuántas salieron bien al primer intento, duración mediana y reintentos.
+- **Celular.** La barra lateral pasa a ser la lista principal; un ítem abre el transcript con el contexto debajo.
+
+#### 15.2 Dónde corre y quién lo ve
+
+- **Proceso propio.** `dashboard/server.ts`, un servicio `systemd --user` (`ronin-dashboard`, instalado con `pnpm dashboard:setup`, igual que `webhook:setup`). No comparte proceso con el servidor de webhooks: ese puerto está expuesto a GitHub y el tablero no debe estarlo. Si el tablero se cae, ronin sigue igual: solo lee.
+- **Red local.** Escucha en `DASHBOARD_HOST:DASHBOARD_PORT` (por defecto `0.0.0.0:4747`), así que se abre desde la LAN (`http://192.168.0.50:4747`). Por la tailnet lo ve el dueño, que tiene `*` sobre `tag:media`. Los externos no lo ven: su política solo abre `tcp:20000-20999` (§12). Por eso el tablero nunca usa un puerto de `PREVIEW_PORT_RANGE` ni se publica con `tailscale serve` o `funnel`.
+- **Sin login.** Quien llega a la página lo ve todo. Por eso es de solo lectura y todo lo que muestra pasa por `redact()` (`core/logger.ts`). Antes de sumar acciones hace falta saber quién las pide, por ejemplo con `tailscale whois` de la conexión.
+
+#### 15.3 De dónde sale cada dato
+
+| Dato | Fuente | ¿Existe hoy? |
+|---|---|---|
+| Corridas en curso y pasadas, transcript | Registro por corrida (`logs/runs/`, 15.4) | No |
+| Uso de cada cuenta de Claude | `rate_limit_event` de cada corrida (`logs/usage/`, 15.5) | No |
+| Motivo de un bloqueo | `notifyBlocker` lo guarda en el estado local (15.6) | Solo en el email y el log |
+| Lo que espera un cupo | Marcas de espera en `.ronin-slots/waiting/` (15.7) | No |
+| Issues de tracking, slices, PRs, checks | GitHub: `listTrackingIssues`, el checklist del issue, `listAllOpenRoninPrs`, `listAllOpenExternalPrs` | Sí |
+| Previews | `preview.json` de cada worktree de preview y `.preview-reservations/` | Sí |
+| Cupos de agentes | `.ronin-slots/*.lock` (pid vivo = ocupado) | Sí |
+| Worktrees y quién los tiene | `worktreeBasePath` de cada repo y `<worktreeBasePath>/.locks/` | Sí |
+| Último tick, eventos de webhooks | `tick_complete`, `event_start` y `event_complete` en `logs/tick-*.log` | Sí |
+
+#### 15.4 Registro por corrida (`logs/runs/`)
+
+Hoy el paso a paso de un agente ya se resume (`logStreamEvent` y `summarizeToolUse` en `claude-runner.ts`), pero va al log diario mezclado con todo lo demás, y `agent_run` se escribe recién al terminar: no hay forma de saber qué está corriendo ahora. Cada corrida pasa a escribir además su propio archivo, `logs/runs/<fecha>/<runId>.jsonl`, una línea JSON por evento:
+
+- **`run_start`**, al arrancar: `runId`, repo, `taskType`, issue, PR, índice y título de la slice si hay, la etiqueta que hoy va al log, modelo, effort, cuenta (el `claudeConfigDir` de la corrida), worktree, `pid` y `startedAt`. Lo escribe `runAgentTask`, que ya tiene todo eso a mano.
+- **`text`**, **`tool`** y **`tool_error`**, durante: lo mismo que hoy va al log, con la misma truncación (`MAX_LOG_LINE`) y sin el contenido de los `tool_result` (archivos enteros, salidas de comandos), salvo los errores truncados. `runClaudeHeadless` recibe un *sink* opcional y le pasa cada evento además de loguearlo.
+- **`run_end`**, al terminar: `outcome` (`ok`, `error`, `timeout`, `usage_limit`), duración, `total_cost_usd` y tokens del evento `result`, y `session_id`.
+
+Todo pasa por `redact()` antes de escribirse. Una corrida sin `run_end` cuyo `pid` ya no vive se muestra como *cortada* (el proceso murió a mitad). La métrica `agent_run` sigue igual. Los archivos se podan a los 14 días, como los `tick-*.log` (`run-tick.sh`). El transcript completo que Claude Code guarda en `<claudeConfigDir>/projects/` no se usa: trae los `tool_result` enteros, sin redactar.
+
+#### 15.5 Uso de cada cuenta de Claude
+
+Cada corrida de `claude -p` emite en el stream un `rate_limit_event` con el uso de la cuenta (probado el 2026-10-16):
+
+```json
+{"type":"rate_limit_event","rate_limit_info":{"status":"allowed","rateLimitType":"five_hour","unifiedWindows":{"five_hour":{"utilization":0.4,"resetsAt":1792116600},"seven_day":{"utilization":0.17,"resetsAt":1792544400}}}}
+```
+
+`runClaudeHeadless` guarda el último en `logs/usage/<cuenta>.json`, con `measuredAt`. La barra de estado muestra el porcentaje y hace cuánto se midió. Si `resetsAt` ya pasó, muestra que la ventana se reinició, sin número. Cuando una corrida termina con `ClaudeUsageLimitError`, la cuenta se marca sin cuota hasta `resetsAt`.
+
+La desventaja es que una cuenta sin corridas recientes muestra un dato viejo, con su antigüedad a la vista. Se descartó el endpoint que usa `/usage` de Claude Code (`/api/oauth/usage`): no está documentado, y con un token vencido habría que refrescarlo, compitiendo con Claude Code por el mismo `.credentials.json`. El día de la prueba, el de bmedical estaba vencido.
+
+#### 15.6 Motivo de un bloqueo
+
+Hoy el motivo vive en el email y en el log (`docs/BLOCKING.md`). `notifyBlocker`, por donde pasan todos los bloqueos, lo guarda además en el estado local del repo: `blocks[<issue>] = { reason, prUrl, excerpt, at }`. El tablero lo muestra solo mientras el issue tenga `ronin:blocked`, así que no hace falta borrarlo al destrabar; la entrada se borra cuando el issue se cierra. Llenar con esto la sección *Blocker* del issue de tracking queda fuera de este cambio.
+
+#### 15.7 En cola
+
+`withSlots` (`core/locks.ts`) espera en un bucle a que se libere un cupo. Mientras espera, deja `.ronin-slots/waiting/<pid>-<n>.json` con el tipo de job, su etiqueta, el repo y desde cuándo, y lo borra al tomar el cupo. Una marca de un pid muerto se ignora.
+
+#### 15.8 Servidor y página
+
+- **GitHub con cache.** El servidor consulta GitHub con el token de ronin y guarda las respuestas `DASHBOARD_GITHUB_TTL_SECONDS` (60): con varias pestañas abiertas no se multiplican las llamadas. El cache de un repo se invalida cuando aparece o termina una corrida suya.
+- **API.** `GET /api/snapshot` trae la barra lateral, los cupos, el uso y el último tick. `GET /api/items/<id>` trae el contexto de un ítem con sus corridas. `GET /api/runs/<runId>` trae un transcript, y `GET /api/runs/<runId>/stream` lo sigue por *server-sent events* mientras la corrida está abierta.
+- **Página.** HTML, CSS y JS sin build ni framework, como el prototipo, en `src/dashboard/public/`. `pnpm build` la copia a `dist/dashboard/public/`.
+
+#### 15.9 Varios runners
+
+Cada runner sirve su propio tablero con lo suyo, porque los registros, los cupos y las previews son locales. Hoy hay un solo runner, así que la vista conjunta queda para cuando haya otro. El selector de runner del prototipo no se implementa por ahora.
+
+#### 15.10 Fuera de alcance
+
+Acciones (cancelar, reintentar, bajar una preview), el detalle de las exploraciones con sus capturas, notas de reuniones y Linear, la vista de varios runners y notificaciones desde la página.
+
+#### 15.11 Etapas
+
+Cada etapa es un PR que se puede mergear solo:
+
+1. **Registro por corrida y uso por cuenta** (15.4, 15.5). Ya sirve sin tablero: `jq` sobre `logs/runs/`.
+2. **Motivo de bloqueo y cola** (15.6, 15.7).
+3. **Servidor, servicio y página con los datos locales.** La barra lateral sale de las corridas, más el transcript en vivo y la barra de estado.
+4. **GitHub.** Issues de tracking, slices, checks y previews en la barra lateral y el contexto.
+5. ***Hoy*.** La línea de 12 horas y los totales, desde `logs/runs/`.
+
 ## Estado actual
 
 - [x] Definir el esqueleto del supervisor (script + estructura de tick) — ver §3.1 y `src/`
@@ -479,6 +568,7 @@ Ahora cada evento tiene su handler:
 
 **Pendiente, fuera de este scaffold:**
 
+- Tablero web (§15): spec escrito, implementación pendiente en 5 etapas (§15.11)
 - Nunca se probó en vivo contra un PR real con specs de e2e afectados (el dry run de §10 usó un spec sin ningún componente de UI)
 - Exploración y propuestas de mejora (§11): implementadas las etapas 1 a 5 (`app:up` y smoke, memoria, inventario y selección, exploración con navegadores y evaluador, PR de exploración rodante, ventana nocturna, entrevistas por Remote Control y `/spec`). Pendiente: calibrar la calidad de las propuestas con varias corridas a mano antes de activar la exploración nocturna (`explore` en `repos.json`)
 

@@ -1,0 +1,476 @@
+<!doctype html>
+<html lang="es" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ronin — consola</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600;700&family=Shippori+Mincho:wght@800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* oscuro por defecto; claro con el botón de tema */
+:root,:root[data-theme="dark"]{
+  --bg:#11141F; --side:#141826; --panel:#171B29; --raise:#1E2334; --hover:#232A3E;
+  --rule:#272D40; --ink:#E4E7F0; --ink-2:#B4BACC; --muted:#868DA3; --faint:#5D6479;
+  --hanko:#E0573E; --run:#8BA3F0; --ok:#78B871; --warn:#D9A740; --crit:#EE7059; --idle:#5D6479;
+  --repo-a:#6383E8; --repo-b:#22A892;
+  --run-bg:#1F2744; --ok-bg:#1D2B20; --warn-bg:#32291A; --crit-bg:#3A201C;
+  --add:#173022; --code:#0D1019;
+  color-scheme:dark;
+}
+:root[data-theme="light"]{
+  --bg:#F2F3F0; --side:#ECEEEA; --panel:#FCFCFB; --raise:#FFFFFF; --hover:#E3E6E1;
+  --rule:#D9DCE1; --ink:#1C2236; --ink-2:#434A5E; --muted:#686F82; --faint:#9AA0AE;
+  --hanko:#C23B22; --run:#3355CC; --ok:#3F7D3A; --warn:#9A6A0C; --crit:#C23B22; --idle:#9AA0AE;
+  --repo-a:#3355CC; --repo-b:#0F8C7A;
+  --run-bg:#E3E8F8; --ok-bg:#E6EFE3; --warn-bg:#F5ECD6; --crit-bg:#F7E2DD;
+  --add:#E3F0E1; --code:#F6F7F4;
+  color-scheme:light;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{background:var(--bg);color:var(--ink);font:13.5px/1.45 "Schibsted Grotesk",system-ui,sans-serif;-webkit-font-smoothing:antialiased;overflow:hidden}
+button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer;text-align:left}
+a{color:inherit}
+:focus-visible{outline:2px solid var(--run);outline-offset:1px;border-radius:4px}
+.mono{font-family:"JetBrains Mono",ui-monospace,monospace}
+
+.shell{display:grid;grid-template-columns:288px minmax(0,1fr) 316px;grid-template-rows:minmax(0,1fr) 30px;height:100vh}
+
+/* ---------- sidebar */
+.side{grid-row:1;background:var(--side);border-right:1px solid var(--rule);display:flex;flex-direction:column;min-height:0}
+.brand{display:flex;align-items:center;gap:10px;padding:12px 14px 10px}
+.seal{width:26px;height:26px;background:var(--hanko);color:#fff;border-radius:4px;display:grid;place-items:center;font:800 10px/1 "Shippori Mincho",serif;writing-mode:vertical-rl;letter-spacing:1px;transform:rotate(-3deg);flex:none}
+.brand b{font-size:14.5px}
+.brand .alt{margin-left:auto;font-size:12px;color:var(--muted);text-decoration:none}
+.brand .alt:hover{color:var(--ink)}
+.search{margin:0 10px 8px;display:flex;align-items:center;gap:8px;background:var(--panel);border:1px solid var(--rule);border-radius:6px;padding:5px 9px;color:var(--muted)}
+.search input{all:unset;flex:1;color:var(--ink);font-size:13px}
+.quick{padding:0 6px 6px;border-bottom:1px solid var(--rule)}
+.quick button{display:flex;width:100%;align-items:center;gap:9px;padding:5px 8px;border-radius:5px;color:var(--ink-2)}
+.quick button:hover{background:var(--hover)}
+.quick button[aria-current="true"]{background:var(--hover);color:var(--ink)}
+.quick svg{width:15px;height:15px;flex:none;stroke:currentColor;fill:none;stroke-width:1.6}
+.quick .c{margin-left:auto;font-size:12px;color:var(--muted)}
+.quick .c.alert{color:var(--crit);font-weight:600}
+.tree{overflow:auto;flex:1;padding:6px 6px 16px}
+.grp{display:flex;align-items:center;gap:7px;padding:10px 8px 4px;color:var(--muted);font-size:12.5px}
+.grp .sq{width:9px;height:9px;border-radius:2px}
+.grp b{color:var(--ink-2);font-weight:600}
+.grp .n{margin-left:auto}
+.item{display:grid;grid-template-columns:14px minmax(0,1fr) auto;gap:2px 8px;width:100%;padding:6px 8px;border-radius:6px;align-items:start}
+.item:hover{background:var(--hover)}
+.item[aria-current="true"]{background:var(--raise);box-shadow:inset 0 0 0 1px var(--rule)}
+.item .t{font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.item .sub{grid-column:2/-1;font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.item .last{grid-column:2/-1;font:11.5px "JetBrains Mono",monospace;color:var(--faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.item .age{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.kids{margin:0 0 4px 14px;border-left:1px dashed var(--rule);padding-left:6px}
+.kid{display:grid;grid-template-columns:12px minmax(0,1fr) auto;gap:8px;align-items:center;padding:3px 8px;font-size:12.5px;color:var(--ink-2);border-radius:5px;width:100%}
+.kid:hover{background:var(--hover)}
+.kid .t{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.kid .age{font-size:11.5px;color:var(--muted)}
+
+/* status dots */
+.dot{width:8px;height:8px;border-radius:50%;margin-top:5px;background:var(--idle)}
+.kid .dot{margin-top:0;width:7px;height:7px}
+.dot.ok{background:var(--ok)} .dot.warn{background:var(--warn)} .dot.crit{background:var(--crit)}
+.dot.pending{background:transparent;box-shadow:inset 0 0 0 1.5px var(--idle)}
+.dot.live{background:transparent;border:2px solid var(--run);border-right-color:transparent;width:10px;height:10px;margin-top:4px;margin-left:-1px;animation:spin .9s linear infinite}
+.kid .dot.live{width:9px;height:9px;margin-top:0}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.dot.live{animation:none;border-right-color:var(--run)}}
+
+/* ---------- center */
+.center{grid-row:1;display:flex;flex-direction:column;min-width:0;min-height:0;background:var(--bg)}
+.tabs{display:flex;border-bottom:1px solid var(--rule);background:var(--side);overflow-x:auto;scrollbar-width:none;flex:none}
+.tab{display:flex;align-items:center;gap:7px;padding:8px 10px 8px 12px;border-right:1px solid var(--rule);white-space:nowrap;max-width:230px;color:var(--muted);font-size:13px}
+.tab span.l{overflow:hidden;text-overflow:ellipsis}
+.tab[aria-selected="true"]{background:var(--bg);color:var(--ink);box-shadow:inset 0 2px 0 var(--hanko)}
+.tab .x{opacity:.5;padding:0 3px;border-radius:3px}
+.tab .x:hover{opacity:1;background:var(--hover)}
+.tab .dot{margin-top:0}
+.back{display:none}
+.runs{display:flex;gap:6px;padding:10px 16px;border-bottom:1px solid var(--rule);overflow-x:auto;flex:none;align-items:center}
+.runs .lbl{font-size:12px;color:var(--muted);margin-right:2px}
+.run{display:flex;align-items:center;gap:6px;padding:3px 9px;border:1px solid var(--rule);border-radius:999px;font-size:12.5px;white-space:nowrap;color:var(--ink-2)}
+.run[aria-pressed="true"]{background:var(--raise);color:var(--ink);border-color:var(--muted)}
+.run .dot{margin-top:0;width:7px;height:7px}
+.run .dot.live{width:9px;height:9px}
+.tx{flex:1;overflow:auto;padding:16px 18px 24px;font:12.5px/1.6 "JetBrains Mono",monospace;color:var(--ink-2);min-height:0}
+.tx .say{color:var(--ink);margin:12px 0 4px;font-family:"Schibsted Grotesk",sans-serif;font-size:13.5px;max-width:78ch}
+.tx .say:first-child{margin-top:0}
+.tx .step{margin:8px 0 0}
+.tx .step b{font-weight:500;color:var(--ink)}
+.tx .step .arg{color:var(--run)}
+.tx .out{padding-left:16px;color:var(--muted);white-space:pre-wrap}
+.tx .out .pass{color:var(--ok)} .tx .out .fail{color:var(--crit)}
+.tx .ts{float:right;color:var(--faint);font-size:11.5px}
+.tx .end{margin-top:16px;padding:10px 12px;border-radius:6px;font-family:"Schibsted Grotesk",sans-serif;font-size:13.5px;color:var(--ink)}
+.tx .end.ok{background:var(--ok-bg)} .tx .end.crit{background:var(--crit-bg)}
+.tx .end b{font-weight:600}
+.tx .new{animation:in .5s ease-out}
+@keyframes in{from{background:var(--run-bg)}}
+.foot{display:flex;gap:14px;align-items:center;padding:6px 16px;border-top:1px solid var(--rule);font:12px "JetBrains Mono",monospace;color:var(--muted);flex:none;white-space:nowrap;overflow:hidden}
+.foot .w{color:var(--run)}
+.foot .r{margin-left:auto;overflow:hidden;text-overflow:ellipsis}
+.empty{margin:auto;max-width:44ch;text-align:center;color:var(--muted);font-family:"Schibsted Grotesk",sans-serif;font-size:14px;padding:40px 20px}
+.empty b{display:block;color:var(--ink);font-size:15px;margin-bottom:4px}
+
+/* hoy */
+.today{flex:1;overflow:auto;padding:22px 24px 32px}
+.today h1{font:800 26px/1.1 "Shippori Mincho",serif;margin:0 0 4px}
+.today .lead{color:var(--muted);margin:0 0 18px}
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);border:1px solid var(--rule);border-radius:8px;background:var(--panel);margin-bottom:18px}
+.kpi{padding:12px 14px;border-left:1px solid var(--rule)} .kpi:first-child{border-left:0}
+.kpi .v{font-size:24px;font-weight:600;letter-spacing:-.02em}
+.kpi .l{font-size:12.5px;color:var(--muted)}
+.day{border:1px solid var(--rule);border-radius:8px;background:var(--panel);padding:14px 16px 8px}
+.day h2{font-size:14px;margin:0 0 8px;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.legend{display:flex;gap:14px;font-size:12px;color:var(--muted);font-weight:400}
+.legend i{display:inline-block;width:12px;height:7px;border-radius:2px;margin-right:5px}
+.lane{display:grid;grid-template-columns:110px 1fr;align-items:center;min-height:46px;border-top:1px solid var(--rule)}
+.lane:first-of-type{border-top:0}
+.lane .nm{font-size:13px;font-weight:600}
+.track{position:relative;height:36px}
+.bar{position:absolute;height:11px;border-radius:3px}
+.bar.fail{box-shadow:inset -4px 0 0 var(--crit)}
+.bar.live{background-image:repeating-linear-gradient(135deg,transparent 0 4px,rgba(255,255,255,.35) 4px 7px)}
+.nowl{position:absolute;right:0;top:-2px;bottom:-2px;border-left:2px solid var(--hanko)}
+.axis{display:grid;grid-template-columns:110px 1fr;font-size:11px;color:var(--muted)}
+.ticks{position:relative;height:18px}
+.ticks span{position:absolute;transform:translateX(-50%)}
+.ticks span:last-child{transform:translateX(-100%);color:var(--hanko);font-weight:600}
+
+/* ---------- context */
+.ctx{grid-row:1;border-left:1px solid var(--rule);background:var(--side);overflow:auto;min-height:0}
+:is(.ctx,.ctx-inline) section{padding:14px 16px;border-bottom:1px solid var(--rule)}
+:is(.ctx,.ctx-inline) h3{font-size:12.5px;font-weight:600;color:var(--muted);margin:0 0 8px}
+:is(.ctx,.ctx-inline) .title{font-size:15px;font-weight:600;line-height:1.35;margin:4px 0 6px}
+:is(.ctx,.ctx-inline) .links{display:flex;gap:12px;flex-wrap:wrap;font-size:12.5px;color:var(--muted)}
+.chip{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:500;padding:1px 8px;border-radius:999px;white-space:nowrap}
+.chip.run{background:var(--run-bg);color:var(--run)} .chip.ok{background:var(--ok-bg);color:var(--ok)}
+.chip.warn{background:var(--warn-bg);color:var(--warn)} .chip.crit{background:var(--crit-bg);color:var(--crit)}
+.chip.idle{background:var(--hover);color:var(--ink-2)}
+.why{background:var(--crit-bg);border-radius:6px;padding:10px 12px;font-size:13px;color:var(--ink)}
+.why b{color:var(--crit)}
+.why .ask{display:block;margin-top:6px;color:var(--muted);font-size:12.5px}
+/* orquestación: padre y slices */
+.orch .parent{background:var(--raise);border:1px solid var(--rule);border-radius:7px;padding:8px 10px;display:grid;grid-template-columns:12px 1fr;gap:2px 8px}
+.orch .parent .dot{margin-top:5px}
+.orch .parent small{grid-column:2;color:var(--muted);font-size:12px}
+.orch .kidsx{margin-left:16px;border-left:1px dashed var(--muted);padding:6px 0 0 0}
+.orch .sl{position:relative;margin:0 0 6px 14px;background:var(--panel);border:1px solid var(--rule);border-radius:7px;padding:7px 10px;display:grid;grid-template-columns:12px 1fr auto;gap:2px 8px;align-items:center}
+.orch .sl::before{content:"";position:absolute;left:-15px;top:50%;width:14px;border-top:1px dashed var(--muted)}
+.orch .sl .dot{margin-top:0}
+.orch .sl small{grid-column:2/-1;color:var(--muted);font-size:12px}
+.orch .sl a{font-size:12px;color:var(--muted)}
+.orch .sl.pending{border-style:dashed;background:transparent;color:var(--muted)}
+.url{font:12.5px "JetBrains Mono",monospace;color:var(--run);word-break:break-all}
+.ttl{height:4px;background:var(--hover);border-radius:2px;margin-top:8px;overflow:hidden}
+.ttl span{display:block;height:100%;background:var(--ink-2)}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:5px 14px;font-size:13px;margin:0}
+.kv dt{color:var(--muted)} .kv dd{margin:0;min-width:0;overflow-wrap:anywhere}
+.checks li{display:flex;gap:8px;align-items:center;padding:2px 0}
+.checks{list-style:none;margin:0;padding:0;font-size:13px}
+.checks .dot{margin-top:0}
+.ro{font-size:12px;color:var(--muted);padding:12px 16px}
+
+/* ---------- status bar */
+.bar-s{grid-column:1/-1;grid-row:2;display:flex;align-items:center;gap:18px;padding:0 12px;border-top:1px solid var(--rule);background:var(--side);font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden}
+.meter{display:flex;align-items:center;gap:7px}
+.meter .sq{width:8px;height:8px;border-radius:2px}
+.meter .m{width:48px;height:5px;background:var(--hover);border-radius:3px;overflow:hidden}
+.meter .m span{display:block;height:100%;background:var(--ink-2)}
+.meter .m span.hot{background:var(--warn)}
+.meter b{color:var(--ink-2);font-weight:500;font-variant-numeric:tabular-nums}
+.bar-s .sp{margin-left:auto}
+.bar-s .live{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--ok);margin-right:6px}
+.bar-s button{color:var(--muted)} .bar-s button:hover{color:var(--ink)}
+
+/* ---------- responsive */
+.ctx-inline{display:none;border-top:1px solid var(--rule);background:var(--side)}
+
+@media (max-width:1180px){
+  .shell{grid-template-columns:260px minmax(0,1fr)}
+  .ctx{display:none}
+  .ctx-inline{display:block}
+}
+@media (max-width:760px){
+  body{overflow:auto}
+  .shell{grid-template-columns:minmax(0,1fr);grid-template-rows:auto auto;height:auto;min-height:100vh}
+  .side{border-right:0;min-height:calc(100vh - 0px)}
+  .center{display:none;min-height:100vh}
+  .shell[data-m="detail"] .side{display:none}
+  .shell[data-m="detail"] .center{display:flex}
+  .tabs{display:none}
+  .back{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--rule);background:var(--side);font-weight:600;position:sticky;top:0;z-index:2}
+  .back span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .tx{overflow:visible;flex:none}
+  .today{overflow:visible}
+  .kpis{grid-template-columns:repeat(2,1fr)} .kpi:nth-child(3){border-left:0} .kpi:nth-child(n+3){border-top:1px solid var(--rule)}
+  .lane,.axis{grid-template-columns:80px 1fr}
+  .bar-s{grid-row:auto;position:sticky;bottom:0;gap:12px;height:34px}
+  .bar-s .hide-m{display:none}
+  .meter .m{display:none}
+  .foot .r{display:none}
+  .item{padding:9px 8px}
+}
+</style>
+</head>
+<body>
+<div class="shell" id="shell" data-m="list">
+  <aside class="side" aria-label="Trabajo de ronin">
+    <div class="brand"><span class="seal" aria-hidden="true">浪人</span><b>ronin</b></div>
+    <label class="search"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="q" placeholder="Buscar issue, PR o rama" aria-label="Buscar"></label>
+    <div class="quick" id="quick"></div>
+    <div class="tree" id="tree"></div>
+  </aside>
+  <main class="center" id="center"></main>
+  <aside class="ctx" id="ctx" aria-label="Contexto"></aside>
+  <footer class="bar-s" id="statusbar"></footer>
+</div>
+
+<script>
+const T0 = Date.now(), MIN = 60e3, H = 60*MIN;
+const REPOS = {
+  sc:{name:'redmotos/shoppingcart',short:'shoppingcart',color:'var(--repo-a)',account:'redmotos',base:'odoo-main'},
+  bm:{name:'Bmedical/bmedical',short:'bmedical',color:'var(--repo-b)',account:'bmedical',base:'main'}
+};
+const TYPE = {'implement-slice':'Implementar slice','fix-comments':'Aplicar comentarios','external-review':'Review externa','plan':'Planificar',
+  'fix-e2e':'Arreglar e2e','fix-issue':'Corregir slice','explore-function':'Explorar','write-spec':'Escribir spec','fix-review':'Responder review'};
+const gh = (r,n,pr) => `https://github.com/${REPOS[r].name}/${pr?'pull':'issues'}/${n}`;
+
+// Transcript: ['say',texto] | ['step',verbo,arg,[salida...]] | ['end','ok'|'crit',texto]
+const L = {
+  r879s2:[
+    ['say','Arranco la slice 2 de #879 en un worktree nuevo desde origin/odoo-main. La slice 1 (reserva de stock en el modelo) ya está mergeada en #881.'],
+    ['step','Leyó','src/checkout/confirm.ts',['+212 líneas']],
+    ['step','Buscó','"reserveStock" en src/',['src/stock/reserve.ts:14: export async function reserveStock(', 'src/checkout/confirm.ts:88:   // TODO: validar antes de reservar']],
+    ['say','La confirmación reserva sin mirar el stock disponible. Agrego la validación antes de reservar y un error tipado para el carrito.'],
+    ['step','Editó','src/checkout/confirm.ts',['+38 −6']],
+    ['step','Escribió','src/checkout/confirm.test.ts',['+94 líneas']],
+    ['step','Corrió','pnpm vitest run src/checkout',['<span class="fail">FAIL</span> confirm.test.ts > confirma con stock 0 cuando el ítem es kit','27 pasan, 1 falla']],
+    ['say','Los kits no tienen stock propio: hay que mirar el de sus componentes. Lo resuelvo en stock.ts.'],
+    ['step','Editó','src/checkout/stock.ts',['+12 −2']],
+    ['step','Corrió','pnpm vitest run src/checkout',['<span class="pass">PASS</span> 28 tests']],
+    ['step','Corrió','pnpm lint',[]]
+  ],
+  r879s2next:[
+    ['step','Corrió','pnpm tsc --noEmit',['sin errores']],
+    ['say','Todo en verde. Hago el commit y abro el PR apilado sobre #881.'],
+    ['step','Corrió','git commit -m "feat: validar stock antes de confirmar el pedido"',[]],
+    ['step','Corrió','gh pr create --base ronin/879-s1 --draft',['https://github.com/redmotos/shoppingcart/pull/894']]
+  ],
+  r879s1:[
+    ['say','Slice 1 de #879: reserva de stock en el modelo.'],
+    ['step','Leyó','src/stock/models.ts',[]],['step','Editó','src/stock/models.ts',['+41 −3']],['step','Escribió','migrations/0142_stock_reservations.sql',['+22 líneas']],
+    ['step','Corrió','pnpm vitest run src/stock',['<span class="pass">PASS</span> 19 tests']],
+    ['end','ok','<b>PR #881 abierto.</b> Checks en verde. Se mergeó a las 01:32.']],
+  r879plan:[
+    ['say','Leo #879 y armo el plan en slices chicas que se puedan revisar solas.'],
+    ['step','Leyó','issue #879',[]],['step','Buscó','"stock" en src/',['37 coincidencias en 9 archivos']],
+    ['end','ok','<b>Plan de 3 slices</b> agregado al issue: reserva en el modelo, validar al confirmar, liberar reservas vencidas.']],
+  r889:[
+    ['say','4 hilos abiertos en #889. Uno lo resolvió el autor, así que quedan 3.'],
+    ['step','Leyó','src/shipping/rates.ts',[]],['step','Editó','src/shipping/rates.ts',['+9 −14']],
+    ['say','El hilo 2 pide renombrar zoneFee a zoneSurcharge. Aparece en 7 archivos.'],
+    ['step','Editó','7 archivos',['src/shipping/*.ts, src/checkout/summary.ts']],
+    ['step','Corrió','pnpm tsc --noEmit',['sin errores']],['step','Corrió','pnpm vitest run',['<span class="pass">PASS</span> 412 tests']],
+    ['say','Respondo en los hilos 1, 2 y 4 y los resuelvo.']],
+  r412:[
+    ['say','Review de solo lectura del PR #412 de mfernandez, "Agenda: permitir turnos dobles".'],
+    ['step','Corrió','git diff origin/main...HEAD --stat',['6 archivos, +184 −31']],
+    ['say','Lanzo 3 workers de review (haiku): tests, datos y permisos.'],
+    ['step','Worker','tests',['Sin cobertura para el caso de solapamiento parcial entre dos turnos dobles.']]],
+  r401a:[['say','Slice 2 de #401: envío programado de recordatorios.'],['step','Corrió','pnpm e2e reminders',['<span class="fail">FAIL</span> envío programado › manda el recordatorio 24 h antes','Error: WHATSAPP_TOKEN is not defined']],['end','crit','<b>Falló.</b> Reintento con el mismo plan.']],
+  r401b:[['say','Reintento 2. Reviso si el token se puede mockear en e2e.'],['step','Leyó','e2e/setup.ts',[]],['step','Buscó','"WHATSAPP_TOKEN" en .github/',['sin coincidencias']],['step','Corrió','pnpm e2e reminders',['<span class="fail">FAIL</span> Error: WHATSAPP_TOKEN is not defined']],['end','crit','<b>Falló.</b>']],
+  r401c:[['say','Reintento 3. El e2e usa la API real a propósito (ver e2e/README.md); mockearlo cambiaría lo que prueba el test.'],['step','Leyó','e2e/README.md',['"Los e2e de mensajería pegan contra el sandbox de Meta."']],['end','crit','<b>Bloqueado.</b> Falta la credencial WHATSAPP_TOKEN en el entorno de e2e. Mandé un mail a quien asignó el issue.']],
+  r855:[['say','Slice 2 de #855: validación de cupones en el carrito.'],['step','Leyó','docs/specs/cupones.md',[]],['say','El spec no dice qué pasa con un cupón que vence mientras está en el carrito: ¿se quita solo o se avisa? Las dos opciones cambian la UI.'],['end','crit','<b>Bloqueado.</b> Pregunté en el issue y espero respuesta.']],
+  r890:[['say','Slice 1 de #860: endpoint de exportación a CSV.'],['step','Escribió','src/orders/export.ts',['+76 líneas']],['step','Corrió','pnpm vitest run src/orders',['<span class="pass">PASS</span> 22 tests']],['end','ok','<b>PR #890 abierto.</b> Checks en verde, esperando review.']],
+  r407:[['say','Slice 3 de #398: permisos por rol para los estudios.'],['step','Editó','src/records/policy.ts',['+31 −4']],['end','ok','<b>PR #407 abierto.</b> Tiene 2 comentarios de review; los respondo cuando alguien me mencione o pida /fix-comments.']],
+  rexp:[['say','Exploración nocturna de backoffice como admin y vendedor, en desktop y mobile.'],['step','Exploró','pedidos, guías, carrito',['4 propuestas nuevas']],['end','ok','<b>4 propuestas</b> en el PR de exploración #878.']],
+  rexpbm:[['say','Exploración nocturna de webapp como paciente y recepción.'],['step','Exploró','reserva de turnos, cancelación',['2 propuestas nuevas']],['end','ok','<b>2 propuestas</b> en el PR de exploración #410.']]
+};
+
+// state: run | crit | warn (esperando a otro) | idle | ok
+const ITEMS = [
+  {id:'sc-879',repo:'sc',kind:'issue',n:879,title:'Validar stock y reservar al confirmar',state:'run',last:'$ pnpm lint',
+   slices:[{t:'Reserva de stock en el modelo',s:'ok',pr:881,note:'mergeada'},{t:'Validar stock antes de confirmar',s:'run',note:'implementando',agent:'sc-879:0'},{t:'Liberar reservas vencidas',s:'pending',note:'espera a la slice 2'}],
+   runs:[{type:'implement-slice',label:'Slice 2',start:T0-6.4*MIN,live:true,model:'opus',wt:'.worktrees/sc-879-s2',log:'r879s2'},
+         {type:'implement-slice',label:'Slice 1',start:T0-62*MIN,dur:24,res:'ok',model:'opus',log:'r879s1'},
+         {type:'plan',label:'Plan',start:T0-70*MIN,dur:5,res:'ok',model:'opus',log:'r879plan'}],
+   checks:[['ok','unit'],['run','lint'],['pending','e2e']]},
+  {id:'sc-872',repo:'sc',kind:'issue',n:872,title:'Tarifas de envío por zona',state:'run',last:'respondiendo en los hilos 1, 2 y 4',
+   slices:[{t:'Tabla de zonas y migración',s:'ok',pr:884,note:'mergeada'},{t:'Cálculo en el checkout',s:'run',pr:889,note:'aplicando comentarios'}],
+   runs:[{type:'fix-comments',label:'Comentarios en #889',start:T0-11.2*MIN,live:true,model:'opus',wt:'.worktrees/sc-pr889',log:'r889'}],
+   preview:{app:'backoffice',pr:889,port:20001,up:T0-38*MIN,users:['admin@demo','vendedor@demo']},
+   checks:[['ok','unit'],['ok','lint'],['ok','e2e']]},
+  {id:'sc-860',repo:'sc',kind:'issue',n:860,title:'Exportar pedidos a CSV desde el backoffice',state:'warn',last:'checks OK, esperando review',since:T0-3*H,
+   slices:[{t:'Endpoint de exportación',s:'warn',pr:890,note:'esperando review'}],
+   runs:[{type:'implement-slice',label:'Slice 1',start:T0-3*H-20*MIN,dur:19,res:'ok',model:'opus',log:'r890'}],
+   preview:{app:'backoffice',pr:890,port:20000,up:T0-4*MIN,users:['admin@demo']},checks:[['ok','unit'],['ok','lint'],['ok','e2e']]},
+  {id:'sc-855',repo:'sc',kind:'issue',n:855,title:'Cupones con fecha de vencimiento',state:'crit',last:'pregunta abierta en el issue',since:T0-26*H,
+   blocked:{why:'El spec no dice si un cupón vencido en el carrito se quita solo o se avisa. Las dos opciones cambian la UI.',ask:'Pregunté en el issue. Respondé ahí mencionando a @ronin-agent.'},
+   slices:[{t:'Campo de vencimiento',s:'ok',pr:858,note:'mergeada'},{t:'Validación en el carrito',s:'crit',note:'bloqueada'}],
+   runs:[{type:'implement-slice',label:'Slice 2',start:T0-26*H,dur:8,res:'crit',model:'opus',log:'r855'}]},
+  {id:'sc-pr893',repo:'sc',kind:'pr',n:893,title:'Review de "Checkout: guardar dirección"',state:'idle',last:'en cola',sub:'PR #893 de jlopez',runs:[]},
+  {id:'sc-exp',repo:'sc',kind:'explore',n:878,title:'Exploración de backoffice',state:'ok',last:'4 propuestas, 1 pide corrección',sub:'PR de exploración #878',since:T0-22*H,
+   runs:[{type:'explore-function',label:'Anoche',start:T0-23*H,dur:100,res:'ok',model:'opus',log:'rexp'}]},
+
+  {id:'bm-401',repo:'bm',kind:'issue',n:401,title:'Recordatorios de turno por WhatsApp',state:'crit',last:'Error: WHATSAPP_TOKEN is not defined',since:T0-3*H-20*MIN,
+   blocked:{why:'Falta la credencial WHATSAPP_TOKEN en el entorno de e2e. Los tests de envío pegan contra el sandbox de Meta a propósito, así que no se pueden mockear.',ask:'Mandé un mail a quien asignó el issue. Cuando esté el secreto, comentá en el issue y retomo.'},
+   slices:[{t:'Plantillas de mensajes',s:'ok',pr:405,note:'mergeada'},{t:'Envío programado',s:'crit',pr:409,note:'e2e falla 3 veces'},{t:'Confirmar o cancelar desde la respuesta',s:'pending',note:'espera a la slice 2'}],
+   runs:[{type:'fix-e2e',label:'Intento 3',start:T0-3*H-26*MIN,dur:6,res:'crit',model:'sonnet',log:'r401c'},{type:'fix-e2e',label:'Intento 2',start:T0-3*H-50*MIN,dur:14,res:'crit',model:'sonnet',log:'r401b'},{type:'implement-slice',label:'Intento 1',start:T0-4*H-30*MIN,dur:35,res:'crit',model:'sonnet',log:'r401a'}],
+   preview:{app:'webapp',pr:409,port:20003,up:T0-51*MIN,users:['medico@demo','recepcion@demo','paciente@demo']},checks:[['ok','unit'],['ok','lint'],['crit','e2e']]},
+  {id:'bm-pr412',repo:'bm',kind:'pr',n:412,title:'Review de "Agenda: permitir turnos dobles"',state:'run',last:'esperando 2 de 3 workers',sub:'PR #412 de mfernandez',
+   runs:[{type:'external-review',label:'Review',start:T0-2.1*MIN,live:true,model:'sonnet',wt:'.worktrees/bm-pr412-ro',log:'r412'}]},
+  {id:'bm-398',repo:'bm',kind:'issue',n:398,title:'Historia clínica: adjuntar estudios en PDF',state:'warn',last:'2 comentarios de review en #407',since:T0-5*H,
+   slices:[{t:'Subida y almacenamiento',s:'ok',pr:399,note:'mergeada'},{t:'Visor en la ficha del paciente',s:'ok',pr:402,note:'mergeada'},{t:'Permisos por rol',s:'warn',pr:407,note:'en review'}],
+   runs:[{type:'implement-slice',label:'Slice 3',start:T0-5*H-30*MIN,dur:21,res:'ok',model:'sonnet',log:'r407'}],checks:[['ok','unit'],['ok','lint'],['ok','e2e']]},
+  {id:'bm-exp',repo:'bm',kind:'explore',n:410,title:'Exploración de webapp',state:'ok',last:'2 propuestas abiertas',sub:'PR de exploración #410',since:T0-H*0.5-H*1.2,
+   runs:[{type:'explore-function',label:'Hoy 02:00',start:T0-2*H,dur:55,res:'ok',model:'sonnet',log:'rexpbm'}]}
+];
+const ORDER = {crit:0,run:1,warn:2,idle:3,ok:4};
+const STATE_TXT = {run:['run','trabajando'],crit:['crit','bloqueado'],warn:['warn','esperando a alguien'],idle:['idle','en cola'],ok:['ok','al día']};
+const byId = Object.fromEntries(ITEMS.map(i=>[i.id,i]));
+
+// ---------- helpers
+const $ = s=>document.querySelector(s);
+function clock(ms){const s=Math.max(0,Math.floor(ms/1000)),m=Math.floor(s/60);return m>=60?`${Math.floor(m/60)}:${String(m%60).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`:`${m}:${String(s%60).padStart(2,'0')}`}
+function short(ms){const m=Math.round(ms/MIN);if(m<60)return `${m}m`;const h=Math.floor(m/60);return h<24?`${h}h`:`${Math.floor(h/24)}d`}
+function hhmm(t){return new Date(t).toLocaleTimeString('es',{hour:'2-digit',minute:'2-digit'})}
+const dot = s => `<span class="dot ${s==='run'?'live':s}" aria-hidden="true"></span>`;
+const ref = i => i.kind==='issue'?`#${i.n}`:i.sub;
+
+// ---------- state
+const S = {sel:'sc-879', open:['sc-879','sc-872','bm-pr412'], run:{}, q:'', view:'item'};
+const isMobile = () => matchMedia('(max-width:760px)').matches;
+
+// ---------- sidebar
+function renderQuick(){
+  const blocked=ITEMS.filter(i=>i.state==='crit').length, running=ITEMS.filter(i=>i.state==='run').length;
+  $('#quick').innerHTML = `
+    <button data-view="hoy" aria-current="${S.view==='hoy'}"><svg viewBox="0 0 24 24"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>Hoy<span class="c">${running} trabajando</span></button>
+    <button data-filter="crit"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v6M12 16.5v.5"/></svg>Necesitan a alguien<span class="c alert">${blocked}</span></button>`;
+  $('#quick').querySelector('[data-view]').onclick=()=>{S.view='hoy';S.sel=null;renderAll();if(isMobile())$('#shell').dataset.m='detail'};
+  $('#quick').querySelector('[data-filter]').onclick=()=>{S.q='';$('#q').value='';const first=ITEMS.find(i=>i.state==='crit');select(first.id)};
+}
+function itemRow(i){
+  const age = i.state==='run'? clock(Date.now()-i.runs.find(r=>r.live).start) : i.since? short(Date.now()-i.since):'';
+  const kids = i.slices && (i.id===S.sel || i.state==='run' || i.state==='crit') ? `<div class="kids">${i.slices.map((s,k)=>
+    `<button class="kid" data-id="${i.id}">${dot(s.s)}<span class="t">${k+1}. ${s.t}</span><span class="age">${s.pr?'#'+s.pr:''}</span></button>`).join('')}</div>`:'';
+  return `<button class="item" data-id="${i.id}" aria-current="${S.sel===i.id}">
+    ${dot(i.state)}<span class="t">${i.title}</span><span class="age" ${i.state==='run'?`data-live="${i.id}"`:''}>${age}</span>
+    <span class="sub">${ref(i)}${i.slices?`, ${i.slices.filter(s=>s.s==='ok').length} de ${i.slices.length} slices`:''}</span>
+    <span class="last">${i.last}</span></button>${kids}`;
+}
+function renderTree(){
+  const q=S.q.toLowerCase();
+  const match=i=>!q||(i.title+' '+ref(i)+' '+i.n).toLowerCase().includes(q);
+  const pinned=ITEMS.filter(i=>i.state==='crit'&&match(i));
+  let h='';
+  if(pinned.length) h+=`<div class="grp"><span>Necesitan a alguien</span><span class="n">${pinned.length}</span></div>`+pinned.map(itemRow).join('');
+  for(const r of Object.keys(REPOS)){
+    const list=ITEMS.filter(i=>i.repo===r&&i.state!=='crit'&&match(i)).sort((a,b)=>ORDER[a.state]-ORDER[b.state]);
+    if(!list.length)continue;
+    h+=`<div class="grp"><span class="sq" style="background:${REPOS[r].color}"></span><b>${REPOS[r].short}</b><span class="n">${ITEMS.filter(i=>i.repo===r).length}</span></div>`+list.map(itemRow).join('');
+  }
+  $('#tree').innerHTML=h||`<div class="empty" style="padding:24px 8px"><b>Nada coincide</b>Probá con el número del issue o del PR.</div>`;
+  $('#tree').querySelectorAll('[data-id]').forEach(b=>b.onclick=()=>select(b.dataset.id));
+}
+
+// ---------- center
+function renderCenter(){
+  const c=$('#center');
+  const tabs=`<div class="tabs" role="tablist">${S.open.map(id=>{const i=byId[id];return `<div class="tab" role="tab" aria-selected="${S.view==='item'&&S.sel===id}"><button data-tab="${id}" style="display:flex;gap:7px;align-items:center;min-width:0">${dot(i.state)}<span class="l">${i.title}</span></button><button class="x" data-close="${id}" aria-label="Cerrar">×</button></div>`}).join('')}</div>`;
+  if(S.view==='hoy'){c.innerHTML=tabs+backBar('Hoy')+renderToday();wireCenter();return}
+  const i=byId[S.sel];
+  if(!i){c.innerHTML=tabs+`<div class="empty"><b>Elegí algo de la izquierda</b>Vas a ver lo que hizo el agente, paso a paso.</div>`;wireCenter();return}
+  const ri=S.run[i.id]??0, run=i.runs[ri];
+  const runs=i.runs.length?`<div class="runs"><span class="lbl">Corridas</span>${i.runs.map((r,k)=>`<button class="run" data-run="${k}" aria-pressed="${k===ri}">${dot(r.live?'run':r.res)}${r.label}<span style="color:var(--muted)">${r.live?'en curso':hhmm(r.start)+', '+r.dur+' min'}</span></button>`).join('')}</div>`:'';
+  let body;
+  if(!run) body=`<div class="tx" style="display:flex"><div class="empty"><b>Todavía no corrió nada acá</b>Está en cola: hay 3 de 4 lugares para agentes ocupados. Arranca cuando se libere uno.</div></div>`;
+  else {
+    const lines=[...L[run.log], ...(run.live&&run.log==='r879s2'?L.r879s2next.slice(0,S.extra):[])];
+    body=`<div class="tx" id="tx">${lines.map((e,k)=>fmt(e,k>=L[run.log].length?'new':'')).join('')}</div>
+      <div class="foot">${run.live?`<span class="w">● Trabajando</span><span data-elapsed="${run.start}">${clock(Date.now()-run.start)}</span>`:`<span>${run.res==='ok'?'Terminó bien':'Terminó con error'}</span><span>${run.dur} min</span>`}<span>${TYPE[run.type]}</span><span class="r">${run.model}${run.wt?'  '+run.wt:''}</span></div>`;
+  }
+  c.innerHTML=tabs+backBar(i.title)+runs+body+`<div class="ctx-inline">${ctxHTML(i)}</div>`;
+  wireCenter();
+  const tx=$('#tx'); if(tx&&run&&run.live&&!isMobile()) tx.scrollTop=tx.scrollHeight;
+}
+function backBar(t){return `<button class="back" id="back"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg><span>${t}</span></button>`}
+function fmt(e,cls){
+  if(e[0]==='say')return `<div class="say ${cls}">${e[1]}</div>`;
+  if(e[0]==='end')return `<div class="end ${e[1]} ${cls}">${e[2]}</div>`;
+  return `<div class="step ${cls}"><b>${e[1]}</b> <span class="arg">${e[2]}</span>${e[3].length?`<div class="out">${e[3].join('\n')}</div>`:''}</div>`;
+}
+function wireCenter(){
+  document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>select(b.dataset.tab));
+  document.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>{const id=b.dataset.close;S.open=S.open.filter(x=>x!==id);if(S.sel===id){S.sel=S.open[0]||null}renderAll()});
+  document.querySelectorAll('[data-run]').forEach(b=>b.onclick=()=>{S.run[S.sel]=+b.dataset.run;renderCenter()});
+  const bk=$('#back'); if(bk) bk.onclick=()=>{$('#shell').dataset.m='list';scrollTo(0,0)};
+}
+function renderToday(){
+  const span=12*H, from=Date.now()-span;
+  const RUNS=[['sc',700,6,1],['sc',690,22,1],['bm',655,9,1],['sc',640,14,0],['sc',618,17,1],['bm',590,12,1],['sc',560,8,1],['sc',520,11,1],['bm',505,31,1],['sc',470,3,1],['sc',440,26,1],['bm',430,9,1],['sc',395,7,1],['bm',370,10,1],['sc',350,4,1],['sc',330,13,0],['sc',312,9,1],['bm',290,18,1],['sc',262,7,1],['sc',240,29,1],['bm',270,35,0],['bm',230,14,0],['bm',206,6,0],['sc',190,15,1],['bm',160,11,1],['sc',140,10,1],['sc',95,9,1],['sc',72,5,1],['bm',60,6,1],['sc',70,5,1],['sc',62,24,1]];
+  const pos=t=>(t-from)/span*100;
+  const lane=r=>`<div class="lane"><span class="nm">${REPOS[r].short}</span><div class="track">${RUNS.filter(x=>x[0]===r).map(([_,a,d,ok],k)=>`<span class="bar ${ok?'':'fail'}" style="left:${pos(Date.now()-a*MIN)}%;width:max(3px,${d*MIN/span*100}%);top:${k%2?20:5}px;background:${REPOS[r].color}"></span>`).join('')}${ITEMS.filter(i=>i.repo===r&&i.state==='run').map((i,k)=>{const s=i.runs.find(x=>x.live).start;return `<span class="bar live" style="left:${pos(s)}%;width:${(Date.now()-s)/span*100}%;top:${k?20:5}px;background-color:${REPOS[r].color}"></span>`}).join('')}<span class="nowl"></span></div></div>`;
+  const ticks=[0,2,4,6,8,10,12].map(h=>`<span style="left:${h/12*100}%">${h===12?'ahora':hhmm(from+h*H)}</span>`).join('');
+  return `<div class="today"><h1>Hoy</h1><p class="lead">3 agentes trabajando, 2 issues esperan a alguien, 3 previews arriba.</p>
+    <div class="kpis"><div class="kpi"><div class="v">38</div><div class="l">corridas hoy</div></div><div class="kpi"><div class="v">89%</div><div class="l">bien al primer intento</div></div><div class="kpi"><div class="v">9,8 min</div><div class="l">duración mediana</div></div><div class="kpi"><div class="v">5</div><div class="l">reintentos</div></div></div>
+    <div class="day"><h2>Últimas 12 horas<span class="legend"><span><i style="background:var(--repo-a)"></i>shoppingcart</span><span><i style="background:var(--repo-b)"></i>bmedical</span><span><i style="background:var(--ink-2);box-shadow:inset -4px 0 0 var(--crit)"></i>terminó con error</span></span></h2>
+    ${lane('sc')}${lane('bm')}<div class="axis"><span></span><div class="ticks">${ticks}</div></div></div></div>`;
+}
+
+// ---------- context
+function ctxHTML(i){
+  const st=STATE_TXT[i.state];
+  let h=`<section><span class="chip ${st[0]}">${st[1]}</span><div class="title">${i.title}</div>
+    <div class="links"><span style="display:inline-flex;align-items:center;gap:5px"><i style="width:8px;height:8px;border-radius:2px;background:${REPOS[i.repo].color}"></i>${REPOS[i.repo].short}</span><a href="${gh(i.repo,i.n,i.kind!=='issue')}" target="_blank" rel="noopener">${i.kind==='issue'?'Issue #'+i.n:'PR #'+i.n} en GitHub</a></div></section>`;
+  if(i.blocked) h+=`<section><h3>Por qué está bloqueado</h3><div class="why"><b>Hace ${short(Date.now()-i.since)}.</b> ${i.blocked.why}<span class="ask">${i.blocked.ask}</span></div></section>`;
+  if(i.slices){
+    const done=i.slices.filter(s=>s.s==='ok').length;
+    h+=`<section class="orch"><h3>Slices</h3><div class="parent">${dot(i.state)}<span>#${i.n}</span><small>${done} de ${i.slices.length} mergeadas, base ${REPOS[i.repo].base}</small></div>
+      <div class="kidsx">${i.slices.map((s,k)=>`<div class="sl ${s.s==='pending'?'pending':''}">${dot(s.s)}<span>${k+1}. ${s.t}</span>${s.pr?`<a href="${gh(i.repo,s.pr,1)}" target="_blank" rel="noopener">#${s.pr}</a>`:'<span></span>'}<small>${s.note}</small></div>`).join('')}</div></section>`;
+  }
+  if(i.checks) h+=`<section><h3>Checks del último PR</h3><ul class="checks">${i.checks.map(([s,n])=>`<li>${dot(s)}${n}<span style="margin-left:auto;color:var(--muted);font-size:12px">${{ok:'pasó',run:'corriendo',pending:'pendiente',crit:'falló'}[s]}</span></li>`).join('')}</ul></section>`;
+  if(i.preview){const p=i.preview,left=p.up+60*MIN-Date.now();
+    h+=`<section><h3>Preview</h3><div style="font-weight:500;margin-bottom:2px">${p.app} con #${p.pr}</div><a class="url" href="http://homelab.tail2b3c.ts.net:${p.port}" target="_blank" rel="noopener">homelab.tail2b3c.ts.net:${p.port}</a>
+      <dl class="kv" style="margin-top:8px"><dt>Usuarios</dt><dd>${p.users.join(', ')}</dd><dt>Se baja en</dt><dd data-ttl="${p.up+60*MIN}">${clock(left)}</dd></dl><div class="ttl"><span style="width:${Math.max(0,left/(60*MIN)*100)}%"></span></div></section>`}
+  const live=i.runs.find(r=>r.live);
+  if(live) h+=`<section><h3>Agente</h3><dl class="kv"><dt>Tarea</dt><dd>${TYPE[live.type]}</dd><dt>Modelo</dt><dd>${live.model}</dd><dt>Cuenta</dt><dd>${REPOS[i.repo].account}</dd><dt>Worktree</dt><dd class="mono" style="font-size:12px">${live.wt}</dd></dl></section>`;
+  return h+`<div class="ro">Solo lectura por ahora. Cancelar, reintentar y bajar previews llegan después.</div>`;
+}
+function renderCtx(){const i=byId[S.sel];$('#ctx').innerHTML=S.view==='item'&&i?ctxHTML(i):`<section><h3>Runner</h3><dl class="kv"><dt>Equipo</dt><dd>homelab, 192.168.0.50</dd><dt>Último tick</dt><dd>hace 2 min, cada 5 min</dd><dt>Webhooks</dt><dd>recibiendo, último evento hace 40 s</dd><dt>Build en dist/</dt><dd>v1.13.95 (7c20722)</dd></dl></section><section><h3>Previews arriba</h3>${ITEMS.filter(x=>x.preview).map(x=>`<div style="margin-bottom:8px"><div>${x.preview.app} con #${x.preview.pr}</div><a class="url" href="http://homelab.tail2b3c.ts.net:${x.preview.port}">:${x.preview.port}</a></div>`).join('')}</section>`}
+
+// ---------- status bar
+function renderStatus(){
+  const m=(r,a,b)=>`<span class="meter" title="Uso de Claude de la cuenta ${REPOS[r].account}"><span class="sq" style="background:${REPOS[r].color}"></span>${REPOS[r].account}<span class="m"><span class="${a>=75?'hot':''}" style="width:${a}%"></span></span><b>${a}% 5h</b><span class="hide-m">${b}% sem</span></span>`;
+  const running=ITEMS.filter(i=>i.state==='run').length;
+  $('#statusbar').innerHTML=`${m('sc',58,41)}${m('bm',22,30)}<span class="sp hide-m">agentes ${running}/4</span><span class="hide-m">previews ${ITEMS.filter(i=>i.preview).length}</span><span class="hide-m"><span class="live"></span>tick hace 2 min</span><span class="hide-m">homelab</span><button id="theme">${document.documentElement.dataset.theme==='dark'?'Tema claro':'Tema oscuro'}</button>`;
+  $('#theme').onclick=()=>{const t=document.documentElement.dataset.theme==='dark'?'light':'dark';document.documentElement.dataset.theme=t;try{localStorage.setItem('ronin-b-theme',t)}catch(e){}renderStatus()};
+}
+
+function select(id){S.sel=id;S.view='item';if(!S.open.includes(id))S.open.push(id);renderAll();if(isMobile()){$('#shell').dataset.m='detail';scrollTo(0,0)}}
+function renderAll(){renderQuick();renderTree();renderCenter();renderCtx();renderStatus()}
+
+$('#q').oninput=e=>{S.q=e.target.value;renderTree()};
+try{const t=localStorage.getItem('ronin-b-theme');if(t)document.documentElement.dataset.theme=t}catch(e){}
+S.extra=0;
+renderAll();
+
+// relojes y el agente de #879 que sigue avanzando
+setInterval(()=>{const n=Date.now();
+  document.querySelectorAll('[data-elapsed]').forEach(el=>el.textContent=clock(n-+el.dataset.elapsed));
+  document.querySelectorAll('[data-live]').forEach(el=>{const i=byId[el.dataset.live];el.textContent=clock(n-i.runs.find(r=>r.live).start)});
+  document.querySelectorAll('[data-ttl]').forEach(el=>el.textContent=clock(+el.dataset.ttl-n));
+},1000);
+setInterval(()=>{if(S.extra>=L.r879s2next.length)return;S.extra++;
+  const nxt=L.r879s2next[S.extra-1]; byId['sc-879'].last = nxt[0]==='step'?'$ '+nxt[2]:nxt[1];
+  renderTree(); if(S.view==='item'&&S.sel==='sc-879'&&!(S.run['sc-879'])) renderCenter();
+},9000);
+</script>
+</body>
+</html>
