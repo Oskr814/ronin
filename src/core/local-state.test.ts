@@ -8,7 +8,7 @@ vi.mock('./config.js', () => ({
   config: new Proxy({}, { get: (_t, prop) => (prop === 'localStatePath' ? localStatePath : undefined) }),
 }));
 
-const { incrementChecksPendingCount, resetChecksPendingCount, withLocalStateLock, readLocalState, getLastReviewedSha, setLastReviewedSha, pruneLastReviewedSha, getLastChangelogRelease, setLastChangelogRelease, getProcessedComments, recordProcessedComment } = await import('./local-state.js');
+const { incrementChecksPendingCount, resetChecksPendingCount, withLocalStateLock, readLocalState, getLastReviewedSha, setLastReviewedSha, pruneLastReviewedSha, getLastChangelogRelease, setLastChangelogRelease, getProcessedComments, recordProcessedComment, getBlocks, recordBlock } = await import('./local-state.js');
 const { withActiveRepo } = await import('./repo-context.js');
 
 let dir: string;
@@ -204,3 +204,28 @@ describe('processed comments', () => {
     });
   });
 });
+
+describe('blocks', () => {
+  const block = (reason: string, at: string) => ({ reason, url: 'https://github.com/acme/product/issues/1', at });
+
+  it('keeps the latest reason per item, per repo', async () => {
+    await withRepo('acme/product', async () => {
+      await recordBlock(1, block('e2e falla', '2026-10-16T01:00:00Z'), 1000 * 60);
+      await recordBlock(1, block('falta un secreto', '2026-10-16T01:00:10Z'), 1000 * 60);
+      await recordBlock(2, block('spec ambiguo', '2026-10-16T01:00:20Z'), 1000 * 60);
+      expect(await getBlocks()).toEqual({ 1: block('falta un secreto', '2026-10-16T01:00:10Z'), 2: block('spec ambiguo', '2026-10-16T01:00:20Z') });
+    });
+    await withRepo('acme/other', async () => {
+      expect(await getBlocks()).toEqual({});
+    });
+  });
+
+  it('prunes reasons past the age limit', async () => {
+    await withRepo('acme/product', async () => {
+      await recordBlock(1, block('viejo', '2026-01-01T00:00:00Z'), 1000);
+      await recordBlock(2, block('nuevo', '2026-10-16T00:00:00Z'), 1000);
+      expect(Object.keys(await getBlocks())).toEqual(['2']);
+    });
+  });
+});
+

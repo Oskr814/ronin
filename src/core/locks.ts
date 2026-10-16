@@ -1,5 +1,5 @@
-import { rm } from 'node:fs/promises';
-import { join } from 'node:path';
+import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { acquireLock } from './worker-launch.js';
 import { activeRepo } from './repo-context.js';
@@ -99,27 +99,70 @@ function slotPath(name: string): string {
   return join(process.cwd(), '.ronin-slots', `${name}.lock`);
 }
 
-async function takeSlot(prefix: string, count: number): Promise<string> {
+async function takeSlot(prefix: string, count: number, onWait: () => Promise<void>): Promise<string> {
   for (;;) {
     for (let i = 0; i < count; i++) {
       const path = slotPath(`${prefix}-${i}`);
       if (await take(path)) return path;
     }
+    await onWait();
     await sleep(POLL_MS);
   }
 }
 
-export async function withSlots<T>(kind: string, limit: number, caps: Record<string, number>, fn: () => Promise<T>): Promise<T> {
-  const cap = caps[kind];
-  const kindSlot = cap === undefined ? null : await takeSlot(`kind-${kind}`, cap);
-  try {
-    const slot = await takeSlot('all', limit);
+// What's waiting for a slot right now, for the dashboard's queue
+// (docs/DESIGN.md §15.7): a file per waiting job, from its first failed try
+// until it has its slots. One left by a dead process is ignored (its pid).
+let waitSeq = 0;
+
+class WaitMark {
+  private path: string | null = null;
+
+  constructor(private readonly kind: string, private readonly label: string) {}
+
+  async set(): Promise<void> {
+    if (this.path) return;
+    this.path = join(process.cwd(), '.ronin-slots', 'waiting', `${process.pid}-${++waitSeq}.json`);
+    let repo: string | undefined;
     try {
-      return await fn();
+      repo = activeRepo().productRepo;
+    } catch {
+      repo = undefined;
+    }
+    try {
+      await mkdir(dirname(this.path), { recursive: true });
+      await writeFile(this.path, JSON.stringify({ pid: process.pid, kind: this.kind, label: this.label, repo, since: new Date().toISOString() }));
+    } catch {
+      // Only the dashboard loses it; the job waits all the same.
+    }
+  }
+
+  async clear(): Promise<void> {
+    if (!this.path) return;
+    const path = this.path;
+    this.path = null;
+    await rm(path, { force: true }).catch(() => {});
+  }
+}
+
+export async function withSlots<T>(kind: string, limit: number, caps: Record<string, number>, fn: () => Promise<T>, label = kind): Promise<T> {
+  const mark = new WaitMark(kind, label);
+  const onWait = () => mark.set();
+  try {
+    const cap = caps[kind];
+    const kindSlot = cap === undefined ? null : await takeSlot(`kind-${kind}`, cap, onWait);
+    try {
+      const slot = await takeSlot('all', limit, onWait);
+      await mark.clear();
+      try {
+        return await fn();
+      } finally {
+        await release(slot);
+      }
     } finally {
-      await release(slot);
+      if (kindSlot) await release(kindSlot);
     }
   } finally {
-    if (kindSlot) await release(kindSlot);
+    await mark.clear();
   }
 }

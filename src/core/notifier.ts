@@ -1,6 +1,17 @@
 import nodemailer from 'nodemailer';
 import { config } from './config.js';
 import { log } from './logger.js';
+import { recordBlock } from './local-state.js';
+
+const BLOCK_MAX_AGE_MS = 180 * 24 * 60 * 60 * 1000;
+
+// The issue or PR a block is about, from its URL. A release (a failed
+// changelog entry) has none: it gets no label, so the dashboard has nothing
+// to show it on.
+export function blockedItemNumber(url: string): number | null {
+  const match = url.match(/\/(?:issues|pull)\/(\d+)(?:[/?#]|$)/);
+  return match ? Number(match[1]) : null;
+}
 
 export interface BlockerNotification {
   issueUrl: string;
@@ -35,6 +46,19 @@ export async function notifyBlocker(notification: BlockerNotification): Promise<
     `blocked: ${notification.reason}`,
     notification.prUrl ? { issueUrl: notification.issueUrl, prUrl: notification.prUrl } : { issueUrl: notification.issueUrl },
   );
+
+  // Kept in the local state for the dashboard (docs/DESIGN.md §15.6), before
+  // the email: a failed send must not lose it. Never throws either.
+  const itemNumber = blockedItemNumber(notification.issueUrl);
+  if (itemNumber !== null) {
+    await recordBlock(itemNumber, {
+      reason: notification.reason,
+      url: notification.issueUrl,
+      ...(notification.prUrl ? { prUrl: notification.prUrl } : {}),
+      ...(notification.excerpt ? { excerpt: notification.excerpt } : {}),
+      at: new Date().toISOString(),
+    }, BLOCK_MAX_AGE_MS).catch((error) => log.error('notifyBlocker: no se pudo guardar el motivo en el estado local', error));
+  }
 
   const lines = [
     `Motivo: ${notification.reason}`,

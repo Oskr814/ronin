@@ -45,6 +45,19 @@ export interface LocalState {
   // tracked here rather than by ronin's 👀 on them, which only says "got
   // it" (see processed-comments.ts).
   processedComments: Record<string, string>;
+  // Issue or PR number -> why ronin last blocked it (notifier.ts), for the
+  // dashboard (docs/DESIGN.md §15.6). Today the reason only goes out by
+  // email and to the log. Shown only while the item has ronin:blocked, so
+  // unblocking doesn't need to clear it; old entries are pruned by age.
+  blocks: Record<string, BlockRecord>;
+}
+
+export interface BlockRecord {
+  reason: string;
+  url: string;
+  prUrl?: string;
+  excerpt?: string;
+  at: string;
 }
 
 // What to do once an interview gets its answers: put a ronin issue back in
@@ -101,9 +114,10 @@ export async function readLocalState(): Promise<LocalState> {
       interviews: raw.interviews ?? {},
       pendingSpecs: raw.pendingSpecs ?? [],
       processedComments: raw.processedComments ?? {},
+      blocks: raw.blocks ?? {},
     };
   } catch {
-    return { claimedIssues: [], checksPendingCounts: {}, lastReviewedSha: {}, failureSignatures: {}, nightlyExploration: {}, interviews: {}, pendingSpecs: [], processedComments: {} };
+    return { claimedIssues: [], checksPendingCounts: {}, lastReviewedSha: {}, failureSignatures: {}, nightlyExploration: {}, interviews: {}, pendingSpecs: [], processedComments: {}, blocks: {} };
   }
 }
 
@@ -257,6 +271,25 @@ export async function recordProcessedComment(key: string, maxAgeMs: number): Pro
     state.processedComments[key] = new Date(now).toISOString();
     for (const [k, at] of Object.entries(state.processedComments)) {
       if (now - Date.parse(at) > maxAgeMs) delete state.processedComments[k];
+    }
+    await writeLocalState(state);
+  });
+}
+
+export async function getBlocks(): Promise<LocalState['blocks']> {
+  return (await readLocalState()).blocks;
+}
+
+// The latest block of an item replaces the one before. Entries older than
+// `maxAgeMs` go, like processedComments: an item blocked that long ago has
+// long been unblocked or closed.
+export async function recordBlock(itemNumber: number, block: BlockRecord, maxAgeMs: number): Promise<void> {
+  return withLocalStateLock(async () => {
+    const state = await readLocalState();
+    state.blocks[itemNumber] = block;
+    const now = Date.parse(block.at);
+    for (const [k, b] of Object.entries(state.blocks)) {
+      if (now - Date.parse(b.at) > maxAgeMs) delete state.blocks[k];
     }
     await writeLocalState(state);
   });
