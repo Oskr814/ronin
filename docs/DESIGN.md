@@ -478,9 +478,16 @@ El diseño sale del prototipo [`docs/dashboard/prototype.html`](dashboard/protot
 
 #### 15.2 Dónde corre y quién lo ve
 
-- **Proceso propio.** `dashboard/server.ts`, un servicio `systemd --user` (`ronin-dashboard`, instalado con `pnpm dashboard:setup`, igual que `webhook:setup`). No comparte proceso con el servidor de webhooks: ese puerto está expuesto a GitHub y el tablero no debe estarlo. Si el tablero se cae, ronin sigue igual: solo lee.
-- **Red local.** Escucha en `DASHBOARD_HOST:DASHBOARD_PORT` (por defecto `0.0.0.0:4747`), así que se abre desde la LAN (`http://192.168.0.50:4747`). Por la tailnet lo ve el dueño, que tiene `*` sobre `tag:media`. Los externos no lo ven: su política solo abre `tcp:20000-20999` (§12). Por eso el tablero nunca usa un puerto de `PREVIEW_PORT_RANGE` ni se publica con `tailscale serve` o `funnel`.
-- **Sin login.** Quien llega a la página lo ve todo. Por eso es de solo lectura y todo lo que muestra pasa por `redact()` (`core/logger.ts`). Antes de sumar acciones hace falta saber quién las pide, por ejemplo con `tailscale whois` de la conexión.
+- **El servidor que ya existe.** `webhooks/server.ts` pasa a ser el servidor web de ronin. En el mismo puerto (`WEBHOOK_PORT`, 3939) atiende `POST /webhook`, igual que hoy, y el tablero en todo lo demás. No hace falta un servicio nuevo: se despliega con `webhook:setup`.
+- **Público, en el dominio de ronin.** Hoy `https://ronin-agent.redmotoshn.com` entra por un túnel de Cloudflare y nginx-proxy-manager hasta el 3939. El tablero queda en la raíz de ese dominio y GitHub sigue entregando en `/webhook`. Con un dominio propio, cambian `DASHBOARD_PUBLIC_URL`, la URL de los webhooks (`scripts/init-webhooks.sh`) y la de callback de la OAuth App. También se entra desde la LAN y la tailnet, pero por el dominio: la cookie de sesión es `Secure` y no viaja por `http://`.
+- **Errores aislados.** Un error del tablero no puede tirar el proceso que recibe los webhooks. La ruta `/webhook` se resuelve antes que cualquier otra y el código del tablero está envuelto: un error responde 500 y se loguea. Si el proceso igual se cae, systemd lo reinicia y el tick levanta lo que llegó mientras tanto (§14).
+- **Login con GitHub.** Todo menos `/webhook` y `/auth/*` pide sesión: la página redirige al login y la API responde 401.
+  - Usa una OAuth App de GitHub de la cuenta del dueño, sin scopes: solo hace falta saber quién es. Se configura con `DASHBOARD_GITHUB_CLIENT_ID` y `DASHBOARD_GITHUB_CLIENT_SECRET`.
+  - `/auth/login` redirige a GitHub con un `state` al azar en una cookie de corta vida. `/auth/callback` verifica el `state`, canjea el código desde el servidor, lee `GET /user` y descarta el token de GitHub: no se guarda.
+  - Entra solo quien está en `DASHBOARD_ALLOWED_USERS` (logins separados por coma). La lista se vuelve a mirar en cada pedido, así que sacar a alguien lo deja afuera en el momento.
+  - La sesión es una cookie firmada con HMAC (`DASHBOARD_SESSION_SECRET`) que lleva el login y el vencimiento (`DASHBOARD_SESSION_DAYS`, 7). Es `HttpOnly`, `Secure` y `SameSite=Lax`, y no hay estado de sesión en el servidor. `/auth/logout` la borra.
+  - Las respuestas del tablero llevan una CSP restrictiva (`default-src 'self'`, `frame-ancestors 'none'`). Por eso las fuentes se sirven desde el propio servidor y no desde Google Fonts.
+- **Lo que se muestra.** Aun con login, todo pasa por `redact()` (`core/logger.ts`): el tablero no debe ser la forma de sacar un secreto que un agente vio. Es de solo lectura. Cuando se sumen acciones, el login de GitHub ya dice quién las pide, y los `POST` van a verificar además el header `Origin`.
 
 #### 15.3 De dónde sale cada dato
 
@@ -530,7 +537,7 @@ Hoy el motivo vive en el email y en el log (`docs/BLOCKING.md`). `notifyBlocker`
 
 - **GitHub con cache.** El servidor consulta GitHub con el token de ronin y guarda las respuestas `DASHBOARD_GITHUB_TTL_SECONDS` (60): con varias pestañas abiertas no se multiplican las llamadas. El cache de un repo se invalida cuando aparece o termina una corrida suya.
 - **API.** `GET /api/snapshot` trae la barra lateral, los cupos, el uso y el último tick. `GET /api/items/<id>` trae el contexto de un ítem con sus corridas. `GET /api/runs/<runId>` trae un transcript, y `GET /api/runs/<runId>/stream` lo sigue por *server-sent events* mientras la corrida está abierta.
-- **Página.** HTML, CSS y JS sin build ni framework, como el prototipo, en `src/dashboard/public/`. `pnpm build` la copia a `dist/dashboard/public/`.
+- **Página.** HTML, CSS y JS sin build ni framework, como el prototipo, en `src/dashboard/public/`, con las fuentes incluidas. `pnpm build` la copia a `dist/dashboard/public/`.
 
 #### 15.9 Varios runners
 
@@ -546,7 +553,7 @@ Cada etapa es un PR que se puede mergear solo:
 
 1. **Registro por corrida y uso por cuenta** (15.4, 15.5). Ya sirve sin tablero: `jq` sobre `logs/runs/`.
 2. **Motivo de bloqueo y cola** (15.6, 15.7).
-3. **Servidor, servicio y página con los datos locales.** La barra lateral sale de las corridas, más el transcript en vivo y la barra de estado.
+3. **Login con GitHub y página con los datos locales.** El login va primero: el tablero no se sirve en el dominio sin él. Después, la barra lateral sale de las corridas, más el transcript en vivo y la barra de estado.
 4. **GitHub.** Issues de tracking, slices, checks y previews en la barra lateral y el contexto.
 5. ***Hoy*.** La línea de 12 horas y los totales, desde `logs/runs/`.
 
