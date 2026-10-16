@@ -478,11 +478,11 @@ El diseño sale del prototipo [`docs/dashboard/prototype.html`](dashboard/protot
 
 #### 15.2 El servidor de ronin: API y aplicación web
 
-El servidor que hoy recibe los webhooks (`webhooks/server.ts`) pasa a ser el servidor web de ronin, con dos partes en el mismo puerto: una **API** en `/api/*` y la **aplicación web** del tablero en todo lo demás. Los webhooks quedan dentro de la API.
+El servidor que hoy recibe los webhooks (`webhooks/server.ts`) pasa a ser el servidor web de ronin, con dos partes: una **API** en `/api/*` y la **aplicación web** del tablero en todo lo demás. Los webhooks quedan dentro de la API. Lo único público son los webhooks, porque GitHub tiene que llegar a ellos; la app y el resto de la API se ven solo por la tailnet.
 
 ```
 src/server/
-  index.ts             el proceso: un listener, /api/* a la API, el resto a la app
+  index.ts             el proceso: el listener público (webhooks) y el de la tailnet (todo)
   api/
     webhooks/          POST /api/webhooks/github (antes webhooks/server.ts), events.ts y handler.ts
     auth.ts            /api/auth/login, /callback, /logout y /me
@@ -494,11 +494,13 @@ src/web/               la aplicación web: HTML, CSS, JS y fuentes, sin build
 - **La aplicación web.** Son archivos estáticos sin datos adentro: todo lo pide a la API. Por eso se sirve sin sesión, y cuando la API responde 401 muestra *Entrar con GitHub*. Una ruta que no es un archivo devuelve `index.html`, así que los links a un ítem (`/i/sc-879`) funcionan al recargar. `pnpm build` copia `src/web/` a `dist/web/`.
 - **El proceso y el servicio.** Pasan a llamarse `ronin-server` (antes `ronin-webhook`): `pnpm server` en desarrollo, `pnpm server:setup` y `server:remove` para el servicio. `server:setup` desinstala el servicio viejo si lo encuentra. El puerto pasa a ser `SERVER_PORT` (3939), y `WEBHOOK_PORT` se sigue leyendo si `SERVER_PORT` no está. El handler sigue siendo un proceso por evento (`launchWorker('server/api/webhooks/handler')`).
 - **La ruta de los webhooks.** Pasa de `/webhook` a `/api/webhooks/github`. Hay que actualizar la URL de los hooks ya creados, no crear otros: `init-webhooks.sh` hoy busca el hook por URL, así que con la nueva crearía un segundo hook en cada repo y GitHub entregaría todo dos veces. El script pasa a encontrar el hook de ronin por la URL vieja o la nueva y le cambia la URL. `/webhook` sigue funcionando como alias hasta que todos los hooks apunten a la ruta nueva; después se saca.
-- **En el dominio de ronin.** Hoy `https://ronin-agent.redmotoshn.com` entra por un túnel de Cloudflare y nginx-proxy-manager hasta el 3939. La app queda en la raíz de ese dominio y la API en `/api`. Con un dominio propio, cambian `SERVER_PUBLIC_URL`, la URL de los hooks y la de callback de la OAuth App. También se entra desde la LAN y la tailnet, pero por el dominio: la cookie de sesión es `Secure` y no viaja por `http://`.
-- **Errores aislados.** Un error del tablero no puede tirar el proceso que recibe los webhooks. Los webhooks se resuelven antes que cualquier otra ruta, y el resto del servidor está envuelto: un error responde 500 y se loguea. Si el proceso igual se cae, systemd lo reinicia y el tick levanta lo que llegó mientras tanto (§14).
-- **Login con GitHub.**
+- **Dos listeners en el mismo proceso.**
+  - **Público** (`SERVER_PORT`, 3939, el de hoy): es al que llega `https://ronin-agent.redmotoshn.com` por el túnel de Cloudflare y nginx-proxy-manager. Atiende solo los webhooks; cualquier otra ruta responde 404. La restricción está en el código, no en el proxy: aunque el proxy reenvíe todo, la app no queda expuesta. Con un dominio propio solo cambia la URL de los hooks.
+  - **Tailnet** (`127.0.0.1:SERVER_TAILNET_PORT`, 3940): atiende la app y toda la API. No escucha en la LAN ni en otra interfaz: se publica solo en la tailnet con `tailscale serve --bg --https=<DASHBOARD_TAILNET_HTTPS_PORT> http://127.0.0.1:3940`, igual que las previews (§12), y nunca con `funnel`. `server:setup` deja publicado ese puerto. El puerto de la tailnet (por defecto 8443) queda fuera de `PREVIEW_PORT_RANGE`: la política de Tailscale solo le abre a los externos `tcp:20000-20999`, así que el tablero lo ve solo el dueño, que tiene `*` sobre `tag:media`. `tailscale serve` pone el HTTPS, que la cookie `Secure` necesita. La URL queda `https://media.tail758870.ts.net:8443` (`DASHBOARD_URL`). Un nombre propio sin puerto (`https://ronin.<tailnet>.ts.net`, como el servicio de Jellyfin) se puede sumar después con un servicio de Tailscale definido en la consola.
+- **Errores aislados.** Un error del tablero no puede tirar el proceso que recibe los webhooks. El listener público solo toca los webhooks, y todo lo del listener de la tailnet está envuelto: un error responde 500 y se loguea. Si el proceso igual se cae, systemd lo reinicia y el tick levanta lo que llegó mientras tanto (§14).
+- **Login con GitHub.** La tailnet ya limita quién llega. El login suma la identidad para las acciones futuras y una segunda barrera si alguien más entra a la tailnet.
   - Usa una OAuth App de GitHub de la cuenta del dueño, sin scopes: solo hace falta saber quién es. Se configura con `DASHBOARD_GITHUB_CLIENT_ID` y `DASHBOARD_GITHUB_CLIENT_SECRET`.
-  - `/api/auth/login` redirige a GitHub con un `state` al azar en una cookie de corta vida. `/api/auth/callback` verifica el `state`, canjea el código desde el servidor, lee `GET /user` y descarta el token de GitHub: no se guarda.
+  - La URL de callback es `<DASHBOARD_URL>/api/auth/callback`: funciona aunque solo se vea en la tailnet, porque la redirección la sigue el navegador. `/api/auth/login` redirige a GitHub con un `state` al azar en una cookie de corta vida. `/api/auth/callback` verifica el `state`, canjea el código desde el servidor, lee `GET /user` y descarta el token de GitHub: no se guarda.
   - Entra solo quien está en `DASHBOARD_ALLOWED_USERS` (logins separados por coma). La lista se vuelve a mirar en cada pedido, así que sacar a alguien lo deja afuera en el momento.
   - La sesión es una cookie firmada con HMAC (`DASHBOARD_SESSION_SECRET`) que lleva el login y el vencimiento (`DASHBOARD_SESSION_DAYS`, 7). Es `HttpOnly`, `Secure` y `SameSite=Lax`, y no hay estado de sesión en el servidor. `/api/auth/logout` la borra.
   - La app se sirve con una CSP restrictiva (`default-src 'self'`, `frame-ancestors 'none'`). Por eso las fuentes van en `src/web/` y no se cargan de Google Fonts.
@@ -568,8 +570,8 @@ Cada etapa es un PR que se puede mergear solo:
 
 1. **Registro por corrida y uso por cuenta** (15.4, 15.5). Ya sirve sin tablero: `jq` sobre `logs/runs/`.
 2. **Motivo de bloqueo y cola** (15.6, 15.7).
-3. **El servidor de ronin** (15.2), sin tablero todavía. `webhooks/` pasa a `src/server/`, los webhooks a `/api/webhooks/github` (con el alias `/webhook`), el servicio a `ronin-server`, y `init-webhooks.sh` actualiza los hooks existentes. También actualiza las referencias de §3.1 y §14. Cuando todos los hooks apuntan a la ruta nueva, otro PR saca el alias.
-4. **Login con GitHub y app con los datos locales.** El login va primero: la app no se sirve en el dominio sin él. Después, la barra lateral sale de las corridas, más el transcript en vivo y la barra de estado.
+3. **El servidor de ronin** (15.2), sin tablero todavía. `webhooks/` pasa a `src/server/`, los webhooks a `/api/webhooks/github` (con el alias `/webhook`) en el listener público, que responde 404 a todo lo demás. El servicio pasa a `ronin-server`, y `init-webhooks.sh` actualiza los hooks existentes. También actualiza las referencias de §3.1 y §14. Cuando todos los hooks apuntan a la ruta nueva, otro PR saca el alias.
+4. **Listener de la tailnet, login con GitHub y app con los datos locales.** El listener y el login van primero: la app no se sirve sin ellos. Después, la barra lateral sale de las corridas, más el transcript en vivo y la barra de estado.
 5. **GitHub.** Issues de tracking, slices, checks y previews en la barra lateral y el contexto.
 6. ***Hoy*.** La línea de 12 horas y los totales, desde `logs/runs/`.
 
