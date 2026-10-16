@@ -1,3 +1,4 @@
+import { isProcessed, markProcessed } from '../core/processed-comments.js';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { activeRepo } from '../core/repo-context.js';
@@ -7,7 +8,6 @@ import { log } from '../core/logger.js';
 import { dayIn } from '../core/timezone.js';
 import { runAgentTask, type FindingFeedback, type FindingSummary, type GeneralFeedback } from '../core/agent-task.js';
 import {
-  addReaction,
   closeIssueNotPlanned,
   createIssue,
   listFileReviewComments,
@@ -16,7 +16,6 @@ import {
   markPullRequestReady,
   mergePullRequest,
   replyToComment,
-  hasBotReaction,
   type PullRequestStatus,
 } from '../core/github.js';
 import { ensureAppWorktree } from '../app/index.js';
@@ -206,7 +205,7 @@ async function pendingFeedback(pr: PullRequestStatus): Promise<PendingFeedback[]
     if (c.inReplyToId && !mentionsHandle(c.body, config.githubLogin)) continue;
     const match = findingOf(c.path);
     if (!match) continue;
-    if (c.reactionsEyes > 0 && (await hasBotReaction(c.id, 'review', config.githubLogin))) continue;
+    if (await isProcessed({ ...c, kind: 'review' })) continue;
     // Matched by app and id, not path: an edited title renames the file.
     const conversacion = comments
       .filter((o) => o.id < c.id && findingOf(o.path)?.[1] === match[1] && findingOf(o.path)?.[2] === match[2])
@@ -225,7 +224,7 @@ async function pendingGeneralFeedback(pr: PullRequestStatus): Promise<GeneralFee
   const result: GeneralFeedback[] = [];
   for (const c of comments) {
     if (isBot(c.authorLogin) || !c.authorLogin || !mentionsHandle(c.body, config.githubLogin)) continue;
-    if (c.reactionsEyes > 0 && (await hasBotReaction(c.id, 'issue', config.githubLogin))) continue;
+    if (await isProcessed(c)) continue;
     const conversacion = comments
       .filter((o) => o.id < c.id)
       .map((o) => ({ autor: isBot(o.authorLogin) ? ('ronin' as const) : ('persona' as const), texto: o.body, mismoHilo: true }));
@@ -375,8 +374,8 @@ async function applyFeedback(pr: PullRequestStatus, batch: string): Promise<Redo
       .catch((error) => log.error(`exploración: no se pudo cerrar el issue #${c.issue} de ${c.findingId}, rechazada`, error));
   }
   for (const r of replies) await replyToComment(pr.number, { id: r.commentId, kind: r.kind }, r.body).catch((error) => log.error(`exploración: no se pudo responder el comentario ${r.commentId}`, error));
-  for (const p of pending) await addReaction(p.commentId, 'review', 'eyes').catch(() => {});
-  for (const g of general) await addReaction(g.commentId, 'issue', 'eyes').catch(() => {});
+  for (const p of pending) await markProcessed({ id: p.commentId, kind: 'review' }).catch(() => {});
+  for (const g of general) await markProcessed({ id: g.commentId, kind: 'issue' }).catch(() => {});
   return redo;
 }
 
@@ -491,5 +490,5 @@ export function launchExploreWorker(request: ExploreWorkerRequest): void {
 
 export async function reactToTrigger(trigger: ExploreWorkerRequest['trigger']): Promise<void> {
   if (!trigger) return;
-  for (const id of trigger.commentIds) await addReaction(id, 'issue', 'eyes').catch(() => {});
+  for (const id of trigger.commentIds) await markProcessed({ id, kind: 'issue' }).catch(() => {});
 }

@@ -1,10 +1,11 @@
+import { markProcessed } from '../core/processed-comments.js';
 import { existsSync } from 'node:fs';
 import { mkdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { runAgentTask } from '../core/agent-task.js';
 import { activeRepo } from '../core/repo-context.js';
 import { log } from '../core/logger.js';
-import { addReaction, commentOnIssue, findOpenPrByHead, replyToComment } from '../core/github.js';
+import { commentOnIssue, findOpenPrByHead, replyToComment } from '../core/github.js';
 import { renderHtmlToPng } from '../app/index.js';
 import { evidenceUrl, publishEvidence } from '../app/index.js';
 import { startInterview } from './interview.js';
@@ -70,6 +71,6 @@ export async function processSpecCandidate(candidate: SpecCandidate): Promise<vo
   } finally {
     // Reacted to on success and failure alike: a /spec that fails is
     // answered, not retried every tick at the cost of another agent run.
-    for (const m of candidate.trigger) await addReaction(m.id, m.kind, 'eyes').catch(() => {});
+    for (const m of candidate.trigger) await markProcessed(m).catch(() => {});
   }
 }

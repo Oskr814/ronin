@@ -57,8 +57,8 @@ export function prototypeWorkerBusy(): Promise<boolean> {
   return lockHeld(lockPath());
 }
 
-// Waits its turn instead of giving up: the comment was already answered
-// with 👀, so a worker that left would drop the request for good.
+// Waits its turn instead of giving up: the comment was already marked done,
+// so a worker that left would drop the request for good.
 export async function waitForPrototypeLock(opts: { intervalMs?: number; timeoutMs?: number } = {}): Promise<boolean> {
   const intervalMs = opts.intervalMs ?? 30_000;
   const deadline = Date.now() + (opts.timeoutMs ?? 3 * 60 * 60_000);

@@ -1,3 +1,4 @@
+import { markProcessed } from './core/processed-comments.js';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
@@ -17,7 +18,6 @@ import {
   attemptCountFromLabels,
   resetAttemptCount,
   isTransientGhError,
-  addReaction,
   getPullRequestStatus,
   setReviewStatus,
   listExternalOpenReviewThreads,
@@ -395,7 +395,7 @@ export async function processSlicePr(issue: TrackingIssue, pr: StackedPr, isBott
       await runAgentTask({ type: 'review-request', issueNumber: issue.number, prNumber: pr.number, mentions });
       await setReviewStatus(pr.number, 'success', 'Review posteada');
 
-      for (const m of mentions) await addReaction(m.id, m.kind, 'eyes');
+      for (const m of mentions) await markProcessed(m);
       // `pr` was read before a claude -p run that can take up to 30
       // minutes and may itself push a commit, so its checks/review fields
       // can be stale now — re-read before falling through to the merge
@@ -408,8 +408,8 @@ export async function processSlicePr(issue: TrackingIssue, pr: StackedPr, isBott
     }
   } catch (error) {
     // Local failure, not the issue-wide catch in tick(): a review-request
-    // that doesn't land shouldn't block the slice loop. No reaction was
-    // added, so the next tick picks these same comments up again.
+    // that doesn't land shouldn't block the slice loop. Nothing was marked
+    // done, so the next tick picks these same comments up again.
     if (mentions.length > 0) await setReviewStatus(pr.number, 'error', 'La review falló — ver logs del tick');
     log.error(`review-request failed for PR #${pr.number}`, error);
   }
@@ -422,13 +422,13 @@ export async function processSlicePr(issue: TrackingIssue, pr: StackedPr, isBott
       await setReviewStatus(pr.number, 'pending', 'ronin está resolviendo comentarios…', { context: 'ronin/fix-comments' });
       await runAgentTask({ type: 'fix-comments', issueNumber: issue.number, prNumber: pr.number, trigger: commandMentions, openThreads });
       await setReviewStatus(pr.number, 'success', 'Comentarios atendidos', { context: 'ronin/fix-comments' });
-      for (const m of commandMentions) await addReaction(m.id, m.kind, 'eyes');
+      for (const m of commandMentions) await markProcessed(m);
       // Same staleness concern as the review-request re-read above: this run
       // can push a commit, so re-fetch before the merge decision below.
       pr = { ...pr, ...(await getPullRequestStatus(pr.number)) };
     }
   } catch (error) {
-    // No reaction added on failure, so the next tick re-processes the same
+    // Not marked done on failure, so the next tick re-processes the same
     // command comment(s) — same trade-off as review-request above.
     if (commandMentions.length > 0) await setReviewStatus(pr.number, 'error', 'El fix-comments falló — ver logs del tick', { context: 'ronin/fix-comments' });
     log.error(`fix-comments failed for PR #${pr.number}`, error);
@@ -690,11 +690,11 @@ export async function processExternalReviewCandidate(candidate: ReviewCandidate)
     await runExternalReview(candidate);
     await setReviewStatus(candidate.prNumber, 'success', 'Review posteada', { sha: candidate.headSha });
     await setLastReviewedSha(candidate.prNumber, candidate.headSha);
-    // Only after a successful run: a missing reaction is what makes
+    // Only after a successful run: not being marked done is what makes
     // findUnprocessedMentions treat these same comments as unprocessed and
     // retry them on the next tick — same reasoning as processSlicePr's own
-    // reactions loop above.
-    for (const m of candidate.mentions) await addReaction(m.id, m.kind, 'eyes');
+    // loop above.
+    for (const m of candidate.mentions) await markProcessed(m);
   } catch (error) {
     await setReviewStatus(candidate.prNumber, 'error', 'La review falló — ver logs del tick', { sha: candidate.headSha });
     log.error(`external-review failed for PR #${candidate.prNumber}`, error);
@@ -718,10 +718,10 @@ export async function processTrustedFixCandidate(candidate: TrustedFixCandidate)
     });
     await setReviewStatus(candidate.prNumber, 'success', 'Comentarios atendidos', { context: 'ronin/fix-comments' });
     // Only after a successful run — same reasoning as processSlicePr's own
-    // reactions loop: a missing reaction is what makes
+    // loop: not being marked done is what makes
     // findTrustedFixCommentsCommand treat this comment as unprocessed and
     // retry it on the next tick.
-    for (const m of candidate.trigger) await addReaction(m.id, m.kind, 'eyes');
+    for (const m of candidate.trigger) await markProcessed(m);
   } catch (error) {
     await setReviewStatus(candidate.prNumber, 'error', 'El fix-comments falló — ver logs del tick', { context: 'ronin/fix-comments' });
     log.error(`fix-comments-external failed for PR #${candidate.prNumber}`, error);
@@ -730,7 +730,7 @@ export async function processTrustedFixCandidate(candidate: TrustedFixCandidate)
 
 // Mentions inside review threads of a non-fork PR ronin didn't open — each
 // one is handled in its own thread. Same isolation as
-// processTrustedFixCandidate, and the same retry: no 👀 on failure.
+// processTrustedFixCandidate, and the same retry: not marked done on failure.
 export async function processThreadMentionCandidate(candidate: ThreadMentionCandidate): Promise<void> {
   try {
     await setReviewStatus(candidate.prNumber, 'pending', 'ronin está atendiendo comentarios…', { context: 'ronin/thread-reply' });
@@ -741,7 +741,7 @@ export async function processThreadMentionCandidate(candidate: ThreadMentionCand
       mentions: candidate.mentions,
     });
     await setReviewStatus(candidate.prNumber, 'success', 'Comentarios atendidos', { context: 'ronin/thread-reply' });
-    for (const m of candidate.mentions) await addReaction(m.id, m.kind, 'eyes');
+    for (const m of candidate.mentions) await markProcessed(m);
   } catch (error) {
     await setReviewStatus(candidate.prNumber, 'error', 'La respuesta en el hilo falló — ver logs del tick', { context: 'ronin/thread-reply' });
     log.error(`thread-reply-external failed for PR #${candidate.prNumber}`, error);
@@ -787,11 +787,11 @@ export async function processSpikeCandidate(candidate: SpikeCandidate): Promise<
       instruction: candidate.instruction,
       trigger: candidate.trigger,
     });
-    // Only after a successful run — a missing reaction is what makes
+    // Only after a successful run — not being marked done is what makes
     // findTrustedSpikeCommand treat this same comment as unprocessed and
     // retry it on a later tick, same reasoning as every other command
     // trigger in this file.
-    for (const m of candidate.trigger) await addReaction(m.id, m.kind, 'eyes');
+    for (const m of candidate.trigger) await markProcessed(m);
   } catch (error) {
     log.error(`spike falló para issue #${candidate.issueNumber}`, error);
   } finally {
@@ -842,8 +842,8 @@ export async function processRequestCandidate(candidate: RequestCandidate): Prom
 
 // A /prototype never runs inside the tick: it brings a whole app up. Its
 // worker waits for the per-repo prototype lock itself, so it's launched
-// right away; the 👀 goes on once it is, which keeps the next tick from
-// launching it again. A launch that fails gets no 👀 and is retried.
+// right away; it's marked done once it is, which keeps the next tick from
+// launching it again. A launch that fails isn't, and is retried.
 export async function launchPrototypeCandidate(candidate: PrototypeCandidate): Promise<void> {
   try {
     launchPrototypeWorker({
@@ -853,7 +853,7 @@ export async function launchPrototypeCandidate(candidate: PrototypeCandidate): P
       ...(candidate.instruction ? { instruction: candidate.instruction } : {}),
       commentId: candidate.trigger[0].id,
     });
-    for (const m of candidate.trigger) await addReaction(m.id, m.kind, 'eyes');
+    for (const m of candidate.trigger) await markProcessed(m);
   } catch (error) {
     log.error(`issue #${candidate.issueNumber}: no se pudo lanzar el prototipo`, error);
   }
@@ -862,7 +862,7 @@ export async function launchPrototypeCandidate(candidate: PrototypeCandidate): P
 // An /explore never runs inside the tick: it can take an hour, and the tick
 // is single-flight. It starts a separate worker process (see
 // exploration/flow.ts) — one per repo at a time; while one runs, the next
-// command waits for a later tick (no 👀 yet, so it's picked up again).
+// command waits for a later tick (not marked done, so it's picked up again).
 export async function launchExploreCandidate(candidate: ExploreCandidate): Promise<void> {
   if (await exploreWorkerBusy()) {
     log.info(`issue #${candidate.issueNumber}: /explore esperando, ya hay una exploración corriendo en este repo`);

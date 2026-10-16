@@ -1,7 +1,8 @@
+import { markProcessed } from '../core/processed-comments.js';
 import { mkdir, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { runAgentTask } from '../core/agent-task.js';
-import { addReaction, getIssueBody, replyToComment, setIssueBody, type Comment } from '../core/github.js';
+import { getIssueBody, replyToComment, setIssueBody, type Comment } from '../core/github.js';
 import { applyScopeChange, appendInvestigation } from './issue-sections.js';
 import { launchPrototypeWorker } from './prototype.js';
 import { activeRepo } from '../core/repo-context.js';
@@ -111,7 +112,7 @@ export async function processIssueRequest(candidate: IssueRequestCandidate): Pro
   } finally {
     // Reacted to on success and failure alike, like /spec: a request that
     // fails is answered, not retried every tick at the cost of another run.
-    await addReaction(trigger.id, trigger.kind, 'eyes').catch(() => {});
+    await markProcessed(trigger).catch(() => {});
     await removeWorktree(requestBranch(issueNumber)).catch(() => {});
     await rm(outDir, { recursive: true, force: true }).catch(() => {});
   }

@@ -107,11 +107,11 @@ const server = createServer(async (req, res) => {
       if (target) {
         scheduleHandler(target.repo, target.scope);
         // The "got it" on a mention, right away — not awaited: GitHub's
-        // delivery doesn't wait on it, and a failure costs only the 🚀.
+        // delivery doesn't wait on it, and a failure costs only the 👀.
         const ack = ackTarget(eventName as string, payload, config.githubLogin);
         if (ack) {
           addAckReaction(target.repo, ack.commentId, ack.kind)
-            .catch((error) => log.info(`webhook: no se pudo poner el 🚀 en el comentario ${ack.commentId}: ${(error as Error).message}`));
+            .catch((error) => log.info(`webhook: no se pudo poner el 👀 en el comentario ${ack.commentId}: ${(error as Error).message}`));
         }
       }
     } catch (error) {

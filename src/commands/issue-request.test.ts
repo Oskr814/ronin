@@ -14,6 +14,12 @@ vi.mock('../core/github.js', () => ({
   addReaction: (...args: unknown[]) => addReaction(...args),
 }));
 
+// Done-ness lives in the local state now (processed-comments.ts, tested on
+// its own); here it's still read off the 👀, as these tests set it up.
+vi.mock('../core/processed-comments.js', () => ({
+  markProcessed: (c: { id: number; kind: string }) => addReaction(c.id, c.kind, 'eyes'),
+}));
+
 const launchPrototypeWorker = vi.fn();
 vi.mock('./prototype.js', () => ({ launchPrototypeWorker: (...args: unknown[]) => launchPrototypeWorker(...args) }));
 

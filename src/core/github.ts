@@ -676,6 +676,7 @@ export interface Comment {
   body: string;
   reactionsEyes: number;
   authorLogin: string;
+  createdAt?: string;
   // Inline review comments only: the thread the comment lives in, so a
   // mention like "@ronin arreglá esto" in a reply can be understood without
   // the agent rediscovering what "esto" points at.
@@ -695,6 +696,7 @@ export interface CommentThread {
 export interface RawApiComment {
   id: number;
   body: string;
+  created_at?: string;
   reactions: { eyes: number };
   pull_request_review_id?: number | null;
   user: { login: string } | null;
@@ -714,7 +716,7 @@ function reactionsPath(kind: 'issue' | 'review'): string {
 export async function listIssueComments(prNumber: number): Promise<Comment[]> {
   const stdout = await ghApi(['api', `repos/${activeRepo().productRepo}/issues/${prNumber}/comments?per_page=100`]);
   const raw = JSON.parse(stdout) as RawApiComment[];
-  return raw.map((c) => ({ id: c.id, kind: 'issue' as const, body: c.body, reactionsEyes: c.reactions.eyes, authorLogin: c.user?.login ?? '' }));
+  return raw.map((c) => ({ id: c.id, kind: 'issue' as const, body: c.body, reactionsEyes: c.reactions.eyes, authorLogin: c.user?.login ?? '', createdAt: c.created_at }));
 }
 
 interface RawReview {
@@ -773,6 +775,7 @@ export async function listReviewComments(prNumber: number): Promise<Comment[]> {
     body: c.body,
     reactionsEyes: c.reactions.eyes,
     authorLogin: c.user?.login ?? '',
+    createdAt: c.created_at,
     thread: threadOf(c, published),
   }));
 }
@@ -790,21 +793,23 @@ export function threadOf(comment: RawApiComment, all: RawApiComment[]): CommentT
   return { path: root.path ?? comment.path ?? '', line: root.line ?? null, diffHunk: root.diff_hunk ?? comment.diff_hunk ?? '', comments };
 }
 
-export async function hasBotReaction(commentId: number, kind: 'issue' | 'review', botLogin: string): Promise<boolean> {
+// Whether ronin put its 👀 on the comment before `before` (ISO) — back when
+// that 👀 meant "done", not "got it" (see processed-comments.ts).
+export async function botReactedBefore(commentId: number, kind: 'issue' | 'review', botLogin: string, before: string): Promise<boolean> {
   const stdout = await ghApi([
     'api',
     `repos/${activeRepo().productRepo}/${reactionsPath(kind)}/${commentId}/reactions?content=eyes&per_page=100`,
   ]);
-  const raw = JSON.parse(stdout) as Array<{ user: { login: string } }>;
-  return raw.some((r) => r.user.login === botLogin);
+  const raw = JSON.parse(stdout) as Array<{ user: { login: string }; created_at: string }>;
+  return raw.some((r) => r.user.login === botLogin && r.created_at < before);
 }
 
-// The "got it" the webhook server puts on a mention the moment it arrives,
-// before anything is processed (webhooks/server.ts) — 🚀, never 👀, which is
-// what marks a comment as done. Takes the repo itself: the server isn't
-// inside withActiveRepo.
+// The "got it" 👀 the webhook server puts on a mention the moment it
+// arrives, before anything is processed (webhooks/server.ts). Whether it's
+// done is tracked apart (processed-comments.ts). Takes the repo itself: the
+// server isn't inside withActiveRepo.
 export async function addAckReaction(repo: string, commentId: number, kind: 'issue' | 'review'): Promise<void> {
-  await ghApi(['api', `repos/${repo}/${reactionsPath(kind)}/${commentId}/reactions`, '-f', 'content=rocket']);
+  await ghApi(['api', `repos/${repo}/${reactionsPath(kind)}/${commentId}/reactions`, '-f', 'content=eyes']);
 }
 
 export async function addReaction(commentId: number, kind: 'issue' | 'review', content: 'eyes'): Promise<void> {
@@ -1197,6 +1202,7 @@ export interface FileReviewComment {
   body: string;
   authorLogin: string;
   reactionsEyes: number;
+  createdAt?: string;
   // Replies inside a thread point at its first comment; only first comments
   // carry feedback on a file.
   inReplyToId?: number;
@@ -1211,6 +1217,7 @@ export async function listFileReviewComments(prNumber: number): Promise<FileRevi
     body: c.body,
     authorLogin: c.user?.login ?? '',
     reactionsEyes: c.reactions.eyes,
+    createdAt: c.created_at,
     ...(c.in_reply_to_id ? { inReplyToId: c.in_reply_to_id } : {}),
   }));
 }

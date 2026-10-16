@@ -125,7 +125,7 @@ export async function findPrsNeedingReview(only?: number[]): Promise<{
         // One write flow per PR per tick, same as /fix-comments above: a
         // review running alongside would read a head this run is about to
         // amend. Any general mention waits for the next tick, still
-        // unprocessed (no 👀 yet).
+        // unprocessed (not marked done yet).
         const threadMentions = trustedThreadMentions(mentions);
         if (threadMentions.length > 0) {
           results[index].thread = { prNumber: pr.number, headRefName: pr.headRefName, mentions: threadMentions };
