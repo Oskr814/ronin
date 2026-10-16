@@ -44,7 +44,8 @@ export interface Ficha extends FindingBodyParts {
   motivo?: string;
   issue?: number;
   entorno?: boolean;
-  // The file in the PR's branch, on GitHub.
+  // The file in the PR's branch: its path, where a comment on it goes, and on GitHub.
+  path: string;
   url: string;
   // The after it had before ronin redid it, when it did.
   despuesAnterior?: FindingImage;
@@ -128,7 +129,7 @@ async function readFichas(entry: RepoEntry, pr: ExplorationPr): Promise<Omit<Exp
         const { body, huella: _huella, semilla: _semilla, fecha: _fecha, ...meta } = parseFinding(await git(dir, ['show', `${head}:${path}`]));
         const parts = parseFindingBody(body);
         const despuesAnterior = await previousAfter(dir, base, head, path, parts.despues?.url);
-        fichas.push({ app, ...meta, ...parts, url: blob(path), ...(despuesAnterior ? { despuesAnterior } : {}) });
+        fichas.push({ app, ...meta, ...parts, path, url: blob(path), ...(despuesAnterior ? { despuesAnterior } : {}) });
       } catch (error) {
         log.error(`tablero: no se pudo leer la ficha ${path} de #${pr.number}`, error);
       }
@@ -193,6 +194,11 @@ export async function explorationReview(entry: RepoEntry, pr: ExplorationPr, cha
       });
   }
   return entryCache.data ?? entryCache.reading;
+}
+
+// After someone commented from the dashboard: the next read brings the comment.
+export function forgetExploration(repo: string, prNumber: number): void {
+  for (const key of cache.keys()) if (key.startsWith(`${repo}#${prNumber}:`)) cache.delete(key);
 }
 
 export function resetExplorationCache(): void {

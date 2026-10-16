@@ -1,20 +1,18 @@
-import { launchConflictsWorker } from '../../commands/conflicts.js';
-import { applyAutoMergeCommand } from '../../commands/auto-merge.js';
-import { LABEL_AUTO_MERGE } from '../../core/config.js';
-import { postIssueComment, setIssueState } from '../../core/github.js';
+import { config, LABEL_AUTO_MERGE } from '../../core/config.js';
+import { setIssueState } from '../../core/github.js';
 import { log } from '../../core/logger.js';
 import { withActiveRepo, type RepoEntry } from '../../core/repo-context.js';
-import { launchPreviewWorker } from '../../preview/preview.js';
+import type { Session } from './auth.js';
 import type { ItemDetail, ItemRef } from './dashboard-detail.js';
 import type { RepoGithub } from './dashboard-github.js';
+import { commentOnIssue, type Posted } from './github-as-user.js';
 
 // What can be asked of ronin from an item's page (#85). Each action is a
-// command that already exists on GitHub, run by the same code: ronin first
-// comments on the issue or PR "<login> pidió `/x` desde el tablero", and
-// that comment takes the place of the one a person would have written — the
-// worker answers it, and the PR keeps the record of who asked for what.
-// The comment doesn't mention ronin, so no mention scan ever picks it up
-// again.
+// command that already exists on GitHub, and the dashboard writes it as
+// whoever is logged in (#93): "@ronin-agent /resolve-conflicts" on the PR,
+// with their GitHub token. From there it's a comment like any other — its
+// webhook, the mention handler, the worker that answers it — and GitHub
+// shows who asked.
 
 export type ActionId = 'resolve-conflicts' | 'preview' | 'preview-stop' | 'auto-merge-on' | 'auto-merge-off' | 'unblock';
 
@@ -30,7 +28,7 @@ export interface ActionView {
   text?: { required: boolean; label: string; placeholder: string };
   // The one that fits what the item is waiting for.
   primary?: boolean;
-  // The comment ronin will leave, shown before it's sent; with text, `> …` stands for it.
+  // The comment that will be left, shown before it's sent; with text, `…` stands for it.
   preview: string;
 }
 
@@ -64,53 +62,44 @@ export function listActions(ref: ItemRef, gh: RepoGithub | undefined, detail: It
   if (issue?.status === 'blocked') {
     actions.unshift({
       id: 'unblock', label: 'Responder y destrabar', command: 'ronin:in-progress', target: ref.number, primary: true,
-      help: 'Comenta tu respuesta en el issue y lo vuelve a pasar a ronin:in-progress.',
+      help: 'Comentás tu respuesta en el issue y ronin lo vuelve a pasar a ronin:in-progress.',
       text: { required: true, label: 'Tu respuesta', placeholder: 'Lo que hacía falta decidir o resolver' },
     });
   }
-  return actions.map((a) => ({ ...a, preview: actionComment(a, login, a.text ? '…' : undefined) }));
+  return actions.map((a) => ({ ...a, preview: actionComment(a, a.text ? '…' : undefined) }));
 }
 
-const quote = (text: string) => text.split('\n').map((line) => `> ${line}`).join('\n');
-
-// The comment ronin leaves, which the page also shows before it's sent.
-export function actionComment(action: Pick<ActionView, 'id' | 'command'>, login: string, text?: string): string {
-  if (action.id === 'unblock') return `**${login}** respondió desde el tablero:\n\n${quote(text ?? '')}\n\nLo vuelvo a pasar a \`ronin:in-progress\`.`;
-  return `**${login}** pidió \`${action.command}\` desde el tablero.${text ? `\n\n${quote(text)}` : ''}`;
+// The comment written as the person, which the page also shows before it's
+// sent: the command after the mention, and what to prepare below it (the
+// /preview parser reads the lines after the command too). The answer that
+// unblocks an issue is just the answer.
+export function actionComment(action: Pick<ActionView, 'id' | 'command'>, text?: string): string {
+  if (action.id === 'unblock') return text ?? '';
+  return `@${config.githubLogin} ${action.command}${text ? `\n\n${text}` : ''}`;
 }
 
 export class ActionError extends Error {}
 
-export async function runAction(entry: RepoEntry, ref: ItemRef, gh: RepoGithub | undefined, detail: ItemDetail | undefined, login: string, id: string, rawText?: unknown): Promise<{ url: string }> {
-  const action = listActions(ref, gh, detail, login).find((a) => a.id === id);
+export async function runAction(
+  entry: RepoEntry,
+  ref: ItemRef,
+  gh: RepoGithub | undefined,
+  detail: ItemDetail | undefined,
+  session: Session,
+  id: string,
+  rawText?: unknown,
+  post: (token: string, repo: string, number: number, body: string) => Promise<Posted> = commentOnIssue,
+): Promise<{ url: string }> {
+  const action = listActions(ref, gh, detail, session.login).find((a) => a.id === id);
   if (!action) throw new ActionError('Esa acción no está disponible para este ítem ahora.');
   const text = typeof rawText === 'string' ? rawText.trim().slice(0, MAX_TEXT) : '';
   if (action.text?.required && !text) throw new ActionError('Falta el texto.');
   if (!action.text && text) throw new ActionError('Esta acción no lleva texto.');
 
-  return withActiveRepo(entry, async () => {
-    const posted = await postIssueComment(action.target, actionComment(action, login, text || undefined));
-    const comment = { id: posted.id, kind: 'issue' as const };
-    log.info(`tablero: ${login} pidió ${action.id} en ${entry.productRepo}#${action.target} (${posted.url})`);
-    const repo = entry.productRepo;
-    switch (action.id) {
-      case 'resolve-conflicts':
-        launchConflictsWorker({ repo, prNumber: action.target, comment });
-        break;
-      case 'preview':
-        launchPreviewWorker({ repo, prNumber: action.target, action: 'up', ...(text ? { args: text } : {}), comment });
-        break;
-      case 'preview-stop':
-        launchPreviewWorker({ repo, prNumber: action.target, action: 'stop', comment });
-        break;
-      case 'auto-merge-on':
-      case 'auto-merge-off':
-        await applyAutoMergeCommand(action.target, comment, action.id === 'auto-merge-on' ? 'on' : 'off');
-        break;
-      case 'unblock':
-        await setIssueState(action.target, 'in-progress');
-        break;
-    }
-    return { url: posted.url };
-  });
+  const posted = await post(session.token, entry.productRepo, action.target, actionComment(action, text || undefined));
+  log.info(`tablero: ${session.login} pidió ${action.id} en ${entry.productRepo}#${action.target} (${posted.url})`);
+  // The answer is all the person writes; putting the issue back in the
+  // pipeline is ronin's, as when someone moves the label by hand.
+  if (action.id === 'unblock') await withActiveRepo(entry, () => setIssueState(action.target, 'in-progress'));
+  return { url: posted.url };
 }

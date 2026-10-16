@@ -9,7 +9,10 @@ import { forgetDetails, itemDetail, resolveItem } from './dashboard-detail.js';
 import { ActionError, listActions, runAction } from './dashboard-actions.js';
 import { today } from './dashboard-today.js';
 import { readEvidence } from './dashboard-evidence.js';
-import { explorationReview, isExplorationPr } from './dashboard-exploration.js';
+import { explorationReview, forgetExploration, isExplorationPr } from './dashboard-exploration.js';
+import { FichaActionError, runFichaAction } from './dashboard-exploration-actions.js';
+import { GithubUserError } from './github-as-user.js';
+import type { Session } from './auth.js';
 
 // The dashboard's data (#65), all behind the session (tailnet.ts checks it
 // before any of this runs):
@@ -18,6 +21,7 @@ import { explorationReview, isExplorationPr } from './dashboard-exploration.js';
 //   GET /api/items/<id>              one item's runs (14 days)
 //   GET /api/items/<id>/detail       its issue and PR from GitHub, with its comments and what can be asked of it (#85)
 //   GET /api/items/<id>/exploration  an exploration PR's findings and their threads, to review them (#93)
+//   POST /api/items/<id>/exploration/actions  a comment on one of them, as the person (dashboard-exploration-actions.ts)
 //   POST /api/items/<id>/actions     asks for one of those (dashboard-actions.ts)
 //   GET /api/runs/<runId>            one run's transcript
 //   GET /api/runs/<runId>/stream     the rest of it as it happens (SSE)
@@ -79,7 +83,7 @@ async function detail(id: string, login: string): Promise<unknown | null> {
 
 // An open exploration PR of a repo in repos.json, with its findings. Null
 // for anything else.
-async function exploration(id: string): Promise<unknown | null> {
+async function explorationContext(id: string) {
   const match = /^(.+)#(\d+)$/.exec(id);
   const entry = match && (await loadRepos()).find((repo) => repo.productRepo === match[1]);
   if (!match || !entry) return null;
@@ -88,7 +92,20 @@ async function exploration(id: string): Promise<unknown | null> {
   if (!pr || !isExplorationPr(pr)) return null;
   const keys = itemRunKeys(id, gh);
   const changedSince = Math.max(0, ...listRuns(HISTORY_DAYS).filter((run) => keys.includes(itemKey(run))).map((run) => Date.parse(run.endedAt ?? run.startedAt)));
-  return { ronin: config.githubLogin, ...(await explorationReview(entry, pr, changedSince)) };
+  return { entry, pr, review: await explorationReview(entry, pr, changedSince) };
+}
+
+async function exploration(id: string): Promise<unknown | null> {
+  const ctx = await explorationContext(id);
+  return ctx && { ronin: config.githubLogin, ...ctx.review };
+}
+
+// What GitHub refused when writing as the person: a token no longer good
+// asks to log in again (401, as the page reads it).
+function githubRefusal(res: ServerResponse, error: unknown): boolean {
+  if (!(error instanceof GithubUserError)) return false;
+  json(res, error.relogin ? 401 : 502, { error: error.message });
+  return true;
 }
 
 const MAX_BODY = 16 * 1024;
@@ -111,7 +128,7 @@ async function readJson(req: IncomingMessage): Promise<Record<string, unknown> |
 
 // POST /api/items/<id>/actions { action, text? }. Only JSON: a form from
 // another site can't send it, on top of tailnet.ts's Origin check.
-async function postAction(req: IncomingMessage, res: ServerResponse, id: string, login: string): Promise<void> {
+async function postAction(req: IncomingMessage, res: ServerResponse, id: string, session: Session): Promise<void> {
   if (!(req.headers['content-type'] ?? '').startsWith('application/json')) {
     json(res, 415, { error: 'se espera JSON' });
     return;
@@ -127,13 +144,39 @@ async function postAction(req: IncomingMessage, res: ServerResponse, id: string,
     return;
   }
   try {
-    const done = await runAction(ctx.entry, ctx.ref, ctx.gh, ctx.detail, login, body.action, body.text);
-    // The next read shows ronin's comment and whatever the action changed.
+    const done = await runAction(ctx.entry, ctx.ref, ctx.gh, ctx.detail, session, body.action, body.text);
+    // The next read shows the comment and whatever the action changed.
     forgetDetails(ctx.entry.productRepo);
     json(res, 200, done);
   } catch (error) {
     if (error instanceof ActionError) json(res, 409, { error: error.message });
-    else throw error;
+    else if (!githubRefusal(res, error)) throw error;
+  }
+}
+
+// POST /api/items/<id>/exploration/actions { action, ficha, text, redo? }.
+async function postFichaAction(req: IncomingMessage, res: ServerResponse, id: string, session: Session): Promise<void> {
+  if (!(req.headers['content-type'] ?? '').startsWith('application/json')) {
+    json(res, 415, { error: 'se espera JSON' });
+    return;
+  }
+  const body = await readJson(req);
+  if (!body) {
+    json(res, 400, { error: 'falta el pedido' });
+    return;
+  }
+  const ctx = await explorationContext(id);
+  if (!ctx) {
+    json(res, 404, { error: 'ese ítem no es un PR de exploración abierto de un repo de ronin' });
+    return;
+  }
+  try {
+    const done = await runFichaAction(ctx.entry, ctx.pr, ctx.review, session, body);
+    forgetExploration(ctx.entry.productRepo, ctx.pr.number);
+    json(res, 200, done);
+  } catch (error) {
+    if (error instanceof FichaActionError) json(res, 409, { error: error.message });
+    else if (!githubRefusal(res, error)) throw error;
   }
 }
 
@@ -191,10 +234,16 @@ async function serveEvidence(res: ServerResponse, raw: string): Promise<void> {
 
 // /api/snapshot, /api/today, /api/items/*, /api/runs/*, /api/evidence/*. Returns false for a
 // path it doesn't own.
-export async function handleDashboard(req: IncomingMessage, res: ServerResponse, path: string, login: string): Promise<boolean> {
+export async function handleDashboard(req: IncomingMessage, res: ServerResponse, path: string, session: Session): Promise<boolean> {
+  const login = session.login;
+  const fichaAction = /^\/api\/items\/(.+)\/exploration\/actions$/.exec(path);
+  if (fichaAction && req.method === 'POST') {
+    await postFichaAction(req, res, decodeURIComponent(fichaAction[1]), session);
+    return true;
+  }
   const action = /^\/api\/items\/(.+)\/actions$/.exec(path);
   if (action && req.method === 'POST') {
-    await postAction(req, res, decodeURIComponent(action[1]), login);
+    await postAction(req, res, decodeURIComponent(action[1]), session);
     return true;
   }
   if (req.method !== 'GET') return false;
