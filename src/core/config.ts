@@ -141,6 +141,22 @@ export const config = {
   // lands after the window is coalesced anyway, by handler.ts keeping at
   // most one handler waiting per scope.
   webhookDebounceMs: Number(process.env.WEBHOOK_DEBOUNCE_MS ?? 1000),
+  // The dashboard (#65): the web app and the rest of the API, on a second
+  // listener that only the tailnet reaches (127.0.0.1, published with
+  // `tailscale serve` by scripts/setup-server-service.sh). Off unless the
+  // GitHub OAuth App is set: without it the server only takes webhooks.
+  dashboard: {
+    tailnetPort: Number(process.env.SERVER_TAILNET_PORT ?? 3940),
+    // Where people open it, e.g. https://media.<tailnet>.ts.net:8443 — the
+    // OAuth callback is built from it.
+    url: (process.env.DASHBOARD_URL ?? '').replace(/\/+$/, ''),
+    githubClientId: process.env.DASHBOARD_GITHUB_CLIENT_ID ?? '',
+    githubClientSecret: process.env.DASHBOARD_GITHUB_CLIENT_SECRET ?? '',
+    sessionSecret: process.env.DASHBOARD_SESSION_SECRET ?? '',
+    // GitHub logins allowed in, comma-separated.
+    allowedUsers: (process.env.DASHBOARD_ALLOWED_USERS ?? '').split(',').map((u) => u.trim().toLowerCase()).filter(Boolean),
+    sessionDays: Number(process.env.DASHBOARD_SESSION_DAYS ?? 7),
+  },
 } as const;
 
 // Per task type, the model a run uses when its env var isn't set — anything

@@ -13,6 +13,17 @@ OLD_SERVICE_NAME="ronin-webhook"
 UNIT_DIR="$HOME/.config/systemd/user"
 UNIT_FILE="$UNIT_DIR/$SERVICE_NAME.service"
 
+# The dashboard (#65), when configured: its listener is on 127.0.0.1 and only
+# the tailnet reaches it, through `tailscale serve` — never `funnel`, and never
+# on a port of PREVIEW_PORT_RANGE, the only range the Tailscale policy opens
+# to people outside (docs/DESIGN.md §12).
+set -a
+# shellcheck disable=SC1091
+[ -f "$REPO_DIR/.env" ] && source "$REPO_DIR/.env"
+set +a
+TAILNET_PORT="${SERVER_TAILNET_PORT:-3940}"
+TAILNET_HTTPS_PORT="${DASHBOARD_TAILNET_HTTPS_PORT:-8443}"
+
 remove_service() {
   systemctl --user disable --now "$1.service" 2>/dev/null || true
   rm -f "$UNIT_DIR/$1.service"
@@ -20,6 +31,7 @@ remove_service() {
 
 if [[ "${1:-}" == "--remove" ]]; then
   remove_service "$SERVICE_NAME"
+  tailscale serve --https="$TAILNET_HTTPS_PORT" off 2>/dev/null || true
   systemctl --user daemon-reload
   echo "Servicio $SERVICE_NAME removido"
   exit 0
@@ -69,5 +81,12 @@ systemctl --user enable "$SERVICE_NAME.service"
 systemctl --user restart "$SERVICE_NAME.service"
 
 echo "Servicio $SERVICE_NAME instalado y corriendo"
+
+if [ -n "${DASHBOARD_GITHUB_CLIENT_ID:-}" ]; then
+  tailscale serve --bg --https="$TAILNET_HTTPS_PORT" "http://127.0.0.1:$TAILNET_PORT" >/dev/null
+  echo "Tablero publicado en la tailnet: ${DASHBOARD_URL:-https://<host>.ts.net:$TAILNET_HTTPS_PORT}"
+else
+  echo "Tablero desactivado (falta DASHBOARD_GITHUB_CLIENT_ID en .env)"
+fi
 echo "Logs: journalctl --user -u $SERVICE_NAME -f"
 echo "Desinstalar: $0 --remove"

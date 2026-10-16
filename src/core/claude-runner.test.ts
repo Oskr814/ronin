@@ -24,7 +24,7 @@ vi.mock('node:child_process', () => ({
   spawn: () => spawn(),
 }));
 
-const { runClaudeHeadless, ClaudeUsageLimitError, claudeHeadlessArgs } = await import('./claude-runner.js');
+const { runClaudeHeadless, ClaudeUsageLimitError, claudeHeadlessArgs, streamSteps } = await import('./claude-runner.js');
 const { config } = await import('./config.js');
 // The mock above is a plain object; the real config is typed read-only.
 const mutableConfig = config as { agentModel: string; agentEffort: string };
@@ -144,5 +144,12 @@ describe('runClaudeHeadless run record and usage', () => {
     fakeChild.emit('close', 1);
     await expect(promise).rejects.toBeInstanceOf(ClaudeUsageLimitError);
     expect(readAccountUsage('default')).toHaveProperty('limitHitAt');
+  });
+});
+
+describe('streamSteps', () => {
+  it("sums up a subagent by what it was asked, not its raw input", () => {
+    const event = { type: 'assistant', message: { content: [{ type: 'tool_use', name: 'Task', input: { description: 'worker de tests', prompt: 'largo…' } }] } };
+    expect(streamSteps(event)).toEqual([{ kind: 'tool', name: 'Task', summary: 'worker de tests' }]);
   });
 });
