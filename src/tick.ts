@@ -977,6 +977,11 @@ function issueJob(kind: string, issueNumber: number, run: () => Promise<void>): 
   return { kind, label: `issue #${issueNumber}`, lock: issueResource(issueNumber), resources: [issueResource(issueNumber)], run };
 }
 
+// Jobs that never run an agent — they answer, launch a worker or apply a
+// label — so they don't take a slot of the quota, and never wait behind
+// three long `claude -p` runs to answer a /help.
+const NO_SLOT_KINDS = new Set(['pr-commands', 'idle-commands', 'prototype-launch', 'explore-launch']);
+
 // The job as it runs: holding its lock, then a slot of the runner-wide
 // quota (shared with every other process, see locks.ts's withSlots) — the
 // same limits runJobs keeps inside this one.
@@ -985,7 +990,8 @@ function guarded(job: TickJob): Job {
     kind: job.kind,
     label: job.label,
     run: async () => {
-      const ran = await withResourceLock(job.lock, 'skip', () => withSlots(job.kind, config.tickConcurrency, JOB_CAPS, job.run));
+      const work = NO_SLOT_KINDS.has(job.kind) ? job.run : () => withSlots(job.kind, config.tickConcurrency, JOB_CAPS, job.run);
+      const ran = await withResourceLock(job.lock, 'skip', work);
       if (!ran) log.info(`${job.kind} ${job.label}: ya lo está atendiendo otro proceso, se salta`);
     },
   };
@@ -1050,6 +1056,16 @@ export function idleCommandJobs(allPrs: PullRequestStatus[], inProgress: Trackin
   });
 }
 
+// A command on a PR (help, /preview, /resolve-conflicts, /auto-merge — see
+// webhooks/events.ts), straight to what answers it: findUnprocessedMentions,
+// nothing else. Any plain-words mention it leaves is picked up by its usual
+// flow; mentions.ts's claimComment keeps the two from answering one twice.
+function commandJob(prNumber: number): TickJob {
+  return prJob('pr-commands', prNumber, async () => {
+    await findUnprocessedMentions(prNumber).catch((error) => log.error(`PR #${prNumber}: no se pudieron atender los comandos`, error));
+  });
+}
+
 // A bug-fix PR's "Closes #N" (see
 // docs/superpowers/specs/2026-07-28-bug-issue-intake-design.md) makes GitHub
 // close the issue as soon as a human merges it, and listTrackingIssues only
@@ -1076,6 +1092,7 @@ export type Flow =
   | 'auto-merge'
   | 'issues'
   | 'idle-commands'
+  | 'pr-commands'
   | 'review'
   | 'issue-commands'
   | 'changelog'
@@ -1178,6 +1195,8 @@ async function tickOneRepo(scope?: Scope): Promise<void> {
     const discovered = await Promise.all([
       runs('issues') && allPrs ? issueJobs(inProgress, allPrs) : [],
       runs('idle-commands') && allPrs ? idleCommandJobs(allPrs, inProgress) : [],
+      // Only ever in an event's scope: a command on a PR, straight to it.
+      runs('pr-commands') && prs ? prs.map((pr) => commandJob(pr)) : [],
       runs('review') ? externalReviewJobs(prs) : [],
       runs('issue-commands') ? spikeJobs(issues) : [],
       runs('changelog') ? changelogJobs() : [],

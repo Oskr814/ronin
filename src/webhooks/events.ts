@@ -65,6 +65,8 @@ interface PrRef {
 
 export interface EventPayload {
   action?: string;
+  sender?: { login?: string };
+  comment?: { id?: number; body?: string };
   repository?: { full_name?: string };
   label?: { name?: string };
   issue?: { number?: number; pull_request?: unknown };
@@ -89,16 +91,33 @@ function resourcesOf(eventName: string, payload: EventPayload): string[] {
   return [payload.issue?.pull_request ? `pr-${number}` : `issue-${number}`];
 }
 
+// A comment that's a command — "@<login> /<something>" — other than
+// /fix-comments: help, typos and misplaced commands, /preview,
+// /resolve-conflicts, /auto-merge. All of them are answered or launched by
+// findUnprocessedMentions alone (mentions.ts), without an agent run, so its
+// handler goes straight to that and nothing else (tick.ts's 'pr-commands').
+// /fix-comments does need its flow: the issue's pipeline, or the external
+// PR's review.
+function isQuickCommand(body: string, botLogin: string): boolean {
+  // botLogin is operator config (RONIN_GITHUB_LOGIN), never comment input —
+  // same reasoning as mentions.ts's mentionsHandle.
+  return new RegExp(`\\B@${botLogin}\\s+/[\\w-]`, 'i').test(body) && !/\/fix-comments\b/i.test(body);
+}
+
+const COMMENT_EVENTS = ['issue_comment', 'pull_request_review_comment', 'pull_request_review'];
+
 // What an event asks ronin to look at: its repo, and the Scope tick.ts's
-// runScoped runs for it. Null for an event nothing reacts to.
+// runScoped runs for it. Null for an event nothing reacts to — including
+// ronin's own comments and reviews, which are never requests to itself.
 //
 // `payload` is untyped GitHub webhook JSON on purpose — we only ever read a
 // couple of well-known fields off it, never trust it for anything beyond
 // "what is this about". The actual work still re-reads fresh state from
 // GitHub.
-export function scopeForEvent(eventName: string, payload: EventPayload, trackedRepos: string[]): { repo: string; scope: Scope } | null {
+export function scopeForEvent(eventName: string, payload: EventPayload, trackedRepos: string[], botLogin: string): { repo: string; scope: Scope } | null {
   const repo = payload.repository?.full_name;
   if (!repo || !trackedRepos.includes(repo)) return null;
+  if (COMMENT_EVENTS.includes(eventName) && payload.sender?.login?.toLowerCase() === botLogin.toLowerCase()) return null;
   // Only ronin:auto-merge going on (by hand or by /auto-merge): ronin changes
   // other labels on its own PRs as it works, and each of those would start
   // another run.
@@ -108,8 +127,22 @@ export function scopeForEvent(eventName: string, payload: EventPayload, trackedR
   if (!flows) return null;
   // A comment on an issue (not a PR) can only be a command on it.
   if (eventName === 'issue_comment' && !payload.issue?.pull_request) flows = ['issue-commands'];
+  else if ((eventName === 'issue_comment' || eventName === 'pull_request_review_comment') && isQuickCommand(payload.comment?.body ?? '', botLogin)) flows = ['pr-commands'];
   const resources = resourcesOf(eventName, payload);
   // A suite on a branch with no PR (a push to main) has nothing to look at.
   if (resources.length === 0) return null;
   return { repo, scope: { flows, resources } };
+}
+
+// The comment to put the "got it" 🚀 on as soon as the event arrives
+// (github.ts's addAckReaction): a new comment mentioning ronin, by someone
+// other than ronin. Null for anything else.
+export function ackTarget(eventName: string, payload: EventPayload, botLogin: string): { commentId: number; kind: 'issue' | 'review' } | null {
+  if (payload.action !== 'created' || typeof payload.comment?.id !== 'number') return null;
+  if (payload.sender?.login?.toLowerCase() === botLogin.toLowerCase()) return null;
+  // Same rule as mentions.ts's mentionsHandle.
+  if (!new RegExp(`\\B@${botLogin}\\b`, 'i').test(payload.comment.body ?? '')) return null;
+  if (eventName === 'issue_comment') return { commentId: payload.comment.id, kind: 'issue' };
+  if (eventName === 'pull_request_review_comment') return { commentId: payload.comment.id, kind: 'review' };
+  return null;
 }

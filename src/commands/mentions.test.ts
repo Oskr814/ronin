@@ -20,6 +20,13 @@ vi.mock('../core/github.js', () => ({
 
 vi.mock('../core/logger.js', () => ({ log: { error: vi.fn(), info: vi.fn() } }));
 
+// Comments another process is acting on right now (see mentions.ts's claimComment).
+const takenElsewhere = new Set<string>();
+vi.mock('../core/locks.js', () => ({
+  tryLockResource: async (resource: string) => !takenElsewhere.has(resource),
+  unlockResource: async () => {},
+}));
+
 const launchPreviewWorker = vi.fn();
 vi.mock('../preview/preview.js', () => ({ launchPreviewWorker: (...args: unknown[]) => launchPreviewWorker(...args) }));
 const applyAutoMergeCommand = vi.fn();
@@ -198,6 +205,27 @@ describe('meta-commands (/help, typos, wrong place)', () => {
     expect(result).toEqual([]);
     expect(replyToComment).toHaveBeenCalledWith(42, expect.objectContaining({ id: 1 }), expect.stringContaining('/fix-comments'));
     expect(addReaction).toHaveBeenCalledWith(1, 'issue', 'eyes');
+  });
+
+  it('leaves a command alone while another process is acting on it', async () => {
+    issueComments.mockResolvedValue([{ id: 7, kind: 'issue', body: '@ronin /help', reactionsEyes: 0, authorLogin: 'someone' }]);
+    takenElsewhere.add('comment-issue-7');
+    try {
+      expect(await findUnprocessedMentions(42)).toEqual([]);
+      expect(replyToComment).not.toHaveBeenCalled();
+    } finally {
+      takenElsewhere.clear();
+    }
+  });
+
+  it('does not answer twice a command another process answered after this one listed it', async () => {
+    // Listed without 👀, but by the time this process takes it, it has one.
+    issueComments.mockResolvedValue([{ id: 8, kind: 'issue', body: '@ronin /help', reactionsEyes: 0, authorLogin: 'someone' }]);
+    botReaction.mockResolvedValueOnce(true);
+
+    expect(await findUnprocessedMentions(42)).toEqual([]);
+    expect(replyToComment).not.toHaveBeenCalled();
+    expect(addReaction).not.toHaveBeenCalled();
   });
 
   it('suggests the closest command for a typo, replying inside an inline thread', async () => {

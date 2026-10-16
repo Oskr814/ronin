@@ -6,6 +6,7 @@ import { launchPreviewWorker } from '../preview/index.js';
 import { applyAutoMergeCommand, type AutoMergeAction } from './auto-merge.js';
 import { launchConflictsWorker } from './conflicts.js';
 import { log } from '../core/logger.js';
+import { tryLockResource, unlockResource } from '../core/locks.js';
 
 export function mentionsHandle(body: string, handle: string): boolean {
   // `handle` is not escaped for regex metacharacters on purpose: it comes from
@@ -210,6 +211,22 @@ async function filterUnprocessed(comments: Comment[]): Promise<Comment[]> {
   return others.filter((_, i) => !reacted[i]);
 }
 
+// Two processes can list the same unprocessed command at once: an event
+// handler going straight to the command (tick.ts's 'pr-commands' flow) and
+// the tick's pipeline for that PR's issue, which doesn't wait for it. The
+// first to take the comment acts on it; the other, once it gets it, finds
+// the 👀 already there and leaves it alone.
+async function claimComment(comment: Comment, fn: () => Promise<void>): Promise<void> {
+  const resource = `comment-${comment.kind}-${comment.id}`;
+  if (!(await tryLockResource(resource))) return;
+  try {
+    if (await hasBotReaction(comment.id, comment.kind, config.githubLogin)) return;
+    await fn();
+  } finally {
+    await unlockResource(resource);
+  }
+}
+
 // Answers /help and misspelled or misplaced commands right here, without
 // Claude, and drops them from what the caller gets back — see help.ts. Every
 // flow that acts on a mention reads it through findUnprocessedMentions or
@@ -229,8 +246,10 @@ async function handleMetaCommands(number: number, context: CommandContext, comme
       continue;
     }
     try {
-      await replyToComment(number, comment, renderMetaReply(meta, login, context));
-      await addReaction(comment.id, comment.kind, 'eyes');
+      await claimComment(comment, async () => {
+        await replyToComment(number, comment, renderMetaReply(meta, login, context));
+        await addReaction(comment.id, comment.kind, 'eyes');
+      });
     } catch (error) {
       log.error(`respuesta al meta-comando del comentario ${comment.id} falló en #${number}`, error);
     }
@@ -253,13 +272,15 @@ async function handlePreviewCommands(prNumber: number, comments: Comment[]): Pro
       continue;
     }
     try {
-      launchPreviewWorker({
-        repo: activeRepo().productRepo,
-        prNumber,
-        ...command,
-        comment: { id: comment.id, kind: comment.kind },
+      await claimComment(comment, async () => {
+        launchPreviewWorker({
+          repo: activeRepo().productRepo,
+          prNumber,
+          ...command,
+          comment: { id: comment.id, kind: comment.kind },
+        });
+        await addReaction(comment.id, comment.kind, 'eyes');
       });
-      await addReaction(comment.id, comment.kind, 'eyes');
     } catch (error) {
       log.error(`no se pudo lanzar la preview del comentario ${comment.id} en #${prNumber}`, error);
     }
@@ -278,8 +299,10 @@ async function handleConflictsCommands(prNumber: number, comments: Comment[]): P
       continue;
     }
     try {
-      launchConflictsWorker({ repo: activeRepo().productRepo, prNumber, comment: { id: comment.id, kind: comment.kind } });
-      await addReaction(comment.id, comment.kind, 'eyes');
+      await claimComment(comment, async () => {
+        launchConflictsWorker({ repo: activeRepo().productRepo, prNumber, comment: { id: comment.id, kind: comment.kind } });
+        await addReaction(comment.id, comment.kind, 'eyes');
+      });
     } catch (error) {
       log.error(`no se pudo lanzar /resolve-conflicts del comentario ${comment.id} en #${prNumber}`, error);
     }
@@ -300,7 +323,7 @@ async function handleAutoMergeCommands(prNumber: number, comments: Comment[]): P
       continue;
     }
     try {
-      await applyAutoMergeCommand(prNumber, comment, action);
+      await claimComment(comment, () => applyAutoMergeCommand(prNumber, comment, action));
     } catch (error) {
       log.error(`no se pudo aplicar el /auto-merge del comentario ${comment.id} en #${prNumber}`, error);
     }
