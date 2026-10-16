@@ -833,6 +833,7 @@ export interface RawApiComment {
   line?: number | null;
   diff_hunk?: string;
   in_reply_to_id?: number;
+  html_url?: string;
 }
 
 function reactionsPath(kind: 'issue' | 'review'): string {
@@ -1343,6 +1344,7 @@ export interface FileReviewComment {
   // Replies inside a thread point at its first comment; only first comments
   // carry feedback on a file.
   inReplyToId?: number;
+  url?: string;
 }
 
 export async function listFileReviewComments(prNumber: number): Promise<FileReviewComment[]> {
@@ -1356,6 +1358,7 @@ export async function listFileReviewComments(prNumber: number): Promise<FileRevi
     reactionsEyes: c.reactions.eyes,
     createdAt: c.created_at,
     ...(c.in_reply_to_id ? { inReplyToId: c.in_reply_to_id } : {}),
+    ...(c.html_url ? { url: c.html_url } : {}),
   }));
 }
 

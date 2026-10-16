@@ -58,7 +58,7 @@ function duration(ms) {
 const money = (usd) => (usd < 0.01 ? 'menos de US$0,01' : `US$${usd.toFixed(2).replace('.', ',')}`);
 const pct = (fraction) => `${Math.round(fraction * 100)}%`;
 
-const S = { snap: null, today: null, sel: null, open: [], runIdx: {}, pendingRun: null, filter: null, q: '', itemRuns: {}, run: null, stream: null, detail: {}, view: {}, doc: {}, menu: false, dialog: null, expanded: new Set() };
+const S = { snap: null, today: null, sel: null, open: [], runIdx: {}, pendingRun: null, filter: null, q: '', itemRuns: {}, run: null, stream: null, detail: {}, view: {}, doc: {}, menu: false, dialog: null, expanded: new Set(), expl: {}, ficha: {}, fichaOpen: {}, fichaFilter: { tipo: 'todas', vp: 'todos' }, antes: {}, oldAfter: new Set(), lightbox: null };
 const DETAIL_EVERY_MS = 30_000;
 
 class Unauthorized extends Error {}
@@ -295,6 +295,7 @@ function renderCenter() {
   }).join('')}</div>`;
 
   const item = S.sel && itemById(S.sel);
+  if (!item || viewOf(item) === 'tx') $('#shell').classList.remove('wide');
   if (!item) {
     setCenter(tabs + backBar('Hoy') + renderToday());
     wireToday();
@@ -307,9 +308,17 @@ function renderCenter() {
   // Redrawn on every snapshot: whoever was reading further down stays there.
   const doc = $('#doc');
   const keep = doc && doc.dataset.key === docKeyOf(item) ? doc.scrollTop : 0;
+  const rows = $('#frows')?.scrollTop ?? 0;
+  const fd = $('#fdetail');
+  const fdKeep = fd ? { ficha: fd.dataset.current, top: fd.scrollTop } : null;
+  // Reviewing findings takes the room of the context column.
+  $('#shell').classList.toggle('wide', docOf(item) === 'fichas');
   if (!setCenter(tabs + backBar(item.title) + headHTML(item) + activityHTML(item) + docHTML(item) + `<div class="ctx-inline">${ctxHTML(item)}</div>`)) return;
   const fresh = $('#doc');
   if (fresh && !isMobile()) fresh.scrollTop = keep;
+  if ($('#frows')) $('#frows').scrollTop = rows;
+  const fdFresh = $('#fdetail');
+  if (fdFresh && fdKeep && fdFresh.dataset.current === fdKeep.ficha) fdFresh.scrollTop = fdKeep.top;
 }
 
 // Only touches the page when something changed, so a snapshot that changes
@@ -515,8 +524,15 @@ function activityHTML(item) {
 
 function docTabsOf(item, d) {
   if (item.kind === 'issue') return [['issue', 'Issue'], ...(d?.pr ? [['pr', `PR #${d.pr.number}`]] : []), ['comments', 'Comentarios']];
-  return [['pr', 'Descripción'], ...(d?.issue ? [['issue', `Issue #${d.issue.number}`]] : []), ['comments', 'Comentarios']];
+  // An exploration PR opens on its findings, to review them (#93).
+  return [...(d?.exploration ? [['fichas', 'Fichas']] : []), ['pr', 'Descripción'], ...(d?.issue ? [['issue', `Issue #${d.issue.number}`]] : []), ['comments', 'Comentarios']];
 }
+const docOf = (item) => {
+  const d = S.detail[item.id]?.data;
+  if (!d) return null;
+  const tabs = docTabsOf(item, d);
+  return tabs.some(([k]) => k === S.doc[item.id]) ? S.doc[item.id] : tabs[0][0];
+};
 const docKeyOf = (item) => `${item.id}:${S.doc[item.id] ?? ''}`;
 
 function docHTML(item) {
@@ -529,8 +545,11 @@ function docHTML(item) {
   const own = item.kind === 'issue' ? d.issue : d.pr;
   const entries = own ? conversation(own) : [];
   const count = entries.length;
-  const bar = `<div class="doctabs" role="tablist">${tabs.map(([k, label]) => `<button class="doctab" role="tab" data-doc="${k}" aria-selected="${k === cur}">${esc(label)}${k === 'comments' ? `<span class="c">${count}</span>` : ''}</button>`).join('')}
-    <span class="src">${d.error ? `<span class="bad">GitHub no respondió: ${esc(d.error)}</span>, ` : ''}${d.fetchedAt ? `leído hace ${esc(short(Date.now() - Date.parse(d.fetchedAt)))}` : ''}</span></div>`;
+  const fichas = S.expl[item.id]?.data?.fichas;
+  const counter = (k) => (k === 'comments' ? `<span class="c">${count}</span>` : k === 'fichas' && fichas ? `<span class="c">${fichas.length}</span>` : '');
+  const bar = `<div class="doctabs" role="tablist">${tabs.map(([k, label]) => `<button class="doctab" role="tab" data-doc="${k}" aria-selected="${k === cur}">${esc(label)}${counter(k)}</button>`).join('')}
+    ${cur === 'fichas' ? '<span class="keys"><kbd>j</kbd> <kbd>k</kbd> otra ficha</span>' : ''}<span class="src">${d.error ? `<span class="bad">GitHub no respondió: ${esc(d.error)}</span>, ` : ''}${d.fetchedAt ? `leído hace ${esc(short(Date.now() - Date.parse(d.fetchedAt)))}` : ''}</span></div>`;
+  if (cur === 'fichas') return bar + fichasHTML(item);
   let body;
   if (cur === 'comments') {
     body = count
@@ -544,6 +563,196 @@ function docHTML(item) {
       <div class="md">${doc.body.trim() ? md(doc.body, item.repo) : '<p class="m">Sin descripción.</p>'}</div></div>`;
   }
   return bar + `<div class="doc" id="doc" data-key="${esc(`${item.id}:${cur}`)}">${body}</div>`;
+}
+
+// ---------- reviewing an exploration PR (#93)
+// The findings the PR brings, read into their parts, with their threads:
+// a list on the left, the finding on the right (one after the other on a
+// phone). Read-only for now; deciding is still commenting on GitHub.
+const RONIN_MENTION = /@ronin-agent\b/i;
+const fichaKey = (f) => `${f.app}/${f.id}`;
+const FICHA_GROUPS = [['decidir', 'Por decidir'], ['esperando', 'Esperando a ronin'], ['respondida', 'Respondidas por ronin'], ['aprobada', 'Aprobadas'], ['rechazada', 'Rechazadas']];
+const FICHA_DOT = { decidir: 'pending', esperando: 'live', respondida: 'run', aprobada: 'ok', rechazada: 'crit' };
+
+// Where a finding stands: decided in its file, or by its thread — ronin
+// answers a first comment, or a reply that mentions it.
+function fichaStatus(f, ronin) {
+  if (f.estado === 'rechazado') return 'rechazada';
+  if (f.estado === 'aprobado') return 'aprobada';
+  const last = f.comments[f.comments.length - 1];
+  if (!last) return 'decidir';
+  if (last.author === ronin) return 'respondida';
+  return !last.replyTo || RONIN_MENTION.test(last.body) ? 'esperando' : 'respondida';
+}
+
+function visibleFichas(data) {
+  const { tipo, vp } = S.fichaFilter;
+  const shown = data.fichas.filter((f) => (tipo === 'todas' || f.tipo === tipo) && (vp === 'todos' || f.viewport === vp));
+  return FICHA_GROUPS.flatMap(([k]) => shown.filter((f) => fichaStatus(f, data.ronin) === k));
+}
+
+function currentFicha(item, data) {
+  const list = visibleFichas(data);
+  return list.find((f) => fichaKey(f) === S.ficha[item.id]) ?? data.fichas.find((f) => fichaKey(f) === S.ficha[item.id]) ?? list[0];
+}
+
+const sevClass = (f) => (f.tipo === 'idea' ? 'pulido' : f.gravedad);
+const sevLabel = (f) => (f.tipo === 'idea' ? 'idea' : f.gravedad);
+const VP_ICON = {
+  mobile: '<svg width="10" height="12" viewBox="0 0 10 12" aria-hidden="true"><rect x=".75" y=".75" width="8.5" height="10.5" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>',
+  desktop: '<svg width="13" height="11" viewBox="0 0 13 11" aria-hidden="true"><rect x=".75" y=".75" width="11.5" height="7.5" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M4 10.25h5" stroke="currentColor" stroke-width="1.3"/></svg>',
+};
+const TALK_ICON = '<svg width="11" height="11" viewBox="0 0 11 11" aria-hidden="true"><path d="M1 1.5h9v6H4.5L2 9.8V7.5H1z" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>';
+const vp = (v) => `<span class="vp">${VP_ICON[v] ?? ''}${esc(v)}</span>`;
+
+function fichasHTML(item) {
+  const entry = S.expl[item.id];
+  const data = entry?.data;
+  if (!data) return `<div class="doc" id="doc"><div class="empty">${entry?.error ? `No se pudieron leer las fichas: ${esc(entry.error)}` : 'Leyendo las fichas…'}</div></div>`;
+  if (!data.fichas.length) return `<div class="doc" id="doc"><div class="empty"><b>Este PR no trae fichas nuevas</b>${data.error ? esc(data.error) : 'Solo cambia el inventario o el registro de corridas.'}</div></div>`;
+  const f = currentFicha(item, data);
+  const filter = (key, value, label) => `<button class="fchip" data-ffilter="${key}:${value}" aria-pressed="${S.fichaFilter[key] === value}">${label}</button>`;
+  const shown = visibleFichas(data);
+  const groups = FICHA_GROUPS.map(([k, label]) => {
+    const rows = shown.filter((x) => fichaStatus(x, data.ronin) === k);
+    if (!rows.length) return '';
+    return `<div class="fgrp"><span>${label}</span><span>${rows.length}</span></div>` + rows.map((x) => `<button class="frow${k === 'rechazada' ? ' rej' : ''}" data-ficha="${esc(fichaKey(x))}" aria-current="${f && fichaKey(x) === fichaKey(f)}">
+      ${dotClass(FICHA_DOT[k])}<span class="tl">${esc(x.titulo)}</span>
+      <span class="sub"><span class="id">${esc(x.id)}</span><span class="sev ${esc(sevClass(x))}">${esc(sevLabel(x))}</span>${vp(x.viewport)}${x.comments.length ? `<span class="vp">${TALK_ICON}${x.comments.length}</span>` : ''}</span></button>`).join('');
+  }).join('');
+  const list = `<div class="flist"><div class="filters">${filter('tipo', 'todas', 'Todas')}${filter('tipo', 'hallazgo', 'Hallazgos')}${filter('tipo', 'idea', 'Ideas')}<span class="gap"></span>${filter('vp', 'todos', 'Todos')}${filter('vp', 'desktop', 'Desktop')}${filter('vp', 'mobile', 'Mobile')}</div>
+    <div class="frows" id="frows">${groups || '<p class="none">Ninguna ficha con esos filtros.</p>'}</div>
+    ${data.runs.length ? `<div class="fruns">Corridas: ${data.runs.map((run) => `<a href="${esc(run.url)}" target="_blank" rel="noopener">${esc(run.id)}</a>`).join(', ')}</div>` : ''}</div>`;
+  return `<div class="doc review${S.fichaOpen[item.id] ? ' open' : ''}" id="doc" data-key="${esc(`${item.id}:fichas`)}">${list}<div class="fdetail" id="fdetail" data-current="${esc(f ? fichaKey(f) : '')}">${f ? fichaHTML(item, data, f, shown) : ''}</div></div>`;
+}
+
+function shotHTML(img, label, which, extra = '') {
+  const local = evidenceSrc(img.url);
+  const pic = local
+    ? `<button class="img" data-zoom="${which}"><img class="ev" src="${esc(local)}" alt="${esc(img.nota ?? label)}" data-label="${esc(`[imagen${img.nota ? `: ${img.nota}` : ''}]`)}"></button>`
+    : `<a class="img" href="${esc(img.url)}" target="_blank" rel="noopener noreferrer">[imagen${img.nota ? `: ${esc(img.nota)}` : ''}]</a>`;
+  return `<figure class="shot ${which === 'despues' ? 'after' : ''}"><div class="lab"><b>${label}</b>${extra}</div>${pic}${img.nota ? `<figcaption>${esc(img.nota)}</figcaption>` : ''}</figure>`;
+}
+
+function compareHTML(f) {
+  const key = fichaKey(f);
+  const i = Math.min(S.antes[key] ?? 0, Math.max(0, f.antes.length - 1));
+  const old = S.oldAfter.has(key) && f.despuesAnterior;
+  const after = f.despues && (old ? f.despuesAnterior : f.despues);
+  const thumbs = f.antes.length > 1 ? `<span class="thumbs">${f.antes.map((a, k) => {
+    const local = evidenceSrc(a.url);
+    return `<button class="thumb" data-antes="${k}" aria-pressed="${k === i}" title="${esc(a.nota ?? `Antes ${k + 1}`)}">${local ? `<img class="ev" src="${esc(local)}" alt="" data-label="${k + 1}">` : k + 1}</button>`;
+  }).join('')}</span>` : '';
+  const before = f.antes[i];
+  if (!before && !after) return '';
+  const afterExtra = f.despuesAnterior ? `<button class="link tag" data-oldafter>${old ? 'ver la actual' : 'ver la anterior'}</button>` : '';
+  const cls = [f.viewport === 'desktop' ? 'wide' : '', before && after ? '' : 'one'].filter(Boolean).join(' ');
+  return `<div class="compare"><div class="ctop"><h3>Antes y después</h3>${thumbs}</div>
+    <div class="pair ${cls}">${before ? shotHTML(before, 'Antes', 'antes', f.antes.length > 1 ? `<span>${i + 1} de ${f.antes.length}</span>` : '') : ''}${after ? shotHTML(after, 'Después', 'despues', `${old ? '<span>versión anterior</span>' : ''}${afterExtra}`) : ''}</div>
+    ${after ? '' : '<p class="nodesp">Sin captura del después: ronin consideró que la propuesta se entiende sin ella.</p>'}</div>`;
+}
+
+function diffHTML(patch) {
+  return `<pre class="diff">${patch.split('\n').map((l) => `<span class="${l.startsWith('diff --git') ? 'f' : l.startsWith('@@') ? 'h' : /^\+(?!\+\+)/.test(l) ? 'a' : /^-(?!--)/.test(l) ? 'd' : ''}">${esc(l) || ' '}</span>`).join('')}</pre>`;
+}
+function diffStat(patch) {
+  const lines = patch.split('\n');
+  const files = lines.filter((l) => l.startsWith('diff --git')).length;
+  return `+${lines.filter((l) => /^\+(?!\+\+)/.test(l)).length} −${lines.filter((l) => /^-(?!--)/.test(l)).length}${files ? ` · ${files} ${files === 1 ? 'archivo' : 'archivos'}` : ''}`;
+}
+
+function fichaThreadHTML(item, data, f) {
+  const roots = f.comments.filter((c) => !c.replyTo || !f.comments.some((o) => o.id === c.replyTo));
+  const ordered = roots.flatMap((root) => [root, ...f.comments.filter((c) => c.replyTo === root.id)]);
+  const files = prUrl(item.repo, item.number);
+  const cms = ordered.map((c) => `<article class="cm${c.author === data.ronin ? ' bot' : ''}${c.replyTo ? ' reply' : ''}"><header>${avatar(c.author)}<b>${esc(c.author)}</b>${c.url ? `<a href="${esc(c.url)}" target="_blank" rel="noopener">${esc(when(c.createdAt))}</a>` : `<span>${esc(when(c.createdAt))}</span>`}</header><div class="md">${md(c.body, item.repo)}</div></article>`).join('');
+  return `<div class="fthread"><h3>Conversación <span class="m">${f.comments.length ? `${f.comments.length} ${f.comments.length === 1 ? 'comentario' : 'comentarios'} en la ficha` : 'nadie comentó esta ficha'}</span></h3>
+    ${cms ? `<div class="cms">${cms}</div>` : ''}
+    <p class="note">Para rechazarla o pedir cambios, por ahora, comentá su archivo en ${files ? `<a href="${esc(files)}/files" target="_blank" rel="noopener">“Files changed” ↗</a>` : '“Files changed”'}.</p></div>`;
+}
+
+function fichaHTML(item, data, f, shown) {
+  const status = fichaStatus(f, data.ronin);
+  const idx = shown.findIndex((x) => fichaKey(x) === fichaKey(f));
+  const banner = {
+    rechazada: `<div class="banner crit">${dotClass('crit')}<div><b>Rechazada</b>${f.motivo ? `<p>${esc(f.motivo)}</p>` : ''}</div></div>`,
+    aprobada: `<div class="banner ok">${dotClass('ok')}<div><b>Aprobada</b>${f.issue ? `<p>Issue <a href="${esc(`https://github.com/${item.repo}/issues/${f.issue}`)}" target="_blank" rel="noopener">#${esc(f.issue)}</a>.</p>` : ''}</div></div>`,
+    esperando: `<div class="banner run">${dotClass('live')}<div><b>Esperando a ronin</b><p>Hay un comentario que ronin todavía no respondió.</p></div></div>`,
+  }[status] ?? '';
+  const meta = [f.senal && f.senal !== f.gravedad && f.tipo !== 'idea' ? esc(f.senal) : '', `rol ${esc(f.rol)}`, esc(f.functionName || f.funcion), f.entorno ? 'entorno de dev' : ''].filter(Boolean).map((m) => `<span>${m}</span>`).join('');
+  return `<div class="fwrap">
+    <div class="fnav"><button class="pill fback" data-fback>← Fichas</button><span class="m">${idx >= 0 ? `${idx + 1} de ${shown.length}` : ''}</span><button class="pill" data-fmove="-1" ${idx <= 0 ? 'disabled' : ''} aria-label="Ficha anterior">↑</button><button class="pill" data-fmove="1" ${idx < 0 || idx >= shown.length - 1 ? 'disabled' : ''} aria-label="Ficha siguiente">↓</button></div>
+    <div class="fmeta"><span class="id">${esc(f.id)}</span><span class="sev ${esc(sevClass(f))}">${esc(sevLabel(f))}</span>${vp(f.viewport)}${meta}<a class="link fgh" href="${esc(f.url)}" target="_blank" rel="noopener">archivo ↗</a></div>
+    <h2 class="ftitle">${esc(f.titulo)}</h2>
+    ${banner}
+    ${f.observado || f.esperado ? `<div class="obs">${f.observado ? `<div><h3>Qué pasa</h3><div class="md">${md(f.observado, item.repo)}</div></div>` : ''}${f.esperado ? `<div class="exp"><h3>Qué se esperaba</h3><div class="md">${md(f.esperado, item.repo)}</div></div>` : ''}</div>` : ''}
+    ${compareHTML(f)}
+    <div class="prop"><h3>Propuesta</h3><div class="md">${md(f.propuesta, item.repo)}</div></div>
+    ${f.pasos.length ? `<details class="sec"><summary><h3>Cómo reproducirlo</h3><span class="m">${f.pasos.length} ${f.pasos.length === 1 ? 'paso' : 'pasos'}</span></summary><ol class="in">${f.pasos.map((p) => `<li>${esc(p)}</li>`).join('')}</ol></details>` : ''}
+    ${f.evidencia.length ? `<details class="sec"><summary><h3>Evidencia</h3><span class="m">${esc([...new Set(f.evidencia.map((e) => e.tipo))].join(', '))}</span></summary><div class="in">${f.evidencia.map((e) => `<div class="ev-row"><span class="k">${esc(e.tipo)}</span><span class="v">${esc(e.detalle)}</span></div>`).join('')}</div></details>` : ''}
+    ${f.parche ? `<details class="sec"><summary><h3>Cambio borrador del después</h3><span class="m">${esc(diffStat(f.parche))}</span></summary><div class="in">${diffHTML(f.parche)}</div></details>` : ''}
+    ${fichaThreadHTML(item, data, f)}</div>`;
+}
+
+function selectFicha(key) {
+  S.ficha[S.sel] = key;
+  S.fichaOpen[S.sel] = true;
+  const url = `/i/${encodeURIComponent(S.sel)}?f=${encodeURIComponent(key)}`;
+  if (location.pathname + location.search !== url) history.replaceState(null, '', url);
+  renderCenter();
+  const fd = $('#fdetail');
+  if (fd) fd.scrollTop = 0;
+  if (isMobile()) scrollTo(0, 0);
+  document.querySelector(`.frow[aria-current="true"]`)?.scrollIntoView({ block: 'nearest' });
+}
+
+function moveFicha(delta) {
+  const item = S.sel && itemById(S.sel);
+  const data = item && S.expl[item.id]?.data;
+  if (!data?.fichas.length) return;
+  const list = visibleFichas(data);
+  const cur = currentFicha(item, data);
+  const i = list.findIndex((f) => cur && fichaKey(f) === fichaKey(cur));
+  const next = list[Math.max(0, Math.min(list.length - 1, i + delta))];
+  if (next) selectFicha(fichaKey(next));
+}
+
+// The finding's screenshots in large: the before shown next to the after; ←/→ go through the befores.
+function renderLightbox() {
+  let box = $('#lightbox');
+  const lb = S.lightbox;
+  const item = lb && itemById(lb.item);
+  const f = item && S.expl[item.id]?.data?.fichas.find((x) => fichaKey(x) === lb.ficha);
+  if (!f) {
+    box?.remove();
+    S.lightbox = null;
+    return;
+  }
+  if (!box) box = Object.assign(document.body.appendChild(document.createElement('div')), { id: 'lightbox', className: 'lightbox' });
+  const key = fichaKey(f);
+  const after = f.despues && (S.oldAfter.has(key) && f.despuesAnterior ? f.despuesAnterior : f.despues);
+  const before = f.antes[lb.antes];
+  const shots = lb.only === 'despues' || !before ? [['Después', after]] : [[`Antes${f.antes.length > 1 ? ` ${lb.antes + 1} de ${f.antes.length}` : ''}`, before], ...(after ? [['Después', after]] : [])];
+  box.innerHTML = `<div class="lt"><b>${esc(f.id)}</b><span class="m">${esc(f.titulo)}</span>${f.antes.length > 1 ? '<span class="m keys"><kbd>←</kbd> <kbd>→</kbd> otra captura del antes</span>' : ''}<button id="lb-x">Cerrar ✕</button></div>
+    <div class="lb">${shots.filter(([, img]) => img && evidenceSrc(img.url)).map(([label, img]) => `<figure><div><img src="${esc(evidenceSrc(img.url))}" alt="${esc(img.nota ?? label)}"></div><figcaption><b>${esc(label)}</b>${img.nota ? ` · ${esc(img.nota)}` : ''}</figcaption></figure>`).join('')}</div>`;
+  $('#lb-x').onclick = () => { S.lightbox = null; renderLightbox(); };
+}
+
+async function loadExploration(id) {
+  const entry = (S.expl[id] ??= {});
+  if (entry.loading) return;
+  entry.loading = true;
+  try {
+    entry.data = await api(`/api/items/${encodeURIComponent(id)}/exploration`);
+    entry.error = null;
+  } catch (error) {
+    if (error instanceof Unauthorized) return showLogin();
+    entry.error = error.message;
+  } finally {
+    entry.loading = false;
+    entry.at = Date.now();
+  }
+  if (S.sel === id) renderCenter();
 }
 
 // The item's conversation as GitHub shows it, oldest first: general
@@ -646,6 +855,37 @@ function wireCenter() {
     button.onclick = (event) => {
       event.stopPropagation();
       openAction(button.dataset.action);
+    };
+  }
+  for (const button of document.querySelectorAll('[data-ficha]')) button.onclick = () => selectFicha(button.dataset.ficha);
+  for (const button of document.querySelectorAll('[data-fmove]')) button.onclick = () => moveFicha(Number(button.dataset.fmove));
+  for (const button of document.querySelectorAll('[data-fback]')) button.onclick = () => { S.fichaOpen[S.sel] = false; renderCenter(); };
+  for (const button of document.querySelectorAll('[data-ffilter]')) {
+    button.onclick = () => {
+      const [key, value] = button.dataset.ffilter.split(':');
+      S.fichaFilter[key] = value;
+      renderCenter();
+    };
+  }
+  for (const button of document.querySelectorAll('[data-antes]')) {
+    button.onclick = () => {
+      S.antes[S.ficha[S.sel] ?? $('#fdetail')?.dataset.current] = Number(button.dataset.antes);
+      renderCenter();
+    };
+  }
+  for (const button of document.querySelectorAll('[data-oldafter]')) {
+    button.onclick = () => {
+      const key = $('#fdetail')?.dataset.current;
+      if (S.oldAfter.has(key)) S.oldAfter.delete(key);
+      else S.oldAfter.add(key);
+      renderCenter();
+    };
+  }
+  for (const button of document.querySelectorAll('[data-zoom]')) {
+    button.onclick = () => {
+      const key = $('#fdetail')?.dataset.current;
+      S.lightbox = { item: S.sel, ficha: key, antes: S.antes[key] ?? 0, only: button.dataset.zoom === 'despues' ? 'despues' : null };
+      renderLightbox();
     };
   }
   for (const button of document.querySelectorAll('[data-expand]')) {
@@ -959,6 +1199,7 @@ async function loadDetail(id) {
   try {
     entry.data = await api(`/api/items/${encodeURIComponent(id)}/detail`);
     entry.error = null;
+    if (entry.data.exploration) loadExploration(id);
   } catch (error) {
     if (error instanceof Unauthorized) return showLogin();
     entry.error = error.message;
@@ -976,7 +1217,7 @@ async function select(id) {
   S.menu = false;
   if (!S.open.includes(id)) S.open.push(id);
   const path = `/i/${encodeURIComponent(id)}`;
-  if (location.pathname !== path) history.pushState(null, '', path);
+  if (location.pathname !== path) history.pushState(null, '', S.ficha[id] ? `${path}?f=${encodeURIComponent(S.ficha[id])}` : path);
   renderAll();
   if (isMobile()) {
     $('#shell').dataset.m = 'detail';
@@ -1001,6 +1242,10 @@ async function refresh() {
   renderCenter();
   const detail = S.sel && S.detail[S.sel];
   if (detail && Date.now() - (detail.at ?? 0) > DETAIL_EVERY_MS) loadDetail(S.sel);
+  else {
+    const expl = S.sel && S.expl[S.sel];
+    if (expl && Date.now() - (expl.at ?? 0) > DETAIL_EVERY_MS) loadExploration(S.sel);
+  }
 }
 
 // A new run on the open item: its list of runs is read again. Whoever was
@@ -1059,6 +1304,11 @@ async function boot() {
   // Open from the start: whatever is running right now.
   S.open = S.snap.items.filter((item) => item.status === 'running').map((item) => item.id);
   const fromPath = selectedFromPath();
+  const ficha = new URLSearchParams(location.search).get('f');
+  if (fromPath && ficha) {
+    S.ficha[fromPath] = ficha;
+    S.fichaOpen[fromPath] = true;
+  }
   if (fromPath) await select(fromPath);
   else renderAll();
 
@@ -1068,6 +1318,22 @@ async function boot() {
     renderCenter();
   });
   document.addEventListener('keydown', (event) => {
+    if (S.lightbox) {
+      const f = S.expl[S.lightbox.item]?.data?.fichas.find((x) => fichaKey(x) === S.lightbox.ficha);
+      if (event.key === 'Escape') S.lightbox = null;
+      else if (event.key === 'ArrowRight' && f && S.lightbox.antes < f.antes.length - 1) S.lightbox.antes++;
+      else if (event.key === 'ArrowLeft' && S.lightbox.antes > 0) S.lightbox.antes--;
+      else return;
+      renderLightbox();
+      return;
+    }
+    // j/k go through the findings of an exploration PR, as long as nothing is being typed.
+    const item = S.sel && itemById(S.sel);
+    if ((event.key === 'j' || event.key === 'k') && !S.dialog && !event.metaKey && !event.ctrlKey && !event.altKey && item && viewOf(item) === 'ficha' && docOf(item) === 'fichas' && !/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName ?? '')) {
+      event.preventDefault();
+      moveFicha(event.key === 'j' ? 1 : -1);
+      return;
+    }
     if (event.key !== 'Escape') return;
     if (S.dialog) closeDialog();
     else if (S.menu) {

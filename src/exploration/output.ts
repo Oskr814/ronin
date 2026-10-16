@@ -273,6 +273,62 @@ export function renderFindingBody(
   return lines.join('\n');
 }
 
+// A finding body read back into its parts, for the dashboard (#93): the
+// inverse of renderFindingBody, also after replaceProposal,
+// replaceAfterImage and replaceDraftPatch touched it. A part a body doesn't
+// have (an idea without steps, a finding without an after) comes back empty.
+export interface FindingBodyParts {
+  functionName: string;
+  pasos: string[];
+  observado: string;
+  esperado: string;
+  evidencia: Array<{ tipo: string; detalle: string }>;
+  antes: FindingImage[];
+  propuesta: string;
+  despues?: FindingImage;
+  parche?: string;
+}
+
+const IMG_SRC_RE = /<img src="([^"]+)"/;
+
+function images(text: string, label: string): FindingImage[] {
+  const re = new RegExp(`\\*\\*${label}\\*\\*(?:: ([^\\n]*))?\\n\\n(<img [^\\n]*>)`, 'g');
+  return [...text.matchAll(re)].flatMap((m) => {
+    const url = IMG_SRC_RE.exec(m[2])?.[1];
+    return url ? [{ url, ...(m[1]?.trim() ? { nota: m[1].trim() } : {}) }] : [];
+  });
+}
+
+function section(body: string, heading: string): string {
+  const start = body.indexOf(`\n### ${heading}\n`);
+  if (start < 0) return '';
+  const from = start + heading.length + 6;
+  const next = body.indexOf('\n### ', from);
+  return body.slice(from, next < 0 ? undefined : next);
+}
+
+export function parseFindingBody(body: string): FindingBodyParts {
+  const text = `\n${body.replace(/\r\n/g, '\n')}`;
+  const header = /^\*\*[^*\n]+\*\* · [^\n]* · (?:desktop|mobile) · ([^\n]+)$/m.exec(text);
+  const beforeEvidence = text.split(/\n### (?:Evidencia|Propuesta)\n/)[0];
+  const field = (label: string) => new RegExp(`\\*\\*${label}:\\*\\* ([\\s\\S]*?)(?=\\n\\n\\*\\*Qué se esperaba:\\*\\*|\\n\\n### |\\n*$)`).exec(beforeEvidence)?.[1].trim() ?? '';
+  const evidence = section(text, 'Evidencia');
+  const proposal = section(text, 'Propuesta');
+  const patch = /```diff\n([\s\S]*?)\n```/.exec(proposal)?.[1];
+  const despues = images(proposal, 'Después')[0];
+  return {
+    functionName: header?.[1].trim() ?? '',
+    pasos: [...section(text, 'Cómo reproducirlo').matchAll(/^\d+\. (.*)$/gm)].map((m) => m[1].trim()),
+    observado: field('Qué pasa'),
+    esperado: field('Qué se esperaba'),
+    evidencia: [...evidence.matchAll(/^- ([\w-]+): (.*)$/gm)].filter((m) => m[1] !== 'captura').map((m) => ({ tipo: m[1], detalle: m[2].trim() })),
+    antes: images(evidence, 'Antes'),
+    propuesta: proposal.split(/\n\*\*Después\*\*|\n<details>/)[0].trim(),
+    ...(despues ? { despues } : {}),
+    ...(patch ? { parche: patch } : {}),
+  };
+}
+
 const AFTER_RE = /\*\*Después\*\*[^\n]*\n\n<img [^\n]*>\n?/;
 
 // The finding body with its "after" replaced by a new image — or added at
