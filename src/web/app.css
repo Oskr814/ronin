@@ -194,6 +194,32 @@ a { color: inherit; }
 .cm header a:hover { text-decoration: underline; }
 .cm .md { padding: 9px 12px; }
 .back-ficha { color: var(--ink); }
+.actions { position: relative; flex: none; }
+.act-btn { display: inline-flex; padding: 5px 11px; border-radius: 6px; background: var(--ink); color: var(--bg); font-size: 13px; font-weight: 600; white-space: nowrap; }
+.act-btn:hover { opacity: .9; }
+.menu { position: absolute; right: 0; top: calc(100% + 6px); width: min(340px, calc(100vw - 32px)); background: var(--raise); border: 1px solid var(--rule); border-radius: 8px; box-shadow: 0 12px 32px rgba(0, 0, 0, .35); padding: 6px; z-index: 20; }
+.menu button { display: grid; grid-template-columns: 1fr auto; gap: 1px 10px; width: 100%; padding: 7px 8px; border-radius: 5px; }
+.menu button:hover, .menu button:focus-visible { background: var(--hover); }
+.menu b { font-weight: 500; }
+.menu button.primary b { color: var(--hanko); }
+.menu .k { font: 11.5px "JetBrains Mono", monospace; color: var(--muted); }
+.menu small { grid-column: 1 / -1; color: var(--muted); font-size: 12px; }
+.scrim { position: fixed; inset: 0; background: rgba(5, 7, 14, .55); display: grid; place-items: center; padding: 16px; z-index: 40; }
+.dlg { width: min(520px, 100%); max-height: calc(100vh - 32px); overflow: auto; background: var(--raise); border: 1px solid var(--rule); border-radius: 10px; box-shadow: 0 20px 60px rgba(0, 0, 0, .45); padding: 16px 18px 14px; }
+.dlg h2 { margin: 0 0 4px; font-size: 16px; }
+.dlg .help { margin: 0 0 12px; color: var(--muted); }
+.dlg .field { display: grid; gap: 6px; font-size: 12.5px; color: var(--ink-2); margin-bottom: 12px; }
+.dlg textarea { width: 100%; background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; color: var(--ink); font: inherit; padding: 8px; resize: vertical; }
+.dlg .prev { border: 1px dashed var(--rule); border-radius: 8px; padding: 10px 12px; background: var(--panel); }
+.dlg .prev .lbl { font-size: 12px; color: var(--faint); margin-bottom: 4px; }
+.dlg .bad { margin: 10px 0 0; }
+.foot-d { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+.btn-s { padding: 6px 12px; border-radius: 6px; border: 1px solid var(--rule); background: var(--panel); font-size: 13px; }
+.btn-s:hover { background: var(--hover); }
+.btn-s.primary { background: var(--ink); color: var(--bg); border-color: var(--ink); font-weight: 600; }
+.btn-s:disabled { opacity: .5; cursor: default; }
+.toast { position: fixed; bottom: 44px; left: 50%; transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 8px 14px; border-radius: 8px; font-size: 13px; z-index: 50; box-shadow: 0 8px 24px rgba(0, 0, 0, .3); max-width: calc(100vw - 32px); }
+.toast a { color: inherit; font-weight: 600; }
 
 /* today */
 .today { flex: 1; overflow: auto; padding: 22px 24px 32px; min-height: 0; }

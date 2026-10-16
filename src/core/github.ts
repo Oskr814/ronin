@@ -418,6 +418,7 @@ export interface Discussion {
   createdAt: string;
   url: string;
   state: string;
+  labels: string[];
   comments: Array<{ author: string; body: string; createdAt: string; url: string }>;
   mergeable?: 'MERGEABLE' | 'CONFLICTING' | 'UNKNOWN';
   baseRefName?: string;
@@ -425,13 +426,14 @@ export interface Discussion {
 }
 
 export async function getDiscussion(kind: 'issue' | 'pr', number: number): Promise<Discussion> {
-  const fields = 'number,title,body,author,createdAt,url,state,comments' + (kind === 'pr' ? ',mergeable,baseRefName,headRefName' : '');
-  type Raw = Omit<Discussion, 'author' | 'comments' | 'body'> & { body: string | null; author: { login: string } | null; comments: Array<{ author: { login: string } | null; body: string; createdAt: string; url: string }> };
+  const fields = 'number,title,body,author,createdAt,url,state,labels,comments' + (kind === 'pr' ? ',mergeable,baseRefName,headRefName' : '');
+  type Raw = Omit<Discussion, 'author' | 'comments' | 'body' | 'labels'> & { body: string | null; author: { login: string } | null; labels: Array<{ name: string }>; comments: Array<{ author: { login: string } | null; body: string; createdAt: string; url: string }> };
   const raw = JSON.parse(await gh([kind, 'view', String(number), '--json', fields])) as Raw;
   return {
     ...raw,
     body: raw.body ?? '',
     author: raw.author?.login ?? '',
+    labels: raw.labels.map((l) => l.name),
     comments: raw.comments.map((c) => ({ author: c.author?.login ?? '', body: c.body, createdAt: c.createdAt, url: c.url })),
   };
 }
@@ -897,6 +899,14 @@ export async function replyToComment(number: number, comment: Pick<Comment, 'id'
     ? `repos/${activeRepo().productRepo}/pulls/${number}/comments/${comment.id}/replies`
     : `repos/${activeRepo().productRepo}/issues/${number}/comments`;
   await ghApi(['api', path, '-f', `body=${body}`]);
+}
+
+// A general comment on an issue or PR, as ronin, returning it: what a
+// dashboard action (#85) leaves as the record of who asked for what, and the
+// comment its worker then answers.
+export async function postIssueComment(number: number, body: string): Promise<{ id: number; url: string }> {
+  const created = JSON.parse(await ghApi(['api', `repos/${activeRepo().productRepo}/issues/${number}/comments`, '-f', `body=${body}`])) as { id: number; html_url: string };
+  return { id: created.id, url: created.html_url };
 }
 
 // REST, not `gh pr edit --body-file`: `gh pr edit` fails on this org with a

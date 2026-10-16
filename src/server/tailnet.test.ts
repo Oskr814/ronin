@@ -103,4 +103,15 @@ describe('tailnet listener', () => {
     const ok = await fetch(`${base}/api/auth/logout`, { method: 'POST', headers: { origin: AUTH.url, cookie: session() } });
     expect(ok.status).toBe(204);
   });
+
+  it("takes an action only from the page itself, as JSON, with a session", async () => {
+    const url = `${base}/api/items/${encodeURIComponent('acme/product#12')}/actions`;
+    const body = JSON.stringify({ action: 'resolve-conflicts' });
+    expect((await fetch(url, { method: 'POST', body, headers: { origin: 'https://evil.example', cookie: session(), 'content-type': 'application/json' } })).status).toBe(403);
+    expect((await fetch(url, { method: 'POST', body, headers: { origin: AUTH.url, 'content-type': 'application/json' } })).status).toBe(401);
+    expect((await fetch(url, { method: 'POST', body: 'action=resolve-conflicts', headers: { origin: AUTH.url, cookie: session(), 'content-type': 'application/x-www-form-urlencoded' } })).status).toBe(415);
+    expect((await fetch(url, { method: 'POST', body: '{', headers: { origin: AUTH.url, cookie: session(), 'content-type': 'application/json' } })).status).toBe(400);
+    // Not an issue or PR GitHub knows of, nor one with runs.
+    expect((await fetch(url, { method: 'POST', body, headers: { origin: AUTH.url, cookie: session(), 'content-type': 'application/json' } })).status).toBe(404);
+  });
 });

@@ -5,7 +5,8 @@ import { loadRepos } from '../../core/repos.js';
 import { itemKey, listRuns, readQueue, readRunLines, readTickInfo, readUsage, runPath, slotsInUse, summarizeRun } from './dashboard-data.js';
 import { repoGithub } from './dashboard-github.js';
 import { buildItems } from './dashboard-items.js';
-import { itemDetail, resolveItem } from './dashboard-detail.js';
+import { forgetDetails, itemDetail, resolveItem } from './dashboard-detail.js';
+import { ActionError, listActions, runAction } from './dashboard-actions.js';
 import { today } from './dashboard-today.js';
 
 // The dashboard's data (#65), all behind the session (tailnet.ts checks it
@@ -13,7 +14,8 @@ import { today } from './dashboard-today.js';
 //   GET /api/snapshot                the sidebar and the status bar
 //   GET /api/today                   the last 12 hours' runs and the day's totals
 //   GET /api/items/<id>              one item's runs (14 days)
-//   GET /api/items/<id>/detail       its issue and PR from GitHub, with its comments (#85)
+//   GET /api/items/<id>/detail       its issue and PR from GitHub, with its comments and what can be asked of it (#85)
+//   POST /api/items/<id>/actions     asks for one of those (dashboard-actions.ts)
 //   GET /api/runs/<runId>            one run's transcript
 //   GET /api/runs/<runId>/stream     the rest of it as it happens (SSE)
 
@@ -46,9 +48,9 @@ export async function snapshot(login: string): Promise<unknown> {
   };
 }
 
-// An issue's or PR's page: what GitHub has on it. 404 for an item that
-// isn't one (a changelog entry) or a repo not in repos.json.
-async function detail(id: string): Promise<unknown | null> {
+// An issue or PR of a repo in repos.json: what it is and what GitHub has on
+// it. Null for an item that isn't one (a changelog entry).
+async function itemContext(id: string) {
   const match = /^(.+)#(\d+)$/.exec(id);
   if (!match) return null;
   const entry = (await loadRepos()).find((repo) => repo.productRepo === match[1]);
@@ -56,9 +58,62 @@ async function detail(id: string): Promise<unknown | null> {
   const runs = listRuns(HISTORY_DAYS).filter((run) => itemKey(run) === id);
   const changedSince = Math.max(0, ...runs.map((run) => Date.parse(run.endedAt ?? run.startedAt)));
   const runKind = runs[0] ? (runs[0].issueNumber !== undefined ? 'issue' : 'pr') : undefined;
-  const ref = resolveItem(Number(match[2]), await repoGithub(entry), runKind);
+  const gh = await repoGithub(entry);
+  const ref = resolveItem(Number(match[2]), gh, runKind);
+  return ref && { entry, ref, gh, detail: await itemDetail(entry, ref, changedSince) };
+}
+
+async function detail(id: string, login: string): Promise<unknown | null> {
+  const ctx = await itemContext(id);
+  if (!ctx) return null;
   // `ronin`: its login, so the page can tell its comments apart.
-  return ref && { ref, ronin: config.githubLogin, ...(await itemDetail(entry, ref, changedSince)) };
+  return { ref: ctx.ref, ronin: config.githubLogin, ...ctx.detail, actions: listActions(ctx.ref, ctx.gh, ctx.detail, login) };
+}
+
+const MAX_BODY = 16 * 1024;
+
+async function readJson(req: IncomingMessage): Promise<Record<string, unknown> | null> {
+  let size = 0;
+  const chunks: Buffer[] = [];
+  for await (const chunk of req) {
+    size += (chunk as Buffer).length;
+    if (size > MAX_BODY) return null;
+    chunks.push(chunk as Buffer);
+  }
+  try {
+    const body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+    return body && typeof body === 'object' && !Array.isArray(body) ? body : null;
+  } catch {
+    return null;
+  }
+}
+
+// POST /api/items/<id>/actions { action, text? }. Only JSON: a form from
+// another site can't send it, on top of tailnet.ts's Origin check.
+async function postAction(req: IncomingMessage, res: ServerResponse, id: string, login: string): Promise<void> {
+  if (!(req.headers['content-type'] ?? '').startsWith('application/json')) {
+    json(res, 415, { error: 'se espera JSON' });
+    return;
+  }
+  const body = await readJson(req);
+  if (!body || typeof body.action !== 'string') {
+    json(res, 400, { error: 'falta la acción' });
+    return;
+  }
+  const ctx = await itemContext(id);
+  if (!ctx) {
+    json(res, 404, { error: 'ese ítem no es un issue ni un PR de un repo de ronin' });
+    return;
+  }
+  try {
+    const done = await runAction(ctx.entry, ctx.ref, ctx.gh, ctx.detail, login, body.action, body.text);
+    // The next read shows ronin's comment and whatever the action changed.
+    forgetDetails(ctx.entry.productRepo);
+    json(res, 200, done);
+  } catch (error) {
+    if (error instanceof ActionError) json(res, 409, { error: error.message });
+    else throw error;
+  }
 }
 
 function streamRun(req: IncomingMessage, res: ServerResponse, path: string, from: number): void {
@@ -94,9 +149,14 @@ function streamRun(req: IncomingMessage, res: ServerResponse, path: string, from
   req.on('close', () => clearInterval(timer));
 }
 
-// /api/snapshot, /api/items/*, /api/runs/*. Returns false for a path it
-// doesn't own.
+// /api/snapshot, /api/today, /api/items/*, /api/runs/*. Returns false for a
+// path it doesn't own.
 export async function handleDashboard(req: IncomingMessage, res: ServerResponse, path: string, login: string): Promise<boolean> {
+  const action = /^\/api\/items\/(.+)\/actions$/.exec(path);
+  if (action && req.method === 'POST') {
+    await postAction(req, res, decodeURIComponent(action[1]), login);
+    return true;
+  }
   if (req.method !== 'GET') return false;
 
   if (path === '/api/snapshot') {
@@ -111,7 +171,7 @@ export async function handleDashboard(req: IncomingMessage, res: ServerResponse,
 
   const itemPage = /^\/api\/items\/(.+)\/detail$/.exec(path);
   if (itemPage) {
-    const body = await detail(decodeURIComponent(itemPage[1]));
+    const body = await detail(decodeURIComponent(itemPage[1]), login);
     if (body) json(res, 200, body);
     else json(res, 404, { error: 'ese ítem no es un issue ni un PR de un repo de ronin' });
     return true;

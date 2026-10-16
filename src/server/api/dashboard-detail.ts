@@ -99,6 +99,12 @@ export async function itemDetail(entry: RepoEntry, ref: ItemRef, changedSince = 
   return entryCache.data ?? entryCache.reading;
 }
 
+// After an action on one of the repo's items: its next read is fresh. Every
+// item of the repo, since an issue's page carries its PR too.
+export function forgetDetails(repo: string): void {
+  for (const key of cache.keys()) if (key.startsWith(`${repo}#`)) cache.delete(key);
+}
+
 export function resetDetailCache(): void {
   cache.clear();
 }
