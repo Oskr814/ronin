@@ -5,10 +5,12 @@ import { loadRepos } from '../../core/repos.js';
 import { itemKey, listRuns, readQueue, readRunLines, readTickInfo, readUsage, runPath, slotsInUse, summarizeRun } from './dashboard-data.js';
 import { repoGithub } from './dashboard-github.js';
 import { buildItems } from './dashboard-items.js';
+import { today } from './dashboard-today.js';
 
 // The dashboard's data (#65), all behind the session (tailnet.ts checks it
 // before any of this runs):
 //   GET /api/snapshot                the sidebar and the status bar
+//   GET /api/today                   the last 12 hours' runs and the day's totals
 //   GET /api/items/<id>              one item's runs (14 days)
 //   GET /api/runs/<runId>            one run's transcript
 //   GET /api/runs/<runId>/stream     the rest of it as it happens (SSE)
@@ -82,6 +84,11 @@ export async function handleDashboard(req: IncomingMessage, res: ServerResponse,
 
   if (path === '/api/snapshot') {
     json(res, 200, await snapshot(login));
+    return true;
+  }
+
+  if (path === '/api/today') {
+    json(res, 200, today(listRuns(2)));
     return true;
   }
 
