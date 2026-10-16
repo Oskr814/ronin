@@ -40,6 +40,9 @@ function summarizeToolUse(name: string, input: Record<string, unknown>): string 
     case 'Grep':
     case 'Glob':
       return truncate(String(input.pattern ?? ''));
+    case 'Task':
+    case 'Agent':
+      return truncate(String(input.description ?? input.subagent_type ?? ''));
     case 'WebFetch':
     case 'WebSearch':
       return truncate(String(input.url ?? input.query ?? ''));

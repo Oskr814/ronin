@@ -8,7 +8,7 @@
     "tick": "tsx src/index.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "build": "rm -rf dist && tsc -p tsconfig.build.json",
+    "build": "rm -rf dist && tsc -p tsconfig.build.json && cp -r src/web dist/web",
     "start": "node dist/index.js",
     "smoke-test": "tsx scripts/smoke-test.ts",
     "review:dry-run": "tsx scripts/review-dry-run.ts",
