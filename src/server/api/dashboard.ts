@@ -10,7 +10,7 @@ import { ActionError, listActions, runAction } from './dashboard-actions.js';
 import { today } from './dashboard-today.js';
 import { readEvidence } from './dashboard-evidence.js';
 import { explorationReview, forgetExploration, isExplorationPr } from './dashboard-exploration.js';
-import { FichaActionError, runFichaAction } from './dashboard-exploration-actions.js';
+import { FichaActionError, runApprove, runFichaAction, runGeneralComment } from './dashboard-exploration-actions.js';
 import { GithubUserError } from './github-as-user.js';
 import type { Session } from './auth.js';
 
@@ -22,6 +22,8 @@ import type { Session } from './auth.js';
 //   GET /api/items/<id>/detail       its issue and PR from GitHub, with its comments and what can be asked of it (#85)
 //   GET /api/items/<id>/exploration  an exploration PR's findings and their threads, to review them (#93)
 //   POST /api/items/<id>/exploration/actions  a comment on one of them, as the person (dashboard-exploration-actions.ts)
+//   POST /api/items/<id>/exploration/general  a general comment on the PR, as the person
+//   POST /api/items/<id>/exploration/approve  an approving review, as the person
 //   POST /api/items/<id>/actions     asks for one of those (dashboard-actions.ts)
 //   GET /api/runs/<runId>            one run's transcript
 //   GET /api/runs/<runId>/stream     the rest of it as it happens (SSE)
@@ -154,8 +156,9 @@ async function postAction(req: IncomingMessage, res: ServerResponse, id: string,
   }
 }
 
-// POST /api/items/<id>/exploration/actions { action, ficha, text, redo? }.
-async function postFichaAction(req: IncomingMessage, res: ServerResponse, id: string, session: Session): Promise<void> {
+// POST /api/items/<id>/exploration/<what>: actions { action, ficha, text,
+// redo? } on a finding, general { text }, approve { text? }.
+async function postExploration(req: IncomingMessage, res: ServerResponse, id: string, what: string, session: Session): Promise<void> {
   if (!(req.headers['content-type'] ?? '').startsWith('application/json')) {
     json(res, 415, { error: 'se espera JSON' });
     return;
@@ -171,8 +174,13 @@ async function postFichaAction(req: IncomingMessage, res: ServerResponse, id: st
     return;
   }
   try {
-    const done = await runFichaAction(ctx.entry, ctx.pr, ctx.review, session, body);
+    const done = what === 'approve'
+      ? await runApprove(ctx.entry, ctx.pr, ctx.review, session, body)
+      : what === 'general'
+        ? await runGeneralComment(ctx.entry, ctx.pr, session, body)
+        : await runFichaAction(ctx.entry, ctx.pr, ctx.review, session, body);
     forgetExploration(ctx.entry.productRepo, ctx.pr.number);
+    forgetDetails(ctx.entry.productRepo);
     json(res, 200, done);
   } catch (error) {
     if (error instanceof FichaActionError) json(res, 409, { error: error.message });
@@ -236,9 +244,9 @@ async function serveEvidence(res: ServerResponse, raw: string): Promise<void> {
 // path it doesn't own.
 export async function handleDashboard(req: IncomingMessage, res: ServerResponse, path: string, session: Session): Promise<boolean> {
   const login = session.login;
-  const fichaAction = /^\/api\/items\/(.+)\/exploration\/actions$/.exec(path);
-  if (fichaAction && req.method === 'POST') {
-    await postFichaAction(req, res, decodeURIComponent(fichaAction[1]), session);
+  const explorationPost = /^\/api\/items\/(.+)\/exploration\/(actions|general|approve)$/.exec(path);
+  if (explorationPost && req.method === 'POST') {
+    await postExploration(req, res, decodeURIComponent(explorationPost[1]), explorationPost[2], session);
     return true;
   }
   const action = /^\/api\/items\/(.+)\/actions$/.exec(path);

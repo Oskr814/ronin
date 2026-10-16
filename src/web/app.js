@@ -409,7 +409,7 @@ function headHTML(item) {
   if (item.kind === 'pr' && pr?.author) facts.push(`de ${pr.author}`);
   return `<div class="head">
     <div class="crumb"><i style="background:${repoColor(item.repo)}"></i>${esc(item.repo)} · ${item.kind === 'pr' ? 'Pull request' : item.kind === 'issue' ? 'Issue' : 'Tarea'}</div>
-    <div class="row"><h1>${esc(item.title)}${item.number !== undefined ? ` <span class="n">${esc(itemRef(item))}</span>` : ''}</h1>${url ? `<a class="gh" href="${esc(url)}" target="_blank" rel="noopener">GitHub ↗</a>` : ''}${actionsHTML(d)}</div>
+    <div class="row"><h1>${esc(item.title)}${item.number !== undefined ? ` <span class="n">${esc(itemRef(item))}</span>` : ''}</h1>${url ? `<a class="gh" href="${esc(url)}" target="_blank" rel="noopener">GitHub ↗</a>` : ''}${d?.exploration ? '<button class="gh" data-xpr="general">Comentario general</button>' : ''}${actionsHTML(d)}${d?.exploration ? '<button class="act-btn" data-xpr="approve">Aprobar…</button>' : ''}</div>
     <div class="state">${chips.map(([cls, text]) => `<span class="chip ${cls}">${esc(text)}</span>`).join('')}${facts.map((f) => `<span>${esc(f)}</span>`).join('')}</div></div>`;
 }
 
@@ -781,6 +781,41 @@ const FICHA_ACTIONS = {
   cambios: { title: 'Pedir cambios', field: 'Qué cambiar en la propuesta', btn: 'Pedir cambios', placeholder: 'Por ejemplo: que el aviso diga “No se encontró el producto o ya fue eliminado por otro usuario”', redo: true },
   issue: { title: 'Pedir un issue aparte', field: 'Qué tiene que tener el issue', btn: 'Pedir el issue', placeholder: 'Por ejemplo: revisar todos los toasts de error de catálogos' },
   pregunta: { title: 'Preguntarle a ronin', field: 'Tu pregunta', btn: 'Preguntar', placeholder: '¿Esto pasa también como Sales?' },
+  // On the whole PR, not a finding.
+  general: { pr: true, title: 'Comentario general', field: 'Sobre varias fichas a la vez, o lo que las próximas exploraciones no deben volver a proponer', btn: 'Comentar', placeholder: 'Por ejemplo: F-0017 y F-0018 no aplican, el listado de catálogos lo usa una sola persona' },
+  approve: { pr: true, optional: true, title: 'Aprobar la exploración', field: 'Comentario de la review (opcional)', btn: 'Aprobar', placeholder: 'Por ejemplo: las de catálogos van primero' },
+};
+
+function openPrDialog(kind) {
+  const item = S.sel && itemById(S.sel);
+  if (!item || !FICHA_ACTIONS[kind]) return;
+  S.menu = false;
+  S.fmenu = false;
+  S.fdialog = { item: item.id, pr: item.number, action: kind, text: '', redo: false, sending: false, error: null };
+  renderFichaDialog();
+}
+
+// What approving does, with what's left to look at: the findings that open
+// an issue, the rejected ones, those nobody decided on and those ronin is
+// still applying a comment on (approving waits for them).
+function approveSummaryHTML(itemId) {
+  const data = S.expl[itemId]?.data;
+  if (!data) return '<p class="help">Leyendo las fichas…</p>';
+  const status = (f) => fichaStatus(f, data.ronin, itemId);
+  const li = (f) => `<li><span class="id">${esc(f.id)}</span><span class="t">${esc(f.titulo)}</span></li>`;
+  const keep = data.fichas.filter((f) => f.estado !== 'rechazado');
+  const rejected = data.fichas.filter((f) => f.estado === 'rechazado');
+  const undecided = data.fichas.filter((f) => status(f) === 'decidir');
+  const waiting = data.fichas.filter((f) => status(f) === 'esperando');
+  return `<div class="sum"><p class="sumh">${dotClass('ok')}Abren su issue (${keep.length})</p>${keep.length ? `<ul>${keep.map(li).join('')}</ul>` : ''}
+    <p class="sumh">${dotClass('crit')}Rechazadas, sin issue (${rejected.length})</p>${rejected.length ? `<ul>${rejected.map(li).join('')}</ul>` : ''}
+    ${undecided.length ? `<p class="warnbox">${undecided.length === 1 ? 'Queda 1 ficha' : `Quedan ${undecided.length} fichas`} sin revisar (${esc(undecided.map((f) => f.id).join(', '))}). Si aprobás, también abren su issue.</p>` : ''}
+    ${waiting.length ? `<p class="warnbox">ronin todavía está aplicando comentarios en ${esc(waiting.map((f) => f.id).join(', '))}. Aprobá cuando responda.</p>` : ''}
+    <p class="help">Se envía como tu review <b>Approve</b> en GitHub. Con eso ronin marca las fichas, abre un issue por cada una que siga en pie y mergea el PR.</p></div>`;
+}
+const waitingCount = (itemId) => {
+  const data = S.expl[itemId]?.data;
+  return data ? data.fichas.filter((f) => fichaStatus(f, data.ronin, itemId) === 'esperando').length : 0;
 };
 
 // The comment as it will be written — the same words the server writes
@@ -814,12 +849,13 @@ function renderFichaDialog() {
   if (!layer) {
     layer = Object.assign(document.body.appendChild(document.createElement('div')), { id: 'flayer' });
     layer.innerHTML = `<div class="scrim"><div class="dlg" role="dialog" aria-modal="true" aria-labelledby="fdlg-t">
-      <p class="help">${esc(d.fid)} · ${esc(d.titulo)}</p>
+      <p class="help">${meta.pr ? `PR #${esc(d.pr)}` : `${esc(d.fid)} · ${esc(d.titulo)}`}</p>
       <h2 id="fdlg-t">${esc(meta.title)}</h2>
-      <label class="field"><span>${esc(meta.field)}</span><textarea id="fdlg-text" rows="4" maxlength="4000" placeholder="${esc(meta.placeholder)}"></textarea></label>
+      ${d.action === 'approve' ? `<div id="fdlg-sum">${approveSummaryHTML(d.item)}</div>` : ''}
+      <label class="field"><span>${esc(meta.field)}</span><textarea id="fdlg-text" rows="${meta.optional ? 2 : 4}" maxlength="4000" placeholder="${esc(meta.placeholder)}"></textarea></label>
       ${meta.quick ? `<div class="quick-r">${meta.quick.map((q) => `<button class="pill" data-quick="${esc(q)}">${esc(q)}</button>`).join('')}</div>` : ''}
       ${meta.redo ? `<label class="check"><input type="checkbox" id="fdlg-redo"${d.redo ? ' checked' : ''}><span>Rehacer la captura del después<small>ronin levanta la app con el cambio borrador corregido y reemplaza la imagen. Tarda unos minutos.</small></span></label>` : ''}
-      <div class="prev"><div class="lbl">Comentás como ${esc(S.snap?.me ?? '')} en ${esc(d.fid)}, en “Files changed” del PR #${esc(d.pr)}</div><div class="md" id="fdlg-prev"></div></div>
+      ${d.action === 'approve' ? '' : `<div class="prev"><div class="lbl">${d.action === 'general' ? `Comentás como ${esc(S.snap?.me ?? '')} en el PR #${esc(d.pr)}` : `Comentás como ${esc(S.snap?.me ?? '')} en ${esc(d.fid)}, en “Files changed” del PR #${esc(d.pr)}`}</div><div class="md" id="fdlg-prev"></div></div>`}
       <p class="bad" id="fdlg-err" hidden></p>
       <div class="foot-d"><span class="kbd-hint"><kbd>Ctrl</kbd> <kbd>Enter</kbd> para enviar</span><button class="btn-s" id="fdlg-no">Cancelar</button><button class="btn-s ${meta.cls === 'danger' ? 'danger-solid' : 'primary'}" id="fdlg-yes"></button></div></div></div>`;
     const area = $('#fdlg-text');
@@ -834,10 +870,16 @@ function renderFichaDialog() {
     area.focus();
   }
   const typed = d.text.trim();
-  $('#fdlg-prev').innerHTML = md(fichaCommentText(d.action, typed || '…', d.redo), itemById(d.item)?.repo ?? '');
+  const prev = $('#fdlg-prev');
+  if (prev) prev.innerHTML = md(d.action === 'general' ? `@ronin-agent ${typed || '…'}` : fichaCommentText(d.action, typed || '…', d.redo), itemById(d.item)?.repo ?? '');
+  const sum = $('#fdlg-sum');
+  if (sum) {
+    const html = approveSummaryHTML(d.item);
+    if (sum._html !== html) sum.innerHTML = sum._html = html;
+  }
   const yes = $('#fdlg-yes');
-  yes.textContent = d.sending ? 'Comentando…' : meta.btn;
-  yes.disabled = d.sending || !typed;
+  yes.textContent = d.sending ? (d.action === 'approve' ? 'Aprobando…' : 'Comentando…') : meta.btn;
+  yes.disabled = d.sending || (!meta.optional && !typed) || (d.action === 'approve' && waitingCount(d.item) > 0);
   $('#fdlg-err').hidden = !d.error;
   $('#fdlg-err').textContent = d.error ?? '';
 }
@@ -859,14 +901,26 @@ async function postFichaComment(itemId, ficha, action, text, redo) {
   await loadExploration(itemId);
 }
 
+// The general comment and the approval, on the whole PR.
+async function postPrDecision(d) {
+  const text = d.text.trim();
+  const done = await api(`/api/items/${encodeURIComponent(d.item)}/exploration/${d.action}`, { method: 'POST', body: JSON.stringify(text ? { text } : {}) });
+  toast(d.action === 'approve' ? `Aprobaste el PR #${d.pr}. ronin marca las fichas, abre sus issues y lo mergea.` : `Comentaste en el PR #${d.pr}. ronin lo va a aplicar y te responde ahí.`, done.url);
+  if (S.detail[d.item]) S.detail[d.item].at = 0;
+  if (S.expl[d.item]) S.expl[d.item].at = 0;
+  await Promise.all([loadDetail(d.item), loadExploration(d.item)]);
+}
+
 async function sendFichaAction() {
   const d = S.fdialog;
-  if (!d || d.sending || !d.text.trim()) return;
+  const meta = d && FICHA_ACTIONS[d.action];
+  if (!d || d.sending || (!meta.optional && !d.text.trim())) return;
   d.sending = true;
   d.error = null;
   renderFichaDialog();
   try {
-    await postFichaComment(d.item, d.ficha, d.action, d.text.trim(), d.redo);
+    if (meta.pr) await postPrDecision(d);
+    else await postFichaComment(d.item, d.ficha, d.action, d.text.trim(), d.redo);
     S.fdialog = null;
     renderFichaDialog();
   } catch (error) {
@@ -926,6 +980,7 @@ async function loadExploration(id) {
     entry.at = Date.now();
   }
   if (S.sel === id) renderCenter();
+  if (S.fdialog?.item === id) renderFichaDialog();
 }
 
 // The item's conversation as GitHub shows it, oldest first: general
@@ -1038,6 +1093,7 @@ function wireCenter() {
     };
   }
   for (const button of document.querySelectorAll('[data-flista]')) button.onclick = toggleLista;
+  for (const button of document.querySelectorAll('[data-xpr]')) button.onclick = () => openPrDialog(button.dataset.xpr);
   const fmore = $('#fmore');
   if (fmore) fmore.onclick = (event) => {
     event.stopPropagation();

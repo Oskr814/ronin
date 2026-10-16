@@ -355,6 +355,8 @@ Qué pasó, cómo reproducirlo, evidencia (con las capturas del antes) y propues
    - **crear un issue** aparte a partir del comentario;
    - **responder** una pregunta.
 
+   Las mismas decisiones se pueden tomar desde el tablero, que comenta como quien entró (§15.12).
+
    Un comentario general del PR que menciona a ronin también se aplica: puede cubrir varias fichas a la vez ("los de mobile se resuelven con F-0003"), que se rechazan o corrigen como arriba, y dejar en `knowledge.md` lo que las exploraciones siguientes no deben volver a proponer. Se procesa antes del merge, así que no se abren issues de fichas que ese comentario descartó.
 4. Approve + merge (mismo gate que el resto): al ver el PR aprobado, ronin marca como `aprobado` **las fichas que siguen en pie**, les crea su issue, commitea ambos al PR y recién entonces lo mergea (si sigue aprobado), así la base queda con el estado y el número de issue de cada ficha. La corrida siguiente abre el PR nuevo. Asignar ese issue a ronin lo mete en el flujo de `fix-issue` o de spec de siempre.
 5. Sin excepciones: ninguna ficha abre issue antes de la aprobación, ni siquiera un bug de gravedad `bug`. Así una ficha rechazada nunca deja un issue abierto. Los problemas del **entorno de desarrollo** (seed, stubs), que el evaluador marca con `entorno`, siguen el mismo camino.
@@ -466,9 +468,9 @@ Ahora cada evento tiene su handler:
 
 **Métricas**: el handler loguea `event_start` con `delayMs` (desde que llegó el evento hasta que tiene sus recursos) y `event_complete` al terminar, junto al `tick_complete` del tick.
 
-### 15. Tablero web (#65, #85)
+### 15. Tablero web (#65, #85, #93)
 
-Una página para ver qué está haciendo ronin sin recorrer GitHub issue por issue ni leer el log: qué agentes corren y qué hacen paso a paso, qué issues esperan a alguien y por qué, cómo va cada stack de slices, qué previews están arriba y cuánto le queda a cada cuenta de Claude. Cada issue o PR tiene su ficha, con lo que dice en GitHub, y desde ahí se le pueden pedir a ronin los comandos más usados (15.11). Se ve solo por la tailnet.
+Una página para ver qué está haciendo ronin sin recorrer GitHub issue por issue ni leer el log: qué agentes corren y qué hacen paso a paso, qué issues esperan a alguien y por qué, cómo va cada stack de slices, qué previews están arriba y cuánto le queda a cada cuenta de Claude. Cada issue o PR tiene su ficha, con lo que dice en GitHub, y desde ahí se le pueden pedir a ronin los comandos más usados (15.11). Un PR de exploración se revisa ahí mismo, ficha por ficha (15.12). Lo que se hace desde la página sale en GitHub a nombre de quien entró (15.3). Se ve solo por la tailnet.
 
 #### 15.1 Qué muestra
 
@@ -481,6 +483,7 @@ Una página para ver qué está haciendo ronin sin recorrer GitHub issue por iss
 - **Centro: la ficha del ítem.** Pestañas, una por ítem abierto; al cargar se abren las de los agentes que corren. Cada una muestra la ficha del issue o PR, tenga corridas o no:
   - **Encabezado.** Título, repo, el link a GitHub y el botón *Acciones* (15.11). Debajo, chips con su estado. El PR del ítem (o, en un issue, el de la slice que avanza) suma si tiene conflictos con su base, sus checks, la review y si es draft. Un issue suma cuántas slices van mergeadas y qué espera.
   - **Actividad.** Una línea con la última corrida (estado, hace cuánto, duración, costo y el error si falló) y las anteriores de los últimos 14 días, cada una con su transcript. Si hay una en curso, una tarjeta con lo último que dijo el agente, sus últimos cuatro pasos y el reloj, que se sigue en vivo.
+  - **Pestaña *Fichas*,** solo en un PR de exploración, y la primera: las propuestas que trae, para revisarlas y decidir (15.12). Mientras está abierta, la columna de contexto se oculta para dejarle lugar.
   - **Pestañas *Issue*, *PR* y *Comentarios*.** La descripción del issue y la de su PR (o la del PR y la de su issue de tracking), y los comentarios del ítem, con los de ronin marcados. Es el markdown de GitHub, saneado (15.3). Un `#123` abre ese ítem en el tablero si está en la barra lateral, y si no, en GitHub.
   - **El transcript de una corrida** se abre desde la actividad, con "← Ficha" para volver: los textos del agente y sus pasos (leyó, buscó, editó, corrió), arriba las corridas del ítem y abajo el estado, el reloj, el modelo y el worktree. Una corrida en curso se sigue en vivo, y si arranca una nueva sobre el ítem abierto, aparece sola. Lo que no es un issue ni un PR (el changelog) abre directo en el transcript, igual que una corrida elegida en *Hoy*.
 - **Contexto, a la derecha.**
@@ -523,12 +526,15 @@ src/web/               la aplicación: HTML, CSS, JS y fuentes, sin build; marke
 
 #### 15.3 Login con GitHub
 
-La tailnet ya limita quién llega. El login suma una segunda barrera y la identidad con la que ronin firma las acciones (15.11).
+La tailnet ya limita quién llega. El login suma una segunda barrera, y el token con el que el tablero escribe en GitHub a nombre de quien entró (15.11, 15.12).
 
-- **OAuth App de la cuenta del dueño, sin scopes:** solo hace falta saber quién es. Se configura con `DASHBOARD_GITHUB_CLIENT_ID` y `DASHBOARD_GITHUB_CLIENT_SECRET`, y su callback es `<DASHBOARD_URL>/api/auth/callback`. Funciona aunque esa URL solo se vea en la tailnet, porque la redirección la sigue el navegador.
-- **Flujo.** `/api/auth/login` redirige a GitHub con un `state` al azar en una cookie de corta vida. `/api/auth/callback` verifica el `state`, canjea el código desde el servidor, lee `GET /user` y descarta el token de GitHub: no se guarda.
-- **Quién entra.** Solo los logins de `DASHBOARD_ALLOWED_USERS`, separados por coma. La lista se vuelve a mirar en cada pedido, así que sacar a alguien lo deja afuera en el momento.
-- **Sesión.** Es una cookie firmada con HMAC (`DASHBOARD_SESSION_SECRET`) que lleva el login y el vencimiento (`DASHBOARD_SESSION_DAYS`, 7). Es `HttpOnly`, `Secure` y `SameSite=Lax`, y no hay estado de sesión en el servidor. Cambiar el secreto cierra todas las sesiones.
+- **OAuth App de la cuenta del dueño, con el scope `repo`:** sirve para comentar y aprobar como la persona. Se configura con `DASHBOARD_GITHUB_CLIENT_ID` y `DASHBOARD_GITHUB_CLIENT_SECRET`, y su callback es `<DASHBOARD_URL>/api/auth/callback`. Funciona aunque esa URL solo se vea en la tailnet, porque la redirección la sigue el navegador.
+- **Por qué `repo`:** el token puede escribir en todos los repos de la persona. Se aceptó porque el tablero solo se ve por la tailnet y solo para los logins de `DASHBOARD_ALLOWED_USERS` (#93). Una GitHub App acotaría mejor los permisos, pero hay que registrarla e instalarla en cada organización.
+- **Flujo.** `/api/auth/login` redirige a GitHub con el scope y con un `state` al azar en una cookie de corta vida. `/api/auth/callback` verifica el `state`, canjea el código desde el servidor y lee `GET /user`. Si la persona destildó el scope en la pantalla de GitHub, el login se rechaza explicando por qué.
+- **Quién entra.** Solo los logins de `DASHBOARD_ALLOWED_USERS`, separados por coma. La lista se vuelve a mirar en cada pedido, así que sacar a alguien lo deja afuera en el momento. Un login rechazado (fuera de la lista o sin el scope) revoca su token en GitHub.
+- **Sesión.** Es una cookie con el login, el vencimiento (`DASHBOARD_SESSION_DAYS`, 7) y el token de GitHub, cifrada con AES-256-GCM con una clave derivada de `DASHBOARD_SESSION_SECRET`. GCM oculta el token y rechaza una cookie cambiada a mano, y no hay estado de sesión en el servidor. Es `HttpOnly`, `Secure` y `SameSite=Lax`. Cambiar el secreto cierra todas las sesiones, y una cookie del formato anterior (firmada, sin token) pide volver a entrar.
+- **Salir** revoca el token en GitHub (`DELETE /applications/{client_id}/token`) y borra la cookie, aunque GitHub falle.
+- **Organizaciones.** Si una organización restringe las OAuth Apps de terceros, un admin tiene que aprobar el tablero para que el token vea sus repos. Hasta entonces, GitHub responde 403 o 404 al comentar, y la página lo explica.
 - **Lo demás:**
   - Un pedido que no es `GET` y trae un `Origin` de otro sitio recibe 403. Las acciones además solo aceptan JSON, que un formulario de otro sitio no puede mandar.
   - La app se sirve con una CSP que solo permite scripts propios (`script-src 'self'`, `frame-ancestors 'none'`). Por eso las fuentes van en `src/web/fonts/` y no se cargan de Google Fonts.
@@ -600,6 +606,10 @@ Todo, salvo los webhooks y `/api/auth/*`, pide sesión:
 | `GET /api/items/<id>` | Las corridas de un ítem en los últimos 14 días |
 | `GET /api/items/<id>/detail` | Su ficha: el issue y el PR con los comentarios del ítem, y las acciones que se le pueden pedir, cada una con el comentario que dejaría |
 | `POST /api/items/<id>/actions` | Pide una de esas acciones: `{ action, text? }` (15.11) |
+| `GET /api/items/<id>/exploration` | Las fichas de un PR de exploración abierto, leídas en partes, con su hilo (15.12) |
+| `POST /api/items/<id>/exploration/actions` | Comenta en una ficha: `{ action, ficha, text, redo? }` (15.12) |
+| `POST /api/items/<id>/exploration/general` | Un comentario general en el PR: `{ text }` (15.12) |
+| `POST /api/items/<id>/exploration/approve` | Aprueba el PR: `{ text? }` (15.12) |
 | `GET /api/runs/<runId>` | El transcript de una corrida |
 | `GET /api/runs/<runId>/stream` | Lo que se le agrega, por *server-sent events*, hasta que termina |
 | `GET /api/evidence/<owner>/<repo>/<sha>/<ruta>` | Una captura que publicó ronin (§11.5), leída del clon del repo de producto |
@@ -626,13 +636,49 @@ Desde la ficha se le piden a ronin los comandos que hoy se piden comentando en G
 
 En un issue, las acciones de PR van al PR de su slice que avanza ("Resolver conflictos en #849").
 
-**Cómo corre.** ronin primero comenta en el issue o PR *"**<login>** pidió `/resolve-conflicts` desde el tablero."* (con `postIssueComment`), y ese comentario reemplaza al que escribiría una persona. Después corre el mismo código que un comentario en GitHub: `launchConflictsWorker`, `launchPreviewWorker`, `applyAutoMergeCommand` o `setIssueState(…, 'in-progress')`. El worker responde ese comentario, igual que si lo hubiera escrito alguien, y el PR conserva quién pidió qué. El comentario no menciona a ronin, así que ningún escaneo de menciones lo vuelve a tomar.
+**Cómo corre.** El tablero escribe el comando como la persona, con su token (`server/api/github-as-user.ts`): `@ronin-agent /resolve-conflicts`, o `@ronin-agent /preview` con lo que hay que preparar en las líneas de abajo, que el parser de `/preview` también lee. Desde ahí es un comentario como cualquiera: llega su webhook, ronin le pone 👀 y lanza el worker, que lo responde. GitHub muestra quién lo pidió. Responder y destrabar comenta la respuesta como la persona, y ronin le pone `ronin:in-progress` al issue; si GitHub rechazó el comentario, el label no se toca.
 
-**Antes de pedirla,** un diálogo muestra el comentario que va a quedar, renderizado y actualizado mientras se escribe. El servidor la valida contra la misma lista, armada con lo que leyó de GitHub. Si la acción ya no aplica, o le falta o le sobra el texto, responde 409 sin comentar nada.
+Antes de #93, ronin comentaba *"**<login>** pidió `/x` desde el tablero"* y lanzaba el worker en el momento. Ahora el worker espera al webhook, como cuando alguien escribe en GitHub, y si no llega lo levanta el tick.
 
-**No están** `/fix-comments` ni `/spike`: no son un worker que se lanza, sino comandos que el tick toma de los comentarios. Tampoco cancelar o reintentar una corrida, que necesitan coordinarse con los locks del tick.
+**Antes de pedirla,** un diálogo muestra el comentario que va a quedar ("Comentás en #849 como oskr814"), renderizado y actualizado mientras se escribe. El servidor la valida contra la misma lista, armada con lo que leyó de GitHub. Si la acción ya no aplica, o le falta o le sobra el texto, responde 409 sin comentar nada. Si GitHub ya no acepta el token de la persona, responde 401 y la página pide volver a entrar.
+
+**No están** `/fix-comments` ni `/spike`, aunque ahora que las acciones son comentarios sumarlos es agregarlos a la lista. Tampoco cancelar o reintentar una corrida, que necesitan coordinarse con los locks del tick.
 
 **Pendiente:** cancelar y reintentar corridas, `/fix-comments` y `/spike` desde la página, una vista de varios runners juntos y sacar el alias `/webhook`.
+
+#### 15.12 Revisar una exploración (#93)
+
+En GitHub, un PR de exploración (§11.7) cuesta revisarlo: "Files changed" muestra cada ficha como diff de markdown, así que las capturas se ven abriendo archivo por archivo; `inventory.yml`, `knowledge.md` y `runs/` aparecen en el medio; y para decidir hay que comentar el archivo de cada ficha. La pestaña *Fichas* de su ficha en el tablero es para eso.
+
+- **La lista.** Las fichas que trae el PR (`findingsAddedOverBase`, como el digest), agrupadas por cómo están:
+  - **Por decidir:** nadie la comentó.
+  - **Esperando a ronin:** el último comentario es de una persona, y es nuevo o es una respuesta que lo menciona; los mismos que toma `pendingFeedback`.
+  - **Respondidas por ronin.**
+  - **Listas para aprobar.**
+  - **Aprobadas** y **rechazadas,** según su archivo.
+
+  Arriba, "Revisadas X de N" y filtros por tipo y por viewport. Abajo, las corridas del PR.
+- **La ficha.** Leída en partes con `parseFindingBody` (`exploration/output.ts`, el inverso de `renderFindingBody`):
+  - Qué pasa y qué se esperaba.
+  - El antes y el después lado a lado, con miniaturas si hay varias capturas del antes y una vista en grande (←/→ recorre las del antes). Si ronin rehízo el después, *ver la anterior* muestra la que reemplazó, buscada en la historia del archivo aunque el título y el nombre hayan cambiado.
+  - La propuesta.
+  - Plegados: los pasos, la evidencia y el cambio borrador.
+  - Su hilo, con una caja para comentar.
+- **Navegación.** `j`/`k` pasa de ficha y la ficha abierta queda en la URL (`?f=backoffice/F-0017`). En el celular, primero la lista y después la ficha.
+- **Decidir.** Cada acción es un comentario sobre el archivo de la ficha (`subject_type: file`), escrito como la persona: lo que escribiría en "Files changed". `exploration/flow.ts` lo lee como cualquier comentario en una ficha y no necesita la mención, porque un comentario nuevo en una ficha ya es feedback.
+
+  | Botón | Lo que queda comentado |
+  |---|---|
+  | Rechazar (`r`), con motivos rápidos | `Rechazo esta ficha: <motivo>` |
+  | Pedir cambios (`c`) | el texto; con *Rehacer la captura del después*, suma `También hay que rehacer la captura del después.` |
+  | Pedir un issue aparte | `Abrí un issue aparte: <texto>` |
+  | Preguntar, o la caja del hilo | el texto tal cual |
+  | Dejarla así (`a`) | nada: es una marca del navegador (`localStorage`) que la pasa a *Listas para aprobar* y cuenta para el progreso |
+
+  En una ficha ya rechazada o aprobada solo se puede preguntar o comentar. Mientras alguna espera a ronin, la página vuelve a leer las fichas cada 10 s en vez de cada 30.
+- **Comentario general.** `@ronin-agent <texto>` en el PR, como la persona, para decidir sobre varias fichas a la vez o dejar en `knowledge.md` lo que no hay que volver a proponer (lo lee `pendingGeneralFeedback`).
+- **Aprobar.** Antes de enviar, el diálogo muestra qué fichas abren issue, cuáles quedan rechazadas y cuáles nadie revisó. Lo que envía es una review *Approve* a nombre de la persona, con un comentario opcional. Desde ahí sigue el gate de siempre: `approveAndMerge` marca las fichas, abre sus issues y mergea. No se puede aprobar mientras ronin esté aplicando un comentario, que podría rechazar alguna ficha.
+- **De dónde sale.** `GET /api/items/<id>/exploration` (`server/api/dashboard-exploration.ts`) lee las fichas del clon del repo de producto, en la rama del PR, como `dashboard-evidence.ts` lee las capturas. Antes trae la rama y su base con un `fetch`, como mucho uno por minuto. Los hilos salen de `listFileReviewComments`, agrupados por app e id de ficha. Usa la misma caché que la ficha (15.8), y se descarta después de comentar desde la página.
 
 ## Estado actual
 

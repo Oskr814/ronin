@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { commentOnFile, commentOnIssue, GithubUserError } from './github-as-user.js';
+import { approvePr, commentOnFile, commentOnIssue, GithubUserError } from './github-as-user.js';
 
 const reply = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
 const fetchMock = vi.fn();
@@ -21,6 +21,13 @@ describe('github-as-user', () => {
     await commentOnFile('gho_user', 'acme/product', 840, 'docs/exploration/backoffice/findings/F-0017-x.md', 'Rechazo esta ficha: no');
     expect(fetchMock.mock.calls[1][0]).toBe('https://api.github.com/repos/acme/product/pulls/840/comments');
     expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({ body: 'Rechazo esta ficha: no', commit_id: 'abc123', path: 'docs/exploration/backoffice/findings/F-0017-x.md', subject_type: 'file' });
+  });
+
+  it('approves the PR with a review, as GitHub’s Review changes does', async () => {
+    fetchMock.mockResolvedValueOnce(reply(200, { id: 3, html_url: 'https://github.com/acme/product/pull/840#pullrequestreview-3' }));
+    await approvePr('gho_user', 'acme/product', 840, 'dale');
+    expect(fetchMock.mock.calls[0][0]).toBe('https://api.github.com/repos/acme/product/pulls/840/reviews');
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ event: 'APPROVE', body: 'dale' });
   });
 
   it('asks to log in again for a token GitHub no longer takes, and explains a refusal', async () => {
