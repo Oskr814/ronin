@@ -476,17 +476,32 @@ El diseño sale del prototipo [`docs/dashboard/prototype.html`](dashboard/protot
 - ***Hoy*.** La línea de las últimas 12 horas, un carril por repo y cada corrida como una barra (las que fallaron con la punta roja), y los totales del día: corridas, cuántas salieron bien al primer intento, duración mediana y reintentos.
 - **Celular.** La barra lateral pasa a ser la lista principal; un ítem abre el transcript con el contexto debajo.
 
-#### 15.2 Dónde corre y quién lo ve
+#### 15.2 El servidor de ronin: API y aplicación web
 
-- **El servidor que ya existe.** `webhooks/server.ts` pasa a ser el servidor web de ronin. En el mismo puerto (`WEBHOOK_PORT`, 3939) atiende `POST /webhook`, igual que hoy, y el tablero en todo lo demás. No hace falta un servicio nuevo: se despliega con `webhook:setup`.
-- **Público, en el dominio de ronin.** Hoy `https://ronin-agent.redmotoshn.com` entra por un túnel de Cloudflare y nginx-proxy-manager hasta el 3939. El tablero queda en la raíz de ese dominio y GitHub sigue entregando en `/webhook`. Con un dominio propio, cambian `DASHBOARD_PUBLIC_URL`, la URL de los webhooks (`scripts/init-webhooks.sh`) y la de callback de la OAuth App. También se entra desde la LAN y la tailnet, pero por el dominio: la cookie de sesión es `Secure` y no viaja por `http://`.
-- **Errores aislados.** Un error del tablero no puede tirar el proceso que recibe los webhooks. La ruta `/webhook` se resuelve antes que cualquier otra y el código del tablero está envuelto: un error responde 500 y se loguea. Si el proceso igual se cae, systemd lo reinicia y el tick levanta lo que llegó mientras tanto (§14).
-- **Login con GitHub.** Todo menos `/webhook` y `/auth/*` pide sesión: la página redirige al login y la API responde 401.
+El servidor que hoy recibe los webhooks (`webhooks/server.ts`) pasa a ser el servidor web de ronin, con dos partes en el mismo puerto: una **API** en `/api/*` y la **aplicación web** del tablero en todo lo demás. Los webhooks quedan dentro de la API.
+
+```
+src/server/
+  index.ts             el proceso: un listener, /api/* a la API, el resto a la app
+  api/
+    webhooks/          POST /api/webhooks/github (antes webhooks/server.ts), events.ts y handler.ts
+    auth.ts            /api/auth/login, /callback, /logout y /me
+    dashboard.ts       los datos del tablero (15.8)
+src/web/               la aplicación web: HTML, CSS, JS y fuentes, sin build
+```
+
+- **La API.** Responde JSON. Cada ruta declara cómo se autentica: los webhooks, con la firma de GitHub (`WEBHOOK_SECRET`), como hoy; `/api/auth/*`, sin sesión, porque es el login; todo lo demás, con la sesión de GitHub (abajo). Un pedido sin sesión recibe 401.
+- **La aplicación web.** Son archivos estáticos sin datos adentro: todo lo pide a la API. Por eso se sirve sin sesión, y cuando la API responde 401 muestra *Entrar con GitHub*. Una ruta que no es un archivo devuelve `index.html`, así que los links a un ítem (`/i/sc-879`) funcionan al recargar. `pnpm build` copia `src/web/` a `dist/web/`.
+- **El proceso y el servicio.** Pasan a llamarse `ronin-server` (antes `ronin-webhook`): `pnpm server` en desarrollo, `pnpm server:setup` y `server:remove` para el servicio. `server:setup` desinstala el servicio viejo si lo encuentra. El puerto pasa a ser `SERVER_PORT` (3939), y `WEBHOOK_PORT` se sigue leyendo si `SERVER_PORT` no está. El handler sigue siendo un proceso por evento (`launchWorker('server/api/webhooks/handler')`).
+- **La ruta de los webhooks.** Pasa de `/webhook` a `/api/webhooks/github`. Hay que actualizar la URL de los hooks ya creados, no crear otros: `init-webhooks.sh` hoy busca el hook por URL, así que con la nueva crearía un segundo hook en cada repo y GitHub entregaría todo dos veces. El script pasa a encontrar el hook de ronin por la URL vieja o la nueva y le cambia la URL. `/webhook` sigue funcionando como alias hasta que todos los hooks apunten a la ruta nueva; después se saca.
+- **En el dominio de ronin.** Hoy `https://ronin-agent.redmotoshn.com` entra por un túnel de Cloudflare y nginx-proxy-manager hasta el 3939. La app queda en la raíz de ese dominio y la API en `/api`. Con un dominio propio, cambian `SERVER_PUBLIC_URL`, la URL de los hooks y la de callback de la OAuth App. También se entra desde la LAN y la tailnet, pero por el dominio: la cookie de sesión es `Secure` y no viaja por `http://`.
+- **Errores aislados.** Un error del tablero no puede tirar el proceso que recibe los webhooks. Los webhooks se resuelven antes que cualquier otra ruta, y el resto del servidor está envuelto: un error responde 500 y se loguea. Si el proceso igual se cae, systemd lo reinicia y el tick levanta lo que llegó mientras tanto (§14).
+- **Login con GitHub.**
   - Usa una OAuth App de GitHub de la cuenta del dueño, sin scopes: solo hace falta saber quién es. Se configura con `DASHBOARD_GITHUB_CLIENT_ID` y `DASHBOARD_GITHUB_CLIENT_SECRET`.
-  - `/auth/login` redirige a GitHub con un `state` al azar en una cookie de corta vida. `/auth/callback` verifica el `state`, canjea el código desde el servidor, lee `GET /user` y descarta el token de GitHub: no se guarda.
+  - `/api/auth/login` redirige a GitHub con un `state` al azar en una cookie de corta vida. `/api/auth/callback` verifica el `state`, canjea el código desde el servidor, lee `GET /user` y descarta el token de GitHub: no se guarda.
   - Entra solo quien está en `DASHBOARD_ALLOWED_USERS` (logins separados por coma). La lista se vuelve a mirar en cada pedido, así que sacar a alguien lo deja afuera en el momento.
-  - La sesión es una cookie firmada con HMAC (`DASHBOARD_SESSION_SECRET`) que lleva el login y el vencimiento (`DASHBOARD_SESSION_DAYS`, 7). Es `HttpOnly`, `Secure` y `SameSite=Lax`, y no hay estado de sesión en el servidor. `/auth/logout` la borra.
-  - Las respuestas del tablero llevan una CSP restrictiva (`default-src 'self'`, `frame-ancestors 'none'`). Por eso las fuentes se sirven desde el propio servidor y no desde Google Fonts.
+  - La sesión es una cookie firmada con HMAC (`DASHBOARD_SESSION_SECRET`) que lleva el login y el vencimiento (`DASHBOARD_SESSION_DAYS`, 7). Es `HttpOnly`, `Secure` y `SameSite=Lax`, y no hay estado de sesión en el servidor. `/api/auth/logout` la borra.
+  - La app se sirve con una CSP restrictiva (`default-src 'self'`, `frame-ancestors 'none'`). Por eso las fuentes van en `src/web/` y no se cargan de Google Fonts.
 - **Lo que se muestra.** Aun con login, todo pasa por `redact()` (`core/logger.ts`): el tablero no debe ser la forma de sacar un secreto que un agente vio. Es de solo lectura. Cuando se sumen acciones, el login de GitHub ya dice quién las pide, y los `POST` van a verificar además el header `Origin`.
 
 #### 15.3 De dónde sale cada dato
@@ -533,11 +548,11 @@ Hoy el motivo vive en el email y en el log (`docs/BLOCKING.md`). `notifyBlocker`
 
 `withSlots` (`core/locks.ts`) espera en un bucle a que se libere un cupo. Mientras espera, deja `.ronin-slots/waiting/<pid>-<n>.json` con el tipo de job, su etiqueta, el repo y desde cuándo, y lo borra al tomar el cupo. Una marca de un pid muerto se ignora.
 
-#### 15.8 Servidor y página
+#### 15.8 Los datos del tablero en la API
 
-- **GitHub con cache.** El servidor consulta GitHub con el token de ronin y guarda las respuestas `DASHBOARD_GITHUB_TTL_SECONDS` (60): con varias pestañas abiertas no se multiplican las llamadas. El cache de un repo se invalida cuando aparece o termina una corrida suya.
-- **API.** `GET /api/snapshot` trae la barra lateral, los cupos, el uso y el último tick. `GET /api/items/<id>` trae el contexto de un ítem con sus corridas. `GET /api/runs/<runId>` trae un transcript, y `GET /api/runs/<runId>/stream` lo sigue por *server-sent events* mientras la corrida está abierta.
-- **Página.** HTML, CSS y JS sin build ni framework, como el prototipo, en `src/dashboard/public/`, con las fuentes incluidas. `pnpm build` la copia a `dist/dashboard/public/`.
+- **GitHub con cache.** La API consulta GitHub con el token de ronin y guarda las respuestas `DASHBOARD_GITHUB_TTL_SECONDS` (60): con varias pestañas abiertas no se multiplican las llamadas. El cache de un repo se invalida cuando aparece o termina una corrida suya.
+- **Rutas.** `GET /api/snapshot` trae la barra lateral, los cupos, el uso y el último tick. `GET /api/items/<id>` trae el contexto de un ítem con sus corridas. `GET /api/runs/<runId>` trae un transcript, y `GET /api/runs/<runId>/stream` lo sigue por *server-sent events* mientras la corrida está abierta.
+- **La app.** HTML, CSS y JS sin build ni framework, como el prototipo, en `src/web/` (15.2).
 
 #### 15.9 Varios runners
 
@@ -553,9 +568,10 @@ Cada etapa es un PR que se puede mergear solo:
 
 1. **Registro por corrida y uso por cuenta** (15.4, 15.5). Ya sirve sin tablero: `jq` sobre `logs/runs/`.
 2. **Motivo de bloqueo y cola** (15.6, 15.7).
-3. **Login con GitHub y página con los datos locales.** El login va primero: el tablero no se sirve en el dominio sin él. Después, la barra lateral sale de las corridas, más el transcript en vivo y la barra de estado.
-4. **GitHub.** Issues de tracking, slices, checks y previews en la barra lateral y el contexto.
-5. ***Hoy*.** La línea de 12 horas y los totales, desde `logs/runs/`.
+3. **El servidor de ronin** (15.2), sin tablero todavía. `webhooks/` pasa a `src/server/`, los webhooks a `/api/webhooks/github` (con el alias `/webhook`), el servicio a `ronin-server`, y `init-webhooks.sh` actualiza los hooks existentes. También actualiza las referencias de §3.1 y §14. Cuando todos los hooks apuntan a la ruta nueva, otro PR saca el alias.
+4. **Login con GitHub y app con los datos locales.** El login va primero: la app no se sirve en el dominio sin él. Después, la barra lateral sale de las corridas, más el transcript en vivo y la barra de estado.
+5. **GitHub.** Issues de tracking, slices, checks y previews en la barra lateral y el contexto.
+6. ***Hoy*.** La línea de 12 horas y los totales, desde `logs/runs/`.
 
 ## Estado actual
 
@@ -575,7 +591,7 @@ Cada etapa es un PR que se puede mergear solo:
 
 **Pendiente, fuera de este scaffold:**
 
-- Tablero web (§15): spec escrito, implementación pendiente en 5 etapas (§15.11)
+- Tablero web (§15): spec escrito, implementación pendiente en 6 etapas (§15.11)
 - Nunca se probó en vivo contra un PR real con specs de e2e afectados (el dry run de §10 usó un spec sin ningún componente de UI)
 - Exploración y propuestas de mejora (§11): implementadas las etapas 1 a 5 (`app:up` y smoke, memoria, inventario y selección, exploración con navegadores y evaluador, PR de exploración rodante, ventana nocturna, entrevistas por Remote Control y `/spec`). Pendiente: calibrar la calidad de las propuestas con varias corridas a mano antes de activar la exploración nocturna (`explore` en `repos.json`)
 
