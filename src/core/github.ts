@@ -408,8 +408,8 @@ export async function listOpenPrsWithChecks(): Promise<OpenPr[]> {
 }
 
 // An issue or PR as the dashboard's item page shows it (#85): its body and
-// its general comments, oldest first. A PR adds its branches and whether it
-// merges cleanly. Review comments (inline) aren't here.
+// its general comments, oldest first. A PR adds its branches, whether it
+// merges cleanly, its reviews and its review threads (the inline comments).
 export interface Discussion {
   number: number;
   title: string;
@@ -423,14 +423,74 @@ export interface Discussion {
   mergeable?: 'MERGEABLE' | 'CONFLICTING' | 'UNKNOWN';
   baseRefName?: string;
   headRefName?: string;
+  // Only the ones that say something: a body, or a decision. GitHub makes an
+  // empty review for every batch of inline comments; those are in `threads`.
+  reviews?: Array<{ author: string; body: string; state: string; submittedAt: string }>;
+  threads?: DiscussionThread[];
+}
+
+export interface DiscussionThread {
+  path: string | null;
+  // On the current head; null once the code under it changed (isOutdated).
+  line: number | null;
+  isResolved: boolean;
+  isOutdated: boolean;
+  url: string;
+  comments: Array<{ author: string; body: string; createdAt: string; url: string }>;
+}
+
+const DISCUSSION_THREADS_QUERY = `
+query($owner: String!, $repo: String!, $number: Int!) {
+  repository(owner: $owner, name: $repo) {
+    pullRequest(number: $number) {
+      reviewThreads(first: 100) {
+        nodes {
+          isResolved
+          isOutdated
+          path
+          line
+          originalLine
+          comments(first: 50) { nodes { author { login } body createdAt url } }
+        }
+      }
+    }
+  }
+}`;
+
+async function getDiscussionThreads(prNumber: number): Promise<DiscussionThread[]> {
+  const [owner, repo] = activeRepo().productRepo.split('/');
+  type Raw = { data: { repository: { pullRequest: { reviewThreads: { nodes: Array<{ isResolved: boolean; isOutdated: boolean; path: string | null; line: number | null; originalLine: number | null; comments: { nodes: Array<{ author: { login: string } | null; body: string; createdAt: string; url: string }> } }> } } } } };
+  const raw = JSON.parse(await ghApi(['api', 'graphql', '-f', `query=${DISCUSSION_THREADS_QUERY}`, '-f', `owner=${owner}`, '-f', `repo=${repo}`, '-F', `number=${prNumber}`])) as Raw;
+  return raw.data.repository.pullRequest.reviewThreads.nodes
+    .filter((t) => t.comments.nodes.length > 0)
+    .map((t) => ({
+      path: t.path,
+      line: t.line ?? t.originalLine,
+      isResolved: t.isResolved,
+      isOutdated: t.isOutdated,
+      url: t.comments.nodes[0].url,
+      comments: t.comments.nodes.map((c) => ({ author: c.author?.login ?? '', body: c.body, createdAt: c.createdAt, url: c.url })),
+    }));
 }
 
 export async function getDiscussion(kind: 'issue' | 'pr', number: number): Promise<Discussion> {
-  const fields = 'number,title,body,author,createdAt,url,state,labels,comments' + (kind === 'pr' ? ',mergeable,baseRefName,headRefName' : '');
-  type Raw = Omit<Discussion, 'author' | 'comments' | 'body' | 'labels'> & { body: string | null; author: { login: string } | null; labels: Array<{ name: string }>; comments: Array<{ author: { login: string } | null; body: string; createdAt: string; url: string }> };
-  const raw = JSON.parse(await gh([kind, 'view', String(number), '--json', fields])) as Raw;
+  const fields = 'number,title,body,author,createdAt,url,state,labels,comments' + (kind === 'pr' ? ',mergeable,baseRefName,headRefName,reviews' : '');
+  type Raw = Omit<Discussion, 'author' | 'comments' | 'body' | 'labels' | 'reviews' | 'threads'> & {
+    body: string | null;
+    author: { login: string } | null;
+    labels: Array<{ name: string }>;
+    comments: Array<{ author: { login: string } | null; body: string; createdAt: string; url: string }>;
+    reviews?: Array<{ author: { login: string } | null; body: string; state: string; submittedAt: string }>;
+  };
+  const [raw, threads] = await Promise.all([
+    gh([kind, 'view', String(number), '--json', fields]).then((out) => JSON.parse(out) as Raw),
+    kind === 'pr' ? getDiscussionThreads(number) : undefined,
+  ]);
+  const { reviews, ...rest } = raw;
   return {
-    ...raw,
+    ...rest,
+    ...(reviews ? { reviews: reviews.filter((r) => r.body.trim() || ['APPROVED', 'CHANGES_REQUESTED', 'DISMISSED'].includes(r.state)).map((r) => ({ author: r.author?.login ?? '', body: r.body, state: r.state, submittedAt: r.submittedAt })) } : {}),
+    ...(threads ? { threads } : {}),
     body: raw.body ?? '',
     author: raw.author?.login ?? '',
     labels: raw.labels.map((l) => l.name),

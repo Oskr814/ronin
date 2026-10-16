@@ -58,7 +58,7 @@ function duration(ms) {
 const money = (usd) => (usd < 0.01 ? 'menos de US$0,01' : `US$${usd.toFixed(2).replace('.', ',')}`);
 const pct = (fraction) => `${Math.round(fraction * 100)}%`;
 
-const S = { snap: null, today: null, sel: null, open: [], runIdx: {}, pendingRun: null, filter: null, q: '', itemRuns: {}, run: null, stream: null, detail: {}, view: {}, doc: {}, menu: false, dialog: null };
+const S = { snap: null, today: null, sel: null, open: [], runIdx: {}, pendingRun: null, filter: null, q: '', itemRuns: {}, run: null, stream: null, detail: {}, view: {}, doc: {}, menu: false, dialog: null, expanded: new Set() };
 const DETAIL_EVERY_MS = 30_000;
 
 class Unauthorized extends Error {}
@@ -504,13 +504,14 @@ function docHTML(item) {
   const tabs = docTabsOf(item, d);
   const cur = tabs.some(([k]) => k === S.doc[item.id]) ? S.doc[item.id] : tabs[0][0];
   const own = item.kind === 'issue' ? d.issue : d.pr;
-  const count = own?.comments.length ?? 0;
+  const entries = own ? conversation(own) : [];
+  const count = entries.length;
   const bar = `<div class="doctabs" role="tablist">${tabs.map(([k, label]) => `<button class="doctab" role="tab" data-doc="${k}" aria-selected="${k === cur}">${esc(label)}${k === 'comments' ? `<span class="c">${count}</span>` : ''}</button>`).join('')}
     <span class="src">${d.error ? `<span class="bad">GitHub no respondió: ${esc(d.error)}</span>, ` : ''}${d.fetchedAt ? `leído hace ${esc(short(Date.now() - Date.parse(d.fetchedAt)))}` : ''}</span></div>`;
   let body;
   if (cur === 'comments') {
     body = count
-      ? `<div class="comments">${own.comments.map((c) => `<article class="cm${c.author === d.ronin ? ' bot' : ''}"><header>${avatar(c.author)}<b>${esc(c.author || 'alguien')}</b><a href="${esc(c.url)}" target="_blank" rel="noopener">${esc(when(c.createdAt))}</a></header><div class="md">${md(c.body, item.repo)}</div></article>`).join('')}</div>`
+      ? `<div class="comments">${entries.map((e) => entryHTML(e, d, own, item.repo)).join('')}</div>`
       : '<div class="empty">Nadie comentó todavía.</div>';
   } else {
     const doc = cur === 'issue' ? d.issue : d.pr;
@@ -520,6 +521,49 @@ function docHTML(item) {
       <div class="md">${doc.body.trim() ? md(doc.body, item.repo) : '<p class="m">Sin descripción.</p>'}</div></div>`;
   }
   return bar + `<div class="doc" id="doc" data-key="${esc(`${item.id}:${cur}`)}">${body}</div>`;
+}
+
+// The item's conversation as GitHub shows it, oldest first: general
+// comments, a PR's reviews (those that say something) and its review threads,
+// each thread where its first comment falls.
+function conversation(doc) {
+  return [
+    ...doc.comments.map((c) => ({ kind: 'comment', at: c.createdAt, c })),
+    ...(doc.reviews ?? []).map((r) => ({ kind: 'review', at: r.submittedAt, r })),
+    ...(doc.threads ?? []).map((t) => ({ kind: 'thread', at: t.comments[0].createdAt, t })),
+  ].sort((a, b) => a.at.localeCompare(b.at));
+}
+
+const REVIEW_STATE = { APPROVED: ['ok', 'aprobó'], CHANGES_REQUESTED: ['crit', 'pidió cambios'], DISMISSED: ['idle', 'review descartada'], COMMENTED: ['idle', 'review'] };
+// Past this, a body is shown cut, with "Ver todo" (ronin's external review summary runs long).
+const CLIP_CHARS = 1800;
+
+// What's opened (a resolved thread, a long review) stays open across redraws.
+function clipped(key, html, long) {
+  if (!long) return `<div class="md">${html}</div>`;
+  const open = S.expanded.has(key);
+  return `<div class="md${open ? '' : ' clip'}">${html}</div><button class="link more" data-expand="${esc(key)}">${open ? 'Ver menos' : 'Ver todo'}</button>`;
+}
+
+function entryHTML(e, d, own, repo) {
+  const head = (author, url, at, extra = '') => `<header>${avatar(author)}<b>${esc(author || 'alguien')}</b>${extra}<a href="${esc(url)}" target="_blank" rel="noopener">${esc(when(at))}</a></header>`;
+  const bot = (author) => (author === d.ronin ? ' bot' : '');
+  if (e.kind === 'comment') return `<article class="cm${bot(e.c.author)}">${head(e.c.author, e.c.url, e.c.createdAt)}${clipped(`c:${e.c.url}`, md(e.c.body, repo), e.c.body.length > CLIP_CHARS)}</article>`;
+  if (e.kind === 'review') {
+    const [cls, label] = REVIEW_STATE[e.r.state] ?? REVIEW_STATE.COMMENTED;
+    const key = `r:${e.r.author}:${e.r.submittedAt}`;
+    return `<article class="cm${bot(e.r.author)}">${head(e.r.author, own.url, e.r.submittedAt, `<span class="chip ${cls}">${label}</span>`)}${e.r.body.trim() ? clipped(key, md(e.r.body, repo), e.r.body.length > CLIP_CHARS) : ''}</article>`;
+  }
+  const t = e.t;
+  // The end of the path is what tells files apart: the last two parts, the whole one on hover.
+  const parts = (t.path ?? 'archivo').split('/');
+  const where = `${parts.length > 2 ? '…/' : ''}${parts.slice(-2).join('/')}${t.line ? `:${t.line}` : ''}`;
+  const chips = (t.isResolved ? '<span class="chip ok">resuelto</span>' : '') + (t.isOutdated ? '<span class="chip idle">desactualizado</span>' : '');
+  const key = `t:${t.url}`;
+  // Resolved threads start folded, like on GitHub.
+  const open = t.isResolved ? S.expanded.has(key) : !S.expanded.has(key);
+  const replies = t.comments.map((c, i) => `<div class="tc${i ? ' reply' : ''}">${head(c.author, c.url, c.createdAt)}<div class="md">${md(c.body, repo)}</div></div>`).join('');
+  return `<details class="cm thread${bot(t.comments[0].author)}" data-thread="${esc(key)}"${open ? ' open' : ''}><summary><span class="path" title="${esc(t.path ?? '')}">${esc(where)}</span>${chips}<span class="n">${t.comments.length} ${t.comments.length === 1 ? 'comentario' : 'comentarios'}</span><span class="who">${esc(t.comments[0].author)}</span></summary>${replies}</details>`;
 }
 
 const avatar = (login) => (/^[\w-]+$/.test(login ?? '') ? `<img class="av" src="https://avatars.githubusercontent.com/${login}?s=40" alt="">` : '<span class="av"></span>');
@@ -579,6 +623,25 @@ function wireCenter() {
     button.onclick = (event) => {
       event.stopPropagation();
       openAction(button.dataset.action);
+    };
+  }
+  for (const button of document.querySelectorAll('[data-expand]')) {
+    button.onclick = () => {
+      const key = button.dataset.expand;
+      if (S.expanded.has(key)) S.expanded.delete(key);
+      else S.expanded.add(key);
+      renderCenter();
+    };
+  }
+  for (const thread of document.querySelectorAll('details[data-thread]')) {
+    // A thread's default is open unless resolved; what's kept is the change from it.
+    thread.ontoggle = () => {
+      const key = thread.dataset.thread;
+      const resolved = Boolean(thread.querySelector('.chip.ok'));
+      if (thread.open === resolved) S.expanded.add(key);
+      else S.expanded.delete(key);
+      const center = $('#center');
+      center._html = null;
     };
   }
   for (const link of document.querySelectorAll('a[data-ref]')) {
