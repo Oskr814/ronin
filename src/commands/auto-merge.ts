@@ -1,6 +1,6 @@
+import { markProcessed } from '../core/processed-comments.js';
 import {
   addIssueLabel,
-  addReaction,
   commentOnSpecPr,
   listOpenPrsForAutoMerge,
   mergePullRequest,
@@ -99,7 +99,7 @@ async function turnOff(prNumber: number, reason: string): Promise<void> {
 
 // The command itself: puts the label on or off and answers in the comment's
 // own place with what the merge is still waiting for — or, for a PR that
-// already conflicts, why it wasn't turned on. The 👀 goes on last,
+// already conflicts, why it wasn't turned on. It's marked done last,
 // so a failure halfway is retried next tick (adding or removing the label
 // twice is harmless).
 export async function applyAutoMergeCommand(prNumber: number, comment: Pick<Comment, 'id' | 'kind'>, action: AutoMergeAction): Promise<void> {
@@ -119,7 +119,7 @@ export async function applyAutoMergeCommand(prNumber: number, comment: Pick<Comm
     if (!blockers.disable) await addIssueLabel(prNumber, LABEL_AUTO_MERGE);
     await replyToComment(prNumber, comment, renderAutoMergeOn(blockers, login));
   }
-  await addReaction(comment.id, comment.kind, 'eyes');
+  await markProcessed(comment);
 }
 
 // --- replies ---

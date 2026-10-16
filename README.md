@@ -8,7 +8,7 @@ Orquestación de agentes autónomos (Claude Code) para desarrollo dirigido por s
 
 ## Comandos
 
-Todo se pide desde GitHub, mencionando a [`@ronin-agent`](https://github.com/ronin-agent) en un comentario. Apenas recibe un comentario que lo menciona le pone 🚀, y cuando ya lo procesó, 👀.
+Todo se pide desde GitHub, mencionando a [`@ronin-agent`](https://github.com/ronin-agent) en un comentario. Apenas recibe un comentario que lo menciona, le pone 👀.
 
 | Dónde | Comando | Qué hace |
 |---|---|---|

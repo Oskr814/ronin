@@ -41,6 +41,11 @@ export interface LocalState {
   interviews: Record<string, { sessionId: string; startedAt: string; url?: string; nonce?: string; resume?: InterviewResume }>;
   // /spec runs to redo now that an interview got the answers they lacked.
   pendingSpecs: Array<{ issueNumber: number; appName: string; instruction?: string }>;
+  // Comments ronin is done with ("issue-<id>"/"review-<id>" -> when), and
+  // since when that's tracked here rather than by ronin's 👀 on them — which
+  // now only says "got it" (see processed-comments.ts).
+  processedComments: Record<string, string>;
+  processedSince?: string;
 }
 
 // What to do once an interview gets its answers: put a ronin issue back in
@@ -96,9 +101,11 @@ export async function readLocalState(): Promise<LocalState> {
       nightlyExploration: raw.nightlyExploration ?? {},
       interviews: raw.interviews ?? {},
       pendingSpecs: raw.pendingSpecs ?? [],
+      processedComments: raw.processedComments ?? {},
+      processedSince: raw.processedSince,
     };
   } catch {
-    return { claimedIssues: [], checksPendingCounts: {}, lastReviewedSha: {}, failureSignatures: {}, nightlyExploration: {}, interviews: {}, pendingSpecs: [] };
+    return { claimedIssues: [], checksPendingCounts: {}, lastReviewedSha: {}, failureSignatures: {}, nightlyExploration: {}, interviews: {}, pendingSpecs: [], processedComments: {} };
   }
 }
 
@@ -236,5 +243,32 @@ export async function takePendingSpecs(): Promise<LocalState['pendingSpecs']> {
     state.pendingSpecs = [];
     await writeLocalState(state);
     return taken;
+  });
+}
+
+// What's done, and since when it's tracked here — set the first time it's
+// asked for, so it's never later than the first comment tracked this way.
+export async function getProcessedComments(): Promise<{ since: string; done: Set<string> }> {
+  const state = await readLocalState();
+  if (state.processedSince) return { since: state.processedSince, done: new Set(Object.keys(state.processedComments)) };
+  return withLocalStateLock(async () => {
+    const fresh = await readLocalState();
+    fresh.processedSince ??= new Date().toISOString();
+    await writeLocalState(fresh);
+    return { since: fresh.processedSince, done: new Set(Object.keys(fresh.processedComments)) };
+  });
+}
+
+// Entries older than `maxAgeMs` go: a comment that old counts as done anyway
+// (see processed-comments.ts).
+export async function recordProcessedComment(key: string, maxAgeMs: number): Promise<void> {
+  return withLocalStateLock(async () => {
+    const state = await readLocalState();
+    const now = Date.now();
+    state.processedComments[key] = new Date(now).toISOString();
+    for (const [k, at] of Object.entries(state.processedComments)) {
+      if (now - Date.parse(at) > maxAgeMs) delete state.processedComments[k];
+    }
+    await writeLocalState(state);
   });
 }

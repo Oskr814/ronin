@@ -134,7 +134,7 @@ export function scopeForEvent(eventName: string, payload: EventPayload, trackedR
   return { repo, scope: { flows, resources } };
 }
 
-// The comment to put the "got it" 🚀 on as soon as the event arrives
+// The comment to put the "got it" 👀 on as soon as the event arrives
 // (github.ts's addAckReaction): a new comment mentioning ronin, by someone
 // other than ronin. Null for anything else.
 export function ackTarget(eventName: string, payload: EventPayload, botLogin: string): { commentId: number; kind: 'issue' | 'review' } | null {

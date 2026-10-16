@@ -18,6 +18,20 @@ vi.mock('../core/github.js', () => ({
   addReaction: (...args: unknown[]) => addReaction(...args),
 }));
 
+// Done-ness lives in the local state now (processed-comments.ts, tested on
+// its own); here it's still read off the 👀, as these tests set it up.
+vi.mock('../core/processed-comments.js', () => {
+  const done = async (c: { id: number; kind: string; reactionsEyes: number }) => c.reactionsEyes > 0 && Boolean(await botReaction(c.id, c.kind, 'ronin'));
+  return {
+    unprocessed: async <T extends { id: number; kind: string; reactionsEyes: number }>(cs: T[]) => {
+      const flags = await Promise.all(cs.map(done));
+      return cs.filter((_, i) => !flags[i]);
+    },
+    isProcessed: async (c: { id: number; kind: string; reactionsEyes: number }) => (await botReaction(c.id, c.kind, 'ronin')) || done(c),
+    markProcessed: (c: { id: number; kind: string }) => addReaction(c.id, c.kind, 'eyes'),
+  };
+});
+
 vi.mock('../core/logger.js', () => ({ log: { error: vi.fn(), info: vi.fn() } }));
 
 // Comments another process is acting on right now (see mentions.ts's claimComment).

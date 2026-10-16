@@ -1,4 +1,5 @@
-import { listIssueComments, listReviewComments, hasBotReaction, replyToComment, addReaction, type Comment } from '../core/github.js';
+import { listIssueComments, listReviewComments, replyToComment, type Comment } from '../core/github.js';
+import { isProcessed, markProcessed, unprocessed } from '../core/processed-comments.js';
 import { classifyMetaCommand, renderMetaReply, type CommandContext } from './help.js';
 import { config } from '../core/config.js';
 import { activeRepo } from '../core/repo-context.js';
@@ -205,22 +206,19 @@ async function filterUnprocessed(comments: Comment[]): Promise<Comment[]> {
   // reply shows "@<login> /fix-comments" as an example, which would
   // otherwise be picked up as a fresh mention on the next tick, forever.
   const others = comments.filter((c) => (c.authorLogin ?? '').toLowerCase() !== botLogin.toLowerCase());
-  // One reaction lookup per already-👀'd mention, every tick for as long as
-  // the PR is open — in parallel, so a long-lived PR doesn't add them up.
-  const reacted = await Promise.all(others.map((c) => c.reactionsEyes > 0 && hasBotReaction(c.id, c.kind, botLogin)));
-  return others.filter((_, i) => !reacted[i]);
+  return unprocessed(others);
 }
 
 // Two processes can list the same unprocessed command at once: an event
 // handler going straight to the command (tick.ts's 'pr-commands' flow) and
 // the tick's pipeline for that PR's issue, which doesn't wait for it. The
 // first to take the comment acts on it; the other, once it gets it, finds
-// the 👀 already there and leaves it alone.
+// it already done (processed-comments.ts) and leaves it alone.
 async function claimComment(comment: Comment, fn: () => Promise<void>): Promise<void> {
   const resource = `comment-${comment.kind}-${comment.id}`;
   if (!(await tryLockResource(resource))) return;
   try {
-    if (await hasBotReaction(comment.id, comment.kind, config.githubLogin)) return;
+    if (await isProcessed(comment)) return;
     await fn();
   } finally {
     await unlockResource(resource);
@@ -234,7 +232,7 @@ async function claimComment(comment: Comment, fn: () => Promise<void>): Promise<
 // from costing a full review-request/external-review/spike run.
 //
 // A meta-command is dropped even when its reply fails: it's retried as a
-// meta-command next tick (no 👀 was added), never handed to a flow that
+// meta-command next tick (it wasn't marked done), never handed to a flow that
 // would spend an agent run on it.
 async function handleMetaCommands(number: number, context: CommandContext, comments: Comment[]): Promise<Comment[]> {
   const login = config.githubLogin;
@@ -248,7 +246,7 @@ async function handleMetaCommands(number: number, context: CommandContext, comme
     try {
       await claimComment(comment, async () => {
         await replyToComment(number, comment, renderMetaReply(meta, login, context));
-        await addReaction(comment.id, comment.kind, 'eyes');
+        await markProcessed(comment);
       });
     } catch (error) {
       log.error(`respuesta al meta-comando del comentario ${comment.id} falló en #${number}`, error);
@@ -259,10 +257,10 @@ async function handleMetaCommands(number: number, context: CommandContext, comme
 
 // Hands every /preview among the mentions to its own worker (preview.ts) and
 // drops it from what the caller gets back — same interception point as
-// handleMetaCommands, so a preview never costs a review run. The 👀 goes on
-// once the worker is launched, which keeps the next tick from launching it
-// again; the worker answers in the comment's own place. A launch that fails
-// gets no 👀 and is retried next tick.
+// handleMetaCommands, so a preview never costs a review run. It's marked
+// done once the worker is launched, which keeps the next tick from launching
+// it again; the worker answers in the comment's own place. A launch that
+// fails isn't, and is retried next tick.
 async function handlePreviewCommands(prNumber: number, comments: Comment[]): Promise<Comment[]> {
   const rest: Comment[] = [];
   for (const comment of comments) {
@@ -279,7 +277,7 @@ async function handlePreviewCommands(prNumber: number, comments: Comment[]): Pro
           ...command,
           comment: { id: comment.id, kind: comment.kind },
         });
-        await addReaction(comment.id, comment.kind, 'eyes');
+        await markProcessed(comment);
       });
     } catch (error) {
       log.error(`no se pudo lanzar la preview del comentario ${comment.id} en #${prNumber}`, error);
@@ -289,7 +287,7 @@ async function handlePreviewCommands(prNumber: number, comments: Comment[]): Pro
 }
 
 // Hands every /resolve-conflicts to its own worker (conflicts-worker.ts),
-// exactly like handlePreviewCommands: 👀 once it's launched, retried next
+// exactly like handlePreviewCommands: done once it's launched, retried next
 // tick if the launch fails.
 async function handleConflictsCommands(prNumber: number, comments: Comment[]): Promise<Comment[]> {
   const rest: Comment[] = [];
@@ -301,7 +299,7 @@ async function handleConflictsCommands(prNumber: number, comments: Comment[]): P
     try {
       await claimComment(comment, async () => {
         launchConflictsWorker({ repo: activeRepo().productRepo, prNumber, comment: { id: comment.id, kind: comment.kind } });
-        await addReaction(comment.id, comment.kind, 'eyes');
+        await markProcessed(comment);
       });
     } catch (error) {
       log.error(`no se pudo lanzar /resolve-conflicts del comentario ${comment.id} en #${prNumber}`, error);
@@ -312,8 +310,8 @@ async function handleConflictsCommands(prNumber: number, comments: Comment[]): P
 
 // Applies every /auto-merge among the mentions right here (it's a label and
 // a reply, no worker needed) and drops it from what the caller gets back,
-// like handlePreviewCommands. One that fails gets no 👀 and is retried next
-// tick.
+// like handlePreviewCommands. One that fails isn't marked done and is
+// retried next tick.
 async function handleAutoMergeCommands(prNumber: number, comments: Comment[]): Promise<Comment[]> {
   const rest: Comment[] = [];
   for (const comment of comments) {

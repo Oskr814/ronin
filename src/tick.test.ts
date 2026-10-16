@@ -98,6 +98,12 @@ vi.mock('./core/github.js', () => ({
   getFailedChecks: (...args: unknown[]) => getFailedChecks(...args),
 }));
 
+// Done-ness lives in the local state now (processed-comments.ts, tested on
+// its own); here it's still read off the 👀, as these tests set it up.
+vi.mock('./core/processed-comments.js', () => ({
+  markProcessed: (c: { id: number; kind: string }) => addReaction(c.id, c.kind, 'eyes'),
+}));
+
 const incrementChecksPendingCount = vi.fn();
 const resetChecksPendingCount = vi.fn();
 const setLastReviewedSha = vi.fn();

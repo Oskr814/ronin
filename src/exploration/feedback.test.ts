@@ -20,6 +20,20 @@ const gh = vi.hoisted(() => ({
 }));
 vi.mock('../core/github.js', () => gh);
 const actions = vi.hoisted(() => ({ value: [] as unknown[], tasks: [] as any[] }));
+
+// Done-ness lives in the local state now (processed-comments.ts, tested on
+// its own); here it's still read off the 👀, as these tests set it up.
+vi.mock('../core/processed-comments.js', () => {
+  const done = async (c: { id: number; kind: string; reactionsEyes: number }) => c.reactionsEyes > 0 && Boolean(await gh.hasBotReaction(c.id, c.kind, 'ronin'));
+  return {
+    unprocessed: async <T extends { id: number; kind: string; reactionsEyes: number }>(cs: T[]) => {
+      const flags = await Promise.all(cs.map(done));
+      return cs.filter((_, i) => !flags[i]);
+    },
+    isProcessed: async (c: { id: number; kind: string; reactionsEyes: number }) => (await gh.hasBotReaction(c.id, c.kind, 'ronin')) || done(c),
+    markProcessed: (c: { id: number; kind: string }) => gh.addReaction(c.id, c.kind, 'eyes'),
+  };
+});
 vi.mock('../core/agent-task.js', () => ({
   runAgentTask: async (task: { outputPath: string }) => {
     actions.tasks.push(task);

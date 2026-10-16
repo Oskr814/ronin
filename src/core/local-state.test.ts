@@ -8,7 +8,7 @@ vi.mock('./config.js', () => ({
   config: new Proxy({}, { get: (_t, prop) => (prop === 'localStatePath' ? localStatePath : undefined) }),
 }));
 
-const { incrementChecksPendingCount, resetChecksPendingCount, withLocalStateLock, readLocalState, getLastReviewedSha, setLastReviewedSha, pruneLastReviewedSha, getLastChangelogRelease, setLastChangelogRelease } = await import('./local-state.js');
+const { incrementChecksPendingCount, resetChecksPendingCount, withLocalStateLock, readLocalState, getLastReviewedSha, setLastReviewedSha, pruneLastReviewedSha, getLastChangelogRelease, setLastChangelogRelease, getProcessedComments, recordProcessedComment } = await import('./local-state.js');
 const { withActiveRepo } = await import('./repo-context.js');
 
 let dir: string;
@@ -184,5 +184,32 @@ describe('getLastChangelogRelease / setLastChangelogRelease', () => {
 
     expect(a).toEqual({ tag: 'v1', publishedAt: '2026-01-01T00:00:00Z' });
     expect(b).toBeUndefined();
+  });
+});
+
+describe('processed comments', () => {
+  it('starts tracking at the first read, and keeps that start', async () => {
+    await withRepo('acme/product', async () => {
+      const first = await getProcessedComments();
+      expect(first.done.size).toBe(0);
+      await new Promise((r) => setTimeout(r, 5));
+      expect((await getProcessedComments()).since).toBe(first.since);
+    });
+  });
+
+  it('records a comment as done, per repo, and prunes entries past the age limit', async () => {
+    await withRepo('acme/product', async () => {
+      await recordProcessedComment('issue-1', 1000);
+      expect((await getProcessedComments()).done).toEqual(new Set(['issue-1']));
+      const state = await readLocalState();
+      state.processedComments['issue-old'] = new Date(Date.now() - 5000).toISOString();
+      const { writeLocalState } = await import('./local-state.js');
+      await writeLocalState(state);
+      await recordProcessedComment('review-2', 1000);
+      expect((await getProcessedComments()).done).toEqual(new Set(['issue-1', 'review-2']));
+    });
+    await withRepo('acme/other', async () => {
+      expect((await getProcessedComments()).done.size).toBe(0);
+    });
   });
 });
