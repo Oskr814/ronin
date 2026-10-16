@@ -49,6 +49,8 @@ exec >> "\$LOG_DIR/tick-\$(date +%F).log" 2>&1
 # Time-based retention: prune files older than $RETENTION_DAYS days on
 # every run, so this never needs a separate cron entry or logrotate.
 find "\$LOG_DIR" -name 'tick-*.log' -mtime +$RETENTION_DAYS -delete
+# Per-run records (docs/DESIGN.md §15.4), one folder per day: same retention.
+find "\$LOG_DIR/runs" -mindepth 1 -maxdepth 1 -type d -mtime +$RETENTION_DAYS -exec rm -rf {} + 2>/dev/null || true
 
 # Single-flight: a tick can run for a while (a claude -p invocation can take
 # up to AGENT_TASK_TIMEOUT_MINUTES). If a previous run is still going, don't

@@ -2,7 +2,9 @@ import { rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { ensureWorktree, remoteBranchExists, ensureExternalReviewWorktree, removeExternalReviewWorktree, ensureTrustedFixWorktree, removeTrustedFixWorktree } from './worktree.js';
 import { ensureChangelogRepoUpToDate } from '../changelog/index.js';
-import { runClaudeHeadless } from './claude-runner.js';
+import { runClaudeHeadless, ClaudeTimeoutError, ClaudeUsageLimitError } from './claude-runner.js';
+import { accountName } from './claude-usage.js';
+import { RunRecord, type RunOutcome } from './run-record.js';
 import { getPullRequestStatus, type BotThread, type Comment, type CommentThread, type ReviewThread, type Release } from './github.js';
 import { config, agentModelFor, agentEffortFor, reviewWorkerModel } from './config.js';
 import { activeRepo } from './repo-context.js';
@@ -1032,6 +1034,12 @@ function taskNumber(task: AgentTask): string | number {
   return 'issueNumber' in task ? task.issueNumber : task.prNumber;
 }
 
+function runOutcome(error: unknown): RunOutcome {
+  if (error instanceof ClaudeUsageLimitError) return 'usage_limit';
+  if (error instanceof ClaudeTimeoutError) return 'timeout';
+  return 'error';
+}
+
 export async function runAgentTask(task: AgentTask): Promise<string> {
   const { branch, prompt, baseBranch, agents } = await buildTask(task);
   // An external PR's head is resolved by SHA, never by branch name: a fork's
@@ -1082,22 +1090,39 @@ export async function runAgentTask(task: AgentTask): Promise<string> {
   const start = Date.now();
   const issueNumber = 'issueNumber' in task ? task.issueNumber : undefined;
   const prNumber = 'prNumber' in task ? task.prNumber : undefined;
+  const model = agentModelFor(task.type);
+  const effort = agentEffortFor(task.type);
+  // The run's own record, for the dashboard (run-record.ts).
+  const record = RunRecord.start({
+    repo: activeRepo().productRepo,
+    taskType: task.type,
+    label,
+    ...(issueNumber !== undefined ? { issueNumber } : {}),
+    ...(prNumber !== undefined ? { prNumber } : {}),
+    ...('sliceIndex' in task ? { sliceIndex: task.sliceIndex, sliceTitle: task.sliceTitle } : {}),
+    ...(model ? { model } : {}),
+    ...(effort ? { effort } : {}),
+    account: accountName(activeRepo().claudeConfigDir ?? config.claudeConfigDir ?? ''),
+    worktree: worktreeDir,
+  });
   try {
     const result = await runClaudeHeadless(worktreeDir, prompt, `${task.type} #${taskNumber(task)}`, {
-      model: agentModelFor(task.type),
-      effort: agentEffortFor(task.type),
+      model,
+      effort,
       ...(agentsFile ? { agentsFile } : {}),
       ...(task.type === 'explore-function' || task.type === 'explore-redo-after' || task.type === 'prototype' ? { mcpConfigFile: task.mcpConfigPath } : {}),
-    });
+    }, record);
     const durationMs = Date.now() - start;
     recordAgentRun(durationMs);
     log.metric('agent_run', { taskType: task.type, issueNumber, prNumber, durationMs, success: true });
+    record.end('ok');
     log.info(`finished ${task.type} for ${label}`);
     return result;
   } catch (error) {
     const durationMs = Date.now() - start;
     recordAgentRun(durationMs);
     log.metric('agent_run', { taskType: task.type, issueNumber, prNumber, durationMs, success: false });
+    record.end(runOutcome(error), error);
     log.error(`${task.type} for ${label} failed`, error);
     throw error;
   } finally {

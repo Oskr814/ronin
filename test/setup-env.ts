@@ -18,3 +18,4 @@ for (const name of ['RONIN_GITHUB_TOKEN', 'RONIN_GITHUB_LOGIN', 'GMAIL_USER', 'G
 const scratch = mkdtempSync(join(tmpdir(), 'ronin-test-'));
 process.env.LOCAL_STATE_PATH = join(scratch, '.ronin-state.json');
 process.env.WORKTREE_BASE_PATH = join(scratch, 'worktrees');
+process.env.RONIN_LOGS_DIR = join(scratch, 'logs');

@@ -33,7 +33,8 @@ vi.mock('./worktree.js', () => ({
 }));
 
 const runClaudeHeadless = vi.fn();
-vi.mock('./claude-runner.js', () => ({
+vi.mock('./claude-runner.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./claude-runner.js')>()),
   runClaudeHeadless: (...args: unknown[]) => runClaudeHeadless(...args),
 }));
 
@@ -1110,3 +1111,34 @@ describe('buildTask — data the team sees in screenshots', () => {
     expect(CHARTER_MISSIONS['datos-hostiles']).toContain("unusual characters this app's users could really type");
   });
 });
+
+describe('runAgentTask — run record', () => {
+  // The record runAgentTask handed to its last runClaudeHeadless call.
+  async function lastRecord(): Promise<any[]> {
+    const { readFileSync } = await import('node:fs');
+    const record = runClaudeHeadless.mock.calls.at(-1)![4] as { path: string };
+    return readFileSync(record.path, 'utf8').trim().split('\n').map((line) => JSON.parse(line));
+  }
+
+  it('records the run, hands it to runClaudeHeadless, and closes it as ok', async () => {
+    await runAgentTask({ type: 'implement-slice', issueNumber: 228, sliceIndex: 0, sliceTitle: 'Add foo' });
+
+    const lines = await lastRecord();
+    expect(lines[0]).toMatchObject({
+      type: 'run_start', repo: 'bmedical/bmedical', taskType: 'implement-slice', issueNumber: 228,
+      sliceIndex: 0, sliceTitle: 'Add foo', model: 'model-for-implement-slice', worktree: '/tmp/worktree',
+    });
+    expect(lines.at(-1)).toMatchObject({ type: 'run_end', outcome: 'ok' });
+    expect(runClaudeHeadless.mock.calls[0][4]).toHaveProperty('runId', lines[0].runId);
+  });
+
+  it('closes it with the kind of failure', async () => {
+    const { ClaudeTimeoutError, ClaudeUsageLimitError } = await import('./claude-runner.js');
+    for (const [error, outcome] of [[new ClaudeTimeoutError('t'), 'timeout'], [new ClaudeUsageLimitError('u'), 'usage_limit'], [new Error('boom'), 'error']] as const) {
+      runClaudeHeadless.mockRejectedValueOnce(error);
+      await expect(runAgentTask({ type: 'implement-slice', issueNumber: 228, sliceIndex: 0, sliceTitle: 'Add foo' })).rejects.toBe(error);
+      expect((await lastRecord()).at(-1)).toMatchObject({ type: 'run_end', outcome });
+    }
+  });
+});
+
