@@ -602,6 +602,9 @@ Todo, salvo los webhooks y `/api/auth/*`, pide sesión:
 | `POST /api/items/<id>/actions` | Pide una de esas acciones: `{ action, text? }` (15.11) |
 | `GET /api/runs/<runId>` | El transcript de una corrida |
 | `GET /api/runs/<runId>/stream` | Lo que se le agrega, por *server-sent events*, hasta que termina |
+| `GET /api/evidence/<owner>/<repo>/<sha>/<ruta>` | Una captura que publicó ronin (§11.5), leída del clon del repo de producto |
+
+En la ficha, las imágenes de los comentarios son enlaces, salvo las capturas que publicó ronin. El enlace de GitHub de una captura (`evidenceUrl`) solo carga con sesión de GitHub, y un `<img>` del tablero no la lleva. Por eso el servidor la lee de su propio clon con `git cat-file`: `publishEvidence` la commitea ahí antes del push. Solo sirve imágenes y solo de commits de la rama `ronin/evidence`. Si el sha no está, hace un `fetch` de esa rama, como mucho uno por minuto por repo. Si la imagen no carga, vuelve a ser el enlace `[imagen]`.
 
 #### 15.10 Activarlo
 

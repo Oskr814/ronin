@@ -61,6 +61,12 @@ describe('tailnet listener', () => {
     expect(await res.json()).toMatchObject({ me: 'oskr814', repos: ['acme/product'], items: [] });
   });
 
+  it('serves evidence only behind the session, and only of a repo of ronin', async () => {
+    const path = `${base}/api/evidence/other/repo/abc1234/a.png`;
+    expect((await fetch(path)).status).toBe(401);
+    expect((await fetch(path, { headers: { cookie: session() } })).status).toBe(404);
+  });
+
   it('logs in with GitHub: state checked, session set, GitHub token dropped', async () => {
     const login = await fetch(`${base}/api/auth/login`, { redirect: 'manual' });
     expect(login.status).toBe(302);
