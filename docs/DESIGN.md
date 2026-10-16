@@ -673,7 +673,7 @@ En GitHub, un PR de exploración (§11.7) cuesta revisarlo: "Files changed" mues
   | Pedir cambios (`c`) | el texto; con *Rehacer la captura del después*, suma `También hay que rehacer la captura del después.` |
   | Pedir un issue aparte | `Abrí un issue aparte: <texto>` |
   | Preguntar, o la caja del hilo | el texto tal cual |
-  | Dejarla así (`a`) | nada: es una marca del navegador (`localStorage`) que la pasa a *Listas para aprobar* y cuenta para el progreso |
+  | Aprobar (`a`) | nada todavía: es una marca del navegador (`localStorage`) que la pasa a *Listas para aprobar* y cuenta para el progreso; la ficha se aprueba de verdad al aprobar el PR |
 
   En una ficha ya rechazada o aprobada solo se puede preguntar o comentar. Mientras alguna espera a ronin, la página vuelve a leer las fichas cada 10 s en vez de cada 30.
 - **Comentario general.** `@ronin-agent <texto>` en el PR, como la persona, para decidir sobre varias fichas a la vez o dejar en `knowledge.md` lo que no hay que volver a proponer (lo lee `pendingGeneralFeedback`).
