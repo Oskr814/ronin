@@ -32,6 +32,13 @@ export const config = {
   // see docs/DESIGN.md §7.1. Containment relies on every task running
   // inside its own disposable git worktree, never the main checkout.
   agentTaskTimeoutMs: Number(process.env.AGENT_TASK_TIMEOUT_MINUTES ?? 30) * 60_000,
+  // The whole run of one webhook event's handler (server/api/webhooks/
+  // handler.ts): waiting for its turn and a slot, and every agent its flows
+  // start. Past it, the handler ends itself and the agent it's running.
+  // Restarting the server no longer stops handlers (KillMode=process), so
+  // this is what keeps one stuck on something other than an agent (a `gh`
+  // that never answers) from staying forever.
+  eventHandlerTimeoutMs: Number(process.env.EVENT_HANDLER_TIMEOUT_MINUTES ?? 120) * 60_000,
   // Binario invocado para las corridas headless. Defaults to plain `claude`;
   // only change this if a genuinely different binary/wrapper script is used.
   claudeCommand: process.env.CLAUDE_COMMAND ?? 'claude',

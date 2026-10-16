@@ -4,6 +4,7 @@
 // issue or PR it's about, the flows that event can move. The cron tick keeps
 // running everything as the reconciliation pass. See docs/DESIGN.md §14.
 import { createHash } from 'node:crypto';
+import { config } from '../../../core/config.js';
 import { loadRepos } from '../../../core/repos.js';
 import { withActiveRepo } from '../../../core/repo-context.js';
 import { getPrHead } from '../../../core/github.js';
@@ -42,7 +43,25 @@ async function withSliceIssues(scope: Scope): Promise<Scope> {
   return { ...scope, resources };
 }
 
+// The cap on the whole event (EVENT_HANDLER_TIMEOUT_MINUTES). The handler is
+// launched detached, so it leads its own process group: the signal goes to
+// the group, which takes the `claude -p` it's running too. The workers it
+// launched lead groups of their own and keep going. Its locks and run
+// record carry its pid, so the next process takes the locks over and the
+// dashboard shows the run as cut.
+function capRun(timeoutMs: number): void {
+  setTimeout(() => {
+    log.error(`handler de evento: pasaron ${Math.round(timeoutMs / 60_000)} min (EVENT_HANDLER_TIMEOUT_MINUTES), lo corto con lo que esté corriendo`);
+    try {
+      process.kill(-process.pid, 'SIGTERM');
+    } catch {
+      process.kill(process.pid, 'SIGTERM');
+    }
+  }, timeoutMs).unref();
+}
+
 async function main(): Promise<void> {
+  capRun(config.eventHandlerTimeoutMs);
   const entry = (await loadRepos()).find((r) => r.productRepo === request.repo);
   if (!entry) throw new Error(`${request.repo} no está en repos.json`);
   await withActiveRepo(entry, async () => {
