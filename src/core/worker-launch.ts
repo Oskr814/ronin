@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import { closeSync, existsSync, mkdirSync, openSync } from 'node:fs';
-import { mkdir, readFile, rm, open as openFile } from 'node:fs/promises';
+import { randomBytes } from 'node:crypto';
+import { link, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -23,17 +24,23 @@ export async function lockHeld(path: string): Promise<boolean> {
   }
 }
 
-// Exclusive create; a lock left by a dead process is taken over.
+// Exclusive create; a lock left by a dead process is taken over. The pid is
+// written to a temporary file first and published with link(), which fails
+// if the lock exists: created and written in one step, so no other process
+// ever reads a lock still empty — and takes it for a dead one's — between
+// the create and the write.
 export async function acquireLock(path: string): Promise<boolean> {
   await mkdir(dirname(path), { recursive: true });
   if (existsSync(path) && !(await lockHeld(path))) await rm(path, { force: true });
+  const tmp = `${path}.${process.pid}.${randomBytes(4).toString('hex')}`;
+  await writeFile(tmp, String(process.pid));
   try {
-    const handle = await openFile(path, 'wx');
-    await handle.writeFile(String(process.pid));
-    await handle.close();
+    await link(tmp, path);
     return true;
   } catch {
     return false;
+  } finally {
+    await rm(tmp, { force: true });
   }
 }
 

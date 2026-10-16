@@ -53,8 +53,10 @@ export async function findIssuesNeedingSpike(): Promise<SpikeCandidate[]> {
 
 // /spike, /explore, /spec, /prototype and plain-words requests, found in one
 // pass over the open unmanaged issues.
-export async function findIssueCommands(): Promise<IssueCommandCandidates> {
-  const issues = await listOpenUnmanagedIssues();
+// `only` narrows it to those issues, like findPrsNeedingReview's.
+export async function findIssueCommands(only?: number[]): Promise<IssueCommandCandidates> {
+  const open = await listOpenUnmanagedIssues();
+  const issues = only ? open.filter((issue) => only.includes(issue.number)) : open;
   const spikes: SpikeCandidate[] = [];
   const explores: ExploreCandidate[] = [];
   const specs: SpecCandidate[] = [];

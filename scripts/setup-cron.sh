@@ -55,8 +55,8 @@ find "\$LOG_DIR" -name 'tick-*.log' -mtime +$RETENTION_DAYS -delete
 # run a second tick concurrently against the same local state
 # (.ronin-state.json) — see docs/DESIGN.md §9. The trigger is not dropped
 # either: it leaves a pending mark that the running tick picks up when it
-# ends, so a webhook event that lands mid-tick (a PR opened while the tick
-# already listed PRs) is handled right away instead of at the next cron slot.
+# ends. (Webhook events don't come through here anymore: each one gets its
+# own handler process — see docs/DESIGN.md §14.)
 PENDING="$REPO_DIR/.tick.pending"
 exec 200>"$REPO_DIR/.tick.lock"
 if ! flock -n 200; then

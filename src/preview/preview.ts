@@ -381,8 +381,9 @@ export async function stopPreview(prNumber: number): Promise<boolean> {
 }
 
 // A preview lives as long as its PR: once it's merged or closed, its app,
-// its tailnet ports and its worktree go. Runs every tick, and a merge wakes
-// one up through the webhook (pull_request closed), so it goes right after.
+// its tailnet ports and its worktree go. Runs every tick, and a merge starts
+// an event handler that runs it (pull_request closed — see
+// webhooks/events.ts), so it goes right after.
 // Costs nothing when there are no previews: the PR list is only read if
 // there's a preview worktree on disk. A preview whose worker is still running
 // waits for the next tick.

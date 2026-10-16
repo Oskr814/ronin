@@ -1,46 +1,59 @@
 // Long-running companion to the cron-driven tick() (see index.ts): listens
-// for GitHub webhook deliveries and, for the handful of event/action combos
-// that actually matter (assignment, external PR review, mention/command
-// comments — see webhooks/events.ts), triggers a tick sooner than the next
-// cron slot instead of reimplementing any of tick()'s own discovery logic.
+// for GitHub webhook deliveries and, for the event/action combos that
+// actually matter (see events.ts's scopeForEvent), starts an event handler
+// right away — its own process (handler.ts) that runs only the flows that
+// event can move, for only the issue or PR it's about. The cron tick stays as
+// the reconciliation pass. See docs/DESIGN.md §14.
 //
 // Deliberately its own process (installed via
 // scripts/setup-webhook-service.sh as a systemd --user service), not folded
 // into index.ts: it needs to stay up permanently, while index.ts's tick() is
 // a one-shot invoked by cron every N minutes.
 import { createServer, type IncomingMessage } from 'node:http';
-import { spawn } from 'node:child_process';
-import { join } from 'node:path';
 import { config } from '../core/config.js';
 import { loadRepos } from '../core/repos.js';
-import { verifySignature, shouldTriggerTick } from './events.js';
+import { launchWorker } from '../core/worker-launch.js';
+import { verifySignature, scopeForEvent, type EventPayload } from './events.js';
 import { log } from '../core/logger.js';
+import type { Scope } from '../tick.js';
+import type { EventHandlerRequest } from './handler.js';
 
 if (!config.webhookSecret) {
   throw new Error('WEBHOOK_SECRET no está seteado — ver .env.example. webhook-server no puede arrancar sin validar firmas.');
 }
 
-const REPO_DIR = join(import.meta.dirname, '..', '..');
-const RUN_TICK_SCRIPT = join(REPO_DIR, 'scripts', 'run-tick.sh');
+// Open debounce windows, one per repo + resources: what's been asked of them
+// so far, and the timer that starts their handler.
+const pending = new Map<string, { repo: string; scope: Scope; receivedAt: number; timer: NodeJS.Timeout }>();
 
-// Set only while a debounce window is open — see scheduleTick.
-let pendingTimer: NodeJS.Timeout | null = null;
-
-// Coalesces a burst of qualifying webhook deliveries (e.g. several PR
-// comments landing seconds apart) into a single tick trigger, so the AI
-// pipeline isn't asked to spin up a run per event. The tick itself is also
-// still single-flight via run-tick.sh's own flock on .tick.lock — if a
-// cron-triggered tick is already in progress when this fires, run-tick.sh
-// just skips and logs it, exactly as it does for an overlapping cron tick.
-function scheduleTick(): void {
-  if (pendingTimer) return; // a trigger is already queued for this burst
-  pendingTimer = setTimeout(() => {
-    pendingTimer = null;
-    log.info('webhook: disparando tick anticipado');
-    const child = spawn(RUN_TICK_SCRIPT, [], { stdio: 'ignore', detached: true });
-    child.on('error', (error) => log.error('webhook: no se pudo lanzar run-tick.sh', error));
-    child.unref();
-  }, config.webhookDebounceMs);
+// Coalesces a burst of deliveries about the same thing (a review's several
+// inline comments, a few check suites finishing together) into one handler,
+// with every flow any of them asked for. Different PRs or issues get their
+// own handlers, at once.
+function scheduleHandler(repo: string, scope: Scope): void {
+  const key = JSON.stringify([repo, [...scope.resources].sort()]);
+  const open = pending.get(key);
+  if (open) {
+    open.scope = { ...open.scope, flows: [...new Set([...open.scope.flows, ...scope.flows])] };
+    return;
+  }
+  const entry = {
+    repo,
+    scope,
+    receivedAt: Date.now(),
+    timer: setTimeout(() => {
+      pending.delete(key);
+      log.info(`webhook: atendiendo ${entry.scope.resources.join(', ')} en ${repo} (${entry.scope.flows.join(', ')})`);
+      try {
+        const request: EventHandlerRequest = { repo, scope: entry.scope, receivedAt: entry.receivedAt };
+        launchWorker('webhooks/handler', request);
+      } catch (error) {
+        // The cron tick picks the event up anyway, just later.
+        log.error('webhook: no se pudo lanzar el handler', error);
+      }
+    }, config.webhookDebounceMs),
+  };
+  pending.set(key, entry);
 }
 
 function readBody(req: IncomingMessage): Promise<Buffer> {
@@ -75,7 +88,7 @@ const server = createServer(async (req, res) => {
   }
 
   const eventName = req.headers['x-github-event'];
-  let payload: { action?: string; repository?: { full_name?: string } };
+  let payload: EventPayload;
   try {
     payload = JSON.parse(rawBody.toString('utf8'));
   } catch {
@@ -89,9 +102,8 @@ const server = createServer(async (req, res) => {
     try {
       const repos = await loadRepos();
       const trackedRepos = repos.map((r) => r.productRepo);
-      if (typeof eventName === 'string' && shouldTriggerTick(eventName, payload, trackedRepos)) {
-        scheduleTick();
-      }
+      const target = typeof eventName === 'string' ? scopeForEvent(eventName, payload, trackedRepos) : null;
+      if (target) scheduleHandler(target.repo, target.scope);
     } catch (error) {
       // A malformed repos.json or a transient read failure must never make
       // GitHub retry-storm this endpoint — log and still 200 below.
