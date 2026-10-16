@@ -2,7 +2,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { dirname, extname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { handleAuth, sessionLogin, type AuthConfig, type GithubOAuth } from './api/auth.js';
+import { handleAuth, readSession, type AuthConfig, type GithubOAuth } from './api/auth.js';
 import { handleDashboard } from './api/dashboard.js';
 import { handleGithubWebhook } from './api/webhooks/github.js';
 import { GITHUB_WEBHOOK_PATHS } from './public.js';
@@ -80,12 +80,12 @@ export function createTailnetHandler(auth: AuthConfig, options: { github?: Githu
 
     if (path.startsWith('/api/')) {
       if (await handleAuth(req, res, path, auth, options.github)) return;
-      const login = sessionLogin(req, auth);
-      if (!login) {
+      const session = readSession(req, auth);
+      if (!session) {
         res.writeHead(401, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }).end(JSON.stringify({ error: 'sin sesión' }));
         return;
       }
-      if (await handleDashboard(req, res, path, login)) return;
+      if (await handleDashboard(req, res, path, session)) return;
       res.writeHead(404, { 'Content-Type': 'application/json; charset=utf-8' }).end(JSON.stringify({ error: 'no existe' }));
       return;
     }

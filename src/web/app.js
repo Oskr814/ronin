@@ -58,8 +58,9 @@ function duration(ms) {
 const money = (usd) => (usd < 0.01 ? 'menos de US$0,01' : `US$${usd.toFixed(2).replace('.', ',')}`);
 const pct = (fraction) => `${Math.round(fraction * 100)}%`;
 
-const S = { snap: null, today: null, sel: null, open: [], runIdx: {}, pendingRun: null, filter: null, q: '', itemRuns: {}, run: null, stream: null, detail: {}, view: {}, doc: {}, menu: false, dialog: null, expanded: new Set(), expl: {}, ficha: {}, fichaOpen: {}, fichaFilter: { tipo: 'todas', vp: 'todos' }, antes: {}, oldAfter: new Set(), lightbox: null };
+const S = { snap: null, today: null, sel: null, open: [], runIdx: {}, pendingRun: null, filter: null, q: '', itemRuns: {}, run: null, stream: null, detail: {}, view: {}, doc: {}, menu: false, dialog: null, expanded: new Set(), expl: {}, ficha: {}, fichaOpen: {}, fichaFilter: { tipo: 'todas', vp: 'todos' }, antes: {}, oldAfter: new Set(), lightbox: null, fmenu: false, fdialog: null, fdraft: {}, listas: {} };
 const DETAIL_EVERY_MS = 30_000;
+const WAITING_EVERY_MS = 10_000;
 
 class Unauthorized extends Error {}
 
@@ -313,12 +314,18 @@ function renderCenter() {
   const fdKeep = fd ? { ficha: fd.dataset.current, top: fd.scrollTop } : null;
   // Reviewing findings takes the room of the context column.
   $('#shell').classList.toggle('wide', docOf(item) === 'fichas');
+  const typing = document.activeElement?.id === 'fcomment' ? { start: document.activeElement.selectionStart, end: document.activeElement.selectionEnd } : null;
   if (!setCenter(tabs + backBar(item.title) + headHTML(item) + activityHTML(item) + docHTML(item) + `<div class="ctx-inline">${ctxHTML(item)}</div>`)) return;
   const fresh = $('#doc');
   if (fresh && !isMobile()) fresh.scrollTop = keep;
   if ($('#frows')) $('#frows').scrollTop = rows;
   const fdFresh = $('#fdetail');
   if (fdFresh && fdKeep && fdFresh.dataset.current === fdKeep.ficha) fdFresh.scrollTop = fdKeep.top;
+  const box = typing && $('#fcomment');
+  if (box) {
+    box.focus();
+    box.setSelectionRange(typing.start, typing.end);
+  }
 }
 
 // Only touches the page when something changed, so a snapshot that changes
@@ -407,8 +414,8 @@ function headHTML(item) {
 }
 
 // ---------- actions (#85)
-// Each one is a command that exists on GitHub; ronin comments on the issue
-// or PR that it was asked from here, and the same code runs.
+// Each one is a command that exists on GitHub, commented as whoever is
+// logged in (#93): the same comment they'd write there.
 function actionsHTML(d) {
   if (!d?.actions?.length) return '';
   const menu = S.menu ? `<div class="menu" role="menu">${d.actions.map((a) => `<button role="menuitem" data-action="${esc(a.id)}" class="${a.primary ? 'primary' : ''}"><b>${esc(a.label)}</b><span class="k">${esc(a.command)}</span><small>${esc(a.help)}</small></button>`).join('')}</div>` : '';
@@ -424,8 +431,6 @@ function openAction(id) {
   renderDialog();
 }
 
-const quoteText = (text) => text.split('\n').map((line) => `> ${line}`).join('\n');
-
 function renderDialog() {
   let layer = $('#layer');
   if (!S.dialog) {
@@ -434,16 +439,16 @@ function renderDialog() {
   }
   if (!layer) layer = Object.assign(document.body.appendChild(document.createElement('div')), { id: 'layer' });
   const { action, text, sending, error } = S.dialog;
-  // `> …` stands for the text: filled as it's typed, left out when the text is optional and empty.
+  // `…` stands for the text: filled as it's typed, left out when the text is optional and empty.
   const typed = text.trim();
-  const preview = !action.text ? action.preview : typed ? action.preview.replace('> …', quoteText(typed)) : action.text.required ? action.preview : action.preview.replace(/\n\n> …/, '');
+  const preview = !action.text ? action.preview : typed ? action.preview.replace('…', typed) : action.text.required ? action.preview : action.preview.replace(/\n\n…$/, '');
   const fresh = !layer.firstChild;
   if (fresh) {
     layer.innerHTML = `<div class="scrim"><div class="dlg" role="dialog" aria-modal="true" aria-labelledby="dlg-t">
       <h2 id="dlg-t">${esc(action.label)}</h2>
       <p class="help">${esc(action.help)}</p>
       ${action.text ? `<label class="field"><span>${esc(action.text.label)}</span><textarea id="dlg-text" rows="4" maxlength="4000" placeholder="${esc(action.text.placeholder)}"></textarea></label>` : ''}
-      <div class="prev"><div class="lbl">ronin comenta en #${esc(action.target)}</div><div class="md" id="dlg-prev"></div></div>
+      <div class="prev"><div class="lbl">Comentás en #${esc(action.target)} como ${esc(S.snap?.me ?? '')}</div><div class="md" id="dlg-prev"></div></div>
       <p class="bad" id="dlg-err" hidden></p>
       <div class="foot-d"><button class="btn-s" id="dlg-no">Cancelar</button><button class="btn-s primary" id="dlg-yes"></button></div></div></div>`;
     const area = $('#dlg-text');
@@ -455,7 +460,7 @@ function renderDialog() {
   }
   $('#dlg-prev').innerHTML = md(preview, itemById(S.dialog.item)?.repo ?? '');
   const yes = $('#dlg-yes');
-  yes.textContent = sending ? 'Pidiendo…' : action.id === 'unblock' ? 'Comentar y destrabar' : 'Pedirlo';
+  yes.textContent = sending ? 'Comentando…' : action.id === 'unblock' ? 'Comentar y destrabar' : 'Comentar';
   yes.disabled = sending || Boolean(action.text?.required && !text.trim());
   $('#dlg-err').hidden = !error;
   $('#dlg-err').textContent = error ?? '';
@@ -477,7 +482,7 @@ async function sendAction() {
     const { url } = await api(`/api/items/${encodeURIComponent(dialog.item)}/actions`, { method: 'POST', body: JSON.stringify({ action: dialog.action.id, ...(dialog.text.trim() ? { text: dialog.text.trim() } : {}) }) });
     S.dialog = null;
     renderDialog();
-    toast(`Listo: ronin lo comentó en #${dialog.action.target}.`, url);
+    toast(`Listo: comentaste en #${dialog.action.target}.`, url);
     const item = itemById(dialog.item);
     // Its comment is where the answer will come: shown when it's this item's own.
     if (item && item.number === dialog.action.target) S.doc[dialog.item] = 'comments';
@@ -568,31 +573,49 @@ function docHTML(item) {
 // ---------- reviewing an exploration PR (#93)
 // The findings the PR brings, read into their parts, with their threads:
 // a list on the left, the finding on the right (one after the other on a
-// phone). Read-only for now; deciding is still commenting on GitHub.
+// phone). Deciding on one is a comment on its file, written as whoever is
+// logged in — what they'd write in "Files changed" — and ronin applies it
+// as it does any other.
 const RONIN_MENTION = /@ronin-agent\b/i;
 const fichaKey = (f) => `${f.app}/${f.id}`;
-const FICHA_GROUPS = [['decidir', 'Por decidir'], ['esperando', 'Esperando a ronin'], ['respondida', 'Respondidas por ronin'], ['aprobada', 'Aprobadas'], ['rechazada', 'Rechazadas']];
-const FICHA_DOT = { decidir: 'pending', esperando: 'live', respondida: 'run', aprobada: 'ok', rechazada: 'crit' };
+const FICHA_GROUPS = [['decidir', 'Por decidir'], ['esperando', 'Esperando a ronin'], ['respondida', 'Respondidas por ronin'], ['lista', 'Listas para aprobar'], ['aprobada', 'Aprobadas'], ['rechazada', 'Rechazadas']];
+const FICHA_DOT = { decidir: 'pending', esperando: 'live', respondida: 'run', lista: 'ok', aprobada: 'ok', rechazada: 'crit' };
+
+// "Dejarla así" leaves nothing on GitHub: it's this browser's mark of what
+// was already looked at, so the review's progress shows.
+const listasKey = (id) => `ronin-listas:${id}`;
+function listas(id) {
+  if (!S.listas[id]) {
+    try { S.listas[id] = new Set(JSON.parse(localStorage.getItem(listasKey(id)) ?? '[]')); } catch { S.listas[id] = new Set(); }
+  }
+  return S.listas[id];
+}
+function setLista(id, key, on) {
+  const set = listas(id);
+  if (on) set.add(key);
+  else set.delete(key);
+  try { localStorage.setItem(listasKey(id), JSON.stringify([...set])); } catch { /* sin storage */ }
+}
 
 // Where a finding stands: decided in its file, or by its thread — ronin
 // answers a first comment, or a reply that mentions it.
-function fichaStatus(f, ronin) {
+function fichaStatus(f, ronin, id) {
   if (f.estado === 'rechazado') return 'rechazada';
   if (f.estado === 'aprobado') return 'aprobada';
   const last = f.comments[f.comments.length - 1];
-  if (!last) return 'decidir';
+  if (!last) return id && listas(id).has(fichaKey(f)) ? 'lista' : 'decidir';
   if (last.author === ronin) return 'respondida';
   return !last.replyTo || RONIN_MENTION.test(last.body) ? 'esperando' : 'respondida';
 }
 
-function visibleFichas(data) {
+function visibleFichas(data, id) {
   const { tipo, vp } = S.fichaFilter;
   const shown = data.fichas.filter((f) => (tipo === 'todas' || f.tipo === tipo) && (vp === 'todos' || f.viewport === vp));
-  return FICHA_GROUPS.flatMap(([k]) => shown.filter((f) => fichaStatus(f, data.ronin) === k));
+  return FICHA_GROUPS.flatMap(([k]) => shown.filter((f) => fichaStatus(f, data.ronin, id) === k));
 }
 
 function currentFicha(item, data) {
-  const list = visibleFichas(data);
+  const list = visibleFichas(data, item.id);
   return list.find((f) => fichaKey(f) === S.ficha[item.id]) ?? data.fichas.find((f) => fichaKey(f) === S.ficha[item.id]) ?? list[0];
 }
 
@@ -612,15 +635,17 @@ function fichasHTML(item) {
   if (!data.fichas.length) return `<div class="doc" id="doc"><div class="empty"><b>Este PR no trae fichas nuevas</b>${data.error ? esc(data.error) : 'Solo cambia el inventario o el registro de corridas.'}</div></div>`;
   const f = currentFicha(item, data);
   const filter = (key, value, label) => `<button class="fchip" data-ffilter="${key}:${value}" aria-pressed="${S.fichaFilter[key] === value}">${label}</button>`;
-  const shown = visibleFichas(data);
+  const shown = visibleFichas(data, item.id);
+  const reviewed = data.fichas.filter((x) => fichaStatus(x, data.ronin, item.id) !== 'decidir').length;
   const groups = FICHA_GROUPS.map(([k, label]) => {
-    const rows = shown.filter((x) => fichaStatus(x, data.ronin) === k);
+    const rows = shown.filter((x) => fichaStatus(x, data.ronin, item.id) === k);
     if (!rows.length) return '';
     return `<div class="fgrp"><span>${label}</span><span>${rows.length}</span></div>` + rows.map((x) => `<button class="frow${k === 'rechazada' ? ' rej' : ''}" data-ficha="${esc(fichaKey(x))}" aria-current="${f && fichaKey(x) === fichaKey(f)}">
       ${dotClass(FICHA_DOT[k])}<span class="tl">${esc(x.titulo)}</span>
       <span class="sub"><span class="id">${esc(x.id)}</span><span class="sev ${esc(sevClass(x))}">${esc(sevLabel(x))}</span>${vp(x.viewport)}${x.comments.length ? `<span class="vp">${TALK_ICON}${x.comments.length}</span>` : ''}</span></button>`).join('');
   }).join('');
-  const list = `<div class="flist"><div class="filters">${filter('tipo', 'todas', 'Todas')}${filter('tipo', 'hallazgo', 'Hallazgos')}${filter('tipo', 'idea', 'Ideas')}<span class="gap"></span>${filter('vp', 'todos', 'Todos')}${filter('vp', 'desktop', 'Desktop')}${filter('vp', 'mobile', 'Mobile')}</div>
+  const progress = `<div class="fprog"><span class="fprog-bar"><i style="width:${(reviewed / data.fichas.length) * 100}%"></i></span>Revisadas ${reviewed} de ${data.fichas.length}</div>`;
+  const list = `<div class="flist">${progress}<div class="filters">${filter('tipo', 'todas', 'Todas')}${filter('tipo', 'hallazgo', 'Hallazgos')}${filter('tipo', 'idea', 'Ideas')}<span class="gap"></span>${filter('vp', 'todos', 'Todos')}${filter('vp', 'desktop', 'Desktop')}${filter('vp', 'mobile', 'Mobile')}</div>
     <div class="frows" id="frows">${groups || '<p class="none">Ninguna ficha con esos filtros.</p>'}</div>
     ${data.runs.length ? `<div class="fruns">Corridas: ${data.runs.map((run) => `<a href="${esc(run.url)}" target="_blank" rel="noopener">${esc(run.id)}</a>`).join(', ')}</div>` : ''}</div>`;
   return `<div class="doc review${S.fichaOpen[item.id] ? ' open' : ''}" id="doc" data-key="${esc(`${item.id}:fichas`)}">${list}<div class="fdetail" id="fdetail" data-current="${esc(f ? fichaKey(f) : '')}">${f ? fichaHTML(item, data, f, shown) : ''}</div></div>`;
@@ -668,20 +693,33 @@ function fichaThreadHTML(item, data, f) {
   const cms = ordered.map((c) => `<article class="cm${c.author === data.ronin ? ' bot' : ''}${c.replyTo ? ' reply' : ''}"><header>${avatar(c.author)}<b>${esc(c.author)}</b>${c.url ? `<a href="${esc(c.url)}" target="_blank" rel="noopener">${esc(when(c.createdAt))}</a>` : `<span>${esc(when(c.createdAt))}</span>`}</header><div class="md">${md(c.body, item.repo)}</div></article>`).join('');
   return `<div class="fthread"><h3>Conversación <span class="m">${f.comments.length ? `${f.comments.length} ${f.comments.length === 1 ? 'comentario' : 'comentarios'} en la ficha` : 'nadie comentó esta ficha'}</span></h3>
     ${cms ? `<div class="cms">${cms}</div>` : ''}
-    <p class="note">Para rechazarla o pedir cambios, por ahora, comentá su archivo en ${files ? `<a href="${esc(files)}/files" target="_blank" rel="noopener">“Files changed” ↗</a>` : '“Files changed”'}.</p></div>`;
+    <div class="composer"><textarea id="fcomment" rows="3" maxlength="4000" placeholder="Comentar en la ficha… ronin lo lee como en GitHub: puede rechazarla, corregirla, abrir un issue o responder.">${esc(S.fdraft[fichaKey(f)] ?? '')}</textarea>
+      <div class="cf"><span>Comentás como ${esc(S.snap?.me ?? '')} sobre el archivo de la ficha${files ? `, en <a href="${esc(files)}/files" target="_blank" rel="noopener">“Files changed”</a>` : ''}.</span><button class="btn-s" id="fcomment-send">Comentar</button></div></div></div>`;
+}
+
+function decisionsHTML(f, status) {
+  if (status === 'rechazada' || status === 'aprobada') return '';
+  const marked = status === 'lista';
+  const menu = S.fmenu ? `<div class="menu fmenu" role="menu">
+    <button role="menuitem" data-fact="issue"><b>Pedir un issue aparte</b><small>Algo que surge de esta ficha pero no es su propuesta.</small></button>
+    <button role="menuitem" data-fact="pregunta"><b>Preguntarle a ronin</b><small>Responde en el hilo, sin tocar la ficha.</small></button></div>` : '';
+  return `<span class="decide">${status === 'decidir' || marked ? `<button class="btn-s ok" data-flista aria-pressed="${marked}">${marked ? '✓ Lista' : '✓ Dejarla así'} <kbd>a</kbd></button>` : ''}
+    <button class="btn-s" data-fact="cambios">Pedir cambios <kbd>c</kbd></button>
+    <button class="btn-s danger" data-fact="rechazar">Rechazar <kbd>r</kbd></button>
+    <span class="actions"><button class="btn-s" id="fmore" aria-haspopup="menu" aria-expanded="${S.fmenu}">Más ▾</button>${menu}</span></span>`;
 }
 
 function fichaHTML(item, data, f, shown) {
-  const status = fichaStatus(f, data.ronin);
+  const status = fichaStatus(f, data.ronin, item.id);
   const idx = shown.findIndex((x) => fichaKey(x) === fichaKey(f));
   const banner = {
     rechazada: `<div class="banner crit">${dotClass('crit')}<div><b>Rechazada</b>${f.motivo ? `<p>${esc(f.motivo)}</p>` : ''}</div></div>`,
     aprobada: `<div class="banner ok">${dotClass('ok')}<div><b>Aprobada</b>${f.issue ? `<p>Issue <a href="${esc(`https://github.com/${item.repo}/issues/${f.issue}`)}" target="_blank" rel="noopener">#${esc(f.issue)}</a>.</p>` : ''}</div></div>`,
-    esperando: `<div class="banner run">${dotClass('live')}<div><b>Esperando a ronin</b><p>Hay un comentario que ronin todavía no respondió.</p></div></div>`,
+    esperando: `<div class="banner run">${dotClass('live')}<div><b>Esperando a ronin</b><p>Hay un comentario que ronin todavía no respondió. Cuando lo aplique, su respuesta aparece abajo.</p></div></div>`,
   }[status] ?? '';
   const meta = [f.senal && f.senal !== f.gravedad && f.tipo !== 'idea' ? esc(f.senal) : '', `rol ${esc(f.rol)}`, esc(f.functionName || f.funcion), f.entorno ? 'entorno de dev' : ''].filter(Boolean).map((m) => `<span>${m}</span>`).join('');
   return `<div class="fwrap">
-    <div class="fnav"><button class="pill fback" data-fback>← Fichas</button><span class="m">${idx >= 0 ? `${idx + 1} de ${shown.length}` : ''}</span><button class="pill" data-fmove="-1" ${idx <= 0 ? 'disabled' : ''} aria-label="Ficha anterior">↑</button><button class="pill" data-fmove="1" ${idx < 0 || idx >= shown.length - 1 ? 'disabled' : ''} aria-label="Ficha siguiente">↓</button></div>
+    <div class="fnav"><button class="pill fback" data-fback>← Fichas</button>${decisionsHTML(f, status)}<span class="m">${idx >= 0 ? `${idx + 1} de ${shown.length}` : ''}</span><button class="pill" data-fmove="-1" ${idx <= 0 ? 'disabled' : ''} aria-label="Ficha anterior">↑</button><button class="pill" data-fmove="1" ${idx < 0 || idx >= shown.length - 1 ? 'disabled' : ''} aria-label="Ficha siguiente">↓</button></div>
     <div class="fmeta"><span class="id">${esc(f.id)}</span><span class="sev ${esc(sevClass(f))}">${esc(sevLabel(f))}</span>${vp(f.viewport)}${meta}<a class="link fgh" href="${esc(f.url)}" target="_blank" rel="noopener">archivo ↗</a></div>
     <h2 class="ftitle">${esc(f.titulo)}</h2>
     ${banner}
@@ -710,7 +748,7 @@ function moveFicha(delta) {
   const item = S.sel && itemById(S.sel);
   const data = item && S.expl[item.id]?.data;
   if (!data?.fichas.length) return;
-  const list = visibleFichas(data);
+  const list = visibleFichas(data, item.id);
   const cur = currentFicha(item, data);
   const i = list.findIndex((f) => cur && fichaKey(f) === fichaKey(cur));
   const next = list[Math.max(0, Math.min(list.length - 1, i + delta))];
@@ -736,6 +774,141 @@ function renderLightbox() {
   box.innerHTML = `<div class="lt"><b>${esc(f.id)}</b><span class="m">${esc(f.titulo)}</span>${f.antes.length > 1 ? '<span class="m keys"><kbd>←</kbd> <kbd>→</kbd> otra captura del antes</span>' : ''}<button id="lb-x">Cerrar ✕</button></div>
     <div class="lb">${shots.filter(([, img]) => img && evidenceSrc(img.url)).map(([label, img]) => `<figure><div><img src="${esc(evidenceSrc(img.url))}" alt="${esc(img.nota ?? label)}"></div><figcaption><b>${esc(label)}</b>${img.nota ? ` · ${esc(img.nota)}` : ''}</figcaption></figure>`).join('')}</div>`;
   $('#lb-x').onclick = () => { S.lightbox = null; renderLightbox(); };
+}
+
+const FICHA_ACTIONS = {
+  rechazar: { title: 'Rechazar', field: 'Motivo: queda en knowledge.md para que no se vuelva a proponer', btn: 'Rechazar', cls: 'danger', placeholder: 'Por qué no va', quick: ['Muy poco probable: es una app interna con pocos usuarios', 'Ya está cubierto', 'No es un problema para el equipo', 'Lo resolvemos con otra ficha'] },
+  cambios: { title: 'Pedir cambios', field: 'Qué cambiar en la propuesta', btn: 'Pedir cambios', placeholder: 'Por ejemplo: que el aviso diga “No se encontró el producto o ya fue eliminado por otro usuario”', redo: true },
+  issue: { title: 'Pedir un issue aparte', field: 'Qué tiene que tener el issue', btn: 'Pedir el issue', placeholder: 'Por ejemplo: revisar todos los toasts de error de catálogos' },
+  pregunta: { title: 'Preguntarle a ronin', field: 'Tu pregunta', btn: 'Preguntar', placeholder: '¿Esto pasa también como Sales?' },
+};
+
+// The comment as it will be written — the same words the server writes
+// (dashboard-exploration-actions.ts's fichaComment).
+function fichaCommentText(action, text, redo) {
+  if (action === 'rechazar') return `Rechazo esta ficha: ${text}`;
+  if (action === 'cambios') return redo ? `${text}\n\nTambién hay que rehacer la captura del después.` : text;
+  if (action === 'issue') return `Abrí un issue aparte: ${text}`;
+  return text;
+}
+
+function openFichaAction(action, opts = {}) {
+  const item = S.sel && itemById(S.sel);
+  const data = item && S.expl[item.id]?.data;
+  const f = data && currentFicha(item, data);
+  if (!f || !FICHA_ACTIONS[action]) return;
+  S.fmenu = false;
+  S.fdialog = { item: item.id, pr: item.number, ficha: fichaKey(f), fid: f.id, titulo: f.titulo, action, text: '', redo: Boolean(opts.redo), sending: false, error: null };
+  renderCenter();
+  renderFichaDialog();
+}
+
+function renderFichaDialog() {
+  let layer = $('#flayer');
+  const d = S.fdialog;
+  if (!d) {
+    layer?.remove();
+    return;
+  }
+  const meta = FICHA_ACTIONS[d.action];
+  if (!layer) {
+    layer = Object.assign(document.body.appendChild(document.createElement('div')), { id: 'flayer' });
+    layer.innerHTML = `<div class="scrim"><div class="dlg" role="dialog" aria-modal="true" aria-labelledby="fdlg-t">
+      <p class="help">${esc(d.fid)} · ${esc(d.titulo)}</p>
+      <h2 id="fdlg-t">${esc(meta.title)}</h2>
+      <label class="field"><span>${esc(meta.field)}</span><textarea id="fdlg-text" rows="4" maxlength="4000" placeholder="${esc(meta.placeholder)}"></textarea></label>
+      ${meta.quick ? `<div class="quick-r">${meta.quick.map((q) => `<button class="pill" data-quick="${esc(q)}">${esc(q)}</button>`).join('')}</div>` : ''}
+      ${meta.redo ? `<label class="check"><input type="checkbox" id="fdlg-redo"${d.redo ? ' checked' : ''}><span>Rehacer la captura del después<small>ronin levanta la app con el cambio borrador corregido y reemplaza la imagen. Tarda unos minutos.</small></span></label>` : ''}
+      <div class="prev"><div class="lbl">Comentás como ${esc(S.snap?.me ?? '')} en ${esc(d.fid)}, en “Files changed” del PR #${esc(d.pr)}</div><div class="md" id="fdlg-prev"></div></div>
+      <p class="bad" id="fdlg-err" hidden></p>
+      <div class="foot-d"><span class="kbd-hint"><kbd>Ctrl</kbd> <kbd>Enter</kbd> para enviar</span><button class="btn-s" id="fdlg-no">Cancelar</button><button class="btn-s ${meta.cls === 'danger' ? 'danger-solid' : 'primary'}" id="fdlg-yes"></button></div></div></div>`;
+    const area = $('#fdlg-text');
+    area.oninput = () => { S.fdialog.text = area.value; renderFichaDialog(); };
+    area.onkeydown = (event) => { if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) sendFichaAction(); };
+    const redo = $('#fdlg-redo');
+    if (redo) redo.onchange = () => { S.fdialog.redo = redo.checked; renderFichaDialog(); };
+    for (const b of layer.querySelectorAll('[data-quick]')) b.onclick = () => { area.value = b.dataset.quick; S.fdialog.text = area.value; renderFichaDialog(); area.focus(); };
+    $('#fdlg-no').onclick = closeFichaDialog;
+    layer.querySelector('.scrim').onclick = (event) => { if (event.target.classList.contains('scrim')) closeFichaDialog(); };
+    $('#fdlg-yes').onclick = sendFichaAction;
+    area.focus();
+  }
+  const typed = d.text.trim();
+  $('#fdlg-prev').innerHTML = md(fichaCommentText(d.action, typed || '…', d.redo), itemById(d.item)?.repo ?? '');
+  const yes = $('#fdlg-yes');
+  yes.textContent = d.sending ? 'Comentando…' : meta.btn;
+  yes.disabled = d.sending || !typed;
+  $('#fdlg-err').hidden = !d.error;
+  $('#fdlg-err').textContent = d.error ?? '';
+}
+
+function closeFichaDialog() {
+  if (S.fdialog?.sending) return;
+  S.fdialog = null;
+  renderFichaDialog();
+}
+
+// Sends a comment on the finding (from the dialog, or the box under its
+// thread) and reads the review again, so the finding shows it's waiting on ronin.
+async function postFichaComment(itemId, ficha, action, text, redo) {
+  const done = await api(`/api/items/${encodeURIComponent(itemId)}/exploration/actions`, { method: 'POST', body: JSON.stringify({ action, ficha, text, ...(redo ? { redo: true } : {}) }) });
+  setLista(itemId, ficha, false);
+  delete S.fdraft[ficha];
+  toast(`Comentaste en ${ficha.split('/')[1]}. ronin lo va a aplicar y te responde en el hilo.`, done.url);
+  if (S.expl[itemId]) S.expl[itemId].at = 0;
+  await loadExploration(itemId);
+}
+
+async function sendFichaAction() {
+  const d = S.fdialog;
+  if (!d || d.sending || !d.text.trim()) return;
+  d.sending = true;
+  d.error = null;
+  renderFichaDialog();
+  try {
+    await postFichaComment(d.item, d.ficha, d.action, d.text.trim(), d.redo);
+    S.fdialog = null;
+    renderFichaDialog();
+  } catch (error) {
+    if (error instanceof Unauthorized) return showLogin();
+    d.sending = false;
+    d.error = `No se pudo: ${error.message}`;
+    renderFichaDialog();
+  }
+}
+
+async function sendFreeComment() {
+  const area = $('#fcomment');
+  const key = $('#fdetail')?.dataset.current;
+  const text = area?.value.trim();
+  if (!text || !key) return area?.focus();
+  const button = $('#fcomment-send');
+  button.disabled = true;
+  button.textContent = 'Comentando…';
+  try {
+    await postFichaComment(S.sel, key, 'comentar', text, false);
+  } catch (error) {
+    if (error instanceof Unauthorized) return showLogin();
+    toast(`No se pudo comentar: ${error.message}`);
+    button.disabled = false;
+    button.textContent = 'Comentar';
+  }
+}
+
+function toggleLista() {
+  const item = S.sel && itemById(S.sel);
+  const data = item && S.expl[item.id]?.data;
+  const f = data && currentFicha(item, data);
+  if (!f) return;
+  const status = fichaStatus(f, data.ronin, item.id);
+  if (status !== 'decidir' && status !== 'lista') return;
+  setLista(item.id, fichaKey(f), status === 'decidir');
+  if (status === 'decidir') {
+    // On to the next one still to decide.
+    const next = visibleFichas(data, item.id).find((x) => fichaStatus(x, data.ronin, item.id) === 'decidir');
+    if (next) return selectFicha(fichaKey(next));
+  }
+  renderCenter();
 }
 
 async function loadExploration(id) {
@@ -858,6 +1031,26 @@ function wireCenter() {
     };
   }
   for (const button of document.querySelectorAll('[data-ficha]')) button.onclick = () => selectFicha(button.dataset.ficha);
+  for (const button of document.querySelectorAll('[data-fact]')) {
+    button.onclick = (event) => {
+      event.stopPropagation();
+      openFichaAction(button.dataset.fact);
+    };
+  }
+  for (const button of document.querySelectorAll('[data-flista]')) button.onclick = toggleLista;
+  const fmore = $('#fmore');
+  if (fmore) fmore.onclick = (event) => {
+    event.stopPropagation();
+    S.fmenu = !S.fmenu;
+    renderCenter();
+  };
+  const fcomment = $('#fcomment');
+  if (fcomment) {
+    fcomment.oninput = () => { S.fdraft[$('#fdetail').dataset.current] = fcomment.value; };
+    fcomment.onkeydown = (event) => { if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) sendFreeComment(); };
+  }
+  const fsend = $('#fcomment-send');
+  if (fsend) fsend.onclick = sendFreeComment;
   for (const button of document.querySelectorAll('[data-fmove]')) button.onclick = () => moveFicha(Number(button.dataset.fmove));
   for (const button of document.querySelectorAll('[data-fback]')) button.onclick = () => { S.fichaOpen[S.sel] = false; renderCenter(); };
   for (const button of document.querySelectorAll('[data-ffilter]')) {
@@ -1244,7 +1437,9 @@ async function refresh() {
   if (detail && Date.now() - (detail.at ?? 0) > DETAIL_EVERY_MS) loadDetail(S.sel);
   else {
     const expl = S.sel && S.expl[S.sel];
-    if (expl && Date.now() - (expl.at ?? 0) > DETAIL_EVERY_MS) loadExploration(S.sel);
+    // While a finding waits on ronin, its answer is looked for more often.
+    const waiting = expl?.data?.fichas.some((f) => fichaStatus(f, expl.data.ronin) === 'esperando');
+    if (expl && Date.now() - (expl.at ?? 0) > (waiting ? WAITING_EVERY_MS : DETAIL_EVERY_MS)) loadExploration(S.sel);
   }
 }
 
@@ -1313,8 +1508,9 @@ async function boot() {
   else renderAll();
 
   document.addEventListener('click', () => {
-    if (!S.menu) return;
+    if (!S.menu && !S.fmenu) return;
     S.menu = false;
+    S.fmenu = false;
     renderCenter();
   });
   document.addEventListener('keydown', (event) => {
@@ -1327,15 +1523,23 @@ async function boot() {
       renderLightbox();
       return;
     }
-    // j/k go through the findings of an exploration PR, as long as nothing is being typed.
+    // On an exploration PR's findings, as long as nothing is being typed:
+    // j/k go through them, a marks one as looked at, c and r open the dialog.
     const item = S.sel && itemById(S.sel);
-    if ((event.key === 'j' || event.key === 'k') && !S.dialog && !event.metaKey && !event.ctrlKey && !event.altKey && item && viewOf(item) === 'ficha' && docOf(item) === 'fichas' && !/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName ?? '')) {
+    const reviewing = !S.dialog && !S.fdialog && !event.metaKey && !event.ctrlKey && !event.altKey && item && viewOf(item) === 'ficha' && docOf(item) === 'fichas' && !/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName ?? '');
+    if (reviewing && ['j', 'k', 'a', 'c', 'r'].includes(event.key)) {
       event.preventDefault();
-      moveFicha(event.key === 'j' ? 1 : -1);
+      if (event.key === 'j' || event.key === 'k') moveFicha(event.key === 'j' ? 1 : -1);
+      else if (event.key === 'a') toggleLista();
+      else if (document.querySelector(`[data-fact="${event.key === 'c' ? 'cambios' : 'rechazar'}"]`)) openFichaAction(event.key === 'c' ? 'cambios' : 'rechazar');
       return;
     }
     if (event.key !== 'Escape') return;
-    if (S.dialog) closeDialog();
+    if (S.fdialog) closeFichaDialog();
+    else if (S.fmenu) {
+      S.fmenu = false;
+      renderCenter();
+    } else if (S.dialog) closeDialog();
     else if (S.menu) {
       S.menu = false;
       renderCenter();
