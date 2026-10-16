@@ -5,17 +5,21 @@ import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createTailnetHandler } from './tailnet.js';
-import { signSession, type AuthConfig, type GithubOAuth } from './api/auth.js';
+import { sealSession, type AuthConfig, type GithubOAuth } from './api/auth.js';
 
 vi.mock('../core/repos.js', () => ({ loadRepos: async () => [{ productRepo: 'acme/product' }] }));
 vi.mock('./api/dashboard-github.js', () => ({ repoGithub: async () => undefined }));
 
 const AUTH: AuthConfig = { url: 'https://media.example.ts.net:8443', githubClientId: 'cid', githubClientSecret: 'cs', sessionSecret: 's'.repeat(40), allowedUsers: ['oskr814'], sessionDays: 7 };
-const github: GithubOAuth = { exchangeCode: vi.fn(async () => 'gho_token'), userLogin: vi.fn(async () => 'Oskr814') };
+const github: GithubOAuth = {
+  exchangeCode: vi.fn(async () => ({ token: 'gho_token', scopes: ['repo'] })),
+  userLogin: vi.fn(async () => 'Oskr814'),
+  revokeToken: vi.fn(async () => {}),
+};
 
 let server: Server;
 let base: string;
-const session = () => `ronin_session=${signSession('oskr814', AUTH.sessionSecret, 7)}`;
+const session = (token = 'gho_token') => `ronin_session=${sealSession({ login: 'oskr814', token }, AUTH.sessionSecret, 7)}`;
 
 beforeAll(async () => {
   const web = mkdtempSync(join(tmpdir(), 'ronin-web-'));
@@ -67,13 +71,13 @@ describe('tailnet listener', () => {
     expect((await fetch(path, { headers: { cookie: session() } })).status).toBe(404);
   });
 
-  it('logs in with GitHub: state checked, session set, GitHub token dropped', async () => {
+  it('logs in with GitHub asking for repo: state checked, the token kept only inside the sealed session', async () => {
     const login = await fetch(`${base}/api/auth/login`, { redirect: 'manual' });
     expect(login.status).toBe(302);
     const location = new URL(login.headers.get('location')!);
     expect(location.origin + location.pathname).toBe('https://github.com/login/oauth/authorize');
     expect(location.searchParams.get('redirect_uri')).toBe(`${AUTH.url}/api/auth/callback`);
-    expect(location.searchParams.get('scope')).toBeNull();
+    expect(location.searchParams.get('scope')).toBe('repo');
     const state = location.searchParams.get('state')!;
     const stateCookie = login.headers.get('set-cookie')!.split(';')[0];
 
@@ -101,6 +105,28 @@ describe('tailnet listener', () => {
     const res = await fetch(`${base}/api/auth/callback?code=c1&state=${state}`, { redirect: 'manual', headers: { cookie: login.headers.get('set-cookie')!.split(';')[0] } });
     expect(res.status).toBe(403);
     expect(res.headers.getSetCookie().some((c) => c.startsWith('ronin_session=') && !c.startsWith('ronin_session=;'))).toBe(false);
+    expect(github.revokeToken).toHaveBeenCalledWith('gho_token', AUTH);
+  });
+
+  it('turns away a login that unchecked the repo scope, and revokes its token', async () => {
+    vi.mocked(github.exchangeCode).mockResolvedValueOnce({ token: 'gho_sin_repo', scopes: [] });
+    const login = await fetch(`${base}/api/auth/login`, { redirect: 'manual' });
+    const state = new URL(login.headers.get('location')!).searchParams.get('state')!;
+    const res = await fetch(`${base}/api/auth/callback?code=c1&state=${state}`, { redirect: 'manual', headers: { cookie: login.headers.get('set-cookie')!.split(';')[0] } });
+    expect(res.status).toBe(403);
+    expect(await res.text()).toContain('"repo"');
+    expect(res.headers.getSetCookie().some((c) => c.startsWith('ronin_session=') && !c.startsWith('ronin_session=;'))).toBe(false);
+    expect(github.revokeToken).toHaveBeenCalledWith('gho_sin_repo', AUTH);
+  });
+
+  it('revokes the token on logout, and clears the cookie even if GitHub fails', async () => {
+    const ok = await fetch(`${base}/api/auth/logout`, { method: 'POST', headers: { origin: AUTH.url, cookie: session('gho_salir') } });
+    expect(ok.status).toBe(204);
+    expect(github.revokeToken).toHaveBeenCalledWith('gho_salir', AUTH);
+    vi.mocked(github.revokeToken).mockRejectedValueOnce(new Error('GitHub caído'));
+    const failed = await fetch(`${base}/api/auth/logout`, { method: 'POST', headers: { origin: AUTH.url, cookie: session('gho_otro') } });
+    expect(failed.status).toBe(204);
+    expect(failed.headers.getSetCookie()[0]).toMatch(/^ronin_session=;.*Max-Age=0/);
   });
 
   it('refuses a change asked from another site', async () => {
