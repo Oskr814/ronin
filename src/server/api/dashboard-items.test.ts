@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import type { OpenPr } from '../../core/github.js';
 import type { RunSummary } from './dashboard-data.js';
 import type { RepoGithub } from './dashboard-github.js';
-import { buildItems, prNote } from './dashboard-items.js';
+import { buildItems, itemRunKeys, prNote } from './dashboard-items.js';
 
 const REPO = 'acme/product';
 
@@ -28,6 +28,15 @@ const ISSUE_879 = {
 };
 
 describe('buildItems', () => {
+  it("counts a run on a slice's PR alone as the issue's, not as an item of its own", () => {
+    const items = buildItems([REPO], [
+      run({ runId: 'c', taskType: 'resolve-conflicts', prNumber: 894, state: 'running', startedAt: '2026-10-16T12:00:00Z' }),
+      run({ runId: 'i', issueNumber: 879, sliceIndex: 1, startedAt: '2026-10-16T11:00:00Z' }),
+    ], [github({ issues: [ISSUE_879], prs: [pr({ number: 894 })] })]);
+    expect(items.map((item) => item.id)).toEqual(['acme/product#879']);
+    expect(items[0]).toMatchObject({ status: 'running', runs: 2, lastRun: { runId: 'c' } });
+  });
+
   it("shows an issue ronin manages with its slices and what it's waiting for, even with no recent runs", () => {
     const [item] = buildItems([REPO], [], [github({
       issues: [ISSUE_879],
@@ -95,5 +104,15 @@ describe('prNote', () => {
     expect(prNote(pr({ reviewDecision: 'APPROVED', checks: [{ name: 'e2e', outcome: 'passed' }] }))).toBe('aprobado, falta el merge de #1');
     expect(prNote(pr({ reviewDecision: 'CHANGES_REQUESTED' }))).toBe('cambios pedidos en #1');
     expect(prNote(pr({}))).toBe('esperando review en #1');
+  });
+});
+
+describe('itemRunKeys', () => {
+  const gh = github({ issues: [ISSUE_879] });
+  it("is an issue's own key plus its slices' PRs, and just the item's own for anything else", () => {
+    expect(itemRunKeys('acme/product#879', gh)).toEqual(['acme/product#879', 'acme/product#881', 'acme/product#894']);
+    expect(itemRunKeys('acme/product#894', gh)).toEqual(['acme/product#894']);
+    expect(itemRunKeys('acme/product#879', undefined)).toEqual(['acme/product#879']);
+    expect(itemRunKeys('acme/product:update-changelog:v1', gh)).toEqual(['acme/product:update-changelog:v1']);
   });
 });

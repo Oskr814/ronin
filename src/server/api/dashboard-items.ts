@@ -85,6 +85,24 @@ function byKey(runs: RunSummary[]): Map<string, RunSummary[]> {
   return map;
 }
 
+// The run keys that belong to an issue: its own, and those of its slices'
+// PRs. A run on a slice PR alone (/resolve-conflicts, a preview's data) is
+// keyed by the PR, but it's work on the issue: it shows there, not as an
+// item of its own (#85).
+export function issueRunKeys(repo: string, issue: { number: number; slices: Array<{ prNumber: number | null }> }): string[] {
+  return [`${repo}#${issue.number}`, ...issue.slices.flatMap((s) => (s.prNumber !== null ? [`${repo}#${s.prNumber}`] : []))];
+}
+
+// The run keys an item's history is made of: an issue's (issueRunKeys) when
+// GitHub lists it, otherwise just its own.
+export function itemRunKeys(id: string, gh: RepoGithub | undefined): string[] {
+  const number = Number(/#(\d+)$/.exec(id)?.[1] ?? NaN);
+  const issue = gh?.issues.find((i) => i.number === number && i.status !== 'other');
+  return issue && `${gh!.repo}#${issue.number}` === id ? issueRunKeys(gh!.repo, issue) : [id];
+}
+
+const newestFirst = (a: RunSummary, b: RunSummary) => b.startedAt.localeCompare(a.startedAt);
+
 function runStatus(runs: RunSummary[]): RunState {
   return runs.some((run) => run.state === 'running') ? 'running' : runs[0].state;
 }
@@ -107,8 +125,9 @@ export function buildItems(repos: string[], runs: RunSummary[], github: Array<Re
     for (const issue of gh.issues) {
       if (issue.status === 'other') continue;
       const id = `${repo}#${issue.number}`;
-      seen.add(id);
-      const itemRuns = runsByKey.get(id) ?? [];
+      const keys = issueRunKeys(repo, issue);
+      for (const key of keys) seen.add(key);
+      const itemRuns = keys.flatMap((key) => runsByKey.get(key) ?? []).sort(newestFirst);
       const slices: SliceView[] = issue.slices.map((slice) => {
         const open = slice.prNumber !== null ? prs.get(slice.prNumber) : undefined;
         return {
