@@ -1,27 +1,18 @@
-// Long-running companion to the cron-driven tick() (see index.ts): listens
-// for GitHub webhook deliveries and, for the event/action combos that
-// actually matter (see events.ts's scopeForEvent), starts an event handler
-// right away — its own process (handler.ts) that runs only the flows that
-// event can move, for only the issue or PR it's about. The cron tick stays as
-// the reconciliation pass. See docs/DESIGN.md §14.
-//
-// Deliberately its own process (installed via
-// scripts/setup-webhook-service.sh as a systemd --user service), not folded
-// into index.ts: it needs to stay up permanently, while index.ts's tick() is
-// a one-shot invoked by cron every N minutes.
-import { createServer, type IncomingMessage } from 'node:http';
-import { config } from '../core/config.js';
-import { loadRepos } from '../core/repos.js';
-import { launchWorker } from '../core/worker-launch.js';
+// GitHub's webhook deliveries (POST /api/webhooks/github): for the
+// event/action combos that actually matter (see events.ts's scopeForEvent),
+// starts an event handler right away — its own process (handler.ts) that
+// runs only the flows that event can move, for only the issue or PR it's
+// about. The cron tick stays as the reconciliation pass. See
+// docs/DESIGN.md §14. Served by the ronin server (src/server/index.ts).
+import type { IncomingMessage, ServerResponse } from 'node:http';
+import { config } from '../../../core/config.js';
+import { loadRepos } from '../../../core/repos.js';
+import { launchWorker } from '../../../core/worker-launch.js';
 import { verifySignature, scopeForEvent, ackTarget, type EventPayload } from './events.js';
-import { addAckReaction } from '../core/github.js';
-import { log } from '../core/logger.js';
-import type { Scope } from '../tick.js';
+import { addAckReaction } from '../../../core/github.js';
+import { log } from '../../../core/logger.js';
+import type { Scope } from '../../../tick.js';
 import type { EventHandlerRequest } from './handler.js';
-
-if (!config.webhookSecret) {
-  throw new Error('WEBHOOK_SECRET no está seteado — ver .env.example. webhook-server no puede arrancar sin validar firmas.');
-}
 
 // Open debounce windows, one per repo + resources: what's been asked of them
 // so far, and the timer that starts their handler.
@@ -47,7 +38,7 @@ function scheduleHandler(repo: string, scope: Scope): void {
       log.info(`webhook: atendiendo ${entry.scope.resources.join(', ')} en ${repo} (${entry.scope.flows.join(', ')})`);
       try {
         const request: EventHandlerRequest = { repo, scope: entry.scope, receivedAt: entry.receivedAt };
-        launchWorker('webhooks/handler', request);
+        launchWorker('server/api/webhooks/handler', request);
       } catch (error) {
         // The cron tick picks the event up anyway, just later.
         log.error('webhook: no se pudo lanzar el handler', error);
@@ -66,12 +57,7 @@ function readBody(req: IncomingMessage): Promise<Buffer> {
   });
 }
 
-const server = createServer(async (req, res) => {
-  if (req.method !== 'POST' || req.url !== '/webhook') {
-    res.writeHead(404).end();
-    return;
-  }
-
+export async function handleGithubWebhook(req: IncomingMessage, res: ServerResponse): Promise<void> {
   let rawBody: Buffer;
   try {
     rawBody = await readBody(req);
@@ -122,8 +108,4 @@ const server = createServer(async (req, res) => {
   }
 
   res.writeHead(202).end();
-});
-
-server.listen(config.webhookPort, () => {
-  log.info(`webhook-server escuchando en :${config.webhookPort}`);
-});
+}

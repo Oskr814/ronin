@@ -127,15 +127,17 @@ export const config = {
   // per active repo by local-state.ts, never read directly as a file path
   // here anymore.
   localStatePath: process.env.LOCAL_STATE_PATH ?? '.ronin-state.json',
-  // The following three are only read by webhooks/server.ts — deliberately
-  // not requireEnv'd here so `pnpm tick`/the cron path keeps working for
-  // anyone who never sets up webhooks. webhooks/server.ts validates
+  // The following three are only read by the ronin server (src/server/) —
+  // deliberately not requireEnv'd here so `pnpm tick`/the cron path keeps
+  // working for anyone who never sets it up. The server validates
   // webhookSecret itself at startup.
   webhookSecret: process.env.WEBHOOK_SECRET ?? '',
-  webhookPort: Number(process.env.WEBHOOK_PORT ?? 3939),
+  // The public listener's port, where GitHub's deliveries arrive.
+  // WEBHOOK_PORT is its old name, still read when SERVER_PORT isn't set.
+  serverPort: Number(process.env.SERVER_PORT ?? process.env.WEBHOOK_PORT ?? 3939),
   // How long to coalesce a burst of webhook deliveries about the same issue
   // or PR (e.g. a review's several inline comments) into a single event
-  // handler — see webhooks/server.ts's scheduleHandler. Short: whatever
+  // handler — see server/api/webhooks/github.ts's scheduleHandler. Short: whatever
   // lands after the window is coalesced anyway, by handler.ts keeping at
   // most one handler waiting per scope.
   webhookDebounceMs: Number(process.env.WEBHOOK_DEBOUNCE_MS ?? 1000),

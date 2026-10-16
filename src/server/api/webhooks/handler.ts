@@ -1,16 +1,16 @@
-// One webhook event's run, in its own process — started by the webhook server
-// (server.ts) the moment the event arrives, instead of waiting for a whole
+// One webhook event's run, in its own process — started by the ronin server
+// (github.ts) the moment the event arrives, instead of waiting for a whole
 // tick. Runs tick.ts's flows for the event's scope only (runScoped): the
 // issue or PR it's about, the flows that event can move. The cron tick keeps
 // running everything as the reconciliation pass. See docs/DESIGN.md §14.
 import { createHash } from 'node:crypto';
-import { loadRepos } from '../core/repos.js';
-import { withActiveRepo } from '../core/repo-context.js';
-import { getPrHead } from '../core/github.js';
-import { tryLockResource, unlockResource } from '../core/locks.js';
-import { log } from '../core/logger.js';
-import { issueFromSliceBranch } from '../slices/index.js';
-import { runScoped, type Scope } from '../tick.js';
+import { loadRepos } from '../../../core/repos.js';
+import { withActiveRepo } from '../../../core/repo-context.js';
+import { getPrHead } from '../../../core/github.js';
+import { tryLockResource, unlockResource } from '../../../core/locks.js';
+import { log } from '../../../core/logger.js';
+import { issueFromSliceBranch } from '../../../slices/index.js';
+import { runScoped, type Scope } from '../../../tick.js';
 
 export interface EventHandlerRequest {
   repo: string;

@@ -13,7 +13,7 @@ export function verifySignature(rawBody: Buffer, signatureHeader: string | undef
   return timingSafeEqual(expectedBuf, actualBuf);
 }
 
-import type { Flow, Scope } from '../tick.js';
+import type { Flow, Scope } from '../../../tick.js';
 
 // config.ts's LABEL_AUTO_MERGE — not imported: this module stays free of
 // config.ts, which requires the runner's env vars just to load.

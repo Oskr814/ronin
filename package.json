@@ -19,10 +19,10 @@
     "init-labels": "bash scripts/init-labels.sh",
     "cron:setup": "bash scripts/setup-cron.sh",
     "cron:remove": "bash scripts/setup-cron.sh --remove",
-    "webhook-server": "tsx src/webhooks/server.ts",
+    "server": "tsx src/server/index.ts",
     "init-webhooks": "bash scripts/init-webhooks.sh",
-    "webhook:setup": "bash scripts/setup-webhook-service.sh",
-    "webhook:remove": "bash scripts/setup-webhook-service.sh --remove"
+    "server:setup": "bash scripts/setup-server-service.sh",
+    "server:remove": "bash scripts/setup-server-service.sh --remove"
   },
   "dependencies": {
     "@playwright/mcp": "0.0.83",
