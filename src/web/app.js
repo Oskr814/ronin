@@ -21,12 +21,17 @@ const STATE = {
   timeout: ['crit', 'crit', 'se pasó del tiempo'],
   usage_limit: ['warn', 'warn', 'sin cuota de Claude'],
   cut: ['crit', 'crit', 'se cortó'],
+  blocked: ['crit', 'crit', 'bloqueado'],
+  waiting: ['warn', 'warn', 'esperando a alguien'],
 };
+const SLICE_STATE = { merged: ['ok', 'mergeada'], open: ['warn', 'abierta'], pending: ['pending', 'pendiente'], closed: ['crit', 'PR cerrado sin mergear'] };
+const CHECK_STATE = { passed: ['ok', 'pasó'], pending: ['live', 'corriendo'], failed: ['crit', 'falló'] };
 
 const $ = (selector) => document.querySelector(selector);
 const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const typeName = (type) => TYPE[type] ?? type;
 const dot = (state) => `<span class="dot ${(STATE[state] ?? STATE.error)[0]}" aria-hidden="true"></span>`;
+const dotClass = (cls) => `<span class="dot ${cls}" aria-hidden="true"></span>`;
 const hhmm = (iso) => new Date(iso).toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' });
 const isMobile = () => matchMedia('(max-width: 760px)').matches;
 
@@ -74,20 +79,31 @@ const itemById = (id) => S.snap?.items.find((item) => item.id === id);
 function itemRef(item) {
   if (item.kind === 'issue') return `#${item.number}`;
   if (item.kind === 'pr') return `PR #${item.number}`;
-  return typeName(item.lastRun.taskType);
+  return item.lastRun ? typeName(item.lastRun.taskType) : '';
 }
+const safeRepo = (repo) => /^[\w.-]+\/[\w.-]+$/.test(repo);
 function githubUrl(item) {
-  if (item.number === undefined || !/^[\w.-]+\/[\w.-]+$/.test(item.repo)) return null;
+  if (item.url && item.url.startsWith('https://github.com/')) return item.url;
+  if (item.number === undefined || !safeRepo(item.repo)) return null;
   return `https://github.com/${item.repo}/${item.kind === 'pr' ? 'pull' : 'issues'}/${item.number}`;
 }
+const prUrl = (repo, number) => (safeRepo(repo) ? `https://github.com/${repo}/pull/${number}` : null);
 function itemAge(item) {
   const run = item.lastRun;
-  return item.state === 'running' ? clock(Date.now() - Date.parse(run.startedAt)) : short(Date.now() - Date.parse(run.endedAt ?? run.startedAt));
+  if (item.status === 'running' && run) return clock(Date.now() - Date.parse(run.startedAt));
+  if (item.status === 'blocked' && item.block) return short(Date.now() - Date.parse(item.block.at));
+  return run ? short(Date.now() - Date.parse(run.endedAt ?? run.startedAt)) : '';
+}
+function itemLast(item) {
+  if (item.status === 'running') return item.lastRun?.lastStep ?? '';
+  if (item.status === 'blocked') return item.block?.reason ?? 'bloqueado';
+  if (item.note) return item.note;
+  return item.lastRun?.lastStep ?? '';
 }
 
 // ---------- sidebar
 function renderQuick() {
-  const running = S.snap.items.filter((item) => item.state === 'running').length;
+  const running = S.snap.items.filter((item) => item.status === 'running').length;
   const queued = S.snap.runner.queue.length;
   $('#quick').innerHTML = `
     <button data-filter="running" aria-pressed="${S.filter === 'running'}"><svg viewBox="0 0 24 24"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>Corriendo ahora<span class="c">${running}</span></button>
@@ -101,11 +117,22 @@ function renderQuick() {
   }
 }
 
+function itemSub(item) {
+  const parts = [itemRef(item)];
+  if (item.slices?.length) parts.push(`${item.slices.filter((s) => s.status === 'merged').length} de ${item.slices.length} ${item.slices.length === 1 ? 'slice' : 'slices'}`);
+  else if (item.kind === 'pr' && item.pr?.author && item.pr.author !== 'ronin-agent') parts.push(`de ${item.pr.author}`);
+  else if (item.kind !== 'other' && item.lastRun) parts.push(typeName(item.lastRun.taskType));
+  return parts.filter(Boolean).join(', ');
+}
+
 function itemRow(item) {
+  const last = itemLast(item);
+  const showSlices = item.slices?.length && (S.sel === item.id || item.status === 'running' || item.status === 'blocked');
+  const kids = showSlices ? `<div class="kids">${item.slices.map((slice) => `<button class="kid" data-id="${esc(item.id)}">${dotClass(SLICE_STATE[slice.status][0])}<span class="t">${slice.index + 1}. ${esc(slice.title)}</span><span class="age">${slice.prNumber ? `#${slice.prNumber}` : ''}</span></button>`).join('')}</div>` : '';
   return `<button class="item" data-id="${esc(item.id)}" aria-current="${S.sel === item.id}">
-    ${dot(item.state)}<span class="t">${esc(item.title)}</span><span class="age" ${item.state === 'running' ? `data-since="${esc(item.lastRun.startedAt)}"` : ''}>${esc(itemAge(item))}</span>
-    <span class="sub">${esc(itemRef(item))}${item.kind !== 'other' ? `, ${esc(typeName(item.lastRun.taskType))}` : ''}</span>
-    ${item.lastRun.lastStep ? `<span class="last">${esc(item.lastRun.lastStep)}</span>` : ''}</button>`;
+    ${dot(item.status)}<span class="t">${esc(item.title)}</span><span class="age" ${item.status === 'running' && item.lastRun ? `data-since="${esc(item.lastRun.startedAt)}"` : ''}>${esc(itemAge(item))}</span>
+    <span class="sub">${esc(itemSub(item))}</span>
+    ${last ? `<span class="last">${esc(last)}</span>` : ''}</button>${kids}`;
 }
 
 function renderTree() {
@@ -118,12 +145,14 @@ function renderTree() {
     return;
   }
   const q = S.q.toLowerCase();
-  const match = (item) => (!q || `${item.title} ${itemRef(item)} ${item.number ?? ''} ${typeName(item.lastRun.taskType)}`.toLowerCase().includes(q)) && (S.filter !== 'running' || item.state === 'running');
+  const match = (item) => (!q || `${item.title} ${itemRef(item)} ${item.number ?? ''} ${item.lastRun ? typeName(item.lastRun.taskType) : ''}`.toLowerCase().includes(q)) && (S.filter !== 'running' || item.status === 'running');
   let html = '';
+  const blocked = S.snap.items.filter((item) => item.status === 'blocked' && match(item));
+  if (blocked.length) html += `<div class="grp"><span>Necesitan a alguien</span><span class="n alert">${blocked.length}</span></div>` + blocked.map(itemRow).join('');
   for (const repo of S.snap.repos) {
-    const items = S.snap.items.filter((item) => item.repo === repo && match(item));
+    const items = S.snap.items.filter((item) => item.repo === repo && item.status !== 'blocked' && match(item));
     html += `<div class="grp"><span class="sq" style="background:${repoColor(repo)}"></span><b>${esc(repoShort(repo))}</b><span class="n">${items.length}</span></div>`;
-    html += items.length ? items.map(itemRow).join('') : `<div class="grp-empty">${q || S.filter ? 'Nada coincide.' : 'Sin corridas en los últimos 3 días.'}</div>`;
+    html += items.length ? items.map(itemRow).join('') : `<div class="grp-empty">${q || S.filter ? 'Nada coincide.' : 'Nada en curso ni corridas en los últimos 3 días.'}</div>`;
   }
   tree.innerHTML = html;
   for (const button of tree.querySelectorAll('[data-id]')) button.onclick = () => select(button.dataset.id);
@@ -161,18 +190,24 @@ function renderCenter() {
   const tabs = `<div class="tabs" role="tablist">${S.open.map((id) => {
     const item = itemById(id);
     const label = item ? item.title : id;
-    return `<div class="tab" role="tab" aria-selected="${S.sel === id}"><button class="open" data-tab="${esc(id)}">${item ? dot(item.state) : ''}<span class="l">${esc(label)}</span></button><button class="x" data-close="${esc(id)}" aria-label="Cerrar">×</button></div>`;
+    return `<div class="tab" role="tab" aria-selected="${S.sel === id}"><button class="open" data-tab="${esc(id)}">${item ? dot(item.status) : ''}<span class="l">${esc(label)}</span></button><button class="x" data-close="${esc(id)}" aria-label="Cerrar">×</button></div>`;
   }).join('')}</div>`;
 
   const item = S.sel && itemById(S.sel);
   if (!item) {
-    const running = S.snap.items.filter((i) => i.state === 'running').length;
+    const running = S.snap.items.filter((i) => i.status === 'running').length;
     center.innerHTML = tabs + `<div class="empty"><b>${running ? `${running} ${running === 1 ? 'agente trabajando' : 'agentes trabajando'}` : 'Ningún agente trabajando ahora'}</b>Elegí algo de la izquierda para ver lo que hizo el agente, paso a paso.</div>`;
     wireCenter();
     return;
   }
 
-  const runs = S.itemRuns[item.id] ?? [item.lastRun];
+  const runs = S.itemRuns[item.id] ?? (item.lastRun ? [item.lastRun] : []);
+  if (runs.length === 0) {
+    const loading = !(item.id in S.itemRuns);
+    center.innerHTML = tabs + backBar(item.title) + `<div class="tx"><div class="empty">${loading ? 'Cargando…' : `<b>Sin corridas de agentes en los últimos 14 días</b>${esc(item.status === 'blocked' ? 'Está bloqueado: el motivo y qué hace falta están en el panel de contexto.' : item.note ? `Ahora: ${item.note}.` : '')}`}</div></div><div class="ctx-inline">${ctxHTML(item)}</div>`;
+    wireCenter();
+    return;
+  }
   const index = Math.min(S.runIdx[item.id] ?? 0, runs.length - 1);
   const pills = `<div class="runs"><span class="lbl">Corridas</span>${runs.map((run, i) => `<button class="pill" data-run="${i}" aria-pressed="${i === index}">${dot(run.state)}${esc(typeName(run.taskType))}<span class="m">${run.state === 'running' ? 'en curso' : `${hhmm(run.startedAt)}${run.durationMs !== undefined ? `, ${duration(run.durationMs)}` : ''}`}</span></button>`).join('')}</div>`;
 
@@ -228,14 +263,36 @@ function wireCenter() {
 
 // ---------- context
 function ctxHTML(item) {
-  const [, chip, label] = STATE[item.state] ?? STATE.error;
+  const [, chip, label] = STATE[item.status] ?? STATE.error;
   const url = githubUrl(item);
-  const runs = S.itemRuns[item.id] ?? [item.lastRun];
+  const runs = S.itemRuns[item.id] ?? (item.lastRun ? [item.lastRun] : []);
+  let html = `<section><span class="chip ${chip}">${esc(label)}</span><div class="title">${esc(item.title)}</div>
+    <div class="links"><span class="repo-tag"><i style="background:${repoColor(item.repo)}"></i>${esc(repoShort(item.repo))}</span>${url ? `<a href="${esc(url)}" target="_blank" rel="noopener">${esc(itemRef(item))} en GitHub</a>` : ''}</div>
+    ${item.note && item.status !== 'running' ? `<p class="note">${esc(item.note[0].toUpperCase() + item.note.slice(1))}.</p>` : ''}</section>`;
+  if (item.status === 'blocked') {
+    html += `<section><h3>Por qué está bloqueado</h3><div class="why">${item.block
+      ? `<b>Hace ${esc(short(Date.now() - Date.parse(item.block.at)))}.</b> ${esc(item.block.reason)}${item.block.excerpt ? `<span class="ask">${esc(item.block.excerpt)}</span>` : ''}`
+      : 'ronin no guardó el motivo en este runner (puede ser de antes del tablero): está en el email del bloqueo.'}
+      <span class="ask">Cuando esté resuelto, volvé a ponerle <code>ronin:in-progress</code> al issue.</span></div></section>`;
+  }
+  if (item.slices?.length) {
+    const merged = item.slices.filter((s) => s.status === 'merged').length;
+    html += `<section class="orch"><h3>Slices</h3><div class="parent">${dot(item.status)}<span>#${esc(item.number)}</span><small>${merged} de ${item.slices.length} ${item.slices.length === 1 ? 'mergeada' : 'mergeadas'}</small></div>
+      <div class="kidsx">${item.slices.map((slice) => {
+        const [cls, text] = SLICE_STATE[slice.status];
+        const link = slice.prNumber ? prUrl(item.repo, slice.prNumber) : null;
+        const detail = slice.status === 'open' ? [slice.checks && slice.checks !== 'none' ? `checks: ${CHECK_STATE[slice.checks][1]}` : null, slice.reviewDecision === 'APPROVED' ? 'aprobada' : slice.reviewDecision === 'CHANGES_REQUESTED' ? 'cambios pedidos' : null].filter(Boolean).join(', ') : '';
+        return `<div class="sl ${slice.status === 'pending' ? 'pending' : ''}">${dotClass(cls)}<span>${slice.index + 1}. ${esc(slice.title)}</span>${link ? `<a href="${esc(link)}" target="_blank" rel="noopener">#${esc(slice.prNumber)}</a>` : '<span></span>'}<small>${esc(text)}${detail ? `, ${esc(detail)}` : ''}</small></div>`;
+      }).join('')}</div></section>`;
+  }
+  if (item.pr?.checks?.length) {
+    html += `<section><h3>Checks de #${esc(item.pr.number)}</h3><ul class="checks">${item.pr.checks.map((check) => `<li>${dotClass(CHECK_STATE[check.outcome][0])}<span>${esc(check.name)}</span><span class="m">${esc(CHECK_STATE[check.outcome][1])}</span></li>`).join('')}</ul></section>`;
+  }
+  if (item.preview) html += previewHTML(item.preview);
+  if (runs.length === 0) return html;
   const shown = runs[Math.min(S.runIdx[item.id] ?? 0, runs.length - 1)];
   const cost = runs.reduce((sum, run) => sum + (run.costUsd ?? 0), 0);
   const failed = runs.filter((run) => ['error', 'timeout', 'cut'].includes(run.state)).length;
-  let html = `<section><span class="chip ${chip}">${esc(label)}</span><div class="title">${esc(item.title)}</div>
-    <div class="links"><span class="repo-tag"><i style="background:${repoColor(item.repo)}"></i>${esc(repoShort(item.repo))}</span>${url ? `<a href="${esc(url)}" target="_blank" rel="noopener">${esc(itemRef(item))} en GitHub</a>` : ''}</div></section>`;
   html += `<section><h3>Esta corrida</h3><dl class="kv">
     <dt>Tarea</dt><dd>${esc(typeName(shown.taskType))}${shown.sliceIndex !== undefined ? `, slice ${shown.sliceIndex + 1}` : ''}</dd>
     ${shown.model ? `<dt>Modelo</dt><dd>${esc(shown.model)}${shown.effort ? `, ${esc(shown.effort)}` : ''}</dd>` : ''}
@@ -246,6 +303,15 @@ function ctxHTML(item) {
     <dt>Worktree</dt><dd class="mono" style="font-size:12px">${esc(shown.worktree)}</dd></dl></section>`;
   html += `<section><h3>Últimos 14 días</h3><dl class="kv"><dt>Corridas</dt><dd>${runs.length}${failed ? `, ${failed} con error` : ''}</dd>${cost ? `<dt>Costo</dt><dd>${esc(money(cost))}</dd>` : ''}</dl></section>`;
   return html;
+}
+
+function previewHTML(preview) {
+  const left = preview.expiresAt ? Date.parse(preview.expiresAt) - Date.now() : null;
+  const safe = /^https?:\/\//.test(preview.url);
+  return `<section><h3>Preview</h3><div class="pv">${esc(preview.appName)} con #${esc(preview.prNumber)}</div>
+    ${safe ? `<a class="url" href="${esc(preview.url)}" target="_blank" rel="noopener">${esc(preview.url.replace(/^https?:\/\//, ''))}</a>` : ''}
+    ${left !== null ? `<dl class="kv" style="margin-top:8px"><dt>Se baja en</dt><dd data-until="${esc(preview.expiresAt)}">${esc(clock(left))}</dd></dl><div class="ttl"><span style="width:${Math.max(0, Math.min(100, (left / (60 * MIN)) * 100))}%"></span></div>` : ''}
+    <p class="note">Los usuarios de prueba están en el comentario de la preview, en el PR.</p></section>`;
 }
 
 function renderCtx() {
@@ -259,7 +325,9 @@ function renderCtx() {
     <dt>Agentes</dt><dd>${slots.used} de ${slots.limit} lugares ocupados</dd>
     <dt>Último tick</dt><dd>${tick.lastTickAt ? `hace ${esc(short(Date.now() - Date.parse(tick.lastTickAt)))}, duró ${esc(duration(tick.lastTickDurationMs ?? 0))}` : 'sin datos hoy'}</dd>
     <dt>Último evento</dt><dd>${tick.lastEventAt ? `hace ${esc(short(Date.now() - Date.parse(tick.lastEventAt)))}` : 'sin datos hoy'}</dd>
-    <dt>Repos</dt><dd>${S.snap.repos.map((repo) => `<span class="repo-tag"><i style="background:${repoColor(repo)}"></i>${esc(repo)}</span>`).join('<br>')}</dd></dl></section>`;
+    <dt>Repos</dt><dd>${S.snap.repos.map((repo) => `<span class="repo-tag"><i style="background:${repoColor(repo)}"></i>${esc(repo)}</span>`).join('<br>')}</dd></dl></section>
+    <section><h3>Previews arriba</h3>${S.snap.previews.length ? S.snap.previews.map((p) => `<div class="pv-row"><div>${esc(p.appName)} con #${esc(p.prNumber)} <span class="m">${esc(repoShort(p.repo))}</span></div>${/^https?:\/\//.test(p.url) ? `<a class="url" href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.url.replace(/^https?:\/\//, ''))}</a>` : ''}</div>`).join('') : '<p class="note">Ninguna.</p>'}</section>
+    <section><h3>GitHub</h3><dl class="kv">${S.snap.github.map((g) => `<dt>${esc(repoShort(g.repo))}</dt><dd>${g.error ? `<span class="bad">no se pudo leer: ${esc(g.error)}</span>${g.fetchedAt ? `, datos de hace ${esc(short(Date.now() - Date.parse(g.fetchedAt)))}` : ''}` : g.fetchedAt ? `leído hace ${esc(short(Date.now() - Date.parse(g.fetchedAt)))}` : 'sin leer'}</dd>`).join('')}</dl></section>`;
 }
 
 // ---------- status bar
@@ -283,6 +351,8 @@ function renderStatus() {
   $('#statusbar').innerHTML = S.snap.usage.map(usageMeter).join('') +
     `<span class="sp hide-m">agentes ${slots.used}/${slots.limit}</span>` +
     `<span class="hide-m">en cola ${queue.length}</span>` +
+    `<span class="hide-m">previews ${S.snap.previews.length}</span>` +
+    (S.snap.github.some((g) => g.error) ? `<span class="hide-m bad" title="${esc(S.snap.github.filter((g) => g.error).map((g) => `${g.repo}: ${g.error}`).join('; '))}">GitHub sin responder</span>` : '') +
     `<span class="hide-m"><span class="ok-dot${tickAge === null || tickAge > 45 * MIN ? ' stale' : ''}"></span>${tickAge === null ? 'sin tick hoy' : `tick hace ${esc(short(tickAge))}`}</span>` +
     `<span class="hide-m">${esc(S.snap.me)}</span>` +
     `<button id="theme">${dark ? 'Tema claro' : 'Tema oscuro'}</button><button id="logout">Salir</button>`;
@@ -315,9 +385,15 @@ function stopStream() {
 async function loadShownRun() {
   const item = itemById(S.sel);
   if (!item) return;
-  const runs = S.itemRuns[item.id] ?? [item.lastRun];
-  const shown = runs[Math.min(S.runIdx[item.id] ?? 0, runs.length - 1)];
+  const runs = S.itemRuns[item.id] ?? (item.lastRun ? [item.lastRun] : []);
   stopStream();
+  if (runs.length === 0) {
+    S.run = null;
+    renderCenter();
+    renderCtx();
+    return;
+  }
+  const shown = runs[Math.min(S.runIdx[item.id] ?? 0, runs.length - 1)];
   S.run = null;
   renderCenter();
   renderCtx();
@@ -407,7 +483,7 @@ async function boot() {
   $('#login').hidden = true;
   $('#shell').hidden = false;
   // Open from the start: whatever is running right now.
-  S.open = S.snap.items.filter((item) => item.state === 'running').map((item) => item.id);
+  S.open = S.snap.items.filter((item) => item.status === 'running').map((item) => item.id);
   const fromPath = selectedFromPath();
   if (fromPath) await select(fromPath);
   else renderAll();
@@ -430,6 +506,7 @@ async function boot() {
   }, SNAPSHOT_EVERY_MS);
   setInterval(() => {
     for (const el of document.querySelectorAll('[data-since]')) el.textContent = clock(Date.now() - Date.parse(el.dataset.since));
+    for (const el of document.querySelectorAll('[data-until]')) el.textContent = clock(Date.parse(el.dataset.until) - Date.now());
   }, 1000);
 }
 

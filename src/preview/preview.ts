@@ -102,7 +102,7 @@ async function unservePort(port: number): Promise<void> {
 
 // --- the preview itself ---
 
-interface PreviewState {
+export interface PreviewState {
   prNumber: number;
   appName: string;
   sha: string;
@@ -394,6 +394,25 @@ export async function stopPreview(prNumber: number): Promise<boolean> {
 //
 // Nor does it hold a stack forever on an open PR: PREVIEW_TTL_MINUTES after
 // it came up it goes, and the PR is told `/preview` brings it back.
+// The active repo's previews that are up, as their state files say — for
+// the dashboard (#65). Whether each one still answers isn't checked here.
+export async function listPreviewStates(): Promise<PreviewState[]> {
+  let entries: string[];
+  try {
+    entries = await readdir(activeRepo().worktreeBasePath);
+  } catch {
+    return [];
+  }
+  const states: PreviewState[] = [];
+  for (const name of entries) {
+    const pr = previewPrFromDirName(name);
+    if (pr === null) continue;
+    const state = await readPreviewState(previewDirFor(pr));
+    if (state) states.push(state);
+  }
+  return states;
+}
+
 export async function sweepPreviews(now: Date = new Date()): Promise<void> {
   let entries: string[];
   try {

@@ -369,6 +369,44 @@ export async function listAllOpenRoninPrs(): Promise<PullRequestStatus[]> {
   return raw.map(toPullRequestStatus);
 }
 
+// --- for the dashboard (#65): the whole repo in two reads ---
+
+// Every open issue ronin manages, with its body (the slice checklist).
+export async function listOpenManagedIssues(): Promise<Array<TrackingIssue & { body: string }>> {
+  const stdout = await gh(['issue', 'list', '--label', LABEL_MANAGED, '--state', 'open', '--limit', '200', '--json', 'number,title,url,labels,body']);
+  return (JSON.parse(stdout) as Array<{ number: number; title: string; url: string; labels: Array<{ name: string }>; body: string | null }>)
+    .map((issue) => ({ number: issue.number, title: issue.title, url: issue.url, labels: issue.labels.map((l) => l.name), body: issue.body ?? '' }));
+}
+
+export interface OpenPr {
+  number: number;
+  title: string;
+  url: string;
+  author: string;
+  isDraft: boolean;
+  headRefName: string;
+  baseRefName: string;
+  reviewDecision: PullRequestStatus['reviewDecision'];
+  checks: Array<{ name: string; outcome: 'passed' | 'pending' | 'failed' }>;
+}
+
+// Every open PR — ronin's and everyone else's — with its checks one by one.
+export async function listOpenPrsWithChecks(): Promise<OpenPr[]> {
+  const stdout = await gh(['pr', 'list', '--state', 'open', '--limit', String(PR_LIST_LIMIT), '--json', 'number,title,url,author,isDraft,headRefName,baseRefName,reviewDecision,statusCheckRollup']);
+  type Raw = { number: number; title: string; url: string; author: { login: string } | null; isDraft: boolean; headRefName: string; baseRefName: string; reviewDecision: PullRequestStatus['reviewDecision'] | null; statusCheckRollup: Array<RollupEntry & { name?: string }> };
+  return (JSON.parse(stdout) as Raw[]).map((pr) => ({
+    number: pr.number,
+    title: pr.title,
+    url: pr.url,
+    author: pr.author?.login ?? '',
+    isDraft: pr.isDraft,
+    headRefName: pr.headRefName,
+    baseRefName: pr.baseRefName,
+    reviewDecision: pr.reviewDecision ?? '',
+    checks: (pr.statusCheckRollup ?? []).map((c) => ({ name: c.name ?? c.context ?? '?', outcome: checkOutcome(c) })),
+  }));
+}
+
 export interface ExternalPr {
   number: number;
   headRefName: string;

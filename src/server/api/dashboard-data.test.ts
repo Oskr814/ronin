@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { groupItems, listRuns, readQueue, readTickInfo, slotsInUse, summarizeRun, type RunLine } from './dashboard-data.js';
+import { listRuns, readQueue, readTickInfo, slotsInUse, summarizeRun, type RunLine } from './dashboard-data.js';
 
 let logs: string;
 beforeEach(() => {
@@ -42,8 +42,8 @@ describe('summarizeRun', () => {
   });
 });
 
-describe('listRuns and groupItems', () => {
-  it('lists the last days only, newest first, and groups them by issue or PR', () => {
+describe('listRuns', () => {
+  it('lists the last days only, newest first', () => {
     const now = new Date(2026, 9, 16, 12);
     writeRun('2026-10-16', [start('20261016T100000-implement-slice-879-aaaa'), { type: 'run_end', outcome: 'ok', endedAt: '2026-10-16T10:05:00.000Z', durationMs: 1 }]);
     writeRun('2026-10-16', [start('20261016T110000-fix-comments-879-bbbb', { taskType: 'fix-comments', startedAt: '2026-10-16T11:00:00.000Z' })]);
@@ -53,11 +53,6 @@ describe('listRuns and groupItems', () => {
     const runs = listRuns(3, now);
     expect(runs.map((r) => r.runId)).toEqual(['20261016T110000-fix-comments-879-bbbb', '20261016T100000-implement-slice-879-aaaa', '20261015T090000-external-review-412-cccc']);
 
-    const items = groupItems(runs);
-    expect(items.map((i) => [i.id, i.kind, i.state, i.runs])).toEqual([
-      ['acme/product#879', 'issue', 'running', 2],
-      ['acme/product#412', 'pr', 'error', 1],
-    ]);
   });
 });
 

@@ -8,6 +8,7 @@ import { createTailnetHandler } from './tailnet.js';
 import { signSession, type AuthConfig, type GithubOAuth } from './api/auth.js';
 
 vi.mock('../core/repos.js', () => ({ loadRepos: async () => [{ productRepo: 'acme/product' }] }));
+vi.mock('./api/dashboard-github.js', () => ({ repoGithub: async () => undefined }));
 
 const AUTH: AuthConfig = { url: 'https://media.example.ts.net:8443', githubClientId: 'cid', githubClientSecret: 'cs', sessionSecret: 's'.repeat(40), allowedUsers: ['oskr814'], sessionDays: 7 };
 const github: GithubOAuth = { exchangeCode: vi.fn(async () => 'gho_token'), userLogin: vi.fn(async () => 'Oskr814') };
