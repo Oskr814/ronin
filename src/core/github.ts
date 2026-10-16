@@ -407,6 +407,35 @@ export async function listOpenPrsWithChecks(): Promise<OpenPr[]> {
   }));
 }
 
+// An issue or PR as the dashboard's item page shows it (#85): its body and
+// its general comments, oldest first. A PR adds its branches and whether it
+// merges cleanly. Review comments (inline) aren't here.
+export interface Discussion {
+  number: number;
+  title: string;
+  body: string;
+  author: string;
+  createdAt: string;
+  url: string;
+  state: string;
+  comments: Array<{ author: string; body: string; createdAt: string; url: string }>;
+  mergeable?: 'MERGEABLE' | 'CONFLICTING' | 'UNKNOWN';
+  baseRefName?: string;
+  headRefName?: string;
+}
+
+export async function getDiscussion(kind: 'issue' | 'pr', number: number): Promise<Discussion> {
+  const fields = 'number,title,body,author,createdAt,url,state,comments' + (kind === 'pr' ? ',mergeable,baseRefName,headRefName' : '');
+  type Raw = Omit<Discussion, 'author' | 'comments' | 'body'> & { body: string | null; author: { login: string } | null; comments: Array<{ author: { login: string } | null; body: string; createdAt: string; url: string }> };
+  const raw = JSON.parse(await gh([kind, 'view', String(number), '--json', fields])) as Raw;
+  return {
+    ...raw,
+    body: raw.body ?? '',
+    author: raw.author?.login ?? '',
+    comments: raw.comments.map((c) => ({ author: c.author?.login ?? '', body: c.body, createdAt: c.createdAt, url: c.url })),
+  };
+}
+
 export interface ExternalPr {
   number: number;
   headRefName: string;

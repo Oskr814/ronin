@@ -1,5 +1,9 @@
 // The dashboard (#65): a page with no data of its own — everything comes from
-// the API (/api/*), behind the GitHub login. Plain JS, no build.
+// the API (/api/*), behind the GitHub login. Plain JS, no build: the two
+// libraries it needs are copied into vendor/ (the CSP only runs our own scripts).
+
+import { marked } from './vendor/marked.esm.js';
+import DOMPurify from './vendor/purify.esm.js';
 
 const MIN = 60e3;
 const SNAPSHOT_EVERY_MS = 5000;
@@ -54,7 +58,8 @@ function duration(ms) {
 const money = (usd) => (usd < 0.01 ? 'menos de US$0,01' : `US$${usd.toFixed(2).replace('.', ',')}`);
 const pct = (fraction) => `${Math.round(fraction * 100)}%`;
 
-const S = { snap: null, today: null, sel: null, open: [], runIdx: {}, pendingRun: null, filter: null, q: '', itemRuns: {}, run: null, stream: null };
+const S = { snap: null, today: null, sel: null, open: [], runIdx: {}, pendingRun: null, filter: null, q: '', itemRuns: {}, run: null, stream: null, detail: {}, view: {}, doc: {} };
+const DETAIL_EVERY_MS = 30_000;
 
 class Unauthorized extends Error {}
 
@@ -160,6 +165,66 @@ function renderTree() {
   for (const button of tree.querySelectorAll('[data-id]')) button.onclick = () => select(button.dataset.id);
 }
 
+// ---------- markdown from GitHub
+// Whatever comes from GitHub (a PR from anyone, a comment) is untrusted: it's
+// parsed by marked and then cleaned by DOMPurify before it reaches the page.
+// Images become links (the CSP wouldn't load them anyway), links open
+// outside, and a #123 opens that item here when the sidebar has it.
+DOMPurify.addHook('afterSanitizeAttributes', (node) => {
+  if (node.tagName === 'A') {
+    node.setAttribute('target', '_blank');
+    node.setAttribute('rel', 'noopener noreferrer');
+  }
+  if (node.tagName === 'INPUT') node.setAttribute('disabled', '');
+});
+const mdCache = new Map();
+
+function md(text, repo) {
+  const key = `${repo}\n${text}`;
+  if (mdCache.has(key)) return mdCache.get(key);
+  const clean = DOMPurify.sanitize(marked.parse(text ?? '', { gfm: true, breaks: true }), { FORBID_TAGS: ['style', 'form', 'button', 'select', 'textarea', 'iframe', 'video', 'audio'], ALLOWED_URI_REGEXP: /^(?:https?:|mailto:|#)/i });
+  const tpl = document.createElement('template');
+  tpl.innerHTML = clean;
+  for (const img of tpl.content.querySelectorAll('img')) {
+    const link = document.createElement('a');
+    link.href = img.getAttribute('src') ?? '#';
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    link.textContent = `[imagen${img.alt ? `: ${img.alt}` : ''}]`;
+    img.replaceWith(link);
+  }
+  if (safeRepo(repo)) linkRefs(tpl.content, repo);
+  const html = tpl.innerHTML;
+  if (mdCache.size > 200) mdCache.clear();
+  mdCache.set(key, html);
+  return html;
+}
+
+function linkRefs(root, repo) {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, { acceptNode: (n) => (n.parentElement?.closest('a, code, pre') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT) });
+  const nodes = [];
+  while (walker.nextNode()) if (/(^|[^\w&/])#\d+\b/.test(walker.currentNode.nodeValue)) nodes.push(walker.currentNode);
+  for (const node of nodes) {
+    const frag = document.createDocumentFragment();
+    let last = 0;
+    const text = node.nodeValue;
+    for (const m of text.matchAll(/(^|[^\w&/])#(\d+)\b/g)) {
+      const at = m.index + m[1].length;
+      frag.append(text.slice(last, at));
+      const link = document.createElement('a');
+      link.href = `https://github.com/${repo}/issues/${m[2]}`;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      link.dataset.ref = `${repo}#${m[2]}`;
+      link.textContent = `#${m[2]}`;
+      frag.append(link);
+      last = at + m[2].length + 1;
+    }
+    frag.append(text.slice(last));
+    node.replaceWith(frag);
+  }
+}
+
 // ---------- center
 function step(line) {
   if (line.type === 'text') return `<div class="say">${esc(line.text)}</div>`;
@@ -187,6 +252,10 @@ function backBar(title) {
   return `<button class="back" id="back"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg><span>${esc(title)}</span></button>`;
 }
 
+const itemRuns = (item) => S.itemRuns[item.id] ?? (item.lastRun ? [item.lastRun] : []);
+// The item's page by default; the transcript for what has no page (a changelog entry).
+const viewOf = (item) => S.view[item.id] ?? (item.kind === 'other' ? 'tx' : 'ficha');
+
 function renderCenter() {
   const center = $('#center');
   const tabs = `<div class="tabs" role="tablist">${S.open.map((id) => {
@@ -197,21 +266,44 @@ function renderCenter() {
 
   const item = S.sel && itemById(S.sel);
   if (!item) {
-    center.innerHTML = tabs + backBar('Hoy') + renderToday();
-    wireCenter();
+    setCenter(tabs + backBar('Hoy') + renderToday());
     wireToday();
     return;
   }
+  if (viewOf(item) === 'tx') {
+    renderTranscript(item, tabs);
+    return;
+  }
+  // Redrawn on every snapshot: whoever was reading further down stays there.
+  const doc = $('#doc');
+  const keep = doc && doc.dataset.key === docKeyOf(item) ? doc.scrollTop : 0;
+  if (!setCenter(tabs + backBar(item.title) + headHTML(item) + activityHTML(item) + docHTML(item) + `<div class="ctx-inline">${ctxHTML(item)}</div>`)) return;
+  const fresh = $('#doc');
+  if (fresh && !isMobile()) fresh.scrollTop = keep;
+}
 
-  const runs = S.itemRuns[item.id] ?? (item.lastRun ? [item.lastRun] : []);
+// Only touches the page when something changed, so a snapshot that changes
+// nothing doesn't reset a selection or a scroll. False when it was the same.
+function setCenter(html) {
+  const center = $('#center');
+  if (center._html === html) return false;
+  center._html = html;
+  center.innerHTML = html;
+  tickClocks();
+  wireCenter();
+  return true;
+}
+
+function renderTranscript(item, tabs) {
+  const runs = itemRuns(item);
+  const back = item.kind !== 'other' ? '<button class="pill back-ficha" data-view="ficha">← Ficha</button>' : '';
   if (runs.length === 0) {
     const loading = !(item.id in S.itemRuns);
-    center.innerHTML = tabs + backBar(item.title) + `<div class="tx"><div class="empty">${loading ? 'Cargando…' : `<b>Sin corridas de agentes en los últimos 14 días</b>${esc(item.status === 'blocked' ? 'Está bloqueado: el motivo y qué hace falta están en el panel de contexto.' : item.note ? `Ahora: ${item.note}.` : '')}`}</div></div><div class="ctx-inline">${ctxHTML(item)}</div>`;
-    wireCenter();
+    setCenter(tabs + backBar(item.title) + (back ? `<div class="runs">${back}</div>` : '') + `<div class="tx"><div class="empty">${loading ? 'Cargando…' : '<b>Sin corridas de agentes en los últimos 14 días</b>'}</div></div><div class="ctx-inline">${ctxHTML(item)}</div>`);
     return;
   }
   const index = Math.min(S.runIdx[item.id] ?? 0, runs.length - 1);
-  const pills = `<div class="runs"><span class="lbl">Corridas</span>${runs.map((run, i) => `<button class="pill" data-run="${i}" aria-pressed="${i === index}">${dot(run.state)}${esc(typeName(run.taskType))}<span class="m">${run.state === 'running' ? 'en curso' : `${hhmm(run.startedAt)}${run.durationMs !== undefined ? `, ${duration(run.durationMs)}` : ''}`}</span></button>`).join('')}</div>`;
+  const pills = `<div class="runs">${back}<span class="lbl">Corridas</span>${runs.map((run, i) => `<button class="pill" data-run="${i}" aria-pressed="${i === index}">${dot(run.state)}${esc(typeName(run.taskType))}<span class="m">${run.state === 'running' ? 'en curso' : `${hhmm(run.startedAt)}${run.durationMs !== undefined ? `, ${duration(run.durationMs)}` : ''}`}</span></button>`).join('')}</div>`;
 
   const shown = runs[index];
   const loaded = S.run && S.run.runId === shown.runId ? S.run : null;
@@ -222,23 +314,117 @@ function renderCenter() {
     const steps = loaded.lines.map(step).join('');
     body = `<div class="tx" id="tx">${steps || '<div class="empty">El agente todavía no hizo nada.</div>'}${ending(loaded.summary)}</div>
       <div class="foot">${loaded.summary.state === 'running'
-        ? `<span class="w">● Trabajando</span><span data-since="${esc(loaded.summary.startedAt)}">${esc(clock(Date.now() - Date.parse(loaded.summary.startedAt)))}</span>`
+        ? `<span class="w">● Trabajando</span><span data-since="${esc(loaded.summary.startedAt)}"></span>`
         : `<span>${esc(STATE[loaded.summary.state]?.[2] ?? loaded.summary.state)}</span>`}<span>${esc(typeName(loaded.summary.taskType))}</span><span class="r">${esc([loaded.summary.model, loaded.summary.worktree].filter(Boolean).join('  '))}</span></div>`;
   }
-  // Redrawn on every snapshot: whoever was reading further up stays there,
-  // whoever was at the bottom of a run still going follows it.
+  // Whoever was reading further up stays there, whoever was at the bottom
+  // of a run still going follows it.
   const tx = $('#tx');
   const sameRun = tx && tx.dataset.run === loaded?.runId;
   const atBottom = !sameRun || tx.scrollTop + tx.clientHeight >= tx.scrollHeight - 30;
   const scrollTop = sameRun ? tx.scrollTop : 0;
-  center.innerHTML = tabs + backBar(item.title) + pills + body + `<div class="ctx-inline">${ctxHTML(item)}</div>`;
-  wireCenter();
+  if (!setCenter(tabs + backBar(item.title) + pills + body + `<div class="ctx-inline">${ctxHTML(item)}</div>`)) return;
   const fresh = $('#tx');
   if (!fresh) return;
   if (loaded) fresh.dataset.run = loaded.runId;
   if (isMobile()) return;
   fresh.scrollTop = atBottom ? fresh.scrollHeight : scrollTop;
 }
+
+// ---------- the item's page (#85)
+function checksChip(checks) {
+  if (!checks?.length) return null;
+  const failed = checks.filter((c) => c.outcome === 'failed').length;
+  if (failed) return ['crit', `${failed} ${failed === 1 ? 'check falla' : 'checks fallan'}`];
+  if (checks.some((c) => c.outcome === 'pending')) return ['run', 'checks corriendo'];
+  return ['ok', `checks ${checks.length}/${checks.length}`];
+}
+
+function headHTML(item) {
+  const url = githubUrl(item);
+  const [, chip, label] = STATE[item.status] ?? STATE.error;
+  const d = S.detail[item.id]?.data;
+  const pr = item.pr;
+  const prDoc = d?.pr;
+  // For an issue, what's said about its PR is said with the PR's number.
+  const of = item.kind === 'issue' && pr ? `#${pr.number}: ` : '';
+  // A run's outcome is in the activity line, not here: "terminó bien" next to "conflictos" would read as the PR's.
+  const chips = ['running', 'blocked', 'waiting'].includes(item.status) ? [[chip, label]] : [];
+  if (prDoc?.mergeable === 'CONFLICTING') chips.push(['crit', `${of}conflictos con ${prDoc.baseRefName}`]);
+  const checks = checksChip(pr?.checks);
+  if (checks) chips.push([checks[0], of + checks[1]]);
+  if (pr?.reviewDecision === 'APPROVED') chips.push(['ok', `${of}aprobado`]);
+  else if (pr?.reviewDecision === 'CHANGES_REQUESTED') chips.push(['warn', `${of}cambios pedidos`]);
+  if (pr?.isDraft) chips.push(['idle', `${of}draft`]);
+  const facts = [];
+  if (item.slices?.length) facts.push(`${item.slices.filter((s) => s.status === 'merged').length} de ${item.slices.length} slices mergeadas`);
+  if (item.note && item.status !== 'running') facts.push(item.note);
+  if (item.kind === 'pr' && prDoc?.headRefName) facts.push(`${prDoc.headRefName} → ${prDoc.baseRefName}`);
+  if (item.kind === 'pr' && pr?.author) facts.push(`de ${pr.author}`);
+  return `<div class="head">
+    <div class="crumb"><i style="background:${repoColor(item.repo)}"></i>${esc(item.repo)} · ${item.kind === 'pr' ? 'Pull request' : item.kind === 'issue' ? 'Issue' : 'Tarea'}</div>
+    <div class="row"><h1>${esc(item.title)}${item.number !== undefined ? ` <span class="n">${esc(itemRef(item))}</span>` : ''}</h1>${url ? `<a class="gh" href="${esc(url)}" target="_blank" rel="noopener">GitHub ↗</a>` : ''}</div>
+    <div class="state">${chips.map(([cls, text]) => `<span class="chip ${cls}">${esc(text)}</span>`).join('')}${facts.map((f) => `<span>${esc(f)}</span>`).join('')}</div></div>`;
+}
+
+function activityHTML(item) {
+  const runs = itemRuns(item);
+  const loading = !(item.id in S.itemRuns);
+  if (runs.length === 0) return `<div class="activity"><div class="act-line"><span class="lbl">Actividad</span><span class="m">${loading ? 'Cargando…' : 'Sin corridas de agentes en los últimos 14 días.'}</span></div></div>`;
+  const latest = runs[0];
+  // The latest run is the line itself (or the card below it); the older ones, pills that open their transcript.
+  const older = runs.slice(1).map((run, i) => `<button class="pill" data-runview="${i + 1}">${dot(run.state)}${esc(typeName(run.taskType))}<span class="m">${esc(short(Date.now() - Date.parse(run.endedAt ?? run.startedAt)))}</span></button>`).join('');
+  let summary = '';
+  if (latest.state !== 'running') {
+    const [, , label] = STATE[latest.state] ?? STATE.error;
+    const facts = [label, `hace ${short(Date.now() - Date.parse(latest.endedAt ?? latest.startedAt))}`, latest.durationMs !== undefined ? duration(latest.durationMs) : null, latest.costUsd !== undefined ? money(latest.costUsd) : null].filter(Boolean).join(' · ');
+    summary = `<span class="latest">${dot(latest.state)}<b>${esc(typeName(latest.taskType))}</b><span class="m">${esc(facts)}</span></span>`;
+  }
+  const line = `<div class="act-line"><span class="lbl">Actividad</span>${summary}${older ? `<span class="pills">${older}</span>` : ''}<span class="sp"><button class="link" data-runview="0">transcript →</button></span></div>`;
+  if (latest.state !== 'running') return `<div class="activity">${line}${latest.state === 'error' && latest.error ? `<div class="last-err">${esc(latest.error)}</div>` : ''}</div>`;
+  // The run going on: what the agent last said and its last few steps.
+  const lines = S.run?.runId === latest.runId ? S.run.lines : [];
+  const said = [...lines].reverse().find((l) => l.type === 'text');
+  const steps = lines.filter((l) => l.type === 'tool').slice(-4);
+  return `<div class="activity">${line}<div class="livecard"><div class="top">${dot('running')}<b>${esc(typeName(latest.taskType))}${latest.sliceIndex !== undefined ? `, slice ${latest.sliceIndex + 1}` : ''}</b><span class="clk" data-since="${esc(latest.startedAt)}"></span>${latest.model ? `<span class="m">${esc(latest.model)}</span>` : ''}</div>
+    ${said ? `<div class="say">${esc(said.text)}</div>` : ''}
+    ${steps.length ? `<ol>${steps.map((l) => `<li><b>${esc(VERB[l.name] ?? l.name)}</b> <span class="arg">${esc(String(l.summary ?? '').replace(/^\$ /, ''))}</span></li>`).join('')}</ol>` : `<div class="m">${S.run?.runId === latest.runId ? 'Arrancando…' : 'Cargando…'}</div>`}</div></div>`;
+}
+
+function docTabsOf(item, d) {
+  if (item.kind === 'issue') return [['issue', 'Issue'], ...(d?.pr ? [['pr', `PR #${d.pr.number}`]] : []), ['comments', 'Comentarios']];
+  return [['pr', 'Descripción'], ...(d?.issue ? [['issue', `Issue #${d.issue.number}`]] : []), ['comments', 'Comentarios']];
+}
+const docKeyOf = (item) => `${item.id}:${S.doc[item.id] ?? ''}`;
+
+function docHTML(item) {
+  if (item.kind === 'other') return '';
+  const entry = S.detail[item.id];
+  const d = entry?.data;
+  if (!d) return `<div class="doc" id="doc"><div class="empty">${entry?.error ? `No se pudo leer de GitHub: ${esc(entry.error)}` : 'Cargando de GitHub…'}</div></div>`;
+  const tabs = docTabsOf(item, d);
+  const cur = tabs.some(([k]) => k === S.doc[item.id]) ? S.doc[item.id] : tabs[0][0];
+  const own = item.kind === 'issue' ? d.issue : d.pr;
+  const count = own?.comments.length ?? 0;
+  const bar = `<div class="doctabs" role="tablist">${tabs.map(([k, label]) => `<button class="doctab" role="tab" data-doc="${k}" aria-selected="${k === cur}">${esc(label)}${k === 'comments' ? `<span class="c">${count}</span>` : ''}</button>`).join('')}
+    <span class="src">${d.error ? `<span class="bad">GitHub no respondió: ${esc(d.error)}</span>, ` : ''}${d.fetchedAt ? `leído hace ${esc(short(Date.now() - Date.parse(d.fetchedAt)))}` : ''}</span></div>`;
+  let body;
+  if (cur === 'comments') {
+    body = count
+      ? `<div class="comments">${own.comments.map((c) => `<article class="cm${c.author === d.ronin ? ' bot' : ''}"><header>${avatar(c.author)}<b>${esc(c.author || 'alguien')}</b><a href="${esc(c.url)}" target="_blank" rel="noopener">${esc(when(c.createdAt))}</a></header><div class="md">${md(c.body, item.repo)}</div></article>`).join('')}</div>`
+      : '<div class="empty">Nadie comentó todavía.</div>';
+  } else {
+    const doc = cur === 'issue' ? d.issue : d.pr;
+    const other = (cur === 'issue') !== (item.kind === 'issue');
+    body = `<div class="page">${other ? `<a class="other" href="${esc(doc.url)}" target="_blank" rel="noopener">${esc(doc.title)} <span class="m">${cur === 'pr' ? 'PR' : 'Issue'} #${esc(doc.number)} ↗</span></a>` : ''}
+      <div class="meta">${avatar(doc.author)}<b>${esc(doc.author)}</b><span>${esc(when(doc.createdAt))}</span></div>
+      <div class="md">${doc.body.trim() ? md(doc.body, item.repo) : '<p class="m">Sin descripción.</p>'}</div></div>`;
+  }
+  return bar + `<div class="doc" id="doc" data-key="${esc(`${item.id}:${cur}`)}">${body}</div>`;
+}
+
+const avatar = (login) => (/^[\w-]+$/.test(login ?? '') ? `<img class="av" src="https://avatars.githubusercontent.com/${login}?s=40" alt="">` : '<span class="av"></span>');
+const when = (iso) => (iso ? new Date(iso).toLocaleString('es', { dateStyle: 'medium', timeStyle: 'short' }) : '');
 
 function wireCenter() {
   for (const button of document.querySelectorAll('[data-tab]')) button.onclick = () => select(button.dataset.tab);
@@ -261,6 +447,34 @@ function wireCenter() {
     button.onclick = () => {
       S.runIdx[S.sel] = Number(button.dataset.run);
       loadShownRun();
+    };
+  }
+  for (const button of document.querySelectorAll('[data-runview]')) {
+    button.onclick = () => {
+      S.view[S.sel] = 'tx';
+      S.runIdx[S.sel] = Number(button.dataset.runview);
+      loadShownRun();
+    };
+  }
+  for (const button of document.querySelectorAll('[data-view]')) {
+    button.onclick = () => {
+      S.view[S.sel] = button.dataset.view;
+      // The page follows the latest run, live if it's going.
+      S.runIdx[S.sel] = 0;
+      loadShownRun();
+    };
+  }
+  for (const button of document.querySelectorAll('[data-doc]')) {
+    button.onclick = () => {
+      S.doc[S.sel] = button.dataset.doc;
+      renderCenter();
+    };
+  }
+  for (const link of document.querySelectorAll('a[data-ref]')) {
+    if (!itemById(link.dataset.ref)) continue;
+    link.onclick = (event) => {
+      event.preventDefault();
+      select(link.dataset.ref);
     };
   }
   const back = $('#back');
@@ -359,12 +573,8 @@ function goHome() {
 
 // ---------- context
 function ctxHTML(item) {
-  const [, chip, label] = STATE[item.status] ?? STATE.error;
-  const url = githubUrl(item);
-  const runs = S.itemRuns[item.id] ?? (item.lastRun ? [item.lastRun] : []);
-  let html = `<section><span class="chip ${chip}">${esc(label)}</span><div class="title">${esc(item.title)}</div>
-    <div class="links"><span class="repo-tag"><i style="background:${repoColor(item.repo)}"></i>${esc(repoShort(item.repo))}</span>${url ? `<a href="${esc(url)}" target="_blank" rel="noopener">${esc(itemRef(item))} en GitHub</a>` : ''}</div>
-    ${item.note && item.status !== 'running' ? `<p class="note">${esc(item.note[0].toUpperCase() + item.note.slice(1))}.</p>` : ''}</section>`;
+  const runs = itemRuns(item);
+  let html = '';
   if (item.status === 'blocked') {
     html += `<section><h3>Por qué está bloqueado</h3><div class="why">${item.block
       ? `<b>Hace ${esc(short(Date.now() - Date.parse(item.block.at)))}.</b> ${esc(item.block.reason)}${item.block.excerpt ? `<span class="ask">${esc(item.block.excerpt)}</span>` : ''}`
@@ -529,7 +739,11 @@ async function loadItem(id) {
     S.itemRuns[id] = runs;
     if (S.pendingRun) {
       const index = runs.findIndex((run) => run.runId === S.pendingRun);
-      if (index >= 0) S.runIdx[id] = index;
+      // A run picked on Hoy's timeline opens as its transcript.
+      if (index >= 0) {
+        S.runIdx[id] = index;
+        S.view[id] = 'tx';
+      }
       S.pendingRun = null;
     }
   } catch (error) {
@@ -538,9 +752,30 @@ async function loadItem(id) {
   if (S.sel === id) await loadShownRun();
 }
 
+// The item's issue and PR from GitHub. The server caches them, so asking
+// again only costs a call to GitHub once its copy is old.
+async function loadDetail(id) {
+  const item = itemById(id);
+  const entry = (S.detail[id] ??= {});
+  if (!item || item.kind === 'other' || entry.loading) return;
+  entry.loading = true;
+  try {
+    entry.data = await api(`/api/items/${encodeURIComponent(id)}/detail`);
+    entry.error = null;
+  } catch (error) {
+    if (error instanceof Unauthorized) return showLogin();
+    entry.error = error.message;
+  } finally {
+    entry.loading = false;
+    entry.at = Date.now();
+  }
+  if (S.sel === id) renderCenter();
+}
+
 async function select(id) {
   S.sel = id;
   S.runIdx[id] = 0;
+  delete S.view[id];
   if (!S.open.includes(id)) S.open.push(id);
   const path = `/i/${encodeURIComponent(id)}`;
   if (location.pathname !== path) history.pushState(null, '', path);
@@ -549,6 +784,7 @@ async function select(id) {
     $('#shell').dataset.m = 'detail';
     scrollTo(0, 0);
   }
+  loadDetail(id);
   await loadItem(id);
 }
 
@@ -565,6 +801,8 @@ async function refresh() {
   renderStatus();
   await followNewRun();
   renderCenter();
+  const detail = S.sel && S.detail[S.sel];
+  if (detail && Date.now() - (detail.at ?? 0) > DETAIL_EVERY_MS) loadDetail(S.sel);
 }
 
 // A new run on the open item: its list of runs is read again. Whoever was
@@ -592,6 +830,11 @@ async function followNewRun() {
   } else {
     S.runIdx[id] = Math.max(0, runs.findIndex((run) => run.runId === viewing));
   }
+}
+
+function tickClocks() {
+  for (const el of document.querySelectorAll('[data-since]')) el.textContent = clock(Date.now() - Date.parse(el.dataset.since));
+  for (const el of document.querySelectorAll('[data-until]')) el.textContent = clock(Date.parse(el.dataset.until) - Date.now());
 }
 
 function selectedFromPath() {
@@ -632,10 +875,7 @@ async function boot() {
   setInterval(() => {
     if (!document.hidden) refresh();
   }, SNAPSHOT_EVERY_MS);
-  setInterval(() => {
-    for (const el of document.querySelectorAll('[data-since]')) el.textContent = clock(Date.now() - Date.parse(el.dataset.since));
-    for (const el of document.querySelectorAll('[data-until]')) el.textContent = clock(Date.parse(el.dataset.until) - Date.now());
-  }, 1000);
+  setInterval(tickClocks, 1000);
 }
 
 boot();
