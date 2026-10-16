@@ -990,7 +990,7 @@ function guarded(job: TickJob): Job {
     kind: job.kind,
     label: job.label,
     run: async () => {
-      const work = NO_SLOT_KINDS.has(job.kind) ? job.run : () => withSlots(job.kind, config.tickConcurrency, JOB_CAPS, job.run);
+      const work = NO_SLOT_KINDS.has(job.kind) ? job.run : () => withSlots(job.kind, config.tickConcurrency, JOB_CAPS, job.run, job.label);
       const ran = await withResourceLock(job.lock, 'skip', work);
       if (!ran) log.info(`${job.kind} ${job.label}: ya lo está atendiendo otro proceso, se salta`);
     },

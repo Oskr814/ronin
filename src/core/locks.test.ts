@@ -90,4 +90,28 @@ describe('withSlots', () => {
     expect(existsSync(join(base, '.ronin-slots', 'all-0.lock'))).toBe(false);
     expect(existsSync(join(base, '.ronin-slots', 'kind-changelog-0.lock'))).toBe(false);
   });
+
+  it('marks a job as waiting while it has no slot, and clears the mark once it has one', async () => {
+    const { readdir, readFile } = await import('node:fs/promises');
+    const waitingDir = join(base, '.ronin-slots', 'waiting');
+    let release!: () => void;
+    const first = withSlots('issue', 1, {}, () => new Promise<void>((resolve) => { release = resolve; }), 'issue #1');
+    await vi.waitFor(() => expect(release).toBeDefined());
+    const second = withSlots('issue', 1, {}, async () => 'ran', 'issue #2');
+
+    await vi.waitFor(async () => expect(await readdir(waitingDir)).toHaveLength(1));
+    const [file] = await readdir(waitingDir);
+    expect(JSON.parse(await readFile(join(waitingDir, file), 'utf8'))).toMatchObject({ pid: process.pid, kind: 'issue', label: 'issue #2', since: expect.any(String) });
+
+    release();
+    await first;
+    expect(await second).toBe('ran');
+    expect(await readdir(waitingDir)).toEqual([]);
+  });
+
+  it('leaves no mark for a job that got its slot right away', async () => {
+    await withSlots('issue', 1, {}, async () => {});
+    expect(existsSync(join(base, '.ronin-slots', 'waiting'))).toBe(false);
+  });
 });
+

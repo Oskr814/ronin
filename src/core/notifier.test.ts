@@ -14,11 +14,15 @@ vi.mock('nodemailer', () => ({
   default: { createTransport: () => createTransport() },
 }));
 
-const { notifyBlocker } = await import('./notifier.js');
+const recordBlock = vi.fn();
+vi.mock('./local-state.js', () => ({ recordBlock: (...args: unknown[]) => recordBlock(...args) }));
+
+const { notifyBlocker, blockedItemNumber } = await import('./notifier.js');
 
 beforeEach(() => {
   vi.clearAllMocks();
   sendMail.mockResolvedValue(undefined);
+  recordBlock.mockResolvedValue(undefined);
 });
 
 describe('notifyBlocker', () => {
@@ -40,3 +44,42 @@ describe('notifyBlocker', () => {
     await expect(notifyBlocker({ issueUrl: 'https://x/issues/1', reason: 'algo se rompió' })).resolves.toBeUndefined();
   });
 });
+
+describe('notifyBlocker — reason kept for the dashboard', () => {
+  it('keeps the reason under the blocked issue', async () => {
+    await notifyBlocker({ issueUrl: 'https://github.com/a/b/issues/401', prUrl: 'https://github.com/a/b/pull/409', reason: 'e2e falla 3 veces', excerpt: 'PR #409, 3 intentos' });
+    expect(recordBlock).toHaveBeenCalledWith(401, {
+      reason: 'e2e falla 3 veces',
+      url: 'https://github.com/a/b/issues/401',
+      prUrl: 'https://github.com/a/b/pull/409',
+      excerpt: 'PR #409, 3 intentos',
+      at: expect.any(String),
+    }, expect.any(Number));
+  });
+
+  it('keeps nothing for a release, which has no issue or PR', async () => {
+    await notifyBlocker({ issueUrl: 'https://github.com/a/b/releases/tag/v1.2.3', reason: 'changelog falló' });
+    expect(recordBlock).not.toHaveBeenCalled();
+    expect(sendMail).toHaveBeenCalled();
+  });
+
+  it('still sends the email when the reason cannot be kept', async () => {
+    recordBlock.mockRejectedValueOnce(new Error('disk full'));
+    await expect(notifyBlocker({ issueUrl: 'https://github.com/a/b/issues/1', reason: 'x' })).resolves.toBeUndefined();
+    expect(sendMail).toHaveBeenCalled();
+  });
+});
+
+describe('blockedItemNumber', () => {
+  it('reads the number of an issue or a PR', () => {
+    expect(blockedItemNumber('https://github.com/a/b/issues/401')).toBe(401);
+    expect(blockedItemNumber('https://github.com/a/b/pull/74')).toBe(74);
+    expect(blockedItemNumber('https://github.com/a/b/pull/74#issuecomment-1')).toBe(74);
+  });
+
+  it('is null for anything else', () => {
+    expect(blockedItemNumber('https://github.com/a/b/releases/tag/v1.2.3')).toBeNull();
+    expect(blockedItemNumber('https://github.com/a/b/issues/12abc')).toBeNull();
+  });
+});
+
