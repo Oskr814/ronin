@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -101,6 +101,25 @@ describe('resolveConflicts', () => {
     expect(outcome).toMatchObject({ kind: 'resolved', files: ['app.txt'], resolution: { archivos: ['`app.txt`: junté los dos cambios'] } });
     expect(originFile('feature')).toBe('uno\ndos (main + feature)\ntres');
     expect(git(origin, 'rev-parse', 'feature^2')).toBe(git(origin, 'rev-parse', 'main'));
+  });
+
+  it("commits the merge even when the product repo's commit hooks would fail", async () => {
+    setup('uno\ndos (main)\ntres\n', 'uno\ndos (feature)\ntres\n');
+    const hooks = join(root, 'hooks');
+    mkdirSync(hooks);
+    for (const hook of ['pre-commit', 'pre-merge-commit', 'commit-msg']) {
+      writeFileSync(join(hooks, hook), '#!/bin/sh\necho "dotnet: not found" >&2\nexit 1\n');
+      chmodSync(join(hooks, hook), 0o755);
+    }
+    git(repo.productRepoPath, 'config', 'core.hooksPath', hooks);
+    runAgentTask.mockImplementation(async (task: { checkoutDir: string; outputPath: string }) => {
+      writeFileSync(join(task.checkoutDir, 'app.txt'), 'uno\ndos (main + feature)\ntres\n');
+      git(task.checkoutDir, 'add', 'app.txt');
+      writeFileSync(task.outputPath, JSON.stringify({ resuelto: true, archivos: [], revisar: [], verificacion: '' }));
+    });
+
+    expect(await resolveConflicts(1, pr)).toMatchObject({ kind: 'resolved' });
+    expect(originFile('feature')).toBe('uno\ndos (main + feature)\ntres');
   });
 
   it('pushes nothing when the agent says it resolved them but left conflict markers', async () => {
