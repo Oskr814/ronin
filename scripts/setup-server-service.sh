@@ -67,6 +67,12 @@ EnvironmentFile=$REPO_DIR/.env
 ExecStart=$NODE_BIN $REPO_DIR/dist/server/index.js
 Restart=on-failure
 RestartSec=5
+# A restart (a deploy) stops the server only. The event handlers it started,
+# and their agents, live in this unit's cgroup but are processes of their
+# own: they finish their event and exit by themselves, each with its own cap
+# (EVENT_HANDLER_TIMEOUT_MINUTES). The default, control-group, killed them
+# mid-run on every deploy.
+KillMode=process
 
 [Install]
 WantedBy=default.target
