@@ -47,7 +47,7 @@ export async function notifyBlocker(notification: BlockerNotification): Promise<
     notification.prUrl ? { issueUrl: notification.issueUrl, prUrl: notification.prUrl } : { issueUrl: notification.issueUrl },
   );
 
-  // Kept in the local state for the dashboard (docs/DESIGN.md §15.6), before
+  // Kept in the local state for the dashboard (#65), before
   // the email: a failed send must not lose it. Never throws either.
   const itemNumber = blockedItemNumber(notification.issueUrl);
   if (itemNumber !== null) {

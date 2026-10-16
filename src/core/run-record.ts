@@ -6,7 +6,7 @@ import { localDay, logsDir } from './run-files.js';
 
 // One file per agent run, logs/runs/<day>/<runId>.jsonl: what the dashboard
 // shows as a run's transcript, and how it knows what's running right now
-// (docs/DESIGN.md §15.4). The daily tick log has the same steps, but mixed
+// (#65). The daily tick log has the same steps, but mixed
 // with everything else, and its agent_run metric is only written at the end.
 //
 // One JSON line per event: run_start, then text/tool/tool_error as they

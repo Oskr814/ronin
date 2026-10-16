@@ -4,7 +4,7 @@ import { log } from './logger.js';
 import { logsDir } from './run-files.js';
 
 // Each Claude account's last known usage, for the dashboard's status bar
-// (docs/DESIGN.md §15.5). The source is the rate_limit_event every
+// (#65). The source is the rate_limit_event every
 // `claude -p --output-format stream-json` run emits near its start: the
 // account's 5-hour and weekly windows, as a fraction used and when each
 // resets. Nothing is asked of Anthropic on top of the runs ronin already
