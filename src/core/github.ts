@@ -799,6 +799,14 @@ export async function hasBotReaction(commentId: number, kind: 'issue' | 'review'
   return raw.some((r) => r.user.login === botLogin);
 }
 
+// The "got it" the webhook server puts on a mention the moment it arrives,
+// before anything is processed (webhooks/server.ts) — 🚀, never 👀, which is
+// what marks a comment as done. Takes the repo itself: the server isn't
+// inside withActiveRepo.
+export async function addAckReaction(repo: string, commentId: number, kind: 'issue' | 'review'): Promise<void> {
+  await ghApi(['api', `repos/${repo}/${reactionsPath(kind)}/${commentId}/reactions`, '-f', 'content=rocket']);
+}
+
 export async function addReaction(commentId: number, kind: 'issue' | 'review', content: 'eyes'): Promise<void> {
   await ghApi([
     'api',

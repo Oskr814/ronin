@@ -135,8 +135,10 @@ export const config = {
   webhookPort: Number(process.env.WEBHOOK_PORT ?? 3939),
   // How long to coalesce a burst of webhook deliveries about the same issue
   // or PR (e.g. a review's several inline comments) into a single event
-  // handler — see webhooks/server.ts's scheduleHandler.
-  webhookDebounceMs: Number(process.env.WEBHOOK_DEBOUNCE_MS ?? 8000),
+  // handler — see webhooks/server.ts's scheduleHandler. Short: whatever
+  // lands after the window is coalesced anyway, by handler.ts keeping at
+  // most one handler waiting per scope.
+  webhookDebounceMs: Number(process.env.WEBHOOK_DEBOUNCE_MS ?? 1000),
 } as const;
 
 // Per task type, the model a run uses when its env var isn't set — anything

@@ -13,7 +13,8 @@ import { createServer, type IncomingMessage } from 'node:http';
 import { config } from '../core/config.js';
 import { loadRepos } from '../core/repos.js';
 import { launchWorker } from '../core/worker-launch.js';
-import { verifySignature, scopeForEvent, type EventPayload } from './events.js';
+import { verifySignature, scopeForEvent, ackTarget, type EventPayload } from './events.js';
+import { addAckReaction } from '../core/github.js';
 import { log } from '../core/logger.js';
 import type { Scope } from '../tick.js';
 import type { EventHandlerRequest } from './handler.js';
@@ -102,8 +103,17 @@ const server = createServer(async (req, res) => {
     try {
       const repos = await loadRepos();
       const trackedRepos = repos.map((r) => r.productRepo);
-      const target = typeof eventName === 'string' ? scopeForEvent(eventName, payload, trackedRepos) : null;
-      if (target) scheduleHandler(target.repo, target.scope);
+      const target = typeof eventName === 'string' ? scopeForEvent(eventName, payload, trackedRepos, config.githubLogin) : null;
+      if (target) {
+        scheduleHandler(target.repo, target.scope);
+        // The "got it" on a mention, right away — not awaited: GitHub's
+        // delivery doesn't wait on it, and a failure costs only the 🚀.
+        const ack = ackTarget(eventName as string, payload, config.githubLogin);
+        if (ack) {
+          addAckReaction(target.repo, ack.commentId, ack.kind)
+            .catch((error) => log.info(`webhook: no se pudo poner el 🚀 en el comentario ${ack.commentId}: ${(error as Error).message}`));
+        }
+      }
     } catch (error) {
       // A malformed repos.json or a transient read failure must never make
       // GitHub retry-storm this endpoint — log and still 200 below.
