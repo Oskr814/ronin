@@ -58,15 +58,19 @@ function duration(ms) {
 const money = (usd) => (usd < 0.01 ? 'menos de US$0,01' : `US$${usd.toFixed(2).replace('.', ',')}`);
 const pct = (fraction) => `${Math.round(fraction * 100)}%`;
 
-const S = { snap: null, today: null, sel: null, open: [], runIdx: {}, pendingRun: null, filter: null, q: '', itemRuns: {}, run: null, stream: null, detail: {}, view: {}, doc: {} };
+const S = { snap: null, today: null, sel: null, open: [], runIdx: {}, pendingRun: null, filter: null, q: '', itemRuns: {}, run: null, stream: null, detail: {}, view: {}, doc: {}, menu: false, dialog: null };
 const DETAIL_EVERY_MS = 30_000;
 
 class Unauthorized extends Error {}
 
 async function api(path, init) {
-  const response = await fetch(path, { ...init, headers: { Accept: 'application/json' } });
+  const response = await fetch(path, { ...init, headers: { Accept: 'application/json', ...(init?.body ? { 'Content-Type': 'application/json' } : {}) } });
   if (response.status === 401) throw new Unauthorized();
-  if (!response.ok) throw new Error(`${path}: ${response.status}`);
+  if (!response.ok) {
+    // The API's own explanation when it has one (an action it refused).
+    const said = await response.json().then((body) => body?.error).catch(() => null);
+    throw new Error(said ?? `${path}: ${response.status}`);
+  }
   return response.status === 204 ? null : response.json();
 }
 
@@ -363,8 +367,100 @@ function headHTML(item) {
   if (item.kind === 'pr' && pr?.author) facts.push(`de ${pr.author}`);
   return `<div class="head">
     <div class="crumb"><i style="background:${repoColor(item.repo)}"></i>${esc(item.repo)} · ${item.kind === 'pr' ? 'Pull request' : item.kind === 'issue' ? 'Issue' : 'Tarea'}</div>
-    <div class="row"><h1>${esc(item.title)}${item.number !== undefined ? ` <span class="n">${esc(itemRef(item))}</span>` : ''}</h1>${url ? `<a class="gh" href="${esc(url)}" target="_blank" rel="noopener">GitHub ↗</a>` : ''}</div>
+    <div class="row"><h1>${esc(item.title)}${item.number !== undefined ? ` <span class="n">${esc(itemRef(item))}</span>` : ''}</h1>${url ? `<a class="gh" href="${esc(url)}" target="_blank" rel="noopener">GitHub ↗</a>` : ''}${actionsHTML(d)}</div>
     <div class="state">${chips.map(([cls, text]) => `<span class="chip ${cls}">${esc(text)}</span>`).join('')}${facts.map((f) => `<span>${esc(f)}</span>`).join('')}</div></div>`;
+}
+
+// ---------- actions (#85)
+// Each one is a command that exists on GitHub; ronin comments on the issue
+// or PR that it was asked from here, and the same code runs.
+function actionsHTML(d) {
+  if (!d?.actions?.length) return '';
+  const menu = S.menu ? `<div class="menu" role="menu">${d.actions.map((a) => `<button role="menuitem" data-action="${esc(a.id)}" class="${a.primary ? 'primary' : ''}"><b>${esc(a.label)}</b><span class="k">${esc(a.command)}</span><small>${esc(a.help)}</small></button>`).join('')}</div>` : '';
+  return `<div class="actions"><button class="act-btn" id="act" aria-haspopup="menu" aria-expanded="${S.menu}">Acciones ▾</button>${menu}</div>`;
+}
+
+function openAction(id) {
+  const action = S.detail[S.sel]?.data?.actions?.find((a) => a.id === id);
+  if (!action) return;
+  S.menu = false;
+  S.dialog = { item: S.sel, action, text: '', sending: false, error: null };
+  renderCenter();
+  renderDialog();
+}
+
+const quoteText = (text) => text.split('\n').map((line) => `> ${line}`).join('\n');
+
+function renderDialog() {
+  let layer = $('#layer');
+  if (!S.dialog) {
+    layer?.remove();
+    return;
+  }
+  if (!layer) layer = Object.assign(document.body.appendChild(document.createElement('div')), { id: 'layer' });
+  const { action, text, sending, error } = S.dialog;
+  // `> …` stands for the text: filled as it's typed, left out when the text is optional and empty.
+  const typed = text.trim();
+  const preview = !action.text ? action.preview : typed ? action.preview.replace('> …', quoteText(typed)) : action.text.required ? action.preview : action.preview.replace(/\n\n> …/, '');
+  const fresh = !layer.firstChild;
+  if (fresh) {
+    layer.innerHTML = `<div class="scrim"><div class="dlg" role="dialog" aria-modal="true" aria-labelledby="dlg-t">
+      <h2 id="dlg-t">${esc(action.label)}</h2>
+      <p class="help">${esc(action.help)}</p>
+      ${action.text ? `<label class="field"><span>${esc(action.text.label)}</span><textarea id="dlg-text" rows="4" maxlength="4000" placeholder="${esc(action.text.placeholder)}"></textarea></label>` : ''}
+      <div class="prev"><div class="lbl">ronin comenta en #${esc(action.target)}</div><div class="md" id="dlg-prev"></div></div>
+      <p class="bad" id="dlg-err" hidden></p>
+      <div class="foot-d"><button class="btn-s" id="dlg-no">Cancelar</button><button class="btn-s primary" id="dlg-yes"></button></div></div></div>`;
+    const area = $('#dlg-text');
+    if (area) area.oninput = () => { S.dialog.text = area.value; renderDialog(); };
+    $('#dlg-no').onclick = closeDialog;
+    layer.querySelector('.scrim').onclick = (event) => { if (event.target.classList.contains('scrim')) closeDialog(); };
+    $('#dlg-yes').onclick = sendAction;
+    (area ?? $('#dlg-yes')).focus();
+  }
+  $('#dlg-prev').innerHTML = md(preview, itemById(S.dialog.item)?.repo ?? '');
+  const yes = $('#dlg-yes');
+  yes.textContent = sending ? 'Pidiendo…' : action.id === 'unblock' ? 'Comentar y destrabar' : 'Pedirlo';
+  yes.disabled = sending || Boolean(action.text?.required && !text.trim());
+  $('#dlg-err').hidden = !error;
+  $('#dlg-err').textContent = error ?? '';
+}
+
+function closeDialog() {
+  if (S.dialog?.sending) return;
+  S.dialog = null;
+  renderDialog();
+}
+
+async function sendAction() {
+  const dialog = S.dialog;
+  if (!dialog || dialog.sending) return;
+  dialog.sending = true;
+  dialog.error = null;
+  renderDialog();
+  try {
+    const { url } = await api(`/api/items/${encodeURIComponent(dialog.item)}/actions`, { method: 'POST', body: JSON.stringify({ action: dialog.action.id, ...(dialog.text.trim() ? { text: dialog.text.trim() } : {}) }) });
+    S.dialog = null;
+    renderDialog();
+    toast(`Listo: ronin lo comentó en #${dialog.action.target}.`, url);
+    const item = itemById(dialog.item);
+    // Its comment is where the answer will come: shown when it's this item's own.
+    if (item && item.number === dialog.action.target) S.doc[dialog.item] = 'comments';
+    if (S.detail[dialog.item]) S.detail[dialog.item].at = 0;
+    await loadDetail(dialog.item);
+    refresh();
+  } catch (error) {
+    if (error instanceof Unauthorized) return showLogin();
+    dialog.sending = false;
+    dialog.error = `No se pudo: ${error.message}`;
+    renderDialog();
+  }
+}
+
+function toast(message, url) {
+  const el = Object.assign(document.body.appendChild(document.createElement('div')), { className: 'toast', role: 'status' });
+  el.innerHTML = `${esc(message)}${url && url.startsWith('https://github.com/') ? ` <a href="${esc(url)}" target="_blank" rel="noopener">Ver ↗</a>` : ''}`;
+  setTimeout(() => el.remove(), 5000);
 }
 
 function activityHTML(item) {
@@ -468,6 +564,18 @@ function wireCenter() {
     button.onclick = () => {
       S.doc[S.sel] = button.dataset.doc;
       renderCenter();
+    };
+  }
+  const act = $('#act');
+  if (act) act.onclick = (event) => {
+    event.stopPropagation();
+    S.menu = !S.menu;
+    renderCenter();
+  };
+  for (const button of document.querySelectorAll('[data-action]')) {
+    button.onclick = (event) => {
+      event.stopPropagation();
+      openAction(button.dataset.action);
     };
   }
   for (const link of document.querySelectorAll('a[data-ref]')) {
@@ -776,6 +884,7 @@ async function select(id) {
   S.sel = id;
   S.runIdx[id] = 0;
   delete S.view[id];
+  S.menu = false;
   if (!S.open.includes(id)) S.open.push(id);
   const path = `/i/${encodeURIComponent(id)}`;
   if (location.pathname !== path) history.pushState(null, '', path);
@@ -859,6 +968,19 @@ async function boot() {
   if (fromPath) await select(fromPath);
   else renderAll();
 
+  document.addEventListener('click', () => {
+    if (!S.menu) return;
+    S.menu = false;
+    renderCenter();
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape') return;
+    if (S.dialog) closeDialog();
+    else if (S.menu) {
+      S.menu = false;
+      renderCenter();
+    }
+  });
   $('#q').oninput = (event) => {
     S.q = event.target.value;
     renderTree();
