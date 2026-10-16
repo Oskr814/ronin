@@ -4,7 +4,7 @@ import { config } from '../../core/config.js';
 import { loadRepos } from '../../core/repos.js';
 import { itemKey, listRuns, readQueue, readRunLines, readTickInfo, readUsage, runPath, slotsInUse, summarizeRun } from './dashboard-data.js';
 import { repoGithub } from './dashboard-github.js';
-import { buildItems } from './dashboard-items.js';
+import { buildItems, itemRunKeys } from './dashboard-items.js';
 import { forgetDetails, itemDetail, resolveItem } from './dashboard-detail.js';
 import { ActionError, listActions, runAction } from './dashboard-actions.js';
 import { today } from './dashboard-today.js';
@@ -55,10 +55,11 @@ async function itemContext(id: string) {
   if (!match) return null;
   const entry = (await loadRepos()).find((repo) => repo.productRepo === match[1]);
   if (!entry) return null;
-  const runs = listRuns(HISTORY_DAYS).filter((run) => itemKey(run) === id);
+  const gh = await repoGithub(entry);
+  const keys = itemRunKeys(id, gh);
+  const runs = listRuns(HISTORY_DAYS).filter((run) => keys.includes(itemKey(run)));
   const changedSince = Math.max(0, ...runs.map((run) => Date.parse(run.endedAt ?? run.startedAt)));
   const runKind = runs[0] ? (runs[0].issueNumber !== undefined ? 'issue' : 'pr') : undefined;
-  const gh = await repoGithub(entry);
   const ref = resolveItem(Number(match[2]), gh, runKind);
   return ref && { entry, ref, gh, detail: await itemDetail(entry, ref, changedSince) };
 }
@@ -181,7 +182,10 @@ export async function handleDashboard(req: IncomingMessage, res: ServerResponse,
   if (item) {
     const id = decodeURIComponent(item[1]);
     // An issue ronin manages can have no runs in that window: an empty list.
-    json(res, 200, { id, runs: listRuns(HISTORY_DAYS).filter((run) => itemKey(run) === id) });
+    // Its slices' PR runs are its own too (itemRunKeys), as in the sidebar.
+    const entry = (await loadRepos()).find((repo) => id.startsWith(`${repo.productRepo}#`));
+    const keys = itemRunKeys(id, entry ? await repoGithub(entry) : undefined);
+    json(res, 200, { id, runs: listRuns(HISTORY_DAYS).filter((run) => keys.includes(itemKey(run))) });
     return true;
   }
 

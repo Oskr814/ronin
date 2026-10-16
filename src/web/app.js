@@ -256,6 +256,9 @@ function backBar(title) {
   return `<button class="back" id="back"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg><span>${esc(title)}</span></button>`;
 }
 
+// A run's task, and the PR it was on when that's not the item itself: an
+// issue's history carries its slices' PR runs too (/resolve-conflicts on #849).
+const runName = (item, run) => typeName(run.taskType) + (run.issueNumber == null && run.prNumber != null && run.prNumber !== item.number ? ` en #${run.prNumber}` : '');
 const itemRuns = (item) => S.itemRuns[item.id] ?? (item.lastRun ? [item.lastRun] : []);
 // The item's page by default; the transcript for what has no page (a changelog entry).
 const viewOf = (item) => S.view[item.id] ?? (item.kind === 'other' ? 'tx' : 'ficha');
@@ -307,7 +310,7 @@ function renderTranscript(item, tabs) {
     return;
   }
   const index = Math.min(S.runIdx[item.id] ?? 0, runs.length - 1);
-  const pills = `<div class="runs">${back}<span class="lbl">Corridas</span>${runs.map((run, i) => `<button class="pill" data-run="${i}" aria-pressed="${i === index}">${dot(run.state)}${esc(typeName(run.taskType))}<span class="m">${run.state === 'running' ? 'en curso' : `${hhmm(run.startedAt)}${run.durationMs !== undefined ? `, ${duration(run.durationMs)}` : ''}`}</span></button>`).join('')}</div>`;
+  const pills = `<div class="runs">${back}<span class="lbl">Corridas</span>${runs.map((run, i) => `<button class="pill" data-run="${i}" aria-pressed="${i === index}">${dot(run.state)}${esc(runName(item, run))}<span class="m">${run.state === 'running' ? 'en curso' : `${hhmm(run.startedAt)}${run.durationMs !== undefined ? `, ${duration(run.durationMs)}` : ''}`}</span></button>`).join('')}</div>`;
 
   const shown = runs[index];
   const loaded = S.run && S.run.runId === shown.runId ? S.run : null;
@@ -469,12 +472,12 @@ function activityHTML(item) {
   if (runs.length === 0) return `<div class="activity"><div class="act-line"><span class="lbl">Actividad</span><span class="m">${loading ? 'Cargando…' : 'Sin corridas de agentes en los últimos 14 días.'}</span></div></div>`;
   const latest = runs[0];
   // The latest run is the line itself (or the card below it); the older ones, pills that open their transcript.
-  const older = runs.slice(1).map((run, i) => `<button class="pill" data-runview="${i + 1}">${dot(run.state)}${esc(typeName(run.taskType))}<span class="m">${esc(short(Date.now() - Date.parse(run.endedAt ?? run.startedAt)))}</span></button>`).join('');
+  const older = runs.slice(1).map((run, i) => `<button class="pill" data-runview="${i + 1}">${dot(run.state)}${esc(runName(item, run))}<span class="m">${esc(short(Date.now() - Date.parse(run.endedAt ?? run.startedAt)))}</span></button>`).join('');
   let summary = '';
   if (latest.state !== 'running') {
     const [, , label] = STATE[latest.state] ?? STATE.error;
     const facts = [label, `hace ${short(Date.now() - Date.parse(latest.endedAt ?? latest.startedAt))}`, latest.durationMs !== undefined ? duration(latest.durationMs) : null, latest.costUsd !== undefined ? money(latest.costUsd) : null].filter(Boolean).join(' · ');
-    summary = `<span class="latest">${dot(latest.state)}<b>${esc(typeName(latest.taskType))}</b><span class="m">${esc(facts)}</span></span>`;
+    summary = `<span class="latest">${dot(latest.state)}<b>${esc(runName(item, latest))}</b><span class="m">${esc(facts)}</span></span>`;
   }
   const line = `<div class="act-line"><span class="lbl">Actividad</span>${summary}${older ? `<span class="pills">${older}</span>` : ''}<span class="sp"><button class="link" data-runview="0">transcript →</button></span></div>`;
   if (latest.state !== 'running') return `<div class="activity">${line}${latest.state === 'error' && latest.error ? `<div class="last-err">${esc(latest.error)}</div>` : ''}</div>`;
@@ -482,7 +485,7 @@ function activityHTML(item) {
   const lines = S.run?.runId === latest.runId ? S.run.lines : [];
   const said = [...lines].reverse().find((l) => l.type === 'text');
   const steps = lines.filter((l) => l.type === 'tool').slice(-4);
-  return `<div class="activity">${line}<div class="livecard"><div class="top">${dot('running')}<b>${esc(typeName(latest.taskType))}${latest.sliceIndex !== undefined ? `, slice ${latest.sliceIndex + 1}` : ''}</b><span class="clk" data-since="${esc(latest.startedAt)}"></span>${latest.model ? `<span class="m">${esc(latest.model)}</span>` : ''}</div>
+  return `<div class="activity">${line}<div class="livecard"><div class="top">${dot('running')}<b>${esc(runName(item, latest))}${latest.sliceIndex !== undefined ? `, slice ${latest.sliceIndex + 1}` : ''}</b><span class="clk" data-since="${esc(latest.startedAt)}"></span>${latest.model ? `<span class="m">${esc(latest.model)}</span>` : ''}</div>
     ${said ? `<div class="say">${esc(said.text)}</div>` : ''}
     ${steps.length ? `<ol>${steps.map((l) => `<li><b>${esc(VERB[l.name] ?? l.name)}</b> <span class="arg">${esc(String(l.summary ?? '').replace(/^\$ /, ''))}</span></li>`).join('')}</ol>` : `<div class="m">${S.run?.runId === latest.runId ? 'Arrancando…' : 'Cargando…'}</div>`}</div></div>`;
 }
