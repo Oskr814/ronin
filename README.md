@@ -32,10 +32,11 @@ Todo se pide desde GitHub, mencionando a [`@ronin-agent`](https://github.com/ron
 
 Detalle de cada comando: [wiki → Comandos](https://github.com/Oskr814/ronin/wiki/Comandos).
 
-**Exploración y propuestas de mejora** ([`docs/DESIGN.md` §11](docs/DESIGN.md)): con un `ronin.app.json` en el repo del producto, ronin levanta la app, la usa como cada rol y propone mejoras con capturas del antes y del después (en la rama huérfana `ronin/evidence` del repo del producto). Las propuestas van a un PR de exploración (`ronin/exploration/<fecha>`), listo para revisar apenas termina cada corrida; mientras siga abierto, las corridas siguientes se suman a él. Comentando en una ficha podés rechazarla, pedir que la corrija (incluso rehacer la captura del después, que reemplaza a la anterior) o pedir un issue aparte. Dentro de un hilo, ronin solo atiende las respuestas que lo mencionan (`@ronin-agent`), y siempre lee lo que ya se habló sobre esa ficha; al aprobar y mergear, abre un issue por cada propuesta que quedó en pie y la próxima corrida abre un PR nuevo. Las apps listadas en `explore` de `repos.json` se exploran solas de noche (`EXPLORE_NIGHT_WINDOW`).
+**Exploración y propuestas de mejora** ([`docs/DESIGN.md` §11](docs/DESIGN.md)): con un `ronin.app.json` en el repo del producto, ronin levanta la app, la usa como cada rol y propone mejoras con capturas del antes y del después (en la rama huérfana `ronin/evidence` del repo del producto). Las propuestas van a un PR de exploración (`ronin/exploration/<fecha>`), listo para revisar apenas termina cada corrida; mientras siga abierto, las corridas siguientes se suman a él. Comentando en una ficha (en GitHub, o desde la pestaña *Fichas* del tablero) podés rechazarla, pedir que la corrija (incluso rehacer la captura del después, que reemplaza a la anterior) o pedir un issue aparte. Dentro de un hilo, ronin solo atiende las respuestas que lo mencionan (`@ronin-agent`), y siempre lee lo que ya se habló sobre esa ficha; al aprobar y mergear, abre un issue por cada propuesta que quedó en pie y la próxima corrida abre un PR nuevo. Las apps listadas en `explore` de `repos.json` se exploran solas de noche (`EXPLORE_NIGHT_WINDOW`).
 
 **Tablero** ([`docs/DESIGN.md` §15](docs/DESIGN.md)): una página que se ve solo por la tailnet y pide entrar con GitHub. Muestra:
 - la ficha de cada issue o PR: su descripción, sus comentarios y lo que hicieron los agentes;
+- en un PR de exploración, sus fichas para revisarlas: el antes y el después lado a lado, la propuesta y su hilo, para rechazar, pedir cambios o aprobar desde ahí;
 - qué agentes están corriendo, con su transcript en vivo;
 - qué issues esperan a alguien y por qué;
 - cómo va cada stack de slices, con sus checks;
@@ -43,7 +44,7 @@ Detalle de cada comando: [wiki → Comandos](https://github.com/Oskr814/ronin/wi
 - el uso de cada cuenta de Claude;
 - en *Hoy*, las corridas de las últimas 12 horas y los totales del día.
 
-Desde la ficha se le pide a ronin lo mismo que comentando en GitHub: resolver conflictos, levantar o bajar la preview, el auto-merge, o responder y destrabar un issue. ronin deja en el issue o PR un comentario con quién lo pidió.
+Desde la ficha se le pide a ronin lo mismo que comentando en GitHub: resolver conflictos, levantar o bajar la preview, el auto-merge, o responder y destrabar un issue. El login pide el permiso `repo` de GitHub, y lo que se pide desde el tablero queda comentado a tu nombre, como si lo escribieras en GitHub.
 
 ## Operar un runner
 

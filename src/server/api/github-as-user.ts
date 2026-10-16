@@ -52,3 +52,10 @@ export async function commentOnFile(token: string, repo: string, prNumber: numbe
   const created = await call<{ id: number; html_url: string }>(token, 'POST', `/repos/${repo}/pulls/${prNumber}/comments`, { body, commit_id: pr.head.sha, path, subject_type: 'file' });
   return { id: created.id, url: created.html_url };
 }
+
+// An approving review of the PR, as the person: what GitHub's "Review
+// changes → Approve" sends.
+export async function approvePr(token: string, repo: string, prNumber: number, body?: string): Promise<Posted> {
+  const created = await call<{ id: number; html_url: string }>(token, 'POST', `/repos/${repo}/pulls/${prNumber}/reviews`, { event: 'APPROVE', ...(body ? { body } : {}) });
+  return { id: created.id, url: created.html_url };
+}
