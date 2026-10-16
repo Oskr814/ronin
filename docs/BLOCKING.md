@@ -35,4 +35,4 @@ Cuando se dispara un bloqueo, el email (`src/core/notifier.ts`) incluye:
 - El motivo concreto (una de las categorías de arriba), en una oración
 - Cuando lo hay, un fragmento relevante (p. ej. cuántos intentos lleva el PR contra qué límite), no el log completo
 
-El label `ronin:blocked` y el email salen juntos. El motivo vive en el email y en el log del tick: el supervisor no llena todavía la sección "Blocker" del issue de tracking (`templates/tracking-issue.md`). Para retomar, un humano resuelve lo que falta y vuelve a pasar el issue a `ronin:in-progress`.
+El label `ronin:blocked` y el email salen juntos. El motivo queda en el email, en el log del tick y en el estado local del runner, desde donde lo muestra el tablero mientras el issue siga bloqueado (`docs/DESIGN.md` §15.7). El supervisor no llena todavía la sección "Blocker" del issue de tracking (`templates/tracking-issue.md`). Para retomar, un humano resuelve lo que falta y vuelve a pasar el issue a `ronin:in-progress`.
