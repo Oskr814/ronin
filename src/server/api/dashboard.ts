@@ -5,6 +5,7 @@ import { loadRepos } from '../../core/repos.js';
 import { itemKey, listRuns, readQueue, readRunLines, readTickInfo, readUsage, runPath, slotsInUse, summarizeRun } from './dashboard-data.js';
 import { repoGithub } from './dashboard-github.js';
 import { buildItems } from './dashboard-items.js';
+import { itemDetail, resolveItem } from './dashboard-detail.js';
 import { today } from './dashboard-today.js';
 
 // The dashboard's data (#65), all behind the session (tailnet.ts checks it
@@ -12,6 +13,7 @@ import { today } from './dashboard-today.js';
 //   GET /api/snapshot                the sidebar and the status bar
 //   GET /api/today                   the last 12 hours' runs and the day's totals
 //   GET /api/items/<id>              one item's runs (14 days)
+//   GET /api/items/<id>/detail       its issue and PR from GitHub, with its comments (#85)
 //   GET /api/runs/<runId>            one run's transcript
 //   GET /api/runs/<runId>/stream     the rest of it as it happens (SSE)
 
@@ -42,6 +44,21 @@ export async function snapshot(login: string): Promise<unknown> {
     previews: github.flatMap((gh) => (gh ? gh.previews.map((p) => ({ ...p, repo: gh.repo })) : [])),
     github: github.map((gh, i) => ({ repo: repos[i], fetchedAt: gh?.fetchedAt ?? null, ...(gh?.error ? { error: gh.error } : {}) })),
   };
+}
+
+// An issue's or PR's page: what GitHub has on it. 404 for an item that
+// isn't one (a changelog entry) or a repo not in repos.json.
+async function detail(id: string): Promise<unknown | null> {
+  const match = /^(.+)#(\d+)$/.exec(id);
+  if (!match) return null;
+  const entry = (await loadRepos()).find((repo) => repo.productRepo === match[1]);
+  if (!entry) return null;
+  const runs = listRuns(HISTORY_DAYS).filter((run) => itemKey(run) === id);
+  const changedSince = Math.max(0, ...runs.map((run) => Date.parse(run.endedAt ?? run.startedAt)));
+  const runKind = runs[0] ? (runs[0].issueNumber !== undefined ? 'issue' : 'pr') : undefined;
+  const ref = resolveItem(Number(match[2]), await repoGithub(entry), runKind);
+  // `ronin`: its login, so the page can tell its comments apart.
+  return ref && { ref, ronin: config.githubLogin, ...(await itemDetail(entry, ref, changedSince)) };
 }
 
 function streamRun(req: IncomingMessage, res: ServerResponse, path: string, from: number): void {
@@ -89,6 +106,14 @@ export async function handleDashboard(req: IncomingMessage, res: ServerResponse,
 
   if (path === '/api/today') {
     json(res, 200, today(listRuns(2)));
+    return true;
+  }
+
+  const itemPage = /^\/api\/items\/(.+)\/detail$/.exec(path);
+  if (itemPage) {
+    const body = await detail(decodeURIComponent(itemPage[1]));
+    if (body) json(res, 200, body);
+    else json(res, 404, { error: 'ese ítem no es un issue ni un PR de un repo de ronin' });
     return true;
   }
 
