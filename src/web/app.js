@@ -581,8 +581,9 @@ const fichaKey = (f) => `${f.app}/${f.id}`;
 const FICHA_GROUPS = [['decidir', 'Por decidir'], ['esperando', 'Esperando a ronin'], ['respondida', 'Respondidas por ronin'], ['lista', 'Listas para aprobar'], ['aprobada', 'Aprobadas'], ['rechazada', 'Rechazadas']];
 const FICHA_DOT = { decidir: 'pending', esperando: 'live', respondida: 'run', lista: 'ok', aprobada: 'ok', rechazada: 'crit' };
 
-// "Dejarla así" leaves nothing on GitHub: it's this browser's mark of what
-// was already looked at, so the review's progress shows.
+// "Aprobar" on a finding leaves nothing on GitHub yet: it's this browser's
+// mark of what was looked at and stays, so the review's progress shows. The
+// finding is approved for real when the PR is (approveAndMerge).
 const listasKey = (id) => `ronin-listas:${id}`;
 function listas(id) {
   if (!S.listas[id]) {
@@ -703,7 +704,7 @@ function decisionsHTML(f, status) {
   const menu = S.fmenu ? `<div class="menu fmenu" role="menu">
     <button role="menuitem" data-fact="issue"><b>Pedir un issue aparte</b><small>Algo que surge de esta ficha pero no es su propuesta.</small></button>
     <button role="menuitem" data-fact="pregunta"><b>Preguntarle a ronin</b><small>Responde en el hilo, sin tocar la ficha.</small></button></div>` : '';
-  return `<span class="decide">${status === 'decidir' || marked ? `<button class="btn-s ok" data-flista aria-pressed="${marked}">${marked ? '✓ Lista' : '✓ Dejarla así'} <kbd>a</kbd></button>` : ''}
+  return `<span class="decide">${status === 'decidir' || marked ? `<button class="btn-s ok" data-flista aria-pressed="${marked}" title="${marked ? 'Se aprueba cuando apruebes el PR. Clic para deshacer.' : 'Queda para aprobar: se aprueba cuando apruebes el PR.'}">${marked ? '✓ Para aprobar' : '✓ Aprobar'} <kbd>a</kbd></button>` : ''}
     <button class="btn-s" data-fact="cambios">Pedir cambios <kbd>c</kbd></button>
     <button class="btn-s danger" data-fact="rechazar">Rechazar <kbd>r</kbd></button>
     <span class="actions"><button class="btn-s" id="fmore" aria-haspopup="menu" aria-expanded="${S.fmenu}">Más ▾</button>${menu}</span></span>`;
