@@ -225,12 +225,19 @@ function renderCenter() {
         ? `<span class="w">● Trabajando</span><span data-since="${esc(loaded.summary.startedAt)}">${esc(clock(Date.now() - Date.parse(loaded.summary.startedAt)))}</span>`
         : `<span>${esc(STATE[loaded.summary.state]?.[2] ?? loaded.summary.state)}</span>`}<span>${esc(typeName(loaded.summary.taskType))}</span><span class="r">${esc([loaded.summary.model, loaded.summary.worktree].filter(Boolean).join('  '))}</span></div>`;
   }
+  // Redrawn on every snapshot: whoever was reading further up stays there,
+  // whoever was at the bottom of a run still going follows it.
   const tx = $('#tx');
-  const atBottom = tx ? tx.scrollTop + tx.clientHeight >= tx.scrollHeight - 30 : true;
+  const sameRun = tx && tx.dataset.run === loaded?.runId;
+  const atBottom = !sameRun || tx.scrollTop + tx.clientHeight >= tx.scrollHeight - 30;
+  const scrollTop = sameRun ? tx.scrollTop : 0;
   center.innerHTML = tabs + backBar(item.title) + pills + body + `<div class="ctx-inline">${ctxHTML(item)}</div>`;
   wireCenter();
   const fresh = $('#tx');
-  if (fresh && atBottom && !isMobile()) fresh.scrollTop = fresh.scrollHeight;
+  if (!fresh) return;
+  if (loaded) fresh.dataset.run = loaded.runId;
+  if (isMobile()) return;
+  fresh.scrollTop = atBottom ? fresh.scrollHeight : scrollTop;
 }
 
 function wireCenter() {
@@ -556,8 +563,35 @@ async function refresh() {
   renderTree();
   renderCtx();
   renderStatus();
-  // The tabs' dots follow the snapshot; the transcript, its own stream.
-  if (!S.sel || !S.run) renderCenter();
+  await followNewRun();
+  renderCenter();
+}
+
+// A new run on the open item: its list of runs is read again. Whoever was
+// looking at the latest one moves on to the new one (and follows it live);
+// whoever was looking at an older one stays on it.
+async function followNewRun() {
+  const item = S.sel && itemById(S.sel);
+  const known = S.sel && S.itemRuns[S.sel];
+  if (!item?.lastRun || !known || known.some((run) => run.runId === item.lastRun.runId)) return;
+  const id = S.sel;
+  const index = S.runIdx[id] ?? 0;
+  const viewing = known[index]?.runId;
+  let runs;
+  try {
+    ({ runs } = await api(`/api/items/${encodeURIComponent(id)}`));
+  } catch (error) {
+    if (error instanceof Unauthorized) showLogin();
+    return;
+  }
+  if (S.sel !== id) return;
+  S.itemRuns[id] = runs;
+  if (index === 0) {
+    S.runIdx[id] = 0;
+    await loadShownRun();
+  } else {
+    S.runIdx[id] = Math.max(0, runs.findIndex((run) => run.runId === viewing));
+  }
 }
 
 function selectedFromPath() {
