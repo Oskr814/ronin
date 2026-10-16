@@ -7,6 +7,7 @@ import { createServer } from 'node:net';
 import { config } from './config.js';
 import { activeRepo } from './repo-context.js';
 import { log } from './logger.js';
+import { issueResource, withResourceLock } from './locks.js';
 import type { PullRequestStatus } from './github.js';
 
 const execFileAsync = promisify(execFile);
@@ -382,7 +383,8 @@ export function branchesToSweep(dirNames: string[], allPrs: PullRequestStatus[])
 // too (see concurrency.ts). Reuses tick()'s already-batched allPrs — no
 // extra GitHub call. Called at the very start of tick(), before this tick's
 // own new worktrees exist, so it never races a worktree that's
-// mid-creation for work just starting.
+// mid-creation for work just starting — and skips the ones whose issue an
+// event handler holds.
 export async function sweepOrphanedWorktrees(allPrs: PullRequestStatus[]): Promise<void> {
   let entries: string[];
   try {
@@ -392,6 +394,10 @@ export async function sweepOrphanedWorktrees(allPrs: PullRequestStatus[]): Promi
   }
 
   for (const branch of branchesToSweep(entries, allPrs)) {
-    await removeWorktree(branch);
+    // An event handler may be working on this issue right now (a slice not
+    // pushed yet, a plan, a /spike), in a worktree that has no PR yet: only
+    // swept while nobody holds the issue (see locks.ts).
+    const issue = Number(branch.split('/')[1]);
+    await withResourceLock(issueResource(issue), 'skip', () => removeWorktree(branch));
   }
 }

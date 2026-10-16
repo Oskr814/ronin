@@ -33,6 +33,17 @@ vi.mock('./core/config.js', () => ({
   LABEL_STATES: { ready: 'ronin:ready', 'in-progress': 'ronin:in-progress', blocked: 'ronin:blocked', done: 'ronin:done' },
 }));
 
+vi.mock('./core/locks.js', () => ({
+  issueResource: (n: number) => `issue-${n}`,
+  prResource: (n: number) => `pr-${n}`,
+  tryLockResource: async () => true,
+  unlockResource: async () => {},
+  withResourceLock: async (_r: string, _m: string, fn: () => Promise<void>) => { await fn(); return true; },
+  withSlots: (_k: string, _l: number, _c: unknown, fn: () => Promise<unknown>) => fn(),
+  pinResources: async () => {},
+  unpinResources: async () => {},
+}));
+
 const activeRepo = vi.fn();
 vi.mock('./core/repo-context.js', () => ({
   activeRepo: (...args: unknown[]) => activeRepo(...args),
@@ -66,7 +77,9 @@ const setPullRequestBody = vi.fn();
 const resetAttemptCount = vi.fn();
 const isTransientGhError = vi.fn();
 const getFailedChecks = vi.fn();
+const listTrackingIssues = vi.fn();
 vi.mock('./core/github.js', () => ({
+  listTrackingIssues: (...args: unknown[]) => listTrackingIssues(...args),
   attemptCountFromLabels: (labels: string[]) => Number(labels.map((l) => l.match(/^ronin:attempts-(\d+)$/)?.[1]).find(Boolean) ?? 0),
   resetAttemptCount: (...args: unknown[]) => resetAttemptCount(...args),
   isTransientGhError: (...args: unknown[]) => isTransientGhError(...args),
@@ -142,7 +155,7 @@ vi.mock('./changelog/changelog.js', () => ({
   findReleasesNeedingChangelog: (...args: unknown[]) => findReleasesNeedingChangelog(...args),
 }));
 
-const { runIssueStep, handleCommandsOnIdleSlicePrs, processSlicePr, processIssue, agentTaskFor, needsMoreInfo, discoverAssignedIssues, processExternalReviewCandidate, processTrustedFixCandidate, runExternalReviews, processSpikeCandidate, processChangelogCandidate, runChangelogUpdates, renderTrackingIssueBody } = await import('./tick.js');
+const { runScoped, runIssueStep, idleCommandJobs, processSlicePr, processIssue, agentTaskFor, needsMoreInfo, discoverAssignedIssues, processExternalReviewCandidate, processTrustedFixCandidate, runExternalReviews, processSpikeCandidate, processChangelogCandidate, runChangelogUpdates, renderTrackingIssueBody } = await import('./tick.js');
 
 function issue(overrides: Partial<TrackingIssue> = {}): TrackingIssue {
   return { number: 228, title: 'Test issue', url: 'https://github.com/x/y/issues/228', labels: [], ...overrides };
@@ -954,6 +967,30 @@ describe('renderTrackingIssueBody', () => {
 // used to live inline in tickOneRepo, after an early `return` on an
 // unrelated listAllOpenRoninPrs failure — untestable on its own, and
 // silently skipped for a whole tick whenever that unrelated call flaked.
+describe('runScoped', () => {
+  const candidate = (prNumber: number) => ({ prNumber, headRefName: 'feature', headSha: `sha${prNumber}`, baseRefName: 'main', threadHistory: [], openThreads: [], mentions: [], canExecute: true });
+
+  beforeEach(() => {
+    activeRepo.mockReturnValue({ productRepo: 'acme/product' });
+    runExternalReview.mockReset().mockResolvedValue(undefined);
+    listTrackingIssues.mockReset();
+    findPrsNeedingReview.mockReset();
+  });
+
+  it("runs only the event's flows, narrowed to its resources", async () => {
+    // Even if discovery hands back more, only the event's PR is worked on.
+    findPrsNeedingReview.mockResolvedValue({ reviewCandidates: [candidate(41), candidate(42)], trustedFixCandidates: [], threadMentionCandidates: [] });
+
+    await runScoped({ flows: ['review'], resources: ['pr-41'] });
+
+    expect(findPrsNeedingReview).toHaveBeenCalledWith([41]);
+    expect(runExternalReview).toHaveBeenCalledTimes(1);
+    expect(runExternalReview).toHaveBeenCalledWith(expect.objectContaining({ prNumber: 41 }));
+    // The issue pipeline isn't one of the event's flows: not even listed.
+    expect(listTrackingIssues).not.toHaveBeenCalled();
+  });
+});
+
 describe('runExternalReviews', () => {
   beforeEach(() => {
     runAgentTask.mockResolvedValue(undefined);
@@ -1148,7 +1185,7 @@ describe('runChangelogUpdates', () => {
   });
 });
 
-describe('handleCommandsOnIdleSlicePrs', () => {
+describe('idleCommandJobs', () => {
   it('reads the commands on slice PRs whose issue is not in progress, and only those', async () => {
     findUnprocessedMentions.mockReset().mockResolvedValue([]);
     const prs = [
@@ -1157,15 +1194,19 @@ describe('handleCommandsOnIdleSlicePrs', () => {
       { number: 380, headRefName: 'ronin/exploration/2026-10-14' },
     ] as any[];
 
-    await handleCommandsOnIdleSlicePrs(prs, [{ number: 361 }] as any[]);
+    const jobs = idleCommandJobs(prs, [{ number: 361 }] as any[]);
+    for (const job of jobs) await job.run();
 
     expect(findUnprocessedMentions.mock.calls).toEqual([[367]]);
+    // An event on the PR or on its issue finds this job.
+    expect(jobs[0]).toMatchObject({ lock: 'pr-367', resources: ['pr-367', 'issue-350'] });
   });
 
   it('keeps going when one PR fails', async () => {
     findUnprocessedMentions.mockReset().mockRejectedValueOnce(new Error('gh down')).mockResolvedValue([]);
 
-    await handleCommandsOnIdleSlicePrs([{ number: 1, headRefName: 'ronin/10/slice-1' }, { number: 2, headRefName: 'ronin/11/slice-2' }] as any[], []);
+    const jobs = idleCommandJobs([{ number: 1, headRefName: 'ronin/10/slice-1' }, { number: 2, headRefName: 'ronin/11/slice-2' }] as any[], []);
+    for (const job of jobs) await job.run();
 
     expect(findUnprocessedMentions.mock.calls).toEqual([[1], [2]]);
   });

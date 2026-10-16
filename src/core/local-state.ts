@@ -1,4 +1,6 @@
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { setTimeout as sleep } from 'node:timers/promises';
+import { acquireLock } from './worker-launch.js';
 import { config } from './config.js';
 import { activeRepo } from './repo-context.js';
 
@@ -45,20 +47,28 @@ export interface LocalState {
 // progress (the default), or redo a /spec on an issue ronin doesn't manage.
 export type InterviewResume = { kind: 'issue' } | { kind: 'spec'; appName: string; instruction?: string };
 
-// In-process serialization for the read-modify-write span around this file:
-// tick() now runs several issues' pipelines concurrently (see
-// concurrency.ts), and this file's own read-then-write functions below, plus
-// claim.ts's tryClaim/releaseIfNoLongerInProgress, would otherwise race —
-// two concurrent callers can both read before either writes, and the second
-// write silently clobbers the first's update. A lost update here was always
-// tolerable on its own (this is a cache, not the source of truth — see the
-// LocalState doc comment above), but there's no reason to rely on that when
-// serializing the whole critical section is this cheap: these are quick
-// label reads/writes, never the long `claude -p` run a concurrent slot is
-// actually there to overlap.
+// Serializes the read-modify-write span around this file: tick() runs
+// several issues' pipelines concurrently (see concurrency.ts), and the event
+// handlers (webhooks/handler.ts) are other processes writing it alongside the
+// tick. This file's own read-then-write functions below, plus claim.ts's
+// tryClaim/releaseIfNoLongerInProgress, would otherwise race — two callers
+// can both read before either writes, and the second write silently clobbers
+// the first's update. Inside the process a promise queue; across processes a
+// lock file next to the state, held only for that quick span (label
+// reads/writes, never the long `claude -p` run).
+const STATE_LOCK_POLL_MS = 50;
 let queue: Promise<unknown> = Promise.resolve();
 export function withLocalStateLock<T>(fn: () => Promise<T>): Promise<T> {
-  const result = queue.then(fn, fn);
+  const locked = async () => {
+    const lock = `${config.localStatePath}.lock`;
+    while (!(await acquireLock(lock))) await sleep(STATE_LOCK_POLL_MS);
+    try {
+      return await fn();
+    } finally {
+      await rm(lock, { force: true });
+    }
+  };
+  const result = queue.then(locked, locked);
   queue = result.then(
     () => {},
     () => {},
@@ -92,8 +102,13 @@ export async function readLocalState(): Promise<LocalState> {
   }
 }
 
+// Written aside and renamed into place: another process reading it meanwhile
+// sees the old file or the new one, never half of one — which readLocalState
+// would take for an empty state, and the next write would persist.
 export async function writeLocalState(state: LocalState): Promise<void> {
-  await writeFile(statePath(), JSON.stringify(state, null, 2));
+  const tmp = `${statePath()}.${process.pid}.tmp`;
+  await writeFile(tmp, JSON.stringify(state, null, 2));
+  await rename(tmp, statePath());
 }
 
 export async function incrementChecksPendingCount(prNumber: number): Promise<number> {

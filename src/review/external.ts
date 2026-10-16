@@ -77,18 +77,25 @@ const DISCOVERY_CONCURRENCY = 6;
 // layer) — same split as mentions.ts. Only fetches openThreads for PRs it's
 // actually going to re-review (skips the extra GraphQL call for the common
 // case: a PR with no new commits and no fresh @mention since last time).
-export async function findPrsNeedingReview(): Promise<{
+//
+// `only` narrows it to those PRs — an event handler's, for the PR its event
+// is about (see tick.ts's Scope).
+export async function findPrsNeedingReview(only?: number[]): Promise<{
   reviewCandidates: ReviewCandidate[];
   trustedFixCandidates: TrustedFixCandidate[];
   threadMentionCandidates: ThreadMentionCandidate[];
 }> {
   const start = Date.now();
-  const prs = await listAllOpenExternalPrs();
+  const open = await listAllOpenExternalPrs();
+  const prs = only ? open.filter((pr) => only.includes(pr.number)) : open;
   // Entries for PRs that are no longer open are dead weight — drop them here
   // rather than in a separate cron; this is the one place that already knows
-  // the full set of currently-open external PRs.
-  await pruneLastReviewedSha(prs.map((pr) => pr.number));
-  await pruneReviewedPins(prs.map((pr) => pr.number));
+  // the full set of currently-open external PRs. Not on a narrowed run: the
+  // list it has isn't every open PR.
+  if (!only) {
+    await pruneLastReviewedSha(prs.map((pr) => pr.number));
+    await pruneReviewedPins(prs.map((pr) => pr.number));
+  }
   // Every PR is evaluated independently, several at once: each costs a
   // handful of sequential `gh` calls, and one after another they were most of
   // an idle tick. Results are kept in the PRs' own order.

@@ -133,9 +133,9 @@ export const config = {
   // webhookSecret itself at startup.
   webhookSecret: process.env.WEBHOOK_SECRET ?? '',
   webhookPort: Number(process.env.WEBHOOK_PORT ?? 3939),
-  // How long to coalesce a burst of qualifying webhook deliveries (e.g.
-  // several PR comments in a row) into a single tick trigger — see
-  // webhooks/server.ts's scheduleTick.
+  // How long to coalesce a burst of webhook deliveries about the same issue
+  // or PR (e.g. a review's several inline comments) into a single event
+  // handler — see webhooks/server.ts's scheduleHandler.
   webhookDebounceMs: Number(process.env.WEBHOOK_DEBOUNCE_MS ?? 8000),
 } as const;
 

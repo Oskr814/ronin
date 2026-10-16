@@ -13,54 +13,103 @@ export function verifySignature(rawBody: Buffer, signatureHeader: string | undef
   return timingSafeEqual(expectedBuf, actualBuf);
 }
 
+import type { Flow, Scope } from '../tick.js';
+
 // config.ts's LABEL_AUTO_MERGE — not imported: this module stays free of
 // config.ts, which requires the runner's env vars just to load.
 const LABEL_AUTO_MERGE = 'ronin:auto-merge';
 
-// Event/action combos that actually move the needle for tick()'s three
-// discovery paths (see docs — assignment, external-PR review, mentions/
-// commands). Everything else (push, label, etc.) is noise we don't need to
-// wake a tick up for.
-const RELEVANT: Record<string, string[]> = {
-  issues: ['assigned'],
-  // "closed" covers a merge too: the merged slice is checked off, its stack
-  // retargeted, and its worktree and /preview taken down right away instead
-  // of on the next cron tick.
-  pull_request: ['assigned', 'ready_for_review', 'opened', 'synchronize', 'reopened', 'closed'],
-  issue_comment: ['created'],
-  pull_request_review_comment: ['created'],
-  // An approval (an exploration PR merges on it) or a request for changes
-  // with no inline comment wouldn't wake a tick otherwise.
-  pull_request_review: ['submitted'],
-  // CI finishing on a PR: one with ronin:auto-merge merges right then
-  // instead of on the next cron tick (auto-merge.ts).
-  check_suite: ['completed'],
+// The flows each event/action can move — tick.ts runs only those, and only
+// for the event's issue or PR (see Scope). Everything else (push, label,
+// etc.) is noise nothing reacts to.
+const PR_ACTIVITY: Flow[] = ['issues', 'idle-commands', 'review', 'exploration'];
+const FLOWS: Record<string, Record<string, Flow[]>> = {
+  issues: { assigned: ['assign', 'issues'] },
+  pull_request: {
+    // A spec PR handed to ronin, a slice PR out of draft, an external PR
+    // ready for review.
+    assigned: ['assign', 'issues', 'review'],
+    ready_for_review: ['assign', 'issues', 'review'],
+    opened: ['issues', 'review', 'exploration'],
+    synchronize: ['issues', 'review', 'exploration'],
+    reopened: ['issues', 'review', 'exploration'],
+    // A merge too: the merged slice is checked off, its stack retargeted,
+    // its worktree and /preview taken down, and a PR stacked on it can
+    // auto-merge now.
+    closed: ['sweeps', 'issues', 'auto-merge'],
+    labeled: ['auto-merge'],
+  },
+  issue_comment: { created: PR_ACTIVITY },
+  pull_request_review_comment: { created: PR_ACTIVITY },
+  // An approval (an exploration PR merges on it, so does an auto-merge one)
+  // or a request for changes with no inline comment.
+  pull_request_review: { submitted: ['auto-merge', ...PR_ACTIVITY] },
+  // CI finishing on a PR: one with ronin:auto-merge merges right then, a
+  // slice with failing checks gets its fix-e2e.
+  check_suite: { completed: ['auto-merge', 'issues'] },
   // GitHub's "released" action fires only for a real, non-draft,
   // non-prerelease publish — unlike "published" (fires for pre-releases too)
   // or "created" (fires for drafts). Exactly the trigger changelog.ts wants;
   // see docs on the release event's action types.
-  release: ['released'],
+  release: { released: ['changelog'] },
 };
 
+// stack.ts's ronin/<issue>/... branches — a PR on one belongs to that
+// issue's stack. Repeated here for the same reason as LABEL_AUTO_MERGE.
+const RONIN_BRANCH_RE = /^ronin\/(\d+)\//;
+
+interface PrRef {
+  number?: number;
+  head?: { ref?: string };
+}
+
+export interface EventPayload {
+  action?: string;
+  repository?: { full_name?: string };
+  label?: { name?: string };
+  issue?: { number?: number; pull_request?: unknown };
+  pull_request?: PrRef;
+  check_suite?: { pull_requests?: PrRef[] };
+}
+
+function prResources(pr: PrRef): string[] {
+  if (typeof pr.number !== 'number') return [];
+  const issue = pr.head?.ref?.match(RONIN_BRANCH_RE)?.[1];
+  return [`pr-${pr.number}`, ...(issue ? [`issue-${issue}`] : [])];
+}
+
+function resourcesOf(eventName: string, payload: EventPayload): string[] {
+  if (eventName === 'release') return ['changelog'];
+  if (eventName === 'check_suite') return (payload.check_suite?.pull_requests ?? []).flatMap(prResources);
+  if (payload.pull_request) return prResources(payload.pull_request);
+  const number = payload.issue?.number;
+  if (typeof number !== 'number') return [];
+  // A comment on a PR comes as issue_comment, without its branch: the
+  // handler looks the PR's issue up itself (webhooks/handler.ts).
+  return [payload.issue?.pull_request ? `pr-${number}` : `issue-${number}`];
+}
+
+// What an event asks ronin to look at: its repo, and the Scope tick.ts's
+// runScoped runs for it. Null for an event nothing reacts to.
+//
 // `payload` is untyped GitHub webhook JSON on purpose — we only ever read a
 // couple of well-known fields off it, never trust it for anything beyond
-// "is this worth waking a tick up for". The actual work still re-reads fresh
-// state from GitHub inside tick() itself.
-export function shouldTriggerTick(
-  eventName: string,
-  payload: { action?: string; repository?: { full_name?: string }; label?: { name?: string }; check_suite?: { pull_requests?: unknown[] } },
-  trackedRepos: string[],
-): boolean {
+// "what is this about". The actual work still re-reads fresh state from
+// GitHub.
+export function scopeForEvent(eventName: string, payload: EventPayload, trackedRepos: string[]): { repo: string; scope: Scope } | null {
   const repo = payload.repository?.full_name;
-  if (!repo || !trackedRepos.includes(repo)) return false;
+  if (!repo || !trackedRepos.includes(repo)) return null;
   // Only ronin:auto-merge going on (by hand or by /auto-merge): ronin changes
-  // other labels on its own PRs during a tick, and each of those would wake
-  // another one.
-  if (eventName === 'pull_request' && payload.action === 'labeled') return payload.label?.name === LABEL_AUTO_MERGE;
-  // A suite on a branch with no PR (a push to main) has nothing to merge.
-  if (eventName === 'check_suite' && (payload.check_suite?.pull_requests?.length ?? 0) === 0) return false;
+  // other labels on its own PRs as it works, and each of those would start
+  // another run.
+  if (eventName === 'pull_request' && payload.action === 'labeled' && payload.label?.name !== LABEL_AUTO_MERGE) return null;
 
-  const actions = RELEVANT[eventName];
-  if (!actions) return false;
-  return payload.action !== undefined && actions.includes(payload.action);
+  let flows = payload.action === undefined ? undefined : FLOWS[eventName]?.[payload.action];
+  if (!flows) return null;
+  // A comment on an issue (not a PR) can only be a command on it.
+  if (eventName === 'issue_comment' && !payload.issue?.pull_request) flows = ['issue-commands'];
+  const resources = resourcesOf(eventName, payload);
+  // A suite on a branch with no PR (a push to main) has nothing to look at.
+  if (resources.length === 0) return null;
+  return { repo, scope: { flows, resources } };
 }

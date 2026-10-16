@@ -33,6 +33,7 @@ import { nextUnstartedSlice, hasRemainingSlices, recordSlicePr, markSliceMerged,
 import { notifyBlocker } from './core/notifier.js';
 import { resetTickMetrics, getTickAgentMetrics } from './core/metrics.js';
 import { runJobs, type Job } from './core/concurrency.js';
+import { issueResource, pinResources, prResource, tryLockResource, unlockResource, unpinResources, withResourceLock, withSlots } from './core/locks.js';
 import { runAgentTask, type AgentTask } from './core/agent-task.js';
 import { runExternalReview } from './review/index.js';
 import { ClaudeUsageLimitError } from './core/claude-runner.js';
@@ -175,10 +176,15 @@ async function discoverAssignedSpecs(): Promise<TrackingIssue[]> {
       // regardless of outcome. Nothing about a finished plan run needs to
       // persist: a retry (including after ClaudeUsageLimitError) just
       // recreates the worktree fresh via ensureWorktree.
+      // Held while the plan runs: its worktree has no PR, and the tick's
+      // sweepOrphanedWorktrees would otherwise take it from under it when an
+      // event handler is the one running this.
+      const locked = await tryLockResource(issueResource(issue.number));
       try {
         await runAgentTask({ type: 'plan', issueNumber: issue.number, specPaths });
       } finally {
         await removeWorktree(planBranch(issue.number));
+        if (locked) await unlockResource(issueResource(issue.number));
       }
       started.push({ number: issue.number, title: `[spec] ${title}`, url: issue.url, labels: [LABEL_MANAGED, LABEL_STATES['in-progress']] });
     } catch (error) {
@@ -747,20 +753,20 @@ export async function processThreadMentionCandidate(candidate: ThreadMentionCand
 // transient `listAllOpenRoninPrs` failure — which returns early from the
 // issue pipeline — must not silently skip external review for the whole
 // tick. See final review Fix 4.
-export async function externalReviewJobs(): Promise<Job[]> {
+export async function externalReviewJobs(only?: number[]): Promise<TickJob[]> {
   let reviewCandidates: ReviewCandidate[];
   let trustedFixCandidates: TrustedFixCandidate[];
   let threadMentionCandidates: ThreadMentionCandidate[];
   try {
-    ({ reviewCandidates, trustedFixCandidates, threadMentionCandidates } = await findPrsNeedingReview());
+    ({ reviewCandidates, trustedFixCandidates, threadMentionCandidates } = await findPrsNeedingReview(only));
   } catch (error) {
     log.info(`tick: findPrsNeedingReview falló, reintentando en el próximo tick: ${(error as Error).message}`);
     return [];
   }
   return [
-    ...trustedFixCandidates.map((c) => ({ kind: 'fix-comments-external', label: `PR #${c.prNumber}`, run: () => processTrustedFixCandidate(c) })),
-    ...threadMentionCandidates.map((c) => ({ kind: 'thread-reply-external', label: `PR #${c.prNumber}`, run: () => processThreadMentionCandidate(c) })),
-    ...reviewCandidates.map((c) => ({ kind: 'external-review', label: `PR #${c.prNumber}`, run: () => processExternalReviewCandidate(c) })),
+    ...trustedFixCandidates.map((c) => prJob('fix-comments-external', c.prNumber, () => processTrustedFixCandidate(c))),
+    ...threadMentionCandidates.map((c) => prJob('thread-reply-external', c.prNumber, () => processThreadMentionCandidate(c))),
+    ...reviewCandidates.map((c) => prJob('external-review', c.prNumber, () => processExternalReviewCandidate(c))),
   ];
 }
 
@@ -800,28 +806,30 @@ export async function processSpikeCandidate(candidate: SpikeCandidate): Promise<
 // of) the ronin-PR loop — same reasoning as runExternalReviews: a transient
 // listOpenUnmanagedIssues failure must not silently skip every other flow
 // this tick.
-export async function spikeJobs(): Promise<Job[]> {
+export async function spikeJobs(only?: number[]): Promise<TickJob[]> {
   let candidates: SpikeCandidate[];
   let explores: ExploreCandidate[];
   let specs: SpecCandidate[];
   let prototypes: PrototypeCandidate[];
   let requests: RequestCandidate[];
   try {
-    ({ spikes: candidates, explores, specs, prototypes, requests } = await findIssueCommands());
+    ({ spikes: candidates, explores, specs, prototypes, requests } = await findIssueCommands(only));
   } catch (error) {
     log.info(`tick: findIssueCommands falló, reintentando en el próximo tick: ${(error as Error).message}`);
     return [];
   }
   // /spec runs whose interview just got its answers (see interview.ts).
-  const resumed: SpecCandidate[] = (await takePendingSpecs().catch(() => []))
+  // Taken from the queue as they're read, so only by a run that will look
+  // at every issue — a narrowed one would drop the rest.
+  const resumed: SpecCandidate[] = (only ? [] : await takePendingSpecs().catch(() => []))
     .filter((p) => !specs.some((s) => s.issueNumber === p.issueNumber))
     .map((p) => ({ ...p, trigger: [] }));
   return [
-    ...candidates.map((c) => ({ kind: 'spike', label: `issue #${c.issueNumber}`, run: () => processSpikeCandidate(c) })),
-    ...[...specs, ...resumed].map((c) => ({ kind: 'spec', label: `issue #${c.issueNumber}`, run: () => processSpecCandidate(c) })),
-    ...explores.slice(0, 1).map((c) => ({ kind: 'explore-launch', label: `issue #${c.issueNumber}`, run: () => launchExploreCandidate(c) })),
-    ...prototypes.map((c) => ({ kind: 'prototype-launch', label: `issue #${c.issueNumber}`, run: () => launchPrototypeCandidate(c) })),
-    ...requests.map((c) => ({ kind: 'issue-request', label: `issue #${c.issueNumber}`, run: () => processRequestCandidate(c) })),
+    ...candidates.map((c) => issueJob('spike', c.issueNumber, () => processSpikeCandidate(c))),
+    ...[...specs, ...resumed].map((c) => issueJob('spec', c.issueNumber, () => processSpecCandidate(c))),
+    ...explores.slice(0, 1).map((c) => issueJob('explore-launch', c.issueNumber, () => launchExploreCandidate(c))),
+    ...prototypes.map((c) => issueJob('prototype-launch', c.issueNumber, () => launchPrototypeCandidate(c))),
+    ...requests.map((c) => issueJob('issue-request', c.issueNumber, () => processRequestCandidate(c))),
   ];
 }
 
@@ -872,7 +880,7 @@ export async function launchExploreCandidate(candidate: ExploreCandidate): Promi
 // after images redone by the worker), merged into issues once approved — see
 // exploration/flow.ts's processExplorationPr. Each PR isolated like every
 // other flow here.
-export async function explorationPrJobs(): Promise<Job[]> {
+export async function explorationPrJobs(): Promise<TickJob[]> {
   let prs;
   try {
     prs = await explorationPrs();
@@ -880,11 +888,7 @@ export async function explorationPrJobs(): Promise<Job[]> {
     log.info(`tick: explorationPrs falló, reintentando en el próximo tick: ${(error as Error).message}`);
     return [];
   }
-  return prs.map((pr) => ({
-    kind: 'exploration-pr',
-    label: `PR #${pr.number}`,
-    run: () => processExplorationPr(pr).catch((error) => log.error(`exploración: PR #${pr.number} falló`, error)),
-  }));
+  return prs.map((pr) => prJob('exploration-pr', pr.number, () => processExplorationPr(pr).catch((error) => log.error(`exploración: PR #${pr.number} falló`, error))));
 }
 
 export async function runSpikes(): Promise<void> {
@@ -926,7 +930,7 @@ export async function processChangelogCandidate(candidate: ChangelogCandidate): 
 // the same changelogRepoPath checkout (see changelog.ts's
 // ensureChangelogRepoUpToDate), so two running at once would race the same
 // working tree and clobber each other's commit.
-export async function changelogJobs(): Promise<Job[]> {
+export async function changelogJobs(): Promise<TickJob[]> {
   let candidates: ChangelogCandidate[];
   try {
     candidates = await findReleasesNeedingChangelog();
@@ -934,7 +938,7 @@ export async function changelogJobs(): Promise<Job[]> {
     log.info(`tick: findReleasesNeedingChangelog falló, reintentando en el próximo tick: ${(error as Error).message}`);
     return [];
   }
-  return candidates.map((c) => ({ kind: 'changelog', label: c.release.tagName, run: () => processChangelogCandidate(c) }));
+  return candidates.map((c) => ({ kind: 'changelog', label: c.release.tagName, lock: 'changelog', resources: ['changelog'], run: () => processChangelogCandidate(c) }));
 }
 
 export async function runChangelogUpdates(): Promise<void> {
@@ -955,32 +959,47 @@ const JOB_CAPS: Record<string, number> = {
   'explore-launch': 1,
 };
 
+// A unit of a run's work and what it touches. `lock` is held while it runs
+// (locks.ts): the cron tick and an event handler never work on the same
+// issue or PR at once — whoever comes second skips it (the tick) or already
+// waited for it (a handler, see runScoped). `resources` is what an event's
+// Scope is matched against.
+export interface TickJob extends Job {
+  lock: string;
+  resources: string[];
+}
+
+function prJob(kind: string, prNumber: number, run: () => Promise<void>): TickJob {
+  return { kind, label: `PR #${prNumber}`, lock: prResource(prNumber), resources: [prResource(prNumber)], run };
+}
+
+function issueJob(kind: string, issueNumber: number, run: () => Promise<void>): TickJob {
+  return { kind, label: `issue #${issueNumber}`, lock: issueResource(issueNumber), resources: [issueResource(issueNumber)], run };
+}
+
+// The job as it runs: holding its lock, then a slot of the runner-wide
+// quota (shared with every other process, see locks.ts's withSlots) — the
+// same limits runJobs keeps inside this one.
+function guarded(job: TickJob): Job {
+  return {
+    kind: job.kind,
+    label: job.label,
+    run: async () => {
+      const ran = await withResourceLock(job.lock, 'skip', () => withSlots(job.kind, config.tickConcurrency, JOB_CAPS, job.run));
+      if (!ran) log.info(`${job.kind} ${job.label}: ya lo está atendiendo otro proceso, se salta`);
+    },
+  };
+}
+
 // One job per in-progress issue: its whole pipeline (fixes, then a possible
-// new-slice start) as one unit. Returns no jobs when the open PRs can't be
-// listed — that failure is shared by every issue (not attributable to any
-// one of them), so it gets the same treatment as ClaudeUsageLimitError: log
-// and retry next tick, never escalate to a human over it.
-async function issueJobs(inProgress: TrackingIssue[]): Promise<Job[]> {
-  // One batched read for every issue's stack instead of a `gh pr list` + a
-  // `gh pr view` per PR per issue — see
-  // docs/superpowers/specs/2026-08-01-pr-list-batching-design.md.
-  let allPrs: PullRequestStatus[];
-  try {
-    allPrs = await listAllOpenRoninPrs();
-  } catch (error) {
-    log.info(`tick: listAllOpenRoninPrs falló, reintentando en el próximo tick: ${(error as Error).message}`);
-    return [];
-  }
-
-  // Best-effort, before any of this tick's own work starts (so it never
-  // races a worktree that's mid-creation for a task about to run) — see
-  // sweepOrphanedWorktrees's own comment for what this covers and why.
-  await sweepOrphanedWorktrees(allPrs);
-  await pruneFailureSignatures(allPrs.map((pr) => pr.number));
-
+// new-slice start) as one unit, holding the issue — and with it every PR of
+// its stack.
+function issueJobs(inProgress: TrackingIssue[], allPrs: PullRequestStatus[]): TickJob[] {
   return inProgress.map((issue) => ({
     kind: 'issue',
     label: `#${issue.number}`,
+    lock: issueResource(issue.number),
+    resources: [issueResource(issue.number), ...prsForIssue(allPrs, issue.number).map((pr) => prResource(pr.number))],
     run: async () => {
       if (!(await tryClaim(issue.number))) return; // another runner already owns this one
       await runIssueStep(issue, async () => {
@@ -1016,14 +1035,19 @@ async function issueJobs(inProgress: TrackingIssue[]): Promise<Job[]> {
 // launches /preview and applies /auto-merge on its own — so they're handled
 // here for those PRs. A request in plain words waits for the issue to be
 // back in progress, as before.
-export async function handleCommandsOnIdleSlicePrs(allPrs: PullRequestStatus[], inProgress: TrackingIssue[]): Promise<void> {
+export function idleCommandJobs(allPrs: PullRequestStatus[], inProgress: TrackingIssue[]): TickJob[] {
   const active = new Set(inProgress.map((issue) => issue.number));
-  for (const pr of allPrs) {
+  return allPrs.flatMap((pr) => {
     const issue = issueFromSliceBranch(pr.headRefName);
-    if (issue === null || active.has(issue)) continue;
-    await findUnprocessedMentions(pr.number)
-      .catch((error) => log.error(`PR #${pr.number}: no se pudieron leer los comandos (issue #${issue} no está en curso)`, error));
-  }
+    if (issue === null || active.has(issue)) return [];
+    return [{
+      ...prJob('idle-commands', pr.number, async () => {
+        await findUnprocessedMentions(pr.number)
+          .catch((error) => log.error(`PR #${pr.number}: no se pudieron leer los comandos (issue #${issue} no está en curso)`, error));
+      }),
+      resources: [prResource(pr.number), issueResource(issue)],
+    }];
+  });
 }
 
 // A bug-fix PR's "Closes #N" (see
@@ -1042,74 +1066,165 @@ async function finishClosedIssues(): Promise<void> {
   }
 }
 
-async function tickOneRepo(): Promise<void> {
+// The flows a run goes through. The cron tick runs every one of them, over
+// everything; an event handler (webhooks/handler.ts) only the ones its event
+// can move — see webhooks/events.ts's scopeForEvent.
+export type Flow =
+  | 'interviews'
+  | 'assign'
+  | 'sweeps'
+  | 'auto-merge'
+  | 'issues'
+  | 'idle-commands'
+  | 'review'
+  | 'issue-commands'
+  | 'changelog'
+  | 'exploration'
+  | 'nightly';
+
+// What an event handler's run covers: its flows, and of their jobs only the
+// ones touching one of `resources` (issue-N, pr-N, changelog — see locks.ts).
+export interface Scope {
+  flows: Flow[];
+  resources: string[];
+}
+
+// A repo-wide step (assignments, sweeps, auto-merge), under a lock of its
+// own so two processes never run it at once: the tick skips it when it's
+// taken, a handler waits for it. Never holds anything else while it waits —
+// whoever has a step's lock is running it, not waiting — so it can't
+// deadlock with the resources a handler pinned.
+async function repoStep(scope: Scope | undefined, flow: Flow, fn: () => Promise<void>): Promise<void> {
+  if (scope && !scope.flows.includes(flow)) return;
+  const ran = await withResourceLock(flow, scope ? 'wait' : 'skip', fn);
+  if (!ran) log.info(`${flow}: ya lo está haciendo otro proceso, se salta`);
+}
+
+function numbersOf(resources: string[], prefix: 'pr' | 'issue'): number[] {
+  return resources.flatMap((r) => (r.startsWith(`${prefix}-`) ? [Number(r.slice(prefix.length + 1))] : []));
+}
+
+async function tickOneRepo(scope?: Scope): Promise<void> {
   const start = Date.now();
   resetTickMetrics();
-  log.info(`tick start (commit ${await currentCommit()}, repo ${activeRepo().productRepo})`);
+  const runs = (flow: Flow) => !scope || scope.flows.includes(flow);
+  if (scope) log.info(`evento en ${activeRepo().productRepo}: ${scope.flows.join(', ')} sobre ${scope.resources.join(', ')}`);
+  else log.info(`tick start (commit ${await currentCommit()}, repo ${activeRepo().productRepo})`);
   // Closes answered or expired Remote Control interviews; an answered one
   // puts its issue back in progress before this tick lists the work.
-  await checkInterviews().catch((error) => log.error('entrevistas: no se pudieron revisar', error));
-  const justStarted = [...(await discoverAssignedSpecs()), ...(await discoverAssignedIssues())];
+  await repoStep(scope, 'interviews', () => checkInterviews().catch((error) => log.error('entrevistas: no se pudieron revisar', error)));
+  let justStarted: TrackingIssue[] = [];
+  await repoStep(scope, 'assign', async () => {
+    justStarted = [...(await discoverAssignedSpecs()), ...(await discoverAssignedIssues())];
+  });
 
-  await finishClosedIssues().catch((error) => log.error('no se pudieron cerrar los issues ya mergeados', error));
-  await sweepPreviews().catch((error) => log.error('previews: no se pudieron barrer las de PRs cerrados', error));
+  // What closed PRs leave behind: issues a merge finished, previews, and
+  // the worktrees of slices no longer open — sweepOrphanedWorktrees skips
+  // the issues another process holds right now (see its own comment).
+  await repoStep(scope, 'sweeps', async () => {
+    await finishClosedIssues().catch((error) => log.error('no se pudieron cerrar los issues ya mergeados', error));
+    await sweepPreviews().catch((error) => log.error('previews: no se pudieron barrer las de PRs cerrados', error));
+    try {
+      const open = await listAllOpenRoninPrs();
+      await sweepOrphanedWorktrees(open);
+      await pruneFailureSignatures(open.map((pr) => pr.number));
+    } catch (error) {
+      log.error('worktrees: no se pudieron barrer los de PRs cerrados', error);
+    }
+  });
   // Before the flows, so a merge doesn't wait behind a long review run.
-  await sweepAutoMerge().catch((error) => log.error('auto-merge: no se pudieron revisar los PRs con el label', error));
-  const inProgress = await listTrackingIssues('in-progress');
-  // Merge in whatever this same tick just moved to in-progress — GitHub's
-  // issue-list-by-label query can lag a few seconds behind a label applied
-  // moments earlier by discoverAssignedSpecs/discoverAssignedIssues above,
-  // so a freshly-assigned issue could otherwise sit unstarted until the
-  // *next* tick noticed it, one tick's-worth of avoidable delay that
-  // defeats the point of a webhook waking this tick up early in the first
-  // place. See both functions' own doc comments.
-  for (const issue of justStarted) {
-    if (!inProgress.some((i) => i.number === issue.number)) inProgress.push(issue);
-  }
-  log.info(`${inProgress.length} issue(s) en progreso`);
-  await listAllOpenRoninPrs()
-    .then((prs) => handleCommandsOnIdleSlicePrs(prs, inProgress))
-    .catch((error) => log.error('comandos en PRs de issues que no están en curso: no se pudieron revisar', error));
+  await repoStep(scope, 'auto-merge', () => sweepAutoMerge().catch((error) => log.error('auto-merge: no se pudieron revisar los PRs con el label', error)));
 
+  // What this run's jobs are narrowed to — the event's resources, plus any
+  // issue its assignment just started.
+  const resources = scope ? [...scope.resources, ...justStarted.map((issue) => issueResource(issue.number))] : null;
+  let inProgress: TrackingIssue[] = [];
+  let allPrs: PullRequestStatus[] | null = null;
   try {
+    if (runs('issues') || runs('idle-commands')) {
+      inProgress = await listTrackingIssues('in-progress');
+      // Merge in whatever this same run just moved to in-progress — GitHub's
+      // issue-list-by-label query can lag a few seconds behind a label applied
+      // moments earlier by discoverAssignedSpecs/discoverAssignedIssues above,
+      // so a freshly-assigned issue could otherwise sit unstarted until the
+      // *next* tick noticed it. See both functions' own doc comments.
+      for (const issue of justStarted) {
+        if (!inProgress.some((i) => i.number === issue.number)) inProgress.push(issue);
+      }
+      if (!scope) log.info(`${inProgress.length} issue(s) en progreso`);
+      // One batched read for every issue's stack instead of a `gh pr list` +
+      // a `gh pr view` per PR per issue — see
+      // docs/superpowers/specs/2026-08-01-pr-list-batching-design.md. Without
+      // it no issue job is built: that failure is shared by every issue (not
+      // attributable to any one of them), so it gets the same treatment as
+      // ClaudeUsageLimitError: log and retry next run, never escalate.
+      try {
+        allPrs = await listAllOpenRoninPrs();
+      } catch (error) {
+        log.info(`listAllOpenRoninPrs falló, reintentando en la próxima corrida: ${(error as Error).message}`);
+      }
+    }
+    // Only starts a separate process (see exploration/schedule.ts), so it
+    // never holds this tick up; a failure here is logged, never escalated.
+    await repoStep(scope, 'nightly', () => maybeLaunchNightlyExploration().catch((error) => log.error('exploración nocturna: no se pudo lanzar', error)));
+
     // Every flow's discovery at once, then all of their work in one pool:
     // a long external review no longer holds back an issue's quick fix, a
     // /spike or a changelog entry, and nothing waits for a whole other flow
     // to finish first. The flows share nothing, and each discovery handles
     // its own failure — one of them failing only leaves its own jobs out.
-    // Only starts a separate process (see exploration/schedule.ts), so it
-    // never holds this tick up; a failure here is logged, never escalated.
-    await maybeLaunchNightlyExploration().catch((error) => log.error('exploración nocturna: no se pudo lanzar', error));
-    const [issues, reviews, spikes, changelog, exploration] = await Promise.all([
-      issueJobs(inProgress),
-      externalReviewJobs(),
-      spikeJobs(),
-      changelogJobs(),
-      explorationPrJobs(),
+    const prs = resources ? numbersOf(resources, 'pr') : undefined;
+    const issues = resources ? numbersOf(resources, 'issue') : undefined;
+    const discovered = await Promise.all([
+      runs('issues') && allPrs ? issueJobs(inProgress, allPrs) : [],
+      runs('idle-commands') && allPrs ? idleCommandJobs(allPrs, inProgress) : [],
+      runs('review') ? externalReviewJobs(prs) : [],
+      runs('issue-commands') ? spikeJobs(issues) : [],
+      runs('changelog') ? changelogJobs() : [],
+      runs('exploration') ? explorationPrJobs() : [],
     ]);
-    await runJobs([...issues, ...reviews, ...spikes, ...changelog, ...exploration], config.tickConcurrency, JOB_CAPS);
+    const jobs = discovered.flat().filter((job) => !resources || job.resources.some((r) => resources.includes(r)));
+    await runJobs(jobs.map(guarded), config.tickConcurrency, JOB_CAPS);
   } finally {
     // Always emitted, even when a discovery failed — durationMs vs.
     // agentRunsDurationMs is what tells whether a tick was mostly spent
     // waiting on sequential `claude -p` runs (an argument for parallelizing
     // them) or on something else entirely.
     const { agentRuns, agentRunsDurationMs } = getTickAgentMetrics();
-    log.metric('tick_complete', { durationMs: Date.now() - start, issuesInProgress: inProgress.length, agentRuns, agentRunsDurationMs, repo: activeRepo().productRepo });
+    log.metric(scope ? 'event_complete' : 'tick_complete', { durationMs: Date.now() - start, issuesInProgress: inProgress.length, agentRuns, agentRunsDurationMs, repo: activeRepo().productRepo });
   }
 }
 
-// Entry point invoked once per cron run (see index.ts). Repos run strictly
-// in sequence — see docs/superpowers/specs/2026-08-19-multi-repo-pat-auth-design.md
-// §3/§5 for why a mutable activeRepo() singleton is safe under that
-// constraint. A repo whose tick throws is logged and skipped for this run;
-// it never stops the rest of repos.json from ticking.
+// Entry point invoked once per cron run (see index.ts): the reconciliation
+// pass, over every flow and everything in them — it picks up whatever no
+// event handler did (a webhook that never arrived, a runner that was down)
+// and the periodic work no event starts (sweeps, nightly exploration).
+// Repos run strictly in sequence — see
+// docs/superpowers/specs/2026-08-19-multi-repo-pat-auth-design.md §3/§5 for
+// why a mutable activeRepo() singleton is safe under that constraint. A repo
+// whose tick throws is logged and skipped for this run; it never stops the
+// rest of repos.json from ticking.
 export async function tick(): Promise<void> {
   const repos = await loadRepos();
   for (const repo of repos) {
     try {
-      await withActiveRepo(repo, tickOneRepo);
+      await withActiveRepo(repo, () => tickOneRepo());
     } catch (error) {
       log.error(`tick: ${repo.productRepo} falló, sigue con el resto: ${(error as Error).message}`);
     }
+  }
+}
+
+// One event's run, in its own process (webhooks/handler.ts) inside
+// withActiveRepo. Takes every resource of the scope first, waiting for
+// whoever holds them, so everything it reads after is fresh. `onPinned`
+// runs once it has them, before reading anything.
+export async function runScoped(scope: Scope, onPinned: () => Promise<void> = async () => {}): Promise<void> {
+  await pinResources(scope.resources);
+  try {
+    await onPinned();
+    await tickOneRepo(scope);
+  } finally {
+    await unpinResources();
   }
 }

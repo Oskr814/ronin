@@ -10,3 +10,4 @@ scripts/run-tick.sh
 repos.json
 .tick.pending
 .preview-reservations/
+.ronin-slots/
