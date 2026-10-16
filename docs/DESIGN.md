@@ -544,7 +544,7 @@ La desventaja es que una cuenta sin corridas recientes muestra un dato viejo, co
 
 #### 15.6 Motivo de un bloqueo
 
-Hoy el motivo vive en el email y en el log (`docs/BLOCKING.md`). `notifyBlocker`, por donde pasan todos los bloqueos, lo guarda además en el estado local del repo: `blocks[<issue>] = { reason, prUrl, excerpt, at }`. El tablero lo muestra solo mientras el issue tenga `ronin:blocked`, así que no hace falta borrarlo al destrabar; la entrada se borra cuando el issue se cierra. Llenar con esto la sección *Blocker* del issue de tracking queda fuera de este cambio.
+Hoy el motivo vive en el email y en el log (`docs/BLOCKING.md`). `notifyBlocker`, por donde pasan todos los bloqueos, lo guarda además en el estado local del repo, antes del email: `blocks[<número>] = { reason, url, prUrl, excerpt, at }`, con el número del issue o PR sacado de su URL. Un bloqueo nuevo del mismo ítem reemplaza al anterior. El tablero lo muestra solo mientras el ítem tenga `ronin:blocked`, así que no hace falta borrarlo al destrabar. Las entradas de más de 180 días se podan, como `processedComments`. Una release (el changelog que falla) no se guarda: no lleva label y no hay dónde mostrarla. Llenar con esto la sección *Blocker* del issue de tracking queda fuera de este cambio.
 
 #### 15.7 En cola
 
