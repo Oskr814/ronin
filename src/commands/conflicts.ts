@@ -147,7 +147,10 @@ export async function resolveConflicts(prNumber: number, pr: PrHead): Promise<Co
     if (await gitOk(dir, ['merge-base', '--is-ancestor', `origin/${base}`, 'HEAD'])) return { kind: 'up-to-date', base };
 
     const message = `Merge branch '${base}' into ${head}`;
-    if (await gitOk(dir, ['merge', '--no-ff', '--no-edit', '-m', message, `origin/${base}`])) {
+    // --no-verify: the product repo's commit hooks (lint-staged and the like)
+    // would check every file the base brings in, which is already reviewed
+    // code, with tools this host may not have (dotnet csharpier on #849).
+    if (await gitOk(dir, ['merge', '--no-ff', '--no-edit', '--no-verify', '-m', message, `origin/${base}`])) {
       if (!(await push(dir, head))) return { kind: 'branch-moved', base };
       return { kind: 'merged-clean', base, sha: await git(dir, ['rev-parse', 'HEAD']) };
     }
@@ -174,7 +177,7 @@ export async function resolveConflicts(prNumber: number, pr: PrHead): Promise<Co
     const notReady = await mergeNotReady(dir, files);
     if (notReady) return { kind: 'unresolved', base, files, reason: notReady, resolution };
 
-    await git(dir, ['commit', '--no-edit', '-m', message]);
+    await git(dir, ['commit', '--no-edit', '--no-verify', '-m', message]);
     if (!(await push(dir, head))) return { kind: 'branch-moved', base };
     return { kind: 'resolved', base, sha: await git(dir, ['rev-parse', 'HEAD']), files, resolution };
   } finally {
