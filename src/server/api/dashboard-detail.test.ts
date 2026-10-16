@@ -56,6 +56,16 @@ describe('itemDetail', () => {
     expect(detail.issue?.comments).toEqual([]);
   });
 
+  it("keeps a PR's reviews and threads only when the PR is the item itself", async () => {
+    getDiscussion.mockImplementation(async (kind: string, number: number) => ({ ...discussion(number, 1), ...(kind === 'pr' ? { reviews: [{ author: 'a', body: 'ok', state: 'APPROVED', submittedAt: '' }], threads: [{ path: 'a.ts', line: 1, isResolved: false, isOutdated: false, url: '', comments: [] }] } : {}) }));
+    const own = await itemDetail(ENTRY, { kind: 'pr', number: 849, issue: 844 });
+    expect(own.pr).toMatchObject({ reviews: [{ state: 'APPROVED' }], threads: [{ path: 'a.ts' }] });
+    resetDetailCache();
+    const other = await itemDetail(ENTRY, { kind: 'issue', number: 844, pr: 849 });
+    expect(other.pr).not.toHaveProperty('reviews');
+    expect(other.pr).not.toHaveProperty('threads');
+  });
+
   it('reuses a read while it is fresh, and reads again once a run changed after it', async () => {
     const now = Date.now();
     await itemDetail(ENTRY, { kind: 'issue', number: 844 }, 0, now);
