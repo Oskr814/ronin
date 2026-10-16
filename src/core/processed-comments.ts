@@ -8,10 +8,18 @@ import { getProcessedComments, recordProcessedComment } from './local-state.js';
 // work went through — a failure records nothing and is retried, as before.
 //
 // Before this, the 👀 itself meant done. A comment from back then still
-// counts as done if ronin's 👀 on it predates the local tracking (`since`);
-// one more than MAX_AGE old counts as done no matter what, which is what
-// lets old entries be pruned.
+// counts as done if ronin's 👀 on it predates ACK_EYES_SINCE; one more than
+// MAX_AGE old counts as done no matter what, which is what lets old entries
+// be pruned.
 const MAX_AGE_MS = 180 * 24 * 60 * 60 * 1000;
+
+// When the webhook server started putting 👀 as "got it" (the #70 deploy on
+// the runner). A fixed date, not "when the local tracking started": the
+// server's 👀 lands seconds before any handler reads the state, so a start
+// taken from that first read came after the 👀 of the very comment it was
+// reading — which then counted as done and went unanswered (a /help on
+// redmotos/shoppingcart#849, 2026-10-16).
+export const ACK_EYES_SINCE = '2026-10-16T01:03:19.475Z';
 
 export interface TrackedComment {
   id: number;
@@ -27,15 +35,15 @@ const keyOf = (c: Pick<TrackedComment, 'id' | 'kind'>) => `${c.kind}-${c.id}`;
 // The ones still to do, in order.
 export async function unprocessed<T extends TrackedComment>(comments: T[]): Promise<T[]> {
   if (comments.length === 0) return [];
-  const { since, done } = await getProcessedComments();
+  const done = await getProcessedComments();
   const now = Date.now();
   // One reaction lookup per old comment with a 👀, in parallel — only for
-  // comments from before the local tracking.
+  // comments from before ACK_EYES_SINCE.
   const isDone = await Promise.all(comments.map(async (c) => {
     if (done.has(keyOf(c))) return true;
     if (!c.createdAt) return false;
     if (now - Date.parse(c.createdAt) > MAX_AGE_MS) return true;
-    return c.createdAt < since && c.reactionsEyes > 0 && botReactedBefore(c.id, c.kind, config.githubLogin, since);
+    return c.createdAt < ACK_EYES_SINCE && c.reactionsEyes > 0 && botReactedBefore(c.id, c.kind, config.githubLogin, ACK_EYES_SINCE);
   }));
   return comments.filter((_, i) => !isDone[i]);
 }
