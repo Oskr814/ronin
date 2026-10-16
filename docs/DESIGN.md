@@ -464,9 +464,9 @@ Ahora cada evento tiene su handler:
 
 **Métricas**: el handler loguea `event_start` con `delayMs` (desde que llegó el evento hasta que tiene sus recursos) y `event_complete` al terminar, junto al `tick_complete` del tick.
 
-### 15. Tablero web (#65)
+### 15. Tablero web (#65, #85)
 
-Una página para ver qué está haciendo ronin sin recorrer GitHub issue por issue ni leer el log: qué agentes corren y qué hacen paso a paso, qué issues esperan a alguien y por qué, cómo va cada stack de slices, qué previews están arriba y cuánto le queda a cada cuenta de Claude. Es de solo lectura y se ve solo por la tailnet.
+Una página para ver qué está haciendo ronin sin recorrer GitHub issue por issue ni leer el log: qué agentes corren y qué hacen paso a paso, qué issues esperan a alguien y por qué, cómo va cada stack de slices, qué previews están arriba y cuánto le queda a cada cuenta de Claude. Cada issue o PR tiene su ficha, con lo que dice en GitHub, y desde ahí se le pueden pedir a ronin los comandos más usados (15.11). Se ve solo por la tailnet.
 
 #### 15.1 Qué muestra
 
@@ -476,9 +476,11 @@ Una página para ver qué está haciendo ronin sin recorrer GitHub issue por iss
   - Lo demás que corrió en los últimos 3 días: la review de un PR de un humano, un pedido en un issue, el changelog.
 
   Cada fila lleva un punto de estado, el número, cuántas slices van mergeadas, la última línea del agente (o lo que espera: "esperando review en #881", "aprobado, falta el merge de #401") y hace cuánto. Un issue elegido, corriendo o bloqueado se despliega en sus slices.
-- **Centro.** Pestañas, una por ítem abierto; al cargar se abren las de los agentes que corren. Cada una muestra el transcript de una corrida, con los textos del agente y sus pasos (leyó, buscó, editó, corrió). Arriba van las corridas de ese ítem de los últimos 14 días, y abajo el estado, el reloj, el modelo y el worktree.
-  - Una corrida en curso se sigue en vivo.
-  - Si arranca una nueva sobre el ítem abierto, aparece sola.
+- **Centro: la ficha del ítem.** Pestañas, una por ítem abierto; al cargar se abren las de los agentes que corren. Cada una muestra la ficha del issue o PR, tenga corridas o no:
+  - **Encabezado.** Título, repo, el link a GitHub y el botón *Acciones* (15.11). Debajo, chips con su estado. El PR del ítem (o, en un issue, el de la slice que avanza) suma si tiene conflictos con su base, sus checks, la review y si es draft. Un issue suma cuántas slices van mergeadas y qué espera.
+  - **Actividad.** Una línea con la última corrida (estado, hace cuánto, duración, costo y el error si falló) y las anteriores de los últimos 14 días, cada una con su transcript. Si hay una en curso, una tarjeta con lo último que dijo el agente, sus últimos cuatro pasos y el reloj, que se sigue en vivo.
+  - **Pestañas *Issue*, *PR* y *Comentarios*.** La descripción del issue y la de su PR (o la del PR y la de su issue de tracking), y los comentarios del ítem, con los de ronin marcados. Es el markdown de GitHub, saneado (15.3). Un `#123` abre ese ítem en el tablero si está en la barra lateral, y si no, en GitHub.
+  - **El transcript de una corrida** se abre desde la actividad, con "← Ficha" para volver: los textos del agente y sus pasos (leyó, buscó, editó, corrió), arriba las corridas del ítem y abajo el estado, el reloj, el modelo y el worktree. Una corrida en curso se sigue en vivo, y si arranca una nueva sobre el ítem abierto, aparece sola. Lo que no es un issue ni un PR (el changelog) abre directo en el transcript, igual que una corrida elegida en *Hoy*.
 - **Contexto, a la derecha.**
   - El motivo de un bloqueo y cómo destrabarlo.
   - El árbol de slices con sus PRs, checks y reviews.
@@ -487,8 +489,8 @@ Una página para ver qué está haciendo ronin sin recorrer GitHub issue por iss
   - Los datos de la corrida: tarea, modelo, cuenta, duración, costo y worktree.
 - **Barra de estado.** El uso de cada cuenta de Claude en la ventana de 5 horas y en la semanal, los cupos de agentes ocupados, la cola, las previews, el último tick y si GitHub no responde.
 - ***Hoy*, la vista de inicio.** Los totales del día (corridas, cuántas terminaron bien, duración mediana y p90, costo, errores; con las de ayer al lado) y una línea de las últimas 12 horas, con un carril por repo y cada corrida como una barra. Al hacerle clic, se abre esa corrida.
-- **Celular.** La barra lateral es la lista principal, y un ítem abre el transcript con el contexto debajo.
-- **Actualización.** La página pide el snapshot cada 5 segundos mientras está visible, y el transcript de una corrida en curso le llega por *server-sent events*. No hace falta recargar.
+- **Celular.** La barra lateral es la lista principal, y un ítem abre su ficha con el contexto debajo.
+- **Actualización.** La página pide el snapshot cada 5 segundos mientras está visible, y el transcript de una corrida en curso le llega por *server-sent events*. La ficha se vuelve a pedir cada 30 segundos (el servidor la tiene en caché, 15.8). El centro solo se redibuja si algo cambió, así que leer, seleccionar texto o tener el menú abierto no se interrumpe. No hace falta recargar.
 
 #### 15.2 El servidor de ronin: API y aplicación web
 
@@ -503,7 +505,7 @@ src/server/
     webhooks/          POST /api/webhooks/github: github.ts, events.ts, handler.ts (§14)
     auth.ts            /api/auth/login, /callback, /logout y /me
     dashboard*.ts      los datos del tablero
-src/web/               la aplicación: HTML, CSS, JS y fuentes, sin build
+src/web/               la aplicación: HTML, CSS, JS y fuentes, sin build; marked y DOMPurify en vendor/
 ```
 
 - **Listener público** (`SERVER_PORT`, 3939; `WEBHOOK_PORT` se sigue leyendo si no está). Es al que llega `https://ronin-agent.redmotoshn.com`, por el túnel de Cloudflare y nginx-proxy-manager. Atiende solo `POST /api/webhooks/github`, más el alias `/webhook` de la ruta anterior; cualquier otra ruta responde 404. La restricción está en el código, así que no depende de cómo esté configurado el proxy.
@@ -519,16 +521,17 @@ src/web/               la aplicación: HTML, CSS, JS y fuentes, sin build
 
 #### 15.3 Login con GitHub
 
-La tailnet ya limita quién llega. El login suma una segunda barrera y la identidad que van a necesitar las acciones, cuando las haya.
+La tailnet ya limita quién llega. El login suma una segunda barrera y la identidad con la que ronin firma las acciones (15.11).
 
 - **OAuth App de la cuenta del dueño, sin scopes:** solo hace falta saber quién es. Se configura con `DASHBOARD_GITHUB_CLIENT_ID` y `DASHBOARD_GITHUB_CLIENT_SECRET`, y su callback es `<DASHBOARD_URL>/api/auth/callback`. Funciona aunque esa URL solo se vea en la tailnet, porque la redirección la sigue el navegador.
 - **Flujo.** `/api/auth/login` redirige a GitHub con un `state` al azar en una cookie de corta vida. `/api/auth/callback` verifica el `state`, canjea el código desde el servidor, lee `GET /user` y descarta el token de GitHub: no se guarda.
 - **Quién entra.** Solo los logins de `DASHBOARD_ALLOWED_USERS`, separados por coma. La lista se vuelve a mirar en cada pedido, así que sacar a alguien lo deja afuera en el momento.
 - **Sesión.** Es una cookie firmada con HMAC (`DASHBOARD_SESSION_SECRET`) que lleva el login y el vencimiento (`DASHBOARD_SESSION_DAYS`, 7). Es `HttpOnly`, `Secure` y `SameSite=Lax`, y no hay estado de sesión en el servidor. Cambiar el secreto cierra todas las sesiones.
 - **Lo demás:**
-  - Un pedido que no es `GET` y trae un `Origin` de otro sitio recibe 403.
+  - Un pedido que no es `GET` y trae un `Origin` de otro sitio recibe 403. Las acciones además solo aceptan JSON, que un formulario de otro sitio no puede mandar.
   - La app se sirve con una CSP que solo permite scripts propios (`script-src 'self'`, `frame-ancestors 'none'`). Por eso las fuentes van en `src/web/fonts/` y no se cargan de Google Fonts.
   - Todo lo que viene de los agentes se escapa antes de insertarse en la página, y además ya pasó por `redact()` al escribirse.
+  - El markdown de GitHub (la descripción de un PR de cualquiera, un comentario) no es confiable: lo interpreta `marked` y lo limpia `DOMPurify`, copiados en `src/web/vendor/` porque la CSP no deja cargar scripts de afuera. Se descartan estilos, formularios e iframes, y cualquier link que no sea `http(s)`, `mailto` o `#`. Las imágenes pasan a ser links, porque la CSP tampoco las cargaría.
 
 #### 15.4 De dónde sale cada dato
 
@@ -540,6 +543,7 @@ La tailnet ya limita quién llega. El login suma una segunda barrera y la identi
 | Lo que espera un cupo | `.ronin-slots/waiting/` (15.7) |
 | Cupos ocupados | `.ronin-slots/all-*.lock` con un pid vivo |
 | Issues, slices, PRs, checks | GitHub, dos llamadas por repo (15.8) |
+| Descripción y comentarios de un issue o PR | GitHub, al abrir su ficha (15.8) |
 | Previews | El `preview.json` de cada worktree de preview |
 | Último tick y último evento | `tick_complete` y `event_complete` en `logs/tick-*.log` |
 
@@ -576,6 +580,13 @@ Cada repo se vuelve a leer a los `DASHBOARD_GITHUB_TTL_SECONDS` (60), o antes si
 
 `dashboard-items.ts` arma los ítems de la barra lateral con eso y con las corridas: estado, lo que espera cada issue, slices, el PR que avanza y su preview.
 
+**La ficha** (`dashboard-detail.ts`) se lee aparte, solo cuando alguien abre un ítem: la descripción del issue y la del PR, con los labels y, en un PR, sus ramas y si tiene conflictos (`getDiscussion`, con `gh issue view` y `gh pr view`). Trae los últimos 50 comentarios del ítem, sin los comentarios de review de línea. Qué es cada número sale de la lectura del repo en caché:
+- **Un issue** trae el PR de su slice que avanza.
+- **Un PR de una slice** trae su issue de tracking, por el checklist o por la rama `ronin/<issue>/…`.
+- **Lo que GitHub no lista** (el PR de una persona, un issue cerrado) usa lo que dicen sus corridas.
+
+La caché es la misma idea que la de los repos: `DASHBOARD_GITHUB_TTL_SECONDS`, o antes si una corrida del ítem empezó o terminó después. Después de una acción se descarta la del repo, para que la próxima lectura ya traiga el comentario de ronin. Una ficha que nadie abre en 30 minutos se olvida.
+
 #### 15.9 API
 
 Todo, salvo los webhooks y `/api/auth/*`, pide sesión:
@@ -585,6 +596,8 @@ Todo, salvo los webhooks y `/api/auth/*`, pide sesión:
 | `GET /api/snapshot` | Los ítems, el uso de cada cuenta, los cupos, la cola, el último tick, las previews y el estado de la lectura de GitHub |
 | `GET /api/today` | Las corridas de las últimas 12 horas y los totales de hoy y de ayer |
 | `GET /api/items/<id>` | Las corridas de un ítem en los últimos 14 días |
+| `GET /api/items/<id>/detail` | Su ficha: el issue y el PR con los comentarios del ítem, y las acciones que se le pueden pedir, cada una con el comentario que dejaría |
+| `POST /api/items/<id>/actions` | Pide una de esas acciones: `{ action, text? }` (15.11) |
 | `GET /api/runs/<runId>` | El transcript de una corrida |
 | `GET /api/runs/<runId>/stream` | Lo que se le agrega, por *server-sent events*, hasta que termina |
 
@@ -594,7 +607,27 @@ Todo, salvo los webhooks y `/api/auth/*`, pide sesión:
 2. Completar en `.env` `DASHBOARD_GITHUB_CLIENT_ID`, `DASHBOARD_GITHUB_CLIENT_SECRET`, `DASHBOARD_SESSION_SECRET` (`openssl rand -hex 32`), `DASHBOARD_ALLOWED_USERS` y `DASHBOARD_URL` (por ejemplo `https://<host>.<tailnet>.ts.net:8443`).
 3. `pnpm build && pnpm server:setup`. `server:setup` instala `ronin-server` (y desinstala el `ronin-webhook` de antes si lo encuentra) y publica el 8443 en la tailnet.
 
-**Pendiente:** acciones desde la página (cancelar, reintentar, bajar una preview), una vista de varios runners juntos y sacar el alias `/webhook`.
+#### 15.11 Acciones (`server/api/dashboard-actions.ts`)
+
+Desde la ficha se le piden a ronin los comandos que hoy se piden comentando en GitHub. El botón *Acciones* muestra solo los que aplican al ítem en ese momento:
+
+| Acción | Igual que | Cuándo aparece |
+|---|---|---|
+| Resolver conflictos | `/resolve-conflicts` | PR abierto. Se destaca si tiene conflictos con su base |
+| Levantar o actualizar la preview | `/preview <qué preparar>` | PR abierto. Lleva un texto opcional |
+| Bajar la preview | `/preview stop` | Hay una preview arriba |
+| Activar o desactivar el auto-merge | `/auto-merge`, `/auto-merge off` | Según si el PR tiene `ronin:auto-merge` |
+| Responder y destrabar | Comentar y volver a `ronin:in-progress` | Issue con `ronin:blocked`. Lleva un texto obligatorio, la respuesta |
+
+En un issue, las acciones de PR van al PR de su slice que avanza ("Resolver conflictos en #849").
+
+**Cómo corre.** ronin primero comenta en el issue o PR *"**<login>** pidió `/resolve-conflicts` desde el tablero."* (con `postIssueComment`), y ese comentario reemplaza al que escribiría una persona. Después corre el mismo código que un comentario en GitHub: `launchConflictsWorker`, `launchPreviewWorker`, `applyAutoMergeCommand` o `setIssueState(…, 'in-progress')`. El worker responde ese comentario, igual que si lo hubiera escrito alguien, y el PR conserva quién pidió qué. El comentario no menciona a ronin, así que ningún escaneo de menciones lo vuelve a tomar.
+
+**Antes de pedirla,** un diálogo muestra el comentario que va a quedar, renderizado y actualizado mientras se escribe. El servidor la valida contra la misma lista, armada con lo que leyó de GitHub. Si la acción ya no aplica, o le falta o le sobra el texto, responde 409 sin comentar nada.
+
+**No están** `/fix-comments` ni `/spike`: no son un worker que se lanza, sino comandos que el tick toma de los comentarios. Tampoco cancelar o reintentar una corrida, que necesitan coordinarse con los locks del tick.
+
+**Pendiente:** cancelar y reintentar corridas, `/fix-comments` y `/spike` desde la página, una vista de varios runners juntos y sacar el alias `/webhook`.
 
 ## Estado actual
 
@@ -610,7 +643,7 @@ Todo, salvo los webhooks y `/api/auth/*`, pide sesión:
 - [x] Límite de uso de Claude como estado transitorio, no como bloqueo — `ClaudeUsageLimitError` (§3)
 - [x] Limpieza de worktrees cuando su PR ya no está abierto — `sweepOrphanedWorktrees` (§3.1)
 - [x] Reacción por evento: un handler por evento de GitHub, el tick como conciliación — `server/api/webhooks/handler.ts`, `core/locks.ts` (§14)
-- [x] Tablero web de solo lectura, en la tailnet, con login de GitHub — `server/`, `web/`, `core/run-record.ts`, `core/claude-usage.ts` (§15)
+- [x] Tablero web en la tailnet, con login de GitHub, la ficha de cada ítem y acciones — `server/`, `web/`, `core/run-record.ts`, `core/claude-usage.ts` (§15)
 - [x] ~~Evidencia visual de e2e en el PR~~ — eliminado (el `src/evidence.ts` de entonces; el `evidence-store.ts` actual es el de la exploración, §11.5); no reemplazaba la supervisión humana y la calidad no era suficiente — ver [issue #4](https://github.com/Oskr814/ronin/issues/4)
 
 **Pendiente, fuera de este scaffold:**
