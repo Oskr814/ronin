@@ -9,6 +9,7 @@ import { forgetDetails, itemDetail, resolveItem } from './dashboard-detail.js';
 import { ActionError, listActions, runAction } from './dashboard-actions.js';
 import { today } from './dashboard-today.js';
 import { readEvidence } from './dashboard-evidence.js';
+import { explorationReview, isExplorationPr } from './dashboard-exploration.js';
 
 // The dashboard's data (#65), all behind the session (tailnet.ts checks it
 // before any of this runs):
@@ -16,6 +17,7 @@ import { readEvidence } from './dashboard-evidence.js';
 //   GET /api/today                   the last 12 hours' runs and the day's totals
 //   GET /api/items/<id>              one item's runs (14 days)
 //   GET /api/items/<id>/detail       its issue and PR from GitHub, with its comments and what can be asked of it (#85)
+//   GET /api/items/<id>/exploration  an exploration PR's findings and their threads, to review them (#93)
 //   POST /api/items/<id>/actions     asks for one of those (dashboard-actions.ts)
 //   GET /api/runs/<runId>            one run's transcript
 //   GET /api/runs/<runId>/stream     the rest of it as it happens (SSE)
@@ -69,8 +71,24 @@ async function itemContext(id: string) {
 async function detail(id: string, login: string): Promise<unknown | null> {
   const ctx = await itemContext(id);
   if (!ctx) return null;
-  // `ronin`: its login, so the page can tell its comments apart.
-  return { ref: ctx.ref, ronin: config.githubLogin, ...ctx.detail, actions: listActions(ctx.ref, ctx.gh, ctx.detail, login) };
+  // `ronin`: its login, so the page can tell its comments apart. `exploration`:
+  // an exploration PR, whose page has its findings to review (#93).
+  const pr = ctx.ref.kind === 'pr' ? ctx.gh?.prs.find((p) => p.number === ctx.ref.number) : undefined;
+  return { ref: ctx.ref, ronin: config.githubLogin, ...ctx.detail, exploration: Boolean(pr && isExplorationPr(pr)), actions: listActions(ctx.ref, ctx.gh, ctx.detail, login) };
+}
+
+// An open exploration PR of a repo in repos.json, with its findings. Null
+// for anything else.
+async function exploration(id: string): Promise<unknown | null> {
+  const match = /^(.+)#(\d+)$/.exec(id);
+  const entry = match && (await loadRepos()).find((repo) => repo.productRepo === match[1]);
+  if (!match || !entry) return null;
+  const gh = await repoGithub(entry);
+  const pr = gh?.prs.find((p) => p.number === Number(match[2]));
+  if (!pr || !isExplorationPr(pr)) return null;
+  const keys = itemRunKeys(id, gh);
+  const changedSince = Math.max(0, ...listRuns(HISTORY_DAYS).filter((run) => keys.includes(itemKey(run))).map((run) => Date.parse(run.endedAt ?? run.startedAt)));
+  return { ronin: config.githubLogin, ...(await explorationReview(entry, pr, changedSince)) };
 }
 
 const MAX_BODY = 16 * 1024;
@@ -196,6 +214,14 @@ export async function handleDashboard(req: IncomingMessage, res: ServerResponse,
     const body = await detail(decodeURIComponent(itemPage[1]), login);
     if (body) json(res, 200, body);
     else json(res, 404, { error: 'ese ítem no es un issue ni un PR de un repo de ronin' });
+    return true;
+  }
+
+  const explorationPage = /^\/api\/items\/(.+)\/exploration$/.exec(path);
+  if (explorationPage) {
+    const body = await exploration(decodeURIComponent(explorationPage[1]));
+    if (body) json(res, 200, body);
+    else json(res, 404, { error: 'ese ítem no es un PR de exploración abierto de un repo de ronin' });
     return true;
   }
 

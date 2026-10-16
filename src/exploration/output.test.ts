@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { capCandidates, clip, parseCandidate, parseFunctionResult, parseRedoResult, parseVerdicts, renderFindingBody, replaceAfterImage, replaceProposal, type Candidate } from './output.js';
+import { capCandidates, clip, parseCandidate, parseFindingBody, parseFunctionResult, parseRedoResult, parseVerdicts, renderFindingBody, replaceAfterImage, replaceDraftPatch, replaceProposal, type Candidate } from './output.js';
 
 const out = '/w/exploration-out/run-1/pedidos.confirmar';
 
@@ -124,6 +124,52 @@ describe('renderFindingBody', () => {
     expect(body).toContain('**Después**: botón deshabilitado\n\n<img src="https://github.com/o/r/blob/abc/d.png?raw=true"');
     expect(body).not.toContain('- captura');
     expect(body.indexOf('### Propuesta')).toBeLessThan(body.indexOf('**Después**'));
+  });
+});
+
+describe('parseFindingBody', () => {
+  const A = 'https://github.com/o/r/blob/abc/a.png?raw=true';
+  const D = 'https://github.com/o/r/blob/abc/d.png?raw=true';
+  const rendered = () => renderFindingBody(parseCandidate(raw(), 'pedidos.confirmar', out), {
+    functionName: 'Confirmar pedido',
+    patch: '-a\n+b',
+    antes: [{ url: A, nota: 'dos filas' }, { url: 'https://github.com/o/r/blob/abc/a2.png?raw=true' }],
+    despues: { url: D, nota: 'botón deshabilitado' },
+  });
+
+  it('reads back every part renderFindingBody writes', () => {
+    expect(parseFindingBody(rendered())).toEqual({
+      functionName: 'Confirmar pedido',
+      pasos: ['Abrir un pedido creado', 'Tocar Confirmar dos veces rápido'],
+      observado: 'Aparecen dos pedidos confirmados',
+      esperado: 'Uno solo',
+      evidencia: [{ tipo: 'red', detalle: 'POST /Orders/Confirm x2' }],
+      antes: [{ url: A, nota: 'dos filas' }, { url: 'https://github.com/o/r/blob/abc/a2.png?raw=true' }],
+      propuesta: 'Deshabilitar el botón mientras se confirma',
+      despues: { url: D, nota: 'botón deshabilitado' },
+      parche: '-a\n+b',
+    });
+  });
+
+  it('keeps up with an edited proposal, a redone after and a new patch', () => {
+    const body = replaceDraftPatch(replaceAfterImage(replaceProposal(rendered(), 'Mostrar un aviso\n\ny bloquear el botón'), { url: 'https://github.com/o/r/blob/def/d.png?raw=true' }, 'mobile'), '+c');
+    const parts = parseFindingBody(body);
+    expect(parts.propuesta).toBe('Mostrar un aviso\n\ny bloquear el botón');
+    expect(parts.despues).toEqual({ url: 'https://github.com/o/r/blob/def/d.png?raw=true' });
+    expect(parts.parche).toBe('+c');
+  });
+
+  it('leaves empty what an idea without steps or images does not have', () => {
+    const idea = parseCandidate(raw({ tipo: 'idea', senal: 'idea', pasos: [], observado: '', esperado: '', evidencia: [], despues: { imagen: 'd.html' } }), 'pedidos.confirmar', out);
+    const parts = parseFindingBody(renderFindingBody(idea, { functionName: 'Confirmar pedido' }));
+    expect(parts).toMatchObject({ functionName: 'Confirmar pedido', pasos: [], observado: '', esperado: '', evidencia: [], antes: [], propuesta: 'Deshabilitar el botón mientras se confirma' });
+    expect(parts.despues).toBeUndefined();
+    expect(parts.parche).toBeUndefined();
+  });
+
+  it('keeps a multi-paragraph observation whole', () => {
+    const c = parseCandidate(raw({ observado: 'Primero esto.\n\nDespués aquello.' }), 'pedidos.confirmar', out);
+    expect(parseFindingBody(renderFindingBody(c, { functionName: 'Confirmar pedido' })).observado).toBe('Primero esto.\n\nDespués aquello.');
   });
 });
 
