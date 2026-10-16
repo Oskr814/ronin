@@ -111,7 +111,7 @@ async function takeSlot(prefix: string, count: number, onWait: () => Promise<voi
 }
 
 // What's waiting for a slot right now, for the dashboard's queue
-// (docs/DESIGN.md §15.7): a file per waiting job, from its first failed try
+// (#65): a file per waiting job, from its first failed try
 // until it has its slots. One left by a dead process is ignored (its pid).
 let waitSeq = 0;
 

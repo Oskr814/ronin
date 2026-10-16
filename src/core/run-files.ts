@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 
-// Where ronin writes what the dashboard (docs/DESIGN.md §15) reads: the
+// Where ronin writes what the dashboard (#65) reads: the
 // per-run records (logs/runs/) and each Claude account's usage
 // (logs/usage/). Next to the daily tick log, which the cron wrapper writes to
 // the same logs/ (scripts/run-tick.sh). RONIN_LOGS_DIR moves it; the tests

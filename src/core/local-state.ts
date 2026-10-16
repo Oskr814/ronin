@@ -46,7 +46,7 @@ export interface LocalState {
   // it" (see processed-comments.ts).
   processedComments: Record<string, string>;
   // Issue or PR number -> why ronin last blocked it (notifier.ts), for the
-  // dashboard (docs/DESIGN.md §15.6). Today the reason only goes out by
+  // dashboard (#65). Today the reason only goes out by
   // email and to the log. Shown only while the item has ronin:blocked, so
   // unblocking doesn't need to clear it; old entries are pruned by age.
   blocks: Record<string, BlockRecord>;
