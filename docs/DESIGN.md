@@ -799,7 +799,7 @@ La pestaña *Archivos* de la ficha de un PR (o de un issue, con los archivos de 
 
 ### 16. Portal de pedidos (#114)
 
-Una página pública, `https://ronin-agent.redmotoshn.com`, para que la gente que usa las aplicaciones pida ajustes chicos sin cuenta de GitHub. Entra con email y contraseña, elige la aplicación, le cuenta a ronin qué necesita (texto y capturas) y conversa con él. Si es un ajuste chico, ronin le muestra un prototipo; si lo aprueba, ronin hace el cambio en un PR que mergea cuando un dev lo aprueba, y le avisa a la persona que sale en la próxima actualización. Lo que es más que un ajuste, o lo que la persona no aprueba, pasa al equipo de desarrollo en un issue, y la persona se entera cuando se cierra.
+Una página pública, `https://ronin-agent.redmotoshn.com`, para que la gente que usa las aplicaciones pida ajustes chicos sin cuenta de GitHub. Entra con email y contraseña, elige la aplicación, le cuenta a ronin qué necesita (texto y capturas) y conversa con él. Si es un ajuste chico, ronin le muestra un prototipo; si lo aprueba, ronin hace el cambio en un PR que mergea cuando un dev lo aprueba, y le avisa a la persona que sale en la próxima actualización. Si reporta un error, ronin lo reproduce en una copia de la app con un test que falla y, si el arreglo es pequeño, lo corrige él (16.12). Lo que es más que un ajuste, o lo que la persona no aprueba, pasa al equipo de desarrollo en un issue, y la persona se entera cuando se cierra.
 
 ```
 src/portal/            el dominio: cuentas, pedidos, la conversación, el prototipo y los issues
@@ -807,9 +807,10 @@ src/portal/            el dominio: cuentas, pedidos, la conversación, el protot
   password.ts          scrypt, y el chequeo de mentira que iguala los tiempos
   session.ts           la cookie firmada del portal
   requests.ts          los pedidos: requests/<n>/request.json, img/ y proto/
-  classify.ts          ronin lee el pedido: preguntar, responder, menor o grande
+  classify.ts          ronin lee el pedido: preguntar, responder, menor, error o grande
   prototype.ts         el prototipo de un ajuste chico, y aprobar o "No me sirve"
-  issue.ts             el issue en el repo del producto: para ronin (aprobado) o para el equipo
+  reproduce.ts         la reproducción de un error reportado, con su test (#137)
+  issue.ts             el issue en el repo del producto: para ronin (aprobado, o el arreglo de un error) o para el equipo
   cancel.ts            la persona cancela un pedido que nadie tomó
   follow.ts            el tick sigue esos issues y sus PRs
   worker.ts, launch.ts el worker por pedido y su relanzamiento
@@ -830,12 +831,14 @@ src/portal-web/        la página: HTML, CSS y JS sin build
 | `minor` | es un ajuste chico: ronin arma el prototipo (16.4) | ronin |
 | `proposed` | el prototipo está en pantalla | la persona: aprobar, pedir un ajuste o "No me sirve" |
 | `approved` | aprobado: ronin hace el cambio en un PR (16.5) | ronin, y un dev que apruebe el PR |
+| `reproducing` | es un error: ronin lo reproduce con un test (16.12) | ronin |
+| `fixing` | lo reprodujo y el arreglo es pequeño: ronin lo hace en un PR, como uno aprobado (16.12) | ronin, y un dev que apruebe el PR |
 | `done` | el PR se mergeó: sale en la próxima actualización | — |
 | `big` | es del equipo, en un issue (16.6) | el equipo |
 | `resolved` / `declined` | el equipo cerró el issue como completado / no planeado | — |
 | `cancelled` | la persona lo canceló (16.10) | — |
 
-Cada paso que hace ronin corre en un **worker por pedido** (`portal/worker.ts`, lanzado con `launchWorker` desde el servidor cuando la persona escribe o decide). Toma el lock `portal-<n>`, así que dos workers nunca trabajan el mismo pedido, y anota su pid en el pedido. Al empezar cada tick, `sweepPortalRequests` relanza los pedidos que esperan a ronin (`thinking`, `minor`, o aprobados o del equipo sin issue todavía) cuyo worker murió, con 2 minutos de gracia para uno recién lanzado.
+Cada paso que hace ronin corre en un **worker por pedido** (`portal/worker.ts`, lanzado con `launchWorker` desde el servidor cuando la persona escribe o decide). Toma el lock `portal-<n>`, así que dos workers nunca trabajan el mismo pedido, y anota su pid en el pedido. Al empezar cada tick, `sweepPortalRequests` relanza los pedidos que esperan a ronin (`thinking`, `minor`, `reproducing`, o aprobados, en `fixing` o del equipo sin issue todavía) cuyo worker murió, con 2 minutos de gracia para uno recién lanzado.
 
 #### 16.2 Cuentas, sesión y seguridad
 
@@ -850,14 +853,15 @@ Cada paso que hace ronin corre en un **worker por pedido** (`portal/worker.ts`, 
 
 #### 16.3 La conversación (`classify.ts`)
 
-La persona escribe y adjunta hasta 4 capturas (png, jpg, webp o gif, validadas por sus primeros bytes, hasta 5 MB cada una; la página achica las grandes antes de mandarlas). Un agente de solo lectura (`portal-request`) lee la conversación y las imágenes en un checkout aparte de la rama base (`portal-P-<n>`, sin rama, que se borra al terminar), revisa el código de esa app y decide una de cuatro cosas:
+La persona escribe y adjunta hasta 4 capturas (png, jpg, webp o gif, validadas por sus primeros bytes, hasta 5 MB cada una; la página achica las grandes antes de mandarlas). Un agente de solo lectura (`portal-request`) lee la conversación y las imágenes en un checkout aparte de la rama base (`portal-P-<n>`, sin rama, que se borra al terminar), revisa el código de esa app y decide una de cinco cosas:
 
 - **preguntar**, hasta 3 veces por pedido;
 - **responder**, cuando no hay nada que cambiar (una duda, algo que ya existe);
 - **menor**, un ajuste chico sobre algo que existe en esa app: deja la propuesta en palabras simples, la instrucción para el prototipo y un resumen técnico para el equipo;
+- **error**, algo que no funciona como debería en esa app: deja los pasos para reproducirlo y sigue 16.12. Si no sabe cómo reproducirlo, primero pregunta;
 - **grande**: lo nuevo, el esquema de datos, dependencias, permisos, integraciones, varias apps, una regla que nadie definió o algo cuya causa no encontró. Ante la duda, grande.
 
-Lo que escribe la persona va cercado como dato, nunca como instrucción. El supervisor escribe la respuesta: un "menor" sin propuesta o sin instrucción, o una pregunta pasada del límite, se convierte en "grande". La primera respuesta le pone título al pedido. La persona recibe cada respuesta también por correo, salvo la de un ajuste chico, porque el correo siguiente es el del prototipo. Si el agente falla, ronin se lo dice y la persona puede volver a escribir.
+Lo que escribe la persona va cercado como dato, nunca como instrucción. El supervisor escribe la respuesta: un "menor" sin propuesta o sin instrucción, un "error" sin pasos o pasado de sus intentos, o una pregunta pasada del límite, se convierte en "grande". La primera respuesta le pone título al pedido. La persona recibe cada respuesta también por correo, salvo la de un ajuste chico o un error, porque el correo siguiente es el del prototipo o el de la reproducción. Si el agente falla, ronin se lo dice y la persona puede volver a escribir.
 
 #### 16.4 El prototipo (`prototype.ts`)
 
@@ -926,9 +930,10 @@ La persona puede cancelar un pedido mientras nadie lo tomó, con *Cancelar pedid
 - **Se puede:**
   - mientras ronin lo lee o espera su respuesta (`thinking`, `asking`, `answered`);
   - alrededor del prototipo (`minor`, `proposed`);
+  - mientras ronin reproduce un error (`reproducing`);
   - ya en manos del equipo (`big`), si su issue sigue sin asignar. Lo comprueba en GitHub al momento, y el issue se cierra como no planeado con un comentario que dice que la persona lo canceló.
 - **No se puede:**
-  - aprobado, porque su issue es de ronin;
+  - aprobado o en `fixing`, porque su issue es de ronin;
   - del equipo, con el issue ya asignado a alguien;
   - terminado.
 - **Un worker que seguía trabajando** en el pedido termina y lo deja cancelado (`updateUnlessCancelled`): no escribe su respuesta ni su prototipo y no manda correos. Si el issue del equipo se estaba abriendo justo entonces, lo cierra.
@@ -954,6 +959,28 @@ Un pedido no tiene issue hasta que ronin lo abre, y algunos no lo tienen nunca. 
   - **las corridas.** El registro de cada corrida lleva `portalRequest` y su runId dice `p<n>`; las de antes se reconocen por su etiqueta, "pedido P-n". Las del issue y el PR del pedido se suman por su número.
 
   Los pedidos de antes de #132 no tienen eventos. Su actividad se arma con el veredicto y la decisión, y su issue va al final, sin hora.
+- **Un reporte de error** (16.12) lo dice en la lista y en la ficha, tiene sus propias etapas (Pedido, Error, Reproducción, Issue, PR, Listo) y una pestaña *Reproducción*: cada intento con su resultado, lo que hizo ronin, la causa o lo que sospecha, las capturas, el test con su salida en rojo y en verde, y el diff (`GET /api/pedidos/<n>/reproduccion/<intento>`).
+
+#### 16.12 Reportes de error (`reproduce.ts`, #137)
+
+Cuando la persona reporta algo que no funciona, `classify.ts` lo lee como **error** y deja los pasos para reproducirlo como los entendió. El pedido pasa a `reproducing` y el worker lo reproduce:
+
+1. **En una copia de la app.** `runOnApp` en `commands/prototype.ts`, la parte de `makePrototype` que levanta la app desde la rama base, con instancia `portal-r-<n>` y un navegador por rol y tamaño de pantalla. Espera el mismo lock que los prototipos (`.prototype.lock`): una app a la vez por repo.
+2. **El agente (`portal-reproduce`)** sigue los pasos y captura el error (`error-N.png`). Después escribe un test que falla por ese error, antes de cualquier arreglo, como en TDD: directo en la capa donde está el problema si sabe cuál es (por ejemplo, un test solo sobre la API), o un e2e que sigue los pasos de la persona si no. Lo corre con los comandos del CLAUDE.md del repo, dentro del stack de la app (le pasa el `docker compose -p …` de esa instancia), y comprueba que falla por la razón que vio la persona.
+3. **El arreglo, solo si es pequeño** (los mismos criterios que un "menor": sin esquema ni migraciones, dependencias, configuración, permisos ni otras apps). Lo hace, vuelve a correr el test (tiene que pasar a verde) y los de alrededor, y captura la pantalla con el arreglo (`arreglo-N.png`) si se ve.
+4. **El supervisor guarda el intento** en `request.bug.reproductions`: si se reprodujo, los pasos, el test (`red`, y `green` solo si antes fue rojo) con el final de su salida, el arreglo (`small` o `big`, con su motivo), el resumen para el equipo y el diff (`proto/r<intento>.diff`, el test y el arreglo). Las capturas van a la conversación (`img/r<intento>-error-1.png`…) con su leyenda.
+
+Según lo que salió:
+
+| Resultado | Estado | Qué pasa |
+|---|---|---|
+| Reproducido, arreglo pequeño, test de rojo a verde y con diff | `fixing` | Un issue **asignado a ronin** con la reproducción y el diff, sin prototipo ni aprobación de la persona. `fix-issue` parte del test y el diff, y `follow.ts` lo sigue como uno aprobado (16.5): `ronin:auto-merge`, aprobación de un dev y `done` |
+| Reproducido, cualquier otro caso (arreglo grande, test que no pasó a verde, sin test) | `big` | Issue del equipo (16.6), con los pasos, la causa, el test que falla y su diff |
+| No reproducido, y puede preguntar | `asking` | Le pregunta a la persona lo que necesita (cuenta para las 3 preguntas). Su respuesta vuelve a `classify.ts`, que lo intenta de nuevo: hasta 2 intentos |
+| No reproducido, sin preguntas ni intentos | `big` | Al equipo, diciendo que **no se pudo reproducir con datos de prueba**. Nunca se cierra como "no es un error": puede depender de datos reales. Un test que no falla va en el issue como lo que se intentó, no como prueba |
+| La corrida falla dos veces, o la app no deja ni intentarlo | `big` | Al equipo, con el motivo |
+
+La persona ve en el portal "Reproduciendo el error", luego lo que encontró ronin con las capturas, y recibe cada paso por correo. Los eventos `reproduced` (intento, si se reprodujo y si el test quedó en rojo, verde o sin test) y `failed` con paso `reproduce` quedan en la actividad.
 
 ## Estado actual
 
