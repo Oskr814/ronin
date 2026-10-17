@@ -1,10 +1,13 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { existsSync } from 'node:fs';
 import { config } from '../../core/config.js';
 import { loadRepos } from '../../core/repos.js';
+import { accountName } from '../../core/claude-usage.js';
+import { sees, type Access } from './access.js';
 import { itemKindOf } from '../../core/github.js';
 import { withActiveRepo } from '../../core/repo-context.js';
-import { itemKey, listRuns, readQueue, readRunLines, readTickInfo, readUsage, runPath, slotsInUse, summarizeRun } from './dashboard-data.js';
+import { itemKey, listRuns as listAllRuns, readQueue, readRunLines, readTickInfo, readUsage, runPath, slotsInUse, summarizeRun } from './dashboard-data.js';
 import { forgetGithub, repoGithub } from './dashboard-github.js';
 import { createFromDashboard, NewIssueError, parseNewIssue, repoApps } from './dashboard-new-issue.js';
 import { cycleView, repoLinear } from './dashboard-linear.js';
@@ -41,12 +44,34 @@ const HISTORY_DAYS = 14;
 const STREAM_POLL_MS = 1000;
 const STREAM_HEARTBEAT_MS = 15_000;
 
+// Which repos the request's session sees (#106, access.ts): set by
+// handleDashboard for the whole request, so every read below goes through
+// visibleRepos() and listRuns() and never reaches a repo the person can't
+// see on GitHub. Outside a request there's no access at all.
+const requestAccess = new AsyncLocalStorage<Access>();
+
+function currentAccess(): Access {
+  const access = requestAccess.getStore();
+  if (!access) throw new Error('tablero: lectura fuera de un pedido con sesión');
+  return access;
+}
+
+async function visibleRepos() {
+  const access = currentAccess();
+  return (await loadRepos()).filter((entry) => sees(access, entry.productRepo));
+}
+
+function listRuns(days: number) {
+  const access = currentAccess();
+  return listAllRuns(days).filter((run) => sees(access, run.repo));
+}
+
 function json(res: ServerResponse, status: number, body: unknown): void {
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }).end(JSON.stringify(body));
 }
 
 export async function snapshot(login: string): Promise<unknown> {
-  const entries = await loadRepos();
+  const entries = await visibleRepos();
   const repos = entries.map((repo) => repo.productRepo);
   const runs = listRuns(SIDEBAR_DAYS);
   // A repo's GitHub read is stale once one of its runs started or ended after it.
@@ -58,13 +83,17 @@ export async function snapshot(login: string): Promise<unknown> {
     const issue = item.kind === 'issue' && item.number !== undefined ? linear[repos.indexOf(item.repo)]?.issues[item.number] : undefined;
     return issue ? { ...item, linear: issue } : item;
   });
+  const access = currentAccess();
   return {
     me: login,
+    // Whether it sees everything, and through which permission it sees each repo.
+    access: { admin: access.admin, repos: access.repos },
     // ronin's GitHub login, for the comments the page shows it'll write.
     ronin: config.githubLogin,
     repos,
-    runner: { slots: { used: slotsInUse(), limit: config.tickConcurrency }, queue: readQueue(), tick: readTickInfo() },
-    usage: readUsage(),
+    // The queue and the Claude accounts, only of the repos it sees.
+    runner: { slots: { used: slotsInUse(), limit: config.tickConcurrency }, queue: readQueue().filter((job) => !job.repo || repos.includes(job.repo)), tick: readTickInfo() },
+    usage: readUsage().filter((u) => entries.some((entry) => accountName(entry.claudeConfigDir ?? '') === u.account)),
     items,
     previews: github.flatMap((gh) => (gh ? gh.previews.map((p) => ({ ...p, repo: gh.repo })) : [])),
     github: github.map((gh, i) => ({ repo: repos[i], fetchedAt: gh?.fetchedAt ?? null, ...(gh?.error ? { error: gh.error } : {}) })),
@@ -84,7 +113,7 @@ export async function snapshot(login: string): Promise<unknown> {
 // Hoy: the runs, and each repo's current Linear cycle, where ronin's issues
 // stand by what GitHub says of them.
 async function todayWithCycles(): Promise<unknown> {
-  const entries = await loadRepos();
+  const entries = await visibleRepos();
   const cycles = await Promise.all(entries.map(async (entry) => {
     const gh = await repoGithub(entry);
     const linear = await repoLinear(entry, gh);
@@ -98,7 +127,7 @@ async function todayWithCycles(): Promise<unknown> {
 async function itemContext(id: string) {
   const match = /^(.+)#(\d+)$/.exec(id);
   if (!match) return null;
-  const entry = (await loadRepos()).find((repo) => repo.productRepo === match[1]);
+  const entry = (await visibleRepos()).find((repo) => repo.productRepo === match[1]);
   if (!entry) return null;
   const gh = await repoGithub(entry);
   const keys = itemRunKeys(id, gh);
@@ -124,7 +153,7 @@ async function detail(id: string, login: string): Promise<unknown | null> {
 // for anything else.
 async function explorationContext(id: string) {
   const match = /^(.+)#(\d+)$/.exec(id);
-  const entry = match && (await loadRepos()).find((repo) => repo.productRepo === match[1]);
+  const entry = match && (await visibleRepos()).find((repo) => repo.productRepo === match[1]);
   if (!match || !entry) return null;
   const gh = await repoGithub(entry);
   const pr = gh?.prs.find((p) => p.number === Number(match[2]));
@@ -200,7 +229,7 @@ async function postNewIssue(req: IncomingMessage, res: ServerResponse, repo: str
     return;
   }
   const body = await readJson(req);
-  const entry = (await loadRepos()).find((r) => r.productRepo === repo);
+  const entry = (await visibleRepos()).find((r) => r.productRepo === repo);
   if (!entry) {
     json(res, 404, { error: 'ese repo no está en repos.json' });
     return;
@@ -291,7 +320,7 @@ async function serveEvidence(res: ServerResponse, raw: string): Promise<void> {
     parts = [];
   }
   const [owner, name, sha, ...segments] = parts;
-  const entry = (await loadRepos()).find((repo) => repo.productRepo === `${owner}/${name}`);
+  const entry = (await visibleRepos()).find((repo) => repo.productRepo === `${owner}/${name}`);
   const image = entry && (await readEvidence(entry, sha ?? '', segments));
   if (!image) {
     json(res, 404, { error: 'no existe esa imagen' });
@@ -303,7 +332,11 @@ async function serveEvidence(res: ServerResponse, raw: string): Promise<void> {
 
 // /api/snapshot, /api/today, /api/items/*, /api/runs/*, /api/evidence/*. Returns false for a
 // path it doesn't own.
-export async function handleDashboard(req: IncomingMessage, res: ServerResponse, path: string, session: Session): Promise<boolean> {
+export async function handleDashboard(req: IncomingMessage, res: ServerResponse, path: string, session: Session, access: Access): Promise<boolean> {
+  return requestAccess.run(access, () => route(req, res, path, session));
+}
+
+async function route(req: IncomingMessage, res: ServerResponse, path: string, session: Session): Promise<boolean> {
   const login = session.login;
   const explorationPost = /^\/api\/items\/(.+)\/exploration\/(actions|general|approve)$/.exec(path);
   if (explorationPost && req.method === 'POST') {
@@ -353,7 +386,11 @@ export async function handleDashboard(req: IncomingMessage, res: ServerResponse,
     const id = decodeURIComponent(item[1]);
     // An issue ronin manages can have no runs in that window: an empty list.
     // Its slices' PR runs are its own too (itemRunKeys), as in the sidebar.
-    const entry = (await loadRepos()).find((repo) => id.startsWith(`${repo.productRepo}#`));
+    const entry = (await visibleRepos()).find((repo) => id.startsWith(`${repo.productRepo}#`));
+    if (!entry && !listRuns(HISTORY_DAYS).some((run) => itemKey(run) === id)) {
+      json(res, 404, { error: 'no existe ese ítem' });
+      return true;
+    }
     const keys = itemRunKeys(id, entry ? await repoGithub(entry) : undefined);
     json(res, 200, { id, runs: listRuns(HISTORY_DAYS).filter((run) => keys.includes(itemKey(run))) });
     return true;
@@ -367,7 +404,9 @@ export async function handleDashboard(req: IncomingMessage, res: ServerResponse,
   const run = /^\/api\/runs\/([^/]+)(\/stream)?$/.exec(path);
   if (run) {
     const file = runPath(run[1]);
-    if (!file || !existsSync(file)) {
+    // A run of a repo the session doesn't see is as good as missing.
+    const summary = file && existsSync(file) ? summarizeRun(readRunLines(file)) : null;
+    if (!file || !summary || !sees(currentAccess(), summary.repo)) {
       json(res, 404, { error: 'no existe esa corrida' });
       return true;
     }
@@ -376,7 +415,7 @@ export async function handleDashboard(req: IncomingMessage, res: ServerResponse,
       streamRun(req, res, file, Number.isInteger(from) && from >= 0 ? from : 0);
     } else {
       const lines = readRunLines(file);
-      json(res, 200, { summary: summarizeRun(lines), lines });
+      json(res, 200, { summary, lines });
     }
     return true;
   }

@@ -2,7 +2,10 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { dirname, extname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { handleAuth, readSession, type AuthConfig, type GithubOAuth } from './api/auth.js';
+import { handleAuth, readSession, type AuthConfig, type GithubOAuth, type Session } from './api/auth.js';
+import { sessionAccess, type Access } from './api/access.js';
+import { GithubUserError } from './api/github-as-user.js';
+import { loadRepos } from '../core/repos.js';
 import { handleDashboard } from './api/dashboard.js';
 import { handleGithubWebhook } from './api/webhooks/github.js';
 import { GITHUB_WEBHOOK_PATHS } from './public.js';
@@ -58,8 +61,17 @@ function serveStatic(path: string, res: ServerResponse, root: string): void {
 
 type Handler = (req: IncomingMessage, res: ServerResponse) => Promise<void>;
 
-export function createTailnetHandler(auth: AuthConfig, options: { github?: GithubOAuth; webRoot?: string } = {}): Handler {
+// The repos a session sees (access.ts), from repos.json.
+type AccessOf = (session: Session) => Promise<Access>;
+
+export function createTailnetHandler(auth: AuthConfig, options: { github?: GithubOAuth; webRoot?: string; access?: AccessOf } = {}): Handler {
   const root = options.webRoot ?? WEB_ROOT;
+  const accessOf: AccessOf = options.access ?? (async (session) => sessionAccess(session, await loadRepos(), auth.admins));
+  // At login, past the lists: an admin, or someone with a repo to see.
+  const canEnter = async (login: string, token: string) => {
+    const access = await accessOf({ login, token });
+    return access.admin || access.repos.length > 0;
+  };
   return async (req, res) => {
     for (const [name, value] of Object.entries(SECURITY_HEADERS)) res.setHeader(name, value);
     const path = new URL(req.url ?? '/', 'http://localhost').pathname;
@@ -79,13 +91,32 @@ export function createTailnetHandler(auth: AuthConfig, options: { github?: Githu
     }
 
     if (path.startsWith('/api/')) {
-      if (await handleAuth(req, res, path, auth, options.github)) return;
+      if (await handleAuth(req, res, path, auth, options.github, canEnter)) return;
       const session = readSession(req, auth);
+      const unauthorized = (error: string) => res.writeHead(401, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }).end(JSON.stringify({ error }));
       if (!session) {
-        res.writeHead(401, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }).end(JSON.stringify({ error: 'sin sesión' }));
+        unauthorized('sin sesión');
         return;
       }
-      if (await handleDashboard(req, res, path, session)) return;
+      // Which repos it sees (#106): every request, so someone taken off a
+      // repo on GitHub stops seeing it within the cache's minutes. With none
+      // left, it's as good as no session: the page asks to log in, and the
+      // login says why it can't.
+      let access: Access;
+      try {
+        access = await accessOf(session);
+      } catch (error) {
+        if (error instanceof GithubUserError) {
+          unauthorized(error.message);
+          return;
+        }
+        throw error;
+      }
+      if (!access.admin && access.repos.length === 0) {
+        unauthorized('tu usuario de GitHub ya no puede ver ningún repo de este tablero');
+        return;
+      }
+      if (await handleDashboard(req, res, path, session, access)) return;
       res.writeHead(404, { 'Content-Type': 'application/json; charset=utf-8' }).end(JSON.stringify({ error: 'no existe' }));
       return;
     }
