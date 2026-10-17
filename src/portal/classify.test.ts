@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { applyResult, MAX_QUESTIONS, NEXT_STEP, parsePortalResult } from './classify.js';
-import type { PortalRequest } from './requests.js';
+import { MAX_PROTOTYPES, type PortalRequest } from './requests.js';
 
 vi.mock('../core/logger.js', () => ({ log: { info: vi.fn(), error: vi.fn() } }));
 
@@ -51,6 +51,26 @@ describe('applyResult', () => {
     expect(r.status).toBe('minor');
     expect(r.verdict).toMatchObject({ kind: 'minor', proposal: 'El nombre del cliente pasa a ser un enlace.', instruction: 'Pedido N° 2, desktop, Admin', summary: 'ClientInfoPanel.tsx' });
     expect(r.messages.at(-1)?.text).toBe(`Se puede.\n\nLa propuesta: El nombre del cliente pasa a ser un enlace.\n\n${NEXT_STEP.menor}`);
+  });
+
+  it('past the prototypes allowed, another small change goes to the team', () => {
+    expect(parsePortalResult(json({ accion: 'menor', mensaje: 'Otro', propuesta: 'p', instruccion: 'i' }), 0, MAX_PROTOTYPES)).toMatchObject({ accion: 'grande' });
+    expect(parsePortalResult(json({ accion: 'menor', mensaje: 'Otro', propuesta: 'p', instruccion: 'i' }), 0, MAX_PROTOTYPES - 1)).toMatchObject({ accion: 'menor' });
+  });
+
+  it('with a prototype on screen, an answer leaves it there to decide on, and an adjustment draws another', () => {
+    const shown = (): PortalRequest => ({
+      ...request(), status: 'thinking',
+      verdict: { kind: 'minor', proposal: 'p', instruction: 'i', summary: '', at: '' },
+      prototypes: [{ round: 1, summary: 's', messageId: 2, at: '' }],
+    });
+    const asked = shown();
+    applyResult(asked, { accion: 'responder', mensaje: 'Sí, también en el celular.' });
+    expect(asked.status).toBe('proposed');
+    const adjusted = shown();
+    applyResult(adjusted, { accion: 'menor', mensaje: 'Va.', propuesta: 'Más grande', instruccion: 'i2' });
+    expect(adjusted).toMatchObject({ status: 'minor', verdict: { instruction: 'i2' } });
+    expect(adjusted.messages.at(-1)?.text).toContain(NEXT_STEP.otra);
   });
 
   it('a big one goes to the team with its reason', () => {

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { readFile, rm, stat } from 'node:fs/promises';
 import { config } from '../core/config.js';
-import { addPersonMessage, createRequest, getRequest, listRequestsOf, requestImagePath, startedToday, updateRequest } from './requests.js';
+import { addPersonMessage, createRequest, getRequest, listRequestsOf, requestImagePath, startedToday, updateRequest, MAX_PROTOTYPES } from './requests.js';
 import { sweepPortalRequests } from './launch.js';
 
 vi.mock('../core/logger.js', () => ({ log: { info: vi.fn(), error: vi.fn() } }));
@@ -13,6 +13,18 @@ beforeEach(async () => {
 });
 
 describe('portal requests', () => {
+  it('takes adjustments to a prototype until none are left', async () => {
+    const r = await createRequest({ userId: 'u1', repo: 'a/b', app: 'web', text: 'Hola', images: [] });
+    const shown = (count: number) => updateRequest(r.number, (x) => {
+      x.status = 'proposed';
+      x.prototypes = Array.from({ length: count }, (_, i) => ({ round: i + 1, summary: '', messageId: 1, at: '' }));
+    });
+    await shown(MAX_PROTOTYPES - 1);
+    expect((await addPersonMessage(r.number, 'Más grande', [])).status).toBe('thinking');
+    await shown(MAX_PROTOTYPES);
+    await expect(addPersonMessage(r.number, 'Más', [])).rejects.toThrow(/no quedan ajustes/);
+  });
+
   it('numbers them across repos, saves the images apart, and starts them thinking', async () => {
     const a = await createRequest({ userId: 'u1', repo: 'a/b', app: 'web', text: '  Cambiar el texto del botón\nmás detalle ', images: [{ ext: 'png', data: PNG }] });
     const b = await createRequest({ userId: 'u2', repo: 'c/d', app: 'app', text: '', images: [{ ext: 'png', data: PNG }] });
@@ -49,6 +61,11 @@ describe('portal requests', () => {
     await sweepPortalRequests(later, launch);
     expect(launch).not.toHaveBeenCalled();
     await updateRequest(r.number, (x) => { x.worker = { pid: 2 ** 22 + 12345, since: new Date().toISOString() }; });
+    await sweepPortalRequests(later, launch);
+    expect(launch).toHaveBeenCalledWith(r.number);
+    // So is one whose prototype was on the way.
+    launch.mockClear();
+    await updateRequest(r.number, (x) => { x.status = 'minor'; });
     await sweepPortalRequests(later, launch);
     expect(launch).toHaveBeenCalledWith(r.number);
     // Answered ones are left alone.

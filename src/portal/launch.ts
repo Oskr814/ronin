@@ -2,7 +2,8 @@ import { launchWorker } from '../core/worker-launch.js';
 import { log } from '../core/logger.js';
 import { listRequests, updateRequest } from './requests.js';
 
-// Starts the worker that reads a request (worker.ts), and notes its pid on
+// Starts the worker that reads a request and draws its prototype
+// (worker.ts), and notes its pid on
 // the request so the tick can tell when it died.
 export async function launchPortalWorker(n: number): Promise<void> {
   const pid = launchWorker('portal/worker', { number: n });
@@ -24,11 +25,12 @@ const alive = (pid: number) => {
 // pid yet.
 const GRACE_MS = 2 * 60_000;
 
-// The tick's reconciliation: a request still 'thinking' whose worker is gone
-// (the server restarted mid-launch, the runner rebooted) gets a new one.
+// The tick's reconciliation: a request still 'thinking' or 'minor' (its
+// prototype on the way) whose worker is gone (the server restarted
+// mid-launch, the runner rebooted) gets a new one.
 export async function sweepPortalRequests(now = Date.now(), launch = launchPortalWorker): Promise<void> {
   for (const request of await listRequests()) {
-    if (request.status !== 'thinking') continue;
+    if (request.status !== 'thinking' && request.status !== 'minor') continue;
     if (request.worker && (alive(request.worker.pid) || now - Date.parse(request.worker.since) < GRACE_MS)) continue;
     if (!request.worker && now - Date.parse(request.updatedAt) < GRACE_MS) continue;
     log.info(`portal: el pedido P-${request.number} quedó sin quien lo lea; lanzo otro worker`);

@@ -18,12 +18,22 @@ export type RequestStatus =
   // ronin answered without a change to make (a question about the app): the
   // person can write again.
   | 'answered'
-  // A small change: ronin proposed it, the prototype comes next.
+  // A small change: ronin proposed it and is drawing the prototype (a
+  // worker brings the app up).
   | 'minor'
-  // Too big for the portal: the dev team takes it.
+  // The prototype is on screen: the person approves it, asks for an
+  // adjustment (back to 'thinking') or turns it down (to 'big').
+  | 'proposed'
+  // The person approved the prototype.
+  | 'approved'
+  // Too big for the portal, or turned down: the dev team takes it.
   | 'big';
 
-export const OPEN_FOR_PERSON: RequestStatus[] = ['asking', 'answered'];
+// When the person can write: an answer, or an adjustment to the prototype.
+export const OPEN_FOR_PERSON: RequestStatus[] = ['asking', 'answered', 'proposed'];
+
+// Prototypes per request: the first and up to two adjustments.
+export const MAX_PROTOTYPES = 3;
 
 export interface PortalMessage {
   id: number;
@@ -31,6 +41,19 @@ export interface PortalMessage {
   text: string;
   // File names under img/.
   images: string[];
+  // One per image, for a prototype's ("Antes: …", "Después: …").
+  captions?: string[];
+  at: string;
+}
+
+export interface Prototype {
+  round: number;
+  // For the team: what the draft changes, technically.
+  summary: string;
+  // The draft's diff, under proto/ (empty when the after is a mockup).
+  patch?: string;
+  // The message that shows it.
+  messageId: number;
   at: string;
 }
 
@@ -57,8 +80,11 @@ export interface PortalRequest {
   // How many times ronin asked something, to stop asking at some point.
   questions: number;
   verdict?: Verdict;
-  // The worker reading it while 'thinking', so the tick can tell one that
-  // died (and start another).
+  prototypes?: Prototype[];
+  // When the person approved the prototype or turned it down.
+  decision?: { kind: 'approved' | 'rejected'; at: string };
+  // The worker reading it while 'thinking', or drawing the prototype while
+  // 'minor', so the tick can tell one that died (and start another).
   worker?: { pid: number; since: string };
   createdAt: string;
   updatedAt: string;
@@ -66,7 +92,9 @@ export interface PortalRequest {
 
 const requestsDir = () => join(config.portal.dataDir, 'requests');
 const requestPath = (n: number) => join(requestsDir(), String(n), 'request.json');
+export const requestDir = (n: number) => join(requestsDir(), String(n));
 export const requestImagePath = (n: number, file: string) => join(requestsDir(), String(n), 'img', file);
+export const prototypePatchPath = (n: number, file: string) => join(requestsDir(), String(n), 'proto', file);
 const counterPath = () => join(requestsDir(), 'counter.json');
 
 export class RequestError extends Error {}
@@ -148,6 +176,9 @@ export async function createRequest(input: { userId: string; repo: string; app: 
 export async function addPersonMessage(n: number, text: string, images: ImageUpload[], now = new Date()): Promise<PortalRequest> {
   return updateRequest(n, async (request) => {
     if (!OPEN_FOR_PERSON.includes(request.status)) throw new RequestError('Este pedido no espera una respuesta ahora.');
+    if (request.status === 'proposed' && (request.prototypes?.length ?? 0) >= MAX_PROTOTYPES) {
+      throw new RequestError('Ya no quedan ajustes para este pedido: apruébalo o pásalo al equipo.');
+    }
     const id = Math.max(0, ...request.messages.map((m) => m.id)) + 1;
     request.messages.push({ id, from: 'person', text: text.trim(), images: await saveImages(n, id, images), at: now.toISOString() });
     request.status = 'thinking';
@@ -156,7 +187,14 @@ export async function addPersonMessage(n: number, text: string, images: ImageUpl
   });
 }
 
-export function addRoninMessage(request: PortalRequest, text: string, now = new Date()): void {
+export function addRoninMessage(request: PortalRequest, text: string, now = new Date(), shots?: { images: string[]; captions: string[] }): number {
   const id = Math.max(0, ...request.messages.map((m) => m.id)) + 1;
-  request.messages.push({ id, from: 'ronin', text, images: [], at: now.toISOString() });
+  request.messages.push({ id, from: 'ronin', text, images: shots?.images ?? [], ...(shots ? { captions: shots.captions } : {}), at: now.toISOString() });
+  return id;
+}
+
+// The person's note when turning a prototype down, if they left one.
+export function addPersonNote(request: PortalRequest, text: string, now = new Date()): void {
+  const id = Math.max(0, ...request.messages.map((m) => m.id)) + 1;
+  request.messages.push({ id, from: 'person', text, images: [], at: now.toISOString() });
 }

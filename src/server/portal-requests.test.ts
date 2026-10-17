@@ -13,6 +13,8 @@ import { resetPortalLimits } from './api/portal.js';
 import { createPortalHandler } from './portal.js';
 
 vi.mock('../core/logger.js', () => ({ log: { info: vi.fn(), error: vi.fn() } }));
+const sendMail = vi.fn(async () => {});
+vi.mock('../core/notifier.js', () => ({ sendMail: (...args: unknown[]) => sendMail(...(args as [])) }));
 
 const PORTAL = { url: 'https://ronin-agent.example.com', sessionSecret: 'p'.repeat(40), sessionDays: 30, dailyLimit: 2 };
 const entries = [{ productRepo: 'redmotos/shoppingcart', productRepoPath: '/x', portal: { name: 'Red Motos', apps: { backoffice: { name: 'Backoffice' }, tienda: { name: 'Tienda' } } } }];
@@ -108,6 +110,28 @@ describe('portal requests API', () => {
     for (const path of ['/api/portal/requests/1', '/api/portal/requests/1/images/1-1.png']) expect((await get(b.cookie, path)).status, path).toBe(404);
     expect((await post(b.cookie, '/api/portal/requests/1/messages', { text: 'x' })).status).toBe(404);
     expect(await (await get(b.cookie, '/api/portal/requests')).json()).toEqual([]);
+  });
+
+  it('shows the prototype with its captions and the adjustments left, and takes the decision on it', async () => {
+    const { cookie } = await person('mf@x.com');
+    await post(cookie, '/api/portal/requests', { repo: 'redmotos/shoppingcart', app: 'backoffice', text: 'Hola' });
+    expect((await post(cookie, '/api/portal/requests/1/decision', { decision: 'aprobar' })).status).toBe(400);
+    await updateRequest(1, (r) => {
+      r.status = 'proposed';
+      r.verdict = { kind: 'minor', proposal: 'p', instruction: 'secreto', summary: 'ClientInfoPanel.tsx', at: '' };
+      r.messages.push({ id: 2, from: 'ronin', text: 'Así quedaría', images: ['p1-antes-1.png'], captions: ['Antes: hoy'], at: '' });
+      r.prototypes = [{ round: 1, summary: 'Link en ClientInfoPanel', patch: '1.diff', messageId: 2, at: '' }];
+    });
+    const view = await (await get(cookie, '/api/portal/requests/1')).json();
+    expect(view).toMatchObject({ status: 'proposed', adjustmentsLeft: 2, messages: [{}, { images: ['/api/portal/requests/1/images/p1-antes-1.png'], captions: ['Antes: hoy'] }] });
+    expect(JSON.stringify(view)).not.toMatch(/ClientInfoPanel|secreto|1\.diff/);
+    expect((await post(cookie, '/api/portal/requests/1/decision', { decision: 'quizás' })).status).toBe(400);
+    const res = await post(cookie, '/api/portal/requests/1/decision', { decision: 'rechazar', text: 'No era eso' });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ status: 'big', messages: [{}, {}, { from: 'person', text: 'No era eso' }, { from: 'ronin' }] });
+    expect(launch).toHaveBeenCalledOnce();
+    const other = await person('otro@x.com');
+    expect((await post(other.cookie, '/api/portal/requests/1/decision', { decision: 'aprobar' })).status).toBe(404);
   });
 
   it('asks for a session', async () => {
