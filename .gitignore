@@ -13,3 +13,5 @@ repos.json
 .ronin-slots/
 # the request portal's accounts (#114)
 portal-data/
+# the meetings' notes uploaded to the dashboard (#62)
+meetings-data/

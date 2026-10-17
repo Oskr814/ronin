@@ -192,6 +192,13 @@ export const config = {
     // Requests a person can start per day unless the admin set theirs.
     dailyLimit: Number(process.env.PORTAL_DAILY_LIMIT ?? 5),
   },
+  // The meetings whose notes the team uploads to the dashboard (#62): the
+  // original file, its text and what ronin proposes from it. The only copy,
+  // like the portal's, and never in the product repo: meeting notes say
+  // more than an issue should.
+  meetings: {
+    dataDir: resolve(process.env.MEETINGS_DATA_DIR || 'meetings-data'),
+  },
 } as const;
 
 // Per task type, the model a run uses when its env var isn't set — anything
