@@ -23,7 +23,8 @@ vi.mock('../app/index.js', () => ({
   publishEvidence: (...args: unknown[]) => publishEvidence(...(args as [])),
   evidenceUrl: (sha: string, path: string) => `https://github.com/redmotos/shoppingcart/blob/${sha}/${path}?raw=true`,
 }));
-vi.mock('../core/repo-context.js', () => ({ activeRepo: () => ({ productRepo: 'redmotos/shoppingcart', productRepoPath: '/repo', portal: { name: 'Red Motos', apps: { backoffice: { name: 'Backoffice' } } } }) }));
+const team: { notifyTo?: string[] } = {};
+vi.mock('../core/repo-context.js', () => ({ activeRepo: () => ({ productRepo: 'redmotos/shoppingcart', productRepoPath: '/repo', portal: { name: 'Red Motos', apps: { backoffice: { name: 'Backoffice' } }, ...team } }) }));
 
 const { portalIssueBody, issueMarker, openPortalIssue } = await import('./issue.js');
 const { DECLINED_REPLY, DONE_REPLY, followPortalIssues, PR_READY_REPLY, RESOLVED_REPLY } = await import('./follow.js');
@@ -152,6 +153,21 @@ describe('portal issues', () => {
     expect((await getRequest(n))?.issue?.number).toBe(901);
     expect((await getRequest(n))?.events?.map((e) => e.kind)).toEqual(['issue', 'mail']);
     expect((await getRequest(n))?.events?.[0]).toMatchObject({ number: 901, team: true });
+  });
+
+  it("tells only the repo's own team when its portal block lists one", async () => {
+    team.notifyTo = ['ana@x.com', 'luis@x.com'];
+    try {
+      const big = await approvedRequest({ status: 'big', verdict: { kind: 'big', reason: 'Toca dos apps.', summary: '', at: '' } });
+      await openPortalIssue(big);
+      const approved = await approvedRequest({ issue: { number: 901, url: 'u' } });
+      gh.listPrClosingIssues.mockResolvedValue({ 950: [901] });
+      await followPortalIssues();
+      expect((sendMail.mock.calls as unknown as Array<[{ to: string }]>).map(([mail]) => mail.to)).toEqual(['ana@x.com, luis@x.com', 'ana@x.com, luis@x.com']);
+      expect((await getRequest(approved))?.pr).toBe(950);
+    } finally {
+      delete team.notifyTo;
+    }
   });
 
   it("when the team's issue closes, tells the person how: solved, or not for now", async () => {

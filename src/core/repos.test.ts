@@ -133,7 +133,7 @@ describe('loadRepos', () => {
   });
 
   it('keeps a valid portal block (#114) and rejects a malformed one', async () => {
-    const portal = { name: 'Red Motos', apps: { backoffice: { name: 'Backoffice', description: 'Pedidos y clientes' } } };
+    const portal = { name: 'Red Motos', apps: { backoffice: { name: 'Backoffice', description: 'Pedidos y clientes' } }, notifyTo: ['ana@x.com', 'luis@x.com'] };
     await writeFile(reposConfigPath, JSON.stringify([{ productRepo: 'a/b', productRepoPath: '/tmp/a', portal }]));
     expect((await loadRepos())[0].portal).toEqual(portal);
 
@@ -143,6 +143,9 @@ describe('loadRepos', () => {
       [{ name: 'X', apps: { backoffice: 'Backoffice' } }, /portal\.apps\.backoffice/],
       [{ name: 'X', apps: { backoffice: { name: 'B', color: 'red' } } }, /portal\.apps\.backoffice/],
       [{ ...portal, mail: {} }, /campos desconocidos: mail/],
+      [{ ...portal, notifyTo: 'ana@x.com' }, /portal\.notifyTo/],
+      [{ ...portal, notifyTo: [] }, /portal\.notifyTo/],
+      [{ ...portal, notifyTo: ['ana@x.com, luis@x.com'] }, /portal\.notifyTo/],
     ] as const) {
       await writeFile(reposConfigPath, JSON.stringify([{ productRepo: 'a/b', productRepoPath: '/tmp/a', portal: bad }]));
       await expect(loadRepos()).rejects.toThrow(error);

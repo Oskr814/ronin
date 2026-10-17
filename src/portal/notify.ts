@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { config } from '../core/config.js';
 import { log } from '../core/logger.js';
+import { activeRepo } from '../core/repo-context.js';
 import { sendMail, type Mail } from '../core/notifier.js';
 import type { PortalUser } from './accounts.js';
 import { bigRequestMail, PORTAL_FROM_NAME, teamRequestMail } from './mail.js';
@@ -18,12 +19,16 @@ export async function sendPortalMails(request: PortalRequest, mails: Array<Mail 
   }
 }
 
+// Inside withActiveRepo: the team of the request's repo (its portal.notifyTo
+// in repos.json), never another repo's; NOTIFY_TO when it has none.
+export const teamTo = () => activeRepo().portal?.notifyTo?.join(', ') || config.notifyTo;
+
 // To the dev team, with its issue and the last prototype's diff when there
 // is one.
 export async function teamMail(request: PortalRequest, user: PortalUser | undefined): Promise<Mail> {
   const file = request.prototypes?.at(-1)?.patch;
   const patch = file ? await readFile(prototypePatchPath(request.number, file), 'utf8').catch(() => undefined) : undefined;
-  return teamRequestMail(request, user, config.notifyTo, requestDir(request.number), patch);
+  return teamRequestMail(request, user, teamTo(), requestDir(request.number), patch);
 }
 
 // A request the team takes now: the person hears right away; the team, with

@@ -44,6 +44,9 @@ export interface RepoEntry {
 export interface PortalRepoConfig {
   name: string;
   apps: Record<string, { name: string; description?: string }>;
+  // Who on this repo's team gets its requests: the ones that are theirs now
+  // and the PRs waiting for their approval. Absent: NOTIFY_TO.
+  notifyTo?: string[];
 }
 
 export interface AgentDefaults {
