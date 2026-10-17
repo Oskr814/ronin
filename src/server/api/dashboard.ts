@@ -52,6 +52,7 @@ import { isOpen, requestDetail, requestImage, requestPatch, requestRow } from '.
 //   GET /api/pedidos/<n>             one of them: its conversation, its activity and its runs
 //   GET /api/pedidos/<n>/img/<file>  one of its images (the person's, or a prototype's)
 //   GET /api/pedidos/<n>/prototipo/<round>  a prototype's draft diff
+//   GET /api/pedidos/<n>/reproduccion/<round>  a reproduction's diff (#137)
 
 // How far back the sidebar and an item's history look. Run records are kept
 // 14 days (scripts/setup-cron.sh).
@@ -156,7 +157,7 @@ async function pedidos(res: ServerResponse, path: string): Promise<void> {
     json(res, 200, { requests: requests.map((r) => requestRow(r, users.get(r.userId), entries, runs)).sort((a, b) => b.number - a.number) });
     return;
   }
-  const match = /^\/api\/pedidos\/(\d+)(?:\/(img|prototipo)\/([^/]+))?$/.exec(path);
+  const match = /^\/api\/pedidos\/(\d+)(?:\/(img|prototipo|reproduccion)\/([^/]+))?$/.exec(path);
   const request = match ? await getRequest(Number(match[1])) : undefined;
   // One of a repo it doesn't see is one that isn't there.
   if (!match || !request || !sees(currentAccess(), request.repo)) {
@@ -175,9 +176,10 @@ async function pedidos(res: ServerResponse, path: string): Promise<void> {
     else json(res, 404, { error: 'no existe esa imagen' });
     return;
   }
-  if (match[2] === 'prototipo') {
-    const patch = await requestPatch(request, Number(match[3]));
-    if (patch === null) json(res, 404, { error: 'ese prototipo no dejó diff' });
+  if (match[2] === 'prototipo' || match[2] === 'reproduccion') {
+    const prototype = match[2] === 'prototipo';
+    const patch = await requestPatch(request, Number(match[3]), prototype ? 'prototype' : 'reproduction');
+    if (patch === null) json(res, 404, { error: prototype ? 'ese prototipo no dejó diff' : 'esa reproducción no dejó diff' });
     else json(res, 200, { patch });
     return;
   }

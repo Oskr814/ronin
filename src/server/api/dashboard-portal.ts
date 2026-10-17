@@ -38,7 +38,8 @@ export function waitsOn(r: Pick<PortalRequest, 'status' | 'issue' | 'pr'>): Wait
 
 export const isOpen = (r: Pick<PortalRequest, 'status'>) => !['done', 'resolved', 'declined', 'cancelled'].includes(r.status);
 
-// The runs that were about it: its own (portal-request, portal-prototype)
+// The runs that were about it: its own (portal-request, portal-prototype,
+// portal-reproduce)
 // and, once it has them, its issue's and its PR's.
 export function requestRuns(r: Pick<PortalRequest, 'number' | 'repo' | 'issue' | 'pr'>, runs: RunSummary[]): RunSummary[] {
   return runs.filter((run) => run.repo === r.repo && (run.portalRequest === r.number
@@ -66,6 +67,8 @@ export interface RequestRow {
   questions: number;
   decision?: 'approved' | 'rejected';
   verdict?: Verdict['kind'];
+  // A reported error (#137).
+  bug: boolean;
   createdAt: string;
   // Its last change or its last run's, whichever is later.
   lastAt: string;
@@ -89,6 +92,7 @@ export function requestRow(r: PortalRequest, user: PortalUser | undefined, entri
     questions: r.questions,
     ...(r.decision ? { decision: r.decision.kind } : {}),
     ...(r.verdict ? { verdict: r.verdict.kind } : {}),
+    bug: Boolean(r.bug),
     createdAt: r.createdAt,
     lastAt: lastAt(r, own),
   };
@@ -132,6 +136,7 @@ export function requestDetail(r: PortalRequest, user: PortalUser | undefined, en
     messages: r.messages,
     verdict: r.verdict ?? null,
     prototypes: r.prototypes ?? [],
+    bug: r.bug ?? null,
     decision: r.decision ?? null,
     issue: r.issue ?? null,
     pr: r.pr ?? null,
@@ -156,8 +161,8 @@ export async function requestImage(r: PortalRequest, file: string): Promise<{ ty
   }
 }
 
-export async function requestPatch(r: PortalRequest, round: number): Promise<string | null> {
-  const file = r.prototypes?.find((p) => p.round === round)?.patch;
+export async function requestPatch(r: PortalRequest, round: number, of: 'prototype' | 'reproduction' = 'prototype'): Promise<string | null> {
+  const file = (of === 'prototype' ? r.prototypes : r.bug?.reproductions)?.find((p) => p.round === round)?.patch;
   if (!file) return null;
   return readFile(prototypePatchPath(r.number, file), 'utf8').catch(() => null);
 }
