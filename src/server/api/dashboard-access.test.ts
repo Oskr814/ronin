@@ -40,6 +40,9 @@ vi.mock('./dashboard-data.js', async (importOriginal) => ({
   runPath: (runId: string) => join(dir, `${runId}.jsonl`),
 }));
 
+const launchMeetingWorker = vi.fn(async (_n: number) => {});
+vi.mock('../../meetings/launch.js', async (importOriginal) => ({ ...(await importOriginal<typeof import('../../meetings/launch.js')>()), launchMeetingWorker: (n: number) => launchMeetingWorker(n) }));
+
 const { handleDashboard } = await import('./dashboard.js');
 const ACCESS = { admin: false, repos: [{ repo: SC, permission: 'triage' as const }] };
 const SESSION = { login: 'valeria', token: 'gho_v' };
@@ -134,11 +137,23 @@ describe('a session that sees only some repos', () => {
     const { createMeeting, extractPasted } = await import('../../meetings/index.js');
     const bm = await createMeeting({ repo: BM, by: 'otra', notes: extractPasted(`De Bmedical. ${notes}`) });
     expect((await call('/api/reuniones')).body.meetings.map((m: { number: number }) => m.number)).toEqual([up.body.number]);
-    expect((await call('/api/snapshot')).body.reunionesPendientes).toBe(1);
+    expect((await call('/api/snapshot')).body.reunionesPorRevisar).toBe(0);
     expect((await call(`/api/reuniones/${up.body.number}`)).body).toMatchObject({ text: notes, original: false, events: [{ kind: 'uploaded', by: 'valeria' }] });
     expect((await call(`/api/reuniones/${bm.number}`)).status).toBe(404);
     expect((await call(`/api/reuniones/${bm.number}/original`)).status).toBe(404);
     expect((await call(`/api/reuniones/${up.body.number}/original`)).status).toBe(404);
+    // ronin reads it as soon as it's up.
+    expect(launchMeetingWorker).toHaveBeenCalledWith(up.body.number);
+    // Asking again: only after a failed reading, and only for its repos.
+    expect((await call(`/api/reuniones/${up.body.number}/reintentar`, 'POST', {})).status).toBe(409);
+    const { updateMeeting } = await import('../../meetings/index.js');
+    await updateMeeting(up.body.number, (m) => { m.status = 'failed'; });
+    await updateMeeting(bm.number, (m) => { m.status = 'failed'; });
+    expect((await call(`/api/reuniones/${bm.number}/reintentar`, 'POST', {})).status).toBe(404);
+    launchMeetingWorker.mockClear();
+    expect((await call(`/api/reuniones/${up.body.number}/reintentar`, 'POST', {})).body).toEqual({ ok: true });
+    expect(launchMeetingWorker).toHaveBeenCalledWith(up.body.number);
+    expect((await call(`/api/reuniones/${up.body.number}`)).body).toMatchObject({ status: 'pending', events: [{ kind: 'uploaded' }, { kind: 'retried', by: 'valeria' }] });
   });
 
   it("reads only a file the PR changes (#111)", async () => {

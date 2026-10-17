@@ -67,6 +67,7 @@ export interface AgentTask {
   issueNumber?: number;
   prNumber?: number;
   requestNumber?: number;
+  meetingNumber?: number;
   sliceIndex?: number;
   sliceTitle?: string;
   // Builds the prompt and says where it runs; called once, first thing.
@@ -128,6 +129,7 @@ export async function runAgentTask(task: AgentTask): Promise<string> {
     ...(issueNumber !== undefined ? { issueNumber } : {}),
     ...(prNumber !== undefined ? { prNumber } : {}),
     ...(task.requestNumber !== undefined ? { portalRequest: task.requestNumber } : {}),
+    ...(task.meetingNumber !== undefined ? { meeting: task.meetingNumber } : {}),
     ...(task.sliceIndex !== undefined ? { sliceIndex: task.sliceIndex, sliceTitle: task.sliceTitle } : {}),
     ...(model ? { model } : {}),
     ...(effort ? { effort } : {}),

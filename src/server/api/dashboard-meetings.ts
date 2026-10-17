@@ -1,4 +1,5 @@
 import type { RepoEntry } from '../../core/repo-context.js';
+import type { RunSummary } from './dashboard-data.js';
 import { ExtractError, extractFile, extractPasted, MAX_FILE_BYTES, ORIGINAL_EXT, readNotes, readOriginal, type Meeting, type NewMeeting } from '../../meetings/index.js';
 
 // The meetings on the dashboard (#62): anyone who sees a repo uploads the
@@ -49,6 +50,8 @@ export interface MeetingRow {
   status: Meeting['status'];
   source: { kind: Meeting['source']['kind']; name: string | null; pages: number | null };
   chars: number;
+  // What ronin proposed, once it read it.
+  counts: { projects: number; issues: number; comments: number; discarded: number } | null;
   createdAt: string;
 }
 
@@ -62,18 +65,24 @@ export function meetingRow(m: Meeting): MeetingRow {
     status: m.status,
     source: { kind: m.source.kind, name: m.source.name ?? null, pages: m.source.pages ?? null },
     chars: m.chars,
+    counts: m.proposals
+      ? { projects: m.proposals.projects.length, issues: m.proposals.issues.length + m.proposals.projects.reduce((sum, p) => sum + p.issues.length, 0), comments: m.proposals.comments.length, discarded: m.proposals.discarded.length }
+      : null,
     createdAt: m.createdAt,
   };
 }
 
-export async function meetingDetail(m: Meeting) {
+export async function meetingDetail(m: Meeting, runs: RunSummary[]) {
   return {
     ...meetingRow(m),
     link: m.link ?? null,
     bytes: m.source.bytes ?? null,
     original: Boolean(m.source.file),
     text: await readNotes(m.number).catch(() => ''),
+    proposals: m.proposals ?? null,
     events: m.events,
+    // Its readings: what ronin did with it.
+    runs: runs.filter((run) => run.repo === m.repo && run.meeting === m.number).sort((a, b) => b.startedAt.localeCompare(a.startedAt)),
   };
 }
 
