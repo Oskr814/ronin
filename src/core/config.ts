@@ -1,4 +1,4 @@
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { assertTimezone } from './timezone.js';
 import { currentRepo } from './repo-context.js';
 
@@ -184,9 +184,11 @@ export const config = {
     url: (process.env.PORTAL_URL ?? '').replace(/\/+$/, ''),
     sessionSecret: process.env.PORTAL_SESSION_SECRET ?? '',
     sessionDays: Number(process.env.PORTAL_SESSION_DAYS ?? 30),
-    // Its accounts (and, later, its requests): the source of truth for them,
-    // unlike the local state, so it lives apart and is never pruned.
-    dataDir: process.env.PORTAL_DATA_DIR || 'portal-data',
+    // Its accounts and its requests: the source of truth for them, unlike
+    // the local state, so it lives apart and is never pruned. Absolute, from
+    // where ronin runs: its paths go to agents and to git commands that run
+    // in the product repo's checkout.
+    dataDir: resolve(process.env.PORTAL_DATA_DIR || 'portal-data'),
     // Requests a person can start per day unless the admin set theirs.
     dailyLimit: Number(process.env.PORTAL_DAILY_LIMIT ?? 5),
   },
