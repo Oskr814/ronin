@@ -5,13 +5,15 @@
 //
 // Its API lives under /api (api/), GitHub's webhooks included. Two
 // listeners: the public one, the one the domain's proxy reaches, serves only
-// the webhooks (public.ts); the tailnet one serves the dashboard — the web
-// app and the whole API, behind a GitHub login (tailnet.ts). The second one
-// only starts once the dashboard is configured.
+// the webhooks and, once configured, the request portal (public.ts,
+// portal.ts); the tailnet one serves the dashboard — the web app and the
+// whole API, behind a GitHub login (tailnet.ts). The second one only starts
+// once the dashboard is configured.
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { config } from '../core/config.js';
 import { log } from '../core/logger.js';
 import { missingAuthConfig } from './api/auth.js';
+import { createPortalHandler, missingPortalConfig } from './portal.js';
 import { createPublicHandler } from './public.js';
 import { createTailnetHandler } from './tailnet.js';
 
@@ -31,8 +33,13 @@ function serve(handle: (req: IncomingMessage, res: ServerResponse) => Promise<vo
   });
 }
 
-serve(createPublicHandler()).listen(config.serverPort, () => {
-  log.info(`ronin-server escuchando en :${config.serverPort} (público: solo los webhooks de GitHub)`);
+// The request portal (#114) shares the public listener, only once configured.
+const missingPortal = missingPortalConfig(config.portal);
+if (missingPortal.length > 0) log.info(`portal de pedidos desactivado: falta ${missingPortal.join(', ')} en .env`);
+const portal = missingPortal.length === 0 ? createPortalHandler(config.portal) : undefined;
+
+serve(createPublicHandler(undefined, portal)).listen(config.serverPort, () => {
+  log.info(`ronin-server escuchando en :${config.serverPort} (público: los webhooks de GitHub${portal ? ` y el portal de pedidos, ${config.portal.url}` : ''})`);
 });
 
 const missing = missingAuthConfig(config.dashboard);

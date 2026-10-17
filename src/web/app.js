@@ -59,7 +59,7 @@ function duration(ms) {
 const money = (usd) => (usd < 0.01 ? 'menos de US$0,01' : `US$${usd.toFixed(2).replace('.', ',')}`);
 const pct = (fraction) => `${Math.round(fraction * 100)}%`;
 
-const S = { snap: null, today: null, sel: null, open: [], runIdx: {}, pendingRun: null, filter: null, q: '', itemRuns: {}, run: null, stream: null, detail: {}, view: {}, doc: {}, menu: false, dialog: null, expanded: new Set(), expl: {}, ficha: {}, fichaOpen: {}, fichaFilter: { tipo: 'todas', vp: 'todos' }, antes: {}, oldAfter: new Set(), lightbox: null, fmenu: false, fdialog: null, fdraft: {}, listas: {}, scope: 'all', project: '', attAll: false, extra: {}, newIssue: null, files: {}, fcur: {}, ffold: {}, fexp: {}, fcontent: {}, fq: {}, ftree: false, fcomp: null, fbusy: new Set(), rpanel: null };
+const S = { snap: null, today: null, sel: null, open: [], runIdx: {}, pendingRun: null, filter: null, q: '', itemRuns: {}, run: null, stream: null, detail: {}, view: {}, doc: {}, menu: false, dialog: null, expanded: new Set(), expl: {}, ficha: {}, fichaOpen: {}, fichaFilter: { tipo: 'todas', vp: 'todos' }, antes: {}, oldAfter: new Set(), lightbox: null, fmenu: false, fdialog: null, fdraft: {}, listas: {}, scope: 'all', project: '', attAll: false, extra: {}, newIssue: null, files: {}, fcur: {}, ffold: {}, fexp: {}, fcontent: {}, fq: {}, ftree: false, fcomp: null, fbusy: new Set(), rpanel: null, page: null, portal: { data: null, error: null }, pdialog: null };
 // The sidebar's Linear filter (#101), remembered per browser.
 try { Object.assign(S, JSON.parse(localStorage.getItem('ronin-scope') ?? '{}')); } catch { /* sin storage */ }
 function saveScope() {
@@ -143,10 +143,12 @@ function renderQuick() {
   const running = S.snap.items.filter((item) => item.status === 'running').length;
   const queued = S.snap.runner.queue.length;
   $('#quick').innerHTML = `
-    <button data-home aria-pressed="${!S.sel}"><svg viewBox="0 0 24 24"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>Hoy</button>
+    <button data-home aria-pressed="${!S.sel && S.page !== 'portal'}"><svg viewBox="0 0 24 24"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>Hoy</button>
     <button data-filter="running" aria-pressed="${S.filter === 'running'}"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg>Corriendo ahora<span class="c">${running}</span></button>
-    <button data-filter="queue" aria-pressed="${S.filter === 'queue'}"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg>En cola<span class="c">${queued}</span></button>`;
+    <button data-filter="queue" aria-pressed="${S.filter === 'queue'}"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg>En cola<span class="c">${queued}</span></button>
+    ${S.snap.portalAdmin ? `<button data-portal aria-pressed="${S.page === 'portal' && !S.sel}"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 19c.8-3.2 3-5 5.5-5s4.7 1.8 5.5 5M16 6.5h5M18.5 4v5"/></svg>Portal de pedidos<span class="c">${S.portal.data ? S.portal.data.users.filter((u) => !u.disabled).length : ''}</span></button>` : ''}`;
   $('#quick').querySelector('[data-home]').onclick = goHome;
+  $('#quick').querySelector('[data-portal]')?.addEventListener('click', () => openPortal());
   renderScope();
   for (const button of $('#quick').querySelectorAll('[data-filter]')) {
     button.onclick = () => {
@@ -385,6 +387,10 @@ function renderCenter() {
 
   const item = S.sel && itemById(S.sel);
   if (!item || viewOf(item) === 'tx') $('#shell').classList.remove('wide');
+  if (!item && S.page === 'portal') {
+    if (setCenter(backBar('Portal de pedidos') + portalHTML())) wirePortal();
+    return;
+  }
   if (!item) {
     setCenter(tabs + backBar('Hoy') + renderToday());
     wireToday();
@@ -2399,6 +2405,7 @@ function wireToday() {
 
 function goHome() {
   S.sel = null;
+  S.page = null;
   stopStream();
   if (location.pathname !== '/') history.pushState(null, '', '/');
   renderAll();
@@ -2407,6 +2414,162 @@ function goHome() {
     scrollTo(0, 0);
   }
   refresh();
+}
+
+// ---------- request portal accounts (#114)
+// The people who ask for small changes in the portal, without GitHub: only
+// the dashboard's admins see this page.
+function openPortal() {
+  S.sel = null;
+  S.page = 'portal';
+  stopStream();
+  if (location.pathname !== '/portal') history.pushState(null, '', '/portal');
+  renderAll();
+  if (isMobile()) {
+    $('#shell').dataset.m = 'detail';
+    scrollTo(0, 0);
+  }
+  loadPortal();
+}
+
+async function loadPortal() {
+  try {
+    S.portal = { data: await api('/api/portal-admin'), error: null };
+  } catch (error) {
+    if (error instanceof Unauthorized) return showLogin();
+    S.portal = { ...S.portal, error: error.message };
+  }
+  renderQuick();
+  renderCenter();
+}
+
+const appKey = (a) => `${a.repo}:${a.app}`;
+const appLabel = (grant) => {
+  const app = S.portal.data?.apps.find((a) => appKey(a) === appKey(grant));
+  return app ? `${app.org} · ${app.name}` : `${grant.repo} · ${grant.app} (ya no está en el portal)`;
+};
+
+function portalStatus(u) {
+  if (u.disabled) return ['idle', 'desactivada'];
+  if (!u.hasPassword) return u.link && Date.parse(u.link.expiresAt) > Date.now() ? ['warn', 'invitada'] : ['crit', 'invitación vencida'];
+  return ['ok', 'activa'];
+}
+
+function portalHTML() {
+  const p = S.portal;
+  const head = `<h1>Portal de pedidos</h1><p class="lead">Quienes piden ajustes chicos sin cuenta de GitHub. Entran con correo y contraseña${p.data?.url ? ` en <a href="${esc(p.data.url)}" target="_blank" rel="noopener">${esc(p.data.url.replace(/^https?:\/\//, ''))}</a>` : ''}.</p>`;
+  if (p.error && !p.data) return `<div class="today">${head}<p class="bad">${esc(p.error)}</p></div>`;
+  if (!p.data) return `<div class="today">${head}<div class="empty">Cargando…</div></div>`;
+  const { users, apps } = p.data;
+  const rows = users.map((u) => {
+    const [cls, label] = portalStatus(u);
+    return `<tr data-puser="${esc(u.id)}" tabindex="0"><td>${esc(u.name)}<small>${esc(u.email)}</small></td>
+      <td class="hide-m">${u.grants.length ? u.grants.map((g) => `<span class="tag">${esc(appLabel(g))}</span>`).join('') : '<span class="m">ninguna</span>'}</td>
+      <td class="hide-m">${u.lastLoginAt ? `hace ${esc(short(Date.now() - Date.parse(u.lastLoginAt)))}` : '<span class="m">nunca</span>'}</td>
+      <td><span class="chip ${cls}">${label}</span></td></tr>`;
+  }).join('');
+  return `<div class="today padm">${head}
+    <div class="padm-bar"><button class="btn-s primary" data-pnew ${apps.length ? '' : 'disabled'}>+ Invitar</button>
+      ${apps.length ? `<span class="m">Apps del portal: ${apps.map((a) => esc(`${a.org} · ${a.name}`)).join(', ')}</span>` : '<span class="bad">Ningún repo tiene <code>portal.apps</code> en repos.json: no hay apps para habilitar.</span>'}</div>
+    ${users.length ? `<table class="padm-t"><thead><tr><th>Persona</th><th class="hide-m">Puede pedir en</th><th class="hide-m">Último acceso</th><th>Estado</th></tr></thead><tbody>${rows}</tbody></table>` : '<p class="note">Todavía no hay cuentas.</p>'}
+  </div>`;
+}
+
+function wirePortal() {
+  $('#center').querySelector('[data-pnew]')?.addEventListener('click', () => openPortalUser(null));
+  for (const row of $('#center').querySelectorAll('[data-puser]')) {
+    row.onclick = () => openPortalUser(row.dataset.puser);
+    row.onkeydown = (event) => { if (event.key === 'Enter') openPortalUser(row.dataset.puser); };
+  }
+}
+
+function openPortalUser(id) {
+  const u = id ? S.portal.data.users.find((x) => x.id === id) : null;
+  S.pdialog = { id, email: u?.email ?? '', name: u?.name ?? '', grants: new Set((u?.grants ?? []).map(appKey)), dailyLimit: u?.dailyLimit ?? '', busy: false, error: null, done: null };
+  renderPortalUser();
+}
+
+function closePortalUser() {
+  if (S.pdialog?.busy) return;
+  S.pdialog = null;
+  renderPortalUser();
+}
+
+function renderPortalUser() {
+  let layer = $('#player');
+  const d = S.pdialog;
+  if (!d) {
+    layer?.remove();
+    return;
+  }
+  const u = d.id ? S.portal.data.users.find((x) => x.id === d.id) : null;
+  const apps = S.portal.data.apps;
+  const byOrg = [...new Set(apps.map((a) => a.repo))].map((repo) => apps.filter((a) => a.repo === repo));
+  const linkLabel = u && u.hasPassword ? 'Mandar enlace para nueva contraseña' : 'Volver a mandar la invitación';
+  const fresh = !layer;
+  layer ??= Object.assign(document.body.appendChild(document.createElement('div')), { id: 'player' });
+  layer.innerHTML = `<div class="scrim"><div class="dlg" role="dialog" aria-modal="true" aria-labelledby="pu-t">
+    <h2 id="pu-t">${u ? esc(u.name) : 'Invitar al portal'}</h2>
+    <p class="help">${u ? `${esc(u.email)} · creada por ${esc(u.createdBy)}` : 'Le llega un correo con un enlace para crear su contraseña. Vence en 24 horas.'}</p>
+    <label class="field"><span>Nombre</span><input id="pu-name" maxlength="120" autocomplete="off" value="${esc(d.name)}"></label>
+    <label class="field"><span>Correo</span><input id="pu-email" type="email" autocomplete="off" value="${esc(d.email)}" ${u ? 'readonly' : ''}></label>
+    <fieldset class="pu-apps"><legend>Puede pedir ajustes en</legend>
+      ${byOrg.map((group) => `<div class="pu-org"><b>${esc(group[0].org)}</b> <span class="m">${esc(group[0].repo)}</span>
+        ${group.map((a) => `<label class="check"><input type="checkbox" data-pgrant="${esc(appKey(a))}" ${d.grants.has(appKey(a)) ? 'checked' : ''}><span>${esc(a.name)}${a.description ? `<small>${esc(a.description)}</small>` : ''}</span></label>`).join('')}</div>`).join('')}
+    </fieldset>
+    <label class="field"><span>Pedidos por día</span><input id="pu-limit" type="number" min="0" max="100" placeholder="${esc(S.portal.data.dailyLimit)} (el de PORTAL_DAILY_LIMIT)" value="${esc(d.dailyLimit)}"></label>
+    ${u ? `<div class="pu-more"><button class="btn-s" data-plink ${u.disabled || d.busy ? 'disabled' : ''}>${linkLabel}</button>
+      <button class="btn-s ${u.disabled ? '' : 'danger'}" data-poff ${d.busy ? 'disabled' : ''}>${u.disabled ? 'Reactivar' : 'Desactivar'}</button></div>
+      <p class="note">${u.disabled ? 'Desactivada: no puede entrar.' : 'Desactivar cierra sus sesiones al momento.'} Nadie más ve la contraseña: la crea la persona desde el enlace.</p>` : ''}
+    ${d.done ? `<p class="${d.done.url ? 'bad' : 'note'}">${esc(d.done.text)}</p>${d.done.url ? `<input class="pu-link" readonly value="${esc(d.done.url)}" aria-label="Enlace">` : ''}` : ''}
+    <p class="bad" ${d.error ? '' : 'hidden'}>${esc(d.error ?? '')}</p>
+    <div class="foot-d"><button class="btn-s" data-pclose>${d.done ? 'Cerrar' : 'Cancelar'}</button><button class="btn-s primary" data-psave ${d.busy ? 'disabled' : ''}>${d.busy ? 'Guardando…' : u ? 'Guardar' : 'Crear e invitar'}</button></div>
+  </div></div>`;
+  $('#pu-name').oninput = (e) => { S.pdialog.name = e.target.value; };
+  $('#pu-email').oninput = (e) => { S.pdialog.email = e.target.value; };
+  $('#pu-limit').oninput = (e) => { S.pdialog.dailyLimit = e.target.value; };
+  for (const box of layer.querySelectorAll('[data-pgrant]')) box.onchange = () => { if (box.checked) S.pdialog.grants.add(box.dataset.pgrant); else S.pdialog.grants.delete(box.dataset.pgrant); };
+  layer.querySelector('[data-pclose]').onclick = closePortalUser;
+  layer.querySelector('[data-psave]').onclick = savePortalUser;
+  layer.querySelector('[data-plink]')?.addEventListener('click', () => portalWrite(`/api/portal-admin/users/${d.id}/link`, {}));
+  layer.querySelector('[data-poff]')?.addEventListener('click', () => portalWrite(`/api/portal-admin/users/${d.id}`, { disabled: !u.disabled }));
+  layer.querySelector('.scrim').onclick = (event) => { if (event.target.classList.contains('scrim')) closePortalUser(); };
+  layer.querySelector('.pu-link')?.select();
+  if (fresh) $('#pu-name').focus();
+}
+
+function savePortalUser() {
+  const d = S.pdialog;
+  const grants = S.portal.data.apps.filter((a) => d.grants.has(appKey(a))).map((a) => ({ repo: a.repo, app: a.app }));
+  const limit = String(d.dailyLimit).trim();
+  const body = { name: d.name, grants, dailyLimit: limit === '' ? null : Number(limit) };
+  if (d.id) portalWrite(`/api/portal-admin/users/${d.id}`, body);
+  else portalWrite('/api/portal-admin/users', { ...body, email: d.email });
+}
+
+// A change to an account; the dialog stays open with what happened.
+async function portalWrite(path, body) {
+  const d = S.pdialog;
+  d.busy = true;
+  d.error = null;
+  renderPortalUser();
+  try {
+    const out = await api(path, { method: 'POST', body: JSON.stringify(body) });
+    const users = S.portal.data.users.filter((u) => u.id !== out.user.id);
+    S.portal.data.users = [...users, out.user].sort((a, b) => a.name.localeCompare(b.name, 'es'));
+    d.id = out.user.id;
+    d.email = out.user.email;
+    if (out.sent === true) d.done = { text: `Listo: le mandamos el enlace a ${out.user.email}.` };
+    else if (out.sent === false) d.done = { text: `La cuenta quedó, pero el correo no salió. Pásale este enlace por otro medio (vence en 24 horas):`, url: out.url };
+    else d.done = { text: body.disabled === true ? 'Cuenta desactivada.' : body.disabled === false ? 'Cuenta reactivada.' : 'Guardado.' };
+  } catch (error) {
+    if (error instanceof Unauthorized) return showLogin();
+    d.error = error.message;
+  }
+  d.busy = false;
+  renderPortalUser();
+  renderQuick();
+  renderCenter();
 }
 
 // ---------- context
@@ -2651,6 +2814,7 @@ async function select(id) {
   const n = /^(.+)#(\d+)$/.exec(id);
   if (!itemById(id) && n) S.extra[id] = { id, repo: n[1], number: Number(n[2]), kind: 'issue', title: `#${n[2]}`, status: 'open', runs: 0, listed: false };
   S.sel = id;
+  S.page = null;
   S.runIdx[id] = 0;
   delete S.view[id];
   S.menu = false;
@@ -2754,6 +2918,7 @@ async function boot() {
     S.fichaOpen[fromPath] = true;
   }
   if (fromPath) await select(fromPath);
+  else if (location.pathname === '/portal' && S.snap.portalAdmin) openPortal();
   else renderAll();
 
   document.addEventListener('click', (event) => {
@@ -2802,7 +2967,8 @@ async function boot() {
       return;
     }
     if (event.key !== 'Escape') return;
-    if (S.newIssue) closeNewIssue();
+    if (S.pdialog) closePortalUser();
+    else if (S.newIssue) closeNewIssue();
     else if (S.rpanel && !S.rpanel.sending) {
       S.rpanel = null;
       renderCenter();
@@ -2827,7 +2993,9 @@ async function boot() {
   addEventListener('popstate', () => {
     const id = selectedFromPath();
     if (id) select(id);
+    else if (location.pathname === '/portal' && S.snap.portalAdmin) openPortal();
     else {
+      S.page = null;
       S.sel = null;
       stopStream();
       renderAll();

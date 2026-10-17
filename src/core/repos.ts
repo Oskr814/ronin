@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { config } from './config.js';
-import type { RepoEntry, AgentDefaults } from './repo-context.js';
+import type { RepoEntry, AgentDefaults, PortalRepoConfig } from './repo-context.js';
 
 export async function loadRepos(): Promise<RepoEntry[]> {
   let raw: string;
@@ -40,7 +40,7 @@ function validateEntry(entry: unknown, index: number): RepoEntry {
   if (typeof entry !== 'object' || entry === null) {
     throw new Error(`${config.reposConfigPath}[${index}] no es un objeto`);
   }
-  const { productRepo, productRepoPath, claudeConfigDir, worktreeBaseRef, changelogRepo, changelogRepoPath, explore, agent, linear } = entry as Record<string, unknown>;
+  const { productRepo, productRepoPath, claudeConfigDir, worktreeBaseRef, changelogRepo, changelogRepoPath, explore, agent, linear, portal } = entry as Record<string, unknown>;
   if (typeof productRepo !== 'string' || productRepo.length === 0) {
     throw new Error(`${config.reposConfigPath}[${index}].productRepo falta o no es un string`);
   }
@@ -70,7 +70,27 @@ function validateEntry(entry: unknown, index: number): RepoEntry {
     ...(explore !== undefined ? { explore: explore as string[] } : {}),
     ...(agent !== undefined ? { agent: validateAgent(agent, `${config.reposConfigPath}[${index}].agent`) } : {}),
     ...(linear !== undefined ? { linear: validateLinear(linear, `${config.reposConfigPath}[${index}].linear`) } : {}),
+    ...(portal !== undefined ? { portal: validatePortal(portal, `${config.reposConfigPath}[${index}].portal`) } : {}),
   };
+}
+
+function validatePortal(portal: unknown, where: string): PortalRepoConfig {
+  if (typeof portal !== 'object' || portal === null || Array.isArray(portal)) throw new Error(`${where} debe ser un objeto`);
+  const { name, apps, ...rest } = portal as Record<string, unknown>;
+  const unknownKeys = Object.keys(rest);
+  if (unknownKeys.length > 0) throw new Error(`${where} tiene campos desconocidos: ${unknownKeys.join(', ')} (válidos: name, apps)`);
+  if (typeof name !== 'string' || !name.trim()) throw new Error(`${where}.name debe ser el nombre con el que el portal muestra el repo (p. ej. "Red Motos")`);
+  if (typeof apps !== 'object' || apps === null || Array.isArray(apps) || Object.keys(apps).length === 0) {
+    throw new Error(`${where}.apps debe ser un objeto app de ronin.app.json → { name, description? }`);
+  }
+  for (const [app, value] of Object.entries(apps)) {
+    const { name: appName, description, ...extra } = (value ?? {}) as Record<string, unknown>;
+    if (typeof value !== 'object' || value === null || Array.isArray(value) || typeof appName !== 'string' || !appName.trim()
+      || (description !== undefined && typeof description !== 'string') || Object.keys(extra).length > 0) {
+      throw new Error(`${where}.apps.${app} debe ser { name, description? }`);
+    }
+  }
+  return { name, apps: apps as PortalRepoConfig['apps'] };
 }
 
 function validateLinear(linear: unknown, where: string): NonNullable<RepoEntry['linear']> {

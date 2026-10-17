@@ -34,6 +34,16 @@ export interface RepoEntry {
   // `explorationProject`: app → the Linear project (name or id) the issues
   // its exploration opens go to (core/linear-assign.ts).
   linear?: { apiKeyEnv: string; explorationProject?: Record<string, string> };
+  // The request portal (#114): the apps of ronin.app.json people can ask
+  // small changes in, with the name and description they see there, and the
+  // name of the repo's owner as the portal shows it ("Red Motos"). Absent:
+  // the repo isn't offered in the portal.
+  portal?: PortalRepoConfig;
+}
+
+export interface PortalRepoConfig {
+  name: string;
+  apps: Record<string, { name: string; description?: string }>;
 }
 
 export interface AgentDefaults {

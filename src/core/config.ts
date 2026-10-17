@@ -173,6 +173,23 @@ export const config = {
     // How long a repo's GitHub read is reused (server/api/dashboard-github.ts).
     githubTtlSeconds: Number(process.env.DASHBOARD_GITHUB_TTL_SECONDS ?? 60),
   },
+  // The request portal (#114): people without GitHub ask for small changes,
+  // with their email and a password, on the public listener. Off unless its
+  // URL and session secret are set: without them the public listener serves
+  // only the webhooks, as before.
+  portal: {
+    // Where people open it, e.g. https://ronin-agent.redmotoshn.com — the
+    // links in its emails are built from it, and a POST from any other
+    // origin is refused.
+    url: (process.env.PORTAL_URL ?? '').replace(/\/+$/, ''),
+    sessionSecret: process.env.PORTAL_SESSION_SECRET ?? '',
+    sessionDays: Number(process.env.PORTAL_SESSION_DAYS ?? 30),
+    // Its accounts (and, later, its requests): the source of truth for them,
+    // unlike the local state, so it lives apart and is never pruned.
+    dataDir: process.env.PORTAL_DATA_DIR || 'portal-data',
+    // Requests a person can start per day unless the admin set theirs.
+    dailyLimit: Number(process.env.PORTAL_DAILY_LIMIT ?? 5),
+  },
 } as const;
 
 // Per task type, the model a run uses when its env var isn't set — anything

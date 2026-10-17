@@ -43,4 +43,26 @@ describe('public listener', () => {
     const res = await fetch(`${base}/api/webhooks/github?x=1`, { method: 'POST', body: '{}' });
     expect(res.status).toBe(202);
   });
+
+  it('with the request portal (#114), hands it every other path; the webhooks still go to GitHub', async () => {
+    const portal = vi.fn(async (_req, res) => {
+      res.writeHead(200).end('portal');
+    });
+    const handle = createPublicHandler(github, portal);
+    const withPortal = createServer((req, res) => void handle(req, res));
+    await new Promise<void>((resolve) => withPortal.listen(0, '127.0.0.1', resolve));
+    const url = `http://127.0.0.1:${(withPortal.address() as AddressInfo).port}`;
+    try {
+      github.mockClear();
+      expect((await fetch(`${url}/api/webhooks/github`, { method: 'POST', body: '{}' })).status).toBe(202);
+      expect(github).toHaveBeenCalledOnce();
+      expect(await (await fetch(`${url}/`)).text()).toBe('portal');
+      expect(await (await fetch(`${url}/api/portal/me`)).text()).toBe('portal');
+      // A GET on the webhook path is neither GitHub's nor the portal's.
+      expect((await fetch(`${url}/api/webhooks/github`)).status).toBe(404);
+      expect(portal).toHaveBeenCalledTimes(2);
+    } finally {
+      await new Promise<void>((resolve) => withPortal.close(() => resolve()));
+    }
+  });
 });
