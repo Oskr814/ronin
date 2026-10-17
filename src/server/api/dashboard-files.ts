@@ -11,6 +11,7 @@ import { withActiveRepo, type RepoEntry } from '../../core/repo-context.js';
 
 export interface PrFiles {
   fetchedAt: string;
+  prId: string;
   headSha: string;
   baseSha: string;
   files: PrFile[];
@@ -20,8 +21,8 @@ export interface PrFiles {
 
 async function fetchFiles(entry: RepoEntry, prNumber: number): Promise<PrFiles> {
   return withActiveRepo(entry, async () => {
-    const [{ headSha, baseSha, files }, threads] = await Promise.all([getPrFiles(prNumber), getDiffThreads(prNumber)]);
-    return { fetchedAt: new Date().toISOString(), headSha, baseSha, files, threads };
+    const [{ prId, headSha, baseSha, files }, threads] = await Promise.all([getPrFiles(prNumber), getDiffThreads(prNumber)]);
+    return { fetchedAt: new Date().toISOString(), prId, headSha, baseSha, files, threads };
   });
 }
 
@@ -46,7 +47,7 @@ export async function prFiles(entry: RepoEntry, prNumber: number, changedSince =
       .catch((error) => {
         log.error(`tablero: no se pudieron leer los archivos de ${key} de GitHub`, error);
         entryCache.readAt = Date.now();
-        entryCache.data = { ...(entryCache.data ?? { fetchedAt: '', headSha: '', baseSha: '', files: [], threads: [] }), error: (error as Error).message.split('\n')[0] };
+        entryCache.data = { ...(entryCache.data ?? { fetchedAt: '', prId: '', headSha: '', baseSha: '', files: [], threads: [] }), error: (error as Error).message.split('\n')[0] };
         return entryCache.data;
       })
       .finally(() => {

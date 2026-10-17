@@ -23,7 +23,7 @@ vi.mock('./dashboard-linear.js', () => ({ repoLinear: async () => undefined, cyc
 vi.mock('./dashboard-new-issue.js', async (importOriginal) => ({ ...(await importOriginal<typeof import('./dashboard-new-issue.js')>()), repoApps: async () => [] }));
 vi.mock('./dashboard-files.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./dashboard-files.js')>()),
-  prFiles: async () => ({ fetchedAt: '', headSha: 'h', baseSha: 'b', files: [{ path: 'a.ts', status: 'modified', additions: 1, deletions: 0 }], threads: [] }),
+  prFiles: async () => ({ fetchedAt: '', prId: 'PR_2', headSha: 'h', baseSha: 'b', files: [{ path: 'a.ts', status: 'modified', additions: 1, deletions: 0 }], threads: [] }),
   fileContent: async () => 'a\n',
 }));
 vi.mock('./dashboard-detail.js', async (importOriginal) => ({ ...(await importOriginal<typeof import('./dashboard-detail.js')>()), itemDetail: async () => ({ fetchedAt: '' }) }));

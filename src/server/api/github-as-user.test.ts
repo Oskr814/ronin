@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { approvePr, commentOnFile, commentOnIssue, GithubUserError } from './github-as-user.js';
+import { approvePr, commentOnDiff, commentOnFile, commentOnIssue, GithubUserError, replyToReviewComment, setFileViewed, setThreadResolved, viewedFiles } from './github-as-user.js';
 
 const reply = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
 const fetchMock = vi.fn();
@@ -39,5 +39,54 @@ describe('github-as-user', () => {
     expect(error.relogin).toBe(false);
     expect(error.message).toContain('acme/product');
     expect(error.message).toContain('aprobar el tablero');
+  });
+
+  it('comments a range of the diff on the commit the person saw, or the whole file (#111)', async () => {
+    fetchMock.mockImplementation(async () => reply(201, { id: 9, html_url: 'u' }));
+    const sha = 'a'.repeat(40);
+    await commentOnDiff('gho_user', 'acme/product', 904, { path: 'src/a.ts', commitId: sha, subject: 'line', side: 'RIGHT', line: 15, startLine: 14 }, 'mejor así');
+    expect(fetchMock.mock.calls[0][0]).toBe('https://api.github.com/repos/acme/product/pulls/904/comments');
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ body: 'mejor así', commit_id: sha, path: 'src/a.ts', line: 15, side: 'RIGHT', start_line: 14, start_side: 'RIGHT' });
+    await commentOnDiff('gho_user', 'acme/product', 904, { path: 'src/a.ts', commitId: sha, subject: 'line', side: 'LEFT', line: 3, startLine: 3 }, 'x');
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({ body: 'x', commit_id: sha, path: 'src/a.ts', line: 3, side: 'LEFT' });
+    await commentOnDiff('gho_user', 'acme/product', 904, { path: 'src/a.ts', commitId: sha, subject: 'file' }, 'y');
+    expect(JSON.parse(fetchMock.mock.calls[2][1].body)).toEqual({ body: 'y', commit_id: sha, path: 'src/a.ts', subject_type: 'file' });
+  });
+
+  it('replies in a thread', async () => {
+    fetchMock.mockResolvedValueOnce(reply(201, { id: 10, html_url: 'u' }));
+    await replyToReviewComment('gho_user', 'acme/product', 904, 77, 'ok');
+    expect(fetchMock.mock.calls[0][0]).toBe('https://api.github.com/repos/acme/product/pulls/904/comments/77/replies');
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ body: 'ok' });
+  });
+
+  it('says what a 422 was about', async () => {
+    fetchMock.mockResolvedValueOnce(reply(422, { message: 'Validation Failed', errors: ['pull_request_review_thread.line must be part of the diff'] }));
+    await expect(replyToReviewComment('gho_user', 'acme/product', 904, 77, 'ok')).rejects.toThrow('must be part of the diff');
+  });
+
+  it('resolves and reopens a thread, and marks a file viewed, through GraphQL', async () => {
+    fetchMock.mockImplementation(async () => reply(200, { data: {} }));
+    await setThreadResolved('gho_user', 'acme/product', 'PRRT_1', true);
+    await setThreadResolved('gho_user', 'acme/product', 'PRRT_1', false);
+    await setFileViewed('gho_user', 'acme/product', 'PR_1', 'src/a.ts', true);
+    const sent = fetchMock.mock.calls.map(([url, init]) => [url, JSON.parse(init.body)]);
+    expect(sent[0][0]).toBe('https://api.github.com/graphql');
+    expect(sent[0][1].query).toContain('resolveReviewThread');
+    expect(sent[0][1].variables).toEqual({ id: 'PRRT_1' });
+    expect(sent[1][1].query).toContain('unresolveReviewThread');
+    expect(sent[2][1].query).toContain('markFileAsViewed');
+    expect(sent[2][1].variables).toEqual({ id: 'PR_1', path: 'src/a.ts' });
+  });
+
+  it('reads the files the person viewed, page by page, and turns GraphQL errors into refusals', async () => {
+    const page = (nodes: unknown[], next: string | null) => reply(200, { data: { repository: { pullRequest: { files: { pageInfo: { hasNextPage: !!next, endCursor: next }, nodes } } } } });
+    fetchMock.mockResolvedValueOnce(page([{ path: 'a', viewerViewedState: 'VIEWED' }, { path: 'b', viewerViewedState: 'DISMISSED' }], 'c1')).mockResolvedValueOnce(page([{ path: 'c', viewerViewedState: 'VIEWED' }], null));
+    expect(await viewedFiles('gho_user', 'acme/product', 904)).toEqual(['a', 'c']);
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body).variables.after).toBe('c1');
+    fetchMock.mockResolvedValueOnce(reply(200, { errors: [{ type: 'FORBIDDEN', message: 'Resource not accessible by integration' }] }));
+    await expect(setThreadResolved('gho_user', 'acme/product', 'PRRT_1', true)).rejects.toThrow('no te deja');
+    fetchMock.mockResolvedValueOnce(reply(401, {}));
+    await expect(setThreadResolved('gho_user', 'acme/product', 'PRRT_1', true)).rejects.toMatchObject({ relogin: true });
   });
 });

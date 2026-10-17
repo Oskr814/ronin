@@ -14,12 +14,13 @@ import { cycleView, repoLinear } from './dashboard-linear.js';
 import { buildItems, itemRunKeys } from './dashboard-items.js';
 import { forgetDetails, itemDetail, resolveItem } from './dashboard-detail.js';
 import { fileContent, forgetFiles, prFiles } from './dashboard-files.js';
+import { FilesActionError, runFilesAction } from './dashboard-files-actions.js';
 import { ActionError, listActions, runAction } from './dashboard-actions.js';
 import { today, WEEK_DAYS } from './dashboard-today.js';
 import { readEvidence } from './dashboard-evidence.js';
 import { explorationReview, forgetExploration, isExplorationPr } from './dashboard-exploration.js';
 import { FichaActionError, runApprove, runFichaAction, runGeneralComment } from './dashboard-exploration-actions.js';
-import { GithubUserError } from './github-as-user.js';
+import { GithubUserError, viewedFiles } from './github-as-user.js';
 import type { Session } from './auth.js';
 
 // The dashboard's data (#65), all behind the session (tailnet.ts checks it
@@ -31,6 +32,8 @@ import type { Session } from './auth.js';
 //   GET /api/items/<id>/exploration  an exploration PR's findings and their threads, to review them (#93)
 //   GET /api/items/<id>/files        its PR's changed files and review threads, as "Files changed" (#111)
 //   GET /api/items/<id>/files/content?path=  one of those files at the PR's head, for the lines around its hunks
+//   GET /api/items/<id>/files/viewed  the files the person marked as viewed, as GitHub keeps them
+//   POST /api/items/<id>/files/actions  a comment, a reply, resolving a thread or marking a file viewed, as the person (dashboard-files-actions.ts)
 //   POST /api/items/<id>/exploration/actions  a comment on one of them, as the person (dashboard-exploration-actions.ts)
 //   POST /api/items/<id>/exploration/general  a general comment on the PR, as the person
 //   POST /api/items/<id>/exploration/approve  an approving review, as the person
@@ -301,6 +304,36 @@ async function postExploration(req: IncomingMessage, res: ServerResponse, id: st
   }
 }
 
+// POST /api/items/<id>/files/actions { action: comment | reply | resolve | viewed, … }.
+async function postFilesAction(req: IncomingMessage, res: ServerResponse, id: string, session: Session): Promise<void> {
+  if (!(req.headers['content-type'] ?? '').startsWith('application/json')) {
+    json(res, 415, { error: 'se espera JSON' });
+    return;
+  }
+  const body = await readJson(req);
+  if (!body) {
+    json(res, 400, { error: 'falta el pedido' });
+    return;
+  }
+  const ctx = await filesContext(id);
+  if (!ctx) {
+    json(res, 404, { error: 'ese ítem no tiene un PR de un repo de ronin' });
+    return;
+  }
+  try {
+    const done = await runFilesAction(ctx.entry, ctx.prNumber, ctx.files, session, body);
+    // A viewed mark is only the person's; the rest changes what everyone reads.
+    if (body.action !== 'viewed') {
+      forgetFiles(ctx.entry.productRepo);
+      forgetDetails(ctx.entry.productRepo);
+    }
+    json(res, 200, done);
+  } catch (error) {
+    if (error instanceof FilesActionError) json(res, 400, { error: error.message });
+    else if (!githubRefusal(res, error)) throw error;
+  }
+}
+
 function streamRun(req: IncomingMessage, res: ServerResponse, path: string, from: number): void {
   res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-store', Connection: 'keep-alive' });
   let sent = from;
@@ -384,6 +417,11 @@ async function route(req: IncomingMessage, res: ServerResponse, path: string, se
     await postExploration(req, res, decodeURIComponent(explorationPost[1]), explorationPost[2], session);
     return true;
   }
+  const filesPost = /^\/api\/items\/(.+)\/files\/actions$/.exec(path);
+  if (filesPost && req.method === 'POST') {
+    await postFilesAction(req, res, decodeURIComponent(filesPost[1]), session);
+    return true;
+  }
   const newIssue = /^\/api\/repos\/([\w.-]+\/[\w.-]+)\/issues$/.exec(path);
   if (newIssue && req.method === 'POST') {
     await postNewIssue(req, res, newIssue[1], session);
@@ -414,12 +452,20 @@ async function route(req: IncomingMessage, res: ServerResponse, path: string, se
     return true;
   }
 
-  const filesPage = /^\/api\/items\/(.+)\/files(\/content)?$/.exec(path);
+  const filesPage = /^\/api\/items\/(.+)\/files(?:\/(content|viewed))?$/.exec(path);
   if (filesPage) {
     const ctx = await filesContext(decodeURIComponent(filesPage[1]));
     if (!ctx) json(res, 404, { error: 'ese ítem no tiene un PR de un repo de ronin' });
     else if (!filesPage[2]) json(res, 200, { pr: ctx.prNumber, ...ctx.files });
-    else await serveFileContent(req, res, ctx);
+    else if (filesPage[2] === 'content') await serveFileContent(req, res, ctx);
+    else {
+      // Each person's own: read with their token, never cached.
+      try {
+        json(res, 200, { paths: await viewedFiles(session.token, ctx.entry.productRepo, ctx.prNumber) });
+      } catch (error) {
+        if (!githubRefusal(res, error)) throw error;
+      }
+    }
     return true;
   }
 

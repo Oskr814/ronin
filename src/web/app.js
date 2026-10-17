@@ -59,7 +59,7 @@ function duration(ms) {
 const money = (usd) => (usd < 0.01 ? 'menos de US$0,01' : `US$${usd.toFixed(2).replace('.', ',')}`);
 const pct = (fraction) => `${Math.round(fraction * 100)}%`;
 
-const S = { snap: null, today: null, sel: null, open: [], runIdx: {}, pendingRun: null, filter: null, q: '', itemRuns: {}, run: null, stream: null, detail: {}, view: {}, doc: {}, menu: false, dialog: null, expanded: new Set(), expl: {}, ficha: {}, fichaOpen: {}, fichaFilter: { tipo: 'todas', vp: 'todos' }, antes: {}, oldAfter: new Set(), lightbox: null, fmenu: false, fdialog: null, fdraft: {}, listas: {}, scope: 'all', project: '', attAll: false, extra: {}, newIssue: null, files: {}, fcur: {}, ffold: {}, fexp: {}, fcontent: {}, fq: {}, ftree: false };
+const S = { snap: null, today: null, sel: null, open: [], runIdx: {}, pendingRun: null, filter: null, q: '', itemRuns: {}, run: null, stream: null, detail: {}, view: {}, doc: {}, menu: false, dialog: null, expanded: new Set(), expl: {}, ficha: {}, fichaOpen: {}, fichaFilter: { tipo: 'todas', vp: 'todos' }, antes: {}, oldAfter: new Set(), lightbox: null, fmenu: false, fdialog: null, fdraft: {}, listas: {}, scope: 'all', project: '', attAll: false, extra: {}, newIssue: null, files: {}, fcur: {}, ffold: {}, fexp: {}, fcontent: {}, fq: {}, ftree: false, fcomp: null, fbusy: new Set() };
 // The sidebar's Linear filter (#101), remembered per browser.
 try { Object.assign(S, JSON.parse(localStorage.getItem('ronin-scope') ?? '{}')); } catch { /* sin storage */ }
 function saveScope() {
@@ -404,7 +404,8 @@ function renderCenter() {
   const ftrows = $('#ftrows')?.scrollTop;
   // Reviewing findings or a diff takes the room of the context column.
   $('#shell').classList.toggle('wide', ['fichas', 'files'].includes(docOf(item)));
-  const typing = document.activeElement?.id === 'fcomment' ? { start: document.activeElement.selectionStart, end: document.activeElement.selectionEnd } : null;
+  // A box being written in survives the redraw (a finding's comment, a comment on the diff).
+  const typing = ['fcomment', 'fcbox'].includes(document.activeElement?.id) ? { id: document.activeElement.id, start: document.activeElement.selectionStart, end: document.activeElement.selectionEnd } : null;
   if (!setCenter(tabs + backBar(item.title) + headHTML(item) + activityHTML(item) + docHTML(item) + `<div class="ctx-inline">${ctxHTML(item)}</div>`)) return;
   const fresh = $('#doc');
   if (fresh && !isMobile()) fresh.scrollTop = keep;
@@ -413,7 +414,7 @@ function renderCenter() {
   if ($('#ftrows') && ftrows !== undefined) $('#ftrows').scrollTop = ftrows;
   const fdFresh = $('#fdetail');
   if (fdFresh && fdKeep && fdFresh.dataset.current === fdKeep.ficha) fdFresh.scrollTop = fdKeep.top;
-  const box = typing && $('#fcomment');
+  const box = typing && document.getElementById(typing.id);
   if (box) {
     box.focus();
     box.setSelectionRange(typing.start, typing.end);
@@ -766,7 +767,7 @@ function docHTML(item) {
   const files = S.files[item.id];
   const counter = (k) => (k === 'comments' ? `<span class="c">${count}</span>` : k === 'fichas' && fichas ? `<span class="c">${fichas.length}</span>` : k === 'files' && files?.data ? `<span class="c">${files.data.files.length}</span>` : '');
   const bar = `<div class="doctabs" role="tablist">${tabs.map(([k, label]) => `<button class="doctab" role="tab" data-doc="${k}" aria-selected="${k === cur}">${esc(label)}${counter(k)}</button>`).join('')}
-    ${cur === 'fichas' ? '<span class="keys"><kbd>j</kbd> <kbd>k</kbd> otra ficha</span>' : cur === 'files' ? '<span class="keys"><kbd>j</kbd> <kbd>k</kbd> otro archivo</span>' : ''}<span class="src">${d.error ? `<span class="bad">GitHub no respondió: ${esc(d.error)}</span>, ` : ''}${d.fetchedAt ? `leído hace ${esc(short(Date.now() - Date.parse(d.fetchedAt)))}` : ''}</span></div>`;
+    ${cur === 'fichas' ? '<span class="keys"><kbd>j</kbd> <kbd>k</kbd> otra ficha</span>' : cur === 'files' ? '<span class="keys"><kbd>j</kbd> <kbd>k</kbd> otro archivo · <kbd>v</kbd> visto</span>' : ''}<span class="src">${d.error ? `<span class="bad">GitHub no respondió: ${esc(d.error)}</span>, ` : ''}${d.fetchedAt ? `leído hace ${esc(short(Date.now() - Date.parse(d.fetchedAt)))}` : ''}</span></div>`;
   if (cur === 'fichas') return bar + fichasHTML(item);
   if (cur === 'files') {
     // Read when the tab is first shown, and again once old (refresh).
@@ -791,6 +792,8 @@ function docHTML(item) {
 // ---------- a PR's files (#111)
 // "Files changed": the files on the left, their diffs on the right, each
 // review thread under the line it's on. An issue's tab shows its moving PR's.
+// Commenting, replying, resolving and "Viewed" are done as whoever is
+// logged in, as in "Files changed" (POST /files/actions).
 const BIG_DIFF_LINES = 400;
 // How many unchanged lines each "show more" adds.
 const MORE_LINES = 20;
@@ -832,7 +835,9 @@ function hunksOf(file) {
 
 const contentKey = (id, path) => `${id}|${path}`;
 const foldOf = (id) => (S.ffold[id] ??= {});
-const isFolded = (id, file) => foldOf(id)[file.path] ?? file.additions + file.deletions > BIG_DIFF_LINES;
+const viewedOf = (id) => S.files[id]?.viewed ?? new Set();
+// A viewed file folds, like on GitHub; so does a big diff, until opened.
+const isFolded = (id, file) => foldOf(id)[file.path] ?? (viewedOf(id).has(file.path) || file.additions + file.deletions > BIG_DIFF_LINES);
 
 function filesHTML(item) {
   const entry = S.files[item.id];
@@ -840,6 +845,7 @@ function filesHTML(item) {
   if (!data) return `<div class="doc" id="doc"><div class="empty">${entry?.error ? `No se pudieron leer los archivos: ${esc(entry.error)}` : 'Leyendo los archivos de GitHub…'}</div></div>`;
   if (!data.files.length) return `<div class="doc" id="doc"><div class="empty">${data.error ? `GitHub no respondió: ${esc(data.error)}` : '<b>Este PR no cambia ningún archivo</b>'}</div></div>`;
   const cur = S.fcur[item.id] ?? data.files[0].path;
+  const viewed = viewedOf(item.id);
   const threads = (path) => data.threads.filter((t) => t.path === path && !t.isResolved).length;
   const q = (S.fq[item.id] ?? '').toLowerCase();
   const byDir = new Map();
@@ -850,16 +856,19 @@ function filesHTML(item) {
   }
   const rows = [...byDir].map(([dir, files]) => (dir ? `<div class="fdir" title="${esc(dir)}"><bdi>${esc(dir)}/</bdi></div>` : '') + files.map((f) => {
     const open = threads(f.path);
-    return `<button class="ffile" data-fgo="${esc(f.path)}" aria-current="${f.path === cur}"><span class="fst ${esc(f.status)}" title="${esc(f.status)}">${FILE_STATUS[f.status] ?? '?'}</span><span class="nm">${esc(f.path.split('/').pop())}</span>${open ? `<span class="talk" title="${open} sin resolver">${TALK_ICON}${open}</span>` : ''}<span class="addel"><span class="a">+${f.additions}</span> <span class="d">−${f.deletions}</span></span></button>`;
+    const seen = viewed.has(f.path);
+    return `<button class="ffile${seen ? ' seen' : ''}" data-fgo="${esc(f.path)}" aria-current="${f.path === cur}"><span class="fst ${esc(f.status)}" title="${esc(f.status)}">${FILE_STATUS[f.status] ?? '?'}</span><span class="nm">${esc(f.path.split('/').pop())}</span>${open ? `<span class="talk" title="${open} sin resolver">${TALK_ICON}${open}</span>` : ''}${seen ? '<span class="ck" title="Visto">✓</span>' : `<span class="addel"><span class="a">+${f.additions}</span> <span class="d">−${f.deletions}</span></span>`}</button>`;
   }).join('')).join('');
   const add = data.files.reduce((s, f) => s + f.additions, 0);
   const del = data.files.reduce((s, f) => s + f.deletions, 0);
   const url = prUrl(item.repo, data.pr);
   const mode = (m, label) => `<button data-fmode="${m}" aria-pressed="${S.diffMode === m}">${label}</button>`;
-  const tree = `<div class="ftree"><div class="ftop"><input type="search" id="fq" placeholder="Filtrar archivos" value="${esc(S.fq[item.id] ?? '')}" aria-label="Filtrar archivos"><button class="btn-s ftreex" data-ftree>Cerrar</button></div><div class="frows" id="ftrows">${rows || '<p class="none">Ningún archivo coincide.</p>'}</div></div>`;
+  const seenCount = data.files.filter((f) => viewed.has(f.path)).length;
+  const progress = `<div class="fseen"><span class="fprog-bar"><i style="width:${(seenCount / data.files.length) * 100}%"></i></span>${seenCount} de ${data.files.length} vistos</div>`;
+  const tree = `<div class="ftree"><div class="ftop"><input type="search" id="fq" placeholder="Filtrar archivos" value="${esc(S.fq[item.id] ?? '')}" aria-label="Filtrar archivos"><button class="btn-s ftreex" data-ftree>Cerrar</button></div>${progress}<div class="frows" id="ftrows">${rows || '<p class="none">Ningún archivo coincide.</p>'}</div></div>`;
   const tool = `<div class="ftool"><button class="btn-s ftreebtn" data-ftree>Archivos ▾</button><span class="seg">${mode('unified', 'Unificado')}${mode('split', 'Lado a lado')}</span>
     <span>${data.files.length} ${data.files.length === 1 ? 'archivo' : 'archivos'} · <span class="addel"><span class="a">+${add}</span> <span class="d">−${del}</span></span></span>${data.error ? `<span class="bad">GitHub no respondió: ${esc(data.error)}</span>` : ''}
-    ${url ? `<a class="gh" href="${esc(url)}/files" target="_blank" rel="noopener">En GitHub ↗</a>` : ''}</div>`;
+    <span class="m hint-c">Clic en un número de línea para comentarla</span>${url ? `<a class="gh" href="${esc(url)}/files" target="_blank" rel="noopener">En GitHub ↗</a>` : ''}</div>`;
   return `<div class="doc files${S.ftree ? ' tree' : ''}" id="doc" data-key="${esc(`${item.id}:files`)}">${tree}<div class="fdiffs" id="fdiffs">${tool}<div class="fcards">${data.files.map((f) => fileHTML(item, data, f)).join('')}</div></div></div>`;
 }
 
@@ -868,19 +877,30 @@ function fileHTML(item, data, file) {
   const parts = file.path.split('/');
   const name = parts.pop();
   const own = data.threads.filter((t) => t.path === file.path);
+  const seen = viewedOf(item.id).has(file.path);
   const header = `<header><button class="fold" data-ffold="${esc(file.path)}" aria-expanded="${!folded}" aria-label="${folded ? 'Abrir' : 'Plegar'}">${folded ? '▸' : '▾'}</button>
     <span class="p" title="${esc(file.path)}">${file.previousPath ? `<span>${esc(file.previousPath)} → </span>` : ''}<span>${esc(parts.length ? `${parts.join('/')}/` : '')}</span><b>${esc(name)}</b></span>
-    <span class="addel"><span class="a">+${file.additions}</span> <span class="d">−${file.deletions}</span></span></header>`;
+    <span class="addel"><span class="a">+${file.additions}</span> <span class="d">−${file.deletions}</span></span>
+    <button class="btn-s fcfile" data-fcfile="${esc(file.path)}" title="Comentar el archivo entero">Comentar archivo</button>
+    <label class="fviewed${seen ? ' on' : ''}"><input type="checkbox" data-fviewed="${esc(file.path)}"${seen ? ' checked' : ''}> Visto</label></header>`;
+  const comp = S.fcomp?.item === item.id && S.fcomp.path === file.path && S.fcomp.subject === 'file' ? composerHTML(item, file) : '';
   if (folded) {
-    const why = file.additions + file.deletions > BIG_DIFF_LINES && foldOf(item.id)[file.path] === undefined ? `<button class="fbig" data-ffold="${esc(file.path)}">Diff grande (${file.additions + file.deletions} líneas): abrirlo</button>` : '';
-    return `<section class="fcard folded" id="${esc(fileAnchor(file.path))}" data-file="${esc(file.path)}">${header}${why}</section>`;
+    const why = !seen && file.additions + file.deletions > BIG_DIFF_LINES && foldOf(item.id)[file.path] === undefined ? `<button class="fbig" data-ffold="${esc(file.path)}">Diff grande (${file.additions + file.deletions} líneas): abrirlo</button>` : '';
+    return `<section class="fcard folded" id="${esc(fileAnchor(file.path))}" data-file="${esc(file.path)}">${header}${comp ? `<div class="ftop-threads">${comp}</div>` : ''}${why}</section>`;
   }
   const body = file.patch ? diffTable(item, file, own) : { html: `<p class="nodiff">GitHub no muestra el diff de este archivo${file.status === 'renamed' && !file.additions && !file.deletions ? ': solo se renombró' : ' (binario o demasiado grande)'}.</p>`, placed: new Set() };
   // On top: what's about the whole file, and what's on lines no longer in the diff.
   const top = own.filter((t) => !body.placed.has(t));
-  return `<section class="fcard" id="${esc(fileAnchor(file.path))}" data-file="${esc(file.path)}">${header}${top.length ? `<div class="ftop-threads">${top.map((t) => diffThreadHTML(t, data, item.repo)).join('')}</div>` : ''}${body.html}</section>`;
+  const above = top.map((t) => diffThreadHTML(item, t, data)).join('') + comp;
+  return `<section class="fcard" id="${esc(fileAnchor(file.path))}" data-file="${esc(file.path)}">${header}${above ? `<div class="ftop-threads">${above}</div>` : ''}${body.html}</section>`;
 }
 const fileAnchor = (path) => `f-${[...path].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7).toString(36)}`;
+
+// The line being commented on, or the range: on one side, inside one hunk.
+function inComposer(item, file, side, num) {
+  const c = S.fcomp;
+  return c && c.item === item.id && c.path === file.path && c.subject === 'line' && !c.reply && c.side === side && num >= (c.startLine ?? c.line) && num <= c.line;
+}
 
 // The rows of one file's diff, and which threads found their line.
 function diffTable(item, file, threads) {
@@ -889,18 +909,24 @@ function diffTable(item, file, threads) {
   const placed = new Set();
   const at = new Map();
   for (const t of threads) if (t.subject === 'line' && t.line !== null && !t.isOutdated) at.set(`${t.side}:${t.line}`, [...(at.get(`${t.side}:${t.line}`) ?? []), t]);
+  const data = S.files[item.id].data;
+  const c = S.fcomp;
+  // Under a line: its threads, then the composer when it ends there.
   const under = (side, num) => {
-    const list = num === undefined ? undefined : at.get(`${side}:${num}`);
-    if (!list) return '';
+    if (num === undefined) return '';
+    const list = at.get(`${side}:${num}`) ?? [];
     for (const t of list) placed.add(t);
-    return list.map((t) => diffThreadHTML(t, S.files[item.id].data, item.repo)).join('');
+    const comp = c && c.item === item.id && c.path === file.path && c.subject === 'line' && !c.reply && c.side === side && c.line === num ? composerHTML(item, file) : '';
+    return list.map((t) => diffThreadHTML(item, t, data)).join('') + comp;
   };
+  const sel = (side, num) => inComposer(item, file, side, num);
   const content = S.fcontent[contentKey(item.id, file.path)];
   const lines = content?.lines;
   const shown = S.fexp[item.id]?.[file.path] ?? {};
   const hunks = hunksOf(file);
   let rows = '';
-  const ctxRow = (o, n) => lineRow({ t: 'eq', o, n, text: lines[n - 1] ?? '' }, split, under);
+  // Lines shown around the hunks can't be commented: GitHub takes only lines of the diff.
+  const ctxRow = (o, n) => lineRow({ t: 'eq', o, n, text: lines[n - 1] ?? '' }, under, null, sel);
   const more = (key, label) => `<tr class="fgap"><td colspan="${cols}"><button data-fmore="${esc(file.path)}|${key}"${content?.loading ? ' disabled' : ''}>↕ ${content?.loading ? 'Leyendo…' : label}</button>${content?.error ? ` <span class="bad">${esc(content.error)}</span>` : ''}</td></tr>`;
   let prevNew = 0;
   hunks.forEach((h, k) => {
@@ -911,7 +937,7 @@ function diffTable(item, file, threads) {
       for (let n = h.newStart - open; n < h.newStart; n++) rows += ctxRow(n + h.oldStart - h.newStart, n);
     }
     rows += `<tr class="fhunk"><td colspan="${cols}">@@ −${h.oldStart} +${h.newStart} @@ ${esc(h.ctx)}</td></tr>`;
-    rows += split ? splitRows(h.lines, under) : h.lines.map((l) => lineRow(l, false, under)).join('');
+    rows += split ? splitRows(h.lines, under, k, sel) : h.lines.map((l) => lineRow(l, under, k, sel)).join('');
     prevNew = h.newEnd;
   });
   // After the last hunk: how much is left is known once the file is read.
@@ -928,17 +954,21 @@ function diffTable(item, file, threads) {
 }
 
 const MARK = { add: '+', del: '−', eq: ' ' };
-function lineRow(l, _split, under) {
+// A line number that opens the composer: its side and number, and its hunk
+// (a range can't go past it).
+const numCell = (cls, side, num, hunk) => (num === undefined ? `<td class="n ${cls}"></td>` : hunk === null ? `<td class="n ${cls}">${num}</td>` : `<td class="n ${cls} fl" data-fl="${side}|${num}|${hunk}" title="Comentar esta línea (Shift+clic: hasta acá)">${num}</td>`);
+function lineRow(l, under, hunk, sel) {
   const side = l.t === 'del' ? 'LEFT' : 'RIGHT';
-  const threads = under(side, side === 'LEFT' ? l.o : l.n);
-  return `<tr class="ln ${l.t}"><td class="n">${l.o ?? ''}</td><td class="n">${l.n ?? ''}</td><td class="c"><span class="m">${MARK[l.t]}</span>${esc(l.text)}</td></tr>${threads ? `<tr class="fthreads"><td colspan="3">${threads}</td></tr>` : ''}`;
+  const num = side === 'LEFT' ? l.o : l.n;
+  const threads = under(side, num);
+  return `<tr class="ln ${l.t}${sel(side, num) ? ' sel' : ''}">${numCell('', 'LEFT', l.o, hunk)}${numCell('', 'RIGHT', l.n, hunk)}<td class="c"><span class="m">${MARK[l.t]}</span>${esc(l.text)}</td></tr>${threads ? `<tr class="fthreads"><td colspan="3">${threads}</td></tr>` : ''}`;
 }
 // Side by side: a run of deletions next to the additions that replace it.
-function splitRows(lines, under) {
+function splitRows(lines, under, hunk, sel) {
   let out = '';
   for (let i = 0; i < lines.length;) {
     if (lines[i].t === 'eq') {
-      out += pairRow(lines[i], lines[i], under);
+      out += pairRow(lines[i], lines[i], under, hunk, sel);
       i++;
       continue;
     }
@@ -946,24 +976,48 @@ function splitRows(lines, under) {
     const adds = [];
     while (i < lines.length && lines[i].t === 'del') dels.push(lines[i++]);
     while (i < lines.length && lines[i].t === 'add') adds.push(lines[i++]);
-    for (let k = 0; k < Math.max(dels.length, adds.length); k++) out += pairRow(dels[k], adds[k], under);
+    for (let k = 0; k < Math.max(dels.length, adds.length); k++) out += pairRow(dels[k], adds[k], under, hunk, sel);
   }
   return out;
 }
-function pairRow(left, right, under) {
-  const cell = (l, num) => (l ? `<td class="n ${l.t}">${num}</td><td class="c ${l.t}"><span class="m">${MARK[l.t]}</span>${esc(l.text)}</td>` : '<td class="n none"></td><td class="c none"></td>');
+function pairRow(left, right, under, hunk, sel) {
+  const cell = (l, side, num) => (l ? `${numCell(`${l.t}${sel(side, num) ? ' sel' : ''}`, side, num, hunk)}<td class="c ${l.t}${sel(side, num) ? ' sel' : ''}"><span class="m">${MARK[l.t]}</span>${esc(l.text)}</td>` : '<td class="n none"></td><td class="c none"></td>');
   const threads = (left && left.t === 'del' ? under('LEFT', left.o) : '') + (right ? under('RIGHT', right.n) : '');
-  return `<tr class="ln">${cell(left, left?.o)}${cell(right, right?.n)}</tr>${threads ? `<tr class="fthreads"><td colspan="4">${threads}</td></tr>` : ''}`;
+  return `<tr class="ln">${cell(left, 'LEFT', left?.o)}${cell(right, 'RIGHT', right?.n)}</tr>${threads ? `<tr class="fthreads"><td colspan="4">${threads}</td></tr>` : ''}`;
 }
 
-function diffThreadHTML(t, data, repo) {
+function diffThreadHTML(item, t, data) {
   const key = `t:${t.url}`;
   // Resolved threads start folded, like on GitHub.
   const open = t.isResolved ? S.expanded.has(key) : !S.expanded.has(key);
   const where = t.subject === 'file' ? 'Sobre el archivo' : t.isOutdated || t.line === null ? `Línea ${t.originalLine ?? '?'}, en código que ya cambió` : `${t.startLine && t.startLine !== t.line ? `Líneas ${t.startLine}–${t.line}` : `Línea ${t.line}`}${t.side === 'LEFT' ? ', versión anterior' : ''}`;
   const chips = (t.isResolved ? '<span class="chip ok">resuelto</span>' : '') + (t.isOutdated ? '<span class="chip idle">desactualizado</span>' : '');
-  const comments = t.comments.map((c) => `<div class="tc">${avatar(c.author)}<div><header><b>${esc(c.author || 'alguien')}</b>${c.author === data.ronin ? '<span class="botl">bot</span>' : ''}<a href="${esc(c.url)}" target="_blank" rel="noopener">${esc(when(c.createdAt))}</a></header><div class="md">${md(c.body, repo)}</div></div></div>`).join('');
-  return `<details class="dthread" data-thread="${esc(key)}"${open ? ' open' : ''}><summary><span>${esc(where)}</span>${chips}<span class="n">${t.comments.length} ${t.comments.length === 1 ? 'comentario' : 'comentarios'}</span></summary>${comments}</details>`;
+  const comments = t.comments.map((c) => `<div class="tc">${avatar(c.author)}<div><header><b>${esc(c.author || 'alguien')}</b>${c.author === data.ronin ? '<span class="botl">bot</span>' : ''}<a href="${esc(c.url)}" target="_blank" rel="noopener">${esc(when(c.createdAt))}</a></header><div class="md">${md(c.body, item.repo)}</div></div></div>`).join('');
+  const replying = S.fcomp?.item === item.id && S.fcomp.reply === t.id;
+  const busy = S.fbusy.has(t.id);
+  const foot = replying
+    ? composerHTML(item, null)
+    : `<div class="tfoot"><button class="treply" data-freply="${esc(t.id)}">Responder…</button><button class="btn-s" data-fresolve="${esc(t.id)}" data-on="${t.isResolved ? '0' : '1'}"${busy ? ' disabled' : ''}>${busy ? '…' : t.isResolved ? 'Reabrir' : 'Resolver conversación'}</button></div>`;
+  return `<details class="dthread" data-thread="${esc(key)}"${open || replying ? ' open' : ''}><summary><span>${esc(where)}</span>${chips}<span class="n">${t.comments.length} ${t.comments.length === 1 ? 'comentario' : 'comentarios'}</span></summary>${comments}${foot}</details>`;
+}
+
+// The lines a comment is on, as the new file has them: what a suggestion replaces.
+function linesForSuggestion(file, c) {
+  const out = [];
+  for (const h of hunksOf(file)) for (const l of h.lines) if (l.n !== undefined && l.n >= (c.startLine ?? c.line) && l.n <= c.line) out.push(l.text);
+  return out;
+}
+
+function composerHTML(item, file) {
+  const c = S.fcomp;
+  const where = c.reply ? '' : c.subject === 'file' ? 'el archivo entero' : c.startLine ? `líneas ${c.startLine}–${c.line}${c.side === 'LEFT' ? ' (versión anterior)' : ''}` : `línea ${c.line}${c.side === 'LEFT' ? ' (versión anterior)' : ''}`;
+  const canSuggest = !c.reply && c.subject === 'line' && c.side === 'RIGHT' && file;
+  const body = c.preview
+    ? `<div class="dpv md">${c.text.trim() ? md(c.text, item.repo) : '<p class="m">Nada para mostrar.</p>'}</div>`
+    : `<textarea id="fcbox" rows="4" placeholder="${c.reply ? 'Respuesta' : 'Comentario'} (markdown). Ctrl+Enter lo manda.">${esc(c.text)}</textarea>`;
+  return `<div class="dcomp"><div class="dct"><button class="dtb" data-fcpv="0" aria-selected="${!c.preview}">Escribir</button><button class="dtb" data-fcpv="1" aria-selected="${!!c.preview}">Vista previa</button>${canSuggest ? '<button class="dtool" data-fsuggest title="Proponer el código que va en esas líneas">± Sugerir cambio</button>' : ''}<span class="where">${esc(where)}</span></div>
+    ${body}
+    <div class="dfoot">${c.error ? `<span class="bad">${esc(c.error)}</span>` : `<span class="m">${c.reply ? '' : c.subject === 'line' ? 'Shift+clic en otro número para elegir varias líneas. ' : ''}Comentás como ${esc(S.snap?.me ?? '')}.</span>`}<button class="btn-s" data-fccancel>Cancelar</button><button class="btn-s primary" data-fcsend${c.sending ? ' disabled' : ''}>${c.sending ? 'Enviando…' : c.reply ? 'Responder' : 'Comentar'}</button></div></div>`;
 }
 
 async function loadFiles(id) {
@@ -971,7 +1025,10 @@ async function loadFiles(id) {
   if (entry.loading) return;
   entry.loading = true;
   try {
-    entry.data = await api(`/api/items/${encodeURIComponent(id)}/files`);
+    // What the person marked as viewed is theirs, read with their token; without it the diff still shows.
+    const [data, viewed] = await Promise.all([api(`/api/items/${encodeURIComponent(id)}/files`), api(`/api/items/${encodeURIComponent(id)}/files/viewed`).catch((error) => (error instanceof Unauthorized ? Promise.reject(error) : null))]);
+    entry.data = data;
+    if (viewed) entry.viewed = new Set(viewed.paths);
     entry.error = null;
   } catch (error) {
     if (error instanceof Unauthorized) return showLogin();
@@ -1011,12 +1068,116 @@ async function showMoreLines(id, path, key) {
   if (S.sel === id) renderCenter();
 }
 
+async function filesAction(id, body) {
+  return api(`/api/items/${encodeURIComponent(id)}/files/actions`, { method: 'POST', body: JSON.stringify(body) });
+}
+
+// After writing on GitHub: the files and the item's comments are read again.
+function afterFilesWrite(id) {
+  if (S.files[id]) S.files[id].at = 0;
+  loadFiles(id);
+  loadDetail(id);
+}
+
+async function sendComment() {
+  const c = S.fcomp;
+  if (!c || c.sending) return;
+  const box = $('#fcbox');
+  if (box) c.text = box.value;
+  if (!c.text.trim()) {
+    c.error = 'Escribí algo primero.';
+    return renderCenter();
+  }
+  const data = S.files[c.item]?.data;
+  const body = c.reply
+    ? { action: 'reply', commentId: c.commentId, text: c.text }
+    : { action: 'comment', path: c.path, commitId: data.headSha, subject: c.subject, text: c.text, ...(c.subject === 'line' ? { side: c.side, line: c.line, ...(c.startLine ? { startLine: c.startLine } : {}) } : {}) };
+  c.sending = true;
+  c.error = null;
+  renderCenter();
+  try {
+    const posted = await filesAction(c.item, body);
+    S.fcomp = null;
+    toast(c.reply ? 'Respondiste en el hilo.' : 'Comentaste en el PR.', posted?.url);
+    afterFilesWrite(c.item);
+  } catch (error) {
+    if (error instanceof Unauthorized) return showLogin();
+    c.sending = false;
+    c.error = `No se pudo: ${error.message}`;
+    renderCenter();
+  }
+}
+
+async function resolveThread(threadId, resolved) {
+  const id = S.sel;
+  S.fbusy.add(threadId);
+  renderCenter();
+  try {
+    await filesAction(id, { action: 'resolve', threadId, resolved });
+    toast(resolved ? 'Conversación resuelta.' : 'Conversación reabierta.');
+    afterFilesWrite(id);
+  } catch (error) {
+    if (error instanceof Unauthorized) return showLogin();
+    toast(`No se pudo: ${error.message}`);
+  } finally {
+    S.fbusy.delete(threadId);
+    renderCenter();
+  }
+}
+
+// "Viewed" shows at once and is undone if GitHub says no.
+async function setViewed(path, viewed) {
+  const id = S.sel;
+  const entry = S.files[id];
+  if (!entry?.data) return;
+  entry.viewed ??= new Set();
+  if (viewed) entry.viewed.add(path);
+  else entry.viewed.delete(path);
+  delete foldOf(id)[path];
+  renderCenter();
+  try {
+    await filesAction(id, { action: 'viewed', path, viewed });
+  } catch (error) {
+    if (error instanceof Unauthorized) return showLogin();
+    if (viewed) entry.viewed.delete(path);
+    else entry.viewed.add(path);
+    toast(`No se pudo marcar como visto: ${error.message}`);
+    renderCenter();
+  }
+}
+
+// v: the file in view goes viewed (or back), and the next one not viewed comes up.
+function toggleViewedCurrent() {
+  const files = S.files[S.sel]?.data?.files;
+  if (!files?.length) return;
+  const cur = S.fcur[S.sel] ?? files[0].path;
+  const now = !viewedOf(S.sel).has(cur);
+  setViewed(cur, now);
+  const next = now && files.find((f) => !viewedOf(S.sel).has(f.path));
+  if (next) goFile(next.path);
+}
+
+function openComposer(spot) {
+  const prev = S.fcomp;
+  // Re-opening on the same spot keeps what was written.
+  const text = prev && prev.item === spot.item && !prev.sending ? $('#fcbox')?.value ?? prev.text : '';
+  S.fcomp = { text, preview: false, ...spot };
+  renderCenter();
+  focusComposer();
+}
+function focusComposer() {
+  const box = $('#fcbox');
+  if (!box) return;
+  box.focus();
+  box.setSelectionRange(box.value.length, box.value.length);
+}
+
 function goFile(path) {
   S.fcur[S.sel] = path;
   S.ftree = false;
   const item = itemById(S.sel);
   const file = S.files[S.sel]?.data?.files.find((f) => f.path === path);
-  if (item && file && isFolded(item.id, file) && foldOf(item.id)[path] === undefined) foldOf(item.id)[path] = false;
+  if (item && file && isFolded(item.id, file) && !viewedOf(item.id).has(path)) foldOf(item.id)[path] = false;
   renderCenter();
   document.getElementById(fileAnchor(path))?.scrollIntoView({ block: 'start' });
 }
@@ -1040,8 +1201,8 @@ function wireFiles() {
   }
   for (const button of document.querySelectorAll('[data-fmore]')) {
     button.onclick = () => {
-      const [path, key] = [button.dataset.fmore.slice(0, button.dataset.fmore.lastIndexOf('|')), button.dataset.fmore.slice(button.dataset.fmore.lastIndexOf('|') + 1)];
-      showMoreLines(S.sel, path, key);
+      const cut = button.dataset.fmore.lastIndexOf('|');
+      showMoreLines(S.sel, button.dataset.fmore.slice(0, cut), button.dataset.fmore.slice(cut + 1));
     };
   }
   for (const button of document.querySelectorAll('[data-fmode]')) {
@@ -1057,6 +1218,69 @@ function wireFiles() {
       renderCenter();
     };
   }
+  // A line number: comment it; with Shift, from the line already chosen to this one (same side, same hunk).
+  for (const cell of document.querySelectorAll('[data-fl]')) {
+    cell.onclick = (event) => {
+      const [side, num, hunk] = cell.dataset.fl.split('|');
+      const path = cell.closest('[data-file]').dataset.file;
+      const line = Number(num);
+      const c = S.fcomp;
+      if (event.shiftKey && c && c.item === S.sel && c.path === path && c.subject === 'line' && !c.reply && c.side === side && c.hunk === hunk) {
+        const from = Math.min(c.anchor, line);
+        const to = Math.max(c.anchor, line);
+        openComposer({ item: S.sel, path, subject: 'line', side, hunk, anchor: c.anchor, line: to, ...(from !== to ? { startLine: from } : {}) });
+        return;
+      }
+      openComposer({ item: S.sel, path, subject: 'line', side, hunk, anchor: line, line });
+    };
+  }
+  for (const button of document.querySelectorAll('[data-fcfile]')) button.onclick = () => openComposer({ item: S.sel, path: button.dataset.fcfile, subject: 'file' });
+  for (const button of document.querySelectorAll('[data-freply]')) {
+    button.onclick = () => {
+      const t = S.files[S.sel]?.data?.threads.find((x) => x.id === button.dataset.freply);
+      // A reply goes to the thread's last comment, as GitHub's reply box does.
+      if (t) openComposer({ item: S.sel, path: t.path, reply: t.id, commentId: t.comments[t.comments.length - 1].id });
+    };
+  }
+  for (const button of document.querySelectorAll('[data-fresolve]')) button.onclick = () => resolveThread(button.dataset.fresolve, button.dataset.on === '1');
+  for (const box of document.querySelectorAll('[data-fviewed]')) box.onchange = () => setViewed(box.dataset.fviewed, box.checked);
+  const fcbox = $('#fcbox');
+  if (fcbox) {
+    fcbox.oninput = () => { if (S.fcomp) S.fcomp.text = fcbox.value; };
+    fcbox.onkeydown = (event) => {
+      if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) sendComment();
+      if (event.key === 'Escape') {
+        event.stopPropagation();
+        S.fcomp = null;
+        renderCenter();
+      }
+    };
+  }
+  for (const button of document.querySelectorAll('[data-fcpv]')) {
+    button.onclick = () => {
+      S.fcomp.preview = button.dataset.fcpv === '1';
+      renderCenter();
+      if (!S.fcomp.preview) focusComposer();
+    };
+  }
+  for (const button of document.querySelectorAll('[data-fsuggest]')) {
+    button.onclick = () => {
+      const c = S.fcomp;
+      const file = S.files[S.sel]?.data?.files.find((f) => f.path === c.path);
+      if (!file) return;
+      c.text = `${c.text.trim() ? `${c.text.replace(/\s+$/, '')}\n\n` : ''}\`\`\`suggestion\n${linesForSuggestion(file, c).join('\n')}\n\`\`\`\n`;
+      c.preview = false;
+      renderCenter();
+      focusComposer();
+    };
+  }
+  for (const button of document.querySelectorAll('[data-fccancel]')) {
+    button.onclick = () => {
+      S.fcomp = null;
+      renderCenter();
+    };
+  }
+  for (const button of document.querySelectorAll('[data-fcsend]')) button.onclick = sendComment;
   const q = $('#fq');
   if (q) q.oninput = () => {
     S.fq[S.sel] = q.value;
@@ -2355,9 +2579,10 @@ async function boot() {
     const reviewing = !S.dialog && !S.fdialog && !S.newIssue && !event.metaKey && !event.ctrlKey && !event.altKey && item && viewOf(item) === 'ficha' && docOf(item) === 'fichas' && !/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName ?? '');
     // On a PR's files, j/k go from one file to the next (#111).
     const typing = event.metaKey || event.ctrlKey || event.altKey || /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName ?? '');
-    if (!typing && !S.dialog && !S.fdialog && !S.newIssue && item && viewOf(item) === 'ficha' && docOf(item) === 'files' && (event.key === 'j' || event.key === 'k')) {
+    if (!typing && !S.dialog && !S.fdialog && !S.newIssue && item && viewOf(item) === 'ficha' && docOf(item) === 'files' && ['j', 'k', 'v'].includes(event.key)) {
       event.preventDefault();
-      moveFile(event.key === 'j' ? 1 : -1);
+      if (event.key === 'v') toggleViewedCurrent();
+      else moveFile(event.key === 'j' ? 1 : -1);
       return;
     }
     if (reviewing && ['j', 'k', 'a', 'c', 'r'].includes(event.key)) {
@@ -2369,6 +2594,10 @@ async function boot() {
     }
     if (event.key !== 'Escape') return;
     if (S.newIssue) closeNewIssue();
+    else if (S.fcomp && !S.fcomp.sending) {
+      S.fcomp = null;
+      renderCenter();
+    }
     else if (S.fdialog) closeFichaDialog();
     else if (S.fmenu) {
       S.fmenu = false;
