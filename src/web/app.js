@@ -580,7 +580,7 @@ function headHTML(item) {
   return `<div class="head">
     <div class="crumb"><i style="background:${repoColor(item.repo)}"></i>${esc(item.repo)} · ${item.kind === 'pr' ? 'Pull request' : item.kind === 'issue' ? 'Issue' : 'Tarea'}</div>
     <div class="row"><h1>${esc(item.title)}${item.number !== undefined ? ` <span class="n">${esc(itemRef(item))}</span>` : ''}</h1>${url ? `<a class="gh" href="${esc(url)}" target="_blank" rel="noopener">GitHub ↗</a>` : ''}${safeLinear((item.linear ?? d?.linear)?.url) ? `<a class="gh" href="${esc((item.linear ?? d.linear).url)}" target="_blank" rel="noopener" title="El issue en Linear">${esc((item.linear ?? d.linear).id)} ↗</a>` : ''}${d?.exploration ? '<button class="gh" data-xpr="general">Comentario general</button>' : ''}${reviewable(item, d) ? (pendingOf(item.id).length ? `<button class="act-btn" data-frev>Terminar revisión <span class="rn">${pendingOf(item.id).length}</span></button>` : `<button class="gh" data-frev>${esc(reviewLabel(item, d))}</button>`) : ''}${actionsHTML(d)}${d?.exploration ? '<button class="act-btn" data-xpr="approve">Aprobar…</button>' : ''}</div>
-    <div class="state">${ghPill(item, d)}${linearChips(item)}${chips.map(([cls, text]) => `<span class="chip ${cls}">${esc(text)}</span>`).join('')}${facts.map((f) => `<span>${esc(f)}</span>`).join('')}</div></div>`;
+    <div class="state">${ghPill(item, d)}${d?.pedido ? `<button class="chip plain" data-goped="${d.pedido.number}" title="${esc(d.pedido.title)}">del pedido P-${d.pedido.number}</button>` : ''}${linearChips(item)}${chips.map(([cls, text]) => `<span class="chip ${cls}">${esc(text)}</span>`).join('')}${facts.map((f) => `<span>${esc(f)}</span>`).join('')}</div></div>`;
 }
 
 // ---------- actions (#85)
@@ -2040,6 +2040,7 @@ const when = (iso) => (iso ? new Date(iso).toLocaleString('es', { dateStyle: 'me
 
 function wireCenter() {
   for (const button of document.querySelectorAll('[data-tab]')) button.onclick = () => select(button.dataset.tab);
+  for (const button of document.querySelectorAll('[data-goped]')) button.onclick = () => openPedido(Number(button.dataset.goped));
   for (const button of document.querySelectorAll('[data-close]')) {
     button.onclick = () => {
       const id = button.dataset.close;
