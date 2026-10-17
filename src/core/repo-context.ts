@@ -28,6 +28,9 @@ export interface RepoEntry {
   // (claudeConfigDir), for when that account can't afford the global ones —
   // see config.ts's agentModelFor for how they combine with the env vars.
   agent?: AgentDefaults;
+  // Linear (#101): the env var holding the workspace's API key, for projects
+  // and cycles (core/linear-api.ts). Absent: nothing is read from Linear.
+  linear?: { apiKeyEnv: string };
 }
 
 export interface AgentDefaults {

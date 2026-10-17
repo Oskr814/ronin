@@ -114,4 +114,15 @@ describe('loadRepos', () => {
     await writeFile(reposConfigPath, JSON.stringify([{ productRepo: 'a/b', productRepoPath: '/tmp/a', agent: { models: { 'fix-review': 3 } } }]));
     await expect(loadRepos()).rejects.toThrow(/agent\.models/);
   });
+
+  it('keeps a valid linear block and rejects a malformed one', async () => {
+    await writeFile(reposConfigPath, JSON.stringify([{ productRepo: 'a/b', productRepoPath: '/tmp/a', linear: { apiKeyEnv: 'LINEAR_API_KEY_X' } }]));
+    expect((await loadRepos())[0].linear).toEqual({ apiKeyEnv: 'LINEAR_API_KEY_X' });
+
+    await writeFile(reposConfigPath, JSON.stringify([{ productRepo: 'a/b', productRepoPath: '/tmp/a', linear: { apiKey: 'lin_api_secreto' } }]));
+    await expect(loadRepos()).rejects.toThrow(/campos desconocidos: apiKey/);
+
+    await writeFile(reposConfigPath, JSON.stringify([{ productRepo: 'a/b', productRepoPath: '/tmp/a', linear: { apiKeyEnv: 'lin_api_secreto' } }]));
+    await expect(loadRepos()).rejects.toThrow(/linear\.apiKeyEnv/);
+  });
 });

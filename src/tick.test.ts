@@ -45,6 +45,13 @@ vi.mock('./core/locks.js', () => ({
 }));
 
 const activeRepo = vi.fn();
+const linearKey = vi.fn();
+const currentCycle = vi.fn();
+vi.mock('./core/linear-api.js', () => ({
+  linearKey: (...args: unknown[]) => linearKey(...args),
+  currentCycle: (...args: unknown[]) => currentCycle(...args),
+}));
+
 vi.mock('./core/repo-context.js', () => ({
   activeRepo: (...args: unknown[]) => activeRepo(...args),
 }));
@@ -163,7 +170,7 @@ vi.mock('./changelog/changelog.js', () => ({
   findReleasesNeedingChangelog: (...args: unknown[]) => findReleasesNeedingChangelog(...args),
 }));
 
-const { runScoped, runIssueStep, idleCommandJobs, processSlicePr, processIssue, agentTaskFor, needsMoreInfo, discoverAssignedIssues, processExternalReviewCandidate, processTrustedFixCandidate, runExternalReviews, processSpikeCandidate, processChangelogCandidate, runChangelogUpdates, renderTrackingIssueBody } = await import('./tick.js');
+const { runScoped, runIssueStep, idleCommandJobs, processSlicePr, processIssue, agentTaskFor, needsMoreInfo, discoverAssignedIssues, processExternalReviewCandidate, processTrustedFixCandidate, runExternalReviews, processSpikeCandidate, processChangelogCandidate, runChangelogUpdates, renderTrackingIssueBody, cycleFirst } = await import('./tick.js');
 
 function issue(overrides: Partial<TrackingIssue> = {}): TrackingIssue {
   return { number: 228, title: 'Test issue', url: 'https://github.com/x/y/issues/228', labels: [], ...overrides };
@@ -209,6 +216,26 @@ beforeEach(() => {
   removeWorktree.mockResolvedValue(undefined);
   activeRepo.mockReturnValue({ productRepo: 'bmedical/bmedical', productRepoPath: '/tmp/repo', worktreeBasePath: '/tmp/worktrees' });
   readFile.mockResolvedValue('body\n{{spec_links}}\n');
+});
+
+describe('cycleFirst', () => {
+  const issues = [issue({ number: 1 }), issue({ number: 2 }), issue({ number: 3 }), issue({ number: 4 })];
+
+  it("puts the current cycle's issues first, each group in its order", async () => {
+    linearKey.mockReturnValue('lin_api_x');
+    currentCycle.mockResolvedValue({ number: 17, issues: [{ githubNumber: 4 }, { githubNumber: 2 }, { id: 'RED-9' }] });
+    expect((await cycleFirst(issues)).map((i) => i.number)).toEqual([2, 4, 1, 3]);
+  });
+
+  it('keeps the order without a Linear key, or when Linear fails', async () => {
+    linearKey.mockReturnValue(null);
+    expect(await cycleFirst(issues)).toBe(issues);
+    expect(currentCycle).not.toHaveBeenCalled();
+
+    linearKey.mockReturnValue('lin_api_x');
+    currentCycle.mockRejectedValue(new Error('Linear respondió 500'));
+    expect((await cycleFirst(issues)).map((i) => i.number)).toEqual([1, 2, 3, 4]);
+  });
 });
 
 describe('processSlicePr — Linear link', () => {

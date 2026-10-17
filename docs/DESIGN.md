@@ -61,7 +61,7 @@ cada tick. Ver
 
 - 1 spec → 1 issue de tracking, con checklist de slices (generado por el paso de planning).
 - 1 slice → 1 PR. Por default **secuencial**: la siguiente slice recién arranca cuando no queda ningún PR abierto del issue (la anterior ya mergeó). Con el label `ronin:stack-prs` en el issue de tracking, **apilado**: cada PR se abre con `--base` el branch de la slice anterior, sin esperar a que mergee — ver [`docs/superpowers/specs/2026-07-28-stacked-prs-design.md`](superpowers/specs/2026-07-28-stacked-prs-design.md) para el rationale completo.
-- **Linear (#101):** si el issue de tracking tiene el comentario de Linear (`<!-- linear-linkback -->`, de su bot), el supervisor agrega a la descripción de cada PR de slice `Part of RED-n`, o `Fixes RED-n` en la última slice, sobre la chuleta de comandos (`core/linear.ts`, en `processSlicePr`). Así Linear muestra los PRs en su issue y las automatizaciones del equipo lo mueven de estado. No necesita API key; un issue sin ese comentario no se toca. El tablero muestra `RED-n ↗` junto a *GitHub ↗* en la ficha.
+- **Linear (#101):** si el issue de tracking tiene el comentario de Linear (`<!-- linear-linkback -->`, de su bot), el supervisor agrega a la descripción de cada PR de slice `Part of RED-n`, o `Fixes RED-n` en la última slice, sobre la chuleta de comandos (`core/linear.ts`, en `processSlicePr`). Así Linear muestra los PRs en su issue y las automatizaciones del equipo lo mueven de estado. No necesita API key; un issue sin ese comentario no se toca. El tablero muestra `RED-n ↗` junto a *GitHub ↗* en la ficha. Con API key de Linear, además: proyecto y ciclo en el tablero (§15.13) y **prioridad por ciclo**: en el tick (no en los eventos), los issues del ciclo actual del equipo van primero en la cola de jobs (`cycleFirst` en `tick.ts`), así que si no alcanzan los lugares (`TICK_CONCURRENCY`) los toman antes; cada grupo en su orden de siempre. Si Linear falla, el orden queda como estaba.
 - Estado inferido de GitHub, no de memoria del agente:
   - branch existe → spec empezado
   - PR abierto → slice en curso (con `ronin:stack-prs`, pueden ser varios PRs de un mismo issue abiertos a la vez, cada uno una slice apilada sobre la anterior; sin el label, a lo sumo uno)
@@ -494,7 +494,11 @@ Una página para ver qué está haciendo ronin sin recorrer GitHub issue por iss
   - La preview, con su URL y cuánto le queda. Mientras ronin prepara los datos que piden los pasos de prueba, lo dice y todavía no ofrece la URL para abrir.
   - Los datos de la corrida: tarea, modelo, cuenta, duración, costo y worktree.
 - **Barra de estado.** El uso de cada cuenta de Claude en la ventana de 5 horas y en la semanal, los cupos de agentes ocupados, la cola, las previews, el último tick y si GitHub no responde.
-- ***Hoy*, la vista de inicio.** Los totales del día (corridas, cuántas terminaron bien, duración mediana y p90, costo, errores; con las de ayer al lado) y una línea de las últimas 12 horas, con un carril por repo y cada corrida como una barra. Al hacerle clic, se abre esa corrida.
+- ***Hoy*, la vista de inicio.**
+  - **Los números del día:** corridas, cuántas terminaron bien, duración mediana y p90, costo y errores, con los de ayer al lado y una mini línea de los últimos 7 días.
+  - ***Necesitan tu atención*:** los issues bloqueados con su motivo, los PRs de ronin que esperan review o merge (el que más espera primero, desde la última corrida), el PR de exploración y las previews arriba. Cada fila abre su ítem.
+  - **Con Linear (§15.13), el ciclo actual:** una barra por estado y un gráfico de issues en el ciclo contra hechos, día por día. Debajo, el desglose por proyecto (un clic filtra la barra lateral) y quién tiene lo que falta.
+  - **Las últimas 12 horas:** un carril por repo y cada corrida como una barra. Al hacerle clic, se abre esa corrida.
 - **Celular.** La barra lateral es la lista principal, y un ítem abre su ficha con el contexto debajo.
 - **Actualización.** La página pide el snapshot cada 5 segundos mientras está visible, y el transcript de una corrida en curso le llega por *server-sent events*. La ficha se vuelve a pedir cada 30 segundos (el servidor la tiene en caché, 15.8). El centro solo se redibuja si algo cambió, así que leer, seleccionar texto o tener el menú abierto no se interrumpe. No hace falta recargar.
 
@@ -680,6 +684,20 @@ En GitHub, un PR de exploración (§11.7) cuesta revisarlo: "Files changed" mues
 - **Comentario general.** `@ronin-agent <texto>` en el PR, como la persona, para decidir sobre varias fichas a la vez o dejar en `knowledge.md` lo que no hay que volver a proponer (lo lee `pendingGeneralFeedback`).
 - **Aprobar.** Antes de enviar, el diálogo muestra qué fichas abren issue, cuáles quedan rechazadas y cuáles nadie revisó. Lo que envía es una review *Approve* a nombre de la persona, con un comentario opcional. Desde ahí sigue el gate de siempre: `approveAndMerge` marca las fichas, abre sus issues y mergea. No se puede aprobar mientras ronin esté aplicando un comentario, que podría rechazar alguna ficha.
 - **De dónde sale.** `GET /api/items/<id>/exploration` (`server/api/dashboard-exploration.ts`) lee las fichas del clon del repo de producto, en la rama del PR, como `dashboard-evidence.ts` lee las capturas. Antes trae la rama y su base con un `fetch`, como mucho uno por minuto. Los hilos salen de `listFileReviewComments`, agrupados por app e id de ficha. Usa la misma caché que la ficha (15.8), y se descarta después de comentar desde la página.
+
+#### 15.13 Linear en el tablero (#101)
+
+Para un repo con `"linear": { "apiKeyEnv": "…" }` en `repos.json` y esa key en `.env`, el tablero lee de Linear (`server/api/dashboard-linear.ts`, sobre `core/linear-api.ts`), con la misma caché y el mismo manejo de errores que la lectura de GitHub (§15.8). Dos consultas GraphQL por repo:
+
+- **Los issues de ronin:** el issue de Linear de cada issue abierto que gestiona ronin, buscado por la URL del issue de GitHub (el *attachment* que deja la sincronización). Trae identificador, estado, proyecto, ciclo y asignado. Va en cada ítem del snapshot (`item.linear`).
+- **El ciclo actual del equipo:** el equipo es el de cualquier issue del repo en Linear, así que `repos.json` no lo nombra. Trae fechas, el historial diario de issues en el ciclo y hechos (el mismo que usa el gráfico de Linear) y sus issues. Va en `/api/today` (`cycles`). Cada issue del ciclo cae en un estado (`cycleView`): los de ronin según GitHub (bloqueado, PR abierto = en review, si no ronin trabaja) y los del equipo según su estado en Linear (completed = hecho, started = en curso o en review si el estado se llama así, el resto sin empezar).
+
+En la página:
+- **Barra lateral:** un filtro *Ciclo N / Todos* y otro por proyecto, recordados en el navegador. Cada ítem muestra su `RED-n` y su proyecto.
+- **Ficha:** chips de proyecto y ciclo, y una sección *Linear* en el panel de contexto.
+- ***Hoy*:** el ciclo actual (§15.1).
+
+Los colores de los proyectos siguen al proyecto: los conocidos en orden alfabético, los cuatro primeros con un color de la paleta (`--proj-*`, validada para daltonismo) y el resto en gris. Sin key, nada de esto aparece y el tablero funciona como antes.
 
 ## Estado actual
 

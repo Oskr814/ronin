@@ -40,7 +40,7 @@ function validateEntry(entry: unknown, index: number): RepoEntry {
   if (typeof entry !== 'object' || entry === null) {
     throw new Error(`${config.reposConfigPath}[${index}] no es un objeto`);
   }
-  const { productRepo, productRepoPath, claudeConfigDir, worktreeBaseRef, changelogRepo, changelogRepoPath, explore, agent } = entry as Record<string, unknown>;
+  const { productRepo, productRepoPath, claudeConfigDir, worktreeBaseRef, changelogRepo, changelogRepoPath, explore, agent, linear } = entry as Record<string, unknown>;
   if (typeof productRepo !== 'string' || productRepo.length === 0) {
     throw new Error(`${config.reposConfigPath}[${index}].productRepo falta o no es un string`);
   }
@@ -69,7 +69,17 @@ function validateEntry(entry: unknown, index: number): RepoEntry {
     productRepo, productRepoPath, claudeConfigDir, worktreeBaseRef, changelogRepo, changelogRepoPath,
     ...(explore !== undefined ? { explore: explore as string[] } : {}),
     ...(agent !== undefined ? { agent: validateAgent(agent, `${config.reposConfigPath}[${index}].agent`) } : {}),
+    ...(linear !== undefined ? { linear: validateLinear(linear, `${config.reposConfigPath}[${index}].linear`) } : {}),
   };
+}
+
+function validateLinear(linear: unknown, where: string): { apiKeyEnv: string } {
+  if (typeof linear !== 'object' || linear === null || Array.isArray(linear)) throw new Error(`${where} debe ser un objeto`);
+  const { apiKeyEnv, ...rest } = linear as Record<string, unknown>;
+  const unknownKeys = Object.keys(rest);
+  if (unknownKeys.length > 0) throw new Error(`${where} tiene campos desconocidos: ${unknownKeys.join(', ')} (válidos: apiKeyEnv)`);
+  if (typeof apiKeyEnv !== 'string' || !/^[A-Z_][A-Z0-9_]*$/.test(apiKeyEnv)) throw new Error(`${where}.apiKeyEnv debe ser el nombre de una variable de .env (p. ej. LINEAR_API_KEY_REDMOTOS)`);
+  return { apiKeyEnv };
 }
 
 const isStringMap = (value: unknown): value is Record<string, string> =>

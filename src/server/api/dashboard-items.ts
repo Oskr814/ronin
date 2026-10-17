@@ -1,4 +1,5 @@
 import type { OpenPr } from '../../core/github.js';
+import type { LinearIssue } from '../../core/linear-api.js';
 import type { BlockRecord } from '../../core/local-state.js';
 import { itemKey, type RunState, type RunSummary } from './dashboard-data.js';
 import type { PreviewView, RepoGithub } from './dashboard-github.js';
@@ -52,6 +53,8 @@ export interface Item {
   pr?: PrView;
   preview?: PreviewView;
   block?: BlockRecord;
+  // Its Linear issue, for a repo with a Linear key (added by the snapshot, #101).
+  linear?: LinearIssue;
 }
 
 function checksOf(pr: OpenPr): SliceView['checks'] {

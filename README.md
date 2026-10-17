@@ -42,7 +42,8 @@ Detalle de cada comando: [wiki → Comandos](https://github.com/Oskr814/ronin/wi
 - cómo va cada stack de slices, con sus checks;
 - las previews arriba;
 - el uso de cada cuenta de Claude;
-- en *Hoy*, las corridas de las últimas 12 horas y los totales del día.
+- en *Hoy*: los totales del día con su semana, lo que necesita tu atención (bloqueados, PRs que esperan review, exploración, previews) y las corridas de las últimas 12 horas;
+- con una API key de Linear en el repo, el proyecto y el ciclo de cada issue, un filtro por ciclo o proyecto, y en *Hoy* el ciclo actual con su avance. Con la key, el tick además toma primero los issues del ciclo.
 
 Desde la ficha se le pide a ronin lo mismo que comentando en GitHub: resolver conflictos, levantar o bajar la preview, el auto-merge, o responder y destrabar un issue. El login pide el permiso `repo` de GitHub, y lo que se pide desde el tablero queda comentado a tu nombre, como si lo escribieras en GitHub.
 
