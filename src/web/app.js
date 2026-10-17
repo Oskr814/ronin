@@ -1742,6 +1742,17 @@ function previewHTML(preview) {
     <p class="note">Los usuarios de prueba están en el comentario de la preview, en el PR.</p></section>`;
 }
 
+// What this session sees and why (#106): everything as an admin, or the
+// repos GitHub says it can at least triage.
+const PERMISSION = { triage: 'triage', push: 'escritura', maintain: 'maintain', admin: 'admin' };
+function accessHTML() {
+  const access = S.snap.access;
+  if (!access) return '';
+  if (access.admin) return `<section><h3>Tu acceso</h3><p class="note" style="margin:0">Sos administrador del tablero: ves todos los repos.</p></section>`;
+  return `<section><h3>Tu acceso</h3><dl class="kv">${access.repos.map((r) => `<dt><span class="repo-tag"><i style="background:${repoColor(r.repo)}"></i>${esc(repoShort(r.repo))}</span></dt><dd>${esc(PERMISSION[r.permission] ?? r.permission)} en GitHub</dd>`).join('')}</dl>
+    <p class="note">Ves los repos en los que podés gestionar issues (triage o más) en GitHub. Se vuelve a consultar cada 10 minutos: si te dan o te sacan acceso, el tablero lo sigue.</p></section>`;
+}
+
 function renderCtx() {
   const item = S.sel && itemById(S.sel);
   if (item) {
@@ -1749,7 +1760,7 @@ function renderCtx() {
     return;
   }
   const { tick, slots } = S.snap.runner;
-  $('#ctx').innerHTML = `<section><h3>Runner</h3><dl class="kv">
+  $('#ctx').innerHTML = `${accessHTML()}<section><h3>Runner</h3><dl class="kv">
     <dt>Agentes</dt><dd>${slots.used} de ${slots.limit} lugares ocupados</dd>
     <dt>Último tick</dt><dd>${tick.lastTickAt ? `hace ${esc(short(Date.now() - Date.parse(tick.lastTickAt)))}, duró ${esc(duration(tick.lastTickDurationMs ?? 0))}` : 'sin datos hoy'}</dd>
     <dt>Último evento</dt><dd>${tick.lastEventAt ? `hace ${esc(short(Date.now() - Date.parse(tick.lastEventAt)))}` : 'sin datos hoy'}</dd>
