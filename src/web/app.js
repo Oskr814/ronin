@@ -2653,12 +2653,15 @@ async function portalWrite(path, body) {
 const PED_STATUS = {
   thinking: ['run', 'ronin lo está leyendo'], asking: ['warn', 'Espera a la persona'], answered: ['idle', 'Respondido'],
   minor: ['run', 'Armando el prototipo'], proposed: ['warn', 'Espera que apruebe'], approved: ['run', 'Aprobado'],
+  reproducing: ['run', 'Reproduciendo el error'], fixing: ['run', 'En corrección'],
   done: ['ok', 'Listo'], resolved: ['ok', 'Resuelto por el equipo'], declined: ['idle', 'No se hará'],
   cancelled: ['idle', 'Cancelado'], big: ['warn', 'En el equipo'],
 };
 const PED_CLOSED = ['done', 'resolved', 'declined', 'cancelled'];
 const PED_FILTERS = [['todos', 'Todos'], ['person', 'Esperan a la persona'], ['ronin', 'ronin trabajando'], ['team', 'Esperan al equipo'], ['cerrados', 'Cerrados']];
-const PED_TABS = [['act', 'Actividad'], ['chat', 'Conversación'], ['team', 'Para el equipo'], ['runs', 'Corridas']];
+const PED_TABS = [['act', 'Actividad'], ['repro', 'Reproducción'], ['chat', 'Conversación'], ['team', 'Para el equipo'], ['runs', 'Corridas']];
+// A reported error's tries at reproducing it (#137), and how many it gets.
+const PED_REPRODUCTIONS = 2;
 const PED_ICON = {
   person: '<svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c1-4 4-6 8-6s7 2 8 6"/></svg>',
   ronin: '<svg viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4z"/></svg>',
@@ -2678,14 +2681,34 @@ function waitsLabel(p) {
   const who = firstName(p.person);
   switch (p.waitsOn) {
     case 'person': return p.status === 'proposed' ? `${who}: aprobar o ajustar` : `${who}: responder`;
-    case 'ronin': return p.running ? 'ronin trabajando' : p.status === 'approved' && p.issue ? `ronin: el cambio en #${p.issue}` : p.status === 'minor' ? 'ronin: el prototipo' : p.status === 'thinking' ? 'ronin: leerlo' : 'ronin: abrir el issue';
+    case 'ronin': return p.running ? 'ronin trabajando' : p.status === 'approved' && p.issue ? `ronin: el cambio en #${p.issue}` : p.status === 'fixing' && p.issue ? `ronin: el arreglo en #${p.issue}` : p.status === 'minor' ? 'ronin: el prototipo' : p.status === 'reproducing' ? 'ronin: reproducirlo' : p.status === 'thinking' ? 'ronin: leerlo' : 'ronin: abrir el issue';
     case 'team': return p.pr ? `Un dev: aprobar el PR #${p.pr}` : `El equipo: #${p.issue}`;
     default: return PED_CLOSED.includes(p.status) ? 'Cerrado' : 'Nadie';
   }
 }
 
+// A reported error's six steps (#137): no prototype nor approval, its
+// reproduction instead.
+function pedBugStage(p) {
+  const big = p.status === 'big' || p.status === 'resolved';
+  const labels = ['Pedido', 'Error', 'Reproducción', big ? 'Issue del equipo' : 'Issue', 'PR', big ? 'Resuelto' : 'Listo'];
+  let cur;
+  let tone = 'run';
+  switch (p.status) {
+    case 'thinking': case 'asking': case 'answered': cur = 1; tone = p.status === 'asking' ? 'warn' : p.status === 'answered' ? 'idle' : 'run'; break;
+    case 'reproducing': cur = 2; break;
+    case 'fixing': cur = p.pr ? 4 : 3; tone = p.pr ? 'warn' : 'run'; break;
+    case 'big': cur = 3; tone = p.issue ? 'warn' : 'run'; break;
+    case 'done': case 'resolved': cur = 6; break;
+    case 'declined': cur = 5; tone = 'crit'; labels[5] = 'No se hará'; break;
+    default: cur = p.issue ? 3 : 2; tone = 'idle'; labels[cur] = 'Cancelado';
+  }
+  return { cur, tone, skip: [], labels };
+}
+
 // The seven steps, which one it's on and how ([index, tone, skipped]).
 function pedStage(p) {
+  if (p.bug) return pedBugStage(p);
   // A row has the verdict's kind and how many prototypes; a request's page, the verdict and the prototypes.
   const verdict = typeof p.verdict === 'string' ? p.verdict : p.verdict?.kind;
   const prototypes = Array.isArray(p.prototypes) ? p.prototypes.length : p.prototypes;
@@ -2709,7 +2732,8 @@ function pedStage(p) {
 
 function pedMini(p) {
   const { cur, tone, skip } = pedStage(p);
-  return `<span class="pd-mini" aria-hidden="true">${Array.from({ length: 7 }, (_, i) => `<i class="${skip.includes(i) ? '' : i < cur ? 'ok' : i === cur ? tone : ''}"></i>`).join('')}</span>`;
+  const { labels } = pedStage(p);
+  return `<span class="pd-mini" aria-hidden="true">${Array.from({ length: labels.length }, (_, i) => `<i class="${skip.includes(i) ? '' : i < cur ? 'ok' : i === cur ? tone : ''}"></i>`).join('')}</span>`;
 }
 
 function pedStepper(p) {
@@ -2722,8 +2746,10 @@ function pedStepper(p) {
 
 const pedChip = (p) => {
   const [cls, label] = PED_STATUS[p.status] ?? ['idle', p.status];
-  return `<span class="chip ${cls}">${esc(p.status === 'approved' && p.pr ? 'Aprobado · en un PR' : label)}</span>`;
+  return `<span class="chip ${cls}">${esc(p.status === 'approved' && p.pr ? 'Aprobado · en un PR' : p.status === 'fixing' && p.pr ? 'En corrección · en un PR' : label)}</span>`;
 };
+
+const pedBugTag = (p) => (p.bug ? '<span class="pd-tag">Reporte de error</span>' : '');
 
 function openPedidos() {
   S.sel = null;
@@ -2815,7 +2841,7 @@ function pedidosHTML() {
   };
   const shown = groups[S.ped.filter] ?? list;
   const rows = shown.map((p) => `<tr data-ped="${p.number}" tabindex="0"><td class="pn">P-${p.number}</td>
-      <td><span class="tt">${esc(p.title)}</span><small>${esc(p.person)} · ${esc(p.appName)}${S.snap.repos.length > 1 ? ` · ${esc(repoShort(p.repo))}` : ''}</small>${pedMini(p)}</td>
+      <td><span class="tt">${esc(p.title)}</span>${pedBugTag(p)}<small>${esc(p.person)} · ${esc(p.appName)}${S.snap.repos.length > 1 ? ` · ${esc(repoShort(p.repo))}` : ''}</small>${pedMini(p)}</td>
       <td>${pedChip(p)}</td>
       <td class="hide-m"><span class="pd-waits">${p.running ? dotClass('live') : ''}${esc(waitsLabel(p))}</span></td>
       <td class="hide-m pd-gh">${p.issue ? `#${p.issue}` : '<span class="m">—</span>'}${p.pr ? ` · PR #${p.pr}` : ''}</td>
@@ -2844,6 +2870,11 @@ function pedNowHTML(d) {
   switch (d.status) {
     case 'thinking': return card('running', k, 'ronin va a leerlo', '<div class="d">Espera un lugar para el agente.</div>');
     case 'minor': return card('running', k, lastEvent?.kind === 'waiting' ? 'El prototipo espera turno: hay otro en curso en este repo' : 'ronin va a armar el prototipo');
+    case 'reproducing': return card('running', k, lastEvent?.kind === 'waiting' ? 'La reproducción espera turno: hay otra copia de la app en curso en este repo' : 'ronin va a reproducir el error', `<div class="d">Levanta una copia de la app con datos de prueba, sigue los pasos, escribe un test que falle y prueba el arreglo. Intento ${(d.bug?.reproductions.length ?? 0) + 1} de ${PED_REPRODUCTIONS}.</div>`);
+    case 'fixing':
+      if (d.pr) return card('waiting', k, esc(`Espera que un dev apruebe el PR #${d.pr}`), `<div class="d">Es el arreglo del error, partiendo del test y el diff de la reproducción. Tiene ronin:auto-merge: se mergea solo cuando lo aprueben y el CI esté verde. Al mergear, ${esc(who)} recibe “listo”.</div>`, open(d.pr, `Abrir el PR #${d.pr}`));
+      if (d.issue) return card('running', k, esc(`ronin va a hacer el arreglo en #${d.issue.number}`), `<div class="d">Lo reprodujo con un test que falla y el arreglo de prueba lo pasó a verde. ${esc(who)} no tiene que aprobar nada.</div>`, open(d.issue.number, `Abrir #${d.issue.number}`));
+      return card('running', k, 'ronin va a abrir el issue del arreglo');
     case 'asking': return card('waiting', k, esc(`Espera a ${who}: ronin le preguntó algo`), `<div class="d">Le escribió ${esc(ago(d.messages.at(-1)?.at))} y le avisó por correo. Lleva ${d.questions} de 3 preguntas.</div>`);
     case 'answered': return card('', k, esc(`ronin le respondió a ${who}`), '<div class="d">Puede seguir escribiendo si necesita algo más.</div>');
     case 'proposed': {
@@ -2864,6 +2895,8 @@ function pedNowHTML(d) {
   }
 }
 
+const PED_TEST = { red: 'test en rojo', green: 'test de rojo a verde', none: 'sin un test que falle' };
+
 const MAIL_TO = (d, to) => (to === 'team' ? 'el equipo' : d.person);
 
 // One event of its activity: [tone, icon, title, extra, small].
@@ -2871,10 +2904,14 @@ function pedEvent(d, e) {
   const who = d.person;
   switch (e.kind) {
     case 'worker': return ['', 'wait', e.by === 'tick' ? 'El tick vio el pedido sin worker y lanzó otro' : 'Se lanzó un worker', '', true];
-    case 'failed': return ['crit', 'crit', { classify: 'Falló al leerlo', prototype: 'Falló un intento de prototipo', worker: 'El worker falló' }[e.step] ?? 'Falló', `<div class="bx err">${esc(e.error)}</div>`];
-    case 'waiting': return ['', 'wait', 'El prototipo esperó turno: había otro en curso en el repo', '', true];
+    case 'failed': return ['crit', 'crit', { classify: 'Falló al leerlo', prototype: 'Falló un intento de prototipo', reproduce: 'Falló un intento de reproducción', worker: 'El worker falló' }[e.step] ?? 'Falló', `<div class="bx err">${esc(e.error)}</div>`];
+    case 'waiting': return ['', 'wait', d.bug ? 'La reproducción esperó turno: había otra copia de la app en curso en el repo' : 'El prototipo esperó turno: había otro en curso en el repo', '', true];
+    case 'reproduced': return e.reproduced
+      ? ['ok', 'ok', `Lo reprodujo (intento ${e.round})`, `<span class="m">${esc(PED_TEST[e.test])}</span>`, true]
+      : ['warn', 'crit', `No lo pudo reproducir (intento ${e.round})`, `<span class="m">${esc(PED_TEST[e.test])}</span>`, true];
     case 'classified': return e.verdict === 'minor'
       ? ['ok', 'ok', 'Lo clasificó como cambio menor', d.verdict?.kind === 'minor' && d.verdict.proposal ? `<div class="bx">${esc(d.verdict.proposal)}</div>` : '']
+      : e.verdict === 'error' ? ['run', 'run', 'Lo leyó como un reporte de error', d.bug?.steps ? `<div class="bx">${esc(d.bug.steps)}</div>` : '']
       : ['warn', 'crit', 'Lo pasó al equipo', d.verdict?.kind === 'big' && d.verdict.reason ? `<div class="bx">${esc(d.verdict.reason)}</div>` : ''];
     case 'decided': return e.decision === 'approved' ? ['ok', 'ok', `${who} aprobó el prototipo`, ''] : ['warn', 'person', `${who} no aprobó el prototipo`, ''];
     case 'mail': return [e.ok ? 'mail' : 'crit', 'mail', e.ok ? `Correo a ${MAIL_TO(d, e.to)}` : `No salió el correo a ${MAIL_TO(d, e.to)}`, `<span class="m">${esc(e.subject)}</span>`, e.ok];
@@ -2902,14 +2939,16 @@ function pedThumbs(d, m) {
 
 function pedEntryHTML(d, e) {
   const item = (tone, icon, title, extra, time, small = false, body = '') => `<li class="pd-ev ${tone} ${small ? 'small' : ''}"><span class="ic">${PED_ICON[icon] ?? PED_ICON.wait}</span><div class="h"><b>${title}</b>${extra}<span class="tm" title="${esc(time ? when(time) : '')}">${time ? esc(hhmm(time)) : 'sin hora'}</span></div>${body}</li>`;
-  if (e.type === 'run') return item('run', 'run', esc(e.run.taskType === 'portal-prototype' ? 'Armó el prototipo' : e.run.taskType === 'portal-request' ? 'ronin lo leyó' : typeName(e.run.taskType)), '', e.at, false, pedRunCard(e.run));
+  if (e.type === 'run') return item('run', 'run', esc(e.run.taskType === 'portal-prototype' ? 'Armó el prototipo' : e.run.taskType === 'portal-reproduce' ? 'Intentó reproducirlo' : e.run.taskType === 'portal-request' ? 'ronin lo leyó' : typeName(e.run.taskType)), '', e.at, false, pedRunCard(e.run));
   if (e.type === 'message') {
     const m = e.message;
     const long = m.text.length > 320;
     const text = `<div class="bx ${m.from === 'person' ? 'q' : 'r'}">${esc(long ? `${m.text.slice(0, 300)}…` : m.text)}${long ? ' <button class="more" data-ptab2="chat">Ver completo</button>' : ''}</div>`;
-    const title = m.from === 'person' ? (e.first ? `${esc(d.person)} abrió el pedido` : `${esc(d.person)} escribió`) : e.prototype ? `Le mostró el prototipo ${e.prototype}` : 'ronin le respondió';
+    const tried = d.bug?.reproductions.find((t) => t.messageId === m.id);
+    const title = m.from === 'person' ? (e.first ? `${esc(d.person)} abrió el pedido` : `${esc(d.person)} escribió`) : e.prototype ? `Le mostró el prototipo ${e.prototype}` : tried ? `Le contó lo que encontró (intento ${tried.round})` : 'ronin le respondió';
     const extra = e.first ? `<span class="m">${esc(d.appName)}</span>` : '';
-    const proto = e.prototype && d.prototypes.find((p) => p.round === e.prototype)?.patch ? `<button class="more" data-ptab2="team">Ver el borrador para el equipo →</button>` : '';
+    const proto = e.prototype && d.prototypes.find((p) => p.round === e.prototype)?.patch ? `<button class="more" data-ptab2="team">Ver el borrador para el equipo →</button>`
+      : tried ? `<button class="more" data-ptab2="repro">Ver la reproducción →</button>` : '';
     return item(m.from === 'person' ? 'person' : 'ronin', m.from === 'person' ? 'person' : 'ronin', title, extra, e.at, false, text + pedThumbs(d, m) + proto);
   }
   const [tone, icon, title, extra, small] = pedEvent(d, e.event);
@@ -2933,7 +2972,47 @@ function pedTeamHTML(d) {
     const patch = S.ped.patch[`${d.number}:${p.round}`];
     return `<h4>Prototipo ${p.round} · ${esc(when(p.at))}</h4><p>${esc(p.summary)}</p>${p.patch ? (patch?.text ? `<div class="m">${esc(diffStat(patch.text))}</div>${diffHTML(patch.text)}` : `<button class="btn-s" data-ppatch="${p.round}">${patch?.loading ? 'Cargando…' : patch?.error ? 'No se pudo leer: reintentar' : 'Ver el diff'}</button>`) : '<p class="m">Sin diff: el después es una maqueta.</p>'}`;
   }).join('');
-  return `<div class="pd-doc">${v.kind === 'big' ? block('Por qué es para el equipo', v.reason) : block('Qué cambia, en palabras de la persona', v.proposal)}${block('Resumen técnico', v.summary)}${block('Lo que se le pidió al prototipo', v.instruction)}${protos}</div>`;
+  return `<div class="pd-doc">${v.kind === 'big' ? block('Por qué es para el equipo', v.reason) : block('Qué cambia, en palabras de la persona', v.proposal)}${block('Cómo reproducirlo, según ronin', d.bug?.steps)}${block('Resumen técnico', v.summary)}${block('Lo que se le pidió al prototipo', v.instruction)}${protos}</div>`;
+}
+
+// Where a try left it: ronin fixes it, the person answers, or the team.
+function pedReproGoes(d, t, last) {
+  if (!last) return ['', 'Siguiente intento', `${d.bug.reproductions.length} de ${PED_REPRODUCTIONS}`];
+  if (['fixing', 'done'].includes(d.status) && t.fix === 'small') return ['ok', 'ronin', 'hace el arreglo; un dev aprueba el PR'];
+  if (d.status === 'asking' || d.status === 'thinking' || d.status === 'reproducing') return ['warn', `${firstName(d.person)}`, 'le preguntó lo que necesita'];
+  if (d.status === 'cancelled') return ['', 'Nadie', 'cancelado'];
+  return ['', 'Equipo', d.issue ? `issue #${d.issue.number}` : 'va a abrir el issue'];
+}
+
+// A reported error's tries (#137), newest first: what ronin did, its test
+// red and green, its images and its diff.
+function pedReproHTML(d) {
+  const tries = d.bug?.reproductions ?? [];
+  if (!tries.length) return `<div class="pd-doc">${d.bug?.steps ? `<h4>Cómo reproducirlo, según ronin</h4><p>${esc(d.bug.steps)}</p>` : ''}<p class="note">${d.status === 'reproducing' ? 'ronin todavía no termina el primer intento.' : 'Todavía no hay intentos.'}</p></div>`;
+  return tries.slice().reverse().map((t, i) => {
+    const last = i === 0;
+    const test = t.test;
+    const [goTone, goWho, goWhat] = pedReproGoes(d, t, last);
+    const shown = d.messages.find((m) => m.id === t.messageId);
+    const patch = S.ped.patch[`${d.number}:r${t.round}`];
+    const out = (label, text, cls) => (text ? `<div class="pd-out"><div class="lab"><span class="chip ${cls}">${label}</span></div><pre>${esc(text)}</pre></div>` : '');
+    return `<section class="pd-repro">
+      <h4>Intento ${t.round} · ${esc(when(t.at))}</h4>
+      <div class="pd-vc">
+        <div class="${t.reproduced ? 'ok' : 'warn'}"><span class="k">Reproducción</span><b>${t.reproduced ? '✓ Reproducido' : '✕ No se reprodujo'}</b><span class="m">con datos de prueba</span></div>
+        <div class="${test?.red ? (test.green ? 'ok' : 'crit') : ''}"><span class="k">Test</span><b>${!test ? 'Sin test' : !test.red ? 'Sin test rojo' : test.green ? 'Rojo → verde' : 'Rojo'}</b><span class="m">${test ? (test.kind === 'e2e' ? 'e2e' : 'directo en la capa') : '—'}</span></div>
+        <div class="${goTone}"><span class="k">Ahora</span><b>${esc(goWho)}</b><span class="m">${esc(goWhat)}</span></div>
+      </div>
+      <div class="pd-doc">
+        ${t.steps.length ? `<h4>Lo que hizo ronin</h4><ol>${t.steps.map((s) => `<li>${esc(s)}</li>`).join('')}</ol>` : ''}
+        ${t.summary ? `<h4>${t.reproduced ? 'Causa' : 'Lo que sospecha ronin'}</h4><p>${esc(t.summary)}</p>` : ''}
+        ${t.fix === 'big' && t.reason ? `<h4>Por qué el arreglo no es pequeño</h4><p>${esc(t.reason)}</p>` : ''}
+        ${shown ? pedThumbs(d, shown) : ''}
+        ${test ? `<h4>El test</h4><p><code>${esc(test.name)}</code>${test.file ? ` en <code>${esc(test.file)}</code>` : ''}${test.command ? `<br><span class="m">${esc(test.command)}</span>` : ''}</p>${!test.red ? '<p class="m">No falla con datos de prueba: no prueba el error, es lo que se intentó.</p>' : ''}
+          <div class="pd-tdd">${out(test.red ? 'Rojo' : 'Salida', test.redOutput, test.red ? 'crit' : '')}${test.green ? out('Verde', test.greenOutput, 'ok') : ''}</div>` : ''}
+        ${t.patch ? `<h4>Diff ${t.fix === 'small' ? '(el test y el arreglo de prueba)' : '(el test)'}</h4>${patch?.text ? `<div class="m">${esc(diffStat(patch.text))}</div>${diffHTML(patch.text)}` : `<button class="btn-s" data-prpatch="${t.round}">${patch?.loading ? 'Cargando…' : patch?.error ? 'No se pudo leer: reintentar' : 'Ver el diff'}</button>`}` : ''}
+      </div></section>`;
+  }).join('');
 }
 
 function pedRunsHTML(d) {
@@ -2956,7 +3035,7 @@ function pedSideHTML(d) {
       <dt>App</dt><dd>${esc(d.appName)} <small>${esc(d.repo)}</small></dd>
       <dt>Abierto</dt><dd>${esc(when(d.createdAt))}</dd>
       <dt>Preguntas</dt><dd>${d.questions} de 3</dd>
-      <dt>Prototipos</dt><dd>${d.prototypes.length} de 3</dd>
+      ${d.bug ? `<dt>Reproducciones</dt><dd>${d.bug.reproductions.length} de ${PED_REPRODUCTIONS}</dd>` : `<dt>Prototipos</dt><dd>${d.prototypes.length} de 3</dd>`}
       ${d.issue ? `<dt>Issue</dt><dd>${gh(d.issue.number, issueUrl(d.repo, d.issue.number) ?? '#', `#${d.issue.number}`)}</dd>` : ''}
       ${d.pr ? `<dt>PR</dt><dd>${gh(d.pr, prUrl(d.repo, d.pr) ?? '#', `#${d.pr}`)}</dd>` : ''}
     </dl></div>
@@ -2970,13 +3049,16 @@ function pedidoHTML() {
   const entry = S.ped.detail[n];
   const d = entry?.data;
   if (!d) return `<div class="today pd">${entry?.error ? `<p class="bad">${esc(entry.error)}</p>` : '<div class="empty">Cargando…</div>'}</div>`;
-  const counts = { chat: d.messages.length, runs: d.runs.length };
-  const body = S.ped.tab === 'chat' ? pedChatHTML(d) : S.ped.tab === 'team' ? pedTeamHTML(d) : S.ped.tab === 'runs' ? pedRunsHTML(d) : pedActivityHTML(d);
+  const counts = { chat: d.messages.length, runs: d.runs.length, repro: d.bug?.reproductions.length };
+  // Reproducción, only for a reported error.
+  const tabs = PED_TABS.filter(([k]) => k !== 'repro' || d.bug);
+  const tab = tabs.some(([k]) => k === S.ped.tab) ? S.ped.tab : 'act';
+  const body = tab === 'chat' ? pedChatHTML(d) : tab === 'team' ? pedTeamHTML(d) : tab === 'runs' ? pedRunsHTML(d) : tab === 'repro' ? pedReproHTML(d) : pedActivityHTML(d);
   return `<div class="head pd-head"><div class="crumb"><button class="link" data-ppage>Portal de pedidos</button> / <i style="background:${repoColor(d.repo)}"></i>${esc(repoShort(d.repo))} · ${esc(d.appName)}</div>
       <div class="row"><h1>${esc(d.title)} <span class="n">P-${d.number}</span></h1></div>
-      <div class="state">${pedChip(d)}<span>${esc(d.person)}</span><span class="m">abierto ${esc(ago(d.createdAt))}</span>${d.issue ? `<button class="link" data-pitem="${esc(`${d.repo}#${d.issue.number}`)}">#${d.issue.number}</button>` : ''}${d.pr ? `<button class="link" data-pitem="${esc(`${d.repo}#${d.pr}`)}">PR #${d.pr}</button>` : ''}</div>
+      <div class="state">${pedChip(d)}${pedBugTag(d)}<span>${esc(d.person)}</span><span class="m">abierto ${esc(ago(d.createdAt))}</span>${d.issue ? `<button class="link" data-pitem="${esc(`${d.repo}#${d.issue.number}`)}">#${d.issue.number}</button>` : ''}${d.pr ? `<button class="link" data-pitem="${esc(`${d.repo}#${d.pr}`)}">PR #${d.pr}</button>` : ''}</div>
       ${pedStepper(d)}</div>
-    <div class="doctabs" role="tablist">${PED_TABS.map(([k, label]) => `<button class="doctab" role="tab" data-ptab2="${k}" aria-selected="${S.ped.tab === k}">${label}${counts[k] ? ` <span class="c">${counts[k]}</span>` : ''}</button>`).join('')}</div>
+    <div class="doctabs" role="tablist">${tabs.map(([k, label]) => `<button class="doctab" role="tab" data-ptab2="${k}" aria-selected="${tab === k}">${label}${counts[k] ? ` <span class="c">${counts[k]}</span>` : ''}</button>`).join('')}</div>
     <div class="pd-body"><div class="pd-cols"><div class="pd-main">${body}</div>${pedSideHTML(d)}</div></div>`;
 }
 
@@ -2992,12 +3074,13 @@ function pedLightbox() {
   $('#lb-x').onclick = () => { S.ped.lb = null; pedLightbox(); };
 }
 
-async function loadPatch(n, round) {
-  const key = `${n}:${round}`;
+// A prototype's diff, or a reproduction's (#137).
+async function loadPatch(n, round, of = 'prototipo') {
+  const key = `${n}:${of === 'prototipo' ? '' : 'r'}${round}`;
   S.ped.patch[key] = { loading: true };
   renderCenter();
   try {
-    S.ped.patch[key] = { text: (await api(pedPath(n, `/prototipo/${round}`))).patch };
+    S.ped.patch[key] = { text: (await api(pedPath(n, `/${of}/${round}`))).patch };
   } catch (error) {
     if (error instanceof Unauthorized) return showLogin();
     S.ped.patch[key] = { error: error.message };
@@ -3028,6 +3111,7 @@ function wirePedidos() {
   center.querySelector('[data-prunx]')?.addEventListener('click', () => { S.ped.run = null; renderCenter(); });
   for (const b of center.querySelectorAll('[data-plb]')) b.onclick = () => { S.ped.lb = { n: S.ped.n, file: b.dataset.plb }; pedLightbox(); };
   for (const b of center.querySelectorAll('[data-ppatch]')) b.onclick = () => loadPatch(S.ped.n, Number(b.dataset.ppatch));
+  for (const b of center.querySelectorAll('[data-prpatch]')) b.onclick = () => loadPatch(S.ped.n, Number(b.dataset.prpatch), 'reproduccion');
 }
 
 // ---------- context

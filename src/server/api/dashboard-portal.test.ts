@@ -26,6 +26,10 @@ describe("a portal request on the dashboard (#132)", () => {
     expect(waitsOn({ status: 'approved', pr: 9 })).toBe('team');
     expect(waitsOn({ status: 'big' })).toBe('ronin');
     expect(waitsOn({ status: 'big', issue: { number: 9, url: '' } })).toBe('team');
+    // A reported error (#137): ronin while it's reproduced, and its fix like an approved one.
+    expect(waitsOn({ status: 'reproducing' })).toBe('ronin');
+    expect(waitsOn({ status: 'fixing' })).toBe('ronin');
+    expect(waitsOn({ status: 'fixing', pr: 9 })).toBe('team');
     expect(waitsOn({ status: 'done' })).toBeNull();
   });
 

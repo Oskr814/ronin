@@ -921,6 +921,22 @@ button.brow:hover { background: var(--hover); }
 .pd-doc h4:first-child { margin-top: 0; }
 .pd-doc p { margin: 4px 0 8px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .pd-doc .diff { margin-top: 6px; max-height: 520px; }
+.pd-doc ol { margin: 4px 0 8px; padding-left: 20px; display: grid; gap: 2px; }
+.pd-doc code { font: 12px "JetBrains Mono", ui-monospace, monospace; background: var(--raise); border-radius: 4px; padding: 0 4px; overflow-wrap: anywhere; }
+.pd-tag { display: inline-block; margin-left: 6px; font-size: 11.5px; padding: 0 7px; border-radius: 999px; background: var(--crit-bg); color: var(--crit); white-space: nowrap; vertical-align: 1px; }
+.pd-head .state .pd-tag { margin-left: 0; }
+.pd-repro { margin-bottom: 22px; }
+.pd-repro > h4 { margin: 0 0 8px; font-size: 13px; color: var(--ink); }
+.pd-vc { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-bottom: 12px; }
+.pd-vc > div { border: 1px solid var(--rule); border-radius: 9px; background: var(--panel); padding: 8px 11px; display: grid; gap: 1px; }
+.pd-vc .k { font-size: 11.5px; color: var(--faint); text-transform: uppercase; letter-spacing: .05em; }
+.pd-vc b { font-weight: 600; }
+.pd-vc .m { font-size: 12px; }
+.pd-vc .ok b { color: var(--ok); } .pd-vc .warn b { color: var(--warn); } .pd-vc .crit b { color: var(--crit); }
+.pd-tdd { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 8px; }
+.pd-out .lab { margin-bottom: 4px; }
+.pd-out pre { margin: 0; font: 11.5px/1.55 "JetBrains Mono", ui-monospace, monospace; background: var(--bg); border: 1px solid var(--rule); border-radius: 8px; padding: 8px 10px; overflow-x: auto; max-height: 260px; color: var(--ink-2); white-space: pre; }
+@media (max-width: 760px) { .pd-vc { grid-template-columns: minmax(0, 1fr); } }
 .pd-runrow { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 10px; align-items: start; margin-bottom: 8px; }
 .pd-runrow .tm { font: 11.5px "JetBrains Mono", ui-monospace, monospace; color: var(--faint); padding-top: 14px; }
 .pd-runrow.cur .pd-run { border-color: var(--run); }

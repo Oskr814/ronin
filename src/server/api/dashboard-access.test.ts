@@ -104,6 +104,18 @@ describe('a session that sees only some repos', () => {
     // Only an image the request has, by its name.
     expect((await call(`/api/pedidos/${sc.number}/img/..%2F..%2Frequest.json`)).status).toBe(404);
     expect((await call(`/api/pedidos/${sc.number}/prototipo/1`)).status).toBe(404);
+    expect((await call(`/api/pedidos/${sc.number}/reproduccion/1`)).status).toBe(404);
+    // A reported error's reproduction: in its page, and its diff by round (#137).
+    const { prototypePatchPath, updateRequest: update } = await import('../../portal/requests.js');
+    const { mkdir, writeFile } = await import('node:fs/promises');
+    const { dirname } = await import('node:path');
+    await mkdir(dirname(prototypePatchPath(sc.number, 'r1.diff')), { recursive: true });
+    await writeFile(prototypePatchPath(sc.number, 'r1.diff'), '+[Fact]\n');
+    await update(sc.number, (r) => { r.bug = { steps: 's', reproductions: [{ round: 1, reproduced: true, steps: [], summary: '', patch: 'r1.diff', messageId: 1, at: '' }] }; });
+    expect((await call(`/api/pedidos/${sc.number}/reproduccion/1`)).body).toEqual({ patch: '+[Fact]\n' });
+    expect((await call(`/api/pedidos/${sc.number}/prototipo/1`)).status).toBe(404);
+    expect((await call(`/api/pedidos/${sc.number}`)).body).toMatchObject({ bug: { steps: 's', reproductions: [{ round: 1 }] } });
+    expect((await call('/api/pedidos')).body.requests[0]).toMatchObject({ bug: true });
     // The issue it became says so on its page.
     const { updateRequest } = await import('../../portal/requests.js');
     await updateRequest(sc.number, (r) => { r.issue = { number: 1, url: '' }; });
