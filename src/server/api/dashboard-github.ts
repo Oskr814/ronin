@@ -15,7 +15,9 @@ import { parseSlices, type Slice } from '../../slices/checklist.js';
 // repo is read again after DASHBOARD_GITHUB_TTL_SECONDS, or sooner when one
 // of its runs started or ended since the last read. While a read is on its
 // way, the previous one is served; if it fails, the previous one stays, with
-// the error, so the page can say its GitHub data is old.
+// the error, so the page can say its GitHub data is old. The previews are
+// the exception: they're files on this machine, read again on every call,
+// so a preview whose data just got ready says so on the next poll.
 
 export interface IssueView {
   number: number;
@@ -74,10 +76,9 @@ export function linkPrs(prs: Array<Pick<OpenPr, 'number' | 'headRefName'>>, clos
   return links;
 }
 
-async function fetchRepo(entry: RepoEntry): Promise<RepoGithub> {
+async function fetchRepo(entry: RepoEntry): Promise<Omit<RepoGithub, 'previews'>> {
   return withActiveRepo(entry, async () => {
-    const [managed, openIssues, prs, closing, previews, blocks] = await Promise.all([listOpenManagedIssues(), listOpenIssues(), listOpenPrsWithChecks(), listPrClosingIssues(), listPreviewStates(), getBlocks()]);
-    const ttl = config.previewTtlMinutes;
+    const [managed, openIssues, prs, closing, blocks] = await Promise.all([listOpenManagedIssues(), listOpenIssues(), listOpenPrsWithChecks(), listPrClosingIssues(), getBlocks()]);
     const issues = managed.map((issue) => ({
       number: issue.number,
       title: issue.title,
@@ -93,24 +94,39 @@ async function fetchRepo(entry: RepoEntry): Promise<RepoGithub> {
       openIssues,
       prs,
       prIssue: linkPrs(prs, closing, issues, new Set([...openIssues, ...issues].map((i) => i.number))),
-      previews: previews.map((p) => ({
-        prNumber: p.prNumber,
-        appName: p.appName,
-        url: p.url,
-        ...(p.startedAt ? { startedAt: p.startedAt } : {}),
-        ...(p.startedAt && ttl > 0 ? { expiresAt: new Date(Date.parse(p.startedAt) + ttl * 60_000).toISOString() } : {}),
-        ...(p.preparing ? { preparing: true } : {}),
-      })),
       blocks,
     };
   });
 }
 
-const cache = new Map<string, { data?: RepoGithub; readAt: number; reading?: Promise<RepoGithub> }>();
+async function readPreviews(entry: RepoEntry): Promise<PreviewView[]> {
+  const ttl = config.previewTtlMinutes;
+  try {
+    const previews = await withActiveRepo(entry, () => listPreviewStates());
+    return previews.map((p) => ({
+      prNumber: p.prNumber,
+      appName: p.appName,
+      url: p.url,
+      ...(p.startedAt ? { startedAt: p.startedAt } : {}),
+      ...(p.startedAt && ttl > 0 ? { expiresAt: new Date(Date.parse(p.startedAt) + ttl * 60_000).toISOString() } : {}),
+      ...(p.preparing ? { preparing: true } : {}),
+    }));
+  } catch (error) {
+    log.error(`tablero: no se pudieron leer las previews de ${entry.productRepo}`, error);
+    return [];
+  }
+}
+
+const cache = new Map<string, { data?: Omit<RepoGithub, 'previews'>; readAt: number; reading?: Promise<Omit<RepoGithub, 'previews'>> }>();
 
 // `changedSince`: the latest start or end of one of the repo's runs (epoch
 // ms) — a read older than that is stale whatever its age.
 export async function repoGithub(entry: RepoEntry, changedSince = 0, now = Date.now()): Promise<RepoGithub | undefined> {
+  const [github, previews] = await Promise.all([cachedGithub(entry, changedSince, now), readPreviews(entry)]);
+  return github && { ...github, previews };
+}
+
+async function cachedGithub(entry: RepoEntry, changedSince: number, now: number): Promise<Omit<RepoGithub, 'previews'> | undefined> {
   const key = entry.productRepo;
   const entryCache = cache.get(key) ?? { readAt: 0 };
   cache.set(key, entryCache);
@@ -128,7 +144,7 @@ export async function repoGithub(entry: RepoEntry, changedSince = 0, now = Date.
         log.error(`tablero: no se pudo leer GitHub para ${key}`, error);
         // Tried again on the next snapshot, not on every one of them.
         entryCache.readAt = Date.now();
-        const stale = entryCache.data ?? { repo: key, fetchedAt: '', issues: [], openIssues: [], prs: [], prIssue: {}, previews: [], blocks: {} };
+        const stale = entryCache.data ?? { repo: key, fetchedAt: '', issues: [], openIssues: [], prs: [], prIssue: {}, blocks: {} };
         entryCache.data = { ...stale, error: (error as Error).message.split('\n')[0] };
         return entryCache.data;
       })

@@ -11,7 +11,8 @@ vi.mock('../../core/github.js', () => ({
   listPrClosingIssues: () => listPrClosingIssues(),
 }));
 vi.mock('../../core/local-state.js', () => ({ getBlocks: async () => ({}) }));
-vi.mock('../../preview/index.js', () => ({ listPreviewStates: async () => [] }));
+const listPreviewStates = vi.fn();
+vi.mock('../../preview/index.js', () => ({ listPreviewStates: () => listPreviewStates() }));
 
 const { linkPrs, repoGithub, resetGithubCache } = await import('./dashboard-github.js');
 
@@ -25,6 +26,7 @@ beforeEach(() => {
   listOpenPrsWithChecks.mockReset().mockResolvedValue([]);
   listOpenIssues.mockReset().mockResolvedValue([{ number: 879, title: 'Validar stock', url: 'u', labels: ['ronin'] }, { number: 405, title: 'Otro', url: 'v', labels: [] }]);
   listPrClosingIssues.mockReset().mockResolvedValue({});
+  listPreviewStates.mockReset().mockResolvedValue([]);
 });
 
 describe('repoGithub', () => {
@@ -45,6 +47,17 @@ describe('repoGithub', () => {
     // A run ended after the read: the next call serves the old read and starts a new one.
     await repoGithub(ENTRY, now + 60_000, now + 2000);
     await vi.waitFor(() => expect(listOpenManagedIssues).toHaveBeenCalledTimes(2));
+  });
+
+  it('reads the previews again on every call, while the GitHub read is still fresh', async () => {
+    const now = Date.now();
+    const preview = { prNumber: 881, appName: 'web', sha: 'abc', url: 'https://h:20001' };
+    listPreviewStates.mockResolvedValue([{ ...preview, preparing: true }]);
+    expect((await repoGithub(ENTRY, 0, now))?.previews).toEqual([{ prNumber: 881, appName: 'web', url: 'https://h:20001', preparing: true }]);
+    // Its data got ready: the next poll says so, without asking GitHub again.
+    listPreviewStates.mockResolvedValue([preview]);
+    expect((await repoGithub(ENTRY, 0, now + 1000))?.previews).toEqual([{ prNumber: 881, appName: 'web', url: 'https://h:20001' }]);
+    expect(listOpenManagedIssues).toHaveBeenCalledTimes(1);
   });
 
   it('keeps the last good read when GitHub fails, with the error', async () => {
