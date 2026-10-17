@@ -3,7 +3,8 @@
 // when the one before died. Reading it waits for a slot of the runner's
 // shared quota like any other agent run; a small change then waits for the
 // repo's prototype lock (one app stack at a time, shared with the issues'
-// /prototype) and gets its prototype. Holds the request's lock throughout,
+// /prototype) and gets its prototype. An approved one gets its issue, for
+// ronin to make the change (approved.ts). Holds the request's lock throughout,
 // so two workers never work the same request.
 import { config } from '../core/config.js';
 import { tryLockResource, unlockResource, withSlots } from '../core/locks.js';
@@ -12,6 +13,7 @@ import { withActiveRepo } from '../core/repo-context.js';
 import { loadRepos } from '../core/repos.js';
 import { releasePrototypeLock, waitForPrototypeLock } from '../commands/prototype.js';
 import { classifyRequest } from './classify.js';
+import { openApprovedIssue } from './approved.js';
 import { prototypeRequest } from './prototype.js';
 import { addRoninMessage, getRequest, updateRequest } from './requests.js';
 
@@ -19,7 +21,7 @@ const { number } = JSON.parse(process.argv[2] ?? '{}') as { number?: number };
 
 async function main(): Promise<void> {
   const request = number ? await getRequest(number) : undefined;
-  if (!request || (request.status !== 'thinking' && request.status !== 'minor')) return;
+  if (!request || !(request.status === 'thinking' || request.status === 'minor' || (request.status === 'approved' && !request.issue))) return;
   const entry = (await loadRepos()).find((r) => r.productRepo === request.repo);
   if (!entry) throw new Error(`${request.repo} no está en repos.json`);
   await withActiveRepo(entry, async () => {
@@ -29,6 +31,11 @@ async function main(): Promise<void> {
       r.worker = { pid: process.pid, since: new Date().toISOString() };
     });
     try {
+      if (request.status === 'approved') {
+        await claim();
+        await openApprovedIssue(request.number);
+        return;
+      }
       if (request.status === 'thinking') {
         await claim();
         await withSlots('portal-request', config.tickConcurrency, {}, () => classifyRequest(request.number), `pedido P-${request.number}`);

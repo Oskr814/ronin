@@ -98,15 +98,17 @@ describe('portal prototype', () => {
     expect((await getRequest(n))?.status).toBe('big');
   });
 
-  it('approved, it is the team’s to make; turned down, the team’s to look at, with the person’s note', async () => {
+  it('approved, the worker opens its issue; turned down, the team’s to look at, with the person’s note', async () => {
     const approve = await minorRequest();
-    await expect(decideRequest(approve, 'aprobar')).rejects.toThrow(/no espera tu decisión/);
+    const launch = vi.fn(async () => {});
+    await expect(decideRequest(approve, 'aprobar', '', launch)).rejects.toThrow(/no espera tu decisión/);
     await updateRequest(approve, (x) => { x.status = 'proposed'; });
-    const approved = await decideRequest(approve, 'aprobar');
+    const approved = await decideRequest(approve, 'aprobar', '', launch);
     expect(approved).toMatchObject({ status: 'approved', decision: { kind: 'approved' } });
     expect(approved.messages.at(-1)?.text).toBe(APPROVED_REPLY);
-    expect(sendMail).toHaveBeenCalledOnce();
-    expect(sendMail.mock.calls[0]).toMatchObject([{ to: config.notifyTo, subject: expect.stringContaining('(prototipo aprobado)') }, expect.any(String)]);
+    // The worker opens its issue; nobody is mailed yet.
+    expect(launch).toHaveBeenCalledWith(approve);
+    expect(sendMail).not.toHaveBeenCalled();
 
     sendMail.mockClear();
     const reject = (await createRequest({ userId: approved.userId, repo: 'redmotos/shoppingcart', app: 'backoffice', text: 'Otra', images: [] })).number;

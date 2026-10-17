@@ -65,6 +65,14 @@ export async function removeIssueLabel(issueNumber: number, label: string): Prom
   await gh(['issue', 'edit', String(issueNumber), '--remove-label', label]);
 }
 
+// Open or closed, and why it closed: COMPLETED (done, e.g. by its PR's
+// merge) or NOT_PLANNED.
+export async function getIssueState(issueNumber: number): Promise<{ state: 'OPEN' | 'CLOSED'; stateReason: string }> {
+  const stdout = await gh(['issue', 'view', String(issueNumber), '--json', 'state,stateReason']);
+  const raw = JSON.parse(stdout) as { state: 'OPEN' | 'CLOSED'; stateReason?: string | null };
+  return { state: raw.state, stateReason: raw.stateReason ?? '' };
+}
+
 export async function getIssueBody(issueNumber: number): Promise<string> {
   const stdout = await gh(['issue', 'view', String(issueNumber), '--json', 'body']);
   return (JSON.parse(stdout) as { body: string }).body;
@@ -1518,13 +1526,13 @@ export async function closeIssueNotPlanned(issueNumber: number, comment: string)
   return true;
 }
 
-export async function createIssue(title: string, body: string, labels: string[]): Promise<{ number: number; url: string }> {
+export async function createIssue(title: string, body: string, labels: string[], assignees: string[] = []): Promise<{ number: number; url: string }> {
   const dir = await mkdtemp(join(tmpdir(), 'ronin-issue-'));
   const bodyFile = join(dir, 'body.md');
   try {
     await writeFile(bodyFile, body, 'utf8');
     for (const label of labels) await ensureLabel(label);
-    const stdout = await gh(['issue', 'create', '--title', title, '--body-file', bodyFile, ...labels.flatMap((l) => ['--label', l])]);
+    const stdout = await gh(['issue', 'create', '--title', title, '--body-file', bodyFile, ...labels.flatMap((l) => ['--label', l]), ...assignees.flatMap((a) => ['--assignee', a])]);
     const url = stdout.trim();
     return { number: Number(url.split('/').pop()), url };
   } finally {

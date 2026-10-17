@@ -5,7 +5,8 @@ import { config } from '../core/config.js';
 import { log } from '../core/logger.js';
 import { getUser } from './accounts.js';
 import { prototypeMail } from './mail.js';
-import { handOverMails, sendPortalMails, teamMail } from './notify.js';
+import { launchPortalWorker } from './launch.js';
+import { handOverMails, sendPortalMails } from './notify.js';
 import {
   addPersonNote,
   addRoninMessage,
@@ -37,7 +38,7 @@ export function proposedReply(mensaje: string | undefined, round: number): strin
   return `${mensaje ?? 'Así quedaría el cambio.'}\n\n${next}`;
 }
 
-export const APPROVED_REPLY = '¡Listo, quedó aprobado! El equipo de desarrollo va a hacer el cambio tal como lo viste. Te aviso por correo cuando esté listo para la próxima actualización.';
+export const APPROVED_REPLY = '¡Quedó aprobado! Voy a hacer el cambio tal como lo viste, y antes de publicarlo lo revisa una persona del equipo. Te aviso por correo cuando esté listo para la próxima actualización.';
 export const REJECTED_REPLY = 'Entendido. Se lo paso al equipo de desarrollo con tu pedido y lo que conversamos. Te aviso por correo cuando esté resuelto.';
 export const FAILED_PROTOTYPE_REPLY = 'No pude armar el prototipo de este cambio, así que se lo paso al equipo de desarrollo con tu pedido y lo que conversamos. Te aviso por correo cuando esté resuelto.';
 
@@ -135,10 +136,10 @@ export async function prototypeRequest(n: number): Promise<void> {
 
 export type Decision = 'aprobar' | 'rechazar';
 
-// What the person decided on the prototype on screen. Approved, it's the
-// team's to make until the portal opens the PR itself; turned down, it's
-// the team's to look at, like a big one.
-export async function decideRequest(n: number, decision: Decision, note = ''): Promise<PortalRequest> {
+// What the person decided on the prototype on screen. Approved, the worker
+// opens its issue for ronin (approved.ts); turned down, it's the team's to
+// look at, like a big one.
+export async function decideRequest(n: number, decision: Decision, note = '', launch = launchPortalWorker): Promise<PortalRequest> {
   const decided = await updateRequest(n, (r) => {
     if (r.status !== 'proposed') throw new RequestError('Este pedido no espera tu decisión ahora.');
     const at = new Date();
@@ -155,8 +156,7 @@ export async function decideRequest(n: number, decision: Decision, note = ''): P
     return r;
   });
   log.info(`portal: el pedido P-${n} quedó ${decision === 'aprobar' ? 'aprobado' : 'para el equipo (prototipo no aprobado)'}`);
-  const user = await getUser(decided.userId);
-  if (decided.status === 'big') await handOverMails(decided, user);
-  else await sendPortalMails(decided, [await teamMail(decided, user)]);
+  if (decided.status === 'big') await handOverMails(decided, await getUser(decided.userId));
+  else await launch(n);
   return decided;
 }

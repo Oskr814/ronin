@@ -30,13 +30,14 @@ const FLOWS: Record<string, Record<string, Flow[]>> = {
     // ready for review.
     assigned: ['assign', 'issues', 'review'],
     ready_for_review: ['assign', 'issues', 'review'],
-    opened: ['issues', 'review', 'exploration'],
+    // An approved portal request's PR gets ronin:auto-merge right away.
+    opened: ['issues', 'review', 'exploration', 'portal'],
     synchronize: ['issues', 'review', 'exploration'],
     reopened: ['issues', 'review', 'exploration'],
     // A merge too: the merged slice is checked off, its stack retargeted,
     // its worktree and /preview taken down, and a PR stacked on it can
-    // auto-merge now.
-    closed: ['sweeps', 'issues', 'auto-merge'],
+    // auto-merge now. A portal request's merge tells the person.
+    closed: ['sweeps', 'issues', 'auto-merge', 'portal'],
     labeled: ['auto-merge'],
   },
   issue_comment: { created: PR_ACTIVITY },

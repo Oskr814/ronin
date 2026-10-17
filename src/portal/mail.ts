@@ -111,6 +111,39 @@ export function bigRequestMail(request: PortalRequest, user: PortalUser, portalU
   };
 }
 
+// To the person, when the change merged.
+export function doneMail(request: PortalRequest, user: PortalUser, portalUrl: string): Mail {
+  const first = user.name.split(/\s+/)[0] || user.name;
+  const lines = [
+    `Hola ${first},`,
+    `Listo: el cambio de tu pedido P-${request.number} ("${request.title}") ya está hecho y sale en la próxima actualización de la aplicación.`,
+    'Gracias por pedirlo.',
+  ];
+  const url = requestUrl(portalUrl, request.number);
+  return {
+    to: user.email,
+    subject: `Listo, sale en la próxima actualización: ${request.title}`,
+    text: `${lines.join('\n\n')}\n\n${url}`,
+    html: html(lines.map(esc), { label: 'Ver el pedido', url }, portalUrl),
+  };
+}
+
+// To the dev team (NOTIFY_TO), when ronin opened the PR of an approved
+// request: it merges once one of them approves it and CI is green.
+export function teamPrMail(request: PortalRequest, user: PortalUser | undefined, to: string, prUrl: string): Mail {
+  const who = user ? `${user.name} <${user.email}>` : request.userId;
+  const text = [
+    `ronin abrió el PR del pedido P-${request.number} del portal: ${request.title}`,
+    `De: ${who}`,
+    `App: ${request.repo} · ${request.app}`,
+    request.verdict?.proposal ? `Lo que aprobó: ${request.verdict.proposal}` : null,
+    `PR: ${prUrl}`,
+    'Tiene ronin:auto-merge: se mergea cuando alguien del equipo lo aprueba y CI está en verde. Entonces se le avisa a la persona que sale en la próxima actualización.',
+    request.issue ? `Issue: ${request.issue.url}` : null,
+  ].filter(Boolean).join('\n\n');
+  return { to, subject: `[ronin] PR para aprobar: pedido P-${request.number} del portal (${request.title})`, text };
+}
+
 const MAX_PATCH = 30_000;
 
 // What the team is told a request is.

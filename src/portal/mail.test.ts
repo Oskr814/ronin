@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { bigRequestMail, linkMail, prototypeMail, replyMail, teamRequestMail } from './mail.js';
+import { bigRequestMail, doneMail, linkMail, prototypeMail, replyMail, teamPrMail, teamRequestMail } from './mail.js';
 import type { PortalUser } from './accounts.js';
 import type { PortalRequest } from './requests.js';
 
@@ -51,6 +51,13 @@ describe('portal mails', () => {
     const rejected = teamRequestMail(request({ status: 'big', verdict: { ...verdict, kind: 'big', reason: 'La persona no aprobó el prototipo.' }, prototypes, decision: { kind: 'rejected', at: '' } }), user, 'team@x.com', '/data/requests/31');
     expect(rejected.subject).toContain('(prototipo no aprobado)');
     expect(bigRequestMail(request({ status: 'big', decision: { kind: 'rejected', at: '' } }), user, URL).text).toContain('lo que conversamos sobre el prototipo');
+  });
+
+  it('tells the person when it merged, and the team when its PR waits for them', () => {
+    expect(doneMail(request({ status: 'done' }), user, URL)).toMatchObject({ to: 'mf@x.com', subject: 'Listo, sale en la próxima actualización: Abrir la ficha del cliente' });
+    const team = teamPrMail(request({ status: 'approved', issue: { number: 9, url: 'https://github.com/x/y/issues/9' } }), user, 'team@x.com', 'https://github.com/x/y/pull/10');
+    expect(team.subject).toBe('[ronin] PR para aprobar: pedido P-31 del portal (Abrir la ficha del cliente)');
+    for (const part of ['https://github.com/x/y/pull/10', 'ronin:auto-merge', 'https://github.com/x/y/issues/9']) expect(team.text).toContain(part);
   });
 
   it('escapes what people wrote in the HTML', () => {

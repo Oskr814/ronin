@@ -54,7 +54,7 @@ describe('scopeForEvent', () => {
 
   it('scopes an event on a PR ronin does not manage to that PR alone', () => {
     expect(scopeForEvent('pull_request', { action: 'opened', pull_request: externalPr, repository }, tracked, 'ronin-agent')?.scope).toEqual({
-      flows: ['issues', 'review', 'exploration'],
+      flows: ['issues', 'review', 'exploration', 'portal'],
       resources: ['pr-41'],
     });
   });
@@ -65,8 +65,8 @@ describe('scopeForEvent', () => {
     }
   });
 
-  it('cleans up after a closed or merged PR, and lets a PR stacked on it auto-merge', () => {
-    expect(scopeForEvent('pull_request', { action: 'closed', pull_request: slicePr, repository }, tracked, 'ronin-agent')?.scope.flows).toEqual(['sweeps', 'issues', 'auto-merge']);
+  it('cleans up after a closed or merged PR, lets a PR stacked on it auto-merge, and follows a portal request', () => {
+    expect(scopeForEvent('pull_request', { action: 'closed', pull_request: slicePr, repository }, tracked, 'ronin-agent')?.scope.flows).toEqual(['sweeps', 'issues', 'auto-merge', 'portal']);
   });
 
   it('reads a comment on a PR as PR activity, leaving its issue to the handler', () => {
