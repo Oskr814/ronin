@@ -473,9 +473,9 @@ Ahora cada evento tiene su handler:
 
 **Métricas**: el handler loguea `event_start` con `delayMs` (desde que llegó el evento hasta que tiene sus recursos) y `event_complete` al terminar, junto al `tick_complete` del tick.
 
-### 15. Tablero web (#65, #85, #93)
+### 15. Tablero web (#65, #85, #93, #111)
 
-Una página para ver qué está haciendo ronin sin recorrer GitHub issue por issue ni leer el log: qué agentes corren y qué hacen paso a paso, qué issues esperan a alguien y por qué, cómo va cada stack de slices, qué previews están arriba y cuánto le queda a cada cuenta de Claude. Cada issue o PR tiene su ficha, con lo que dice en GitHub, y desde ahí se le pueden pedir a ronin los comandos más usados (15.11). Un PR de exploración se revisa ahí mismo, ficha por ficha (15.12). Lo que se hace desde la página sale en GitHub a nombre de quien entró (15.3). Se ve solo por la tailnet.
+Una página para ver qué está haciendo ronin sin recorrer GitHub issue por issue ni leer el log: qué agentes corren y qué hacen paso a paso, qué issues esperan a alguien y por qué, cómo va cada stack de slices, qué previews están arriba y cuánto le queda a cada cuenta de Claude. Cada issue o PR tiene su ficha, con lo que dice en GitHub, y desde ahí se le pueden pedir a ronin los comandos más usados (15.11). Un PR de exploración se revisa ahí mismo, ficha por ficha (15.12), y cualquier PR, archivo por archivo, con su revisión (15.14). Lo que se hace desde la página sale en GitHub a nombre de quien entró (15.3). Se ve solo por la tailnet.
 
 #### 15.1 Qué muestra
 
@@ -493,6 +493,7 @@ Una página para ver qué está haciendo ronin sin recorrer GitHub issue por iss
   - **Encabezado.** Título, repo, el link a GitHub y el botón *Acciones* (15.11). Debajo, chips con su estado. El PR del ítem (o, en un issue, el de la slice que avanza) suma si tiene conflictos con su base, sus checks, la review y si es draft. Un issue suma cuántas slices van mergeadas y qué espera.
   - **Actividad.** Una línea con la última corrida (estado, hace cuánto, duración, costo y el error si falló) y las anteriores de los últimos 14 días, cada una con su transcript. Si hay una en curso, una tarjeta con lo último que dijo el agente, sus últimos cuatro pasos y el reloj, que se sigue en vivo.
   - **Pestaña *Fichas*,** solo en un PR de exploración, y la primera: las propuestas que trae, para revisarlas y decidir (15.12). Mientras está abierta, la columna de contexto se oculta para dejarle lugar.
+  - **Pestaña *Archivos*,** en un PR y en un issue con un PR que avanza: el diff con sus hilos, para comentar y revisar (15.14). Como *Fichas*, ocupa también la columna de contexto.
   - **Pestañas *Issue*, *PR* y *Comentarios*.** La descripción del issue y la de su PR (o la del PR y la de su issue de tracking), y los comentarios del ítem, con los de ronin marcados. Es el markdown de GitHub, saneado (15.3). Un `#123` abre ese ítem en el tablero si está en la barra lateral, y si no, en GitHub.
   - **El transcript de una corrida** se abre desde la actividad, con "← Ficha" para volver: los textos del agente y sus pasos (leyó, buscó, editó, corrió), arriba las corridas del ítem y abajo el estado, el reloj, el modelo y el worktree. Una corrida en curso se sigue en vivo, y si arranca una nueva sobre el ítem abierto, aparece sola. Lo que no es un issue ni un PR (el changelog) abre directo en el transcript, igual que una corrida elegida en *Hoy*.
 - **Contexto, a la derecha.**
@@ -571,6 +572,8 @@ La tailnet ya limita quién llega. El login suma una segunda barrera, y el token
 | Cupos ocupados | `.ronin-slots/all-*.lock` con un pid vivo |
 | Issues, slices, PRs, checks | GitHub, dos llamadas por repo (15.8) |
 | Descripción y comentarios de un issue o PR | GitHub, al abrir su ficha (15.8) |
+| Archivos de un PR y sus hilos de review | GitHub, al abrir *Archivos* (15.14) |
+| Lo visto y la revisión pendiente de la persona | GitHub, con su token, al abrir *Archivos* (15.14) |
 | Previews | El `preview.json` de cada worktree de preview |
 | Último tick y último evento | `tick_complete` y `event_complete` en `logs/tick-*.log` |
 
@@ -630,6 +633,10 @@ Todo, salvo los webhooks y `/api/auth/*`, pide sesión:
 | `POST /api/items/<id>/exploration/actions` | Comenta en una ficha: `{ action, ficha, text, redo? }` (15.12) |
 | `POST /api/items/<id>/exploration/general` | Un comentario general en el PR: `{ text }` (15.12) |
 | `POST /api/items/<id>/exploration/approve` | Aprueba el PR: `{ text? }` (15.12) |
+| `GET /api/items/<id>/files` | Los archivos del PR del ítem con su patch, y sus hilos de review (15.14) |
+| `GET /api/items/<id>/files/content?path=` | Uno de esos archivos en el head del PR, para mostrar más líneas |
+| `GET /api/items/<id>/files/mine` | Lo que la persona marcó como visto y su revisión pendiente |
+| `POST /api/items/<id>/files/actions` | Comenta, responde, resuelve, marca visto o maneja la revisión: `{ action, … }` (15.14) |
 | `GET /api/runs/<runId>` | El transcript de una corrida |
 | `GET /api/runs/<runId>/stream` | Lo que se le agrega, por *server-sent events*, hasta que termina |
 | `GET /api/evidence/<owner>/<repo>/<sha>/<ruta>` | Una captura que publicó ronin (§11.5), leída del clon del repo de producto |
@@ -662,9 +669,9 @@ Antes de #93, ronin comentaba *"**<login>** pidió `/x` desde el tablero"* y lan
 
 **Antes de pedirla,** un diálogo muestra el comentario que va a quedar ("Comentás en #849 como oskr814"), renderizado y actualizado mientras se escribe. El servidor la valida contra la misma lista, armada con lo que leyó de GitHub. Si la acción ya no aplica, o le falta o le sobra el texto, responde 409 sin comentar nada. Si GitHub ya no acepta el token de la persona, responde 401 y la página pide volver a entrar.
 
-**No están** `/fix-comments` ni `/spike`, aunque ahora que las acciones son comentarios sumarlos es agregarlos a la lista. Tampoco cancelar o reintentar una corrida, que necesitan coordinarse con los locks del tick.
+**No están** `/fix-comments` (va con la revisión de un PR, 15.14) ni `/spike`, aunque ahora que las acciones son comentarios sumarlos es agregarlos a la lista. Tampoco cancelar o reintentar una corrida, que necesitan coordinarse con los locks del tick.
 
-**Pendiente:** cancelar y reintentar corridas, `/fix-comments` y `/spike` desde la página, una vista de varios runners juntos y sacar el alias `/webhook`.
+**Pendiente:** cancelar y reintentar corridas, `/spike` desde la página, una vista de varios runners juntos y sacar el alias `/webhook`.
 
 #### 15.11.1 Nuevo issue (#100, `server/api/dashboard-new-issue.ts`)
 
@@ -728,6 +735,51 @@ En la página:
 
 Los colores de los proyectos siguen al proyecto: los conocidos en orden alfabético, los cuatro primeros con un color de la paleta (`--proj-*`, validada para daltonismo) y el resto en gris. Sin key, nada de esto aparece y el tablero funciona como antes.
 
+#### 15.14 Revisar un PR (#111)
+
+La pestaña *Archivos* de la ficha de un PR (o de un issue, con los archivos de su PR que avanza) es "Files changed" en el tablero, y desde ahí se revisa: comentarios por línea, sugerencias, respuestas y la revisión con Comentar, Aprobar o Pedir cambios. Todo lo que escribe sale a nombre de quien entró, con su token (`github-as-user.ts`, 15.3). Llega a ronin como si se hubiera escrito en GitHub.
+
+- **Leer** (`server/api/dashboard-files.ts`):
+  - **Los archivos** de `pulls/<n>/files`, paginado, con su patch. GitHub lista como mucho 3000, y deja sin patch a los binarios y a los muy grandes, que la página muestra con un link a GitHub.
+  - **Los hilos de review** por GraphQL (`getDiffThreads`), con su lado, su línea o rango, si son sobre el archivo, si están resueltos o desactualizados y los ids que hacen falta para responderlos y resolverlos.
+  - Se leen con el token de ronin y usan la misma caché que la ficha (15.8).
+  - **"Mostrar más líneas"** lee el archivo en el head del PR (`/files/content`, solo archivos que el PR cambia, hasta 1 MB, en caché por commit).
+- **La pestaña:**
+  - el árbol de archivos con filtro, estado, +/−, los hilos sin resolver y "N de M vistos";
+  - el diff unificado o lado a lado (en el celular, unificado);
+  - cada hilo bajo su línea. Los resueltos van plegados; los que son sobre el archivo, o sobre código que ya cambió, van arriba del archivo;
+  - los diffs de más de 400 líneas y los archivos vistos empiezan plegados;
+  - `j`/`k` pasan de archivo, `v` marca visto y salta al siguiente sin ver, `r` abre la revisión.
+- **Comentar:**
+  - **Una línea:** clic en su número, del lado viejo o del nuevo. Shift+clic elige un rango del mismo lado y del mismo hunk. Las líneas de contexto que se agregan con "mostrar más" no se pueden comentar, porque GitHub solo acepta líneas del diff.
+  - **El archivo entero:** "Comentar archivo".
+  - **El editor:** markdown con vista previa. "± Sugerir cambio" agrega un bloque `suggestion` con esas líneas.
+  - **El commit:** el comentario va sobre el commit que se está viendo, así las líneas son las del diff que se vio.
+  - **En los hilos,** "Responder…" (al último comentario, como en GitHub) y "Resolver conversación" o "Reabrir".
+- **Visto** es el "Viewed" de GitHub (`viewerViewedState`, `markFileAsViewed`): se lee y se marca con el token de la persona, y GitHub lo quita solo cuando el archivo cambia.
+- **La revisión es la revisión pendiente de GitHub,** no un borrador del navegador:
+  - sigue ahí al recargar o al cambiar de dispositivo, se ve en github.com, y una empezada allá aparece en el tablero;
+  - "Empezar una revisión" la crea sobre el commit a la vista (`addPullRequestReview`). Desde ahí, cada comentario o respuesta "Se suma a la revisión" (`addPullRequestReviewThread`, `addPullRequestReviewThreadReply`);
+  - lo pendiente se ve en el diff como *Pendiente*, con editar y borrar, y solo lo ve su autor;
+  - se lee de los hilos del PR con el token de la persona: cada comentario dice si está `PENDING`, y los pendientes de otros no aparecen.
+- ***Terminar revisión***, en la cabecera del PR, en la barra de *Archivos* o con `r`:
+  - **El panel:** un resumen, Comentar / Aprobar / Pedir cambios y la lista de lo pendiente.
+  - **Mandar:** `submitPullRequestReview`. Sin nada pendiente, va una revisión con solo el resumen (aprobar sin comentarios).
+  - **Descartar:** `deletePullRequestReview`.
+  - **En un PR propio,** aprobar y pedir cambios no se ofrecen y el servidor los rechaza, como GitHub.
+  - **En un PR de exploración** el panel no aparece: se aprueba con su propio gate (15.12).
+- **Que ronin la atienda.** ronin no lee el resumen de una review (`findUnprocessedMentions` lee los comentarios sueltos y los de review), y sus comentarios solos no disparan `/fix-comments`. Por eso, en un PR de ronin con comentarios pendientes o pidiendo cambios, el panel ofrece *Que ronin los atienda ahora*: después de mandar la revisión comenta `@ronin-agent /fix-comments` a nombre de la persona.
+- **API** (15.9):
+  - `GET /api/items/<id>/files`, `/files/content?path=` y `/files/mine`. Este último trae lo visto y la revisión pendiente de la persona, sin caché.
+  - `POST /api/items/<id>/files/actions` con `action`:
+    - `comment` y `reply`, con `review: true` para que vayan a la revisión;
+    - `resolve`, `viewed`;
+    - `pending-edit` y `pending-delete`;
+    - `discard`;
+    - `submit` (`event`, `text`, `commitId`, `fixComments`).
+  - Cada pedido se valida contra el PR leído: un archivo que cambia, un hilo o comentario suyo, un comentario de la revisión de la persona. Si no pasa, responde 400; lo demás lo decide GitHub y la página muestra su mensaje.
+  - Después de escribir algo público se descartan las cachés de archivos y de la ficha. Lo pendiente y lo visto no las tocan.
+
 ## Estado actual
 
 - [x] Definir el esqueleto del supervisor (script + estructura de tick) — ver §3.1 y `src/`
@@ -742,7 +794,7 @@ Los colores de los proyectos siguen al proyecto: los conocidos en orden alfabét
 - [x] Límite de uso de Claude como estado transitorio, no como bloqueo — `ClaudeUsageLimitError` (§3)
 - [x] Limpieza de worktrees cuando su PR ya no está abierto — `sweepOrphanedWorktrees` (§3.1)
 - [x] Reacción por evento: un handler por evento de GitHub, el tick como conciliación — `server/api/webhooks/handler.ts`, `core/locks.ts` (§14)
-- [x] Tablero web en la tailnet, con login de GitHub, la ficha de cada ítem y acciones — `server/`, `web/`, `core/run-record.ts`, `core/claude-usage.ts` (§15)
+- [x] Tablero web en la tailnet, con login de GitHub, la ficha de cada ítem, acciones y la revisión de PRs (§15.14) — `server/`, `web/`, `core/run-record.ts`, `core/claude-usage.ts` (§15)
 - [x] ~~Evidencia visual de e2e en el PR~~ — eliminado (el `src/evidence.ts` de entonces; el `evidence-store.ts` actual es el de la exploración, §11.5); no reemplazaba la supervisión humana y la calidad no era suficiente — ver [issue #4](https://github.com/Oskr814/ronin/issues/4)
 
 **Pendiente, fuera de este scaffold:**
