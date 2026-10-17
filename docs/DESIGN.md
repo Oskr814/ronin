@@ -489,6 +489,13 @@ Una página para ver qué está haciendo ronin sin recorrer GitHub issue por iss
 
   **Lo que no tiene issue:** un PR sin issue ni número en la rama, o el changelog, solo aparece mientras corre (*Corriendo ahora*) y en *Hoy*. Un número que no está en la lista ofrece *Abrir #N*: el servidor le pregunta a GitHub si es issue o PR (`itemKindOf`) y abre la ficha aunque esté cerrado.
 
+  **El punto y el ícono (#129).** El punto de color dice lo que hace ronin: corriendo, esperando, bloqueado o un error. El ícono junto al número dice cómo está el ítem en GitHub, con los íconos y colores de GitHub (Octicons, en `web/vendor/octicons.js`, MIT):
+  - **Issues:** abierto (verde), cerrado como completado (check morado) y cerrado como no planeado (círculo gris tachado).
+  - **PRs:** abierto (verde), draft (gris), mergeado (morado) y cerrado sin mergear (rojo).
+  - **Dónde aparece:** en la barra lateral, en las slices (la pendiente, que todavía no tiene PR, sigue con su punto) y en *Necesitan tu atención*. En la ficha va además como la pastilla de GitHub ("Abierto", "Cerrado", "Mergeado"…).
+  - **De dónde sale:** los abiertos, de la lectura cacheada del repo. Los cerrados, de una sola consulta GraphQL por lectura (`listRecentlyClosed`: los últimos 100 issues y PRs cerrados, con `stateReason`, que el `gh` 2.45 no trae). Uno más viejo, abierto con *Abrir #N*, toma el estado de su ficha.
+  - **Accesibilidad:** cada ícono lleva el estado en palabras (`aria-label` y `title`).
+
   Cada fila lleva un punto de estado, el número, cuántas slices van mergeadas (o el PR de una persona: "PR #910 de abdias98"), el `RED-n` y el proyecto si hay Linear, la última línea del agente (o lo que espera: "esperando review en #881", "conflictos en #904", "aprobado, falta el merge de #401") y hace cuánto. Un issue elegido, corriendo o bloqueado se despliega en sus slices.
 - **Centro: la ficha del ítem.** Pestañas, una por ítem abierto; al cargar se abren las de los agentes que corren. Cada una muestra la ficha del issue o PR, tenga corridas o no:
   - **Encabezado.** Título, repo, el link a GitHub y el botón *Acciones* (15.11). Debajo, chips con su estado. El PR del ítem (o, en un issue, el de la slice que avanza) suma si tiene conflictos con su base, sus checks, la review y si es draft. Un issue suma cuántas slices van mergeadas y qué espera.

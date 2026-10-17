@@ -1,5 +1,5 @@
 import { config, LABEL_DIRECT_ISSUE, LABEL_STATES } from '../../core/config.js';
-import { listOpenIssues, listOpenManagedIssues, listOpenPrsWithChecks, listPrClosingIssues, type OpenIssue, type OpenPr } from '../../core/github.js';
+import { listOpenIssues, listOpenManagedIssues, listOpenPrsWithChecks, listPrClosingIssues, listRecentlyClosed, type GithubState, type OpenIssue, type OpenPr } from '../../core/github.js';
 import { getBlocks, type BlockRecord } from '../../core/local-state.js';
 import { log } from '../../core/logger.js';
 import { withActiveRepo, type RepoEntry } from '../../core/repo-context.js';
@@ -8,7 +8,8 @@ import { parseSlices, type Slice } from '../../slices/checklist.js';
 
 // What the dashboard reads from GitHub (#65), per repo: the open issues ronin
 // manages, with their bodies (the slice checklist); every open issue, for the
-// search (#100); and every open PR with its checks and the issues it closes. Plus what this runner keeps about them: the
+// search (#100); every open PR with its checks and the issues it closes; and
+// how the latest closed ones closed (#129). Plus what this runner keeps about them: the
 // reasons it blocked them (local state) and the previews it has up.
 //
 // Cached: several open tabs, each polling, never multiply GitHub's calls. A
@@ -47,6 +48,8 @@ export interface RepoGithub {
   prs: OpenPr[];
   // The open issue each open PR belongs to, by PR number (linkPrs).
   prIssue: Record<number, number>;
+  // How the latest closed issues and PRs closed, by number (#129).
+  closed?: Record<number, GithubState>;
   previews: PreviewView[];
   blocks: Record<string, BlockRecord>;
   error?: string;
@@ -78,7 +81,15 @@ export function linkPrs(prs: Array<Pick<OpenPr, 'number' | 'headRefName'>>, clos
 
 async function fetchRepo(entry: RepoEntry): Promise<Omit<RepoGithub, 'previews'>> {
   return withActiveRepo(entry, async () => {
-    const [managed, openIssues, prs, closing, blocks] = await Promise.all([listOpenManagedIssues(), listOpenIssues(), listOpenPrsWithChecks(), listPrClosingIssues(), getBlocks()]);
+    const [managed, openIssues, prs, closing, closed, blocks] = await Promise.all([
+      listOpenManagedIssues(), listOpenIssues(), listOpenPrsWithChecks(), listPrClosingIssues(),
+      // Only for the icons: without it the dashboard still works.
+      listRecentlyClosed().catch((error) => {
+        log.error(`tablero: no se pudieron leer los cerrados de ${entry.productRepo}`, error);
+        return {} as Record<number, GithubState>;
+      }),
+      getBlocks(),
+    ]);
     const issues = managed.map((issue) => ({
       number: issue.number,
       title: issue.title,
@@ -94,6 +105,7 @@ async function fetchRepo(entry: RepoEntry): Promise<Omit<RepoGithub, 'previews'>
       openIssues,
       prs,
       prIssue: linkPrs(prs, closing, issues, new Set([...openIssues, ...issues].map((i) => i.number))),
+      closed,
       blocks,
     };
   });
@@ -144,7 +156,7 @@ async function cachedGithub(entry: RepoEntry, changedSince: number, now: number)
         log.error(`tablero: no se pudo leer GitHub para ${key}`, error);
         // Tried again on the next snapshot, not on every one of them.
         entryCache.readAt = Date.now();
-        const stale = entryCache.data ?? { repo: key, fetchedAt: '', issues: [], openIssues: [], prs: [], prIssue: {}, blocks: {} };
+        const stale = entryCache.data ?? { repo: key, fetchedAt: '', issues: [], openIssues: [], prs: [], prIssue: {}, closed: {}, blocks: {} };
         entryCache.data = { ...stale, error: (error as Error).message.split('\n')[0] };
         return entryCache.data;
       })

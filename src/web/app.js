@@ -4,6 +4,7 @@
 
 import { marked } from './vendor/marked.esm.js';
 import DOMPurify from './vendor/purify.esm.js';
+import { OCTICON } from './vendor/octicons.js';
 
 const MIN = 60e3;
 const SNAPSHOT_EVERY_MS = 5000;
@@ -30,6 +31,48 @@ const STATE = {
   open: ['pending', 'idle', 'abierto'],
 };
 const SLICE_STATE = { merged: ['ok', 'mergeada'], open: ['warn', 'abierta'], pending: ['pending', 'pendiente'], closed: ['crit', 'PR cerrado sin mergear'] };
+// How an issue or PR stands on GitHub, with GitHub's own icon and color
+// (#129): [class, short label, what it says in words, octicon]. The dot is
+// what ronin does; this is what GitHub says.
+const GH_STATE = {
+  issue: {
+    open: ['open', 'Abierto', 'Issue abierto', 'issue-opened'],
+    completed: ['done', 'Cerrado', 'Issue cerrado como completado', 'issue-closed'],
+    not_planned: ['neutral', 'No planeado', 'Issue cerrado como no planeado', 'skip'],
+  },
+  pr: {
+    open: ['open', 'Abierto', 'PR abierto', 'git-pull-request'],
+    draft: ['neutral', 'Draft', 'PR en draft', 'git-pull-request-draft'],
+    merged: ['done', 'Mergeado', 'PR mergeado', 'git-merge'],
+    closed: ['closed', 'Cerrado', 'PR cerrado sin mergear', 'git-pull-request-closed'],
+  },
+};
+const ghInfo = (kind, state) => (kind === 'issue' || kind === 'pr' ? GH_STATE[kind][state] : undefined);
+const ghIcon = (kind, state) => {
+  const info = ghInfo(kind, state);
+  if (!info) return '';
+  return `<svg class="ghi ${info[0]}" viewBox="0 0 16 16" role="img" aria-label="${info[2]}"><title>${info[2]}</title>${OCTICON[info[3]].map((d) => `<path d="${d}"/>`).join('')}</svg>`;
+};
+// An item's state: from the sidebar's read, else from its page (an old
+// closed one opened with "Abrir #N").
+function ghStateOf(item, d) {
+  if (item.github) return item.github;
+  const doc = item.kind === 'pr' ? d?.pr : item.kind === 'issue' ? d?.issue : undefined;
+  if (!doc?.state) return undefined;
+  if (doc.state === 'MERGED') return 'merged';
+  if (doc.state === 'OPEN') return doc.isDraft ? 'draft' : 'open';
+  if (item.kind === 'pr') return 'closed';
+  return doc.stateReason === 'NOT_PLANNED' ? 'not_planned' : 'completed';
+}
+// The item's state as GitHub's pill at the head of its page: "Abierto",
+// "Cerrado", "Mergeado"…
+function ghPill(item, d) {
+  const state = ghStateOf(item, d);
+  const info = ghInfo(item.kind, state);
+  return info ? `<span class="ghs ${info[0]}" title="${info[2]}">${ghIcon(item.kind, state)}${info[1]}</span>` : '';
+}
+// A slice: its PR's icon, or the pending dot while it has none.
+const sliceMark = (slice) => (slice.status === 'pending' ? dotClass(SLICE_STATE.pending[0]) : ghIcon('pr', slice.status === 'open' ? (slice.draft ? 'draft' : 'open') : slice.status));
 const CHECK_STATE = { passed: ['ok', 'pasó'], pending: ['live', 'corriendo'], failed: ['crit', 'falló'] };
 
 const $ = (selector) => document.querySelector(selector);
@@ -208,10 +251,10 @@ const EXPLORE_ICON = '<svg class="pin-ico" viewBox="0 0 24 24" aria-hidden="true
 function itemRow(item, hit) {
   const last = itemLast(item);
   const showSlices = item.slices?.length && (S.sel === item.id || item.status === 'running' || item.status === 'blocked' || hit);
-  const kids = showSlices ? `<div class="kids">${item.slices.map((slice) => `<button class="kid ${hit && slice.prNumber === hit ? 'hit' : ''}" data-id="${esc(item.id)}">${dotClass(SLICE_STATE[slice.status][0])}<span class="t">${slice.index + 1}. ${esc(slice.title)}</span><span class="age">${slice.prNumber ? `#${slice.prNumber}` : ''}</span></button>`).join('')}</div>` : '';
+  const kids = showSlices ? `<div class="kids">${item.slices.map((slice) => `<button class="kid ${hit && slice.prNumber === hit ? 'hit' : ''}" data-id="${esc(item.id)}">${sliceMark(slice)}<span class="t">${slice.index + 1}. ${esc(slice.title)}</span><span class="age">${slice.prNumber ? `#${slice.prNumber}` : ''}</span></button>`).join('')}</div>` : '';
   return `<button class="item ${item.pinned ? 'pinned' : ''}" data-id="${esc(item.id)}" aria-current="${S.sel === item.id}" ${item.pinned ? 'title="PR de exploración: sus fichas se revisan acá"' : ''}>
     ${item.pinned ? EXPLORE_ICON : dot(item.status)}<span class="t">${esc(item.title)}</span><span class="age" ${item.status === 'running' && item.lastRun ? `data-since="${esc(item.lastRun.startedAt)}"` : ''}>${esc(itemAge(item))}</span>
-    <span class="sub">${esc(itemSub(item))}${item.linear ? `, <span class="red">${esc(item.linear.id)}</span>` : ''}${item.linear?.project && !S.project ? `, <span class="ptag"><i style="background:${projectColor(item.linear.project.id)}"></i>${esc(item.linear.project.name)}</span>` : ''}</span>
+    <span class="sub">${ghIcon(item.kind, item.github)}${esc(itemSub(item))}${item.linear ? `, <span class="red">${esc(item.linear.id)}</span>` : ''}${item.linear?.project && !S.project ? `, <span class="ptag"><i style="background:${projectColor(item.linear.project.id)}"></i>${esc(item.linear.project.name)}</span>` : ''}</span>
     ${last ? `<span class="last">${esc(last)}</span>` : ''}</button>${kids}`;
 }
 
@@ -509,7 +552,7 @@ function headHTML(item) {
   return `<div class="head">
     <div class="crumb"><i style="background:${repoColor(item.repo)}"></i>${esc(item.repo)} · ${item.kind === 'pr' ? 'Pull request' : item.kind === 'issue' ? 'Issue' : 'Tarea'}</div>
     <div class="row"><h1>${esc(item.title)}${item.number !== undefined ? ` <span class="n">${esc(itemRef(item))}</span>` : ''}</h1>${url ? `<a class="gh" href="${esc(url)}" target="_blank" rel="noopener">GitHub ↗</a>` : ''}${safeLinear((item.linear ?? d?.linear)?.url) ? `<a class="gh" href="${esc((item.linear ?? d.linear).url)}" target="_blank" rel="noopener" title="El issue en Linear">${esc((item.linear ?? d.linear).id)} ↗</a>` : ''}${d?.exploration ? '<button class="gh" data-xpr="general">Comentario general</button>' : ''}${reviewable(item, d) ? (pendingOf(item.id).length ? `<button class="act-btn" data-frev>Terminar revisión <span class="rn">${pendingOf(item.id).length}</span></button>` : `<button class="gh" data-frev>${esc(reviewLabel(item, d))}</button>`) : ''}${actionsHTML(d)}${d?.exploration ? '<button class="act-btn" data-xpr="approve">Aprobar…</button>' : ''}</div>
-    <div class="state">${linearChips(item)}${chips.map(([cls, text]) => `<span class="chip ${cls}">${esc(text)}</span>`).join('')}${facts.map((f) => `<span>${esc(f)}</span>`).join('')}</div></div>`;
+    <div class="state">${ghPill(item, d)}${linearChips(item)}${chips.map(([cls, text]) => `<span class="chip ${cls}">${esc(text)}</span>`).join('')}${facts.map((f) => `<span>${esc(f)}</span>`).join('')}</div></div>`;
 }
 
 // ---------- actions (#85)
@@ -2150,17 +2193,17 @@ function attention() {
 
 function attentionHTML(a) {
   const ref = (i) => [`#${i.number}`, i.linear?.id].filter(Boolean).join(' · ');
-  const row = (cls, title, sub, when, id) => `<button class="arow" ${id ? `data-att="${esc(id)}"` : ''}>${dotClass(cls)}<span class="t">${esc(title)}</span><span class="w">${esc(when)}</span><span class="s">${esc(sub)}</span></button>`;
+  const row = (cls, title, sub, when, id, icon = '') => `<button class="arow" ${id ? `data-att="${esc(id)}"` : ''}>${dotClass(cls)}<span class="t">${esc(title)}</span><span class="w">${esc(when)}</span><span class="s">${icon}${esc(sub)}</span></button>`;
   const total = a.blocked.length + a.review.length + a.exploration.length + a.previews.length;
   const shownReview = S.attAll ? a.review : a.review.slice(0, 4);
   return `<div class="card"><h2>Necesitan tu atención<span class="c">${total || 'nada'}</span></h2><div class="att">
     <div class="ag">Bloqueados, esperan una respuesta</div>
-    ${a.blocked.length ? a.blocked.map((i) => row('crit', i.title, `${ref(i)} · ${i.block?.reason ?? 'el motivo está en el email del bloqueo'}`, i.block ? `hace ${short(Date.now() - Date.parse(i.block.at))}` : '', i.id)).join('') : '<div class="none">Ninguno.</div>'}
+    ${a.blocked.length ? a.blocked.map((i) => row('crit', i.title, `${ref(i)} · ${i.block?.reason ?? 'el motivo está en el email del bloqueo'}`, i.block ? `hace ${short(Date.now() - Date.parse(i.block.at))}` : '', i.id, ghIcon('issue', i.github))).join('') : '<div class="none">Ninguno.</div>'}
     <div class="ag">PRs de ronin que esperan tu review o tu merge, el que más espera primero</div>
-    ${a.review.length ? shownReview.map((i) => row(i.pr.reviewDecision === 'APPROVED' ? 'ok' : 'warn', i.title, `PR #${i.pr.number} · ${[i.linear?.id, i.pr.reviewDecision === 'APPROVED' ? 'aprobado, falta el merge' : i.pr.checks.length ? 'checks en verde' : 'sin checks'].filter(Boolean).join(' · ')}`, `hace ${short(Date.now() - a.waitedSince(i))}`, i.id)).join('') : '<div class="none">Ninguno.</div>'}
+    ${a.review.length ? shownReview.map((i) => row(i.pr.reviewDecision === 'APPROVED' ? 'ok' : 'warn', i.title, `PR #${i.pr.number} · ${[i.linear?.id, i.pr.reviewDecision === 'APPROVED' ? 'aprobado, falta el merge' : i.pr.checks.length ? 'checks en verde' : 'sin checks'].filter(Boolean).join(' · ')}`, `hace ${short(Date.now() - a.waitedSince(i))}`, i.id, ghIcon('pr', 'open'))).join('') : '<div class="none">Ninguno.</div>'}
     ${a.review.length > 4 ? `<button class="more-l" id="att-more">${S.attAll ? 'Ver menos' : `Ver los ${a.review.length} →`}</button>` : ''}
     ${a.exploration.length || a.previews.length ? '<div class="ag">Exploración y previews</div>' : ''}
-    ${a.exploration.map((i) => row('run', i.title, `PR #${i.number} · ${repoShort(i.repo)} · fichas para revisar`, i.lastRun ? `hace ${short(Date.now() - Date.parse(i.lastRun.endedAt ?? i.lastRun.startedAt))}` : '', i.id)).join('')}
+    ${a.exploration.map((i) => row('run', i.title, `PR #${i.number} · ${repoShort(i.repo)} · fichas para revisar`, i.lastRun ? `hace ${short(Date.now() - Date.parse(i.lastRun.endedAt ?? i.lastRun.startedAt))}` : '', i.id, ghIcon('pr', i.github))).join('')}
     ${a.previews.map((p) => {
       const left = p.expiresAt ? Date.parse(p.expiresAt) - Date.now() : null;
       const item = S.snap.items.find((i) => i.repo === p.repo && (i.number === p.prNumber || i.slices?.some((sl) => sl.prNumber === p.prNumber)));
@@ -2602,7 +2645,7 @@ function ctxHTML(item) {
         const [cls, text] = SLICE_STATE[slice.status];
         const link = slice.prNumber ? prUrl(item.repo, slice.prNumber) : null;
         const detail = slice.status === 'open' ? [slice.checks && slice.checks !== 'none' ? `checks: ${CHECK_STATE[slice.checks][1]}` : null, slice.reviewDecision === 'APPROVED' ? 'aprobada' : slice.reviewDecision === 'CHANGES_REQUESTED' ? 'cambios pedidos' : null].filter(Boolean).join(', ') : '';
-        return `<div class="sl ${slice.status === 'pending' ? 'pending' : ''}">${dotClass(cls)}<span>${slice.index + 1}. ${esc(slice.title)}</span>${link ? `<a href="${esc(link)}" target="_blank" rel="noopener">#${esc(slice.prNumber)}</a>` : '<span></span>'}<small>${esc(text)}${detail ? `, ${esc(detail)}` : ''}</small></div>`;
+        return `<div class="sl ${slice.status === 'pending' ? 'pending' : ''}">${sliceMark(slice)}<span>${slice.index + 1}. ${esc(slice.title)}</span>${link ? `<a href="${esc(link)}" target="_blank" rel="noopener">#${esc(slice.prNumber)}</a>` : '<span></span>'}<small>${esc(text)}${detail ? `, ${esc(detail)}` : ''}</small></div>`;
       }).join('')}</div></section>`;
   }
   if (item.pr?.checks?.length) {
