@@ -8,6 +8,8 @@ import { OCTICON } from './vendor/octicons.js';
 
 const MIN = 60e3;
 const SNAPSHOT_EVERY_MS = 5000;
+// A portal request's page (#132), read again this often while it's open.
+const PEDIDO_EVERY_MS = 10_000;
 
 const TYPE = {
   'plan': 'Planificar', 'implement-slice': 'Implementar slice', 'fix-issue': 'Corregir slice', 'fix-review': 'Responder review',
@@ -102,7 +104,7 @@ function duration(ms) {
 const money = (usd) => (usd < 0.01 ? 'menos de US$0,01' : `US$${usd.toFixed(2).replace('.', ',')}`);
 const pct = (fraction) => `${Math.round(fraction * 100)}%`;
 
-const S = { snap: null, today: null, sel: null, open: [], runIdx: {}, pendingRun: null, filter: null, q: '', itemRuns: {}, run: null, stream: null, detail: {}, view: {}, doc: {}, menu: false, dialog: null, expanded: new Set(), expl: {}, ficha: {}, fichaOpen: {}, fichaFilter: { tipo: 'todas', vp: 'todos' }, antes: {}, oldAfter: new Set(), lightbox: null, fmenu: false, fdialog: null, fdraft: {}, listas: {}, scope: 'all', project: '', attAll: false, extra: {}, newIssue: null, files: {}, fcur: {}, ffold: {}, fexp: {}, fcontent: {}, fq: {}, ftree: false, fcomp: null, fbusy: new Set(), rpanel: null, page: null, portal: { data: null, error: null }, pdialog: null };
+const S = { snap: null, today: null, sel: null, open: [], runIdx: {}, pendingRun: null, filter: null, q: '', itemRuns: {}, run: null, stream: null, detail: {}, view: {}, doc: {}, menu: false, dialog: null, expanded: new Set(), expl: {}, ficha: {}, fichaOpen: {}, fichaFilter: { tipo: 'todas', vp: 'todos' }, antes: {}, oldAfter: new Set(), lightbox: null, fmenu: false, fdialog: null, fdraft: {}, listas: {}, scope: 'all', project: '', attAll: false, extra: {}, newIssue: null, files: {}, fcur: {}, ffold: {}, fexp: {}, fcontent: {}, fq: {}, ftree: false, fcomp: null, fbusy: new Set(), rpanel: null, page: null, portal: { data: null, error: null }, pdialog: null, ped: { list: null, error: null, listAt: 0, detail: {}, n: null, tab: 'act', filter: 'todos', run: null, lb: null, patch: {} } };
 // The sidebar's Linear filter (#101), remembered per browser.
 try { Object.assign(S, JSON.parse(localStorage.getItem('ronin-scope') ?? '{}')); } catch { /* sin storage */ }
 function saveScope() {
@@ -186,12 +188,12 @@ function renderQuick() {
   const running = S.snap.items.filter((item) => item.status === 'running').length;
   const queued = S.snap.runner.queue.length;
   $('#quick').innerHTML = `
-    <button data-home aria-pressed="${!S.sel && S.page !== 'portal'}"><svg viewBox="0 0 24 24"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>Hoy</button>
+    <button data-home aria-pressed="${!S.sel && !S.page}"><svg viewBox="0 0 24 24"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>Hoy</button>
     <button data-filter="running" aria-pressed="${S.filter === 'running'}"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg>Corriendo ahora<span class="c">${running}</span></button>
     <button data-filter="queue" aria-pressed="${S.filter === 'queue'}"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg>En cola<span class="c">${queued}</span></button>
-    ${S.snap.portalAdmin ? `<button data-portal aria-pressed="${S.page === 'portal' && !S.sel}"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 19c.8-3.2 3-5 5.5-5s4.7 1.8 5.5 5M16 6.5h5M18.5 4v5"/></svg>Portal de pedidos<span class="c">${S.portal.data ? S.portal.data.users.filter((u) => !u.disabled).length : ''}</span></button>` : ''}`;
+    ${S.snap.portalAdmin || S.snap.pedidosTotal ? `<button data-portal aria-pressed="${['pedidos', 'pedido', 'portal'].includes(S.page) && !S.sel}"><svg viewBox="0 0 24 24"><path d="M5 4h14v16H5zM9 9h6M9 13h6M9 17h3"/></svg>Pedidos del portal<span class="c">${S.snap.pedidos?.length || ''}</span></button>` : ''}`;
   $('#quick').querySelector('[data-home]').onclick = goHome;
-  $('#quick').querySelector('[data-portal]')?.addEventListener('click', () => openPortal());
+  $('#quick').querySelector('[data-portal]')?.addEventListener('click', () => openPedidos());
   renderScope();
   for (const button of $('#quick').querySelectorAll('[data-filter]')) {
     button.onclick = () => {
@@ -258,6 +260,12 @@ function itemRow(item, hit) {
     ${last ? `<span class="last">${esc(last)}</span>` : ''}</button>${kids}`;
 }
 
+function pedRow(p) {
+  const tone = p.running ? 'live' : p.waitsOn === 'person' || p.waitsOn === 'team' ? 'warn' : p.waitsOn === 'ronin' ? 'run' : 'idle';
+  return `<button class="item" data-ped="${p.number}" aria-current="${S.page === 'pedido' && S.ped.n === p.number}">${dotClass(tone)}<span class="t"><span class="pd-pn">P-${p.number}</span> ${esc(p.title)}</span><span class="age">${esc(short(Date.now() - Date.parse(p.lastAt)))}</span>
+    <span class="sub">${esc(waitsLabel(p))}</span></button>`;
+}
+
 function renderTree() {
   const tree = $('#tree');
   if (S.filter === 'queue') {
@@ -289,6 +297,9 @@ function renderTree() {
   let html = '';
   const blocked = S.snap.items.filter((item) => item.status === 'blocked' && shown(item));
   if (blocked.length) html += `<div class="grp"><span>Necesitan a alguien</span><span class="n alert">${blocked.length}</span></div>` + blocked.map(row).join('');
+  // The portal's requests still going (#132): not searched, and only the running ones while filtering by that.
+  const pedidos = (S.snap.pedidos ?? []).filter((p) => !q && (S.filter !== 'running' || p.running));
+  if (pedidos.length) html += `<div class="grp"><span>Pedidos en curso</span><span class="n">${pedidos.length}</span></div>` + pedidos.map(pedRow).join('');
   for (const repo of S.snap.repos) {
     const items = S.snap.items.filter((item) => item.repo === repo && item.status !== 'blocked' && shown(item)).sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
     html += `<div class="grp"><span class="sq" style="background:${repoColor(repo)}"></span><b>${esc(repoShort(repo))}</b><span class="n">${items.length}</span><button class="grp-add" data-new="${esc(repo)}" title="Nuevo issue en ${esc(repoShort(repo))}" aria-label="Nuevo issue en ${esc(repoShort(repo))}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button></div>`;
@@ -300,6 +311,7 @@ function renderTree() {
   }
   tree.innerHTML = html;
   for (const button of tree.querySelectorAll('[data-id]')) button.onclick = () => select(button.dataset.id);
+  for (const button of tree.querySelectorAll('[data-ped]')) button.onclick = () => openPedido(Number(button.dataset.ped));
   for (const button of tree.querySelectorAll('[data-new]')) button.onclick = () => openNewIssue(button.dataset.new);
 }
 
@@ -430,8 +442,24 @@ function renderCenter() {
 
   const item = S.sel && itemById(S.sel);
   if (!item || viewOf(item) === 'tx') $('#shell').classList.remove('wide');
+  if (!item && (S.page === 'pedidos' || S.page === 'pedido')) {
+    // A request's page takes the room of the context column.
+    $('#shell').classList.toggle('wide', S.page === 'pedido');
+    // Redrawn on every snapshot: whoever was reading further down stays there.
+    const scroller = $('#center .pd-body') ?? $('#center .today.pd');
+    const keep = scroller?.scrollTop ?? 0;
+    if (setCenter(backBar(S.page === 'pedido' ? `Pedido P-${S.ped.n}` : 'Portal de pedidos') + (S.page === 'pedido' ? pedidoHTML() : pedidosHTML()))) {
+      wirePedidos();
+      const fresh = $('#center .pd-body') ?? $('#center .today.pd');
+      if (fresh && !isMobile()) fresh.scrollTop = keep;
+    }
+    return;
+  }
   if (!item && S.page === 'portal') {
-    if (setCenter(backBar('Portal de pedidos') + portalHTML())) wirePortal();
+    if (setCenter(backBar('Portal de pedidos') + portalHTML())) {
+      wirePortal();
+      wirePedidos();
+    }
     return;
   }
   if (!item) {
@@ -2500,7 +2528,7 @@ function portalStatus(u) {
 
 function portalHTML() {
   const p = S.portal;
-  const head = `<h1>Portal de pedidos</h1><p class="lead">Quienes piden ajustes chicos sin cuenta de GitHub. Entran con correo y contraseña${p.data?.url ? ` en <a href="${esc(p.data.url)}" target="_blank" rel="noopener">${esc(p.data.url.replace(/^https?:\/\//, ''))}</a>` : ''}.</p>`;
+  const head = `<h1>Portal de pedidos</h1><p class="lead">Quienes piden ajustes chicos sin cuenta de GitHub. Entran con correo y contraseña${p.data?.url ? ` en <a href="${esc(p.data.url)}" target="_blank" rel="noopener">${esc(p.data.url.replace(/^https?:\/\//, ''))}</a>` : ''}.</p>${portalTabsHTML('usuarios')}`;
   if (p.error && !p.data) return `<div class="today">${head}<p class="bad">${esc(p.error)}</p></div>`;
   if (!p.data) return `<div class="today">${head}<div class="empty">Cargando…</div></div>`;
   const { users, apps } = p.data;
@@ -2613,6 +2641,391 @@ async function portalWrite(path, body) {
   renderPortalUser();
   renderQuick();
   renderCenter();
+}
+
+// ---------- the portal's requests (#132)
+// What people ask through the portal and where each request stands, for
+// anyone who sees its repo: its conversation, what ronin did with it and,
+// once it has them, its issue and PR. The accounts are the Usuarios tab,
+// for admins only.
+const PED_STATUS = {
+  thinking: ['run', 'ronin lo está leyendo'], asking: ['warn', 'Espera a la persona'], answered: ['idle', 'Respondido'],
+  minor: ['run', 'Armando el prototipo'], proposed: ['warn', 'Espera que apruebe'], approved: ['run', 'Aprobado'],
+  done: ['ok', 'Listo'], resolved: ['ok', 'Resuelto por el equipo'], declined: ['idle', 'No se hará'],
+  cancelled: ['idle', 'Cancelado'], big: ['warn', 'En el equipo'],
+};
+const PED_CLOSED = ['done', 'resolved', 'declined', 'cancelled'];
+const PED_FILTERS = [['todos', 'Todos'], ['person', 'Esperan a la persona'], ['ronin', 'ronin trabajando'], ['team', 'Esperan al equipo'], ['cerrados', 'Cerrados']];
+const PED_TABS = [['act', 'Actividad'], ['chat', 'Conversación'], ['team', 'Para el equipo'], ['runs', 'Corridas']];
+const PED_ICON = {
+  person: '<svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c1-4 4-6 8-6s7 2 8 6"/></svg>',
+  ronin: '<svg viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4z"/></svg>',
+  run: '<svg viewBox="0 0 24 24"><path d="M7 4l12 8-12 8z"/></svg>',
+  ok: '<svg viewBox="0 0 24 24"><path d="M5 12l5 5 9-10"/></svg>',
+  crit: '<svg viewBox="0 0 24 24"><path d="M12 7v6M12 17h.01"/></svg>',
+  mail: '<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>',
+  wait: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg>',
+};
+const pedPath = (n, rest = '') => `/api/pedidos/${n}${rest}`;
+const pedImg = (n, file) => pedPath(n, `/img/${encodeURIComponent(file)}`);
+const firstName = (name) => String(name ?? '').split(' ')[0];
+const issueUrl = (repo, number) => (safeRepo(repo) ? `https://github.com/${repo}/issues/${number}` : null);
+const ago = (iso) => (iso ? `hace ${short(Date.now() - Date.parse(iso))}` : '');
+
+function waitsLabel(p) {
+  const who = firstName(p.person);
+  switch (p.waitsOn) {
+    case 'person': return p.status === 'proposed' ? `${who}: aprobar o ajustar` : `${who}: responder`;
+    case 'ronin': return p.running ? 'ronin trabajando' : p.status === 'approved' && p.issue ? `ronin: el cambio en #${p.issue}` : p.status === 'minor' ? 'ronin: el prototipo' : p.status === 'thinking' ? 'ronin: leerlo' : 'ronin: abrir el issue';
+    case 'team': return p.pr ? `Un dev: aprobar el PR #${p.pr}` : `El equipo: #${p.issue}`;
+    default: return PED_CLOSED.includes(p.status) ? 'Cerrado' : 'Nadie';
+  }
+}
+
+// The seven steps, which one it's on and how ([index, tone, skipped]).
+function pedStage(p) {
+  // A row has the verdict's kind and how many prototypes; a request's page, the verdict and the prototypes.
+  const verdict = typeof p.verdict === 'string' ? p.verdict : p.verdict?.kind;
+  const prototypes = Array.isArray(p.prototypes) ? p.prototypes.length : p.prototypes;
+  const big = p.status === 'big' || p.status === 'resolved' || verdict === 'big';
+  const skip = big && !prototypes ? [2, 3] : [];
+  const labels = ['Pedido', 'Conversación', 'Prototipo', 'Aprobación', big ? 'Issue del equipo' : 'Issue', 'PR', big ? 'Resuelto' : 'Listo'];
+  let cur;
+  let tone = 'run';
+  switch (p.status) {
+    case 'thinking': case 'asking': case 'answered': cur = 1; tone = p.status === 'asking' ? 'warn' : p.status === 'answered' ? 'idle' : 'run'; break;
+    case 'minor': cur = 2; break;
+    case 'proposed': cur = 3; tone = 'warn'; break;
+    case 'approved': cur = p.pr ? 5 : 4; tone = p.pr ? 'warn' : 'run'; break;
+    case 'big': cur = 4; tone = p.issue ? 'warn' : 'run'; break;
+    case 'done': case 'resolved': cur = 7; break;
+    case 'declined': cur = 6; tone = 'crit'; labels[6] = 'No se hará'; break;
+    default: cur = p.issue ? 4 : prototypes ? 3 : 1; tone = 'idle'; labels[cur] = 'Cancelado';
+  }
+  return { cur, tone, skip, labels };
+}
+
+function pedMini(p) {
+  const { cur, tone, skip } = pedStage(p);
+  return `<span class="pd-mini" aria-hidden="true">${Array.from({ length: 7 }, (_, i) => `<i class="${skip.includes(i) ? '' : i < cur ? 'ok' : i === cur ? tone : ''}"></i>`).join('')}</span>`;
+}
+
+function pedStepper(p) {
+  const { cur, tone, skip, labels } = pedStage(p);
+  return `<div class="pd-steps">${labels.map((label, i) => {
+    const cls = skip.includes(i) ? 'skip' : i < cur ? 'ok' : i === cur ? tone : '';
+    return `${i ? `<span class="ln ${i <= cur && !skip.includes(i) ? 'ok' : ''}"></span>` : ''}<span class="st ${cls}"><span class="b">${cls === 'ok' ? '✓' : i + 1}</span>${esc(label)}</span>`;
+  }).join('')}</div>`;
+}
+
+const pedChip = (p) => {
+  const [cls, label] = PED_STATUS[p.status] ?? ['idle', p.status];
+  return `<span class="chip ${cls}">${esc(p.status === 'approved' && p.pr ? 'Aprobado · en un PR' : label)}</span>`;
+};
+
+function openPedidos() {
+  S.sel = null;
+  S.page = 'pedidos';
+  stopStream();
+  if (location.pathname !== '/pedidos') history.pushState(null, '', '/pedidos');
+  renderAll();
+  if (isMobile()) {
+    $('#shell').dataset.m = 'detail';
+    scrollTo(0, 0);
+  }
+  loadPedidos();
+}
+
+function openPedido(n) {
+  S.sel = null;
+  S.page = 'pedido';
+  if (S.ped.n !== n) {
+    S.ped.tab = 'act';
+    S.ped.run = null;
+  }
+  S.ped.n = n;
+  stopStream();
+  if (location.pathname !== `/pedidos/${n}`) history.pushState(null, '', `/pedidos/${n}`);
+  renderAll();
+  if (isMobile()) {
+    $('#shell').dataset.m = 'detail';
+    scrollTo(0, 0);
+  }
+  loadPedido(n);
+}
+
+async function loadPedidos() {
+  try {
+    const { requests } = await api('/api/pedidos');
+    S.ped.list = requests;
+    S.ped.error = null;
+  } catch (error) {
+    if (error instanceof Unauthorized) return showLogin();
+    S.ped.error = error.message;
+  }
+  S.ped.listAt = Date.now();
+  if (S.page === 'pedidos') renderCenter();
+}
+
+async function loadPedido(n) {
+  try {
+    S.ped.detail[n] = { data: await api(pedPath(n)), at: Date.now() };
+  } catch (error) {
+    if (error instanceof Unauthorized) return showLogin();
+    S.ped.detail[n] = { ...S.ped.detail[n], error: error.message, at: Date.now() };
+  }
+  if (S.page === 'pedido' && S.ped.n === n) {
+    renderCenter();
+    // The run open on its Corridas tab, read again while it's going.
+    const run = S.ped.run;
+    if (run && (!run.summary || run.summary.state === 'running')) loadPedidoRun(run.runId);
+  }
+}
+
+async function loadPedidoRun(runId) {
+  try {
+    const { summary, lines } = await api(`/api/runs/${encodeURIComponent(runId)}`);
+    if (S.ped.run?.runId !== runId) return;
+    S.ped.run = { runId, summary, lines: lines.filter((line) => line.type !== 'run_start' && line.type !== 'run_end') };
+  } catch (error) {
+    if (error instanceof Unauthorized) return showLogin();
+    if (S.ped.run?.runId === runId) S.ped.run.error = error.message;
+  }
+  if (S.page === 'pedido') renderCenter();
+}
+
+// The Pedidos | Usuarios tabs atop the portal's page; Usuarios, only for admins.
+function portalTabsHTML(cur) {
+  const total = S.snap.pedidosTotal ?? 0;
+  return `<div class="doctabs pd-ptabs" role="tablist"><button class="doctab" role="tab" data-ptab="pedidos" aria-selected="${cur === 'pedidos'}">Pedidos <span class="c">${total}</span></button>${S.snap.portalAdmin ? `<button class="doctab" role="tab" data-ptab="usuarios" aria-selected="${cur === 'usuarios'}">Usuarios${S.portal.data ? ` <span class="c">${S.portal.data.users.length}</span>` : ''}</button>` : ''}</div>`;
+}
+
+function pedidosHTML() {
+  const head = `<h1>Portal de pedidos</h1><p class="lead">Lo que la gente pide desde el portal y en qué va cada pedido: la conversación, lo que hizo ronin, y el issue y el PR cuando los hay.</p>${portalTabsHTML('pedidos')}`;
+  const list = S.ped.list;
+  if (!list) return `<div class="today pd">${head}${S.ped.error ? `<p class="bad">${esc(S.ped.error)}</p>` : '<div class="empty">Cargando…</div>'}</div>`;
+  const groups = {
+    todos: list,
+    person: list.filter((p) => p.waitsOn === 'person'),
+    ronin: list.filter((p) => p.waitsOn === 'ronin'),
+    team: list.filter((p) => p.waitsOn === 'team'),
+    cerrados: list.filter((p) => PED_CLOSED.includes(p.status)),
+  };
+  const shown = groups[S.ped.filter] ?? list;
+  const rows = shown.map((p) => `<tr data-ped="${p.number}" tabindex="0"><td class="pn">P-${p.number}</td>
+      <td><span class="tt">${esc(p.title)}</span><small>${esc(p.person)} · ${esc(p.appName)}${S.snap.repos.length > 1 ? ` · ${esc(repoShort(p.repo))}` : ''}</small>${pedMini(p)}</td>
+      <td>${pedChip(p)}</td>
+      <td class="hide-m"><span class="pd-waits">${p.running ? dotClass('live') : ''}${esc(waitsLabel(p))}</span></td>
+      <td class="hide-m pd-gh">${p.issue ? `#${p.issue}` : '<span class="m">—</span>'}${p.pr ? ` · PR #${p.pr}` : ''}</td>
+      <td class="hide-m m" data-ago="${esc(p.lastAt)}">${esc(ago(p.lastAt))}</td></tr>`).join('');
+  return `<div class="today pd">${head}
+    <div class="pd-filters">${PED_FILTERS.map(([k, label]) => `<button data-pfilter="${k}" aria-pressed="${S.ped.filter === k}">${label}<span class="c">${groups[k].length}</span></button>`).join('')}</div>
+    ${rows ? `<table class="padm-t pd-t"><thead><tr><th></th><th>Pedido</th><th>Estado</th><th class="hide-m">Espera a</th><th class="hide-m">GitHub</th><th class="hide-m">Último movimiento</th></tr></thead><tbody>${rows}</tbody></table>` : `<p class="note">${list.length ? 'Ningún pedido aquí.' : 'Todavía nadie pidió nada por el portal.'}</p>`}
+  </div>`;
+}
+
+// What it waits on now, and who has to do it.
+function pedNowHTML(d) {
+  const who = firstName(d.person);
+  const running = d.runs.find((run) => run.state === 'running');
+  const lastEvent = d.activity.entries.filter((e) => e.type === 'event').at(-1)?.event;
+  const card = (cls, k, t, body = '', acts = '') => `<div class="pd-now ${cls}"><div class="k">${k}</div><div class="t">${t}</div>${body}${acts ? `<div class="acts">${acts}</div>` : ''}</div>`;
+  const open = (number, label) => `<button class="btn-s" data-pitem="${esc(`${d.repo}#${number}`)}">${esc(label)}</button>`;
+  if (running) {
+    return card('running', `${dotClass('live')} Ahora · ronin trabajando`, esc(`${typeName(running.taskType)}${running.issueNumber ? ` en #${running.issueNumber}` : running.prNumber ? ` en el PR #${running.prNumber}` : ''}`),
+      `<div class="feed">${running.lastStep ? `▸ ${esc(running.lastStep)}` : 'Arrancando…'}</div>`, `<button class="btn-s" data-prun="${esc(running.runId)}">Ver la corrida</button>`);
+  }
+  if (d.waitsOn === 'ronin' && lastEvent?.kind === 'failed') {
+    return card('failed', 'Ahora · falló lo último que hizo ronin', 'El tick lanza otro worker en su próxima vuelta', `<div class="err">${esc(lastEvent.error)}</div>`);
+  }
+  const k = `${PED_ICON.wait} Ahora`;
+  switch (d.status) {
+    case 'thinking': return card('running', k, 'ronin va a leerlo', '<div class="d">Espera un lugar para el agente.</div>');
+    case 'minor': return card('running', k, lastEvent?.kind === 'waiting' ? 'El prototipo espera turno: hay otro en curso en este repo' : 'ronin va a armar el prototipo');
+    case 'asking': return card('waiting', k, esc(`Espera a ${who}: ronin le preguntó algo`), `<div class="d">Le escribió ${esc(ago(d.messages.at(-1)?.at))} y le avisó por correo. Lleva ${d.questions} de 3 preguntas.</div>`);
+    case 'answered': return card('', k, esc(`ronin le respondió a ${who}`), '<div class="d">Puede seguir escribiendo si necesita algo más.</div>');
+    case 'proposed': {
+      const left = 3 - d.prototypes.length;
+      return card('waiting', k, esc(`Espera a ${who}: aprobar el prototipo, pedir un ajuste o pasarlo al equipo`), `<div class="d">Se lo mostró ${esc(ago(d.prototypes.at(-1)?.at))} y le avisó por correo. ${left > 0 ? `Le ${left === 1 ? 'queda 1 ajuste' : `quedan ${left} ajustes`}.` : 'No le quedan ajustes.'}</div>`);
+    }
+    case 'approved':
+      if (d.pr) return card('waiting', k, esc(`Espera que un dev apruebe el PR #${d.pr}`), `<div class="d">Tiene ronin:auto-merge: se mergea solo cuando lo aprueben y el CI esté verde. Al mergear, ${esc(who)} recibe “listo, sale en la próxima actualización”.</div>`, open(d.pr, `Abrir el PR #${d.pr}`));
+      if (d.issue) return card('running', k, esc(`ronin va a hacer el cambio en #${d.issue.number}`), '<div class="d">Lo toma como cualquier issue asignado a ronin y abre el PR.</div>', open(d.issue.number, `Abrir #${d.issue.number}`));
+      return card('running', k, 'ronin va a abrir el issue del cambio');
+    case 'big':
+      if (d.issue) return card('waiting', k, esc(`Espera al equipo: el issue #${d.issue.number}`), `<div class="d">${esc(who)} recibe un correo cuando el issue se cierre. Mientras, ronin no hace nada más con este pedido.</div>`, open(d.issue.number, `Abrir #${d.issue.number}`));
+      return card('running', k, 'ronin va a abrir el issue del equipo');
+    default: {
+      const [, label] = PED_STATUS[d.status] ?? ['', d.status];
+      return card('closed', 'Cerrado', esc(label));
+    }
+  }
+}
+
+const MAIL_TO = (d, to) => (to === 'team' ? 'el equipo' : d.person);
+
+// One event of its activity: [tone, icon, title, extra, small].
+function pedEvent(d, e) {
+  const who = d.person;
+  switch (e.kind) {
+    case 'worker': return ['', 'wait', e.by === 'tick' ? 'El tick vio el pedido sin worker y lanzó otro' : 'Se lanzó un worker', '', true];
+    case 'failed': return ['crit', 'crit', { classify: 'Falló al leerlo', prototype: 'Falló un intento de prototipo', worker: 'El worker falló' }[e.step] ?? 'Falló', `<div class="bx err">${esc(e.error)}</div>`];
+    case 'waiting': return ['', 'wait', 'El prototipo esperó turno: había otro en curso en el repo', '', true];
+    case 'classified': return e.verdict === 'minor'
+      ? ['ok', 'ok', 'Lo clasificó como cambio menor', d.verdict?.kind === 'minor' && d.verdict.proposal ? `<div class="bx">${esc(d.verdict.proposal)}</div>` : '']
+      : ['warn', 'crit', 'Lo pasó al equipo', d.verdict?.kind === 'big' && d.verdict.reason ? `<div class="bx">${esc(d.verdict.reason)}</div>` : ''];
+    case 'decided': return e.decision === 'approved' ? ['ok', 'ok', `${who} aprobó el prototipo`, ''] : ['warn', 'person', `${who} no aprobó el prototipo`, ''];
+    case 'mail': return [e.ok ? 'mail' : 'crit', 'mail', e.ok ? `Correo a ${MAIL_TO(d, e.to)}` : `No salió el correo a ${MAIL_TO(d, e.to)}`, `<span class="m">${esc(e.subject)}</span>`, e.ok];
+    case 'issue': return ['ok', 'ok', e.team ? `Abrió el issue del equipo #${e.number}` : `Abrió el issue #${e.number} para ronin`, ''];
+    case 'pr': return ['ok', 'ok', `ronin abrió el PR #${e.number}, con ronin:auto-merge`, ''];
+    case 'pr-closed': return ['warn', 'crit', `El PR #${e.number} se cerró sin merge`, ''];
+    case 'closed': return e.status === 'done' ? ['ok', 'ok', 'Se mergeó: sale en la próxima actualización', ''] : e.status === 'resolved' ? ['ok', 'ok', 'El equipo cerró el issue como resuelto', ''] : ['', 'crit', 'El equipo decidió no hacerlo por ahora', ''];
+    case 'cancelled': return ['', 'person', `${who} lo canceló`, ''];
+    default: return ['', 'wait', e.kind, ''];
+  }
+}
+
+function pedRunCard(run) {
+  const live = run.state === 'running';
+  return `<div class="pd-run">${dot(run.state)}<span class="nm">${esc(typeName(run.taskType))}${run.issueNumber ? ` · #${run.issueNumber}` : run.prNumber ? ` · PR #${run.prNumber}` : ''}</span>
+    <span class="st">${live ? '<span data-since="' + esc(run.startedAt) + '"></span>' : [run.durationMs !== undefined ? duration(run.durationMs) : null, run.costUsd !== undefined ? money(run.costUsd) : null, STATE[run.state]?.[2]].filter(Boolean).map(esc).join(' · ')}</span>
+    <button class="go" data-prun="${esc(run.runId)}">${live ? 'Ver en vivo' : 'Ver corrida'} →</button>
+    ${run.lastStep ? `<span class="last">${live ? '▸' : 'último:'} ${esc(run.lastStep)}</span>` : ''}</div>`;
+}
+
+function pedThumbs(d, m) {
+  if (!m.images.length) return '';
+  return `<div class="pd-thumbs">${m.images.map((file, i) => `<figure><button data-plb="${esc(file)}"><img src="${esc(pedImg(d.number, file))}" alt="${esc(m.captions?.[i] ?? 'Imagen')}" loading="lazy"></button>${m.captions?.[i] ? `<figcaption>${esc(m.captions[i].split(':')[0])}</figcaption>` : ''}</figure>`).join('')}</div>`;
+}
+
+function pedEntryHTML(d, e) {
+  const item = (tone, icon, title, extra, time, small = false, body = '') => `<li class="pd-ev ${tone} ${small ? 'small' : ''}"><span class="ic">${PED_ICON[icon] ?? PED_ICON.wait}</span><div class="h"><b>${title}</b>${extra}<span class="tm" title="${esc(time ? when(time) : '')}">${time ? esc(hhmm(time)) : 'sin hora'}</span></div>${body}</li>`;
+  if (e.type === 'run') return item('run', 'run', esc(e.run.taskType === 'portal-prototype' ? 'Armó el prototipo' : e.run.taskType === 'portal-request' ? 'ronin lo leyó' : typeName(e.run.taskType)), '', e.at, false, pedRunCard(e.run));
+  if (e.type === 'message') {
+    const m = e.message;
+    const long = m.text.length > 320;
+    const text = `<div class="bx ${m.from === 'person' ? 'q' : 'r'}">${esc(long ? `${m.text.slice(0, 300)}…` : m.text)}${long ? ' <button class="more" data-ptab2="chat">Ver completo</button>' : ''}</div>`;
+    const title = m.from === 'person' ? (e.first ? `${esc(d.person)} abrió el pedido` : `${esc(d.person)} escribió`) : e.prototype ? `Le mostró el prototipo ${e.prototype}` : 'ronin le respondió';
+    const extra = e.first ? `<span class="m">${esc(d.appName)}</span>` : '';
+    const proto = e.prototype && d.prototypes.find((p) => p.round === e.prototype)?.patch ? `<button class="more" data-ptab2="team">Ver el borrador para el equipo →</button>` : '';
+    return item(m.from === 'person' ? 'person' : 'ronin', m.from === 'person' ? 'person' : 'ronin', title, extra, e.at, false, text + pedThumbs(d, m) + proto);
+  }
+  const [tone, icon, title, extra, small] = pedEvent(d, e.event);
+  return item(tone, icon, esc(title), small ? extra : '', e.at, small, small ? '' : extra);
+}
+
+function pedActivityHTML(d) {
+  const { entries, untimed } = d.activity;
+  return pedNowHTML(d) + `<ol class="pd-tl">${entries.map((e) => pedEntryHTML(d, e)).join('')}${untimed.map((ev) => pedEntryHTML(d, { type: 'event', at: '', event: ev })).join('')}</ol>`;
+}
+
+function pedChatHTML(d) {
+  return `<p class="m pd-note">Lo mismo que ve ${esc(firstName(d.person))} en el portal.</p><div class="pd-chat">${d.messages.map((m) => `<div class="msg ${m.from}"><div class="w">${m.from === 'person' ? esc(d.person) : 'ronin'} · ${esc(when(m.at))}</div>${esc(m.text)}${pedThumbs(d, m)}</div>`).join('')}</div>`;
+}
+
+function pedTeamHTML(d) {
+  const v = d.verdict;
+  if (!v) return '<p class="note">ronin todavía no lo clasificó.</p>';
+  const block = (title, text) => (text ? `<h4>${esc(title)}</h4><p>${esc(text)}</p>` : '');
+  const protos = d.prototypes.map((p) => {
+    const patch = S.ped.patch[`${d.number}:${p.round}`];
+    return `<h4>Prototipo ${p.round} · ${esc(when(p.at))}</h4><p>${esc(p.summary)}</p>${p.patch ? (patch?.text ? `<div class="m">${esc(diffStat(patch.text))}</div>${diffHTML(patch.text)}` : `<button class="btn-s" data-ppatch="${p.round}">${patch?.loading ? 'Cargando…' : patch?.error ? 'No se pudo leer: reintentar' : 'Ver el diff'}</button>`) : '<p class="m">Sin diff: el después es una maqueta.</p>'}`;
+  }).join('');
+  return `<div class="pd-doc">${v.kind === 'big' ? block('Por qué es para el equipo', v.reason) : block('Qué cambia, en palabras de la persona', v.proposal)}${block('Resumen técnico', v.summary)}${block('Lo que se le pidió al prototipo', v.instruction)}${protos}</div>`;
+}
+
+function pedRunsHTML(d) {
+  if (!d.runs.length) return '<p class="note">Sin corridas en los últimos 14 días.</p>';
+  const open = S.ped.run;
+  const list = d.runs.map((run) => `<div class="pd-runrow ${open?.runId === run.runId ? 'cur' : ''}"><span class="tm">${esc(when(run.startedAt))}</span>${pedRunCard(run)}</div>`).join('');
+  if (!open) return list;
+  const body = open.summary
+    ? `<div class="tx pd-tx">${open.lines.map(step).join('') || '<div class="empty">El agente todavía no hizo nada.</div>'}${ending(open.summary)}</div>`
+    : `<div class="empty">${open.error ? esc(open.error) : 'Cargando la corrida…'}</div>`;
+  return `<div class="pd-runview"><div class="pd-runbar"><b>${esc(typeName(open.summary?.taskType ?? ''))}</b><span class="m">${open.summary ? esc(when(open.summary.startedAt)) : ''}</span><button class="btn-s" data-prunx>Cerrar</button></div>${body}</div>${list}`;
+}
+
+function pedSideHTML(d) {
+  const mails = d.activity.entries.filter((e) => e.type === 'event' && e.event.kind === 'mail');
+  const gh = (number, url, label) => `<a href="${esc(url)}" target="_blank" rel="noopener">${label}</a> <button class="link" data-pitem="${esc(`${d.repo}#${number}`)}">en el tablero</button>`;
+  return `<div class="pd-side">
+    <div class="pd-card"><h3>Pedido</h3><dl class="kv">
+      <dt>Quién</dt><dd>${esc(d.person)}${d.email ? `<small>${esc(d.email)}</small>` : ''}</dd>
+      <dt>App</dt><dd>${esc(d.appName)} <small>${esc(d.repo)}</small></dd>
+      <dt>Abierto</dt><dd>${esc(when(d.createdAt))}</dd>
+      <dt>Preguntas</dt><dd>${d.questions} de 3</dd>
+      <dt>Prototipos</dt><dd>${d.prototypes.length} de 3</dd>
+      ${d.issue ? `<dt>Issue</dt><dd>${gh(d.issue.number, issueUrl(d.repo, d.issue.number) ?? '#', `#${d.issue.number}`)}</dd>` : ''}
+      ${d.pr ? `<dt>PR</dt><dd>${gh(d.pr, prUrl(d.repo, d.pr) ?? '#', `#${d.pr}`)}</dd>` : ''}
+    </dl></div>
+    <div class="pd-card"><h3>Corridas</h3>${d.runs.length ? `<div class="pd-costs">${d.runs.slice().reverse().map((run) => `<div><span>${esc(typeName(run.taskType))}</span><span>${run.costUsd !== undefined ? esc(money(run.costUsd)) : run.state === 'running' ? 'en curso' : '—'}</span></div>`).join('')}<div class="tot"><span>${d.runs.length} ${d.runs.length === 1 ? 'corrida' : 'corridas'}</span><span>${esc(money(d.costUsd))}</span></div></div>` : '<p class="m">Ninguna en los últimos 14 días.</p>'}</div>
+    ${mails.length ? `<div class="pd-card"><h3>Correos</h3><div class="pd-mails">${mails.map((e) => `<div class="${e.event.ok ? '' : 'bad'}"><span class="tm">${esc(hhmm(e.at))}</span><span>${e.event.ok ? '' : 'no salió · '}a ${esc(MAIL_TO(d, e.event.to))}</span></div>`).join('')}</div></div>` : ''}
+  </div>`;
+}
+
+function pedidoHTML() {
+  const n = S.ped.n;
+  const entry = S.ped.detail[n];
+  const d = entry?.data;
+  if (!d) return `<div class="today pd">${entry?.error ? `<p class="bad">${esc(entry.error)}</p>` : '<div class="empty">Cargando…</div>'}</div>`;
+  const counts = { chat: d.messages.length, runs: d.runs.length };
+  const body = S.ped.tab === 'chat' ? pedChatHTML(d) : S.ped.tab === 'team' ? pedTeamHTML(d) : S.ped.tab === 'runs' ? pedRunsHTML(d) : pedActivityHTML(d);
+  return `<div class="head pd-head"><div class="crumb"><button class="link" data-ppage>Portal de pedidos</button> / <i style="background:${repoColor(d.repo)}"></i>${esc(repoShort(d.repo))} · ${esc(d.appName)}</div>
+      <div class="row"><h1>${esc(d.title)} <span class="n">P-${d.number}</span></h1></div>
+      <div class="state">${pedChip(d)}<span>${esc(d.person)}</span><span class="m">abierto ${esc(ago(d.createdAt))}</span>${d.issue ? `<button class="link" data-pitem="${esc(`${d.repo}#${d.issue.number}`)}">#${d.issue.number}</button>` : ''}${d.pr ? `<button class="link" data-pitem="${esc(`${d.repo}#${d.pr}`)}">PR #${d.pr}</button>` : ''}</div>
+      ${pedStepper(d)}</div>
+    <div class="doctabs" role="tablist">${PED_TABS.map(([k, label]) => `<button class="doctab" role="tab" data-ptab2="${k}" aria-selected="${S.ped.tab === k}">${label}${counts[k] ? ` <span class="c">${counts[k]}</span>` : ''}</button>`).join('')}</div>
+    <div class="pd-body"><div class="pd-cols"><div class="pd-main">${body}</div>${pedSideHTML(d)}</div></div>`;
+}
+
+function pedLightbox() {
+  let box = $('#lightbox');
+  const lb = S.ped.lb;
+  if (!lb) {
+    box?.remove();
+    return;
+  }
+  if (!box) box = Object.assign(document.body.appendChild(document.createElement('div')), { id: 'lightbox', className: 'lightbox' });
+  box.innerHTML = `<div class="lt"><b>P-${lb.n}</b><span class="m">${esc(lb.file)}</span><button id="lb-x">Cerrar ✕</button></div><div class="lb"><figure><div><img src="${esc(pedImg(lb.n, lb.file))}" alt=""></div></figure></div>`;
+  $('#lb-x').onclick = () => { S.ped.lb = null; pedLightbox(); };
+}
+
+async function loadPatch(n, round) {
+  const key = `${n}:${round}`;
+  S.ped.patch[key] = { loading: true };
+  renderCenter();
+  try {
+    S.ped.patch[key] = { text: (await api(pedPath(n, `/prototipo/${round}`))).patch };
+  } catch (error) {
+    if (error instanceof Unauthorized) return showLogin();
+    S.ped.patch[key] = { error: error.message };
+  }
+  renderCenter();
+}
+
+function wirePedidos() {
+  const center = $('#center');
+  for (const b of center.querySelectorAll('[data-ptab]')) b.onclick = () => (b.dataset.ptab === 'usuarios' ? openPortal() : openPedidos());
+  for (const b of center.querySelectorAll('[data-pfilter]')) b.onclick = () => { S.ped.filter = b.dataset.pfilter; renderCenter(); };
+  for (const row of center.querySelectorAll('[data-ped]')) {
+    row.onclick = () => openPedido(Number(row.dataset.ped));
+    row.onkeydown = (event) => { if (event.key === 'Enter') openPedido(Number(row.dataset.ped)); };
+  }
+  center.querySelector('[data-ppage]')?.addEventListener('click', openPedidos);
+  for (const b of center.querySelectorAll('[data-ptab2]')) b.onclick = () => { S.ped.tab = b.dataset.ptab2; renderCenter(); };
+  for (const b of center.querySelectorAll('[data-pitem]')) b.onclick = () => select(b.dataset.pitem);
+  for (const b of center.querySelectorAll('[data-prun]')) {
+    b.onclick = () => {
+      S.ped.tab = 'runs';
+      S.ped.run = { runId: b.dataset.prun };
+      renderCenter();
+      $('#center .pd-body')?.scrollTo(0, 0);
+      loadPedidoRun(b.dataset.prun);
+    };
+  }
+  center.querySelector('[data-prunx]')?.addEventListener('click', () => { S.ped.run = null; renderCenter(); });
+  for (const b of center.querySelectorAll('[data-plb]')) b.onclick = () => { S.ped.lb = { n: S.ped.n, file: b.dataset.plb }; pedLightbox(); };
+  for (const b of center.querySelectorAll('[data-ppatch]')) b.onclick = () => loadPatch(S.ped.n, Number(b.dataset.ppatch));
 }
 
 // ---------- context
@@ -2854,6 +3267,19 @@ async function loadDetail(id) {
 }
 
 async function select(id) {
+  // A portal request's run (Hoy's timeline) opens the request's page, on that run (#132).
+  const ped = /:portal-(?:request|prototype):pedido P-(\d+)/.exec(id);
+  if (ped) {
+    const runId = S.pendingRun;
+    S.pendingRun = null;
+    openPedido(Number(ped[1]));
+    if (runId) {
+      S.ped.tab = 'runs';
+      S.ped.run = { runId };
+      loadPedidoRun(runId);
+    }
+    return;
+  }
   const n = /^(.+)#(\d+)$/.exec(id);
   if (!itemById(id) && n) S.extra[id] = { id, repo: n[1], number: Number(n[2]), kind: 'issue', title: `#${n[2]}`, status: 'open', runs: 0, listed: false };
   S.sel = id;
@@ -2894,6 +3320,8 @@ async function refresh() {
     const waiting = expl?.data?.fichas.some((f) => fichaStatus(f, expl.data.ronin) === 'esperando');
     if (expl && Date.now() - (expl.at ?? 0) > (waiting ? WAITING_EVERY_MS : DETAIL_EVERY_MS)) loadExploration(S.sel);
   }
+  if (S.page === 'pedido' && Date.now() - (S.ped.detail[S.ped.n]?.at ?? 0) > PEDIDO_EVERY_MS) loadPedido(S.ped.n);
+  if (S.page === 'pedidos' && Date.now() - S.ped.listAt > PEDIDO_EVERY_MS) loadPedidos();
   const item = S.sel && itemById(S.sel);
   const files = S.sel && S.files[S.sel];
   if (item && files && docOf(item) === 'files' && Date.now() - (files.at ?? 0) > DETAIL_EVERY_MS) loadFiles(S.sel);
@@ -2931,6 +3359,16 @@ function tickClocks() {
   for (const el of document.querySelectorAll('[data-until]')) el.textContent = clock(Date.parse(el.dataset.until) - Date.now());
 }
 
+// /pedidos, /pedidos/<n> (#132) and /portal (the accounts, admins only): false for any other path.
+function openPortalPath() {
+  const n = /^\/pedidos\/(\d+)$/.exec(location.pathname)?.[1];
+  if (n) openPedido(Number(n));
+  else if (location.pathname === '/pedidos') openPedidos();
+  else if (location.pathname === '/portal' && S.snap.portalAdmin) openPortal();
+  else return false;
+  return true;
+}
+
 function selectedFromPath() {
   const match = /^\/i\/(.+)$/.exec(location.pathname);
   return match ? decodeURIComponent(match[1]) : null;
@@ -2961,8 +3399,7 @@ async function boot() {
     S.fichaOpen[fromPath] = true;
   }
   if (fromPath) await select(fromPath);
-  else if (location.pathname === '/portal' && S.snap.portalAdmin) openPortal();
-  else renderAll();
+  else if (!openPortalPath()) renderAll();
 
   document.addEventListener('click', (event) => {
     // A click outside the review panel closes it, as Escape does; one that
@@ -3010,7 +3447,10 @@ async function boot() {
       return;
     }
     if (event.key !== 'Escape') return;
-    if (S.pdialog) closePortalUser();
+    if (S.ped.lb) {
+      S.ped.lb = null;
+      pedLightbox();
+    } else if (S.pdialog) closePortalUser();
     else if (S.newIssue) closeNewIssue();
     else if (S.rpanel && !S.rpanel.sending) {
       S.rpanel = null;
@@ -3036,7 +3476,7 @@ async function boot() {
   addEventListener('popstate', () => {
     const id = selectedFromPath();
     if (id) select(id);
-    else if (location.pathname === '/portal' && S.snap.portalAdmin) openPortal();
+    else if (openPortalPath()) return;
     else {
       S.page = null;
       S.sel = null;

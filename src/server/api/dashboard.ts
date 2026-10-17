@@ -24,6 +24,9 @@ import { GithubUserError, pendingReview, viewedFiles } from './github-as-user.js
 import type { Session } from './auth.js';
 import { PortalAdminError, portalAdminView, runPortalAdmin, type PortalAdminContext } from './portal-admin.js';
 import { missingPortalConfig } from '../portal.js';
+import { listUsers, type PortalUser } from '../../portal/accounts.js';
+import { getRequest, listRequests } from '../../portal/requests.js';
+import { isOpen, requestDetail, requestImage, requestPatch, requestRow } from './dashboard-portal.js';
 
 // The dashboard's data (#65), all behind the session (tailnet.ts checks it
 // before any of this runs):
@@ -45,6 +48,10 @@ import { missingPortalConfig } from '../portal.js';
 //   GET /api/runs/<runId>/stream     the rest of it as it happens (SSE)
 //   GET /api/evidence/<owner>/<repo>/<sha>/<path>  a screenshot ronin published (dashboard-evidence.ts)
 //   GET|POST /api/portal-admin[/…]   the request portal's accounts, for admins only (#114, portal-admin.ts)
+//   GET /api/pedidos                 the request portal's requests, of the repos it sees (#132, dashboard-portal.ts)
+//   GET /api/pedidos/<n>             one of them: its conversation, its activity and its runs
+//   GET /api/pedidos/<n>/img/<file>  one of its images (the person's, or a prototype's)
+//   GET /api/pedidos/<n>/prototipo/<round>  a prototype's draft diff
 
 // How far back the sidebar and an item's history look. Run records are kept
 // 14 days (scripts/setup-cron.sh).
@@ -101,6 +108,8 @@ export async function snapshot(login: string): Promise<unknown> {
     ronin: config.githubLogin,
     // Whether it can manage the request portal's accounts (#114).
     portalAdmin: access.admin && missingPortalConfig(config.portal).length === 0,
+    // The portal's requests still going, for the sidebar, and how many there are in all (#132).
+    ...(await portalSummary(runs)),
     repos,
     // The queue and the Claude accounts, only of the repos it sees.
     runner: { slots: { used: slotsInUse(), limit: config.tickConcurrency }, queue: readQueue().filter((job) => !job.repo || repos.includes(job.repo)), tick: readTickInfo() },
@@ -120,6 +129,60 @@ export async function snapshot(login: string): Promise<unknown> {
       ...(l.error ? { error: l.error } : {}),
     }] : [])),
   };
+}
+
+// The portal's requests of the repos it sees, with whoever asked each.
+async function visibleRequests() {
+  const access = currentAccess();
+  const requests = (await listRequests()).filter((r) => sees(access, r.repo));
+  const users = new Map<string, PortalUser>(requests.length ? (await listUsers()).map((u) => [u.id, u]) : []);
+  return { requests, users };
+}
+
+async function portalSummary(runs: ReturnType<typeof listRuns>) {
+  const { requests, users } = await visibleRequests();
+  const entries = await visibleRepos();
+  return {
+    pedidos: requests.filter(isOpen).map((r) => requestRow(r, users.get(r.userId), entries, runs)).sort((a, b) => b.lastAt.localeCompare(a.lastAt)),
+    pedidosTotal: requests.length,
+  };
+}
+
+async function pedidos(res: ServerResponse, path: string): Promise<void> {
+  if (path === '/api/pedidos') {
+    const { requests, users } = await visibleRequests();
+    const entries = await visibleRepos();
+    const runs = listRuns(HISTORY_DAYS);
+    json(res, 200, { requests: requests.map((r) => requestRow(r, users.get(r.userId), entries, runs)).sort((a, b) => b.number - a.number) });
+    return;
+  }
+  const match = /^\/api\/pedidos\/(\d+)(?:\/(img|prototipo)\/([^/]+))?$/.exec(path);
+  const request = match ? await getRequest(Number(match[1])) : undefined;
+  // One of a repo it doesn't see is one that isn't there.
+  if (!match || !request || !sees(currentAccess(), request.repo)) {
+    json(res, 404, { error: 'no existe ese pedido' });
+    return;
+  }
+  if (match[2] === 'img') {
+    let file = '';
+    try {
+      file = decodeURIComponent(match[3]);
+    } catch {
+      // A name that doesn't decode is one the request doesn't have.
+    }
+    const image = await requestImage(request, file);
+    if (image) res.writeHead(200, { 'Content-Type': image.type, 'Cache-Control': 'private, max-age=86400' }).end(image.data);
+    else json(res, 404, { error: 'no existe esa imagen' });
+    return;
+  }
+  if (match[2] === 'prototipo') {
+    const patch = await requestPatch(request, Number(match[3]));
+    if (patch === null) json(res, 404, { error: 'ese prototipo no dejó diff' });
+    else json(res, 200, { patch });
+    return;
+  }
+  const users = new Map((await listUsers()).map((u) => [u.id, u]));
+  json(res, 200, requestDetail(request, users.get(request.userId), await visibleRepos(), listRuns(HISTORY_DAYS)));
 }
 
 // Hoy: the runs, and each repo's current Linear cycle, where ronin's issues
@@ -453,6 +516,10 @@ async function route(req: IncomingMessage, res: ServerResponse, path: string, se
   const login = session.login;
   if (path === '/api/portal-admin' || path.startsWith('/api/portal-admin/')) {
     await portalAdmin(req, res, path, session);
+    return true;
+  }
+  if (req.method === 'GET' && (path === '/api/pedidos' || path.startsWith('/api/pedidos/'))) {
+    await pedidos(res, path);
     return true;
   }
   const explorationPost = /^\/api\/items\/(.+)\/exploration\/(actions|general|approve)$/.exec(path);
