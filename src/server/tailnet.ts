@@ -1,7 +1,4 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { existsSync, readFileSync, statSync } from 'node:fs';
-import { dirname, extname, join, resolve, sep } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { handleAuth, readSession, type AuthConfig, type GithubOAuth, type Session } from './api/auth.js';
 import { sessionAccess, type Access } from './api/access.js';
 import { GithubUserError } from './api/github-as-user.js';
@@ -9,24 +6,12 @@ import { loadRepos } from '../core/repos.js';
 import { handleDashboard } from './api/dashboard.js';
 import { handleGithubWebhook } from './api/webhooks/github.js';
 import { GITHUB_WEBHOOK_PATHS } from './public.js';
+import { serveStatic, WEB_ROOT } from './static.js';
 
 // What the tailnet listener serves (#65): the whole API under /api and the
 // web app (src/web/) everywhere else. Only the tailnet reaches it — it
 // listens on 127.0.0.1 and `tailscale serve` publishes it — and on top of
 // that, everything but the login asks for a GitHub session.
-
-// src/web/ in development (tsx), dist/web/ once built (`pnpm build` copies it).
-export const WEB_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'web');
-
-const MIME: Record<string, string> = {
-  '.html': 'text/html; charset=utf-8',
-  '.js': 'text/javascript; charset=utf-8',
-  '.css': 'text/css; charset=utf-8',
-  '.svg': 'image/svg+xml',
-  '.woff2': 'font/woff2',
-  '.png': 'image/png',
-  '.ico': 'image/x-icon',
-};
 
 // Inline style attributes are allowed (the app sets widths and colors with
 // them); scripts only from the app's own files.
@@ -35,29 +20,6 @@ const SECURITY_HEADERS = {
   'X-Content-Type-Options': 'nosniff',
   'Referrer-Policy': 'same-origin',
 };
-
-function serveStatic(path: string, res: ServerResponse, root: string): void {
-  let file: string;
-  try {
-    file = resolve(root, `.${decodeURIComponent(path)}`);
-  } catch {
-    res.writeHead(400).end();
-    return;
-  }
-  if (file !== root && !file.startsWith(root + sep)) {
-    res.writeHead(404).end();
-    return;
-  }
-  // An app route (/i/<item>) gets the app itself; a missing file, a 404.
-  if (!existsSync(file) || !statSync(file).isFile()) {
-    if (extname(path)) {
-      res.writeHead(404).end();
-      return;
-    }
-    file = join(root, 'index.html');
-  }
-  res.writeHead(200, { 'Content-Type': MIME[extname(file)] ?? 'application/octet-stream', 'Cache-Control': 'no-cache' }).end(readFileSync(file));
-}
 
 type Handler = (req: IncomingMessage, res: ServerResponse) => Promise<void>;
 

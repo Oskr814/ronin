@@ -27,6 +27,20 @@ function transport() {
   });
 }
 
+export interface Mail {
+  to: string;
+  subject: string;
+  text: string;
+  html?: string;
+}
+
+// Any other email ronin sends (the request portal's, #114), from the same
+// account as the blockers. Unlike notifyBlocker it throws: the caller says
+// whether the email went out.
+export async function sendMail(mail: Mail, fromName = 'ronin'): Promise<void> {
+  await transport().sendMail({ from: `"${fromName}" <${config.gmailUser}>`, ...mail });
+}
+
 // Fires only for the cases enumerated in docs/BLOCKING.md — waiting-for-review
 // and transient quota backoff must never reach this function.
 //

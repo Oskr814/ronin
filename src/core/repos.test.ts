@@ -131,4 +131,21 @@ describe('loadRepos', () => {
     await writeFile(reposConfigPath, JSON.stringify([{ productRepo: 'a/b', productRepoPath: '/tmp/a', linear: { apiKeyEnv: 'K', explorationProject: { backoffice: '' } } }]));
     await expect(loadRepos()).rejects.toThrow(/explorationProject/);
   });
+
+  it('keeps a valid portal block (#114) and rejects a malformed one', async () => {
+    const portal = { name: 'Red Motos', apps: { backoffice: { name: 'Backoffice', description: 'Pedidos y clientes' } } };
+    await writeFile(reposConfigPath, JSON.stringify([{ productRepo: 'a/b', productRepoPath: '/tmp/a', portal }]));
+    expect((await loadRepos())[0].portal).toEqual(portal);
+
+    for (const [bad, error] of [
+      [{ apps: portal.apps }, /portal\.name/],
+      [{ name: 'X', apps: {} }, /portal\.apps/],
+      [{ name: 'X', apps: { backoffice: 'Backoffice' } }, /portal\.apps\.backoffice/],
+      [{ name: 'X', apps: { backoffice: { name: 'B', color: 'red' } } }, /portal\.apps\.backoffice/],
+      [{ ...portal, mail: {} }, /campos desconocidos: mail/],
+    ] as const) {
+      await writeFile(reposConfigPath, JSON.stringify([{ productRepo: 'a/b', productRepoPath: '/tmp/a', portal: bad }]));
+      await expect(loadRepos()).rejects.toThrow(error);
+    }
+  });
 });

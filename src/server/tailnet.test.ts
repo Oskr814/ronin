@@ -165,4 +165,12 @@ describe('tailnet listener', () => {
     // Not an issue or PR GitHub knows of, nor one with runs.
     expect((await fetch(url, { method: 'POST', body, headers: { origin: AUTH.url, cookie: session(), 'content-type': 'application/json' } })).status).toBe(404);
   });
+
+  it("leaves the request portal's accounts to the dashboard's admins (#114)", async () => {
+    const res = await fetch(`${base}/api/portal-admin`, { headers: { cookie: session('gho_token', 'valeria') } });
+    expect(res.status).toBe(403);
+    const admin = await fetch(`${base}/api/portal-admin`, { headers: { cookie: session() } });
+    expect(admin.status).toBe(200);
+    expect(await admin.json()).toMatchObject({ users: [] });
+  });
 });

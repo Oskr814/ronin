@@ -22,6 +22,8 @@ import { explorationReview, forgetExploration, isExplorationPr } from './dashboa
 import { FichaActionError, runApprove, runFichaAction, runGeneralComment } from './dashboard-exploration-actions.js';
 import { GithubUserError, pendingReview, viewedFiles } from './github-as-user.js';
 import type { Session } from './auth.js';
+import { PortalAdminError, portalAdminView, runPortalAdmin, type PortalAdminContext } from './portal-admin.js';
+import { missingPortalConfig } from '../portal.js';
 
 // The dashboard's data (#65), all behind the session (tailnet.ts checks it
 // before any of this runs):
@@ -42,6 +44,7 @@ import type { Session } from './auth.js';
 //   GET /api/runs/<runId>            one run's transcript
 //   GET /api/runs/<runId>/stream     the rest of it as it happens (SSE)
 //   GET /api/evidence/<owner>/<repo>/<sha>/<path>  a screenshot ronin published (dashboard-evidence.ts)
+//   GET|POST /api/portal-admin[/…]   the request portal's accounts, for admins only (#114, portal-admin.ts)
 
 // How far back the sidebar and an item's history look. Run records are kept
 // 14 days (scripts/setup-cron.sh).
@@ -96,6 +99,8 @@ export async function snapshot(login: string): Promise<unknown> {
     access: { admin: access.admin, repos: access.repos },
     // ronin's GitHub login, for the comments the page shows it'll write.
     ronin: config.githubLogin,
+    // Whether it can manage the request portal's accounts (#114).
+    portalAdmin: access.admin && missingPortalConfig(config.portal).length === 0,
     repos,
     // The queue and the Claude accounts, only of the repos it sees.
     runner: { slots: { used: slotsInUse(), limit: config.tickConcurrency }, queue: readQueue().filter((job) => !job.repo || repos.includes(job.repo)), tick: readTickInfo() },
@@ -271,6 +276,40 @@ async function postNewIssue(req: IncomingMessage, res: ServerResponse, repo: str
   }
 }
 
+// The request portal's accounts (#114): only for the dashboard's admins,
+// over every repo of the portal.
+async function portalAdmin(req: IncomingMessage, res: ServerResponse, path: string, session: Session): Promise<void> {
+  if (!currentAccess().admin) {
+    json(res, 403, { error: 'solo los administradores del tablero manejan las cuentas del portal' });
+    return;
+  }
+  const ctx: PortalAdminContext = {
+    url: config.portal.url,
+    enabled: missingPortalConfig(config.portal).length === 0,
+    dailyLimit: config.portal.dailyLimit,
+    entries: await loadRepos(),
+    admin: session.login,
+  };
+  if (req.method === 'GET' && path === '/api/portal-admin') {
+    json(res, 200, await portalAdminView(ctx));
+    return;
+  }
+  if (req.method !== 'POST') {
+    json(res, 405, { error: 'método no permitido' });
+    return;
+  }
+  if (!(req.headers['content-type'] ?? '').startsWith('application/json')) {
+    json(res, 415, { error: 'se espera JSON' });
+    return;
+  }
+  try {
+    json(res, 200, await runPortalAdmin(ctx, path, (await readJson(req)) ?? {}));
+  } catch (error) {
+    if (error instanceof PortalAdminError) json(res, error.status, { error: error.message });
+    else throw error;
+  }
+}
+
 // POST /api/items/<id>/exploration/<what>: actions { action, ficha, text,
 // redo? } on a finding, general { text }, approve { text? }.
 async function postExploration(req: IncomingMessage, res: ServerResponse, id: string, what: string, session: Session): Promise<void> {
@@ -412,6 +451,10 @@ export async function handleDashboard(req: IncomingMessage, res: ServerResponse,
 
 async function route(req: IncomingMessage, res: ServerResponse, path: string, session: Session): Promise<boolean> {
   const login = session.login;
+  if (path === '/api/portal-admin' || path.startsWith('/api/portal-admin/')) {
+    await portalAdmin(req, res, path, session);
+    return true;
+  }
   const explorationPost = /^\/api\/items\/(.+)\/exploration\/(actions|general|approve)$/.exec(path);
   if (explorationPost && req.method === 'POST') {
     await postExploration(req, res, decodeURIComponent(explorationPost[1]), explorationPost[2], session);
