@@ -59,7 +59,7 @@ function duration(ms) {
 const money = (usd) => (usd < 0.01 ? 'menos de US$0,01' : `US$${usd.toFixed(2).replace('.', ',')}`);
 const pct = (fraction) => `${Math.round(fraction * 100)}%`;
 
-const S = { snap: null, today: null, sel: null, open: [], runIdx: {}, pendingRun: null, filter: null, q: '', itemRuns: {}, run: null, stream: null, detail: {}, view: {}, doc: {}, menu: false, dialog: null, expanded: new Set(), expl: {}, ficha: {}, fichaOpen: {}, fichaFilter: { tipo: 'todas', vp: 'todos' }, antes: {}, oldAfter: new Set(), lightbox: null, fmenu: false, fdialog: null, fdraft: {}, listas: {}, scope: 'all', project: '', attAll: false, extra: {}, newIssue: null, files: {}, fcur: {}, ffold: {}, fexp: {}, fcontent: {}, fq: {}, ftree: false, fcomp: null, fbusy: new Set() };
+const S = { snap: null, today: null, sel: null, open: [], runIdx: {}, pendingRun: null, filter: null, q: '', itemRuns: {}, run: null, stream: null, detail: {}, view: {}, doc: {}, menu: false, dialog: null, expanded: new Set(), expl: {}, ficha: {}, fichaOpen: {}, fichaFilter: { tipo: 'todas', vp: 'todos' }, antes: {}, oldAfter: new Set(), lightbox: null, fmenu: false, fdialog: null, fdraft: {}, listas: {}, scope: 'all', project: '', attAll: false, extra: {}, newIssue: null, files: {}, fcur: {}, ffold: {}, fexp: {}, fcontent: {}, fq: {}, ftree: false, fcomp: null, fbusy: new Set(), rpanel: null };
 // The sidebar's Linear filter (#101), remembered per browser.
 try { Object.assign(S, JSON.parse(localStorage.getItem('ronin-scope') ?? '{}')); } catch { /* sin storage */ }
 function saveScope() {
@@ -405,8 +405,8 @@ function renderCenter() {
   // Reviewing findings or a diff takes the room of the context column.
   $('#shell').classList.toggle('wide', ['fichas', 'files'].includes(docOf(item)));
   // A box being written in survives the redraw (a finding's comment, a comment on the diff).
-  const typing = ['fcomment', 'fcbox'].includes(document.activeElement?.id) ? { id: document.activeElement.id, start: document.activeElement.selectionStart, end: document.activeElement.selectionEnd } : null;
-  if (!setCenter(tabs + backBar(item.title) + headHTML(item) + activityHTML(item) + docHTML(item) + `<div class="ctx-inline">${ctxHTML(item)}</div>`)) return;
+  const typing = ['fcomment', 'fcbox', 'rsum'].includes(document.activeElement?.id) ? { id: document.activeElement.id, start: document.activeElement.selectionStart, end: document.activeElement.selectionEnd } : null;
+  if (!setCenter(tabs + backBar(item.title) + headHTML(item) + activityHTML(item) + docHTML(item) + reviewPanelHTML(item) + `<div class="ctx-inline">${ctxHTML(item)}</div>`)) return;
   const fresh = $('#doc');
   if (fresh && !isMobile()) fresh.scrollTop = keep;
   if ($('#frows')) $('#frows').scrollTop = rows;
@@ -502,7 +502,7 @@ function headHTML(item) {
   if (item.kind === 'pr' && pr?.author) facts.push(`de ${pr.author}`);
   return `<div class="head">
     <div class="crumb"><i style="background:${repoColor(item.repo)}"></i>${esc(item.repo)} · ${item.kind === 'pr' ? 'Pull request' : item.kind === 'issue' ? 'Issue' : 'Tarea'}</div>
-    <div class="row"><h1>${esc(item.title)}${item.number !== undefined ? ` <span class="n">${esc(itemRef(item))}</span>` : ''}</h1>${url ? `<a class="gh" href="${esc(url)}" target="_blank" rel="noopener">GitHub ↗</a>` : ''}${safeLinear((item.linear ?? d?.linear)?.url) ? `<a class="gh" href="${esc((item.linear ?? d.linear).url)}" target="_blank" rel="noopener" title="El issue en Linear">${esc((item.linear ?? d.linear).id)} ↗</a>` : ''}${d?.exploration ? '<button class="gh" data-xpr="general">Comentario general</button>' : ''}${actionsHTML(d)}${d?.exploration ? '<button class="act-btn" data-xpr="approve">Aprobar…</button>' : ''}</div>
+    <div class="row"><h1>${esc(item.title)}${item.number !== undefined ? ` <span class="n">${esc(itemRef(item))}</span>` : ''}</h1>${url ? `<a class="gh" href="${esc(url)}" target="_blank" rel="noopener">GitHub ↗</a>` : ''}${safeLinear((item.linear ?? d?.linear)?.url) ? `<a class="gh" href="${esc((item.linear ?? d.linear).url)}" target="_blank" rel="noopener" title="El issue en Linear">${esc((item.linear ?? d.linear).id)} ↗</a>` : ''}${d?.exploration ? '<button class="gh" data-xpr="general">Comentario general</button>' : ''}${reviewable(item, d) ? (pendingOf(item.id).length ? `<button class="act-btn" data-frev>Terminar revisión <span class="rn">${pendingOf(item.id).length}</span></button>` : '<button class="gh" data-frev>Revisar</button>') : ''}${actionsHTML(d)}${d?.exploration ? '<button class="act-btn" data-xpr="approve">Aprobar…</button>' : ''}</div>
     <div class="state">${linearChips(item)}${chips.map(([cls, text]) => `<span class="chip ${cls}">${esc(text)}</span>`).join('')}${facts.map((f) => `<span>${esc(f)}</span>`).join('')}</div></div>`;
 }
 
@@ -710,6 +710,8 @@ async function sendNewIssue() {
 }
 
 function toast(message, url) {
+  // The newest says it all: one on top of another can't be read.
+  for (const old of document.querySelectorAll('.toast')) old.remove();
   const el = Object.assign(document.body.appendChild(document.createElement('div')), { className: 'toast', role: 'status' });
   el.innerHTML = `${esc(message)}${url && url.startsWith('https://github.com/') ? ` <a href="${esc(url)}" target="_blank" rel="noopener">Ver ↗</a>` : ''}`;
   setTimeout(() => el.remove(), 5000);
@@ -767,7 +769,7 @@ function docHTML(item) {
   const files = S.files[item.id];
   const counter = (k) => (k === 'comments' ? `<span class="c">${count}</span>` : k === 'fichas' && fichas ? `<span class="c">${fichas.length}</span>` : k === 'files' && files?.data ? `<span class="c">${files.data.files.length}</span>` : '');
   const bar = `<div class="doctabs" role="tablist">${tabs.map(([k, label]) => `<button class="doctab" role="tab" data-doc="${k}" aria-selected="${k === cur}">${esc(label)}${counter(k)}</button>`).join('')}
-    ${cur === 'fichas' ? '<span class="keys"><kbd>j</kbd> <kbd>k</kbd> otra ficha</span>' : cur === 'files' ? '<span class="keys"><kbd>j</kbd> <kbd>k</kbd> otro archivo · <kbd>v</kbd> visto</span>' : ''}<span class="src">${d.error ? `<span class="bad">GitHub no respondió: ${esc(d.error)}</span>, ` : ''}${d.fetchedAt ? `leído hace ${esc(short(Date.now() - Date.parse(d.fetchedAt)))}` : ''}</span></div>`;
+    ${cur === 'fichas' ? '<span class="keys"><kbd>j</kbd> <kbd>k</kbd> otra ficha</span>' : cur === 'files' ? '<span class="keys"><kbd>j</kbd> <kbd>k</kbd> otro archivo · <kbd>v</kbd> visto · <kbd>r</kbd> revisión</span>' : ''}<span class="src">${d.error ? `<span class="bad">GitHub no respondió: ${esc(d.error)}</span>, ` : ''}${d.fetchedAt ? `leído hace ${esc(short(Date.now() - Date.parse(d.fetchedAt)))}` : ''}</span></div>`;
   if (cur === 'fichas') return bar + fichasHTML(item);
   if (cur === 'files') {
     // Read when the tab is first shown, and again once old (refresh).
@@ -836,6 +838,18 @@ function hunksOf(file) {
 const contentKey = (id, path) => `${id}|${path}`;
 const foldOf = (id) => (S.ffold[id] ??= {});
 const viewedOf = (id) => S.files[id]?.viewed ?? new Set();
+// The person's pending review on the PR: GitHub's own draft, only theirs.
+const reviewOf = (id) => S.files[id]?.review ?? null;
+const pendingOf = (id) => (reviewOf(id)?.threads ?? []).flatMap((t) => t.comments.map((c) => ({ t, c })));
+// A file's threads as the person sees them: the PR's, with the replies their
+// review adds, and the ones their review starts.
+function threadsSeen(id, data, path) {
+  const review = reviewOf(id);
+  const replies = new Map((review?.threads ?? []).filter((t) => !t.isNew).map((t) => [t.id, t.comments]));
+  const own = data.threads.filter((t) => t.path === path).map((t) => (replies.has(t.id) ? { ...t, pending: replies.get(t.id) } : t));
+  const fresh = (review?.threads ?? []).filter((t) => t.isNew && t.path === path).map((t) => ({ ...t, isResolved: false, isOutdated: t.subject === 'line' && t.line === null, url: `pending:${t.id}`, comments: [], pending: t.comments, mine: true }));
+  return [...own, ...fresh];
+}
 // A viewed file folds, like on GitHub; so does a big diff, until opened.
 const isFolded = (id, file) => foldOf(id)[file.path] ?? (viewedOf(id).has(file.path) || file.additions + file.deletions > BIG_DIFF_LINES);
 
@@ -847,6 +861,7 @@ function filesHTML(item) {
   const cur = S.fcur[item.id] ?? data.files[0].path;
   const viewed = viewedOf(item.id);
   const threads = (path) => data.threads.filter((t) => t.path === path && !t.isResolved).length;
+  const pendingIn = (path) => pendingOf(item.id).filter((x) => x.t.path === path).length;
   const q = (S.fq[item.id] ?? '').toLowerCase();
   const byDir = new Map();
   for (const f of data.files.filter((x) => !q || x.path.toLowerCase().includes(q))) {
@@ -857,7 +872,7 @@ function filesHTML(item) {
   const rows = [...byDir].map(([dir, files]) => (dir ? `<div class="fdir" title="${esc(dir)}"><bdi>${esc(dir)}/</bdi></div>` : '') + files.map((f) => {
     const open = threads(f.path);
     const seen = viewed.has(f.path);
-    return `<button class="ffile${seen ? ' seen' : ''}" data-fgo="${esc(f.path)}" aria-current="${f.path === cur}"><span class="fst ${esc(f.status)}" title="${esc(f.status)}">${FILE_STATUS[f.status] ?? '?'}</span><span class="nm">${esc(f.path.split('/').pop())}</span>${open ? `<span class="talk" title="${open} sin resolver">${TALK_ICON}${open}</span>` : ''}${seen ? '<span class="ck" title="Visto">✓</span>' : `<span class="addel"><span class="a">+${f.additions}</span> <span class="d">−${f.deletions}</span></span>`}</button>`;
+    return `<button class="ffile${seen ? ' seen' : ''}" data-fgo="${esc(f.path)}" aria-current="${f.path === cur}"><span class="fst ${esc(f.status)}" title="${esc(f.status)}">${FILE_STATUS[f.status] ?? '?'}</span><span class="nm">${esc(f.path.split('/').pop())}</span>${pendingIn(f.path) ? `<span class="pd" title="${pendingIn(f.path)} en tu revisión">✎${pendingIn(f.path)}</span>` : ''}${open ? `<span class="talk" title="${open} sin resolver">${TALK_ICON}${open}</span>` : ''}${seen ? '<span class="ck" title="Visto">✓</span>' : `<span class="addel"><span class="a">+${f.additions}</span> <span class="d">−${f.deletions}</span></span>`}</button>`;
   }).join('')).join('');
   const add = data.files.reduce((s, f) => s + f.additions, 0);
   const del = data.files.reduce((s, f) => s + f.deletions, 0);
@@ -868,7 +883,7 @@ function filesHTML(item) {
   const tree = `<div class="ftree"><div class="ftop"><input type="search" id="fq" placeholder="Filtrar archivos" value="${esc(S.fq[item.id] ?? '')}" aria-label="Filtrar archivos"><button class="btn-s ftreex" data-ftree>Cerrar</button></div>${progress}<div class="frows" id="ftrows">${rows || '<p class="none">Ningún archivo coincide.</p>'}</div></div>`;
   const tool = `<div class="ftool"><button class="btn-s ftreebtn" data-ftree>Archivos ▾</button><span class="seg">${mode('unified', 'Unificado')}${mode('split', 'Lado a lado')}</span>
     <span>${data.files.length} ${data.files.length === 1 ? 'archivo' : 'archivos'} · <span class="addel"><span class="a">+${add}</span> <span class="d">−${del}</span></span></span>${data.error ? `<span class="bad">GitHub no respondió: ${esc(data.error)}</span>` : ''}
-    <span class="m hint-c">Clic en un número de línea para comentarla</span>${url ? `<a class="gh" href="${esc(url)}/files" target="_blank" rel="noopener">En GitHub ↗</a>` : ''}</div>`;
+    <span class="m hint-c">Clic en un número de línea para comentarla</span>${reviewOf(item.id) ? `<button class="btn-s primary frevb" data-frev>Terminar revisión <span class="rn">${pendingOf(item.id).length}</span></button>` : ''}${url ? `<a class="gh" href="${esc(url)}/files" target="_blank" rel="noopener">En GitHub ↗</a>` : ''}</div>`;
   return `<div class="doc files${S.ftree ? ' tree' : ''}" id="doc" data-key="${esc(`${item.id}:files`)}">${tree}<div class="fdiffs" id="fdiffs">${tool}<div class="fcards">${data.files.map((f) => fileHTML(item, data, f)).join('')}</div></div></div>`;
 }
 
@@ -876,7 +891,7 @@ function fileHTML(item, data, file) {
   const folded = isFolded(item.id, file);
   const parts = file.path.split('/');
   const name = parts.pop();
-  const own = data.threads.filter((t) => t.path === file.path);
+  const own = threadsSeen(item.id, data, file.path);
   const seen = viewedOf(item.id).has(file.path);
   const header = `<header><button class="fold" data-ffold="${esc(file.path)}" aria-expanded="${!folded}" aria-label="${folded ? 'Abrir' : 'Plegar'}">${folded ? '▸' : '▾'}</button>
     <span class="p" title="${esc(file.path)}">${file.previousPath ? `<span>${esc(file.previousPath)} → </span>` : ''}<span>${esc(parts.length ? `${parts.join('/')}/` : '')}</span><b>${esc(name)}</b></span>
@@ -993,12 +1008,20 @@ function diffThreadHTML(item, t, data) {
   const where = t.subject === 'file' ? 'Sobre el archivo' : t.isOutdated || t.line === null ? `Línea ${t.originalLine ?? '?'}, en código que ya cambió` : `${t.startLine && t.startLine !== t.line ? `Líneas ${t.startLine}–${t.line}` : `Línea ${t.line}`}${t.side === 'LEFT' ? ', versión anterior' : ''}`;
   const chips = (t.isResolved ? '<span class="chip ok">resuelto</span>' : '') + (t.isOutdated ? '<span class="chip idle">desactualizado</span>' : '');
   const comments = t.comments.map((c) => `<div class="tc">${avatar(c.author)}<div><header><b>${esc(c.author || 'alguien')}</b>${c.author === data.ronin ? '<span class="botl">bot</span>' : ''}<a href="${esc(c.url)}" target="_blank" rel="noopener">${esc(when(c.createdAt))}</a></header><div class="md">${md(c.body, item.repo)}</div></div></div>`).join('');
+  // What the person's review adds: only they see it until they send it.
+  const me = S.snap?.me ?? '';
+  const editing = S.fcomp?.item === item.id ? S.fcomp.edit : null;
+  const pending = (t.pending ?? []).map((c) => (editing === c.nodeId
+    ? composerHTML(item, null)
+    : `<div class="tc pend" id="p-${esc(c.nodeId)}">${avatar(me)}<div><header><b>${esc(me)}</b><span class="pendl">Pendiente</span><span class="pact"><button data-fpedit="${esc(c.nodeId)}">Editar</button><button data-fpdel="${esc(c.nodeId)}"${S.fbusy.has(c.nodeId) ? ' disabled' : ''}>Borrar</button></span></header><div class="md">${md(c.body, item.repo)}</div></div></div>`)).join('');
   const replying = S.fcomp?.item === item.id && S.fcomp.reply === t.id;
   const busy = S.fbusy.has(t.id);
+  // A thread the review starts takes no replies or resolving until it's sent.
   const foot = replying
     ? composerHTML(item, null)
-    : `<div class="tfoot"><button class="treply" data-freply="${esc(t.id)}">Responder…</button><button class="btn-s" data-fresolve="${esc(t.id)}" data-on="${t.isResolved ? '0' : '1'}"${busy ? ' disabled' : ''}>${busy ? '…' : t.isResolved ? 'Reabrir' : 'Resolver conversación'}</button></div>`;
-  return `<details class="dthread" data-thread="${esc(key)}"${open || replying ? ' open' : ''}><summary><span>${esc(where)}</span>${chips}<span class="n">${t.comments.length} ${t.comments.length === 1 ? 'comentario' : 'comentarios'}</span></summary>${comments}${foot}</details>`;
+    : t.mine ? '' : `<div class="tfoot"><button class="treply" data-freply="${esc(t.id)}">Responder…</button><button class="btn-s" data-fresolve="${esc(t.id)}" data-on="${t.isResolved ? '0' : '1'}"${busy ? ' disabled' : ''}>${busy ? '…' : t.isResolved ? 'Reabrir' : 'Resolver conversación'}</button></div>`;
+  const count = t.comments.length + (t.pending?.length ?? 0);
+  return `<details class="dthread${t.mine ? ' mine' : ''}" data-thread="${esc(key)}"${open || replying || t.pending ? ' open' : ''}><summary><span>${esc(where)}</span>${chips}${t.pending ? `<span class="pendl">${t.mine ? 'en tu revisión' : `${t.pending.length} en tu revisión`}</span>` : ''}<span class="n">${count} ${count === 1 ? 'comentario' : 'comentarios'}</span></summary>${comments}${pending}${foot}</details>`;
 }
 
 // The lines a comment is on, as the new file has them: what a suggestion replaces.
@@ -1010,14 +1033,21 @@ function linesForSuggestion(file, c) {
 
 function composerHTML(item, file) {
   const c = S.fcomp;
-  const where = c.reply ? '' : c.subject === 'file' ? 'el archivo entero' : c.startLine ? `líneas ${c.startLine}–${c.line}${c.side === 'LEFT' ? ' (versión anterior)' : ''}` : `línea ${c.line}${c.side === 'LEFT' ? ' (versión anterior)' : ''}`;
-  const canSuggest = !c.reply && c.subject === 'line' && c.side === 'RIGHT' && file;
+  const where = c.reply || c.edit ? '' : c.subject === 'file' ? 'el archivo entero' : c.startLine ? `líneas ${c.startLine}–${c.line}${c.side === 'LEFT' ? ' (versión anterior)' : ''}` : `línea ${c.line}${c.side === 'LEFT' ? ' (versión anterior)' : ''}`;
+  const canSuggest = !c.reply && !c.edit && c.subject === 'line' && c.side === 'RIGHT' && file;
   const body = c.preview
     ? `<div class="dpv md">${c.text.trim() ? md(c.text, item.repo) : '<p class="m">Nada para mostrar.</p>'}</div>`
-    : `<textarea id="fcbox" rows="4" placeholder="${c.reply ? 'Respuesta' : 'Comentario'} (markdown). Ctrl+Enter lo manda.">${esc(c.text)}</textarea>`;
+    : `<textarea id="fcbox" rows="4" placeholder="${c.reply ? 'Respuesta' : 'Comentario'} (markdown). Ctrl+Enter ${c.edit ? 'lo guarda' : reviewOf(c.item) ? 'lo suma a tu revisión' : 'empieza una revisión'}.">${esc(c.text)}</textarea>`;
+  // As in GitHub: once a review is started, what's written goes into it.
+  const send = (mode, label, primary) => `<button class="btn-s${primary ? ' primary' : ''}" data-fcsend="${mode}"${c.sending ? ' disabled' : ''}>${c.sending === mode ? 'Enviando…' : label}</button>`;
+  const buttons = c.edit
+    ? send('edit', 'Guardar', true)
+    : reviewOf(c.item)
+      ? send('review', 'Sumar a la revisión', true)
+      : send('now', c.reply ? 'Responder ya' : 'Comentar ya', false) + send('review', 'Empezar una revisión', true);
   return `<div class="dcomp"><div class="dct"><button class="dtb" data-fcpv="0" aria-selected="${!c.preview}">Escribir</button><button class="dtb" data-fcpv="1" aria-selected="${!!c.preview}">Vista previa</button>${canSuggest ? '<button class="dtool" data-fsuggest title="Proponer el código que va en esas líneas">± Sugerir cambio</button>' : ''}<span class="where">${esc(where)}</span></div>
     ${body}
-    <div class="dfoot">${c.error ? `<span class="bad">${esc(c.error)}</span>` : `<span class="m">${c.reply ? '' : c.subject === 'line' ? 'Shift+clic en otro número para elegir varias líneas. ' : ''}Comentás como ${esc(S.snap?.me ?? '')}.</span>`}<button class="btn-s" data-fccancel>Cancelar</button><button class="btn-s primary" data-fcsend${c.sending ? ' disabled' : ''}>${c.sending ? 'Enviando…' : c.reply ? 'Responder' : 'Comentar'}</button></div></div>`;
+    <div class="dfoot">${c.error ? `<span class="bad">${esc(c.error)}</span>` : `<span class="m">${c.reply ? '' : c.subject === 'line' ? 'Shift+clic en otro número para elegir varias líneas. ' : ''}Comentás como ${esc(S.snap?.me ?? '')}.</span>`}<button class="btn-s" data-fccancel>Cancelar</button>${buttons}</div></div>`;
 }
 
 async function loadFiles(id) {
@@ -1025,10 +1055,13 @@ async function loadFiles(id) {
   if (entry.loading) return;
   entry.loading = true;
   try {
-    // What the person marked as viewed is theirs, read with their token; without it the diff still shows.
-    const [data, viewed] = await Promise.all([api(`/api/items/${encodeURIComponent(id)}/files`), api(`/api/items/${encodeURIComponent(id)}/files/viewed`).catch((error) => (error instanceof Unauthorized ? Promise.reject(error) : null))]);
+    // What the person marked as viewed and their pending review are theirs, read with their token; without them the diff still shows.
+    const [data, mine] = await Promise.all([api(`/api/items/${encodeURIComponent(id)}/files`), api(`/api/items/${encodeURIComponent(id)}/files/mine`).catch((error) => (error instanceof Unauthorized ? Promise.reject(error) : null))]);
     entry.data = data;
-    if (viewed) entry.viewed = new Set(viewed.paths);
+    if (mine) {
+      entry.viewed = new Set(mine.viewed);
+      entry.review = mine.review;
+    }
     entry.error = null;
   } catch (error) {
     if (error instanceof Unauthorized) return showLogin();
@@ -1079,9 +1112,11 @@ function afterFilesWrite(id) {
   loadDetail(id);
 }
 
-async function sendComment() {
+// `mode`: now (out at once), review (into the person's pending review, started if needed), edit (a pending one).
+async function sendComment(mode) {
   const c = S.fcomp;
   if (!c || c.sending) return;
+  mode ??= c.edit ? 'edit' : 'review';
   const box = $('#fcbox');
   if (box) c.text = box.value;
   if (!c.text.trim()) {
@@ -1089,21 +1124,170 @@ async function sendComment() {
     return renderCenter();
   }
   const data = S.files[c.item]?.data;
-  const body = c.reply
-    ? { action: 'reply', commentId: c.commentId, text: c.text }
-    : { action: 'comment', path: c.path, commitId: data.headSha, subject: c.subject, text: c.text, ...(c.subject === 'line' ? { side: c.side, line: c.line, ...(c.startLine ? { startLine: c.startLine } : {}) } : {}) };
-  c.sending = true;
+  const review = mode === 'review' ? { review: true } : {};
+  const body = c.edit
+    ? { action: 'pending-edit', commentId: c.edit, text: c.text }
+    : c.reply
+      ? { action: 'reply', commentId: c.commentId, text: c.text, ...review }
+      : { action: 'comment', path: c.path, commitId: data.headSha, subject: c.subject, text: c.text, ...review, ...(c.subject === 'line' ? { side: c.side, line: c.line, ...(c.startLine ? { startLine: c.startLine } : {}) } : {}) };
+  const started = mode === 'review' && !reviewOf(c.item);
+  c.sending = mode;
   c.error = null;
   renderCenter();
   try {
     const posted = await filesAction(c.item, body);
     S.fcomp = null;
-    toast(c.reply ? 'Respondiste en el hilo.' : 'Comentaste en el PR.', posted?.url);
+    if (mode === 'now') toast(c.reply ? 'Respondiste en el hilo.' : 'Comentaste en el PR.', posted?.url);
+    else toast(mode === 'edit' ? 'Guardado en tu revisión.' : started ? 'Empezaste una revisión: nadie la ve hasta que la mandes.' : 'Sumado a tu revisión.');
     afterFilesWrite(c.item);
   } catch (error) {
     if (error instanceof Unauthorized) return showLogin();
     c.sending = false;
     c.error = `No se pudo: ${error.message}`;
+    renderCenter();
+  }
+}
+
+async function deletePending(nodeId) {
+  const id = S.sel;
+  S.fbusy.add(nodeId);
+  renderCenter();
+  try {
+    await filesAction(id, { action: 'pending-delete', commentId: nodeId });
+    toast('Borrado de tu revisión.');
+    afterFilesWrite(id);
+  } catch (error) {
+    if (error instanceof Unauthorized) return showLogin();
+    toast(`No se pudo: ${error.message}`);
+  } finally {
+    S.fbusy.delete(nodeId);
+    renderCenter();
+  }
+}
+
+// ---------- the review panel (#111)
+// Finishing the review as in GitHub's "Review changes": a summary, Comment,
+// Approve or Request changes, and the pending comments it carries.
+const REVIEW_EVENTS = [
+  ['COMMENT', 'Comentar', '', 'Sin aprobar ni bloquear: solo deja los comentarios.'],
+  ['APPROVE', 'Aprobar', 'ok', 'El PR queda aprobado.'],
+  ['REQUEST_CHANGES', 'Pedir cambios', 'crit', 'El PR no se puede mergear hasta que lo apruebes o se descarte tu revisión.'],
+];
+const isMine = (login) => (login ?? '').toLowerCase() === (S.snap?.me ?? '').toLowerCase();
+// A PR's page offers the review; an exploration PR has its own approval (#93).
+const reviewable = (item, d) => item.kind === 'pr' && !d?.exploration && d?.pr?.state === 'OPEN';
+
+function openReviewPanel() {
+  const id = S.sel;
+  if (!id) return;
+  S.rpanel = S.rpanel?.item === id ? null : { item: id, event: 'COMMENT', text: '', fix: true, sending: false, error: null };
+  if (S.rpanel && !S.files[id]?.data) loadFiles(id);
+  renderCenter();
+  if (S.rpanel) $('#rsum')?.focus();
+}
+
+function reviewPanelHTML(item) {
+  const p = S.rpanel;
+  if (!p || p.item !== item.id) return '';
+  const entry = S.files[item.id];
+  const data = entry?.data;
+  const d = S.detail[item.id]?.data;
+  const head = `<header><h2>Terminar la revisión</h2><span class="m">como ${esc(S.snap?.me ?? '')}</span><button class="x" data-rclose aria-label="Cerrar">×</button></header>`;
+  if (!data) return `<div class="rpanel" role="dialog" aria-label="Terminar la revisión">${head}<div class="rbody"><p class="m">${entry?.error ? `No se pudo leer el PR: ${esc(entry.error)}` : 'Leyendo el PR…'}</p></div></div>`;
+  const own = isMine(data.author);
+  const event = own ? 'COMMENT' : p.event;
+  const pend = pendingOf(item.id);
+  const ronins = d?.ronin && data.author.toLowerCase() === d.ronin.toLowerCase();
+  const autoMerge = d?.pr?.labels?.includes('ronin:auto-merge');
+  const options = REVIEW_EVENTS.map(([value, label, cls, help]) => {
+    const off = own && value !== 'COMMENT';
+    const why = value === 'APPROVE' && autoMerge ? 'El PR tiene ronin:auto-merge: se mergea cuando pasen los checks.' : help;
+    return `<label class="${off ? 'off' : ''}"${off ? ' title="GitHub no deja aprobar ni pedir cambios en tu propio PR"' : ''}><input type="radio" name="rev" value="${value}"${event === value ? ' checked' : ''}${off ? ' disabled' : ''}><b class="${cls}">${label}</b><small>${esc(off ? 'No se puede en tu propio PR.' : why)}</small></label>`;
+  }).join('');
+  // ronin reads a review's comments, not its summary, and acts on them only when asked.
+  const fixable = ronins && (pend.length > 0 || event === 'REQUEST_CHANGES');
+  const fix = fixable ? `<label class="rfix"><input type="checkbox" id="rfix"${p.fix ? ' checked' : ''}><span><b>Que ronin los atienda ahora</b><small>Después de la revisión comenta <code>@${esc(d.ronin)} /fix-comments</code> a tu nombre.</small></span></label>` : '';
+  const where = (t) => `${t.path.split('/').pop()}${t.subject === 'file' ? '' : t.line ? ` · línea ${t.line}` : ''}`;
+  const list = pend.length
+    ? pend.map(({ t, c }) => `<button class="ri" data-rjump="${esc(t.path)}|${esc(c.nodeId)}"><span class="w">${esc(where(t))}${t.isNew ? '' : ' · respuesta'}</span><span class="t">${esc(c.body.replace(/```suggestion[\s\S]*?```/g, '[cambio sugerido]').trim().split('\n')[0])}</span></button>`).join('')
+    : '<p class="m">Ningún comentario todavía: hacé clic en el número de una línea en Archivos.</p>';
+  const can = !p.sending && (event !== 'COMMENT' || pend.length > 0 || p.text.trim());
+  return `<div class="rpanel" role="dialog" aria-label="Terminar la revisión">${head}<div class="rbody">
+    <textarea id="rsum" rows="3" placeholder="Resumen (opcional). Va arriba de la revisión, como en GitHub.">${esc(p.text)}</textarea>
+    <div class="rev">${options}</div>${fix}
+    <div class="rlist"><div class="rh">En tu revisión<span>${pend.length ? `${pend.length} comentario${pend.length === 1 ? '' : 's'}` : ''}</span></div>${list}</div></div>
+    <footer>${p.error ? `<span class="bad">${esc(p.error)}</span>` : `<span class="m">${pend.length ? 'Hasta mandarla, nadie ve tus comentarios.' : ''}</span>`}${reviewOf(item.id) ? `<button class="btn-s danger" data-rdiscard${p.sending ? ' disabled' : ''}>Descartar</button>` : ''}<button class="btn-s primary" data-rsend${can ? '' : ' disabled'}>${p.sending ? 'Enviando…' : 'Mandar revisión'}</button></footer></div>`;
+}
+
+function wireReviewPanel() {
+  const p = S.rpanel;
+  if (!p) return;
+  for (const button of document.querySelectorAll('[data-rclose]')) button.onclick = () => { S.rpanel = null; renderCenter(); };
+  const sum = $('#rsum');
+  if (sum) {
+    sum.oninput = () => {
+      p.text = sum.value;
+      const send = $('[data-rsend]');
+      if (send && !p.sending) send.disabled = !((p.event !== 'COMMENT' && !isMine(S.files[p.item]?.data?.author)) || pendingOf(p.item).length > 0 || p.text.trim());
+    };
+    sum.onkeydown = (event) => { if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) sendReview(); };
+  }
+  for (const radio of document.querySelectorAll('input[name="rev"]')) radio.onchange = () => { p.event = radio.value; renderCenter(); };
+  const fix = $('#rfix');
+  if (fix) fix.onchange = () => { p.fix = fix.checked; };
+  for (const button of document.querySelectorAll('[data-rsend]')) button.onclick = sendReview;
+  for (const button of document.querySelectorAll('[data-rdiscard]')) button.onclick = discardPendingReview;
+  for (const button of document.querySelectorAll('[data-rjump]')) {
+    button.onclick = () => {
+      const [path, nodeId] = button.dataset.rjump.split('|');
+      S.rpanel = null;
+      S.doc[S.sel] = 'files';
+      goFile(path);
+      document.getElementById(`p-${nodeId}`)?.scrollIntoView({ block: 'center' });
+    };
+  }
+}
+
+const REVIEW_SENT = { COMMENT: 'Mandaste tu revisión', APPROVE: 'Aprobaste el PR', REQUEST_CHANGES: 'Pediste cambios' };
+async function sendReview() {
+  const p = S.rpanel;
+  const data = p && S.files[p.item]?.data;
+  if (!p || !data || p.sending) return;
+  const event = isMine(data.author) ? 'COMMENT' : p.event;
+  const d = S.detail[p.item]?.data;
+  const fixable = d?.ronin && data.author.toLowerCase() === d.ronin.toLowerCase() && (pendingOf(p.item).length > 0 || event === 'REQUEST_CHANGES');
+  p.sending = true;
+  p.error = null;
+  renderCenter();
+  try {
+    const sent = await filesAction(p.item, { action: 'submit', event, text: p.text, commitId: data.headSha, fixComments: Boolean(fixable && p.fix) });
+    S.rpanel = null;
+    toast(`${REVIEW_SENT[event]}${sent.fixUrl ? '; ronin ya tiene el /fix-comments' : ''}.`, sent.url);
+    afterFilesWrite(p.item);
+    refresh();
+  } catch (error) {
+    if (error instanceof Unauthorized) return showLogin();
+    p.sending = false;
+    p.error = `No se pudo: ${error.message}`;
+    renderCenter();
+  }
+}
+
+async function discardPendingReview() {
+  const p = S.rpanel;
+  const n = pendingOf(p.item).length;
+  if (!confirm(`¿Descartar tu revisión${n ? ` con ${n} comentario${n === 1 ? '' : 's'}` : ''}? No se puede deshacer.`)) return;
+  p.sending = true;
+  renderCenter();
+  try {
+    await filesAction(p.item, { action: 'discard' });
+    S.rpanel = null;
+    toast('Descartaste tu revisión.');
+    afterFilesWrite(p.item);
+  } catch (error) {
+    if (error instanceof Unauthorized) return showLogin();
+    p.sending = false;
+    p.error = `No se pudo: ${error.message}`;
     renderCenter();
   }
 }
@@ -1160,7 +1344,7 @@ function toggleViewedCurrent() {
 function openComposer(spot) {
   const prev = S.fcomp;
   // Re-opening on the same spot keeps what was written.
-  const text = prev && prev.item === spot.item && !prev.sending ? $('#fcbox')?.value ?? prev.text : '';
+  const text = prev && prev.item === spot.item && !prev.sending && !prev.edit ? $('#fcbox')?.value ?? prev.text : '';
   S.fcomp = { text, preview: false, ...spot };
   renderCenter();
   focusComposer();
@@ -1280,7 +1464,19 @@ function wireFiles() {
       renderCenter();
     };
   }
-  for (const button of document.querySelectorAll('[data-fcsend]')) button.onclick = sendComment;
+  for (const button of document.querySelectorAll('[data-fcsend]')) button.onclick = () => sendComment(button.dataset.fcsend);
+  for (const button of document.querySelectorAll('[data-fpedit]')) {
+    button.onclick = () => {
+      const found = pendingOf(S.sel).find((x) => x.c.nodeId === button.dataset.fpedit);
+      if (found) openComposer({ item: S.sel, path: found.t.path, edit: found.c.nodeId, text: found.c.body });
+    };
+  }
+  for (const button of document.querySelectorAll('[data-fpdel]')) button.onclick = () => deletePending(button.dataset.fpdel);
+  for (const button of document.querySelectorAll('[data-frev]')) button.onclick = (event) => {
+    event.stopPropagation();
+    openReviewPanel();
+  };
+  wireReviewPanel();
   const q = $('#fq');
   if (q) q.oninput = () => {
     S.fq[S.sel] = q.value;
@@ -2579,9 +2775,10 @@ async function boot() {
     const reviewing = !S.dialog && !S.fdialog && !S.newIssue && !event.metaKey && !event.ctrlKey && !event.altKey && item && viewOf(item) === 'ficha' && docOf(item) === 'fichas' && !/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName ?? '');
     // On a PR's files, j/k go from one file to the next (#111).
     const typing = event.metaKey || event.ctrlKey || event.altKey || /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName ?? '');
-    if (!typing && !S.dialog && !S.fdialog && !S.newIssue && item && viewOf(item) === 'ficha' && docOf(item) === 'files' && ['j', 'k', 'v'].includes(event.key)) {
+    if (!typing && !S.dialog && !S.fdialog && !S.newIssue && item && viewOf(item) === 'ficha' && docOf(item) === 'files' && ['j', 'k', 'v', 'r'].includes(event.key)) {
       event.preventDefault();
-      if (event.key === 'v') toggleViewedCurrent();
+      if (event.key === 'r') openReviewPanel();
+      else if (event.key === 'v') toggleViewedCurrent();
       else moveFile(event.key === 'j' ? 1 : -1);
       return;
     }
@@ -2594,7 +2791,10 @@ async function boot() {
     }
     if (event.key !== 'Escape') return;
     if (S.newIssue) closeNewIssue();
-    else if (S.fcomp && !S.fcomp.sending) {
+    else if (S.rpanel && !S.rpanel.sending) {
+      S.rpanel = null;
+      renderCenter();
+    } else if (S.fcomp && !S.fcomp.sending) {
       S.fcomp = null;
       renderCenter();
     }

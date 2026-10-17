@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { approvePr, commentOnDiff, commentOnFile, commentOnIssue, GithubUserError, replyToReviewComment, setFileViewed, setThreadResolved, viewedFiles } from './github-as-user.js';
+import { addReviewThread, approvePr, commentOnDiff, pendingReview, submitReview, commentOnFile, commentOnIssue, GithubUserError, replyToReviewComment, setFileViewed, setThreadResolved, viewedFiles } from './github-as-user.js';
 
 const reply = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
 const fetchMock = vi.fn();
@@ -88,5 +88,28 @@ describe('github-as-user', () => {
     await expect(setThreadResolved('gho_user', 'acme/product', 'PRRT_1', true)).rejects.toThrow('no te deja');
     fetchMock.mockResolvedValueOnce(reply(401, {}));
     await expect(setThreadResolved('gho_user', 'acme/product', 'PRRT_1', true)).rejects.toMatchObject({ relogin: true });
+  });
+
+  it("reads the person's pending review from the PR's threads: what it starts and what it replies", async () => {
+    const thread = (id: string, states: string[]) => ({ id, path: 'src/a.ts', subjectType: 'LINE', diffSide: 'RIGHT', line: 3, startLine: null, originalLine: 3, comments: { nodes: states.map((state, i) => ({ id: `${id}-c${i}`, databaseId: i, body: state, createdAt: '', state })) } });
+    fetchMock.mockResolvedValueOnce(reply(200, { data: { repository: { pullRequest: {
+      reviews: { nodes: [{ id: 'PRR_x', viewerDidAuthor: false }, { id: 'PRR_mine', viewerDidAuthor: true }] },
+      reviewThreads: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [thread('T1', ['SUBMITTED']), thread('T2', ['SUBMITTED', 'PENDING']), thread('T3', ['PENDING'])] },
+    } } } }));
+    const review = await pendingReview('gho_user', 'acme/product', 904);
+    expect(review?.id).toBe('PRR_mine');
+    expect(review?.threads.map((t) => [t.id, t.isNew, t.comments.map((c) => c.nodeId)])).toEqual([['T2', false, ['T2-c1']], ['T3', true, ['T3-c0']]]);
+    fetchMock.mockResolvedValueOnce(reply(200, { data: { repository: { pullRequest: { reviews: { nodes: [] }, reviewThreads: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [] } } } } }));
+    expect(await pendingReview('gho_user', 'acme/product', 904)).toBeNull();
+  });
+
+  it('adds a range to the review, and submits it or a review of its own', async () => {
+    fetchMock.mockImplementation(async () => reply(200, { data: { submitPullRequestReview: { pullRequestReview: { url: 'u1' } }, addPullRequestReview: { pullRequestReview: { url: 'u2' } } } }));
+    await addReviewThread('gho_user', 'acme/product', 'PRR_1', { path: 'a.ts', commitId: 'c', subject: 'line', side: 'LEFT', line: 9, startLine: 7 }, 'x');
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).variables.input).toEqual({ pullRequestReviewId: 'PRR_1', path: 'a.ts', body: 'x', subjectType: 'LINE', line: 9, side: 'LEFT', startLine: 7, startSide: 'LEFT' });
+    expect(await submitReview('gho_user', 'acme/product', { prId: 'PR_1', commitId: 'c', pendingId: 'PRR_1', event: 'APPROVE', body: '' })).toEqual({ url: 'u1' });
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body).variables).toEqual({ id: 'PRR_1', event: 'APPROVE', body: null });
+    expect(await submitReview('gho_user', 'acme/product', { prId: 'PR_1', commitId: 'c', event: 'REQUEST_CHANGES', body: 'no' })).toEqual({ url: 'u2' });
+    expect(JSON.parse(fetchMock.mock.calls[2][1].body).variables).toEqual({ pr: 'PR_1', commit: 'c', event: 'REQUEST_CHANGES', body: 'no' });
   });
 });
