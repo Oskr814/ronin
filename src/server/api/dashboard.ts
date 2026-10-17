@@ -5,7 +5,8 @@ import { loadRepos } from '../../core/repos.js';
 import { itemKindOf } from '../../core/github.js';
 import { withActiveRepo } from '../../core/repo-context.js';
 import { itemKey, listRuns, readQueue, readRunLines, readTickInfo, readUsage, runPath, slotsInUse, summarizeRun } from './dashboard-data.js';
-import { repoGithub } from './dashboard-github.js';
+import { forgetGithub, repoGithub } from './dashboard-github.js';
+import { createFromDashboard, NewIssueError, parseNewIssue, repoApps } from './dashboard-new-issue.js';
 import { cycleView, repoLinear } from './dashboard-linear.js';
 import { buildItems, itemRunKeys } from './dashboard-items.js';
 import { forgetDetails, itemDetail, resolveItem } from './dashboard-detail.js';
@@ -28,6 +29,7 @@ import type { Session } from './auth.js';
 //   POST /api/items/<id>/exploration/general  a general comment on the PR, as the person
 //   POST /api/items/<id>/exploration/approve  an approving review, as the person
 //   POST /api/items/<id>/actions     asks for one of those (dashboard-actions.ts)
+//   POST /api/repos/<owner>/<repo>/issues  a new issue, as the person, and what to do with it (#100)
 //   GET /api/runs/<runId>            one run's transcript
 //   GET /api/runs/<runId>/stream     the rest of it as it happens (SSE)
 //   GET /api/evidence/<owner>/<repo>/<sha>/<path>  a screenshot ronin published (dashboard-evidence.ts)
@@ -58,12 +60,16 @@ export async function snapshot(login: string): Promise<unknown> {
   });
   return {
     me: login,
+    // ronin's GitHub login, for the comments the page shows it'll write.
+    ronin: config.githubLogin,
     repos,
     runner: { slots: { used: slotsInUse(), limit: config.tickConcurrency }, queue: readQueue(), tick: readTickInfo() },
     usage: readUsage(),
     items,
     previews: github.flatMap((gh) => (gh ? gh.previews.map((p) => ({ ...p, repo: gh.repo })) : [])),
     github: github.map((gh, i) => ({ repo: repos[i], fetchedAt: gh?.fetchedAt ?? null, ...(gh?.error ? { error: gh.error } : {}) })),
+    // Each repo's apps (ronin.app.json), for /spike and /spec on a new issue.
+    apps: Object.fromEntries(await Promise.all(entries.map(async (entry) => [entry.productRepo, await repoApps(entry)] as const))),
     // Only the repos with a Linear key.
     linear: linear.flatMap((l) => (l ? [{
       repo: l.repo,
@@ -187,6 +193,30 @@ async function postAction(req: IncomingMessage, res: ServerResponse, id: string,
   }
 }
 
+// POST /api/repos/<owner>/<repo>/issues: { title, body, after, app?, instruction? }.
+async function postNewIssue(req: IncomingMessage, res: ServerResponse, repo: string, session: Session): Promise<void> {
+  if (!(req.headers['content-type'] ?? '').startsWith('application/json')) {
+    json(res, 415, { error: 'se espera JSON' });
+    return;
+  }
+  const body = await readJson(req);
+  const entry = (await loadRepos()).find((r) => r.productRepo === repo);
+  if (!entry) {
+    json(res, 404, { error: 'ese repo no está en repos.json' });
+    return;
+  }
+  try {
+    const issue = parseNewIssue(body ?? {}, await repoApps(entry));
+    const created = await createFromDashboard(entry, session, issue, config.githubLogin);
+    // The next snapshot lists it.
+    forgetGithub(entry.productRepo);
+    json(res, 200, created);
+  } catch (error) {
+    if (error instanceof NewIssueError) json(res, 400, { error: error.message });
+    else if (!githubRefusal(res, error)) throw error;
+  }
+}
+
 // POST /api/items/<id>/exploration/<what>: actions { action, ficha, text,
 // redo? } on a finding, general { text }, approve { text? }.
 async function postExploration(req: IncomingMessage, res: ServerResponse, id: string, what: string, session: Session): Promise<void> {
@@ -278,6 +308,11 @@ export async function handleDashboard(req: IncomingMessage, res: ServerResponse,
   const explorationPost = /^\/api\/items\/(.+)\/exploration\/(actions|general|approve)$/.exec(path);
   if (explorationPost && req.method === 'POST') {
     await postExploration(req, res, decodeURIComponent(explorationPost[1]), explorationPost[2], session);
+    return true;
+  }
+  const newIssue = /^\/api\/repos\/([\w.-]+\/[\w.-]+)\/issues$/.exec(path);
+  if (newIssue && req.method === 'POST') {
+    await postNewIssue(req, res, newIssue[1], session);
     return true;
   }
   const action = /^\/api\/items\/(.+)\/actions$/.exec(path);

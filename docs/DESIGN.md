@@ -615,6 +615,7 @@ Todo, salvo los webhooks y `/api/auth/*`, pide sesión:
 | `GET /api/items/<id>` | Las corridas de un ítem en los últimos 14 días |
 | `GET /api/items/<id>/detail` | Su ficha: el issue y el PR con los comentarios del ítem, y las acciones que se le pueden pedir, cada una con el comentario que dejaría |
 | `POST /api/items/<id>/actions` | Pide una de esas acciones: `{ action, text? }` (15.11) |
+| `POST /api/repos/<owner>/<repo>/issues` | Crea un issue a nombre de la persona y, si se pide, lo asigna a ronin o le comenta `/spike` o `/spec`: `{ title, body, after, app?, instruction? }` (15.11.1) |
 | `GET /api/items/<id>/exploration` | Las fichas de un PR de exploración abierto, leídas en partes, con su hilo (15.12) |
 | `POST /api/items/<id>/exploration/actions` | Comenta en una ficha: `{ action, ficha, text, redo? }` (15.12) |
 | `POST /api/items/<id>/exploration/general` | Un comentario general en el PR: `{ text }` (15.12) |
@@ -654,6 +655,19 @@ Antes de #93, ronin comentaba *"**<login>** pidió `/x` desde el tablero"* y lan
 **No están** `/fix-comments` ni `/spike`, aunque ahora que las acciones son comentarios sumarlos es agregarlos a la lista. Tampoco cancelar o reintentar una corrida, que necesitan coordinarse con los locks del tick.
 
 **Pendiente:** cancelar y reintentar corridas, `/fix-comments` y `/spike` desde la página, una vista de varios runners juntos y sacar el alias `/webhook`.
+
+#### 15.11.1 Nuevo issue (#100, `server/api/dashboard-new-issue.ts`)
+
+Cada repo de la barra lateral tiene un botón **+** que abre *Nuevo issue*: título y descripción (markdown, con vista previa) y qué hacer después.
+
+- **Cómo se crea:** en GitHub, a nombre de quien entró y con su token (`createIssue` en `github-as-user.ts`, como las acciones de 15.11). No pasa por Linear: con la sincronización bidireccional aparece allá solo, y el botón sigue andando si se deja Linear.
+- **Después de crearlo**, una de cuatro:
+  - **Solo crearlo.**
+  - **Asignárselo a ronin:** el issue se crea ya asignado a la cuenta de ronin, que lo toma como cualquier issue asignado (`discoverAssignedIssues`).
+  - **Pedir `/spike <app>`** o **`/spec <app>`:** un comentario a nombre de la persona, con una de las apps del `ronin.app.json` del repo (`repoApps`, que el snapshot manda en `apps`) y una instrucción opcional. Le llega a ronin por su webhook, como uno escrito en GitHub.
+- **Al terminar:** la lectura del repo se descarta (`forgetGithub`), así el snapshot siguiente lista el issue, y la página abre su ficha.
+
+`POST /api/repos/<owner>/<repo>/issues` con `{ title, body, after, app?, instruction? }`. Pasa por las mismas defensas que cualquier POST del tablero (origen, sesión, JSON). Un rechazo de GitHub (un 401 con la sesión vencida, o un 403/404 cuando la organización restringe las apps OAuth) se explica igual que en 15.11.
 
 #### 15.12 Revisar una exploración (#93)
 

@@ -140,6 +140,12 @@ export async function repoGithub(entry: RepoEntry, changedSince = 0, now = Date.
   return entryCache.data ?? entryCache.reading;
 }
 
+// After something changed the repo from the dashboard (a new issue): its
+// next read is fresh.
+export function forgetGithub(repo: string): void {
+  cache.delete(repo);
+}
+
 export function resetGithubCache(): void {
   cache.clear();
 }

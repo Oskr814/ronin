@@ -59,7 +59,7 @@ function duration(ms) {
 const money = (usd) => (usd < 0.01 ? 'menos de US$0,01' : `US$${usd.toFixed(2).replace('.', ',')}`);
 const pct = (fraction) => `${Math.round(fraction * 100)}%`;
 
-const S = { snap: null, today: null, sel: null, open: [], runIdx: {}, pendingRun: null, filter: null, q: '', itemRuns: {}, run: null, stream: null, detail: {}, view: {}, doc: {}, menu: false, dialog: null, expanded: new Set(), expl: {}, ficha: {}, fichaOpen: {}, fichaFilter: { tipo: 'todas', vp: 'todos' }, antes: {}, oldAfter: new Set(), lightbox: null, fmenu: false, fdialog: null, fdraft: {}, listas: {}, scope: 'all', project: '', attAll: false, extra: {} };
+const S = { snap: null, today: null, sel: null, open: [], runIdx: {}, pendingRun: null, filter: null, q: '', itemRuns: {}, run: null, stream: null, detail: {}, view: {}, doc: {}, menu: false, dialog: null, expanded: new Set(), expl: {}, ficha: {}, fichaOpen: {}, fichaFilter: { tipo: 'todas', vp: 'todos' }, antes: {}, oldAfter: new Set(), lightbox: null, fmenu: false, fdialog: null, fdraft: {}, listas: {}, scope: 'all', project: '', attAll: false, extra: {}, newIssue: null };
 // The sidebar's Linear filter (#101), remembered per browser.
 try { Object.assign(S, JSON.parse(localStorage.getItem('ronin-scope') ?? '{}')); } catch { /* sin storage */ }
 function saveScope() {
@@ -246,7 +246,7 @@ function renderTree() {
   if (blocked.length) html += `<div class="grp"><span>Necesitan a alguien</span><span class="n alert">${blocked.length}</span></div>` + blocked.map(row).join('');
   for (const repo of S.snap.repos) {
     const items = S.snap.items.filter((item) => item.repo === repo && item.status !== 'blocked' && shown(item)).sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
-    html += `<div class="grp"><span class="sq" style="background:${repoColor(repo)}"></span><b>${esc(repoShort(repo))}</b><span class="n">${items.length}</span></div>`;
+    html += `<div class="grp"><span class="sq" style="background:${repoColor(repo)}"></span><b>${esc(repoShort(repo))}</b><span class="n">${items.length}</span><button class="grp-add" data-new="${esc(repo)}" title="Nuevo issue en ${esc(repoShort(repo))}" aria-label="Nuevo issue en ${esc(repoShort(repo))}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button></div>`;
     html += items.length ? items.map(row).join('') : `<div class="grp-empty">${q || S.filter ? 'Nada coincide.' : S.scope === 'cycle' || S.project ? `Ningún issue abierto ${S.scope === 'cycle' ? 'en este ciclo' : ''}${S.project ? ' para este proyecto' : ''}.` : 'Nada en curso ni corridas en los últimos 3 días.'}</div>`;
     // A number nothing listed has: open it anyway (a closed issue, a PR without an issue).
     if (num && !found && safeRepo(repo)) {
@@ -255,6 +255,7 @@ function renderTree() {
   }
   tree.innerHTML = html;
   for (const button of tree.querySelectorAll('[data-id]')) button.onclick = () => select(button.dataset.id);
+  for (const button of tree.querySelectorAll('[data-new]')) button.onclick = () => openNewIssue(button.dataset.new);
 }
 
 // ---------- markdown from GitHub
@@ -590,6 +591,107 @@ async function sendAction() {
     dialog.sending = false;
     dialog.error = `No se pudo: ${error.message}`;
     renderDialog();
+  }
+}
+
+// ---------- new issue (#100)
+// Created on GitHub as the person (never through Linear), and then, if
+// asked, assigned to ronin or with a /spike or /spec commented as them.
+const AFTER = [
+  ['none', 'Solo crearlo', 'Queda en GitHub (y en Linear, por la sincronización) para quien lo tome.'],
+  ['assign', 'Asignárselo a ronin', 'ronin lo toma como cualquier issue que le asignan: lo investiga, pregunta si le falta algo y abre un PR.'],
+  ['spike', 'Pedir un /spike', 'ronin investiga en solo lectura y agrega una sección de contexto al issue.'],
+  ['spec', 'Pedir un /spec', 'ronin lo convierte en un spec, te pregunta lo que falte y abre un PR draft con el spec.'],
+];
+
+function openNewIssue(repo) {
+  const apps = S.snap?.apps?.[repo] ?? [];
+  S.newIssue = { repo, title: '', body: '', after: 'none', app: apps[0] ?? '', instruction: '', tab: 'write', sending: false, error: null };
+  renderNewIssue();
+}
+
+function closeNewIssue() {
+  if (S.newIssue?.sending) return;
+  S.newIssue = null;
+  renderNewIssue();
+}
+
+function renderNewIssue() {
+  let layer = $('#nlayer');
+  const n = S.newIssue;
+  if (!n) {
+    layer?.remove();
+    return;
+  }
+  const apps = S.snap?.apps?.[n.repo] ?? [];
+  if (!layer) {
+    layer = Object.assign(document.body.appendChild(document.createElement('div')), { id: 'nlayer' });
+    layer.innerHTML = `<div class="scrim"><div class="dlg dlg-new" role="dialog" aria-modal="true" aria-labelledby="ni-t">
+      <h2 id="ni-t">Nuevo issue en ${esc(repoShort(n.repo))}</h2>
+      <p class="help">Se crea en GitHub a tu nombre (${esc(S.snap?.me ?? '')}).${linearRepos().some((l) => l.repo === n.repo) ? ' Con la sincronización, aparece también en Linear.' : ''}</p>
+      <label class="field"><span>Título</span><input id="ni-title" maxlength="256" autocomplete="off" placeholder="Qué pasa o qué hace falta"></label>
+      <div class="field"><div class="ni-tabs" role="tablist"><span>Descripción</span><button role="tab" data-nitab="write">Escribir</button><button role="tab" data-nitab="preview">Vista previa</button></div>
+        <textarea id="ni-body" rows="7" placeholder="Contexto, pasos para reproducirlo, qué se espera. Acepta markdown."></textarea><div class="md ni-prev" id="ni-prev" hidden></div></div>
+      <fieldset class="ni-after"><legend>Después de crearlo</legend>
+        ${AFTER.map(([id, label, help]) => {
+          const off = (id === 'spike' || id === 'spec') && !apps.length;
+          return `<label class="check"><input type="radio" name="ni-after" value="${id}" ${off ? 'disabled' : ''}><span>${esc(label)}<small>${esc(off ? 'El repo no tiene ronin.app.json: no hay apps para pedirlo.' : help)}</small></span></label>`;
+        }).join('')}
+      </fieldset>
+      <div class="ni-cmd" id="ni-cmd" hidden>
+        <label class="field"><span>App</span><select id="ni-app">${apps.map((a) => `<option>${esc(a)}</option>`).join('')}</select></label>
+        <label class="field"><span>Instrucción (opcional)</span><input id="ni-instr" maxlength="500" autocomplete="off" placeholder="En qué fijarse"></label>
+        <div class="prev"><div class="lbl">Comentás en el issue como ${esc(S.snap?.me ?? '')}</div><code id="ni-line"></code></div>
+      </div>
+      <p class="bad" id="ni-err" hidden></p>
+      <div class="foot-d"><button class="btn-s" id="ni-no">Cancelar</button><button class="btn-s primary" id="ni-yes"></button></div></div></div>`;
+    const bind = (sel, key) => { $(sel).oninput = (e) => { S.newIssue[key] = e.target.value; renderNewIssue(); }; };
+    bind('#ni-title', 'title');
+    bind('#ni-body', 'body');
+    bind('#ni-instr', 'instruction');
+    $('#ni-app').onchange = (e) => { S.newIssue.app = e.target.value; renderNewIssue(); };
+    for (const radio of layer.querySelectorAll('[name="ni-after"]')) radio.onchange = () => { S.newIssue.after = radio.value; renderNewIssue(); };
+    for (const tab of layer.querySelectorAll('[data-nitab]')) tab.onclick = () => { S.newIssue.tab = tab.dataset.nitab; renderNewIssue(); };
+    $('#ni-no').onclick = closeNewIssue;
+    layer.querySelector('.scrim').onclick = (event) => { if (event.target.classList.contains('scrim')) closeNewIssue(); };
+    $('#ni-yes').onclick = sendNewIssue;
+    $('#ni-title').focus();
+  }
+  for (const radio of layer.querySelectorAll('[name="ni-after"]')) radio.checked = radio.value === n.after;
+  for (const tab of layer.querySelectorAll('[data-nitab]')) tab.setAttribute('aria-selected', String(tab.dataset.nitab === n.tab));
+  const preview = n.tab === 'preview';
+  $('#ni-body').hidden = preview;
+  $('#ni-prev').hidden = !preview;
+  if (preview) $('#ni-prev').innerHTML = n.body.trim() ? md(n.body, n.repo) : '<p class="note">Sin descripción.</p>';
+  const command = n.after === 'spike' || n.after === 'spec';
+  $('#ni-cmd').hidden = !command;
+  if (command) $('#ni-line').textContent = `@${S.snap?.ronin ?? 'ronin'} /${n.after} ${n.app}${n.instruction.trim() ? ` ${n.instruction.trim().replace(/\s+/g, ' ')}` : ''}`;
+  const yes = $('#ni-yes');
+  yes.textContent = n.sending ? 'Creando…' : n.after === 'assign' ? 'Crear y asignar a ronin' : command ? `Crear y pedir /${n.after}` : 'Crear issue';
+  yes.disabled = n.sending || !n.title.trim() || (command && !n.app);
+  $('#ni-err').hidden = !n.error;
+  $('#ni-err').textContent = n.error ?? '';
+}
+
+async function sendNewIssue() {
+  const n = S.newIssue;
+  if (!n || n.sending || !n.title.trim()) return;
+  n.sending = true;
+  n.error = null;
+  renderNewIssue();
+  try {
+    const command = n.after === 'spike' || n.after === 'spec';
+    const created = await api(`/api/repos/${n.repo}/issues`, { method: 'POST', body: JSON.stringify({ title: n.title, body: n.body, after: n.after, ...(command ? { app: n.app, instruction: n.instruction } : {}) }) });
+    S.newIssue = null;
+    renderNewIssue();
+    toast(`Listo: creaste #${created.number}${n.after === 'assign' ? ' y se lo asignaste a ronin' : command ? ` y pediste /${n.after}` : ''}.`, created.url);
+    await refresh();
+    select(created.id);
+  } catch (error) {
+    if (error instanceof Unauthorized) return showLogin();
+    n.sending = false;
+    n.error = `No se pudo: ${error.message}`;
+    renderNewIssue();
   }
 }
 
@@ -1925,7 +2027,7 @@ async function boot() {
     // On an exploration PR's findings, as long as nothing is being typed:
     // j/k go through them, a marks one as looked at, c and r open the dialog.
     const item = S.sel && itemById(S.sel);
-    const reviewing = !S.dialog && !S.fdialog && !event.metaKey && !event.ctrlKey && !event.altKey && item && viewOf(item) === 'ficha' && docOf(item) === 'fichas' && !/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName ?? '');
+    const reviewing = !S.dialog && !S.fdialog && !S.newIssue && !event.metaKey && !event.ctrlKey && !event.altKey && item && viewOf(item) === 'ficha' && docOf(item) === 'fichas' && !/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName ?? '');
     if (reviewing && ['j', 'k', 'a', 'c', 'r'].includes(event.key)) {
       event.preventDefault();
       if (event.key === 'j' || event.key === 'k') moveFicha(event.key === 'j' ? 1 : -1);
@@ -1934,7 +2036,8 @@ async function boot() {
       return;
     }
     if (event.key !== 'Escape') return;
-    if (S.fdialog) closeFichaDialog();
+    if (S.newIssue) closeNewIssue();
+    else if (S.fdialog) closeFichaDialog();
     else if (S.fmenu) {
       S.fmenu = false;
       renderCenter();

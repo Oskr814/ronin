@@ -59,3 +59,9 @@ export async function approvePr(token: string, repo: string, prNumber: number, b
   const created = await call<{ id: number; html_url: string }>(token, 'POST', `/repos/${repo}/pulls/${prNumber}/reviews`, { event: 'APPROVE', ...(body ? { body } : {}) });
   return { id: created.id, url: created.html_url };
 }
+
+// A new issue, as the person; `assignees` set at creation (ronin, to take it).
+export async function createIssue(token: string, repo: string, issue: { title: string; body: string; assignees?: string[] }): Promise<{ number: number; url: string }> {
+  const created = await call<{ number: number; html_url: string }>(token, 'POST', `/repos/${repo}/issues`, issue);
+  return { number: created.number, url: created.html_url };
+}
