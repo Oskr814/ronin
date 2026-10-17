@@ -24,7 +24,8 @@ const LABEL_AUTO_MERGE = 'ronin:auto-merge';
 // etc.) is noise nothing reacts to.
 const PR_ACTIVITY: Flow[] = ['issues', 'idle-commands', 'review', 'exploration'];
 const FLOWS: Record<string, Record<string, Flow[]>> = {
-  issues: { assigned: ['assign', 'issues'] },
+  // A portal request's issue closing tells the person (#114).
+  issues: { assigned: ['assign', 'issues'], closed: ['portal'] },
   pull_request: {
     // A spec PR handed to ronin, a slice PR out of draft, an external PR
     // ready for review.

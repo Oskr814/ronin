@@ -126,6 +126,8 @@ const STATUS = {
   proposed: ['warn', 'Prototipo listo'],
   approved: ['run', 'En desarrollo'],
   done: ['ok', 'Listo'],
+  resolved: ['ok', 'Resuelto'],
+  declined: ['idle', 'Cerrado'],
   big: ['idle', 'Con el equipo'],
 };
 const CLOSED = {
@@ -133,6 +135,8 @@ const CLOSED = {
   minor: 'ronin está armando el prototipo. Puedes cerrar la página: te avisamos por correo cuando esté listo.',
   approved: 'Aprobaste el prototipo. ronin hace el cambio y una persona del equipo lo revisa; te avisamos por correo cuando esté listo.',
   done: 'Listo: el cambio sale en la próxima actualización de la aplicación.',
+  resolved: 'El equipo de desarrollo resolvió este pedido.',
+  declined: 'El equipo de desarrollo decidió no hacer este pedido por ahora. Puedes enviar uno nuevo cuando quieras.',
   big: 'El equipo de desarrollo tiene este pedido. Te avisamos por correo cuando esté resuelto.',
 };
 const WORKING = {

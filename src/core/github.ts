@@ -66,11 +66,11 @@ export async function removeIssueLabel(issueNumber: number, label: string): Prom
 }
 
 // Open or closed, and why it closed: COMPLETED (done, e.g. by its PR's
-// merge) or NOT_PLANNED.
+// merge) or NOT_PLANNED. Through the REST API: the runner's gh (2.45) has
+// no stateReason in `issue view --json`.
 export async function getIssueState(issueNumber: number): Promise<{ state: 'OPEN' | 'CLOSED'; stateReason: string }> {
-  const stdout = await gh(['issue', 'view', String(issueNumber), '--json', 'state,stateReason']);
-  const raw = JSON.parse(stdout) as { state: 'OPEN' | 'CLOSED'; stateReason?: string | null };
-  return { state: raw.state, stateReason: raw.stateReason ?? '' };
+  const raw = JSON.parse(await ghApi(['api', `repos/${activeRepo().productRepo}/issues/${issueNumber}`])) as { state: string; state_reason?: string | null };
+  return { state: raw.state.toUpperCase() as 'OPEN' | 'CLOSED', stateReason: (raw.state_reason ?? '').toUpperCase() };
 }
 
 export async function getIssueBody(issueNumber: number): Promise<string> {

@@ -10,7 +10,7 @@ import { activeRepo } from '../core/repo-context.js';
 import { removeWorktreeDir } from '../core/worktree.js';
 import { getUser, type PortalUser } from './accounts.js';
 import { replyMail } from './mail.js';
-import { handOverMails, sendPortalMails } from './notify.js';
+import { handOverMail, sendPortalMails } from './notify.js';
 import { addRoninMessage, getRequest, MAX_PROTOTYPES, requestImagePath, TITLE_MAX, updateRequest, type PortalRequest, type Verdict } from './requests.js';
 
 const execFileAsync = promisify(execFile);
@@ -116,10 +116,10 @@ async function checkout(n: number): Promise<string> {
 }
 
 // The person hears back by email (they may have closed the page), except
-// for a small change: the next email is the prototype's. A big one goes to
-// the team too.
+// for a small change: the next email is the prototype's. A big one's issue
+// for the team comes next, in the same worker.
 async function notify(request: PortalRequest, user: PortalUser | undefined): Promise<void> {
-  if (request.status === 'big') await handOverMails(request, user);
+  if (request.status === 'big') await handOverMail(request, user);
   else if (request.status !== 'minor' && user) await sendPortalMails(request, [replyMail(request, user, config.portal.url)]);
 }
 

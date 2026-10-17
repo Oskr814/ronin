@@ -129,7 +129,8 @@ describe('portal requests API', () => {
     const res = await post(cookie, '/api/portal/requests/1/decision', { decision: 'rechazar', text: 'No era eso' });
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ status: 'big', messages: [{}, {}, { from: 'person', text: 'No era eso' }, { from: 'ronin' }] });
-    expect(launch).toHaveBeenCalledOnce();
+    // Once to read it, once to open the team's issue.
+    expect(launch).toHaveBeenCalledTimes(2);
     const other = await person('otro@x.com');
     expect((await post(other.cookie, '/api/portal/requests/1/decision', { decision: 'aprobar' })).status).toBe(404);
   });

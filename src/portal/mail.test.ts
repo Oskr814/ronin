@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { bigRequestMail, doneMail, linkMail, prototypeMail, replyMail, teamPrMail, teamRequestMail } from './mail.js';
+import { bigRequestMail, closedMail, doneMail, linkMail, prototypeMail, replyMail, teamPrMail, teamRequestMail } from './mail.js';
 import type { PortalUser } from './accounts.js';
 import type { PortalRequest } from './requests.js';
 
@@ -58,6 +58,11 @@ describe('portal mails', () => {
     const team = teamPrMail(request({ status: 'approved', issue: { number: 9, url: 'https://github.com/x/y/issues/9' } }), user, 'team@x.com', 'https://github.com/x/y/pull/10');
     expect(team.subject).toBe('[ronin] PR para aprobar: pedido P-31 del portal (Abrir la ficha del cliente)');
     for (const part of ['https://github.com/x/y/pull/10', 'ronin:auto-merge', 'https://github.com/x/y/issues/9']) expect(team.text).toContain(part);
+  });
+
+  it("tells the person when the team closed its issue, solved or not for now", () => {
+    expect(closedMail(request({ status: 'resolved' }), user, URL)).toMatchObject({ subject: 'Resuelto: Abrir la ficha del cliente', text: expect.stringContaining('resolvió tu pedido P-31') });
+    expect(closedMail(request({ status: 'declined' }), user, URL)).toMatchObject({ subject: 'Revisamos tu pedido: Abrir la ficha del cliente', text: expect.stringContaining('decidió no hacerlo por ahora') });
   });
 
   it('escapes what people wrote in the HTML', () => {

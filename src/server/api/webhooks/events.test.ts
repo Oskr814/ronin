@@ -65,6 +65,10 @@ describe('scopeForEvent', () => {
     }
   });
 
+  it("follows a portal request's issue when it closes", () => {
+    expect(scopeForEvent('issues', { action: 'closed', issue: { number: 40 }, repository }, tracked, 'ronin-agent')?.scope.flows).toEqual(['portal']);
+  });
+
   it('cleans up after a closed or merged PR, lets a PR stacked on it auto-merge, and follows a portal request', () => {
     expect(scopeForEvent('pull_request', { action: 'closed', pull_request: slicePr, repository }, tracked, 'ronin-agent')?.scope.flows).toEqual(['sweeps', 'issues', 'auto-merge', 'portal']);
   });

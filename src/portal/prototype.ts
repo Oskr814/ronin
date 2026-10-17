@@ -6,7 +6,7 @@ import { log } from '../core/logger.js';
 import { getUser } from './accounts.js';
 import { prototypeMail } from './mail.js';
 import { launchPortalWorker } from './launch.js';
-import { handOverMails, sendPortalMails } from './notify.js';
+import { handOverMail, sendPortalMails } from './notify.js';
 import {
   addPersonNote,
   addRoninMessage,
@@ -128,7 +128,7 @@ export async function prototypeRequest(n: number): Promise<void> {
       delete r.worker;
       return r;
     });
-    await handOverMails(handed, await getUser(handed.userId));
+    await handOverMail(handed, await getUser(handed.userId));
   } catch (error) {
     log.error(`portal: no se pudo pasar al equipo el pedido P-${n}`, error);
   }
@@ -136,9 +136,9 @@ export async function prototypeRequest(n: number): Promise<void> {
 
 export type Decision = 'aprobar' | 'rechazar';
 
-// What the person decided on the prototype on screen. Approved, the worker
-// opens its issue for ronin (approved.ts); turned down, it's the team's to
-// look at, like a big one.
+// What the person decided on the prototype on screen. Either way the worker
+// opens its issue (issue.ts): approved, for ronin to make; turned down, for
+// the team to look at, like a big one.
 export async function decideRequest(n: number, decision: Decision, note = '', launch = launchPortalWorker): Promise<PortalRequest> {
   const decided = await updateRequest(n, (r) => {
     if (r.status !== 'proposed') throw new RequestError('Este pedido no espera tu decisión ahora.');
@@ -156,7 +156,7 @@ export async function decideRequest(n: number, decision: Decision, note = '', la
     return r;
   });
   log.info(`portal: el pedido P-${n} quedó ${decision === 'aprobar' ? 'aprobado' : 'para el equipo (prototipo no aprobado)'}`);
-  if (decided.status === 'big') await handOverMails(decided, await getUser(decided.userId));
-  else await launch(n);
+  if (decided.status === 'big') await handOverMail(decided, await getUser(decided.userId));
+  await launch(n);
   return decided;
 }
