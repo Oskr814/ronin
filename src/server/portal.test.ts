@@ -25,7 +25,7 @@ let base: string;
 
 beforeAll(async () => {
   const web = mkdtempSync(join(tmpdir(), 'ronin-portal-web-'));
-  writeFileSync(join(web, 'index.html'), '<!doctype html><title>Pedidos</title>');
+  writeFileSync(join(web, 'index.html'), '<!doctype html><title>Pedidos</title><script src="/portal.js" type="module"></script>');
   writeFileSync(join(web, 'portal.js'), 'console.log(1)');
   const fonts = mkdtempSync(join(tmpdir(), 'ronin-fonts-'));
   writeFileSync(join(fonts, 'a.woff2'), 'font');
@@ -64,6 +64,13 @@ describe('request portal', () => {
     expect(await (await fetch(`${base}/fonts/a.woff2`)).text()).toBe('font');
     expect(await (await fetch(`${base}/fonts/..%2fapp.js`)).text()).not.toBe('dashboard');
     expect((await fetch(`${base}/fonts/x`)).status).toBe(404);
+  });
+
+  it('names its script with a version, so a deploy is never hidden behind a cache, and serves it by that URL', async () => {
+    const html = await (await fetch(`${base}/p/3`)).text();
+    const src = /src="(\/portal\.js\?v=\w+)"/.exec(html)?.[1];
+    expect(src).toBeDefined();
+    expect(await (await fetch(`${base}${src}`)).text()).toBe('console.log(1)');
   });
 
   it('knows nothing of the dashboard API', async () => {
