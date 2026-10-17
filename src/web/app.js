@@ -606,7 +606,7 @@ const AFTER = [
 
 function openNewIssue(repo) {
   const apps = S.snap?.apps?.[repo] ?? [];
-  S.newIssue = { repo, title: '', body: '', after: 'none', app: apps[0] ?? '', instruction: '', tab: 'write', sending: false, error: null };
+  S.newIssue = { repo, title: '', body: '', after: 'none', app: apps[0] ?? '', instruction: '', projectId: '', cycleId: '', tab: 'write', sending: false, error: null };
   renderNewIssue();
 }
 
@@ -624,6 +624,9 @@ function renderNewIssue() {
     return;
   }
   const apps = S.snap?.apps?.[n.repo] ?? [];
+  // With Linear (#101): the project and the cycle it goes in, both optional.
+  const planning = linearRepos().find((l) => l.repo === n.repo)?.planning;
+  const cycleLabel = (c) => `${cycleName(c)}${c.current ? ', el actual' : ''} (${dayMonth(c.startsAt)} – ${endDay(c.endsAt)})`;
   if (!layer) {
     layer = Object.assign(document.body.appendChild(document.createElement('div')), { id: 'nlayer' });
     layer.innerHTML = `<div class="scrim"><div class="dlg dlg-new" role="dialog" aria-modal="true" aria-labelledby="ni-t">
@@ -632,6 +635,8 @@ function renderNewIssue() {
       <label class="field"><span>Título</span><input id="ni-title" maxlength="256" autocomplete="off" placeholder="Qué pasa o qué hace falta"></label>
       <div class="field"><div class="ni-tabs" role="tablist"><span>Descripción</span><button role="tab" data-nitab="write">Escribir</button><button role="tab" data-nitab="preview">Vista previa</button></div>
         <textarea id="ni-body" rows="7" placeholder="Contexto, pasos para reproducirlo, qué se espera. Acepta markdown."></textarea><div class="md ni-prev" id="ni-prev" hidden></div></div>
+      ${planning ? `<div class="ni-linear"><label class="field"><span>${LIN_ICON} Proyecto</span><select id="ni-project"><option value="">Sin proyecto</option>${planning.projects.map((p) => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('')}</select></label>
+        <label class="field"><span>${LIN_ICON} Ciclo</span><select id="ni-cycle"><option value="">Sin ciclo</option>${planning.cycles.map((c) => `<option value="${esc(c.id)}">${esc(cycleLabel(c))}</option>`).join('')}</select></label></div>` : ''}
       <fieldset class="ni-after"><legend>Después de crearlo</legend>
         ${AFTER.map(([id, label, help]) => {
           const off = (id === 'spike' || id === 'spec') && !apps.length;
@@ -650,6 +655,10 @@ function renderNewIssue() {
     bind('#ni-body', 'body');
     bind('#ni-instr', 'instruction');
     $('#ni-app').onchange = (e) => { S.newIssue.app = e.target.value; renderNewIssue(); };
+    if (planning) {
+      $('#ni-project').onchange = (e) => { S.newIssue.projectId = e.target.value; };
+      $('#ni-cycle').onchange = (e) => { S.newIssue.cycleId = e.target.value; };
+    }
     for (const radio of layer.querySelectorAll('[name="ni-after"]')) radio.onchange = () => { S.newIssue.after = radio.value; renderNewIssue(); };
     for (const tab of layer.querySelectorAll('[data-nitab]')) tab.onclick = () => { S.newIssue.tab = tab.dataset.nitab; renderNewIssue(); };
     $('#ni-no').onclick = closeNewIssue;
@@ -681,10 +690,10 @@ async function sendNewIssue() {
   renderNewIssue();
   try {
     const command = n.after === 'spike' || n.after === 'spec';
-    const created = await api(`/api/repos/${n.repo}/issues`, { method: 'POST', body: JSON.stringify({ title: n.title, body: n.body, after: n.after, ...(command ? { app: n.app, instruction: n.instruction } : {}) }) });
+    const created = await api(`/api/repos/${n.repo}/issues`, { method: 'POST', body: JSON.stringify({ title: n.title, body: n.body, after: n.after, ...(command ? { app: n.app, instruction: n.instruction } : {}), ...(n.projectId ? { projectId: n.projectId } : {}), ...(n.cycleId ? { cycleId: n.cycleId } : {}) }) });
     S.newIssue = null;
     renderNewIssue();
-    toast(`Listo: creaste #${created.number}${n.after === 'assign' ? ' y se lo asignaste a ronin' : command ? ` y pediste /${n.after}` : ''}.`, created.url);
+    toast(`Listo: creaste #${created.number}${n.after === 'assign' ? ' y se lo asignaste a ronin' : command ? ` y pediste /${n.after}` : ''}.${n.projectId || n.cycleId ? ' El proyecto y el ciclo se le ponen en Linear apenas la sincronización lo cree allá.' : ''}`, created.url);
     await refresh();
     select(created.id);
   } catch (error) {

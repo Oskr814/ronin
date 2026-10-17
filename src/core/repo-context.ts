@@ -30,7 +30,9 @@ export interface RepoEntry {
   agent?: AgentDefaults;
   // Linear (#101): the env var holding the workspace's API key, for projects
   // and cycles (core/linear-api.ts). Absent: nothing is read from Linear.
-  linear?: { apiKeyEnv: string };
+  // `explorationProject`: app → the Linear project (name or id) the issues
+  // its exploration opens go to (core/linear-assign.ts).
+  linear?: { apiKeyEnv: string; explorationProject?: Record<string, string> };
 }
 
 export interface AgentDefaults {

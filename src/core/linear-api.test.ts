@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { currentCycle, linearIssuesFor, linearKey } from './linear-api.js';
+import { currentCycle, linearIssuesFor, linearKey, resolveProject, teamPlanning, updateIssue } from './linear-api.js';
 
 const ENTRY = { productRepo: 'redmotos/shoppingcart', productRepoPath: '/tmp/x', linear: { apiKeyEnv: 'LINEAR_API_KEY_TEST' } };
 const PREFIX = 'https://github.com/redmotos/shoppingcart/issues/';
@@ -75,5 +75,39 @@ describe('currentCycle', () => {
     expect(await currentCycle(ENTRY, 'k')).toBeNull();
     respond({ data: { issues: { nodes: [] } } });
     expect(await currentCycle(ENTRY, 'k')).toBeNull();
+  });
+});
+
+describe('teamPlanning', () => {
+  it("reads the team's active projects and the cycles to come, in date order", async () => {
+    respond({ data: { issues: { nodes: [{ team: {
+      projects: { nodes: [{ id: 'p2', name: 'Seguridad' }, { id: 'p1', name: 'Auditoría' }] },
+      cycles: { nodes: [{ id: 'c18', number: 18, name: null, startsAt: '2026-10-19', endsAt: '2026-10-26', isActive: false }, { id: 'c17', number: 17, name: null, startsAt: '2026-10-12', endsAt: '2026-10-19', isActive: true }] },
+    } }] } } });
+    expect(await teamPlanning(ENTRY, 'k')).toEqual({
+      projects: [{ id: 'p1', name: 'Auditoría' }, { id: 'p2', name: 'Seguridad' }],
+      cycles: [
+        { id: 'c17', number: 17, startsAt: '2026-10-12', endsAt: '2026-10-19', current: true },
+        { id: 'c18', number: 18, startsAt: '2026-10-19', endsAt: '2026-10-26', current: false },
+      ],
+    });
+  });
+});
+
+describe('resolveProject and updateIssue', () => {
+  it('takes an id as is, finds a name, and is null for none or several', async () => {
+    expect(await resolveProject('k', '0115fd03-c758-490f-8f57-f559d21e9c44')).toBe('0115fd03-c758-490f-8f57-f559d21e9c44');
+    respond({ data: { projects: { nodes: [{ id: 'p1' }] } } });
+    expect(await resolveProject('k', 'auditoria de cambios')).toBe('p1');
+    respond({ data: { projects: { nodes: [] } } });
+    expect(await resolveProject('k', 'nada')).toBeNull();
+  });
+
+  it('sends the project and cycle, and fails when Linear does not apply it', async () => {
+    const fetchMock = respond({ data: { issueUpdate: { success: true } } });
+    await updateIssue('k', 'u-1', { projectId: 'p1', cycleId: 'c17' });
+    expect(JSON.parse((fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1].body as string).variables).toEqual({ id: 'u-1', input: { projectId: 'p1', cycleId: 'c17' } });
+    respond({ data: { issueUpdate: { success: false } } });
+    await expect(updateIssue('k', 'u-1', { projectId: 'p1' })).rejects.toThrow('no aplicó');
   });
 });

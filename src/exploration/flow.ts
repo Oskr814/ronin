@@ -5,6 +5,7 @@ import { activeRepo } from '../core/repo-context.js';
 import { acquireLock, launchWorker, lockHeld } from '../core/worker-launch.js';
 import { config } from '../core/config.js';
 import { log } from '../core/logger.js';
+import { queueExplorationProject } from '../core/linear-assign.js';
 import { dayIn } from '../core/timezone.js';
 import { runAgentTask, type FindingFeedback, type FindingSummary, type GeneralFeedback } from '../core/agent-task.js';
 import {
@@ -328,12 +329,15 @@ async function applyFeedback(pr: PullRequestStatus, batch: string): Promise<Redo
     }
   };
 
-  const openIssue = async (action: FeedbackAction, ref: string, reply: string): Promise<string> => {
+  // `app`: whose exploration it comes from, for its Linear project; unknown in
+  // a general comment on a PR with findings of several apps.
+  const openIssue = async (action: FeedbackAction, ref: string, reply: string, app: string | undefined): Promise<string> => {
     if (!action.issue?.titulo?.trim()) return reply;
     const created = await createIssue(clean(action.issue.titulo.trim()).slice(0, 200), `${clean(action.issue.cuerpo?.trim() ?? '')}\n\n${ref}`, []).catch((error) => {
       log.error(`exploración: no se pudo crear el issue pedido en el comentario ${action.commentId}`, error);
       return undefined;
     });
+    if (created && app) await queueExplorationProject(app, created.number);
     return created ? `${reply}\n\nAbrí #${created.number}.`.trim() : `${reply}\n\nNo pude abrir el issue; el detalle está en el log del runner.`.trim();
   };
 
@@ -341,7 +345,7 @@ async function applyFeedback(pr: PullRequestStatus, batch: string): Promise<Redo
     const action = parsed.acciones?.find((a) => a.commentId === p.commentId);
     if (!action) continue;
     let reply = action.respuesta ? clean(action.respuesta) : '';
-    if (action.accion === 'crear-issue') reply = await openIssue(action, `Pedido en un comentario sobre la ficha ${p.findingId} del PR de exploración #${pr.number}.`, reply);
+    if (action.accion === 'crear-issue') reply = await openIssue(action, `Pedido en un comentario sobre la ficha ${p.findingId} del PR de exploración #${pr.number}.`, reply, p.app);
     else await applyToFinding(p.app, p.findingId, action, p.commentId, 'review');
     if (reply) replies.push({ commentId: p.commentId, kind: 'review', body: reply });
   }
@@ -363,7 +367,7 @@ async function applyFeedback(pr: PullRequestStatus, batch: string): Promise<Redo
       await appendKnowledge(memoryDirFor(batchDir, app), `${texto} (pedido en #${pr.number})`);
       knowledge.push({ app, texto });
     }
-    if (action.issue) reply = await openIssue(action, `Pedido en un comentario del PR de exploración #${pr.number}.`, reply);
+    if (action.issue) reply = await openIssue(action, `Pedido en un comentario del PR de exploración #${pr.number}.`, reply, appOf(undefined));
     if (reply) replies.push({ commentId: g.commentId, kind: 'issue', body: reply });
   }
 

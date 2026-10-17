@@ -1,5 +1,5 @@
 import { config } from '../../core/config.js';
-import { currentCycle, linearIssuesFor, linearKey, type LinearCycle, type LinearIssue } from '../../core/linear-api.js';
+import { currentCycle, linearIssuesFor, linearKey, teamPlanning, type LinearCycle, type LinearIssue, type LinearPlanning } from '../../core/linear-api.js';
 import { log } from '../../core/logger.js';
 import type { RepoEntry } from '../../core/repo-context.js';
 import type { RepoGithub } from './dashboard-github.js';
@@ -17,13 +17,15 @@ export interface RepoLinear {
   fetchedAt: string;
   issues: Record<number, LinearIssue>;
   cycle: LinearCycle | null;
+  // The projects and cycles a new issue can go in (#101, entrega 3).
+  planning?: LinearPlanning;
   error?: string;
 }
 
 async function fetchLinear(entry: RepoEntry, key: string, gh: RepoGithub | undefined): Promise<RepoLinear> {
   // Every open issue: the sidebar finds any of them, and filters them by cycle or project (#100).
   const numbers = [...new Set([...(gh?.issues ?? []), ...(gh?.openIssues ?? [])].map((i) => i.number))];
-  const [issues, cycle] = await Promise.all([linearIssuesFor(entry, key, numbers), currentCycle(entry, key)]);
+  const [issues, cycle, planning] = await Promise.all([linearIssuesFor(entry, key, numbers), currentCycle(entry, key), teamPlanning(entry, key)]);
   const anyUrl = [...issues.values()][0]?.url ?? cycle?.issues[0]?.url;
   const workspace = anyUrl ? /^https:\/\/linear\.app\/([^/]+)\//.exec(anyUrl)?.[1] : undefined;
   return {
@@ -32,6 +34,7 @@ async function fetchLinear(entry: RepoEntry, key: string, gh: RepoGithub | undef
     fetchedAt: new Date().toISOString(),
     issues: Object.fromEntries(issues),
     cycle,
+    ...(planning ? { planning } : {}),
   };
 }
 

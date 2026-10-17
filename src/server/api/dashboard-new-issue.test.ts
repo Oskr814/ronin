@@ -32,6 +32,17 @@ describe('parseNewIssue', () => {
   });
 });
 
+describe('parseNewIssue with Linear', () => {
+  const planning = { projects: [{ id: 'p1', name: 'Catálogos' }], cycles: [{ id: 'c17', number: 17, startsAt: '', endsAt: '', current: true }] };
+
+  it("keeps a project and a cycle of the repo's planning, and refuses others", () => {
+    expect(parseNewIssue({ title: 'x', projectId: 'p1', cycleId: 'c17' }, [], planning)).toMatchObject({ projectId: 'p1', cycleId: 'c17' });
+    expect(() => parseNewIssue({ title: 'x', projectId: 'otro' }, [], planning)).toThrow('proyecto');
+    expect(() => parseNewIssue({ title: 'x', cycleId: 'c1' }, [], planning)).toThrow('ciclo');
+    expect(() => parseNewIssue({ title: 'x', projectId: 'p1' }, [])).toThrow('proyecto');
+  });
+});
+
 describe('createFromDashboard', () => {
   it('creates it as the person, assigned to ronin when asked', async () => {
     const done = await createFromDashboard(ENTRY, SESSION, { title: 't', body: 'b', after: 'assign' }, 'ronin-agent');

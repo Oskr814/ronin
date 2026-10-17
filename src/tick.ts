@@ -1,6 +1,7 @@
 import { markProcessed } from './core/processed-comments.js';
 import { linearIdInPr, linearRefFrom, withLinearLink } from './core/linear.js';
 import { currentCycle, linearKey } from './core/linear-api.js';
+import { processLinearAssignments, queueLinearAssignment } from './core/linear-assign.js';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
@@ -163,6 +164,10 @@ async function discoverAssignedSpecs(): Promise<TrackingIssue[]> {
 
       const body = await renderTrackingIssueBody(specPaths);
       const issue = await createTrackingIssue(`[spec] ${title}`, body);
+      // In Linear, into the project of the issue the spec came from (#101):
+      // its branch is ronin/<issue>/spec.
+      const origin = Number(/^ronin\/(\d+)\/spec$/.exec(pr.headRefName)?.[1]);
+      if (Number.isInteger(origin)) await queueLinearAssignment({ number: issue.number, fromIssue: origin }).catch((error) => log.error(`Linear: no se pudo encolar el proyecto de #${issue.number}`, error));
       // Without this, the issue stays labeled ronin:ready forever and
       // listTrackingIssues('in-progress') would never find it again.
       await setIssueState(issue.number, 'in-progress');
@@ -1173,6 +1178,9 @@ async function tickOneRepo(scope?: Scope): Promise<void> {
   await repoStep(scope, 'assign', async () => {
     justStarted = [...(await discoverAssignedSpecs()), ...(await discoverAssignedIssues())];
   });
+  // The Linear projects and cycles still owed to issues ronin opened (#101);
+  // a failure is only logged, and retried next tick.
+  if (!scope) await processLinearAssignments().catch((error) => log.error('Linear: no se pudieron aplicar los proyectos pendientes', error));
 
   // What closed PRs leave behind: issues a merge finished, previews, and
   // the worktrees of slices no longer open — sweepOrphanedWorktrees skips
