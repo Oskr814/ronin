@@ -104,6 +104,10 @@ describe('a session that sees only some repos', () => {
     // Only an image the request has, by its name.
     expect((await call(`/api/pedidos/${sc.number}/img/..%2F..%2Frequest.json`)).status).toBe(404);
     expect((await call(`/api/pedidos/${sc.number}/prototipo/1`)).status).toBe(404);
+    // The issue it became says so on its page.
+    const { updateRequest } = await import('../../portal/requests.js');
+    await updateRequest(sc.number, (r) => { r.issue = { number: 1, url: '' }; });
+    expect((await call(`/api/items/${encodeURIComponent(`${SC}#1`)}/detail`)).body.pedido).toEqual({ number: sc.number, title: 'Hola' });
   });
 
   it("reads only a file the PR changes (#111)", async () => {

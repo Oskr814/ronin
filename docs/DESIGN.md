@@ -650,6 +650,9 @@ Todo, salvo los webhooks y `/api/auth/*`, pide sesión:
 | `POST /api/items/<id>/files/actions` | Comenta, responde, resuelve, marca visto o maneja la revisión: `{ action, … }` (15.14) |
 | `GET /api/runs/<runId>` | El transcript de una corrida |
 | `GET /api/runs/<runId>/stream` | Lo que se le agrega, por *server-sent events*, hasta que termina |
+| `GET /api/pedidos` | Los pedidos del portal de los repos que ve la sesión, con a quién espera cada uno (§16.11) |
+| `GET /api/pedidos/<n>` | Uno: la conversación, el veredicto, los prototipos, su actividad y sus corridas |
+| `GET /api/pedidos/<n>/img/<archivo>`, `/prototipo/<ronda>` | Una imagen del pedido, por el nombre que tiene en él, y el diff de un prototipo |
 | `GET /api/portal-admin` | Solo admins: las cuentas del portal de pedidos y las aplicaciones que se pueden dar (§16.2) |
 | `POST /api/portal-admin/users`, `/users/<id>`, `/users/<id>/link` | Solo admins: crea una cuenta y manda la invitación, la cambia o manda otro enlace para la contraseña |
 | `GET /api/evidence/<owner>/<repo>/<sha>/<ruta>` | Una captura que publicó ronin (§11.5), leída del clon del repo de producto |
@@ -813,6 +816,7 @@ src/portal/            el dominio: cuentas, pedidos, la conversación, el protot
   mail.ts, notify.ts   los correos
 src/server/portal.ts   lo que el listener público atiende del portal
 src/server/api/portal*.ts  la API del portal y la administración desde el tablero
+src/server/api/dashboard-portal.ts  los pedidos en el tablero: la lista, la ficha y su actividad
 src/portal-web/        la página: HTML, CSS y JS sin build
 ```
 
@@ -835,7 +839,7 @@ Cada paso que hace ronin corre en un **worker por pedido** (`portal/worker.ts`, 
 
 #### 16.2 Cuentas, sesión y seguridad
 
-- **Las cuentas las crea un admin del tablero** (`DASHBOARD_ADMINS`), en la página *Portal de pedidos* (`/portal`): nombre, email, las aplicaciones que puede pedir y, si se quiere, un tope diario propio. La persona recibe un correo con un enlace para crear su contraseña. Desde ahí también se cambian sus aplicaciones, se deshabilita la cuenta o se manda otro enlace. Si el correo falla, el tablero muestra el enlace para pasárselo por otro lado.
+- **Las cuentas las crea un admin del tablero** (`DASHBOARD_ADMINS`), en la pestaña *Usuarios* de la página *Pedidos del portal* (`/portal`), que solo ven los admins: nombre, email, las aplicaciones que puede pedir y, si se quiere, un tope diario propio. La persona recibe un correo con un enlace para crear su contraseña. Desde ahí también se cambian sus aplicaciones, se deshabilita la cuenta o se manda otro enlace. Si el correo falla, el tablero muestra el enlace para pasárselo por otro lado.
 - **Qué aplicaciones hay:** cada repo de `repos.json` con un bloque `portal: { name, apps: { <app de ronin.app.json>: { name, description? } } }`. El login no nombra ninguna: la persona elige entre las que tiene después de entrar.
 - **Contraseñas:** scrypt (N=2^15, r=8, p=1), mínimo 10 caracteres. Un email que no existe responde igual y tarda lo mismo que una contraseña mal puesta (`burnPasswordCheck`).
 - **Sesión:** la cookie `ronin_portal`, firmada con HMAC (`PORTAL_SESSION_SECRET`), por `PORTAL_SESSION_DAYS` días. Lleva una versión de la cuenta: cambiar la contraseña o deshabilitarla cierra todas sus sesiones.
@@ -929,6 +933,27 @@ La persona puede cancelar un pedido mientras nadie lo tomó, con *Cancelar pedid
   - terminado.
 - **Un worker que seguía trabajando** en el pedido termina y lo deja cancelado (`updateUnlessCancelled`): no escribe su respuesta ni su prototipo y no manda correos. Si el issue del equipo se estaba abriendo justo entonces, lo cierra.
 - **Cuenta para el tope diario:** cancelar no devuelve el pedido del día.
+
+
+#### 16.11 Los pedidos en el tablero (#132)
+
+Un pedido no tiene issue hasta que ronin lo abre, y algunos no lo tienen nunca. Por eso el tablero les da una página propia, *Pedidos del portal*, que ve cualquiera que vea el repo del pedido (§15, #106). Las cuentas son la otra pestaña de esa página, *Usuarios*, solo para admins.
+
+- **La lista** (`/pedidos`) dice a quién espera cada pedido (`waitsOn`): la persona (`asking`, `proposed`), ronin (leerlo, el prototipo, abrir su issue, hacer el cambio), el equipo (su issue, o aprobar el PR) o nadie. Se filtra por eso o por los cerrados. La barra lateral lista los que siguen abiertos, en *Pedidos en curso*.
+- **La ficha** (`/pedidos/<n>`):
+  - las siete etapas (Pedido, Conversación, Prototipo, Aprobación, Issue, PR, Listo);
+  - una tarjeta *Ahora* con qué falta y quién lo hace, o la corrida en vivo;
+  - la actividad;
+  - la conversación como la ve la persona;
+  - lo que vio ronin para el equipo, con el diff de cada prototipo;
+  - las corridas, incluidas las del issue y el PR que salieron del pedido.
+- **La ficha de ese issue o PR** dice "del pedido P-n", con enlace al pedido. En *Hoy*, una corrida de un pedido abre su ficha, en esa corrida.
+- **La actividad** junta tres cosas por hora:
+  - **los mensajes**;
+  - **los `events` del pedido.** `request.json` gana un registro al que solo se le agregan entradas, con tope de 200: cada worker lanzado (por el servidor o el tick), cada falla con la primera línea del error, la espera del turno de prototipo, la clasificación, la decisión, cada correo (a quién, el asunto y si salió), el issue, el PR, su cierre y la cancelación. `noteEvent` nunca falla: una línea perdida no frena el pedido;
+  - **las corridas.** El registro de cada corrida lleva `portalRequest` y su runId dice `p<n>`; las de antes se reconocen por su etiqueta, "pedido P-n". Las del issue y el PR del pedido se suman por su número.
+
+  Los pedidos de antes de #132 no tienen eventos. Su actividad se arma con el veredicto y la decisión, y su issue va al final, sin hora.
 
 ## Estado actual
 

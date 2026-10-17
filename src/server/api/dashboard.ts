@@ -237,7 +237,15 @@ async function detail(id: string, login: string): Promise<unknown | null> {
   // `ronin`: its login, so the page can tell its comments apart. `exploration`:
   // an exploration PR, whose page has its findings to review (#93).
   const pr = ctx.ref.kind === 'pr' ? ctx.gh?.prs.find((p) => p.number === ctx.ref.number) : undefined;
-  return { ref: ctx.ref, ronin: config.githubLogin, ...ctx.detail, exploration: Boolean(pr && isExplorationPr(pr)), actions: listActions(ctx.ref, ctx.gh, ctx.detail, login) };
+  return { ref: ctx.ref, ronin: config.githubLogin, ...ctx.detail, exploration: Boolean(pr && isExplorationPr(pr)), actions: listActions(ctx.ref, ctx.gh, ctx.detail, login), pedido: await pedidoOf(ctx.entry.productRepo, ctx.ref) };
+}
+
+// The portal request an issue or PR came from (#132), to link its page.
+async function pedidoOf(repo: string, ref: { kind: string; number: number; issue?: number; pr?: number }) {
+  const issue = ref.kind === 'issue' ? ref.number : ref.issue;
+  const pr = ref.kind === 'pr' ? ref.number : ref.pr;
+  const request = (await listRequests()).find((r) => r.repo === repo && ((issue !== undefined && r.issue?.number === issue) || (pr !== undefined && r.pr === pr)));
+  return request ? { number: request.number, title: request.title } : null;
 }
 
 // An open exploration PR of a repo in repos.json, with its findings. Null
