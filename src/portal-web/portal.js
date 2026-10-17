@@ -274,7 +274,7 @@ function decisionHTML(d) {
 }
 
 function appHTML() {
-  return `<div class="app ${S.menu ? 'menu' : ''}">${sideHTML()}<main class="main">${S.cur ? requestHTML() : newHTML()}</main></div>${S.zoom ? `<button class="lb" data-unzoom aria-label="Cerrar imagen"><img src="${esc(S.zoom)}" alt=""></button>` : ''}`;
+  return `<div class="app ${S.menu ? 'menu' : ''}">${sideHTML()}<main class="main">${S.cur ? requestHTML() : newHTML()}</main></div>`;
 }
 
 // ---------- images: pasted, dropped or picked; big ones are scaled down here
@@ -470,6 +470,13 @@ function fromPath(push = false) {
 }
 
 // ---------- render
+// The lightbox lives outside #root: opening it must not re-render the thread and lose its scroll.
+function renderZoom() {
+  $('#lb')?.remove();
+  if (!S.zoom) return;
+  document.body.insertAdjacentHTML('beforeend', `<button class="lb" id="lb" data-unzoom aria-label="Cerrar imagen"><img src="${esc(S.zoom)}" alt=""></button>`);
+}
+
 function render(keep = {}) {
   const root = $('#root');
   const thread = $('#thread');
@@ -536,10 +543,10 @@ document.addEventListener('click', async (event) => {
     render();
   } else if (t.dataset.zoom) {
     S.zoom = t.dataset.zoom;
-    render();
+    renderZoom();
   } else if ('unzoom' in t.dataset) {
     S.zoom = null;
-    render();
+    renderZoom();
   } else if ('menu' in t.dataset) {
     S.menu = !S.menu;
     render();
@@ -557,7 +564,7 @@ document.addEventListener('click', async (event) => {
 document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape' && S.zoom) {
     S.zoom = null;
-    render();
+    renderZoom();
   }
 });
 
