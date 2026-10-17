@@ -33,6 +33,8 @@ async function gh(args: string[]): Promise<string> {
 async function ghApi(args: string[]): Promise<string> {
   const { stdout } = await execFileAsync('gh', args, {
     env: { ...process.env, GH_TOKEN: config.githubToken },
+    // A big PR's files with their patches (getPrFiles) are well over the 1 MB default.
+    maxBuffer: 64 * 1024 * 1024,
   });
   return stdout;
 }
@@ -543,6 +545,99 @@ export async function getDiscussion(kind: 'issue' | 'pr', number: number): Promi
     labels: raw.labels.map((l) => l.name),
     comments: raw.comments.map((c) => ({ author: c.author?.login ?? '', body: c.body, createdAt: c.createdAt, url: c.url })),
   };
+}
+
+// A PR's changed files as "Files changed" shows them (#111): each with its
+// patch, which GitHub leaves out for a binary or too big a file. GitHub lists
+// at most 3000.
+export interface PrFile {
+  path: string;
+  previousPath?: string;
+  status: 'added' | 'removed' | 'modified' | 'renamed' | 'copied' | 'changed' | 'unchanged';
+  additions: number;
+  deletions: number;
+  patch?: string;
+}
+
+export async function getPrFiles(prNumber: number): Promise<{ headSha: string; baseSha: string; files: PrFile[] }> {
+  const path = `repos/${activeRepo().productRepo}/pulls/${prNumber}`;
+  const [pr, lines] = await Promise.all([
+    ghApi(['api', path, '--jq', '{head: .head.sha, base: .base.sha}']).then((out) => JSON.parse(out) as { head: string; base: string }),
+    ghApi(['api', '--paginate', `${path}/files?per_page=100`, '--jq', '.[] | {path: .filename, previousPath: .previous_filename, status, additions, deletions, patch}']),
+  ]);
+  const files = lines.split('\n').filter(Boolean).map((line) => {
+    const { previousPath, patch, ...file } = JSON.parse(line) as PrFile & { previousPath: string | null; patch: string | null };
+    return { ...file, ...(previousPath ? { previousPath } : {}), ...(patch ? { patch } : {}) };
+  });
+  return { headSha: pr.head, baseSha: pr.base, files };
+}
+
+// A review thread where the diff puts it (#111): on a side and a line (or a
+// range startLine..line), or on the whole file. `line` is null once the code
+// under it changed (isOutdated); `originalLine` is where it was written.
+export interface DiffThread {
+  id: string;
+  path: string;
+  subject: 'line' | 'file';
+  side: 'LEFT' | 'RIGHT';
+  line: number | null;
+  startLine: number | null;
+  originalLine: number | null;
+  isResolved: boolean;
+  isOutdated: boolean;
+  url: string;
+  comments: Array<{ id: number; author: string; body: string; createdAt: string; url: string }>;
+}
+
+const DIFF_THREADS_QUERY = `
+query($owner: String!, $repo: String!, $number: Int!, $after: String) {
+  repository(owner: $owner, name: $repo) {
+    pullRequest(number: $number) {
+      reviewThreads(first: 100, after: $after) {
+        pageInfo { hasNextPage endCursor }
+        nodes {
+          id isResolved isOutdated path subjectType diffSide line startLine originalLine
+          comments(first: 100) { nodes { databaseId author { login } body createdAt url } }
+        }
+      }
+    }
+  }
+}`;
+
+export async function getDiffThreads(prNumber: number): Promise<DiffThread[]> {
+  const [owner, repo] = activeRepo().productRepo.split('/');
+  type Node = { id: string; isResolved: boolean; isOutdated: boolean; path: string; subjectType: 'LINE' | 'FILE'; diffSide: 'LEFT' | 'RIGHT'; line: number | null; startLine: number | null; originalLine: number | null; comments: { nodes: Array<{ databaseId: number; author: { login: string } | null; body: string; createdAt: string; url: string }> } };
+  type Raw = { data: { repository: { pullRequest: { reviewThreads: { pageInfo: { hasNextPage: boolean; endCursor: string | null }; nodes: Node[] } } } } };
+  const threads: DiffThread[] = [];
+  let after: string | null = null;
+  do {
+    const raw = JSON.parse(await ghApi(['api', 'graphql', '-f', `query=${DIFF_THREADS_QUERY}`, '-f', `owner=${owner}`, '-f', `repo=${repo}`, '-F', `number=${prNumber}`, ...(after ? ['-f', `after=${after}`] : [])])) as Raw;
+    const page = raw.data.repository.pullRequest.reviewThreads;
+    for (const t of page.nodes) {
+      if (t.comments.nodes.length === 0) continue;
+      threads.push({
+        id: t.id,
+        path: t.path,
+        subject: t.subjectType === 'FILE' ? 'file' : 'line',
+        side: t.diffSide,
+        line: t.line,
+        startLine: t.startLine,
+        originalLine: t.originalLine,
+        isResolved: t.isResolved,
+        isOutdated: t.isOutdated,
+        url: t.comments.nodes[0].url,
+        comments: t.comments.nodes.map((c) => ({ id: c.databaseId, author: c.author?.login ?? '', body: c.body, createdAt: c.createdAt, url: c.url })),
+      });
+    }
+    after = page.pageInfo.hasNextPage ? page.pageInfo.endCursor : null;
+  } while (after);
+  return threads;
+}
+
+// A file's text at a commit, for the lines around a diff's hunks.
+export async function getFileAt(sha: string, path: string): Promise<string> {
+  const encoded = path.split('/').map(encodeURIComponent).join('/');
+  return ghApi(['api', `repos/${activeRepo().productRepo}/contents/${encoded}?ref=${sha}`, '-H', 'Accept: application/vnd.github.raw']);
 }
 
 export interface ExternalPr {
