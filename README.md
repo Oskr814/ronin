@@ -47,7 +47,15 @@ Detalle de cada comando: [wiki → Comandos](https://github.com/Oskr814/ronin/wi
 - en *Hoy*: los totales del día con su semana, lo que necesita tu atención (bloqueados, PRs que esperan review, exploración, previews) y las corridas de las últimas 12 horas;
 - con una API key de Linear en el repo, el proyecto y el ciclo de cada issue, un filtro por ciclo o proyecto, y en *Hoy* el ciclo actual con su avance. Con la key, el tick además toma primero los issues del ciclo.
 
-Desde la ficha se le pide a ronin lo mismo que comentando en GitHub: resolver conflictos, levantar o bajar la preview, el auto-merge, o responder y destrabar un issue. Al mandar una revisión en un PR de ronin, una casilla le pide que atienda los comentarios (`/fix-comments`). El botón **+** de cada repo crea un issue nuevo y, si querés, se lo asigna a ronin o le pide un `/spike` o un `/spec`; con Linear, también elegís su proyecto y su ciclo. El login pide el permiso `repo` de GitHub, y lo que se pide desde el tablero queda comentado a tu nombre, como si lo escribieras en GitHub. Los administradores (`DASHBOARD_ADMINS`) ven todos los repos; cualquier otra persona ve los repos en los que puede gestionar issues (triage o más) en GitHub, consultado con su propia sesión.
+Desde la ficha se le pide a ronin lo mismo que comentando en GitHub: resolver conflictos, levantar o bajar la preview, el auto-merge, o responder y destrabar un issue. Al mandar una revisión en un PR de ronin, una casilla le pide que atienda los comentarios (`/fix-comments`). El botón **+** de cada repo crea un issue nuevo y, si querés, se lo asigna a ronin o le pide un `/spike` o un `/spec`; con Linear, también elegís su proyecto y su ciclo. El login pide el permiso `repo` de GitHub, y lo que se pide desde el tablero queda comentado a tu nombre, como si lo escribieras en GitHub. Los administradores (`DASHBOARD_ADMINS`) ven todos los repos y administran las cuentas del portal de pedidos; cualquier otra persona ve los repos en los que puede gestionar issues (triage o más) en GitHub, consultado con su propia sesión.
+
+**Portal de pedidos** ([`docs/DESIGN.md` §16](docs/DESIGN.md)): en `https://ronin-agent.redmotoshn.com`, la gente que usa las aplicaciones pide ajustes chicos sin cuenta de GitHub. Entra con email y contraseña, elige la aplicación (las que le habilitaron) y le cuenta a ronin qué necesita, con texto y capturas.
+- **ronin lee el pedido y revisa el código.** Puede hacer una pregunta, responder (cuando no hay nada que cambiar) o decidir si es un ajuste chico o algo para el equipo.
+- **Ajuste chico:** le muestra un prototipo con el antes y el después, armado sobre la app levantada, y la persona lo aprueba, pide un ajuste (hasta 3 prototipos) o dice que no le sirve.
+- **Aprobado:** ronin abre un issue asignado a sí mismo, hace el cambio en un PR con `ronin:auto-merge` y avisa al equipo. El PR se mergea cuando un dev lo aprueba y CI pasa, y la persona recibe "Listo, sale en la próxima actualización".
+- **Grande, o "no me sirve":** va al equipo en un issue con label `ronin:portal`, y la persona recibe un correo cuando se cierra.
+- **Cuentas:** las crean los administradores del tablero, en la página *Portal de pedidos*, con las aplicaciones de cada persona. Las aplicaciones salen del bloque `portal` de cada repo en `repos.json`.
+- **Correos:** salen de la cuenta de `GMAIL_USER`.
 
 ## Operar un runner
 
@@ -56,6 +64,7 @@ Desde la ficha se le pide a ronin lo mismo que comentando en GitHub: resolver co
 - [Tablero](https://github.com/Oskr814/ronin/wiki/Tablero): activarlo y entrar desde la tailnet
 - [Changelog](https://github.com/Oskr814/ronin/wiki/Changelog): publicación automática de releases
 - [Bloqueos](https://github.com/Oskr814/ronin/wiki/Bloqueos): cuándo ronin se detiene y avisa por email
+- Portal de pedidos: `PORTAL_URL` y `PORTAL_SESSION_SECRET` en `.env`, y el bloque `portal` en `repos.json` ([`docs/DESIGN.md` §16.9](docs/DESIGN.md))
 
 ## Desarrollo
 
