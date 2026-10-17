@@ -57,6 +57,7 @@ import { takePendingSpecs } from './core/local-state.js';
 import { explorationPrs, exploreWorkerBusy, launchExploreWorker, processExplorationPr } from './exploration/index.js';
 import { maybeLaunchNightlyExploration } from './exploration/index.js';
 import { sweepPreviews } from './preview/index.js';
+import { reconcileApproved } from './portal/approved.js';
 import { sweepPortalRequests } from './portal/launch.js';
 import { sweepAutoMerge } from './commands/index.js';
 import { checkInterviews, startInterview } from './slices/index.js';
@@ -1115,6 +1116,9 @@ export type Flow =
   | 'assign'
   | 'sweeps'
   | 'auto-merge'
+  // The request portal's approved requests (#114): their PR gets
+  // ronin:auto-merge, its merge tells the person.
+  | 'portal'
   | 'issues'
   | 'idle-commands'
   | 'pr-commands'
@@ -1199,6 +1203,7 @@ async function tickOneRepo(scope?: Scope): Promise<void> {
   });
   // Before the flows, so a merge doesn't wait behind a long review run.
   await repoStep(scope, 'auto-merge', () => sweepAutoMerge().catch((error) => log.error('auto-merge: no se pudieron revisar los PRs con el label', error)));
+  await repoStep(scope, 'portal', () => reconcileApproved().catch((error) => log.error('portal: no se pudieron seguir los pedidos aprobados', error)));
 
   // What this run's jobs are narrowed to — the event's resources, plus any
   // issue its assignment just started.

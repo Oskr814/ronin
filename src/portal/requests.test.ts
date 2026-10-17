@@ -68,6 +68,15 @@ describe('portal requests', () => {
     await updateRequest(r.number, (x) => { x.status = 'minor'; });
     await sweepPortalRequests(later, launch);
     expect(launch).toHaveBeenCalledWith(r.number);
+    // And an approved one still without its issue, not one that has it.
+    launch.mockClear();
+    await updateRequest(r.number, (x) => { x.status = 'approved'; });
+    await sweepPortalRequests(later, launch);
+    expect(launch).toHaveBeenCalledWith(r.number);
+    launch.mockClear();
+    await updateRequest(r.number, (x) => { x.issue = { number: 9, url: 'u' }; });
+    await sweepPortalRequests(later, launch);
+    expect(launch).not.toHaveBeenCalled();
     // Answered ones are left alone.
     launch.mockClear();
     await updateRequest(r.number, (x) => { x.status = 'asking'; });

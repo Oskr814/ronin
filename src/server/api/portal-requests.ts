@@ -121,7 +121,7 @@ export async function handlePortalRequests(req: IncomingMessage, res: ServerResp
       if (decision !== 'aprobar' && decision !== 'rechazar') throw new RequestError('Elige si lo apruebas o no.');
       const note = typeof body?.text === 'string' ? body.text.trim() : '';
       if (note.length > TEXT_MAX) throw new RequestError(`El mensaje puede tener hasta ${TEXT_MAX} caracteres.`);
-      json(res, 200, personView(await decideRequest(request.number, decision, note), appOf(request)));
+      json(res, 200, personView(await decideRequest(request.number, decision, note, launch), appOf(request)));
       return;
     }
 

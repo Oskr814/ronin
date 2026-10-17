@@ -267,4 +267,8 @@ export const LABEL_STACK_PRS = 'ronin:stack-prs';
 // set it by hand; the label itself is the state.
 export const LABEL_AUTO_MERGE = 'ronin:auto-merge';
 
+// On an issue opened from the request portal (#114): an approved prototype
+// ronin makes, or a request the dev team takes.
+export const LABEL_PORTAL = 'ronin:portal';
+
 export type SpecStatus = keyof typeof LABEL_STATES;

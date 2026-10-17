@@ -24,8 +24,11 @@ export type RequestStatus =
   // The prototype is on screen: the person approves it, asks for an
   // adjustment (back to 'thinking') or turns it down (to 'big').
   | 'proposed'
-  // The person approved the prototype.
+  // The person approved the prototype: ronin opens an issue for it, makes
+  // the change in a PR and a dev approves it before it merges.
   | 'approved'
+  // Its PR merged: it goes out in the next release.
+  | 'done'
   // Too big for the portal, or turned down: the dev team takes it.
   | 'big';
 
@@ -83,8 +86,13 @@ export interface PortalRequest {
   prototypes?: Prototype[];
   // When the person approved the prototype or turned it down.
   decision?: { kind: 'approved' | 'rejected'; at: string };
-  // The worker reading it while 'thinking', or drawing the prototype while
-  // 'minor', so the tick can tell one that died (and start another).
+  // Approved: the issue ronin opened in the product repo, and the PR that
+  // closes it once ronin opened one.
+  issue?: { number: number; url: string };
+  pr?: number;
+  // The worker reading it while 'thinking', drawing the prototype while
+  // 'minor', or opening its issue once 'approved', so the tick can tell one
+  // that died (and start another).
   worker?: { pid: number; since: string };
   createdAt: string;
   updatedAt: string;
