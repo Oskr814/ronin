@@ -162,9 +162,9 @@ export const config = {
     githubClientId: process.env.DASHBOARD_GITHUB_CLIENT_ID ?? '',
     githubClientSecret: process.env.DASHBOARD_GITHUB_CLIENT_SECRET ?? '',
     sessionSecret: process.env.DASHBOARD_SESSION_SECRET ?? '',
-    // Who sees every repo (#106), comma-separated GitHub logins. Unset, the
-    // DASHBOARD_ALLOWED_USERS are: a .env from before #106 works as it did.
-    admins: logins(process.env.DASHBOARD_ADMINS ?? process.env.DASHBOARD_ALLOWED_USERS),
+    // Who sees every repo (#106), comma-separated GitHub logins. Unset, no
+    // one: being let in (DASHBOARD_ALLOWED_USERS) never makes an admin.
+    admins: logins(process.env.DASHBOARD_ADMINS),
     // Optional: only these logins get in at all (admins always do). Empty,
     // anyone who can triage a repo of repos.json on GitHub gets in, and sees
     // just those repos (server/api/access.ts).

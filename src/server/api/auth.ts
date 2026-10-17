@@ -42,7 +42,6 @@ export function missingAuthConfig(config: AuthConfig): string[] {
   if (!config.githubClientId) missing.push('DASHBOARD_GITHUB_CLIENT_ID');
   if (!config.githubClientSecret) missing.push('DASHBOARD_GITHUB_CLIENT_SECRET');
   if (config.sessionSecret.length < 32) missing.push('DASHBOARD_SESSION_SECRET (32+ caracteres)');
-  if (config.admins.length === 0) missing.push('DASHBOARD_ADMINS');
   return missing;
 }
 

@@ -21,9 +21,11 @@ describe('missingAuthConfig', () => {
   });
 
   it('names what is missing, and asks for a long session secret', () => {
-    expect(missingAuthConfig({ ...CONFIG, githubClientId: '', sessionSecret: 'short', admins: [] })).toEqual([
-      'DASHBOARD_GITHUB_CLIENT_ID', 'DASHBOARD_SESSION_SECRET (32+ caracteres)', 'DASHBOARD_ADMINS',
+    expect(missingAuthConfig({ ...CONFIG, githubClientId: '', sessionSecret: 'short' })).toEqual([
+      'DASHBOARD_GITHUB_CLIENT_ID', 'DASHBOARD_SESSION_SECRET (32+ caracteres)',
     ]);
+    // Without admins it runs too: everyone sees what GitHub lets them.
+    expect(missingAuthConfig({ ...CONFIG, admins: [] })).toEqual([]);
     // Without a list of who gets in, GitHub decides (#106).
     expect(missingAuthConfig({ ...CONFIG, allowedUsers: [] })).toEqual([]);
   });

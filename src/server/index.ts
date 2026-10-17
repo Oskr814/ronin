@@ -48,6 +48,6 @@ if (missing.length > 0) {
 } else {
   // 127.0.0.1 only: what reaches it is `tailscale serve`, never the LAN.
   serve(createTailnetHandler(config.dashboard)).listen(config.dashboard.tailnetPort, '127.0.0.1', () => {
-    log.info(`tablero escuchando en 127.0.0.1:${config.dashboard.tailnetPort}, publicado en la tailnet como ${config.dashboard.url}`);
+    log.info(`tablero escuchando en 127.0.0.1:${config.dashboard.tailnetPort}, publicado en la tailnet como ${config.dashboard.url} (administradores: ${config.dashboard.admins.join(', ') || 'ninguno'})`);
   });
 }
