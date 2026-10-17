@@ -57,6 +57,7 @@ import { takePendingSpecs } from './core/local-state.js';
 import { explorationPrs, exploreWorkerBusy, launchExploreWorker, processExplorationPr } from './exploration/index.js';
 import { maybeLaunchNightlyExploration } from './exploration/index.js';
 import { sweepPreviews } from './preview/index.js';
+import { sweepPortalRequests } from './portal/launch.js';
 import { sweepAutoMerge } from './commands/index.js';
 import { checkInterviews, startInterview } from './slices/index.js';
 import { findReleasesNeedingChangelog, type ChangelogCandidate } from './changelog/index.js';
@@ -1274,6 +1275,8 @@ async function tickOneRepo(scope?: Scope): Promise<void> {
 // whose tick throws is logged and skipped for this run; it never stops the
 // rest of repos.json from ticking.
 export async function tick(): Promise<void> {
+  // Portal requests (#114) whose worker died: across every repo, once.
+  await sweepPortalRequests().catch((error) => log.error('portal: no se pudieron revisar los pedidos en curso', error));
   const repos = await loadRepos();
   for (const repo of repos) {
     try {

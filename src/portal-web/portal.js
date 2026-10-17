@@ -7,7 +7,7 @@ const $ = (selector) => document.querySelector(selector);
 const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const initials = (name) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join('');
 
-const S = { me: null, view: 'login', error: null, info: null, busy: false, token: null, link: null, picked: null, menu: false };
+const S = { me: null, view: 'login', error: null, info: null, busy: false, token: null, link: null, picked: null, menu: false, requests: [], cur: null, detail: null, pending: [], draft: '', sending: false, zoom: null };
 
 class ApiError extends Error {
   constructor(message, status) {
@@ -65,7 +65,9 @@ async function submitLogin(event) {
       S.info = 'Si hay una cuenta con ese correo, te llegará un enlace en unos minutos. Revisa también el correo no deseado.';
     } else {
       S.me = await api('/api/portal/login', { email, password });
-      S.view = 'app';
+      S.busy = false;
+      await enter();
+      return;
     }
   } catch (error) {
     S.error = error.message;
@@ -103,8 +105,10 @@ async function submitPassword(event) {
   try {
     S.me = await api('/api/portal/password', { token: S.token, password });
     S.token = null;
-    S.view = 'app';
+    S.busy = false;
     history.replaceState(null, '', '/');
+    await enter();
+    return;
   } catch (error) {
     S.error = error.message;
   }
@@ -113,42 +117,276 @@ async function submitPassword(event) {
 }
 
 // ---------- once in
-function appHTML() {
-  const me = S.me;
-  const apps = me.apps;
-  if (S.picked && !apps.some((a) => key(a) === S.picked)) S.picked = null;
-  if (!S.picked && apps.length) S.picked = key(apps[0]);
+const key = (a) => `${a.repo}:${a.app}`;
+const STATUS = {
+  thinking: ['run', 'ronin lo está revisando'],
+  asking: ['warn', 'Espera tu respuesta'],
+  answered: ['idle', 'Respondido'],
+  minor: ['run', 'Preparando prototipo'],
+  big: ['idle', 'Con el equipo'],
+};
+const CLOSED = {
+  thinking: 'ronin está revisando tu pedido. Puedes cerrar la página: te avisamos por correo.',
+  minor: 'ronin va a preparar un prototipo para que lo veas antes de hacer el cambio. Te avisamos por correo cuando esté listo.',
+  big: 'El equipo de desarrollo tiene este pedido. Te avisamos por correo cuando esté resuelto.',
+};
+const POLL_MS = 4000;
+const hhmm = (iso) => new Date(iso).toLocaleString('es', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+const paragraphs = (text) => esc(text).split(/\n{2,}/).map((p) => `<p>${p.replace(/\n/g, '<br>')}</p>`).join('');
+const chip = (status) => {
+  const [cls, label] = STATUS[status] ?? ['idle', status];
+  return `<span class="chip ${cls}">${label}</span>`;
+};
+
+function sideHTML() {
   const dark = document.documentElement.dataset.theme !== 'light';
-  return `<div class="app ${S.menu ? 'menu' : ''}">
-    <aside class="side">
-      <div class="brand"><div class="seal" aria-hidden="true">浪人</div><b>Pedidos</b></div>
-      <button class="btn primary new" data-new>+ Nuevo pedido</button>
-      <h3>Mis pedidos</h3>
-      <div class="reqs"><div class="none">Todavía no tienes pedidos.</div></div>
-      <div class="me"><div class="av" aria-hidden="true">${esc(initials(me.name))}</div><div class="who">${esc(me.name)}<small>${esc(me.email)}</small></div>
-        <div class="acts"><button class="btn" data-theme-t title="${dark ? 'Tema claro' : 'Tema oscuro'}" aria-label="${dark ? 'Tema claro' : 'Tema oscuro'}">${dark ? '☀' : '☾'}</button><button class="btn" data-logout>Salir</button></div></div>
-    </aside>
-    <main class="main">
-      <div class="top"><button class="menu-btn" data-menu aria-label="Mis pedidos"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button><h2>Nuevo pedido</h2></div>
-      <div class="content"><div class="content-in">
-        ${apps.length ? `<h3>¿En qué aplicación es el cambio?</h3>
-        <p>Solo ves las que el equipo te habilitó.</p>
-        <div class="projects">${apps.map((a) => `<button class="proj" data-app="${esc(key(a))}" aria-pressed="${key(a) === S.picked}"><span class="org">${esc(a.org)}</span><b>${esc(a.name)}</b>${a.description ? `<span>${esc(a.description)}</span>` : ''}</button>`).join('')}</div>
-        <div class="note"><b>Qué se puede pedir aquí:</b> ajustes chicos sobre lo que ya existe: un texto, un enlace, un dato que falta en una pantalla, algo que se ve mal en el teléfono.
-          Lo que sea un proyecto o una función nueva lo recibe el equipo de desarrollo, y te avisamos cuando esté resuelto.</div>
-        <ul class="tips"><li>Cuenta qué quieres cambiar y en qué pantalla.</li><li>Pega o arrastra capturas: ayudan mucho.</li><li>ronin te puede hacer preguntas antes de proponer el cambio.</li></ul>`
-        : '<h3>Todavía no tienes aplicaciones habilitadas</h3><p>Pídele al equipo de desarrollo que te habilite las aplicaciones en las que necesitas pedir ajustes.</p>'}
-      </div></div>
-      <div class="soon">Muy pronto vas a poder enviar tus pedidos desde aquí.</div>
-    </main>
-  </div>`;
+  const list = S.requests.length
+    ? S.requests.map((r) => `<button class="req" data-req="${r.number}" aria-current="${S.cur === r.number}"><span class="t">${esc(r.title)}</span><span class="pj">${esc(r.appName)}</span><span class="m">${chip(r.status)}<span class="p">P-${r.number}</span></span></button>`).join('')
+    : '<div class="none">Todavía no tienes pedidos.</div>';
+  return `<aside class="side">
+    <div class="brand"><div class="seal" aria-hidden="true">浪人</div><b>Pedidos</b></div>
+    <button class="btn primary new" data-new>+ Nuevo pedido</button>
+    <h3>Mis pedidos</h3>
+    <div class="reqs">${list}</div>
+    <div class="me"><div class="av" aria-hidden="true">${esc(initials(S.me.name))}</div><div class="who">${esc(S.me.name)}<small>${esc(S.me.email)}</small></div>
+      <div class="acts"><button class="btn" data-theme-t title="${dark ? 'Tema claro' : 'Tema oscuro'}" aria-label="${dark ? 'Tema claro' : 'Tema oscuro'}">${dark ? '☀' : '☾'}</button><button class="btn" data-logout>Salir</button></div></div>
+  </aside>`;
 }
 
-const key = (a) => `${a.repo}:${a.app}`;
+const MENU = '<button class="menu-btn" data-menu aria-label="Mis pedidos"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>';
+
+function composerHTML(placeholder, label, note = '') {
+  return `<div class="composer"><div class="composer-in">
+    <div class="box" id="box">
+      ${S.pending.length ? `<div class="pend">${S.pending.map((src, i) => `<div><img src="${src}" alt="Imagen adjunta ${i + 1}"><button data-unpend="${i}" aria-label="Quitar imagen">×</button></div>`).join('')}</div>` : ''}
+      <textarea id="ta" rows="2" maxlength="4000" placeholder="${esc(placeholder)}" ${S.sending ? 'disabled' : ''}></textarea>
+      <div class="box-f"><label class="icon-btn" title="Adjuntar imágenes"><input type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden id="file"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="m21 16-5-5-8 8"/></svg><span class="sr">Adjuntar imágenes</span></label>
+        <span class="hint">${note || 'Puedes pegar o arrastrar capturas (hasta 4)'}</span><button class="btn primary" data-send ${S.sending ? 'disabled' : ''}>${S.sending ? 'Enviando…' : label}</button></div>
+    </div>
+    ${S.error ? `<p class="msg-bad" role="alert">${esc(S.error)}</p>` : ''}
+  </div></div>`;
+}
+
+function newHTML() {
+  const apps = S.me.apps;
+  if (S.picked && !apps.some((a) => key(a) === S.picked)) S.picked = null;
+  if (!S.picked && apps.length) S.picked = key(apps[0]);
+  const left = Math.max(0, S.me.today.limit - S.me.today.used);
+  const body = apps.length ? `<h3>¿En qué aplicación es el cambio?</h3>
+    <p>Solo ves las que el equipo te habilitó.</p>
+    <div class="projects">${apps.map((a) => `<button class="proj" data-app="${esc(key(a))}" aria-pressed="${key(a) === S.picked}"><span class="org">${esc(a.org)}</span><b>${esc(a.name)}</b>${a.description ? `<span>${esc(a.description)}</span>` : ''}</button>`).join('')}</div>
+    <div class="note"><b>Qué se puede pedir aquí:</b> ajustes chicos sobre lo que ya existe: un texto, un enlace, un dato que falta en una pantalla, algo que se ve mal en el teléfono.
+      Lo que sea un proyecto o una función nueva lo recibe el equipo de desarrollo, y te avisamos cuando esté resuelto.</div>
+    <ul class="tips"><li>Cuenta qué quieres cambiar y en qué pantalla.</li><li>Pega o arrastra capturas: ayudan mucho.</li><li>ronin te puede hacer preguntas antes de proponer el cambio.</li></ul>`
+    : '<h3>Todavía no tienes aplicaciones habilitadas</h3><p>Pídele al equipo de desarrollo que te habilite las aplicaciones en las que necesitas pedir ajustes.</p>';
+  const composer = !apps.length ? ''
+    : left === 0 ? `<div class="closed-bar">Llegaste al tope de ${S.me.today.limit} pedidos por hoy. Mañana puedes enviar más.</div>`
+      : composerHTML('Describe el cambio que necesitas…', 'Enviar pedido', `Te ${left === 1 ? 'queda 1 pedido' : `quedan ${left} pedidos`} por hoy · puedes pegar o arrastrar capturas`);
+  return `<div class="top">${MENU}<h2>Nuevo pedido</h2></div>
+    <div class="content"><div class="content-in">${body}</div></div>${composer}`;
+}
+
+function threadHTML(d) {
+  const out = [`<div class="sys">${esc(d.appName)} · ${esc(hhmm(d.createdAt))}</div>`];
+  for (const m of d.messages) {
+    const who = m.from === 'ronin' ? '<div class="seal" aria-hidden="true">浪人</div>' : `<div class="av" aria-hidden="true">${esc(initials(S.me.name))}</div>`;
+    const images = m.images.length ? `<div class="atts">${m.images.map((src, i) => `<button class="att" data-zoom="${esc(src)}"><img src="${esc(src)}" alt="Imagen ${i + 1}" loading="lazy"></button>`).join('')}</div>` : '';
+    out.push(`<div class="msg ${m.from === 'ronin' ? '' : 'mine'}">${who}<div class="body"><div class="who"><b>${m.from === 'ronin' ? 'ronin' : esc(S.me.name)}</b> ${esc(hhmm(m.at))}</div>
+      <div class="bubble">${m.text ? paragraphs(m.text) : ''}${images}</div></div></div>`);
+  }
+  if (d.status === 'thinking') out.push('<div class="working"><div class="spin" aria-hidden="true"></div><div>ronin está revisando tu pedido…<small>Lee lo que escribiste y revisa la aplicación. Suele tardar unos minutos.</small></div></div>');
+  return out.join('');
+}
+
+function requestHTML() {
+  const d = S.detail;
+  if (!d) return `<div class="top">${MENU}<h2>Cargando…</h2></div><div class="content"></div>`;
+  const open = d.status === 'asking' || d.status === 'answered';
+  return `<div class="top">${MENU}<h2>${esc(d.title)}</h2><span class="proj-l">${esc(d.appName)} · P-${d.number}</span>${chip(d.status)}</div>
+    <div class="content" id="thread"><div class="content-in thread">${threadHTML(d)}</div></div>
+    ${open ? composerHTML(d.status === 'asking' ? 'Responde a ronin…' : 'Escríbele a ronin si necesitas algo más…', 'Enviar') : `<div class="closed-bar">${CLOSED[d.status] ?? ''}</div>`}`;
+}
+
+function appHTML() {
+  return `<div class="app ${S.menu ? 'menu' : ''}">${sideHTML()}<main class="main">${S.cur ? requestHTML() : newHTML()}</main></div>${S.zoom ? `<button class="lb" data-unzoom aria-label="Cerrar imagen"><img src="${esc(S.zoom)}" alt=""></button>` : ''}`;
+}
+
+// ---------- images: pasted, dropped or picked; big ones are scaled down here
+const MAX_SIDE = 2400;
+const MAX_RAW = 1.5 * 1024 * 1024;
+const readAsDataUrl = (blob) => new Promise((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onload = () => resolve(reader.result);
+  reader.onerror = () => reject(reader.error);
+  reader.readAsDataURL(blob);
+});
+
+async function toDataUrl(file) {
+  const url = await readAsDataUrl(file);
+  if (file.type === 'image/gif') return url;
+  const img = new Image();
+  await new Promise((resolve, reject) => { img.onload = resolve; img.onerror = reject; img.src = url; });
+  const scale = Math.min(1, MAX_SIDE / Math.max(img.naturalWidth, img.naturalHeight));
+  if (scale === 1 && file.size <= MAX_RAW) return url;
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(img.naturalWidth * scale);
+  canvas.height = Math.round(img.naturalHeight * scale);
+  canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL('image/jpeg', 0.85);
+}
+
+async function attach(files) {
+  const text = $('#ta')?.value ?? '';
+  S.error = null;
+  for (const file of files) {
+    if (!/^image\/(png|jpeg|webp|gif)$/.test(file.type)) {
+      S.error = 'Solo se aceptan imágenes PNG, JPG, WebP o GIF.';
+      continue;
+    }
+    if (S.pending.length >= 4) {
+      S.error = 'Puedes adjuntar hasta 4 imágenes por mensaje.';
+      break;
+    }
+    try {
+      S.pending.push(await toDataUrl(file));
+    } catch {
+      S.error = 'No pude leer una de las imágenes.';
+    }
+  }
+  render();
+  if ($('#ta')) $('#ta').value = text;
+}
+
+function wireComposer() {
+  const box = $('#box');
+  if (!box) return;
+  const ta = $('#ta');
+  $('#file').onchange = (e) => attach([...e.target.files]);
+  ta.onpaste = (e) => {
+    const files = [...e.clipboardData.files];
+    if (files.length) {
+      e.preventDefault();
+      attach(files);
+    }
+  };
+  box.ondragover = (e) => { e.preventDefault(); box.classList.add('drag'); };
+  box.ondragleave = () => box.classList.remove('drag');
+  box.ondrop = (e) => { e.preventDefault(); box.classList.remove('drag'); attach([...e.dataTransfer.files]); };
+  ta.onkeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); } };
+  ta.value = S.draft;
+  ta.oninput = () => { S.draft = ta.value; };
+}
+
+async function send() {
+  const text = ($('#ta')?.value ?? '').trim();
+  if (S.sending || (!text && !S.pending.length)) return;
+  S.sending = true;
+  S.error = null;
+  render();
+  try {
+    let d;
+    if (S.cur) d = await api(`/api/portal/requests/${S.cur}/messages`, { text, images: S.pending });
+    else {
+      const app = S.me.apps.find((a) => key(a) === S.picked);
+      d = await api('/api/portal/requests', { repo: app.repo, app: app.app, text, images: S.pending });
+      S.me.today.used += 1;
+    }
+    S.pending = [];
+    S.draft = '';
+    S.detail = d;
+    S.cur = d.number;
+    if (location.pathname !== `/p/${d.number}`) history.pushState(null, '', `/p/${d.number}`);
+    await loadList();
+  } catch (error) {
+    if (error.status === 401) return toLogin();
+    S.error = error.message;
+  }
+  S.sending = false;
+  render();
+  poll();
+}
+
+// ---------- data
+async function loadList() {
+  try {
+    S.requests = await api('/api/portal/requests');
+  } catch (error) {
+    if (error.status === 401) toLogin();
+  }
+}
+
+async function openRequest(n, push = true) {
+  S.cur = n;
+  S.detail = null;
+  S.menu = false;
+  S.error = null;
+  S.pending = [];
+  S.draft = '';
+  if (push && location.pathname !== `/p/${n}`) history.pushState(null, '', `/p/${n}`);
+  render();
+  try {
+    S.detail = await api(`/api/portal/requests/${n}`);
+  } catch (error) {
+    if (error.status === 401) return toLogin();
+    S.cur = null;
+    S.error = error.message;
+    history.replaceState(null, '', '/');
+  }
+  render();
+  poll();
+}
+
+function openNew(push = true) {
+  S.cur = null;
+  S.detail = null;
+  S.menu = false;
+  S.error = null;
+  if (push && location.pathname !== '/') history.pushState(null, '', '/');
+  render();
+}
+
+// While ronin reads a request, its page asks again every few seconds.
+let pollTimer = null;
+function poll() {
+  clearTimeout(pollTimer);
+  if (S.detail?.status !== 'thinking') return;
+  pollTimer = setTimeout(async () => {
+    if (document.hidden || !S.cur) return poll();
+    const n = S.cur;
+    try {
+      const d = await api(`/api/portal/requests/${n}`);
+      if (S.cur !== n) return;
+      const changed = d.status !== S.detail.status || d.messages.length !== S.detail.messages.length;
+      S.detail = d;
+      if (changed) {
+        await loadList();
+        render();
+      }
+    } catch (error) {
+      if (error.status === 401) return toLogin();
+    }
+    poll();
+  }, POLL_MS);
+}
+
+function toLogin() {
+  clearTimeout(pollTimer);
+  S.me = null; S.view = 'login'; S.error = null; S.info = null;
+  history.replaceState(null, '', '/');
+  render();
+}
+
+function fromPath(push = false) {
+  const match = /^\/p\/(\d+)$/.exec(location.pathname);
+  if (match) openRequest(Number(match[1]), push);
+  else openNew(push);
+}
 
 // ---------- render
 function render(keep = {}) {
   const root = $('#root');
+  const thread = $('#thread');
+  const atBottom = !thread || thread.scrollHeight - thread.scrollTop - thread.clientHeight < 80;
   if (S.view === 'app') root.innerHTML = appHTML();
   else if (S.view === 'password') root.innerHTML = passwordHTML();
   else root.innerHTML = loginHTML();
@@ -157,6 +395,11 @@ function render(keep = {}) {
   if (keep.email !== undefined && $('#em')) $('#em').value = keep.email;
   const first = $('#f input');
   if (first && !S.busy && !first.value) first.focus();
+  if (S.view === 'app') {
+    wireComposer();
+    const fresh = $('#thread');
+    if (fresh && atBottom) fresh.scrollTop = fresh.scrollHeight;
+  }
 }
 
 document.addEventListener('click', async (event) => {
@@ -169,11 +412,23 @@ document.addEventListener('click', async (event) => {
   } else if (t.dataset.app) {
     S.picked = t.dataset.app;
     render();
+  } else if (t.dataset.req) {
+    openRequest(Number(t.dataset.req));
+  } else if ('new' in t.dataset) {
+    openNew();
+  } else if ('send' in t.dataset) {
+    send();
+  } else if (t.dataset.unpend !== undefined) {
+    S.pending.splice(Number(t.dataset.unpend), 1);
+    render();
+  } else if (t.dataset.zoom) {
+    S.zoom = t.dataset.zoom;
+    render();
+  } else if ('unzoom' in t.dataset) {
+    S.zoom = null;
+    render();
   } else if ('menu' in t.dataset) {
     S.menu = !S.menu;
-    render();
-  } else if ('new' in t.dataset) {
-    S.menu = false;
     render();
   } else if ('themeT' in t.dataset) {
     const next = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light';
@@ -182,10 +437,26 @@ document.addEventListener('click', async (event) => {
     render();
   } else if ('logout' in t.dataset) {
     await api('/api/portal/logout', {}).catch(() => {});
-    S.me = null; S.view = 'login'; S.error = null; S.info = null;
+    toLogin();
+  }
+});
+
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && S.zoom) {
+    S.zoom = null;
     render();
   }
 });
+
+addEventListener('popstate', () => {
+  if (S.view === 'app') fromPath();
+});
+
+async function enter() {
+  S.view = 'app';
+  await loadList();
+  fromPath();
+}
 
 async function start() {
   if (location.pathname === '/contrasena') {
@@ -205,11 +476,12 @@ async function start() {
   }
   try {
     S.me = await api('/api/portal/me');
-    S.view = 'app';
   } catch {
     S.view = 'login';
+    render();
+    return;
   }
-  render();
+  await enter();
 }
 
 start();

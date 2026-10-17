@@ -1,0 +1,42 @@
+import { describe, it, expect } from 'vitest';
+import { bigRequestMail, linkMail, replyMail, teamRequestMail } from './mail.js';
+import type { PortalUser } from './accounts.js';
+import type { PortalRequest } from './requests.js';
+
+const user: PortalUser = { id: 'u1', email: 'mf@x.com', name: 'María Fernández', grants: [], disabled: false, sessionVersion: 1, createdAt: '', createdBy: 'oskr814' };
+const request = (over: Partial<PortalRequest> = {}): PortalRequest => ({
+  number: 31, userId: 'u1', repo: 'redmotos/shoppingcart', app: 'backoffice', title: 'Abrir la ficha del cliente', status: 'asking', questions: 1,
+  messages: [
+    { id: 1, from: 'person', text: 'Quiero <b>abrir</b> la ficha', images: ['1-1.png'], at: '2026-10-17T10:00:00Z' },
+    { id: 2, from: 'ronin', text: '¿En las tres pantallas?', images: [], at: '2026-10-17T10:02:00Z' },
+  ],
+  createdAt: '', updatedAt: '', ...over,
+});
+const URL = 'https://ronin-agent.example.com';
+
+describe('portal mails', () => {
+  it("a question carries ronin's reply and the link to answer it", () => {
+    const mail = replyMail(request(), user, URL);
+    expect(mail).toMatchObject({ to: 'mf@x.com', subject: 'ronin te hizo una pregunta: Abrir la ficha del cliente' });
+    expect(mail.text).toContain('¿En las tres pantallas?');
+    expect(mail.text).toContain(`${URL}/p/31`);
+    expect(replyMail(request({ status: 'minor' }), user, URL).subject).toMatch(/^ronin te respondió/);
+  });
+
+  it('a big one tells the person the team has it', () => {
+    const mail = bigRequestMail(request({ status: 'big' }), user, URL);
+    expect(mail.subject).toBe('Recibimos tu pedido: Abrir la ficha del cliente');
+    expect(mail.text).toMatch(/equipo de desarrollo/);
+  });
+
+  it("the team's mail has the verdict, the conversation and where the images are", () => {
+    const mail = teamRequestMail(request({ status: 'minor', verdict: { kind: 'minor', proposal: 'Un enlace', instruction: 'x', summary: 'ClientInfoPanel.tsx', at: '' } }), user, 'team@x.com', '/data/requests/31/img');
+    expect(mail).toMatchObject({ to: 'team@x.com', subject: '[ronin] Pedido P-31 del portal (ajuste chico): Abrir la ficha del cliente' });
+    for (const part of ['María Fernández <mf@x.com>', 'Propuesta: Un enlace', 'ClientInfoPanel.tsx', '¿En las tres pantallas?', '/data/requests/31/img']) expect(mail.text).toContain(part);
+  });
+
+  it('escapes what people wrote in the HTML', () => {
+    expect(linkMail({ ...user, name: '<script>x</script>' }, 'invite', `${URL}/contrasena#t=abc`, URL, []).html).not.toContain('<script>');
+    expect(replyMail(request({ messages: [{ id: 2, from: 'ronin', text: '<img src=x onerror=alert(1)>', images: [], at: '' }] }), user, URL).html).not.toContain('<img');
+  });
+});

@@ -6,7 +6,9 @@ import { grantedApps } from '../../portal/apps.js';
 import { burnPasswordCheck, hashPassword, passwordProblem, verifyPassword } from '../../portal/password.js';
 import { RateLimit } from '../../portal/rate-limit.js';
 import { sendPasswordLink, type Send } from '../../portal/send-link.js';
+import { startedToday } from '../../portal/requests.js';
 import { portalCookie, readPortalSession, sealPortalSession } from '../../portal/session.js';
+import { handlePortalRequests } from './portal-requests.js';
 
 // The request portal's API (#114), on the public listener:
 //   POST /api/portal/login     { email, password }: the session cookie
@@ -15,6 +17,7 @@ import { portalCookie, readPortalSession, sealPortalSession } from '../../portal
 //   POST /api/portal/forgot    { email }: a link to change the password, if the account exists
 //   POST /api/portal/link      { token }: whose password a link sets, while it's good
 //   POST /api/portal/password  { token, password }: sets it with the link, and logs in
+//   /api/portal/requests…      the person's requests and their conversation (portal-requests.ts)
 //
 // It answers the same to an unknown email and a wrong password, and takes as
 // long, so the login doesn't tell which emails have an account; the same for
@@ -24,11 +27,15 @@ export interface PortalConfig {
   url: string;
   sessionSecret: string;
   sessionDays: number;
+  // Requests per person per day, unless their account sets its own.
+  dailyLimit: number;
 }
 
 export interface PortalDeps {
   entries: () => Promise<RepoEntry[]>;
   send?: Send;
+  // Starts the worker that reads a request (portal/launch.ts).
+  launch?: (n: number) => Promise<void>;
 }
 
 const WINDOW_MS = 15 * 60_000;
@@ -50,7 +57,7 @@ export function resetPortalLimits(): void {
   for (const limit of [loginByEmail, loginByIp, forgotByEmail, forgotByIp, linkByIp]) limit.reset();
 }
 
-function json(res: ServerResponse, status: number, body: unknown, cookies: string[] = []): void {
+export function json(res: ServerResponse, status: number, body: unknown, cookies: string[] = []): void {
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', ...(cookies.length ? { 'Set-Cookie': cookies } : {}) }).end(JSON.stringify(body));
 }
 
@@ -66,12 +73,12 @@ export function clientIp(req: IncomingMessage): string {
 
 const MAX_BODY = 8 * 1024;
 
-async function readJson(req: IncomingMessage): Promise<Record<string, unknown> | null> {
+export async function readJson(req: IncomingMessage, max = MAX_BODY): Promise<Record<string, unknown> | null> {
   let size = 0;
   const chunks: Buffer[] = [];
   for await (const chunk of req) {
     size += (chunk as Buffer).length;
-    if (size > MAX_BODY) return null;
+    if (size > max) return null;
     chunks.push(chunk as Buffer);
   }
   try {
@@ -97,8 +104,9 @@ function sessionCookie(user: PortalUser, config: PortalConfig): string {
   return portalCookie(sealPortalSession({ userId: user.id, version: user.sessionVersion }, config.sessionSecret, config.sessionDays), config.sessionDays * 24 * 60 * 60);
 }
 
-async function me(user: PortalUser, deps: PortalDeps) {
-  return { name: user.name, email: user.email, apps: grantedApps(user.grants, await deps.entries()) };
+async function me(user: PortalUser, config: PortalConfig, deps: PortalDeps) {
+  const limit = user.dailyLimit ?? config.dailyLimit;
+  return { name: user.name, email: user.email, apps: grantedApps(user.grants, await deps.entries()), today: { used: await startedToday(user.id), limit } };
 }
 
 // /api/portal/*. Returns false for a path it doesn't own.
@@ -107,8 +115,13 @@ export async function handlePortalApi(req: IncomingMessage, res: ServerResponse,
 
   if (path === '/api/portal/me' && method === 'GET') {
     const user = await portalUser(req, config);
-    if (user) json(res, 200, await me(user, deps));
+    if (user) json(res, 200, await me(user, config, deps));
     else json(res, 401, { error: 'sin sesión' }, [portalCookie('', 0)]);
+    return true;
+  }
+
+  if (path === '/api/portal/requests' || path.startsWith('/api/portal/requests/')) {
+    await handlePortalRequests(req, res, path, config, deps);
     return true;
   }
 
@@ -149,7 +162,7 @@ export async function handlePortalApi(req: IncomingMessage, res: ServerResponse,
     loginByEmail.clear(email);
     await recordLogin(user.id);
     log.info(`portal: ${user.email} entró`);
-    json(res, 200, await me(user, deps), [sessionCookie(user, config)]);
+    json(res, 200, await me(user, config, deps), [sessionCookie(user, config)]);
     return true;
   }
 
@@ -200,6 +213,6 @@ export async function handlePortalApi(req: IncomingMessage, res: ServerResponse,
   loginByEmail.clear(user.email);
   await recordLogin(user.id);
   log.info(`portal: ${user.email} puso su contraseña`);
-  json(res, 200, await me(user, deps), [sessionCookie(user, config)]);
+  json(res, 200, await me(user, config, deps), [sessionCookie(user, config)]);
   return true;
 }

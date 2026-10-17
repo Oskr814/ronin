@@ -1,9 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto';
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { setTimeout as sleep } from 'node:timers/promises';
 import { config } from '../core/config.js';
-import { acquireLock } from '../core/worker-launch.js';
+import { readJson, withJson } from './json-store.js';
 
 // The request portal's accounts (#114): people without GitHub, who enter
 // with their email and a password. Kept in <PORTAL_DATA_DIR>/accounts.json,
@@ -52,7 +50,6 @@ export const LINK_TTL_MS = 24 * 60 * 60 * 1000;
 const NAME_MAX = 120;
 const EMAIL_MAX = 254;
 const DAILY_LIMIT_MAX = 100;
-const LOCK_POLL_MS = 50;
 
 const accountsPath = () => join(config.portal.dataDir, 'accounts.json');
 
@@ -60,48 +57,18 @@ export const normalizeEmail = (email: string) => email.trim().toLowerCase();
 const isEmail = (email: string) => email.length <= EMAIL_MAX && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 const hashToken = (token: string) => createHash('sha256').update(token).digest('base64url');
 
+const empty = (): AccountsFile => ({ users: [] });
+
 async function readAccounts(): Promise<AccountsFile> {
-  let raw: string;
-  try {
-    raw = await readFile(accountsPath(), 'utf8');
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { users: [] };
-    throw error;
-  }
-  const parsed = JSON.parse(raw) as Partial<AccountsFile>;
-  if (!Array.isArray(parsed.users)) throw new Error(`${accountsPath()} no tiene la lista de usuarios`);
-  return { users: parsed.users };
+  const data = await readJson(accountsPath(), empty);
+  if (!Array.isArray(data.users)) throw new Error(`${accountsPath()} no tiene la lista de usuarios`);
+  return data;
 }
 
-// Written aside and renamed into place, readable only by this user: it holds
-// the password hashes.
-async function writeAccounts(data: AccountsFile): Promise<void> {
-  await mkdir(config.portal.dataDir, { recursive: true, mode: 0o700 });
-  const tmp = `${accountsPath()}.${process.pid}.tmp`;
-  await writeFile(tmp, JSON.stringify(data, null, 2), { mode: 0o600 });
-  await rename(tmp, accountsPath());
-}
-
-// Read, change and write under a lock: the server is one process, but the
-// tick will read the accounts too once it sends the requests' emails.
-let queue: Promise<unknown> = Promise.resolve();
+// Read, change and write under a lock: the server writes them, and the
+// portal's workers and the tick read them for the requests' emails.
 function withAccounts<T>(fn: (data: AccountsFile) => T | Promise<T>): Promise<T> {
-  const locked = async () => {
-    const lock = `${accountsPath()}.lock`;
-    while (!(await acquireLock(lock))) await sleep(LOCK_POLL_MS);
-    try {
-      const data = await readAccounts();
-      const before = JSON.stringify(data);
-      const result = await fn(data);
-      if (JSON.stringify(data) !== before) await writeAccounts(data);
-      return result;
-    } finally {
-      await rm(lock, { force: true });
-    }
-  };
-  const result = queue.then(locked, locked);
-  queue = result.then(() => {}, () => {});
-  return result;
+  return withJson(accountsPath(), empty, fn);
 }
 
 export async function listUsers(): Promise<PortalUser[]> {
