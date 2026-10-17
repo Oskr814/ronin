@@ -281,15 +281,16 @@ function renderTree() {
   const prHit = (item) => (num && item.number !== Number(num) && [...(item.prs ?? []), ...(item.slices ?? []).map((sl) => sl.prNumber)].includes(Number(num)) ? Number(num) : null);
   const matchQ = (item) => `${item.title} ${itemRef(item)} ${item.number ?? ''} ${item.linear?.id ?? ''}`.toLowerCase().includes(q) || prHit(item) !== null;
   // Without searching, the listed ones (ronin's issues, the ones it worked
-  // on, the exploration PR); searching, or filtering by a Linear cycle or
-  // project, every open issue (#100). A PR without an issue or a changelog
-  // entry shows only while it runs.
+  // on that are still open, the exploration PR) and the one open on the
+  // page; searching, or filtering by a Linear cycle or project, every open
+  // issue (#100). A closed one shows only while open or searched. A PR
+  // without an issue or a changelog entry shows only while it runs.
   const shown = (item) => {
     if (S.filter === 'running') return item.status === 'running' && (!q || matchQ(item));
     if (item.kind !== 'issue' && !item.pinned) return false;
     if (q) return matchQ(item) && inScope(item);
     if (S.scope === 'cycle' || S.project) return item.kind === 'issue' && inScope(item);
-    return item.listed;
+    return item.listed || S.sel === item.id;
   };
   const row = (item) => itemRow(item, prHit(item));
   // Offered only when nothing has that number, as an issue or one of its PRs.
