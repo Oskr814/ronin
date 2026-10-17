@@ -124,5 +124,11 @@ describe('loadRepos', () => {
 
     await writeFile(reposConfigPath, JSON.stringify([{ productRepo: 'a/b', productRepoPath: '/tmp/a', linear: { apiKeyEnv: 'lin_api_secreto' } }]));
     await expect(loadRepos()).rejects.toThrow(/linear\.apiKeyEnv/);
+
+    const linear = { apiKeyEnv: 'K', explorationProject: { backoffice: 'Mejoras de backoffice' } };
+    await writeFile(reposConfigPath, JSON.stringify([{ productRepo: 'a/b', productRepoPath: '/tmp/a', linear }]));
+    expect((await loadRepos())[0].linear).toEqual(linear);
+    await writeFile(reposConfigPath, JSON.stringify([{ productRepo: 'a/b', productRepoPath: '/tmp/a', linear: { apiKeyEnv: 'K', explorationProject: { backoffice: '' } } }]));
+    await expect(loadRepos()).rejects.toThrow(/explorationProject/);
   });
 });

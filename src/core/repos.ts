@@ -73,13 +73,16 @@ function validateEntry(entry: unknown, index: number): RepoEntry {
   };
 }
 
-function validateLinear(linear: unknown, where: string): { apiKeyEnv: string } {
+function validateLinear(linear: unknown, where: string): NonNullable<RepoEntry['linear']> {
   if (typeof linear !== 'object' || linear === null || Array.isArray(linear)) throw new Error(`${where} debe ser un objeto`);
-  const { apiKeyEnv, ...rest } = linear as Record<string, unknown>;
+  const { apiKeyEnv, explorationProject, ...rest } = linear as Record<string, unknown>;
   const unknownKeys = Object.keys(rest);
-  if (unknownKeys.length > 0) throw new Error(`${where} tiene campos desconocidos: ${unknownKeys.join(', ')} (válidos: apiKeyEnv)`);
+  if (unknownKeys.length > 0) throw new Error(`${where} tiene campos desconocidos: ${unknownKeys.join(', ')} (válidos: apiKeyEnv, explorationProject)`);
   if (typeof apiKeyEnv !== 'string' || !/^[A-Z_][A-Z0-9_]*$/.test(apiKeyEnv)) throw new Error(`${where}.apiKeyEnv debe ser el nombre de una variable de .env (p. ej. LINEAR_API_KEY_REDMOTOS)`);
-  return { apiKeyEnv };
+  if (explorationProject !== undefined && (!isStringMap(explorationProject) || Object.values(explorationProject).some((v) => !v.trim()))) {
+    throw new Error(`${where}.explorationProject debe ser un objeto app → proyecto de Linear (nombre o id)`);
+  }
+  return { apiKeyEnv, ...(explorationProject !== undefined ? { explorationProject: explorationProject as Record<string, string> } : {}) };
 }
 
 const isStringMap = (value: unknown): value is Record<string, string> =>

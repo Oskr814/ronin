@@ -1,7 +1,10 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { APP_MANIFEST_FILE, parseAppManifest } from '../../app/manifest.js';
-import type { RepoEntry } from '../../core/repo-context.js';
+import { processLinearAssignments, queueLinearAssignment } from '../../core/linear-assign.js';
+import type { LinearPlanning } from '../../core/linear-api.js';
+import { log } from '../../core/logger.js';
+import { withActiveRepo, type RepoEntry } from '../../core/repo-context.js';
 import type { Session } from './auth.js';
 import { commentOnIssue, createIssue } from './github-as-user.js';
 
@@ -11,6 +14,8 @@ import { commentOnIssue, createIssue } from './github-as-user.js';
 // if asked: assigned to ronin, which takes it like any issue assigned to it
 // (discoverAssignedIssues), or a /spike or /spec commented on it as the
 // person, which reaches ronin through its webhook like one written on GitHub.
+// With Linear (#101), a project and a cycle can be chosen: applied once the
+// sync creates the issue there (core/linear-assign.ts).
 
 export type AfterCreate = 'none' | 'assign' | 'spike' | 'spec';
 
@@ -20,6 +25,9 @@ export interface NewIssue {
   after: AfterCreate;
   app?: string;
   instruction?: string;
+  // Linear's ids, from the repo's planning.
+  projectId?: string;
+  cycleId?: string;
 }
 
 export class NewIssueError extends Error {}
@@ -37,7 +45,20 @@ export async function repoApps(entry: RepoEntry): Promise<string[]> {
   }
 }
 
-export function parseNewIssue(raw: Record<string, unknown>, apps: string[]): NewIssue {
+export function parseNewIssue(raw: Record<string, unknown>, apps: string[], planning?: LinearPlanning): NewIssue {
+  const linear: Pick<NewIssue, 'projectId' | 'cycleId'> = {};
+  if (typeof raw.projectId === 'string' && raw.projectId) {
+    if (!planning?.projects.some((p) => p.id === raw.projectId)) throw new NewIssueError('Ese proyecto de Linear ya no está activo.');
+    linear.projectId = raw.projectId;
+  }
+  if (typeof raw.cycleId === 'string' && raw.cycleId) {
+    if (!planning?.cycles.some((c) => c.id === raw.cycleId)) throw new NewIssueError('Ese ciclo de Linear ya terminó.');
+    linear.cycleId = raw.cycleId;
+  }
+  return { ...parseNew(raw, apps), ...linear };
+}
+
+function parseNew(raw: Record<string, unknown>, apps: string[]): NewIssue {
   const title = typeof raw.title === 'string' ? raw.title.trim() : '';
   const body = typeof raw.body === 'string' ? raw.body.trim() : '';
   const after = (raw.after ?? 'none') as AfterCreate;
@@ -64,5 +85,22 @@ export async function createFromDashboard(entry: RepoEntry, session: Session, is
     ...(issue.after === 'assign' ? { assignees: [roninLogin] } : {}),
   });
   if (issue.after === 'spike' || issue.after === 'spec') await commentOnIssue(session.token, entry.productRepo, created.number, commandComment(roninLogin, issue));
+  if (issue.projectId || issue.cycleId) {
+    await withActiveRepo(entry, () => queueLinearAssignment({ number: created.number, ...(issue.projectId ? { projectId: issue.projectId } : {}), ...(issue.cycleId ? { cycleId: issue.cycleId } : {}) }));
+    applySoon(entry);
+  }
   return { id: `${entry.productRepo}#${created.number}`, ...created };
 }
+
+// The sync usually creates the Linear issue within seconds: try a few times
+// over the next minutes, so the project shows up while the person is still
+// looking. Whatever's left, the next tick applies.
+const RETRY_S = [5, 15, 30, 60, 120, 300];
+function applySoon(entry: RepoEntry): void {
+  for (const s of RETRY_S) {
+    setTimeout(() => {
+      withActiveRepo(entry, () => processLinearAssignments()).catch((error) => log.error('Linear: no se pudo asignar el issue nuevo', error));
+    }, s * 1000).unref();
+  }
+}
+

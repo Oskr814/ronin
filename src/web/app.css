@@ -631,3 +631,6 @@ button.brow:hover { background: var(--hover); }
 .ni-after input:disabled + span { opacity: .55; }
 .ni-cmd { border-top: 1px solid var(--rule); padding-top: 12px; margin-top: 4px; }
 .ni-cmd code { display: block; white-space: pre-wrap; font: 12.5px "JetBrains Mono", ui-monospace, monospace; color: var(--ink); overflow-wrap: anywhere; }
+.ni-linear { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.ni-linear .field span { display: flex; align-items: center; gap: 6px; }
+@media (max-width: 760px) { .ni-linear { grid-template-columns: 1fr; } }

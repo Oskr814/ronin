@@ -105,6 +105,7 @@ export async function snapshot(login: string): Promise<unknown> {
       ...(l.workspace ? { workspace: l.workspace } : {}),
       fetchedAt: l.fetchedAt || null,
       cycle: l.cycle ? { team: l.cycle.team, number: l.cycle.number, ...(l.cycle.name ? { name: l.cycle.name } : {}), startsAt: l.cycle.startsAt, endsAt: l.cycle.endsAt } : null,
+      ...(l.planning ? { planning: l.planning } : {}),
       ...(l.error ? { error: l.error } : {}),
     }] : [])),
   };
@@ -235,7 +236,8 @@ async function postNewIssue(req: IncomingMessage, res: ServerResponse, repo: str
     return;
   }
   try {
-    const issue = parseNewIssue(body ?? {}, await repoApps(entry));
+    const linear = await repoLinear(entry, await repoGithub(entry));
+    const issue = parseNewIssue(body ?? {}, await repoApps(entry), linear?.planning);
     const created = await createFromDashboard(entry, session, issue, config.githubLogin);
     // The next snapshot lists it.
     forgetGithub(entry.productRepo);

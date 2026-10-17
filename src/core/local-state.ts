@@ -50,6 +50,23 @@ export interface LocalState {
   // email and to the log. Shown only while the item has ronin:blocked, so
   // unblocking doesn't need to clear it; old entries are pruned by age.
   blocks: Record<string, BlockRecord>;
+  // Issues ronin or the dashboard created that still have to be put in a
+  // Linear project or cycle, once the sync creates them there (#101,
+  // core/linear-assign.ts).
+  linearPending: LinearPending[];
+}
+
+export interface LinearPending {
+  number: number;
+  // Set whatever the Linear issue already has (a choice made in the dashboard)…
+  projectId?: string;
+  cycleId?: string;
+  // …or only if it has no project yet: the exploration's (name or id, from
+  // repos.json), or the one of the issue it came from.
+  projectName?: string;
+  fromIssue?: number;
+  since: string;
+  attempts?: number;
 }
 
 export interface BlockRecord {
@@ -115,9 +132,10 @@ export async function readLocalState(): Promise<LocalState> {
       pendingSpecs: raw.pendingSpecs ?? [],
       processedComments: raw.processedComments ?? {},
       blocks: raw.blocks ?? {},
+      linearPending: raw.linearPending ?? [],
     };
   } catch {
-    return { claimedIssues: [], checksPendingCounts: {}, lastReviewedSha: {}, failureSignatures: {}, nightlyExploration: {}, interviews: {}, pendingSpecs: [], processedComments: {}, blocks: {} };
+    return { claimedIssues: [], checksPendingCounts: {}, lastReviewedSha: {}, failureSignatures: {}, nightlyExploration: {}, interviews: {}, pendingSpecs: [], processedComments: {}, blocks: {}, linearPending: [] };
   }
 }
 

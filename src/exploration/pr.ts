@@ -6,6 +6,7 @@ import { join, relative } from 'node:path';
 import { activeRepo } from '../core/repo-context.js';
 import { config } from '../core/config.js';
 import { log } from '../core/logger.js';
+import { queueExplorationProject } from '../core/linear-assign.js';
 import { acceptSubject, repoCommitConvention, type CommitChange, type CommitConvention } from '../core/commit-style.js';
 import { runAgentTask } from '../core/agent-task.js';
 import {
@@ -181,6 +182,7 @@ export async function openFindingIssues(
       const { title, body } = renderFindingIssue(appName, finding, fileUrl);
       number = (await createIssue(title, body, finding.tipo === 'idea' ? [LABEL_PROPOSAL, LABEL_IDEA] : [LABEL_PROPOSAL])).number;
       log.info(`exploración ${appName}: issue #${number} para ${meta.id}`);
+      await queueExplorationProject(appName, number);
     }
     await writeFile(path, serializeFinding({ ...finding, issue: number }));
     opened.push({ id: meta.id, issue: number });

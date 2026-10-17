@@ -10,7 +10,10 @@
       "backoffice"
     ],
     "linear": {
-      "apiKeyEnv": "LINEAR_API_KEY_REDMOTOS"
+      "apiKeyEnv": "LINEAR_API_KEY_REDMOTOS",
+      "explorationProject": {
+        "backoffice": "Mejoras de backoffice"
+      }
     }
   },
   {

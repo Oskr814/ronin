@@ -30,7 +30,10 @@ async function query<T>(key: string, text: string, variables: Record<string, unk
 export type LinearStateType = 'triage' | 'backlog' | 'unstarted' | 'started' | 'completed' | 'canceled';
 
 export interface LinearIssue {
+  // The identifier people use ("RED-214").
   id: string;
+  // Linear's own id, for writing to it.
+  uuid?: string;
   title: string;
   url: string;
   state: { name: string; type: LinearStateType };
@@ -55,6 +58,7 @@ export interface LinearCycle {
 }
 
 interface RawIssue {
+  id?: string;
   identifier: string;
   title: string;
   url: string;
@@ -73,6 +77,7 @@ function toIssue(raw: RawIssue, prefix: string): LinearIssue {
   const number = github ? Number(/^(\d+)/.exec(github.slice(prefix.length))?.[1]) : NaN;
   return {
     id: raw.identifier,
+    ...(raw.id ? { uuid: raw.id } : {}),
     title: raw.title,
     url: raw.url,
     state: raw.state,
@@ -85,7 +90,7 @@ function toIssue(raw: RawIssue, prefix: string): LinearIssue {
 
 const BY_URL_QUERY = `query($urls: [String!], $prefix: String!) {
   issues(first: 100, filter: { attachments: { some: { url: { in: $urls } } } }) {
-    nodes { ${ISSUE_FIELDS} cycle { number name isActive } attachments(first: 3, filter: { url: { startsWith: $prefix } }) { nodes { url } } }
+    nodes { id ${ISSUE_FIELDS} cycle { number name isActive } attachments(first: 3, filter: { url: { startsWith: $prefix } }) { nodes { url } } }
   }
 }`;
 
@@ -146,3 +151,52 @@ export async function currentCycle(entry: RepoEntry, key: string): Promise<Linea
     issues: cycle.issues.nodes.map((raw) => ({ ...toIssue(raw, prefix), cycle: { number: cycle.number, ...(cycle.name ? { name: cycle.name } : {}), current: true } })),
   };
 }
+
+// What a new issue can be put in (#101, entrega 3): the team's projects that
+// are still going and its cycles that haven't ended, current one first.
+export interface LinearPlanning {
+  projects: Array<{ id: string; name: string }>;
+  cycles: Array<{ id: string; number: number; name?: string; startsAt: string; endsAt: string; current: boolean }>;
+}
+
+const PLANNING_QUERY = `query($prefix: String!) {
+  issues(first: 1, filter: { attachments: { some: { url: { startsWith: $prefix } } } }) {
+    nodes { team {
+      projects(first: 100, filter: { state: { nin: ["completed", "canceled"] } }) { nodes { id name } }
+      cycles(first: 4, filter: { isPast: { eq: false } }, orderBy: createdAt) { nodes { id number name startsAt endsAt isActive } }
+    } }
+  }
+}`;
+
+export async function teamPlanning(entry: RepoEntry, key: string): Promise<LinearPlanning | null> {
+  type Raw = { issues: { nodes: Array<{ team: { projects: { nodes: Array<{ id: string; name: string }> }; cycles: { nodes: Array<{ id: string; number: number; name: string | null; startsAt: string; endsAt: string; isActive: boolean }> } } }> } };
+  const data = await query<Raw>(key, PLANNING_QUERY, { prefix: issuesPrefix(entry) });
+  const team = data.issues.nodes[0]?.team;
+  if (!team) return null;
+  return {
+    projects: [...team.projects.nodes].sort((a, b) => a.name.localeCompare(b.name, 'es')),
+    cycles: team.cycles.nodes
+      .map((c) => ({ id: c.id, number: c.number, ...(c.name ? { name: c.name } : {}), startsAt: c.startsAt, endsAt: c.endsAt, current: c.isActive }))
+      .sort((a, b) => a.startsAt.localeCompare(b.startsAt)),
+  };
+}
+
+const PROJECT_QUERY = `query($name: String!) { projects(first: 2, filter: { name: { eqIgnoreCase: $name } }) { nodes { id name } } }`;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// A project named in repos.json, by its id or its name; null if there's no
+// such project (or the name matches more than one).
+export async function resolveProject(key: string, nameOrId: string): Promise<string | null> {
+  if (UUID.test(nameOrId)) return nameOrId;
+  const data = await query<{ projects: { nodes: Array<{ id: string }> } }>(key, PROJECT_QUERY, { name: nameOrId });
+  return data.projects.nodes.length === 1 ? data.projects.nodes[0].id : null;
+}
+
+const UPDATE_MUTATION = `mutation($id: String!, $input: IssueUpdateInput!) { issueUpdate(id: $id, input: $input) { success } }`;
+
+// Puts a Linear issue in a project and/or a cycle.
+export async function updateIssue(key: string, uuid: string, input: { projectId?: string; cycleId?: string }): Promise<void> {
+  const data = await query<{ issueUpdate: { success: boolean } }>(key, UPDATE_MUTATION, { id: uuid, input });
+  if (!data.issueUpdate.success) throw new Error('Linear no aplicó el cambio');
+}
+
