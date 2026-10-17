@@ -3,7 +3,11 @@ import { describe, it, expect, vi } from 'vitest';
 vi.mock('../core/config.js', () => ({ config: { githubLogin: 'ronin', worktreeBaseRef: 'origin/main' } }));
 vi.mock('../core/logger.js', () => ({ log: { error: vi.fn(), info: vi.fn() } }));
 
-import { parsePrototypeResult, prototypeBrowsers, renderPrototypeComment, serverName } from './prototype.js';
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { changedFiles, draftDiff, parsePrototypeResult, prototypeBrowsers, renderPrototypeComment, serverName } from './prototype.js';
 
 const OUT = '/tmp/prototype-out/820-1';
 
@@ -75,5 +79,27 @@ describe('renderPrototypeComment', () => {
 
   it('leaves the diff out when the after is only an HTML drawing', () => {
     expect(renderPrototypeComment({ ...result, patch: '' }, 'ronin')).not.toContain('<details>');
+  });
+});
+
+describe('draftDiff', () => {
+  it("leaves out what the app's startup had already changed, keeping the draft and its new files", async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ronin-draft-'));
+    const git = (...args: string[]) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { cwd: dir });
+    git('init', '-q');
+    writeFileSync(join(dir, 'api.xml'), '<doc/>\n');
+    writeFileSync(join(dir, 'Orders Page.tsx'), 'total\n');
+    git('add', '.');
+    git('commit', '-qm', 'base');
+    writeFileSync(join(dir, 'api.xml'), '<doc>generado</doc>\n');
+    writeFileSync(join(dir, 'build.log'), 'x\n');
+    const generated = await changedFiles(dir);
+    expect(generated.sort()).toEqual(['api.xml', 'build.log']);
+    writeFileSync(join(dir, 'Orders Page.tsx'), 'total en negrita\n');
+    writeFileSync(join(dir, 'nuevo.ts'), 'export {};\n');
+    const patch = await draftDiff(dir, generated);
+    expect(patch).toContain('+total en negrita');
+    expect(patch).toContain('nuevo.ts');
+    expect(patch).not.toMatch(/api\.xml|build\.log/);
   });
 });

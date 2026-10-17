@@ -220,10 +220,27 @@ async function freshWorktree(key: string): Promise<string> {
   return dir;
 }
 
-// The draft change the agent left in the checkout, new files included.
-async function draftDiff(dir: string): Promise<string> {
+// Files that differ from the base right after the app came up: what its
+// build generates (e.g. a .NET API's documentation XML), not the draft.
+export async function changedFiles(dir: string): Promise<string[]> {
+  const { stdout } = await execFileAsync('git', ['status', '--porcelain', '-z', '--untracked-files=all'], { cwd: dir, maxBuffer: 16 * 1024 * 1024 });
+  const entries = stdout.split('\0');
+  const files: string[] = [];
+  for (let i = 0; i < entries.length; i++) {
+    if (!entries[i]) continue;
+    files.push(entries[i].slice(3));
+    // A rename or copy is followed by its original path.
+    if (/^[RC]/.test(entries[i])) i++;
+  }
+  return files;
+}
+
+// The draft change the agent left in the checkout, new files included, and
+// leaving out what the app's own startup had already changed.
+export async function draftDiff(dir: string, generated: string[] = []): Promise<string> {
   await execFileAsync('git', ['add', '-A', '-N'], { cwd: dir }).catch(() => {});
-  const { stdout } = await execFileAsync('git', ['diff'], { cwd: dir, maxBuffer: 16 * 1024 * 1024 });
+  const exclude = generated.map((file) => `:(exclude,literal)${file}`);
+  const { stdout } = await execFileAsync('git', ['diff', '--', '.', ...exclude], { cwd: dir, maxBuffer: 16 * 1024 * 1024 });
   return stdout.trim();
 }
 
@@ -238,6 +255,7 @@ export async function makePrototype<T>(target: PrototypeTarget, deliver: (draft:
     const app = await loadAppDefinition(dir, appName);
     const session = await appUp(dir, appName, { instance: key });
     const authStates = await loginAllUsers(session);
+    const generated = await changedFiles(dir).catch(() => []);
     const origins = originsOf(session.baseUrl, session.ctx.ports, session.ctx.port);
     const browsers = prototypeBrowsers(app);
     await mkdir(outDir, { recursive: true });
@@ -285,7 +303,7 @@ export async function makePrototype<T>(target: PrototypeTarget, deliver: (draft:
       resumen: output.resumen,
       ...(output.mensaje ? { mensaje: output.mensaje } : {}),
       ...shots,
-      patch: await draftDiff(dir),
+      patch: await draftDiff(dir, generated),
     });
   } finally {
     await appDown(dir);
