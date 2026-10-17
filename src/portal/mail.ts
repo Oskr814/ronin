@@ -118,7 +118,9 @@ export function doneMail(request: PortalRequest, user: PortalUser, portalUrl: st
   const first = user.name.split(/\s+/)[0] || user.name;
   const lines = [
     `Hola ${first},`,
-    `Listo: el cambio de tu pedido P-${request.number} ("${request.title}") ya está hecho y sale en la próxima actualización de la aplicación.`,
+    request.bug
+      ? `Listo: el error que reportaste en P-${request.number} ("${request.title}") ya está corregido y el arreglo sale en la próxima actualización de la aplicación.`
+      : `Listo: el cambio de tu pedido P-${request.number} ("${request.title}") ya está hecho y sale en la próxima actualización de la aplicación.`,
     'Gracias por pedirlo.',
   ];
   const url = requestUrl(portalUrl, request.number);
@@ -158,7 +160,7 @@ export function teamPrMail(request: PortalRequest, user: PortalUser | undefined,
     `ronin abrió el PR del pedido P-${request.number} del portal: ${request.title}`,
     `De: ${who}`,
     `App: ${request.repo} · ${request.app}`,
-    request.verdict?.proposal ? `Lo que aprobó: ${request.verdict.proposal}` : null,
+    request.status === 'fixing' ? 'Es el arreglo de un error que reportó: ronin lo reprodujo con un test que falla y el arreglo de prueba lo pasó a verde.' : request.verdict?.proposal ? `Lo que aprobó: ${request.verdict.proposal}` : null,
     `PR: ${prUrl}`,
     'Tiene ronin:auto-merge: se mergea cuando alguien del equipo lo aprueba y CI está en verde. Entonces se le avisa a la persona que sale en la próxima actualización.',
     request.issue ? `Issue: ${request.issue.url}` : null,
@@ -171,6 +173,7 @@ const MAX_PATCH = 30_000;
 // What the team is told a request is.
 function teamKind(request: PortalRequest): string {
   if (request.status === 'approved') return 'prototipo aprobado';
+  if (request.status === 'fixing') return 'error a corregir';
   if (request.decision?.kind === 'rejected') return 'prototipo no aprobado';
   if (request.bug) return request.bug.reproductions.at(-1)?.reproduced ? 'error reproducido' : 'error sin reproducir';
   return request.verdict?.kind === 'minor' ? 'ajuste chico' : 'pedido grande';

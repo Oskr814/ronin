@@ -32,6 +32,11 @@ export type RequestStatus =
   // The person approved the prototype: ronin opens an issue for it, makes
   // the change in a PR and a dev approves it before it merges.
   | 'approved'
+  // A reported error ronin reproduced with a test that fails, whose small
+  // fix turned it green (#137): like an approved one, ronin opens an issue
+  // for it, makes the fix in a PR and a dev approves it before it merges.
+  // The person approves nothing.
+  | 'fixing'
   // Its PR merged: it goes out in the next release.
   | 'done'
   // The team's issue closed as completed…
@@ -47,8 +52,12 @@ export type RequestStatus =
 // When the person can write: an answer, or an adjustment to the prototype.
 export const OPEN_FOR_PERSON: RequestStatus[] = ['asking', 'answered', 'proposed'];
 
-// When the person can cancel it: while nobody took it. Approved, its issue
-// is assigned to ronin; the team's, cancel.ts checks no one assigned its
+// Its issue is ronin's: an approved prototype, or a reported error's small
+// fix (#137).
+export const RONINS: RequestStatus[] = ['approved', 'fixing'];
+
+// When the person can cancel it: while nobody took it. Approved or fixing,
+// its issue is assigned to ronin; the team's, cancel.ts checks no one assigned its
 // issue yet.
 export const CANCELLABLE: RequestStatus[] = ['thinking', 'asking', 'answered', 'minor', 'proposed', 'reproducing', 'big'];
 

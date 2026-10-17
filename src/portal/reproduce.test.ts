@@ -19,7 +19,7 @@ vi.mock('../commands/prototype.js', async (original) => ({
   draftDiff: () => draftDiff(),
 }));
 
-const { FAILED_REPRODUCE_REPLY, NOT_REPRODUCED_REPLY, parseReproduction, REPRODUCED_REPLY, reproduceRequest, ReproductionDeclined } = await import('./reproduce.js');
+const { FAILED_REPRODUCE_REPLY, FIXING_REPLY, NOT_REPRODUCED_REPLY, parseReproduction, REPRODUCED_REPLY, reproduceRequest, ReproductionDeclined } = await import('./reproduce.js');
 
 const outDir = mkdtempSync(join(tmpdir(), 'ronin-portal-repro-'));
 mkdirSync(join(outDir, 'sales-desktop'));
@@ -94,7 +94,7 @@ describe('parseReproduction', () => {
 });
 
 describe('reproduceRequest', () => {
-  it('reproduced: shows the error and the fix, keeps the diff and hands it to the team', async () => {
+  it('reproduced with a small fix that turned its test green: ronin fixes it, the person approves nothing', async () => {
     const n = await errorRequest();
     agentWrites(reproduced, (target) => {
       expect(target).toMatchObject({ key: `portal-r-${n}`, appName: 'backoffice' });
@@ -102,18 +102,44 @@ describe('reproduceRequest', () => {
     });
     await reproduceRequest(n);
     const r = (await getRequest(n))!;
-    expect(r).toMatchObject({ status: 'big', verdict: { kind: 'big', summary: 'OrderHeaderExtensions' } });
-    expect(r.verdict?.reason).toMatch(/lo reprodujo, con un test que falla y probó un arreglo pequeño que lo pasa a verde/);
+    expect(r).toMatchObject({ status: 'fixing', verdict: { kind: 'error', summary: 'OrderHeaderExtensions' } });
     expect(r.worker).toBeUndefined();
     const shown = r.messages.at(-1)!;
-    expect(shown).toMatchObject({ from: 'ronin', text: `${reproduced.mensaje}\n\n${REPRODUCED_REPLY}`, images: ['r1-error-1.png', 'r1-arreglo-1.png'], captions: ['Hasta el 16, sin los del 16', 'Con el arreglo de prueba'] });
+    expect(shown).toMatchObject({ from: 'ronin', text: `${reproduced.mensaje}\n\n${FIXING_REPLY}`, images: ['r1-error-1.png', 'r1-arreglo-1.png'], captions: ['Hasta el 16, sin los del 16', 'Con el arreglo de prueba'] });
     expect(await readFile(requestImagePath(n, 'r1-error-1.png'), 'utf8')).toBe('error-1.png');
     expect(r.bug?.reproductions).toEqual([expect.objectContaining({ round: 1, reproduced: true, fix: 'small', patch: 'r1.diff', messageId: shown.id, test: expect.objectContaining({ green: true }) })]);
     expect(await readFile(prototypePatchPath(n, 'r1.diff'), 'utf8')).toContain('+[Fact]');
-    expect(r.events?.map((e) => e.kind)).toEqual(['reproduced', 'classified', 'mail']);
+    expect(r.events?.map((e) => e.kind)).toEqual(['reproduced', 'mail']);
     expect(r.events?.[0]).toMatchObject({ round: 1, reproduced: true, test: 'green' });
-    // The person hears now; the team, once the worker opened its issue.
-    expect(sendMail.mock.calls.map((c) => (c as unknown as [{ to: string; subject: string }])[0])).toEqual([expect.objectContaining({ to: 'km@x.com', subject: expect.stringMatching(/^Recibimos tu pedido/) })]);
+    expect(sendMail.mock.calls.map((c) => (c as unknown as [{ to: string; subject: string }])[0])).toEqual([expect.objectContaining({ to: 'km@x.com', subject: expect.stringMatching(/^ronin te respondió/) })]);
+  });
+
+  it('reproduced otherwise — a big fix, a test that never went green, or no diff: the team’s, with what it found', async () => {
+    const cases: Array<[unknown, RegExp]> = [
+      [{ ...reproduced, arreglo: 'grande', motivo: 'Hay que migrar las fechas' }, /el arreglo es más que un ajuste: Hay que migrar las fechas/],
+      [{ ...reproduced, test: { ...reproduced.test, verde: false } }, /probó un arreglo pequeño\.$/],
+      [{ ...reproduced, test: undefined }, /sin un test que lo pruebe/],
+    ];
+    for (const [result, reason] of cases) {
+      await rm(config.portal.dataDir, { recursive: true, force: true });
+      sendMail.mockClear();
+      const n = await errorRequest();
+      agentWrites(result);
+      await reproduceRequest(n);
+      const r = (await getRequest(n))!;
+      expect(r).toMatchObject({ status: 'big', verdict: { kind: 'big', summary: 'OrderHeaderExtensions' } });
+      expect(r.verdict?.reason).toMatch(reason);
+      expect(r.messages.at(-1)?.text).toBe(`${reproduced.mensaje}\n\n${REPRODUCED_REPLY}`);
+      expect(r.events?.map((e) => e.kind)).toEqual(['reproduced', 'classified', 'mail']);
+      // The person hears now; the team, once the worker opened its issue.
+      expect(sendMail.mock.calls.map((c) => (c as unknown as [{ subject: string }])[0].subject)).toEqual([expect.stringMatching(/^Recibimos tu pedido/)]);
+    }
+    await rm(config.portal.dataDir, { recursive: true, force: true });
+    const n = await errorRequest();
+    draftDiff.mockResolvedValueOnce('');
+    agentWrites(reproduced);
+    await reproduceRequest(n);
+    expect((await getRequest(n))?.status).toBe('big');
   });
 
   it('not reproduced: asks the person what it needs, and counts the question', async () => {
