@@ -13,7 +13,7 @@ const post = vi.fn();
 const ENTRY = { productRepo: 'acme/product', productRepoPath: '/tmp/x' };
 const pr = (number: number) => ({ number, title: '', url: '', author: 'ronin-agent', isDraft: false, headRefName: 'ronin/844/slice-1', baseRefName: 'odoo-main', reviewDecision: '' as const, checks: [] });
 const gh = (over: Record<string, unknown> = {}) => ({
-  repo: 'acme/product', fetchedAt: '', blocks: {}, previews: [],
+  repo: 'acme/product', fetchedAt: '', blocks: {}, previews: [], openIssues: [], prIssue: {},
   issues: [{ number: 844, title: '', url: '', status: 'blocked' as const, direct: false, slices: [] }],
   prs: [pr(849)],
   ...over,

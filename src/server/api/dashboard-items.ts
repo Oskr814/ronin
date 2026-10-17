@@ -4,13 +4,17 @@ import type { BlockRecord } from '../../core/local-state.js';
 import { itemKey, type RunState, type RunSummary } from './dashboard-data.js';
 import type { PreviewView, RepoGithub } from './dashboard-github.js';
 
-// The dashboard's sidebar (#65): what ronin has going in each repo, put
-// together from GitHub (the issues it manages, their slices, the open PRs)
-// and from this runner's own runs. An issue ronin manages shows up whether
-// or not an agent ran on it lately; a run about anything else (a human's PR
-// it reviewed, a changelog entry) shows up for as long as it's recent.
+// The dashboard's sidebar (#65, #100): every open issue of each repo, put
+// together from GitHub (the issues, ronin's slices, the open PRs and the
+// issue each one belongs to) and from this runner's own runs. A PR lives
+// inside its issue, and a run on it counts as the issue's. Listed without
+// searching: ronin's issues, the ones it worked on in the last days and the
+// exploration PR; the rest of the open issues are found by searching. A run
+// on something that's no issue (a PR without one, a changelog entry) is an
+// item too, shown only while it runs and in Hoy.
 
-export type ItemStatus = 'running' | 'blocked' | 'waiting' | RunState;
+// 'open': an issue nobody is on.
+export type ItemStatus = 'running' | 'blocked' | 'waiting' | 'open' | RunState;
 
 export interface CheckView {
   name: string;
@@ -53,6 +57,12 @@ export interface Item {
   pr?: PrView;
   preview?: PreviewView;
   block?: BlockRecord;
+  // Shown in the sidebar without searching.
+  listed: boolean;
+  // The exploration PR, fixed on top of its repo.
+  pinned?: boolean;
+  // Every open PR of the issue, to find it by a PR's number.
+  prs?: number[];
   // Its Linear issue, for a repo with a Linear key (added by the snapshot, #101).
   linear?: LinearIssue;
 }
@@ -71,6 +81,7 @@ function prView(pr: OpenPr): PrView {
 // What an open PR waits for, in the words of someone looking at it.
 export function prNote(pr: OpenPr): string {
   const checks = checksOf(pr);
+  if (pr.mergeable === 'CONFLICTING') return `conflictos en #${pr.number}`;
   if (checks === 'failed') return `checks fallando en #${pr.number}`;
   if (checks === 'pending') return `checks corriendo en #${pr.number}`;
   if (pr.reviewDecision === 'APPROVED') return `aprobado, falta el merge de #${pr.number}`;
@@ -96,12 +107,19 @@ export function issueRunKeys(repo: string, issue: { number: number; slices: Arra
   return [`${repo}#${issue.number}`, ...issue.slices.flatMap((s) => (s.prNumber !== null ? [`${repo}#${s.prNumber}`] : []))];
 }
 
-// The run keys an item's history is made of: an issue's (issueRunKeys) when
-// GitHub lists it, otherwise just its own.
+// The PRs of an issue, by the links the repo read made (linkPrs).
+function linkedPrs(gh: RepoGithub, issue: number): number[] {
+  return Object.entries(gh.prIssue).filter(([, n]) => n === issue).map(([pr]) => Number(pr));
+}
+
+// The run keys an item's history is made of: an open issue's (issueRunKeys
+// plus its PRs') when GitHub lists it, otherwise just its own.
 export function itemRunKeys(id: string, gh: RepoGithub | undefined): string[] {
   const number = Number(/#(\d+)$/.exec(id)?.[1] ?? NaN);
-  const issue = gh?.issues.find((i) => i.number === number && i.status !== 'other');
-  return issue && `${gh!.repo}#${issue.number}` === id ? issueRunKeys(gh!.repo, issue) : [id];
+  if (!gh || `${gh.repo}#${number}` !== id) return [id];
+  const own = gh.issues.find((i) => i.number === number);
+  if (!own && !gh.openIssues.some((i) => i.number === number)) return [id];
+  return [...new Set([...issueRunKeys(gh.repo, { number, slices: own?.slices ?? [] }), ...linkedPrs(gh, number).map((pr) => `${gh.repo}#${pr}`)])];
 }
 
 const newestFirst = (a: RunSummary, b: RunSummary) => b.startedAt.localeCompare(a.startedAt);
@@ -110,7 +128,7 @@ function runStatus(runs: RunSummary[]): RunState {
   return runs.some((run) => run.state === 'running') ? 'running' : runs[0].state;
 }
 
-const ORDER: Record<string, number> = { running: 0, blocked: 1, waiting: 2 };
+const ORDER: Record<string, number> = { running: 0, blocked: 1, waiting: 2, open: 4 };
 
 // `runs`: newest first (listRuns). `github`: one per repo, or missing for a
 // repo GitHub couldn't be read for — its runs still show.
@@ -125,13 +143,17 @@ export function buildItems(repos: string[], runs: RunSummary[], github: Array<Re
     const prs = new Map(gh.prs.map((pr) => [pr.number, pr]));
     const previewFor = (numbers: number[]) => gh.previews.find((p) => numbers.includes(p.prNumber));
 
-    for (const issue of gh.issues) {
-      if (issue.status === 'other') continue;
+    const managed = new Map(gh.issues.map((issue) => [issue.number, issue]));
+    const issues = [...gh.issues, ...gh.openIssues.filter((issue) => !managed.has(issue.number))];
+    for (const issue of issues) {
+      const own = managed.get(issue.number);
+      const tracked = own !== undefined && own.status !== 'other';
       const id = `${repo}#${issue.number}`;
-      const keys = issueRunKeys(repo, issue);
+      const linked = linkedPrs(gh, issue.number);
+      const keys = [...new Set([...issueRunKeys(repo, { number: issue.number, slices: own?.slices ?? [] }), ...linked.map((n) => `${repo}#${n}`)])];
       for (const key of keys) seen.add(key);
       const itemRuns = keys.flatMap((key) => runsByKey.get(key) ?? []).sort(newestFirst);
-      const slices: SliceView[] = issue.slices.map((slice) => {
+      const slices: SliceView[] = (own?.slices ?? []).map((slice) => {
         const open = slice.prNumber !== null ? prs.get(slice.prNumber) : undefined;
         return {
           index: slice.index,
@@ -142,11 +164,17 @@ export function buildItems(repos: string[], runs: RunSummary[], github: Array<Re
         };
       });
       const moving = slices.find((s) => s.status === 'open');
-      const movingPr = moving?.prNumber != null ? prs.get(moving.prNumber) : undefined;
+      // A ronin issue's lowest open slice; anyone else's issue, its first open PR.
+      const movingPr = moving?.prNumber != null ? prs.get(moving.prNumber) : own ? undefined : linked.map((n) => prs.get(n)).find(Boolean);
       const running = itemRuns.some((run) => run.state === 'running');
-      const blocked = issue.status === 'blocked';
+      const blocked = own?.status === 'blocked';
       const nextSlice = slices.find((s) => s.status === 'pending');
-      const preview = previewFor(slices.flatMap((s) => (s.prNumber !== null ? [s.prNumber] : [])));
+      const preview = previewFor([...slices.flatMap((s) => (s.prNumber !== null ? [s.prNumber] : [])), ...linked]);
+      let note: string | undefined;
+      if (!running && !blocked) {
+        if (tracked) note = movingPr ? prNote(movingPr) : nextSlice ? `por arrancar la slice ${nextSlice.index + 1}` : 'en curso';
+        else if (movingPr) note = prNote(movingPr);
+      }
       items.push({
         id,
         repo,
@@ -154,14 +182,16 @@ export function buildItems(repos: string[], runs: RunSummary[], github: Array<Re
         kind: 'issue',
         title: issue.title,
         url: issue.url,
-        status: running ? 'running' : blocked ? 'blocked' : 'waiting',
-        ...(!running && !blocked ? { note: movingPr ? prNote(movingPr) : nextSlice ? `por arrancar la slice ${nextSlice.index + 1}` : 'en curso' } : {}),
+        status: running ? 'running' : blocked ? 'blocked' : tracked || movingPr ? 'waiting' : itemRuns[0]?.state ?? 'open',
+        ...(note ? { note } : {}),
         ...(itemRuns[0] ? { lastRun: itemRuns[0] } : {}),
         runs: itemRuns.length,
-        slices,
+        ...(slices.length ? { slices } : {}),
         ...(movingPr ? { pr: prView(movingPr) } : {}),
         ...(preview ? { preview } : {}),
         ...(blocked && gh.blocks[issue.number] ? { block: gh.blocks[issue.number] } : {}),
+        listed: own !== undefined || itemRuns.length > 0,
+        ...(linked.length ? { prs: linked } : {}),
       });
     }
 
@@ -179,6 +209,8 @@ export function buildItems(repos: string[], runs: RunSummary[], github: Array<Re
         ...(itemRuns[0] ? { lastRun: itemRuns[0] } : {}),
         runs: itemRuns.length,
         pr: prView(pr),
+        listed: true,
+        pinned: true,
       });
     }
   }
@@ -203,6 +235,10 @@ export function buildItems(repos: string[], runs: RunSummary[], github: Array<Re
       lastRun: last,
       runs: itemRuns.length,
       ...(preview ? { preview } : {}),
+      // An issue ronin worked on lately (closed since, or in a repo GitHub
+      // couldn't be read for) is listed; a PR without an issue or a
+      // changelog entry only shows while it runs and in Hoy.
+      listed: last.issueNumber !== undefined,
     });
   }
 

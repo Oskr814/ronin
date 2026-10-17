@@ -388,12 +388,13 @@ export interface OpenPr {
   baseRefName: string;
   reviewDecision: PullRequestStatus['reviewDecision'];
   checks: Array<{ name: string; outcome: 'passed' | 'pending' | 'failed' }>;
+  mergeable?: 'MERGEABLE' | 'CONFLICTING' | 'UNKNOWN';
 }
 
 // Every open PR — ronin's and everyone else's — with its checks one by one.
 export async function listOpenPrsWithChecks(): Promise<OpenPr[]> {
-  const stdout = await gh(['pr', 'list', '--state', 'open', '--limit', String(PR_LIST_LIMIT), '--json', 'number,title,url,author,isDraft,headRefName,baseRefName,reviewDecision,statusCheckRollup']);
-  type Raw = { number: number; title: string; url: string; author: { login: string } | null; isDraft: boolean; headRefName: string; baseRefName: string; reviewDecision: PullRequestStatus['reviewDecision'] | null; statusCheckRollup: Array<RollupEntry & { name?: string }> };
+  const stdout = await gh(['pr', 'list', '--state', 'open', '--limit', String(PR_LIST_LIMIT), '--json', 'number,title,url,author,isDraft,headRefName,baseRefName,reviewDecision,statusCheckRollup,mergeable']);
+  type Raw = { number: number; title: string; url: string; author: { login: string } | null; isDraft: boolean; headRefName: string; baseRefName: string; reviewDecision: PullRequestStatus['reviewDecision'] | null; statusCheckRollup: Array<RollupEntry & { name?: string }>; mergeable?: OpenPr['mergeable'] };
   return (JSON.parse(stdout) as Raw[]).map((pr) => ({
     number: pr.number,
     title: pr.title,
@@ -404,7 +405,53 @@ export async function listOpenPrsWithChecks(): Promise<OpenPr[]> {
     baseRefName: pr.baseRefName,
     reviewDecision: pr.reviewDecision ?? '',
     checks: (pr.statusCheckRollup ?? []).map((c) => ({ name: c.name ?? c.context ?? '?', outcome: checkOutcome(c) })),
+    ...(pr.mergeable ? { mergeable: pr.mergeable } : {}),
   }));
+}
+
+export interface OpenIssue {
+  number: number;
+  title: string;
+  url: string;
+  labels: string[];
+}
+
+// Every open issue of the repo, ronin's or not: what the dashboard's search
+// looks through (#100).
+export async function listOpenIssues(): Promise<OpenIssue[]> {
+  const stdout = await gh(['issue', 'list', '--state', 'open', '--limit', '500', '--json', 'number,title,url,labels']);
+  return (JSON.parse(stdout) as Array<{ number: number; title: string; url: string; labels: Array<{ name: string }> }>)
+    .map((issue) => ({ number: issue.number, title: issue.title, url: issue.url, labels: issue.labels.map((l) => l.name) }));
+}
+
+const CLOSING_ISSUES_QUERY = `
+query($owner: String!, $repo: String!) {
+  repository(owner: $owner, name: $repo) {
+    pullRequests(states: OPEN, first: 100, orderBy: { field: CREATED_AT, direction: DESC }) {
+      nodes { number closingIssuesReferences(first: 5) { nodes { number } } }
+    }
+  }
+}`;
+
+// The issues each open PR closes ("Closes #N", or linked by hand), by PR
+// number. GraphQL: this gh's `pr list` doesn't know closingIssuesReferences.
+export async function listPrClosingIssues(): Promise<Record<number, number[]>> {
+  const [owner, repo] = activeRepo().productRepo.split('/');
+  type Raw = { data: { repository: { pullRequests: { nodes: Array<{ number: number; closingIssuesReferences: { nodes: Array<{ number: number }> } }> } } } };
+  const raw = JSON.parse(await ghApi(['api', 'graphql', '-f', `query=${CLOSING_ISSUES_QUERY}`, '-f', `owner=${owner}`, '-f', `repo=${repo}`])) as Raw;
+  return Object.fromEntries(raw.data.repository.pullRequests.nodes.map((pr) => [pr.number, pr.closingIssuesReferences.nodes.map((i) => i.number)]));
+}
+
+// Whether #number is an issue or a PR, open or closed; null if the repo has
+// neither. For opening by number something the dashboard doesn't list.
+export async function itemKindOf(number: number): Promise<'issue' | 'pr' | null> {
+  try {
+    const raw = JSON.parse(await ghApi(['api', `repos/${activeRepo().productRepo}/issues/${number}`])) as { pull_request?: unknown };
+    return raw.pull_request ? 'pr' : 'issue';
+  } catch (error) {
+    if (/HTTP 404|HTTP 410/.test((error as Error).message)) return null;
+    throw error;
+  }
 }
 
 // An issue or PR as the dashboard's item page shows it (#85): its body and

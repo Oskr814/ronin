@@ -609,3 +609,9 @@ button.brow:hover { background: var(--hover); }
   .tile:nth-child(n+3) { border-top: 1px solid var(--rule); }
   .brow { grid-template-columns: 110px minmax(0, 1fr) 24px; }
 }
+
+/* Sidebar of issues (#100) */
+.pin-ico { width: 13px; height: 13px; margin-top: 3px; flex: none; fill: none; stroke: var(--run); stroke-width: 1.8; stroke-linejoin: round; }
+.item.pinned .t { color: var(--ink); }
+.kid.hit { background: var(--run-bg); color: var(--ink); }
+.item.open-n .t { color: var(--run); }

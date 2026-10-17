@@ -15,7 +15,7 @@ function pr(fields: Partial<OpenPr>): OpenPr {
 }
 
 function github(fields: Partial<RepoGithub>): RepoGithub {
-  return { repo: REPO, fetchedAt: '2026-10-16T10:00:00Z', issues: [], prs: [], previews: [], blocks: {}, ...fields };
+  return { repo: REPO, fetchedAt: '2026-10-16T10:00:00Z', issues: [], openIssues: [], prs: [], prIssue: {}, previews: [], blocks: {}, ...fields };
 }
 
 const ISSUE_879 = {
@@ -26,6 +26,46 @@ const ISSUE_879 = {
     { index: 2, title: 'Liberar vencidas', checked: false, prNumber: null },
   ],
 };
+
+describe('buildItems — issues only (#100)', () => {
+  const OPEN = [{ number: 405, title: 'Exportar a Excel', url: 'u405', labels: [] }, { number: 406, title: 'Otro', url: 'u406', labels: [] }];
+
+  it("lists every open issue, but only ronin's and the ones it worked on without searching", () => {
+    const items = buildItems([REPO], [], [github({ issues: [ISSUE_879], openIssues: [{ number: 879, title: 'Validar stock y reservar', url: 'u', labels: ['ronin'] }, ...OPEN] })]);
+    expect(items.map((i) => [i.id, i.listed, i.status])).toEqual([
+      ['acme/product#879', true, 'waiting'],
+      ['acme/product#405', false, 'open'],
+      ['acme/product#406', false, 'open'],
+    ]);
+  });
+
+  it("puts a person's PR inside its issue, and a run on it makes the issue listed", () => {
+    const items = buildItems([REPO], [run({ runId: 'rv', taskType: 'external-review', prNumber: 920, startedAt: '2026-10-16T12:00:00Z' })], [github({
+      openIssues: OPEN,
+      prs: [pr({ number: 920, author: 'valeria', headRefName: 'feat/405-excel', checks: [{ name: 'ci', outcome: 'failed' }] })],
+      prIssue: { 920: 405 },
+    })]);
+    const issue = items.find((i) => i.id === 'acme/product#405')!;
+    expect(issue).toMatchObject({ listed: true, status: 'waiting', note: 'checks fallando en #920', pr: { number: 920, author: 'valeria' }, prs: [920], runs: 1, lastRun: { runId: 'rv' } });
+    expect(items.some((i) => i.id === 'acme/product#920')).toBe(false);
+  });
+
+  it('keeps the exploration PR pinned, a PR without an issue unlisted and a closed issue ronin worked on listed', () => {
+    const items = buildItems([REPO], [
+      run({ runId: 'a', taskType: 'external-review', prNumber: 722 }),
+      run({ runId: 'b', taskType: 'issue-request', issueNumber: 300 }),
+    ], [github({ prs: [pr({ number: 911, headRefName: 'ronin/exploration/2026-10-16' }), pr({ number: 722, headRefName: 'feat/scanner', author: 'oskr' })] })]);
+    expect(Object.fromEntries(items.map((i) => [i.id, [i.kind, i.listed, i.pinned ?? false]]))).toEqual({
+      'acme/product#911': ['pr', true, true],
+      'acme/product#722': ['pr', false, false],
+      'acme/product#300': ['issue', true, false],
+    });
+  });
+
+  it('says when the PR has conflicts', () => {
+    expect(prNote(pr({ number: 9, mergeable: 'CONFLICTING' }))).toBe('conflictos en #9');
+  });
+});
 
 describe('buildItems', () => {
   it("counts a run on a slice's PR alone as the issue's, not as an item of its own", () => {

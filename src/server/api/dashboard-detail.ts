@@ -33,19 +33,22 @@ export interface ItemDetail {
 
 const SLICE_BRANCH = /^ronin\/(\d+)\//;
 
-// What `number` is in this repo, from the cached repo read. `runKind`: what
-// its runs say it is, for one GitHub doesn't list (a human's PR, a closed
-// issue).
+// What `number` is in this repo, from the cached repo read: an open issue
+// brings its moving PR (a ronin issue's lowest open slice, anyone else's
+// first open PR); an open PR, the issue it belongs to (#100). `runKind`: what
+// its runs say it is, for one GitHub doesn't list (a closed issue, a merged PR).
 export function resolveItem(number: number, gh: RepoGithub | undefined, runKind?: 'issue' | 'pr'): ItemRef | null {
-  const issue = gh?.issues.find((i) => i.number === number);
-  if (issue) {
+  const own = gh?.issues.find((i) => i.number === number);
+  if (own || gh?.openIssues.some((i) => i.number === number)) {
     const open = new Set(gh!.prs.map((pr) => pr.number));
-    const moving = issue.slices.find((s) => !s.checked && s.prNumber !== null && open.has(s.prNumber));
-    return { kind: 'issue', number, ...(moving?.prNumber ? { pr: moving.prNumber } : {}) };
+    const moving = own
+      ? own.slices.find((s) => !s.checked && s.prNumber !== null && open.has(s.prNumber))?.prNumber
+      : gh!.prs.find((pr) => gh!.prIssue[pr.number] === number)?.number;
+    return { kind: 'issue', number, ...(moving ? { pr: moving } : {}) };
   }
   const pr = gh?.prs.find((p) => p.number === number);
   if (pr) {
-    const tracking = gh!.issues.find((i) => i.slices.some((s) => s.prNumber === number))?.number ?? Number(SLICE_BRANCH.exec(pr.headRefName)?.[1] ?? NaN);
+    const tracking = gh!.prIssue[number] ?? Number(SLICE_BRANCH.exec(pr.headRefName)?.[1] ?? NaN);
     return { kind: 'pr', number, ...(Number.isInteger(tracking) ? { issue: tracking } : {}) };
   }
   return runKind ? { kind: runKind, number } : null;
