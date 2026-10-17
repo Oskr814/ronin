@@ -29,12 +29,12 @@ const alive = (pid: number) => {
 const GRACE_MS = 2 * 60_000;
 
 // The tick's reconciliation: a request still 'thinking', 'minor' (its
-// prototype on the way), or approved or the team's without its issue yet,
+// prototype on the way), 'reproducing' (#137), or approved or the team's without its issue yet,
 // whose worker is gone (the server restarted
 // mid-launch, the runner rebooted) gets a new one.
 export async function sweepPortalRequests(now = Date.now(), launch: (n: number, by: 'tick') => Promise<void> = launchPortalWorker): Promise<void> {
   for (const request of await listRequests()) {
-    if (!(request.status === 'thinking' || request.status === 'minor' || needsIssue(request))) continue;
+    if (!(request.status === 'thinking' || request.status === 'minor' || request.status === 'reproducing' || needsIssue(request))) continue;
     if (request.worker && (alive(request.worker.pid) || now - Date.parse(request.worker.since) < GRACE_MS)) continue;
     if (!request.worker && now - Date.parse(request.updatedAt) < GRACE_MS) continue;
     log.info(`portal: el pedido P-${request.number} quedó sin quien lo lea; lanzo otro worker`);

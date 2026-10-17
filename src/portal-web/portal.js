@@ -124,6 +124,7 @@ const STATUS = {
   answered: ['idle', 'Respondido'],
   minor: ['run', 'Preparando prototipo'],
   proposed: ['warn', 'Prototipo listo'],
+  reproducing: ['run', 'Reproduciendo el error'],
   approved: ['run', 'En desarrollo'],
   done: ['ok', 'Listo'],
   resolved: ['ok', 'Resuelto'],
@@ -134,6 +135,7 @@ const STATUS = {
 const CLOSED = {
   thinking: 'ronin está revisando tu pedido. Puedes cerrar la página: te avisamos por correo.',
   minor: 'ronin está armando el prototipo. Puedes cerrar la página: te avisamos por correo cuando esté listo.',
+  reproducing: 'ronin está reproduciendo el error. Puedes cerrar la página: te avisamos por correo.',
   approved: 'Aprobaste el prototipo. ronin hace el cambio y una persona del equipo lo revisa; te avisamos por correo cuando esté listo.',
   done: 'Listo: el cambio sale en la próxima actualización de la aplicación.',
   resolved: 'El equipo de desarrollo resolvió este pedido.',
@@ -144,6 +146,7 @@ const CLOSED = {
 const WORKING = {
   thinking: ['ronin está revisando tu pedido…', 'Lee lo que escribiste y revisa la aplicación. Suele tardar unos minutos.'],
   minor: ['ronin está armando el prototipo…', 'Abre la aplicación, hace el cambio de prueba y toma capturas de antes y después. Suele tardar entre 5 y 15 minutos.'],
+  reproducing: ['ronin está reproduciendo el error…', 'Abre una copia de la aplicación con datos de prueba y sigue tus pasos. Suele tardar entre 5 y 15 minutos.'],
 };
 const POLL_MS = 4000;
 const hhmm = (iso) => new Date(iso).toLocaleString('es', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
@@ -190,9 +193,9 @@ function newHTML() {
   const body = apps.length ? `<h3>¿En qué aplicación es el cambio?</h3>
     <p>Solo ves las que el equipo te habilitó.</p>
     <div class="projects">${apps.map((a) => `<button class="proj" data-app="${esc(key(a))}" aria-pressed="${key(a) === S.picked}"><span class="org">${esc(a.org)}</span><b>${esc(a.name)}</b>${a.description ? `<span>${esc(a.description)}</span>` : ''}</button>`).join('')}</div>
-    <div class="note"><b>Qué se puede pedir aquí:</b> ajustes chicos sobre lo que ya existe: un texto, un enlace, un dato que falta en una pantalla, algo que se ve mal en el teléfono.
+    <div class="note"><b>Qué se puede pedir aquí:</b> ajustes chicos sobre lo que ya existe: un texto, un enlace, un dato que falta en una pantalla, algo que se ve mal en el teléfono. También puedes reportar algo que no funciona: ronin intenta reproducirlo.
       Lo que sea un proyecto o una función nueva lo recibe el equipo de desarrollo, y te avisamos cuando esté resuelto.</div>
-    <ul class="tips"><li>Cuenta qué quieres cambiar y en qué pantalla.</li><li>Pega o arrastra capturas: ayudan mucho.</li><li>ronin te puede hacer preguntas antes de proponer el cambio.</li></ul>`
+    <ul class="tips"><li>Cuenta qué quieres cambiar y en qué pantalla.</li><li>Si es algo que no funciona, cuenta qué hiciste, qué esperabas y qué pasó.</li><li>Pega o arrastra capturas: ayudan mucho.</li><li>ronin te puede hacer preguntas antes de proponer el cambio.</li></ul>`
     : '<h3>Todavía no tienes aplicaciones habilitadas</h3><p>Pídele al equipo de desarrollo que te habilite las aplicaciones en las que necesitas pedir ajustes.</p>';
   const composer = !apps.length ? ''
     : left === 0 ? `<div class="closed-bar">Llegaste al tope de ${S.me.today.limit} pedidos por hoy. Mañana puedes enviar más.</div>`

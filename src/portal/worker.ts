@@ -3,7 +3,8 @@
 // the tick when the one before died. Reading it waits for a slot of the
 // runner's shared quota like any other agent run; a small change then waits
 // for the repo's prototype lock (one app stack at a time, shared with the
-// issues' /prototype) and gets its prototype. An approved one, or one the
+// issues' /prototype) and gets its prototype, and a reported error waits
+// for it too and gets reproduced (#137). An approved one, or one the
 // team takes, gets its issue in the product repo (issue.ts). Holds the
 // request's lock throughout, so two workers never work the same request.
 import { config } from '../core/config.js';
@@ -15,6 +16,7 @@ import { releasePrototypeLock, waitForPrototypeLock } from '../commands/prototyp
 import { classifyRequest } from './classify.js';
 import { needsIssue, openPortalIssue } from './issue.js';
 import { prototypeRequest } from './prototype.js';
+import { reproduceRequest } from './reproduce.js';
 import { addEvent, addRoninMessage, errorLine, getRequest, noteEvent, updateRequest } from './requests.js';
 
 const { number } = JSON.parse(process.argv[2] ?? '{}') as { number?: number };
@@ -23,18 +25,25 @@ const claim = (n: number) => updateRequest(n, (r) => {
   r.worker = { pid: process.pid, since: new Date().toISOString() };
 });
 
-async function prototype(n: number): Promise<void> {
+// What brings the app up: a prototype or a reproduction, one at a time per
+// repo.
+const ON_APP = {
+  prototype: { run: prototypeRequest, waiting: 'Sigo esperando turno para armar tu prototipo: hay otros en curso. Lo intento de nuevo en un rato.', what: 'el prototipo' },
+  reproduce: { run: reproduceRequest, waiting: 'Sigo esperando turno para reproducir el error: hay otras copias de la aplicación en curso. Lo intento de nuevo en un rato.', what: 'la reproducción' },
+} as const;
+
+async function onApp(n: number, step: keyof typeof ON_APP): Promise<void> {
   await claim(n);
   if (!(await waitForPrototypeLock({ onWait: () => noteEvent(n, { kind: 'waiting', for: 'prototype-lock' }) }))) {
     await updateRequest(n, (r) => {
-      addRoninMessage(r, 'Sigo esperando turno para armar tu prototipo: hay otros en curso. Lo intento de nuevo en un rato.');
-      addEvent(r, { kind: 'failed', step: 'prototype', error: 'sin turno para el prototipo después de esperar 3 horas' });
+      addRoninMessage(r, ON_APP[step].waiting);
+      addEvent(r, { kind: 'failed', step, error: `sin turno para ${ON_APP[step].what} después de esperar 3 horas` });
       delete r.worker;
     });
     return;
   }
   try {
-    await prototypeRequest(n);
+    await ON_APP[step].run(n);
   } finally {
     await releasePrototypeLock();
   }
@@ -42,7 +51,7 @@ async function prototype(n: number): Promise<void> {
 
 async function main(): Promise<void> {
   const request = number ? await getRequest(number) : undefined;
-  if (!request || !(request.status === 'thinking' || request.status === 'minor' || needsIssue(request))) return;
+  if (!request || !(request.status === 'thinking' || request.status === 'minor' || request.status === 'reproducing' || needsIssue(request))) return;
   const entry = (await loadRepos()).find((r) => r.productRepo === request.repo);
   if (!entry) throw new Error(`${request.repo} no está en repos.json`);
   const n = request.number;
@@ -54,7 +63,9 @@ async function main(): Promise<void> {
         await claim(n);
         await withSlots('portal-request', config.tickConcurrency, {}, () => classifyRequest(n), `pedido P-${n}`);
       }
-      if ((await getRequest(n))?.status === 'minor') await prototype(n);
+      const next = (await getRequest(n))?.status;
+      if (next === 'minor') await onApp(n, 'prototype');
+      if (next === 'reproducing') await onApp(n, 'reproduce');
       // Approved, or the team's now: its issue.
       const now = await getRequest(n);
       if (now && needsIssue(now)) {

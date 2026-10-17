@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import type { RepoEntry } from '../../core/repo-context.js';
 import type { PortalUser } from '../../portal/accounts.js';
-import { prototypePatchPath, requestImagePath, type PortalMessage, type PortalRequest, type RequestEvent } from '../../portal/requests.js';
+import { prototypePatchPath, requestImagePath, type PortalMessage, type PortalRequest, type RequestEvent, type Verdict } from '../../portal/requests.js';
 import type { RunSummary } from './dashboard-data.js';
 
 // The request portal's requests on the dashboard (#132): every one of the
@@ -11,7 +11,8 @@ import type { RunSummary } from './dashboard-data.js';
 // events and its runs) and, once it has them, its issue's and PR's runs.
 
 // Who it waits on now: the person (to answer or decide), ronin (reading it,
-// drawing a prototype, opening its issue, making the change) or the dev
+// drawing a prototype, reproducing an error, opening its issue, making the
+// change) or the dev
 // team (its issue, or approving the PR). Null: nobody — closed, or ronin
 // answered and the person may write again if they want.
 export type WaitsOn = 'person' | 'ronin' | 'team' | null;
@@ -20,6 +21,7 @@ export function waitsOn(r: Pick<PortalRequest, 'status' | 'issue' | 'pr'>): Wait
   switch (r.status) {
     case 'thinking':
     case 'minor':
+    case 'reproducing':
       return 'ronin';
     case 'asking':
     case 'proposed':
@@ -62,7 +64,7 @@ export interface RequestRow {
   prototypes: number;
   questions: number;
   decision?: 'approved' | 'rejected';
-  verdict?: 'minor' | 'big';
+  verdict?: Verdict['kind'];
   createdAt: string;
   // Its last change or its last run's, whichever is later.
   lastAt: string;

@@ -200,11 +200,26 @@ export class PrototypeDeclined extends Error {}
 export type PrototypeTaskBase = Omit<Extract<AgentTask, { type: 'prototype' }>, 'type' | 'issueNumber' | 'instruction'>;
 
 export interface PrototypeTarget {
-  // Names the checkout, the app instance and the output dir: issue-<n> or
-  // portal-p-<n>, never shared between two prototypes.
+  // Names the checkout, the app instance and the output dir: issue-<n>,
+  // portal-p-<n> or portal-r-<n>, never shared between two runs.
   key: string;
   appName: string;
-  task: (base: PrototypeTaskBase) => AgentTask;
+  // `compose`: the docker compose command of the app's stack, for a task
+  // that runs tests in it (a portal reproduction, #137).
+  task: (base: PrototypeTaskBase, extra: { compose: string }) => AgentTask;
+}
+
+// What a run on the app left, for whoever reads its result: while it lasts,
+// its output dir and checkout still exist.
+export interface AppRun {
+  appName: string;
+  dir: string;
+  outDir: string;
+  outputPath: string;
+  // What the app's own startup changed, left out of the diff.
+  generated: string[];
+  // A screenshot or an HTML file the agent named, as an image file.
+  shot: (path: string, name: string) => Promise<{ path: string; viewport: 'desktop' | 'mobile' }>;
 }
 
 // Detached at the base branch, fresh every time: a prototype starts from
@@ -246,10 +261,10 @@ export async function draftDiff(dir: string, generated: string[] = []): Promise<
   return stdout.trim();
 }
 
-// Brings the app up from a fresh checkout, lets the agent take the before,
-// make the draft and take the after, and hands the result to `deliver`
-// while its images still exist: everything is thrown away right after.
-export async function makePrototype<T>(target: PrototypeTarget, deliver: (draft: PrototypeDraft) => Promise<T>): Promise<T> {
+// Brings the app up from a fresh checkout, with one logged-in browser per
+// role and viewport, runs the agent on it and hands what it left to
+// `collect`: everything is thrown away right after.
+export async function runOnApp<T>(target: PrototypeTarget, collect: (run: AppRun) => Promise<T>): Promise<T> {
   const { key, appName } = target;
   const dir = await freshWorktree(key);
   const outDir = join(activeRepo().worktreeBasePath, 'prototype-out', `${key}-${Date.now()}`);
@@ -279,39 +294,45 @@ export async function makePrototype<T>(target: PrototypeTarget, deliver: (draft:
       baseUrl: session.baseUrl,
       homePath: app.homePath ?? '/',
       browsers,
-    }));
-    const output = parsePrototypeResult(await readFile(outputPath, 'utf8'), outDir);
-    if ('error' in output) throw new PrototypeDeclined(output.error);
+    }, { compose: session.ctx.compose }));
     // A screenshot lands in the folder of the browser that took it; an HTML
-    // after sits at the top of outDir and renders at desktop size.
-    const viewportOf = (path: string): 'desktop' | 'mobile' => {
+    // file sits at the top of outDir and renders at desktop size.
+    const shot = async (path: string, name: string) => {
       const folder = basename(join(path, '..'));
-      return browsers.find((b) => b.server === folder)?.viewport ?? 'desktop';
+      const viewport = browsers.find((b) => b.server === folder)?.viewport ?? 'desktop';
+      if (!/\.html?$/i.test(path)) return { path, viewport };
+      const png = join(outDir, `${name}-render.png`);
+      await renderHtmlToPng(path, png, app.viewports[viewport]);
+      return { path: png, viewport };
     };
-    const shots = { antes: [] as PrototypeShot[], despues: [] as PrototypeShot[] };
-    for (const kind of ['antes', 'despues'] as const) {
-      for (const [i, shot] of output[kind].entries()) {
-        const viewport = viewportOf(shot.imagen);
-        let path = shot.imagen;
-        if (/\.html?$/i.test(path)) {
-          path = join(outDir, `${kind}-${i + 1}-render.png`);
-          await renderHtmlToPng(shot.imagen, path, app.viewports[viewport]);
-        }
-        shots[kind].push({ path, viewport, ...(shot.nota ? { nota: shot.nota } : {}) });
-      }
-    }
-    return await deliver({
-      appName,
-      resumen: output.resumen,
-      ...(output.mensaje ? { mensaje: output.mensaje } : {}),
-      ...shots,
-      patch: await draftDiff(dir, generated),
-    });
+    return await collect({ appName, dir, outDir, outputPath, generated, shot });
   } finally {
     await appDown(dir);
     await removeWorktreeDir(dir, 'prototype');
     await rm(outDir, { recursive: true, force: true }).catch(() => {});
   }
+}
+
+// A prototype: the agent takes the before, makes the draft and takes the
+// after, and `deliver` gets them while the images still exist.
+export function makePrototype<T>(target: PrototypeTarget, deliver: (draft: PrototypeDraft) => Promise<T>): Promise<T> {
+  return runOnApp(target, async (run) => {
+    const output = parsePrototypeResult(await readFile(run.outputPath, 'utf8'), run.outDir);
+    if ('error' in output) throw new PrototypeDeclined(output.error);
+    const shots = { antes: [] as PrototypeShot[], despues: [] as PrototypeShot[] };
+    for (const kind of ['antes', 'despues'] as const) {
+      for (const [i, image] of output[kind].entries()) {
+        shots[kind].push({ ...(await run.shot(image.imagen, `${kind}-${i + 1}`)), ...(image.nota ? { nota: image.nota } : {}) });
+      }
+    }
+    return deliver({
+      appName: run.appName,
+      resumen: output.resumen,
+      ...(output.mensaje ? { mensaje: output.mensaje } : {}),
+      ...shots,
+      patch: await draftDiff(run.dir, run.generated),
+    });
+  });
 }
 
 async function publishImages(issueNumber: number, draft: PrototypeDraft): Promise<{ antes: PublishedImage[]; despues: PublishedImage[] }> {

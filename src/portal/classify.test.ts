@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { applyResult, MAX_QUESTIONS, NEXT_STEP, parsePortalResult } from './classify.js';
-import { MAX_PROTOTYPES, type PortalRequest } from './requests.js';
+import { MAX_PROTOTYPES, MAX_REPRODUCTIONS, type PortalRequest } from './requests.js';
 
 vi.mock('../core/logger.js', () => ({ log: { info: vi.fn(), error: vi.fn() } }));
 
@@ -25,6 +25,13 @@ describe('parsePortalResult', () => {
 
   it('a small change without what the prototype needs goes to the team', () => {
     expect(parsePortalResult(json({ accion: 'menor', mensaje: 'Sí se puede.', propuesta: 'Un enlace' }), 0)).toMatchObject({ accion: 'grande', motivo: expect.any(String) });
+  });
+
+  it('an error needs its steps to reproduce it, and goes to the team once out of tries (#137)', () => {
+    expect(parsePortalResult(json({ accion: 'error', mensaje: 'Gracias por avisar.', pasos: 'Sales, Gestionar Pedidos, hasta 16/10' }), 0)).toMatchObject({ accion: 'error', pasos: 'Sales, Gestionar Pedidos, hasta 16/10' });
+    expect(parsePortalResult(json({ accion: 'error', mensaje: 'Gracias por avisar.' }), 0)).toMatchObject({ accion: 'grande', motivo: 'No quedó claro cómo reproducir el error.' });
+    expect(parsePortalResult(json({ accion: 'error', mensaje: 'Va otra vez.', pasos: 'p' }), 1, 0, MAX_REPRODUCTIONS - 1).accion).toBe('error');
+    expect(parsePortalResult(json({ accion: 'error', mensaje: 'Va otra vez.', pasos: 'p' }), 1, 0, MAX_REPRODUCTIONS)).toMatchObject({ accion: 'grande', motivo: 'No se pudo reproducir con datos de prueba.' });
   });
 
   it('a question past the limit goes to the team', () => {
@@ -71,6 +78,18 @@ describe('applyResult', () => {
     applyResult(adjusted, { accion: 'menor', mensaje: 'Va.', propuesta: 'Más grande', instruccion: 'i2' });
     expect(adjusted).toMatchObject({ status: 'minor', verdict: { instruction: 'i2' } });
     expect(adjusted.messages.at(-1)?.text).toContain(NEXT_STEP.otra);
+  });
+
+  it('an error is reproduced next, keeping the tries before it (#137)', () => {
+    const r = request();
+    applyResult(r, { accion: 'error', mensaje: 'Gracias por avisar.', pasos: 'Sales, Gestionar Pedidos, hasta 16/10: faltan los del 16', resumen: 'FilterByDateRange' });
+    expect(r).toMatchObject({ status: 'reproducing', verdict: { kind: 'error', summary: 'FilterByDateRange' }, bug: { steps: 'Sales, Gestionar Pedidos, hasta 16/10: faltan los del 16', reproductions: [] }, events: [{ kind: 'classified', verdict: 'error' }] });
+    expect(r.worker).toBeUndefined();
+    expect(r.messages.at(-1)?.text).toBe(`Gracias por avisar.\n\n${NEXT_STEP.error}`);
+    const again = request();
+    again.bug = { steps: 'antes', reproductions: [{ round: 1, reproduced: false, steps: [], summary: 's', messageId: 2, at: '' }] };
+    applyResult(again, { accion: 'error', mensaje: 'Lo intento con el 1498.', pasos: 'el pedido 1498' });
+    expect(again.bug).toMatchObject({ steps: 'el pedido 1498', reproductions: [{ round: 1 }] });
   });
 
   it('a big one goes to the team with its reason', () => {

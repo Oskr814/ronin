@@ -90,6 +90,11 @@ describe('portal requests', () => {
     await updateRequest(r.number, (x) => { x.status = 'minor'; });
     await sweepPortalRequests(later, launch);
     expect(launch).toHaveBeenCalledWith(r.number, 'tick');
+    // And one whose reported error was being reproduced (#137).
+    launch.mockClear();
+    await updateRequest(r.number, (x) => { x.status = 'reproducing'; });
+    await sweepPortalRequests(later, launch);
+    expect(launch).toHaveBeenCalledWith(r.number, 'tick');
     // And an approved one still without its issue, not one that has it.
     launch.mockClear();
     await updateRequest(r.number, (x) => { x.status = 'approved'; });

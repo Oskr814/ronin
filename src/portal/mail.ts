@@ -99,7 +99,9 @@ export function bigRequestMail(request: PortalRequest, user: PortalUser, portalU
     `Hola ${first},`,
     request.decision?.kind === 'rejected'
       ? `Le enviamos tu pedido P-${request.number} ("${request.title}") al equipo de desarrollo, con tu descripción y lo que conversamos sobre el prototipo.`
-      : `Tu pedido P-${request.number} ("${request.title}") necesita más trabajo que un ajuste chico, así que se lo enviamos al equipo de desarrollo con tu descripción y tus imágenes.`,
+      : request.bug
+        ? `Le enviamos el error que reportaste en P-${request.number} ("${request.title}") al equipo de desarrollo, con tu descripción, tus imágenes y lo que encontró ronin al intentar reproducirlo.`
+        : `Tu pedido P-${request.number} ("${request.title}") necesita más trabajo que un ajuste chico, así que se lo enviamos al equipo de desarrollo con tu descripción y tus imágenes.`,
     'Te escribimos cuando esté resuelto.',
   ];
   const url = requestUrl(portalUrl, request.number);
@@ -170,12 +172,14 @@ const MAX_PATCH = 30_000;
 function teamKind(request: PortalRequest): string {
   if (request.status === 'approved') return 'prototipo aprobado';
   if (request.decision?.kind === 'rejected') return 'prototipo no aprobado';
+  if (request.bug) return request.bug.reproductions.at(-1)?.reproduced ? 'error reproducido' : 'error sin reproducir';
   return request.verdict?.kind === 'minor' ? 'ajuste chico' : 'pedido grande';
 }
 
 // To the dev team (teamTo in notify.ts): a request that's theirs now (too big, or
 // its prototype turned down or impossible), with its issue and its
-// conversation. `patch` is the last prototype's diff.
+// conversation. `patch` is the last prototype's diff, or a reported error's
+// last reproduction's.
 export function teamRequestMail(request: PortalRequest, user: PortalUser | undefined, to: string, dataDir: string, patch?: string): Mail {
   const kind = teamKind(request);
   const who = user ? `${user.name} <${user.email}>` : request.userId;
@@ -184,19 +188,25 @@ export function teamRequestMail(request: PortalRequest, user: PortalUser | undef
     .join('\n\n');
   const v = request.verdict;
   const last = request.prototypes?.at(-1);
+  const repro = request.bug?.reproductions.at(-1);
+  const test = repro?.test;
   const text = [
     `Pedido P-${request.number} del portal: ${request.title}`,
     `De: ${who}`,
     `App: ${request.repo} · ${request.app}`,
     request.issue ? `Issue: ${request.issue.url}` : null,
-    request.status === 'approved' || request.decision ? `La persona vio ${request.prototypes?.length === 1 ? 'el prototipo' : `${request.prototypes?.length ?? 0} prototipos`}: ${kind}.` : `ronin lo clasificó como ${kind}.`,
+    request.bug ? `Es un reporte de error; ronin ${repro ? `intentó reproducirlo ${request.bug.reproductions.length === 1 ? 'una vez' : `${request.bug.reproductions.length} veces`}` : 'no llegó a reproducirlo'}.` : request.status === 'approved' || request.decision ? `La persona vio ${request.prototypes?.length === 1 ? 'el prototipo' : `${request.prototypes?.length ?? 0} prototipos`}: ${kind}.` : `ronin lo clasificó como ${kind}.`,
     v?.proposal ? `Propuesta: ${v.proposal}` : null,
     v?.reason ? `Motivo: ${v.reason}` : null,
     v?.summary ? `Resumen técnico:\n${v.summary}` : null,
     last ? `El prototipo ${last.round}:\n${last.summary}` : null,
+    request.bug?.steps ? `Cómo reproducirlo, según ronin:\n${request.bug.steps}` : null,
+    repro?.steps.length ? `Lo que hizo ronin:\n${repro.steps.map((step, i) => `${i + 1}. ${step}`).join('\n')}` : null,
+    repro?.summary ? `${repro.reproduced ? 'Causa' : 'Lo que sospecha ronin'}:\n${repro.summary}` : null,
+    test ? `Test (${test.kind === 'e2e' ? 'e2e' : 'directo'}): ${test.name}${test.file ? ` en ${test.file}` : ''}, ${test.red ? (test.green ? 'rojo sin el arreglo y verde con él' : 'rojo en la rama base') : 'no falla con datos de prueba'}.` : null,
     `Conversación:\n\n${conversation}`,
-    request.messages.some((m) => m.images.length) || last ? `Las imágenes${last?.patch ? ' y los diffs de los prototipos' : ''} están en el runner, en ${dataDir}.` : null,
-    patch ? `Diff del prototipo ${last?.round ?? ''}:\n\n${patch.length > MAX_PATCH ? `${patch.slice(0, MAX_PATCH)}\n… (recortado)` : patch}` : null,
+    request.messages.some((m) => m.images.length) || last || repro ? `Las imágenes${last?.patch || repro?.patch ? ` y los diffs de ${repro ? 'las reproducciones' : 'los prototipos'}` : ''} están en el runner, en ${dataDir}.` : null,
+    patch ? `Diff ${repro ? 'de la reproducción' : `del prototipo ${last?.round ?? ''}`}:\n\n${patch.length > MAX_PATCH ? `${patch.slice(0, MAX_PATCH)}\n… (recortado)` : patch}` : null,
   ].filter(Boolean).join('\n\n');
   return { to, subject: `[ronin] Pedido P-${request.number} del portal (${kind}): ${request.title}`, text };
 }
