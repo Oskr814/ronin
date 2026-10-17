@@ -8,7 +8,10 @@
     "changelogRepoPath": "/home/link/RM/changelog",
     "explore": [
       "backoffice"
-    ]
+    ],
+    "linear": {
+      "apiKeyEnv": "LINEAR_API_KEY_REDMOTOS"
+    }
   },
   {
     "productRepo": "Oskr814/repo-b",

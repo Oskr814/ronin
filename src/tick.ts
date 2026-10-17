@@ -1,5 +1,6 @@
 import { markProcessed } from './core/processed-comments.js';
 import { linearIdInPr, linearRefFrom, withLinearLink } from './core/linear.js';
+import { currentCycle, linearKey } from './core/linear-api.js';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
@@ -1139,6 +1140,26 @@ function numbersOf(resources: string[], prefix: 'pr' | 'issue'): number[] {
   return resources.flatMap((r) => (r.startsWith(`${prefix}-`) ? [Number(r.slice(prefix.length + 1))] : []));
 }
 
+// The issues of the repo's current Linear cycle first (#101), each group in
+// its usual order: when there are more issues than slots
+// (TICK_CONCURRENCY), the cycle's get them first. Only on the cron pass — an
+// event's run is about one issue anyway. Without a Linear key, or if Linear
+// fails, the order stays as it was.
+export async function cycleFirst(issues: TrackingIssue[]): Promise<TrackingIssue[]> {
+  const key = linearKey(activeRepo());
+  if (!key || issues.length < 2) return issues;
+  try {
+    const cycle = await currentCycle(activeRepo(), key);
+    const inCycle = new Set(cycle?.issues.flatMap((i) => (i.githubNumber !== undefined ? [i.githubNumber] : [])) ?? []);
+    const first = issues.filter((i) => inCycle.has(i.number));
+    if (first.length > 0) log.info(`ciclo ${cycle!.number} de Linear: primero ${first.map((i) => `#${i.number}`).join(', ')}`);
+    return [...first, ...issues.filter((i) => !inCycle.has(i.number))];
+  } catch (error) {
+    log.info(`Linear: no se pudo leer el ciclo actual, sigue el orden de siempre (${(error as Error).message.split('\n')[0]})`);
+    return issues;
+  }
+}
+
 async function tickOneRepo(scope?: Scope): Promise<void> {
   const start = Date.now();
   resetTickMetrics();
@@ -1186,7 +1207,10 @@ async function tickOneRepo(scope?: Scope): Promise<void> {
       for (const issue of justStarted) {
         if (!inProgress.some((i) => i.number === issue.number)) inProgress.push(issue);
       }
-      if (!scope) log.info(`${inProgress.length} issue(s) en progreso`);
+      if (!scope) {
+        inProgress = await cycleFirst(inProgress);
+        log.info(`${inProgress.length} issue(s) en progreso`);
+      }
       // One batched read for every issue's stack instead of a `gh pr list` +
       // a `gh pr view` per PR per issue — see
       // docs/superpowers/specs/2026-08-01-pr-list-batching-design.md. Without

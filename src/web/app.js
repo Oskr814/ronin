@@ -58,7 +58,12 @@ function duration(ms) {
 const money = (usd) => (usd < 0.01 ? 'menos de US$0,01' : `US$${usd.toFixed(2).replace('.', ',')}`);
 const pct = (fraction) => `${Math.round(fraction * 100)}%`;
 
-const S = { snap: null, today: null, sel: null, open: [], runIdx: {}, pendingRun: null, filter: null, q: '', itemRuns: {}, run: null, stream: null, detail: {}, view: {}, doc: {}, menu: false, dialog: null, expanded: new Set(), expl: {}, ficha: {}, fichaOpen: {}, fichaFilter: { tipo: 'todas', vp: 'todos' }, antes: {}, oldAfter: new Set(), lightbox: null, fmenu: false, fdialog: null, fdraft: {}, listas: {} };
+const S = { snap: null, today: null, sel: null, open: [], runIdx: {}, pendingRun: null, filter: null, q: '', itemRuns: {}, run: null, stream: null, detail: {}, view: {}, doc: {}, menu: false, dialog: null, expanded: new Set(), expl: {}, ficha: {}, fichaOpen: {}, fichaFilter: { tipo: 'todas', vp: 'todos' }, antes: {}, oldAfter: new Set(), lightbox: null, fmenu: false, fdialog: null, fdraft: {}, listas: {}, scope: 'all', project: '', attAll: false };
+// The sidebar's Linear filter (#101), remembered per browser.
+try { Object.assign(S, JSON.parse(localStorage.getItem('ronin-scope') ?? '{}')); } catch { /* sin storage */ }
+function saveScope() {
+  try { localStorage.setItem('ronin-scope', JSON.stringify({ scope: S.scope, project: S.project })); } catch { /* sin storage */ }
+}
 const DETAIL_EVERY_MS = 30_000;
 const WAITING_EVERY_MS = 10_000;
 
@@ -85,6 +90,25 @@ const repoIndex = (repo) => Math.max(0, (S.snap?.repos ?? []).indexOf(repo));
 const repoColor = (repo) => `var(--repo-${repoIndex(repo) % 4})`;
 const repoShort = (repo) => repo.split('/')[1] ?? repo;
 const itemById = (id) => S.snap?.items.find((item) => item.id === id);
+
+// ---------- Linear (#101)
+const LIN_ICON = '<svg width="12" height="12" viewBox="0 0 100 100" aria-hidden="true" style="vertical-align:-1px;flex:none"><path fill="currentColor" d="M1.2 61.5a50 50 0 0 0 37.3 37.3zM.1 48.9l51 51a50 50 0 0 0 9.3-1.4L1.5 39.6A50 50 0 0 0 .1 48.9zm3.6-17.8 65.2 65.2a50 50 0 0 0 7.2-3.9L7.6 23.9a50 50 0 0 0-3.9 7.2zm8.4-12.2a50 50 0 1 1 69 69z"/></svg>';
+const cycleName = (c) => c.name || `Ciclo ${c.number}`;
+const linearRepos = () => S.snap?.linear ?? [];
+const currentCycleOf = (repo) => linearRepos().find((l) => l.repo === repo)?.cycle ?? null;
+const dayMonth = (iso) => new Date(iso).toLocaleDateString('es', { day: 'numeric', month: 'short' }).replace('.', '');
+const safeLinear = (url) => typeof url === 'string' && url.startsWith('https://linear.app/');
+// A project's color follows the project, never its rank: the projects known
+// to the page in name order, the first four with a color each, the rest gray.
+function projectColor(id) {
+  const names = new Map();
+  for (const item of S.snap?.items ?? []) if (item.linear?.project) names.set(item.linear.project.id, item.linear.project.name);
+  for (const c of S.today?.cycles ?? []) for (const i of c.issues) if (i.project) names.set(i.project.id, i.project.name);
+  const order = [...names].sort((a, b) => a[1].localeCompare(b[1], 'es')).map(([pid]) => pid);
+  const k = order.indexOf(id);
+  return k >= 0 && k < 4 ? `var(--proj-${k})` : 'var(--proj-other)';
+}
+const inScope = (item) => (S.scope !== 'cycle' || item.linear?.cycle?.current) && (!S.project || item.linear?.project?.id === S.project);
 
 function itemRef(item) {
   if (item.kind === 'issue') return `#${item.number}`;
@@ -120,6 +144,7 @@ function renderQuick() {
     <button data-filter="running" aria-pressed="${S.filter === 'running'}"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg>Corriendo ahora<span class="c">${running}</span></button>
     <button data-filter="queue" aria-pressed="${S.filter === 'queue'}"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg>En cola<span class="c">${queued}</span></button>`;
   $('#quick').querySelector('[data-home]').onclick = goHome;
+  renderScope();
   for (const button of $('#quick').querySelectorAll('[data-filter]')) {
     button.onclick = () => {
       S.filter = S.filter === button.dataset.filter ? null : button.dataset.filter;
@@ -127,6 +152,40 @@ function renderQuick() {
       renderTree();
     };
   }
+}
+
+// Linear's filter: the current cycle or everything, and a project. Only for
+// repos with a Linear key; the cycle is the first one's.
+function renderScope() {
+  const el = $('#scope');
+  const linear = linearRepos();
+  if (!linear.length) {
+    el.hidden = true;
+    return;
+  }
+  const cycle = linear.find((l) => l.cycle)?.cycle;
+  if (!cycle && S.scope === 'cycle') S.scope = 'all';
+  const inCycle = S.snap.items.filter((item) => item.linear?.cycle?.current).length;
+  const projects = new Map();
+  for (const item of S.snap.items) if (item.linear?.project) projects.set(item.linear.project.id, item.linear.project.name);
+  if (S.project && !projects.has(S.project)) projects.set(S.project, 'Proyecto filtrado');
+  el.hidden = false;
+  el.innerHTML = `<div class="lbl">${LIN_ICON} Linear${linear[0].workspace ? ` · ${esc(linear[0].workspace)}` : ''}${linear.some((l) => l.error) ? ' · <span class="bad">no se pudo leer</span>' : ''}</div>
+    ${cycle ? `<div class="seg"><button data-scope="cycle" aria-pressed="${S.scope === 'cycle'}">${esc(cycleName(cycle))} · ${inCycle}</button><button data-scope="all" aria-pressed="${S.scope !== 'cycle'}">Todos</button></div>` : ''}
+    <select id="proj" aria-label="Proyecto de Linear"><option value="">Todos los proyectos</option>${[...projects].sort((a, b) => a[1].localeCompare(b[1], 'es')).map(([id, name]) => `<option value="${esc(id)}" ${S.project === id ? 'selected' : ''}>${esc(name)}</option>`).join('')}</select>`;
+  for (const button of el.querySelectorAll('[data-scope]')) {
+    button.onclick = () => {
+      S.scope = button.dataset.scope;
+      saveScope();
+      renderScope();
+      renderTree();
+    };
+  }
+  el.querySelector('#proj').onchange = (e) => {
+    S.project = e.target.value;
+    saveScope();
+    renderTree();
+  };
 }
 
 function itemSub(item) {
@@ -143,7 +202,7 @@ function itemRow(item) {
   const kids = showSlices ? `<div class="kids">${item.slices.map((slice) => `<button class="kid" data-id="${esc(item.id)}">${dotClass(SLICE_STATE[slice.status][0])}<span class="t">${slice.index + 1}. ${esc(slice.title)}</span><span class="age">${slice.prNumber ? `#${slice.prNumber}` : ''}</span></button>`).join('')}</div>` : '';
   return `<button class="item" data-id="${esc(item.id)}" aria-current="${S.sel === item.id}">
     ${dot(item.status)}<span class="t">${esc(item.title)}</span><span class="age" ${item.status === 'running' && item.lastRun ? `data-since="${esc(item.lastRun.startedAt)}"` : ''}>${esc(itemAge(item))}</span>
-    <span class="sub">${esc(itemSub(item))}</span>
+    <span class="sub">${esc(itemSub(item))}${item.linear ? `, <span class="red">${esc(item.linear.id)}</span>` : ''}${item.linear?.project && !S.project ? `, <span class="ptag"><i style="background:${projectColor(item.linear.project.id)}"></i>${esc(item.linear.project.name)}</span>` : ''}</span>
     ${last ? `<span class="last">${esc(last)}</span>` : ''}</button>${kids}`;
 }
 
@@ -157,14 +216,14 @@ function renderTree() {
     return;
   }
   const q = S.q.toLowerCase();
-  const match = (item) => (!q || `${item.title} ${itemRef(item)} ${item.number ?? ''} ${item.lastRun ? typeName(item.lastRun.taskType) : ''}`.toLowerCase().includes(q)) && (S.filter !== 'running' || item.status === 'running');
+  const match = (item) => (!q || `${item.title} ${itemRef(item)} ${item.number ?? ''} ${item.lastRun ? typeName(item.lastRun.taskType) : ''}`.toLowerCase().includes(q)) && (S.filter !== 'running' || item.status === 'running') && inScope(item);
   let html = '';
   const blocked = S.snap.items.filter((item) => item.status === 'blocked' && match(item));
   if (blocked.length) html += `<div class="grp"><span>Necesitan a alguien</span><span class="n alert">${blocked.length}</span></div>` + blocked.map(itemRow).join('');
   for (const repo of S.snap.repos) {
     const items = S.snap.items.filter((item) => item.repo === repo && item.status !== 'blocked' && match(item));
     html += `<div class="grp"><span class="sq" style="background:${repoColor(repo)}"></span><b>${esc(repoShort(repo))}</b><span class="n">${items.length}</span></div>`;
-    html += items.length ? items.map(itemRow).join('') : `<div class="grp-empty">${q || S.filter ? 'Nada coincide.' : 'Nada en curso ni corridas en los últimos 3 días.'}</div>`;
+    html += items.length ? items.map(itemRow).join('') : `<div class="grp-empty">${q || S.filter ? 'Nada coincide.' : S.scope === 'cycle' || S.project ? `Nada de ronin ${S.scope === 'cycle' ? 'en este ciclo' : 'en curso'}${S.project ? ' para este proyecto' : ''}.` : 'Nada en curso ni corridas en los últimos 3 días.'}</div>`;
   }
   tree.innerHTML = html;
   for (const button of tree.querySelectorAll('[data-id]')) button.onclick = () => select(button.dataset.id);
@@ -409,13 +468,22 @@ function headHTML(item) {
   if (item.kind === 'pr' && pr?.author) facts.push(`de ${pr.author}`);
   return `<div class="head">
     <div class="crumb"><i style="background:${repoColor(item.repo)}"></i>${esc(item.repo)} · ${item.kind === 'pr' ? 'Pull request' : item.kind === 'issue' ? 'Issue' : 'Tarea'}</div>
-    <div class="row"><h1>${esc(item.title)}${item.number !== undefined ? ` <span class="n">${esc(itemRef(item))}</span>` : ''}</h1>${url ? `<a class="gh" href="${esc(url)}" target="_blank" rel="noopener">GitHub ↗</a>` : ''}${d?.linear?.url?.startsWith('https://linear.app/') ? `<a class="gh" href="${esc(d.linear.url)}" target="_blank" rel="noopener" title="El issue en Linear">${esc(d.linear.id)} ↗</a>` : ''}${d?.exploration ? '<button class="gh" data-xpr="general">Comentario general</button>' : ''}${actionsHTML(d)}${d?.exploration ? '<button class="act-btn" data-xpr="approve">Aprobar…</button>' : ''}</div>
-    <div class="state">${chips.map(([cls, text]) => `<span class="chip ${cls}">${esc(text)}</span>`).join('')}${facts.map((f) => `<span>${esc(f)}</span>`).join('')}</div></div>`;
+    <div class="row"><h1>${esc(item.title)}${item.number !== undefined ? ` <span class="n">${esc(itemRef(item))}</span>` : ''}</h1>${url ? `<a class="gh" href="${esc(url)}" target="_blank" rel="noopener">GitHub ↗</a>` : ''}${safeLinear((item.linear ?? d?.linear)?.url) ? `<a class="gh" href="${esc((item.linear ?? d.linear).url)}" target="_blank" rel="noopener" title="El issue en Linear">${esc((item.linear ?? d.linear).id)} ↗</a>` : ''}${d?.exploration ? '<button class="gh" data-xpr="general">Comentario general</button>' : ''}${actionsHTML(d)}${d?.exploration ? '<button class="act-btn" data-xpr="approve">Aprobar…</button>' : ''}</div>
+    <div class="state">${linearChips(item)}${chips.map(([cls, text]) => `<span class="chip ${cls}">${esc(text)}</span>`).join('')}${facts.map((f) => `<span>${esc(f)}</span>`).join('')}</div></div>`;
 }
 
 // ---------- actions (#85)
 // Each one is a command that exists on GitHub, commented as whoever is
 // logged in (#93): the same comment they'd write there.
+// Its project and cycle in Linear (#101), for a repo with a Linear key.
+function linearChips(item) {
+  const l = item.linear;
+  if (!l) return '';
+  const project = l.project ? `<span class="chip plain"><i class="pdot" style="background:${projectColor(l.project.id)};margin:0"></i>${esc(l.project.name)}</span>` : '<span class="chip plain">sin proyecto</span>';
+  const cycle = l.cycle ? `<span class="chip ${l.cycle.current ? 'run' : 'plain'}">${esc(cycleName(l.cycle))}${l.cycle.current ? ', el actual' : ''}</span>` : '<span class="chip plain">sin ciclo</span>';
+  return project + cycle;
+}
+
 function actionsHTML(d) {
   if (!d?.actions?.length) return '';
   const menu = S.menu ? `<div class="menu" role="menu">${d.actions.map((a) => `<button role="menuitem" data-action="${esc(a.id)}" class="${a.primary ? 'primary' : ''}"><b>${esc(a.label)}</b><span class="k">${esc(a.command)}</span><small>${esc(a.help)}</small></button>`).join('')}</div>` : '';
@@ -1174,25 +1242,191 @@ function wireCenter() {
 // ---------- today
 const tipEl = () => document.getElementById('tip') ?? Object.assign(document.body.appendChild(document.createElement('div')), { id: 'tip', className: 'tip', role: 'tooltip' });
 
+// The day's numbers, each with its week as a sparkline (today last).
+function sparkline(values) {
+  const w = 120, h = 22;
+  const vals = values.map((v) => v ?? 0);
+  const max = Math.max(...vals, 1e-9);
+  const pt = (v, k) => [(k / Math.max(1, vals.length - 1)) * w, h - 2 - (v / max) * (h - 4)];
+  const d = vals.map((v, k) => `${k ? 'L' : 'M'}${pt(v, k).map((n) => n.toFixed(1)).join(',')}`).join('');
+  const [lx, ly] = pt(vals[vals.length - 1], vals.length - 1);
+  return `<svg width="${w}" height="${h}" aria-hidden="true"><path d="${d}" fill="none" stroke="var(--faint)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="${lx.toFixed(1)}" cy="${ly.toFixed(1)}" r="3" fill="var(--run)"/></svg>`;
+}
+
+function tilesHTML(t) {
+  const d = t.today;
+  const week = t.week ?? [];
+  const tile = (label, value, sub, series) => `<div class="tile"><div class="l">${label}</div><div class="v">${value}</div><div class="d">${sub}</div>${series.length > 1 ? sparkline(series) : ''}</div>`;
+  return `<div class="tiles">
+    ${tile('Corridas hoy', d.runs, `ayer <b>${t.yesterday.runs}</b>`, week.map((w) => w.runs))}
+    ${tile('Terminaron bien', d.finished ? pct(d.ok / d.finished) : '—', d.finished ? `<b>${d.ok}</b> de ${d.finished} terminadas` : 'ninguna terminada todavía', week.map((w) => (w.finished ? w.ok / w.finished : null)))}
+    ${tile('Duración mediana', d.medianMs !== null ? esc(duration(d.medianMs)) : '—', d.p90Ms !== null ? `p90 <b>${esc(duration(d.p90Ms))}</b>` : '&nbsp;', week.map((w) => w.medianMs))}
+    ${tile('Costo hoy', d.costUsd ? esc(money(d.costUsd)) : 'US$0', [t.yesterday.costUsd !== undefined ? `ayer <b>${esc(t.yesterday.costUsd ? money(t.yesterday.costUsd) : 'US$0')}</b>` : null, d.failed ? `${d.failed} con error` : null, d.usageLimit ? `${d.usageLimit} sin cuota` : null].filter(Boolean).join(', ') || 'sin errores', week.map((w) => w.costUsd))}
+  </div>`;
+}
+
+// What waits on a person, to act on: blocked issues, ronin's PRs waiting for
+// a review or a merge (the longest waiting first), the exploration PR and
+// the previews that are up.
+function attention() {
+  const items = S.snap.items;
+  const blocked = items.filter((i) => i.status === 'blocked');
+  const waitedSince = (i) => Date.parse(i.lastRun?.endedAt ?? i.lastRun?.startedAt ?? '') || Date.now();
+  const review = items.filter((i) => i.kind === 'issue' && i.status === 'waiting' && i.pr && !i.pr.isDraft && i.pr.reviewDecision !== 'CHANGES_REQUESTED'
+    && !i.pr.checks.some((c) => c.outcome !== 'passed')).sort((a, b) => waitedSince(a) - waitedSince(b));
+  const exploration = items.filter((i) => i.kind === 'pr' && i.note === 'PR de exploración abierto');
+  return { blocked, review, exploration, previews: S.snap.previews, waitedSince };
+}
+
+function attentionHTML(a) {
+  const ref = (i) => [`#${i.number}`, i.linear?.id].filter(Boolean).join(' · ');
+  const row = (cls, title, sub, when, id) => `<button class="arow" ${id ? `data-att="${esc(id)}"` : ''}>${dotClass(cls)}<span class="t">${esc(title)}</span><span class="w">${esc(when)}</span><span class="s">${esc(sub)}</span></button>`;
+  const total = a.blocked.length + a.review.length + a.exploration.length + a.previews.length;
+  const shownReview = S.attAll ? a.review : a.review.slice(0, 4);
+  return `<div class="card"><h2>Necesitan tu atención<span class="c">${total || 'nada'}</span></h2><div class="att">
+    <div class="ag">Bloqueados, esperan una respuesta</div>
+    ${a.blocked.length ? a.blocked.map((i) => row('crit', i.title, `${ref(i)} · ${i.block?.reason ?? 'el motivo está en el email del bloqueo'}`, i.block ? `hace ${short(Date.now() - Date.parse(i.block.at))}` : '', i.id)).join('') : '<div class="none">Ninguno.</div>'}
+    <div class="ag">PRs de ronin que esperan tu review o tu merge, el que más espera primero</div>
+    ${a.review.length ? shownReview.map((i) => row(i.pr.reviewDecision === 'APPROVED' ? 'ok' : 'warn', i.title, `PR #${i.pr.number} · ${[i.linear?.id, i.pr.reviewDecision === 'APPROVED' ? 'aprobado, falta el merge' : i.pr.checks.length ? 'checks en verde' : 'sin checks'].filter(Boolean).join(' · ')}`, `hace ${short(Date.now() - a.waitedSince(i))}`, i.id)).join('') : '<div class="none">Ninguno.</div>'}
+    ${a.review.length > 4 ? `<button class="more-l" id="att-more">${S.attAll ? 'Ver menos' : `Ver los ${a.review.length} →`}</button>` : ''}
+    ${a.exploration.length || a.previews.length ? '<div class="ag">Exploración y previews</div>' : ''}
+    ${a.exploration.map((i) => row('run', i.title, `PR #${i.number} · ${repoShort(i.repo)} · fichas para revisar`, i.lastRun ? `hace ${short(Date.now() - Date.parse(i.lastRun.endedAt ?? i.lastRun.startedAt))}` : '', i.id)).join('')}
+    ${a.previews.map((p) => {
+      const left = p.expiresAt ? Date.parse(p.expiresAt) - Date.now() : null;
+      const item = S.snap.items.find((i) => i.repo === p.repo && (i.number === p.prNumber || i.slices?.some((sl) => sl.prNumber === p.prNumber)));
+      return row(p.preparing ? 'live' : 'ok', `Preview de #${p.prNumber} ${p.preparing ? 'preparando datos' : 'arriba'}`, `${p.appName} · ${repoShort(p.repo)}${left !== null ? ` · se baja en ${short(left)}` : ''}`, p.startedAt ? short(Date.now() - Date.parse(p.startedAt)) : '', item?.id);
+    }).join('')}
+  </div></div>`;
+}
+
+// The cycle's issues by where they stand: ronin's by what GitHub says of
+// them, the team's by their Linear state (dashboard-linear.ts).
+const BUCKETS = [
+  ['done', 'hechos', 'var(--ok)'],
+  ['ronin', 'ronin trabaja', 'var(--run)'],
+  ['review', 'en review', 'var(--warn)'],
+  ['blocked', 'esperan a alguien', 'var(--crit)'],
+  ['started', 'en curso, del equipo', 'var(--lin)'],
+  ['todo', 'sin empezar', 'var(--faint)'],
+];
+const endDay = (iso) => dayMonth(new Date(Date.parse(iso) - 1).toISOString());
+const DAY_MS = 24 * 60 * MIN;
+
+function niceMax(v) {
+  const step = v <= 10 ? 2 : v <= 50 ? 10 : v <= 100 ? 20 : 50;
+  return Math.max(step, Math.ceil(v / step) * step);
+}
+
+// Issues in the cycle against issues done, day by day (Linear's history),
+// over the whole cycle so what's left to go shows as room.
+const BURN = { W: 400, H: 180, l: 28, r: 96, t: 10, b: 20 };
+function burnGeometry(c) {
+  const total = Math.max(1, Math.round((Date.parse(c.endsAt) - Date.parse(c.startsAt)) / DAY_MS));
+  const max = niceMax(Math.max(...c.scopeHistory, 1));
+  const x = (d) => BURN.l + (d / total) * (BURN.W - BURN.l - BURN.r);
+  const y = (v) => BURN.t + (1 - v / max) * (BURN.H - BURN.t - BURN.b);
+  return { total, max, x, y };
+}
+
+function burnHTML(c, index) {
+  const scope = c.scopeHistory;
+  const done = c.doneHistory;
+  if (!scope.length) return '';
+  const { W, H } = BURN;
+  const { total, max, x, y } = burnGeometry(c);
+  const last = scope.length - 1;
+  const line = (arr) => arr.map((v, d) => `${d ? 'L' : 'M'}${x(d).toFixed(1)},${y(v).toFixed(1)}`).join('');
+  const area = `${line(done)}L${x(last).toFixed(1)},${y(0)}L${x(0)},${y(0)}Z`;
+  const grid = [0, max / 2, max].map((v) => `<line x1="${BURN.l}" x2="${W - BURN.r}" y1="${y(v)}" y2="${y(v)}" stroke="var(--rule)"/><text x="${BURN.l - 6}" y="${y(v) + 3.5}" text-anchor="end">${v}</text>`).join('');
+  // Linear's history can lag a day or two behind: today gets its own mark.
+  const now = Math.max(0, Math.min(total, (Date.now() - Date.parse(c.startsAt)) / DAY_MS));
+  const labels = [[0, dayMonth(c.startsAt), 'start'], [total, endDay(c.endsAt), 'end']];
+  if (x(now) - x(0) > 30 && x(total) - x(now) > 30) labels.push([now, 'hoy', 'middle']);
+  const xlabels = labels.map(([d, text, anchor]) => `<text x="${x(d)}" y="${H - 4}" text-anchor="${anchor}">${esc(text)}</text>`).join('');
+  // End labels, pulled apart when the two values are close.
+  let ys = y(scope[last]) + 4;
+  let yd = y(done[last] ?? 0) + 4;
+  if (yd - ys < 13) {
+    const mid = (ys + yd) / 2;
+    ys = mid - 6.5;
+    yd = mid + 6.5;
+  }
+  return `<div class="burn" data-burn="${index}"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(`${cycleName(c)}: ${scope[last]} issues en el ciclo y ${done[last] ?? 0} hechos`)}">
+      ${grid}${xlabels}
+      <line x1="${x(now)}" x2="${x(now)}" y1="${BURN.t}" y2="${H - BURN.b}" stroke="var(--faint)" stroke-dasharray="3 3"/>
+      <path d="${area}" fill="var(--ok)" opacity=".12"/>
+      <path d="${line(scope)}" fill="none" stroke="var(--muted)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+      <path d="${line(done)}" fill="none" stroke="var(--ok)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+      <circle cx="${x(last)}" cy="${y(scope[last])}" r="4" fill="var(--muted)" stroke="var(--panel)" stroke-width="2"/>
+      <circle cx="${x(last)}" cy="${y(done[last] ?? 0)}" r="4" fill="var(--ok)" stroke="var(--panel)" stroke-width="2"/>
+      <text class="end" x="${x(last) + 8}" y="${ys}">${scope[last]} en el ciclo</text>
+      <text class="end" x="${x(last) + 8}" y="${yd}">${done[last] ?? 0} hechos</text>
+      <line class="cross" x1="0" x2="0" y1="${BURN.t}" y2="${H - BURN.b}" stroke="var(--faint)" visibility="hidden"/>
+      <rect class="hit" x="${BURN.l}" y="0" width="${W - BURN.l - BURN.r}" height="${H}" fill="transparent"/>
+    </svg><div class="btip" hidden></div>
+    <div class="lg"><span><i style="background:var(--muted)"></i>issues en el ciclo</span><span><i style="background:var(--ok)"></i>hechos</span></div></div>`;
+}
+
+function cycleHTML(c, index) {
+  const left = Math.ceil((Date.parse(c.endsAt) - Date.now()) / DAY_MS);
+  const counts = BUCKETS.map(([k, label, color]) => [k, label, color, c.issues.filter((i) => i.bucket === k).length]);
+  const total = c.issues.length || 1;
+  const stack = counts.filter(([, , , n]) => n).map(([, label, color, n]) => `<i style="width:${(n / total) * 100}%;background:${color}" title="${n} ${esc(label)}"></i>`).join('');
+  const legend = counts.filter(([, , , n]) => n).map(([, label, color, n]) => `<span><i style="background:${color}"></i><b>${n}</b> ${esc(label)}</span>`).join('');
+  return `<div class="card"><h2>${LIN_ICON} ${esc(cycleName(c))}${S.today.cycles.length > 1 ? ` · ${esc(repoShort(c.repo))}` : ''}<span class="c">${esc(dayMonth(c.startsAt))} – ${esc(endDay(c.endsAt))} · ${left > 1 ? `quedan ${left} días` : left === 1 ? 'termina mañana' : 'termina hoy'}</span></h2>
+    <div class="stack">${stack}</div><div class="legend">${legend}</div>
+    ${burnHTML(c, index)}</div>`;
+}
+
+function breakdownHTML(c) {
+  const brow = (name, swatch, segs, n, attrs = '', tag = 'div') => `<${tag} class="brow" ${attrs}><span class="bn"><i style="background:${swatch}"></i><span>${esc(name)}</span></span><span class="bb">${segs}</span><span class="bc">${n}</span></${tag}>`;
+  const groups = new Map();
+  for (const issue of c.issues) {
+    const key = issue.project?.id ?? '';
+    groups.set(key, [...(groups.get(key) ?? []), issue]);
+  }
+  const maxP = Math.max(...[...groups.values()].map((g) => g.length), 1);
+  const projects = [...groups].sort((a, b) => (a[0] === '') - (b[0] === '') || b[1].length - a[1].length).map(([id, issues]) => {
+    const segs = BUCKETS.map(([k, , color]) => {
+      const n = issues.filter((i) => i.bucket === k).length;
+      return n ? `<i style="width:${(n / maxP) * 100}%;background:${color}"></i>` : '';
+    }).join('');
+    return id
+      ? brow(issues[0].project.name, projectColor(id), segs, issues.length, `data-proj="${esc(id)}" aria-pressed="${S.project === id}" title="Filtrar la lista por este proyecto"`, 'button')
+      : brow('Sin proyecto', 'var(--proj-other)', segs, issues.length);
+  }).join('');
+  const open = c.issues.filter((i) => i.bucket !== 'done');
+  const owners = new Map();
+  for (const issue of open) owners.set(issue.owner, (owners.get(issue.owner) ?? 0) + 1);
+  const people = [...owners].sort((a, b) => (b[0] === 'ronin') - (a[0] === 'ronin') || (a[0] === '') - (b[0] === '') || b[1] - a[1]);
+  const maxO = Math.max(...people.map(([, n]) => n), 1);
+  const who = people.map(([owner, n]) => {
+    const color = owner === 'ronin' ? 'var(--hanko)' : 'var(--faint)';
+    return brow(owner || 'sin asignar', color, `<i style="width:${(n / maxO) * 100}%;background:${color}"></i>`, n);
+  }).join('');
+  const ronin = owners.get('ronin') ?? 0;
+  return `<div class="card">
+    <div class="side-list"><h3>Por proyecto, en el ciclo</h3>${projects || '<p class="note">El ciclo no tiene issues.</p>'}</div>
+    <div class="side-list"><h3>Quién tiene qué, de lo que falta</h3>${who || '<p class="note">Todo el ciclo está hecho.</p>'}${open.length ? `<p class="note">ronin tiene ${ronin} de los ${open.length} issues que faltan del ciclo.</p>` : ''}</div>
+  </div>`;
+}
+
 function renderToday() {
   const t = S.today;
   const running = S.snap.items.filter((i) => i.status === 'running').length;
-  const blocked = S.snap.items.filter((i) => i.status === 'blocked').length;
-  const previews = S.snap.previews.length;
+  const a = attention();
   const lead = [
     running ? `${running} ${running === 1 ? 'agente trabajando' : 'agentes trabajando'}` : 'ningún agente trabajando',
-    blocked ? `${blocked} ${blocked === 1 ? 'issue espera' : 'issues esperan'} a alguien` : null,
-    previews ? `${previews} ${previews === 1 ? 'preview arriba' : 'previews arriba'}` : null,
+    a.blocked.length ? `${a.blocked.length} ${a.blocked.length === 1 ? 'issue espera' : 'issues esperan'} una respuesta` : null,
+    a.review.length ? `${a.review.length} ${a.review.length === 1 ? 'PR espera' : 'PRs esperan'} tu review o tu merge` : null,
   ].filter(Boolean).join(', ');
-  if (!t) return `<div class="today"><h1>Hoy</h1><p class="lead">${esc(lead[0].toUpperCase() + lead.slice(1))}.</p><div class="empty">Cargando…</div></div>`;
-  const d = t.today;
-  const okPct = d.finished ? `${Math.round((d.ok / d.finished) * 100)}%` : '—';
-  const kpis = `<div class="kpis">
-    <div class="kpi"><div class="v">${d.runs}</div><div class="l">corridas hoy</div><div class="d">${t.yesterday.runs} ayer</div></div>
-    <div class="kpi"><div class="v">${okPct}</div><div class="l">terminaron bien</div><div class="d">${d.finished ? `${d.ok} de ${d.finished} terminadas` : 'ninguna terminada todavía'}</div></div>
-    <div class="kpi"><div class="v">${d.medianMs !== null ? esc(duration(d.medianMs)) : '—'}</div><div class="l">duración mediana</div><div class="d">${d.p90Ms !== null ? `p90: ${esc(duration(d.p90Ms))}` : '&nbsp;'}</div></div>
-    <div class="kpi"><div class="v">${d.costUsd ? esc(money(d.costUsd)) : 'US$0'}</div><div class="l">costo hoy</div><div class="d">${[d.failed ? `${d.failed} con error` : null, d.usageLimit ? `${d.usageLimit} sin cuota` : null].filter(Boolean).join(', ') || 'sin errores'}</div></div>
-  </div>`;
+  const date = new Date().toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long' });
+  const head = `<h1>Hoy</h1><p class="lead">${esc(date[0].toUpperCase() + date.slice(1))} · ${esc(lead)}.</p>`;
+  if (!t) return `<div class="today">${head}<div class="empty">Cargando…</div></div>`;
+
+  const cycles = t.cycles ?? [];
+  const right = cycles.map((c, i) => cycleHTML(c, i) + breakdownHTML(c)).join('');
+  const grid = `<div class="hgrid ${right ? '' : 'one'}">${attentionHTML(a)}${right ? `<div class="rcol">${right}</div>` : ''}</div>`;
 
   const from = Date.parse(t.from);
   const to = Date.now();
@@ -1221,7 +1455,46 @@ function renderToday() {
   const timeline = `<div class="day"><h2>Últimas 12 horas<span class="legend">${legend}</span></h2>
     ${t.timeline.length ? '' : '<p class="note" style="margin:0 0 8px">Ninguna corrida de agentes en las últimas 12 horas.</p>'}
     ${lanes}<div class="axis"><span></span><div class="ticks">${ticks}</div></div></div>`;
-  return `<div class="today"><h1>Hoy</h1><p class="lead">${esc(lead[0].toUpperCase() + lead.slice(1))}.</p>${kpis}${timeline}</div>`;
+  return `<div class="today">${head}${tilesHTML(t)}${grid}${timeline}</div>`;
+}
+
+function wireBurn(el) {
+  const c = S.today?.cycles?.[Number(el.dataset.burn)];
+  if (!c) return;
+  const svg = el.querySelector('svg');
+  const cross = el.querySelector('.cross');
+  const tip = el.querySelector('.btip');
+  const { x } = burnGeometry(c);
+  const last = c.scopeHistory.length - 1;
+  const hide = () => {
+    cross.setAttribute('visibility', 'hidden');
+    tip.hidden = true;
+  };
+  el.querySelector('.hit').onpointermove = (e) => {
+    const rect = svg.getBoundingClientRect();
+    const vx = ((e.clientX - rect.left) / rect.width) * BURN.W;
+    let d = 0;
+    for (let k = 0; k <= last; k++) if (Math.abs(x(k) - vx) < Math.abs(x(d) - vx)) d = k;
+    if (vx > x(last) + 20) return hide();
+    cross.setAttribute('x1', x(d));
+    cross.setAttribute('x2', x(d));
+    cross.setAttribute('visibility', 'visible');
+    const day = document.createElement('b');
+    day.textContent = dayMonth(new Date(Date.parse(c.startsAt) + d * DAY_MS).toISOString());
+    const lineOf = (color, text) => {
+      const div = document.createElement('div');
+      const key = Object.assign(document.createElement('span'), { className: 'k' });
+      key.style.background = color;
+      div.append(key, text);
+      return div;
+    };
+    tip.replaceChildren(day, lineOf('var(--muted)', `${c.scopeHistory[d]} en el ciclo`), lineOf('var(--ok)', `${c.doneHistory[d] ?? 0} hechos`));
+    tip.hidden = false;
+    const px = (x(d) / BURN.W) * rect.width;
+    tip.style.left = `${Math.min(px + 12, rect.width - tip.offsetWidth)}px`;
+    tip.style.top = '8px';
+  };
+  el.querySelector('.hit').onpointerleave = hide;
 }
 
 function wireToday() {
@@ -1244,6 +1517,20 @@ function wireToday() {
       select(bar.dataset.item);
     };
   }
+  for (const row of document.querySelectorAll('[data-att]')) row.onclick = () => select(row.dataset.att);
+  const more = document.getElementById('att-more');
+  if (more) more.onclick = () => {
+    S.attAll = !S.attAll;
+    renderAll();
+  };
+  for (const row of document.querySelectorAll('[data-proj]')) {
+    row.onclick = () => {
+      S.project = S.project === row.dataset.proj ? '' : row.dataset.proj;
+      saveScope();
+      renderAll();
+    };
+  }
+  for (const el of document.querySelectorAll('[data-burn]')) wireBurn(el);
 }
 
 function goHome() {
@@ -1259,9 +1546,22 @@ function goHome() {
 }
 
 // ---------- context
+function linearCtxHTML(item) {
+  const l = item.linear;
+  if (!l) return '';
+  const current = l.cycle?.current ? currentCycleOf(item.repo) : null;
+  return `<section><h3>${LIN_ICON} Linear</h3><dl class="kv">
+    <dt>Issue</dt><dd>${safeLinear(l.url) ? `<a href="${esc(l.url)}" target="_blank" rel="noopener">${esc(l.id)} ↗</a>` : esc(l.id)}</dd>
+    <dt>Estado</dt><dd>${esc(l.state.name)}</dd>
+    <dt>Proyecto</dt><dd>${l.project ? esc(l.project.name) : '—'}</dd>
+    <dt>Ciclo</dt><dd>${l.cycle ? `${esc(cycleName(l.cycle))}${current ? `, termina el ${esc(endDay(current.endsAt))}` : ''}` : '—'}</dd>
+    ${l.assignee ? `<dt>Asignado</dt><dd>${esc(l.assignee)}</dd>` : ''}</dl>
+    ${l.cycle?.current && item.kind === 'issue' ? '<p class="note">Es del ciclo actual: si no alcanzan los lugares para agentes, ronin lo toma antes que los demás.</p>' : ''}</section>`;
+}
+
 function ctxHTML(item) {
   const runs = itemRuns(item);
-  let html = '';
+  let html = linearCtxHTML(item);
   if (item.status === 'blocked') {
     html += `<section><h3>Por qué está bloqueado</h3><div class="why">${item.block
       ? `<b>Hace ${esc(short(Date.now() - Date.parse(item.block.at)))}.</b> ${esc(item.block.reason)}${item.block.excerpt ? `<span class="ask">${esc(item.block.excerpt)}</span>` : ''}`
@@ -1325,6 +1625,10 @@ function renderCtx() {
     <dt>Último evento</dt><dd>${tick.lastEventAt ? `hace ${esc(short(Date.now() - Date.parse(tick.lastEventAt)))}` : 'sin datos hoy'}</dd>
     <dt>Repos</dt><dd>${S.snap.repos.map((repo) => `<span class="repo-tag"><i style="background:${repoColor(repo)}"></i>${esc(repo)}</span>`).join('<br>')}</dd></dl></section>
     <section><h3>Previews arriba</h3>${S.snap.previews.length ? S.snap.previews.map((p) => `<div class="pv-row"><div>${esc(p.appName)} con #${esc(p.prNumber)} <span class="m">${esc(repoShort(p.repo))}${p.preparing ? ', preparando datos' : ''}</span></div>${/^https?:\/\//.test(p.url) ? (p.preparing ? `<span class="url off">${esc(p.url.replace(/^https?:\/\//, ''))}</span>` : `<a class="url" href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.url.replace(/^https?:\/\//, ''))}</a>`) : ''}</div>`).join('') : '<p class="note">Ninguna.</p>'}</section>
+    ${linearRepos().map((l) => `<section><h3>${LIN_ICON} Linear · ${esc(repoShort(l.repo))}</h3><dl class="kv">
+      ${l.workspace ? `<dt>Workspace</dt><dd>${esc(l.workspace)}${l.cycle ? ` (equipo ${esc(l.cycle.team)})` : ''}</dd>` : ''}
+      <dt>Ciclo actual</dt><dd>${l.cycle ? `${esc(cycleName(l.cycle))}, ${esc(dayMonth(l.cycle.startsAt))} – ${esc(endDay(l.cycle.endsAt))}` : 'ninguno'}</dd>
+      <dt>Leído</dt><dd>${l.error ? `<span class="bad">no se pudo leer: ${esc(l.error)}</span>` : l.fetchedAt ? `hace ${esc(short(Date.now() - Date.parse(l.fetchedAt)))}` : 'sin leer'}</dd></dl></section>`).join('')}
     <section><h3>GitHub</h3><dl class="kv">${S.snap.github.map((g) => `<dt>${esc(repoShort(g.repo))}</dt><dd>${g.error ? `<span class="bad">no se pudo leer: ${esc(g.error)}</span>${g.fetchedAt ? `, datos de hace ${esc(short(Date.now() - Date.parse(g.fetchedAt)))}` : ''}` : g.fetchedAt ? `leído hace ${esc(short(Date.now() - Date.parse(g.fetchedAt)))}` : 'sin leer'}</dd>`).join('')}</dl></section>`;
 }
 

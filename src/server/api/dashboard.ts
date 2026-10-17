@@ -4,10 +4,11 @@ import { config } from '../../core/config.js';
 import { loadRepos } from '../../core/repos.js';
 import { itemKey, listRuns, readQueue, readRunLines, readTickInfo, readUsage, runPath, slotsInUse, summarizeRun } from './dashboard-data.js';
 import { repoGithub } from './dashboard-github.js';
+import { cycleView, repoLinear } from './dashboard-linear.js';
 import { buildItems, itemRunKeys } from './dashboard-items.js';
 import { forgetDetails, itemDetail, resolveItem } from './dashboard-detail.js';
 import { ActionError, listActions, runAction } from './dashboard-actions.js';
-import { today } from './dashboard-today.js';
+import { today, WEEK_DAYS } from './dashboard-today.js';
 import { readEvidence } from './dashboard-evidence.js';
 import { explorationReview, forgetExploration, isExplorationPr } from './dashboard-exploration.js';
 import { FichaActionError, runApprove, runFichaAction, runGeneralComment } from './dashboard-exploration-actions.js';
@@ -17,7 +18,7 @@ import type { Session } from './auth.js';
 // The dashboard's data (#65), all behind the session (tailnet.ts checks it
 // before any of this runs):
 //   GET /api/snapshot                the sidebar and the status bar
-//   GET /api/today                   the last 12 hours' runs and the day's totals
+//   GET /api/today                   the last 12 hours' runs, the day's totals and the week's, and each repo's Linear cycle (#101)
 //   GET /api/items/<id>              one item's runs (14 days)
 //   GET /api/items/<id>/detail       its issue and PR from GitHub, with its comments and what can be asked of it (#85)
 //   GET /api/items/<id>/exploration  an exploration PR's findings and their threads, to review them (#93)
@@ -47,15 +48,41 @@ export async function snapshot(login: string): Promise<unknown> {
   // A repo's GitHub read is stale once one of its runs started or ended after it.
   const changedSince = (repo: string) => Math.max(0, ...runs.filter((run) => run.repo === repo).map((run) => Date.parse(run.endedAt ?? run.startedAt)));
   const github = await Promise.all(entries.map((entry) => repoGithub(entry, changedSince(entry.productRepo))));
+  const linear = await Promise.all(entries.map((entry, i) => repoLinear(entry, github[i])));
+  // Each issue ronin manages, with its Linear issue: identifier, state, project, cycle.
+  const items = buildItems(repos, runs, github).map((item) => {
+    const issue = item.kind === 'issue' && item.number !== undefined ? linear[repos.indexOf(item.repo)]?.issues[item.number] : undefined;
+    return issue ? { ...item, linear: issue } : item;
+  });
   return {
     me: login,
     repos,
     runner: { slots: { used: slotsInUse(), limit: config.tickConcurrency }, queue: readQueue(), tick: readTickInfo() },
     usage: readUsage(),
-    items: buildItems(repos, runs, github),
+    items,
     previews: github.flatMap((gh) => (gh ? gh.previews.map((p) => ({ ...p, repo: gh.repo })) : [])),
     github: github.map((gh, i) => ({ repo: repos[i], fetchedAt: gh?.fetchedAt ?? null, ...(gh?.error ? { error: gh.error } : {}) })),
+    // Only the repos with a Linear key.
+    linear: linear.flatMap((l) => (l ? [{
+      repo: l.repo,
+      ...(l.workspace ? { workspace: l.workspace } : {}),
+      fetchedAt: l.fetchedAt || null,
+      cycle: l.cycle ? { team: l.cycle.team, number: l.cycle.number, ...(l.cycle.name ? { name: l.cycle.name } : {}), startsAt: l.cycle.startsAt, endsAt: l.cycle.endsAt } : null,
+      ...(l.error ? { error: l.error } : {}),
+    }] : [])),
   };
+}
+
+// Hoy: the runs, and each repo's current Linear cycle, where ronin's issues
+// stand by what GitHub says of them.
+async function todayWithCycles(): Promise<unknown> {
+  const entries = await loadRepos();
+  const cycles = await Promise.all(entries.map(async (entry) => {
+    const gh = await repoGithub(entry);
+    const linear = await repoLinear(entry, gh);
+    return linear ? cycleView(linear, gh) : null;
+  }));
+  return { ...today(listRuns(WEEK_DAYS)), cycles: cycles.filter(Boolean) };
 }
 
 // An issue or PR of a repo in repos.json: what it is and what GitHub has on
@@ -262,7 +289,7 @@ export async function handleDashboard(req: IncomingMessage, res: ServerResponse,
   }
 
   if (path === '/api/today') {
-    json(res, 200, today(listRuns(2)));
+    json(res, 200, await todayWithCycles());
     return true;
   }
 

@@ -40,7 +40,20 @@ describe('today', () => {
       ['live', 'acme/product#879'],
     ]);
     expect(result.today).toMatchObject({ runs: 2, finished: 1, ok: 1 });
-    expect(result.yesterday).toEqual({ runs: 2, ok: 2, finished: 2 });
+    expect(result.yesterday).toEqual({ runs: 2, ok: 2, finished: 2, costUsd: 0 });
     expect(result.from).toBe(new Date(2026, 9, 16, 0).toISOString());
+  });
+
+  it("totals each of the week's days, oldest first and today last", () => {
+    const now = new Date(2026, 9, 16, 12, 0);
+    const result = today([
+      run({ startedAt: new Date(2026, 9, 16, 9).toISOString(), durationMs: 60_000, costUsd: 1 }),
+      run({ startedAt: new Date(2026, 9, 13, 9).toISOString(), state: 'error', durationMs: 120_000 }),
+      run({ startedAt: new Date(2026, 9, 1, 9).toISOString() }),
+    ], now);
+    expect(result.week).toHaveLength(7);
+    expect(result.week[6]).toMatchObject({ runs: 1, ok: 1, finished: 1, medianMs: 60_000, costUsd: 1 });
+    expect(result.week[3]).toMatchObject({ runs: 1, ok: 0, finished: 1 });
+    expect(result.week.reduce((sum, d) => sum + d.runs, 0)).toBe(2);
   });
 });

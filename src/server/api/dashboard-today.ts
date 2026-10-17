@@ -2,9 +2,11 @@ import { localDay } from '../../core/run-files.js';
 import { itemKey, type RunState, type RunSummary } from './dashboard-data.js';
 
 // The dashboard's "Hoy" (#65): every run of the last hours, for the
-// timeline, and the day's totals. From the per-run records only.
+// timeline, and the day's totals, with the week's for their trend. From the
+// per-run records only.
 
 export const TIMELINE_HOURS = 12;
+export const WEEK_DAYS = 7;
 
 export interface TimelineRun {
   runId: string;
@@ -32,7 +34,9 @@ export interface Today {
   to: string;
   timeline: TimelineRun[];
   today: DayTotals;
-  yesterday: Pick<DayTotals, 'runs' | 'ok' | 'finished'>;
+  yesterday: Pick<DayTotals, 'runs' | 'ok' | 'finished' | 'costUsd'>;
+  // The last WEEK_DAYS days, oldest first, today last.
+  week: Array<{ day: string } & Pick<DayTotals, 'runs' | 'ok' | 'finished' | 'medianMs' | 'costUsd'>>;
 }
 
 const FAILED: RunState[] = ['error', 'timeout', 'cut'];
@@ -57,7 +61,7 @@ export function dayTotals(runs: RunSummary[]): DayTotals {
   };
 }
 
-// `runs`: today's and yesterday's at least (listRuns(2)).
+// `runs`: the last WEEK_DAYS days' (listRuns(WEEK_DAYS)).
 export function today(runs: RunSummary[], now = new Date()): Today {
   const from = new Date(now.getTime() - TIMELINE_HOURS * 60 * 60 * 1000);
   const day = localDay(now);
@@ -80,6 +84,10 @@ export function today(runs: RunSummary[], now = new Date()): Today {
       }))
       .sort((a, b) => a.startedAt.localeCompare(b.startedAt)),
     today: dayTotals(startedOn(day)),
-    yesterday: { runs: yesterday.runs, ok: yesterday.ok, finished: yesterday.finished },
+    yesterday: { runs: yesterday.runs, ok: yesterday.ok, finished: yesterday.finished, costUsd: yesterday.costUsd },
+    week: Array.from({ length: WEEK_DAYS }, (_, i) => localDay(new Date(now.getTime() - (WEEK_DAYS - 1 - i) * 24 * 60 * 60 * 1000))).map((d) => {
+      const totals = dayTotals(startedOn(d));
+      return { day: d, runs: totals.runs, ok: totals.ok, finished: totals.finished, medianMs: totals.medianMs, costUsd: totals.costUsd };
+    }),
   };
 }
