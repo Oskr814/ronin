@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { readFile, rm, stat } from 'node:fs/promises';
 import { config } from '../core/config.js';
-import { addPersonMessage, createRequest, getRequest, listRequestsOf, requestImagePath, startedToday, updateRequest, MAX_PROTOTYPES } from './requests.js';
+import { addPersonMessage, createRequest, getRequest, listRequestsOf, requestImagePath, startedToday, updateRequest, MAX_PROTOTYPES, updateUnlessCancelled } from './requests.js';
 import { sweepPortalRequests } from './launch.js';
 
 vi.mock('../core/logger.js', () => ({ log: { info: vi.fn(), error: vi.fn() } }));
@@ -13,6 +13,14 @@ beforeEach(async () => {
 });
 
 describe('portal requests', () => {
+  it("a worker finishing on a cancelled request leaves it as it is", async () => {
+    const r = await createRequest({ userId: 'u1', repo: 'a/b', app: 'web', text: 'Hola', images: [] });
+    expect((await updateUnlessCancelled(r.number, (x) => { x.status = 'asking'; }))?.status).toBe('asking');
+    await updateRequest(r.number, (x) => { x.status = 'cancelled'; });
+    expect(await updateUnlessCancelled(r.number, (x) => { x.status = 'proposed'; })).toBeUndefined();
+    expect((await getRequest(r.number))?.status).toBe('cancelled');
+  });
+
   it('takes adjustments to a prototype until none are left', async () => {
     const r = await createRequest({ userId: 'u1', repo: 'a/b', app: 'web', text: 'Hola', images: [] });
     const shown = (count: number) => updateRequest(r.number, (x) => {

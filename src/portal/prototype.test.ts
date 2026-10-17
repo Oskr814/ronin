@@ -74,6 +74,18 @@ describe('portal prototype', () => {
     expect(sendMail.mock.calls[0]).toMatchObject([{ to: 'mf@x.com', subject: expect.stringMatching(/^Tu prototipo está listo/) }, expect.any(String)]);
   });
 
+  it('cancelled while it was being drawn, it is left cancelled and nobody is told', async () => {
+    const n = await minorRequest();
+    makePrototype.mockImplementation(async (_t: PrototypeTarget, deliver: (d: PrototypeDraft) => Promise<unknown>) => {
+      await updateRequest(n, (x) => { x.status = 'cancelled'; });
+      return deliver(draft);
+    });
+    await prototypeRequest(n);
+    expect((await getRequest(n))?.status).toBe('cancelled');
+    expect((await getRequest(n))?.prototypes).toBeUndefined();
+    expect(sendMail).not.toHaveBeenCalled();
+  });
+
   it('counts the adjustments left in its reply', () => {
     expect(proposedReply('Así.', 1)).toContain(`quedan ${MAX_PROTOTYPES - 1} ajustes`);
     expect(proposedReply('Así.', MAX_PROTOTYPES)).toContain('el último ajuste');

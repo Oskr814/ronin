@@ -11,7 +11,7 @@ import { removeWorktreeDir } from '../core/worktree.js';
 import { getUser, type PortalUser } from './accounts.js';
 import { replyMail } from './mail.js';
 import { handOverMail, sendPortalMails } from './notify.js';
-import { addRoninMessage, getRequest, MAX_PROTOTYPES, requestImagePath, TITLE_MAX, updateRequest, type PortalRequest, type Verdict } from './requests.js';
+import { addRoninMessage, getRequest, MAX_PROTOTYPES, requestImagePath, TITLE_MAX, updateUnlessCancelled, type PortalRequest, type Verdict } from './requests.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -148,23 +148,23 @@ export async function classifyRequest(n: number): Promise<void> {
       outputPath,
     });
     const result = parsePortalResult(await readFile(outputPath, 'utf8'), request.questions, request.prototypes?.length ?? 0);
-    const updated = await updateRequest(n, (r) => {
-      applyResult(r, result);
-      return r;
-    });
+    const updated = await updateUnlessCancelled(n, (r) => applyResult(r, result));
+    if (!updated) {
+      log.info(`portal: el pedido P-${n} se canceló mientras ronin lo leía`);
+      return;
+    }
     log.info(`portal: pedido P-${n} → ${result.accion}`);
     await notify(updated, await getUser(updated.userId));
   } catch (error) {
     log.error(`portal: no se pudo revisar el pedido P-${n}`, error);
     try {
-      const failed = await updateRequest(n, (r) => {
+      const failed = await updateUnlessCancelled(n, (r) => {
         addRoninMessage(r, FAILED_REPLY);
         // The prototype on screen, if any, is still there to decide on.
         r.status = r.prototypes?.length && r.verdict?.kind === 'minor' ? 'proposed' : 'asking';
         delete r.worker;
-        return r;
       });
-      await notify(failed, await getUser(failed.userId));
+      if (failed) await notify(failed, await getUser(failed.userId));
     } catch (e) {
       log.error(`portal: no se pudo guardar la falla del pedido P-${n}`, e);
     }

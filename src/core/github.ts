@@ -65,6 +65,12 @@ export async function removeIssueLabel(issueNumber: number, label: string): Prom
   await gh(['issue', 'edit', String(issueNumber), '--remove-label', label]);
 }
 
+// Who an issue is assigned to, read fresh.
+export async function getIssueAssignees(issueNumber: number): Promise<string[]> {
+  const raw = JSON.parse(await ghApi(['api', `repos/${activeRepo().productRepo}/issues/${issueNumber}`])) as { assignees?: Array<{ login: string }> };
+  return (raw.assignees ?? []).map((a) => a.login);
+}
+
 // Open or closed, and why it closed: COMPLETED (done, e.g. by its PR's
 // merge) or NOT_PLANNED. Through the REST API: the runner's gh (2.45) has
 // no stateReason in `issue view --json`.

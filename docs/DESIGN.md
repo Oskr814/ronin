@@ -800,6 +800,7 @@ src/portal/            el dominio: cuentas, pedidos, la conversación, el protot
   classify.ts          ronin lee el pedido: preguntar, responder, menor o grande
   prototype.ts         el prototipo de un ajuste chico, y aprobar o "No me sirve"
   issue.ts             el issue en el repo del producto: para ronin (aprobado) o para el equipo
+  cancel.ts            la persona cancela un pedido que nadie tomó
   follow.ts            el tick sigue esos issues y sus PRs
   worker.ts, launch.ts el worker por pedido y su relanzamiento
   mail.ts, notify.ts   los correos
@@ -821,6 +822,7 @@ src/portal-web/        la página: HTML, CSS y JS sin build
 | `done` | el PR se mergeó: sale en la próxima actualización | — |
 | `big` | es del equipo, en un issue (16.6) | el equipo |
 | `resolved` / `declined` | el equipo cerró el issue como completado / no planeado | — |
+| `cancelled` | la persona lo canceló (16.10) | — |
 
 Cada paso que hace ronin corre en un **worker por pedido** (`portal/worker.ts`, lanzado con `launchWorker` desde el servidor cuando la persona escribe o decide). Toma el lock `portal-<n>`, así que dos workers nunca trabajan el mismo pedido, y anota su pid en el pedido. Al empezar cada tick, `sweepPortalRequests` relanza los pedidos que esperan a ronin (`thinking`, `minor`, o aprobados o del equipo sin issue todavía) cuyo worker murió, con 2 minutos de gracia para uno recién lanzado.
 
@@ -894,6 +896,7 @@ En el listener público, solo con `PORTAL_URL` y `PORTAL_SESSION_SECRET` configu
 | `GET /api/portal/requests/<n>` | Uno, con la conversación |
 | `POST /api/portal/requests/<n>/messages` | Su respuesta, o un ajuste al prototipo: `{ text, images? }` |
 | `POST /api/portal/requests/<n>/decision` | Sobre el prototipo: `{ decision: 'aprobar' \| 'rechazar', text? }` |
+| `POST /api/portal/requests/<n>/cancel` | Lo cancela, mientras nadie lo tomó (16.10) |
 | `GET /api/portal/requests/<n>/images/<archivo>` | Una imagen de la conversación |
 
 La administración está en la API del tablero, solo para `DASHBOARD_ADMINS`: `GET /api/portal-admin`, `POST /api/portal-admin/users`, `/users/<id>` y `/users/<id>/link` (15.9).
@@ -904,6 +907,21 @@ La administración está en la API del tablero, solo para `DASHBOARD_ADMINS`: `G
 2. En `repos.json`, el bloque `portal` de cada repo que se ofrece, con sus aplicaciones.
 3. nginx-proxy-manager tiene que pasarle al 3939 todas las rutas del dominio, no solo la de los webhooks.
 4. `pnpm build` y reiniciar `ronin-server`. Las cuentas se crean desde el tablero.
+
+#### 16.10 Cancelar un pedido (`cancel.ts`)
+
+La persona puede cancelar un pedido mientras nadie lo tomó, con *Cancelar pedido* en la cabecera y una confirmación:
+
+- **Se puede:**
+  - mientras ronin lo lee o espera su respuesta (`thinking`, `asking`, `answered`);
+  - alrededor del prototipo (`minor`, `proposed`);
+  - ya en manos del equipo (`big`), si su issue sigue sin asignar. Lo comprueba en GitHub al momento, y el issue se cierra como no planeado con un comentario que dice que la persona lo canceló.
+- **No se puede:**
+  - aprobado, porque su issue es de ronin;
+  - del equipo, con el issue ya asignado a alguien;
+  - terminado.
+- **Un worker que seguía trabajando** en el pedido termina y lo deja cancelado (`updateUnlessCancelled`): no escribe su respuesta ni su prototipo y no manda correos. Si el issue del equipo se estaba abriendo justo entonces, lo cierra.
+- **Cuenta para el tope diario:** cancelar no devuelve el pedido del día.
 
 ## Estado actual
 

@@ -16,6 +16,7 @@ import {
   requestImagePath,
   RequestError,
   updateRequest,
+  updateUnlessCancelled,
   type PortalRequest,
 } from './requests.js';
 
@@ -55,7 +56,7 @@ function pairs(draft: PrototypeDraft): Array<{ kind: 'antes' | 'despues'; i: num
 }
 
 // Copies the images and the diff into the request and shows them.
-async function deliver(n: number, round: number, draft: PrototypeDraft): Promise<PortalRequest> {
+async function deliver(n: number, round: number, draft: PrototypeDraft): Promise<PortalRequest | undefined> {
   const images: string[] = [];
   const captions: string[] = [];
   for (const shot of pairs(draft)) {
@@ -71,17 +72,16 @@ async function deliver(n: number, round: number, draft: PrototypeDraft): Promise
     await mkdir(dirname(prototypePatchPath(n, patch)), { recursive: true, mode: 0o700 });
     await writeFile(prototypePatchPath(n, patch), `${draft.patch}\n`, { mode: 0o600 });
   }
-  return updateRequest(n, (r) => {
+  return updateUnlessCancelled(n, (r) => {
     const at = new Date();
     const messageId = addRoninMessage(r, proposedReply(draft.mensaje, round), at, { images, captions });
     (r.prototypes ??= []).push({ round, summary: draft.resumen, ...(patch ? { patch } : {}), messageId, at: at.toISOString() });
     r.status = 'proposed';
     delete r.worker;
-    return r;
   });
 }
 
-function draw(request: PortalRequest, round: number): Promise<PortalRequest> {
+function draw(request: PortalRequest, round: number): Promise<PortalRequest | undefined> {
   const n = request.number;
   return makePrototype(
     {
@@ -110,6 +110,10 @@ export async function prototypeRequest(n: number): Promise<void> {
   for (let attempt = 1; attempt <= ATTEMPTS; attempt++) {
     try {
       const shown = await draw(request, round);
+      if (!shown) {
+        log.info(`portal: el pedido P-${n} se canceló mientras se armaba su prototipo`);
+        return;
+      }
       log.info(`portal: prototipo ${round} del pedido P-${n} listo`);
       const user = await getUser(shown.userId);
       if (user) await sendPortalMails(shown, [prototypeMail(shown, user, config.portal.url)]);
@@ -121,14 +125,13 @@ export async function prototypeRequest(n: number): Promise<void> {
     }
   }
   try {
-    const handed = await updateRequest(n, (r) => {
+    const handed = await updateUnlessCancelled(n, (r) => {
       r.verdict = { ...(r.verdict ?? { summary: '' }), kind: 'big', reason: `No se pudo armar el prototipo: ${failure?.message.split('\n')[0].slice(0, 300) ?? 'sin detalle'}`, at: new Date().toISOString() };
       addRoninMessage(r, FAILED_PROTOTYPE_REPLY);
       r.status = 'big';
       delete r.worker;
-      return r;
     });
-    await handOverMail(handed, await getUser(handed.userId));
+    if (handed) await handOverMail(handed, await getUser(handed.userId));
   } catch (error) {
     log.error(`portal: no se pudo pasar al equipo el pedido P-${n}`, error);
   }

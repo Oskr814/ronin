@@ -10,6 +10,7 @@ const sendMail = vi.fn(async () => {});
 vi.mock('../core/notifier.js', () => ({ sendMail: (...args: unknown[]) => sendMail(...(args as [])) }));
 const gh = {
   addIssueLabel: vi.fn(async () => {}),
+  closeIssueNotPlanned: vi.fn(async (_n?: unknown, _c?: unknown) => true),
   createIssue: vi.fn(async () => ({ number: 901, url: 'https://github.com/redmotos/shoppingcart/issues/901' })),
   getIssueState: vi.fn(async (_n?: unknown) => ({ state: 'OPEN', stateReason: '' })),
   getPullRequestStatus: vi.fn(async () => ({ state: 'OPEN' })),
@@ -70,6 +71,17 @@ describe('portal issues', () => {
     const published = (publishEvidence.mock.calls[0] as unknown as [string, Array<{ path: string }>])[1].map((f) => f.path.split('/').pop());
     expect(published).toEqual(['antes-1.png', 'despues-1.png', 'antes-2.png']);
     expect((await getRequest(n))?.issue).toEqual({ number: 901, url: 'https://github.com/redmotos/shoppingcart/issues/901' });
+  });
+
+  it('cancelled while its issue was being opened, closes the issue too', async () => {
+    const n = await approvedRequest({ status: 'big' });
+    gh.createIssue.mockImplementationOnce(async () => {
+      await updateRequest(n, (x) => { x.status = 'cancelled'; });
+      return { number: 905, url: 'u' };
+    });
+    await openPortalIssue(n);
+    expect(gh.closeIssueNotPlanned).toHaveBeenCalledWith(905, `La persona canceló el pedido P-${n} desde el portal de pedidos.`);
+    expect(sendMail).not.toHaveBeenCalled();
   });
 
   it('finds the issue a worker already opened instead of opening another', async () => {

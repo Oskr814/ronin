@@ -33,12 +33,19 @@ export type RequestStatus =
   | 'resolved'
   // …or as not planned (or an approved one's, without its PR).
   | 'declined'
+  // The person cancelled it (cancel.ts).
+  | 'cancelled'
   // Too big for the portal, or turned down: the dev team takes it, in an
   // issue of its own.
   | 'big';
 
 // When the person can write: an answer, or an adjustment to the prototype.
 export const OPEN_FOR_PERSON: RequestStatus[] = ['asking', 'answered', 'proposed'];
+
+// When the person can cancel it: while nobody took it. Approved, its issue
+// is assigned to ronin; the team's, cancel.ts checks no one assigned its
+// issue yet.
+export const CANCELLABLE: RequestStatus[] = ['thinking', 'asking', 'answered', 'minor', 'proposed', 'big'];
 
 // Prototypes per request: the first and up to two adjustments.
 export const MAX_PROTOTYPES = 3;
@@ -126,6 +133,16 @@ export function updateRequest<R>(n: number, fn: (request: PortalRequest) => R | 
     const result = await fn(request);
     request.updatedAt = new Date().toISOString();
     return result;
+  });
+}
+
+// What a worker writes when it finishes, unless the person cancelled the
+// request meanwhile: then it's left as it is, and this returns undefined.
+export async function updateUnlessCancelled(n: number, fn: (request: PortalRequest) => void): Promise<PortalRequest | undefined> {
+  return updateRequest(n, (r) => {
+    if (r.status === 'cancelled') return undefined;
+    fn(r);
+    return r;
   });
 }
 
