@@ -77,6 +77,11 @@ describe('portal requests', () => {
     await updateRequest(r.number, (x) => { x.issue = { number: 9, url: 'u' }; });
     await sweepPortalRequests(later, launch);
     expect(launch).not.toHaveBeenCalled();
+    // So is one the team takes, until its issue is open.
+    launch.mockClear();
+    await updateRequest(r.number, (x) => { x.status = 'big'; delete x.issue; });
+    await sweepPortalRequests(later, launch);
+    expect(launch).toHaveBeenCalledWith(r.number);
     // Answered ones are left alone.
     launch.mockClear();
     await updateRequest(r.number, (x) => { x.status = 'asking'; });

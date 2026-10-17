@@ -128,6 +128,26 @@ export function doneMail(request: PortalRequest, user: PortalUser, portalUrl: st
   };
 }
 
+// To the person, when the team closed its issue: solved, or not for now.
+export function closedMail(request: PortalRequest, user: PortalUser, portalUrl: string): Mail {
+  const first = user.name.split(/\s+/)[0] || user.name;
+  const solved = request.status === 'resolved';
+  const lines = [
+    `Hola ${first},`,
+    solved
+      ? `El equipo de desarrollo resolvió tu pedido P-${request.number} ("${request.title}"). Si era un cambio en la aplicación, sale en una próxima actualización.`
+      : `El equipo de desarrollo revisó tu pedido P-${request.number} ("${request.title}") y decidió no hacerlo por ahora.`,
+    solved ? 'Gracias por pedirlo.' : 'Si necesitas algo más, puedes enviar un pedido nuevo desde el portal.',
+  ];
+  const url = requestUrl(portalUrl, request.number);
+  return {
+    to: user.email,
+    subject: `${solved ? 'Resuelto' : 'Revisamos tu pedido'}: ${request.title}`,
+    text: `${lines.join('\n\n')}\n\n${url}`,
+    html: html(lines.map(esc), { label: 'Ver el pedido', url }, portalUrl),
+  };
+}
+
 // To the dev team (NOTIFY_TO), when ronin opened the PR of an approved
 // request: it merges once one of them approves it and CI is green.
 export function teamPrMail(request: PortalRequest, user: PortalUser | undefined, to: string, prUrl: string): Mail {
@@ -154,8 +174,8 @@ function teamKind(request: PortalRequest): string {
 }
 
 // To the dev team (NOTIFY_TO): a request that's theirs now (too big, or
-// its prototype turned down) or approved, with its conversation, until the
-// portal opens issues and PRs (#114). `patch` is the last prototype's diff.
+// its prototype turned down or impossible), with its issue and its
+// conversation. `patch` is the last prototype's diff.
 export function teamRequestMail(request: PortalRequest, user: PortalUser | undefined, to: string, dataDir: string, patch?: string): Mail {
   const kind = teamKind(request);
   const who = user ? `${user.name} <${user.email}>` : request.userId;
@@ -168,6 +188,7 @@ export function teamRequestMail(request: PortalRequest, user: PortalUser | undef
     `Pedido P-${request.number} del portal: ${request.title}`,
     `De: ${who}`,
     `App: ${request.repo} · ${request.app}`,
+    request.issue ? `Issue: ${request.issue.url}` : null,
     request.status === 'approved' || request.decision ? `La persona vio ${request.prototypes?.length === 1 ? 'el prototipo' : `${request.prototypes?.length ?? 0} prototipos`}: ${kind}.` : `ronin lo clasificó como ${kind}.`,
     v?.proposal ? `Propuesta: ${v.proposal}` : null,
     v?.reason ? `Motivo: ${v.reason}` : null,

@@ -87,7 +87,8 @@ describe('portal prototype', () => {
     const r = (await getRequest(n))!;
     expect(r).toMatchObject({ status: 'big', verdict: { kind: 'big', reason: 'No se pudo armar el prototipo: docker compose up falló', summary: 'ClientInfoPanel.tsx' } });
     expect(r.messages.at(-1)?.text).toBe(FAILED_PROTOTYPE_REPLY);
-    expect(sendMail.mock.calls.map((c) => (c as unknown as [{ to: string }])[0].to).sort()).toEqual([config.notifyTo, 'mf@x.com'].sort());
+    // The person hears now; the team, once the worker opened its issue.
+    expect(sendMail.mock.calls.map((c) => (c as unknown as [{ to: string }])[0].to)).toEqual(['mf@x.com']);
   });
 
   it('when the agent finds no prototype to make, does not try again', async () => {
@@ -98,7 +99,7 @@ describe('portal prototype', () => {
     expect((await getRequest(n))?.status).toBe('big');
   });
 
-  it('approved, the worker opens its issue; turned down, the team’s to look at, with the person’s note', async () => {
+  it('either way the worker opens its issue: approved, for ronin; turned down, for the team, with the person’s note', async () => {
     const approve = await minorRequest();
     const launch = vi.fn(async () => {});
     await expect(decideRequest(approve, 'aprobar', '', launch)).rejects.toThrow(/no espera tu decisión/);
@@ -116,10 +117,12 @@ describe('portal prototype', () => {
       x.status = 'proposed';
       x.verdict = { kind: 'minor', proposal: 'p', instruction: 'i', summary: 's', at: '' };
     });
-    const rejected = await decideRequest(reject, 'rechazar', '  No era esa pantalla  ');
+    launch.mockClear();
+    const rejected = await decideRequest(reject, 'rechazar', '  No era esa pantalla  ', launch);
     expect(rejected).toMatchObject({ status: 'big', decision: { kind: 'rejected' }, verdict: { kind: 'big', reason: 'La persona no aprobó el prototipo.', proposal: 'p' } });
     expect(rejected.messages.slice(-2).map((m) => [m.from, m.text])).toEqual([['person', 'No era esa pantalla'], ['ronin', REJECTED_REPLY]]);
-    expect(sendMail).toHaveBeenCalledTimes(2);
-    await expect(decideRequest(reject, 'aprobar')).rejects.toThrow(/no espera tu decisión/);
+    expect(sendMail).toHaveBeenCalledOnce();
+    expect(launch).toHaveBeenCalledWith(reject);
+    await expect(decideRequest(reject, 'aprobar', '', launch)).rejects.toThrow(/no espera tu decisión/);
   });
 });

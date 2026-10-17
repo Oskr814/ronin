@@ -15,14 +15,16 @@ export async function sendPortalMails(request: PortalRequest, mails: Array<Mail 
   }
 }
 
-// To the dev team, with the last prototype's diff when there is one.
+// To the dev team, with its issue and the last prototype's diff when there
+// is one.
 export async function teamMail(request: PortalRequest, user: PortalUser | undefined): Promise<Mail> {
   const file = request.prototypes?.at(-1)?.patch;
   const patch = file ? await readFile(prototypePatchPath(request.number, file), 'utf8').catch(() => undefined) : undefined;
   return teamRequestMail(request, user, config.notifyTo, requestDir(request.number), patch);
 }
 
-// A request the team takes now: the person and the team hear about it.
-export async function handOverMails(request: PortalRequest, user: PortalUser | undefined): Promise<void> {
-  await sendPortalMails(request, [user ? bigRequestMail(request, user, config.portal.url) : undefined, await teamMail(request, user)]);
+// A request the team takes now: the person hears right away; the team, with
+// the link, once its issue is open (issue.ts).
+export async function handOverMail(request: PortalRequest, user: PortalUser | undefined): Promise<void> {
+  if (user) await sendPortalMails(request, [bigRequestMail(request, user, config.portal.url)]);
 }

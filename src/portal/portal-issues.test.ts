@@ -11,7 +11,7 @@ vi.mock('../core/notifier.js', () => ({ sendMail: (...args: unknown[]) => sendMa
 const gh = {
   addIssueLabel: vi.fn(async () => {}),
   createIssue: vi.fn(async () => ({ number: 901, url: 'https://github.com/redmotos/shoppingcart/issues/901' })),
-  getIssueState: vi.fn(async () => ({ state: 'OPEN', stateReason: '' })),
+  getIssueState: vi.fn(async (_n?: unknown) => ({ state: 'OPEN', stateReason: '' })),
   getPullRequestStatus: vi.fn(async () => ({ state: 'OPEN' })),
   listIssuesWithLabel: vi.fn(async () => [] as Array<{ number: number; body: string; state: string }>),
   listPrClosingIssues: vi.fn(async () => ({}) as Record<number, number[]>),
@@ -24,7 +24,8 @@ vi.mock('../app/index.js', () => ({
 }));
 vi.mock('../core/repo-context.js', () => ({ activeRepo: () => ({ productRepo: 'redmotos/shoppingcart', productRepoPath: '/repo', portal: { name: 'Red Motos', apps: { backoffice: { name: 'Backoffice' } } } }) }));
 
-const { approvedIssueBody, DONE_REPLY, issueMarker, openApprovedIssue, PR_READY_REPLY, reconcileApproved } = await import('./approved.js');
+const { portalIssueBody, issueMarker, openPortalIssue } = await import('./issue.js');
+const { DECLINED_REPLY, DONE_REPLY, followPortalIssues, PR_READY_REPLY, RESOLVED_REPLY } = await import('./follow.js');
 
 async function approvedRequest(over: Partial<PortalRequest> = {}): Promise<number> {
   const user = await createUser({ email: `mf${Math.random()}@x.com`, name: 'María Fernández', grants: [], createdBy: 'oskr814' });
@@ -57,10 +58,10 @@ beforeEach(async () => {
   gh.getIssueState.mockResolvedValue({ state: 'OPEN', stateReason: '' });
 });
 
-describe('approved portal requests', () => {
+describe('portal issues', () => {
   it("opens the issue for ronin, with the approved prototype, its diff and the conversation", async () => {
     const n = await approvedRequest();
-    await openApprovedIssue(n);
+    await openPortalIssue(n);
     expect(gh.createIssue).toHaveBeenCalledOnce();
     const [title, body, labels, assignees] = gh.createIssue.mock.calls[0] as unknown as [string, string, string[], string[]];
     expect([title, labels, assignees]).toEqual(['Total en negrita en Gestionar pedidos', [LABEL_PORTAL], [config.githubLogin]]);
@@ -74,13 +75,13 @@ describe('approved portal requests', () => {
   it('finds the issue a worker already opened instead of opening another', async () => {
     const n = await approvedRequest();
     gh.listIssuesWithLabel.mockResolvedValue([{ number: 77, body: `${issueMarker(n)}\n…`, state: 'OPEN' }]);
-    await openApprovedIssue(n);
+    await openPortalIssue(n);
     expect(gh.createIssue).not.toHaveBeenCalled();
     expect((await getRequest(n))?.issue?.number).toBe(77);
   });
 
   it('cuts a huge diff and says where the whole one is', () => {
-    const body = approvedIssueBody({ number: 3, title: 't', app: 'backoffice', messages: [], verdict: { kind: 'minor', summary: '', at: '' } } as unknown as PortalRequest, undefined, { prototype: [], attached: [] }, 'x'.repeat(50_000), '/data/requests/3/proto/1.diff');
+    const body = portalIssueBody({ number: 3, title: 't', app: 'backoffice', messages: [], verdict: { kind: 'minor', summary: '', at: '' } } as unknown as PortalRequest, undefined, { prototype: [], attached: [] }, 'x'.repeat(50_000), '/data/requests/3/proto/1.diff');
     expect(body.length).toBeLessThan(45_000);
     expect(body).toContain('… (recortado)');
     expect(body).toContain('/data/requests/3/proto/1.diff');
@@ -89,7 +90,7 @@ describe('approved portal requests', () => {
   it("puts ronin:auto-merge on the PR ronin opened, tells the team, and keeps the person posted", async () => {
     const n = await approvedRequest({ issue: { number: 901, url: 'u' } });
     gh.listPrClosingIssues.mockResolvedValue({ 950: [901], 951: [12] });
-    await reconcileApproved();
+    await followPortalIssues();
     expect(gh.addIssueLabel).toHaveBeenCalledWith(950, LABEL_AUTO_MERGE);
     const r = (await getRequest(n))!;
     expect(r).toMatchObject({ status: 'approved', pr: 950 });
@@ -98,7 +99,7 @@ describe('approved portal requests', () => {
     expect(sendMail.mock.calls[0]).toMatchObject([{ to: config.notifyTo, subject: expect.stringContaining('PR para aprobar') }, expect.any(String)]);
     // Next tick: nothing new until it merges.
     sendMail.mockClear();
-    await reconcileApproved();
+    await followPortalIssues();
     expect(sendMail).not.toHaveBeenCalled();
     expect((await getRequest(n))?.status).toBe('approved');
   });
@@ -106,7 +107,7 @@ describe('approved portal requests', () => {
   it('once merged, tells the person it goes out in the next release', async () => {
     const n = await approvedRequest({ issue: { number: 901, url: 'u' }, pr: 950 });
     gh.getPullRequestStatus.mockResolvedValue({ state: 'MERGED' });
-    await reconcileApproved();
+    await followPortalIssues();
     const r = (await getRequest(n))!;
     expect(r.status).toBe('done');
     expect(r.messages.at(-1)?.text).toBe(DONE_REPLY);
@@ -116,17 +117,52 @@ describe('approved portal requests', () => {
   it('a PR closed without merging is forgotten, and an issue closed as done without one finishes it', async () => {
     const closed = await approvedRequest({ issue: { number: 901, url: 'u' }, pr: 950 });
     gh.getPullRequestStatus.mockResolvedValue({ state: 'CLOSED' });
-    await reconcileApproved();
+    await followPortalIssues();
     expect((await getRequest(closed))?.pr).toBeUndefined();
+    gh.listIssuesWithLabel.mockResolvedValue([{ number: 901, body: '', state: 'CLOSED' }]);
     gh.getIssueState.mockResolvedValue({ state: 'CLOSED', stateReason: 'COMPLETED' });
-    await reconcileApproved();
+    await followPortalIssues();
     expect((await getRequest(closed))?.status).toBe('done');
+  });
+
+  it("opens the team's issue for a big one, assigned to no one, and tells the team with the link", async () => {
+    const n = await approvedRequest({ status: 'big', decision: { kind: 'rejected', at: '' }, verdict: { kind: 'big', reason: 'La persona no aprobó el prototipo.', proposal: 'El total se ve en negrita.', summary: 'OrdersPage.tsx', at: '' } });
+    await openPortalIssue(n);
+    const [, body, labels, assignees] = gh.createIssue.mock.calls[0] as unknown as [string, string, string[], string[]];
+    expect([labels, assignees]).toEqual([[LABEL_PORTAL], []]);
+    for (const part of ['Es para el equipo de desarrollo: La persona vio el prototipo y no lo aprobó', 'Lo que ronin le propuso: El total se ve en negrita.', 'Diff del último prototipo', 'ronin le avisa a la persona por correo']) expect(body).toContain(part);
+    expect(body).not.toContain('Para implementarlo');
+    expect(sendMail).toHaveBeenCalledOnce();
+    expect(sendMail.mock.calls[0]).toMatchObject([{ to: config.notifyTo, text: expect.stringContaining('Issue: https://github.com/redmotos/shoppingcart/issues/901') }, expect.any(String)]);
+    expect((await getRequest(n))?.issue?.number).toBe(901);
+  });
+
+  it("when the team's issue closes, tells the person how: solved, or not for now", async () => {
+    const solved = await approvedRequest({ status: 'big', issue: { number: 61, url: 'u' } });
+    const declined = await approvedRequest({ status: 'big', issue: { number: 62, url: 'u' } });
+    const open = await approvedRequest({ status: 'big', issue: { number: 63, url: 'u' } });
+    gh.listIssuesWithLabel.mockResolvedValue([{ number: 61, body: '', state: 'CLOSED' }, { number: 62, body: '', state: 'CLOSED' }, { number: 63, body: '', state: 'OPEN' }]);
+    gh.getIssueState.mockImplementation(async (n: unknown) => ({ state: 'CLOSED', stateReason: n === 61 ? 'COMPLETED' : 'NOT_PLANNED' }));
+    await followPortalIssues();
+    expect(gh.listIssuesWithLabel).toHaveBeenCalledOnce();
+    expect((await getRequest(solved))).toMatchObject({ status: 'resolved', messages: expect.arrayContaining([expect.objectContaining({ text: RESOLVED_REPLY })]) });
+    expect((await getRequest(declined))).toMatchObject({ status: 'declined', messages: expect.arrayContaining([expect.objectContaining({ text: DECLINED_REPLY })]) });
+    expect((await getRequest(open))?.status).toBe('big');
+    expect(sendMail.mock.calls.map((c) => (c as unknown as [{ subject: string }])[0].subject).sort()).toEqual(['Resuelto: Total en negrita en Gestionar pedidos', 'Revisamos tu pedido: Total en negrita en Gestionar pedidos']);
+  });
+
+  it('an approved one the team closed as not planned, without its PR, is declined', async () => {
+    const n = await approvedRequest({ issue: { number: 901, url: 'u' } });
+    gh.listIssuesWithLabel.mockResolvedValue([{ number: 901, body: '', state: 'CLOSED' }]);
+    gh.getIssueState.mockResolvedValue({ state: 'CLOSED', stateReason: 'NOT_PLANNED' });
+    await followPortalIssues();
+    expect((await getRequest(n))?.status).toBe('declined');
   });
 
   it('leaves other repos and requests without an issue alone', async () => {
     await approvedRequest({ repo: 'Bmedical/bmedical', issue: { number: 5, url: 'u' } });
     await approvedRequest();
-    await reconcileApproved();
+    await followPortalIssues();
     expect(gh.listPrClosingIssues).not.toHaveBeenCalled();
   });
 });

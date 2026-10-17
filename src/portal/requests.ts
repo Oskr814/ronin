@@ -29,7 +29,12 @@ export type RequestStatus =
   | 'approved'
   // Its PR merged: it goes out in the next release.
   | 'done'
-  // Too big for the portal, or turned down: the dev team takes it.
+  // The team's issue closed as completed…
+  | 'resolved'
+  // …or as not planned (or an approved one's, without its PR).
+  | 'declined'
+  // Too big for the portal, or turned down: the dev team takes it, in an
+  // issue of its own.
   | 'big';
 
 // When the person can write: an answer, or an adjustment to the prototype.
@@ -86,13 +91,13 @@ export interface PortalRequest {
   prototypes?: Prototype[];
   // When the person approved the prototype or turned it down.
   decision?: { kind: 'approved' | 'rejected'; at: string };
-  // Approved: the issue ronin opened in the product repo, and the PR that
-  // closes it once ronin opened one.
+  // The issue it became in the product repo (approved: for ronin; big: for
+  // the team), and an approved one's PR once ronin opened it.
   issue?: { number: number; url: string };
   pr?: number;
   // The worker reading it while 'thinking', drawing the prototype while
-  // 'minor', or opening its issue once 'approved', so the tick can tell one
-  // that died (and start another).
+  // 'minor', or opening its issue once 'approved' or 'big', so the tick can
+  // tell one that died (and start another).
   worker?: { pid: number; since: string };
   createdAt: string;
   updatedAt: string;
