@@ -844,7 +844,10 @@ const docOf = (item) => {
   const tabs = docTabsOf(item, d);
   return tabs.some(([k]) => k === S.doc[item.id]) ? S.doc[item.id] : tabs[0][0];
 };
-const docKeyOf = (item) => `${item.id}:${S.doc[item.id] ?? ''}`;
+// The tab shown, the same docHTML marks #doc with: on the default tab
+// S.doc is still empty, and comparing against it lost the scroll on every
+// redraw.
+const docKeyOf = (item) => `${item.id}:${docOf(item) ?? ''}`;
 
 function docHTML(item) {
   if (item.kind === 'other') return '';
