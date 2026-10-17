@@ -1,4 +1,5 @@
 import type { ServerResponse } from 'node:http';
+import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { dirname, extname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -20,6 +21,30 @@ const MIME: Record<string, string> = {
   '.png': 'image/png',
   '.ico': 'image/x-icon',
 };
+
+// Cloudflare, in front of the public listener, gives the JS and CSS its own
+// browser cache time (4 hours) over our no-cache: after a deploy, a browser
+// would keep running the old ones. So the index.html names each with its
+// content's hash (`/portal.js?v=1a2b3c4d5e`): a change is a new URL. The
+// HTML itself isn't cached.
+const versions = new Map<string, { mtimeMs: number; v: string }>();
+
+function version(file: string): string {
+  const { mtimeMs } = statSync(file);
+  const cached = versions.get(file);
+  if (cached?.mtimeMs === mtimeMs) return cached.v;
+  const v = createHash('sha256').update(readFileSync(file)).digest('hex').slice(0, 10);
+  versions.set(file, { mtimeMs, v });
+  return v;
+}
+
+export function withVersions(html: string, root: string): string {
+  return html.replace(/(href|src)="\/([\w./-]+\.(?:js|css))"/g, (whole, attr: string, path: string) => {
+    const file = resolve(root, path);
+    if (!file.startsWith(root + sep) || !existsSync(file)) return whole;
+    return `${attr}="/${path}?v=${version(file)}"`;
+  });
+}
 
 // A file under root, or the app's index.html for an app route (a path with
 // no extension: /i/<item>, /contrasena); anything else is a 404, and nothing
@@ -43,5 +68,6 @@ export function serveStatic(path: string, res: ServerResponse, root: string): vo
     }
     file = join(root, 'index.html');
   }
-  res.writeHead(200, { 'Content-Type': MIME[extname(file)] ?? 'application/octet-stream', 'Cache-Control': 'no-cache' }).end(readFileSync(file));
+  const body = extname(file) === '.html' ? withVersions(readFileSync(file, 'utf8'), root) : readFileSync(file);
+  res.writeHead(200, { 'Content-Type': MIME[extname(file)] ?? 'application/octet-stream', 'Cache-Control': 'no-cache' }).end(body);
 }
