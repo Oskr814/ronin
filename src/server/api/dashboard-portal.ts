@@ -27,6 +27,7 @@ export function waitsOn(r: Pick<PortalRequest, 'status' | 'issue' | 'pr'>): Wait
     case 'proposed':
       return 'person';
     case 'approved':
+    case 'fixing':
       return r.pr ? 'team' : 'ronin';
     case 'big':
       return r.issue ? 'team' : 'ronin';
@@ -119,7 +120,7 @@ export function activity(r: PortalRequest, runs: RunSummary[]): { entries: Activ
   ];
   // Stable: at the same instant, the order above (a reply before its email).
   entries.sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
-  const untimed: RequestEvent[] = !r.events?.length && r.issue ? [{ kind: 'issue', number: r.issue.number, team: r.status !== 'approved' && r.status !== 'done', at: '' }] : [];
+  const untimed: RequestEvent[] = !r.events?.length && r.issue ? [{ kind: 'issue', number: r.issue.number, team: r.status !== 'approved' && r.status !== 'fixing' && r.status !== 'done', at: '' }] : [];
   return { entries, untimed };
 }
 

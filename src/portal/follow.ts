@@ -5,12 +5,13 @@ import { activeRepo } from '../core/repo-context.js';
 import { getUser } from './accounts.js';
 import { closedMail, doneMail, teamPrMail } from './mail.js';
 import { sendPortalMails, teamTo } from './notify.js';
-import { addEvent, addRoninMessage, listRequests, updateRequest, type PortalRequest, type RequestStatus } from './requests.js';
+import { addEvent, addRoninMessage, listRequests, RONINS, updateRequest, type PortalRequest, type RequestStatus } from './requests.js';
 
 // The tick (and the webhooks of a PR opened or closed and of an issue
 // closed), inside withActiveRepo: follows the issues this repo's portal
 // requests became (#114, issue.ts).
-//   - Approved: the PR ronin opened gets ronin:auto-merge — it merges once
+//   - Approved, or a reported error's small fix (#137): the PR ronin opened
+//     gets ronin:auto-merge — it merges once
 //     a dev approves it and CI is green (auto-merge.ts) — and the team hears
 //     it waits for them; merged, the person hears it goes out in the next
 //     release.
@@ -20,6 +21,8 @@ import { addEvent, addRoninMessage, listRequests, updateRequest, type PortalRequ
 
 export const PR_READY_REPLY = 'Ya hice el cambio. Ahora una persona del equipo lo revisa antes de publicarlo; te aviso por correo cuando esté listo.';
 export const DONE_REPLY = '¡Listo! El cambio ya está hecho y sale en la próxima actualización de la aplicación.';
+export const FIX_READY_REPLY = 'Ya corregí el error. Ahora una persona del equipo revisa el arreglo antes de publicarlo; te aviso por correo cuando esté listo.';
+export const FIXED_REPLY = '¡Listo! El error ya está corregido y el arreglo sale en la próxima actualización de la aplicación.';
 export const RESOLVED_REPLY = 'El equipo de desarrollo resolvió tu pedido. Si era un cambio en la aplicación, sale en una próxima actualización.';
 export const DECLINED_REPLY = 'El equipo de desarrollo revisó tu pedido y decidió no hacerlo por ahora. Si necesitas algo más, puedes enviar un pedido nuevo.';
 
@@ -28,7 +31,7 @@ const CLOSE: Record<'done' | 'resolved' | 'declined', string> = { done: DONE_REP
 async function close(request: PortalRequest, status: 'done' | 'resolved' | 'declined'): Promise<void> {
   const closed = await updateRequest(request.number, (r) => {
     r.status = status;
-    addRoninMessage(r, CLOSE[status]);
+    addRoninMessage(r, status === 'done' && r.bug ? FIXED_REPLY : CLOSE[status]);
     addEvent(r, { kind: 'closed', status });
     return r;
   });
@@ -42,10 +45,10 @@ async function close(request: PortalRequest, status: 'done' | 'resolved' | 'decl
 async function closedAs(request: PortalRequest): Promise<'done' | 'resolved' | 'declined'> {
   const { stateReason } = await getIssueState(request.issue!.number);
   if (stateReason === 'NOT_PLANNED') return 'declined';
-  return request.status === 'approved' ? 'done' : 'resolved';
+  return RONINS.includes(request.status) ? 'done' : 'resolved';
 }
 
-const FOLLOWED: RequestStatus[] = ['approved', 'big'];
+const FOLLOWED: RequestStatus[] = [...RONINS, 'big'];
 
 export async function followPortalIssues(): Promise<void> {
   const repo = activeRepo().productRepo;
@@ -62,7 +65,7 @@ export async function followPortalIssues(): Promise<void> {
   for (const request of followed) {
     const issue = request.issue!.number;
     try {
-      if (request.status === 'approved' && request.pr) {
+      if (RONINS.includes(request.status) && request.pr) {
         const pr = await getPullRequestStatus(request.pr);
         if (pr.state === 'MERGED') await close(request, 'done');
         else if (pr.state === 'CLOSED') {
@@ -75,7 +78,7 @@ export async function followPortalIssues(): Promise<void> {
         }
         continue;
       }
-      if (request.status === 'approved') {
+      if (RONINS.includes(request.status)) {
         closing ??= await listPrClosingIssues();
         const pr = Object.entries(closing).find(([, issues]) => issues.includes(issue))?.[0];
         if (pr) {
@@ -83,7 +86,7 @@ export async function followPortalIssues(): Promise<void> {
           const updated = await updateRequest(request.number, (r) => {
             r.pr = Number(pr);
             addEvent(r, { kind: 'pr', number: r.pr });
-            addRoninMessage(r, PR_READY_REPLY);
+            addRoninMessage(r, r.status === 'fixing' ? FIX_READY_REPLY : PR_READY_REPLY);
             return r;
           });
           log.info(`portal: el pedido P-${request.number} tiene el PR #${pr}, con ${LABEL_AUTO_MERGE}`);

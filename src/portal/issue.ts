@@ -7,14 +7,15 @@ import { log } from '../core/logger.js';
 import { activeRepo } from '../core/repo-context.js';
 import { getUser, type PortalUser } from './accounts.js';
 import { sendPortalMails, teamMail } from './notify.js';
-import { addEvent, getRequest, patchOf, prototypePatchPath, requestImagePath, updateRequest, type PortalRequest } from './requests.js';
+import { addEvent, getRequest, patchOf, prototypePatchPath, requestImagePath, RONINS, updateRequest, type PortalRequest } from './requests.js';
 
 // The issue a portal request (#114) becomes in its product repo, with label
 // ronin:portal: what the person asked, the conversation, the prototype and
 // its diff if there was one.
-//   - Approved: assigned to ronin, which takes it like any issue assigned
-//     to it (discoverAssignedIssues → 'fix-issue') and opens the PR; follow.ts
-//     takes it from there.
+//   - Approved, or a reported error's small fix (#137): assigned to ronin,
+//     which takes it like any issue assigned to it (discoverAssignedIssues →
+//     'fix-issue') and opens the PR, starting from the prototype's or the
+//     reproduction's diff; follow.ts takes it from there.
 //   - Too big, its prototype turned down or impossible to make, or a
 //     reported error once ronin tried to reproduce it (#137): for the dev
 //     team, assigned to no one; follow.ts tells the person when it closes.
@@ -75,6 +76,7 @@ export function reproductionSection(request: PortalRequest, shots: IssueShot[], 
 }
 
 export function portalIssueBody(request: PortalRequest, user: PortalUser | undefined, shots: IssueShots, patch: string | undefined, patchFile: string | undefined, appName?: string): string {
+  if (request.status === 'fixing') return fixIssueBody(request, user, shots, patch, patchFile, appName);
   const approved = request.status === 'approved';
   const v = request.verdict;
   const last = request.prototypes?.at(-1);
@@ -112,6 +114,33 @@ export function portalIssueBody(request: PortalRequest, user: PortalUser | undef
   ].filter(Boolean).join('\n\n');
 }
 
+const MAX_FIX_PATCH = MAX_PATCH;
+
+// A reported error ronin reproduced and fixed in a draft (#137): the issue
+// is for making that fix, from the test and the diff.
+function fixIssueBody(request: PortalRequest, user: PortalUser | undefined, shots: IssueShots, patch: string | undefined, patchFile: string | undefined, appName?: string): string {
+  const who = user?.name ?? 'una persona';
+  const conversation = request.messages
+    .filter((m) => m.text && !m.captions)
+    .map((m) => `**${m.from === 'ronin' ? 'ronin' : who}:**\n${m.from === 'ronin' ? m.text : quote(m.text)}`)
+    .join('\n\n');
+  const image = (s: IssueShot) => `<img src="${s.url}" alt="${s.caption.replace(/"/g, "'")}" width="720">`;
+  const truncated = patch !== undefined && patch.length > MAX_FIX_PATCH;
+  const where = `Pedido **P-${request.number}** del portal de pedidos, de ${who}, en **${appName ?? request.app}** (\`${request.app}\` en ronin.app.json).`;
+  return [
+    issueMarker(request.number),
+    `${where} Es un **reporte de error**: ronin lo reprodujo con un test que falla y el arreglo es pequeño. Este issue es para hacer ese arreglo.`,
+    '## Lo que reporta',
+    request.title,
+    reproductionSection(request, shots.reproduction ?? [], image),
+    '## Para implementarlo',
+    'Partir del diff de la reproducción: el test ya está y el arreglo de prueba lo pasa a verde. Completar lo que un borrador deja fuera (el mismo error en otros lugares, los tests de alrededor) sin ampliar el alcance: lo que no sea este error queda para otro issue.',
+    request.verdict?.summary ? `**Análisis de ronin al leer el reporte:**\n\n${request.verdict.summary}` : '',
+    patch ? `<details><summary>Diff de la reproducción (el test y el arreglo de prueba)</summary>\n\n\`\`\`diff\n${truncated ? `${patch.slice(0, MAX_FIX_PATCH)}\n… (recortado)` : patch}\n\`\`\`\n\n</details>${truncated && patchFile ? `\n\nEl diff completo está en el runner: \`${patchFile}\`.` : ''}` : '',
+    `<details><summary>La conversación en el portal</summary>\n\n${conversation}${shots.attached.length ? `\n\n${shots.attached.map(image).join('\n')}` : ''}\n\n</details>`,
+  ].filter(Boolean).join('\n\n');
+}
+
 // The last prototype's images and the person's own, on the evidence branch
 // (the product repo is private: only the team sees them). Named like an
 // exploration finding's, so the 'fix-issue' run shows the afters in the PR
@@ -142,15 +171,15 @@ async function publishShots(request: PortalRequest): Promise<IssueShots> {
 
 export const cancelComment = (n: number) => `La persona canceló el pedido P-${n} desde el portal de pedidos.`;
 
-// Whether a request still needs its issue: approved, or the team's.
-export const needsIssue = (r: PortalRequest) => (r.status === 'approved' || r.status === 'big') && !r.issue;
+// Whether a request still needs its issue: ronin's, or the team's.
+export const needsIssue = (r: PortalRequest) => (RONINS.includes(r.status) || r.status === 'big') && !r.issue;
 
 // Inside withActiveRepo. The team hears about theirs here, with the link;
 // the person already heard when it was handed over.
 export async function openPortalIssue(n: number): Promise<void> {
   const request = await getRequest(n);
   if (!request || !needsIssue(request)) return;
-  const approved = request.status === 'approved';
+  const approved = RONINS.includes(request.status);
   const user = await getUser(request.userId);
   const existing = (await listIssuesWithLabel(LABEL_PORTAL)).find((i) => i.body.includes(issueMarker(n)));
   let issue: { number: number; url: string };
@@ -172,6 +201,6 @@ export async function openPortalIssue(n: number): Promise<void> {
     await closeIssueNotPlanned(issue.number, cancelComment(n));
     return;
   }
-  log.info(`portal: el pedido P-${n} ${approved ? 'aprobado' : 'para el equipo'} es el issue #${issue.number}`);
+  log.info(`portal: el pedido P-${n} ${approved ? (request.status === 'fixing' ? 'con su arreglo' : 'aprobado') : 'para el equipo'} es el issue #${issue.number}`);
   if (!approved && !existing) await sendPortalMails(updated, [await teamMail(updated, user)]);
 }

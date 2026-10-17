@@ -28,8 +28,10 @@ import {
 // that fails because of the error and tries the fix. The images stay with
 // the request, behind the person's login; the diff (the test, and the fix
 // if it made one) stays on the runner for the team. Then:
-//   - reproduced: the team's, with the steps, the images, the test and the
-//     diff;
+//   - reproduced, with a small fix that turned its test green: ronin's,
+//     like an approved prototype — the person approves nothing;
+//   - reproduced otherwise: the team's, with the steps, the images, the
+//     test and the diff;
 //   - not reproduced: ronin asks the person what it needs (while it may
 //     ask and try again), or it's the team's, saying it could not be
 //     reproduced with test data — never closed as "not an error".
@@ -39,6 +41,7 @@ import {
 // waiting on a reproduction that won't come.
 const ATTEMPTS = 2;
 
+export const FIXING_REPLY = 'Es un error pequeño y ya se está corrigiendo; una persona del equipo revisa el arreglo antes de que salga. Te aviso por correo cuando esté listo.';
 export const REPRODUCED_REPLY = 'Se lo envié al equipo de desarrollo con lo que encontré. Te aviso por correo cuando esté resuelto.';
 export const NOT_REPRODUCED_REPLY = 'Puede depender de datos que solo están en la aplicación real, así que se lo envié al equipo de desarrollo con tu descripción y lo que intenté. Te aviso por correo cuando esté resuelto.';
 export const FAILED_REPRODUCE_REPLY = 'No pude abrir la copia de la aplicación para reproducir el error, así que se lo envié al equipo de desarrollo con tu descripción. Te aviso por correo cuando esté resuelto.';
@@ -144,6 +147,11 @@ export function parseReproduction(raw: string, outDir: string): ReproductionOutp
   };
 }
 
+// ronin fixes it on its own only with the error reproduced, a small fix,
+// its test red without it and green with it, and the diff to start from.
+export const fixable = (output: Pick<ReproductionOutput, 'reproduced' | 'fix' | 'test'>, patch: string | undefined) =>
+  output.reproduced && output.fix === 'small' && Boolean(output.test?.green) && Boolean(patch);
+
 const testState = (test: ReproductionTest | undefined): 'red' | 'green' | 'none' => (!test?.red ? 'none' : test.green ? 'green' : 'red');
 
 // What the team is told about where it stands.
@@ -181,7 +189,8 @@ async function deliver(n: number, round: number, output: ReproductionOutput, run
   return updateUnlessCancelled(n, (r) => {
     const at = new Date();
     const ask = !output.reproduced && output.pregunta && r.questions < MAX_QUESTIONS && round < MAX_REPRODUCTIONS;
-    const next = ask ? output.pregunta : output.reproduced ? REPRODUCED_REPLY : NOT_REPRODUCED_REPLY;
+    const fix = fixable(output, patch);
+    const next = ask ? output.pregunta : fix ? FIXING_REPLY : output.reproduced ? REPRODUCED_REPLY : NOT_REPRODUCED_REPLY;
     const messageId = addRoninMessage(r, `${output.mensaje}\n\n${next}`, at, images.length ? { images, captions } : undefined);
     const reproduction: Reproduction = {
       round,
@@ -201,6 +210,10 @@ async function deliver(n: number, round: number, output: ReproductionOutput, run
     if (ask) {
       r.status = 'asking';
       r.questions += 1;
+      return;
+    }
+    if (fix) {
+      r.status = 'fixing';
       return;
     }
     r.verdict = { ...(r.verdict ?? { summary: '' }), kind: 'big', reason: teamReason(output), at: at.toISOString() };

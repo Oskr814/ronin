@@ -27,7 +27,7 @@ const team: { notifyTo?: string[] } = {};
 vi.mock('../core/repo-context.js', () => ({ activeRepo: () => ({ productRepo: 'redmotos/shoppingcart', productRepoPath: '/repo', portal: { name: 'Red Motos', apps: { backoffice: { name: 'Backoffice' } }, ...team } }) }));
 
 const { portalIssueBody, issueMarker, openPortalIssue } = await import('./issue.js');
-const { DECLINED_REPLY, DONE_REPLY, followPortalIssues, PR_READY_REPLY, RESOLVED_REPLY } = await import('./follow.js');
+const { DECLINED_REPLY, DONE_REPLY, FIX_READY_REPLY, FIXED_REPLY, followPortalIssues, PR_READY_REPLY, RESOLVED_REPLY } = await import('./follow.js');
 
 async function approvedRequest(over: Partial<PortalRequest> = {}): Promise<number> {
   const user = await createUser({ email: `mf${Math.random()}@x.com`, name: 'María Fernández', grants: [], createdBy: 'oskr814' });
@@ -119,6 +119,33 @@ describe('portal issues', () => {
     expect(published).toEqual(['antes-1.png', 'despues-1.png', 'antes-2.png']);
     // The team's mail says what it is.
     expect(sendMail.mock.calls.at(-1)).toMatchObject([{ subject: expect.stringContaining('(error reproducido)'), text: expect.stringContaining('rojo sin el arreglo y verde con él') }, expect.any(String)]);
+  });
+
+  it("a reported error's small fix is ronin's issue, to make from the test and the diff, and is followed like an approved one (#137)", async () => {
+    const n = await approvedRequest({ status: 'fixing', prototypes: [] });
+    await writeFile(prototypePatchPath(n, 'r1.diff'), 'diff --git a/T.cs b/T.cs\n+[Fact]\n');
+    await updateRequest(n, (x) => {
+      x.verdict = { kind: 'error', summary: 'OrderHeaderExtensions', at: '' };
+      x.bug = { steps: 'hasta 16/10', reproductions: [{ round: 1, reproduced: true, steps: ['Filtró'], fix: 'small', summary: 'medianoche', patch: 'r1.diff', messageId: 2, at: '', test: { kind: 'direct', name: 'T', red: true, green: true } }] };
+    });
+    await openPortalIssue(n);
+    const [, body, , assignees] = gh.createIssue.mock.calls[0] as unknown as [string, string, string[], string[]];
+    expect(assignees).toEqual([config.githubLogin]);
+    for (const part of [issueMarker(n), 'Es un **reporte de error**: ronin lo reprodujo con un test que falla y el arreglo es pequeño. Este issue es para hacer ese arreglo.', '## Reproducción', 'Partir del diff de la reproducción', '+[Fact]']) expect(body).toContain(part);
+    expect(body).not.toContain('Cuando se cierre este issue');
+    // ronin's: the team hears once there's a PR to approve.
+    expect(sendMail).not.toHaveBeenCalled();
+
+    gh.listPrClosingIssues.mockResolvedValue({ 950: [901] });
+    await followPortalIssues();
+    expect(gh.addIssueLabel).toHaveBeenCalledWith(950, LABEL_AUTO_MERGE);
+    expect((await getRequest(n))?.messages.at(-1)?.text).toBe(FIX_READY_REPLY);
+    expect(sendMail.mock.calls[0]).toMatchObject([{ subject: expect.stringContaining('PR para aprobar'), text: expect.stringContaining('Es el arreglo de un error que reportó') }, expect.any(String)]);
+    sendMail.mockClear();
+    gh.getPullRequestStatus.mockResolvedValue({ state: 'MERGED' });
+    await followPortalIssues();
+    expect((await getRequest(n))).toMatchObject({ status: 'done', messages: expect.arrayContaining([expect.objectContaining({ text: FIXED_REPLY })]) });
+    expect(sendMail.mock.calls[0]).toMatchObject([{ text: expect.stringContaining('ya está corregido') }, expect.any(String)]);
   });
 
   it('a test that never failed goes as what was tried, not as proof of the error', () => {
