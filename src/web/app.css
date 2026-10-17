@@ -1027,3 +1027,26 @@ button.chip[data-goped]:hover { color: var(--ink); }
   .reu-top { flex-direction: column; gap: 4px; }
   .reu-row2 { grid-template-columns: 1fr; }
 }
+
+/* the review of a meeting's proposals (#62) */
+.reu-chk { width: 15px; height: 15px; margin: 0; accent-color: var(--ok); cursor: pointer; flex: none; }
+.reu-pr.off { opacity: .55; }
+.reu-pr.off .reu-pr.off { opacity: 1; }
+.reu-ti { flex: 1; min-width: 200px; background: transparent; border: 1px solid transparent; border-radius: 5px; padding: 2px 5px; margin-left: -6px; font: 600 14px "Schibsted Grotesk", system-ui, sans-serif; color: var(--ink); }
+.reu-ti:hover { border-color: var(--rule); }
+.reu-ti:focus { border-color: var(--run); outline: none; background: var(--bg); }
+.reu-sel { display: inline-flex; gap: 6px; align-items: center; }
+.reu-sel select { background: var(--bg); border: 1px solid var(--rule); border-radius: 5px; padding: 2px 6px; font-size: 12.5px; color: var(--ink-2); max-width: 260px; }
+.reu-ta { flex-basis: 100%; width: 100%; min-height: 140px; background: var(--bg); border: 1px solid var(--rule); border-radius: 6px; padding: 8px 10px; font: 12.5px/1.5 "JetBrains Mono", ui-monospace, monospace; color: var(--ink-2); resize: vertical; }
+.reu-res { font-size: 12.5px; }
+.reu-res.ok { color: var(--ok); }
+.reu-res.ok a { color: var(--ok); }
+.reu-res.bad { color: var(--crit); }
+.reu-approve { position: sticky; bottom: 0; margin: 18px -24px -48px; padding: 10px 24px; background: color-mix(in srgb, var(--side) 92%, transparent); backdrop-filter: blur(6px); border-top: 1px solid var(--rule); display: flex; gap: 10px; align-items: center; flex-wrap: wrap; z-index: 3; }
+.reu-approve .sum { flex: 1; min-width: 220px; font-size: 13px; color: var(--ink-2); }
+.reu-approve .sum b { color: var(--ink); }
+.reu-approve .sum small { display: block; color: var(--muted); font-size: 12px; }
+@media (max-width: 760px) {
+  .reu-ti { min-width: 0; width: 100%; flex-basis: 100%; margin-left: 0; }
+  .reu-approve { margin: 18px -16px -48px; padding: 10px 16px; }
+}

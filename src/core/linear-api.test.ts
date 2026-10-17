@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { currentCycle, linearIssuesFor, linearKey, resolveProject, teamPlanning, updateIssue } from './linear-api.js';
+import { createProject, currentCycle, linearIssuesFor, linearKey, resolveProject, teamPlanning, updateIssue } from './linear-api.js';
 
 const ENTRY = { productRepo: 'redmotos/shoppingcart', productRepoPath: '/tmp/x', linear: { apiKeyEnv: 'LINEAR_API_KEY_TEST' } };
 const PREFIX = 'https://github.com/redmotos/shoppingcart/issues/';
@@ -83,6 +83,7 @@ describe('teamPlanning', () => {
     respond({ data: { issues: { nodes: [{ team: {
       projects: { nodes: [{ id: 'p2', name: 'Seguridad' }, { id: 'p1', name: 'Auditoría' }] },
       cycles: { nodes: [{ id: 'c18', number: 18, name: null, startsAt: '2026-10-19', endsAt: '2026-10-26', isActive: false }, { id: 'c17', number: 17, name: null, startsAt: '2026-10-12', endsAt: '2026-10-19', isActive: true }] },
+      members: { nodes: [{ id: 'u2', name: 'Valeria', active: true }, { id: 'u3', name: 'Se fue', active: false }, { id: 'u1', name: 'Abdias V.', active: true }] },
     } }] } } });
     expect(await teamPlanning(ENTRY, 'k')).toEqual({
       projects: [{ id: 'p1', name: 'Auditoría' }, { id: 'p2', name: 'Seguridad' }],
@@ -90,6 +91,7 @@ describe('teamPlanning', () => {
         { id: 'c17', number: 17, startsAt: '2026-10-12', endsAt: '2026-10-19', current: true },
         { id: 'c18', number: 18, startsAt: '2026-10-19', endsAt: '2026-10-26', current: false },
       ],
+      people: [{ id: 'u1', name: 'Abdias V.' }, { id: 'u2', name: 'Valeria' }],
     });
   });
 });
@@ -109,5 +111,29 @@ describe('resolveProject and updateIssue', () => {
     expect(JSON.parse((fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1].body as string).variables).toEqual({ id: 'u-1', input: { projectId: 'p1', cycleId: 'c17' } });
     respond({ data: { issueUpdate: { success: false } } });
     await expect(updateIssue('k', 'u-1', { projectId: 'p1' })).rejects.toThrow('no aplicó');
+  });
+});
+
+describe('createProject', () => {
+  it("creates it in the team, in the workspace's first backlog status, with its lead", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ data: { projectStatuses: { nodes: [{ id: 's-planned', type: 'planned', position: 1 }, { id: 's-backlog2', type: 'backlog', position: 5 }, { id: 's-backlog', type: 'backlog', position: 0 }] } } })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ data: { projectCreate: { success: true, project: { id: 'p9', name: 'Devoluciones', url: 'https://linear.app/x/project/p9' } } } })));
+    vi.stubGlobal('fetch', fetchMock);
+    const long = `Registrar   devoluciones ${'x'.repeat(300)}`;
+    expect(await createProject('k', { name: 'Devoluciones', description: long, content: '## Qué\nTodo.', teamId: 't1', leadId: 'u1' })).toEqual({ id: 'p9', url: 'https://linear.app/x/project/p9' });
+    const input = JSON.parse((fetchMock.mock.calls[1] as unknown as [string, RequestInit])[1].body as string).variables.input;
+    expect(input).toMatchObject({ name: 'Devoluciones', content: '## Qué\nTodo.', teamIds: ['t1'], statusId: 's-backlog', leadId: 'u1' });
+    expect(input.description).toHaveLength(255);
+    expect(input.description.startsWith('Registrar devoluciones x')).toBe(true);
+  });
+
+  it('fails when Linear does not create it', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ data: { projectStatuses: { nodes: [] } } })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ data: { projectCreate: { success: false, project: null } } })));
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(createProject('k', { name: 'X', description: '', content: '', teamId: 't1' })).rejects.toThrow('no creó el proyecto');
+    expect(JSON.parse((fetchMock.mock.calls[1] as unknown as [string, RequestInit])[1].body as string).variables.input).not.toHaveProperty('statusId');
   });
 });

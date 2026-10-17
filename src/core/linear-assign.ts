@@ -1,7 +1,7 @@
 import { linearIssuesFor, linearKey, resolveProject, updateIssue } from './linear-api.js';
 import { readLocalState, withLocalStateLock, writeLocalState, type LinearPending } from './local-state.js';
 import { log } from './logger.js';
-import { activeRepo } from './repo-context.js';
+import { activeRepo, withActiveRepo, type RepoEntry } from './repo-context.js';
 
 // Putting the issues ronin opens in a Linear project (#101, entrega 3).
 // GitHub stays the source: the issue is created there as always, and the
@@ -107,4 +107,17 @@ export async function processLinearAssignments(now = Date.now()): Promise<void> 
     });
     await writeLocalState(state);
   });
+}
+
+// The sync usually creates the Linear issue within seconds: for an issue
+// created from the dashboard, try a few times over the next minutes, so the
+// project shows up while the person is still looking. Whatever's left, the
+// next tick applies.
+const RETRY_S = [5, 15, 30, 60, 120, 300];
+export function applyLinearSoon(entry: RepoEntry): void {
+  for (const s of RETRY_S) {
+    setTimeout(() => {
+      withActiveRepo(entry, () => processLinearAssignments()).catch((error) => log.error('Linear: no se pudo asignar el issue nuevo', error));
+    }, s * 1000).unref();
+  }
 }

@@ -30,6 +30,7 @@ import { getRequest, listRequests } from '../../portal/requests.js';
 import { isOpen, requestDetail, requestImage, requestPatch, requestRow } from './dashboard-portal.js';
 import { DuplicateMeeting, createMeeting, getMeeting, launchMeetingWorker, listMeetings, retryMeeting } from '../../meetings/index.js';
 import { MAX_UPLOAD_BODY, MeetingUploadError, meetingDetail, meetingOriginal, meetingRow, parseUpload } from './dashboard-meetings.js';
+import { ApproveError, approveMeeting, discardMeeting } from './dashboard-meetings-approve.js';
 
 // The dashboard's data (#65), all behind the session (tailnet.ts checks it
 // before any of this runs):
@@ -61,6 +62,8 @@ import { MAX_UPLOAD_BODY, MeetingUploadError, meetingDetail, meetingOriginal, me
 //   GET /api/reuniones/<n>           one of them, with its notes' text
 //   GET /api/reuniones/<n>/original  the file as it was uploaded, to download
 //   POST /api/reuniones/<n>/reintentar  reads it again, after its reading failed
+//   POST /api/reuniones/<n>/aprobar  creates what the person chose of its proposals, as them (dashboard-meetings-approve.ts)
+//   POST /api/reuniones/<n>/descartar  sets the rest of it aside
 
 // How far back the sidebar and an item's history look. Run records are kept
 // 14 days (scripts/setup-cron.sh).
@@ -197,6 +200,35 @@ async function postReunion(req: IncomingMessage, res: ServerResponse, session: S
     if (error instanceof DuplicateMeeting) json(res, 409, { error: error.message, number: error.number });
     else if (error instanceof MeetingUploadError) json(res, 400, { error: error.message });
     else throw error;
+  }
+}
+
+// POST /api/reuniones/<n>/aprobar { items: [{ id, title?, body?, lead?, project?, cycle? }] }, or /descartar.
+async function postDecision(req: IncomingMessage, res: ServerResponse, n: number, what: string, session: Session): Promise<void> {
+  if (!(req.headers['content-type'] ?? '').startsWith('application/json')) {
+    json(res, 415, { error: 'se espera JSON' });
+    return;
+  }
+  const body = await readJson(req, 512 * 1024);
+  const meeting = await getMeeting(n);
+  const entry = meeting && (await visibleRepos()).find((e) => e.productRepo === meeting.repo);
+  if (!meeting || !entry) {
+    json(res, 404, { error: 'no existe esa reunión' });
+    return;
+  }
+  try {
+    if (what === 'descartar') {
+      await discardMeeting(n, session.login);
+      json(res, 200, { status: 'discarded' });
+      return;
+    }
+    const outcome = await approveMeeting(entry, n, session, body?.items);
+    // The next snapshot lists the new issues.
+    forgetGithub(entry.productRepo);
+    json(res, 200, outcome);
+  } catch (error) {
+    if (error instanceof ApproveError) json(res, error.status, { error: error.message });
+    else if (!githubRefusal(res, error)) throw error;
   }
 }
 
@@ -594,6 +626,11 @@ async function route(req: IncomingMessage, res: ServerResponse, path: string, se
   }
   if (path === '/api/reuniones' && req.method === 'POST') {
     await postReunion(req, res, session);
+    return true;
+  }
+  const decide = /^\/api\/reuniones\/(\d+)\/(aprobar|descartar)$/.exec(path);
+  if (decide && req.method === 'POST') {
+    await postDecision(req, res, Number(decide[1]), decide[2], session);
     return true;
   }
   const retry = /^\/api\/reuniones\/(\d+)\/reintentar$/.exec(path);

@@ -1,9 +1,8 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { APP_MANIFEST_FILE, parseAppManifest } from '../../app/manifest.js';
-import { processLinearAssignments, queueLinearAssignment } from '../../core/linear-assign.js';
+import { applyLinearSoon, queueLinearAssignment } from '../../core/linear-assign.js';
 import type { LinearPlanning } from '../../core/linear-api.js';
-import { log } from '../../core/logger.js';
 import { withActiveRepo, type RepoEntry } from '../../core/repo-context.js';
 import type { Session } from './auth.js';
 import { commentOnIssue, createIssue } from './github-as-user.js';
@@ -87,20 +86,7 @@ export async function createFromDashboard(entry: RepoEntry, session: Session, is
   if (issue.after === 'spike' || issue.after === 'spec') await commentOnIssue(session.token, entry.productRepo, created.number, commandComment(roninLogin, issue));
   if (issue.projectId || issue.cycleId) {
     await withActiveRepo(entry, () => queueLinearAssignment({ number: created.number, ...(issue.projectId ? { projectId: issue.projectId } : {}), ...(issue.cycleId ? { cycleId: issue.cycleId } : {}) }));
-    applySoon(entry);
+    applyLinearSoon(entry);
   }
   return { id: `${entry.productRepo}#${created.number}`, ...created };
 }
-
-// The sync usually creates the Linear issue within seconds: try a few times
-// over the next minutes, so the project shows up while the person is still
-// looking. Whatever's left, the next tick applies.
-const RETRY_S = [5, 15, 30, 60, 120, 300];
-function applySoon(entry: RepoEntry): void {
-  for (const s of RETRY_S) {
-    setTimeout(() => {
-      withActiveRepo(entry, () => processLinearAssignments()).catch((error) => log.error('Linear: no se pudo asignar el issue nuevo', error));
-    }, s * 1000).unref();
-  }
-}
-

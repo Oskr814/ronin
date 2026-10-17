@@ -157,6 +157,8 @@ export async function currentCycle(entry: RepoEntry, key: string): Promise<Linea
 export interface LinearPlanning {
   projects: Array<{ id: string; name: string }>;
   cycles: Array<{ id: string; number: number; name?: string; startsAt: string; endsAt: string; current: boolean }>;
+  // Who can lead a project made from a meeting (#62).
+  people: Array<{ id: string; name: string }>;
 }
 
 const PLANNING_QUERY = `query($prefix: String!) {
@@ -164,12 +166,13 @@ const PLANNING_QUERY = `query($prefix: String!) {
     nodes { team {
       projects(first: 100, filter: { state: { nin: ["completed", "canceled"] } }) { nodes { id name } }
       cycles(first: 4, filter: { isPast: { eq: false } }, orderBy: createdAt) { nodes { id number name startsAt endsAt isActive } }
+      members(first: 100) { nodes { id name active } }
     } }
   }
 }`;
 
 export async function teamPlanning(entry: RepoEntry, key: string): Promise<LinearPlanning | null> {
-  type Raw = { issues: { nodes: Array<{ team: { projects: { nodes: Array<{ id: string; name: string }> }; cycles: { nodes: Array<{ id: string; number: number; name: string | null; startsAt: string; endsAt: string; isActive: boolean }> } } }> } };
+  type Raw = { issues: { nodes: Array<{ team: { projects: { nodes: Array<{ id: string; name: string }> }; cycles: { nodes: Array<{ id: string; number: number; name: string | null; startsAt: string; endsAt: string; isActive: boolean }> }; members: { nodes: Array<{ id: string; name: string; active: boolean }> } } }> } };
   const data = await query<Raw>(key, PLANNING_QUERY, { prefix: issuesPrefix(entry) });
   const team = data.issues.nodes[0]?.team;
   if (!team) return null;
@@ -178,6 +181,7 @@ export async function teamPlanning(entry: RepoEntry, key: string): Promise<Linea
     cycles: team.cycles.nodes
       .map((c) => ({ id: c.id, number: c.number, ...(c.name ? { name: c.name } : {}), startsAt: c.startsAt, endsAt: c.endsAt, current: c.isActive }))
       .sort((a, b) => a.startsAt.localeCompare(b.startsAt)),
+    people: team.members.nodes.filter((m) => m.active).map((m) => ({ id: m.id, name: m.name })).sort((a, b) => a.name.localeCompare(b.name, 'es')),
   };
 }
 
@@ -206,6 +210,7 @@ export async function updateIssue(key: string, uuid: string, input: { projectId?
 // its cycles that haven't ended and its people.
 export interface LinearContext {
   team: string;
+  teamId: string;
   projects: Array<{ id: string; name: string; status: string; statusType: string; description?: string; lead?: string }>;
   cycles: LinearPlanning['cycles'];
   people: Array<{ id: string; name: string }>;
@@ -214,7 +219,7 @@ export interface LinearContext {
 const CONTEXT_QUERY = `query($prefix: String!) {
   issues(first: 1, filter: { attachments: { some: { url: { startsWith: $prefix } } } }) {
     nodes { team {
-      key
+      id key
       projects(first: 150) { nodes { id name description status { name type } lead { name } } }
       cycles(first: 4, filter: { isPast: { eq: false } }, orderBy: createdAt) { nodes { id number name startsAt endsAt isActive } }
       members(first: 100) { nodes { id name active } }
@@ -226,12 +231,13 @@ const DESCRIPTION_MAX = 300;
 
 export async function teamContext(entry: RepoEntry, key: string): Promise<LinearContext | null> {
   type RawProject = { id: string; name: string; description: string | null; status: { name: string; type: string } | null; lead: { name: string } | null };
-  type Raw = { issues: { nodes: Array<{ team: { key: string; projects: { nodes: RawProject[] }; cycles: { nodes: Array<{ id: string; number: number; name: string | null; startsAt: string; endsAt: string; isActive: boolean }> }; members: { nodes: Array<{ id: string; name: string; active: boolean }> } } }> } };
+  type Raw = { issues: { nodes: Array<{ team: { id: string; key: string; projects: { nodes: RawProject[] }; cycles: { nodes: Array<{ id: string; number: number; name: string | null; startsAt: string; endsAt: string; isActive: boolean }> }; members: { nodes: Array<{ id: string; name: string; active: boolean }> } } }> } };
   const data = await query<Raw>(key, CONTEXT_QUERY, { prefix: issuesPrefix(entry) });
   const team = data.issues.nodes[0]?.team;
   if (!team) return null;
   return {
     team: team.key,
+    teamId: team.id,
     projects: team.projects.nodes
       .map((p) => {
         const description = p.description?.replace(/\s+/g, ' ').trim();
@@ -250,4 +256,28 @@ export async function teamContext(entry: RepoEntry, key: string): Promise<Linear
       .sort((a, b) => a.startsAt.localeCompare(b.startsAt)),
     people: team.members.nodes.filter((m) => m.active).map((m) => ({ id: m.id, name: m.name })),
   };
+}
+
+// A project made from a meeting (#62): in the team, in its Backlog status
+// (the workspace's first status of type backlog), with whoever leads it.
+// `description` is Linear's one-line summary; `content`, the project's page.
+const STATUSES_QUERY = `query { projectStatuses { nodes { id type position } } }`;
+const PROJECT_CREATE = `mutation($input: ProjectCreateInput!) { projectCreate(input: $input) { success project { id name url } } }`;
+export const PROJECT_SUMMARY_MAX = 255;
+
+export async function createProject(key: string, project: { name: string; description: string; content: string; teamId: string; leadId?: string }): Promise<{ id: string; url: string }> {
+  const { projectStatuses } = await query<{ projectStatuses: { nodes: Array<{ id: string; type: string; position: number }> } }>(key, STATUSES_QUERY, {});
+  const backlog = projectStatuses.nodes.filter((s) => s.type === 'backlog').sort((a, b) => a.position - b.position)[0];
+  const summary = project.description.replace(/\s+/g, ' ').trim();
+  const input = {
+    name: project.name,
+    description: summary.length > PROJECT_SUMMARY_MAX ? `${summary.slice(0, PROJECT_SUMMARY_MAX - 1)}…` : summary,
+    content: project.content,
+    teamIds: [project.teamId],
+    ...(backlog ? { statusId: backlog.id } : {}),
+    ...(project.leadId ? { leadId: project.leadId } : {}),
+  };
+  const data = await query<{ projectCreate: { success: boolean; project: { id: string; url: string } | null } }>(key, PROJECT_CREATE, { input });
+  if (!data.projectCreate.success || !data.projectCreate.project) throw new Error('Linear no creó el proyecto');
+  return { id: data.projectCreate.project.id, url: data.projectCreate.project.url };
 }

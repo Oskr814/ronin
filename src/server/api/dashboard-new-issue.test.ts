@@ -33,7 +33,7 @@ describe('parseNewIssue', () => {
 });
 
 describe('parseNewIssue with Linear', () => {
-  const planning = { projects: [{ id: 'p1', name: 'Catálogos' }], cycles: [{ id: 'c17', number: 17, startsAt: '', endsAt: '', current: true }] };
+  const planning = { projects: [{ id: 'p1', name: 'Catálogos' }], cycles: [{ id: 'c17', number: 17, startsAt: '', endsAt: '', current: true }], people: [] };
 
   it("keeps a project and a cycle of the repo's planning, and refuses others", () => {
     expect(parseNewIssue({ title: 'x', projectId: 'p1', cycleId: 'c17' }, [], planning)).toMatchObject({ projectId: 'p1', cycleId: 'c17' });

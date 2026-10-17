@@ -150,6 +150,10 @@ describe('a session that sees only some repos', () => {
     await updateMeeting(up.body.number, (m) => { m.status = 'failed'; });
     await updateMeeting(bm.number, (m) => { m.status = 'failed'; });
     expect((await call(`/api/reuniones/${bm.number}/reintentar`, 'POST', {})).status).toBe(404);
+    expect((await call(`/api/reuniones/${bm.number}/aprobar`, 'POST', { items: [{ id: 'i1' }] })).status).toBe(404);
+    expect((await call(`/api/reuniones/${bm.number}/descartar`, 'POST', {})).status).toBe(404);
+    // Nothing to approve yet: it has no proposals.
+    expect((await call(`/api/reuniones/${up.body.number}/aprobar`, 'POST', { items: [{ id: 'i1' }] })).status).toBe(409);
     launchMeetingWorker.mockClear();
     expect((await call(`/api/reuniones/${up.body.number}/reintentar`, 'POST', {})).body).toEqual({ ok: true });
     expect(launchMeetingWorker).toHaveBeenCalledWith(up.body.number);

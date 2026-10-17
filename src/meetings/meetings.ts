@@ -20,7 +20,11 @@ export type MeetingStatus =
   // Nothing to do came out of it: ronin proposed nothing.
   | 'empty'
   // The reading failed: someone can ask for it again.
-  | 'failed';
+  | 'failed'
+  // Someone approved what they chose of it, and all of that was created.
+  | 'done'
+  // Someone set all of it aside: nothing was created.
+  | 'discarded';
 
 // Where a proposed issue goes in Linear: the team's current cycle or the next one.
 export type ProposedCycle = 'current' | 'next';
@@ -86,7 +90,16 @@ export type MeetingEvent = { at: string } & (
   | { kind: 'read'; projects: number; issues: number; comments: number; discarded: number }
   | { kind: 'failed'; error: string }
   | { kind: 'mail'; ok: boolean }
+  // What someone approved: how much was created and how much failed.
+  | { kind: 'approved'; by: string; created: number; failed: number }
+  | { kind: 'discarded'; by: string }
 );
+
+// What became of a proposal someone approved (dashboard-meetings-approve.ts),
+// by its id: what was created, or why it couldn't be. One created is never
+// created again.
+export type ProposalOutcome = { ok: true; url: string; number?: number; projectId?: string } | { ok: false; error: string };
+export type ProposalResult = { by: string; at: string } & ProposalOutcome;
 
 export interface MeetingSource {
   kind: Extracted['kind'] | 'pasted';
@@ -116,6 +129,7 @@ export interface Meeting {
   // The worker reading it, so the tick can tell when it died.
   worker?: { pid: number; since: string };
   proposals?: Proposals;
+  results?: Record<string, ProposalResult>;
   events: MeetingEvent[];
   createdAt: string;
   updatedAt: string;
