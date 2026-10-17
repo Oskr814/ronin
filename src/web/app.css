@@ -966,3 +966,28 @@ button.brow:hover { background: var(--hover); }
 }
 button.chip[data-goped] { cursor: pointer; border: 1px solid color-mix(in srgb, var(--repo-2) 45%, transparent); }
 button.chip[data-goped]:hover { color: var(--ink); }
+
+/* meetings (#62) */
+.reu-top { display: flex; gap: 16px; align-items: flex-start; }
+.reu-top > div { flex: 1; min-width: 0; }
+.reu-top .btn-s { flex: none; margin-top: 4px; }
+.reu-src { display: flex; gap: 12px; align-items: center; border: 1px solid var(--rule); border-radius: 8px; padding: 8px 12px; background: var(--panel); margin-bottom: 16px; font-size: 12.5px; flex-wrap: wrap; }
+.reu-src > div, .reu-drop.has > div { flex: 1; min-width: 0; }
+.reu-src .nm, .reu-drop .nm { display: block; color: var(--ink); overflow-wrap: anywhere; }
+.reu-src small, .reu-drop.has small { display: block; color: var(--muted); }
+.reu-src a.btn-s { text-decoration: none; color: var(--ink-2); }
+.reu-src .fi, .reu-drop .fi { width: 30px; height: 36px; border-radius: 4px; background: var(--raise); color: var(--ink-2); display: grid; place-items: center; font: 600 9.5px "JetBrains Mono", ui-monospace, monospace; flex: none; }
+.reu-notes { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--ink-2); line-height: 1.6; max-width: 760px; }
+.reu-row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.reu-drop { width: 100%; border: 1.5px dashed var(--faint); border-radius: 10px; padding: 16px; text-align: center; color: var(--muted); font-size: 13px; display: grid; gap: 3px; justify-items: center; margin-bottom: 12px; }
+.reu-drop b { color: var(--ink); font-weight: 600; }
+.reu-drop small { color: var(--faint); font-size: 12px; }
+.reu-drop:hover, .reu-drop.over { border-color: var(--run); background: var(--hover); }
+.reu-drop.has { border-style: solid; border-color: var(--rule); display: flex; gap: 12px; align-items: center; text-align: left; background: var(--panel); }
+.reu-or { display: flex; align-items: center; gap: 10px; color: var(--faint); font-size: 12px; margin: 0 0 8px; }
+.reu-or::before, .reu-or::after { content: ""; flex: 1; border-top: 1px solid var(--rule); }
+.dlg .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+@media (max-width: 760px) {
+  .reu-top { flex-direction: column; gap: 4px; }
+  .reu-row2 { grid-template-columns: 1fr; }
+}

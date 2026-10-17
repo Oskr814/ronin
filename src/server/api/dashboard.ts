@@ -27,6 +27,8 @@ import { missingPortalConfig } from '../portal.js';
 import { listUsers, type PortalUser } from '../../portal/accounts.js';
 import { getRequest, listRequests } from '../../portal/requests.js';
 import { isOpen, requestDetail, requestImage, requestPatch, requestRow } from './dashboard-portal.js';
+import { DuplicateMeeting, createMeeting, getMeeting, listMeetings } from '../../meetings/index.js';
+import { MAX_UPLOAD_BODY, MeetingUploadError, meetingDetail, meetingOriginal, meetingRow, parseUpload } from './dashboard-meetings.js';
 
 // The dashboard's data (#65), all behind the session (tailnet.ts checks it
 // before any of this runs):
@@ -53,6 +55,10 @@ import { isOpen, requestDetail, requestImage, requestPatch, requestRow } from '.
 //   GET /api/pedidos/<n>/img/<file>  one of its images (the person's, or a prototype's)
 //   GET /api/pedidos/<n>/prototipo/<round>  a prototype's draft diff
 //   GET /api/pedidos/<n>/reproduccion/<round>  a reproduction's diff (#137)
+//   GET /api/reuniones               the meetings whose notes were uploaded, of the repos it sees (#62, dashboard-meetings.ts)
+//   POST /api/reuniones              uploads one: the notes as a file or pasted
+//   GET /api/reuniones/<n>           one of them, with its notes' text
+//   GET /api/reuniones/<n>/original  the file as it was uploaded, to download
 
 // How far back the sidebar and an item's history look. Run records are kept
 // 14 days (scripts/setup-cron.sh).
@@ -111,6 +117,8 @@ export async function snapshot(login: string): Promise<unknown> {
     portalAdmin: access.admin && missingPortalConfig(config.portal).length === 0,
     // The portal's requests still going, for the sidebar, and how many there are in all (#132).
     ...(await portalSummary(runs)),
+    // The meetings ronin hasn't read yet (#62).
+    reunionesPendientes: (await visibleMeetings()).filter((m) => m.status === 'pending').length,
     repos,
     // The queue and the Claude accounts, only of the repos it sees.
     runner: { slots: { used: slotsInUse(), limit: config.tickConcurrency }, queue: readQueue().filter((job) => !job.repo || repos.includes(job.repo)), tick: readTickInfo() },
@@ -138,6 +146,54 @@ async function visibleRequests() {
   const requests = (await listRequests()).filter((r) => sees(access, r.repo));
   const users = new Map<string, PortalUser>(requests.length ? (await listUsers()).map((u) => [u.id, u]) : []);
   return { requests, users };
+}
+
+// The meetings of the repos it sees (#62).
+async function visibleMeetings() {
+  const access = currentAccess();
+  return (await listMeetings()).filter((m) => sees(access, m.repo));
+}
+
+async function reuniones(res: ServerResponse, path: string): Promise<void> {
+  if (path === '/api/reuniones') {
+    json(res, 200, { meetings: (await visibleMeetings()).map(meetingRow).sort((a, b) => b.number - a.number) });
+    return;
+  }
+  const match = /^\/api\/reuniones\/(\d+)(\/original)?$/.exec(path);
+  const meeting = match ? await getMeeting(Number(match[1])) : undefined;
+  // One of a repo it doesn't see is one that isn't there.
+  if (!match || !meeting || !sees(currentAccess(), meeting.repo)) {
+    json(res, 404, { error: 'no existe esa reunión' });
+    return;
+  }
+  if (!match[2]) {
+    json(res, 200, await meetingDetail(meeting));
+    return;
+  }
+  const original = await meetingOriginal(meeting);
+  if (original) res.writeHead(200, original.headers).end(original.data);
+  else json(res, 404, { error: 'esas notas se pegaron: no hay archivo' });
+}
+
+// POST /api/reuniones { repo, title?, at?, link?, text? | file: { name, data } }.
+async function postReunion(req: IncomingMessage, res: ServerResponse, session: Session): Promise<void> {
+  if (!(req.headers['content-type'] ?? '').startsWith('application/json')) {
+    json(res, 415, { error: 'se espera JSON' });
+    return;
+  }
+  const body = await readJson(req, MAX_UPLOAD_BODY);
+  if (!body) {
+    json(res, 400, { error: 'el pedido no llegó bien, o el archivo pesa más de 10 MB' });
+    return;
+  }
+  try {
+    const meeting = await createMeeting(await parseUpload(body, await visibleRepos(), session.login));
+    json(res, 200, meetingRow(meeting));
+  } catch (error) {
+    if (error instanceof DuplicateMeeting) json(res, 409, { error: error.message, number: error.number });
+    else if (error instanceof MeetingUploadError) json(res, 400, { error: error.message });
+    else throw error;
+  }
 }
 
 async function portalSummary(runs: ReturnType<typeof listRuns>) {
@@ -279,12 +335,12 @@ function githubRefusal(res: ServerResponse, error: unknown): boolean {
 
 const MAX_BODY = 16 * 1024;
 
-async function readJson(req: IncomingMessage): Promise<Record<string, unknown> | null> {
+async function readJson(req: IncomingMessage, max = MAX_BODY): Promise<Record<string, unknown> | null> {
   let size = 0;
   const chunks: Buffer[] = [];
   for await (const chunk of req) {
     size += (chunk as Buffer).length;
-    if (size > MAX_BODY) return null;
+    if (size > max) return null;
     chunks.push(chunk as Buffer);
   }
   try {
@@ -530,6 +586,14 @@ async function route(req: IncomingMessage, res: ServerResponse, path: string, se
   }
   if (req.method === 'GET' && (path === '/api/pedidos' || path.startsWith('/api/pedidos/'))) {
     await pedidos(res, path);
+    return true;
+  }
+  if (path === '/api/reuniones' && req.method === 'POST') {
+    await postReunion(req, res, session);
+    return true;
+  }
+  if (req.method === 'GET' && (path === '/api/reuniones' || path.startsWith('/api/reuniones/'))) {
+    await reuniones(res, path);
     return true;
   }
   const explorationPost = /^\/api\/items\/(.+)\/exploration\/(actions|general|approve)$/.exec(path);

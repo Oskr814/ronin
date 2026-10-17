@@ -104,7 +104,7 @@ function duration(ms) {
 const money = (usd) => (usd < 0.01 ? 'menos de US$0,01' : `US$${usd.toFixed(2).replace('.', ',')}`);
 const pct = (fraction) => `${Math.round(fraction * 100)}%`;
 
-const S = { snap: null, today: null, sel: null, open: [], runIdx: {}, pendingRun: null, filter: null, q: '', itemRuns: {}, run: null, stream: null, detail: {}, view: {}, doc: {}, menu: false, dialog: null, expanded: new Set(), expl: {}, ficha: {}, fichaOpen: {}, fichaFilter: { tipo: 'todas', vp: 'todos' }, antes: {}, oldAfter: new Set(), lightbox: null, fmenu: false, fdialog: null, fdraft: {}, listas: {}, scope: 'all', project: '', attAll: false, extra: {}, newIssue: null, files: {}, fcur: {}, ffold: {}, fexp: {}, fcontent: {}, fq: {}, ftree: false, fcomp: null, fbusy: new Set(), rpanel: null, page: null, portal: { data: null, error: null }, pdialog: null, ped: { list: null, error: null, listAt: 0, detail: {}, n: null, tab: 'act', filter: 'todos', run: null, lb: null, patch: {} } };
+const S = { snap: null, today: null, sel: null, open: [], runIdx: {}, pendingRun: null, filter: null, q: '', itemRuns: {}, run: null, stream: null, detail: {}, view: {}, doc: {}, menu: false, dialog: null, expanded: new Set(), expl: {}, ficha: {}, fichaOpen: {}, fichaFilter: { tipo: 'todas', vp: 'todos' }, antes: {}, oldAfter: new Set(), lightbox: null, fmenu: false, fdialog: null, fdraft: {}, listas: {}, scope: 'all', project: '', attAll: false, extra: {}, newIssue: null, files: {}, fcur: {}, ffold: {}, fexp: {}, fcontent: {}, fq: {}, ftree: false, fcomp: null, fbusy: new Set(), rpanel: null, page: null, portal: { data: null, error: null }, pdialog: null, ped: { list: null, error: null, listAt: 0, detail: {}, n: null, tab: 'act', filter: 'todos', run: null, lb: null, patch: {} }, reu: { list: null, error: null, listAt: 0, detail: {}, n: null, tab: 'notas', up: null } };
 // The sidebar's Linear filter (#101), remembered per browser.
 try { Object.assign(S, JSON.parse(localStorage.getItem('ronin-scope') ?? '{}')); } catch { /* sin storage */ }
 function saveScope() {
@@ -191,9 +191,11 @@ function renderQuick() {
     <button data-home aria-pressed="${!S.sel && !S.page}"><svg viewBox="0 0 24 24"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>Hoy</button>
     <button data-filter="running" aria-pressed="${S.filter === 'running'}"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg>Corriendo ahora<span class="c">${running}</span></button>
     <button data-filter="queue" aria-pressed="${S.filter === 'queue'}"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg>En cola<span class="c">${queued}</span></button>
-    ${S.snap.portalAdmin || S.snap.pedidosTotal ? `<button data-portal aria-pressed="${['pedidos', 'pedido', 'portal'].includes(S.page) && !S.sel}"><svg viewBox="0 0 24 24"><path d="M5 4h14v16H5zM9 9h6M9 13h6M9 17h3"/></svg>Pedidos del portal<span class="c">${S.snap.pedidos?.length || ''}</span></button>` : ''}`;
+    ${S.snap.portalAdmin || S.snap.pedidosTotal ? `<button data-portal aria-pressed="${['pedidos', 'pedido', 'portal'].includes(S.page) && !S.sel}"><svg viewBox="0 0 24 24"><path d="M5 4h14v16H5zM9 9h6M9 13h6M9 17h3"/></svg>Pedidos del portal<span class="c">${S.snap.pedidos?.length || ''}</span></button>` : ''}
+    ${S.snap.repos.length ? `<button data-reuniones aria-pressed="${['reuniones', 'reunion'].includes(S.page) && !S.sel}"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h10M4 18h7"/><circle cx="18" cy="16" r="3"/></svg>Reuniones<span class="c">${S.snap.reunionesPendientes || ''}</span></button>` : ''}`;
   $('#quick').querySelector('[data-home]').onclick = goHome;
   $('#quick').querySelector('[data-portal]')?.addEventListener('click', () => openPedidos());
+  $('#quick').querySelector('[data-reuniones]')?.addEventListener('click', () => openReuniones());
   renderScope();
   for (const button of $('#quick').querySelectorAll('[data-filter]')) {
     button.onclick = () => {
@@ -451,6 +453,17 @@ function renderCenter() {
     const keep = scroller?.scrollTop ?? 0;
     if (setCenter(backBar(S.page === 'pedido' ? `Pedido P-${S.ped.n}` : 'Portal de pedidos') + (S.page === 'pedido' ? pedidoHTML() : pedidosHTML()))) {
       wirePedidos();
+      const fresh = $('#center .pd-body') ?? $('#center .today.pd');
+      if (fresh && !isMobile()) fresh.scrollTop = keep;
+    }
+    return;
+  }
+  if (!item && (S.page === 'reuniones' || S.page === 'reunion')) {
+    $('#shell').classList.toggle('wide', S.page === 'reunion');
+    const scroller = $('#center .pd-body') ?? $('#center .today.pd');
+    const keep = scroller?.scrollTop ?? 0;
+    if (setCenter(backBar(S.page === 'reunion' ? `Reunión R-${S.reu.n}` : 'Reuniones') + (S.page === 'reunion' ? reunionHTML() : reunionesHTML()))) {
+      wireReuniones();
       const fresh = $('#center .pd-body') ?? $('#center .today.pd');
       if (fresh && !isMobile()) fresh.scrollTop = keep;
     }
@@ -3114,6 +3127,270 @@ function wirePedidos() {
   for (const b of center.querySelectorAll('[data-prpatch]')) b.onclick = () => loadPatch(S.ped.n, Number(b.dataset.prpatch), 'reproduccion');
 }
 
+// ---------- meetings (#62)
+// The team uploads a meeting's notes (a PDF, a Word .docx, text, or pasted)
+// and ronin proposes the work that comes out of it. Anyone who sees a repo
+// uploads to it and sees its meetings. The notes stay on the runner.
+const REU_STATUS = { pending: ['warn', 'Espera a ronin'] };
+const REU_KIND = { pdf: 'PDF', docx: 'Word', text: 'Texto', pasted: 'Pegado' };
+const REU_MAX_BYTES = 10 * 1024 * 1024;
+const reuPath = (n, rest = '') => `/api/reuniones/${n}${rest}`;
+const reuChip = (m) => {
+  const [cls, label] = REU_STATUS[m.status] ?? ['idle', m.status];
+  return `<span class="chip ${cls}">${esc(label)}</span>`;
+};
+const reuSource = (m) => `${REU_KIND[m.source.kind] ?? m.source.kind}${m.source.pages ? ` · ${m.source.pages} ${m.source.pages === 1 ? 'página' : 'páginas'}` : ''}`;
+const reuChars = (n) => `${n.toLocaleString('es')} caracteres`;
+
+function openReuniones() {
+  S.sel = null;
+  S.page = 'reuniones';
+  stopStream();
+  if (location.pathname !== '/reuniones') history.pushState(null, '', '/reuniones');
+  renderAll();
+  if (isMobile()) {
+    $('#shell').dataset.m = 'detail';
+    scrollTo(0, 0);
+  }
+  loadReuniones();
+}
+
+function openReunion(n) {
+  S.sel = null;
+  S.page = 'reunion';
+  if (S.reu.n !== n) S.reu.tab = 'notas';
+  S.reu.n = n;
+  stopStream();
+  if (location.pathname !== `/reuniones/${n}`) history.pushState(null, '', `/reuniones/${n}`);
+  renderAll();
+  if (isMobile()) {
+    $('#shell').dataset.m = 'detail';
+    scrollTo(0, 0);
+  }
+  loadReunion(n);
+}
+
+async function loadReuniones() {
+  try {
+    S.reu.list = (await api('/api/reuniones')).meetings;
+    S.reu.error = null;
+  } catch (error) {
+    if (error instanceof Unauthorized) return showLogin();
+    S.reu.error = error.message;
+  }
+  S.reu.listAt = Date.now();
+  if (S.page === 'reuniones') renderCenter();
+}
+
+async function loadReunion(n) {
+  try {
+    S.reu.detail[n] = { data: await api(reuPath(n)), at: Date.now() };
+  } catch (error) {
+    if (error instanceof Unauthorized) return showLogin();
+    S.reu.detail[n] = { ...S.reu.detail[n], error: error.message, at: Date.now() };
+  }
+  if (S.page === 'reunion' && S.reu.n === n) renderCenter();
+}
+
+function reunionesHTML() {
+  const head = `<div class="reu-top"><div><h1>Reuniones</h1><p class="lead">Sube las notas de una reunión (PDF, Word o texto) y ronin propone el trabajo que sale de ella: proyectos de Linear, issues y comentarios en issues que ya existen. Nada se crea hasta que alguien lo apruebe aquí.</p></div>
+    <button class="btn-s primary" data-reunew>+ Subir notas</button></div>`;
+  const list = S.reu.list;
+  if (!list) return `<div class="today pd">${head}${S.reu.error ? `<p class="bad">${esc(S.reu.error)}</p>` : '<div class="empty">Cargando…</div>'}</div>`;
+  const rows = list.map((m) => `<tr data-reu="${m.number}" tabindex="0"><td class="pn">R-${m.number}</td>
+      <td><span class="tt">${esc(m.title)}</span><small>${m.at ? `${esc(when(m.at))} · ` : ''}${esc(repoShort(m.repo))}</small></td>
+      <td>${reuChip(m)}</td>
+      <td class="hide-m m">${esc(reuSource(m))}</td>
+      <td class="hide-m m">${esc(m.by)} · <span data-ago="${esc(m.createdAt)}">${esc(ago(m.createdAt))}</span></td></tr>`).join('');
+  return `<div class="today pd">${head}
+    ${rows ? `<table class="padm-t pd-t"><thead><tr><th></th><th>Reunión</th><th>Estado</th><th class="hide-m">Notas</th><th class="hide-m">Subida por</th></tr></thead><tbody>${rows}</tbody></table>` : '<p class="note">Todavía nadie subió las notas de una reunión.</p>'}
+  </div>`;
+}
+
+function reuNotesHTML(d) {
+  const file = d.original
+    ? `<div class="reu-src"><span class="fi">${esc(d.source.kind === 'docx' ? 'DOCX' : d.source.kind === 'pdf' ? 'PDF' : 'TXT')}</span><div><span class="nm">${esc(d.source.name ?? '')}</span><small>${esc(reuSource(d))} · ${esc(reuChars(d.chars))}</small></div><a class="btn-s" href="${esc(reuPath(d.number, '/original'))}" download>Descargar original</a></div>`
+    : `<p class="m pd-note">Pegadas en el tablero · ${esc(reuChars(d.chars))}.</p>`;
+  return `${file}<div class="reu-notes">${esc(d.text)}</div>`;
+}
+
+function reuActivityHTML(d) {
+  const item = (cls, icon, title, at) => `<li class="pd-ev ${cls}"><span class="ic">${PED_ICON[icon]}</span><div class="h"><b>${title}</b><span class="tm" title="${esc(when(at))}">${esc(hhmm(at))}</span></div></li>`;
+  return `<ol class="pd-tl">${d.events.map((e) => (e.kind === 'uploaded'
+    ? item('person', 'person', `${esc(e.by)} subió las notas`, e.at)
+    : '')).join('')}</ol>`;
+}
+
+function reuNowHTML(d) {
+  if (d.status !== 'pending') return '';
+  return `<div class="pd-now waiting"><div class="k">${PED_ICON.wait} Ahora</div><div class="t">Las notas esperan a ronin</div>
+    <div class="d">ronin todavía no lee las notas: eso llega en la próxima entrega de #62. Por ahora quedan guardadas en el runner.</div></div>`;
+}
+
+function reuSideHTML(d) {
+  return `<div class="pd-side"><div class="pd-card"><h3>Reunión</h3><dl class="kv">
+      ${d.at ? `<dt>Cuándo</dt><dd>${esc(when(d.at))}</dd>` : ''}
+      <dt>Repo</dt><dd>${esc(d.repo)}</dd>
+      <dt>Subida</dt><dd>${esc(d.by)}<small>${esc(when(d.createdAt))}</small></dd>
+      <dt>Notas</dt><dd>${esc(reuSource(d))}<small>${esc(reuChars(d.chars))}</small></dd>
+      ${d.link && /^https?:\/\//.test(d.link) ? `<dt>Link</dt><dd><a href="${esc(d.link)}" target="_blank" rel="noopener noreferrer">${esc(d.link.replace(/^https?:\/\//, '').slice(0, 40))} ↗</a></dd>` : ''}
+    </dl></div></div>`;
+}
+
+function reunionHTML() {
+  const n = S.reu.n;
+  const entry = S.reu.detail[n];
+  const d = entry?.data;
+  if (!d) return `<div class="today pd">${entry?.error ? `<p class="bad">${esc(entry.error)}</p>` : '<div class="empty">Cargando…</div>'}</div>`;
+  const tabs = [['notas', 'Notas'], ['act', 'Actividad']];
+  const body = S.reu.tab === 'act' ? reuActivityHTML(d) : reuNotesHTML(d);
+  return `<div class="head pd-head"><div class="crumb"><button class="link" data-reupage>Reuniones</button> / <i style="background:${repoColor(d.repo)}"></i>${esc(repoShort(d.repo))}</div>
+      <div class="row"><h1>${esc(d.title)} <span class="n">R-${d.number}</span></h1></div>
+      <div class="state">${reuChip(d)}${d.at ? `<span>${esc(when(d.at))}</span>` : ''}<span class="m">subida por ${esc(d.by)} ${esc(ago(d.createdAt))}</span></div></div>
+    <div class="doctabs" role="tablist">${tabs.map(([k, label]) => `<button class="doctab" role="tab" data-reutab="${k}" aria-selected="${S.reu.tab === k}">${label}</button>`).join('')}</div>
+    <div class="pd-body"><div class="pd-cols"><div class="pd-main">${reuNowHTML(d)}${body}</div>${reuSideHTML(d)}</div></div>`;
+}
+
+function wireReuniones() {
+  const center = $('#center');
+  for (const row of center.querySelectorAll('[data-reu]')) {
+    row.onclick = () => openReunion(Number(row.dataset.reu));
+    row.onkeydown = (event) => { if (event.key === 'Enter') openReunion(Number(row.dataset.reu)); };
+  }
+  center.querySelector('[data-reunew]')?.addEventListener('click', openUpload);
+  center.querySelector('[data-reupage]')?.addEventListener('click', openReuniones);
+  for (const b of center.querySelectorAll('[data-reutab]')) b.onclick = () => { S.reu.tab = b.dataset.reutab; renderCenter(); };
+}
+
+// The upload dialog: a file, or the text pasted.
+function openUpload() {
+  const repos = S.snap?.repos ?? [];
+  S.reu.up = { repo: repos[0] ?? '', title: '', at: '', link: '', text: '', file: null, sending: false, error: null };
+  renderUpload();
+}
+
+function closeUpload() {
+  if (S.reu.up?.sending) return;
+  S.reu.up = null;
+  renderUpload();
+}
+
+const kb = (bytes) => (bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / 1024 / 1024).toFixed(1).replace('.', ',')} MB`);
+
+function takeFile(file) {
+  const u = S.reu.up;
+  if (!u || !file) return;
+  u.error = null;
+  if (file.size > REU_MAX_BYTES) {
+    u.error = 'El archivo puede pesar hasta 10 MB.';
+    renderUpload();
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = () => {
+    u.file = { name: file.name, size: file.size, data: reader.result };
+    renderUpload();
+  };
+  reader.onerror = () => {
+    u.error = 'No se pudo leer el archivo.';
+    renderUpload();
+  };
+  reader.readAsDataURL(file);
+}
+
+function renderUpload() {
+  let layer = $('#rlayer');
+  const u = S.reu.up;
+  if (!u) {
+    layer?.remove();
+    return;
+  }
+  if (!layer) {
+    const repos = S.snap?.repos ?? [];
+    layer = Object.assign(document.body.appendChild(document.createElement('div')), { id: 'rlayer' });
+    layer.innerHTML = `<div class="scrim"><div class="dlg dlg-new" role="dialog" aria-modal="true" aria-labelledby="ru-t">
+      <h2 id="ru-t">Subir notas de una reunión</h2>
+      <p class="help">ronin propone; nada se crea hasta que alguien lo apruebe. Las notas quedan en el runner, nunca en GitHub.</p>
+      <div class="reu-row2"><label class="field"><span>Repo</span><select id="ru-repo">${repos.map((r) => `<option>${esc(r)}</option>`).join('')}</select></label>
+        <label class="field"><span>Fecha (opcional)</span><input id="ru-at" type="datetime-local"></label></div>
+      <label class="field"><span>Título (opcional)</span><input id="ru-title" maxlength="120" autocomplete="off" placeholder="Si lo dejas vacío, sale del archivo o de las notas"></label>
+      <div id="ru-file"></div>
+      <input id="ru-input" type="file" accept=".pdf,.docx,.txt,.md,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown" hidden>
+      <div id="ru-paste"><div class="reu-or">o pega el texto</div>
+        <label class="field"><span class="sr">Texto de las notas</span><textarea id="ru-text" rows="6" placeholder="Las notas tal como están…"></textarea></label></div>
+      <label class="field"><span>Link de la reunión o la grabación (opcional)</span><input id="ru-link" maxlength="500" autocomplete="off" placeholder="https://meet.google.com/…"></label>
+      <p class="bad" id="ru-err" hidden></p>
+      <div class="foot-d"><button class="btn-s" id="ru-no">Cancelar</button><button class="btn-s primary" id="ru-yes">Subir</button></div></div></div>`;
+    const bind = (sel, key) => { $(sel).oninput = (e) => { S.reu.up[key] = e.target.value; renderUpload(); }; };
+    bind('#ru-title', 'title');
+    bind('#ru-at', 'at');
+    bind('#ru-link', 'link');
+    bind('#ru-text', 'text');
+    $('#ru-repo').onchange = (e) => { S.reu.up.repo = e.target.value; };
+    $('#ru-input').onchange = (e) => takeFile(e.target.files[0]);
+    $('#ru-no').onclick = closeUpload;
+    $('#ru-yes').onclick = sendUpload;
+    layer.querySelector('.scrim').onclick = (event) => { if (event.target.classList.contains('scrim')) closeUpload(); };
+    $('#ru-repo').focus();
+  }
+  const box = $('#ru-file');
+  const html = u.file
+    ? `<div class="reu-drop has"><span class="fi">${esc((u.file.name.split('.').pop() ?? '').toUpperCase().slice(0, 4))}</span><div><span class="nm">${esc(u.file.name)}</span><small>${esc(kb(u.file.size))}</small></div><button class="btn-s" id="ru-rm">Quitar</button></div>`
+    : `<button class="reu-drop" id="ru-pick"><b>Arrastra el archivo aquí o elígelo</b><span>PDF, Word (.docx), texto o Markdown · hasta 10 MB</span><small>De Google Docs: Archivo → Descargar → PDF o .docx</small></button>`;
+  if (box._html !== html) {
+    box._html = html;
+    box.innerHTML = html;
+    $('#ru-rm')?.addEventListener('click', () => { u.file = null; $('#ru-input').value = ''; renderUpload(); });
+    const pick = $('#ru-pick');
+    if (pick) {
+      pick.onclick = () => $('#ru-input').click();
+      pick.ondragover = (e) => { e.preventDefault(); pick.classList.add('over'); };
+      pick.ondragleave = () => pick.classList.remove('over');
+      pick.ondrop = (e) => { e.preventDefault(); pick.classList.remove('over'); takeFile(e.dataTransfer.files[0]); };
+    }
+  }
+  $('#ru-paste').hidden = Boolean(u.file);
+  const yes = $('#ru-yes');
+  yes.textContent = u.sending ? 'Subiendo…' : 'Subir';
+  yes.disabled = u.sending || !u.repo || (!u.file && !u.text.trim());
+  $('#ru-err').hidden = !u.error;
+  $('#ru-err').innerHTML = u.error ?? '';
+}
+
+async function sendUpload() {
+  const u = S.reu.up;
+  if (!u || u.sending) return;
+  u.sending = true;
+  u.error = null;
+  renderUpload();
+  try {
+    const body = { repo: u.repo, title: u.title, link: u.link, ...(u.at ? { at: new Date(u.at).toISOString() } : {}), ...(u.file ? { file: { name: u.file.name, data: u.file.data } } : { text: u.text }) };
+    const response = await fetch('/api/reuniones', { method: 'POST', headers: { Accept: 'application/json', 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    if (response.status === 401) throw new Unauthorized();
+    const out = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      u.sending = false;
+      // The same notes again: a way to the meeting that has them.
+      u.error = response.status === 409 && out.number
+        ? `${esc(out.error)} <button class="link" data-reugo="${Number(out.number)}">Abrir R-${Number(out.number)}</button>`
+        : esc(`No se pudo: ${out.error ?? response.status}`);
+      renderUpload();
+      $('#rlayer [data-reugo]')?.addEventListener('click', (e) => { S.reu.up = null; renderUpload(); openReunion(Number(e.target.dataset.reugo)); });
+      return;
+    }
+    S.reu.up = null;
+    renderUpload();
+    toast(`Listo: subiste las notas como R-${out.number}.`);
+    refresh();
+    openReunion(out.number);
+  } catch (error) {
+    if (error instanceof Unauthorized) return showLogin();
+    u.sending = false;
+    u.error = esc(`No se pudo: ${error.message}`);
+    renderUpload();
+  }
+}
+
 // ---------- context
 function linearCtxHTML(item) {
   const l = item.linear;
@@ -3408,6 +3685,8 @@ async function refresh() {
   }
   if (S.page === 'pedido' && Date.now() - (S.ped.detail[S.ped.n]?.at ?? 0) > PEDIDO_EVERY_MS) loadPedido(S.ped.n);
   if (S.page === 'pedidos' && Date.now() - S.ped.listAt > PEDIDO_EVERY_MS) loadPedidos();
+  if (S.page === 'reunion' && Date.now() - (S.reu.detail[S.reu.n]?.at ?? 0) > PEDIDO_EVERY_MS) loadReunion(S.reu.n);
+  if (S.page === 'reuniones' && Date.now() - S.reu.listAt > PEDIDO_EVERY_MS) loadReuniones();
   const item = S.sel && itemById(S.sel);
   const files = S.sel && S.files[S.sel];
   if (item && files && docOf(item) === 'files' && Date.now() - (files.at ?? 0) > DETAIL_EVERY_MS) loadFiles(S.sel);
@@ -3445,10 +3724,14 @@ function tickClocks() {
   for (const el of document.querySelectorAll('[data-until]')) el.textContent = clock(Date.parse(el.dataset.until) - Date.now());
 }
 
-// /pedidos, /pedidos/<n> (#132) and /portal (the accounts, admins only): false for any other path.
+// /pedidos, /pedidos/<n> (#132), /portal (the accounts, admins only),
+// /reuniones and /reuniones/<n> (#62): false for any other path.
 function openPortalPath() {
   const n = /^\/pedidos\/(\d+)$/.exec(location.pathname)?.[1];
-  if (n) openPedido(Number(n));
+  const r = /^\/reuniones\/(\d+)$/.exec(location.pathname)?.[1];
+  if (r) openReunion(Number(r));
+  else if (location.pathname === '/reuniones') openReuniones();
+  else if (n) openPedido(Number(n));
   else if (location.pathname === '/pedidos') openPedidos();
   else if (location.pathname === '/portal' && S.snap.portalAdmin) openPortal();
   else return false;

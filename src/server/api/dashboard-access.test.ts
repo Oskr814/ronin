@@ -122,6 +122,25 @@ describe('a session that sees only some repos', () => {
     expect((await call(`/api/items/${encodeURIComponent(`${SC}#1`)}/detail`)).body.pedido).toEqual({ number: sc.number, title: 'Hola' });
   });
 
+  it('sees and uploads the meetings of its repos only (#62)', async () => {
+    const notes = 'Exportar pedidos: bodega pidió bajar a Excel la lista de pedidos con los filtros puestos.';
+    const up = await call('/api/reuniones', 'POST', { repo: SC, text: notes, title: 'Llamada con bodega', at: '2026-10-16T15:00:00.000Z' });
+    expect(up.status).toBe(200);
+    expect(up.body).toMatchObject({ repo: SC, title: 'Llamada con bodega', by: 'valeria', status: 'pending', source: { kind: 'pasted' } });
+    // Not to a repo it doesn't see.
+    expect((await call('/api/reuniones', 'POST', { repo: BM, text: notes })).body).toEqual({ error: 'Elige un repo de los que ves.' });
+    // The same notes again: which meeting has them.
+    expect(await call('/api/reuniones', 'POST', { repo: SC, text: `  ${notes}\n` })).toEqual({ status: 409, body: { error: `Esas notas ya se subieron: R-${up.body.number}.`, number: up.body.number } });
+    const { createMeeting, extractPasted } = await import('../../meetings/index.js');
+    const bm = await createMeeting({ repo: BM, by: 'otra', notes: extractPasted(`De Bmedical. ${notes}`) });
+    expect((await call('/api/reuniones')).body.meetings.map((m: { number: number }) => m.number)).toEqual([up.body.number]);
+    expect((await call('/api/snapshot')).body.reunionesPendientes).toBe(1);
+    expect((await call(`/api/reuniones/${up.body.number}`)).body).toMatchObject({ text: notes, original: false, events: [{ kind: 'uploaded', by: 'valeria' }] });
+    expect((await call(`/api/reuniones/${bm.number}`)).status).toBe(404);
+    expect((await call(`/api/reuniones/${bm.number}/original`)).status).toBe(404);
+    expect((await call(`/api/reuniones/${up.body.number}/original`)).status).toBe(404);
+  });
+
   it("reads only a file the PR changes (#111)", async () => {
     expect((await call(`/api/items/${encodeURIComponent(`${SC}#2`)}/files/content?path=.env`)).status).toBe(404);
   });
