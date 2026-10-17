@@ -762,7 +762,7 @@ La pestaña *Archivos* de la ficha de un PR (o de un issue, con los archivos de 
   - "Empezar una revisión" la crea sobre el commit a la vista (`addPullRequestReview`). Desde ahí, cada comentario o respuesta "Se suma a la revisión" (`addPullRequestReviewThread`, `addPullRequestReviewThreadReply`);
   - lo pendiente se ve en el diff como *Pendiente*, con editar y borrar, y solo lo ve su autor;
   - se lee de los hilos del PR con el token de la persona: cada comentario dice si está `PENDING`, y los pendientes de otros no aparecen.
-- ***Terminar revisión***, en la cabecera del PR, en la barra de *Archivos* o con `r`:
+- ***Revisar*** / ***Terminar revisión***, en la cabecera de la ficha (en un issue, *Revisar PR #N*, para su PR que avanza), en la barra de *Archivos* o con `r`:
   - **El panel:** un resumen, Comentar / Aprobar / Pedir cambios y la lista de lo pendiente.
   - **Mandar:** `submitPullRequestReview`. Sin nada pendiente, va una revisión con solo el resumen (aprobar sin comentarios).
   - **Descartar:** `deletePullRequestReview`.

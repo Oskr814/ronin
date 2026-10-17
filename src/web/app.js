@@ -502,7 +502,7 @@ function headHTML(item) {
   if (item.kind === 'pr' && pr?.author) facts.push(`de ${pr.author}`);
   return `<div class="head">
     <div class="crumb"><i style="background:${repoColor(item.repo)}"></i>${esc(item.repo)} · ${item.kind === 'pr' ? 'Pull request' : item.kind === 'issue' ? 'Issue' : 'Tarea'}</div>
-    <div class="row"><h1>${esc(item.title)}${item.number !== undefined ? ` <span class="n">${esc(itemRef(item))}</span>` : ''}</h1>${url ? `<a class="gh" href="${esc(url)}" target="_blank" rel="noopener">GitHub ↗</a>` : ''}${safeLinear((item.linear ?? d?.linear)?.url) ? `<a class="gh" href="${esc((item.linear ?? d.linear).url)}" target="_blank" rel="noopener" title="El issue en Linear">${esc((item.linear ?? d.linear).id)} ↗</a>` : ''}${d?.exploration ? '<button class="gh" data-xpr="general">Comentario general</button>' : ''}${reviewable(item, d) ? (pendingOf(item.id).length ? `<button class="act-btn" data-frev>Terminar revisión <span class="rn">${pendingOf(item.id).length}</span></button>` : '<button class="gh" data-frev>Revisar</button>') : ''}${actionsHTML(d)}${d?.exploration ? '<button class="act-btn" data-xpr="approve">Aprobar…</button>' : ''}</div>
+    <div class="row"><h1>${esc(item.title)}${item.number !== undefined ? ` <span class="n">${esc(itemRef(item))}</span>` : ''}</h1>${url ? `<a class="gh" href="${esc(url)}" target="_blank" rel="noopener">GitHub ↗</a>` : ''}${safeLinear((item.linear ?? d?.linear)?.url) ? `<a class="gh" href="${esc((item.linear ?? d.linear).url)}" target="_blank" rel="noopener" title="El issue en Linear">${esc((item.linear ?? d.linear).id)} ↗</a>` : ''}${d?.exploration ? '<button class="gh" data-xpr="general">Comentario general</button>' : ''}${reviewable(item, d) ? (pendingOf(item.id).length ? `<button class="act-btn" data-frev>Terminar revisión <span class="rn">${pendingOf(item.id).length}</span></button>` : `<button class="gh" data-frev>${esc(reviewLabel(item, d))}</button>`) : ''}${actionsHTML(d)}${d?.exploration ? '<button class="act-btn" data-xpr="approve">Aprobar…</button>' : ''}</div>
     <div class="state">${linearChips(item)}${chips.map(([cls, text]) => `<span class="chip ${cls}">${esc(text)}</span>`).join('')}${facts.map((f) => `<span>${esc(f)}</span>`).join('')}</div></div>`;
 }
 
@@ -883,7 +883,7 @@ function filesHTML(item) {
   const tree = `<div class="ftree"><div class="ftop"><input type="search" id="fq" placeholder="Filtrar archivos" value="${esc(S.fq[item.id] ?? '')}" aria-label="Filtrar archivos"><button class="btn-s ftreex" data-ftree>Cerrar</button></div>${progress}<div class="frows" id="ftrows">${rows || '<p class="none">Ningún archivo coincide.</p>'}</div></div>`;
   const tool = `<div class="ftool"><button class="btn-s ftreebtn" data-ftree>Archivos ▾</button><span class="seg">${mode('unified', 'Unificado')}${mode('split', 'Lado a lado')}</span>
     <span>${data.files.length} ${data.files.length === 1 ? 'archivo' : 'archivos'} · <span class="addel"><span class="a">+${add}</span> <span class="d">−${del}</span></span></span>${data.error ? `<span class="bad">GitHub no respondió: ${esc(data.error)}</span>` : ''}
-    <span class="m hint-c">Clic en un número de línea para comentarla</span>${reviewOf(item.id) ? `<button class="btn-s primary frevb" data-frev>Terminar revisión <span class="rn">${pendingOf(item.id).length}</span></button>` : ''}${url ? `<a class="gh" href="${esc(url)}/files" target="_blank" rel="noopener">En GitHub ↗</a>` : ''}</div>`;
+    <span class="m hint-c">Clic en un número de línea para comentarla</span>${reviewOf(item.id) ? `<button class="btn-s primary frevb" data-frev>Terminar revisión <span class="rn">${pendingOf(item.id).length}</span></button>` : reviewable(item, S.detail[item.id]?.data) ? '<button class="btn-s frevb" data-frev>Revisar</button>' : ''}${url ? `<a class="gh" href="${esc(url)}/files" target="_blank" rel="noopener">En GitHub ↗</a>` : ''}</div>`;
   return `<div class="doc files${S.ftree ? ' tree' : ''}" id="doc" data-key="${esc(`${item.id}:files`)}">${tree}<div class="fdiffs" id="fdiffs">${tool}<div class="fcards">${data.files.map((f) => fileHTML(item, data, f)).join('')}</div></div></div>`;
 }
 
@@ -1174,8 +1174,11 @@ const REVIEW_EVENTS = [
   ['REQUEST_CHANGES', 'Pedir cambios', 'crit', 'El PR no se puede mergear hasta que lo apruebes o se descarte tu revisión.'],
 ];
 const isMine = (login) => (login ?? '').toLowerCase() === (S.snap?.me ?? '').toLowerCase();
-// A PR's page offers the review; an exploration PR has its own approval (#93).
-const reviewable = (item, d) => item.kind === 'pr' && !d?.exploration && d?.pr?.state === 'OPEN';
+// A PR's page offers the review, and so does an issue's, for its moving PR
+// (the one in its Archivos tab); an exploration PR has its own approval (#93).
+const reviewable = (item, d) => (item.kind === 'pr' || item.kind === 'issue') && !d?.exploration && d?.pr?.state === 'OPEN';
+// On an issue, the button says which PR it reviews.
+const reviewLabel = (item, d) => (item.kind === 'issue' ? `Revisar PR #${d.pr.number}` : 'Revisar');
 
 function openReviewPanel() {
   const id = S.sel;
@@ -1192,7 +1195,7 @@ function reviewPanelHTML(item) {
   const entry = S.files[item.id];
   const data = entry?.data;
   const d = S.detail[item.id]?.data;
-  const head = `<header><h2>Terminar la revisión</h2><span class="m">como ${esc(S.snap?.me ?? '')}</span><button class="x" data-rclose aria-label="Cerrar">×</button></header>`;
+  const head = `<header><h2>Terminar la revisión</h2><span class="m">${data ? `de PR #${esc(data.pr)}, ` : ''}como ${esc(S.snap?.me ?? '')}</span><button class="x" data-rclose aria-label="Cerrar">×</button></header>`;
   if (!data) return `<div class="rpanel" role="dialog" aria-label="Terminar la revisión">${head}<div class="rbody"><p class="m">${entry?.error ? `No se pudo leer el PR: ${esc(entry.error)}` : 'Leyendo el PR…'}</p></div></div>`;
   const own = isMine(data.author);
   const event = own ? 'COMMENT' : p.event;
