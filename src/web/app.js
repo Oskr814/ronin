@@ -2756,7 +2756,16 @@ async function boot() {
   if (fromPath) await select(fromPath);
   else renderAll();
 
-  document.addEventListener('click', () => {
+  document.addEventListener('click', (event) => {
+    // A click outside the review panel closes it, as Escape does; one that
+    // re-rendered the panel (a radio, say) leaves its target detached.
+    if (S.rpanel && !S.rpanel.sending && event.target.isConnected && !event.target.closest('.rpanel')) {
+      S.rpanel = null;
+      S.menu = false;
+      S.fmenu = false;
+      renderCenter();
+      return;
+    }
     if (!S.menu && !S.fmenu) return;
     S.menu = false;
     S.fmenu = false;
