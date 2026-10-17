@@ -1205,6 +1205,7 @@ export async function runAgentTask(task: AgentTask): Promise<string> {
     label,
     ...(issueNumber !== undefined ? { issueNumber } : {}),
     ...(prNumber !== undefined ? { prNumber } : {}),
+    ...('requestNumber' in task ? { portalRequest: task.requestNumber } : {}),
     ...('sliceIndex' in task ? { sliceIndex: task.sliceIndex, sliceTitle: task.sliceTitle } : {}),
     ...(model ? { model } : {}),
     ...(effort ? { effort } : {}),

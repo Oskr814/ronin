@@ -34,6 +34,7 @@ export interface RunSummary {
   label: string;
   issueNumber?: number;
   prNumber?: number;
+  portalRequest?: number;
   sliceIndex?: number;
   sliceTitle?: string;
   model?: string;
@@ -84,6 +85,9 @@ export function summarizeRun(lines: RunLine[]): RunSummary | null {
   const steps = lines.filter((line) => line.type === 'text' || line.type === 'tool' || line.type === 'tool_error');
   const last = steps.at(-1);
   const pick = <T>(key: string) => (start[key] as T | undefined);
+  // The portal request it was about (#132): runs from before it was
+  // recorded only say so in their label ("pedido P-2", "pedido P-2 (prototipo)").
+  const portalRequest = pick<number>('portalRequest') ?? (/^portal-/.test(String(start.taskType)) ? Number(/^pedido P-(\d+)\b/.exec(String(start.label ?? ''))?.[1]) || undefined : undefined);
   return {
     runId: String(start.runId),
     repo: String(start.repo),
@@ -91,6 +95,7 @@ export function summarizeRun(lines: RunLine[]): RunSummary | null {
     label: String(start.label ?? ''),
     ...(pick<number>('issueNumber') !== undefined ? { issueNumber: pick<number>('issueNumber') } : {}),
     ...(pick<number>('prNumber') !== undefined ? { prNumber: pick<number>('prNumber') } : {}),
+    ...(portalRequest !== undefined ? { portalRequest } : {}),
     ...(pick<number>('sliceIndex') !== undefined ? { sliceIndex: pick<number>('sliceIndex'), sliceTitle: pick<string>('sliceTitle') } : {}),
     ...(pick<string>('model') ? { model: pick<string>('model') } : {}),
     ...(pick<string>('effort') ? { effort: pick<string>('effort') } : {}),

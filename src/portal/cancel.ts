@@ -2,7 +2,7 @@ import { closeIssueNotPlanned, getIssueAssignees } from '../core/github.js';
 import { log } from '../core/logger.js';
 import { withActiveRepo, type RepoEntry } from '../core/repo-context.js';
 import { cancelComment } from './issue.js';
-import { addRoninMessage, CANCELLABLE, getRequest, RequestError, updateRequest, type PortalRequest } from './requests.js';
+import { addEvent, addRoninMessage, CANCELLABLE, getRequest, RequestError, updateRequest, type PortalRequest } from './requests.js';
 
 // The person cancels a request (#114) while nobody took it: before or while
 // ronin reads it, around its prototype, or once it's the team's while its
@@ -29,6 +29,7 @@ export async function cancelRequest(n: number, entries: () => Promise<RepoEntry[
   const cancelled = await updateRequest(n, (r) => {
     if (!CANCELLABLE.includes(r.status)) throw new RequestError(NOT_ANYMORE);
     r.status = 'cancelled';
+    addEvent(r, { kind: 'cancelled' });
     delete r.worker;
     addRoninMessage(r, CANCELLED_REPLY);
     return r;

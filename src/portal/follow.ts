@@ -5,7 +5,7 @@ import { activeRepo } from '../core/repo-context.js';
 import { getUser } from './accounts.js';
 import { closedMail, doneMail, teamPrMail } from './mail.js';
 import { sendPortalMails } from './notify.js';
-import { addRoninMessage, listRequests, updateRequest, type PortalRequest, type RequestStatus } from './requests.js';
+import { addEvent, addRoninMessage, listRequests, updateRequest, type PortalRequest, type RequestStatus } from './requests.js';
 
 // The tick (and the webhooks of a PR opened or closed and of an issue
 // closed), inside withActiveRepo: follows the issues this repo's portal
@@ -29,6 +29,7 @@ async function close(request: PortalRequest, status: 'done' | 'resolved' | 'decl
   const closed = await updateRequest(request.number, (r) => {
     r.status = status;
     addRoninMessage(r, CLOSE[status]);
+    addEvent(r, { kind: 'closed', status });
     return r;
   });
   log.info(`portal: el pedido P-${request.number} quedó ${status} (issue #${request.issue?.number})`);
@@ -66,7 +67,10 @@ export async function followPortalIssues(): Promise<void> {
         if (pr.state === 'MERGED') await close(request, 'done');
         else if (pr.state === 'CLOSED') {
           // Closed without merging: whatever PR closes the issue next is the one.
-          await updateRequest(request.number, (r) => { delete r.pr; });
+          await updateRequest(request.number, (r) => {
+            addEvent(r, { kind: 'pr-closed', number: request.pr! });
+            delete r.pr;
+          });
           log.info(`portal: el PR #${request.pr} del pedido P-${request.number} se cerró sin merge`);
         }
         continue;
@@ -78,6 +82,7 @@ export async function followPortalIssues(): Promise<void> {
           await addIssueLabel(Number(pr), LABEL_AUTO_MERGE);
           const updated = await updateRequest(request.number, (r) => {
             r.pr = Number(pr);
+            addEvent(r, { kind: 'pr', number: r.pr });
             addRoninMessage(r, PR_READY_REPLY);
             return r;
           });

@@ -15,7 +15,7 @@ import { releasePrototypeLock, waitForPrototypeLock } from '../commands/prototyp
 import { classifyRequest } from './classify.js';
 import { needsIssue, openPortalIssue } from './issue.js';
 import { prototypeRequest } from './prototype.js';
-import { addRoninMessage, getRequest, updateRequest } from './requests.js';
+import { addEvent, addRoninMessage, errorLine, getRequest, noteEvent, updateRequest } from './requests.js';
 
 const { number } = JSON.parse(process.argv[2] ?? '{}') as { number?: number };
 
@@ -25,9 +25,10 @@ const claim = (n: number) => updateRequest(n, (r) => {
 
 async function prototype(n: number): Promise<void> {
   await claim(n);
-  if (!(await waitForPrototypeLock())) {
+  if (!(await waitForPrototypeLock({ onWait: () => noteEvent(n, { kind: 'waiting', for: 'prototype-lock' }) }))) {
     await updateRequest(n, (r) => {
       addRoninMessage(r, 'Sigo esperando turno para armar tu prototipo: hay otros en curso. Lo intento de nuevo en un rato.');
+      addEvent(r, { kind: 'failed', step: 'prototype', error: 'sin turno para el prototipo después de esperar 3 horas' });
       delete r.worker;
     });
     return;
@@ -66,7 +67,8 @@ async function main(): Promise<void> {
   });
 }
 
-main().catch((error) => {
+main().catch(async (error) => {
   log.error(`portal-worker P-${number} falló`, error);
+  if (number) await noteEvent(number, { kind: 'failed', step: 'worker', error: errorLine(error) });
   process.exitCode = 1;
 });

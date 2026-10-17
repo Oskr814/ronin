@@ -4,14 +4,17 @@ import { log } from '../core/logger.js';
 import { sendMail, type Mail } from '../core/notifier.js';
 import type { PortalUser } from './accounts.js';
 import { bigRequestMail, PORTAL_FROM_NAME, teamRequestMail } from './mail.js';
-import { prototypePatchPath, requestDir, type PortalRequest } from './requests.js';
+import { noteEvent, prototypePatchPath, requestDir, type PortalRequest } from './requests.js';
 
 // Sends a request's emails and logs the ones that fail: a lost email never
-// holds a request back.
+// holds a request back. Each one, sent or not, goes to the request's
+// activity (#132).
 export async function sendPortalMails(request: PortalRequest, mails: Array<Mail | undefined>): Promise<void> {
-  const results = await Promise.allSettled(mails.filter((m): m is Mail => Boolean(m)).map((m) => sendMail(m, PORTAL_FROM_NAME)));
-  for (const result of results) {
+  const sent = mails.filter((m): m is Mail => Boolean(m));
+  const results = await Promise.allSettled(sent.map((m) => sendMail(m, PORTAL_FROM_NAME)));
+  for (const [i, result] of results.entries()) {
     if (result.status === 'rejected') log.error(`portal: no se pudo enviar un correo del pedido P-${request.number}`, result.reason);
+    await noteEvent(request.number, { kind: 'mail', to: sent[i].to === config.notifyTo ? 'team' : 'person', subject: sent[i].subject, ok: result.status === 'fulfilled' });
   }
 }
 

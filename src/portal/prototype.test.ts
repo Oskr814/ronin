@@ -101,6 +101,9 @@ describe('portal prototype', () => {
     expect(r.messages.at(-1)?.text).toBe(FAILED_PROTOTYPE_REPLY);
     // The person hears now; the team, once the worker opened its issue.
     expect(sendMail.mock.calls.map((c) => (c as unknown as [{ to: string }])[0].to)).toEqual(['mf@x.com']);
+    // Each attempt's failure, the hand-over and its email, in its activity (#132).
+    expect((await getRequest(n))?.events?.map((e) => e.kind)).toEqual(['failed', 'failed', 'classified', 'mail']);
+    expect((await getRequest(n))?.events?.[0]).toMatchObject({ step: 'prototype', error: 'docker compose up falló' });
   });
 
   it('when the agent finds no prototype to make, does not try again', async () => {
@@ -117,7 +120,7 @@ describe('portal prototype', () => {
     await expect(decideRequest(approve, 'aprobar', '', launch)).rejects.toThrow(/no espera tu decisión/);
     await updateRequest(approve, (x) => { x.status = 'proposed'; });
     const approved = await decideRequest(approve, 'aprobar', '', launch);
-    expect(approved).toMatchObject({ status: 'approved', decision: { kind: 'approved' } });
+    expect(approved).toMatchObject({ status: 'approved', decision: { kind: 'approved' }, events: [{ kind: 'decided', decision: 'approved' }] });
     expect(approved.messages.at(-1)?.text).toBe(APPROVED_REPLY);
     // The worker opens its issue; nobody is mailed yet.
     expect(launch).toHaveBeenCalledWith(approve);

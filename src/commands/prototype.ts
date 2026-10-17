@@ -59,12 +59,14 @@ export function prototypeWorkerBusy(): Promise<boolean> {
 
 // Waits its turn instead of giving up: the comment was already marked done,
 // so a worker that left would drop the request for good.
-export async function waitForPrototypeLock(opts: { intervalMs?: number; timeoutMs?: number } = {}): Promise<boolean> {
+// `onWait` runs once, when the lock is taken and it starts waiting.
+export async function waitForPrototypeLock(opts: { intervalMs?: number; timeoutMs?: number; onWait?: () => void | Promise<void> } = {}): Promise<boolean> {
   const intervalMs = opts.intervalMs ?? 30_000;
   const deadline = Date.now() + (opts.timeoutMs ?? 3 * 60 * 60_000);
-  for (;;) {
+  for (let waited = false; ; waited = true) {
     if (await acquireLock(lockPath())) return true;
     if (Date.now() >= deadline) return false;
+    if (!waited) await opts.onWait?.();
     await new Promise((resolve) => setTimeout(resolve, intervalMs));
   }
 }
