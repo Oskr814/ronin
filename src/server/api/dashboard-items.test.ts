@@ -62,6 +62,19 @@ describe('buildItems — issues only (#100)', () => {
     });
   });
 
+  it("stops listing an issue ronin worked on once it's closed, and keeps one whose state is unknown", () => {
+    const items = buildItems([REPO], [
+      run({ runId: 'a', taskType: 'implement-slice', issueNumber: 300 }),
+      run({ runId: 'b', taskType: 'issue-request', issueNumber: 301 }),
+      run({ runId: 'c', taskType: 'issue-request', issueNumber: 302 }),
+    ], [github({ closed: { 300: 'completed', 301: 'not_planned' } })]);
+    expect(Object.fromEntries(items.map((i) => [i.id, [i.github, i.listed]]))).toEqual({
+      'acme/product#300': ['completed', false],
+      'acme/product#301': ['not_planned', false],
+      'acme/product#302': [undefined, true],
+    });
+  });
+
   it('says when the PR has conflicts', () => {
     expect(prNote(pr({ number: 9, mergeable: 'CONFLICTING' }))).toBe('conflictos en #9');
   });

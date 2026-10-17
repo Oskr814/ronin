@@ -482,7 +482,7 @@ Una página para ver qué está haciendo ronin sin recorrer GitHub issue por iss
 
 - **Barra lateral: solo issues (#100).** Arriba, *Hoy*, *Corriendo ahora* y *En cola*. Después, *Necesitan a alguien* con los issues en `ronin:blocked`, y cada repo de `repos.json` con:
   - **Fijo arriba, el PR de exploración,** con su ícono: no tiene issue y es donde se revisan las fichas (15.12).
-  - **Sin buscar,** los issues de ronin (label `ronin`), aunque no haya corrido un agente, y los issues sobre los que ronin trabajó en los últimos 3 días (un pedido, una review del PR de una persona).
+  - **Sin buscar,** el trabajo pendiente: los issues de ronin (label `ronin`), aunque no haya corrido un agente, y los issues sobre los que ronin trabajó en los últimos 3 días (un pedido, una review del PR de una persona) mientras sigan abiertos. Uno cerrado (completado o no planeado, según `listRecentlyClosed`) sale de la lista salvo que sea el que está abierto en la ficha; se encuentra buscándolo por su número.
   - **Buscando** (título, número, `RED-n` o el número de un PR), o filtrando por un ciclo o un proyecto de Linear (15.13), todos los issues abiertos del repo (`listOpenIssues`, en la misma lectura cacheada).
 
   **Los PRs viven en su issue** (`linkPrs` en `dashboard-github.ts`): una slice de ronin en el suyo; si no, el issue abierto que cierra (`closingIssuesReferences`, por GraphQL); si no, el issue abierto cuyo número lleva la rama (`feat/405-…`, `valeria/228/slice-12`). Las corridas sobre esos PRs cuentan como del issue. Buscar el número de un PR muestra su issue con la slice resaltada.

@@ -244,10 +244,13 @@ export function buildItems(repos: string[], runs: RunSummary[], github: Array<Re
       lastRun: last,
       runs: itemRuns.length,
       ...(preview ? { preview } : {}),
-      // An issue ronin worked on lately (closed since, or in a repo GitHub
-      // couldn't be read for) is listed; a PR without an issue or a
-      // changelog entry only shows while it runs and in Hoy.
-      listed: last.issueNumber !== undefined,
+      // An issue ronin worked on lately is listed while it's still pending
+      // work: not once GitHub says it closed (completed or not planned), which
+      // shows only while it's the one open, or found by searching. One whose
+      // state is unknown (a repo GitHub couldn't be read for) stays listed. A
+      // PR without an issue or a changelog entry only shows while it runs and
+      // in Hoy.
+      listed: last.issueNumber !== undefined && state !== 'completed' && state !== 'not_planned',
     });
   }
 
