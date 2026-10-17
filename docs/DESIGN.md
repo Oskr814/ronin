@@ -166,7 +166,13 @@ Para flujos complejos, el spec incluye un link a un proyecto de Claude Design. E
 
 ### 6. Notificaciones
 
-Solo se notifica por email en bloqueos reales, no en progreso rutinario (para evitar fatiga de alertas). Requiere una app pequeña con credenciales de Gmail vía variables de entorno, corriendo junto al supervisor.
+Los bloqueos se notifican por email solo cuando son reales, no en el progreso rutinario (para evitar fatiga de alertas): van a `NOTIFY_TO`. Las credenciales de Gmail van en variables de entorno (`GMAIL_USER`, `GMAIL_APP_PASSWORD`).
+
+La misma cuenta manda otros dos correos, cada uno solo cuando alguien tiene algo que hacer:
+- **Los del portal de pedidos** (§16.7): a la persona que pidió y al equipo del repo.
+- **Los de las reuniones** (§17.5): al equipo del repo, cuando ronin propone trabajo que revisar.
+
+El equipo de cada repo es su lista `portal.notifyTo` en `repos.json`. Un repo sin lista usa `NOTIFY_TO`, y nunca recibe lo de otro repo.
 
 ### 7. Identidad del agente en GitHub
 
@@ -654,6 +660,13 @@ Todo, salvo los webhooks y `/api/auth/*`, pide sesión:
 | `GET /api/pedidos` | Los pedidos del portal de los repos que ve la sesión, con a quién espera cada uno (§16.11) |
 | `GET /api/pedidos/<n>` | Uno: la conversación, el veredicto, los prototipos, su actividad y sus corridas |
 | `GET /api/pedidos/<n>/img/<archivo>`, `/prototipo/<ronda>` | Una imagen del pedido, por el nombre que tiene en él, y el diff de un prototipo |
+| `GET /api/reuniones` | Las reuniones de los repos que ve la sesión, con lo que ronin propuso de cada una (§17) |
+| `POST /api/reuniones` | Sube las notas de una reunión: `{ repo, title?, at?, link?, text? \| file: { name, data } }`, el archivo como data URL; ronin la lee en seguida |
+| `GET /api/reuniones/<n>` | Una: el texto de sus notas, sus propuestas, lo creado, su actividad y sus corridas |
+| `GET /api/reuniones/<n>/original` | El archivo tal como se subió, siempre como descarga |
+| `POST /api/reuniones/<n>/reintentar` | La lee de nuevo, después de una lectura que falló |
+| `POST /api/reuniones/<n>/aprobar` | Crea lo que la persona eligió, con sus cambios: `{ items: [{ id, title?, body?, lead?, project?, cycle? }] }` (§17.4) |
+| `POST /api/reuniones/<n>/descartar` | Descarta lo que queda de ella |
 | `GET /api/portal-admin` | Solo admins: las cuentas del portal de pedidos y las aplicaciones que se pueden dar (§16.2) |
 | `POST /api/portal-admin/users`, `/users/<id>`, `/users/<id>/link` | Solo admins: crea una cuenta y manda la invitación, la cambia o manda otro enlace para la contraseña |
 | `GET /api/evidence/<owner>/<repo>/<sha>/<ruta>` | Una captura que publicó ronin (§11.5), leída del clon del repo de producto |
@@ -983,6 +996,112 @@ Según lo que salió:
 
 La persona ve en el portal "Reproduciendo el error", luego lo que encontró ronin con las capturas, y recibe cada paso por correo. Los eventos `reproduced` (intento, si se reprodujo y si el test quedó en rojo, verde o sin test) y `failed` con paso `reproduce` quedan en la actividad.
 
+### 17. Reuniones: de las notas al trabajo planificado (#62)
+
+Las reuniones ya dejan notas escritas (las de Gemini en Meet, u otro agente), pero pasar de las notas a trabajo planificado era manual y muchas veces no pasaba. En la página *Reuniones* del tablero, alguien sube las notas de una reunión y ronin propone el trabajo que sale de ellas: proyectos nuevos de Linear con sus issues, issues, y comentarios en issues que ya existen. **Nada se crea hasta que alguien lo apruebe ahí**: no hay borradores en Linear, y GitHub sigue siendo la fuente de verdad (§15.13).
+
+```
+src/meetings/            el dominio: las reuniones, sus notas y lo que ronin propone
+  extract.ts             el texto de un PDF (unpdf), un .docx (mammoth), texto o lo pegado
+  meetings.ts            las reuniones: meetings/<n>/meeting.json, notes.txt y el original
+  prompts.ts             lo que se le dice al agente que las lee
+  proposals.ts           lo que propone, contrastado con las notas, los issues y Linear
+  read.ts                la lectura: el contexto, el agente, las propuestas y el correo
+  mail.ts                el correo al equipo
+  worker.ts, launch.ts   el worker por reunión, su relanzamiento y reintentar
+src/server/api/dashboard-meetings.ts          la subida, la lista y la ficha
+src/server/api/dashboard-meetings-approve.ts  aprobar (como la persona) y descartar
+```
+
+#### 17.1 El recorrido de una reunión
+
+Cada reunión es de **un** repo y se numera entre todos los repos (R-1, R-2…). Sus estados:
+
+- `pending`: se subió; su worker la lee apenas haya un lugar.
+- `reading`: ronin la está leyendo.
+- `review`: propuso algo y espera que alguien lo revise.
+- `empty`: no salió trabajo nuevo. No hay correo.
+- `failed`: la lectura falló (por ejemplo, Linear no respondió). Desde la ficha se pide de nuevo.
+- `done`: alguien aprobó una parte y se creó todo lo aprobado.
+- `discarded`: alguien la descartó. Lo que ya se había creado queda creado.
+
+#### 17.2 Subir las notas
+
+- **Qué se acepta:** un PDF, un Word `.docx`, texto o Markdown (hasta 10 MB), o el texto pegado. De Google Docs se bajan como PDF o `.docx`. El tipo sale de los primeros bytes, nunca del nombre. Un PDF escaneado no tiene texto y se rechaza explicando por qué.
+- **El archivo** viaja como data URL dentro del JSON, como las imágenes del portal: solo JSON pasa las defensas del tablero.
+- **Dónde queda:** en `MEETINGS_DATA_DIR/meetings/<n>/` se guardan `meeting.json`, `notes.txt` (el texto extraído) y el original, con permisos 0600 y 0700. Es la única copia y **nunca va al repo del producto ni a GitHub**: las notas de una reunión dicen más de lo que debería decir un issue.
+- **Sin duplicados:** se guarda un hash del texto normalizado, sin espacios ni mayúsculas. Las mismas notas en el mismo repo se rechazan, diciendo qué reunión las tiene. El control va bajo el mismo lock que el contador, así que dos subidas a la vez no pasan las dos.
+- **Quién:** cualquiera que vea el repo en el tablero (#106) sube y ve sus reuniones. Una reunión de un repo que no ve no existe para esa sesión. La configuración fina (quién sube, quién aprueba) es #145.
+
+#### 17.3 La lectura (`read.ts`)
+
+El servidor lanza un worker por reunión al subirla. El worker espera un lugar como cualquier corrida (`withSlots`) y toma el lock de la reunión. El tick relanza las reuniones que quedaron en `pending` o `reading` sin worker vivo (`sweepMeetings`), igual que con los pedidos del portal.
+
+El agente (`meeting-read`) es de solo lectura y corre en un checkout detached de la rama base. Tiene:
+
+- **las notas**, con las líneas numeradas, en un archivo;
+- **el contexto**, en otro archivo:
+  - los issues abiertos de GitHub;
+  - con Linear, **todos** los proyectos del equipo (también los completados y los planificados), sus ciclos y sus personas (`teamContext`);
+  - lo que otras reuniones del mismo repo propusieron y nadie revisó todavía;
+- **el código.**
+
+El prompt marca ambos archivos como datos, nunca como instrucciones.
+
+El agente responde con proyectos (cada uno con sus issues), issues, comentarios y lo descartado, cada uno con el motivo. Cada propuesta cita las líneas de las notas que la justifican.
+
+`proposals.ts` contrasta la respuesta con lo que realmente existe y deja fuera, con un registro en el log, lo que no se sostiene. Nunca adivina un arreglo:
+- una propuesta sin citas válidas;
+- un comentario en un issue que no está abierto;
+- un proyecto que ya existe en Linear;
+- un proyecto de Linear o un líder que no son del equipo.
+
+Sin Linear no hay proyectos, y sus issues quedan sueltos. Lo que es de otro repo se descarta: una reunión nunca cruza información entre clientes.
+
+#### 17.4 Revisar y crear (`dashboard-meetings-approve.ts`)
+
+En la ficha, quien revisa marca qué propuestas quiere y puede cambiar:
+- el título y la descripción;
+- el líder de un proyecto;
+- el proyecto y el ciclo de un issue;
+- a qué ciclo pasa un issue comentado.
+
+Desmarcar un proyecto desmarca sus issues, y los issues de un proyecto nuevo no se crean sin él.
+
+*Crear seleccionados* crea:
+
+- **Proyectos** en Linear, con la key del repo (`createProject`): en el equipo, en el primer estado *Backlog* del workspace y con su líder. Quedan a nombre del dueño de la key.
+- **Issues y comentarios** en GitHub, **a nombre de quien aprueba** y con su sesión, como *Nuevo issue* (§15.11.1). Los issues se crean sin asignar.
+- **El proyecto y el ciclo** de cada issue, y el ciclo de un issue comentado: se encolan en `linear-assign` y se aplican cuando la sincronización los lleva a Linear (`applyLinearSoon`, y el tick para lo que quede).
+
+Al final de lo creado va de dónde salió: la reunión, su fecha y quién lo aprobó. Nunca el texto de las notas.
+
+El resultado de cada propuesta se guarda apenas se conoce:
+- reintentar después de una falla parcial nunca crea dos veces lo mismo;
+- una sesión de GitHub vencida corta todo, sin perder lo hecho, y la página pide entrar de nuevo;
+- un lock por reunión evita dos aprobaciones a la vez.
+
+La reunión pasa a `done` cuando se creó todo lo marcado. *Descartar* la deja en `discarded`.
+
+#### 17.5 Correos
+
+Cuando ronin propone algo, le llega un correo al equipo del repo, el mismo que el del portal (`teamTo()`: `portal.notifyTo` en `repos.json`, o `NOTIFY_TO`). Nunca va a los participantes de la reunión. Lleva lo propuesto, lo descartado y el link a la ficha (`DASHBOARD_URL`), y **nunca el texto de las notas**. Sale de la cuenta de `GMAIL_USER` con el nombre "ronin · Reuniones". Un correo que falla queda en la actividad y no frena nada.
+
+#### 17.6 API
+
+Ver la tabla de 15.9: `GET|POST /api/reuniones`, `GET /api/reuniones/<n>`, `GET /api/reuniones/<n>/original` y `POST /api/reuniones/<n>/reintentar | aprobar | descartar`. Todas filtran por los repos que ve la sesión.
+
+#### 17.7 Activarlo
+
+- `MEETINGS_DATA_DIR` en `.env` (por defecto `meetings-data`). Es la única copia: hay que respaldarlo, como `PORTAL_DATA_DIR`.
+- Para proyectos y ciclos, la key de Linear del repo (§15.13) con permiso de escritura. Sin ella, ronin propone solo issues y comentarios.
+- Para el correo, `GMAIL_USER` y `GMAIL_APP_PASSWORD`, y el equipo del repo en `portal.notifyTo`. Para que el correo traiga el link, `DASHBOARD_URL`.
+
+#### 17.8 Pendiente
+
+- **Una fuente automática:** una carpeta de Drive o un correo reenviado, que entre por la misma puerta que la subida. Antes hay que probar si Gemini comparte las notas con una cuenta de fuera de la organización.
+- **Configurar quién sube y quién aprueba:** la administración de usuarios de ronin (#145).
+
 ## Estado actual
 
 - [x] Definir el esqueleto del supervisor (script + estructura de tick) — ver §3.1 y `src/`
@@ -998,6 +1117,7 @@ La persona ve en el portal "Reproduciendo el error", luego lo que encontró roni
 - [x] Limpieza de worktrees cuando su PR ya no está abierto — `sweepOrphanedWorktrees` (§3.1)
 - [x] Reacción por evento: un handler por evento de GitHub, el tick como conciliación — `server/api/webhooks/handler.ts`, `core/locks.ts` (§14)
 - [x] Tablero web en la tailnet, con login de GitHub, la ficha de cada ítem, acciones y la revisión de PRs (§15.14) — `server/`, `web/`, `core/run-record.ts`, `core/claude-usage.ts` (§15)
+- [x] Reuniones: las notas que se suben al tablero, la lectura de ronin y la creación de lo aprobado en GitHub y Linear — `meetings/`, `server/api/dashboard-meetings*.ts` (§17)
 - [x] Portal de pedidos en `ronin-agent.redmotoshn.com`: cuentas con email y contraseña, conversación con imágenes, prototipo, PR con `ronin:auto-merge` o issue para el equipo, y correos — `portal/`, `portal-web/` (§16)
 - [x] ~~Evidencia visual de e2e en el PR~~ — eliminado (el `src/evidence.ts` de entonces; el `evidence-store.ts` actual es el de la exploración, §11.5); no reemplazaba la supervisión humana y la calidad no era suficiente — ver [issue #4](https://github.com/Oskr814/ronin/issues/4)
 
