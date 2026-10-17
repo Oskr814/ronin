@@ -25,6 +25,10 @@ export type RequestStatus =
   // The prototype is on screen: the person approves it, asks for an
   // adjustment (back to 'thinking') or turns it down (to 'big').
   | 'proposed'
+  // A reported error (#137): ronin brings the app up to reproduce it, with a
+  // test that fails because of it, and tries the fix (a worker,
+  // reproduce.ts).
+  | 'reproducing'
   // The person approved the prototype: ronin opens an issue for it, makes
   // the change in a PR and a dev approves it before it merges.
   | 'approved'
@@ -46,10 +50,14 @@ export const OPEN_FOR_PERSON: RequestStatus[] = ['asking', 'answered', 'proposed
 // When the person can cancel it: while nobody took it. Approved, its issue
 // is assigned to ronin; the team's, cancel.ts checks no one assigned its
 // issue yet.
-export const CANCELLABLE: RequestStatus[] = ['thinking', 'asking', 'answered', 'minor', 'proposed', 'big'];
+export const CANCELLABLE: RequestStatus[] = ['thinking', 'asking', 'answered', 'minor', 'proposed', 'reproducing', 'big'];
 
 // Prototypes per request: the first and up to two adjustments.
 export const MAX_PROTOTYPES = 3;
+
+// Tries to reproduce a reported error: the first and one more with what
+// the person answered.
+export const MAX_REPRODUCTIONS = 2;
 
 export interface PortalMessage {
   id: number;
@@ -74,7 +82,9 @@ export interface Prototype {
 }
 
 export interface Verdict {
-  kind: 'minor' | 'big';
+  // error: a reported error, to reproduce (#137); once reproduced or not,
+  // the team's ('big').
+  kind: 'minor' | 'big' | 'error';
   // minor: what changes, in plain words; the prototype's instruction.
   proposal?: string;
   instruction?: string;
@@ -83,6 +93,50 @@ export interface Verdict {
   // For the team: the technical summary (areas, files, risks).
   summary: string;
   at: string;
+}
+
+// The test a reproduction wrote: directly on the layer where the error is
+// (the API, a function) when ronin knew where, or e2e following the
+// person's steps. Red: it fails without the fix; green: it passes with it.
+export interface ReproductionTest {
+  kind: 'direct' | 'e2e';
+  name: string;
+  file?: string;
+  command?: string;
+  red: boolean;
+  green: boolean;
+  // The tail of its output, without and with the fix.
+  redOutput?: string;
+  greenOutput?: string;
+}
+
+// One try at reproducing a reported error (#137), in the app running from
+// the base branch with disposable data.
+export interface Reproduction {
+  round: number;
+  reproduced: boolean;
+  // What ronin did in the app, step by step (for the team).
+  steps: string[];
+  test?: ReproductionTest;
+  // The fix ronin tried, when the cause was clear: small (a few hours'
+  // work, its test green) or big (it left the fix out, `reason` says why).
+  fix?: 'small' | 'big';
+  reason?: string;
+  // For the team: the cause, the files involved and the risks; or, not
+  // reproduced, what ronin suspects.
+  summary: string;
+  // Its diff, under proto/: the test, and the fix when it made one.
+  patch?: string;
+  // The message that told the person.
+  messageId: number;
+  at: string;
+}
+
+// A reported error: the steps to reproduce it as ronin understood them, and
+// its tries.
+export interface BugReport {
+  steps: string;
+  reproductions: Reproduction[];
 }
 
 // What happened to a request besides its messages (#132): what the
@@ -94,11 +148,14 @@ export type RequestEvent = { at: string } & (
   // Something failed: reading it, a prototype attempt, opening its issue,
   // or the worker itself. The request goes on (asks again, goes to the
   // team, or the tick launches another worker).
-  | { kind: 'failed'; step: 'classify' | 'prototype' | 'worker'; error: string }
-  // The prototype waited for the repo's turn (another one was running).
+  | { kind: 'failed'; step: 'classify' | 'prototype' | 'reproduce' | 'worker'; error: string }
+  // The prototype (or the reproduction) waited for the repo's turn: they
+  // share it, each brings the app up.
   | { kind: 'waiting'; for: 'prototype-lock' }
   // ronin read it and decided (a question or an answer are its messages).
-  | { kind: 'classified'; verdict: 'minor' | 'big' }
+  | { kind: 'classified'; verdict: 'minor' | 'big' | 'error' }
+  // A try at reproducing a reported error (#137).
+  | { kind: 'reproduced'; round: number; reproduced: boolean; test: 'red' | 'green' | 'none' }
   | { kind: 'decided'; decision: 'approved' | 'rejected' }
   | { kind: 'mail'; to: 'person' | 'team'; subject: string; ok: boolean }
   | { kind: 'issue'; number: number; team: boolean }
@@ -124,6 +181,8 @@ export interface PortalRequest {
   questions: number;
   verdict?: Verdict;
   prototypes?: Prototype[];
+  // A reported error (#137), from the moment ronin read it as one.
+  bug?: BugReport;
   // When the person approved the prototype or turned it down.
   decision?: { kind: 'approved' | 'rejected'; at: string };
   // The issue it became in the product repo (approved: for ronin; big: for
@@ -131,13 +190,17 @@ export interface PortalRequest {
   issue?: { number: number; url: string };
   pr?: number;
   // The worker reading it while 'thinking', drawing the prototype while
-  // 'minor', or opening its issue once 'approved' or 'big', so the tick can
+  // 'minor', reproducing it while 'reproducing', or opening its issue once 'approved' or 'big', so the tick can
   // tell one that died (and start another).
   worker?: { pid: number; since: string };
   events?: RequestEvent[];
   createdAt: string;
   updatedAt: string;
 }
+
+// The diff that goes with it, for the team: a reported error's last
+// reproduction's, or the last prototype's.
+export const patchOf = (r: PortalRequest) => (r.bug ? r.bug.reproductions.at(-1)?.patch : r.prototypes?.at(-1)?.patch);
 
 const requestsDir = () => join(config.portal.dataDir, 'requests');
 const requestPath = (n: number) => join(requestsDir(), String(n), 'request.json');

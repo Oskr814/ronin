@@ -93,6 +93,42 @@ describe('portal issues', () => {
     expect((await getRequest(n))?.issue?.number).toBe(77);
   });
 
+  it("a reported error's issue is the team's, with the reproduction, its test, its images and its diff (#137)", async () => {
+    const n = await approvedRequest({ status: 'big', prototypes: [] });
+    for (const file of ['r1-error-1.png', 'r1-arreglo-1.png']) await writeFile(requestImagePath(n, file), file);
+    await writeFile(prototypePatchPath(n, 'r1.diff'), 'diff --git a/T.cs b/T.cs\n+[Fact]\n');
+    await updateRequest(n, (x) => {
+      x.title = 'Filtro de pedidos deja fuera los del último día';
+      x.verdict = { kind: 'big', reason: 'ronin lo reprodujo, con un test que falla y probó un arreglo pequeño que lo pasa a verde.', summary: 'OrderHeaderExtensions', at: '' };
+      x.messages.push({ id: 3, from: 'ronin', text: 'Lo pude reproducir', images: ['r1-error-1.png', 'r1-arreglo-1.png'], captions: ['El error', 'Con el arreglo de prueba'], at: '' });
+      x.bug = {
+        steps: 'Sales, Gestionar Pedidos, hasta 16/10',
+        reproductions: [{
+          round: 1, reproduced: true, steps: ['Creó 3 pedidos del 16/10', 'Filtró hasta 16/10'], fix: 'small', summary: 'FilterByDateRange compara con la medianoche', patch: 'r1.diff', messageId: 3, at: '',
+          test: { kind: 'direct', name: 'FilterByDateRange_IncluyeLosPedidosDelDiaFinal', file: 'apps/api/T.cs', red: true, green: true, redOutput: 'Failed: 1', greenOutput: 'Passed: 15' },
+        }],
+      };
+    });
+    await openPortalIssue(n);
+    const [, body, , assignees] = gh.createIssue.mock.calls[0] as unknown as [string, string, string[], string[]];
+    expect(assignees).toEqual([]);
+    for (const part of ['Es un **reporte de error**, para el equipo de desarrollo', '## Lo que reporta', '## Reproducción', '**Reproducido**', '1. Creó 3 pedidos del 16/10', '**Causa:**', '`FilterByDateRange_IncluyeLosPedidosDelDiaFinal` en `apps/api/T.cs`', 'Rojo en la rama base; en verde con el arreglo de prueba.', 'Failed: 1', 'Passed: 15', '**Con el arreglo de prueba**', 'Diff de la reproducción (el test y el arreglo de prueba)', '+[Fact]']) expect(body).toContain(part);
+    expect(body).not.toContain('Diff del prototipo');
+    // The error is a before and the fix an after, like a prototype's.
+    const published = (publishEvidence.mock.calls[0] as unknown as [string, Array<{ path: string }>])[1].map((f) => f.path.split('/').pop());
+    expect(published).toEqual(['antes-1.png', 'despues-1.png', 'antes-2.png']);
+    // The team's mail says what it is.
+    expect(sendMail.mock.calls.at(-1)).toMatchObject([{ subject: expect.stringContaining('(error reproducido)'), text: expect.stringContaining('rojo sin el arreglo y verde con él') }, expect.any(String)]);
+  });
+
+  it('a test that never failed goes as what was tried, not as proof of the error', () => {
+    const body = portalIssueBody({
+      number: 3, title: 't', app: 'backoffice', messages: [], status: 'big', verdict: { kind: 'big', reason: 'No se pudo reproducir con datos de prueba.', summary: '', at: '' },
+      bug: { steps: 's', reproductions: [{ round: 1, reproduced: false, steps: [], summary: 'Quizás viene de Odoo', messageId: 2, at: '', test: { kind: 'e2e', name: 'filtro', red: false, green: false } }] },
+    } as unknown as PortalRequest, undefined, { prototype: [], attached: [] }, undefined, undefined);
+    for (const part of ['**No se pudo reproducir** con datos de prueba', '**Lo que sospecha ronin:**', '**El test que se intentó** (e2e)', 'no prueba el error']) expect(body).toContain(part);
+  });
+
   it('cuts a huge diff and says where the whole one is', () => {
     const body = portalIssueBody({ number: 3, title: 't', app: 'backoffice', messages: [], verdict: { kind: 'minor', summary: '', at: '' } } as unknown as PortalRequest, undefined, { prototype: [], attached: [] }, 'x'.repeat(50_000), '/data/requests/3/proto/1.diff');
     expect(body.length).toBeLessThan(45_000);

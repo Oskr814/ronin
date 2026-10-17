@@ -11,21 +11,21 @@ import { removeWorktreeDir } from '../core/worktree.js';
 import { getUser, type PortalUser } from './accounts.js';
 import { replyMail } from './mail.js';
 import { handOverMail, sendPortalMails } from './notify.js';
-import { addEvent, addRoninMessage, errorLine, getRequest, MAX_PROTOTYPES, requestImagePath, TITLE_MAX, updateUnlessCancelled, type PortalRequest, type Verdict } from './requests.js';
+import { addEvent, addRoninMessage, errorLine, getRequest, MAX_PROTOTYPES, MAX_REPRODUCTIONS, requestImagePath, TITLE_MAX, updateUnlessCancelled, type PortalRequest, type Verdict } from './requests.js';
 
 const execFileAsync = promisify(execFile);
 
-// ronin reads a portal request (#114) and does one of four things: asks the
+// ronin reads a portal request (#114) and does one of five things: asks the
 // person something, answers them, or decides it's a small change (the
-// prototype comes next) or one for the dev team. A read-only agent decides;
-// this writes the reply, so the person only ever sees what passes through
-// here.
+// prototype comes next), a reported error (reproducing it comes next, #137)
+// or one for the dev team. A read-only agent decides; this writes the
+// reply, so the person only ever sees what passes through here.
 
 export const MAX_QUESTIONS = 3;
 const MAX_MESSAGE = 3000;
 const MAX_FIELD = 4000;
 
-export type PortalAction = 'preguntar' | 'responder' | 'menor' | 'grande';
+export type PortalAction = 'preguntar' | 'responder' | 'menor' | 'error' | 'grande';
 
 export interface PortalResult {
   accion: PortalAction;
@@ -35,6 +35,8 @@ export interface PortalResult {
   instruccion?: string;
   motivo?: string;
   resumen?: string;
+  // error: the steps to reproduce it, as ronin understood them.
+  pasos?: string;
 }
 
 const text = (value: unknown, max: number): string | undefined => {
@@ -44,17 +46,18 @@ const text = (value: unknown, max: number): string | undefined => {
 };
 
 // What the agent wrote. A small change without what the prototype needs or
-// past the prototypes allowed, or a question past the limit, goes to the
-// team: never left half-decided.
-export function parsePortalResult(raw: string, questionsAsked: number, prototypesShown = 0): PortalResult {
+// past the prototypes allowed, an error without its steps or past the
+// reproductions allowed, or a question past the limit, goes to the team:
+// never left half-decided.
+export function parsePortalResult(raw: string, questionsAsked: number, prototypesShown = 0, reproductions = 0): PortalResult {
   const parsed: unknown = JSON.parse(raw);
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) throw new Error('el resultado no es un objeto JSON');
   const r = parsed as Record<string, unknown>;
   const mensaje = text(r.mensaje, MAX_MESSAGE);
   if (!mensaje) throw new Error('el resultado no trae "mensaje"');
-  if (!['preguntar', 'responder', 'menor', 'grande'].includes(r.accion as string)) throw new Error(`"accion" inválida: ${String(r.accion)}`);
+  if (!['preguntar', 'responder', 'menor', 'error', 'grande'].includes(r.accion as string)) throw new Error(`"accion" inválida: ${String(r.accion)}`);
   const result: PortalResult = { accion: r.accion as PortalAction, mensaje };
-  for (const [key, max] of [['titulo', TITLE_MAX], ['propuesta', MAX_FIELD], ['instruccion', MAX_FIELD], ['motivo', MAX_FIELD], ['resumen', MAX_FIELD]] as const) {
+  for (const [key, max] of [['titulo', TITLE_MAX], ['propuesta', MAX_FIELD], ['instruccion', MAX_FIELD], ['motivo', MAX_FIELD], ['resumen', MAX_FIELD], ['pasos', MAX_FIELD]] as const) {
     const value = text(r[key], max);
     if (value) result[key] = value;
   }
@@ -64,15 +67,22 @@ export function parsePortalResult(raw: string, questionsAsked: number, prototype
   if (result.accion === 'menor' && prototypesShown >= MAX_PROTOTYPES) {
     return { ...result, accion: 'grande', motivo: result.motivo ?? 'Pidió más ajustes de los que se pueden hacer aquí.', mensaje: 'Para dejarlo como lo necesitas hace falta que lo vea el equipo.' };
   }
+  if (result.accion === 'error' && !result.pasos) {
+    return { ...result, accion: 'grande', motivo: result.motivo ?? 'No quedó claro cómo reproducir el error.' };
+  }
+  if (result.accion === 'error' && reproductions >= MAX_REPRODUCTIONS) {
+    return { ...result, accion: 'grande', motivo: result.motivo ?? 'No se pudo reproducir con datos de prueba.', mensaje: 'Para encontrar el error hace falta que lo vea el equipo de desarrollo.' };
+  }
   if (result.accion === 'preguntar' && questionsAsked >= MAX_QUESTIONS) {
     return { ...result, accion: 'grande', motivo: result.motivo ?? 'Hicieron falta más datos de los que se pueden pedir aquí.', mensaje: 'Para entender bien lo que necesitas hace falta conversarlo con el equipo.' };
   }
   return result;
 }
 
-export const NEXT_STEP: Record<'menor' | 'otra' | 'grande', string> = {
+export const NEXT_STEP: Record<'menor' | 'otra' | 'error' | 'grande', string> = {
   menor: 'Voy a armar un prototipo para que veas cómo quedaría antes de hacer el cambio. Te aviso aquí y por correo cuando esté listo.',
   otra: 'Voy a armar otro prototipo con tus ajustes. Te aviso aquí y por correo cuando esté listo.',
+  error: 'Voy a intentar reproducirlo en una copia de la aplicación para ver qué pasa. Te aviso aquí y por correo.',
   grande: 'Se lo envié al equipo de desarrollo con tu descripción y tus imágenes. Te aviso por correo cuando esté resuelto.',
 };
 
@@ -86,6 +96,15 @@ export function applyResult(request: PortalRequest, result: PortalResult, now = 
     addRoninMessage(request, result.mensaje, now);
     request.status = result.accion === 'preguntar' ? 'asking' : onScreen ? 'proposed' : 'answered';
     if (result.accion === 'preguntar') request.questions += 1;
+    return;
+  }
+  if (result.accion === 'error') {
+    request.verdict = { kind: 'error', summary: result.resumen ?? '', at: now.toISOString() };
+    // Asked again after a try: the earlier tries stay.
+    request.bug = { steps: result.pasos ?? '', reproductions: request.bug?.reproductions ?? [] };
+    request.status = 'reproducing';
+    addEvent(request, { kind: 'classified', verdict: 'error' }, now);
+    addRoninMessage(request, `${result.mensaje}\n\n${NEXT_STEP.error}`, now);
     return;
   }
   const kind = result.accion === 'menor' ? 'minor' : 'big';
@@ -117,11 +136,12 @@ async function checkout(n: number): Promise<string> {
 }
 
 // The person hears back by email (they may have closed the page), except
-// for a small change: the next email is the prototype's. A big one's issue
+// for a small change or an error: the next email is the prototype's, or the
+// reproduction's. A big one's issue
 // for the team comes next, in the same worker.
 async function notify(request: PortalRequest, user: PortalUser | undefined): Promise<void> {
   if (request.status === 'big') await handOverMail(request, user);
-  else if (request.status !== 'minor' && user) await sendPortalMails(request, [replyMail(request, user, config.portal.url)]);
+  else if (request.status !== 'minor' && request.status !== 'reproducing' && user) await sendPortalMails(request, [replyMail(request, user, config.portal.url)]);
 }
 
 // Inside withActiveRepo, for a request that's 'thinking'. Never throws: a
@@ -145,10 +165,12 @@ export async function classifyRequest(n: number): Promise<void> {
       prototypes: request.prototypes?.length ?? 0,
       ...(request.verdict?.instruction ? { instruction: request.verdict.instruction } : {}),
       adjustmentsLeft: Math.max(0, MAX_PROTOTYPES - (request.prototypes?.length ?? 0)),
+      ...(request.bug ? { reproductions: request.bug.reproductions.map((t) => ({ reproduced: t.reproduced, summary: t.summary })) } : {}),
+      reproductionsLeft: Math.max(0, MAX_REPRODUCTIONS - (request.bug?.reproductions.length ?? 0)),
       checkoutDir: dir,
       outputPath,
     });
-    const result = parsePortalResult(await readFile(outputPath, 'utf8'), request.questions, request.prototypes?.length ?? 0);
+    const result = parsePortalResult(await readFile(outputPath, 'utf8'), request.questions, request.prototypes?.length ?? 0, request.bug?.reproductions.length ?? 0);
     const updated = await updateUnlessCancelled(n, (r) => applyResult(r, result));
     if (!updated) {
       log.info(`portal: el pedido P-${n} se canceló mientras ronin lo leía`);

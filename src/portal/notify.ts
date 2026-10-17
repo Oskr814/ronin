@@ -5,7 +5,7 @@ import { activeRepo } from '../core/repo-context.js';
 import { sendMail, type Mail } from '../core/notifier.js';
 import type { PortalUser } from './accounts.js';
 import { bigRequestMail, PORTAL_FROM_NAME, teamRequestMail } from './mail.js';
-import { noteEvent, prototypePatchPath, requestDir, type PortalRequest } from './requests.js';
+import { noteEvent, patchOf, prototypePatchPath, requestDir, type PortalRequest } from './requests.js';
 
 // Sends a request's emails and logs the ones that fail: a lost email never
 // holds a request back. Each one, sent or not, goes to the request's
@@ -23,10 +23,10 @@ export async function sendPortalMails(request: PortalRequest, mails: Array<Mail 
 // in repos.json), never another repo's; NOTIFY_TO when it has none.
 export const teamTo = () => activeRepo().portal?.notifyTo?.join(', ') || config.notifyTo;
 
-// To the dev team, with its issue and the last prototype's diff when there
-// is one.
+// To the dev team, with its issue and the last prototype's diff (or a
+// reported error's reproduction's) when there is one.
 export async function teamMail(request: PortalRequest, user: PortalUser | undefined): Promise<Mail> {
-  const file = request.prototypes?.at(-1)?.patch;
+  const file = patchOf(request);
   const patch = file ? await readFile(prototypePatchPath(request.number, file), 'utf8').catch(() => undefined) : undefined;
   return teamRequestMail(request, user, teamTo(), requestDir(request.number), patch);
 }
