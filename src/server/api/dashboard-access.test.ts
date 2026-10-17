@@ -16,11 +16,16 @@ vi.mock('../../core/repos.js', () => ({
   ],
 }));
 vi.mock('./dashboard-github.js', () => ({
-  repoGithub: async (entry: { productRepo: string }) => ({ repo: entry.productRepo, fetchedAt: '', issues: [], openIssues: [{ number: 1, title: `issue de ${entry.productRepo}`, url: '', labels: [] }], prs: [], prIssue: {}, previews: [], blocks: {} }),
+  repoGithub: async (entry: { productRepo: string }) => ({ repo: entry.productRepo, fetchedAt: '', issues: [], openIssues: [{ number: 1, title: `issue de ${entry.productRepo}`, url: '', labels: [] }], prs: [{ number: 2, title: 'PR', url: '', author: 'a', isDraft: false, headRefName: 'feat/x', baseRefName: 'main', reviewDecision: '', checks: [] }], prIssue: {}, previews: [], blocks: {} }),
   forgetGithub: vi.fn(),
 }));
 vi.mock('./dashboard-linear.js', () => ({ repoLinear: async () => undefined, cycleView: () => null }));
 vi.mock('./dashboard-new-issue.js', async (importOriginal) => ({ ...(await importOriginal<typeof import('./dashboard-new-issue.js')>()), repoApps: async () => [] }));
+vi.mock('./dashboard-files.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./dashboard-files.js')>()),
+  prFiles: async () => ({ fetchedAt: '', headSha: 'h', baseSha: 'b', files: [{ path: 'a.ts', status: 'modified', additions: 1, deletions: 0 }], threads: [] }),
+  fileContent: async () => 'a\n',
+}));
 vi.mock('./dashboard-detail.js', async (importOriginal) => ({ ...(await importOriginal<typeof import('./dashboard-detail.js')>()), itemDetail: async () => ({ fetchedAt: '' }) }));
 
 const dir = mkdtempSync(join(tmpdir(), 'ronin-access-'));
@@ -46,7 +51,7 @@ async function call(path: string, method = 'GET', body?: unknown): Promise<{ sta
     writeHead(status: number) { out.status = status; return res; },
     end(text?: string) { out.body = text ? JSON.parse(text) : undefined; return res; },
   } as unknown as ServerResponse;
-  await handleDashboard(req, res, path, SESSION, ACCESS);
+  await handleDashboard(req, res, path.split('?')[0], SESSION, ACCESS);
   return out;
 }
 
@@ -77,10 +82,18 @@ describe('a session that sees only some repos', () => {
     expect((await call(`/api/evidence/${BM}/abc/a.png`)).status).toBe(404);
     expect((await call(`/api/repos/${BM}/issues`, 'POST', { title: 'x' })).status).toBe(404);
     expect((await call(`/api/items/${encodeURIComponent(`${BM}#1`)}/actions`, 'POST', { action: 'resolve-conflicts' })).status).toBe(404);
+    expect((await call(`/api/items/${encodeURIComponent(`${BM}#2`)}/files`)).status).toBe(404);
+    expect((await call(`/api/items/${encodeURIComponent(`${BM}#2`)}/files/content?path=a.ts`)).status).toBe(404);
   });
 
   it('still finds what is of its repos', async () => {
     expect((await call(`/api/items/${encodeURIComponent(`${SC}#1`)}/detail`)).status).toBe(200);
     expect((await call('/api/runs/r-sc')).status).toBe(200);
+    expect((await call(`/api/items/${encodeURIComponent(`${SC}#2`)}/files`)).body).toMatchObject({ pr: 2, files: [{ path: 'a.ts' }] });
+    expect((await call(`/api/items/${encodeURIComponent(`${SC}#2`)}/files/content?path=a.ts`)).body).toEqual({ sha: 'h', text: 'a\n' });
+  });
+
+  it("reads only a file the PR changes (#111)", async () => {
+    expect((await call(`/api/items/${encodeURIComponent(`${SC}#2`)}/files/content?path=.env`)).status).toBe(404);
   });
 });

@@ -13,6 +13,7 @@ import { createFromDashboard, NewIssueError, parseNewIssue, repoApps } from './d
 import { cycleView, repoLinear } from './dashboard-linear.js';
 import { buildItems, itemRunKeys } from './dashboard-items.js';
 import { forgetDetails, itemDetail, resolveItem } from './dashboard-detail.js';
+import { fileContent, forgetFiles, prFiles } from './dashboard-files.js';
 import { ActionError, listActions, runAction } from './dashboard-actions.js';
 import { today, WEEK_DAYS } from './dashboard-today.js';
 import { readEvidence } from './dashboard-evidence.js';
@@ -28,6 +29,8 @@ import type { Session } from './auth.js';
 //   GET /api/items/<id>              one item's runs (14 days)
 //   GET /api/items/<id>/detail       its issue and PR from GitHub, with its comments and what can be asked of it (#85)
 //   GET /api/items/<id>/exploration  an exploration PR's findings and their threads, to review them (#93)
+//   GET /api/items/<id>/files        its PR's changed files and review threads, as "Files changed" (#111)
+//   GET /api/items/<id>/files/content?path=  one of those files at the PR's head, for the lines around its hunks
 //   POST /api/items/<id>/exploration/actions  a comment on one of them, as the person (dashboard-exploration-actions.ts)
 //   POST /api/items/<id>/exploration/general  a general comment on the PR, as the person
 //   POST /api/items/<id>/exploration/approve  an approving review, as the person
@@ -123,9 +126,9 @@ async function todayWithCycles(): Promise<unknown> {
   return { ...today(listRuns(WEEK_DAYS)), cycles: cycles.filter(Boolean) };
 }
 
-// An issue or PR of a repo in repos.json: what it is and what GitHub has on
-// it. Null for an item that isn't one (a changelog entry).
-async function itemContext(id: string) {
+// An issue or PR of a repo in repos.json: what it is, and when one of its
+// runs last started or ended. Null for an item that isn't one (a changelog entry).
+async function itemRef(id: string) {
   const match = /^(.+)#(\d+)$/.exec(id);
   if (!match) return null;
   const entry = (await visibleRepos()).find((repo) => repo.productRepo === match[1]);
@@ -138,7 +141,23 @@ async function itemContext(id: string) {
   // Neither listed nor run on lately (opened by its number): GitHub says what it is.
   const number = Number(match[2]);
   const ref = resolveItem(number, gh, runKind) ?? resolveItem(number, undefined, (await withActiveRepo(entry, () => itemKindOf(number))) ?? undefined);
-  return ref && { entry, ref, gh, detail: await itemDetail(entry, ref, changedSince) };
+  return ref && { entry, ref, gh, changedSince };
+}
+
+// The item, with what GitHub has on it.
+async function itemContext(id: string) {
+  const ctx = await itemRef(id);
+  return ctx && { ...ctx, detail: await itemDetail(ctx.entry, ctx.ref, ctx.changedSince) };
+}
+
+// The files of the item's PR: a PR's own, an issue's moving PR's. Null for
+// an item with no PR.
+async function filesContext(id: string) {
+  const ctx = await itemRef(id);
+  if (!ctx) return null;
+  const prNumber = ctx.ref.kind === 'pr' ? ctx.ref.number : ctx.ref.pr;
+  if (prNumber === undefined) return null;
+  return { entry: ctx.entry, prNumber, files: await prFiles(ctx.entry, prNumber, ctx.changedSince) };
 }
 
 async function detail(id: string, login: string): Promise<unknown | null> {
@@ -216,6 +235,7 @@ async function postAction(req: IncomingMessage, res: ServerResponse, id: string,
     const done = await runAction(ctx.entry, ctx.ref, ctx.gh, ctx.detail, session, body.action, body.text);
     // The next read shows the comment and whatever the action changed.
     forgetDetails(ctx.entry.productRepo);
+    forgetFiles(ctx.entry.productRepo);
     json(res, 200, done);
   } catch (error) {
     if (error instanceof ActionError) json(res, 409, { error: error.message });
@@ -273,6 +293,7 @@ async function postExploration(req: IncomingMessage, res: ServerResponse, id: st
         : await runFichaAction(ctx.entry, ctx.pr, ctx.review, session, body);
     forgetExploration(ctx.entry.productRepo, ctx.pr.number);
     forgetDetails(ctx.entry.productRepo);
+    forgetFiles(ctx.entry.productRepo);
     json(res, 200, done);
   } catch (error) {
     if (error instanceof FichaActionError) json(res, 409, { error: error.message });
@@ -332,6 +353,24 @@ async function serveEvidence(res: ServerResponse, raw: string): Promise<void> {
   res.writeHead(200, { 'Content-Type': image.type, 'Cache-Control': 'private, max-age=31536000, immutable' }).end(image.data);
 }
 
+// One of the PR's files at its head: only a file the PR changes, so the
+// endpoint can't read just anything from the repo.
+async function serveFileContent(req: IncomingMessage, res: ServerResponse, ctx: NonNullable<Awaited<ReturnType<typeof filesContext>>>): Promise<void> {
+  const path = new URL(req.url ?? '/', 'http://localhost').searchParams.get('path') ?? '';
+  const file = ctx.files.files.find((f) => f.path === path);
+  if (!file || file.status === 'removed' || !ctx.files.headSha) {
+    json(res, 404, { error: 'el PR no cambia ese archivo' });
+    return;
+  }
+  try {
+    const text = await fileContent(ctx.entry, ctx.files.headSha, path);
+    if (text === null) json(res, 413, { error: 'el archivo es demasiado grande para mostrarlo entero' });
+    else json(res, 200, { sha: ctx.files.headSha, text });
+  } catch (error) {
+    json(res, 502, { error: `GitHub no respondió: ${(error as Error).message.split('\n')[0]}` });
+  }
+}
+
 // /api/snapshot, /api/today, /api/items/*, /api/runs/*, /api/evidence/*. Returns false for a
 // path it doesn't own.
 export async function handleDashboard(req: IncomingMessage, res: ServerResponse, path: string, session: Session, access: Access): Promise<boolean> {
@@ -372,6 +411,15 @@ async function route(req: IncomingMessage, res: ServerResponse, path: string, se
     const body = await detail(decodeURIComponent(itemPage[1]), login);
     if (body) json(res, 200, body);
     else json(res, 404, { error: 'ese ítem no es un issue ni un PR de un repo de ronin' });
+    return true;
+  }
+
+  const filesPage = /^\/api\/items\/(.+)\/files(\/content)?$/.exec(path);
+  if (filesPage) {
+    const ctx = await filesContext(decodeURIComponent(filesPage[1]));
+    if (!ctx) json(res, 404, { error: 'ese ítem no tiene un PR de un repo de ronin' });
+    else if (!filesPage[2]) json(res, 200, { pr: ctx.prNumber, ...ctx.files });
+    else await serveFileContent(req, res, ctx);
     return true;
   }
 
