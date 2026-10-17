@@ -1,4 +1,5 @@
 import { markProcessed } from './core/processed-comments.js';
+import { linearIdInPr, linearRefFrom, withLinearLink } from './core/linear.js';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
@@ -22,6 +23,7 @@ import {
   setReviewStatus,
   listExternalOpenReviewThreads,
   setPullRequestBody,
+  listIssueComments,
   changesRequestedOnHead,
   getFailedChecks,
   type TrackingIssue,
@@ -350,19 +352,35 @@ function logSliceOutcome(issue: TrackingIssue, pr: StackedPr, isBottom: boolean,
   log.info(`issue #${issue.number} slice ${pr.sliceIndex + 1} PR #${pr.number}${isBottom ? ' (bottom)' : ''}: ${outcome}`);
 }
 
+// The PR's body with "Part of RED-n" (or "Fixes RED-n" on the issue's last
+// slice). The identifier comes from the PR itself once linked, or else from
+// the Linear bot's comment on the issue; an issue without one leaves the body
+// as is.
+async function withLinearLinkFor(issue: TrackingIssue, pr: StackedPr): Promise<string> {
+  try {
+    const id = linearIdInPr(pr.body) ?? linearRefFrom((await listIssueComments(issue.number)).map((c) => ({ author: c.authorLogin, body: c.body })))?.id;
+    if (!id) return pr.body;
+    const slices = await getSlices(issue.number);
+    return withLinearLink(pr.body, id, pr.sliceIndex === slices.length - 1);
+  } catch (error) {
+    log.error(`no se pudo leer el issue de Linear de #${issue.number}`, error);
+    return pr.body;
+  }
+}
+
 export async function processSlicePr(issue: TrackingIssue, pr: StackedPr, isBottom: boolean, waitingTurnPrs?: number[]): Promise<boolean> {
   await recordSlicePr(issue.number, pr.sliceIndex, pr.number);
 
   // Cheat sheet of commands at the bottom of every PR ronin opens — see
-  // help.ts. Idempotent (withHelpFooter returns the body unchanged once its
-  // marker is there), and best-effort: a failed edit only means the PR goes
-  // without it until the next tick, never a blocked slice.
-  const bodyWithHelp = withHelpFooter(pr.body, config.githubLogin);
+  // help.ts — and the line that links it to the issue's Linear issue, if it
+  // has one (linear.ts). Both idempotent, and best-effort: a failed edit only
+  // means the PR goes without them until the next tick, never a blocked slice.
+  const bodyWithHelp = withHelpFooter(await withLinearLinkFor(issue, pr), config.githubLogin);
   if (bodyWithHelp !== pr.body) {
     try {
       await setPullRequestBody(pr.number, bodyWithHelp);
     } catch (error) {
-      log.error(`no se pudo agregar la chuleta de comandos al PR #${pr.number}`, error);
+      log.error(`no se pudo actualizar la descripción del PR #${pr.number}`, error);
     }
   }
 

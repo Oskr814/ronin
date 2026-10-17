@@ -56,6 +56,18 @@ describe('itemDetail', () => {
     expect(detail.issue?.comments).toEqual([]);
   });
 
+  it("brings the issue's Linear issue, also on a PR's page, where the issue's comments aren't kept", async () => {
+    const linkback = { author: 'linear-code', body: '<!-- linear-linkback -->\n<p><a href="https://linear.app/red-motos/issue/RED-214/slug">RED-214</a></p>', createdAt: '', url: '' };
+    getDiscussion.mockImplementation(async (kind: string, number: number) => ({ ...discussion(number), comments: kind === 'issue' ? [linkback] : [] }));
+    const detail = await itemDetail(ENTRY, { kind: 'pr', number: 849, issue: 844 });
+    expect(detail.linear).toEqual({ id: 'RED-214', url: 'https://linear.app/red-motos/issue/RED-214/slug' });
+    expect(detail.issue?.comments).toEqual([]);
+  });
+
+  it('has no Linear issue when the issue has no linkback', async () => {
+    expect(await itemDetail(ENTRY, { kind: 'issue', number: 844 })).not.toHaveProperty('linear');
+  });
+
   it("keeps a PR's reviews and threads only when the PR is the item itself", async () => {
     getDiscussion.mockImplementation(async (kind: string, number: number) => ({ ...discussion(number, 1), ...(kind === 'pr' ? { reviews: [{ author: 'a', body: 'ok', state: 'APPROVED', submittedAt: '' }], threads: [{ path: 'a.ts', line: 1, isResolved: false, isOutdated: false, url: '', comments: [] }] } : {}) }));
     const own = await itemDetail(ENTRY, { kind: 'pr', number: 849, issue: 844 });
