@@ -4,8 +4,9 @@ import { log } from '../../core/logger.js';
 import { grantedApps, type PortalApp } from '../../portal/apps.js';
 import { IMAGE_TYPES, ImageError, MAX_IMAGE_BYTES, MAX_IMAGES, parseImages } from '../../portal/images.js';
 import { launchPortalWorker } from '../../portal/launch.js';
+import { cancelRequest } from '../../portal/cancel.js';
 import { decideRequest } from '../../portal/prototype.js';
-import { addPersonMessage, createRequest, getRequest, listRequestsOf, MAX_PROTOTYPES, requestImagePath, RequestError, startedToday, TEXT_MAX, type PortalRequest } from '../../portal/requests.js';
+import { addPersonMessage, CANCELLABLE, createRequest, getRequest, listRequestsOf, MAX_PROTOTYPES, requestImagePath, RequestError, startedToday, TEXT_MAX, type PortalRequest } from '../../portal/requests.js';
 import { json, portalUser, readJson, type PortalConfig, type PortalDeps } from './portal.js';
 
 // A person's requests in the portal (#114), always behind their session and
@@ -15,6 +16,7 @@ import { json, portalUser, readJson, type PortalConfig, type PortalDeps } from '
 //   GET  /api/portal/requests/<n>                 one, with its conversation
 //   POST /api/portal/requests/<n>/messages        { text, images? }: their answer, or an adjustment to the prototype
 //   POST /api/portal/requests/<n>/decision        { decision: 'aprobar' | 'rechazar', text? }: on the prototype on screen
+//   POST /api/portal/requests/<n>/cancel          while nobody took it (portal/cancel.ts)
 //   GET  /api/portal/requests/<n>/images/<file>   an image of the conversation
 // Images travel as data URLs in the JSON, so these bodies can be large.
 
@@ -30,6 +32,9 @@ function personView(r: PortalRequest, app: PortalApp | undefined) {
     app: r.app,
     appName: app ? `${app.org} · ${app.name}` : r.app,
     status: r.status,
+    // Whether it offers "Cancelar": for the team's, the server still checks
+    // no one assigned its issue.
+    cancellable: CANCELLABLE.includes(r.status),
     // Adjustments the person may still ask for on the prototype.
     adjustmentsLeft: Math.max(0, MAX_PROTOTYPES - (r.prototypes?.length ?? 0)),
     createdAt: r.createdAt,
@@ -92,7 +97,7 @@ export async function handlePortalRequests(req: IncomingMessage, res: ServerResp
       return;
     }
 
-    const one = /^\/api\/portal\/requests\/(\d+)(?:\/(messages|decision|images\/([\w.-]+)))?$/.exec(path);
+    const one = /^\/api\/portal\/requests\/(\d+)(?:\/(messages|decision|cancel|images\/([\w.-]+)))?$/.exec(path);
     const request = one ? await getRequest(Number(one[1])) : undefined;
     // Someone else's request is as good as missing.
     if (!one || !request || request.userId !== user.id) {
@@ -122,6 +127,11 @@ export async function handlePortalRequests(req: IncomingMessage, res: ServerResp
       const note = typeof body?.text === 'string' ? body.text.trim() : '';
       if (note.length > TEXT_MAX) throw new RequestError(`El mensaje puede tener hasta ${TEXT_MAX} caracteres.`);
       json(res, 200, personView(await decideRequest(request.number, decision, note, launch), appOf(request)));
+      return;
+    }
+
+    if (one[2] === 'cancel' && method === 'POST') {
+      json(res, 200, personView(await cancelRequest(request.number, deps.entries), appOf(request)));
       return;
     }
 

@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { extname } from 'node:path';
 import { evidenceUrl, publishEvidence } from '../app/index.js';
 import { config, LABEL_PORTAL } from '../core/config.js';
-import { createIssue, listIssuesWithLabel } from '../core/github.js';
+import { closeIssueNotPlanned, createIssue, listIssuesWithLabel } from '../core/github.js';
 import { log } from '../core/logger.js';
 import { activeRepo } from '../core/repo-context.js';
 import { getUser, type PortalUser } from './accounts.js';
@@ -100,6 +100,8 @@ async function publishShots(request: PortalRequest): Promise<IssueShots> {
   return result;
 }
 
+export const cancelComment = (n: number) => `La persona canceló el pedido P-${n} desde el portal de pedidos.`;
+
 // Whether a request still needs its issue: approved, or the team's.
 export const needsIssue = (r: PortalRequest) => (r.status === 'approved' || r.status === 'big') && !r.issue;
 
@@ -124,6 +126,11 @@ export async function openPortalIssue(n: number): Promise<void> {
     delete r.worker;
     return r;
   });
+  // Cancelled while the issue was being written: close it too.
+  if (updated.status === 'cancelled') {
+    await closeIssueNotPlanned(issue.number, cancelComment(n));
+    return;
+  }
   log.info(`portal: el pedido P-${n} ${approved ? 'aprobado' : 'para el equipo'} es el issue #${issue.number}`);
   if (!approved && !existing) await sendPortalMails(updated, [await teamMail(updated, user)]);
 }

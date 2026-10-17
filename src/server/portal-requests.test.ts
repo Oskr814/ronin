@@ -135,6 +135,20 @@ describe('portal requests API', () => {
     expect((await post(other.cookie, '/api/portal/requests/1/decision', { decision: 'aprobar' })).status).toBe(404);
   });
 
+  it('cancels a request while nobody took it, only its owner', async () => {
+    const { cookie } = await person('mf@x.com');
+    await post(cookie, '/api/portal/requests', { repo: 'redmotos/shoppingcart', app: 'backoffice', text: 'Hola' });
+    expect(await (await get(cookie, '/api/portal/requests/1')).json()).toMatchObject({ cancellable: true });
+    const other = await person('otro@x.com');
+    expect((await post(other.cookie, '/api/portal/requests/1/cancel', {})).status).toBe(404);
+    const res = await post(cookie, '/api/portal/requests/1/cancel', {});
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ status: 'cancelled', cancellable: false });
+    expect((await post(cookie, '/api/portal/requests/1/cancel', {})).status).toBe(400);
+    await updateRequest(1, (r) => { r.status = 'approved'; });
+    expect(await (await get(cookie, '/api/portal/requests/1')).json()).toMatchObject({ cancellable: false });
+  });
+
   it('asks for a session', async () => {
     expect((await fetch(`${base}/api/portal/requests`)).status).toBe(401);
   });

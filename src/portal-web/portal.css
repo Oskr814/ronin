@@ -108,6 +108,7 @@ a { color: inherit; }
 .top h2 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .top .proj-l { color: var(--muted); font-size: 12.5px; white-space: nowrap; }
 .top .chip { margin-left: auto; }
+.top .cancel-btn { font-size: 12.5px; padding: 3px 10px; white-space: nowrap; flex: none; }
 
 /* the conversation */
 .thread { gap: 16px; }
@@ -172,6 +173,7 @@ a { color: inherit; }
   .composer { padding: 10px 16px 14px; }
   .shots { grid-template-columns: minmax(0, 1fr); }
   .decide span { flex-basis: 100%; }
+  .top .cancel-btn .wide { display: none; }
   .decide .btn { flex: 1; }
   .box-f .hint { display: none; }
 }

@@ -7,7 +7,7 @@ const $ = (selector) => document.querySelector(selector);
 const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const initials = (name) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join('');
 
-const S = { me: null, view: 'login', error: null, info: null, busy: false, token: null, link: null, picked: null, menu: false, requests: [], cur: null, detail: null, pending: [], draft: '', sending: false, zoom: null, deciding: null };
+const S = { me: null, view: 'login', error: null, info: null, busy: false, token: null, link: null, picked: null, menu: false, requests: [], cur: null, detail: null, pending: [], draft: '', sending: false, zoom: null, deciding: null, cancelling: false };
 
 class ApiError extends Error {
   constructor(message, status) {
@@ -128,6 +128,7 @@ const STATUS = {
   done: ['ok', 'Listo'],
   resolved: ['ok', 'Resuelto'],
   declined: ['idle', 'Cerrado'],
+  cancelled: ['idle', 'Cancelado'],
   big: ['idle', 'Con el equipo'],
 };
 const CLOSED = {
@@ -137,6 +138,7 @@ const CLOSED = {
   done: 'Listo: el cambio sale en la próxima actualización de la aplicación.',
   resolved: 'El equipo de desarrollo resolvió este pedido.',
   declined: 'El equipo de desarrollo decidió no hacer este pedido por ahora. Puedes enviar uno nuevo cuando quieras.',
+  cancelled: 'Cancelaste este pedido.',
   big: 'El equipo de desarrollo tiene este pedido. Te avisamos por correo cuando esté resuelto.',
 };
 const WORKING = {
@@ -219,12 +221,38 @@ function requestHTML() {
   const d = S.detail;
   if (!d) return `<div class="top">${MENU}<h2>Cargando…</h2></div><div class="content"></div>`;
   const open = d.status === 'asking' || d.status === 'answered';
-  const foot = d.status === 'proposed' ? decisionHTML(d)
+  const foot = S.cancelling ? cancelHTML(d) : d.status === 'proposed' ? decisionHTML(d)
     : open ? composerHTML(d.status === 'asking' ? 'Responde a ronin…' : 'Escríbele a ronin si necesitas algo más…', 'Enviar')
       : `<div class="closed-bar">${CLOSED[d.status] ?? ''}</div>`;
-  return `<div class="top">${MENU}<h2>${esc(d.title)}</h2><span class="proj-l">${esc(d.appName)} · P-${d.number}</span>${chip(d.status)}</div>
+  return `<div class="top">${MENU}<h2>${esc(d.title)}</h2><span class="proj-l">${esc(d.appName)} · P-${d.number}</span>${chip(d.status)}${d.cancellable && !S.cancelling ? '<button class="btn cancel-btn" data-cancel>Cancelar<span class="wide"> pedido</span></button>' : ''}</div>
     <div class="content" id="thread"><div class="content-in thread">${threadHTML(d)}</div></div>
     ${foot}`;
+}
+
+function cancelHTML(d) {
+  return `<div class="composer"><div class="composer-in"><div class="confirm">
+    <b>¿Cancelar este pedido?</b>
+    <p>${d.status === 'big' ? 'El equipo de desarrollo deja de tenerlo pendiente.' : 'ronin deja de trabajar en él.'} No se puede deshacer, pero puedes enviar uno nuevo cuando quieras.</p>
+    <div class="confirm-f"><button class="btn" data-uncancel ${S.sending ? 'disabled' : ''}>Volver</button><button class="btn primary" data-cancelled ${S.sending ? 'disabled' : ''}>${S.sending ? 'Cancelando…' : 'Sí, cancelar'}</button></div>
+  </div>${S.error ? `<p class="msg-bad" role="alert">${esc(S.error)}</p>` : ''}</div></div>`;
+}
+
+async function cancelRequest() {
+  if (S.sending) return;
+  S.sending = true;
+  S.error = null;
+  render();
+  try {
+    S.detail = await api(`/api/portal/requests/${S.cur}/cancel`, {});
+    S.cancelling = false;
+    await loadList();
+  } catch (error) {
+    if (error.status === 401) return toLogin();
+    S.error = error.message;
+  }
+  S.sending = false;
+  render();
+  poll();
 }
 
 // Under a prototype: approve it, turn it down (with an optional note), or
@@ -379,6 +407,7 @@ async function openRequest(n, push = true) {
   S.pending = [];
   S.draft = '';
   S.deciding = null;
+  S.cancelling = false;
   if (push && location.pathname !== `/p/${n}`) history.pushState(null, '', `/p/${n}`);
   render();
   try {
@@ -485,6 +514,17 @@ document.addEventListener('click', async (event) => {
     S.error = null;
     render();
     $('#note')?.focus();
+  } else if ('cancel' in t.dataset) {
+    S.cancelling = true;
+    S.deciding = null;
+    S.error = null;
+    render();
+  } else if ('uncancel' in t.dataset) {
+    S.cancelling = false;
+    S.error = null;
+    render();
+  } else if ('cancelled' in t.dataset) {
+    cancelRequest();
   } else if ('undecide' in t.dataset) {
     S.deciding = null;
     S.error = null;
