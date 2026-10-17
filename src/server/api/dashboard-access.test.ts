@@ -93,6 +93,19 @@ describe('a session that sees only some repos', () => {
     expect((await call(`/api/items/${encodeURIComponent(`${SC}#2`)}/files/content?path=a.ts`)).body).toEqual({ sha: 'h', text: 'a\n' });
   });
 
+  it("sees the portal's requests of its repos only (#132)", async () => {
+    const { createRequest } = await import('../../portal/requests.js');
+    const sc = await createRequest({ userId: 'u', repo: SC, app: 'web', text: 'Hola', images: [{ ext: 'png', data: Buffer.from('x') }] });
+    const bm = await createRequest({ userId: 'u', repo: BM, app: 'web', text: 'Hola', images: [] });
+    expect((await call('/api/pedidos')).body.requests.map((r: { number: number }) => r.number)).toEqual([sc.number]);
+    expect((await call('/api/snapshot')).body).toMatchObject({ pedidosTotal: 1, pedidos: [{ number: sc.number, waitsOn: 'ronin' }] });
+    expect((await call(`/api/pedidos/${sc.number}`)).body).toMatchObject({ number: sc.number, person: 'Cuenta borrada', messages: [{ text: 'Hola' }] });
+    expect((await call(`/api/pedidos/${bm.number}`)).status).toBe(404);
+    // Only an image the request has, by its name.
+    expect((await call(`/api/pedidos/${sc.number}/img/..%2F..%2Frequest.json`)).status).toBe(404);
+    expect((await call(`/api/pedidos/${sc.number}/prototipo/1`)).status).toBe(404);
+  });
+
   it("reads only a file the PR changes (#111)", async () => {
     expect((await call(`/api/items/${encodeURIComponent(`${SC}#2`)}/files/content?path=.env`)).status).toBe(404);
   });
