@@ -39,6 +39,10 @@ import { resetTickMetrics, getTickAgentMetrics } from './core/metrics.js';
 import { runJobs, type Job } from './core/concurrency.js';
 import { issueResource, pinResources, prResource, tryLockResource, unlockResource, unpinResources, withResourceLock, withSlots } from './core/locks.js';
 import { runAgentTask, type AgentTask } from './core/agent-task.js';
+import { sliceTask } from './slices/index.js';
+import { reviewTask } from './review/index.js';
+import { commandTask } from './commands/index.js';
+import { changelogTask } from './changelog/index.js';
 import { runExternalReview } from './review/index.js';
 import { ClaudeUsageLimitError } from './core/claude-runner.js';
 import { toStackedPrs, pickBottomPr, prsForIssue, planBranch, spikeBranch, issueFromSliceBranch, type StackedPr } from './slices/index.js';
@@ -122,12 +126,12 @@ function primarySpecPath(specPaths: string[]): string {
 // Exported for direct unit testing.
 export function agentTaskFor(issue: TrackingIssue, sliceIndex: number, sliceTitle: string): AgentTask {
   return issue.labels.includes(LABEL_DIRECT_ISSUE)
-    ? { type: 'fix-issue', issueNumber: issue.number, sliceIndex, sliceTitle }
-    : { type: 'implement-slice', issueNumber: issue.number, sliceIndex, sliceTitle };
+    ? sliceTask({ type: 'fix-issue', issueNumber: issue.number, sliceIndex, sliceTitle })
+    : sliceTask({ type: 'implement-slice', issueNumber: issue.number, sliceIndex, sliceTitle });
 }
 
 // Reads the RONIN_STATUS marker a 'fix-issue' run ends its response with
-// (see its prompt in agent-task.ts) to tell "abstained, needs a human answer"
+// (see its prompt in slices/prompts.ts) to tell "abstained, needs a human answer"
 // apart from "opened a PR normally" — the only way the supervisor finds out,
 // since runAgentTask's result is otherwise opaque. Exported for direct unit
 // testing.
@@ -191,7 +195,7 @@ async function discoverAssignedSpecs(): Promise<TrackingIssue[]> {
       // event handler is the one running this.
       const locked = await tryLockResource(issueResource(issue.number));
       try {
-        await runAgentTask({ type: 'plan', issueNumber: issue.number, specPaths });
+        await runAgentTask(sliceTask({ type: 'plan', issueNumber: issue.number, specPaths }));
       } finally {
         await removeWorktree(planBranch(issue.number));
         if (locked) await unlockResource(issueResource(issue.number));
@@ -227,7 +231,7 @@ function issueUrl(issueNumber: number): string {
 // single-slice checklist so the rest of the pipeline (merge gate,
 // fix-review/fix-e2e cycles) treats it exactly like a spec's tracking issue.
 // Whether there's enough context to act on it is judged per-issue by the
-// agent itself (see agent-task.ts's 'fix-issue' prompt and its
+// agent itself (see slices/prompts.ts's 'fix-issue' prompt and its
 // RONIN_STATUS marker, read back in tickOneRepo below) rather than gated
 // here by a label. See
 // docs/superpowers/specs/2026-07-28-bug-issue-intake-design.md (original
@@ -418,7 +422,7 @@ export async function processSlicePr(issue: TrackingIssue, pr: StackedPr, isBott
   try {
     if (mentions.length > 0) {
       await setReviewStatus(pr.number, 'pending', 'ronin está revisando el PR…');
-      await runAgentTask({ type: 'review-request', issueNumber: issue.number, prNumber: pr.number, mentions });
+      await runAgentTask(reviewTask({ type: 'review-request', issueNumber: issue.number, prNumber: pr.number, mentions }));
       await setReviewStatus(pr.number, 'success', 'Review posteada');
 
       for (const m of mentions) await markProcessed(m);
@@ -446,7 +450,7 @@ export async function processSlicePr(issue: TrackingIssue, pr: StackedPr, isBott
     if (commandMentions.length > 0) {
       const openThreads = await listExternalOpenReviewThreads(pr.number, config.githubLogin);
       await setReviewStatus(pr.number, 'pending', 'ronin está resolviendo comentarios…', { context: 'ronin/fix-comments' });
-      await runAgentTask({ type: 'fix-comments', issueNumber: issue.number, prNumber: pr.number, trigger: commandMentions, openThreads });
+      await runAgentTask(reviewTask({ type: 'fix-comments', issueNumber: issue.number, prNumber: pr.number, trigger: commandMentions, openThreads }));
       await setReviewStatus(pr.number, 'success', 'Comentarios atendidos', { context: 'ronin/fix-comments' });
       for (const m of commandMentions) await markProcessed(m);
       // Same staleness concern as the review-request re-read above: this run
@@ -489,7 +493,7 @@ export async function processSlicePr(issue: TrackingIssue, pr: StackedPr, isBott
     );
     if (blocked) return false;
     logSliceOutcome(issue, pr, isBottom, 'changes requested, disparando fix-review');
-    await runAgentTask({ type: 'fix-review', issueNumber: issue.number, prNumber: pr.number });
+    await runAgentTask(reviewTask({ type: 'fix-review', issueNumber: issue.number, prNumber: pr.number }));
     return true;
   }
 
@@ -538,7 +542,7 @@ export async function processSlicePr(issue: TrackingIssue, pr: StackedPr, isBott
   if (!pr.checksPassing) {
     if (await blockOnFailingChecks(issue, pr)) return false;
     logSliceOutcome(issue, pr, isBottom, 'checks fallando, disparando fix-e2e');
-    await runAgentTask({ type: 'fix-e2e', issueNumber: issue.number, prNumber: pr.number });
+    await runAgentTask(sliceTask({ type: 'fix-e2e', issueNumber: issue.number, prNumber: pr.number }));
     return true;
   }
 
@@ -735,13 +739,13 @@ export async function processExternalReviewCandidate(candidate: ReviewCandidate)
 export async function processTrustedFixCandidate(candidate: TrustedFixCandidate): Promise<void> {
   try {
     await setReviewStatus(candidate.prNumber, 'pending', 'ronin está resolviendo comentarios…', { context: 'ronin/fix-comments' });
-    await runAgentTask({
+    await runAgentTask(reviewTask({
       type: 'fix-comments-external',
       prNumber: candidate.prNumber,
       headRefName: candidate.headRefName,
       trigger: candidate.trigger,
       openThreads: candidate.openThreads,
-    });
+    }));
     await setReviewStatus(candidate.prNumber, 'success', 'Comentarios atendidos', { context: 'ronin/fix-comments' });
     // Only after a successful run — same reasoning as processSlicePr's own
     // loop: not being marked done is what makes
@@ -760,12 +764,12 @@ export async function processTrustedFixCandidate(candidate: TrustedFixCandidate)
 export async function processThreadMentionCandidate(candidate: ThreadMentionCandidate): Promise<void> {
   try {
     await setReviewStatus(candidate.prNumber, 'pending', 'ronin está atendiendo comentarios…', { context: 'ronin/thread-reply' });
-    await runAgentTask({
+    await runAgentTask(reviewTask({
       type: 'thread-reply-external',
       prNumber: candidate.prNumber,
       headRefName: candidate.headRefName,
       mentions: candidate.mentions,
-    });
+    }));
     await setReviewStatus(candidate.prNumber, 'success', 'Comentarios atendidos', { context: 'ronin/thread-reply' });
     for (const m of candidate.mentions) await markProcessed(m);
   } catch (error) {
@@ -806,13 +810,13 @@ export async function runExternalReviews(): Promise<void> {
 // candidate. Same isolation rationale as processExternalReviewCandidate.
 export async function processSpikeCandidate(candidate: SpikeCandidate): Promise<void> {
   try {
-    await runAgentTask({
+    await runAgentTask(commandTask({
       type: 'spike',
       issueNumber: candidate.issueNumber,
       appName: candidate.appName,
       instruction: candidate.instruction,
       trigger: candidate.trigger,
-    });
+    }));
     // Only after a successful run — not being marked done is what makes
     // findTrustedSpikeCommand treat this same comment as unprocessed and
     // retry it on a later tick, same reasoning as every other command
@@ -821,7 +825,7 @@ export async function processSpikeCandidate(candidate: SpikeCandidate): Promise<
   } catch (error) {
     log.error(`spike falló para issue #${candidate.issueNumber}`, error);
   } finally {
-    // 'spike' never opens a PR (see agent-task.ts) so it never goes through
+    // 'spike' never opens a PR (see commands/prompts.ts) so it never goes through
     // the merge-time worktree cleanup below — same reasoning as
     // discoverAssignedSpecs's own cleanup of planBranch.
     await removeWorktree(spikeBranch(candidate.issueNumber)).catch(() => {});
@@ -933,7 +937,7 @@ export async function runSpikes(): Promise<void> {
 export async function processChangelogCandidate(candidate: ChangelogCandidate): Promise<void> {
   const { release } = candidate;
   try {
-    await runAgentTask({ type: 'update-changelog', release });
+    await runAgentTask(changelogTask({ type: 'update-changelog', release }));
   } catch (error) {
     log.error(`update-changelog falló para release ${release.tagName}`, error);
     await notifyBlocker({
@@ -1044,7 +1048,7 @@ function issueJobs(inProgress: TrackingIssue[], allPrs: PullRequestStatus[]): Ti
         const task = agentTaskFor(next.issue, next.index, next.title);
         const result = await runAgentTask(task);
         // fix-issue is the only task type that may legitimately abstain
-        // (issue lacks enough context — see its prompt in agent-task.ts) and
+        // (issue lacks enough context — see its prompt in slices/prompts.ts) and
         // end without opening a PR. Without this, the issue would stay
         // labeled ronin:in-progress forever and get retried, unattended,
         // every single tick — see the discoverAssignedIssues design note.

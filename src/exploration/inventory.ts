@@ -1,6 +1,7 @@
 import { mkdir, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { runAgentTask } from '../core/agent-task.js';
+import { explorationTask } from './prompts.js';
 import { activeRepo } from '../core/repo-context.js';
 import { log } from '../core/logger.js';
 import { mergeInventory, saveInventory, type ExplorationMemory, type Inventory } from './memory.js';
@@ -35,7 +36,7 @@ export async function refreshInventory(opts: {
   await mkdir(explorationOutDir(), { recursive: true });
   const outputPath = join(explorationOutDir(), `${appName}-functions.json`);
   await rm(outputPath, { force: true });
-  await runAgentTask({
+  await runAgentTask(explorationTask({
     type: 'explore-inventory',
     appName,
     appPath: app.path,
@@ -43,7 +44,7 @@ export async function refreshInventory(opts: {
     outputPath,
     roles: app.users.map((u) => u.role),
     known: memory.inventory.funciones.filter((f) => !f.retirada).map((f) => ({ id: f.id, nombre: f.nombre, rutas: f.rutas })),
-  });
+  }));
 
   let raw: string;
   try {

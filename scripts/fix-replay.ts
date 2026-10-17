@@ -20,7 +20,7 @@ import { parseArgs, promisify } from 'node:util';
 import { config, agentModelFor, agentEffortFor } from '../src/core/config.js';
 import { loadRepos } from '../src/core/repos.js';
 import { withActiveRepo } from '../src/core/repo-context.js';
-import { buildTask } from '../src/core/agent-task.js';
+import { reviewTask } from '../src/review/index.js';
 import { claudeHeadlessArgs } from '../src/core/claude-runner.js';
 
 const execFileAsync = promisify(execFile);
@@ -105,13 +105,13 @@ await withActiveRepo(repo, async () => {
   await git(clone, ['checkout', '-q', '--detach', values.sha!]);
   const startSha = await git(clone, ['rev-parse', 'HEAD']);
 
-  const { prompt } = await buildTask({
+  const { prompt } = await reviewTask({
     type: 'fix-comments-external',
     prNumber,
     headRefName: 'replay',
     trigger: [{ id: trigger.id, kind: 'review', body: trigger.body, reactionsEyes: 0, authorLogin: trigger.user?.login ?? '' }],
     openThreads: threads,
-  });
+  }).prepare();
   const replayPrompt = [
     prompt,
     '',

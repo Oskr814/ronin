@@ -4,5 +4,6 @@ export * from './help.js';
 export * from './issue-request.js';
 export * from './issue-sections.js';
 export * from './mentions.js';
+export * from './prompts.js';
 export * from './prototype.js';
 export * from './spike.js';

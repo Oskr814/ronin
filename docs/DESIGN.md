@@ -46,7 +46,7 @@ tracking issue de un spec (ver `discoverAssignedIssues` y `agentTaskFor` en
 `ronin:issue-fix`, no por algo puesto por un humano).
 
 Como ya no hay una label humana curando qué issues son "chicos y accionables",
-el propio agente (tarea `fix-issue`, ver `agent-task.ts`) juzga la claridad del
+el propio agente (tarea `fix-issue`, ver `slices/prompts.ts`) juzga la claridad del
 issue como parte de la misma corrida: si no tiene contexto suficiente para
 actuar sin adivinar, comenta en el issue pidiendo lo que falta y termina su
 respuesta con la línea `RONIN_STATUS: needs-info` en vez de abrir un PR
@@ -123,7 +123,7 @@ Scaffold en TypeScript (`pnpm tick` corre un tick y termina — lo invoca el cro
 | Carpeta | Qué tiene |
 |---|---|
 | `src/` (raíz) | `index.ts` (entrada del cron) y `tick.ts` (el orquestador) |
-| `core/` | lo compartido por todas las features: config, GitHub, worktrees, `claude -p`, estado local, claim, notificaciones, logs, el lanzador de workers y los prompts (`agent-task.ts`) |
+| `core/` | lo compartido por todas las features: config, GitHub, worktrees, `claude -p`, estado local, claim, notificaciones, logs, el lanzador de workers, cómo corre una tarea de agente (`agent-task.ts`) y las reglas que comparten los prompts (`prompts.ts`) |
 | `slices/` | issues de tracking → PRs apilados: checklist, stack, specs, entrevistas |
 | `review/` | review de PRs ajenos y su publicación (§4) |
 | `commands/` | comandos por mención (`mentions.ts`, `/help`, `/auto-merge`, `/resolve-conflicts`, `/spike`, `/prototype`, pedidos en issues) |
@@ -146,7 +146,8 @@ Los módulos del núcleo (en `core/` salvo que se indique otra carpeta); los de 
 - `logger.ts` — formato `[ISO_TIMESTAMP] LEVEL mensaje`, usado en vez de `console.log` suelto (ver `logs/tick-YYYY-MM-DD.log`, §3)
 - `worktree.ts` — crea/reutiliza un git worktree desechable por branch de tarea, y los borra cuando su PR ya no está abierto (`sweepOrphanedWorktrees`)
 - `claude-runner.ts` — invoca `claude -p` con `--permission-mode bypassPermissions`, reenviando el PAT de la cuenta `ronin` como `GH_TOKEN` al proceso hijo (así los `gh` que el propio Claude headless corra también quedan a nombre de esa cuenta)
-- `agent-task.ts` — arma el prompt (en inglés, ver §8) según el tipo de tarea (`plan`, `implement-slice`, `fix-review`, `fix-e2e`, `fix-issue`, y los de cada feature: reviews, `fix-comments`, spikes, specs, exploración, previews, changelog) y orquesta worktree + invocación; salvo en `plan`, recuerda al agente dejar constancia de aprendizajes no-obvios en `docs/agent-notes/` del repo destino — ver [`docs/superpowers/specs/2026-08-18-agent-notes-design.md`](superpowers/specs/2026-08-18-agent-notes-design.md)
+- `agent-task.ts` — corre una tarea de agente ya armada: su checkout (un worktree de su branch, un checkout que ya existe, la cabeza de un PR ajeno por SHA o la branch de un humano, separada), `claude -p` con el modelo y el esfuerzo de su tipo, el registro de la corrida, las métricas y la limpieza. No sabe de ningún tipo de tarea: cada feature arma los suyos en su `prompts.ts` (`slices/`: `plan`, `implement-slice`, `fix-issue`, `fix-e2e`, `write-spec`; `review/`: la review de PRs ajenos, `fix-review` y lo que responde a comentarios; `commands/`, `exploration/`, `portal/`, `preview/` y `changelog/`, los de sus comandos y flujos), en inglés (ver §8)
+- `prompts.ts` — lo que comparten los prompts: el cercado del texto que escribe la gente, las menciones con su hilo, la convención de commits, los datos realistas en las capturas y el recordatorio de las agent-notes, que llevan las tareas que cambian código para que el agente deje constancia de aprendizajes no-obvios en `docs/agent-notes/` del repo destino — ver [`docs/superpowers/specs/2026-08-18-agent-notes-design.md`](superpowers/specs/2026-08-18-agent-notes-design.md)
 - `claim.ts` — lock por label (`ronin:runner-<runner-id>`) + cache local (`.ronin-state.json`) para que dos supervisores no procesen el mismo issue — ver §9
 - `run-record.ts` — el registro de cada corrida de agente en `logs/runs/`, que lee el tablero (§15.5)
 - `claude-usage.ts` — el uso de cada cuenta de Claude, del `rate_limit_event` de cada corrida (§15.6)
@@ -195,7 +196,7 @@ A diferencia de un GitHub App (cuyo bot user no siempre es confiablemente @menci
 
 ### 8. Idioma
 
-Todo lo que el agente headless lee o produce como instrucción — los prompts en `agent-task.ts`, el texto y comentarios de `templates/tracking-issue.md` — está en inglés, independientemente del idioma de esta documentación. Lo que es comunicación humana (esta doc, `docs/BLOCKING.md`, el cuerpo de los emails de `src/core/notifier.ts`, los motivos de bloqueo en `tick.ts`) se mantiene en español.
+Todo lo que el agente headless lee o produce como instrucción — los prompts en el `prompts.ts` de cada feature y de `core/`, el texto y comentarios de `templates/tracking-issue.md` — está en inglés, independientemente del idioma de esta documentación. Lo que es comunicación humana (esta doc, `docs/BLOCKING.md`, el cuerpo de los emails de `src/core/notifier.ts`, los motivos de bloqueo en `tick.ts`) se mantiene en español.
 
 ### 9. Concurrencia entre múltiples supervisores
 
@@ -988,7 +989,7 @@ La persona ve en el portal "Reproduciendo el error", luego lo que encontró roni
 - [x] Definir el template del issue de tracking (checklist de slices) — ver [`templates/tracking-issue.md`](../templates/tracking-issue.md) y §2.1
 - [x] Definir el criterio exacto de "bloqueo" que dispara notificación — ver [`docs/BLOCKING.md`](BLOCKING.md)
 - [x] Prototipo de la app de notificación por email — ver `src/core/notifier.ts`
-- [x] `agent-task.ts`: invocación de `claude -p` en un worktree aislado (ciclo de vida básico, prompts por tipo de tarea, en inglés — ver §8) — ver `src/core/worktree.ts`, `src/core/claude-runner.ts`, `src/core/agent-task.ts` y §7.1
+- [x] `agent-task.ts`: invocación de `claude -p` en un worktree aislado (ciclo de vida básico, prompts por tipo de tarea, en inglés — ver §8) — ver `src/core/worktree.ts`, `src/core/claude-runner.ts`, `src/core/agent-task.ts`, el `prompts.ts` de cada feature y §7.1
 - [x] Estado persistente entre ticks: índice de slice actual (`src/slices/checklist.ts`, parseado del propio checklist del issue) y contador de reintentos por PR (`ronin:attempts-N`, labels en `src/core/github.ts`) — ver §3.1
 - [x] Claim entre múltiples supervisores concurrentes — ver `src/core/claim.ts` y §9
 - [x] Descubrimiento por asignación manual vía PR (reemplaza el escaneo de frontmatter local) — ver §1, resuelve de paso el gap de descubrimiento duplicado que tenía la versión anterior de §9

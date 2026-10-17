@@ -3,7 +3,8 @@ import { promisify } from 'node:util';
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
-import { runAgentTask, type AgentTask, type PrototypeBrowser } from '../core/agent-task.js';
+import { runAgentTask, type AgentTask } from '../core/agent-task.js';
+import { commandTask, type CommandTask, type PrototypeBrowser } from './prompts.js';
 import { appDown, appUp } from '../app/index.js';
 import { loginAllUsers, renderHtmlToPng } from '../app/index.js';
 import { loadAppDefinition, type AppDefinition } from '../app/index.js';
@@ -197,7 +198,7 @@ export interface PrototypeDraft {
 // opposed to the run failing: trying again won't change its mind.
 export class PrototypeDeclined extends Error {}
 
-export type PrototypeTaskBase = Omit<Extract<AgentTask, { type: 'prototype' }>, 'type' | 'issueNumber' | 'instruction'>;
+export type PrototypeTaskBase = Omit<Extract<CommandTask, { type: 'prototype' }>, 'type' | 'issueNumber' | 'instruction'>;
 
 export interface PrototypeTarget {
   // Names the checkout, the app instance and the output dir: issue-<n>,
@@ -361,7 +362,7 @@ export async function runPrototype(request: Pick<PrototypeWorkerRequest, 'issueN
     {
       key: `issue-${issueNumber}`,
       appName,
-      task: (base) => ({ type: 'prototype', issueNumber, ...base, ...(request.instruction ? { instruction: request.instruction } : {}) }),
+      task: (base) => commandTask({ type: 'prototype', issueNumber, ...base, ...(request.instruction ? { instruction: request.instruction } : {}) }),
     },
     async (draft) => ({ appName, resumen: draft.resumen, ...(await publishImages(issueNumber, draft)), patch: draft.patch }),
   );

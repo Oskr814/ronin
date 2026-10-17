@@ -7,7 +7,8 @@ import { config } from '../core/config.js';
 import { log } from '../core/logger.js';
 import { queueExplorationProject } from '../core/linear-assign.js';
 import { dayIn } from '../core/timezone.js';
-import { runAgentTask, type FindingFeedback, type FindingSummary, type GeneralFeedback } from '../core/agent-task.js';
+import { runAgentTask } from '../core/agent-task.js';
+import { explorationTask, type FindingFeedback, type FindingSummary, type GeneralFeedback } from './prompts.js';
 import {
   closeIssueNotPlanned,
   createIssue,
@@ -292,7 +293,7 @@ async function applyFeedback(pr: PullRequestStatus, batch: string): Promise<Redo
   await mkdir(explorationOutDir(), { recursive: true });
   const outputPath = join(explorationOutDir(), `feedback-${pr.number}.json`);
   await rm(outputPath, { force: true });
-  await runAgentTask({ type: 'explore-feedback', prNumber: pr.number, checkoutDir: batchDir, comments, ...(general.length > 0 ? { general, fichas } : {}), outputPath });
+  await runAgentTask(explorationTask({ type: 'explore-feedback', prNumber: pr.number, checkoutDir: batchDir, comments, ...(general.length > 0 ? { general, fichas } : {}), outputPath }));
   const parsed = JSON.parse(await readFile(outputPath, 'utf8')) as { acciones?: FeedbackAction[] };
 
   const replies: Array<{ commentId: number; kind: 'issue' | 'review'; body: string }> = [];

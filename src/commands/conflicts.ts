@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { activeRepo } from '../core/repo-context.js';
 import { removeWorktreeDir } from '../core/worktree.js';
 import { runAgentTask } from '../core/agent-task.js';
+import { commandTask } from './prompts.js';
 import type { PrHead } from '../core/github.js';
 import { acquireLock, launchWorker } from '../core/worker-launch.js';
 import { log } from '../core/logger.js';
@@ -162,7 +163,7 @@ export async function resolveConflicts(prNumber: number, pr: PrHead): Promise<Co
     await mkdir(outDir, { recursive: true });
     const outputPath = join(outDir, 'result.json');
     await rm(outputPath, { force: true });
-    await runAgentTask({ type: 'resolve-conflicts', prNumber, checkoutDir: dir, outputPath, headRefName: head, baseRefName: base, title: pr.title, body: pr.body, conflictedFiles: files });
+    await runAgentTask(commandTask({ type: 'resolve-conflicts', prNumber, checkoutDir: dir, outputPath, headRefName: head, baseRefName: base, title: pr.title, body: pr.body, conflictedFiles: files }));
 
     let resolution: AgentResolution;
     try {

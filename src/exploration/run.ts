@@ -2,7 +2,8 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { access, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { extname, join } from 'node:path';
-import { runAgentTask, type ExistingFindingSummary } from '../core/agent-task.js';
+import { runAgentTask } from '../core/agent-task.js';
+import { explorationTask, type ExistingFindingSummary } from './prompts.js';
 import { appDown, appUp } from '../app/index.js';
 import { loginAllUsers, renderHtmlToPng } from '../app/index.js';
 import { loadAppDefinition, type AppDefinition } from '../app/index.js';
@@ -176,7 +177,7 @@ export async function runExploration(opts: RunOptions): Promise<RunSummary> {
       }, null, 2));
       const outputPath = join(fnOut, 'result.json');
       try {
-        await runAgentTask({
+        await runAgentTask(explorationTask({
           type: 'explore-function',
           appName,
           appPath: app.path,
@@ -194,7 +195,7 @@ export async function runExploration(opts: RunOptions): Promise<RunSummary> {
           knowledge: memory.knowledge,
           existing,
           maxIdeas: config.exploreIdeasPerRun,
-        });
+        }));
         const { result, dropped } = parseFunctionResult(await readFile(outputPath, 'utf8'), fn.id, fnOut);
         for (const d of dropped) discarded.push({ titulo: d, funcion: fn.id, motivo: 'no cumple el contrato' });
         pending.push(...result.candidatos.map((c) => ({ ...c, functionId: fn.id, functionName: fn.nombre, planned })));
@@ -228,7 +229,7 @@ export async function runExploration(opts: RunOptions): Promise<RunSummary> {
     const verdictsPath = join(outRoot, 'verdicts.json');
     await writeFile(candidatesPath, JSON.stringify(fresh.map(({ planned, ...c }, index) => ({ index, funcion: c.functionId, nombreFuncion: c.functionName, charter: planned.charter, rol: planned.role, ...c })), null, 2));
     try {
-      await runAgentTask({ type: 'explore-evaluate', appName, checkoutDir: codeDir, candidatesPath, outputPath: verdictsPath, knowledge: memory.knowledge, existing });
+      await runAgentTask(explorationTask({ type: 'explore-evaluate', appName, checkoutDir: codeDir, candidatesPath, outputPath: verdictsPath, knowledge: memory.knowledge, existing }));
       const verdicts = parseVerdicts(await readFile(verdictsPath, 'utf8'), fresh.length);
       for (const v of verdicts) {
         const c = fresh[v.index];

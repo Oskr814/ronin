@@ -6,7 +6,7 @@ const execFileAsync = promisify(execFile);
 // Commits and PR titles ronin writes itself (exploration memory, its PR)
 // follow the product repo's own convention, read off its base branch — a
 // squash-merged PR title lands on main as a commit like any other. Agents
-// get the same rule in their prompts (agent-task.ts's COMMIT_STYLE_RULE).
+// get the same rule in their prompts (prompts.ts's COMMIT_STYLE_RULE).
 
 export type CommitStyle = 'conventional' | 'plain';
 export type CommitLanguage = 'en' | 'es';
