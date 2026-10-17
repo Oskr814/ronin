@@ -2,6 +2,8 @@ import { join } from 'node:path';
 import { assertTimezone } from './timezone.js';
 import { currentRepo } from './repo-context.js';
 
+const logins = (value: string | undefined) => (value ?? '').split(',').map((u) => u.trim().toLowerCase()).filter(Boolean);
+
 function requireEnv(name: string): string {
   const value = process.env[name];
   if (!value) throw new Error(`Missing required env var: ${name}`);
@@ -160,8 +162,13 @@ export const config = {
     githubClientId: process.env.DASHBOARD_GITHUB_CLIENT_ID ?? '',
     githubClientSecret: process.env.DASHBOARD_GITHUB_CLIENT_SECRET ?? '',
     sessionSecret: process.env.DASHBOARD_SESSION_SECRET ?? '',
-    // GitHub logins allowed in, comma-separated.
-    allowedUsers: (process.env.DASHBOARD_ALLOWED_USERS ?? '').split(',').map((u) => u.trim().toLowerCase()).filter(Boolean),
+    // Who sees every repo (#106), comma-separated GitHub logins. Unset, the
+    // DASHBOARD_ALLOWED_USERS are: a .env from before #106 works as it did.
+    admins: logins(process.env.DASHBOARD_ADMINS ?? process.env.DASHBOARD_ALLOWED_USERS),
+    // Optional: only these logins get in at all (admins always do). Empty,
+    // anyone who can triage a repo of repos.json on GitHub gets in, and sees
+    // just those repos (server/api/access.ts).
+    allowedUsers: logins(process.env.DASHBOARD_ALLOWED_USERS),
     sessionDays: Number(process.env.DASHBOARD_SESSION_DAYS ?? 7),
     // How long a repo's GitHub read is reused (server/api/dashboard-github.ts).
     githubTtlSeconds: Number(process.env.DASHBOARD_GITHUB_TTL_SECONDS ?? 60),

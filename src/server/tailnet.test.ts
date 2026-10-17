@@ -12,7 +12,9 @@ vi.mock('./api/dashboard-github.js', () => ({ repoGithub: async () => undefined 
 // Opening by number asks GitHub what it is: here, nothing.
 vi.mock('../core/github.js', async (importOriginal) => ({ ...(await importOriginal<typeof import('../core/github.js')>()), itemKindOf: async () => null }));
 
-const AUTH: AuthConfig = { url: 'https://media.example.ts.net:8443', githubClientId: 'cid', githubClientSecret: 'cs', sessionSecret: 's'.repeat(40), allowedUsers: ['oskr814'], sessionDays: 7 };
+const AUTH: AuthConfig = { url: 'https://media.example.ts.net:8443', githubClientId: 'cid', githubClientSecret: 'cs', sessionSecret: 's'.repeat(40), admins: ['oskr814'], allowedUsers: [], sessionDays: 7 };
+// What GitHub would say (access.ts): oskr814 is an admin, valeria can triage acme/product, nobody else sees anything.
+const access = vi.fn(async (s: { login: string }) => (s.login === 'oskr814' ? { admin: true, repos: [{ repo: 'acme/product', permission: 'admin-del-tablero' as const }] } : s.login === 'valeria' ? { admin: false, repos: [{ repo: 'acme/product', permission: 'triage' as const }] } : { admin: false, repos: [] }));
 const github: GithubOAuth = {
   exchangeCode: vi.fn(async () => ({ token: 'gho_token', scopes: ['repo'] })),
   userLogin: vi.fn(async () => 'Oskr814'),
@@ -21,7 +23,7 @@ const github: GithubOAuth = {
 
 let server: Server;
 let base: string;
-const session = (token = 'gho_token') => `ronin_session=${sealSession({ login: 'oskr814', token }, AUTH.sessionSecret, 7)}`;
+const session = (token = 'gho_token', login = 'oskr814') => `ronin_session=${sealSession({ login, token }, AUTH.sessionSecret, 7)}`;
 
 beforeAll(async () => {
   const web = mkdtempSync(join(tmpdir(), 'ronin-web-'));
@@ -29,7 +31,7 @@ beforeAll(async () => {
   writeFileSync(join(web, 'app.js'), 'console.log(1)');
   mkdirSync(join(web, 'fonts'));
   writeFileSync(join(tmpdir(), 'ronin-secret.txt'), 'secret');
-  const handle = createTailnetHandler(AUTH, { github, webRoot: web });
+  const handle = createTailnetHandler(AUTH, { github, webRoot: web, access });
   server = createServer((req, res) => void handle(req, res));
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -100,7 +102,22 @@ describe('tailnet listener', () => {
     expect(res.status).toBe(400);
   });
 
-  it('turns away someone not on the allowlist', async () => {
+  it('lets in someone who can triage a repo on GitHub, though not an admin (#106)', async () => {
+    vi.mocked(github.userLogin).mockResolvedValueOnce('Valeria');
+    const login = await fetch(`${base}/api/auth/login`, { redirect: 'manual' });
+    const state = new URL(login.headers.get('location')!).searchParams.get('state')!;
+    const res = await fetch(`${base}/api/auth/callback?code=c1&state=${state}`, { redirect: 'manual', headers: { cookie: login.headers.get('set-cookie')!.split(';')[0] } });
+    expect(res.status).toBe(302);
+    expect(access).toHaveBeenCalledWith({ login: 'valeria', token: 'gho_token' });
+  });
+
+  it('answers 401 to a session that can no longer see any repo', async () => {
+    const res = await fetch(`${base}/api/snapshot`, { headers: { cookie: session('gho_x', 'exvaleria') } });
+    expect(res.status).toBe(401);
+    expect((await res.json()).error).toContain('ningún repo');
+  });
+
+  it('turns away someone who sees no repo on GitHub', async () => {
     vi.mocked(github.userLogin).mockResolvedValueOnce('intruso');
     const login = await fetch(`${base}/api/auth/login`, { redirect: 'manual' });
     const state = new URL(login.headers.get('location')!).searchParams.get('state')!;

@@ -8,6 +8,7 @@ const CONFIG: AuthConfig = {
   githubClientId: 'id',
   githubClientSecret: 'secret',
   sessionSecret: 'x'.repeat(40),
+  admins: ['oskr814'],
   allowedUsers: ['oskr814'],
   sessionDays: 7,
 };
@@ -20,9 +21,11 @@ describe('missingAuthConfig', () => {
   });
 
   it('names what is missing, and asks for a long session secret', () => {
-    expect(missingAuthConfig({ ...CONFIG, githubClientId: '', sessionSecret: 'short', allowedUsers: [] })).toEqual([
-      'DASHBOARD_GITHUB_CLIENT_ID', 'DASHBOARD_SESSION_SECRET (32+ caracteres)', 'DASHBOARD_ALLOWED_USERS',
+    expect(missingAuthConfig({ ...CONFIG, githubClientId: '', sessionSecret: 'short', admins: [] })).toEqual([
+      'DASHBOARD_GITHUB_CLIENT_ID', 'DASHBOARD_SESSION_SECRET (32+ caracteres)', 'DASHBOARD_ADMINS',
     ]);
+    // Without a list of who gets in, GitHub decides (#106).
+    expect(missingAuthConfig({ ...CONFIG, allowedUsers: [] })).toEqual([]);
   });
 });
 
@@ -68,7 +71,12 @@ describe('sessions', () => {
   });
 
   it('turns away someone taken off the allowlist, even with a valid session', () => {
-    expect(readSession(request(`${SESSION_COOKIE}=${seal()}`), { ...CONFIG, allowedUsers: ['otra'] }, now)).toBeNull();
+    expect(readSession(request(`${SESSION_COOKIE}=${seal()}`), { ...CONFIG, admins: [], allowedUsers: ['otra'] }, now)).toBeNull();
+  });
+
+  it('lets in an admin whatever the allowlist says, and anyone when it is empty (#106)', () => {
+    expect(readSession(request(`${SESSION_COOKIE}=${seal()}`), { ...CONFIG, allowedUsers: ['otra'] }, now)?.login).toBe('oskr814');
+    expect(readSession(request(`${SESSION_COOKIE}=${seal()}`), { ...CONFIG, admins: ['otra'], allowedUsers: [] }, now)?.login).toBe('oskr814');
   });
 
   it('is null without a cookie or with garbage', () => {

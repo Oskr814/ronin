@@ -5,21 +5,24 @@ import { log } from '../../core/logger.js';
 // Login with GitHub for the dashboard (#65). The OAuth App asks for the
 // `repo` scope (#93): what the dashboard does on GitHub — a comment, a
 // review — goes out as whoever logged in, not as ronin. The dashboard is
-// only reachable on the tailnet and for DASHBOARD_ALLOWED_USERS, which is
-// why a token that can write is acceptable.
+// only reachable on the tailnet, which is why a token that can write is
+// acceptable. Who gets in (#106): the DASHBOARD_ADMINS, and anyone who can
+// triage a repo of repos.json on GitHub (access.ts decides, through
+// `canEnter`); DASHBOARD_ALLOWED_USERS, when set, narrows that to a list.
 //
 // The session is a cookie with the login, the expiry and the GitHub token,
 // encrypted with AES-256-GCM under a key derived from the session secret:
 // GCM both hides the token and rejects a cookie changed by hand, and
 // there's still no session state on the server. Logging out revokes the
-// token on GitHub. The allowlist is checked on every request, not only at
-// login: taking someone off it locks them out right away.
+// token on GitHub. The lists are checked on every request, not only at
+// login: taking someone off them locks them out right away.
 
 export interface AuthConfig {
   url: string;
   githubClientId: string;
   githubClientSecret: string;
   sessionSecret: string;
+  admins: string[];
   allowedUsers: string[];
   sessionDays: number;
 }
@@ -39,7 +42,7 @@ export function missingAuthConfig(config: AuthConfig): string[] {
   if (!config.githubClientId) missing.push('DASHBOARD_GITHUB_CLIENT_ID');
   if (!config.githubClientSecret) missing.push('DASHBOARD_GITHUB_CLIENT_SECRET');
   if (config.sessionSecret.length < 32) missing.push('DASHBOARD_SESSION_SECRET (32+ caracteres)');
-  if (config.allowedUsers.length === 0) missing.push('DASHBOARD_ALLOWED_USERS');
+  if (config.admins.length === 0) missing.push('DASHBOARD_ADMINS');
   return missing;
 }
 
@@ -87,14 +90,20 @@ function openSession(value: string, secret: string): { login?: unknown; token?: 
 
 // A request's session, or null: no cookie, an older format, one that
 // doesn't decrypt (another secret, changed by hand), expired, or of someone
-// no longer on the allowlist.
+// DASHBOARD_ALLOWED_USERS no longer lets in.
 export function readSession(req: IncomingMessage, config: AuthConfig, now = Date.now()): Session | null {
   const value = parseCookies(req.headers.cookie)[SESSION_COOKIE];
   const opened = value ? openSession(value, config.sessionSecret) : null;
   if (!opened) return null;
   const { login, token, exp } = opened;
   if (typeof login !== 'string' || typeof token !== 'string' || !token || typeof exp !== 'number' || exp <= now) return null;
-  return config.allowedUsers.includes(login) ? { login, token } : null;
+  return mayEnter(config, login) ? { login, token } : null;
+}
+
+// What the lists say about a login; GitHub has the last word on everyone
+// but the admins (`canEnter`, at login, and access.ts on every request).
+function mayEnter(config: AuthConfig, login: string): boolean {
+  return config.admins.includes(login) || config.allowedUsers.length === 0 || config.allowedUsers.includes(login);
 }
 
 export function sessionLogin(req: IncomingMessage, config: AuthConfig, now = Date.now()): string | null {
@@ -158,7 +167,12 @@ export const githubOAuth: GithubOAuth = {
 };
 
 // /api/auth/*. Returns false for a path it doesn't own.
-export async function handleAuth(req: IncomingMessage, res: ServerResponse, path: string, config: AuthConfig, github: GithubOAuth = githubOAuth): Promise<boolean> {
+// Whether a login with this token gets in, past the lists: an admin always,
+// anyone else only with some repo to see (access.ts). The default is the
+// lists alone.
+export type CanEnter = (login: string, token: string) => Promise<boolean>;
+
+export async function handleAuth(req: IncomingMessage, res: ServerResponse, path: string, config: AuthConfig, github: GithubOAuth = githubOAuth, canEnter: CanEnter = async (login) => config.admins.includes(login)): Promise<boolean> {
   if (path === '/api/auth/login' && req.method === 'GET') {
     const state = randomBytes(16).toString('base64url');
     const params = new URLSearchParams({ client_id: config.githubClientId, redirect_uri: callbackUrl(config), scope: OAUTH_SCOPE, state, allow_signup: 'false' });
@@ -191,10 +205,16 @@ export async function handleAuth(req: IncomingMessage, res: ServerResponse, path
       return true;
     }
     const drop = () => github.revokeToken(granted.token, config).catch((error) => log.error(`tablero: no se pudo revocar el token de ${login}`, error));
-    if (!config.allowedUsers.includes(login)) {
-      log.info(`tablero: login rechazado para ${login}, no está en DASHBOARD_ALLOWED_USERS`);
+    let enters = false;
+    try {
+      enters = mayEnter(config, login) && (await canEnter(login, granted.token));
+    } catch (error) {
+      log.error(`tablero: no se pudo ver a qué repos tiene acceso ${login}`, error);
+    }
+    if (!enters) {
+      log.info(`tablero: login rechazado para ${login}: no es admin ni puede ver ningún repo`);
       await drop();
-      res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8', 'Set-Cookie': [clearState] }).end(`${login} no tiene acceso a este tablero.`);
+      res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8', 'Set-Cookie': [clearState] }).end(`${login} no tiene acceso a este tablero: hace falta poder gestionar issues (triage) en alguno de sus repos de GitHub.`);
       return true;
     }
     // The person can uncheck the scope on GitHub's page; without it the
