@@ -764,6 +764,7 @@ La pestaña *Archivos* de la ficha de un PR (o de un issue, con los archivos de 
   - se lee de los hilos del PR con el token de la persona: cada comentario dice si está `PENDING`, y los pendientes de otros no aparecen.
 - ***Revisar*** / ***Terminar revisión***, en la cabecera de la ficha (en un issue, *Revisar PR #N*, para su PR que avanza), en la barra de *Archivos* o con `r`:
   - **El panel:** un resumen, Comentar / Aprobar / Pedir cambios y la lista de lo pendiente.
+  - **Se cierra** con la ×, con Escape o con un clic fuera de él, salvo mientras se manda.
   - **Mandar:** `submitPullRequestReview`. Sin nada pendiente, va una revisión con solo el resumen (aprobar sin comentarios).
   - **Descartar:** `deletePullRequestReview`.
   - **En un PR propio,** aprobar y pedir cambios no se ofrecen y el servidor los rechaza, como GitHub.
