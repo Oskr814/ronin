@@ -7,7 +7,7 @@ import { log } from '../core/logger.js';
 import { activeRepo } from '../core/repo-context.js';
 import { getUser, type PortalUser } from './accounts.js';
 import { sendPortalMails, teamMail } from './notify.js';
-import { getRequest, prototypePatchPath, requestImagePath, updateRequest, type PortalRequest } from './requests.js';
+import { addEvent, getRequest, prototypePatchPath, requestImagePath, updateRequest, type PortalRequest } from './requests.js';
 
 // The issue a portal request (#114) becomes in its product repo, with label
 // ronin:portal: what the person asked, the conversation, the prototype and
@@ -123,6 +123,7 @@ export async function openPortalIssue(n: number): Promise<void> {
   }
   const updated = await updateRequest(n, (r) => {
     r.issue = issue;
+    addEvent(r, { kind: 'issue', number: issue.number, team: !approved });
     delete r.worker;
     return r;
   });

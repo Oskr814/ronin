@@ -109,6 +109,7 @@ describe('portal issues', () => {
     expect(r.messages.at(-1)?.text).toBe(PR_READY_REPLY);
     expect(sendMail).toHaveBeenCalledOnce();
     expect(sendMail.mock.calls[0]).toMatchObject([{ to: config.notifyTo, subject: expect.stringContaining('PR para aprobar') }, expect.any(String)]);
+    expect(r.events).toEqual([{ kind: 'pr', number: 950, at: expect.any(String) }, { kind: 'mail', to: 'team', subject: expect.stringContaining('PR para aprobar'), ok: true, at: expect.any(String) }]);
     // Next tick: nothing new until it merges.
     sendMail.mockClear();
     await followPortalIssues();
@@ -124,6 +125,7 @@ describe('portal issues', () => {
     expect(r.status).toBe('done');
     expect(r.messages.at(-1)?.text).toBe(DONE_REPLY);
     expect(sendMail.mock.calls[0]).toMatchObject([{ subject: expect.stringMatching(/^Listo, sale en la próxima actualización/) }, expect.any(String)]);
+    expect((await getRequest(n))?.events?.map((e) => [e.kind, 'status' in e ? e.status : 'to' in e ? e.to : ''])).toEqual([['closed', 'done'], ['mail', 'person']]);
   });
 
   it('a PR closed without merging is forgotten, and an issue closed as done without one finishes it', async () => {
@@ -131,6 +133,7 @@ describe('portal issues', () => {
     gh.getPullRequestStatus.mockResolvedValue({ state: 'CLOSED' });
     await followPortalIssues();
     expect((await getRequest(closed))?.pr).toBeUndefined();
+    expect((await getRequest(closed))?.events).toEqual([{ kind: 'pr-closed', number: 950, at: expect.any(String) }]);
     gh.listIssuesWithLabel.mockResolvedValue([{ number: 901, body: '', state: 'CLOSED' }]);
     gh.getIssueState.mockResolvedValue({ state: 'CLOSED', stateReason: 'COMPLETED' });
     await followPortalIssues();
@@ -147,6 +150,8 @@ describe('portal issues', () => {
     expect(sendMail).toHaveBeenCalledOnce();
     expect(sendMail.mock.calls[0]).toMatchObject([{ to: config.notifyTo, text: expect.stringContaining('Issue: https://github.com/redmotos/shoppingcart/issues/901') }, expect.any(String)]);
     expect((await getRequest(n))?.issue?.number).toBe(901);
+    expect((await getRequest(n))?.events?.map((e) => e.kind)).toEqual(['issue', 'mail']);
+    expect((await getRequest(n))?.events?.[0]).toMatchObject({ number: 901, team: true });
   });
 
   it("when the team's issue closes, tells the person how: solved, or not for now", async () => {

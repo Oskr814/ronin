@@ -76,7 +76,7 @@ describe('applyResult', () => {
   it('a big one goes to the team with its reason', () => {
     const r = request();
     applyResult(r, { accion: 'grande', mensaje: 'Esto cambia cómo se guardan los catálogos.', motivo: 'Cambia el servidor', resumen: 'PUT /catalogos' });
-    expect(r).toMatchObject({ status: 'big', verdict: { kind: 'big', reason: 'Cambia el servidor', summary: 'PUT /catalogos' } });
+    expect(r).toMatchObject({ status: 'big', verdict: { kind: 'big', reason: 'Cambia el servidor', summary: 'PUT /catalogos' }, events: [{ kind: 'classified', verdict: 'big' }] });
     expect(r.messages.at(-1)?.text).toContain(NEXT_STEP.grande);
   });
 });

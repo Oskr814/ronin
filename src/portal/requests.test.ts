@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { readFile, rm, stat } from 'node:fs/promises';
 import { isAbsolute, join } from 'node:path';
 import { config } from '../core/config.js';
-import { addPersonMessage, createRequest, getRequest, listRequestsOf, requestImagePath, startedToday, updateRequest, MAX_PROTOTYPES, updateUnlessCancelled } from './requests.js';
+import { addEvent, addPersonMessage, createRequest, MAX_EVENTS, noteEvent, getRequest, listRequestsOf, requestImagePath, startedToday, updateRequest, MAX_PROTOTYPES, updateUnlessCancelled } from './requests.js';
 import { sweepPortalRequests } from './launch.js';
 
 vi.mock('../core/logger.js', () => ({ log: { info: vi.fn(), error: vi.fn() } }));
@@ -54,6 +54,19 @@ describe('portal requests', () => {
     await expect(addPersonMessage(99, 'x', [])).rejects.toThrow(/No existe/);
   });
 
+  it('keeps its activity, the newest last, and never more than the cap', async () => {
+    const r = await createRequest({ userId: 'u1', repo: 'a/b', app: 'web', text: 'Hola', images: [] });
+    await noteEvent(r.number, { kind: 'waiting', for: 'prototype-lock' });
+    await updateRequest(r.number, (x) => {
+      for (let i = 0; i < MAX_EVENTS + 5; i++) addEvent(x, { kind: 'worker', by: 'tick', pid: i });
+    });
+    const events = (await getRequest(r.number))!.events!;
+    expect(events).toHaveLength(MAX_EVENTS);
+    expect(events.at(-1)).toMatchObject({ kind: 'worker', pid: MAX_EVENTS + 4 });
+    // A request that isn't there: logged, never thrown.
+    await expect(noteEvent(99, { kind: 'cancelled' })).resolves.toBeUndefined();
+  });
+
   it('counts the requests started today', async () => {
     await createRequest({ userId: 'u1', repo: 'a/b', app: 'web', text: 'uno', images: [] });
     await createRequest({ userId: 'u1', repo: 'a/b', app: 'web', text: 'dos', images: [], }, new Date(Date.now() - 3 * 24 * 3600_000));
@@ -71,17 +84,17 @@ describe('portal requests', () => {
     expect(launch).not.toHaveBeenCalled();
     await updateRequest(r.number, (x) => { x.worker = { pid: 2 ** 22 + 12345, since: new Date().toISOString() }; });
     await sweepPortalRequests(later, launch);
-    expect(launch).toHaveBeenCalledWith(r.number);
+    expect(launch).toHaveBeenCalledWith(r.number, 'tick');
     // So is one whose prototype was on the way.
     launch.mockClear();
     await updateRequest(r.number, (x) => { x.status = 'minor'; });
     await sweepPortalRequests(later, launch);
-    expect(launch).toHaveBeenCalledWith(r.number);
+    expect(launch).toHaveBeenCalledWith(r.number, 'tick');
     // And an approved one still without its issue, not one that has it.
     launch.mockClear();
     await updateRequest(r.number, (x) => { x.status = 'approved'; });
     await sweepPortalRequests(later, launch);
-    expect(launch).toHaveBeenCalledWith(r.number);
+    expect(launch).toHaveBeenCalledWith(r.number, 'tick');
     launch.mockClear();
     await updateRequest(r.number, (x) => { x.issue = { number: 9, url: 'u' }; });
     await sweepPortalRequests(later, launch);
@@ -90,7 +103,7 @@ describe('portal requests', () => {
     launch.mockClear();
     await updateRequest(r.number, (x) => { x.status = 'big'; delete x.issue; });
     await sweepPortalRequests(later, launch);
-    expect(launch).toHaveBeenCalledWith(r.number);
+    expect(launch).toHaveBeenCalledWith(r.number, 'tick');
     // Answered ones are left alone.
     launch.mockClear();
     await updateRequest(r.number, (x) => { x.status = 'asking'; });

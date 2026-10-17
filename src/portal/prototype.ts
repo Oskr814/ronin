@@ -8,7 +8,10 @@ import { prototypeMail } from './mail.js';
 import { launchPortalWorker } from './launch.js';
 import { handOverMail, sendPortalMails } from './notify.js';
 import {
+  addEvent,
   addPersonNote,
+  errorLine,
+  noteEvent,
   addRoninMessage,
   getRequest,
   MAX_PROTOTYPES,
@@ -121,6 +124,7 @@ export async function prototypeRequest(n: number): Promise<void> {
     } catch (error) {
       failure = error as Error;
       log.error(`portal: falló el prototipo ${round} del pedido P-${n} (intento ${attempt} de ${ATTEMPTS})`, error);
+      await noteEvent(n, { kind: 'failed', step: 'prototype', error: errorLine(error) });
       if (error instanceof PrototypeDeclined) break;
     }
   }
@@ -128,6 +132,7 @@ export async function prototypeRequest(n: number): Promise<void> {
     const handed = await updateUnlessCancelled(n, (r) => {
       r.verdict = { ...(r.verdict ?? { summary: '' }), kind: 'big', reason: `No se pudo armar el prototipo: ${failure?.message.split('\n')[0].slice(0, 300) ?? 'sin detalle'}`, at: new Date().toISOString() };
       addRoninMessage(r, FAILED_PROTOTYPE_REPLY);
+      addEvent(r, { kind: 'classified', verdict: 'big' });
       r.status = 'big';
       delete r.worker;
     });
@@ -147,6 +152,7 @@ export async function decideRequest(n: number, decision: Decision, note = '', la
     if (r.status !== 'proposed') throw new RequestError('Este pedido no espera tu decisión ahora.');
     const at = new Date();
     r.decision = { kind: decision === 'aprobar' ? 'approved' : 'rejected', at: at.toISOString() };
+    addEvent(r, { kind: 'decided', decision: r.decision.kind }, at);
     if (decision === 'aprobar') {
       r.status = 'approved';
       addRoninMessage(r, APPROVED_REPLY, at);

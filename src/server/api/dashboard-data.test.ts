@@ -37,6 +37,14 @@ describe('summarizeRun', () => {
     expect(summarizeRun([start('20261016T100000-x-1-aaaa', { pid: DEAD_PID })])?.state).toBe('cut');
   });
 
+  it('knows the portal request a run was about, from its record or, for older runs, its label (#132)', () => {
+    const portal = (extra: Record<string, unknown>) => summarizeRun([start('20261017T172409-portal-request-ed1b', { issueNumber: undefined, ...extra })])?.portalRequest;
+    expect(portal({ taskType: 'portal-request', portalRequest: 7, label: 'pedido P-7' })).toBe(7);
+    expect(portal({ taskType: 'portal-request', label: 'pedido P-2' })).toBe(2);
+    expect(portal({ taskType: 'portal-prototype', label: 'pedido P-2 (prototipo)' })).toBe(2);
+    expect(portal({ taskType: 'fix-issue', label: 'pedido P-2' })).toBeUndefined();
+  });
+
   it('is null for a file that does not start with run_start', () => {
     expect(summarizeRun([{ type: 'text', text: 'x' }])).toBeNull();
   });

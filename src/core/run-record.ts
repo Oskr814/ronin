@@ -20,6 +20,8 @@ export interface RunContext {
   label: string;
   issueNumber?: number;
   prNumber?: number;
+  // A request of the portal (P-n), whose runs have no issue or PR (#132).
+  portalRequest?: number;
   sliceIndex?: number;
   sliceTitle?: string;
   model?: string;
@@ -67,7 +69,7 @@ export class RunRecord implements RunSink {
   private broken = false;
 
   private constructor(context: RunContext, now: Date) {
-    const subject = context.issueNumber ?? context.prNumber;
+    const subject = context.issueNumber ?? context.prNumber ?? (context.portalRequest === undefined ? undefined : `p${context.portalRequest}`);
     this.runId = [stamp(now), context.taskType, ...(subject === undefined ? [] : [subject]), randomBytes(2).toString('hex')].join('-');
     this.path = join(logsDir(), 'runs', localDay(now), `${this.runId}.jsonl`);
     this.startedAt = now;

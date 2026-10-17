@@ -11,7 +11,7 @@ import { removeWorktreeDir } from '../core/worktree.js';
 import { getUser, type PortalUser } from './accounts.js';
 import { replyMail } from './mail.js';
 import { handOverMail, sendPortalMails } from './notify.js';
-import { addRoninMessage, getRequest, MAX_PROTOTYPES, requestImagePath, TITLE_MAX, updateUnlessCancelled, type PortalRequest, type Verdict } from './requests.js';
+import { addEvent, addRoninMessage, errorLine, getRequest, MAX_PROTOTYPES, requestImagePath, TITLE_MAX, updateUnlessCancelled, type PortalRequest, type Verdict } from './requests.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -96,6 +96,7 @@ export function applyResult(request: PortalRequest, result: PortalResult, now = 
   } else if (result.motivo) verdict.reason = result.motivo;
   request.verdict = verdict;
   request.status = kind;
+  addEvent(request, { kind: 'classified', verdict: kind }, now);
   const proposal = kind === 'minor' ? `\n\nLa propuesta: ${result.propuesta}` : '';
   const next = kind === 'big' ? NEXT_STEP.grande : request.prototypes?.length ? NEXT_STEP.otra : NEXT_STEP.menor;
   addRoninMessage(request, `${result.mensaje}${proposal}\n\n${next}`, now);
@@ -159,6 +160,7 @@ export async function classifyRequest(n: number): Promise<void> {
     log.error(`portal: no se pudo revisar el pedido P-${n}`, error);
     try {
       const failed = await updateUnlessCancelled(n, (r) => {
+        addEvent(r, { kind: 'failed', step: 'classify', error: errorLine(error) });
         addRoninMessage(r, FAILED_REPLY);
         // The prototype on screen, if any, is still there to decide on.
         r.status = r.prototypes?.length && r.verdict?.kind === 'minor' ? 'proposed' : 'asking';

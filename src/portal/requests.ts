@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { config } from '../core/config.js';
+import { log } from '../core/logger.js';
 import { dayIn } from '../core/timezone.js';
 import type { ImageUpload } from './images.js';
 import { readJson, withJson, writeJson } from './json-store.js';
@@ -84,6 +85,33 @@ export interface Verdict {
   at: string;
 }
 
+// What happened to a request besides its messages (#132): what the
+// dashboard shows as its activity. Only appended to, oldest first.
+export type RequestEvent = { at: string } & (
+  // A worker started on it: by the server when the person wrote or
+  // decided, or by the tick when the one before died.
+  | { kind: 'worker'; by: 'server' | 'tick'; pid: number }
+  // Something failed: reading it, a prototype attempt, opening its issue,
+  // or the worker itself. The request goes on (asks again, goes to the
+  // team, or the tick launches another worker).
+  | { kind: 'failed'; step: 'classify' | 'prototype' | 'worker'; error: string }
+  // The prototype waited for the repo's turn (another one was running).
+  | { kind: 'waiting'; for: 'prototype-lock' }
+  // ronin read it and decided (a question or an answer are its messages).
+  | { kind: 'classified'; verdict: 'minor' | 'big' }
+  | { kind: 'decided'; decision: 'approved' | 'rejected' }
+  | { kind: 'mail'; to: 'person' | 'team'; subject: string; ok: boolean }
+  | { kind: 'issue'; number: number; team: boolean }
+  | { kind: 'pr'; number: number }
+  | { kind: 'pr-closed'; number: number }
+  | { kind: 'closed'; status: 'done' | 'resolved' | 'declined' }
+  | { kind: 'cancelled' }
+);
+
+// Enough for every round a request can go through, with room for the
+// tick's relaunches: past it, the oldest are dropped.
+export const MAX_EVENTS = 200;
+
 export interface PortalRequest {
   number: number;
   userId: string;
@@ -106,6 +134,7 @@ export interface PortalRequest {
   // 'minor', or opening its issue once 'approved' or 'big', so the tick can
   // tell one that died (and start another).
   worker?: { pid: number; since: string };
+  events?: RequestEvent[];
   createdAt: string;
   updatedAt: string;
 }
@@ -228,3 +257,25 @@ export function addPersonNote(request: PortalRequest, text: string, now = new Da
   const id = Math.max(0, ...request.messages.map((m) => m.id)) + 1;
   request.messages.push({ id, from: 'person', text, images: [], at: now.toISOString() });
 }
+
+// Distributes over the union, so each kind keeps its own fields.
+type EventInput = RequestEvent extends infer E ? (E extends RequestEvent ? Omit<E, 'at'> : never) : never;
+
+export function addEvent(request: PortalRequest, event: EventInput, now = new Date()): void {
+  const events = (request.events ??= []);
+  events.push({ ...event, at: now.toISOString() } as RequestEvent);
+  if (events.length > MAX_EVENTS) events.splice(0, events.length - MAX_EVENTS);
+}
+
+// An event on its own, outside any other change to the request: never
+// throws, a lost line of activity never holds a request back.
+export async function noteEvent(n: number, event: EventInput, now = new Date()): Promise<void> {
+  try {
+    await updateRequest(n, (r) => addEvent(r, event, now));
+  } catch (error) {
+    log.error(`portal: no se pudo anotar un evento del pedido P-${n}`, error);
+  }
+}
+
+// The first line of an error, short, for an event.
+export const errorLine = (error: unknown) => (error instanceof Error ? error.message : String(error)).split('\n')[0].slice(0, 300);

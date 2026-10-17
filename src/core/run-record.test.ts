@@ -33,6 +33,12 @@ describe('RunRecord', () => {
     expect(record.runId).toMatch(/^20261016T013158-implement-slice-879-[0-9a-f]{4}$/);
   });
 
+  it("names a portal request's run after it (#132)", () => {
+    const record = RunRecord.start({ repo: 'redmotos/shoppingcart', taskType: 'portal-request', label: 'pedido P-2', portalRequest: 2, account: 'redmotos', worktree: '/w' }, new Date(2026, 9, 17, 11, 24, 9));
+    expect(record.runId).toMatch(/^20261017T112409-portal-request-p2-[0-9a-f]{4}$/);
+    expect(lines(record)[0]).toMatchObject({ portalRequest: 2 });
+  });
+
   it('starts with what the run is about and the pid that runs it', () => {
     const record = RunRecord.start(CONTEXT);
     expect(lines(record)[0]).toMatchObject({ type: 'run_start', runId: record.runId, ...CONTEXT, pid: process.pid });
