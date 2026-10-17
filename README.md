@@ -49,6 +49,11 @@ Detalle de cada comando: [wiki → Comandos](https://github.com/Oskr814/ronin/wi
 
 Desde la ficha se le pide a ronin lo mismo que comentando en GitHub: resolver conflictos, levantar o bajar la preview, el auto-merge, o responder y destrabar un issue. Al mandar una revisión en un PR de ronin, una casilla le pide que atienda los comentarios (`/fix-comments`). El botón **+** de cada repo crea un issue nuevo y, si querés, se lo asigna a ronin o le pide un `/spike` o un `/spec`; con Linear, también elegís su proyecto y su ciclo. El login pide el permiso `repo` de GitHub, y lo que se pide desde el tablero queda comentado a tu nombre, como si lo escribieras en GitHub. Los administradores (`DASHBOARD_ADMINS`) ven todos los repos y administran las cuentas del portal de pedidos; cualquier otra persona ve los repos en los que puede gestionar issues (triage o más) en GitHub, consultado con su propia sesión.
 
+**Reuniones** ([`docs/DESIGN.md` §17](docs/DESIGN.md)): en el tablero se suben las notas de una reunión (PDF, Word, texto o pegadas) y ronin propone el trabajo que sale de ellas.
+- **ronin las lee** contra los issues abiertos, los proyectos y ciclos de Linear, lo que propusieron otras reuniones y el código. Propone proyectos nuevos de Linear con sus issues, issues y comentarios en issues que ya existen. Cada propuesta cita las líneas de las notas que la justifican, y lo que descarta lleva su motivo.
+- **Nada se crea hasta que alguien lo apruebe** en la ficha de la reunión, donde puede marcar, desmarcar y editar cada propuesta. Los issues y los comentarios se crean en GitHub a nombre de quien aprueba, y los proyectos en Linear con la key del repo.
+- **Correo:** el equipo del repo recibe uno cuando hay algo que revisar. Las notas quedan en el runner, nunca en GitHub.
+
 **Portal de pedidos** ([`docs/DESIGN.md` §16](docs/DESIGN.md)): en `https://ronin-agent.redmotoshn.com`, la gente que usa las aplicaciones pide ajustes chicos sin cuenta de GitHub. Entra con email y contraseña, elige la aplicación (las que le habilitaron) y le cuenta a ronin qué necesita, con texto y capturas.
 - **ronin lee el pedido y revisa el código.** Puede hacer una pregunta, responder (cuando no hay nada que cambiar) o decidir si es un ajuste chico, un error o algo para el equipo.
 - **Ajuste chico:** le muestra un prototipo con el antes y el después, armado sobre la app levantada, y la persona lo aprueba, pide un ajuste (hasta 3 prototipos) o dice que no le sirve.
@@ -66,6 +71,7 @@ Desde la ficha se le pide a ronin lo mismo que comentando en GitHub: resolver co
 - [Changelog](https://github.com/Oskr814/ronin/wiki/Changelog): publicación automática de releases
 - [Bloqueos](https://github.com/Oskr814/ronin/wiki/Bloqueos): cuándo ronin se detiene y avisa por email
 - Portal de pedidos: `PORTAL_URL` y `PORTAL_SESSION_SECRET` en `.env`, y el bloque `portal` en `repos.json` ([`docs/DESIGN.md` §16.9](docs/DESIGN.md))
+- Reuniones: `MEETINGS_DATA_DIR` en `.env` (respaldarlo), y la key de Linear del repo para los proyectos ([`docs/DESIGN.md` §17.7](docs/DESIGN.md))
 
 ## Desarrollo
 
