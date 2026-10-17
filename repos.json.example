@@ -14,6 +14,12 @@
       "explorationProject": {
         "backoffice": "Mejoras de backoffice"
       }
+    },
+    "portal": {
+      "name": "Red Motos",
+      "apps": {
+        "backoffice": { "name": "Backoffice", "description": "Pedidos, clientes y catálogos" }
+      }
     }
   },
   {

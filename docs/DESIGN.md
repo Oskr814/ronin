@@ -405,6 +405,7 @@ Antes de asignárselo a ronin, el issue se puede ir dando forma con él: cualqui
 - **Alcance:** la sección `## Alcance` (entre marcadores `<!-- ronin:alcance -->`) tiene el alcance vigente completo y se reemplaza en cada cambio. `## Cambios de alcance` suma una línea por cambio, con fecha y link al comentario que lo pidió. Cuando el cambio amplía el alcance ("aplica a otras vistas"), el agente nombra los lugares concretos.
 - **Investigación:** se agrega al final como `## Contexto adicional (<fecha>)`, sin reemplazar las anteriores, igual que `/spike`.
 - **Prototipo** (`/prototype <app> [instrucción]`, o pedido en palabras): corre en un worker aparte (`prototype-worker.ts`), uno a la vez por repo, que espera su turno en lugar de descartar el pedido. Levanta la app desde la rama base en un worktree propio (`prototype-issue-<n>`) con una instancia de compose propia. El agente tiene un navegador por rol y viewport. Saca el antes, hace un cambio borrador, saca el después (o un HTML si el cambio real no es práctico) y deja el cambio sin revertir. El supervisor toma el diff del checkout, sube las capturas a `ronin/evidence` (§11.5) y responde en el issue con antes, después y diff. Después tira el worktree: no queda rama ni PR.
+- **El portal de pedidos** (§16.4) usa el mismo prototipo: `makePrototype` separa el armado (checkout, app, agente, capturas, diff) de la entrega, que en un issue es el comentario y en el portal es el pedido.
 - Cada comentario queda como procesado aunque falle, y la falla se responde. Así un pedido roto no se reintenta en cada tick. En un issue que ronin ya está implementando, estas menciones no se leen: el cambio se pide en el PR.
 
 ### 12. Previews por PR en la tailnet (`/preview`)
@@ -442,7 +443,7 @@ Lo mismo que el auto-merge de GitHub, que es de los planes pagos: el PR se merge
 
   Mergea con `mergePullRequest`, que vuelve a exigir la aprobación y reacomoda los PRs que dependían de la rama mergeada. Mientras espera, solo lo anota en el log. En el PR comenta únicamente el merge o la desactivación.
 - **Cuándo se desactiva.** Igual que en GitHub: si el PR tiene conflictos con su base, o si el merge falla. ronin saca el label y comenta el motivo, así no lo reintenta en cada tick. Para volver a activarlo hay que pedir otra vez `/auto-merge`.
-- **Una excepción explícita.** ronin nunca mergea por su cuenta una slice aprobada: la mergea el humano que la aprobó, cuando le conviene. El auto-merge es ese mismo humano pidiéndolo de antemano para un PR puntual. ronin nunca pone el label por iniciativa propia.
+- **Una excepción explícita.** ronin nunca mergea por su cuenta una slice aprobada: la mergea el humano que la aprobó, cuando le conviene. El auto-merge es ese mismo humano pidiéndolo de antemano para un PR puntual. ronin pone el label por su cuenta en un solo caso: el PR de un pedido del portal que la persona aprobó (§16.5). Igual tiene que aprobarlo un dev.
 - **Rapidez.** Arranca un handler (§14) cuando se pone el label (`pull_request.labeled`, solo con `ronin:auto-merge`), cuando termina el CI de un PR (`check_suite.completed`), con una aprobación (`pull_request_review.submitted`) y cuando se mergea el PR de abajo del stack. Así el merge sale casi en el momento, sin esperar al cron ni a que termine otro trabajo. `check_suite` hay que sumarlo a los webhooks ya creados volviendo a correr `scripts/init-webhooks.sh`.
 
 ### 14. Reacción por evento; el tick como conciliación
@@ -518,16 +519,19 @@ El servidor que recibía los webhooks pasó a ser el servidor web de ronin (`src
 ```
 src/server/
   index.ts             el proceso: los dos listeners
-  public.ts            lo que atiende el listener público: solo los webhooks
+  public.ts            lo que atiende el listener público: los webhooks y el portal de pedidos (§16)
+  portal.ts            el portal: su página y su API
   tailnet.ts           lo que atiende el de la tailnet: la app y toda la API
   api/
     webhooks/          POST /api/webhooks/github: github.ts, events.ts, handler.ts (§14)
     auth.ts            /api/auth/login, /callback, /logout y /me
     dashboard*.ts      los datos del tablero
+    portal*.ts         la API del portal y su administración (§16)
 src/web/               la aplicación: HTML, CSS, JS y fuentes, sin build; marked y DOMPurify en vendor/
+src/portal-web/        la página del portal de pedidos
 ```
 
-- **Listener público** (`SERVER_PORT`, 3939; `WEBHOOK_PORT` se sigue leyendo si no está). Es al que llega `https://ronin-agent.redmotoshn.com`, por el túnel de Cloudflare y nginx-proxy-manager. Atiende solo `POST /api/webhooks/github`, más el alias `/webhook` de la ruta anterior; cualquier otra ruta responde 404. La restricción está en el código, así que no depende de cómo esté configurado el proxy.
+- **Listener público** (`SERVER_PORT`, 3939; `WEBHOOK_PORT` se sigue leyendo si no está). Es al que llega `https://ronin-agent.redmotoshn.com`, por el túnel de Cloudflare y nginx-proxy-manager. Atiende `POST /api/webhooks/github`, más el alias `/webhook` de la ruta anterior, y, con el portal configurado, el portal de pedidos (§16): su página y `/api/portal/*`. Cualquier otra ruta responde 404: el tablero y su API nunca se sirven ahí. La restricción está en el código, así que no depende de cómo esté configurado el proxy.
 - **Listener de la tailnet** (`127.0.0.1:SERVER_TAILNET_PORT`, 3940).
   - **Solo en `127.0.0.1`:** no se ve desde la LAN ni desde otra interfaz.
   - **Publicación:** `pnpm server:setup` lo publica con `tailscale serve --bg --https=8443` (`DASHBOARD_TAILNET_HTTPS_PORT`), nunca con `funnel`.
@@ -639,6 +643,8 @@ Todo, salvo los webhooks y `/api/auth/*`, pide sesión:
 | `POST /api/items/<id>/files/actions` | Comenta, responde, resuelve, marca visto o maneja la revisión: `{ action, … }` (15.14) |
 | `GET /api/runs/<runId>` | El transcript de una corrida |
 | `GET /api/runs/<runId>/stream` | Lo que se le agrega, por *server-sent events*, hasta que termina |
+| `GET /api/portal-admin` | Solo admins: las cuentas del portal de pedidos y las aplicaciones que se pueden dar (§16.2) |
+| `POST /api/portal-admin/users`, `/users/<id>`, `/users/<id>/link` | Solo admins: crea una cuenta y manda la invitación, la cambia o manda otro enlace para la contraseña |
 | `GET /api/evidence/<owner>/<repo>/<sha>/<ruta>` | Una captura que publicó ronin (§11.5), leída del clon del repo de producto |
 
 En la ficha, las imágenes de los comentarios son enlaces, salvo las capturas que publicó ronin. El enlace de GitHub de una captura (`evidenceUrl`) solo carga con sesión de GitHub, y un `<img>` del tablero no la lleva. Por eso el servidor la lee de su propio clon con `git cat-file`: `publishEvidence` la commitea ahí antes del push. Solo sirve imágenes y solo de commits de la rama `ronin/evidence`. Si el sha no está, hace un `fetch` de esa rama, como mucho uno por minuto por repo. Si la imagen no carga, vuelve a ser el enlace `[imagen]`.
@@ -781,6 +787,124 @@ La pestaña *Archivos* de la ficha de un PR (o de un issue, con los archivos de 
   - Cada pedido se valida contra el PR leído: un archivo que cambia, un hilo o comentario suyo, un comentario de la revisión de la persona. Si no pasa, responde 400; lo demás lo decide GitHub y la página muestra su mensaje.
   - Después de escribir algo público se descartan las cachés de archivos y de la ficha. Lo pendiente y lo visto no las tocan.
 
+### 16. Portal de pedidos (#114)
+
+Una página pública, `https://ronin-agent.redmotoshn.com`, para que la gente que usa las aplicaciones pida ajustes chicos sin cuenta de GitHub. Entra con email y contraseña, elige la aplicación, le cuenta a ronin qué necesita (texto y capturas) y conversa con él. Si es un ajuste chico, ronin le muestra un prototipo; si lo aprueba, ronin hace el cambio en un PR que mergea cuando un dev lo aprueba, y le avisa a la persona que sale en la próxima actualización. Lo que es más que un ajuste, o lo que la persona no aprueba, pasa al equipo de desarrollo en un issue, y la persona se entera cuando se cierra.
+
+```
+src/portal/            el dominio: cuentas, pedidos, la conversación, el prototipo y los issues
+  accounts.ts          las cuentas (accounts.json), sus permisos y los enlaces para la contraseña
+  password.ts          scrypt, y el chequeo de mentira que iguala los tiempos
+  session.ts           la cookie firmada del portal
+  requests.ts          los pedidos: requests/<n>/request.json, img/ y proto/
+  classify.ts          ronin lee el pedido: preguntar, responder, menor o grande
+  prototype.ts         el prototipo de un ajuste chico, y aprobar o "No me sirve"
+  issue.ts             el issue en el repo del producto: para ronin (aprobado) o para el equipo
+  follow.ts            el tick sigue esos issues y sus PRs
+  worker.ts, launch.ts el worker por pedido y su relanzamiento
+  mail.ts, notify.ts   los correos
+src/server/portal.ts   lo que el listener público atiende del portal
+src/server/api/portal*.ts  la API del portal y la administración desde el tablero
+src/portal-web/        la página: HTML, CSS y JS sin build
+```
+
+#### 16.1 El recorrido de un pedido
+
+| Estado | Qué pasa | Quién sigue |
+|---|---|---|
+| `thinking` | ronin lee el pedido y revisa el código (16.3) | ronin |
+| `asking` | ronin le hizo una pregunta | la persona |
+| `answered` | ronin respondió: no había nada que cambiar | la persona, si quiere escribir de nuevo |
+| `minor` | es un ajuste chico: ronin arma el prototipo (16.4) | ronin |
+| `proposed` | el prototipo está en pantalla | la persona: aprobar, pedir un ajuste o "No me sirve" |
+| `approved` | aprobado: ronin hace el cambio en un PR (16.5) | ronin, y un dev que apruebe el PR |
+| `done` | el PR se mergeó: sale en la próxima actualización | — |
+| `big` | es del equipo, en un issue (16.6) | el equipo |
+| `resolved` / `declined` | el equipo cerró el issue como completado / no planeado | — |
+
+Cada paso que hace ronin corre en un **worker por pedido** (`portal/worker.ts`, lanzado con `launchWorker` desde el servidor cuando la persona escribe o decide). Toma el lock `portal-<n>`, así que dos workers nunca trabajan el mismo pedido, y anota su pid en el pedido. Al empezar cada tick, `sweepPortalRequests` relanza los pedidos que esperan a ronin (`thinking`, `minor`, o aprobados o del equipo sin issue todavía) cuyo worker murió, con 2 minutos de gracia para uno recién lanzado.
+
+#### 16.2 Cuentas, sesión y seguridad
+
+- **Las cuentas las crea un admin del tablero** (`DASHBOARD_ADMINS`), en la página *Portal de pedidos* (`/portal`): nombre, email, las aplicaciones que puede pedir y, si se quiere, un tope diario propio. La persona recibe un correo con un enlace para crear su contraseña. Desde ahí también se cambian sus aplicaciones, se deshabilita la cuenta o se manda otro enlace. Si el correo falla, el tablero muestra el enlace para pasárselo por otro lado.
+- **Qué aplicaciones hay:** cada repo de `repos.json` con un bloque `portal: { name, apps: { <app de ronin.app.json>: { name, description? } } }`. El login no nombra ninguna: la persona elige entre las que tiene después de entrar.
+- **Contraseñas:** scrypt (N=2^15, r=8, p=1), mínimo 10 caracteres. Un email que no existe responde igual y tarda lo mismo que una contraseña mal puesta (`burnPasswordCheck`).
+- **Sesión:** la cookie `ronin_portal`, firmada con HMAC (`PORTAL_SESSION_SECRET`), por `PORTAL_SESSION_DAYS` días. Lleva una versión de la cuenta: cambiar la contraseña o deshabilitarla cierra todas sus sesiones.
+- **Enlaces para la contraseña:** de un uso, vencen a las 24 horas, se guardan solo como su sha256 y viajan en el fragmento de la URL (`/contrasena#t=…`), que no llega a los logs ni al `Referer`.
+- **Límites, en memoria:** el login, 5 fallos por email y 30 por IP cada 15 minutos; "olvidé mi contraseña", 3 por email y 10 por IP por hora; los enlaces, 20 chequeos por IP cada 15 minutos. La IP es la de `cf-connecting-ip`. Pedidos nuevos: `PORTAL_DAILY_LIMIT` por persona y por día, en la zona de `EXPLORE_TIMEZONE`.
+- **Lo demás:** los POST solo aceptan JSON y del mismo origen; CSP, `Referrer-Policy: no-referrer` y HSTS. Cada persona ve solo sus pedidos: uno ajeno responde 404, igual que uno que no existe. Nunca ve el resumen técnico, la instrucción del prototipo ni su diff.
+- **Archivos:** `PORTAL_DATA_DIR` (`portal-data/`, fuera de git), con modo 0600. Las escrituras toman un lock entre procesos y reemplazan el archivo de forma atómica (`json-store.ts`). `accounts.json` es la única copia de las cuentas: hay que respaldarlo.
+
+#### 16.3 La conversación (`classify.ts`)
+
+La persona escribe y adjunta hasta 4 capturas (png, jpg, webp o gif, validadas por sus primeros bytes, hasta 5 MB cada una; la página achica las grandes antes de mandarlas). Un agente de solo lectura (`portal-request`) lee la conversación y las imágenes en un checkout aparte de la rama base (`portal-P-<n>`, sin rama, que se borra al terminar), revisa el código de esa app y decide una de cuatro cosas:
+
+- **preguntar**, hasta 3 veces por pedido;
+- **responder**, cuando no hay nada que cambiar (una duda, algo que ya existe);
+- **menor**, un ajuste chico sobre algo que existe en esa app: deja la propuesta en palabras simples, la instrucción para el prototipo y un resumen técnico para el equipo;
+- **grande**: lo nuevo, el esquema de datos, dependencias, permisos, integraciones, varias apps, una regla que nadie definió o algo cuya causa no encontró. Ante la duda, grande.
+
+Lo que escribe la persona va cercado como dato, nunca como instrucción. El supervisor escribe la respuesta: un "menor" sin propuesta o sin instrucción, o una pregunta pasada del límite, se convierte en "grande". La primera respuesta le pone título al pedido. La persona recibe cada respuesta también por correo, salvo la de un ajuste chico, porque el correo siguiente es el del prototipo. Si el agente falla, ronin se lo dice y la persona puede volver a escribir.
+
+#### 16.4 El prototipo (`prototype.ts`)
+
+Es el mismo de `/prototype` (§11.11): `makePrototype` en `commands/prototype.ts` levanta la app desde la rama base, con instancia `portal-p-<n>`, y el agente (`portal-prototype`) saca el antes, hace el cambio borrador y saca el después, en desktop y mobile si hace falta. Lo único que cambia es la entrega:
+
+- **Las capturas quedan con el pedido** (`img/p<ronda>-antes-1.png`…), detrás del login de la persona, en pares con su leyenda ("Antes: …", "Después: …"). El agente escribe además un mensaje para la persona, en palabras simples.
+- **El diff queda en el runner** (`proto/<ronda>.diff`), para el equipo. No incluye lo que el arranque de la app ya había cambiado: el build puede regenerar archivos versionados, como el XML de documentación de una API .NET.
+- **Un prototipo a la vez por repo:** espera el mismo lock que `/prototype` (`.prototype.lock`).
+- **Si falla dos veces,** o el agente dice que no hay prototipo posible (`PrototypeDeclined`, sin reintento), el pedido pasa al equipo.
+
+La persona tiene tres salidas:
+- **Aprobar.** Con confirmación; sigue 16.5.
+- **Pedir un ajuste.** Escribe qué cambiaría. Ese mensaje vuelve a `classify.ts` con el contexto del prototipo y su instrucción, y si sigue siendo chico sale otro prototipo. Son hasta 3 prototipos por pedido. Si solo pregunta algo, el prototipo queda en pantalla.
+- **No me sirve.** Con una nota opcional, pasa al equipo (16.6).
+
+#### 16.5 Aprobado: issue, PR y merge (`issue.ts`, `follow.ts`)
+
+1. El worker publica las capturas en la rama de evidencia (§11.5) y abre un **issue en el repo del producto, asignado a ronin**, con label `ronin:portal` y un marcador (`<!-- ronin:portal P-n -->`) que evita abrir otro si el worker muere justo después. El issue lleva el cambio aprobado, el prototipo, el análisis de ronin, el diff y la conversación, con lo que escribió la persona citado y sin `@`. Las capturas se llaman `antes-N` y `despues-N`, así `fix-issue` muestra en el PR, y en el changelog, solo los después.
+2. ronin lo toma como cualquier issue asignado (`discoverAssignedIssues` → `fix-issue`), partiendo del diff del prototipo sin ampliar el alcance, y abre el PR con "Closes #n".
+3. `followPortalIssues`, un paso del tick que también corre con el webhook de un PR abierto (flujo `portal`), encuentra ese PR (`closingIssuesReferences`) y le pone **`ronin:auto-merge`**. Además le avisa al equipo (`NOTIFY_TO`) que espera su aprobación, y la persona ve en la conversación que el cambio está hecho y lo revisa el equipo.
+4. Con la aprobación de un dev y CI en verde, `sweepAutoMerge` lo mergea (§13). Con el webhook del PR cerrado o el tick siguiente, el pedido queda en `done` y la persona recibe "Listo, sale en la próxima actualización".
+
+Un PR cerrado sin merge se olvida hasta que otro cierre el issue. Si `fix-issue` necesita información, el issue queda bloqueado y se abre la entrevista con el equipo, como con cualquier issue asignado. El merge automático con deploy queda para más adelante: por ahora siempre aprueba una persona.
+
+#### 16.6 Del equipo: pedidos grandes y "No me sirve"
+
+- **Al pasar al equipo,** la persona recibe un correo enseguida. El worker abre un **issue sin asignar** con label `ronin:portal`: lo que pide, por qué es del equipo, el análisis de ronin, el último prototipo y su diff si hubo, y la conversación. Al equipo le llega el correo con el enlace.
+- **Al cerrarse el issue** (con el webhook `issues.closed` o en el tick), la persona recibe un correo y un mensaje en la conversación. Completado: `resolved`, "el equipo resolvió tu pedido". No planeado: `declined`, "decidió no hacerlo por ahora". Un pedido aprobado cuyo issue se cierra como no planeado sin PR también termina en `declined`.
+- **El motivo del cierre** se lee por la API REST (`state_reason`), porque el `gh` 2.45 del runner no lo trae en `issue view`. Para saber cuáles se cerraron, el tick hace una sola consulta por pasada: los issues con `ronin:portal`.
+
+#### 16.7 Correos
+
+Todos salen de la misma cuenta, `GMAIL_USER` / `GMAIL_APP_PASSWORD` (la de los bloqueos), con el nombre "ronin · Pedidos de ajustes", para todos los repos. A la persona: la invitación, el cambio de contraseña, cada respuesta de ronin, el prototipo listo, el paso al equipo, el merge y el cierre del issue. Al equipo (`NOTIFY_TO`): el issue de un pedido que es suyo y el PR que espera aprobación. Las imágenes nunca van en el correo: el enlace lleva al portal. Un correo que falla queda en el log y no frena el pedido.
+
+#### 16.8 API
+
+En el listener público, solo con `PORTAL_URL` y `PORTAL_SESSION_SECRET` configurados:
+
+| Ruta | Qué hace |
+|---|---|
+| `POST /api/portal/login`, `/logout` | Entrar y salir: `{ email, password }` |
+| `GET /api/portal/me` | La persona, sus aplicaciones y cuántos pedidos le quedan hoy |
+| `POST /api/portal/forgot` | Manda el enlace para cambiar la contraseña: `{ email }` |
+| `POST /api/portal/link`, `/password` | Revisa un enlace y crea la contraseña con él: `{ token, password? }` |
+| `GET /api/portal/requests` | Sus pedidos, el más nuevo primero |
+| `POST /api/portal/requests` | Uno nuevo: `{ repo, app, text, images? }` (imágenes como data URLs) |
+| `GET /api/portal/requests/<n>` | Uno, con la conversación |
+| `POST /api/portal/requests/<n>/messages` | Su respuesta, o un ajuste al prototipo: `{ text, images? }` |
+| `POST /api/portal/requests/<n>/decision` | Sobre el prototipo: `{ decision: 'aprobar' \| 'rechazar', text? }` |
+| `GET /api/portal/requests/<n>/images/<archivo>` | Una imagen de la conversación |
+
+La administración está en la API del tablero, solo para `DASHBOARD_ADMINS`: `GET /api/portal-admin`, `POST /api/portal-admin/users`, `/users/<id>` y `/users/<id>/link` (15.9).
+
+#### 16.9 Activarlo
+
+1. En `.env`: `PORTAL_URL` (`https://ronin-agent.redmotoshn.com`) y `PORTAL_SESSION_SECRET` (`openssl rand -hex 32`, distinto del del tablero). Opcionales: `PORTAL_SESSION_DAYS` (30), `PORTAL_DAILY_LIMIT` (5) y `PORTAL_DATA_DIR` (`portal-data`).
+2. En `repos.json`, el bloque `portal` de cada repo que se ofrece, con sus aplicaciones.
+3. nginx-proxy-manager tiene que pasarle al 3939 todas las rutas del dominio, no solo la de los webhooks.
+4. `pnpm build` y reiniciar `ronin-server`. Las cuentas se crean desde el tablero.
+
 ## Estado actual
 
 - [x] Definir el esqueleto del supervisor (script + estructura de tick) — ver §3.1 y `src/`
@@ -796,6 +920,7 @@ La pestaña *Archivos* de la ficha de un PR (o de un issue, con los archivos de 
 - [x] Limpieza de worktrees cuando su PR ya no está abierto — `sweepOrphanedWorktrees` (§3.1)
 - [x] Reacción por evento: un handler por evento de GitHub, el tick como conciliación — `server/api/webhooks/handler.ts`, `core/locks.ts` (§14)
 - [x] Tablero web en la tailnet, con login de GitHub, la ficha de cada ítem, acciones y la revisión de PRs (§15.14) — `server/`, `web/`, `core/run-record.ts`, `core/claude-usage.ts` (§15)
+- [x] Portal de pedidos en `ronin-agent.redmotoshn.com`: cuentas con email y contraseña, conversación con imágenes, prototipo, PR con `ronin:auto-merge` o issue para el equipo, y correos — `portal/`, `portal-web/` (§16)
 - [x] ~~Evidencia visual de e2e en el PR~~ — eliminado (el `src/evidence.ts` de entonces; el `evidence-store.ts` actual es el de la exploración, §11.5); no reemplazaba la supervisión humana y la calidad no era suficiente — ver [issue #4](https://github.com/Oskr814/ronin/issues/4)
 
 **Pendiente, fuera de este scaffold:**
