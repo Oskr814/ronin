@@ -560,7 +560,7 @@ La tailnet ya limita quién llega. El login suma una segunda barrera, y el token
   - El markdown de GitHub (la descripción de un PR de cualquiera, un comentario) no es confiable: lo interpreta `marked` y lo limpia `DOMPurify`, copiados en `src/web/vendor/` porque la CSP no deja cargar scripts de afuera. Se descartan estilos, formularios e iframes, y cualquier link que no sea `http(s)`, `mailto` o `#`. Las imágenes pasan a ser links, porque la CSP tampoco las cargaría.
 
 **Qué repos ve cada sesión (#106, `server/api/access.ts`).**
-- **Administradores:** los de `DASHBOARD_ADMINS` (sin definir, los de `DASHBOARD_ALLOWED_USERS`) ven todos los repos.
+- **Administradores:** los de `DASHBOARD_ADMINS` ven todos los repos. Sin definir, no hay ninguno: estar en `DASHBOARD_ALLOWED_USERS` deja entrar, pero no hace administrador. El arranque dice en el log quiénes son.
 - **El resto:** ve los repos de `repos.json` en los que tiene al menos `triage` según GitHub. Se consulta con el token de la sesión: `GET /repos/{owner}/{repo}` y su campo `permissions`, donde un 404 es sin acceso. El resultado se guarda en memoria por sesión 10 minutos. Si GitHub falla, queda la última respuesta, y sin ninguna no se ve nada. Un 401 cierra la sesión.
 - **Quién entra:** un administrador, o alguien con al menos un repo que ver. `DASHBOARD_ALLOWED_USERS`, si tiene logins, es además la lista de quién entra.
 - **Dónde se aplica:** en el servidor. `tailnet.ts` calcula el acceso en cada pedido y `handleDashboard` lo guarda para todo el pedido (`AsyncLocalStorage`). Todas las lecturas de `dashboard.ts` pasan por `visibleRepos()` y `listRuns()`, que solo devuelven lo de esos repos, y fuera de un pedido no devuelven nada. El snapshot, *Hoy*, la cola y el uso de las cuentas de Claude salen filtrados. Pedir por nombre algo de otro repo (una ficha, un transcript, una captura, una acción, *Nuevo issue*) responde 404.
@@ -652,7 +652,7 @@ En la ficha, las imágenes de los comentarios son enlaces, salvo las capturas qu
 #### 15.10 Activarlo
 
 1. Crear una OAuth App en GitHub (*Settings → Developer settings → OAuth Apps*) con callback `<DASHBOARD_URL>/api/auth/callback`.
-2. Completar en `.env` `DASHBOARD_GITHUB_CLIENT_ID`, `DASHBOARD_GITHUB_CLIENT_SECRET`, `DASHBOARD_SESSION_SECRET` (`openssl rand -hex 32`), `DASHBOARD_ALLOWED_USERS` y `DASHBOARD_URL` (por ejemplo `https://<host>.<tailnet>.ts.net:8443`).
+2. Completar en `.env` `DASHBOARD_GITHUB_CLIENT_ID`, `DASHBOARD_GITHUB_CLIENT_SECRET`, `DASHBOARD_SESSION_SECRET` (`openssl rand -hex 32`), `DASHBOARD_ADMINS`, `DASHBOARD_ALLOWED_USERS` y `DASHBOARD_URL` (por ejemplo `https://<host>.<tailnet>.ts.net:8443`).
 3. `pnpm build && pnpm server:setup`. `server:setup` instala `ronin-server` (y desinstala el `ronin-webhook` de antes si lo encuentra) y publica el 8443 en la tailnet.
 
 #### 15.11 Acciones (`server/api/dashboard-actions.ts`)
