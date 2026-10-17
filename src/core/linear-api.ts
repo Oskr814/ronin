@@ -200,3 +200,54 @@ export async function updateIssue(key: string, uuid: string, input: { projectId?
   if (!data.issueUpdate.success) throw new Error('Linear no aplicó el cambio');
 }
 
+
+// What ronin reads a meeting's notes against (#62): every project of the
+// team, done or not (so a meeting that brings back a finished one says so),
+// its cycles that haven't ended and its people.
+export interface LinearContext {
+  team: string;
+  projects: Array<{ id: string; name: string; status: string; statusType: string; description?: string; lead?: string }>;
+  cycles: LinearPlanning['cycles'];
+  people: Array<{ id: string; name: string }>;
+}
+
+const CONTEXT_QUERY = `query($prefix: String!) {
+  issues(first: 1, filter: { attachments: { some: { url: { startsWith: $prefix } } } }) {
+    nodes { team {
+      key
+      projects(first: 150) { nodes { id name description status { name type } lead { name } } }
+      cycles(first: 4, filter: { isPast: { eq: false } }, orderBy: createdAt) { nodes { id number name startsAt endsAt isActive } }
+      members(first: 100) { nodes { id name active } }
+    } }
+  }
+}`;
+
+const DESCRIPTION_MAX = 300;
+
+export async function teamContext(entry: RepoEntry, key: string): Promise<LinearContext | null> {
+  type RawProject = { id: string; name: string; description: string | null; status: { name: string; type: string } | null; lead: { name: string } | null };
+  type Raw = { issues: { nodes: Array<{ team: { key: string; projects: { nodes: RawProject[] }; cycles: { nodes: Array<{ id: string; number: number; name: string | null; startsAt: string; endsAt: string; isActive: boolean }> }; members: { nodes: Array<{ id: string; name: string; active: boolean }> } } }> } };
+  const data = await query<Raw>(key, CONTEXT_QUERY, { prefix: issuesPrefix(entry) });
+  const team = data.issues.nodes[0]?.team;
+  if (!team) return null;
+  return {
+    team: team.key,
+    projects: team.projects.nodes
+      .map((p) => {
+        const description = p.description?.replace(/\s+/g, ' ').trim();
+        return {
+          id: p.id,
+          name: p.name,
+          status: p.status?.name ?? '',
+          statusType: p.status?.type ?? '',
+          ...(description ? { description: description.length > DESCRIPTION_MAX ? `${description.slice(0, DESCRIPTION_MAX - 1)}…` : description } : {}),
+          ...(p.lead ? { lead: p.lead.name } : {}),
+        };
+      })
+      .sort((a, b) => a.name.localeCompare(b.name, 'es')),
+    cycles: team.cycles.nodes
+      .map((c) => ({ id: c.id, number: c.number, ...(c.name ? { name: c.name } : {}), startsAt: c.startsAt, endsAt: c.endsAt, current: c.isActive }))
+      .sort((a, b) => a.startsAt.localeCompare(b.startsAt)),
+    people: team.members.nodes.filter((m) => m.active).map((m) => ({ id: m.id, name: m.name })),
+  };
+}

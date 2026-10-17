@@ -18,7 +18,7 @@ const TYPE = {
   'external-review': 'Review externa', 'spike': 'Spike', 'write-spec': 'Escribir spec', 'issue-request': 'Pedido en issue',
   'prototype': 'Prototipo', 'update-changelog': 'Changelog', 'explore-inventory': 'Inventario de exploración',
   'explore-function': 'Explorar', 'explore-evaluate': 'Evaluar exploración', 'explore-redo-after': 'Rehacer captura',
-  'explore-feedback': 'Comentarios de exploración', 'commit-subject': 'Mensaje de commit', 'prepare-preview-data': 'Datos de preview', 'portal-request': 'Pedido del portal', 'portal-prototype': 'Prototipo del portal', 'portal-reproduce': 'Reproducción del portal',
+  'explore-feedback': 'Comentarios de exploración', 'commit-subject': 'Mensaje de commit', 'prepare-preview-data': 'Datos de preview', 'portal-request': 'Pedido del portal', 'portal-prototype': 'Prototipo del portal', 'portal-reproduce': 'Reproducción del portal', 'meeting-read': 'Lectura de reunión',
 };
 const VERB = { Bash: 'Corrió', Read: 'Leyó', Edit: 'Editó', MultiEdit: 'Editó', Write: 'Escribió', NotebookEdit: 'Editó', Grep: 'Buscó', Glob: 'Buscó', WebFetch: 'Abrió', WebSearch: 'Buscó en la web', Task: 'Lanzó un agente', Agent: 'Lanzó un agente', TodoWrite: 'Anotó tareas' };
 const STATE = {
@@ -104,7 +104,7 @@ function duration(ms) {
 const money = (usd) => (usd < 0.01 ? 'menos de US$0,01' : `US$${usd.toFixed(2).replace('.', ',')}`);
 const pct = (fraction) => `${Math.round(fraction * 100)}%`;
 
-const S = { snap: null, today: null, sel: null, open: [], runIdx: {}, pendingRun: null, filter: null, q: '', itemRuns: {}, run: null, stream: null, detail: {}, view: {}, doc: {}, menu: false, dialog: null, expanded: new Set(), expl: {}, ficha: {}, fichaOpen: {}, fichaFilter: { tipo: 'todas', vp: 'todos' }, antes: {}, oldAfter: new Set(), lightbox: null, fmenu: false, fdialog: null, fdraft: {}, listas: {}, scope: 'all', project: '', attAll: false, extra: {}, newIssue: null, files: {}, fcur: {}, ffold: {}, fexp: {}, fcontent: {}, fq: {}, ftree: false, fcomp: null, fbusy: new Set(), rpanel: null, page: null, portal: { data: null, error: null }, pdialog: null, ped: { list: null, error: null, listAt: 0, detail: {}, n: null, tab: 'act', filter: 'todos', run: null, lb: null, patch: {} }, reu: { list: null, error: null, listAt: 0, detail: {}, n: null, tab: 'notas', up: null } };
+const S = { snap: null, today: null, sel: null, open: [], runIdx: {}, pendingRun: null, filter: null, q: '', itemRuns: {}, run: null, stream: null, detail: {}, view: {}, doc: {}, menu: false, dialog: null, expanded: new Set(), expl: {}, ficha: {}, fichaOpen: {}, fichaFilter: { tipo: 'todas', vp: 'todos' }, antes: {}, oldAfter: new Set(), lightbox: null, fmenu: false, fdialog: null, fdraft: {}, listas: {}, scope: 'all', project: '', attAll: false, extra: {}, newIssue: null, files: {}, fcur: {}, ffold: {}, fexp: {}, fcontent: {}, fq: {}, ftree: false, fcomp: null, fbusy: new Set(), rpanel: null, page: null, portal: { data: null, error: null }, pdialog: null, ped: { list: null, error: null, listAt: 0, detail: {}, n: null, tab: 'act', filter: 'todos', run: null, lb: null, patch: {} }, reu: { list: null, error: null, listAt: 0, detail: {}, n: null, tab: null, up: null, run: null, open: {}, retrying: false } };
 // The sidebar's Linear filter (#101), remembered per browser.
 try { Object.assign(S, JSON.parse(localStorage.getItem('ronin-scope') ?? '{}')); } catch { /* sin storage */ }
 function saveScope() {
@@ -192,7 +192,7 @@ function renderQuick() {
     <button data-filter="running" aria-pressed="${S.filter === 'running'}"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg>Corriendo ahora<span class="c">${running}</span></button>
     <button data-filter="queue" aria-pressed="${S.filter === 'queue'}"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg>En cola<span class="c">${queued}</span></button>
     ${S.snap.portalAdmin || S.snap.pedidosTotal ? `<button data-portal aria-pressed="${['pedidos', 'pedido', 'portal'].includes(S.page) && !S.sel}"><svg viewBox="0 0 24 24"><path d="M5 4h14v16H5zM9 9h6M9 13h6M9 17h3"/></svg>Pedidos del portal<span class="c">${S.snap.pedidos?.length || ''}</span></button>` : ''}
-    ${S.snap.repos.length ? `<button data-reuniones aria-pressed="${['reuniones', 'reunion'].includes(S.page) && !S.sel}"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h10M4 18h7"/><circle cx="18" cy="16" r="3"/></svg>Reuniones<span class="c">${S.snap.reunionesPendientes || ''}</span></button>` : ''}`;
+    ${S.snap.repos.length ? `<button data-reuniones aria-pressed="${['reuniones', 'reunion'].includes(S.page) && !S.sel}"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h10M4 18h7"/><circle cx="18" cy="16" r="3"/></svg>Reuniones<span class="c">${S.snap.reunionesPorRevisar || ''}</span></button>` : ''}`;
   $('#quick').querySelector('[data-home]').onclick = goHome;
   $('#quick').querySelector('[data-portal]')?.addEventListener('click', () => openPedidos());
   $('#quick').querySelector('[data-reuniones]')?.addEventListener('click', () => openReuniones());
@@ -3131,16 +3131,29 @@ function wirePedidos() {
 // The team uploads a meeting's notes (a PDF, a Word .docx, text, or pasted)
 // and ronin proposes the work that comes out of it. Anyone who sees a repo
 // uploads to it and sees its meetings. The notes stay on the runner.
-const REU_STATUS = { pending: ['warn', 'Espera a ronin'] };
+const REU_STATUS = {
+  pending: ['run', 'En cola para ronin'], reading: ['run', 'ronin la está leyendo'], review: ['warn', 'Espera revisión'],
+  empty: ['idle', 'Nada accionable'], failed: ['crit', 'Falló la lectura'],
+};
 const REU_KIND = { pdf: 'PDF', docx: 'Word', text: 'Texto', pasted: 'Pegado' };
 const REU_MAX_BYTES = 10 * 1024 * 1024;
+const REU_CYCLE = { current: 'el ciclo actual', next: 'el próximo ciclo' };
 const reuPath = (n, rest = '') => `/api/reuniones/${n}${rest}`;
 const reuChip = (m) => {
   const [cls, label] = REU_STATUS[m.status] ?? ['idle', m.status];
-  return `<span class="chip ${cls}">${esc(label)}</span>`;
+  return `<span class="chip ${cls}">${m.status === 'reading' ? dotClass('live') : ''}${esc(label)}</span>`;
 };
 const reuSource = (m) => `${REU_KIND[m.source.kind] ?? m.source.kind}${m.source.pages ? ` · ${m.source.pages} ${m.source.pages === 1 ? 'página' : 'páginas'}` : ''}`;
 const reuChars = (n) => `${n.toLocaleString('es')} caracteres`;
+// The notes' lines with text, numbered from 1: what ronin cites (meetings.ts's noteLines).
+const reuLines = (text) => text.split('\n').map((line) => line.trim()).filter(Boolean);
+const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+
+function reuCounts(c) {
+  if (!c) return '<span class="m">—</span>';
+  const parts = [c.projects ? plural(c.projects, 'proyecto', 'proyectos') : '', c.issues ? plural(c.issues, 'issue', 'issues') : '', c.comments ? plural(c.comments, 'comentario', 'comentarios') : ''].filter(Boolean);
+  return `<span class="reu-counts">${parts.map((p) => `<span>${esc(p)}</span>`).join('')}<span class="m">${esc(plural(c.discarded, 'descartado', 'descartados'))}</span></span>`;
+}
 
 function openReuniones() {
   S.sel = null;
@@ -3158,7 +3171,11 @@ function openReuniones() {
 function openReunion(n) {
   S.sel = null;
   S.page = 'reunion';
-  if (S.reu.n !== n) S.reu.tab = 'notas';
+  if (S.reu.n !== n) {
+    S.reu.tab = null;
+    S.reu.run = null;
+    S.reu.open = {};
+  }
   S.reu.n = n;
   stopStream();
   if (location.pathname !== `/reuniones/${n}`) history.pushState(null, '', `/reuniones/${n}`);
@@ -3189,7 +3206,23 @@ async function loadReunion(n) {
     if (error instanceof Unauthorized) return showLogin();
     S.reu.detail[n] = { ...S.reu.detail[n], error: error.message, at: Date.now() };
   }
-  if (S.page === 'reunion' && S.reu.n === n) renderCenter();
+  if (S.page === 'reunion' && S.reu.n === n) {
+    renderCenter();
+    const run = S.reu.run;
+    if (run && (!run.summary || run.summary.state === 'running')) loadReunionRun(run.runId);
+  }
+}
+
+async function loadReunionRun(runId) {
+  try {
+    const { summary, lines } = await api(`/api/runs/${encodeURIComponent(runId)}`);
+    if (S.reu.run?.runId !== runId) return;
+    S.reu.run = { runId, summary, lines: lines.filter((line) => line.type !== 'run_start' && line.type !== 'run_end') };
+  } catch (error) {
+    if (error instanceof Unauthorized) return showLogin();
+    if (S.reu.run?.runId === runId) S.reu.run.error = error.message;
+  }
+  if (S.page === 'reunion') renderCenter();
 }
 
 function reunionesHTML() {
@@ -3198,33 +3231,133 @@ function reunionesHTML() {
   const list = S.reu.list;
   if (!list) return `<div class="today pd">${head}${S.reu.error ? `<p class="bad">${esc(S.reu.error)}</p>` : '<div class="empty">Cargando…</div>'}</div>`;
   const rows = list.map((m) => `<tr data-reu="${m.number}" tabindex="0"><td class="pn">R-${m.number}</td>
-      <td><span class="tt">${esc(m.title)}</span><small>${m.at ? `${esc(when(m.at))} · ` : ''}${esc(repoShort(m.repo))}</small></td>
+      <td><span class="tt">${esc(m.title)}</span><small>${m.at ? `${esc(when(m.at))} · ` : ''}${esc(repoShort(m.repo))} · ${esc(reuSource(m))}</small></td>
       <td>${reuChip(m)}</td>
-      <td class="hide-m m">${esc(reuSource(m))}</td>
+      <td class="hide-m">${reuCounts(m.counts)}</td>
       <td class="hide-m m">${esc(m.by)} · <span data-ago="${esc(m.createdAt)}">${esc(ago(m.createdAt))}</span></td></tr>`).join('');
   return `<div class="today pd">${head}
-    ${rows ? `<table class="padm-t pd-t"><thead><tr><th></th><th>Reunión</th><th>Estado</th><th class="hide-m">Notas</th><th class="hide-m">Subida por</th></tr></thead><tbody>${rows}</tbody></table>` : '<p class="note">Todavía nadie subió las notas de una reunión.</p>'}
+    ${rows ? `<table class="padm-t pd-t"><thead><tr><th></th><th>Reunión</th><th>Estado</th><th class="hide-m">Propuestas</th><th class="hide-m">Subida por</th></tr></thead><tbody>${rows}</tbody></table>` : '<p class="note">Todavía nadie subió las notas de una reunión.</p>'}
   </div>`;
+}
+
+// The lines of the notes a proposal cites, folded until asked for.
+function reuCites(d, key, cites) {
+  if (!cites.length) return '';
+  const lines = reuLines(d.text);
+  const open = S.reu.open[key];
+  return `<button class="reu-x" data-reuopen="${esc(key)}">${open ? '▾' : '▸'} De las notas${cites.length > 1 ? ` (${cites.length})` : ''}</button>
+    ${open ? cites.map((c) => `<blockquote class="reu-q">${esc(lines[c - 1] ?? '')}<button class="reu-src-l" data-reuline="${c}">línea ${c} en las notas</button></blockquote>`).join('') : ''}`;
+}
+
+function reuBody(key, label, body) {
+  const open = S.reu.open[key];
+  return `<button class="reu-x" data-reuopen="${esc(key)}">${open ? '▾' : '▸'} ${esc(label)}</button>${open ? `<div class="md reu-md">${md(body, S.reu.detail[S.reu.n]?.data?.repo ?? '')}</div>` : ''}`;
+}
+
+const reuMeta = (parts) => (parts.filter(Boolean).length ? `<div class="reu-meta">${parts.filter(Boolean).join('')}</div>` : '');
+const reuCycle = (cycle) => (cycle ? `<span>${LIN_ICON} ${esc(REU_CYCLE[cycle] ?? cycle)}</span>` : '');
+
+function reuIssueHTML(d, i, kid = false) {
+  return `<div class="reu-pr ${kid ? 'reu-kid' : ''}"><div class="reu-h"><span class="reu-kind iss">issue</span><b>${esc(i.title)}</b></div>
+    ${i.why ? `<div class="reu-why">${esc(i.why)}</div>` : ''}
+    ${reuMeta([i.project ? `<span>${LIN_ICON} ${esc(i.project)}</span>` : '', reuCycle(i.cycle)])}
+    <div class="reu-xs">${reuCites(d, `q-${i.id}`, i.cites)}${reuBody(`b-${i.id}`, 'Descripción', i.body)}</div></div>`;
+}
+
+function reuProposalsHTML(d) {
+  const p = d.proposals;
+  if (!p) return '<p class="note">Todavía no hay propuestas: ronin no terminó de leer las notas.</p>';
+  const sec = (title, n, html, hint = '') => (n ? `<section class="reu-sec"><h2>${title} <span class="c">${n}</span>${hint ? `<span class="hint">${hint}</span>` : ''}</h2>${html}</section>` : '');
+  const projects = p.projects.map((x) => `<div class="reu-pr proj"><div class="reu-h"><span class="reu-kind proj">${LIN_ICON} proyecto nuevo</span><b>${esc(x.name)}</b></div>
+      ${x.why ? `<div class="reu-why">${esc(x.why)}</div>` : ''}
+      ${reuMeta(['<span>Linear · estado Backlog</span>', x.lead ? `<span>líder ${esc(x.lead)}</span>` : ''])}
+      <div class="reu-xs">${reuCites(d, `q-${x.id}`, x.cites)}${x.description ? reuBody(`b-${x.id}`, 'Descripción', x.description) : ''}</div>
+      <div class="reu-kids"><div class="reu-kids-h">Sus issues · en GitHub, dentro de este proyecto</div>${x.issues.map((i) => reuIssueHTML(d, i, true)).join('')}</div></div>`).join('');
+  const comments = p.comments.map((c) => `<div class="reu-pr"><div class="reu-h"><span class="reu-kind com">comentario</span><b>en <button class="link" data-reuitem="${esc(`${d.repo}#${c.issue}`)}">#${c.issue}</button> <span class="reu-it">${esc(c.issueTitle)}</span></b></div>
+      ${c.why ? `<div class="reu-why">${esc(c.why)}</div>` : ''}
+      ${reuMeta([c.cycle ? `<span>${LIN_ICON} lo pasa a ${esc(REU_CYCLE[c.cycle])}</span>` : ''])}
+      <div class="reu-xs">${reuCites(d, `q-${c.id}`, c.cites)}${reuBody(`b-${c.id}`, 'Comentario', c.body)}</div></div>`).join('');
+  const discarded = p.discarded.map((x, i) => `<div class="reu-disc"><b>${esc(x.topic)}</b><span class="reu-why">${esc(x.why)}</span><div class="reu-xs">${reuCites(d, `d-${i}`, x.cites)}</div></div>`).join('');
+  return `${p.summary ? `<p class="reu-summary">${esc(p.summary)}</p>` : ''}
+    ${sec('Proyectos', p.projects.length, projects, 'en Linear: GitHub no tiene proyectos')}
+    ${sec('Issues', p.issues.length, p.issues.map((i) => reuIssueHTML(d, i)).join(''))}
+    ${sec('En issues que ya existen', p.comments.length, comments)}
+    ${sec('Descartado', p.discarded.length, `<div class="reu-discs">${discarded}</div>`, 'lo que se habló y no pide trabajo nuevo')}
+    <p class="note">La revisión — marcar, editar y crear lo aprobado en GitHub y Linear — llega en la próxima entrega de #62.</p>`;
+}
+
+// What each line of the notes is cited by.
+function reuCitedBy(d) {
+  const by = {};
+  const add = (cites, label) => { for (const c of cites) (by[c] ??= new Set()).add(label); };
+  const p = d.proposals;
+  if (!p) return by;
+  for (const x of p.projects) {
+    add(x.cites, 'proyecto');
+    for (const i of x.issues) add(i.cites, 'proyecto');
+  }
+  for (const i of p.issues) add(i.cites, 'issue');
+  for (const c of p.comments) add(c.cites, `#${c.issue}`);
+  for (const x of p.discarded) add(x.cites, 'descartado');
+  return by;
 }
 
 function reuNotesHTML(d) {
   const file = d.original
     ? `<div class="reu-src"><span class="fi">${esc(d.source.kind === 'docx' ? 'DOCX' : d.source.kind === 'pdf' ? 'PDF' : 'TXT')}</span><div><span class="nm">${esc(d.source.name ?? '')}</span><small>${esc(reuSource(d))} · ${esc(reuChars(d.chars))}</small></div><a class="btn-s" href="${esc(reuPath(d.number, '/original'))}" download>Descargar original</a></div>`
     : `<p class="m pd-note">Pegadas en el tablero · ${esc(reuChars(d.chars))}.</p>`;
-  return `${file}<div class="reu-notes">${esc(d.text)}</div>`;
+  const by = reuCitedBy(d);
+  const lines = reuLines(d.text).map((line, i) => {
+    const tags = by[i + 1];
+    return `<div class="reu-line ${tags ? 'cited' : ''}" id="reu-l${i + 1}"><span class="n">${i + 1}</span><span class="t">${esc(line)}${tags ? `<span class="tags">${esc([...tags].join(', '))}</span>` : ''}</span></div>`;
+  }).join('');
+  return `${file}<div class="reu-notes">${lines}</div>`;
 }
 
 function reuActivityHTML(d) {
-  const item = (cls, icon, title, at) => `<li class="pd-ev ${cls}"><span class="ic">${PED_ICON[icon]}</span><div class="h"><b>${title}</b><span class="tm" title="${esc(when(at))}">${esc(hhmm(at))}</span></div></li>`;
-  return `<ol class="pd-tl">${d.events.map((e) => (e.kind === 'uploaded'
-    ? item('person', 'person', `${esc(e.by)} subió las notas`, e.at)
-    : '')).join('')}</ol>`;
+  const item = (cls, icon, title, at, extra = '') => `<li class="pd-ev ${cls}"><span class="ic">${PED_ICON[icon]}</span><div class="h"><b>${title}</b><span class="tm" title="${esc(when(at))}">${esc(hhmm(at))}</span></div>${extra}</li>`;
+  const events = d.events.map((e) => {
+    switch (e.kind) {
+      case 'uploaded': return { at: e.at, html: item('person', 'person', `${esc(e.by)} subió las notas`, e.at) };
+      case 'retried': return { at: e.at, html: item('person', 'person', `${esc(e.by)} pidió leerla de nuevo`, e.at) };
+      case 'worker': return { at: e.at, html: item('small', 'wait', e.by === 'tick' ? 'El tick la vio sin worker y lanzó otro' : 'Lanzó el worker que la lee', e.at) };
+      case 'read': return { at: e.at, html: item('ok', 'ok', `Propuso ${[e.projects ? plural(e.projects, 'proyecto', 'proyectos') : '', e.issues ? plural(e.issues, 'issue', 'issues') : '', e.comments ? plural(e.comments, 'comentario', 'comentarios') : ''].filter(Boolean).join(', ') || 'nada'}`, e.at, `<div class="m">${esc(plural(e.discarded, 'descartado', 'descartados'))}</div>`) };
+      case 'failed': return { at: e.at, html: item('crit', 'crit', 'La lectura falló', e.at, `<div class="bx err">${esc(e.error)}</div>`) };
+      case 'mail': return { at: e.at, html: item(e.ok ? 'small' : 'crit', 'mail', e.ok ? 'Correo al equipo del repo' : 'No salió el correo al equipo', e.at) };
+      default: return null;
+    }
+  }).filter(Boolean);
+  const runs = d.runs.map((run) => ({ at: run.startedAt, html: item('run', 'run', 'ronin leyó las notas', run.startedAt, pedRunCard(run)) }));
+  return `<ol class="pd-tl">${[...events, ...runs].sort((a, b) => Date.parse(a.at) - Date.parse(b.at)).map((x) => x.html).join('')}</ol>`;
+}
+
+function reuRunsHTML(d) {
+  if (!d.runs.length) return '<p class="note">Sin corridas en los últimos 14 días.</p>';
+  const open = S.reu.run;
+  const list = d.runs.map((run) => `<div class="pd-runrow ${open?.runId === run.runId ? 'cur' : ''}"><span class="tm">${esc(when(run.startedAt))}</span>${pedRunCard(run)}</div>`).join('');
+  if (!open) return list;
+  const body = open.summary
+    ? `<div class="tx pd-tx">${open.lines.map(step).join('') || '<div class="empty">El agente todavía no hizo nada.</div>'}${ending(open.summary)}</div>`
+    : `<div class="empty">${open.error ? esc(open.error) : 'Cargando la corrida…'}</div>`;
+  return `<div class="pd-runview"><div class="pd-runbar"><b>${esc(typeName(open.summary?.taskType ?? ''))}</b><span class="m">${open.summary ? esc(when(open.summary.startedAt)) : ''}</span><button class="btn-s" data-prunx>Cerrar</button></div>${body}</div>${list}`;
 }
 
 function reuNowHTML(d) {
-  if (d.status !== 'pending') return '';
-  return `<div class="pd-now waiting"><div class="k">${PED_ICON.wait} Ahora</div><div class="t">Las notas esperan a ronin</div>
-    <div class="d">ronin todavía no lee las notas: eso llega en la próxima entrega de #62. Por ahora quedan guardadas en el runner.</div></div>`;
+  const running = d.runs.find((run) => run.state === 'running');
+  if (d.status === 'pending' || d.status === 'reading') {
+    return `<div class="pd-now running"><div class="k">${dotClass('live')} Ahora · ${d.status === 'reading' ? 'ronin la está leyendo' : 'en cola para ronin'}</div>
+      <div class="t">${d.status === 'reading' ? 'Lee las notas contra los issues abiertos, Linear y el código' : 'Espera un lugar libre para leerla'}</div>
+      ${running ? `<div class="feed">${running.lastStep ? `▸ ${esc(running.lastStep)}` : 'Arrancando…'}</div><div class="acts"><button class="btn-s" data-prun="${esc(running.runId)}">Ver la corrida</button></div>` : '<div class="d">Suele tardar unos minutos. Al terminar, el equipo del repo recibe un correo si hay algo que revisar.</div>'}</div>`;
+  }
+  if (d.status === 'failed') {
+    const last = d.events.filter((e) => e.kind === 'failed').at(-1);
+    return `<div class="pd-now failed"><div class="k">${PED_ICON.crit} Ahora · falló la lectura</div><div class="t">ronin no pudo leer las notas</div>
+      ${last ? `<div class="err">${esc(last.error)}</div>` : ''}<div class="acts"><button class="btn-s primary" data-reuretry ${S.reu.retrying ? 'disabled' : ''}>${S.reu.retrying ? 'Pidiendo…' : 'Leerla de nuevo'}</button></div></div>`;
+  }
+  if (d.status === 'empty') {
+    return `<div class="pd-now"><div class="k">${PED_ICON.ok} Leída</div><div class="t">No salió trabajo nuevo de esta reunión</div><div class="d">ronin no propuso nada y no mandó correo. Lo que se habló está abajo, con el motivo.</div></div>`;
+  }
+  return '';
 }
 
 function reuSideHTML(d) {
@@ -3234,7 +3367,8 @@ function reuSideHTML(d) {
       <dt>Subida</dt><dd>${esc(d.by)}<small>${esc(when(d.createdAt))}</small></dd>
       <dt>Notas</dt><dd>${esc(reuSource(d))}<small>${esc(reuChars(d.chars))}</small></dd>
       ${d.link && /^https?:\/\//.test(d.link) ? `<dt>Link</dt><dd><a href="${esc(d.link)}" target="_blank" rel="noopener noreferrer">${esc(d.link.replace(/^https?:\/\//, '').slice(0, 40))} ↗</a></dd>` : ''}
-    </dl></div></div>`;
+    </dl></div>
+    ${d.runs.length ? `<div class="pd-card"><h3>Corridas</h3><div class="pd-costs">${d.runs.slice().reverse().map((run) => `<div><span>${esc(typeName(run.taskType))}</span><span>${run.costUsd !== undefined ? esc(money(run.costUsd)) : run.state === 'running' ? 'en curso' : '—'}</span></div>`).join('')}</div></div>` : ''}</div>`;
 }
 
 function reunionHTML() {
@@ -3242,13 +3376,29 @@ function reunionHTML() {
   const entry = S.reu.detail[n];
   const d = entry?.data;
   if (!d) return `<div class="today pd">${entry?.error ? `<p class="bad">${esc(entry.error)}</p>` : '<div class="empty">Cargando…</div>'}</div>`;
-  const tabs = [['notas', 'Notas'], ['act', 'Actividad']];
-  const body = S.reu.tab === 'act' ? reuActivityHTML(d) : reuNotesHTML(d);
+  const total = d.proposals ? d.proposals.projects.length + d.proposals.issues.length + d.proposals.comments.length : 0;
+  const tabs = [...(d.proposals ? [['props', 'Propuestas', total]] : []), ['notas', 'Notas'], ['act', 'Actividad'], ['runs', 'Corridas', d.runs.length]];
+  const tab = tabs.some(([k]) => k === S.reu.tab) ? S.reu.tab : tabs[0][0];
+  const body = tab === 'props' ? reuProposalsHTML(d) : tab === 'act' ? reuActivityHTML(d) : tab === 'runs' ? reuRunsHTML(d) : reuNotesHTML(d);
   return `<div class="head pd-head"><div class="crumb"><button class="link" data-reupage>Reuniones</button> / <i style="background:${repoColor(d.repo)}"></i>${esc(repoShort(d.repo))}</div>
       <div class="row"><h1>${esc(d.title)} <span class="n">R-${d.number}</span></h1></div>
       <div class="state">${reuChip(d)}${d.at ? `<span>${esc(when(d.at))}</span>` : ''}<span class="m">subida por ${esc(d.by)} ${esc(ago(d.createdAt))}</span></div></div>
-    <div class="doctabs" role="tablist">${tabs.map(([k, label]) => `<button class="doctab" role="tab" data-reutab="${k}" aria-selected="${S.reu.tab === k}">${label}</button>`).join('')}</div>
-    <div class="pd-body"><div class="pd-cols"><div class="pd-main">${reuNowHTML(d)}${body}</div>${reuSideHTML(d)}</div></div>`;
+    <div class="doctabs" role="tablist">${tabs.map(([k, label, c]) => `<button class="doctab" role="tab" data-reutab="${k}" aria-selected="${tab === k}">${label}${c ? ` <span class="c">${c}</span>` : ''}</button>`).join('')}</div>
+    <div class="pd-body"><div class="pd-cols"><div class="pd-main">${tab === 'runs' ? '' : reuNowHTML(d)}${body}</div>${reuSideHTML(d)}</div></div>`;
+}
+
+async function retryReunion(n) {
+  S.reu.retrying = true;
+  renderCenter();
+  try {
+    await api(reuPath(n, '/reintentar'), { method: 'POST', body: '{}' });
+    toast(`Listo: ronin vuelve a leer R-${n}.`);
+  } catch (error) {
+    if (error instanceof Unauthorized) return showLogin();
+    toast(`No se pudo: ${error.message}`);
+  }
+  S.reu.retrying = false;
+  await loadReunion(n);
 }
 
 function wireReuniones() {
@@ -3259,7 +3409,32 @@ function wireReuniones() {
   }
   center.querySelector('[data-reunew]')?.addEventListener('click', openUpload);
   center.querySelector('[data-reupage]')?.addEventListener('click', openReuniones);
+  center.querySelector('[data-reuretry]')?.addEventListener('click', () => retryReunion(S.reu.n));
   for (const b of center.querySelectorAll('[data-reutab]')) b.onclick = () => { S.reu.tab = b.dataset.reutab; renderCenter(); };
+  for (const b of center.querySelectorAll('[data-reuopen]')) b.onclick = () => { S.reu.open[b.dataset.reuopen] = !S.reu.open[b.dataset.reuopen]; renderCenter(); };
+  for (const b of center.querySelectorAll('[data-reuitem]')) b.onclick = () => select(b.dataset.reuitem);
+  for (const b of center.querySelectorAll('[data-reuline]')) {
+    b.onclick = () => {
+      S.reu.tab = 'notas';
+      renderCenter();
+      const line = $(`#reu-l${b.dataset.reuline}`);
+      if (line) {
+        line.scrollIntoView({ block: 'center' });
+        line.classList.add('flash');
+        setTimeout(() => line.classList.remove('flash'), 1600);
+      }
+    };
+  }
+  for (const b of center.querySelectorAll('[data-prun]')) {
+    b.onclick = () => {
+      S.reu.tab = 'runs';
+      S.reu.run = { runId: b.dataset.prun };
+      renderCenter();
+      $('#center .pd-body')?.scrollTo(0, 0);
+      loadReunionRun(b.dataset.prun);
+    };
+  }
+  center.querySelector('[data-prunx]')?.addEventListener('click', () => { S.reu.run = null; renderCenter(); });
 }
 
 // The upload dialog: a file, or the text pasted.
@@ -3630,6 +3805,19 @@ async function loadDetail(id) {
 }
 
 async function select(id) {
+  // A meeting's run opens the meeting's page, on that run (#62).
+  const reu = /:meeting-read:reunión R-(\d+)/.exec(id);
+  if (reu) {
+    const runId = S.pendingRun;
+    S.pendingRun = null;
+    openReunion(Number(reu[1]));
+    if (runId) {
+      S.reu.tab = 'runs';
+      S.reu.run = { runId };
+      loadReunionRun(runId);
+    }
+    return;
+  }
   // A portal request's run (Hoy's timeline) opens the request's page, on that run (#132).
   const ped = /:portal-(?:request|prototype):pedido P-(\d+)/.exec(id);
   if (ped) {

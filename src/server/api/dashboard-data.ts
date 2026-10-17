@@ -35,6 +35,7 @@ export interface RunSummary {
   issueNumber?: number;
   prNumber?: number;
   portalRequest?: number;
+  meeting?: number;
   sliceIndex?: number;
   sliceTitle?: string;
   model?: string;
@@ -96,6 +97,7 @@ export function summarizeRun(lines: RunLine[]): RunSummary | null {
     ...(pick<number>('issueNumber') !== undefined ? { issueNumber: pick<number>('issueNumber') } : {}),
     ...(pick<number>('prNumber') !== undefined ? { prNumber: pick<number>('prNumber') } : {}),
     ...(portalRequest !== undefined ? { portalRequest } : {}),
+    ...(pick<number>('meeting') !== undefined ? { meeting: pick<number>('meeting') } : {}),
     ...(pick<number>('sliceIndex') !== undefined ? { sliceIndex: pick<number>('sliceIndex'), sliceTitle: pick<string>('sliceTitle') } : {}),
     ...(pick<string>('model') ? { model: pick<string>('model') } : {}),
     ...(pick<string>('effort') ? { effort: pick<string>('effort') } : {}),

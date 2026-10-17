@@ -63,6 +63,7 @@ import { maybeLaunchNightlyExploration } from './exploration/index.js';
 import { sweepPreviews } from './preview/index.js';
 import { followPortalIssues } from './portal/follow.js';
 import { sweepPortalRequests } from './portal/launch.js';
+import { sweepMeetings } from './meetings/launch.js';
 import { sweepAutoMerge } from './commands/index.js';
 import { checkInterviews, startInterview } from './slices/index.js';
 import { findReleasesNeedingChangelog, type ChangelogCandidate } from './changelog/index.js';
@@ -1287,6 +1288,8 @@ async function tickOneRepo(scope?: Scope): Promise<void> {
 export async function tick(): Promise<void> {
   // Portal requests (#114) whose worker died: across every repo, once.
   await sweepPortalRequests().catch((error) => log.error('portal: no se pudieron revisar los pedidos en curso', error));
+  // Meetings (#62) still to read whose worker died, likewise.
+  await sweepMeetings().catch((error) => log.error('reuniones: no se pudieron revisar las reuniones por leer', error));
   const repos = await loadRepos();
   for (const repo of repos) {
     try {

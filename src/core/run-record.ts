@@ -22,6 +22,8 @@ export interface RunContext {
   prNumber?: number;
   // A request of the portal (P-n), whose runs have no issue or PR (#132).
   portalRequest?: number;
+  // A meeting whose notes ronin read (R-n, #62).
+  meeting?: number;
   sliceIndex?: number;
   sliceTitle?: string;
   model?: string;
@@ -69,7 +71,7 @@ export class RunRecord implements RunSink {
   private broken = false;
 
   private constructor(context: RunContext, now: Date) {
-    const subject = context.issueNumber ?? context.prNumber ?? (context.portalRequest === undefined ? undefined : `p${context.portalRequest}`);
+    const subject = context.issueNumber ?? context.prNumber ?? (context.portalRequest === undefined ? (context.meeting === undefined ? undefined : `r${context.meeting}`) : `p${context.portalRequest}`);
     this.runId = [stamp(now), context.taskType, ...(subject === undefined ? [] : [subject]), randomBytes(2).toString('hex')].join('-');
     this.path = join(logsDir(), 'runs', localDay(now), `${this.runId}.jsonl`);
     this.startedAt = now;

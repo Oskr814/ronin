@@ -2,6 +2,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { existsSync } from 'node:fs';
 import { config } from '../../core/config.js';
+import { log } from '../../core/logger.js';
 import { loadRepos } from '../../core/repos.js';
 import { accountName } from '../../core/claude-usage.js';
 import { sees, type Access } from './access.js';
@@ -27,7 +28,7 @@ import { missingPortalConfig } from '../portal.js';
 import { listUsers, type PortalUser } from '../../portal/accounts.js';
 import { getRequest, listRequests } from '../../portal/requests.js';
 import { isOpen, requestDetail, requestImage, requestPatch, requestRow } from './dashboard-portal.js';
-import { DuplicateMeeting, createMeeting, getMeeting, listMeetings } from '../../meetings/index.js';
+import { DuplicateMeeting, createMeeting, getMeeting, launchMeetingWorker, listMeetings, retryMeeting } from '../../meetings/index.js';
 import { MAX_UPLOAD_BODY, MeetingUploadError, meetingDetail, meetingOriginal, meetingRow, parseUpload } from './dashboard-meetings.js';
 
 // The dashboard's data (#65), all behind the session (tailnet.ts checks it
@@ -59,6 +60,7 @@ import { MAX_UPLOAD_BODY, MeetingUploadError, meetingDetail, meetingOriginal, me
 //   POST /api/reuniones              uploads one: the notes as a file or pasted
 //   GET /api/reuniones/<n>           one of them, with its notes' text
 //   GET /api/reuniones/<n>/original  the file as it was uploaded, to download
+//   POST /api/reuniones/<n>/reintentar  reads it again, after its reading failed
 
 // How far back the sidebar and an item's history look. Run records are kept
 // 14 days (scripts/setup-cron.sh).
@@ -117,8 +119,8 @@ export async function snapshot(login: string): Promise<unknown> {
     portalAdmin: access.admin && missingPortalConfig(config.portal).length === 0,
     // The portal's requests still going, for the sidebar, and how many there are in all (#132).
     ...(await portalSummary(runs)),
-    // The meetings ronin hasn't read yet (#62).
-    reunionesPendientes: (await visibleMeetings()).filter((m) => m.status === 'pending').length,
+    // The meetings that wait on someone to review what ronin proposed (#62).
+    reunionesPorRevisar: (await visibleMeetings()).filter((m) => m.status === 'review').length,
     repos,
     // The queue and the Claude accounts, only of the repos it sees.
     runner: { slots: { used: slotsInUse(), limit: config.tickConcurrency }, queue: readQueue().filter((job) => !job.repo || repos.includes(job.repo)), tick: readTickInfo() },
@@ -167,7 +169,7 @@ async function reuniones(res: ServerResponse, path: string): Promise<void> {
     return;
   }
   if (!match[2]) {
-    json(res, 200, await meetingDetail(meeting));
+    json(res, 200, await meetingDetail(meeting, listRuns(HISTORY_DAYS)));
     return;
   }
   const original = await meetingOriginal(meeting);
@@ -188,7 +190,9 @@ async function postReunion(req: IncomingMessage, res: ServerResponse, session: S
   }
   try {
     const meeting = await createMeeting(await parseUpload(body, await visibleRepos(), session.login));
-    json(res, 200, meetingRow(meeting));
+    // ronin reads it right away; if the launch fails, the tick does.
+    await launchMeetingWorker(meeting.number).catch((error) => log.error(`reuniones: no se pudo lanzar el worker de R-${meeting.number}`, error));
+    json(res, 200, meetingRow((await getMeeting(meeting.number)) ?? meeting));
   } catch (error) {
     if (error instanceof DuplicateMeeting) json(res, 409, { error: error.message, number: error.number });
     else if (error instanceof MeetingUploadError) json(res, 400, { error: error.message });
@@ -590,6 +594,17 @@ async function route(req: IncomingMessage, res: ServerResponse, path: string, se
   }
   if (path === '/api/reuniones' && req.method === 'POST') {
     await postReunion(req, res, session);
+    return true;
+  }
+  const retry = /^\/api\/reuniones\/(\d+)\/reintentar$/.exec(path);
+  if (retry && req.method === 'POST') {
+    const meeting = await getMeeting(Number(retry[1]));
+    if (!meeting || !sees(currentAccess(), meeting.repo)) json(res, 404, { error: 'no existe esa reunión' });
+    else if (await retryMeeting(meeting.number, login)) {
+      await launchMeetingWorker(meeting.number).catch((error) => log.error(`reuniones: no se pudo lanzar el worker de R-${meeting.number}`, error));
+      json(res, 200, { ok: true });
+    }
+    else json(res, 409, { error: 'esa reunión no falló: no hay nada que reintentar' });
     return true;
   }
   if (req.method === 'GET' && (path === '/api/reuniones' || path.startsWith('/api/reuniones/'))) {

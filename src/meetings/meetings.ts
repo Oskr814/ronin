@@ -11,10 +11,82 @@ import { notesHash, type Extracted } from './extract.js';
 // of another stays out.
 
 export type MeetingStatus =
-  // Uploaded: ronin hasn't read it yet.
-  'pending';
+  // Uploaded: its worker reads it as soon as there's a slot.
+  | 'pending'
+  // ronin is reading it (read.ts).
+  | 'reading'
+  // ronin proposed work out of it: someone reviews it.
+  | 'review'
+  // Nothing to do came out of it: ronin proposed nothing.
+  | 'empty'
+  // The reading failed: someone can ask for it again.
+  | 'failed';
 
-export type MeetingEvent = { kind: 'uploaded'; by: string; at: string };
+// Where a proposed issue goes in Linear: the team's current cycle or the next one.
+export type ProposedCycle = 'current' | 'next';
+
+// What ronin proposes out of a meeting (proposals.ts checks what its agent
+// wrote). `cites`: the lines of the notes that justify it, numbered from 1
+// (noteLines).
+export interface ProposedIssue {
+  id: string;
+  title: string;
+  body: string;
+  why: string;
+  cites: number[];
+  // An existing Linear project, by name; an issue of a new project goes inside it instead.
+  project?: string;
+  cycle?: ProposedCycle;
+}
+
+export interface ProposedProject {
+  id: string;
+  name: string;
+  description: string;
+  why: string;
+  cites: number[];
+  // A person of the Linear team, by name.
+  lead?: string;
+  issues: ProposedIssue[];
+}
+
+// On an issue that's already open: what the meeting adds to it.
+export interface ProposedComment {
+  id: string;
+  issue: number;
+  issueTitle: string;
+  body: string;
+  why: string;
+  cites: number[];
+  cycle?: ProposedCycle;
+}
+
+// What was talked about and asks for no new work, and why.
+export interface Discarded {
+  topic: string;
+  why: string;
+  cites: number[];
+}
+
+export interface Proposals {
+  // What the meeting was about, in ronin's words.
+  summary: string;
+  projects: ProposedProject[];
+  issues: ProposedIssue[];
+  comments: ProposedComment[];
+  discarded: Discarded[];
+  at: string;
+}
+
+export type MeetingEvent = { at: string } & (
+  | { kind: 'uploaded'; by: string }
+  // Who launched its worker: the server on upload or retry, the tick when the one before died.
+  | { kind: 'worker'; by: 'server' | 'tick'; pid: number }
+  | { kind: 'retried'; by: string }
+  | { kind: 'read'; projects: number; issues: number; comments: number; discarded: number }
+  | { kind: 'failed'; error: string }
+  | { kind: 'mail'; ok: boolean }
+);
 
 export interface MeetingSource {
   kind: Extracted['kind'] | 'pasted';
@@ -41,6 +113,9 @@ export interface Meeting {
   // Of the notes' text (notesHash): the same notes aren't uploaded twice to a repo.
   hash: string;
   status: MeetingStatus;
+  // The worker reading it, so the tick can tell when it died.
+  worker?: { pid: number; since: string };
+  proposals?: Proposals;
   events: MeetingEvent[];
   createdAt: string;
   updatedAt: string;
@@ -77,6 +152,34 @@ export async function listMeetings(): Promise<Meeting[]> {
 }
 
 export const readNotes = (n: number) => readFile(notesPath(n), 'utf8');
+
+// The notes' lines with text, numbered from 1: what ronin cites them by.
+export const noteLines = (text: string) => text.split('\n').map((line) => line.trim()).filter(Boolean);
+
+class MissingMeeting extends Error {}
+const missing = (): Meeting => {
+  throw new MissingMeeting('No existe esa reunión.');
+};
+
+export function updateMeeting<R>(n: number, fn: (meeting: Meeting) => R | Promise<R>): Promise<R> {
+  return withJson(meetingPath(n), missing, async (meeting) => {
+    const result = await fn(meeting);
+    meeting.updatedAt = new Date().toISOString();
+    return result;
+  });
+}
+
+// Distributive, so each event kind keeps its own fields.
+type NewEvent = MeetingEvent extends infer E ? (E extends MeetingEvent ? Omit<E, 'at'> : never) : never;
+
+export function addEvent(meeting: Meeting, event: NewEvent, now = new Date()): void {
+  meeting.events.push({ ...event, at: now.toISOString() } as MeetingEvent);
+}
+
+export const noteEvent = (n: number, event: NewEvent) => updateMeeting(n, (m) => addEvent(m, event));
+
+// An error's first line, short enough for the activity.
+export const errorLine = (error: unknown) => String((error as Error)?.message ?? error).split('\n')[0].slice(0, 300);
 
 export const ORIGINAL_EXT: Record<Extracted['kind'], string> = { pdf: 'pdf', docx: 'docx', text: 'txt' };
 
