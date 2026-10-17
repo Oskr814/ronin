@@ -5,8 +5,8 @@ import type { RepoEntry } from '../../core/repo-context.js';
 import type { RepoGithub } from './dashboard-github.js';
 
 // What the dashboard reads from Linear (#101), per repo with an API key: the
-// Linear issue of each issue ronin manages (its project and cycle, for the
-// sidebar and the ficha) and the team's current cycle (for Hoy). Cached like
+// Linear issue of each open issue (its project and cycle, for the sidebar and
+// the ficha) and the team's current cycle (for Hoy). Cached like
 // the GitHub read (dashboard-github.ts), and failing the same way: the
 // previous read stays, with the error. A repo without a key reads nothing.
 
@@ -21,7 +21,8 @@ export interface RepoLinear {
 }
 
 async function fetchLinear(entry: RepoEntry, key: string, gh: RepoGithub | undefined): Promise<RepoLinear> {
-  const numbers = (gh?.issues ?? []).filter((i) => i.status !== 'other').map((i) => i.number);
+  // Every open issue: the sidebar finds any of them, and filters them by cycle or project (#100).
+  const numbers = [...new Set([...(gh?.issues ?? []), ...(gh?.openIssues ?? [])].map((i) => i.number))];
   const [issues, cycle] = await Promise.all([linearIssuesFor(entry, key, numbers), currentCycle(entry, key)]);
   const anyUrl = [...issues.values()][0]?.url ?? cycle?.issues[0]?.url;
   const workspace = anyUrl ? /^https:\/\/linear\.app\/([^/]+)\//.exec(anyUrl)?.[1] : undefined;

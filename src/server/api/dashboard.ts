@@ -2,6 +2,8 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { existsSync } from 'node:fs';
 import { config } from '../../core/config.js';
 import { loadRepos } from '../../core/repos.js';
+import { itemKindOf } from '../../core/github.js';
+import { withActiveRepo } from '../../core/repo-context.js';
 import { itemKey, listRuns, readQueue, readRunLines, readTickInfo, readUsage, runPath, slotsInUse, summarizeRun } from './dashboard-data.js';
 import { repoGithub } from './dashboard-github.js';
 import { cycleView, repoLinear } from './dashboard-linear.js';
@@ -97,7 +99,9 @@ async function itemContext(id: string) {
   const runs = listRuns(HISTORY_DAYS).filter((run) => keys.includes(itemKey(run)));
   const changedSince = Math.max(0, ...runs.map((run) => Date.parse(run.endedAt ?? run.startedAt)));
   const runKind = runs[0] ? (runs[0].issueNumber !== undefined ? 'issue' : 'pr') : undefined;
-  const ref = resolveItem(Number(match[2]), gh, runKind);
+  // Neither listed nor run on lately (opened by its number): GitHub says what it is.
+  const number = Number(match[2]);
+  const ref = resolveItem(number, gh, runKind) ?? resolveItem(number, undefined, (await withActiveRepo(entry, () => itemKindOf(number))) ?? undefined);
   return ref && { entry, ref, gh, detail: await itemDetail(entry, ref, changedSince) };
 }
 

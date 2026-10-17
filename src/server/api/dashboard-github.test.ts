@@ -2,14 +2,18 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const listOpenManagedIssues = vi.fn();
 const listOpenPrsWithChecks = vi.fn();
+const listOpenIssues = vi.fn();
+const listPrClosingIssues = vi.fn();
 vi.mock('../../core/github.js', () => ({
   listOpenManagedIssues: () => listOpenManagedIssues(),
   listOpenPrsWithChecks: () => listOpenPrsWithChecks(),
+  listOpenIssues: () => listOpenIssues(),
+  listPrClosingIssues: () => listPrClosingIssues(),
 }));
 vi.mock('../../core/local-state.js', () => ({ getBlocks: async () => ({}) }));
 vi.mock('../../preview/index.js', () => ({ listPreviewStates: async () => [] }));
 
-const { repoGithub, resetGithubCache } = await import('./dashboard-github.js');
+const { linkPrs, repoGithub, resetGithubCache } = await import('./dashboard-github.js');
 
 const ENTRY = { productRepo: 'acme/product', productRepoPath: '/tmp/x' };
 
@@ -19,6 +23,8 @@ beforeEach(() => {
     { number: 879, title: 'Validar stock', url: 'u', labels: ['ronin', 'ronin:in-progress'], body: '- [x] Slice 1: Reserva — PR: #881\n- [ ] Slice 2: Validar — PR: _pending_' },
   ]);
   listOpenPrsWithChecks.mockReset().mockResolvedValue([]);
+  listOpenIssues.mockReset().mockResolvedValue([{ number: 879, title: 'Validar stock', url: 'u', labels: ['ronin'] }, { number: 405, title: 'Otro', url: 'v', labels: [] }]);
+  listPrClosingIssues.mockReset().mockResolvedValue({});
 });
 
 describe('repoGithub', () => {
@@ -47,5 +53,35 @@ describe('repoGithub', () => {
     await repoGithub(ENTRY, Date.now() + 60_000);
     await vi.waitFor(async () => expect((await repoGithub(ENTRY))?.error).toBe('HTTP 502: Bad Gateway'));
     expect((await repoGithub(ENTRY))?.issues).toHaveLength(1);
+  });
+
+  it('reads every open issue too, and the issue each PR belongs to', async () => {
+    listOpenPrsWithChecks.mockResolvedValue([{ number: 881, headRefName: 'ronin/879/slice-1' }, { number: 910, headRefName: 'feat/actualizar' }]);
+    listPrClosingIssues.mockResolvedValue({ 910: [405] });
+    const data = await repoGithub(ENTRY);
+    expect(data?.openIssues.map((i) => i.number)).toEqual([879, 405]);
+    expect(data?.prIssue).toEqual({ 881: 879, 910: 405 });
+  });
+});
+
+describe('linkPrs', () => {
+  const issues = [{ number: 844, slices: [{ index: 0, title: 's', checked: false, prNumber: 849 }] }];
+  const open = new Set([844, 405, 228, 788]);
+
+  it("links a ronin slice to its issue, then by what the PR closes, then by its branch's number", () => {
+    expect(linkPrs([
+      { number: 849, headRefName: 'ronin/844/slice-1' },
+      { number: 910, headRefName: 'feat/actualizar-claude-md' },
+      { number: 920, headRefName: 'feat/405-algo' },
+      { number: 921, headRefName: 'valeria/228/slice-12' },
+    ], { 910: [788] }, issues, open)).toEqual({ 849: 844, 910: 788, 920: 405, 921: 228 });
+  });
+
+  it('leaves out a PR with no open issue to belong to', () => {
+    expect(linkPrs([
+      { number: 722, headRefName: 'feat/product-image-tag-scanner' },
+      { number: 911, headRefName: 'ronin/exploration/2026-10-16' },
+      { number: 930, headRefName: 'fix/999-cerrado' },
+    ], { 930: [999] }, issues, open)).toEqual({});
   });
 });

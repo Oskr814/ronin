@@ -475,12 +475,16 @@ Una página para ver qué está haciendo ronin sin recorrer GitHub issue por iss
 
 #### 15.1 Qué muestra
 
-- **Barra lateral.** Arriba, *Hoy*, *Corriendo ahora* y *En cola*. Después, *Necesitan a alguien* con los issues en `ronin:blocked`, y cada repo de `repos.json` con:
-  - Sus issues de tracking en curso, aunque no haya corrido un agente.
-  - El PR de exploración abierto.
-  - Lo demás que corrió en los últimos 3 días: la review de un PR de un humano, un pedido en un issue, el changelog.
+- **Barra lateral: solo issues (#100).** Arriba, *Hoy*, *Corriendo ahora* y *En cola*. Después, *Necesitan a alguien* con los issues en `ronin:blocked`, y cada repo de `repos.json` con:
+  - **Fijo arriba, el PR de exploración,** con su ícono: no tiene issue y es donde se revisan las fichas (15.12).
+  - **Sin buscar,** los issues de ronin (label `ronin`), aunque no haya corrido un agente, y los issues sobre los que ronin trabajó en los últimos 3 días (un pedido, una review del PR de una persona).
+  - **Buscando** (título, número, `RED-n` o el número de un PR), o filtrando por un ciclo o un proyecto de Linear (15.13), todos los issues abiertos del repo (`listOpenIssues`, en la misma lectura cacheada).
 
-  Cada fila lleva un punto de estado, el número, cuántas slices van mergeadas, la última línea del agente (o lo que espera: "esperando review en #881", "aprobado, falta el merge de #401") y hace cuánto. Un issue elegido, corriendo o bloqueado se despliega en sus slices.
+  **Los PRs viven en su issue** (`linkPrs` en `dashboard-github.ts`): una slice de ronin en el suyo; si no, el issue abierto que cierra (`closingIssuesReferences`, por GraphQL); si no, el issue abierto cuyo número lleva la rama (`feat/405-…`, `valeria/228/slice-12`). Las corridas sobre esos PRs cuentan como del issue. Buscar el número de un PR muestra su issue con la slice resaltada.
+
+  **Lo que no tiene issue:** un PR sin issue ni número en la rama, o el changelog, solo aparece mientras corre (*Corriendo ahora*) y en *Hoy*. Un número que no está en la lista ofrece *Abrir #N*: el servidor le pregunta a GitHub si es issue o PR (`itemKindOf`) y abre la ficha aunque esté cerrado.
+
+  Cada fila lleva un punto de estado, el número, cuántas slices van mergeadas (o el PR de una persona: "PR #910 de abdias98"), el `RED-n` y el proyecto si hay Linear, la última línea del agente (o lo que espera: "esperando review en #881", "conflictos en #904", "aprobado, falta el merge de #401") y hace cuánto. Un issue elegido, corriendo o bloqueado se despliega en sus slices.
 - **Centro: la ficha del ítem.** Pestañas, una por ítem abierto; al cargar se abren las de los agentes que corren. Cada una muestra la ficha del issue o PR, tenga corridas o no:
   - **Encabezado.** Título, repo, el link a GitHub y el botón *Acciones* (15.11). Debajo, chips con su estado. El PR del ítem (o, en un issue, el de la slice que avanza) suma si tiene conflictos con su base, sus checks, la review y si es draft. Un issue suma cuántas slices van mergeadas y qué espera.
   - **Actividad.** Una línea con la última corrida (estado, hace cuánto, duración, costo y el error si falló) y las anteriores de los últimos 14 días, cada una con su transcript. Si hay una en curso, una tarjeta con lo último que dijo el agente, sus últimos cuatro pasos y el reloj, que se sigue en vivo.

@@ -27,6 +27,7 @@ const STATE = {
   cut: ['crit', 'crit', 'se cortó'],
   blocked: ['crit', 'crit', 'bloqueado'],
   waiting: ['warn', 'warn', 'esperando a alguien'],
+  open: ['pending', 'idle', 'abierto'],
 };
 const SLICE_STATE = { merged: ['ok', 'mergeada'], open: ['warn', 'abierta'], pending: ['pending', 'pendiente'], closed: ['crit', 'PR cerrado sin mergear'] };
 const CHECK_STATE = { passed: ['ok', 'pasó'], pending: ['live', 'corriendo'], failed: ['crit', 'falló'] };
@@ -58,7 +59,7 @@ function duration(ms) {
 const money = (usd) => (usd < 0.01 ? 'menos de US$0,01' : `US$${usd.toFixed(2).replace('.', ',')}`);
 const pct = (fraction) => `${Math.round(fraction * 100)}%`;
 
-const S = { snap: null, today: null, sel: null, open: [], runIdx: {}, pendingRun: null, filter: null, q: '', itemRuns: {}, run: null, stream: null, detail: {}, view: {}, doc: {}, menu: false, dialog: null, expanded: new Set(), expl: {}, ficha: {}, fichaOpen: {}, fichaFilter: { tipo: 'todas', vp: 'todos' }, antes: {}, oldAfter: new Set(), lightbox: null, fmenu: false, fdialog: null, fdraft: {}, listas: {}, scope: 'all', project: '', attAll: false };
+const S = { snap: null, today: null, sel: null, open: [], runIdx: {}, pendingRun: null, filter: null, q: '', itemRuns: {}, run: null, stream: null, detail: {}, view: {}, doc: {}, menu: false, dialog: null, expanded: new Set(), expl: {}, ficha: {}, fichaOpen: {}, fichaFilter: { tipo: 'todas', vp: 'todos' }, antes: {}, oldAfter: new Set(), lightbox: null, fmenu: false, fdialog: null, fdraft: {}, listas: {}, scope: 'all', project: '', attAll: false, extra: {} };
 // The sidebar's Linear filter (#101), remembered per browser.
 try { Object.assign(S, JSON.parse(localStorage.getItem('ronin-scope') ?? '{}')); } catch { /* sin storage */ }
 function saveScope() {
@@ -89,7 +90,9 @@ function showLogin() {
 const repoIndex = (repo) => Math.max(0, (S.snap?.repos ?? []).indexOf(repo));
 const repoColor = (repo) => `var(--repo-${repoIndex(repo) % 4})`;
 const repoShort = (repo) => repo.split('/')[1] ?? repo;
-const itemById = (id) => S.snap?.items.find((item) => item.id === id);
+// `extra`: what was opened by its number without being in the list (#100):
+// a closed issue, a PR without an issue.
+const itemById = (id) => S.snap?.items.find((item) => item.id === id) ?? S.extra[id];
 
 // ---------- Linear (#101)
 const LIN_ICON = '<svg width="12" height="12" viewBox="0 0 100 100" aria-hidden="true" style="vertical-align:-1px;flex:none"><path fill="currentColor" d="M1.2 61.5a50 50 0 0 0 37.3 37.3zM.1 48.9l51 51a50 50 0 0 0 9.3-1.4L1.5 39.6A50 50 0 0 0 .1 48.9zm3.6-17.8 65.2 65.2a50 50 0 0 0 7.2-3.9L7.6 23.9a50 50 0 0 0-3.9 7.2zm8.4-12.2a50 50 0 1 1 69 69z"/></svg>';
@@ -192,16 +195,20 @@ function itemSub(item) {
   const parts = [itemRef(item)];
   if (item.slices?.length) parts.push(`${item.slices.filter((s) => s.status === 'merged').length} de ${item.slices.length} ${item.slices.length === 1 ? 'slice' : 'slices'}`);
   else if (item.kind === 'pr' && item.pr?.author && item.pr.author !== 'ronin-agent') parts.push(`de ${item.pr.author}`);
+  else if (item.kind === 'issue' && item.pr) parts.push(`PR #${item.pr.number}${item.pr.author && item.pr.author !== 'ronin-agent' ? ` de ${item.pr.author}` : ''}`);
   else if (item.kind !== 'other' && item.lastRun) parts.push(typeName(item.lastRun.taskType));
   return parts.filter(Boolean).join(', ');
 }
 
-function itemRow(item) {
+const EXPLORE_ICON = '<svg class="pin-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="m15 9-2 4-4 2 2-4z"/></svg>';
+
+// `hit`: the PR number the search found the issue by, whose slice shows highlighted.
+function itemRow(item, hit) {
   const last = itemLast(item);
-  const showSlices = item.slices?.length && (S.sel === item.id || item.status === 'running' || item.status === 'blocked');
-  const kids = showSlices ? `<div class="kids">${item.slices.map((slice) => `<button class="kid" data-id="${esc(item.id)}">${dotClass(SLICE_STATE[slice.status][0])}<span class="t">${slice.index + 1}. ${esc(slice.title)}</span><span class="age">${slice.prNumber ? `#${slice.prNumber}` : ''}</span></button>`).join('')}</div>` : '';
-  return `<button class="item" data-id="${esc(item.id)}" aria-current="${S.sel === item.id}">
-    ${dot(item.status)}<span class="t">${esc(item.title)}</span><span class="age" ${item.status === 'running' && item.lastRun ? `data-since="${esc(item.lastRun.startedAt)}"` : ''}>${esc(itemAge(item))}</span>
+  const showSlices = item.slices?.length && (S.sel === item.id || item.status === 'running' || item.status === 'blocked' || hit);
+  const kids = showSlices ? `<div class="kids">${item.slices.map((slice) => `<button class="kid ${hit && slice.prNumber === hit ? 'hit' : ''}" data-id="${esc(item.id)}">${dotClass(SLICE_STATE[slice.status][0])}<span class="t">${slice.index + 1}. ${esc(slice.title)}</span><span class="age">${slice.prNumber ? `#${slice.prNumber}` : ''}</span></button>`).join('')}</div>` : '';
+  return `<button class="item ${item.pinned ? 'pinned' : ''}" data-id="${esc(item.id)}" aria-current="${S.sel === item.id}" ${item.pinned ? 'title="PR de exploración: sus fichas se revisan acá"' : ''}>
+    ${item.pinned ? EXPLORE_ICON : dot(item.status)}<span class="t">${esc(item.title)}</span><span class="age" ${item.status === 'running' && item.lastRun ? `data-since="${esc(item.lastRun.startedAt)}"` : ''}>${esc(itemAge(item))}</span>
     <span class="sub">${esc(itemSub(item))}${item.linear ? `, <span class="red">${esc(item.linear.id)}</span>` : ''}${item.linear?.project && !S.project ? `, <span class="ptag"><i style="background:${projectColor(item.linear.project.id)}"></i>${esc(item.linear.project.name)}</span>` : ''}</span>
     ${last ? `<span class="last">${esc(last)}</span>` : ''}</button>${kids}`;
 }
@@ -215,15 +222,36 @@ function renderTree() {
       : `<div class="grp-empty">Nada en cola: todo lo que hay para hacer ya tiene lugar.</div>`);
     return;
   }
-  const q = S.q.toLowerCase();
-  const match = (item) => (!q || `${item.title} ${itemRef(item)} ${item.number ?? ''} ${item.lastRun ? typeName(item.lastRun.taskType) : ''}`.toLowerCase().includes(q)) && (S.filter !== 'running' || item.status === 'running') && inScope(item);
+  const q = S.q.trim().toLowerCase();
+  const num = /^#?(\d+)$/.exec(q)?.[1];
+  // The PR number an issue was found by (one of its slices or its PRs).
+  const prHit = (item) => (num && item.number !== Number(num) && [...(item.prs ?? []), ...(item.slices ?? []).map((sl) => sl.prNumber)].includes(Number(num)) ? Number(num) : null);
+  const matchQ = (item) => `${item.title} ${itemRef(item)} ${item.number ?? ''} ${item.linear?.id ?? ''}`.toLowerCase().includes(q) || prHit(item) !== null;
+  // Without searching, the listed ones (ronin's issues, the ones it worked
+  // on, the exploration PR); searching, or filtering by a Linear cycle or
+  // project, every open issue (#100). A PR without an issue or a changelog
+  // entry shows only while it runs.
+  const shown = (item) => {
+    if (S.filter === 'running') return item.status === 'running' && (!q || matchQ(item));
+    if (item.kind !== 'issue' && !item.pinned) return false;
+    if (q) return matchQ(item) && inScope(item);
+    if (S.scope === 'cycle' || S.project) return item.kind === 'issue' && inScope(item);
+    return item.listed;
+  };
+  const row = (item) => itemRow(item, prHit(item));
+  // Offered only when nothing has that number, as an issue or one of its PRs.
+  const found = num && S.snap.items.some((item) => item.number === Number(num) || prHit(item) !== null);
   let html = '';
-  const blocked = S.snap.items.filter((item) => item.status === 'blocked' && match(item));
-  if (blocked.length) html += `<div class="grp"><span>Necesitan a alguien</span><span class="n alert">${blocked.length}</span></div>` + blocked.map(itemRow).join('');
+  const blocked = S.snap.items.filter((item) => item.status === 'blocked' && shown(item));
+  if (blocked.length) html += `<div class="grp"><span>Necesitan a alguien</span><span class="n alert">${blocked.length}</span></div>` + blocked.map(row).join('');
   for (const repo of S.snap.repos) {
-    const items = S.snap.items.filter((item) => item.repo === repo && item.status !== 'blocked' && match(item));
+    const items = S.snap.items.filter((item) => item.repo === repo && item.status !== 'blocked' && shown(item)).sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
     html += `<div class="grp"><span class="sq" style="background:${repoColor(repo)}"></span><b>${esc(repoShort(repo))}</b><span class="n">${items.length}</span></div>`;
-    html += items.length ? items.map(itemRow).join('') : `<div class="grp-empty">${q || S.filter ? 'Nada coincide.' : S.scope === 'cycle' || S.project ? `Nada de ronin ${S.scope === 'cycle' ? 'en este ciclo' : 'en curso'}${S.project ? ' para este proyecto' : ''}.` : 'Nada en curso ni corridas en los últimos 3 días.'}</div>`;
+    html += items.length ? items.map(row).join('') : `<div class="grp-empty">${q || S.filter ? 'Nada coincide.' : S.scope === 'cycle' || S.project ? `Ningún issue abierto ${S.scope === 'cycle' ? 'en este ciclo' : ''}${S.project ? ' para este proyecto' : ''}.` : 'Nada en curso ni corridas en los últimos 3 días.'}</div>`;
+    // A number nothing listed has: open it anyway (a closed issue, a PR without an issue).
+    if (num && !found && safeRepo(repo)) {
+      html += `<button class="item open-n" data-id="${esc(`${repo}#${num}`)}"><span class="dot pending" aria-hidden="true"></span><span class="t">Abrir #${esc(num)}</span><span class="sub">${esc(repoShort(repo))}, aunque esté cerrado o no tenga issue</span></button>`;
+    }
   }
   tree.innerHTML = html;
   for (const button of tree.querySelectorAll('[data-id]')) button.onclick = () => select(button.dataset.id);
@@ -1272,7 +1300,7 @@ function attention() {
   const items = S.snap.items;
   const blocked = items.filter((i) => i.status === 'blocked');
   const waitedSince = (i) => Date.parse(i.lastRun?.endedAt ?? i.lastRun?.startedAt ?? '') || Date.now();
-  const review = items.filter((i) => i.kind === 'issue' && i.status === 'waiting' && i.pr && !i.pr.isDraft && i.pr.reviewDecision !== 'CHANGES_REQUESTED'
+  const review = items.filter((i) => i.kind === 'issue' && i.slices?.length && i.status === 'waiting' && i.pr && !i.pr.isDraft && i.pr.reviewDecision !== 'CHANGES_REQUESTED'
     && !i.pr.checks.some((c) => c.outcome !== 'passed')).sort((a, b) => waitedSince(a) - waitedSince(b));
   const exploration = items.filter((i) => i.kind === 'pr' && i.note === 'PR de exploración abierto');
   return { blocked, review, exploration, previews: S.snap.previews, waitedSince };
@@ -1758,6 +1786,9 @@ async function loadDetail(id) {
   try {
     entry.data = await api(`/api/items/${encodeURIComponent(id)}/detail`);
     entry.error = null;
+    const extra = S.extra[id];
+    const doc = extra && (entry.data.ref?.kind === 'pr' ? entry.data.pr : entry.data.issue);
+    if (doc) Object.assign(extra, { kind: entry.data.ref.kind, title: doc.title, url: doc.url, status: doc.state === 'OPEN' ? 'open' : 'ok' });
     if (entry.data.exploration) loadExploration(id);
   } catch (error) {
     if (error instanceof Unauthorized) return showLogin();
@@ -1770,6 +1801,8 @@ async function loadDetail(id) {
 }
 
 async function select(id) {
+  const n = /^(.+)#(\d+)$/.exec(id);
+  if (!itemById(id) && n) S.extra[id] = { id, repo: n[1], number: Number(n[2]), kind: 'issue', title: `#${n[2]}`, status: 'open', runs: 0, listed: false };
   S.sel = id;
   S.runIdx[id] = 0;
   delete S.view[id];

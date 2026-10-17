@@ -1,14 +1,14 @@
 import { config, LABEL_DIRECT_ISSUE, LABEL_STATES } from '../../core/config.js';
-import { listOpenManagedIssues, listOpenPrsWithChecks, type OpenPr } from '../../core/github.js';
+import { listOpenIssues, listOpenManagedIssues, listOpenPrsWithChecks, listPrClosingIssues, type OpenIssue, type OpenPr } from '../../core/github.js';
 import { getBlocks, type BlockRecord } from '../../core/local-state.js';
 import { log } from '../../core/logger.js';
 import { withActiveRepo, type RepoEntry } from '../../core/repo-context.js';
 import { listPreviewStates } from '../../preview/index.js';
 import { parseSlices, type Slice } from '../../slices/checklist.js';
 
-// What the dashboard reads from GitHub (#65), per repo, in two calls: the
-// open issues ronin manages, with their bodies (the slice checklist), and
-// every open PR with its checks. Plus what this runner keeps about them: the
+// What the dashboard reads from GitHub (#65), per repo: the open issues ronin
+// manages, with their bodies (the slice checklist); every open issue, for the
+// search (#100); and every open PR with its checks and the issues it closes. Plus what this runner keeps about them: the
 // reasons it blocked them (local state) and the previews it has up.
 //
 // Cached: several open tabs, each polling, never multiply GitHub's calls. A
@@ -40,7 +40,11 @@ export interface RepoGithub {
   repo: string;
   fetchedAt: string;
   issues: IssueView[];
+  // Every open issue, ronin's included.
+  openIssues: OpenIssue[];
   prs: OpenPr[];
+  // The open issue each open PR belongs to, by PR number (linkPrs).
+  prIssue: Record<number, number>;
   previews: PreviewView[];
   blocks: Record<string, BlockRecord>;
   error?: string;
@@ -52,22 +56,43 @@ function issueStatus(labels: string[]): IssueView['status'] {
   return 'other';
 }
 
+const BRANCH_NUMBER = /(?:^|[/_-])(\d+)(?=$|[/_-])/;
+
+// The issue a PR belongs to (#100): the slice of a ronin issue it is, else
+// the open issue it closes, else the open issue whose number its branch
+// carries ("feat/405-algo", "valeria/228/slice-12"). A PR with none of those
+// belongs to no issue.
+export function linkPrs(prs: Array<Pick<OpenPr, 'number' | 'headRefName'>>, closing: Record<number, number[]>, issues: Array<Pick<IssueView, 'number' | 'slices'>>, open: Set<number>): Record<number, number> {
+  const links: Record<number, number> = {};
+  for (const pr of prs) {
+    const slice = issues.find((i) => i.slices.some((s) => s.prNumber === pr.number));
+    const closes = (closing[pr.number] ?? []).find((n) => open.has(n));
+    const branch = Number(BRANCH_NUMBER.exec(pr.headRefName)?.[1]);
+    const issue = slice?.number ?? closes ?? (open.has(branch) ? branch : undefined);
+    if (issue !== undefined) links[pr.number] = issue;
+  }
+  return links;
+}
+
 async function fetchRepo(entry: RepoEntry): Promise<RepoGithub> {
   return withActiveRepo(entry, async () => {
-    const [issues, prs, previews, blocks] = await Promise.all([listOpenManagedIssues(), listOpenPrsWithChecks(), listPreviewStates(), getBlocks()]);
+    const [managed, openIssues, prs, closing, previews, blocks] = await Promise.all([listOpenManagedIssues(), listOpenIssues(), listOpenPrsWithChecks(), listPrClosingIssues(), listPreviewStates(), getBlocks()]);
     const ttl = config.previewTtlMinutes;
+    const issues = managed.map((issue) => ({
+      number: issue.number,
+      title: issue.title,
+      url: issue.url,
+      status: issueStatus(issue.labels),
+      direct: issue.labels.includes(LABEL_DIRECT_ISSUE),
+      slices: parseSlices(issue.body),
+    }));
     return {
       repo: entry.productRepo,
       fetchedAt: new Date().toISOString(),
-      issues: issues.map((issue) => ({
-        number: issue.number,
-        title: issue.title,
-        url: issue.url,
-        status: issueStatus(issue.labels),
-        direct: issue.labels.includes(LABEL_DIRECT_ISSUE),
-        slices: parseSlices(issue.body),
-      })),
+      issues,
+      openIssues,
       prs,
+      prIssue: linkPrs(prs, closing, issues, new Set([...openIssues, ...issues].map((i) => i.number))),
       previews: previews.map((p) => ({
         prNumber: p.prNumber,
         appName: p.appName,
@@ -103,7 +128,7 @@ export async function repoGithub(entry: RepoEntry, changedSince = 0, now = Date.
         log.error(`tablero: no se pudo leer GitHub para ${key}`, error);
         // Tried again on the next snapshot, not on every one of them.
         entryCache.readAt = Date.now();
-        const stale = entryCache.data ?? { repo: key, fetchedAt: '', issues: [], prs: [], previews: [], blocks: {} };
+        const stale = entryCache.data ?? { repo: key, fetchedAt: '', issues: [], openIssues: [], prs: [], prIssue: {}, previews: [], blocks: {} };
         entryCache.data = { ...stale, error: (error as Error).message.split('\n')[0] };
         return entryCache.data;
       })

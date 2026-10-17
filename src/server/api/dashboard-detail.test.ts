@@ -10,7 +10,7 @@ const ENTRY = { productRepo: 'acme/product', productRepoPath: '/tmp/x' };
 
 const pr = (number: number, headRefName: string) => ({ number, title: `PR ${number}`, url: '', author: 'ronin-agent', isDraft: false, headRefName, baseRefName: 'main', reviewDecision: '' as const, checks: [] });
 const GH = {
-  repo: 'acme/product', fetchedAt: '', previews: [], blocks: {},
+  repo: 'acme/product', fetchedAt: '', previews: [], blocks: {}, openIssues: [], prIssue: {},
   issues: [{ number: 844, title: 'Pedidos', url: '', status: 'in-progress' as const, direct: false, slices: [
     { index: 0, title: 'Columnas', checked: true, prNumber: 801 },
     { index: 1, title: 'Endpoint', checked: false, prNumber: 849 },
@@ -38,6 +38,12 @@ describe('resolveItem', () => {
     expect(resolveItem(849, GH)).toEqual({ kind: 'pr', number: 849, issue: 844 });
     expect(resolveItem(860, GH)).toEqual({ kind: 'pr', number: 860, issue: 700 });
     expect(resolveItem(870, GH)).toEqual({ kind: 'pr', number: 870 });
+  });
+
+  it("resolves anyone's open issue with its PR, and a PR with the issue it belongs to (#100)", () => {
+    const gh = { ...GH, openIssues: [{ number: 405, title: 'Excel', url: '', labels: [] }], prs: [...GH.prs, pr(920, 'feat/405-excel')], prIssue: { 920: 405 } };
+    expect(resolveItem(405, gh)).toEqual({ kind: 'issue', number: 405, pr: 920 });
+    expect(resolveItem(920, gh)).toEqual({ kind: 'pr', number: 920, issue: 405 });
   });
 
   it("falls back to what the item's runs say it is, and to nothing without them", () => {

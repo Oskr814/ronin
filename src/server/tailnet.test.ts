@@ -9,6 +9,8 @@ import { sealSession, type AuthConfig, type GithubOAuth } from './api/auth.js';
 
 vi.mock('../core/repos.js', () => ({ loadRepos: async () => [{ productRepo: 'acme/product' }] }));
 vi.mock('./api/dashboard-github.js', () => ({ repoGithub: async () => undefined }));
+// Opening by number asks GitHub what it is: here, nothing.
+vi.mock('../core/github.js', async (importOriginal) => ({ ...(await importOriginal<typeof import('../core/github.js')>()), itemKindOf: async () => null }));
 
 const AUTH: AuthConfig = { url: 'https://media.example.ts.net:8443', githubClientId: 'cid', githubClientSecret: 'cs', sessionSecret: 's'.repeat(40), allowedUsers: ['oskr814'], sessionDays: 7 };
 const github: GithubOAuth = {
