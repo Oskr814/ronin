@@ -7,7 +7,7 @@ const $ = (selector) => document.querySelector(selector);
 const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const initials = (name) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join('');
 
-const S = { me: null, view: 'login', error: null, info: null, busy: false, token: null, link: null, picked: null, menu: false, requests: [], cur: null, detail: null, pending: [], draft: '', sending: false, zoom: null };
+const S = { me: null, view: 'login', error: null, info: null, busy: false, token: null, link: null, picked: null, menu: false, requests: [], cur: null, detail: null, pending: [], draft: '', sending: false, zoom: null, deciding: null };
 
 class ApiError extends Error {
   constructor(message, status) {
@@ -123,12 +123,19 @@ const STATUS = {
   asking: ['warn', 'Espera tu respuesta'],
   answered: ['idle', 'Respondido'],
   minor: ['run', 'Preparando prototipo'],
+  proposed: ['warn', 'Prototipo listo'],
+  approved: ['ok', 'Aprobado'],
   big: ['idle', 'Con el equipo'],
 };
 const CLOSED = {
   thinking: 'ronin está revisando tu pedido. Puedes cerrar la página: te avisamos por correo.',
-  minor: 'ronin va a preparar un prototipo para que lo veas antes de hacer el cambio. Te avisamos por correo cuando esté listo.',
+  minor: 'ronin está armando el prototipo. Puedes cerrar la página: te avisamos por correo cuando esté listo.',
+  approved: 'Aprobaste el prototipo. El equipo de desarrollo hace el cambio y te avisamos por correo cuando esté listo.',
   big: 'El equipo de desarrollo tiene este pedido. Te avisamos por correo cuando esté resuelto.',
+};
+const WORKING = {
+  thinking: ['ronin está revisando tu pedido…', 'Lee lo que escribiste y revisa la aplicación. Suele tardar unos minutos.'],
+  minor: ['ronin está armando el prototipo…', 'Abre la aplicación, hace el cambio de prueba y toma capturas de antes y después. Suele tardar entre 5 y 15 minutos.'],
 };
 const POLL_MS = 4000;
 const hhmm = (iso) => new Date(iso).toLocaleString('es', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
@@ -155,8 +162,8 @@ function sideHTML() {
 
 const MENU = '<button class="menu-btn" data-menu aria-label="Mis pedidos"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>';
 
-function composerHTML(placeholder, label, note = '') {
-  return `<div class="composer"><div class="composer-in">
+function composerHTML(placeholder, label, note = '', above = '') {
+  return `<div class="composer"><div class="composer-in">${above}
     <div class="box" id="box">
       ${S.pending.length ? `<div class="pend">${S.pending.map((src, i) => `<div><img src="${src}" alt="Imagen adjunta ${i + 1}"><button data-unpend="${i}" aria-label="Quitar imagen">×</button></div>`).join('')}</div>` : ''}
       <textarea id="ta" rows="2" maxlength="4000" placeholder="${esc(placeholder)}" ${S.sending ? 'disabled' : ''}></textarea>
@@ -190,11 +197,15 @@ function threadHTML(d) {
   const out = [`<div class="sys">${esc(d.appName)} · ${esc(hhmm(d.createdAt))}</div>`];
   for (const m of d.messages) {
     const who = m.from === 'ronin' ? '<div class="seal" aria-hidden="true">浪人</div>' : `<div class="av" aria-hidden="true">${esc(initials(S.me.name))}</div>`;
-    const images = m.images.length ? `<div class="atts">${m.images.map((src, i) => `<button class="att" data-zoom="${esc(src)}"><img src="${esc(src)}" alt="Imagen ${i + 1}" loading="lazy"></button>`).join('')}</div>` : '';
+    // A prototype's images come with their captions ("Antes: …", "Después: …").
+    const images = !m.images.length ? ''
+      : m.captions ? `<div class="shots">${m.images.map((src, i) => `<figure class="shot"><button class="att" data-zoom="${esc(src)}"><img src="${esc(src)}" alt="${esc(m.captions[i] ?? `Imagen ${i + 1}`)}"></button><figcaption>${esc(m.captions[i] ?? '')}</figcaption></figure>`).join('')}</div>`
+        : `<div class="atts">${m.images.map((src, i) => `<button class="att" data-zoom="${esc(src)}"><img src="${esc(src)}" alt="Imagen ${i + 1}" loading="lazy"></button>`).join('')}</div>`;
     out.push(`<div class="msg ${m.from === 'ronin' ? '' : 'mine'}">${who}<div class="body"><div class="who"><b>${m.from === 'ronin' ? 'ronin' : esc(S.me.name)}</b> ${esc(hhmm(m.at))}</div>
       <div class="bubble">${m.text ? paragraphs(m.text) : ''}${images}</div></div></div>`);
   }
-  if (d.status === 'thinking') out.push('<div class="working"><div class="spin" aria-hidden="true"></div><div>ronin está revisando tu pedido…<small>Lee lo que escribiste y revisa la aplicación. Suele tardar unos minutos.</small></div></div>');
+  const working = WORKING[d.status];
+  if (working) out.push(`<div class="working"><div class="spin" aria-hidden="true"></div><div>${working[0]}<small>${working[1]}</small></div></div>`);
   return out.join('');
 }
 
@@ -202,9 +213,30 @@ function requestHTML() {
   const d = S.detail;
   if (!d) return `<div class="top">${MENU}<h2>Cargando…</h2></div><div class="content"></div>`;
   const open = d.status === 'asking' || d.status === 'answered';
+  const foot = d.status === 'proposed' ? decisionHTML(d)
+    : open ? composerHTML(d.status === 'asking' ? 'Responde a ronin…' : 'Escríbele a ronin si necesitas algo más…', 'Enviar')
+      : `<div class="closed-bar">${CLOSED[d.status] ?? ''}</div>`;
   return `<div class="top">${MENU}<h2>${esc(d.title)}</h2><span class="proj-l">${esc(d.appName)} · P-${d.number}</span>${chip(d.status)}</div>
     <div class="content" id="thread"><div class="content-in thread">${threadHTML(d)}</div></div>
-    ${open ? composerHTML(d.status === 'asking' ? 'Responde a ronin…' : 'Escríbele a ronin si necesitas algo más…', 'Enviar') : `<div class="closed-bar">${CLOSED[d.status] ?? ''}</div>`}`;
+    ${foot}`;
+}
+
+// Under a prototype: approve it, turn it down (with an optional note), or
+// write an adjustment while there are some left.
+function decisionHTML(d) {
+  if (S.deciding) {
+    const approve = S.deciding === 'aprobar';
+    return `<div class="composer"><div class="composer-in"><div class="confirm">
+      <b>${approve ? '¿Apruebas este prototipo?' : '¿Se lo pasamos al equipo?'}</b>
+      <p>${approve ? 'El equipo de desarrollo hará el cambio tal como lo ves.' : 'El equipo de desarrollo verá tu pedido, lo que conversamos y el prototipo.'}</p>
+      ${approve ? '' : '<textarea id="note" rows="2" maxlength="4000" placeholder="¿Qué no te convenció? (opcional)"></textarea>'}
+      <div class="confirm-f"><button class="btn" data-undecide ${S.sending ? 'disabled' : ''}>Volver</button><button class="btn primary" data-decided ${S.sending ? 'disabled' : ''}>${S.sending ? 'Enviando…' : approve ? 'Sí, aprobar' : 'Pasar al equipo'}</button></div>
+    </div>${S.error ? `<p class="msg-bad" role="alert">${esc(S.error)}</p>` : ''}</div></div>`;
+  }
+  const left = d.adjustmentsLeft;
+  const bar = `<div class="decide"><span>¿Qué te parece el prototipo?</span><button class="btn" data-decide="rechazar">No me sirve</button><button class="btn primary" data-decide="aprobar">Aprobar</button></div>`;
+  if (left === 0) return `<div class="composer"><div class="composer-in">${bar}<p class="hint">No quedan ajustes para este pedido.</p></div></div>`;
+  return composerHTML('¿Qué le cambiarías? Escríbelo para otro prototipo…', 'Pedir ajuste', `Te ${left === 1 ? 'queda 1 ajuste' : `quedan ${left} ajustes`} · puedes adjuntar capturas`, bar);
 }
 
 function appHTML() {
@@ -306,6 +338,24 @@ async function send() {
   poll();
 }
 
+async function decide() {
+  if (S.sending || !S.deciding) return;
+  const note = ($('#note')?.value ?? '').trim();
+  S.sending = true;
+  S.error = null;
+  render();
+  try {
+    S.detail = await api(`/api/portal/requests/${S.cur}/decision`, { decision: S.deciding, text: note });
+    S.deciding = null;
+    await loadList();
+  } catch (error) {
+    if (error.status === 401) return toLogin();
+    S.error = error.message;
+  }
+  S.sending = false;
+  render();
+}
+
 // ---------- data
 async function loadList() {
   try {
@@ -322,6 +372,7 @@ async function openRequest(n, push = true) {
   S.error = null;
   S.pending = [];
   S.draft = '';
+  S.deciding = null;
   if (push && location.pathname !== `/p/${n}`) history.pushState(null, '', `/p/${n}`);
   render();
   try {
@@ -345,11 +396,12 @@ function openNew(push = true) {
   render();
 }
 
-// While ronin reads a request, its page asks again every few seconds.
+// While ronin reads a request or draws its prototype, its page asks again
+// every few seconds.
 let pollTimer = null;
 function poll() {
   clearTimeout(pollTimer);
-  if (S.detail?.status !== 'thinking') return;
+  if (!WORKING[S.detail?.status]) return;
   pollTimer = setTimeout(async () => {
     if (document.hidden || !S.cur) return poll();
     const n = S.cur;
@@ -398,7 +450,11 @@ function render(keep = {}) {
   if (S.view === 'app') {
     wireComposer();
     const fresh = $('#thread');
-    if (fresh && atBottom) fresh.scrollTop = fresh.scrollHeight;
+    if (fresh && atBottom) {
+      fresh.scrollTop = fresh.scrollHeight;
+      // Images grow the thread as they load: stay at the bottom.
+      for (const img of fresh.querySelectorAll('img')) if (!img.complete) img.addEventListener('load', () => { fresh.scrollTop = fresh.scrollHeight; }, { once: true });
+    }
   }
 }
 
@@ -418,6 +474,17 @@ document.addEventListener('click', async (event) => {
     openNew();
   } else if ('send' in t.dataset) {
     send();
+  } else if (t.dataset.decide) {
+    S.deciding = t.dataset.decide;
+    S.error = null;
+    render();
+    $('#note')?.focus();
+  } else if ('undecide' in t.dataset) {
+    S.deciding = null;
+    S.error = null;
+    render();
+  } else if ('decided' in t.dataset) {
+    decide();
   } else if (t.dataset.unpend !== undefined) {
     S.pending.splice(Number(t.dataset.unpend), 1);
     render();

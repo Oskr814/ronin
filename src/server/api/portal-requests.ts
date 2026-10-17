@@ -4,7 +4,8 @@ import { log } from '../../core/logger.js';
 import { grantedApps, type PortalApp } from '../../portal/apps.js';
 import { IMAGE_TYPES, ImageError, MAX_IMAGE_BYTES, MAX_IMAGES, parseImages } from '../../portal/images.js';
 import { launchPortalWorker } from '../../portal/launch.js';
-import { addPersonMessage, createRequest, getRequest, listRequestsOf, requestImagePath, RequestError, startedToday, TEXT_MAX, type PortalRequest } from '../../portal/requests.js';
+import { decideRequest } from '../../portal/prototype.js';
+import { addPersonMessage, createRequest, getRequest, listRequestsOf, MAX_PROTOTYPES, requestImagePath, RequestError, startedToday, TEXT_MAX, type PortalRequest } from '../../portal/requests.js';
 import { json, portalUser, readJson, type PortalConfig, type PortalDeps } from './portal.js';
 
 // A person's requests in the portal (#114), always behind their session and
@@ -12,14 +13,15 @@ import { json, portalUser, readJson, type PortalConfig, type PortalDeps } from '
 //   GET  /api/portal/requests                     their requests, newest first
 //   POST /api/portal/requests                     { repo, app, text, images? }: a new one; ronin starts reading it
 //   GET  /api/portal/requests/<n>                 one, with its conversation
-//   POST /api/portal/requests/<n>/messages        { text, images? }: their answer, while ronin waits on them
+//   POST /api/portal/requests/<n>/messages        { text, images? }: their answer, or an adjustment to the prototype
+//   POST /api/portal/requests/<n>/decision        { decision: 'aprobar' | 'rechazar', text? }: on the prototype on screen
 //   GET  /api/portal/requests/<n>/images/<file>   an image of the conversation
 // Images travel as data URLs in the JSON, so these bodies can be large.
 
 const MAX_REQUEST_BODY = MAX_IMAGES * Math.ceil((MAX_IMAGE_BYTES * 4) / 3) + 64 * 1024;
 
-// What the person sees of a request: never the team's technical summary or
-// the prototype's instruction.
+// What the person sees of a request: never the team's technical summary,
+// the prototype's instruction or its diff.
 function personView(r: PortalRequest, app: PortalApp | undefined) {
   return {
     number: r.number,
@@ -28,9 +30,18 @@ function personView(r: PortalRequest, app: PortalApp | undefined) {
     app: r.app,
     appName: app ? `${app.org} · ${app.name}` : r.app,
     status: r.status,
+    // Adjustments the person may still ask for on the prototype.
+    adjustmentsLeft: Math.max(0, MAX_PROTOTYPES - (r.prototypes?.length ?? 0)),
     createdAt: r.createdAt,
     updatedAt: r.updatedAt,
-    messages: r.messages.map((m) => ({ id: m.id, from: m.from, text: m.text, at: m.at, images: m.images.map((file) => `/api/portal/requests/${r.number}/images/${file}`) })),
+    messages: r.messages.map((m) => ({
+      id: m.id,
+      from: m.from,
+      text: m.text,
+      at: m.at,
+      images: m.images.map((file) => `/api/portal/requests/${r.number}/images/${file}`),
+      ...(m.captions ? { captions: m.captions } : {}),
+    })),
   };
 }
 
@@ -81,7 +92,7 @@ export async function handlePortalRequests(req: IncomingMessage, res: ServerResp
       return;
     }
 
-    const one = /^\/api\/portal\/requests\/(\d+)(?:\/(messages|images\/([\w.-]+)))?$/.exec(path);
+    const one = /^\/api\/portal\/requests\/(\d+)(?:\/(messages|decision|images\/([\w.-]+)))?$/.exec(path);
     const request = one ? await getRequest(Number(one[1])) : undefined;
     // Someone else's request is as good as missing.
     if (!one || !request || request.userId !== user.id) {
@@ -101,6 +112,16 @@ export async function handlePortalRequests(req: IncomingMessage, res: ServerResp
       const updated = await addPersonMessage(request.number, text, images);
       await launch(request.number);
       json(res, 200, personView((await getRequest(request.number)) ?? updated, appOf(request)));
+      return;
+    }
+
+    if (one[2] === 'decision' && method === 'POST') {
+      const body = await readJson(req, 64 * 1024);
+      const decision = body?.decision;
+      if (decision !== 'aprobar' && decision !== 'rechazar') throw new RequestError('Elige si lo apruebas o no.');
+      const note = typeof body?.text === 'string' ? body.text.trim() : '';
+      if (note.length > TEXT_MAX) throw new RequestError(`El mensaje puede tener hasta ${TEXT_MAX} caracteres.`);
+      json(res, 200, personView(await decideRequest(request.number, decision, note), appOf(request)));
       return;
     }
 

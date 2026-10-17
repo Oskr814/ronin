@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { bigRequestMail, linkMail, replyMail, teamRequestMail } from './mail.js';
+import { bigRequestMail, linkMail, prototypeMail, replyMail, teamRequestMail } from './mail.js';
 import type { PortalUser } from './accounts.js';
 import type { PortalRequest } from './requests.js';
 
@@ -33,6 +33,24 @@ describe('portal mails', () => {
     const mail = teamRequestMail(request({ status: 'minor', verdict: { kind: 'minor', proposal: 'Un enlace', instruction: 'x', summary: 'ClientInfoPanel.tsx', at: '' } }), user, 'team@x.com', '/data/requests/31/img');
     expect(mail).toMatchObject({ to: 'team@x.com', subject: '[ronin] Pedido P-31 del portal (ajuste chico): Abrir la ficha del cliente' });
     for (const part of ['María Fernández <mf@x.com>', 'Propuesta: Un enlace', 'ClientInfoPanel.tsx', '¿En las tres pantallas?', '/data/requests/31/img']) expect(mail.text).toContain(part);
+  });
+
+  it('the prototype mail sends the person to the portal, where the images are', () => {
+    const mail = prototypeMail(request({ status: 'proposed' }), user, URL);
+    expect(mail.subject).toBe('Tu prototipo está listo: Abrir la ficha del cliente');
+    expect(mail.text).toContain(`${URL}/p/31`);
+    expect(mail.html).not.toContain('<img');
+  });
+
+  it("an approved or turned-down prototype tells the team, with the last prototype and its diff", () => {
+    const prototypes = [{ round: 1, summary: 'Hace un Link', patch: '1.diff', messageId: 3, at: '' }];
+    const verdict = { kind: 'minor' as const, proposal: 'Un enlace', instruction: 'x', summary: 'ClientInfoPanel.tsx', at: '' };
+    const approved = teamRequestMail(request({ status: 'approved', verdict, prototypes, decision: { kind: 'approved', at: '' } }), user, 'team@x.com', '/data/requests/31', '+<Link>');
+    expect(approved.subject).toBe('[ronin] Pedido P-31 del portal (prototipo aprobado): Abrir la ficha del cliente');
+    for (const part of ['La persona vio el prototipo: prototipo aprobado.', 'El prototipo 1:\nHace un Link', 'Diff del prototipo 1:', '+<Link>', 'los diffs de los prototipos']) expect(approved.text).toContain(part);
+    const rejected = teamRequestMail(request({ status: 'big', verdict: { ...verdict, kind: 'big', reason: 'La persona no aprobó el prototipo.' }, prototypes, decision: { kind: 'rejected', at: '' } }), user, 'team@x.com', '/data/requests/31');
+    expect(rejected.subject).toContain('(prototipo no aprobado)');
+    expect(bigRequestMail(request({ status: 'big', decision: { kind: 'rejected', at: '' } }), user, URL).text).toContain('lo que conversamos sobre el prototipo');
   });
 
   it('escapes what people wrote in the HTML', () => {

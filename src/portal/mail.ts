@@ -72,12 +72,34 @@ export function replyMail(request: PortalRequest, user: PortalUser, portalUrl: s
   };
 }
 
-// To the person, when ronin judged the request too big for the portal.
+// To the person, when the prototype is ready: they approve it, ask for an
+// adjustment or turn it down in the portal (the images are only there,
+// behind their login).
+export function prototypeMail(request: PortalRequest, user: PortalUser, portalUrl: string): Mail {
+  const first = user.name.split(/\s+/)[0] || user.name;
+  const lines = [
+    `Hola ${first},`,
+    `Ya está el prototipo de tu pedido P-${request.number} ("${request.title}"): son imágenes de cómo se ve hoy y de cómo quedaría con el cambio.`,
+    'Míralo en el portal y dime si lo apruebas, si quieres ajustar algo o si no es lo que buscabas.',
+  ];
+  const url = requestUrl(portalUrl, request.number);
+  return {
+    to: user.email,
+    subject: `Tu prototipo está listo: ${request.title}`,
+    text: `${lines.join('\n\n')}\n\n${url}`,
+    html: html(lines.map(esc), { label: 'Ver el prototipo', url }, portalUrl),
+  };
+}
+
+// To the person, when the request goes to the dev team: too big for the
+// portal, or they turned the prototype down.
 export function bigRequestMail(request: PortalRequest, user: PortalUser, portalUrl: string): Mail {
   const first = user.name.split(/\s+/)[0] || user.name;
   const lines = [
     `Hola ${first},`,
-    `Tu pedido P-${request.number} ("${request.title}") necesita más trabajo que un ajuste chico, así que se lo enviamos al equipo de desarrollo con tu descripción y tus imágenes.`,
+    request.decision?.kind === 'rejected'
+      ? `Le enviamos tu pedido P-${request.number} ("${request.title}") al equipo de desarrollo, con tu descripción y lo que conversamos sobre el prototipo.`
+      : `Tu pedido P-${request.number} ("${request.title}") necesita más trabajo que un ajuste chico, así que se lo enviamos al equipo de desarrollo con tu descripción y tus imágenes.`,
     'Te escribimos cuando esté resuelto.',
   ];
   const url = requestUrl(portalUrl, request.number);
@@ -89,25 +111,38 @@ export function bigRequestMail(request: PortalRequest, user: PortalUser, portalU
   };
 }
 
-// To the dev team (NOTIFY_TO): a request ronin classified, with its
-// conversation, until the portal opens issues for them (#114).
-export function teamRequestMail(request: PortalRequest, user: PortalUser | undefined, to: string, imagesDir: string): Mail {
-  const kind = request.verdict?.kind === 'minor' ? 'ajuste chico' : 'pedido grande';
+const MAX_PATCH = 30_000;
+
+// What the team is told a request is.
+function teamKind(request: PortalRequest): string {
+  if (request.status === 'approved') return 'prototipo aprobado';
+  if (request.decision?.kind === 'rejected') return 'prototipo no aprobado';
+  return request.verdict?.kind === 'minor' ? 'ajuste chico' : 'pedido grande';
+}
+
+// To the dev team (NOTIFY_TO): a request that's theirs now (too big, or
+// its prototype turned down) or approved, with its conversation, until the
+// portal opens issues and PRs (#114). `patch` is the last prototype's diff.
+export function teamRequestMail(request: PortalRequest, user: PortalUser | undefined, to: string, dataDir: string, patch?: string): Mail {
+  const kind = teamKind(request);
   const who = user ? `${user.name} <${user.email}>` : request.userId;
   const conversation = request.messages
     .map((m) => `${m.from === 'ronin' ? 'ronin' : user?.name ?? 'Persona'} (${m.at.slice(0, 16).replace('T', ' ')} UTC):\n${m.text}${m.images.length ? `\n[${m.images.length} imagen(es)]` : ''}`)
     .join('\n\n');
   const v = request.verdict;
+  const last = request.prototypes?.at(-1);
   const text = [
     `Pedido P-${request.number} del portal: ${request.title}`,
     `De: ${who}`,
     `App: ${request.repo} · ${request.app}`,
-    `ronin lo clasificó como ${kind}.`,
+    request.status === 'approved' || request.decision ? `La persona vio ${request.prototypes?.length === 1 ? 'el prototipo' : `${request.prototypes?.length ?? 0} prototipos`}: ${kind}.` : `ronin lo clasificó como ${kind}.`,
     v?.proposal ? `Propuesta: ${v.proposal}` : null,
     v?.reason ? `Motivo: ${v.reason}` : null,
     v?.summary ? `Resumen técnico:\n${v.summary}` : null,
+    last ? `El prototipo ${last.round}:\n${last.summary}` : null,
     `Conversación:\n\n${conversation}`,
-    request.messages.some((m) => m.images.length) ? `Las imágenes están en el runner, en ${imagesDir}.` : null,
+    request.messages.some((m) => m.images.length) || last ? `Las imágenes${last?.patch ? ' y los diffs de los prototipos' : ''} están en el runner, en ${dataDir}.` : null,
+    patch ? `Diff del prototipo ${last?.round ?? ''}:\n\n${patch.length > MAX_PATCH ? `${patch.slice(0, MAX_PATCH)}\n… (recortado)` : patch}` : null,
   ].filter(Boolean).join('\n\n');
   return { to, subject: `[ronin] Pedido P-${request.number} del portal (${kind}): ${request.title}`, text };
 }
