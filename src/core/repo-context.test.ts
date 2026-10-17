@@ -32,6 +32,18 @@ describe('withActiveRepo', () => {
     });
   });
 
+  it('keeps each repo through its own awaits when two run at once (the dashboard server)', async () => {
+    const tick = () => new Promise((resolve) => setTimeout(resolve, 5));
+    const seen = await Promise.all(['a/one', 'a/two'].map((repo) => withActiveRepo({ productRepo: repo, productRepoPath: `/tmp/${repo}` }, async () => {
+      await tick();
+      const first = activeRepo().productRepo;
+      await tick();
+      return [first, activeRepo().productRepo];
+    })));
+    expect(seen).toEqual([['a/one', 'a/one'], ['a/two', 'a/two']]);
+    expect(() => activeRepo()).toThrow();
+  });
+
   it('carries claudeConfigDir through when the entry has one', async () => {
     await withActiveRepo({ productRepo: 'a/b', productRepoPath: '/tmp/a', claudeConfigDir: '/home/x/.claude-a' }, async () => {
       expect(activeRepo().claudeConfigDir).toBe('/home/x/.claude-a');
