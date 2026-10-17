@@ -20,7 +20,7 @@ import { today, WEEK_DAYS } from './dashboard-today.js';
 import { readEvidence } from './dashboard-evidence.js';
 import { explorationReview, forgetExploration, isExplorationPr } from './dashboard-exploration.js';
 import { FichaActionError, runApprove, runFichaAction, runGeneralComment } from './dashboard-exploration-actions.js';
-import { GithubUserError, viewedFiles } from './github-as-user.js';
+import { GithubUserError, pendingReview, viewedFiles } from './github-as-user.js';
 import type { Session } from './auth.js';
 
 // The dashboard's data (#65), all behind the session (tailnet.ts checks it
@@ -32,8 +32,8 @@ import type { Session } from './auth.js';
 //   GET /api/items/<id>/exploration  an exploration PR's findings and their threads, to review them (#93)
 //   GET /api/items/<id>/files        its PR's changed files and review threads, as "Files changed" (#111)
 //   GET /api/items/<id>/files/content?path=  one of those files at the PR's head, for the lines around its hunks
-//   GET /api/items/<id>/files/viewed  the files the person marked as viewed, as GitHub keeps them
-//   POST /api/items/<id>/files/actions  a comment, a reply, resolving a thread or marking a file viewed, as the person (dashboard-files-actions.ts)
+//   GET /api/items/<id>/files/mine    the person's own: the files they marked as viewed, and their pending review
+//   POST /api/items/<id>/files/actions  a comment, a reply, resolving a thread, marking a file viewed, the review, as the person (dashboard-files-actions.ts)
 //   POST /api/items/<id>/exploration/actions  a comment on one of them, as the person (dashboard-exploration-actions.ts)
 //   POST /api/items/<id>/exploration/general  a general comment on the PR, as the person
 //   POST /api/items/<id>/exploration/approve  an approving review, as the person
@@ -321,9 +321,9 @@ async function postFilesAction(req: IncomingMessage, res: ServerResponse, id: st
     return;
   }
   try {
-    const done = await runFilesAction(ctx.entry, ctx.prNumber, ctx.files, session, body);
-    // A viewed mark is only the person's; the rest changes what everyone reads.
-    if (body.action !== 'viewed') {
+    const done = await runFilesAction(ctx.entry, ctx.prNumber, ctx.files, session, body, config.githubLogin);
+    // A viewed mark and a pending review are only the person's; the rest changes what everyone reads.
+    if (!(body.action === 'viewed' || body.review || String(body.action).startsWith('pending-'))) {
       forgetFiles(ctx.entry.productRepo);
       forgetDetails(ctx.entry.productRepo);
     }
@@ -452,7 +452,7 @@ async function route(req: IncomingMessage, res: ServerResponse, path: string, se
     return true;
   }
 
-  const filesPage = /^\/api\/items\/(.+)\/files(?:\/(content|viewed))?$/.exec(path);
+  const filesPage = /^\/api\/items\/(.+)\/files(?:\/(content|mine))?$/.exec(path);
   if (filesPage) {
     const ctx = await filesContext(decodeURIComponent(filesPage[1]));
     if (!ctx) json(res, 404, { error: 'ese ítem no tiene un PR de un repo de ronin' });
@@ -461,7 +461,8 @@ async function route(req: IncomingMessage, res: ServerResponse, path: string, se
     else {
       // Each person's own: read with their token, never cached.
       try {
-        json(res, 200, { paths: await viewedFiles(session.token, ctx.entry.productRepo, ctx.prNumber) });
+        const [viewed, review] = await Promise.all([viewedFiles(session.token, ctx.entry.productRepo, ctx.prNumber), pendingReview(session.token, ctx.entry.productRepo, ctx.prNumber)]);
+        json(res, 200, { viewed, review });
       } catch (error) {
         if (!githubRefusal(res, error)) throw error;
       }

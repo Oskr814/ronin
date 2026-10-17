@@ -560,17 +560,17 @@ export interface PrFile {
 }
 
 // `prId`: its node id, which GraphQL's mutations on it take.
-export async function getPrFiles(prNumber: number): Promise<{ prId: string; headSha: string; baseSha: string; files: PrFile[] }> {
+export async function getPrFiles(prNumber: number): Promise<{ prId: string; author: string; headSha: string; baseSha: string; files: PrFile[] }> {
   const path = `repos/${activeRepo().productRepo}/pulls/${prNumber}`;
   const [pr, lines] = await Promise.all([
-    ghApi(['api', path, '--jq', '{id: .node_id, head: .head.sha, base: .base.sha}']).then((out) => JSON.parse(out) as { id: string; head: string; base: string }),
+    ghApi(['api', path, '--jq', '{id: .node_id, author: .user.login, head: .head.sha, base: .base.sha}']).then((out) => JSON.parse(out) as { id: string; author: string; head: string; base: string }),
     ghApi(['api', '--paginate', `${path}/files?per_page=100`, '--jq', '.[] | {path: .filename, previousPath: .previous_filename, status, additions, deletions, patch}']),
   ]);
   const files = lines.split('\n').filter(Boolean).map((line) => {
     const { previousPath, patch, ...file } = JSON.parse(line) as PrFile & { previousPath: string | null; patch: string | null };
     return { ...file, ...(previousPath ? { previousPath } : {}), ...(patch ? { patch } : {}) };
   });
-  return { prId: pr.id, headSha: pr.head, baseSha: pr.base, files };
+  return { prId: pr.id, author: pr.author, headSha: pr.head, baseSha: pr.base, files };
 }
 
 // A review thread where the diff puts it (#111): on a side and a line (or a

@@ -148,3 +148,125 @@ export async function setFileViewed(token: string, repo: string, prId: string, p
   const mutation = viewed ? 'markFileAsViewed' : 'unmarkFileAsViewed';
   await graphql(token, `mutation($id: ID!, $path: String!) { ${mutation}(input: { pullRequestId: $id, path: $path }) { clientMutationId } }`, { id: prId, path }, repo);
 }
+
+// ---------- the person's pending review (#111)
+// GitHub's own draft of a review: comments that only its author sees until
+// it's submitted. One per person per PR; one started on github.com is the
+// same one the dashboard shows.
+
+export interface PendingComment {
+  // Its node id, which edits and deletes take; `id` is the REST one.
+  nodeId: string;
+  id: number;
+  body: string;
+  createdAt: string;
+}
+
+export interface PendingThread {
+  id: string;
+  path: string;
+  subject: 'line' | 'file';
+  side: 'LEFT' | 'RIGHT';
+  line: number | null;
+  startLine: number | null;
+  originalLine: number | null;
+  // A thread the review starts, or one of the PR's it replies in.
+  isNew: boolean;
+  comments: PendingComment[];
+}
+
+export interface PendingReview {
+  id: string;
+  threads: PendingThread[];
+}
+
+const PENDING_QUERY = `
+query($owner: String!, $repo: String!, $number: Int!, $after: String) {
+  repository(owner: $owner, name: $repo) {
+    pullRequest(number: $number) {
+      reviews(states: PENDING, first: 10) { nodes { id viewerDidAuthor } }
+      reviewThreads(first: 100, after: $after) {
+        pageInfo { hasNextPage endCursor }
+        nodes {
+          id path subjectType diffSide line startLine originalLine
+          comments(first: 100) { nodes { id databaseId body createdAt state } }
+        }
+      }
+    }
+  }
+}`;
+
+export async function pendingReview(token: string, repo: string, prNumber: number): Promise<PendingReview | null> {
+  const [owner, name] = repo.split('/');
+  type Node = { id: string; path: string; subjectType: 'LINE' | 'FILE'; diffSide: 'LEFT' | 'RIGHT'; line: number | null; startLine: number | null; originalLine: number | null; comments: { nodes: Array<{ id: string; databaseId: number; body: string; createdAt: string; state: 'PENDING' | 'SUBMITTED' }> } };
+  type Page = { repository: { pullRequest: { reviews: { nodes: Array<{ id: string; viewerDidAuthor: boolean }> }; reviewThreads: { pageInfo: { hasNextPage: boolean; endCursor: string | null }; nodes: Node[] } } } };
+  let review: string | undefined;
+  const threads: PendingThread[] = [];
+  let after: string | null = null;
+  do {
+    const page: Page = await graphql<Page>(token, PENDING_QUERY, { owner, repo: name, number: prNumber, after }, repo);
+    const pr = page.repository.pullRequest;
+    review ??= pr.reviews.nodes.find((r) => r.viewerDidAuthor)?.id;
+    if (!review) return null;
+    for (const t of pr.reviewThreads.nodes) {
+      // Someone else's pending comments never show; a PENDING one here is the person's.
+      const pending = t.comments.nodes.filter((c) => c.state === 'PENDING');
+      if (!pending.length) continue;
+      threads.push({
+        id: t.id,
+        path: t.path,
+        subject: t.subjectType === 'FILE' ? 'file' : 'line',
+        side: t.diffSide,
+        line: t.line,
+        startLine: t.startLine,
+        originalLine: t.originalLine,
+        isNew: pending.length === t.comments.nodes.length,
+        comments: pending.map((c) => ({ nodeId: c.id, id: c.databaseId, body: c.body, createdAt: c.createdAt })),
+      });
+    }
+    after = pr.reviewThreads.pageInfo.hasNextPage ? pr.reviewThreads.pageInfo.endCursor : null;
+  } while (after);
+  return { id: review, threads };
+}
+
+// A pending review on the commit the person is looking at.
+export async function startReview(token: string, repo: string, prId: string, commitId: string): Promise<string> {
+  const data = await graphql<{ addPullRequestReview: { pullRequestReview: { id: string } } }>(token, `mutation($pr: ID!, $commit: GitObjectID!) { addPullRequestReview(input: { pullRequestId: $pr, commitOID: $commit }) { pullRequestReview { id } } }`, { pr: prId, commit: commitId }, repo);
+  return data.addPullRequestReview.pullRequestReview.id;
+}
+
+export async function addReviewThread(token: string, repo: string, reviewId: string, spot: DiffSpot, body: string): Promise<void> {
+  const where = spot.subject === 'file'
+    ? { subjectType: 'FILE' }
+    : { subjectType: 'LINE', line: spot.line, side: spot.side, ...(spot.startLine !== undefined && spot.startLine !== spot.line ? { startLine: spot.startLine, startSide: spot.side } : {}) };
+  await graphql(token, `mutation($input: AddPullRequestReviewThreadInput!) { addPullRequestReviewThread(input: $input) { thread { id } } }`, { input: { pullRequestReviewId: reviewId, path: spot.path, body, ...where } }, repo);
+}
+
+export async function addReviewReply(token: string, repo: string, reviewId: string, threadId: string, body: string): Promise<void> {
+  await graphql(token, `mutation($review: ID!, $thread: ID!, $body: String!) { addPullRequestReviewThreadReply(input: { pullRequestReviewId: $review, pullRequestReviewThreadId: $thread, body: $body }) { comment { id } } }`, { review: reviewId, thread: threadId, body }, repo);
+}
+
+export async function editReviewComment(token: string, repo: string, nodeId: string, body: string): Promise<void> {
+  await graphql(token, `mutation($id: ID!, $body: String!) { updatePullRequestReviewComment(input: { pullRequestReviewCommentId: $id, body: $body }) { pullRequestReviewComment { id } } }`, { id: nodeId, body }, repo);
+}
+
+export async function deleteReviewComment(token: string, repo: string, nodeId: string): Promise<void> {
+  await graphql(token, `mutation($id: ID!) { deletePullRequestReviewComment(input: { id: $id }) { clientMutationId } }`, { id: nodeId }, repo);
+}
+
+export type ReviewEvent = 'COMMENT' | 'APPROVE' | 'REQUEST_CHANGES';
+
+// Sends the pending review, or, with none, a review with only its summary
+// (an approval without comments).
+export async function submitReview(token: string, repo: string, review: { prId: string; commitId: string; pendingId?: string; event: ReviewEvent; body: string }): Promise<{ url: string }> {
+  if (review.pendingId) {
+    const data = await graphql<{ submitPullRequestReview: { pullRequestReview: { url: string } } }>(token, `mutation($id: ID!, $event: PullRequestReviewEvent!, $body: String) { submitPullRequestReview(input: { pullRequestReviewId: $id, event: $event, body: $body }) { pullRequestReview { url } } }`, { id: review.pendingId, event: review.event, body: review.body || null }, repo);
+    return { url: data.submitPullRequestReview.pullRequestReview.url };
+  }
+  const data = await graphql<{ addPullRequestReview: { pullRequestReview: { url: string } } }>(token, `mutation($pr: ID!, $commit: GitObjectID!, $event: PullRequestReviewEvent!, $body: String) { addPullRequestReview(input: { pullRequestId: $pr, commitOID: $commit, event: $event, body: $body }) { pullRequestReview { url } } }`, { pr: review.prId, commit: review.commitId, event: review.event, body: review.body || null }, repo);
+  return { url: data.addPullRequestReview.pullRequestReview.url };
+}
+
+export async function discardReview(token: string, repo: string, reviewId: string): Promise<void> {
+  await graphql(token, `mutation($id: ID!) { deletePullRequestReview(input: { pullRequestReviewId: $id }) { clientMutationId } }`, { id: reviewId }, repo);
+}
