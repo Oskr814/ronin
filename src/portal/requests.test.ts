@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { readFile, rm, stat } from 'node:fs/promises';
+import { isAbsolute, join } from 'node:path';
 import { config } from '../core/config.js';
 import { addPersonMessage, createRequest, getRequest, listRequestsOf, requestImagePath, startedToday, updateRequest, MAX_PROTOTYPES, updateUnlessCancelled } from './requests.js';
 import { sweepPortalRequests } from './launch.js';
@@ -96,5 +97,20 @@ describe('portal requests', () => {
     await sweepPortalRequests(later, launch);
     expect(launch).not.toHaveBeenCalled();
     expect((await getRequest(r.number))?.status).toBe('asking');
+  });
+});
+
+describe('the portal data dir', () => {
+  it('is absolute even when PORTAL_DATA_DIR is relative: agents and git run in other checkouts', async () => {
+    vi.resetModules();
+    vi.stubEnv('PORTAL_DATA_DIR', 'portal-data');
+    try {
+      const { config: fresh } = await import('../core/config.js');
+      expect(fresh.portal.dataDir).toBe(join(process.cwd(), 'portal-data'));
+      expect(isAbsolute(fresh.portal.dataDir)).toBe(true);
+    } finally {
+      vi.unstubAllEnvs();
+      vi.resetModules();
+    }
   });
 });
