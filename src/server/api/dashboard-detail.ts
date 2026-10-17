@@ -1,5 +1,6 @@
 import { config } from '../../core/config.js';
 import { getDiscussion, type Discussion } from '../../core/github.js';
+import { linearRefFrom, type LinearRef } from '../../core/linear.js';
 import { log } from '../../core/logger.js';
 import { withActiveRepo, type RepoEntry } from '../../core/repo-context.js';
 import type { RepoGithub } from './dashboard-github.js';
@@ -25,6 +26,8 @@ export interface ItemDetail {
   fetchedAt: string;
   issue?: Discussion;
   pr?: Discussion;
+  // The issue's Linear issue, from the Linear bot's comment on it (#101).
+  linear?: LinearRef;
   error?: string;
 }
 
@@ -64,8 +67,10 @@ async function fetchDetail(entry: RepoEntry, ref: ItemRef): Promise<ItemDetail> 
       const { reviews, threads, ...rest } = d;
       return own ? { ...d, comments: d.comments.slice(-MAX_COMMENTS) } : { ...rest, comments: [] };
     };
+    const linear = issue ? linearRefFrom(issue.comments) : null;
     return {
       fetchedAt: new Date().toISOString(),
+      ...(linear ? { linear } : {}),
       ...(issue ? { issue: trim(issue, ref.kind === 'issue') } : {}),
       ...(pr ? { pr: trim(pr, ref.kind === 'pr') } : {}),
     };

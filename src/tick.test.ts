@@ -74,6 +74,7 @@ const listAssignedIssues = vi.fn();
 const listExternalOpenReviewThreads = vi.fn();
 const setReviewStatus = vi.fn();
 const setPullRequestBody = vi.fn();
+const listIssueComments = vi.fn();
 const resetAttemptCount = vi.fn();
 const isTransientGhError = vi.fn();
 const getFailedChecks = vi.fn();
@@ -94,6 +95,7 @@ vi.mock('./core/github.js', () => ({
   listExternalOpenReviewThreads: (...args: unknown[]) => listExternalOpenReviewThreads(...args),
   setReviewStatus: (...args: unknown[]) => setReviewStatus(...args),
   setPullRequestBody: (...args: unknown[]) => setPullRequestBody(...args),
+  listIssueComments: (...args: unknown[]) => listIssueComments(...args),
   changesRequestedOnHead: (...args: unknown[]) => changesRequestedOnHead(...args),
   getFailedChecks: (...args: unknown[]) => getFailedChecks(...args),
 }));
@@ -190,6 +192,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   recordSlicePr.mockResolvedValue(undefined);
   setPullRequestBody.mockResolvedValue(undefined);
+  listIssueComments.mockResolvedValue([]);
   findUnprocessedMentions.mockResolvedValue([]);
   isFixCommentsCommand.mockReturnValue(false);
   listExternalOpenReviewThreads.mockResolvedValue([]);
@@ -206,6 +209,62 @@ beforeEach(() => {
   removeWorktree.mockResolvedValue(undefined);
   activeRepo.mockReturnValue({ productRepo: 'bmedical/bmedical', productRepoPath: '/tmp/repo', worktreeBasePath: '/tmp/worktrees' });
   readFile.mockResolvedValue('body\n{{spec_links}}\n');
+});
+
+describe('processSlicePr — Linear link', () => {
+  const linkback = {
+    authorLogin: 'linear-code[bot]',
+    body: '<!-- linear-linkback -->\n<p><a href="https://linear.app/red-motos/issue/RED-214/extraer-un-componente">RED-214</a></p>',
+  };
+  const twoSlices = [
+    { index: 0, title: 'Slice 1', checked: true, prNumber: 229 },
+    { index: 1, title: 'Slice 2', checked: false, prNumber: 230 },
+  ];
+
+  it('links an intermediate slice with "Part of", above the cheat sheet', async () => {
+    listIssueComments.mockResolvedValue([linkback]);
+    getSlices.mockResolvedValue([...twoSlices, { index: 2, title: 'Slice 3', checked: false, prNumber: null }]);
+
+    await processSlicePr(issue(), pr({ checksPending: true }), false);
+
+    expect(listIssueComments).toHaveBeenCalledWith(228);
+    expect(setPullRequestBody).toHaveBeenCalledWith(230, `Slice description\n\n<!-- ronin:linear -->\nPart of RED-214\n\n${HELP_FOOTER_MARKER}`);
+  });
+
+  it('links the last slice with "Fixes"', async () => {
+    listIssueComments.mockResolvedValue([linkback]);
+    getSlices.mockResolvedValue(twoSlices);
+
+    await processSlicePr(issue(), pr({ checksPending: true }), false);
+
+    expect(setPullRequestBody.mock.calls[0][1]).toContain('<!-- ronin:linear -->\nFixes RED-214');
+  });
+
+  it('reads the identifier from a PR already linked, without reading the issue', async () => {
+    getSlices.mockResolvedValue(twoSlices);
+
+    await processSlicePr(issue(), pr({ checksPending: true, body: `Slice\n\n<!-- ronin:linear -->\nFixes RED-214\n\n${HELP_FOOTER_MARKER}` }), false);
+
+    expect(listIssueComments).not.toHaveBeenCalled();
+    expect(setPullRequestBody).not.toHaveBeenCalled();
+  });
+
+  it('leaves the body alone when the issue has no Linear issue', async () => {
+    listIssueComments.mockResolvedValue([{ authorLogin: 'oskr814', body: '<!-- linear-linkback -->\n<a href="https://linear.app/x/issue/RED-1">RED-1</a>' }]);
+
+    await processSlicePr(issue(), pr({ checksPending: true }), false);
+
+    expect(setPullRequestBody).not.toHaveBeenCalled();
+  });
+
+  it('still adds the cheat sheet when reading the issue fails', async () => {
+    listIssueComments.mockRejectedValue(new Error('gh exploded'));
+
+    await processSlicePr(issue(), pr({ body: 'Slice description', checksPending: true }), false);
+
+    expect(setPullRequestBody.mock.calls[0][1]).not.toContain('ronin:linear');
+    expect(setPullRequestBody.mock.calls[0][1]).toContain(HELP_FOOTER_MARKER);
+  });
 });
 
 describe('processSlicePr — command cheat sheet', () => {
