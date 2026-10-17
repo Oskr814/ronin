@@ -9,6 +9,7 @@ import { APP_MANIFEST_FILE, parseAppManifest, publicizeTemplate, publicPortsIn, 
 import { removeWorktreeDir } from '../core/worktree.js';
 import { commentOnSpecPr, listOpenPrHeads, type PrHead } from '../core/github.js';
 import { runAgentTask } from '../core/agent-task.js';
+import { previewTask } from './prompts.js';
 import { HELP_FOOTER_MARKER } from '../commands/index.js';
 import { config } from '../core/config.js';
 import { acquireLock, launchWorker, lockHeld } from '../core/worker-launch.js';
@@ -271,7 +272,7 @@ function describeServices(ctx: TemplateContext): string {
 
 // After the app is up with its base seeds, an agent reads the PR (its
 // testing steps, its diff) and whatever the requester asked for, and leaves
-// the data that exercises the change — see agent-task.ts. Never fails the
+// the data that exercises the change — see prompts.ts. Never fails the
 // preview: an app without the extra data is still worth handing over.
 async function prepareData(opts: {
   prNumber: number;
@@ -287,7 +288,7 @@ async function prepareData(opts: {
     await execFileAsync('git', ['fetch', 'origin', pr.baseRefName], { cwd: activeRepo().productRepoPath });
     const mergeBase = (await execFileAsync('git', ['merge-base', `origin/${pr.baseRefName}`, pr.headRefOid], { cwd: dir })).stdout.trim();
     const stat = (await execFileAsync('git', ['diff', '--stat', mergeBase, pr.headRefOid], { cwd: dir })).stdout.trim();
-    await runAgentTask({
+    await runAgentTask(previewTask({
       type: 'prepare-preview-data',
       prNumber,
       appName: session.appName,
@@ -303,7 +304,7 @@ async function prepareData(opts: {
       services: describeServices(session.ctx),
       compose: session.ctx.compose,
       users: session.app.users,
-    });
+    }));
     return parsePreviewData(await readFile(outputPath, 'utf8'));
   } catch (error) {
     log.error(`preview PR #${prNumber}: no se pudieron preparar los datos`, error);

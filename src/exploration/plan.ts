@@ -118,7 +118,7 @@ export function planRun(input: PlanInput): ExplorationPlan {
   };
 }
 
-// The agent's functions.json (see agent-task.ts's explore-inventory),
+// The agent's functions.json (see prompts.ts's explore-inventory),
 // validated: an entry without an id, a name or a route is dropped, and ids
 // are normalized to "<module>.<function>" in lowercase.
 export function parseDiscoveredFunctions(raw: string): { functions: DiscoveredFunction[]; dropped: string[] } {

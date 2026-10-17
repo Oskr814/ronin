@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs';
 import { mkdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { runAgentTask } from '../core/agent-task.js';
+import { sliceTask } from './prompts.js';
 import { activeRepo } from '../core/repo-context.js';
 import { log } from '../core/logger.js';
 import { commentOnIssue, findOpenPrByHead, replyToComment } from '../core/github.js';
@@ -39,14 +40,14 @@ export async function processSpecCandidate(candidate: SpecCandidate): Promise<vo
   await rm(outDir, { recursive: true, force: true });
   await mkdir(outDir, { recursive: true });
   try {
-    const result = await runAgentTask({
+    const result = await runAgentTask(sliceTask({
       type: 'write-spec',
       issueNumber: candidate.issueNumber,
       appName: candidate.appName,
       ...(candidate.instruction ? { instruction: candidate.instruction } : {}),
       trigger: candidate.trigger,
       outDir,
-    });
+    }));
     const issueUrl = `https://github.com/${activeRepo().productRepo}/issues/${candidate.issueNumber}`;
     if (specNeedsInfo(result)) {
       await startInterview(candidate.issueNumber, issueUrl, { kind: 'spec', appName: candidate.appName, ...(candidate.instruction ? { instruction: candidate.instruction } : {}) })

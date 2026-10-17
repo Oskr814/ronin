@@ -2,6 +2,7 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { extname, join } from 'node:path';
 import { existsSync } from 'node:fs';
 import { runAgentTask } from '../core/agent-task.js';
+import { explorationTask } from './prompts.js';
 import { appDown, appUp } from '../app/index.js';
 import { loginAllUsers, renderHtmlToPng } from '../app/index.js';
 import { loadAppDefinition } from '../app/index.js';
@@ -54,7 +55,7 @@ export async function redoAfterImages(opts: { appName: string; codeDir: string; 
       await writeFile(mcpConfigPath, JSON.stringify({ mcpServers: { browser: mcpServer(app, meta.viewport, authStates[meta.rol], join(outDir, meta.viewport), origins) } }, null, 2));
       const outputPath = join(outDir, 'result.json');
       try {
-        await runAgentTask({
+        await runAgentTask(explorationTask({
           type: 'explore-redo-after',
           appName: opts.appName,
           appPath: app.path,
@@ -69,7 +70,7 @@ export async function redoAfterImages(opts: { appName: string; codeDir: string; 
           findingId: meta.id,
           findingFile,
           instruction: request.instruction,
-        });
+        }));
         const result = parseRedoResult(await readFile(outputPath, 'utf8'), outDir);
         let src = result.imagen;
         if (/\.html?$/i.test(src)) {

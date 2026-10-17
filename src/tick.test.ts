@@ -321,7 +321,7 @@ describe('processSlicePr — command cheat sheet', () => {
     );
 
     expect(stillInProgress).toBe(true);
-    expect(runAgentTask).toHaveBeenCalledWith({ type: 'fix-review', issueNumber: 228, prNumber: 230 });
+    expect(runAgentTask).toHaveBeenCalledWith(expect.objectContaining({ type: 'fix-review', issueNumber: 228, prNumber: 230 }));
   });
 });
 
@@ -345,7 +345,7 @@ describe('processSlicePr — non-bottom stacked PR (regression)', () => {
     );
 
     expect(stillInProgress).toBe(true);
-    expect(runAgentTask).toHaveBeenCalledWith({ type: 'fix-review', issueNumber: 228, prNumber: 230 });
+    expect(runAgentTask).toHaveBeenCalledWith(expect.objectContaining({ type: 'fix-review', issueNumber: 228, prNumber: 230 }));
   });
 });
 
@@ -515,7 +515,7 @@ describe('processSlicePr — failing checks, by failure signature', () => {
     expect(stillInProgress).toBe(true);
     expect(getFailedChecks).toHaveBeenCalledWith(229);
     expect(recordFailureSignature).toHaveBeenCalledWith(229, expect.stringMatching(/^[0-9a-f]{16}$/));
-    expect(runAgentTask).toHaveBeenCalledWith({ type: 'fix-e2e', issueNumber: 228, prNumber: 229 });
+    expect(runAgentTask).toHaveBeenCalledWith(expect.objectContaining({ type: 'fix-e2e', issueNumber: 228, prNumber: 229 }));
     expect(notifyBlocker).not.toHaveBeenCalled();
   });
 
@@ -540,7 +540,7 @@ describe('processSlicePr — failing checks, by failure signature', () => {
     const stillInProgress = await processSlicePr(issue(), failingBottom(), true);
 
     expect(stillInProgress).toBe(true);
-    expect(runAgentTask).toHaveBeenCalledWith({ type: 'fix-e2e', issueNumber: 228, prNumber: 229 });
+    expect(runAgentTask).toHaveBeenCalledWith(expect.objectContaining({ type: 'fix-e2e', issueNumber: 228, prNumber: 229 }));
   });
 
   it('blocks at the hard limit even when every failure is new', async () => {
@@ -585,10 +585,10 @@ describe('processSlicePr — mentions found on an already-mergeable bottom PR (r
 
     const stillInProgress = await processSlicePr(issue(), bottomPr, true);
 
-    expect(runAgentTask).toHaveBeenCalledWith({
+    expect(runAgentTask).toHaveBeenCalledWith(expect.objectContaining({
       type: 'review-request', issueNumber: 228, prNumber: 229,
       mentions: [{ id: 1, kind: 'issue', body: '@ronin fijate esto', reactionsEyes: 0 }],
-    });
+    }));
     expect(stillInProgress).toBe(true);
     expect(getPullRequestStatus).toHaveBeenCalledWith(229);
   });
@@ -644,10 +644,10 @@ describe('processSlicePr — /fix-comments command', () => {
     await processSlicePr(issue(), bottomPr, true);
 
     expect(listExternalOpenReviewThreads).toHaveBeenCalledWith(229, 'ronin');
-    expect(runAgentTask).toHaveBeenCalledWith({
+    expect(runAgentTask).toHaveBeenCalledWith(expect.objectContaining({
       type: 'fix-comments', issueNumber: 228, prNumber: 229,
       trigger: [commandComment], openThreads: [{ id: 'T1', body: 'finding from Copilot' }],
-    });
+    }));
     expect(addReaction).toHaveBeenCalledWith(1, 'issue', 'eyes');
   });
 
@@ -673,10 +673,10 @@ describe('processSlicePr — /fix-comments command', () => {
 
     await processSlicePr(issue(), bottomPr, true);
 
-    expect(runAgentTask).toHaveBeenCalledWith({
+    expect(runAgentTask).toHaveBeenCalledWith(expect.objectContaining({
       type: 'fix-comments', issueNumber: 228, prNumber: 229,
       trigger: [commandComment], openThreads: [],
-    });
+    }));
     expect(runAgentTask).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'review-request' }));
     expect(addReaction).toHaveBeenCalledWith(5, 'review', 'eyes');
   });
@@ -691,12 +691,12 @@ describe('processSlicePr — /fix-comments command', () => {
 
     await processSlicePr(issue(), bottomPr, true);
 
-    expect(runAgentTask).toHaveBeenCalledWith({
+    expect(runAgentTask).toHaveBeenCalledWith(expect.objectContaining({
       type: 'review-request', issueNumber: 228, prNumber: 229, mentions: [plainMention],
-    });
-    expect(runAgentTask).toHaveBeenCalledWith({
+    }));
+    expect(runAgentTask).toHaveBeenCalledWith(expect.objectContaining({
       type: 'fix-comments', issueNumber: 228, prNumber: 229, trigger: [commandComment], openThreads: [],
-    });
+    }));
     expect(addReaction).toHaveBeenCalledWith(1, 'issue', 'eyes');
     expect(addReaction).toHaveBeenCalledWith(2, 'issue', 'eyes');
   });
@@ -761,15 +761,15 @@ describe('processIssue — starting a next slice while the stack is still open',
 
 describe('agentTaskFor', () => {
   it('routes to implement-slice for a spec tracking issue without the direct-issue label', () => {
-    expect(agentTaskFor(issue({ labels: [] }), 2, 'Tabla de citas')).toEqual({
+    expect(agentTaskFor(issue({ labels: [] }), 2, 'Tabla de citas')).toEqual(expect.objectContaining({
       type: 'implement-slice', issueNumber: 228, sliceIndex: 2, sliceTitle: 'Tabla de citas',
-    });
+    }));
   });
 
   it('routes to fix-issue for an issue labeled ronin:issue-fix', () => {
-    expect(agentTaskFor(issue({ labels: ['ronin:issue-fix'] }), 0, 'Fix — Login redirects to 404')).toEqual({
+    expect(agentTaskFor(issue({ labels: ['ronin:issue-fix'] }), 0, 'Fix — Login redirects to 404')).toEqual(expect.objectContaining({
       type: 'fix-issue', issueNumber: 228, sliceIndex: 0, sliceTitle: 'Fix — Login redirects to 404',
-    });
+    }));
   });
 });
 
@@ -948,13 +948,13 @@ describe('processSpikeCandidate', () => {
 
     await processSpikeCandidate(candidate);
 
-    expect(runAgentTask).toHaveBeenCalledWith({
+    expect(runAgentTask).toHaveBeenCalledWith(expect.objectContaining({
       type: 'spike',
       issueNumber: 571,
       appName: 'backoffice',
       instruction: 'revisá el flujo de login',
       trigger: candidate.trigger,
-    });
+    }));
     expect(addReaction).toHaveBeenCalledWith(7, 'issue', 'eyes');
   });
 
@@ -1002,13 +1002,13 @@ describe('processTrustedFixCandidate', () => {
 
     await processTrustedFixCandidate(candidate);
 
-    expect(runAgentTask).toHaveBeenCalledWith({
+    expect(runAgentTask).toHaveBeenCalledWith(expect.objectContaining({
       type: 'fix-comments-external',
       prNumber: 599,
       headRefName: 'feat/cambio-cliente',
       trigger: candidate.trigger,
       openThreads: candidate.openThreads,
-    });
+    }));
   });
 
   it('reacts with eyes on the trigger comment(s), after a successful run', async () => {
@@ -1156,7 +1156,7 @@ describe('runExternalReviews', () => {
 
     await runExternalReviews();
 
-    expect(runAgentTask).toHaveBeenCalledWith({ type: 'thread-reply-external', prNumber: 600, headRefName: 'feat/z', mentions: [mention] });
+    expect(runAgentTask).toHaveBeenCalledWith(expect.objectContaining({ type: 'thread-reply-external', prNumber: 600, headRefName: 'feat/z', mentions: [mention] }));
     expect(addReaction).toHaveBeenCalledWith(7, 'review', 'eyes');
   });
 
@@ -1205,7 +1205,7 @@ describe('processChangelogCandidate', () => {
 
     await processChangelogCandidate({ release });
 
-    expect(runAgentTask).toHaveBeenCalledWith({ type: 'update-changelog', release });
+    expect(runAgentTask).toHaveBeenCalledWith(expect.objectContaining({ type: 'update-changelog', release }));
     expect(notifyBlocker).not.toHaveBeenCalled();
     expect(setLastChangelogRelease).toHaveBeenCalledWith('v1.13.79-odoo', '2026-09-12T17:06:10Z');
   });
@@ -1229,8 +1229,8 @@ describe('runChangelogUpdates', () => {
 
     await runChangelogUpdates();
 
-    expect(runAgentTask).toHaveBeenNthCalledWith(1, { type: 'update-changelog', release: releaseA });
-    expect(runAgentTask).toHaveBeenNthCalledWith(2, { type: 'update-changelog', release: releaseB });
+    expect(runAgentTask).toHaveBeenNthCalledWith(1, expect.objectContaining({ type: 'update-changelog', release: releaseA }));
+    expect(runAgentTask).toHaveBeenNthCalledWith(2, expect.objectContaining({ type: 'update-changelog', release: releaseB }));
   });
 
   it('runs one thread-reply-external agent task per thread-mention candidate, and marks each mention 👀 after', async () => {
@@ -1243,7 +1243,7 @@ describe('runChangelogUpdates', () => {
 
     await runExternalReviews();
 
-    expect(runAgentTask).toHaveBeenCalledWith({ type: 'thread-reply-external', prNumber: 600, headRefName: 'feat/z', mentions: [mention] });
+    expect(runAgentTask).toHaveBeenCalledWith(expect.objectContaining({ type: 'thread-reply-external', prNumber: 600, headRefName: 'feat/z', mentions: [mention] }));
     expect(addReaction).toHaveBeenCalledWith(7, 'review', 'eyes');
   });
 

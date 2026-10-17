@@ -2,6 +2,7 @@ import { markProcessed } from '../core/processed-comments.js';
 import { mkdir, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { runAgentTask } from '../core/agent-task.js';
+import { commandTask } from './prompts.js';
 import { getIssueBody, replyToComment, setIssueBody, type Comment } from '../core/github.js';
 import { applyScopeChange, appendInvestigation } from './issue-sections.js';
 import { launchPrototypeWorker } from './prototype.js';
@@ -84,7 +85,7 @@ export async function processIssueRequest(candidate: IssueRequestCandidate): Pro
   await mkdir(outDir, { recursive: true });
   try {
     const outputPath = join(outDir, 'result.json');
-    await runAgentTask({ type: 'issue-request', issueNumber, trigger, outputPath });
+    await runAgentTask(commandTask({ type: 'issue-request', issueNumber, trigger, outputPath }));
     const result = parseIssueRequestResult(await readFile(outputPath, 'utf8'));
 
     let reply = result.respuesta;

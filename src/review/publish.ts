@@ -1,6 +1,7 @@
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { runAgentTask } from '../core/agent-task.js';
+import { reviewTask } from './prompts.js';
 import { postReview, resolveReviewThread, replyToComment, type ReviewThread } from '../core/github.js';
 import { activeRepo } from '../core/repo-context.js';
 import { log } from '../core/logger.js';
@@ -79,7 +80,7 @@ export async function runExternalReview(candidate: ReviewCandidate, opts: RunExt
       : { mode: 'full' };
 
     const agentStart = Date.now();
-    await runAgentTask({
+    await runAgentTask(reviewTask({
       type: 'external-review',
       prNumber: candidate.prNumber,
       headRefName: candidate.headRefName,
@@ -96,7 +97,7 @@ export async function runExternalReview(candidate: ReviewCandidate, opts: RunExt
         scope.mode === 'incremental'
           ? { mode: 'incremental', previousSha: candidate.previousSha!, changedLines: formatChangedLines(scope.changed) }
           : { mode: 'full' },
-    });
+    }));
 
     const agentMs = Date.now() - agentStart;
 

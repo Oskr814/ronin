@@ -4,6 +4,7 @@ export * from './memory.js';
 export * from './output.js';
 export * from './plan.js';
 export * from './pr.js';
+export * from './prompts.js';
 export * from './redo.js';
 export * from './run.js';
 export * from './schedule.js';

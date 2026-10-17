@@ -3,6 +3,7 @@ import { dirname, extname } from 'node:path';
 import { makePrototype, PrototypeDeclined, type PrototypeDraft } from '../commands/prototype.js';
 import { config } from '../core/config.js';
 import { log } from '../core/logger.js';
+import { portalTask } from './prompts.js';
 import { getUser } from './accounts.js';
 import { prototypeMail } from './mail.js';
 import { launchPortalWorker } from './launch.js';
@@ -90,7 +91,7 @@ function draw(request: PortalRequest, round: number): Promise<PortalRequest | un
     {
       key: `portal-p-${n}`,
       appName: request.app,
-      task: (base) => ({
+      task: (base) => portalTask({
         type: 'portal-prototype',
         requestNumber: n,
         ...base,

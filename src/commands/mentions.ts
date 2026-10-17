@@ -33,7 +33,7 @@ export function isSpikeCommand(body: string): boolean {
 
 const SPIKE_COMMAND_RE = /\/spike\s+(\S+)(?:\s+([\s\S]+))?/i;
 
-// Turns the issue into a spec PR — see agent-task.ts's write-spec. Same
+// Turns the issue into a spec PR — see slices/prompts.ts's write-spec. Same
 // arguments as /spike: an app and an optional instruction.
 export function isSpecCommand(body: string): boolean {
   return /\/spec\b/i.test(body);

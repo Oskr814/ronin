@@ -4,6 +4,7 @@ import { mkdir, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { runAgentTask } from '../core/agent-task.js';
+import { portalTask } from './prompts.js';
 import { config } from '../core/config.js';
 import { log } from '../core/logger.js';
 import { activeRepo } from '../core/repo-context.js';
@@ -156,7 +157,7 @@ export async function classifyRequest(n: number): Promise<void> {
     await mkdir(outDir, { recursive: true });
     dir = await checkout(n);
     const outputPath = join(outDir, 'result.json');
-    await runAgentTask({
+    await runAgentTask(portalTask({
       type: 'portal-request',
       requestNumber: n,
       appName: request.app,
@@ -169,7 +170,7 @@ export async function classifyRequest(n: number): Promise<void> {
       reproductionsLeft: Math.max(0, MAX_REPRODUCTIONS - (request.bug?.reproductions.length ?? 0)),
       checkoutDir: dir,
       outputPath,
-    });
+    }));
     const result = parsePortalResult(await readFile(outputPath, 'utf8'), request.questions, request.prototypes?.length ?? 0, request.bug?.reproductions.length ?? 0);
     const updated = await updateUnlessCancelled(n, (r) => applyResult(r, result));
     if (!updated) {

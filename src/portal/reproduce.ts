@@ -3,6 +3,7 @@ import { dirname, extname } from 'node:path';
 import { draftDiff, runOnApp, type AppRun } from '../commands/prototype.js';
 import { config } from '../core/config.js';
 import { log } from '../core/logger.js';
+import { portalTask } from './prompts.js';
 import { insideDir } from '../exploration/index.js';
 import { getUser } from './accounts.js';
 import { MAX_QUESTIONS } from './classify.js';
@@ -228,7 +229,7 @@ function reproduce(request: PortalRequest, round: number): Promise<PortalRequest
     {
       key: `portal-r-${n}`,
       appName: request.app,
-      task: (base, { compose }) => ({
+      task: (base, { compose }) => portalTask({
         type: 'portal-reproduce',
         requestNumber: n,
         ...base,

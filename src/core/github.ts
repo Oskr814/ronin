@@ -903,7 +903,7 @@ export interface BugIssue {
 // above. See docs/superpowers/specs/2026-07-28-bug-issue-intake-design.md
 // (original design, since generalized from bug-only intake to any assigned
 // issue — clarity is now judged per-issue by the agent itself, see
-// agent-task.ts's 'fix-issue' prompt).
+// slices/prompts.ts's 'fix-issue' prompt).
 export async function listAssignedIssues(): Promise<BugIssue[]> {
   const stdout = await gh([
     'issue', 'list',

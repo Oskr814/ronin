@@ -8,14 +8,14 @@ export function sliceBranch(issueNumber: number, sliceIndex: number): string {
 }
 
 // The 'plan' task's branch — never opens a PR (its job is to rewrite the
-// tracking issue's body, see agent-task.ts), so it's the one ronin branch
+// tracking issue's body, see prompts.ts), so it's the one ronin branch
 // that never goes through the merge-time worktree cleanup in tick.ts.
 export function planBranch(issueNumber: number): string {
   return `ronin/${issueNumber}/plan`;
 }
 
 // The 'spike' task's branch — same reasoning as planBranch: only ever
-// rewrites the issue body (see agent-task.ts), never opens a PR, so its
+// rewrites the issue body (see commands/prompts.ts), never opens a PR, so its
 // caller (processSpikeCandidate in tick.ts) is responsible for cleaning up
 // the worktree itself, same as discoverAssignedSpecs does for planBranch.
 export function spikeBranch(issueNumber: number): string {
@@ -56,7 +56,7 @@ export interface StackedPr extends PullRequestStatus {
 }
 
 // Slice branches are created as `ronin/<issue>/<slice-slug>` (see
-// agent-task.ts's sliceBranch), so an issue's open PRs are found by branch
+// sliceBranch above), so an issue's open PRs are found by branch
 // prefix out of the single batched list (see github.ts's
 // listAllOpenRoninPrs) instead of a separate per-issue fetch — see
 // docs/superpowers/specs/2026-08-01-pr-list-batching-design.md. Pure: no I/O,

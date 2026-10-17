@@ -9,6 +9,7 @@ import { log } from '../core/logger.js';
 import { queueExplorationProject } from '../core/linear-assign.js';
 import { acceptSubject, repoCommitConvention, type CommitChange, type CommitConvention } from '../core/commit-style.js';
 import { runAgentTask } from '../core/agent-task.js';
+import { explorationTask } from './prompts.js';
 import {
   createIssue,
   createPullRequest,
@@ -115,7 +116,7 @@ export async function explorationCommitSubject(dir: string, change: CommitChange
   const convention = await repoCommitConvention(dir, baseRef());
   const prefix = subjectPrefix(convention);
   try {
-    const raw = await runAgentTask({ type: 'commit-subject', checkoutDir: dir, prefix, language: convention.language, examples: convention.examples, description: change.description });
+    const raw = await runAgentTask(explorationTask({ type: 'commit-subject', checkoutDir: dir, prefix, language: convention.language, examples: convention.examples, description: change.description }));
     const subject = acceptSubject(raw, prefix);
     if (subject) return subject;
     log.info(`exploración: el asunto propuesto no sirve (${raw.trim().slice(0, 120)}), uso el de respaldo`);
