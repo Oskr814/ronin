@@ -873,7 +873,7 @@ La persona tiene tres salidas:
 
 1. El worker publica las capturas en la rama de evidencia (§11.5) y abre un **issue en el repo del producto, asignado a ronin**, con label `ronin:portal` y un marcador (`<!-- ronin:portal P-n -->`) que evita abrir otro si el worker muere justo después. El issue lleva el cambio aprobado, el prototipo, el análisis de ronin, el diff y la conversación, con lo que escribió la persona citado y sin `@`. Las capturas se llaman `antes-N` y `despues-N`, así `fix-issue` muestra en el PR, y en el changelog, solo los después.
 2. ronin lo toma como cualquier issue asignado (`discoverAssignedIssues` → `fix-issue`), partiendo del diff del prototipo sin ampliar el alcance, y abre el PR con "Closes #n".
-3. `followPortalIssues`, un paso del tick que también corre con el webhook de un PR abierto (flujo `portal`), encuentra ese PR (`closingIssuesReferences`) y le pone **`ronin:auto-merge`**. Además le avisa al equipo (`NOTIFY_TO`) que espera su aprobación, y la persona ve en la conversación que el cambio está hecho y lo revisa el equipo.
+3. `followPortalIssues`, un paso del tick que también corre con el webhook de un PR abierto (flujo `portal`), encuentra ese PR (`closingIssuesReferences`) y le pone **`ronin:auto-merge`**. Además le avisa al equipo del repo (§16.7) que espera su aprobación, y la persona ve en la conversación que el cambio está hecho y lo revisa el equipo.
 4. Con la aprobación de un dev y CI en verde, `sweepAutoMerge` lo mergea (§13). Con el webhook del PR cerrado o el tick siguiente, el pedido queda en `done` y la persona recibe "Listo, sale en la próxima actualización".
 
 Un PR cerrado sin merge se olvida hasta que otro cierre el issue. Si `fix-issue` necesita información, el issue queda bloqueado y se abre la entrevista con el equipo, como con cualquier issue asignado. El merge automático con deploy queda para más adelante: por ahora siempre aprueba una persona.
@@ -886,7 +886,7 @@ Un PR cerrado sin merge se olvida hasta que otro cierre el issue. Si `fix-issue`
 
 #### 16.7 Correos
 
-Todos salen de la misma cuenta, `GMAIL_USER` / `GMAIL_APP_PASSWORD` (la de los bloqueos), con el nombre "ronin · Pedidos de ajustes", para todos los repos. A la persona: la invitación, el cambio de contraseña, cada respuesta de ronin, el prototipo listo, el paso al equipo, el merge y el cierre del issue. Al equipo (`NOTIFY_TO`): el issue de un pedido que es suyo y el PR que espera aprobación. Las imágenes nunca van en el correo: el enlace lleva al portal. Un correo que falla queda en el log y no frena el pedido.
+Todos salen de la misma cuenta, `GMAIL_USER` / `GMAIL_APP_PASSWORD` (la de los bloqueos), con el nombre "ronin · Pedidos de ajustes", para todos los repos. A la persona: la invitación, el cambio de contraseña, cada respuesta de ronin, el prototipo listo, el paso al equipo, el merge y el cierre del issue. Al equipo: el issue de un pedido que es suyo y el PR que espera aprobación. El equipo es el de cada repo, la lista `notifyTo` de su bloque `portal` en `repos.json`, y nunca recibe los pedidos de otro repo. Un repo sin `notifyTo` se los manda a `NOTIFY_TO`, que es para los bloqueos. Las imágenes nunca van en el correo: el enlace lleva al portal. Un correo que falla queda en el log y no frena el pedido.
 
 #### 16.8 API
 
@@ -911,7 +911,7 @@ La administración está en la API del tablero, solo para `DASHBOARD_ADMINS`: `G
 #### 16.9 Activarlo
 
 1. En `.env`: `PORTAL_URL` (`https://ronin-agent.redmotoshn.com`) y `PORTAL_SESSION_SECRET` (`openssl rand -hex 32`, distinto del del tablero). Opcionales: `PORTAL_SESSION_DAYS` (30), `PORTAL_DAILY_LIMIT` (5) y `PORTAL_DATA_DIR` (`portal-data`).
-2. En `repos.json`, el bloque `portal` de cada repo que se ofrece, con sus aplicaciones.
+2. En `repos.json`, el bloque `portal` de cada repo que se ofrece, con sus aplicaciones y, en `notifyTo`, los correos de su equipo.
 3. nginx-proxy-manager tiene que pasarle al 3939 todas las rutas del dominio, no solo la de los webhooks.
 4. `pnpm build` y reiniciar `ronin-server`. Las cuentas se crean desde el tablero.
 

@@ -148,7 +148,7 @@ export function closedMail(request: PortalRequest, user: PortalUser, portalUrl: 
   };
 }
 
-// To the dev team (NOTIFY_TO), when ronin opened the PR of an approved
+// To the dev team (teamTo in notify.ts), when ronin opened the PR of an approved
 // request: it merges once one of them approves it and CI is green.
 export function teamPrMail(request: PortalRequest, user: PortalUser | undefined, to: string, prUrl: string): Mail {
   const who = user ? `${user.name} <${user.email}>` : request.userId;
@@ -173,7 +173,7 @@ function teamKind(request: PortalRequest): string {
   return request.verdict?.kind === 'minor' ? 'ajuste chico' : 'pedido grande';
 }
 
-// To the dev team (NOTIFY_TO): a request that's theirs now (too big, or
+// To the dev team (teamTo in notify.ts): a request that's theirs now (too big, or
 // its prototype turned down or impossible), with its issue and its
 // conversation. `patch` is the last prototype's diff.
 export function teamRequestMail(request: PortalRequest, user: PortalUser | undefined, to: string, dataDir: string, patch?: string): Mail {

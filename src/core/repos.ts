@@ -76,9 +76,9 @@ function validateEntry(entry: unknown, index: number): RepoEntry {
 
 function validatePortal(portal: unknown, where: string): PortalRepoConfig {
   if (typeof portal !== 'object' || portal === null || Array.isArray(portal)) throw new Error(`${where} debe ser un objeto`);
-  const { name, apps, ...rest } = portal as Record<string, unknown>;
+  const { name, apps, notifyTo, ...rest } = portal as Record<string, unknown>;
   const unknownKeys = Object.keys(rest);
-  if (unknownKeys.length > 0) throw new Error(`${where} tiene campos desconocidos: ${unknownKeys.join(', ')} (válidos: name, apps)`);
+  if (unknownKeys.length > 0) throw new Error(`${where} tiene campos desconocidos: ${unknownKeys.join(', ')} (válidos: name, apps, notifyTo)`);
   if (typeof name !== 'string' || !name.trim()) throw new Error(`${where}.name debe ser el nombre con el que el portal muestra el repo (p. ej. "Red Motos")`);
   if (typeof apps !== 'object' || apps === null || Array.isArray(apps) || Object.keys(apps).length === 0) {
     throw new Error(`${where}.apps debe ser un objeto app de ronin.app.json → { name, description? }`);
@@ -90,7 +90,10 @@ function validatePortal(portal: unknown, where: string): PortalRepoConfig {
       throw new Error(`${where}.apps.${app} debe ser { name, description? }`);
     }
   }
-  return { name, apps: apps as PortalRepoConfig['apps'] };
+  if (notifyTo !== undefined && (!Array.isArray(notifyTo) || notifyTo.length === 0 || notifyTo.some((a) => typeof a !== 'string' || !/^[^\s@,]+@[^\s@,]+$/.test(a)))) {
+    throw new Error(`${where}.notifyTo debe ser una lista de correos (p. ej. ["ana@x.com", "luis@x.com"])`);
+  }
+  return { name, apps: apps as PortalRepoConfig['apps'], ...(notifyTo !== undefined ? { notifyTo: notifyTo as string[] } : {}) };
 }
 
 function validateLinear(linear: unknown, where: string): NonNullable<RepoEntry['linear']> {

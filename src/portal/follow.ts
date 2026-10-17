@@ -4,7 +4,7 @@ import { log } from '../core/logger.js';
 import { activeRepo } from '../core/repo-context.js';
 import { getUser } from './accounts.js';
 import { closedMail, doneMail, teamPrMail } from './mail.js';
-import { sendPortalMails } from './notify.js';
+import { sendPortalMails, teamTo } from './notify.js';
 import { addEvent, addRoninMessage, listRequests, updateRequest, type PortalRequest, type RequestStatus } from './requests.js';
 
 // The tick (and the webhooks of a PR opened or closed and of an issue
@@ -87,7 +87,7 @@ export async function followPortalIssues(): Promise<void> {
             return r;
           });
           log.info(`portal: el pedido P-${request.number} tiene el PR #${pr}, con ${LABEL_AUTO_MERGE}`);
-          await sendPortalMails(updated, [teamPrMail(updated, await getUser(updated.userId), config.notifyTo, `https://github.com/${repo}/pull/${pr}`)]);
+          await sendPortalMails(updated, [teamPrMail(updated, await getUser(updated.userId), teamTo(), `https://github.com/${repo}/pull/${pr}`)]);
           continue;
         }
       }

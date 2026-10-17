@@ -19,7 +19,8 @@
       "name": "Red Motos",
       "apps": {
         "backoffice": { "name": "Backoffice", "description": "Pedidos, clientes y catálogos" }
-      }
+      },
+      "notifyTo": ["dev1@example.com", "dev2@example.com"]
     }
   },
   {
