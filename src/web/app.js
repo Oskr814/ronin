@@ -104,7 +104,7 @@ function duration(ms) {
 const money = (usd) => (usd < 0.01 ? 'menos de US$0,01' : `US$${usd.toFixed(2).replace('.', ',')}`);
 const pct = (fraction) => `${Math.round(fraction * 100)}%`;
 
-const S = { snap: null, today: null, sel: null, open: [], runIdx: {}, pendingRun: null, filter: null, q: '', itemRuns: {}, run: null, stream: null, detail: {}, view: {}, doc: {}, menu: false, dialog: null, expanded: new Set(), expl: {}, ficha: {}, fichaOpen: {}, fichaFilter: { tipo: 'todas', vp: 'todos' }, antes: {}, oldAfter: new Set(), lightbox: null, fmenu: false, fdialog: null, fdraft: {}, listas: {}, scope: 'all', project: '', attAll: false, extra: {}, newIssue: null, files: {}, fcur: {}, ffold: {}, fexp: {}, fcontent: {}, fq: {}, ftree: false, fcomp: null, fbusy: new Set(), rpanel: null, page: null, portal: { data: null, error: null }, pdialog: null, ped: { list: null, error: null, listAt: 0, detail: {}, n: null, tab: 'act', filter: 'todos', run: null, lb: null, patch: {} }, reu: { list: null, error: null, listAt: 0, detail: {}, n: null, tab: null, up: null, run: null, open: {}, retrying: false } };
+const S = { snap: null, today: null, sel: null, open: [], runIdx: {}, pendingRun: null, filter: null, q: '', itemRuns: {}, run: null, stream: null, detail: {}, view: {}, doc: {}, menu: false, dialog: null, expanded: new Set(), expl: {}, ficha: {}, fichaOpen: {}, fichaFilter: { tipo: 'todas', vp: 'todos' }, antes: {}, oldAfter: new Set(), lightbox: null, fmenu: false, fdialog: null, fdraft: {}, listas: {}, scope: 'all', project: '', attAll: false, extra: {}, newIssue: null, files: {}, fcur: {}, ffold: {}, fexp: {}, fcontent: {}, fq: {}, ftree: false, fcomp: null, fbusy: new Set(), rpanel: null, page: null, portal: { data: null, error: null }, pdialog: null, ped: { list: null, error: null, listAt: 0, detail: {}, n: null, tab: 'act', filter: 'todos', run: null, lb: null, patch: {} }, reu: { list: null, error: null, listAt: 0, detail: {}, n: null, tab: null, up: null, run: null, open: {}, retrying: false, form: {}, approving: false } };
 // The sidebar's Linear filter (#101), remembered per browser.
 try { Object.assign(S, JSON.parse(localStorage.getItem('ronin-scope') ?? '{}')); } catch { /* sin storage */ }
 function saveScope() {
@@ -3133,7 +3133,7 @@ function wirePedidos() {
 // uploads to it and sees its meetings. The notes stay on the runner.
 const REU_STATUS = {
   pending: ['run', 'En cola para ronin'], reading: ['run', 'ronin la está leyendo'], review: ['warn', 'Espera revisión'],
-  empty: ['idle', 'Nada accionable'], failed: ['crit', 'Falló la lectura'],
+  empty: ['idle', 'Nada accionable'], failed: ['crit', 'Falló la lectura'], done: ['ok', 'Creado'], discarded: ['idle', 'Descartada'],
 };
 const REU_KIND = { pdf: 'PDF', docx: 'Word', text: 'Texto', pasted: 'Pegado' };
 const REU_MAX_BYTES = 10 * 1024 * 1024;
@@ -3207,7 +3207,8 @@ async function loadReunion(n) {
     S.reu.detail[n] = { ...S.reu.detail[n], error: error.message, at: Date.now() };
   }
   if (S.page === 'reunion' && S.reu.n === n) {
-    renderCenter();
+    // Not under someone typing in the review: it'd take their cursor away.
+    if (!document.activeElement?.closest?.('[data-reuf]')) renderCenter();
     const run = S.reu.run;
     if (run && (!run.summary || run.summary.state === 'running')) loadReunionRun(run.runId);
   }
@@ -3257,33 +3258,167 @@ function reuBody(key, label, body) {
 const reuMeta = (parts) => (parts.filter(Boolean).length ? `<div class="reu-meta">${parts.filter(Boolean).join('')}</div>` : '');
 const reuCycle = (cycle) => (cycle ? `<span>${LIN_ICON} ${esc(REU_CYCLE[cycle] ?? cycle)}</span>` : '');
 
+// The review (#62, entrega 3): what the person marks and changes, by
+// proposal id, kept while the page is open.
+function reuForm(d) {
+  const key = d.number;
+  if (S.reu.form[key]) return S.reu.form[key];
+  const p = d.proposals;
+  const f = { on: {}, title: {}, body: {}, lead: {}, project: {}, cycle: {}, edit: {} };
+  const all = [...p.projects.flatMap((x) => [x, ...x.issues]), ...p.issues, ...p.comments];
+  for (const x of all) f.on[x.id] = !d.results[x.id]?.ok;
+  S.reu.form[key] = f;
+  return f;
+}
+
+const reuEditable = (d) => d.status === 'review';
+// Dimmed: unmarked while reviewing, or left out once it's decided.
+const reuOff = (d, id) => !d.results[id]?.ok && (reuEditable(d) ? !reuForm(d).on[id] : d.status === 'done' || d.status === 'discarded');
+const reuPlanning = (d) => linearRepos().find((l) => l.repo === d.repo)?.planning ?? null;
+
+// The current cycle and the next, by what the page knows of Linear.
+function reuCycleLabels(d) {
+  const cycles = reuPlanning(d)?.cycles ?? [];
+  const current = cycles.find((c) => c.current);
+  const next = cycles.find((c) => !c.current && (!current || c.startsAt >= current.endsAt));
+  return { current: current ? `${cycleName(current)} (el actual)` : 'El ciclo actual', next: next ? `${cycleName(next)} (el próximo)` : 'El próximo ciclo' };
+}
+
+// What became of it, once approved.
+function reuResult(d, id) {
+  const r = d.results[id];
+  if (!r) return '';
+  if (!r.ok) return `<div class="reu-res bad">No se pudo crear: ${esc(r.error)}</div>`;
+  const label = r.projectId ? 'Proyecto creado en Linear' : r.number && d.proposals.comments.some((c) => c.id === id) ? `Comentado en #${r.number}` : `Creado #${r.number}`;
+  const href = typeof r.url === 'string' && /^https:\/\/(github\.com|linear\.app)\//.test(r.url) ? r.url : null;
+  return `<div class="reu-res ok">✓ ${esc(label)}${href ? ` <a href="${esc(href)}" target="_blank" rel="noopener">abrir ↗</a>` : ''}${r.number && !r.projectId ? ` <button class="link" data-reuitem="${esc(`${d.repo}#${r.number}`)}">en el tablero</button>` : ''}<span class="m"> · ${esc(r.by)}</span></div>`;
+}
+
+function reuCheck(d, id, label) {
+  if (!reuEditable(d) || d.results[id]?.ok) return '';
+  const f = reuForm(d);
+  return `<input type="checkbox" class="reu-chk" data-reuchk="${esc(id)}" ${f.on[id] ? 'checked' : ''} aria-label="${esc(label)}">`;
+}
+
+function reuTitle(d, id, value, label) {
+  const f = reuEditable(d) && !d.results[id]?.ok ? reuForm(d) : null;
+  if (!f) return `<b>${esc(value)}</b>`;
+  return `<input class="reu-ti" data-reuf="title" data-reuid="${esc(id)}" maxlength="256" value="${esc(f.title[id] ?? value)}" aria-label="${esc(label)}">`;
+}
+
+function reuSelect(d, field, id, value, options, label) {
+  const f = reuForm(d);
+  const cur = f[field][id] ?? value ?? '';
+  return `<label class="reu-sel">${label} <select data-reuf="${field}" data-reuid="${esc(id)}">${options.map(([v, l]) => `<option value="${esc(v)}" ${v === cur ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></label>`;
+}
+
+function reuCycleField(d, id, value, label = `${LIN_ICON} Ciclo`) {
+  if (!reuPlanning(d)) return '';
+  if (!reuEditable(d) || d.results[id]?.ok) return reuCycle(value);
+  const labels = reuCycleLabels(d);
+  return reuSelect(d, 'cycle', id, value, [['', 'sin ciclo'], ['current', labels.current], ['next', labels.next]], label);
+}
+
+// The description: shown, or a textarea while editing it.
+function reuText(d, key, id, label, body) {
+  const f = reuEditable(d) && !d.results[id]?.ok ? reuForm(d) : null;
+  if (!f) return reuBody(key, label, body);
+  const open = S.reu.open[key];
+  return `<button class="reu-x" data-reuopen="${esc(key)}">${open ? '▾' : '▸'} ${esc(label)}${f.body[id] !== undefined ? ' · editada' : ''}</button>${open ? `<textarea class="reu-ta" data-reuf="body" data-reuid="${esc(id)}" rows="8">${esc(f.body[id] ?? body)}</textarea>` : ''}`;
+}
+
 function reuIssueHTML(d, i, kid = false) {
-  return `<div class="reu-pr ${kid ? 'reu-kid' : ''}"><div class="reu-h"><span class="reu-kind iss">issue</span><b>${esc(i.title)}</b></div>
+  const planning = reuPlanning(d);
+  const projectField = !kid && planning && reuEditable(d) && !d.results[i.id]?.ok
+    ? reuSelect(d, 'project', i.id, i.project ?? '', [['', 'sin proyecto'], ...[...new Set([...(i.project ? [i.project] : []), ...planning.projects.map((x) => x.name)])].map((x) => [x, x])], `${LIN_ICON} Proyecto`)
+    : i.project ? `<span>${LIN_ICON} ${esc(i.project)}</span>` : '';
+  return `<div class="reu-pr ${kid ? 'reu-kid' : ''} ${reuOff(d, i.id) ? 'off' : ''}"><div class="reu-h">${reuCheck(d, i.id, 'Incluir este issue')}<span class="reu-kind iss">issue</span>${reuTitle(d, i.id, i.title, 'Título del issue')}</div>
     ${i.why ? `<div class="reu-why">${esc(i.why)}</div>` : ''}
-    ${reuMeta([i.project ? `<span>${LIN_ICON} ${esc(i.project)}</span>` : '', reuCycle(i.cycle)])}
-    <div class="reu-xs">${reuCites(d, `q-${i.id}`, i.cites)}${reuBody(`b-${i.id}`, 'Descripción', i.body)}</div></div>`;
+    ${reuMeta([projectField, reuCycleField(d, i.id, i.cycle)])}
+    <div class="reu-xs">${reuCites(d, `q-${i.id}`, i.cites)}${reuText(d, `b-${i.id}`, i.id, 'Descripción', i.body)}</div>${reuResult(d, i.id)}</div>`;
 }
 
 function reuProposalsHTML(d) {
   const p = d.proposals;
   if (!p) return '<p class="note">Todavía no hay propuestas: ronin no terminó de leer las notas.</p>';
+  const editable = reuEditable(d);
+  const off = (id) => reuOff(d, id);
   const sec = (title, n, html, hint = '') => (n ? `<section class="reu-sec"><h2>${title} <span class="c">${n}</span>${hint ? `<span class="hint">${hint}</span>` : ''}</h2>${html}</section>` : '');
-  const projects = p.projects.map((x) => `<div class="reu-pr proj"><div class="reu-h"><span class="reu-kind proj">${LIN_ICON} proyecto nuevo</span><b>${esc(x.name)}</b></div>
+  const planning = reuPlanning(d);
+  const projects = p.projects.map((x) => `<div class="reu-pr proj ${off(x.id) ? 'off' : ''}"><div class="reu-h">${reuCheck(d, x.id, 'Incluir este proyecto')}<span class="reu-kind proj">${LIN_ICON} proyecto nuevo</span>${reuTitle(d, x.id, x.name, 'Nombre del proyecto')}</div>
       ${x.why ? `<div class="reu-why">${esc(x.why)}</div>` : ''}
-      ${reuMeta(['<span>Linear · estado Backlog</span>', x.lead ? `<span>líder ${esc(x.lead)}</span>` : ''])}
-      <div class="reu-xs">${reuCites(d, `q-${x.id}`, x.cites)}${x.description ? reuBody(`b-${x.id}`, 'Descripción', x.description) : ''}</div>
+      ${reuMeta(['<span>Linear · estado Backlog</span>', editable && planning && !d.results[x.id]?.ok ? reuSelect(d, 'lead', x.id, x.lead ?? '', [['', 'sin líder'], ...planning.people.map((u) => [u.name, u.name])], 'Líder') : x.lead ? `<span>líder ${esc(x.lead)}</span>` : ''])}
+      <div class="reu-xs">${reuCites(d, `q-${x.id}`, x.cites)}${x.description ? reuText(d, `b-${x.id}`, x.id, 'Descripción', x.description) : ''}</div>${reuResult(d, x.id)}
       <div class="reu-kids"><div class="reu-kids-h">Sus issues · en GitHub, dentro de este proyecto</div>${x.issues.map((i) => reuIssueHTML(d, i, true)).join('')}</div></div>`).join('');
-  const comments = p.comments.map((c) => `<div class="reu-pr"><div class="reu-h"><span class="reu-kind com">comentario</span><b>en <button class="link" data-reuitem="${esc(`${d.repo}#${c.issue}`)}">#${c.issue}</button> <span class="reu-it">${esc(c.issueTitle)}</span></b></div>
+  const comments = p.comments.map((c) => `<div class="reu-pr ${off(c.id) ? 'off' : ''}"><div class="reu-h">${reuCheck(d, c.id, 'Incluir este comentario')}<span class="reu-kind com">comentario</span><b>en <button class="link" data-reuitem="${esc(`${d.repo}#${c.issue}`)}">#${c.issue}</button> <span class="reu-it">${esc(c.issueTitle)}</span></b></div>
       ${c.why ? `<div class="reu-why">${esc(c.why)}</div>` : ''}
-      ${reuMeta([c.cycle ? `<span>${LIN_ICON} lo pasa a ${esc(REU_CYCLE[c.cycle])}</span>` : ''])}
-      <div class="reu-xs">${reuCites(d, `q-${c.id}`, c.cites)}${reuBody(`b-${c.id}`, 'Comentario', c.body)}</div></div>`).join('');
+      ${reuMeta([reuCycleField(d, c.id, c.cycle, `${LIN_ICON} Pasarlo a`)])}
+      <div class="reu-xs">${reuCites(d, `q-${c.id}`, c.cites)}${reuText(d, `b-${c.id}`, c.id, 'Comentario', c.body)}</div>${reuResult(d, c.id)}</div>`).join('');
   const discarded = p.discarded.map((x, i) => `<div class="reu-disc"><b>${esc(x.topic)}</b><span class="reu-why">${esc(x.why)}</span><div class="reu-xs">${reuCites(d, `d-${i}`, x.cites)}</div></div>`).join('');
-  return `${p.summary ? `<p class="reu-summary">${esc(p.summary)}</p>` : ''}
+  const done = d.status === 'done' ? '<div class="pd-now"><div class="k">' + PED_ICON.ok + ' Creado</div><div class="t">Se creó todo lo aprobado</div><div class="d">Lo que no se marcó quedó fuera. Los issues se crearon sin asignar: el equipo decide quién los toma.</div></div>'
+    : d.status === 'discarded' ? `<div class="pd-now"><div class="k">${PED_ICON.ok} Descartada</div><div class="t">${Object.values(d.results).some((r) => r.ok) ? 'Lo que faltaba quedó fuera' : 'No se creó nada de esta reunión'}</div></div>` : '';
+  return `${done}${p.summary ? `<p class="reu-summary">${esc(p.summary)}</p>` : ''}
     ${sec('Proyectos', p.projects.length, projects, 'en Linear: GitHub no tiene proyectos')}
     ${sec('Issues', p.issues.length, p.issues.map((i) => reuIssueHTML(d, i)).join(''))}
     ${sec('En issues que ya existen', p.comments.length, comments)}
     ${sec('Descartado', p.discarded.length, `<div class="reu-discs">${discarded}</div>`, 'lo que se habló y no pide trabajo nuevo')}
-    <p class="note">La revisión — marcar, editar y crear lo aprobado en GitHub y Linear — llega en la próxima entrega de #62.</p>`;
+    ${editable ? reuApproveBar(d) : ''}`;
+}
+
+// What will be created: the marked ones not created yet.
+function reuChosen(d) {
+  const f = reuForm(d);
+  const p = d.proposals;
+  const pick = (x) => f.on[x.id] && !d.results[x.id]?.ok;
+  const projects = p.projects.filter(pick).length;
+  const issues = [...p.projects.flatMap((x) => x.issues), ...p.issues].filter(pick).length;
+  const comments = p.comments.filter(pick).length;
+  return { projects, issues, comments };
+}
+
+function reuApproveBar(d) {
+  const { projects, issues, comments } = reuChosen(d);
+  const parts = [projects ? plural(projects, 'proyecto', 'proyectos') : '', issues ? plural(issues, 'issue', 'issues') : '', comments ? plural(comments, 'comentario', 'comentarios') : ''].filter(Boolean);
+  const what = parts.length ? parts.join(', ').replace(/, ([^,]*)$/, ' y $1') : 'nada';
+  const busy = S.reu.approving;
+  return `<div class="reu-approve"><div class="sum">Crear <b>${esc(what)}</b><small>A tu nombre (${esc(S.snap?.me ?? '')}): los issues y los comentarios en GitHub con tu sesión${projects ? '; el proyecto en Linear con la key del repo' : ''}.</small></div>
+    <button class="btn-s" data-reudiscard ${busy ? 'disabled' : ''}>Descartar ${Object.values(d.results).some((r) => r.ok) ? 'el resto' : 'todo'}</button>
+    <button class="btn-s primary" data-reuapprove ${busy || !parts.length ? 'disabled' : ''}>${busy ? 'Creando…' : 'Crear seleccionados'}</button></div>`;
+}
+
+async function approveReunion(n) {
+  const d = S.reu.detail[n]?.data;
+  if (!d || S.reu.approving) return;
+  const f = reuForm(d);
+  const p = d.proposals;
+  const ids = [...p.projects.flatMap((x) => [x.id, ...x.issues.map((i) => i.id)]), ...p.issues.map((i) => i.id), ...p.comments.map((c) => c.id)].filter((id) => f.on[id] && !d.results[id]?.ok);
+  const items = ids.map((id) => ({ id, ...['title', 'body', 'lead', 'project', 'cycle'].reduce((o, k) => (f[k][id] !== undefined ? { ...o, [k]: f[k][id] } : o), {}) }));
+  S.reu.approving = true;
+  renderCenter();
+  try {
+    const out = await api(reuPath(n, '/aprobar'), { method: 'POST', body: JSON.stringify({ items }) });
+    toast(out.failed ? `Se crearon ${out.created}; ${out.failed} no se pudieron crear: puedes intentarlo de nuevo.` : `Listo: se crearon ${out.created}.`);
+    refresh();
+  } catch (error) {
+    if (error instanceof Unauthorized) return showLogin();
+    toast(`No se pudo: ${error.message}`);
+  }
+  S.reu.approving = false;
+  delete S.reu.form[n];
+  await loadReunion(n);
+}
+
+async function discardReunion(n) {
+  if (!confirm('¿Descartar lo que queda de esta reunión? No se crea nada más.')) return;
+  try {
+    await api(reuPath(n, '/descartar'), { method: 'POST', body: '{}' });
+    toast('Listo: la reunión quedó descartada.');
+    refresh();
+  } catch (error) {
+    if (error instanceof Unauthorized) return showLogin();
+    toast(`No se pudo: ${error.message}`);
+  }
+  await loadReunion(n);
 }
 
 // What each line of the notes is cited by.
@@ -3324,6 +3459,8 @@ function reuActivityHTML(d) {
       case 'read': return { at: e.at, html: item('ok', 'ok', `Propuso ${[e.projects ? plural(e.projects, 'proyecto', 'proyectos') : '', e.issues ? plural(e.issues, 'issue', 'issues') : '', e.comments ? plural(e.comments, 'comentario', 'comentarios') : ''].filter(Boolean).join(', ') || 'nada'}`, e.at, `<div class="m">${esc(plural(e.discarded, 'descartado', 'descartados'))}</div>`) };
       case 'failed': return { at: e.at, html: item('crit', 'crit', 'La lectura falló', e.at, `<div class="bx err">${esc(e.error)}</div>`) };
       case 'mail': return { at: e.at, html: item(e.ok ? 'small' : 'crit', 'mail', e.ok ? 'Correo al equipo del repo' : 'No salió el correo al equipo', e.at) };
+      case 'approved': return { at: e.at, html: item(e.failed ? 'warn' : 'ok', e.failed ? 'crit' : 'ok', `${esc(e.by)} aprobó: ${esc(plural(e.created, 'creado', 'creados'))}${e.failed ? `, ${esc(plural(e.failed, 'no se pudo crear', 'no se pudieron crear'))}` : ''}`, e.at) };
+      case 'discarded': return { at: e.at, html: item('small', 'person', `${esc(e.by)} descartó ${d.status === 'discarded' && Object.values(d.results).some((r) => r.ok) ? 'el resto' : 'la reunión'}`, e.at) };
       default: return null;
     }
   }).filter(Boolean);
@@ -3435,6 +3572,34 @@ function wireReuniones() {
     };
   }
   center.querySelector('[data-prunx]')?.addEventListener('click', () => { S.reu.run = null; renderCenter(); });
+  const d = S.reu.detail[S.reu.n]?.data;
+  if (!d || S.page !== 'reunion') return;
+  for (const b of center.querySelectorAll('[data-reuchk]')) {
+    b.onchange = () => {
+      const f = reuForm(d);
+      f.on[b.dataset.reuchk] = b.checked;
+      // A project's issues go with it.
+      const project = d.proposals.projects.find((x) => x.id === b.dataset.reuchk);
+      if (project) for (const i of project.issues) if (!d.results[i.id]?.ok) f.on[i.id] = b.checked;
+      renderCenter();
+    };
+  }
+  for (const el of center.querySelectorAll('[data-reuf]')) {
+    const save = () => {
+      const f = reuForm(d);
+      f[el.dataset.reuf][el.dataset.reuid] = el.value;
+      // Nothing is redrawn: the rest stays as typed, and a click on the bar
+      // right after leaving a field still lands on its button.
+      const fresh = document.createElement('div');
+      fresh.innerHTML = reuApproveBar(d);
+      const sum = center.querySelector('.reu-approve .sum');
+      if (sum) sum.innerHTML = fresh.querySelector('.sum').innerHTML;
+    };
+    el.oninput = save;
+    el.onchange = save;
+  }
+  center.querySelector('[data-reuapprove]')?.addEventListener('click', () => approveReunion(S.reu.n));
+  center.querySelector('[data-reudiscard]')?.addEventListener('click', () => discardReunion(S.reu.n));
 }
 
 // The upload dialog: a file, or the text pasted.

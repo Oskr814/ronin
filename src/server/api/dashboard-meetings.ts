@@ -80,6 +80,7 @@ export async function meetingDetail(m: Meeting, runs: RunSummary[]) {
     original: Boolean(m.source.file),
     text: await readNotes(m.number).catch(() => ''),
     proposals: m.proposals ?? null,
+    results: m.results ?? {},
     events: m.events,
     // Its readings: what ronin did with it.
     runs: runs.filter((run) => run.repo === m.repo && run.meeting === m.number).sort((a, b) => b.startedAt.localeCompare(a.startedAt)),
