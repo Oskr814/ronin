@@ -18,6 +18,16 @@
   --proj-0: #6383E8; --proj-1: #22A892; --proj-2: #B07AD6; --proj-3: #B5872A; --proj-other: #5D6479;
   color-scheme: dark;
 }
+/* GitHub's state colors (#129): open, done (completed or merged), closed
+   without merging, and neutral (not planned, draft). */
+:root, :root[data-theme="dark"] {
+  --gh-open: #3FB950; --gh-done: #AB7DF8; --gh-closed: #F85149; --gh-neutral: #9198A1;
+  --gh-open-bg: #238636; --gh-done-bg: #8957E5; --gh-closed-bg: #DA3633; --gh-neutral-bg: #656C76;
+}
+:root[data-theme="light"] {
+  --gh-open: #1A7F37; --gh-done: #8250DF; --gh-closed: #CF222E; --gh-neutral: #59636E;
+  --gh-open-bg: #1F883D; --gh-done-bg: #8250DF; --gh-closed-bg: #CF222E; --gh-neutral-bg: #59636E;
+}
 :root[data-theme="light"] {
   --bg: #F2F3F0; --side: #ECEEEA; --panel: #FCFCFB; --raise: #FFFFFF; --hover: #E3E6E1;
   --rule: #D9DCE1; --ink: #1C2236; --ink-2: #434A5E; --muted: #686F82; --faint: #9AA0AE;
@@ -278,6 +288,18 @@ a { color: inherit; }
 :is(.ctx, .ctx-inline) .links { display: flex; gap: 12px; flex-wrap: wrap; font-size: 12.5px; color: var(--muted); align-items: center; }
 .repo-tag { display: inline-flex; align-items: center; gap: 5px; }
 .repo-tag i { width: 8px; height: 8px; border-radius: 2px; }
+.ghi { width: 13px; height: 13px; flex: none; fill: currentColor; vertical-align: -2px; margin-right: 4px; }
+.ghi.open { color: var(--gh-open); }
+.ghi.done { color: var(--gh-done); }
+.ghi.closed { color: var(--gh-closed); }
+.ghi.neutral { color: var(--gh-neutral); }
+.ghs { display: inline-flex; align-items: center; gap: 2px; font-size: 12px; font-weight: 600; padding: 2px 9px 2px 7px; border-radius: 999px; color: #fff; white-space: nowrap; margin-right: -6px; }
+.ghs .ghi { color: inherit; margin-right: 3px; }
+.ghs.open { background: var(--gh-open-bg); }
+.ghs.done { background: var(--gh-done-bg); }
+.ghs.closed { background: var(--gh-closed-bg); }
+.ghs.neutral { background: var(--gh-neutral-bg); }
+.kid .ghi, .sl .ghi { width: 12px; height: 12px; margin: 0; justify-self: center; align-self: center; }
 .chip { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 500; padding: 1px 8px; border-radius: 999px; white-space: nowrap; }
 .chip.run { background: var(--run-bg); color: var(--run); }
 .chip.ok { background: var(--ok-bg); color: var(--ok); }

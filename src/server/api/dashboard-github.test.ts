@@ -4,7 +4,9 @@ const listOpenManagedIssues = vi.fn();
 const listOpenPrsWithChecks = vi.fn();
 const listOpenIssues = vi.fn();
 const listPrClosingIssues = vi.fn();
+const listRecentlyClosed = vi.fn();
 vi.mock('../../core/github.js', () => ({
+  listRecentlyClosed: () => listRecentlyClosed(),
   listOpenManagedIssues: () => listOpenManagedIssues(),
   listOpenPrsWithChecks: () => listOpenPrsWithChecks(),
   listOpenIssues: () => listOpenIssues(),
@@ -26,10 +28,21 @@ beforeEach(() => {
   listOpenPrsWithChecks.mockReset().mockResolvedValue([]);
   listOpenIssues.mockReset().mockResolvedValue([{ number: 879, title: 'Validar stock', url: 'u', labels: ['ronin'] }, { number: 405, title: 'Otro', url: 'v', labels: [] }]);
   listPrClosingIssues.mockReset().mockResolvedValue({});
+  listRecentlyClosed.mockReset().mockResolvedValue({ 870: 'completed', 871: 'not_planned', 880: 'merged' });
   listPreviewStates.mockReset().mockResolvedValue([]);
 });
 
 describe('repoGithub', () => {
+  it('reads how the latest closed issues and PRs closed, and does without it if that read fails (#129)', async () => {
+    expect((await repoGithub(ENTRY))?.closed).toEqual({ 870: 'completed', 871: 'not_planned', 880: 'merged' });
+    resetGithubCache();
+    listRecentlyClosed.mockRejectedValue(new Error('graphql'));
+    const data = await repoGithub(ENTRY);
+    expect(data?.closed).toEqual({});
+    expect(data?.error).toBeUndefined();
+    expect(data?.issues).toHaveLength(1);
+  });
+
   it('reads the issues with their slices', async () => {
     const data = await repoGithub(ENTRY);
     expect(data?.issues).toEqual([{ number: 879, title: 'Validar stock', url: 'u', status: 'in-progress', direct: false, slices: [

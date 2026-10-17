@@ -458,6 +458,38 @@ export async function listPrClosingIssues(): Promise<Record<number, number[]>> {
   return Object.fromEntries(raw.data.repository.pullRequests.nodes.map((pr) => [pr.number, pr.closingIssuesReferences.nodes.map((i) => i.number)]));
 }
 
+// How an issue or PR stands on GitHub, as GitHub draws it (#129): open (a PR
+// maybe a draft), an issue closed as completed or not planned, a PR merged
+// or closed without merging.
+export type GithubState = 'open' | 'draft' | 'completed' | 'not_planned' | 'merged' | 'closed';
+
+const RECENTLY_CLOSED_QUERY = `
+query($owner: String!, $repo: String!) {
+  repository(owner: $owner, name: $repo) {
+    issues(states: CLOSED, first: 100, orderBy: { field: UPDATED_AT, direction: DESC }) { nodes { number stateReason } }
+    pullRequests(states: [CLOSED, MERGED], first: 100, orderBy: { field: UPDATED_AT, direction: DESC }) { nodes { number state } }
+  }
+}`;
+
+export function closedState(kind: 'issue' | 'pr', state: string, stateReason?: string | null): GithubState {
+  if (kind === 'pr') return state === 'MERGED' ? 'merged' : 'closed';
+  return stateReason === 'NOT_PLANNED' ? 'not_planned' : 'completed';
+}
+
+// The last 100 issues and PRs closed (by latest update), each with how it
+// closed: what the dashboard lists that isn't open anymore is what ronin
+// worked on lately. GraphQL: the runner's gh (2.45) has no stateReason.
+export async function listRecentlyClosed(): Promise<Record<number, GithubState>> {
+  const [owner, repo] = activeRepo().productRepo.split('/');
+  type Raw = { data: { repository: { issues: { nodes: Array<{ number: number; stateReason: string | null }> }; pullRequests: { nodes: Array<{ number: number; state: string }> } } } };
+  const raw = JSON.parse(await ghApi(['api', 'graphql', '-f', `query=${RECENTLY_CLOSED_QUERY}`, '-f', `owner=${owner}`, '-f', `repo=${repo}`])) as Raw;
+  const { issues, pullRequests } = raw.data.repository;
+  return Object.fromEntries([
+    ...issues.nodes.map((i) => [i.number, closedState('issue', 'CLOSED', i.stateReason)] as const),
+    ...pullRequests.nodes.map((p) => [p.number, closedState('pr', p.state)] as const),
+  ]);
+}
+
 // Whether #number is an issue or a PR, open or closed; null if the repo has
 // neither. For opening by number something the dashboard doesn't list.
 export async function itemKindOf(number: number): Promise<'issue' | 'pr' | null> {
@@ -481,6 +513,10 @@ export interface Discussion {
   createdAt: string;
   url: string;
   state: string;
+  // A closed issue's: COMPLETED or NOT_PLANNED.
+  stateReason?: string;
+  // A PR's.
+  isDraft?: boolean;
   labels: string[];
   comments: Array<{ author: string; body: string; createdAt: string; url: string }>;
   mergeable?: 'MERGEABLE' | 'CONFLICTING' | 'UNKNOWN';
@@ -537,7 +573,7 @@ async function getDiscussionThreads(prNumber: number): Promise<DiscussionThread[
 }
 
 export async function getDiscussion(kind: 'issue' | 'pr', number: number): Promise<Discussion> {
-  const fields = 'number,title,body,author,createdAt,url,state,labels,comments' + (kind === 'pr' ? ',mergeable,baseRefName,headRefName,reviews' : '');
+  const fields = 'number,title,body,author,createdAt,url,state,labels,comments' + (kind === 'pr' ? ',mergeable,baseRefName,headRefName,reviews,isDraft' : '');
   type Raw = Omit<Discussion, 'author' | 'comments' | 'body' | 'labels' | 'reviews' | 'threads'> & {
     body: string | null;
     author: { login: string } | null;
@@ -550,8 +586,11 @@ export async function getDiscussion(kind: 'issue' | 'pr', number: number): Promi
     kind === 'pr' ? getDiscussionThreads(number) : undefined,
   ]);
   const { reviews, ...rest } = raw;
+  // How a closed issue closed, which this gh can't say (#129).
+  const stateReason = kind === 'issue' && raw.state === 'CLOSED' ? (await getIssueState(number).catch(() => undefined))?.stateReason : undefined;
   return {
     ...rest,
+    ...(stateReason ? { stateReason } : {}),
     ...(reviews ? { reviews: reviews.filter((r) => r.body.trim() || ['APPROVED', 'CHANGES_REQUESTED', 'DISMISSED'].includes(r.state)).map((r) => ({ author: r.author?.login ?? '', body: r.body, state: r.state, submittedAt: r.submittedAt })) } : {}),
     ...(threads ? { threads } : {}),
     body: raw.body ?? '',

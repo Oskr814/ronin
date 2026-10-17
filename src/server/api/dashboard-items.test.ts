@@ -138,6 +138,27 @@ describe('buildItems', () => {
   });
 });
 
+describe("buildItems — GitHub's state (#129)", () => {
+  it('says how each item stands on GitHub: open issues, open or draft PRs, and the ones that closed since ronin worked on them', () => {
+    const items = buildItems([REPO], [
+      run({ runId: 'a', issueNumber: 870 }),
+      run({ runId: 'b', issueNumber: 871 }),
+      run({ runId: 'c', prNumber: 880 }),
+      run({ runId: 'd', prNumber: 882 }),
+      run({ runId: 'e', prNumber: 990 }),
+      run({ runId: 'f', issueNumber: 12 }),
+    ], [github({
+      issues: [ISSUE_879],
+      openIssues: [{ number: 879, title: 'Validar stock y reservar', url: 'u', labels: ['ronin'] }],
+      prs: [pr({ number: 894, isDraft: true }), pr({ number: 990, headRefName: 'otra' })],
+      closed: { 870: 'completed', 871: 'not_planned', 880: 'merged', 882: 'closed' },
+    })]);
+    const state = Object.fromEntries(items.map((i) => [i.number, i.github]));
+    expect(state).toEqual({ 879: 'open', 870: 'completed', 871: 'not_planned', 880: 'merged', 882: 'closed', 990: 'open', 12: undefined });
+    expect(items.find((i) => i.number === 879)?.slices?.map((s) => [s.status, s.draft])).toEqual([['merged', undefined], ['open', true], ['pending', undefined]]);
+  });
+});
+
 describe('prNote', () => {
   it('says what an open PR waits for', () => {
     expect(prNote(pr({ checks: [{ name: 'e2e', outcome: 'failed' }] }))).toBe('checks fallando en #1');

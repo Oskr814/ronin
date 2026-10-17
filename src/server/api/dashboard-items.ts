@@ -1,4 +1,4 @@
-import type { OpenPr } from '../../core/github.js';
+import type { GithubState, OpenPr } from '../../core/github.js';
 import type { LinearIssue } from '../../core/linear-api.js';
 import type { BlockRecord } from '../../core/local-state.js';
 import { itemKey, type RunState, type RunSummary } from './dashboard-data.js';
@@ -26,6 +26,8 @@ export interface SliceView {
   title: string;
   prNumber: number | null;
   status: 'merged' | 'open' | 'pending' | 'closed';
+  // Its PR is open as a draft.
+  draft?: boolean;
   checks?: 'passed' | 'pending' | 'failed' | 'none';
   reviewDecision?: OpenPr['reviewDecision'];
 }
@@ -48,6 +50,9 @@ export interface Item {
   title: string;
   url?: string;
   status: ItemStatus;
+  // How it stands on GitHub, drawn with GitHub's icon (#129); unknown for an
+  // old closed one, or what's no issue nor PR.
+  github?: GithubState;
   // What it's waiting for, when no agent is on it.
   note?: string;
   lastRun?: RunSummary;
@@ -160,7 +165,7 @@ export function buildItems(repos: string[], runs: RunSummary[], github: Array<Re
           title: slice.title,
           prNumber: slice.prNumber,
           status: slice.checked ? 'merged' : open ? 'open' : slice.prNumber !== null ? 'closed' : 'pending',
-          ...(open ? { checks: checksOf(open), reviewDecision: open.reviewDecision } : {}),
+          ...(open ? { checks: checksOf(open), reviewDecision: open.reviewDecision, ...(open.isDraft ? { draft: true } : {}) } : {}),
         };
       });
       const moving = slices.find((s) => s.status === 'open');
@@ -182,6 +187,7 @@ export function buildItems(repos: string[], runs: RunSummary[], github: Array<Re
         kind: 'issue',
         title: issue.title,
         url: issue.url,
+        github: 'open',
         status: running ? 'running' : blocked ? 'blocked' : tracked || movingPr ? 'waiting' : itemRuns[0]?.state ?? 'open',
         ...(note ? { note } : {}),
         ...(itemRuns[0] ? { lastRun: itemRuns[0] } : {}),
@@ -204,6 +210,7 @@ export function buildItems(repos: string[], runs: RunSummary[], github: Array<Re
       const itemRuns = runsByKey.get(id) ?? [];
       items.push({
         id, repo, number: pr.number, kind: 'pr', title: pr.title, url: pr.url,
+        github: pr.isDraft ? 'draft' : 'open',
         status: itemRuns.length ? runStatus(itemRuns) : 'waiting',
         note: 'PR de exploración abierto',
         ...(itemRuns[0] ? { lastRun: itemRuns[0] } : {}),
@@ -224,6 +231,7 @@ export function buildItems(repos: string[], runs: RunSummary[], github: Array<Re
     const repoIndex = repos.indexOf(last.repo);
     const open = number !== undefined && repoIndex >= 0 ? github[repoIndex]?.prs.find((pr) => pr.number === number) : undefined;
     const preview = number !== undefined && repoIndex >= 0 ? github[repoIndex]?.previews.find((p) => p.prNumber === number) : undefined;
+    const state: GithubState | undefined = open ? (open.isDraft ? 'draft' : 'open') : number !== undefined && repoIndex >= 0 ? github[repoIndex]?.closed?.[number] : undefined;
     items.push({
       id,
       repo: last.repo,
@@ -231,6 +239,7 @@ export function buildItems(repos: string[], runs: RunSummary[], github: Array<Re
       kind: last.issueNumber !== undefined ? 'issue' : last.prNumber !== undefined ? 'pr' : 'other',
       title: open?.title ?? last.sliceTitle ?? (last.issueNumber !== undefined ? `Issue #${last.issueNumber}` : last.prNumber !== undefined ? `PR #${last.prNumber}` : last.label),
       ...(open ? { url: open.url, pr: prView(open) } : {}),
+      ...(state ? { github: state } : {}),
       status: runStatus(itemRuns),
       lastRun: last,
       runs: itemRuns.length,
