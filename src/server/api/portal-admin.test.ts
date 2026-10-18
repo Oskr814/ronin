@@ -83,6 +83,19 @@ describe('portal admin', () => {
     expect(users.map((u) => [u.name, u.today])).toEqual([['Juan', { used: 0, limit: 5 }], ['María', { used: 2, limit: 2 }]]);
   });
 
+  it('records each change in the Registro of Ajustes (#174)', async () => {
+    await rm(config.settings.dataDir, { recursive: true, force: true });
+    const { user } = await runPortalAdmin(ctx, '/api/portal-admin/users', { email: 'persona@x.com', name: 'María', grants: [grant] });
+    await runPortalAdmin(ctx, `/api/portal-admin/users/${user.id}`, { name: 'María José', dailyLimit: 9, disabled: true });
+    const { readRegistro } = await import('./ajustes.js');
+    expect((await readRegistro()).map((e) => `${e.what}: ${e.from} → ${e.to}`)).toEqual([
+      'Usuarios · persona@x.com · cuenta: activa → desactivada',
+      'Usuarios · persona@x.com · pedidos por día: el de General → 9',
+      'Usuarios · persona@x.com · nombre: María → María José',
+      'Usuarios · persona@x.com: — → invitado al portal',
+    ]);
+  });
+
   it('refuses to change anything while the portal is not configured', async () => {
     await expect(runPortalAdmin({ ...ctx, enabled: false }, '/api/portal-admin/users', { email: 'mf@x.com', name: 'María', grants: [] })).rejects.toThrow(/no está configurado/);
   });

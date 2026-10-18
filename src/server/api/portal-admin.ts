@@ -1,12 +1,14 @@
 import type { RepoEntry } from '../../core/repo-context.js';
 import { log } from '../../core/logger.js';
-import { AccountError, adminView, createUser, getUser, listUsers, updateUser, type UserFields } from '../../portal/accounts.js';
+import { AccountError, adminView, createUser, getUser, listUsers, updateUser, type PortalUser, type UserFields } from '../../portal/accounts.js';
 import { portalApps, validGrants } from '../../portal/apps.js';
 import { startedTodayByUser } from '../../portal/requests.js';
 import { sendPasswordLink, type Send } from '../../portal/send-link.js';
+import { record } from './ajustes.js';
 
 // The request portal's accounts from the dashboard (#114), for its admins
-// (DASHBOARD_ADMINS) only:
+// only; since #174 they're shown in Ajustes → Usuarios, with the role
+// Usuario, and every change goes to the Registro:
 //   GET  /api/portal-admin                   the accounts, and the apps that can be granted
 //   POST /api/portal-admin/users             { email, name, grants, dailyLimit? }: creates one and emails the invitation
 //   POST /api/portal-admin/users/<id>        { name?, grants?, dailyLimit?, disabled? }
@@ -65,6 +67,18 @@ function fields(body: Record<string, unknown>, entries: RepoEntry[], creating: b
   return out;
 }
 
+// What an edit changed, in words, for the Registro.
+function accountChanges(before: PortalUser, after: PortalUser): Array<{ what: string; from: string; to: string }> {
+  const apps = (u: PortalUser) => u.grants.map((g) => `${g.repo}:${g.app}`).sort().join(', ') || 'ninguna';
+  const limit = (u: PortalUser) => (u.dailyLimit === undefined ? 'el de General' : String(u.dailyLimit));
+  const changes = [];
+  if (before.name !== after.name) changes.push({ what: 'nombre', from: before.name, to: after.name });
+  if (apps(before) !== apps(after)) changes.push({ what: 'apps', from: apps(before), to: apps(after) });
+  if (limit(before) !== limit(after)) changes.push({ what: 'pedidos por día', from: limit(before), to: limit(after) });
+  if (before.disabled !== after.disabled) changes.push({ what: 'cuenta', from: before.disabled ? 'desactivada' : 'activa', to: after.disabled ? 'desactivada' : 'activa' });
+  return changes;
+}
+
 const linkResult = (sent: boolean, url: string) => (sent ? { sent } : { sent, url });
 
 export async function runPortalAdmin(ctx: PortalAdminContext, path: string, body: Record<string, unknown>) {
@@ -74,6 +88,7 @@ export async function runPortalAdmin(ctx: PortalAdminContext, path: string, body
       if (typeof body.email !== 'string') throw new PortalAdminError('Falta el correo.');
       const user = await createUser({ ...(fields(body, ctx.entries, true) as UserFields), email: body.email, createdBy: ctx.admin });
       log.info(`portal: ${ctx.admin} creó la cuenta de ${user.email}`);
+      await record({ login: ctx.admin, what: `Usuarios · ${user.email}`, from: '—', to: 'invitado al portal' });
       const { sent, url } = await sendPasswordLink(user, 'invite', { portalUrl: ctx.url, entries: ctx.entries, send: ctx.send });
       return { user: adminView((await getUser(user.id)) ?? user), ...linkResult(sent, url) };
     }
@@ -82,11 +97,14 @@ export async function runPortalAdmin(ctx: PortalAdminContext, path: string, body
       const user = await getUser(link[1]);
       if (!user) throw new PortalAdminError('No existe esa cuenta.', 404);
       const { sent, url } = await sendPasswordLink(user, user.passwordHash ? 'reset' : 'invite', { portalUrl: ctx.url, entries: ctx.entries, send: ctx.send });
+      await record({ login: ctx.admin, what: `Usuarios · ${user.email}`, from: '—', to: user.passwordHash ? 'enlace para nueva contraseña' : 'invitación de nuevo' });
       return { user: adminView((await getUser(user.id)) ?? user), ...linkResult(sent, url) };
     }
     const edit = /^\/api\/portal-admin\/users\/([\w-]+)$/.exec(path);
     if (edit) {
+      const before = await getUser(edit[1]);
       const user = await updateUser(edit[1], fields(body, ctx.entries, false));
+      if (before) for (const change of accountChanges(before, user)) await record({ login: ctx.admin, what: `Usuarios · ${user.email} · ${change.what}`, from: change.from, to: change.to });
       log.info(`portal: ${ctx.admin} cambió la cuenta de ${user.email}${body.disabled === true ? ' (desactivada)' : body.disabled === false ? ' (reactivada)' : ''}`);
       return { user: adminView(user) };
     }
