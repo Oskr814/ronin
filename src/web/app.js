@@ -1624,14 +1624,16 @@ function setLista(id, key, on) {
 }
 
 // Where a finding stands: decided in its file, or by its thread — ronin
-// answers a first comment, or a reply that mentions it.
+// answers a first comment, or a reply that mentions it. Once ronin answered
+// (applied the changes asked for), it can be marked to approve again.
 function fichaStatus(f, ronin, id) {
   if (f.estado === 'rechazado') return 'rechazada';
   if (f.estado === 'aprobado') return 'aprobada';
+  const marked = id && listas(id).has(fichaKey(f));
   const last = f.comments[f.comments.length - 1];
-  if (!last) return id && listas(id).has(fichaKey(f)) ? 'lista' : 'decidir';
-  if (last.author === ronin) return 'respondida';
-  return !last.replyTo || RONIN_MENTION.test(last.body) ? 'esperando' : 'respondida';
+  if (!last) return marked ? 'lista' : 'decidir';
+  if (last.author !== ronin && (!last.replyTo || RONIN_MENTION.test(last.body))) return 'esperando';
+  return marked ? 'lista' : 'respondida';
 }
 
 function visibleFichas(data, id) {
@@ -1729,7 +1731,7 @@ function decisionsHTML(f, status) {
   const menu = S.fmenu ? `<div class="menu fmenu" role="menu">
     <button role="menuitem" data-fact="issue"><b>Pedir un issue aparte</b><small>Algo que surge de esta ficha pero no es su propuesta.</small></button>
     <button role="menuitem" data-fact="pregunta"><b>Preguntarle a ronin</b><small>Responde en el hilo, sin tocar la ficha.</small></button></div>` : '';
-  return `<span class="decide">${status === 'decidir' || marked ? `<button class="btn-s ok" data-flista aria-pressed="${marked}" title="${marked ? 'Se aprueba cuando apruebes el PR. Clic para deshacer.' : 'Queda para aprobar: se aprueba cuando apruebes el PR.'}">${marked ? '✓ Para aprobar' : '✓ Aprobar'} <kbd>a</kbd></button>` : ''}
+  return `<span class="decide">${status !== 'esperando' ? `<button class="btn-s ok" data-flista aria-pressed="${marked}" title="${marked ? 'Se aprueba cuando apruebes el PR. Clic para deshacer.' : 'Queda para aprobar: se aprueba cuando apruebes el PR.'}">${marked ? '✓ Para aprobar' : '✓ Aprobar'} <kbd>a</kbd></button>` : ''}
     <button class="btn-s" data-fact="cambios">Pedir cambios <kbd>c</kbd></button>
     <button class="btn-s danger" data-fact="rechazar">Rechazar <kbd>r</kbd></button>
     <span class="actions"><button class="btn-s" id="fmore" aria-haspopup="menu" aria-expanded="${S.fmenu}">Más ▾</button>${menu}</span></span>`;
@@ -1981,8 +1983,8 @@ function toggleLista() {
   const f = data && currentFicha(item, data);
   if (!f) return;
   const status = fichaStatus(f, data.ronin, item.id);
-  if (status !== 'decidir' && status !== 'lista') return;
-  setLista(item.id, fichaKey(f), status === 'decidir');
+  if (status === 'esperando') return;
+  setLista(item.id, fichaKey(f), status !== 'lista');
   if (status === 'decidir') {
     // On to the next one still to decide.
     const next = visibleFichas(data, item.id).find((x) => fichaStatus(x, data.ronin, item.id) === 'decidir');
