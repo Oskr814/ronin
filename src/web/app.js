@@ -2997,13 +2997,6 @@ function portalStatus(u) {
   return ['ok', 'activa'];
 }
 
-// Their daily quota (PORTAL_DAILY_LIMIT, or their own): what's left of it today.
-function quotaHTML(today) {
-  if (!today) return '';
-  const left = Math.max(0, today.limit - today.used);
-  return `<span class="chip ${left ? 'plain' : 'warn'}" title="${esc(`${today.used} de ${today.limit} pedidos hoy`)}">quedan ${left} de ${today.limit}</span><small>${today.used ? `${today.used} ${today.used === 1 ? 'hecho' : 'hechos'} hoy` : 'ninguno hoy'}</small>`;
-}
-
 // ---------- the portal's requests (#132)
 // What people ask through the portal and where each request stands, for
 // anyone who sees its repo: its conversation, what ronin did with it and,
