@@ -1376,7 +1376,7 @@ const reviewButton = (item, at, button) => `<div class="actions rwrap">${button}
 function openReviewPanel(at) {
   const id = S.sel;
   if (!id) return;
-  S.rpanel = S.rpanel?.item === id && S.rpanel.at === at ? null : { item: id, at, event: 'COMMENT', text: '', fix: true, sending: false, error: null };
+  S.rpanel = S.rpanel?.item === id && S.rpanel.at === at ? null : { item: id, at, event: 'COMMENT', text: '', fix: true, autoMerge: true, sending: false, error: null };
   if (S.rpanel && !S.files[id]?.data) loadFiles(id);
   renderCenter();
   if (S.rpanel) $('#rsum')?.focus();
@@ -1403,6 +1403,12 @@ function reviewPanelHTML(item, at) {
   // ronin reads a review's comments, not its summary, and acts on them only when asked.
   const fixable = ronins && (pend.length > 0 || event === 'REQUEST_CHANGES');
   const fix = fixable ? `<label class="rfix"><input type="checkbox" id="rfix"${p.fix ? ' checked' : ''}><span><b>Que ronin los atienda ahora</b><small>Después de la revisión comenta <code>@${esc(d.ronin)} /fix-comments</code> a tu nombre.</small></span></label>` : '';
+  const merge = autoMergeChoice(event, d, fixable && p.fix);
+  const am = merge === 'offer' || merge === 'with-fix'
+    ? `<label class="rfix${merge === 'with-fix' ? ' off' : ''}"><input type="checkbox" id="ram"${merge === 'offer' && p.autoMerge ? ' checked' : ''}${merge === 'with-fix' ? ' disabled' : ''}><span><b>Mergear apenas pasen los checks</b><small>${merge === 'with-fix'
+      ? 'No junto con /fix-comments: se mergearía antes de que ronin los atienda. Pedí el auto-merge cuando estén.'
+      : `Después de aprobar comenta <code>@${esc(d.ronin)} /auto-merge</code> a tu nombre (el label <code>ronin:auto-merge</code>).`}</small></span></label>`
+    : '';
   const where = (t) => `${t.path.split('/').pop()}${t.subject === 'file' ? '' : t.line ? ` · línea ${t.line}` : ''}`;
   const list = pend.length
     ? pend.map(({ t, c }) => `<button class="ri" data-rjump="${esc(t.path)}|${esc(c.nodeId)}"><span class="w">${esc(where(t))}${t.isNew ? '' : ' · respuesta'}</span><span class="t">${esc(c.body.replace(/```suggestion[\s\S]*?```/g, '[cambio sugerido]').trim().split('\n')[0])}</span></button>`).join('')
@@ -1410,9 +1416,18 @@ function reviewPanelHTML(item, at) {
   const can = !p.sending && (event !== 'COMMENT' || pend.length > 0 || p.text.trim());
   return `<div class="rpanel" role="dialog" aria-label="Terminar la revisión">${head}<div class="rbody">
     <textarea id="rsum" rows="3" placeholder="Resumen (opcional). Va arriba de la revisión, como en GitHub.">${esc(p.text)}</textarea>
-    <div class="rev">${options}</div>${fix}
+    <div class="rev">${options}</div>${fix}${am}
     <div class="rlist"><div class="rh">En tu revisión<span>${pend.length ? `${pend.length} comentario${pend.length === 1 ? '' : 's'}` : ''}</span></div>${list}</div></div>
     <footer>${p.error ? `<span class="bad">${esc(p.error)}</span>` : `<span class="m">${pend.length ? 'Hasta mandarla, nadie ve tus comentarios.' : ''}</span>`}${reviewOf(item.id) ? `<button class="btn-s danger" data-rdiscard${p.sending ? ' disabled' : ''}>Descartar</button>` : ''}<button class="btn-s primary" data-rsend${can ? '' : ' disabled'}>${p.sending ? 'Enviando…' : 'Mandar revisión'}</button></footer></div>`;
+}
+
+// Whether approving offers the auto-merge: only to approve, on a PR that
+// doesn't have it yet, isn't a draft (ronin doesn't read commands on a
+// human's draft) and doesn't conflict (the command would refuse it), and
+// never along with /fix-comments.
+function autoMergeChoice(event, d, withFix) {
+  if (event !== 'APPROVE' || !d?.ronin || !d.pr || d.pr.isDraft || d.pr.mergeable === 'CONFLICTING' || d.pr.labels?.includes('ronin:auto-merge')) return null;
+  return withFix ? 'with-fix' : 'offer';
 }
 
 function wireReviewPanel() {
@@ -1437,7 +1452,9 @@ function wireReviewPanel() {
   }
   for (const radio of document.querySelectorAll('input[name="rev"]')) radio.onchange = () => { p.event = radio.value; renderCenter(); };
   const fix = $('#rfix');
-  if (fix) fix.onchange = () => { p.fix = fix.checked; };
+  if (fix) fix.onchange = () => { p.fix = fix.checked; renderCenter(); };
+  const am = $('#ram');
+  if (am) am.onchange = () => { p.autoMerge = am.checked; };
   for (const button of document.querySelectorAll('[data-rsend]')) button.onclick = sendReview;
   for (const button of document.querySelectorAll('[data-rdiscard]')) button.onclick = discardPendingReview;
   for (const button of document.querySelectorAll('[data-rjump]')) {
@@ -1479,11 +1496,12 @@ async function sendReview() {
   const event = isMine(data.author) ? 'COMMENT' : p.event;
   const d = S.detail[p.item]?.data;
   const fixable = d?.ronin && data.author.toLowerCase() === d.ronin.toLowerCase() && (pendingOf(p.item).length > 0 || event === 'REQUEST_CHANGES');
+  const autoMerge = autoMergeChoice(event, d, fixable && p.fix) === 'offer' && p.autoMerge;
   p.sending = true;
   p.error = null;
   renderCenter();
   try {
-    const sent = await filesAction(p.item, { action: 'submit', event, text: p.text, commitId: data.headSha, fixComments: Boolean(fixable && p.fix) });
+    const sent = await filesAction(p.item, { action: 'submit', event, text: p.text, commitId: data.headSha, fixComments: Boolean(fixable && p.fix), autoMerge });
     S.rpanel = null;
     const item = itemById(p.item);
     if (item && REVIEW_DECISION[event]) {
@@ -1492,7 +1510,7 @@ async function sendReview() {
       renderTree();
       renderCenter();
     }
-    toast(`${REVIEW_SENT[event]}${sent.fixUrl ? '; ronin ya tiene el /fix-comments' : ''}.`, sent.url);
+    toast(`${REVIEW_SENT[event]}${sent.fixUrl ? '; ronin ya tiene el /fix-comments' : ''}${sent.autoMergeUrl ? ' y le pediste el auto-merge' : ''}.`, sent.url);
     afterFilesWrite(p.item);
     refresh();
   } catch (error) {

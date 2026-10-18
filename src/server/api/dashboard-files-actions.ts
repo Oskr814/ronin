@@ -56,8 +56,9 @@ function pendingComment(pending: PendingReview | null, nodeId: unknown) {
 }
 
 // `review`: the comment or reply goes into the person's pending review
-// instead of out at once. `botLogin`: ronin's, to ask it for /fix-comments.
-export async function runFilesAction(entry: RepoEntry, prNumber: number, files: PrFiles, session: Session, body: Record<string, unknown>, botLogin: string): Promise<Posted | { ok: true } | { url: string; fixUrl?: string }> {
+// instead of out at once. `botLogin`: ronin's, to ask it for /fix-comments
+// or /auto-merge.
+export async function runFilesAction(entry: RepoEntry, prNumber: number, files: PrFiles, session: Session, body: Record<string, unknown>, botLogin: string): Promise<Posted | { ok: true } | { url: string; fixUrl?: string; autoMergeUrl?: string }> {
   const repo = entry.productRepo;
   switch (body.action) {
     case 'comment': {
@@ -115,6 +116,14 @@ export async function runFilesAction(entry: RepoEntry, prNumber: number, files: 
       if (body.fixComments === true && same(files.author, botLogin)) {
         const fix = await commentOnIssue(session.token, repo, prNumber, `@${botLogin} /fix-comments`);
         return { url: sent.url, fixUrl: fix.url };
+      }
+      // An approval can turn on the PR's auto-merge too, on any PR: the same
+      // `/auto-merge` the person would comment, so ronin answers with what's
+      // still missing. Never along with /fix-comments: it would merge before
+      // ronin got to them.
+      if (body.autoMerge === true && event === 'APPROVE') {
+        const auto = await commentOnIssue(session.token, repo, prNumber, `@${botLogin} /auto-merge`);
+        return { url: sent.url, autoMergeUrl: auto.url };
       }
       return sent;
     }
