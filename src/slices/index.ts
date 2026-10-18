@@ -1,5 +1,4 @@
 export * from './checklist.js';
-export * from './interview.js';
 export * from './prompts.js';
 export * from './spec-content.js';
 export * from './spec-flow.js';

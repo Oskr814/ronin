@@ -36,11 +36,6 @@ export interface LocalState {
   // One start per app per night, success or not: a run that fails must not
   // be relaunched every tick until morning — see exploration/schedule.ts.
   nightlyExploration: Record<string, string>;
-  // Issue → the Remote Control interview session open for it (interview.ts),
-  // so a later tick can close it even after a restart.
-  interviews: Record<string, { sessionId: string; startedAt: string; url?: string; nonce?: string; resume?: InterviewResume }>;
-  // /spec runs to redo now that an interview got the answers they lacked.
-  pendingSpecs: Array<{ issueNumber: number; appName: string; instruction?: string }>;
   // Comments ronin is done with ("issue-<id>"/"review-<id>" -> when) —
   // tracked here rather than by ronin's 👀 on them, which only says "got
   // it" (see processed-comments.ts).
@@ -76,10 +71,6 @@ export interface BlockRecord {
   excerpt?: string;
   at: string;
 }
-
-// What to do once an interview gets its answers: put a ronin issue back in
-// progress (the default), or redo a /spec on an issue ronin doesn't manage.
-export type InterviewResume = { kind: 'issue' } | { kind: 'spec'; appName: string; instruction?: string };
 
 // Serializes the read-modify-write span around this file: tick() runs
 // several issues' pipelines concurrently (see concurrency.ts), and the event
@@ -128,14 +119,12 @@ export async function readLocalState(): Promise<LocalState> {
       failureSignatures: raw.failureSignatures ?? {},
       lastChangelogRelease: raw.lastChangelogRelease,
       nightlyExploration: raw.nightlyExploration ?? {},
-      interviews: raw.interviews ?? {},
-      pendingSpecs: raw.pendingSpecs ?? [],
       processedComments: raw.processedComments ?? {},
       blocks: raw.blocks ?? {},
       linearPending: raw.linearPending ?? [],
     };
   } catch {
-    return { claimedIssues: [], checksPendingCounts: {}, lastReviewedSha: {}, failureSignatures: {}, nightlyExploration: {}, interviews: {}, pendingSpecs: [], processedComments: {}, blocks: {}, linearPending: [] };
+    return { claimedIssues: [], checksPendingCounts: {}, lastReviewedSha: {}, failureSignatures: {}, nightlyExploration: {}, processedComments: {}, blocks: {}, linearPending: [] };
   }
 }
 
@@ -242,37 +231,6 @@ export async function setNightlyExploration(appName: string, night: string): Pro
     const state = await readLocalState();
     state.nightlyExploration[appName] = night;
     await writeLocalState(state);
-  });
-}
-
-export async function getInterviews(): Promise<LocalState['interviews']> {
-  return (await readLocalState()).interviews;
-}
-
-export async function setInterview(issueNumber: number, interview: LocalState['interviews'][string] | null): Promise<void> {
-  return withLocalStateLock(async () => {
-    const state = await readLocalState();
-    if (interview) state.interviews[issueNumber] = interview;
-    else delete state.interviews[issueNumber];
-    await writeLocalState(state);
-  });
-}
-
-export async function addPendingSpec(spec: LocalState['pendingSpecs'][number]): Promise<void> {
-  return withLocalStateLock(async () => {
-    const state = await readLocalState();
-    if (!state.pendingSpecs.some((p) => p.issueNumber === spec.issueNumber)) state.pendingSpecs.push(spec);
-    await writeLocalState(state);
-  });
-}
-
-export async function takePendingSpecs(): Promise<LocalState['pendingSpecs']> {
-  return withLocalStateLock(async () => {
-    const state = await readLocalState();
-    const taken = state.pendingSpecs;
-    state.pendingSpecs = [];
-    await writeLocalState(state);
-    return taken;
   });
 }
 

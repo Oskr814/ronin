@@ -83,7 +83,6 @@ export const config = {
   // plus its workers, and three at once exhausted the account's session
   // limit (docs/superpowers/specs/2026-10-10-exhaustive-external-review-design.md).
   externalReviewConcurrency: Number(process.env.EXTERNAL_REVIEW_CONCURRENCY ?? 2),
-  requestCopilotReview: process.env.REQUEST_COPILOT_REVIEW === 'true',
   // Exploration (docs/DESIGN.md §11): how many functions one run tests, and
   // how much of what it finds gets published — findings most severe first,
   // ideas never in a finding's place. Their screenshots go to the product
@@ -101,11 +100,6 @@ export const config = {
   // so it's capped by EXPLORE_FUNCTIONS_PER_NIGHT, not "use everything".
   exploreNightWindow: process.env.EXPLORE_NIGHT_WINDOW ?? '01:00-06:00',
   exploreFunctionsPerNight: Number(process.env.EXPLORE_FUNCTIONS_PER_NIGHT ?? 3),
-  // When a task ends in needs-info, also open a Remote Control session that
-  // interviews the runner's owner and writes the answers into the issue —
-  // see interview.ts. Only the Claude account of CLAUDE_CONFIG_DIR can open
-  // it; everyone else answers by commenting on the issue, as always.
-  remoteInterviews: process.env.REMOTE_INTERVIEWS !== 'false',
   // /preview: after the base seeds, an agent prepares the data the PR needs
   // to be tried out (preview.ts). Off = just the app with its seeds.
   previewPrepareData: process.env.PREVIEW_PREPARE_DATA !== 'false',
@@ -121,7 +115,6 @@ export const config = {
   // Shared by every repo and worker on this runner: the reservations of
   // public ports and per-app slots (preview/reservations.ts).
   previewReservationsDir: process.env.PREVIEW_RESERVATIONS_DIR || '.preview-reservations',
-  interviewTimeoutHours: Number(process.env.INTERVIEW_TIMEOUT_HOURS ?? 24),
   // Model for the external review's worker subagents (one per criteria
   // dimension). They only gather candidates; the orchestrating session —
   // whatever model the run's Claude config uses — verifies and decides what

@@ -24,8 +24,8 @@ vi.mock('../app/evidence-store.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../app/evidence-store.js')>()),
   publishEvidence: (...a: unknown[]) => publishEvidence(...a),
 }));
-const startInterview = vi.fn();
-vi.mock('./interview.js', () => ({ startInterview: (...a: unknown[]) => startInterview(...a) }));
+const notifyBlocker = vi.fn();
+vi.mock('../core/notifier.js', () => ({ notifyBlocker: (...a: unknown[]) => notifyBlocker(...a) }));
 
 import { processSpecCandidate } from './spec-flow.js';
 
@@ -34,8 +34,8 @@ const candidate = { issueNumber: 900, appName: 'backoffice', trigger };
 
 beforeEach(async () => {
   base = await mkdtemp(join(tmpdir(), 'ronin-spec-'));
-  for (const m of [runAgentTask, addReaction, commentOnIssue, findOpenPrByHead, replyToComment, renderHtmlToPng, publishEvidence, startInterview]) m.mockReset();
-  startInterview.mockResolvedValue(undefined);
+  for (const m of [runAgentTask, addReaction, commentOnIssue, findOpenPrByHead, replyToComment, renderHtmlToPng, publishEvidence, notifyBlocker]) m.mockReset();
+  notifyBlocker.mockResolvedValue(undefined);
   addReaction.mockResolvedValue(undefined);
   replyToComment.mockResolvedValue(undefined);
   commentOnIssue.mockResolvedValue(undefined);
@@ -66,10 +66,10 @@ describe('processSpecCandidate', () => {
     expect(addReaction).toHaveBeenCalledWith(5, 'issue', 'eyes');
   });
 
-  it('opens an interview that redoes the /spec when the agent needs info', async () => {
+  it('emails the team when the agent needs info, and stops there', async () => {
     runAgentTask.mockResolvedValue('Pregunté en el issue.\nRONIN_STATUS: needs-info');
     await processSpecCandidate({ ...candidate, instruction: 'para bodega' });
-    expect(startInterview).toHaveBeenCalledWith(900, 'https://github.com/redmotos/shoppingcart/issues/900', { kind: 'spec', appName: 'backoffice', instruction: 'para bodega' });
+    expect(notifyBlocker).toHaveBeenCalledWith(expect.objectContaining({ issueUrl: 'https://github.com/redmotos/shoppingcart/issues/900', reason: 'ronin necesita información para escribir el spec' }));
     expect(findOpenPrByHead).not.toHaveBeenCalled();
   });
 

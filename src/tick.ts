@@ -57,7 +57,6 @@ import { findIssueCommands, type ExploreCandidate, type PrototypeCandidate, type
 import { processIssueRequest } from './commands/index.js';
 import { launchPrototypeWorker } from './commands/index.js';
 import { processSpecCandidate } from './slices/index.js';
-import { takePendingSpecs } from './core/local-state.js';
 import { explorationPrs, exploreWorkerBusy, launchExploreWorker, processExplorationPr } from './exploration/index.js';
 import { maybeLaunchNightlyExploration } from './exploration/index.js';
 import { sweepPreviews } from './preview/index.js';
@@ -66,7 +65,6 @@ import { followDeploys } from './deploy/follow.js';
 import { sweepPortalRequests } from './portal/launch.js';
 import { sweepMeetings } from './meetings/launch.js';
 import { sweepAutoMerge } from './commands/index.js';
-import { checkInterviews, startInterview } from './slices/index.js';
 import { findReleasesNeedingChangelog, type ChangelogCandidate } from './changelog/index.js';
 import { setLastChangelogRelease } from './core/local-state.js';
 import { config, LABEL_DIRECT_ISSUE, LABEL_MANAGED, LABEL_STACK_PRS, LABEL_STATES } from './core/config.js';
@@ -850,15 +848,9 @@ export async function spikeJobs(only?: number[]): Promise<TickJob[]> {
     log.info(`tick: findIssueCommands falló, reintentando en el próximo tick: ${(error as Error).message}`);
     return [];
   }
-  // /spec runs whose interview just got its answers (see interview.ts).
-  // Taken from the queue as they're read, so only by a run that will look
-  // at every issue — a narrowed one would drop the rest.
-  const resumed: SpecCandidate[] = (only ? [] : await takePendingSpecs().catch(() => []))
-    .filter((p) => !specs.some((s) => s.issueNumber === p.issueNumber))
-    .map((p) => ({ ...p, trigger: [] }));
   return [
     ...candidates.map((c) => issueJob('spike', c.issueNumber, () => processSpikeCandidate(c))),
-    ...[...specs, ...resumed].map((c) => issueJob('spec', c.issueNumber, () => processSpecCandidate(c))),
+    ...specs.map((c) => issueJob('spec', c.issueNumber, () => processSpecCandidate(c))),
     ...explores.slice(0, 1).map((c) => issueJob('explore-launch', c.issueNumber, () => launchExploreCandidate(c))),
     ...prototypes.map((c) => issueJob('prototype-launch', c.issueNumber, () => launchPrototypeCandidate(c))),
     ...requests.map((c) => issueJob('issue-request', c.issueNumber, () => processRequestCandidate(c))),
@@ -1056,9 +1048,8 @@ function issueJobs(inProgress: TrackingIssue[], allPrs: PullRequestStatus[]): Ti
         // every single tick — see the discoverAssignedIssues design note.
         if (task.type === 'fix-issue' && needsMoreInfo(result)) {
           await setIssueState(next.issue.number, 'blocked');
-          // A faster channel for the answers than waiting on comments — see
-          // interview.ts. Best effort: the questions are on the issue anyway.
-          await startInterview(next.issue.number, next.issue.url).catch((error) => log.error(`issue #${next.issue.number}: no se pudo abrir la entrevista`, error));
+          // The questions are on the issue; the email says there are some.
+          await notifyBlocker({ issueUrl: next.issue.url, reason: 'ronin necesita información para seguir con este issue', excerpt: 'Las preguntas están en el issue: respóndelas ahí.' });
         }
       });
     },
@@ -1118,7 +1109,6 @@ async function finishClosedIssues(): Promise<void> {
 // everything; an event handler (server/api/webhooks/handler.ts) only the ones its event
 // can move — see server/api/webhooks/events.ts's scopeForEvent.
 export type Flow =
-  | 'interviews'
   | 'assign'
   | 'sweeps'
   | 'auto-merge'
@@ -1186,9 +1176,6 @@ async function tickOneRepo(scope?: Scope): Promise<void> {
   const runs = (flow: Flow) => !scope || scope.flows.includes(flow);
   if (scope) log.info(`evento en ${activeRepo().productRepo}: ${scope.flows.join(', ')} sobre ${scope.resources.join(', ')}`);
   else log.info(`tick start (commit ${await currentCommit()}, repo ${activeRepo().productRepo})`);
-  // Closes answered or expired Remote Control interviews; an answered one
-  // puts its issue back in progress before this tick lists the work.
-  await repoStep(scope, 'interviews', () => checkInterviews().catch((error) => log.error('entrevistas: no se pudieron revisar', error)));
   let justStarted: TrackingIssue[] = [];
   await repoStep(scope, 'assign', async () => {
     justStarted = [...(await discoverAssignedSpecs()), ...(await discoverAssignedIssues())];

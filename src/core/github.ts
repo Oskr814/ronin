@@ -873,16 +873,6 @@ export async function mergePullRequest(prNumber: number): Promise<void> {
 }
 
 
-// Opt-in only (config.requestCopilotReview) — requesting Copilot review
-// automatically is explicitly out of scope for the core loop for now.
-// NOTE: untested against the same `gh pr edit` GraphQL/Projects-Classic bug
-// documented on setPrState below — `--add-reviewer` has no `gh issue edit`
-// equivalent (reviewers aren't an issue concept), so if this turns out to
-// hit the same bug when the flag gets turned on, it'll need `gh api` directly.
-export async function requestCopilotReview(prNumber: number): Promise<void> {
-  await gh(['pr', 'edit', String(prNumber), '--add-reviewer', 'copilot']);
-}
-
 export interface SpecPr {
   number: number;
   headRefName: string;
