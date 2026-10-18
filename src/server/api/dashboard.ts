@@ -27,6 +27,7 @@ import { PortalAdminError, portalAdminView, runPortalAdmin, type PortalAdminCont
 import { AjustesError, ajustesView, linearTeams, readRegistro, saveNotificacion, saveProfile, setValue } from './ajustes.js';
 import { can, touchSeen, type Perm } from './team.js';
 import { addUsuario, removeUsuario, updateEquipo, updateUsuario, usuariosView, usuarioView } from './usuarios.js';
+import { editRepo, reposView } from './repos-admin.js';
 import { missingPortalConfig } from '../portal.js';
 import { listUsers, type PortalUser } from '../../portal/accounts.js';
 import { getRequest, listRequests } from '../../portal/requests.js';
@@ -594,6 +595,23 @@ async function ajustes(req: IncomingMessage, res: ServerResponse, path: string, 
   if (req.method === 'GET' && path === '/api/ajustes/registro') {
     if (!admin) json(res, 403, { error: 'solo los administradores ven el registro' });
     else json(res, 200, { registro: await readRegistro() });
+    return;
+  }
+  const repoEdit = /^\/api\/ajustes\/repos(?:\/([\w.-]+\/[\w.-]+))?$/.exec(path);
+  if (repoEdit) {
+    if (!admin) json(res, 403, { error: 'solo los administradores cambian los repos' });
+    else if (req.method === 'GET' && !repoEdit[1]) json(res, 200, await reposView(await loadRepos()));
+    else if (req.method !== 'POST' || !repoEdit[1]) json(res, 405, { error: 'método no permitido' });
+    else if (!(req.headers['content-type'] ?? '').startsWith('application/json')) json(res, 415, { error: 'se espera JSON' });
+    else {
+      try {
+        json(res, 200, await editRepo(session.login, repoEdit[1], (await readJson(req)) ?? {}, await loadRepos()));
+        forgetGithub(repoEdit[1]);
+      } catch (error) {
+        if (error instanceof AjustesError) json(res, error.status, { error: error.message });
+        else throw error;
+      }
+    }
     return;
   }
   const usuario = /^\/api\/ajustes\/usuarios(?:\/([a-z\d-]+))?(\/quitar)?$/.exec(path);

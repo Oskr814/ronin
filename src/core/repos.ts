@@ -17,6 +17,12 @@ export async function loadRepos(): Promise<RepoEntry[]> {
     throw new Error(`${config.reposConfigPath} no es JSON válido: ${(error as Error).message}`);
   }
 
+  return validateRepos(parsed);
+}
+
+// The same checks loadRepos makes, for a list about to be written (the
+// dashboard's Ajustes → Repos, #174): what doesn't pass is never saved.
+export function validateRepos(parsed: unknown): RepoEntry[] {
   if (!Array.isArray(parsed) || parsed.length === 0) {
     throw new Error(`${config.reposConfigPath} debe ser un array con al menos un repo`);
   }
