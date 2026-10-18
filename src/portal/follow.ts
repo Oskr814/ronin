@@ -90,7 +90,7 @@ export async function followPortalIssues(): Promise<void> {
             return r;
           });
           log.info(`portal: el pedido P-${request.number} tiene el PR #${pr}, con ${LABEL_AUTO_MERGE}`);
-          await sendPortalMails(updated, [teamPrMail(updated, await getUser(updated.userId), teamTo(), `https://github.com/${repo}/pull/${pr}`)]);
+          await sendPortalMails(updated, [{ ...teamPrMail(updated, await getUser(updated.userId), await teamTo('pedido-revisar'), `https://github.com/${repo}/pull/${pr}`), team: true }]);
           continue;
         }
       }

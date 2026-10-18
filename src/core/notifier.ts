@@ -1,6 +1,7 @@
 import nodemailer from 'nodemailer';
 import { config } from './config.js';
 import { log } from './logger.js';
+import { recipientsFor } from './notifications.js';
 import { recordBlock } from './local-state.js';
 
 const BLOCK_MAX_AGE_MS = 180 * 24 * 60 * 60 * 1000;
@@ -32,6 +33,8 @@ export interface Mail {
   subject: string;
   text: string;
   html?: string;
+  // To the team rather than to a person of the portal (for a request's activity).
+  team?: boolean;
 }
 
 // Any other email ronin sends (the request portal's, #114), from the same
@@ -52,6 +55,14 @@ export async function sendMail(mail: Mail, fromName = 'ronin'): Promise<void> {
 // discoverAssignedIssues in tick.ts, which run outside runIssueStep) —
 // aborting the entire tick over a failed *notification about* an unrelated
 // failure, instead of just failing to send one email.
+// The repo is the one in the issue's URL; recipientsFor never fails a send:
+// whatever goes wrong reading the team, NOTIFY_TO gets it.
+async function blockerRecipients(issueUrl: string): Promise<string> {
+  const repo = /^https:\/\/github\.com\/([^/]+\/[^/]+)\//.exec(issueUrl)?.[1];
+  if (!repo) return config.notifyTo;
+  return recipientsFor(repo, undefined, 'bloqueo').catch(() => config.notifyTo);
+}
+
 export async function notifyBlocker(notification: BlockerNotification): Promise<void> {
   // Logged here, not at each call site, so every blocker — present and
   // future — lands in the tick log, not only in an email a human may not
@@ -84,7 +95,8 @@ export async function notifyBlocker(notification: BlockerNotification): Promise<
   try {
     await transport().sendMail({
       from: config.gmailUser,
-      to: config.notifyTo,
+      // Who of the team chose blockers for the repo, or NOTIFY_TO (#174).
+      to: await blockerRecipients(notification.issueUrl),
       subject: `[ronin] Bloqueo: ${notification.reason}`,
       text: lines.join('\n'),
     });

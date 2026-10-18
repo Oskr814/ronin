@@ -4,6 +4,7 @@ import { log } from '../../core/logger.js';
 import type { RepoEntry } from '../../core/repo-context.js';
 import { readJson, withJson } from '../../portal/json-store.js';
 import { sessionAccess, type Access } from './access.js';
+import type { NotifyEvent } from '../../core/notifications.js';
 
 // The team that enters the dashboard with GitHub (#174, stage 2): who they
 // are (their profile), their role and what they can do in each repo. Kept in
@@ -50,6 +51,8 @@ export interface Member {
   addedBy?: string;
   addedAt?: string;
   lastSeenAt?: string;
+  // The emails they chose per repo (#174, stage 4; core/notifications.ts reads them).
+  notify?: Record<string, NotifyEvent[]>;
 }
 
 export interface TeamFile {

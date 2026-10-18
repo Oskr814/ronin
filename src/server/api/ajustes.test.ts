@@ -6,6 +6,7 @@ import { join } from 'node:path';
 const dir = mkdtempSync(join(tmpdir(), 'ronin-ajustes-'));
 const config = vi.hoisted(() => ({
   settings: { dataDir: '' },
+  notifyTo: 'jefa@x.com',
   dashboard: { sessionDays: 7, githubTtlSeconds: 60, url: 'https://tablero' },
   portal: { dailyLimit: 5, sessionDays: 30, url: 'https://portal' },
 }));
@@ -15,7 +16,7 @@ vi.mock('../../core/logger.js', () => ({ log: { info: vi.fn(), error: vi.fn() } 
 const teamPeople = vi.fn();
 vi.mock('../../core/linear-api.js', () => ({ linearKey: (entry: { linear?: unknown }) => (entry.linear ? 'lin_key' : null), teamPeople: (...a: unknown[]) => teamPeople(...a) }));
 
-const { AjustesError, ajustesView, linearTeams, readRegistro, saveProfile, setValue } = await import('./ajustes.js');
+const { AjustesError, ajustesView, linearTeams, readRegistro, saveNotificacion, saveProfile, setValue } = await import('./ajustes.js');
 
 const SC = { productRepo: 'redmotos/shoppingcart', productRepoPath: '/tmp/sc', linear: { apiKeyEnv: 'LINEAR_API_KEY_X' } };
 const BM = { productRepo: 'Bmedical/bmedical', productRepoPath: '/tmp/bm' };
@@ -90,5 +91,19 @@ describe('ajustesView', () => {
     const view = await ajustesView('admin1', true, []) as { general: Array<{ key: string; source: string; value: number }> };
     expect(view.general.find((s) => s.key === 'dashboard.sessionDays')).toMatchObject({ value: 14, source: 'tablero' });
     expect(view.general.find((s) => s.key === 'portal.dailyLimit')).toMatchObject({ value: 5, source: 'defecto' });
+  });
+});
+
+describe('saveNotificacion', () => {
+  it('saves the person\'s choice in a repo they see, starting from their defaults, and records it', async () => {
+    const sc = { ...SC, portal: { name: 'Red Motos', apps: {}, notifyTo: ['persona@gmail.com'] } };
+    await saveProfile('ana-dev', { email: 'persona@gmail.com' }, []);
+    let view = await ajustesView('ana-dev', false, [sc]) as { notificaciones: Array<{ events: string[]; chosen: boolean }> };
+    expect(view.notificaciones[0]).toMatchObject({ events: ['pedido-equipo', 'pedido-revisar', 'reunion'], chosen: false });
+    const out = await saveNotificacion('ana-dev', { repo: sc.productRepo, event: 'reunion', on: false }, [sc]) as typeof view;
+    expect(out.notificaciones[0]).toMatchObject({ events: ['pedido-equipo', 'pedido-revisar'], chosen: true });
+    await expect(saveNotificacion('ana-dev', { repo: BM.productRepo, event: 'bloqueo', on: true }, [sc])).rejects.toThrow(/no está entre los que ves/);
+    await expect(saveNotificacion('ana-dev', { repo: sc.productRepo, event: 'todo', on: true }, [sc])).rejects.toThrow(/no existe/);
+    expect((await readRegistro())[0]).toMatchObject({ what: `Notificaciones · ${sc.productRepo} · propuestas de una reunión`, from: 'sí', to: 'no' });
   });
 });

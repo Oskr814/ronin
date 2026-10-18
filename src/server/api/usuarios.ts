@@ -1,7 +1,7 @@
 import { config } from '../../core/config.js';
 import { log } from '../../core/logger.js';
 import type { RepoEntry } from '../../core/repo-context.js';
-import { AjustesError, record } from './ajustes.js';
+import { AjustesError, notificaciones, record } from './ajustes.js';
 import { applyTeam, entradaOf, envAdmins, isAdmin, isSetName, permsFor, readTeam, SETS, withTeam, type Member, type RepoGrant, type TeamFile } from './team.js';
 
 // Ajustes → Usuarios (#174, stage 2), admins only:
@@ -94,6 +94,8 @@ export async function usuarioView(login: string, entries: RepoEntry[]): Promise<
     ...(team.people[login]?.linear ? { linear: team.people[login].linear } : {}),
     porDefecto: team.porDefecto ?? 'todo',
     entrada: entradaOf(team),
+    // Theirs to choose; an admin only sees them.
+    notificaciones: notificaciones(team.people[login], entries),
     repos: github.map(([repo, role]) => {
       const grant = team.people[login]?.repos?.[repo] ?? {};
       return { repo, github: role ?? null, githubLets: role === undefined ? null : githubLets(role), set: grant.custom ? 'custom' : grant.set ?? null, hidden: grant.hidden === true, perms: permsFor(team, login, repo) };
