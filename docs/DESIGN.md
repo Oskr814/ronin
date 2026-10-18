@@ -483,13 +483,13 @@ Ahora cada evento tiene su handler:
 
 **Métricas**: el handler loguea `event_start` con `delayMs` (desde que llegó el evento hasta que tiene sus recursos) y `event_complete` al terminar, junto al `tick_complete` del tick.
 
-### 15. Tablero web (#65, #85, #93, #111, #155)
+### 15. Tablero web (#65, #85, #93, #111, #155, #158)
 
-Una página para ver qué está haciendo ronin sin recorrer GitHub issue por issue ni leer el log: qué agentes corren y qué hacen paso a paso, qué issues esperan a alguien y por qué, cómo va cada stack de slices, qué previews están arriba y cuánto le queda a cada cuenta de Claude. Cada issue o PR tiene su ficha, con lo que dice en GitHub, y desde ahí se le pueden pedir a ronin los comandos más usados (15.11). Cada app que ronin explora tiene su página, con las fichas de su PR de exploración para revisarlas una por una, sus corridas y su inventario, y desde ahí se la explora a pedido (15.12). Cualquier PR se revisa archivo por archivo, con su revisión (15.14). Lo que se hace desde la página sale en GitHub a nombre de quien entró (15.3). Se ve solo por la tailnet.
+Una página para ver qué está haciendo ronin sin recorrer GitHub issue por issue ni leer el log: qué agentes corren y qué hacen paso a paso, qué issues esperan a alguien y por qué, cómo va cada stack de slices, qué previews están arriba y cuánto le queda a cada cuenta de Claude. Cada issue o PR tiene su ficha, con lo que dice en GitHub, y desde ahí se le pueden pedir a ronin los comandos más usados (15.11). Cada app que ronin explora tiene su página, con las fichas de su PR de exploración para revisarlas una por una, sus corridas y su inventario, y desde ahí se la explora a pedido (15.12). Cualquier PR se revisa archivo por archivo, con su revisión (15.14). Los admins publican los despliegues de cada repo (§18). Lo que se hace desde la página sale en GitHub a nombre de quien entró (15.3). Se ve solo por la tailnet.
 
 #### 15.1 Qué muestra
 
-- **Barra lateral: solo issues (#100).** Arriba, *Hoy*, *Corriendo ahora*, *En cola* y las páginas propias, entre ellas *Exploraciones* (15.12), con cuántas fichas esperan una decisión. Después, *Necesitan a alguien* con los issues en `ronin:blocked`; *Exploraciones*, con cada app de `explore` y su estado (explorando, fichas por decidir, esperando a ronin o sin PR), que se busca por el nombre de la app o el número de su PR; y cada repo de `repos.json` con:
+- **Barra lateral: solo issues (#100).** Arriba, *Hoy*, *Corriendo ahora*, *En cola* y las páginas propias, entre ellas *Exploraciones* (15.12), con cuántas fichas esperan una decisión, y *Despliegues* (§18), solo para admins, que dice *en curso* mientras corre el workflow de un release. Después, *Necesitan a alguien* con los issues en `ronin:blocked`; *Exploraciones*, con cada app de `explore` y su estado (explorando, fichas por decidir, esperando a ronin o sin PR), que se busca por el nombre de la app o el número de su PR; y cada repo de `repos.json` con:
   - **Sin buscar,** el trabajo pendiente: los issues de ronin (label `ronin`), aunque no haya corrido un agente, y los issues sobre los que ronin trabajó en los últimos 3 días (un pedido, una review del PR de una persona) mientras sigan abiertos. Uno cerrado (completado o no planeado, según `listRecentlyClosed`) sale de la lista salvo que sea el que está abierto en la ficha; se encuentra buscándolo por su número.
   - **Buscando** (título, número, `RED-n` o el número de un PR), o filtrando por un ciclo o un proyecto de Linear (15.13), todos los issues abiertos del repo (`listOpenIssues`, en la misma lectura cacheada).
 
@@ -644,7 +644,7 @@ Todo, salvo los webhooks y `/api/auth/*`, pide sesión:
 
 | Ruta | Qué devuelve |
 |---|---|
-| `GET /api/snapshot` | Los ítems, las apps que se exploran (con su PR y si se están explorando), el uso de cada cuenta, los cupos, la cola, el último tick, las previews y el estado de la lectura de GitHub |
+| `GET /api/snapshot` | Los ítems, las apps que se exploran (con su PR y si se están explorando), si la sesión puede desplegar (`despliegues`), el uso de cada cuenta, los cupos, la cola, el último tick, las previews y el estado de la lectura de GitHub |
 | `GET /api/today` | Las corridas de las últimas 12 horas y los totales de hoy y de ayer |
 | `GET /api/items/<id>` | Las corridas de un ítem en los últimos 14 días |
 | `GET /api/items/<id>/detail` | Su ficha: el issue y el PR con los comentarios del ítem, y las acciones que se le pueden pedir, cada una con el comentario que dejaría |
@@ -667,6 +667,9 @@ Todo, salvo los webhooks y `/api/auth/*`, pide sesión:
 | `GET /api/pedidos` | Los pedidos del portal de los repos que ve la sesión, con a quién espera cada uno (§16.11) |
 | `GET /api/pedidos/<n>` | Uno: la conversación, el veredicto, los prototipos, su actividad y sus corridas |
 | `GET /api/pedidos/<n>/img/<archivo>`, `/prototipo/<ronda>` | Una imagen del pedido, por el nombre que tiene en él, y el diff de un prototipo |
+| `GET /api/despliegues` | Solo admins: cada repo con `deploy`, con lo mergeado sin desplegar (un cambio por PR) y sus últimos releases con el estado de su workflow (§18) |
+| `POST /api/despliegues/<owner>/<repo>/plan` | Solo admins: qué llevaría un release, sin publicarlo: `{ tag, prs: 'all' \| [n…], prerelease? }`, con sus problemas en palabras y su `fingerprint` |
+| `POST /api/despliegues/<owner>/<repo>/publish` | Solo admins: lo publica: lo mismo, más `{ title?, notes?, fingerprint? }`; 409 con el plan nuevo si algo cambió o no se puede |
 | `GET /api/reuniones` | Las reuniones de los repos que ve la sesión, con lo que ronin propuso de cada una (§17) |
 | `POST /api/reuniones` | Sube las notas de una reunión: `{ repo, title?, at?, link?, text? \| file: { name, data } }`, el archivo como data URL; ronin la lee en seguida |
 | `GET /api/reuniones/<n>` | Una: el texto de sus notas, sus propuestas, lo creado, su actividad y sus corridas |
@@ -941,7 +944,7 @@ Un PR cerrado sin merge se olvida hasta que otro cierre el issue. Si `fix-issue`
 
 #### 16.7 Correos
 
-Todos salen de la misma cuenta, `GMAIL_USER` / `GMAIL_APP_PASSWORD` (la de los bloqueos), con el nombre "ronin · Pedidos de ajustes", para todos los repos. A la persona: la invitación, el cambio de contraseña, cada respuesta de ronin, el prototipo listo, el paso al equipo, el merge y el cierre del issue. Al equipo: el issue de un pedido que es suyo y el PR que espera aprobación. El equipo es el de cada repo, la lista `notifyTo` de su bloque `portal` en `repos.json`, y nunca recibe los pedidos de otro repo. Un repo sin `notifyTo` se los manda a `NOTIFY_TO`, que es para los bloqueos. Las imágenes nunca van en el correo: el enlace lleva al portal. Un correo que falla queda en el log y no frena el pedido.
+Todos salen de la misma cuenta, `GMAIL_USER` / `GMAIL_APP_PASSWORD` (la de los bloqueos), con el nombre "ronin · Pedidos de ajustes", para todos los repos. A la persona: la invitación, el cambio de contraseña, cada respuesta de ronin, el prototipo listo, el paso al equipo, el merge, el cierre del issue y, cuando el release que lo lleva termina de desplegarse, *Ya está en la aplicación* (§18.6). Al equipo: el issue de un pedido que es suyo y el PR que espera aprobación. El equipo es el de cada repo, la lista `notifyTo` de su bloque `portal` en `repos.json`, y nunca recibe los pedidos de otro repo. Un repo sin `notifyTo` se los manda a `NOTIFY_TO`, que es para los bloqueos. Las imágenes nunca van en el correo: el enlace lleva al portal. Un correo que falla queda en el log y no frena el pedido.
 
 #### 16.8 API
 
@@ -991,18 +994,22 @@ La persona puede cancelar un pedido mientras nadie lo tomó, con *Cancelar pedid
 
 Un pedido no tiene issue hasta que ronin lo abre, y algunos no lo tienen nunca. Por eso el tablero les da una página propia, *Pedidos del portal*, que ve cualquiera que vea el repo del pedido (§15, #106). Las cuentas son la otra pestaña de esa página, *Usuarios*, solo para admins.
 
-- **La lista** (`/pedidos`) dice a quién espera cada pedido (`waitsOn`): la persona (`asking`, `proposed`), ronin (leerlo, el prototipo, abrir su issue, hacer el cambio), el equipo (su issue, o aprobar el PR) o nadie. Se filtra por eso o por los cerrados. La barra lateral lista los que siguen abiertos, en *Pedidos en curso*.
+- **La lista** (`/pedidos`) dice a quién espera cada pedido (`waitsOn`): la persona (`asking`, `proposed`), ronin (leerlo, el prototipo, abrir su issue, hacer el cambio), el equipo (su issue, o aprobar el PR) o nadie. La barra lateral lista los que siguen abiertos, en *Pedidos en curso*.
+  - **Los filtros (#158):** *Pendientes* (los abiertos, el de entrada) | *Esperan a la persona* · *ronin trabajando* · *Esperan al equipo* | *Cerrados* · *Todos*. Los cerrados solo se ven en los dos últimos.
+  - **De 25 en 25,** paginada en el navegador: con pocas decenas de pedidos alcanza, y `/api/pedidos` sigue trayéndolos todos. Cambiar de filtro vuelve a la primera página.
 - **La ficha** (`/pedidos/<n>`):
   - las siete etapas (Pedido, Conversación, Prototipo, Aprobación, Issue, PR, Listo);
   - una tarjeta *Ahora* con qué falta y quién lo hace, o la corrida en vivo;
   - la actividad;
   - la conversación como la ve la persona;
   - lo que vio ronin para el equipo, con el diff de cada prototipo;
-  - las corridas, incluidas las del issue y el PR que salieron del pedido.
+  - las corridas, incluidas las del issue y el PR que salieron del pedido;
+  - **la pestaña *Issue y PR* (#158),** cuando ya tiene issue (*Issue* mientras no hay PR): lo mismo que la ficha del ítem (estado, labels, checks, review, slices, la descripción y la conversación, de `GET /api/items/<id>/detail`), con un selector entre el issue y el PR. *Revisar el PR* abre su ficha en *Archivos*; comentar y las acciones siguen en la ficha;
+  - en el encabezado, *en la app desde <tag>* cuando el release que lo llevó terminó de desplegarse (§18.6).
 - **La ficha de ese issue o PR** dice "del pedido P-n", con enlace al pedido. En *Hoy*, una corrida de un pedido abre su ficha, en esa corrida.
 - **La actividad** junta tres cosas por hora:
   - **los mensajes**;
-  - **los `events` del pedido.** `request.json` gana un registro al que solo se le agregan entradas, con tope de 200: cada worker lanzado (por el servidor o el tick), cada falla con la primera línea del error, la espera del turno de prototipo, la clasificación, la decisión, cada correo (a quién, el asunto y si salió), el issue, el PR, su cierre y la cancelación. `noteEvent` nunca falla: una línea perdida no frena el pedido;
+  - **los `events` del pedido.** `request.json` gana un registro al que solo se le agregan entradas, con tope de 200: cada worker lanzado (por el servidor o el tick), cada falla con la primera línea del error, la espera del turno de prototipo, la clasificación, la decisión, cada correo (a quién, el asunto y si salió), el issue, el PR, su cierre, la cancelación y el release que lo lleva: publicado, desplegado o fallado (§18.6). `noteEvent` nunca falla: una línea perdida no frena el pedido;
   - **las corridas.** El registro de cada corrida lleva `portalRequest` y su runId dice `p<n>`; las de antes se reconocen por su etiqueta, "pedido P-n". Las del issue y el PR del pedido se suman por su número.
 
   Los pedidos de antes de #132 no tienen eventos. Su actividad se arma con el veredicto y la decisión, y su issue va al final, sin hora.
@@ -1135,6 +1142,110 @@ Ver la tabla de 15.9: `GET|POST /api/reuniones`, `GET /api/reuniones/<n>`, `GET 
 - **Una fuente automática:** una carpeta de Drive o un correo reenviado, que entre por la misma puerta que la subida. Antes hay que probar si Gemini comparte las notas con una cuenta de fuera de la organización.
 - **Configurar quién sube y quién aprueba:** la administración de usuarios de ronin (#145).
 
+### 18. Despliegues (#158)
+
+Los repos de producto despliegan publicando un release de GitHub: su workflow corre con el tag o con el release. Hasta ahora eso se hacía a mano en GitHub, y un pedido del portal terminado le decía a la persona "sale en la próxima actualización", sin saber cuándo. En la página *Despliegues* del tablero, un admin publica el release de un repo, con todo lo mergeado o solo con los PRs que elija, y ronin sigue su workflow hasta el final.
+
+**ronin no despliega nada por su cuenta:** sube el tag y crea el release. Construir y desplegar es del workflow de cada repo.
+
+```
+src/deploy/          el dominio, sin saber quién lo llama
+  deploy.ts          lo pendiente, el plan (con la prueba del cherry-pick) y la publicación
+  follow.ts          el seguimiento del workflow y el aviso a los pedidos
+  store.ts           el registro: deploys-data/deploys.json
+src/server/api/dashboard-despliegues.ts   la página, el plan y la publicación del tablero
+```
+
+#### 18.1 Configuración
+
+Un bloque `deploy` por repo en `repos.json`. Un repo sin él no aparece en *Despliegues* y no se despliega desde ronin:
+
+```json
+"deploy": { "prerelease": true, "selective": true }
+```
+
+- **`prerelease`:** el repo despliega pre-releases a otro lado (QA). El diálogo ofrece la casilla, y un pre-release se compara con el último pre-release.
+- **`selective`:** un release puede llevar solo algunos de los PRs sin desplegar (18.3). Hace falta que el workflow del repo despliegue el commit al que apunta el tag aunque no esté en la rama. Un workflow que solo acepta commits de la rama lo rechazaría: ese repo va sin `selective`.
+
+La rama es la de `worktreeBaseRef`. `DEPLOYS_DATA_DIR` (por defecto `deploys-data`) guarda el registro de lo que se publicó.
+
+#### 18.2 Lo que falta desplegar (`pendingChanges`)
+
+Un cambio por PR, del más viejo al más nuevo:
+
+- **Los commits de la rama por primer padre** desde donde la dejó el último release del mismo tipo (su `merge-base` con la rama): un merge commit o un squash por PR, nunca los commits sueltos de adentro de un PR.
+- **El número de PR** es el que da GitHub: el `mergeCommit` de cada PR mergeado en la rama (`listMergedPrs`). Hace falta porque un merge commit puede llevar solo el título del PR. Si GitHub no lo tiene, el `(#n)` del asunto o el `Merge pull request #n`.
+- **Quedan afuera:**
+  - lo que el release ya tiene por parche (`git cherry`), por ejemplo un PR que alguien aplicó a mano;
+  - los PRs que llevó un release de *Solo elegidos*, siguiendo la cadena de registros (18.5) hasta un release cortado de la rama. Su commit en la rama no está en el release, pero el cambio sí.
+- **De cada cambio:** sus archivos (el diff contra su primer padre), sus apps (por los `path` de `ronin.app.json`) y los pedidos del portal cuyo PR es.
+
+#### 18.3 El plan (`planRelease`)
+
+Lo que haría publicar, sin publicar nada:
+
+- **El tag:** se escribe a mano. Letras, números, puntos, guiones y guiones bajos, y que no exista en el origen.
+- **Todo:** el release va en la punta de la rama. Sin release anterior, va todo lo de la rama.
+- **Solo lo elegido** (con `selective`):
+  - los commits de esos PRs se aplican con cherry-pick sobre el último release, en el orden en que se mergearon; un merge commit, con `-m 1`;
+  - se prueba en un worktree descartable (`.deploy-…` en el directorio de worktrees, que el barrido del tick no toca), que se borra al terminar. El commit que queda es el que se va a publicar;
+  - si un PR no se aplica, el plan dice qué archivos chocan y qué PR sin elegir los cambió antes: *elige también #n*.
+- **Devuelve** las apps, las notas (*Qué entra*, con los pedidos) y un `fingerprint`: el release base y la punta de la rama, o los commits elegidos.
+
+#### 18.4 Publicar (`publishRelease`)
+
+- **Uno por repo a la vez** (lock `deploy-publish`): dos a la vez se compararían con el mismo release anterior.
+- **Vuelve a planear,** y rechaza si el `fingerprint` cambió desde el que se vio (se mergeó algo, o salió otro release). El tablero muestra el plan nuevo para revisarlo otra vez.
+- **Empuja solo el tag** (`<sha>:refs/tags/<tag>`) y crea el release con `gh release create --verify-tag`. El título es el tag si no se escribió otro, y las notas, las del plan si se dejaron vacías.
+- **Lo registra (18.5) y lo anota en sus pedidos.** Si el tag subió pero el release falló, el registro queda igual, porque un workflow que corre con el tag puede estar desplegando ya, y el error lo dice.
+
+#### 18.5 El registro (`store.ts`)
+
+`deploys-data/deploys.json`, la única copia (respaldarla, como `PORTAL_DATA_DIR`), con tope de 500. Por cada release que publicó ronin: el repo y el tag, si es pre-release, si lleva todo o lo elegido, el release base, el sha, la URL, sus cambios (PR y asunto), sus pedidos, quién lo publicó y cuándo, y cómo terminó su workflow. GitHub tiene los releases; solo esto dice qué pedidos llevó cada uno.
+
+#### 18.6 El seguimiento (`followDeploys`) y los pedidos
+
+- **Quién lo sigue:**
+  - **el tick,** con el paso `deploys`, solo en los repos con `deploy`;
+  - **el webhook `workflow_run` (`completed`),** de un `push` o un `release`. El CI de un PR no cuenta. `scripts/init-webhooks.sh` suscribe el evento;
+  - **la página *Despliegues*,** al leerla si hay uno en curso.
+- **Cómo se decide el estado:** sigue los runs del tag que tienen el sha del release.
+  - todos terminaron bien (`success`, `skipped` o `neutral`): *desplegado*;
+  - alguno falló: *falló*;
+  - ninguno apareció en 2 horas: *sin workflow* (el repo no despliega con ese tag).
+- **Cada pedido que entró en el release** suma el evento `deploy` (*publicado*, *desplegado* o *falló*). Si se desplegó y no es un pre-release, el pedido gana `deployed: { tag, at }` y su persona recibe *Ya está en la aplicación*. Un pre-release (QA) solo se anota: nadie recibe un correo por algo que no está en producción.
+
+#### 18.7 La página (`/despliegues`)
+
+Solo para admins (`DASHBOARD_ADMINS`); la API responde 403 a cualquier otra sesión.
+
+- **Una tarjeta por repo con `deploy`:**
+  - lo mergeado sin desplegar, con sus apps y "del pedido P-n". Con `selective`, cada PR tiene *Desplegar solo este*;
+  - los últimos 8 releases: *Latest*, *Pre-release* y *Solo elegidos*, cuándo, el estado de su workflow con un enlace a cada run, quién lo publicó y qué pedidos llevó;
+  - un release publicado fuera de ronin dice *publicado en GitHub*.
+- **El diálogo *Nuevo despliegue*,** como *Draft a new release*:
+  - el tag a mano, con el último release (y el último pre-release) a la vista;
+  - la casilla *Pre-release* si el repo los usa;
+  - *Todo lo de `<rama>`* o *Solo lo que elijas*, con una casilla por PR;
+  - el título y las notas, con *Generar notas*.
+
+  Mientras se escribe, el servidor planea (`POST …/plan`, con 450 ms de espera): el tag, la prueba del cherry-pick ("✓ se aplica limpio sobre v…", o el PR que choca y el que falta) y las apps que cambian. *Publicar* se habilita solo con un plan vigente y sin problemas, y manda su `fingerprint`.
+- **Se relee cada 30 segundos,** o cada 10 mientras corre un workflow, y no mientras el diálogo está abierto.
+
+#### 18.8 Activarlo
+
+1. `deploy` en el bloque de cada repo en `repos.json` (18.1).
+2. `DEPLOYS_DATA_DIR` en `.env`, si no sirve el de por defecto. Hay que respaldarlo.
+3. `scripts/init-webhooks.sh <url-pública>/api/webhooks/github`, para que llegue `workflow_run`. Sin el evento, el tick lo sigue igual, cada 30 minutos.
+
+#### 18.9 Más adelante
+
+- **El despliegue automático de pedidos aprobados.** Los pedidos del portal son ajustes chicos: al mergearse el PR de uno, ronin lo desplegaría solo, con `planRelease` y `publishRelease` y nada más que ese cambio (o los de los pedidos listos para salir). `src/deploy/` no sabe quién lo llama justamente para esto. Falta decidir:
+  - cómo se elige el tag sin una persona;
+  - qué hacer si la prueba falla;
+  - qué pasa en los repos sin `selective`.
+- ***Desplegar solo este*** desde la ficha del pedido y desde la del PR mergeado.
+
 ## Estado actual
 
 - [x] Definir el esqueleto del supervisor (script + estructura de tick) — ver §3.1 y `src/`
@@ -1150,6 +1261,7 @@ Ver la tabla de 15.9: `GET|POST /api/reuniones`, `GET /api/reuniones/<n>`, `GET 
 - [x] Limpieza de worktrees cuando su PR ya no está abierto — `sweepOrphanedWorktrees` (§3.1)
 - [x] Reacción por evento: un handler por evento de GitHub, el tick como conciliación — `server/api/webhooks/handler.ts`, `core/locks.ts` (§14)
 - [x] Tablero web en la tailnet, con login de GitHub, la ficha de cada ítem, acciones y la revisión de PRs (§15.14) — `server/`, `web/`, `core/run-record.ts`, `core/claude-usage.ts` (§15)
+- [x] Despliegues desde el tablero: releases con todo lo mergeado o solo los PRs elegidos (cherry-pick probado), el seguimiento de su workflow y el aviso a los pedidos que llevan — `deploy/`, `server/api/dashboard-despliegues.ts` (§18)
 - [x] Reuniones: las notas que se suben al tablero, la lectura de ronin y la creación de lo aprobado en GitHub y Linear — `meetings/`, `server/api/dashboard-meetings*.ts` (§17)
 - [x] Portal de pedidos en `ronin-agent.redmotoshn.com`: cuentas con email y contraseña, conversación con imágenes, prototipo, PR con `ronin:auto-merge` o issue para el equipo, y correos — `portal/`, `portal-web/` (§16)
 - [x] ~~Evidencia visual de e2e en el PR~~ — eliminado (el `src/evidence.ts` de entonces; el `evidence-store.ts` actual es el de la exploración, §11.5); no reemplazaba la supervisión humana y la calidad no era suficiente — ver [issue #4](https://github.com/Oskr814/ronin/issues/4)
