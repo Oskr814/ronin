@@ -4,11 +4,11 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { APP_MANIFEST_FILE } from '../app/manifest.js';
 import { config } from '../core/config.js';
-import { createRelease, listMergedPrs, listReleases } from '../core/github.js';
+import { createRelease, listMergedPrs, listReleases, type Release } from '../core/github.js';
 import { tryLockResource, unlockResource } from '../core/locks.js';
 import { log } from '../core/logger.js';
 import { activeRepo } from '../core/repo-context.js';
-import { errorLine, listRequests, noteEvent } from '../portal/requests.js';
+import { errorLine, listRequests, noteEvent, type PortalRequest } from '../portal/requests.js';
 import { addDeploy, listDeploys, type DeployRecord } from './store.js';
 
 // A deploy (#158) is a GitHub release: ronin publishes it on the tag someone
@@ -104,9 +104,28 @@ async function tagExists(tag: string): Promise<boolean> {
 
 // The newest published release of the kind: a pre-release compares with the
 // last pre-release, a full one with the last full one.
-async function lastRelease(prerelease: boolean) {
-  const releases = (await listReleases()).filter((r) => !r.isDraft && r.isPrerelease === prerelease);
+function lastRelease(all: Release[], prerelease: boolean) {
+  const releases = all.filter((r) => !r.isDraft && r.isPrerelease === prerelease);
   return releases.sort((a, b) => b.publishedAt.localeCompare(a.publishedAt))[0] ?? null;
+}
+
+// What the pending changes come from: the checkout, fetched, and GitHub's
+// releases and merged PRs, with the portal's requests. Read all at once, and
+// once for both kinds of release (and the dashboard's card of releases).
+export interface RepoRead {
+  releases: Release[];
+  merged: Array<{ number: number; title: string; mergeCommit: string }>;
+  requests: PortalRequest[];
+}
+
+export async function readRepo(): Promise<RepoRead> {
+  const [, releases, merged, requests] = await Promise.all([
+    git(['fetch', '--quiet', '--tags', '--force', 'origin']),
+    listReleases(),
+    listMergedPrs(deployBranch()),
+    listRequests(),
+  ]);
+  return { releases, merged, requests };
 }
 
 // app → its directory, from ronin.app.json at `ref`. Read loosely: a deploy
@@ -144,30 +163,42 @@ async function carriedBy(tag: string): Promise<Set<number>> {
 // a PR's merge commit, or its squash — never the PR's inner commits. Out
 // already: what the release has by patch (git cherry: a PR cherry-picked by
 // hand), and what a release of picked PRs carried (its record).
-export async function pendingChanges(opts: { prerelease?: boolean } = {}): Promise<Pending> {
-  await git(['fetch', '--quiet', '--tags', '--force', 'origin']);
+export async function pendingChanges(opts: { prerelease?: boolean } = {}, read?: RepoRead): Promise<Pending> {
+  const { releases, merged: mergedPrs, requests: allRequests } = read ?? (await readRepo());
   const branch = deployBranch();
-  const head = (await git(['rev-parse', `origin/${branch}`])).trim();
-  const release = await lastRelease(Boolean(opts.prerelease));
+  const release = lastRelease(releases, Boolean(opts.prerelease));
+  const [head, baseSha] = (await Promise.all([
+    git(['rev-parse', `origin/${branch}`]),
+    release ? git(['rev-parse', `refs/tags/${release.tagName}^{commit}`]) : '',
+  ])).map((out) => out.trim());
   if (!release) return { branch, head, base: null, changes: [] };
-  const base = { tag: release.tagName, sha: (await git(['rev-parse', `refs/tags/${release.tagName}^{commit}`])).trim() };
+  const base = { tag: release.tagName, sha: baseSha };
   // Where the release left the branch: itself, or what its cherry-picks went onto.
   const from = (await git(['merge-base', base.sha, head])).trim();
-  const commits = (await git(['rev-list', '--first-parent', '--reverse', `${from}..${head}`])).split('\n').filter(Boolean);
-  const same = new Set((await git(['cherry', base.sha, head])).split('\n').filter((line) => line.startsWith('- ')).map((line) => line.slice(2)));
-  const carried = await carriedBy(base.tag);
-  const merged = new Map((await listMergedPrs(branch)).map((p) => [p.mergeCommit, p]));
-  const paths = await appPaths(head);
+  // The branch's own commits, each with its subject and the files it changed
+  // against its first parent (a merge commit: what its PR brought).
+  const [log, cherry, carried, paths] = await Promise.all([
+    git(['log', '--first-parent', '--reverse', '--diff-merges=first-parent', '--name-only', '--format=%x00%H%x00%s', `${from}..${head}`]),
+    git(['cherry', base.sha, head]),
+    carriedBy(base.tag),
+    appPaths(head),
+  ]);
+  const parts = log.split('\0').slice(1);
+  const commits: Array<{ sha: string; subject: string; files: string[] }> = [];
+  for (let i = 0; i < parts.length; i += 2) {
+    const [subject, ...files] = parts[i + 1].split('\n');
+    commits.push({ sha: parts[i], subject: subject.trim(), files: files.filter(Boolean) });
+  }
+  const same = new Set(cherry.split('\n').filter((line) => line.startsWith('- ')).map((line) => line.slice(2)));
+  const merged = new Map(mergedPrs.map((p) => [p.mergeCommit, p]));
   const repo = activeRepo().productRepo;
-  const requests = (await listRequests()).filter((r) => r.repo === repo && r.pr);
+  const requests = allRequests.filter((r) => r.repo === repo && r.pr);
   const changes: PendingChange[] = [];
-  for (const sha of commits) {
+  for (const { sha, subject, files } of commits) {
     if (same.has(sha)) continue;
-    const subject = (await git(['log', '-1', '--format=%s', sha])).trim();
     const known = merged.get(sha);
     const pr = known?.number ?? prOf(subject);
     if (pr && carried.has(pr)) continue;
-    const files = (await git(['diff', '--name-only', `${sha}^1`, sha])).split('\n').filter(Boolean);
     changes.push({ sha, subject: known && !subject.includes(`#${pr}`) ? `${known.title} (#${pr})` : subject, pr, files, apps: appsOf(files, paths), pedidos: pr ? requests.filter((r) => r.pr === pr).map((r) => r.number) : [] });
   }
   return { branch, head, base, changes };
