@@ -40,11 +40,13 @@ Detalle de cada comando: [wiki → Comandos](https://github.com/Oskr814/ronin/wi
 - en *Exploraciones*, cada app que ronin explora: las fichas de su PR para revisarlas (el antes y el después lado a lado, la propuesta y su hilo, para rechazar, pedir cambios o aprobar), sus corridas con el transcript de cada agente, su inventario con lo que ya se exploró, y *Explorar ahora* para lanzar una corrida sin esperar a la noche (por defecto, cuenta como la de esa noche);
 - qué agentes están corriendo, con su transcript en vivo;
 - los issues de ronin y los que trabajó hace poco, cada uno con sus PRs; buscando, cualquier issue abierto (por título, número, `RED-n` o número de PR), y *Abrir #N* para lo que no está en la lista;
+- en *Pedidos del portal*, los pendientes primero (los cerrados, en *Cerrados* o *Todos*) y la ficha de cada pedido, con su issue y su PR en la pestaña *Issue y PR*;
 - qué issues esperan a alguien y por qué;
 - cómo va cada stack de slices, con sus checks;
 - las previews arriba;
 - el uso de cada cuenta de Claude;
 - en *Hoy*: los totales del día con su semana, lo que necesita tu atención (bloqueados, PRs que esperan review, exploración, previews) y las corridas de las últimas 12 horas;
+- en *Despliegues*, solo para administradores: lo mergeado sin desplegar de cada repo y sus últimos releases con su workflow. *Nuevo despliegue* publica un release de GitHub con el tag que escribas, con todo o solo con los PRs que elijas (ronin prueba antes que se apliquen limpio), y el workflow del repo hace el resto;
 - con una API key de Linear en el repo, el proyecto y el ciclo de cada issue, un filtro por ciclo o proyecto, y en *Hoy* el ciclo actual con su avance. Con la key, el tick además toma primero los issues del ciclo.
 
 Desde la ficha se le pide a ronin lo mismo que comentando en GitHub: resolver conflictos, levantar o bajar la preview, el auto-merge, o responder y destrabar un issue. Al mandar una revisión en un PR de ronin, una casilla le pide que atienda los comentarios (`/fix-comments`). El botón **+** de cada repo crea un issue nuevo y, si querés, se lo asigna a ronin o le pide un `/spike` o un `/spec`; con Linear, también elegís su proyecto y su ciclo. El login pide el permiso `repo` de GitHub, y lo que se pide desde el tablero queda comentado a tu nombre, como si lo escribieras en GitHub. Los administradores (`DASHBOARD_ADMINS`) ven todos los repos y administran las cuentas del portal de pedidos; cualquier otra persona ve los repos en los que puede gestionar issues (triage o más) en GitHub, consultado con su propia sesión.
@@ -57,7 +59,7 @@ Desde la ficha se le pide a ronin lo mismo que comentando en GitHub: resolver co
 **Portal de pedidos** ([`docs/DESIGN.md` §16](docs/DESIGN.md)): en `https://ronin-agent.redmotoshn.com`, la gente que usa las aplicaciones pide ajustes chicos sin cuenta de GitHub. Entra con email y contraseña, elige la aplicación (las que le habilitaron) y le cuenta a ronin qué necesita, con texto y capturas.
 - **ronin lee el pedido y revisa el código.** Puede hacer una pregunta, responder (cuando no hay nada que cambiar) o decidir si es un ajuste chico, un error o algo para el equipo.
 - **Ajuste chico:** le muestra un prototipo con el antes y el después, armado sobre la app levantada, y la persona lo aprueba, pide un ajuste (hasta 3 prototipos) o dice que no le sirve.
-- **Aprobado:** ronin abre un issue asignado a sí mismo, hace el cambio en un PR con `ronin:auto-merge` y avisa al equipo. El PR se mergea cuando un dev lo aprueba y CI pasa, y la persona recibe "Listo, sale en la próxima actualización".
+- **Aprobado:** ronin abre un issue asignado a sí mismo, hace el cambio en un PR con `ronin:auto-merge` y avisa al equipo. El PR se mergea cuando un dev lo aprueba y CI pasa, y la persona recibe "Listo, sale en la próxima actualización". Cuando el release que lo lleva termina de desplegarse, recibe "Ya está en la aplicación".
 - **Un error:** ronin lo reproduce en una copia de la app, con un test que falla por ese error. Si el arreglo es pequeño y el test pasa a verde, lo corrige él en un PR como uno aprobado, sin que la persona apruebe nada. Si no, o si no lo pudo reproducir, va al equipo con lo que encontró.
 - **Grande, o "no me sirve":** va al equipo en un issue con label `ronin:portal`, y la persona recibe un correo cuando se cierra.
 - **Cuentas:** las crean los administradores del tablero, en la página *Portal de pedidos*, con las aplicaciones de cada persona. Las aplicaciones salen del bloque `portal` de cada repo en `repos.json`.
@@ -71,6 +73,7 @@ Desde la ficha se le pide a ronin lo mismo que comentando en GitHub: resolver co
 - [Changelog](https://github.com/Oskr814/ronin/wiki/Changelog): publicación automática de releases
 - [Bloqueos](https://github.com/Oskr814/ronin/wiki/Bloqueos): cuándo ronin se detiene y avisa por email
 - Portal de pedidos: `PORTAL_URL` y `PORTAL_SESSION_SECRET` en `.env`, y el bloque `portal` en `repos.json` ([`docs/DESIGN.md` §16.9](docs/DESIGN.md))
+- Despliegues: el bloque `deploy` en `repos.json`, `DEPLOYS_DATA_DIR` en `.env` (respaldarlo) y el evento `workflow_run` en los webhooks (`scripts/init-webhooks.sh`) ([`docs/DESIGN.md` §18.8](docs/DESIGN.md))
 - Reuniones: `MEETINGS_DATA_DIR` en `.env` (respaldarlo), y la key de Linear del repo para los proyectos ([`docs/DESIGN.md` §17.7](docs/DESIGN.md))
 
 ## Desarrollo
