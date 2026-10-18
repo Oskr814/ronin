@@ -2,6 +2,7 @@ import type { RepoEntry } from '../../core/repo-context.js';
 import { log } from '../../core/logger.js';
 import { AccountError, adminView, createUser, getUser, listUsers, updateUser, type UserFields } from '../../portal/accounts.js';
 import { portalApps, validGrants } from '../../portal/apps.js';
+import { startedTodayByUser } from '../../portal/requests.js';
 import { sendPasswordLink, type Send } from '../../portal/send-link.js';
 
 // The request portal's accounts from the dashboard (#114), for its admins
@@ -29,12 +30,16 @@ export interface PortalAdminContext {
 }
 
 export async function portalAdminView(ctx: PortalAdminContext) {
+  const [users, used] = await Promise.all([listUsers(), startedTodayByUser()]);
   return {
     enabled: ctx.enabled,
     url: ctx.url,
     dailyLimit: ctx.dailyLimit,
     apps: portalApps(ctx.entries),
-    users: (await listUsers()).map(adminView).sort((a, b) => a.name.localeCompare(b.name, 'es')),
+    // Each one with their requests today, against their daily limit.
+    users: users
+      .map((u) => ({ ...adminView(u), today: { used: used.get(u.id) ?? 0, limit: u.dailyLimit ?? ctx.dailyLimit } }))
+      .sort((a, b) => a.name.localeCompare(b.name, 'es')),
   };
 }
 

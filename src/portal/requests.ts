@@ -270,6 +270,14 @@ export async function startedToday(userId: string, now = new Date()): Promise<nu
   return (await listRequestsOf(userId)).filter((r) => dayIn(new Date(r.createdAt), config.exploreTimezone) === today).length;
 }
 
+// The same for everyone at once, by user id (the dashboard's accounts).
+export async function startedTodayByUser(now = new Date()): Promise<Map<string, number>> {
+  const today = dayIn(now, config.exploreTimezone);
+  const counts = new Map<string, number>();
+  for (const r of await listRequests()) if (dayIn(new Date(r.createdAt), config.exploreTimezone) === today) counts.set(r.userId, (counts.get(r.userId) ?? 0) + 1);
+  return counts;
+}
+
 async function saveImages(n: number, messageId: number, images: ImageUpload[]): Promise<string[]> {
   const names: string[] = [];
   for (const [i, image] of images.entries()) {

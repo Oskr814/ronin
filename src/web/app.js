@@ -2993,6 +2993,13 @@ function portalStatus(u) {
   return ['ok', 'activa'];
 }
 
+// Their daily quota (PORTAL_DAILY_LIMIT, or their own): what's left of it today.
+function quotaHTML(today) {
+  if (!today) return '';
+  const left = Math.max(0, today.limit - today.used);
+  return `<span class="chip ${left ? 'plain' : 'warn'}" title="${esc(`${today.used} de ${today.limit} pedidos hoy`)}">quedan ${left} de ${today.limit}</span><small>${today.used ? `${today.used} ${today.used === 1 ? 'hecho' : 'hechos'} hoy` : 'ninguno hoy'}</small>`;
+}
+
 function portalHTML() {
   const p = S.portal;
   const head = `<h1>Portal de pedidos</h1><p class="lead">Quienes piden ajustes chicos sin cuenta de GitHub. Entran con correo y contraseña${p.data?.url ? ` en <a href="${esc(p.data.url)}" target="_blank" rel="noopener">${esc(p.data.url.replace(/^https?:\/\//, ''))}</a>` : ''}.</p>${portalTabsHTML('usuarios')}`;
@@ -3004,12 +3011,13 @@ function portalHTML() {
     return `<tr data-puser="${esc(u.id)}" tabindex="0"><td>${esc(u.name)}<small>${esc(u.email)}</small></td>
       <td class="hide-m">${u.grants.length ? u.grants.map((g) => `<span class="tag">${esc(appLabel(g))}</span>`).join('') : '<span class="m">ninguna</span>'}</td>
       <td class="hide-m">${u.lastLoginAt ? `hace ${esc(short(Date.now() - Date.parse(u.lastLoginAt)))}` : '<span class="m">nunca</span>'}</td>
+      <td>${quotaHTML(u.today)}</td>
       <td><span class="chip ${cls}">${label}</span></td></tr>`;
   }).join('');
   return `<div class="today padm">${head}
     <div class="padm-bar"><button class="btn-s primary" data-pnew ${apps.length ? '' : 'disabled'}>+ Invitar</button>
       ${apps.length ? `<span class="m">Apps del portal: ${apps.map((a) => esc(`${a.org} · ${a.name}`)).join(', ')}</span>` : '<span class="bad">Ningún repo tiene <code>portal.apps</code> en repos.json: no hay apps para habilitar.</span>'}</div>
-    ${users.length ? `<table class="padm-t"><thead><tr><th>Persona</th><th class="hide-m">Puede pedir en</th><th class="hide-m">Último acceso</th><th>Estado</th></tr></thead><tbody>${rows}</tbody></table>` : '<p class="note">Todavía no hay cuentas.</p>'}
+    ${users.length ? `<table class="padm-t"><thead><tr><th>Persona</th><th class="hide-m">Puede pedir en</th><th class="hide-m">Último acceso</th><th>Pedidos hoy</th><th>Estado</th></tr></thead><tbody>${rows}</tbody></table>` : '<p class="note">Todavía no hay cuentas.</p>'}
   </div>`;
 }
 

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { readFile, rm, stat } from 'node:fs/promises';
 import { isAbsolute, join } from 'node:path';
 import { config } from '../core/config.js';
-import { addEvent, addPersonMessage, createRequest, MAX_EVENTS, noteEvent, getRequest, listRequestsOf, requestImagePath, startedToday, updateRequest, MAX_PROTOTYPES, updateUnlessCancelled } from './requests.js';
+import { addEvent, addPersonMessage, createRequest, MAX_EVENTS, noteEvent, getRequest, listRequestsOf, requestImagePath, startedToday, startedTodayByUser, updateRequest, MAX_PROTOTYPES, updateUnlessCancelled } from './requests.js';
 import { sweepPortalRequests } from './launch.js';
 
 vi.mock('../core/logger.js', () => ({ log: { info: vi.fn(), error: vi.fn() } }));
@@ -72,6 +72,7 @@ describe('portal requests', () => {
     await createRequest({ userId: 'u1', repo: 'a/b', app: 'web', text: 'dos', images: [], }, new Date(Date.now() - 3 * 24 * 3600_000));
     expect(await startedToday('u1')).toBe(1);
     expect(await startedToday('u2')).toBe(0);
+    expect(await startedTodayByUser()).toEqual(new Map([['u1', 1]]));
   });
 
   it('the tick starts another worker for a request whose worker died', async () => {
