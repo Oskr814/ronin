@@ -17,7 +17,7 @@ import { rm } from 'node:fs/promises';
 import { config } from '../core/config.js';
 import { withActiveRepo } from '../core/repo-context.js';
 import type { WorkflowRun } from '../core/github.js';
-import { deployState, followDeploys, NO_RUNS_AFTER_MS } from './follow.js';
+import { deployState, followDeploys, NO_RUNS_AFTER_MS, RERUN_WINDOW_MS } from './follow.js';
 import { addDeploy, listDeploys, type DeployRecord } from './store.js';
 
 const run = (status: string, conclusion = '', sha = 'abc'): WorkflowRun => ({ databaseId: 1, workflowName: 'Deploy', status, conclusion, event: 'push', url: 'https://github.com/acme/app/actions/runs/1', headSha: sha });
@@ -81,6 +81,30 @@ describe('followDeploys', () => {
     await follow();
     expect(Object.fromEntries((await listDeploys()).map((d) => [d.tag, d.state]))).toEqual({ 'v1.0.1': 'running', 'v1.0.2': 'unknown' });
     expect(requests.get(7)!.events).toEqual([]);
+  });
+
+  it('follows a failed one re-run on GitHub: going again, then deployed', async () => {
+    await addDeploy(record({ state: 'failed', endedAt: AT, runs: [{ name: 'Deploy', conclusion: 'failure', url: '' }] }));
+    listTagRuns.mockResolvedValue([run('completed', 'failure')]);
+    await follow();
+    expect((await listDeploys())[0].state).toBe('failed');
+    expect(requests.get(7)!.events).toEqual([]);
+    listTagRuns.mockResolvedValue([run('in_progress')]);
+    await follow();
+    const again = (await listDeploys())[0];
+    expect(again.state).toBe('running');
+    expect(again.endedAt).toBeUndefined();
+    listTagRuns.mockResolvedValue([run('completed', 'success')]);
+    await follow();
+    expect((await listDeploys())[0]).toMatchObject({ state: 'deployed', runs: [{ conclusion: 'success' }] });
+    expect(requests.get(7)!.events).toEqual([expect.objectContaining({ state: 'deployed' })]);
+    expect(sendPortalMails).toHaveBeenCalledTimes(1);
+  });
+
+  it('stops looking at a failed one once GitHub no longer re-runs it', async () => {
+    await addDeploy(record({ state: 'failed', endedAt: AT }));
+    await follow(Date.parse(AT) + RERUN_WINDOW_MS + 1);
+    expect(listTagRuns).not.toHaveBeenCalled();
   });
 
   it('only follows the active repo', async () => {
