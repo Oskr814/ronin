@@ -4,8 +4,8 @@ import { log } from '../core/logger.js';
 import { activeRepo } from '../core/repo-context.js';
 import { getUser } from '../portal/accounts.js';
 import { deployedMail } from '../portal/mail.js';
-import { sendPortalMails } from '../portal/notify.js';
-import { addEvent, updateRequest } from '../portal/requests.js';
+import { sendRequestsMail } from '../portal/notify.js';
+import { addEvent, updateRequest, type PortalRequest } from '../portal/requests.js';
 import { listDeploys, updateDeploy, type DeployRecord } from './store.js';
 
 // The tick and the workflow_run webhook (#158), inside withActiveRepo:
@@ -31,18 +31,28 @@ export function deployState(runs: WorkflowRun[], ageMs: number): DeployRecord['s
 }
 
 async function tellRequests(record: DeployRecord, state: 'deployed' | 'failed'): Promise<void> {
+  const told: PortalRequest[] = [];
   for (const n of record.pedidos) {
     try {
-      const request = await updateRequest(n, (r) => {
+      told.push(await updateRequest(n, (r) => {
         addEvent(r, { kind: 'deploy', tag: record.tag, state, prerelease: record.prerelease });
         if (state === 'deployed' && !record.prerelease) r.deployed = { tag: record.tag, at: record.endedAt ?? new Date().toISOString() };
         return r;
-      });
-      if (state !== 'deployed' || record.prerelease) continue;
-      const user = await getUser(request.userId);
-      if (user) await sendPortalMails(request, [deployedMail(request, user, config.portal.url)]);
+      }));
     } catch (error) {
-      log.error(`deploy: no se pudo avisar ${record.tag} al pedido P-${n}`, error);
+      log.error(`deploy: no se pudo anotar ${record.tag} en el pedido P-${n}`, error);
+    }
+  }
+  if (state !== 'deployed' || record.prerelease) return;
+  // One mail per person, with every request of theirs the release carried.
+  const byPerson = new Map<string, PortalRequest[]>();
+  for (const request of told) byPerson.set(request.userId, [...(byPerson.get(request.userId) ?? []), request]);
+  for (const [userId, requests] of byPerson) {
+    try {
+      const user = await getUser(userId);
+      if (user) await sendRequestsMail(requests, deployedMail(requests, user, config.portal.url));
+    } catch (error) {
+      log.error(`deploy: no se pudo avisar ${record.tag} a los pedidos ${requests.map((r) => `P-${r.number}`).join(', ')}`, error);
     }
   }
 }

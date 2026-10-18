@@ -132,9 +132,22 @@ export function doneMail(request: PortalRequest, user: PortalUser, portalUrl: st
   };
 }
 
-// To the person, once the release that carried its change deployed (#158).
-export function deployedMail(request: PortalRequest, user: PortalUser, portalUrl: string): Mail {
+// To the person, once the release that carried their changes deployed
+// (#158): one mail for all of theirs it carried, each with its link.
+export function deployedMail(requests: PortalRequest[], user: PortalUser, portalUrl: string): Mail {
   const first = user.name.split(/\s+/)[0] || user.name;
+  if (requests.length > 1) {
+    const what = (r: PortalRequest) => `P-${r.number}: ${r.bug ? 'el arreglo del error ' : ''}"${r.title}"`;
+    const intro = [`Hola ${first},`, `Estos ${requests.length} pedidos tuyos ya están en la aplicación:`];
+    const outro = 'Si no los ves, recarga la página. Gracias por pedirlos.';
+    return {
+      to: user.email,
+      subject: `Ya están en la aplicación: ${requests.length} de tus pedidos`,
+      text: `${intro.join('\n\n')}\n\n${requests.map((r) => `- ${what(r)}\n  ${requestUrl(portalUrl, r.number)}`).join('\n')}\n\n${outro}`,
+      html: html([...intro.map(esc), requests.map((r) => `<a href="${esc(requestUrl(portalUrl, r.number))}" style="color:#1C2236;font-weight:600">P-${r.number}</a>: ${esc(what(r).replace(/^P-\d+: /, ''))}`).join('<br>'), esc(outro)], { label: 'Ver mis pedidos', url: portalUrl }, portalUrl),
+    };
+  }
+  const [request] = requests;
   const lines = [
     `Hola ${first},`,
     request.bug
