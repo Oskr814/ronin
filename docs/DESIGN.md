@@ -380,6 +380,8 @@ Sin cron aparte: el tick evalúa `es de noche (EXPLORE_NIGHT_WINDOW, en la hora 
 - **Lo urgente primero**: un issue asignado o una mención que llega de noche se procesa antes; la exploración es la prioridad más baja y es interrumpible entre funciones.
 - **Presupuesto por noche, no "usar todo"**: la noche aprovecha la ventana de 5 h de Claude que nadie usa, pero el límite **semanal** es compartido con el trabajo de día. Tope de tiempo y modelo de los workers configurables (como `EXTERNAL_REVIEW_WORKER_MODEL`).
 - **Prompt injection desde la app**: el contenido de páginas y datos se trata como dato, con los mismos marcadores `<<<…>>>` que los comentarios.
+- **A pedido desde el tablero (#155)**: *Explorar ahora*, en la página de la app (§15.12), lanza el mismo worker sin esperar a la noche. Por defecto cuenta como la corrida de esa noche: guarda en `nightlyExploration` la noche que viene (`upcomingNight`: la que está en curso dentro de la ventana, o si no la próxima que abre), y el tick la salta. Así una corrida de la tarde no suma otra a la noche sobre el mismo límite semanal.
+- **El registro de cada corrida** (`exploration/run-log.ts`): el worker escribe `logs/exploration/<owner>-<repo>/<inicio>-<app>.json` al arrancar y lo cierra al terminar. Guarda quién la lanzó (de noche, `/explore` en un issue o el tablero, con el login), la semilla, cada función con su charter, su rol, el motivo y los viewports, las fichas, las descartadas y el error. Si el registro no se puede escribir, la corrida sigue igual. Uno que sigue en `running` cuando el lock del repo ya está libre es de un worker que murió: el tablero lo muestra como cortado.
 
 #### 11.9 Preguntas por Remote Control
 
@@ -481,14 +483,13 @@ Ahora cada evento tiene su handler:
 
 **Métricas**: el handler loguea `event_start` con `delayMs` (desde que llegó el evento hasta que tiene sus recursos) y `event_complete` al terminar, junto al `tick_complete` del tick.
 
-### 15. Tablero web (#65, #85, #93, #111)
+### 15. Tablero web (#65, #85, #93, #111, #155)
 
-Una página para ver qué está haciendo ronin sin recorrer GitHub issue por issue ni leer el log: qué agentes corren y qué hacen paso a paso, qué issues esperan a alguien y por qué, cómo va cada stack de slices, qué previews están arriba y cuánto le queda a cada cuenta de Claude. Cada issue o PR tiene su ficha, con lo que dice en GitHub, y desde ahí se le pueden pedir a ronin los comandos más usados (15.11). Un PR de exploración se revisa ahí mismo, ficha por ficha (15.12), y cualquier PR, archivo por archivo, con su revisión (15.14). Lo que se hace desde la página sale en GitHub a nombre de quien entró (15.3). Se ve solo por la tailnet.
+Una página para ver qué está haciendo ronin sin recorrer GitHub issue por issue ni leer el log: qué agentes corren y qué hacen paso a paso, qué issues esperan a alguien y por qué, cómo va cada stack de slices, qué previews están arriba y cuánto le queda a cada cuenta de Claude. Cada issue o PR tiene su ficha, con lo que dice en GitHub, y desde ahí se le pueden pedir a ronin los comandos más usados (15.11). Cada app que ronin explora tiene su página, con las fichas de su PR de exploración para revisarlas una por una, sus corridas y su inventario, y desde ahí se la explora a pedido (15.12). Cualquier PR se revisa archivo por archivo, con su revisión (15.14). Lo que se hace desde la página sale en GitHub a nombre de quien entró (15.3). Se ve solo por la tailnet.
 
 #### 15.1 Qué muestra
 
-- **Barra lateral: solo issues (#100).** Arriba, *Hoy*, *Corriendo ahora* y *En cola*. Después, *Necesitan a alguien* con los issues en `ronin:blocked`, y cada repo de `repos.json` con:
-  - **Fijo arriba, el PR de exploración,** con su ícono: no tiene issue y es donde se revisan las fichas (15.12).
+- **Barra lateral: solo issues (#100).** Arriba, *Hoy*, *Corriendo ahora*, *En cola* y las páginas propias, entre ellas *Exploraciones* (15.12), con cuántas fichas esperan una decisión. Después, *Necesitan a alguien* con los issues en `ronin:blocked`; *Exploraciones*, con cada app de `explore` y su estado (explorando, fichas por decidir, esperando a ronin o sin PR), que se busca por el nombre de la app o el número de su PR; y cada repo de `repos.json` con:
   - **Sin buscar,** el trabajo pendiente: los issues de ronin (label `ronin`), aunque no haya corrido un agente, y los issues sobre los que ronin trabajó en los últimos 3 días (un pedido, una review del PR de una persona) mientras sigan abiertos. Uno cerrado (completado o no planeado, según `listRecentlyClosed`) sale de la lista salvo que sea el que está abierto en la ficha; se encuentra buscándolo por su número.
   - **Buscando** (título, número, `RED-n` o el número de un PR), o filtrando por un ciclo o un proyecto de Linear (15.13), todos los issues abiertos del repo (`listOpenIssues`, en la misma lectura cacheada).
 
@@ -507,7 +508,7 @@ Una página para ver qué está haciendo ronin sin recorrer GitHub issue por iss
 - **Centro: la ficha del ítem.** Pestañas, una por ítem abierto; al cargar se abren las de los agentes que corren. Cada una muestra la ficha del issue o PR, tenga corridas o no:
   - **Encabezado.** Título, repo, el link a GitHub y el botón *Acciones* (15.11). Debajo, chips con su estado. El PR del ítem (o, en un issue, el de la slice que avanza) suma si tiene conflictos con su base, sus checks, la review y si es draft. Un issue suma cuántas slices van mergeadas y qué espera.
   - **Actividad.** Una línea con la última corrida (estado, hace cuánto, duración, costo y el error si falló) y las anteriores de los últimos 14 días, cada una con su transcript. Si hay una en curso, una tarjeta con lo último que dijo el agente, sus últimos cuatro pasos y el reloj, que se sigue en vivo.
-  - **Pestaña *Fichas*,** solo en un PR de exploración, y la primera: las propuestas que trae, para revisarlas y decidir (15.12). Mientras está abierta, la columna de contexto se oculta para dejarle lugar.
+  - **Pestañas *Fichas*, *Corridas* e *Inventario*,** solo en un PR de exploración, que es la página de su app (15.12). *Fichas* va primera: las propuestas que trae, para revisarlas y decidir. Mientras está abierta, la columna de contexto se oculta para dejarle lugar.
   - **Pestaña *Archivos*,** en un PR y en un issue con un PR que avanza: el diff con sus hilos, para comentar y revisar (15.14). Como *Fichas*, ocupa también la columna de contexto.
   - **Pestañas *Issue*, *PR* y *Comentarios*.** La descripción del issue y la de su PR (o la del PR y la de su issue de tracking), y los comentarios del ítem, con los de ronin marcados. Es el markdown de GitHub, saneado (15.3). Un `#123` abre ese ítem en el tablero si está en la barra lateral, y si no, en GitHub.
   - **El transcript de una corrida** se abre desde la actividad, con "← Ficha" para volver: los textos del agente y sus pasos (leyó, buscó, editó, corrió), arriba las corridas del ítem y abajo el estado, el reloj, el modelo y el worktree. Una corrida en curso se sigue en vivo, y si arranca una nueva sobre el ítem abierto, aparece sola. Lo que no es un issue ni un PR (el changelog) abre directo en el transcript, igual que una corrida elegida en *Hoy*.
@@ -520,7 +521,7 @@ Una página para ver qué está haciendo ronin sin recorrer GitHub issue por iss
 - **Barra de estado.** El uso de cada cuenta de Claude en la ventana de 5 horas y en la semanal, los cupos de agentes ocupados, la cola, las previews, el último tick y si GitHub no responde.
 - ***Hoy*, la vista de inicio.**
   - **Los números del día:** corridas, cuántas terminaron bien, duración mediana y p90, costo y errores, con los de ayer al lado y una mini línea de los últimos 7 días.
-  - ***Necesitan tu atención*:** los issues bloqueados con su motivo, los PRs de ronin que esperan review o merge (el que más espera primero, desde la última corrida), el PR de exploración y las previews arriba. Cada fila abre su ítem.
+  - ***Necesitan tu atención*:** los issues bloqueados con su motivo, los PRs de ronin que esperan review o merge (el que más espera primero, desde la última corrida), el PR de exploración y las previews arriba. Cada fila abre su ítem; la del PR de exploración, la página de su app.
   - **Con Linear (§15.13), el ciclo actual:** una barra por estado y un gráfico de issues en el ciclo contra hechos, día por día. Debajo, el desglose por proyecto (un clic filtra la barra lateral) y quién tiene lo que falta.
   - **Las últimas 12 horas:** un carril por repo y cada corrida como una barra. Al hacerle clic, se abre esa corrida.
 - **Celular.** La barra lateral es la lista principal, y un ítem abre su ficha con el contexto debajo.
@@ -592,6 +593,8 @@ La tailnet ya limita quién llega. El login suma una segunda barrera, y el token
 | Descripción y comentarios de un issue o PR | GitHub, al abrir su ficha (15.8) |
 | Archivos de un PR y sus hilos de review | GitHub, al abrir *Archivos* (15.14) |
 | Lo visto y la revisión pendiente de la persona | GitHub, con su token, al abrir *Archivos* (15.14) |
+| Corridas de exploración | El registro de cada corrida (`logs/exploration/`, §11.8) y el de sus agentes (15.5) |
+| Fichas e inventario de una app | El clon del repo de producto, en la rama del PR de exploración o en la base (15.12) |
 | Previews | El `preview.json` de cada worktree de preview |
 | Último tick y último evento | `tick_complete` y `event_complete` en `logs/tick-*.log` |
 
@@ -641,12 +644,16 @@ Todo, salvo los webhooks y `/api/auth/*`, pide sesión:
 
 | Ruta | Qué devuelve |
 |---|---|
-| `GET /api/snapshot` | Los ítems, el uso de cada cuenta, los cupos, la cola, el último tick, las previews y el estado de la lectura de GitHub |
+| `GET /api/snapshot` | Los ítems, las apps que se exploran (con su PR y si se están explorando), el uso de cada cuenta, los cupos, la cola, el último tick, las previews y el estado de la lectura de GitHub |
 | `GET /api/today` | Las corridas de las últimas 12 horas y los totales de hoy y de ayer |
 | `GET /api/items/<id>` | Las corridas de un ítem en los últimos 14 días |
 | `GET /api/items/<id>/detail` | Su ficha: el issue y el PR con los comentarios del ítem, y las acciones que se le pueden pedir, cada una con el comentario que dejaría |
 | `POST /api/items/<id>/actions` | Pide una de esas acciones: `{ action, text? }` (15.11) |
 | `POST /api/repos/<owner>/<repo>/issues` | Crea un issue a nombre de la persona y, si se pide, lo asigna a ronin o le comenta `/spike` o `/spec`: `{ title, body, after, app?, instruction? }` (15.11.1) |
+| `GET /api/exploraciones` | Cada app que se explora, con las fichas de su PR contadas, la última corrida y la próxima de la noche (15.12) |
+| `GET /api/exploraciones/<owner>/<repo>/<app>/corridas` | Sus corridas de los últimos 14 días, cada una con sus agentes |
+| `GET /api/exploraciones/<owner>/<repo>/<app>/inventario` | Sus funciones y qué charters ya se les aplicaron, de `inventory.yml` |
+| `POST /api/exploraciones/<owner>/<repo>/<app>/run` | La explora ahora: `{ maxFunctions, hours, tonight }`; 409 si el repo ya está explorando (15.12) |
 | `GET /api/items/<id>/exploration` | Las fichas de un PR de exploración abierto, leídas en partes, con su hilo (15.12) |
 | `POST /api/items/<id>/exploration/actions` | Comenta en una ficha: `{ action, ficha, text, redo? }` (15.12) |
 | `POST /api/items/<id>/exploration/general` | Un comentario general en el PR: `{ text }` (15.12) |
@@ -717,9 +724,35 @@ Cada repo de la barra lateral tiene un botón **+** que abre *Nuevo issue*: tít
 
 `POST /api/repos/<owner>/<repo>/issues` con `{ title, body, after, app?, instruction? }`. Pasa por las mismas defensas que cualquier POST del tablero (origen, sesión, JSON). Un rechazo de GitHub (un 401 con la sesión vencida, o un 403/404 cuando la organización restringe las apps OAuth) se explica igual que en 15.11.
 
-#### 15.12 Revisar una exploración (#93)
+#### 15.12 Exploraciones (#93, #155)
 
-En GitHub, un PR de exploración (§11.7) cuesta revisarlo: "Files changed" muestra cada ficha como diff de markdown, así que las capturas se ven abriendo archivo por archivo; `inventory.yml`, `knowledge.md` y `runs/` aparecen en el medio; y para decidir hay que comentar el archivo de cada ficha. La pestaña *Fichas* de su ficha en el tablero es para eso.
+La página *Exploraciones* junta lo que antes estaba repartido entre el PR fijo en cada repo, `/explore` en un issue y la corrida de la noche, que no se veía hasta que actualizaba el PR.
+
+- **La lista (`/exploraciones`).** Cada app de `explore` en `repos.json` con:
+  - su estado: explorando ahora (con la función), fichas por decidir, esperando a ronin o sin PR;
+  - el PR de su repo y cuántas fichas trae;
+  - la última corrida y la próxima de la noche.
+
+  El PR es uno por repo (§11.7), así que un repo con dos apps muestra el mismo en las dos, aunque las fichas se cuentan por app. "Explorando" sale del agente en curso y, antes de que arranque el primero (la app tarda en levantarse), del registro de la corrida mientras el lock del repo está tomado (`liveRuns`).
+- **La página de una app (`/exploraciones/<owner>/<repo>/<app>`).**
+  - **Con un PR abierto,** es la página de ese PR con el encabezado de la app: la miga *Exploraciones / repo*, el PR, *Comentario general*, *Aprobar…*, *Explorar ahora* y la próxima corrida. *Hoy*, *Abrir #N* y las URLs `/i/<repo>#<pr>` llevan aquí.
+  - **Sin PR,** una página que lo explica, con sus corridas y su inventario, y que pasa sola al PR cuando ronin lo abre.
+- **Corridas.** Cada corrida de la app, de su registro (§11.8), con los agentes que corrieron durante ella:
+  - quién la lanzó y cómo terminó: bien, falló o se cortó, con el error;
+  - la duración y el costo, sumado de sus agentes;
+  - las funciones con su charter y sus viewports, las fichas, las descartadas, el PR y la semilla;
+  - el transcript de cada agente, que se abre ahí mismo.
+
+  Solo cuentan los agentes de inventario, explorar y evaluar; rehacer un después o responder comentarios no es una corrida. Las de antes del registro se arman agrupando los agentes separados por menos de 30 minutos, sin quién la lanzó, semilla ni fichas.
+- **Inventario.** Solo lectura, de `inventory.yml` en la rama del PR abierto (que cada corrida actualiza) o en la base: cada función con sus rutas y su prioridad (alta, excluida, retirada o nunca explorada), la última vez que se exploró y en qué viewports, una matriz con los 8 charters y la fecha de cada uno, y cuántas fichas tiene. Se edita en el repo.
+- **Explorar ahora.** Un diálogo con:
+  - la cantidad de funciones (de 1 a 10);
+  - un tope de tiempo (1, 2 o 4 horas, o ninguno), que llega al worker como `until`;
+  - *Cuenta como la de esta noche*, marcada por defecto (§11.8).
+
+  Las funciones y los charters los sigue eligiendo ronin, como de noche (§11.4): elegirlos convertiría la exploración en una prueba dirigida (§11.1). La lanza cualquiera que vea el repo. El servidor llama a `launchExploreWorker` sin `trigger`, con el login en `by`, y responde 409 mientras el lock del repo está tomado o durante el minuto después de lanzar una, que es lo que tarda el worker en tomarlo. La app dice "arrancando…" hasta que el snapshot la ve explorando, y la corrida queda en *Corridas* "a pedido de <login>". `/explore <app>` en un issue sigue funcionando.
+
+**Las fichas.** En GitHub, un PR de exploración (§11.7) cuesta revisarlo: "Files changed" muestra cada ficha como diff de markdown, así que las capturas se ven abriendo archivo por archivo; `inventory.yml`, `knowledge.md` y `runs/` aparecen en el medio; y para decidir hay que comentar el archivo de cada ficha. La pestaña *Fichas* de la página de la app es para eso.
 
 - **La lista.** Las fichas que trae el PR (`findingsAddedOverBase`, como el digest), agrupadas por cómo están:
   - **Por decidir:** nadie la comentó.
