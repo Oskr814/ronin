@@ -112,7 +112,7 @@ function duration(ms) {
 const money = (usd) => (usd < 0.01 ? 'menos de US$0,01' : `US$${usd.toFixed(2).replace('.', ',')}`);
 const pct = (fraction) => `${Math.round(fraction * 100)}%`;
 
-const S = { snap: null, today: null, sel: null, open: [], runIdx: {}, pendingRun: null, filter: null, q: '', itemRuns: {}, run: null, stream: null, detail: {}, view: {}, doc: {}, menu: false, dialog: null, expanded: new Set(), expl: {}, ficha: {}, fichaOpen: {}, fichaFilter: { tipo: 'todas', vp: 'todos' }, antes: {}, oldAfter: new Set(), lightbox: null, fmenu: false, fdialog: null, fdraft: {}, listas: {}, scope: 'all', project: '', attAll: false, extra: {}, newIssue: null, files: {}, fcur: {}, ffold: {}, fexp: {}, fcontent: {}, fq: {}, ftree: false, fcomp: null, fbusy: new Set(), rpanel: null, revSent: {}, page: null, portal: { data: null, error: null }, pdialog: null, ped: { list: null, error: null, listAt: 0, detail: {}, n: null, tab: 'act', gh: 'issue', filter: 'pend', page: 1, run: null, lb: null, patch: {} }, reu: { list: null, error: null, listAt: 0, detail: {}, n: null, tab: null, up: null, run: null, open: {}, retrying: false, form: {}, approving: false }, xpl: { list: null, error: null, listAt: 0, repo: null, app: null, cor: {}, inv: {}, tab: 'corridas', run: null, launched: {} }, xnow: null, dep: { list: null, error: null, listAt: 0, dlg: null }, aj: { data: null, error: null, sec: 'perfil', registro: null, users: null, user: null, login: null, q: '', add: null } };
+const S = { snap: null, today: null, sel: null, open: [], runIdx: {}, pendingRun: null, filter: null, q: '', itemRuns: {}, run: null, stream: null, detail: {}, view: {}, doc: {}, menu: false, dialog: null, expanded: new Set(), expl: {}, ficha: {}, fichaOpen: {}, fichaFilter: { tipo: 'todas', vp: 'todos' }, antes: {}, oldAfter: new Set(), lightbox: null, fmenu: false, fdialog: null, fdraft: {}, listas: {}, scope: 'all', project: '', attAll: false, extra: {}, newIssue: null, files: {}, fcur: {}, ffold: {}, fexp: {}, fcontent: {}, fq: {}, ftree: false, fcomp: null, fbusy: new Set(), rpanel: null, revSent: {}, page: null, portal: { data: null, error: null }, ped: { list: null, error: null, listAt: 0, detail: {}, n: null, tab: 'act', gh: 'issue', filter: 'pend', page: 1, run: null, lb: null, patch: {} }, reu: { list: null, error: null, listAt: 0, detail: {}, n: null, tab: null, up: null, run: null, open: {}, retrying: false, form: {}, approving: false }, xpl: { list: null, error: null, listAt: 0, repo: null, app: null, cor: {}, inv: {}, tab: 'corridas', run: null, launched: {} }, xnow: null, dep: { list: null, error: null, listAt: 0, dlg: null }, aj: { data: null, error: null, sec: 'perfil', registro: null, users: null, user: null, login: null, cuenta: null, f: 'todos', q: '', add: null, link: null, busy: false } };
 // The sidebar's Linear filter (#101), remembered per browser.
 try { Object.assign(S, JSON.parse(localStorage.getItem('ronin-scope') ?? '{}')); } catch { /* sin storage */ }
 function saveScope() {
@@ -205,7 +205,7 @@ function renderQuick() {
     <button data-home aria-pressed="${!S.sel && !S.page}"><svg viewBox="0 0 24 24"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>Hoy</button>
     <button data-filter="running" aria-pressed="${S.filter === 'running'}"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg>Corriendo ahora<span class="c">${running}</span></button>
     <button data-filter="queue" aria-pressed="${S.filter === 'queue'}"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg>En cola<span class="c">${queued}</span></button>
-    ${S.snap.portalAdmin || S.snap.pedidosTotal ? `<button data-portal aria-pressed="${['pedidos', 'pedido', 'portal'].includes(S.page) && !S.sel}"><svg viewBox="0 0 24 24"><path d="M5 4h14v16H5zM9 9h6M9 13h6M9 17h3"/></svg>Pedidos del portal<span class="c">${S.snap.pedidos?.length || ''}</span></button>` : ''}
+    ${S.snap.portalAdmin || S.snap.pedidosTotal ? `<button data-portal aria-pressed="${['pedidos', 'pedido'].includes(S.page) && !S.sel}"><svg viewBox="0 0 24 24"><path d="M5 4h14v16H5zM9 9h6M9 13h6M9 17h3"/></svg>Pedidos del portal<span class="c">${S.snap.pedidos?.length || ''}</span></button>` : ''}
     ${S.snap.repos.length ? `<button data-reuniones aria-pressed="${['reuniones', 'reunion'].includes(S.page) && !S.sel}"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h10M4 18h7"/><circle cx="18" cy="16" r="3"/></svg>Reuniones<span class="c">${S.snap.reunionesPorRevisar || ''}</span></button>` : ''}
     ${S.snap.despliegues ? `<button data-dep-page aria-pressed="${S.page === 'despliegues' && !S.sel}"><svg viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M5 20h14"/></svg>Despliegues<span class="c">${depGoing() ? 'en curso' : ''}</span></button>` : ''}
     ${xplRows().length ? `<button data-xpl-page aria-pressed="${['exploraciones', 'exploracion'].includes(S.page)}"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="m20 20-4.5-4.5M14 8l-2 4-4 2 2-4z"/></svg>Exploraciones<span class="c">${xplToDecide() || ''}</span></button>` : ''}`;
@@ -521,13 +521,6 @@ function renderCenter() {
   if (!item && S.page === 'ajustes') {
     $('#shell').classList.add('wide');
     if (setCenter(backBar('Ajustes') + ajustesHTML())) wireAjustes();
-    return;
-  }
-  if (!item && S.page === 'portal') {
-    if (setCenter(backBar('Portal de pedidos') + portalHTML())) {
-      wirePortal();
-      wirePedidos();
-    }
     return;
   }
   if (!item) {
@@ -2979,21 +2972,8 @@ function openExploracion(repo, app, ficha) {
 }
 
 // ---------- request portal accounts (#114)
-// The people who ask for small changes in the portal, without GitHub: only
-// the dashboard's admins see this page.
-function openPortal() {
-  S.sel = null;
-  S.page = 'portal';
-  stopStream();
-  if (location.pathname !== '/portal') history.pushState(null, '', '/portal');
-  renderAll();
-  if (isMobile()) {
-    $('#shell').dataset.m = 'detail';
-    scrollTo(0, 0);
-  }
-  loadPortal();
-}
-
+// The people who ask for small changes in the portal, without GitHub: since
+// #174 they're in Ajustes → Usuarios, with the role Usuario. This reads them.
 async function loadPortal() {
   try {
     S.portal = { data: await api('/api/portal-admin'), error: null };
@@ -3024,129 +3004,11 @@ function quotaHTML(today) {
   return `<span class="chip ${left ? 'plain' : 'warn'}" title="${esc(`${today.used} de ${today.limit} pedidos hoy`)}">quedan ${left} de ${today.limit}</span><small>${today.used ? `${today.used} ${today.used === 1 ? 'hecho' : 'hechos'} hoy` : 'ninguno hoy'}</small>`;
 }
 
-function portalHTML() {
-  const p = S.portal;
-  const head = `<h1>Portal de pedidos</h1><p class="lead">Quienes piden ajustes chicos sin cuenta de GitHub. Entran con correo y contraseña${p.data?.url ? ` en <a href="${esc(p.data.url)}" target="_blank" rel="noopener">${esc(p.data.url.replace(/^https?:\/\//, ''))}</a>` : ''}.</p>${portalTabsHTML('usuarios')}`;
-  if (p.error && !p.data) return `<div class="today">${head}<p class="bad">${esc(p.error)}</p></div>`;
-  if (!p.data) return `<div class="today">${head}<div class="empty">Cargando…</div></div>`;
-  const { users, apps } = p.data;
-  const rows = users.map((u) => {
-    const [cls, label] = portalStatus(u);
-    return `<tr data-puser="${esc(u.id)}" tabindex="0"><td>${esc(u.name)}<small>${esc(u.email)}</small></td>
-      <td class="hide-m">${u.grants.length ? u.grants.map((g) => `<span class="tag">${esc(appLabel(g))}</span>`).join('') : '<span class="m">ninguna</span>'}</td>
-      <td class="hide-m">${u.lastLoginAt ? `hace ${esc(short(Date.now() - Date.parse(u.lastLoginAt)))}` : '<span class="m">nunca</span>'}</td>
-      <td>${quotaHTML(u.today)}</td>
-      <td><span class="chip ${cls}">${label}</span></td></tr>`;
-  }).join('');
-  return `<div class="today padm">${head}
-    <div class="padm-bar"><button class="btn-s primary" data-pnew ${apps.length ? '' : 'disabled'}>+ Invitar</button>
-      ${apps.length ? `<span class="m">Apps del portal: ${apps.map((a) => esc(`${a.org} · ${a.name}`)).join(', ')}</span>` : '<span class="bad">Ningún repo tiene <code>portal.apps</code> en repos.json: no hay apps para habilitar.</span>'}</div>
-    ${users.length ? `<table class="padm-t"><thead><tr><th>Persona</th><th class="hide-m">Puede pedir en</th><th class="hide-m">Último acceso</th><th>Pedidos hoy</th><th>Estado</th></tr></thead><tbody>${rows}</tbody></table>` : '<p class="note">Todavía no hay cuentas.</p>'}
-  </div>`;
-}
-
-function wirePortal() {
-  $('#center').querySelector('[data-pnew]')?.addEventListener('click', () => openPortalUser(null));
-  for (const row of $('#center').querySelectorAll('[data-puser]')) {
-    row.onclick = () => openPortalUser(row.dataset.puser);
-    row.onkeydown = (event) => { if (event.key === 'Enter') openPortalUser(row.dataset.puser); };
-  }
-}
-
-function openPortalUser(id) {
-  const u = id ? S.portal.data.users.find((x) => x.id === id) : null;
-  S.pdialog = { id, email: u?.email ?? '', name: u?.name ?? '', grants: new Set((u?.grants ?? []).map(appKey)), dailyLimit: u?.dailyLimit ?? '', busy: false, error: null, done: null };
-  renderPortalUser();
-}
-
-function closePortalUser() {
-  if (S.pdialog?.busy) return;
-  S.pdialog = null;
-  renderPortalUser();
-}
-
-function renderPortalUser() {
-  let layer = $('#player');
-  const d = S.pdialog;
-  if (!d) {
-    layer?.remove();
-    return;
-  }
-  const u = d.id ? S.portal.data.users.find((x) => x.id === d.id) : null;
-  const apps = S.portal.data.apps;
-  const byOrg = [...new Set(apps.map((a) => a.repo))].map((repo) => apps.filter((a) => a.repo === repo));
-  const linkLabel = u && u.hasPassword ? 'Mandar enlace para nueva contraseña' : 'Volver a mandar la invitación';
-  const fresh = !layer;
-  layer ??= Object.assign(document.body.appendChild(document.createElement('div')), { id: 'player' });
-  layer.innerHTML = `<div class="scrim"><div class="dlg" role="dialog" aria-modal="true" aria-labelledby="pu-t">
-    <h2 id="pu-t">${u ? esc(u.name) : 'Invitar al portal'}</h2>
-    <p class="help">${u ? `${esc(u.email)} · creada por ${esc(u.createdBy)}` : 'Le llega un correo con un enlace para crear su contraseña. Vence en 24 horas.'}</p>
-    <label class="field"><span>Nombre</span><input id="pu-name" maxlength="120" autocomplete="off" value="${esc(d.name)}"></label>
-    <label class="field"><span>Correo</span><input id="pu-email" type="email" autocomplete="off" value="${esc(d.email)}" ${u ? 'readonly' : ''}></label>
-    <fieldset class="pu-apps"><legend>Puede pedir ajustes en</legend>
-      ${byOrg.map((group) => `<div class="pu-org"><b>${esc(group[0].org)}</b> <span class="m">${esc(group[0].repo)}</span>
-        ${group.map((a) => `<label class="check"><input type="checkbox" data-pgrant="${esc(appKey(a))}" ${d.grants.has(appKey(a)) ? 'checked' : ''}><span>${esc(a.name)}${a.description ? `<small>${esc(a.description)}</small>` : ''}</span></label>`).join('')}</div>`).join('')}
-    </fieldset>
-    <label class="field"><span>Pedidos por día</span><input id="pu-limit" type="number" min="0" max="100" placeholder="${esc(S.portal.data.dailyLimit)} (el de PORTAL_DAILY_LIMIT)" value="${esc(d.dailyLimit)}"></label>
-    ${u ? `<div class="pu-more"><button class="btn-s" data-plink ${u.disabled || d.busy ? 'disabled' : ''}>${linkLabel}</button>
-      <button class="btn-s ${u.disabled ? '' : 'danger'}" data-poff ${d.busy ? 'disabled' : ''}>${u.disabled ? 'Reactivar' : 'Desactivar'}</button></div>
-      <p class="note">${u.disabled ? 'Desactivada: no puede entrar.' : 'Desactivar cierra sus sesiones al momento.'} Nadie más ve la contraseña: la crea la persona desde el enlace.</p>` : ''}
-    ${d.done ? `<p class="${d.done.url ? 'bad' : 'note'}">${esc(d.done.text)}</p>${d.done.url ? `<input class="pu-link" readonly value="${esc(d.done.url)}" aria-label="Enlace">` : ''}` : ''}
-    <p class="bad" ${d.error ? '' : 'hidden'}>${esc(d.error ?? '')}</p>
-    <div class="foot-d"><button class="btn-s" data-pclose>${d.done ? 'Cerrar' : 'Cancelar'}</button><button class="btn-s primary" data-psave ${d.busy ? 'disabled' : ''}>${d.busy ? 'Guardando…' : u ? 'Guardar' : 'Crear e invitar'}</button></div>
-  </div></div>`;
-  $('#pu-name').oninput = (e) => { S.pdialog.name = e.target.value; };
-  $('#pu-email').oninput = (e) => { S.pdialog.email = e.target.value; };
-  $('#pu-limit').oninput = (e) => { S.pdialog.dailyLimit = e.target.value; };
-  for (const box of layer.querySelectorAll('[data-pgrant]')) box.onchange = () => { if (box.checked) S.pdialog.grants.add(box.dataset.pgrant); else S.pdialog.grants.delete(box.dataset.pgrant); };
-  layer.querySelector('[data-pclose]').onclick = closePortalUser;
-  layer.querySelector('[data-psave]').onclick = savePortalUser;
-  layer.querySelector('[data-plink]')?.addEventListener('click', () => portalWrite(`/api/portal-admin/users/${d.id}/link`, {}));
-  layer.querySelector('[data-poff]')?.addEventListener('click', () => portalWrite(`/api/portal-admin/users/${d.id}`, { disabled: !u.disabled }));
-  layer.querySelector('.scrim').onclick = (event) => { if (event.target.classList.contains('scrim')) closePortalUser(); };
-  layer.querySelector('.pu-link')?.select();
-  if (fresh) $('#pu-name').focus();
-}
-
-function savePortalUser() {
-  const d = S.pdialog;
-  const grants = S.portal.data.apps.filter((a) => d.grants.has(appKey(a))).map((a) => ({ repo: a.repo, app: a.app }));
-  const limit = String(d.dailyLimit).trim();
-  const body = { name: d.name, grants, dailyLimit: limit === '' ? null : Number(limit) };
-  if (d.id) portalWrite(`/api/portal-admin/users/${d.id}`, body);
-  else portalWrite('/api/portal-admin/users', { ...body, email: d.email });
-}
-
-// A change to an account; the dialog stays open with what happened.
-async function portalWrite(path, body) {
-  const d = S.pdialog;
-  d.busy = true;
-  d.error = null;
-  renderPortalUser();
-  try {
-    const out = await api(path, { method: 'POST', body: JSON.stringify(body) });
-    const users = S.portal.data.users.filter((u) => u.id !== out.user.id);
-    S.portal.data.users = [...users, out.user].sort((a, b) => a.name.localeCompare(b.name, 'es'));
-    d.id = out.user.id;
-    d.email = out.user.email;
-    if (out.sent === true) d.done = { text: `Listo: le mandamos el enlace a ${out.user.email}.` };
-    else if (out.sent === false) d.done = { text: `La cuenta quedó, pero el correo no salió. Pásale este enlace por otro medio (vence en 24 horas):`, url: out.url };
-    else d.done = { text: body.disabled === true ? 'Cuenta desactivada.' : body.disabled === false ? 'Cuenta reactivada.' : 'Guardado.' };
-  } catch (error) {
-    if (error instanceof Unauthorized) return showLogin();
-    d.error = error.message;
-  }
-  d.busy = false;
-  renderPortalUser();
-  renderQuick();
-  renderCenter();
-}
-
 // ---------- the portal's requests (#132)
 // What people ask through the portal and where each request stands, for
 // anyone who sees its repo: its conversation, what ronin did with it and,
-// once it has them, its issue and PR. The accounts are the Usuarios tab,
-// for admins only.
+// once it has them, its issue and PR. The accounts are in Ajustes →
+// Usuarios (#174), for admins only.
 const PED_STATUS = {
   thinking: ['run', 'ronin lo está leyendo'], asking: ['warn', 'Espera a la persona'], answered: ['idle', 'Respondido'],
   minor: ['run', 'Armando el prototipo'], proposed: ['warn', 'Espera que apruebe'], approved: ['run', 'Aprobado'],
@@ -3326,7 +3188,7 @@ async function loadPedidoRun(runId) {
 // The Pedidos | Usuarios tabs atop the portal's page; Usuarios, only for admins.
 function portalTabsHTML(cur) {
   const total = S.snap.pedidosTotal ?? 0;
-  return `<div class="doctabs pd-ptabs" role="tablist"><button class="doctab" role="tab" data-ptab="pedidos" aria-selected="${cur === 'pedidos'}">Pedidos <span class="c">${total}</span></button>${S.snap.portalAdmin ? `<button class="doctab" role="tab" data-ptab="usuarios" aria-selected="${cur === 'usuarios'}">Usuarios${S.portal.data ? ` <span class="c">${S.portal.data.users.length}</span>` : ''}</button>` : ''}</div>`;
+  return `<div class="doctabs pd-ptabs" role="tablist"><button class="doctab" role="tab" data-ptab="pedidos" aria-selected="${cur === 'pedidos'}">Pedidos <span class="c">${total}</span></button>${S.snap.portalAdmin ? '<button class="doctab" role="tab" data-ptab="usuarios" title="Las cuentas del portal están en Ajustes → Usuarios">Usuarios ↗</button>' : ''}</div>`;
 }
 
 function pedPagerHTML(total, pages) {
@@ -3648,7 +3510,7 @@ async function loadPatch(n, round, of = 'prototipo') {
 
 function wirePedidos() {
   const center = $('#center');
-  for (const b of center.querySelectorAll('[data-ptab]')) b.onclick = () => (b.dataset.ptab === 'usuarios' ? openPortal() : openPedidos());
+  for (const b of center.querySelectorAll('[data-ptab]')) b.onclick = () => (b.dataset.ptab === 'usuarios' ? openAjustes('usuarios', null, 'portal') : openPedidos());
   for (const b of center.querySelectorAll('[data-pfilter]')) b.onclick = () => { S.ped.filter = b.dataset.pfilter; S.ped.page = 1; renderCenter(); };
   for (const b of center.querySelectorAll('[data-ppg]')) {
     b.onclick = () => {
@@ -4687,14 +4549,18 @@ const AJ_SETTINGS = {
 };
 const ajAllowed = (sec) => AJ_SECTIONS[sec] && (!AJ_SECTIONS[sec].admin || S.snap?.access.admin);
 
-function openAjustes(sec = 'perfil', login = null) {
+// `login`: one of the team; `cuenta`: one of the portal's accounts (#174,
+// stage 3); `f`: the list's filter (todos, equipo, portal).
+function openAjustes(sec = 'perfil', login = null, f = null, cuenta = null) {
   S.sel = null;
   S.page = 'ajustes';
   S.aj.sec = ajAllowed(sec) ? sec : 'perfil';
-  S.aj.login = S.aj.sec === 'usuarios' ? login : null;
+  S.aj.login = S.aj.sec === 'usuarios' && !cuenta ? login : null;
+  S.aj.cuenta = S.aj.sec === 'usuarios' ? cuenta : null;
+  if (f) S.aj.f = f;
   if (S.aj.login !== S.aj.user?.login) S.aj.user = null;
   stopStream();
-  const path = `/ajustes/${S.aj.sec}${S.aj.login ? `/${encodeURIComponent(S.aj.login)}` : ''}`;
+  const path = `/ajustes/${S.aj.sec}${S.aj.cuenta ? `/cuenta/${encodeURIComponent(S.aj.cuenta)}` : S.aj.login ? `/${encodeURIComponent(S.aj.login)}` : ''}`;
   if (location.pathname !== path) history.pushState(null, '', path);
   renderAll();
   if (isMobile() && sec) {
@@ -4709,7 +4575,9 @@ async function loadAjustes() {
     S.aj.data = await api('/api/ajustes');
     if (S.aj.sec === 'registro') S.aj.registro = (await api('/api/ajustes/registro')).registro;
     if (S.aj.sec === 'usuarios' && S.aj.login) S.aj.user = await api(`/api/ajustes/usuarios/${encodeURIComponent(S.aj.login)}`);
-    else if (S.aj.sec === 'usuarios') S.aj.users = await api('/api/ajustes/usuarios');
+    else if (S.aj.sec === 'usuarios' && !S.aj.cuenta) S.aj.users = await api('/api/ajustes/usuarios');
+    // The portal's accounts (role Usuario), when the portal is set up.
+    if (S.aj.sec === 'usuarios' && !S.aj.login && S.snap.portalAdmin) S.portal = { data: await api('/api/portal-admin'), error: null };
     S.aj.error = null;
   } catch (error) {
     if (error instanceof Unauthorized) return showLogin();
@@ -4762,7 +4630,7 @@ const AJ_PAGES = {
       ${ajSec('Portal de pedidos', ajFixed('Dirección', esc(d.portal.url || '—'), 'PORTAL_URL') + row('portal.dailyLimit') + row('portal.sessionDays'), 'Las cuentas del portal siguen en <i>Pedidos del portal → Usuarios</i>.')}`;
   },
   usuarios() {
-    return S.aj.login ? ajUserHTML() : ajUsersHTML();
+    return S.aj.cuenta ? ajCuentaHTML() : S.aj.login ? ajUserHTML() : ajUsersHTML();
   },
   registro() {
     const list = S.aj.registro;
@@ -4793,17 +4661,30 @@ function ajUsersHTML() {
     return `<span class="aj-rp${r.hidden ? ' off' : ''}"><i style="background:${repoColor(r.repo)}"></i>${esc(repoShort(r.repo))} <span class="m">${esc(label)}</span></span>`;
   }).join('') || '<span class="m">Ninguno en GitHub</span>');
   const env = d.envAllowed.length ? `.env dice: ${d.envAllowed.join(', ')}` : 'hoy vacío';
-  return `<h1>Usuarios</h1><p class="lead">El equipo que entra al tablero con GitHub. GitHub dice qué repos ve cada uno (permiso <i>triage</i> o más); aquí se le pueden quitar repos y limitar qué hace en ellos, nunca darle más.</p>
-    ${ajSec('Quién puede entrar', ajRow('Entrada', d.entrada === 'github' ? 'Cualquiera con triage en algún repo de ronin. Entra como miembro, con los permisos por defecto.' : 'Solo las personas de la lista de abajo y los administradores.',
+  // The portal's accounts (role Usuario), when the portal is set up.
+  const portal = S.snap.portalAdmin ? (S.portal.data?.users ?? []).filter((u) => !q || `${u.name} ${u.email}`.toLowerCase().includes(q)) : [];
+  const f = S.snap.portalAdmin ? S.aj.f : 'equipo';
+  const teamRows = people.map((u) => `<tr data-ajuser="${esc(u.login)}" tabindex="0"><td><b>${esc(u.name || u.login)}</b><small><span class="mono">@${esc(u.login)}</span>${u.email ? '' : ' · <span class="warn-t">sin correo</span>'}</small></td><td>${ajAdminPill(u)}<small>GitHub</small></td><td class="hide-m">${repos(u)}</td><td class="hide-m m">${esc(ajSince(u.lastSeenAt))}${u.addedBy ? `<small>agregado por @${esc(u.addedBy)}</small>` : ''}</td></tr>`);
+  const portalRows = portal.map((u) => {
+    const [cls, label] = portalStatus(u);
+    return `<tr data-ajcuenta="${esc(u.id)}" tabindex="0" class="${u.disabled ? 'off' : ''}"><td><b>${esc(u.name)}</b><small>${esc(u.email)}</small></td><td><span class="aj-pill user">Usuario</span><small>Portal${cls === 'ok' ? '' : ` · <span class="${cls === 'warn' ? 'warn-t' : 'm'}">${esc(label)}</span>`}</small></td>
+      <td class="hide-m">${u.grants.length ? u.grants.map((g) => `<span class="aj-rp"><i style="background:${repoColor(g.repo)}"></i>${esc(appLabel(g))}</span>`).join('') : '<span class="m">ninguna app</span>'}${u.today && !u.disabled ? `<small>quedan ${Math.max(0, u.today.limit - u.today.used)} de ${u.today.limit} pedidos hoy</small>` : ''}</td>
+      <td class="hide-m m">${u.lastLoginAt ? esc(ajSince(u.lastLoginAt)) : 'nunca'}<small>invitada por @${esc(u.createdBy)}</small></td></tr>`;
+  });
+  const rows = f === 'equipo' ? teamRows : f === 'portal' ? portalRows : [...teamRows, ...portalRows];
+  const counts = { todos: d.people.length + (S.portal.data?.users.length ?? 0), equipo: d.people.length, portal: S.portal.data?.users.length ?? 0 };
+  const filter = S.snap.portalAdmin ? `<div class="aj-seg">${[['todos', 'Todos'], ['equipo', 'Equipo'], ['portal', 'Portal']].map(([k, n]) => `<button data-ajf="${k}" aria-pressed="${f === k}">${n} <span class="m">${counts[k]}</span></button>`).join('')}</div>` : '';
+  return `<h1>Usuarios</h1><p class="lead">Todos los que usan ronin. <b>Administradores</b> y <b>miembros</b> son el equipo y entran al tablero con GitHub: GitHub dice qué repos ve cada uno (permiso <i>triage</i> o más); aquí se le pueden quitar repos y limitar qué hace en ellos, nunca darle más.${S.snap.portalAdmin ? ' <b>Usuarios</b> son quienes piden ajustes en el portal, con correo y contraseña: solo ven las apps que se les habilitan.' : ''}</p>
+    ${f === 'portal' ? '' : ajSec('Quién del equipo puede entrar', ajRow('Entrada', d.entrada === 'github' ? 'Cualquiera con triage en algún repo de ronin. Entra como miembro, con los permisos por defecto.' : 'Solo las personas de la lista de abajo y los administradores.',
       `<div class="aj-seg"><button data-ajentrada="github" aria-pressed="${d.entrada === 'github'}">Quien tenga acceso en GitHub</button><button data-ajentrada="lista" aria-pressed="${d.entrada === 'lista'}">Solo la lista</button></div>`,
       `<span>${d.entradaSet ? 'Reemplaza a' : 'Hoy lo dice'}</span><code>DASHBOARD_ALLOWED_USERS</code><span>· ${esc(env)}</span>`)
       + ajRow('Permisos por defecto', 'Los de un miembro en cada repo, si no se le eligieron otros. Desplegar se da aparte, repo por repo.',
         `<select class="aj-in" data-ajdef aria-label="Permisos por defecto">${Object.entries(AJ_SETS).map(([id, [name, desc]]) => `<option value="${id}" ${d.porDefecto === id ? 'selected' : ''}>${esc(name)} (${esc(desc)})</option>`).join('')}</select>`))}
-    <div class="aj-bar"><input class="aj-in" data-ajq placeholder="Buscar por nombre, login o correo" value="${esc(S.aj.q)}" aria-label="Buscar"><button class="btn-s primary" data-ajadd>Agregar persona</button></div>
-    <div class="aj-card"><table class="aj-tbl"><thead><tr><th>Persona</th><th>Rol</th><th class="hide-m">Repos</th><th class="hide-m">Entró</th></tr></thead><tbody>
-      ${people.map((u) => `<tr data-ajuser="${esc(u.login)}" tabindex="0"><td><b>${esc(u.name || u.login)}</b><small><span class="mono">@${esc(u.login)}</span>${u.email ? '' : ' · <span class="warn-t">sin correo</span>'}</small></td><td>${ajAdminPill(u)}</td><td class="hide-m">${repos(u)}</td><td class="hide-m m">${esc(ajSince(u.lastSeenAt))}${u.addedBy ? `<small>agregado por @${esc(u.addedBy)}</small>` : ''}</td></tr>`).join('') || '<tr><td colspan="4" class="m">Nadie con esa búsqueda.</td></tr>'}
+    <div class="aj-bar">${filter}<input class="aj-in" data-ajq placeholder="Buscar por nombre, login o correo" value="${esc(S.aj.q)}" aria-label="Buscar"><button class="btn-s primary" data-ajadd>Agregar persona</button></div>
+    <div class="aj-card"><table class="aj-tbl"><thead><tr><th>Persona</th><th>Rol</th><th class="hide-m">${f === 'portal' ? 'Apps' : 'Repos'}</th><th class="hide-m">Entró</th></tr></thead><tbody>
+      ${rows.join('') || '<tr><td colspan="4" class="m">Nadie con esa búsqueda.</td></tr>'}
     </tbody></table></div>
-    <p class="aj-foot">Aparece quien entró alguna vez o agregó un administrador. * = los permisos por defecto.</p>`;
+    <p class="aj-foot">Del equipo aparece quien entró alguna vez o agregó un administrador; * = los permisos por defecto.${S.snap.portalAdmin ? ' Las cuentas del portal existen solo si alguien las invita.' : ''}</p>`;
 }
 
 function ajUserHTML() {
@@ -4845,6 +4726,15 @@ function wireAjUsers(center) {
     row.onclick = () => openAjustes('usuarios', row.dataset.ajuser);
     row.onkeydown = (event) => { if (event.key === 'Enter') openAjustes('usuarios', row.dataset.ajuser); };
   }
+  for (const row of center.querySelectorAll('[data-ajcuenta]')) {
+    row.onclick = () => openAjustes('usuarios', null, null, row.dataset.ajcuenta);
+    row.onkeydown = (event) => { if (event.key === 'Enter') openAjustes('usuarios', null, null, row.dataset.ajcuenta); };
+  }
+  for (const b of center.querySelectorAll('[data-ajf]')) b.onclick = () => {
+    S.aj.f = b.dataset.ajf;
+    renderCenter();
+  };
+  wireAjCuenta(center);
   for (const b of center.querySelectorAll('[data-ajentrada]')) b.onclick = () => ajEquipo({ entrada: b.dataset.ajentrada });
   center.querySelector('[data-ajdef]')?.addEventListener('change', (event) => ajEquipo({ porDefecto: event.target.value }));
   center.querySelector('[data-ajadd]')?.addEventListener('click', ajOpenAdd);
@@ -4904,7 +4794,7 @@ async function ajEquipo(patch) {
 
 // Agregar persona: someone of the team, before they come in.
 function ajOpenAdd() {
-  S.aj.add = { login: '', role: 'member', sending: false, error: null };
+  S.aj.add = { kind: S.snap.portalAdmin && S.aj.f === 'portal' ? 'portal' : 'equipo', login: '', role: 'member', name: '', email: '', grants: new Set(), sending: false, error: null };
   ajRenderAdd();
 }
 
@@ -4917,21 +4807,35 @@ function ajRenderAdd() {
   }
   const fresh = !layer;
   layer ??= Object.assign(document.body.appendChild(document.createElement('div')), { id: 'ajlayer' });
+  const portal = a.kind === 'portal';
+  const ready = () => (portal ? a.name.trim() && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(a.email.trim()) : a.login.trim());
+  const apps = S.portal.data?.apps ?? [];
   layer.innerHTML = `<div class="scrim"><div class="dlg" role="dialog" aria-modal="true" aria-labelledby="aj-add-t">
     <h2 id="aj-add-t">Agregar persona</h2>
-    <p class="help">Para darle un rol o sus permisos antes de que entre. Los repos se los sigue dando GitHub.</p>
-    <label class="field"><span>Login de GitHub</span><input id="aj-add-login" autocomplete="off" value="${esc(a.login)}" placeholder="usuario"></label>
-    <label class="field"><span>Rol</span><select id="aj-add-role"><option value="member" ${a.role === 'member' ? 'selected' : ''}>Miembro</option><option value="admin" ${a.role === 'admin' ? 'selected' : ''}>Administrador</option></select></label>
+    ${S.snap.portalAdmin ? `<div class="aj-seg aj-kind"><button data-ajkind="equipo" aria-pressed="${!portal}">Del equipo · con GitHub</button><button data-ajkind="portal" aria-pressed="${portal}">Usuario del portal · con correo</button></div>` : ''}
+    <p class="help">${portal ? 'Le llega un correo con un enlace para crear su contraseña. Vence en 24 horas.' : 'Para darle un rol o sus permisos antes de que entre. Los repos se los sigue dando GitHub.'}</p>
+    ${portal ? `<label class="field"><span>Nombre</span><input id="aj-add-name" maxlength="120" autocomplete="off" value="${esc(a.name)}"></label>
+      <label class="field"><span>Correo</span><input id="aj-add-email" type="email" autocomplete="off" value="${esc(a.email)}" placeholder="persona@gmail.com"></label>
+      <fieldset class="aj-add-apps"><legend>Puede pedir ajustes en</legend>${apps.map((x) => `<label class="aj-chk"><input type="checkbox" data-ajaddgrant="${esc(appKey(x))}" ${a.grants.has(appKey(x)) ? 'checked' : ''}><span>${esc(x.org)} · ${esc(x.name)}</span></label>`).join('') || '<span class="m">Ningún repo tiene portal.apps en repos.json.</span>'}</fieldset>`
+    : `<label class="field"><span>Login de GitHub</span><input id="aj-add-login" autocomplete="off" value="${esc(a.login)}" placeholder="usuario"></label>
+      <label class="field"><span>Rol</span><select id="aj-add-role"><option value="member" ${a.role === 'member' ? 'selected' : ''}>Miembro</option><option value="admin" ${a.role === 'admin' ? 'selected' : ''}>Administrador</option></select></label>`}
     <p class="bad" ${a.error ? '' : 'hidden'}>${esc(a.error ?? '')}</p>
-    <div class="foot-d"><button class="btn-s" data-ajaddx>Cancelar</button><button class="btn-s primary" data-ajaddok ${a.sending || !a.login.trim() ? 'disabled' : ''}>${a.sending ? 'Agregando…' : 'Agregar'}</button></div>
+    <div class="foot-d"><button class="btn-s" data-ajaddx>Cancelar</button><button class="btn-s primary" data-ajaddok ${a.sending || !ready() ? 'disabled' : ''}>${a.sending ? 'Agregando…' : portal ? 'Crear e invitar' : 'Agregar'}</button></div>
   </div></div>`;
-  const input = $('#aj-add-login');
-  input.oninput = () => {
-    a.login = input.value;
-    layer.querySelector('[data-ajaddok]').disabled = !a.login.trim();
+  const ok = layer.querySelector('[data-ajaddok]');
+  for (const b of layer.querySelectorAll('[data-ajkind]')) b.onclick = () => { a.kind = b.dataset.ajkind; a.error = null; ajRenderAdd(); };
+  const bind = (sel, field) => {
+    const el = layer.querySelector(sel);
+    if (!el) return;
+    el.oninput = () => { a[field] = el.value; ok.disabled = !ready(); };
+    el.onkeydown = (event) => { if (event.key === 'Enter' && ready()) ajAdd(); };
   };
-  input.onkeydown = (event) => { if (event.key === 'Enter' && a.login.trim()) ajAdd(); };
-  $('#aj-add-role').onchange = (event) => { a.role = event.target.value; };
+  bind('#aj-add-login', 'login');
+  bind('#aj-add-name', 'name');
+  bind('#aj-add-email', 'email');
+  for (const box of layer.querySelectorAll('[data-ajaddgrant]')) box.onchange = () => { if (box.checked) a.grants.add(box.dataset.ajaddgrant); else a.grants.delete(box.dataset.ajaddgrant); };
+  layer.querySelector('#aj-add-role')?.addEventListener('change', (event) => { a.role = event.target.value; });
+  const input = layer.querySelector(portal ? '#aj-add-name' : '#aj-add-login');
   layer.querySelector('[data-ajaddx]').onclick = () => { S.aj.add = null; ajRenderAdd(); };
   layer.querySelector('[data-ajaddok]').onclick = ajAdd;
   layer.querySelector('.scrim').onclick = (event) => { if (event.target.classList.contains('scrim')) { S.aj.add = null; ajRenderAdd(); } };
@@ -4943,12 +4847,105 @@ async function ajAdd() {
   a.sending = true;
   a.error = null;
   ajRenderAdd();
+  if (a.kind === 'portal') return ajAddCuenta(a);
   try {
     const { login } = await api('/api/ajustes/usuarios', { method: 'POST', body: JSON.stringify({ login: a.login, role: a.role }) });
     S.aj.add = null;
     ajRenderAdd();
     toast(`Agregaste a @${login}.`);
     openAjustes('usuarios', login);
+  } catch (error) {
+    if (error instanceof Unauthorized) return showLogin();
+    a.sending = false;
+    a.error = error.message;
+    ajRenderAdd();
+  }
+}
+
+// One of the portal's accounts (#174, stage 3), as Pedidos del portal →
+// Usuarios had it in a dialog: its name, the apps it can ask in, its daily
+// limit, the link to set its password and turning it off.
+function ajCuentaHTML() {
+  const crumbs = `<div class="aj-crumbs"><a href="/ajustes/usuarios" data-aj-link="usuarios">Usuarios</a> › <span>Portal</span></div>`;
+  const data = S.portal.data;
+  const u = data?.users.find((x) => x.id === S.aj.cuenta);
+  if (!data) return `${crumbs}<div class="empty">${S.portal.error ? esc(S.portal.error) : 'Cargando…'}</div>`;
+  if (!u) return `${crumbs}<p class="bad">No existe esa cuenta.</p>`;
+  const [cls, label] = portalStatus(u);
+  const byRepo = [...new Set(data.apps.map((a) => a.repo))].map((repo) => data.apps.filter((a) => a.repo === repo));
+  const granted = new Set(u.grants.map(appKey));
+  const gone = u.grants.filter((g) => !data.apps.some((a) => appKey(a) === appKey(g)));
+  const link = S.aj.link?.id === u.id ? S.aj.link : null;
+  return `${crumbs}<h1>${esc(u.name)}</h1><p class="lead">${esc(u.email)} · invitada por @${esc(u.createdBy)} · entró ${u.lastLoginAt ? esc(ajSince(u.lastLoginAt)) : 'nunca'}</p>
+    ${cls !== 'ok' ? `<div class="aj-note ${cls === 'warn' || cls === 'crit' ? 'warn' : ''}"><b>${esc(label[0].toUpperCase() + label.slice(1))}.</b> ${u.disabled ? 'No puede entrar al portal; sus pedidos siguen en Pedidos del portal.' : 'Todavía no creó su contraseña.'}</div>` : ''}
+    ${link ? `<div class="aj-note${link.url ? ' warn' : ''}">${esc(link.text)}${link.url ? `<input class="aj-in aj-link" readonly value="${esc(link.url)}" aria-label="Enlace">` : ''}</div>` : ''}
+    ${ajSec('Cuenta', ajRow('Rol', 'Pide ajustes en el portal con su correo y contraseña. No entra al tablero.', '<span class="aj-pill user">Usuario</span>')
+      + ajRow('Nombre', '', `<input class="aj-in" maxlength="120" data-ajcname value="${esc(u.name)}" aria-label="Nombre">`)
+      + ajRow('Correo', 'Es con lo que entra: no se cambia. Si cambió de correo, se invita de nuevo.', `<span class="aj-ro">${esc(u.email)}</span>`))}
+    ${ajSec('Puede pedir ajustes en', byRepo.map((apps) => `<div class="aj-row aj-apps"><div class="l"><b><i class="aj-sq" style="background:${repoColor(apps[0].repo)}"></i>${esc(apps[0].org)} <span class="m mono">${esc(apps[0].repo)}</span></b>
+      ${apps.map((a) => `<label class="aj-chk"><input type="checkbox" data-ajgrant="${esc(appKey(a))}" ${granted.has(appKey(a)) ? 'checked' : ''}><span>${esc(a.name)}${a.description ? `<small>${esc(a.description)}</small>` : ''}</span></label>`).join('')}</div></div>`).join('')
+      + (gone.length ? `<div class="aj-row"><div class="l"><small>${gone.map((g) => esc(appLabel(g))).join(', ')}: ya no está en el portal (portal.apps de repos.json).</small></div></div>` : ''), 'Las apps de <code>portal.apps</code> de cada repo.')}
+    ${ajSec('Pedidos', ajRow('Pedidos por día', `Vacío: el de General (${data.dailyLimit}).`, `<input class="aj-num" type="number" min="0" max="100" data-ajclimit value="${u.dailyLimit ?? ''}" placeholder="${data.dailyLimit}" aria-label="Pedidos por día"><span class="aj-unit">pedidos</span>`,
+      u.today ? `<span>Hoy: ${u.today.used} de ${u.today.limit}${u.today.used >= u.today.limit ? ' · <span class="warn-t">sin pedidos hasta mañana</span>' : ''}</span>` : '')
+      + ajRow('Sus pedidos', '', '<button class="btn-s" data-ajcpedidos>Ver en Pedidos del portal</button>'))}
+    ${ajSec('Acceso', ajRow(u.hasPassword ? 'Nueva contraseña' : 'Volver a mandar la invitación', 'Le llega un enlace que vence en 24 horas. Nadie más ve la contraseña.', `<button class="btn-s" data-ajclink ${u.disabled || S.aj.busy ? 'disabled' : ''}>Mandar enlace</button>`)
+      + ajRow(u.disabled ? 'Reactivar' : 'Desactivar', u.disabled ? 'Vuelve a poder entrar con su contraseña.' : 'Cierra sus sesiones al momento. Sus pedidos no se tocan.', `<button class="btn-s${u.disabled ? '' : ' danger'}" data-ajcoff ${S.aj.busy ? 'disabled' : ''}>${u.disabled ? 'Reactivar' : 'Desactivar'}</button>`))}`;
+}
+
+function wireAjCuenta(center) {
+  const id = S.aj.cuenta;
+  if (!id) return;
+  const u = () => S.portal.data?.users.find((x) => x.id === id);
+  center.querySelector('[data-ajcname]')?.addEventListener('change', (event) => ajCuentaWrite(`/api/portal-admin/users/${id}`, { name: event.target.value }));
+  center.querySelector('[data-ajclimit]')?.addEventListener('change', (event) => {
+    const raw = event.target.value.trim();
+    ajCuentaWrite(`/api/portal-admin/users/${id}`, { dailyLimit: raw === '' ? null : Number(raw) });
+  });
+  for (const box of center.querySelectorAll('[data-ajgrant]')) box.onchange = () => {
+    const keys = new Set([...center.querySelectorAll('[data-ajgrant]:checked')].map((b) => b.dataset.ajgrant));
+    // Apps no longer in the portal stay as they are.
+    const kept = u().grants.filter((g) => !S.portal.data.apps.some((a) => appKey(a) === appKey(g)));
+    ajCuentaWrite(`/api/portal-admin/users/${id}`, { grants: [...kept, ...S.portal.data.apps.filter((a) => keys.has(appKey(a))).map((a) => ({ repo: a.repo, app: a.app }))] });
+  };
+  center.querySelector('[data-ajclink]')?.addEventListener('click', () => ajCuentaWrite(`/api/portal-admin/users/${id}/link`, {}));
+  center.querySelector('[data-ajcoff]')?.addEventListener('click', () => {
+    if (!u().disabled && !confirm(`¿Desactivar la cuenta de ${u().name}? Sus sesiones se cierran al momento.`)) return;
+    ajCuentaWrite(`/api/portal-admin/users/${id}`, { disabled: !u().disabled });
+  });
+  center.querySelector('[data-ajcpedidos]')?.addEventListener('click', () => openPedidos());
+  center.querySelector('.aj-link')?.select();
+}
+
+// A change to an account: the page shows what happened (a link that didn't go out by email, to pass on).
+async function ajCuentaWrite(path, body) {
+  S.aj.busy = true;
+  renderCenter();
+  try {
+    const out = await api(path, { method: 'POST', body: JSON.stringify(body) });
+    S.portal.data.users = [...S.portal.data.users.filter((x) => x.id !== out.user.id), { ...out.user, today: S.portal.data.users.find((x) => x.id === out.user.id)?.today }].sort((a, b) => a.name.localeCompare(b.name, 'es'));
+    if (out.sent === true) S.aj.link = { id: out.user.id, text: `Le mandamos el enlace a ${out.user.email}.` };
+    else if (out.sent === false) S.aj.link = { id: out.user.id, text: 'El correo no salió. Pásale este enlace por otro medio (vence en 24 horas):', url: out.url };
+    else toast(body.disabled === true ? 'Cuenta desactivada.' : body.disabled === false ? 'Cuenta reactivada.' : 'Guardado.');
+    // The limit and today's use come with the list.
+    if (body.dailyLimit !== undefined) S.portal.data = await api('/api/portal-admin');
+  } catch (error) {
+    if (error instanceof Unauthorized) return showLogin();
+    toast(`No se guardó. ${error.message}`);
+  }
+  S.aj.busy = false;
+  $('#center')._html = null;
+  renderCenter();
+}
+
+async function ajAddCuenta(a) {
+  try {
+    const grants = S.portal.data.apps.filter((x) => a.grants.has(appKey(x))).map((x) => ({ repo: x.repo, app: x.app }));
+    const out = await api('/api/portal-admin/users', { method: 'POST', body: JSON.stringify({ name: a.name, email: a.email, grants }) });
+    S.aj.add = null;
+    ajRenderAdd();
+    S.portal.data = await api('/api/portal-admin');
+    S.aj.link = out.sent ? { id: out.user.id, text: `Le mandamos la invitación a ${out.user.email}.` } : { id: out.user.id, text: 'La cuenta quedó, pero el correo no salió. Pásale este enlace por otro medio (vence en 24 horas):', url: out.url };
+    openAjustes('usuarios', null, null, out.user.id);
   } catch (error) {
     if (error instanceof Unauthorized) return showLogin();
     a.sending = false;
@@ -5246,8 +5243,9 @@ function openPortalPath() {
   const n = /^\/pedidos\/(\d+)$/.exec(location.pathname)?.[1];
   const r = /^\/reuniones\/(\d+)$/.exec(location.pathname)?.[1];
   const x = /^\/exploraciones\/([\w.-]+\/[\w.-]+)\/([^/]+)$/.exec(location.pathname);
-  const aj = /^\/ajustes(?:\/(\w+))?(?:\/([\w-]+))?$/.exec(location.pathname);
-  if (aj) openAjustes(aj[1] ?? 'perfil', aj[2] ?? null);
+  const aj = /^\/ajustes(?:\/(\w+))?(?:\/([\w-]+))?(?:\/([\w-]+))?$/.exec(location.pathname);
+  if (aj && aj[2] === 'cuenta' && aj[3]) openAjustes('usuarios', null, null, aj[3]);
+  else if (aj) openAjustes(aj[1] ?? 'perfil', aj[2] ?? null);
   else if (x) openExploracion(x[1], decodeURIComponent(x[2]), new URLSearchParams(location.search).get('f'));
   else if (location.pathname === '/exploraciones') openExploraciones();
   else if (location.pathname === '/despliegues' && S.snap.despliegues) openDespliegues();
@@ -5255,7 +5253,7 @@ function openPortalPath() {
   else if (location.pathname === '/reuniones') openReuniones();
   else if (n) openPedido(Number(n));
   else if (location.pathname === '/pedidos') openPedidos();
-  else if (location.pathname === '/portal' && S.snap.portalAdmin) openPortal();
+  else if (location.pathname === '/portal' && S.snap.portalAdmin) openAjustes('usuarios', null, 'portal');
   else return false;
   return true;
 }
@@ -5345,7 +5343,7 @@ async function boot() {
     } else if (S.aj.add) {
       S.aj.add = null;
       ajRenderAdd();
-    } else if (S.pdialog) closePortalUser();
+    }
     else if (S.newIssue) closeNewIssue();
     else if (S.xnow) closeExploreNow();
     else if (S.dep.dlg) closeDeploy();
