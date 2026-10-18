@@ -831,6 +831,7 @@ La pestaña *Archivos* de la ficha de un PR (o de un issue, con los archivos de 
   - **En un PR propio,** aprobar y pedir cambios no se ofrecen y el servidor los rechaza, como GitHub.
   - **En un PR de exploración** el panel no aparece: se aprueba con su propio gate (15.12).
 - **Que ronin la atienda.** ronin no lee el resumen de una review (`findUnprocessedMentions` lee los comentarios sueltos y los de review), y sus comentarios solos no disparan `/fix-comments`. Por eso, en un PR de ronin con comentarios pendientes o pidiendo cambios, el panel ofrece *Que ronin los atienda ahora*: después de mandar la revisión comenta `@ronin-agent /fix-comments` a nombre de la persona.
+- **Aprobar y mergear.** Al aprobar cualquier PR, de ronin o de otra persona, el panel ofrece *Mergear apenas pasen los checks*, marcada por defecto: después de la aprobación comenta `@ronin-agent /auto-merge` a nombre de la persona, y ronin contesta qué falta (§13). No aparece si el PR ya tiene `ronin:auto-merge`, si es draft (ronin no lee comandos en el draft de un humano) o si tiene conflictos (el comando lo rechazaría). Junto con *Que ronin los atienda ahora* queda deshabilitada: el PR se mergearía antes de que ronin atienda los comentarios.
 - **API** (15.9):
   - `GET /api/items/<id>/files`, `/files/content?path=` y `/files/mine`. Este último trae lo visto y la revisión pendiente de la persona, sin caché.
   - `POST /api/items/<id>/files/actions` con `action`:

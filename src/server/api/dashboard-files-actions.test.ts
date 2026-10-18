@@ -117,6 +117,15 @@ describe('runFilesAction', () => {
     expect(commentOnIssue).not.toHaveBeenCalled();
   });
 
+  it('turns the auto-merge on with an approval, on any PR, and only with one', async () => {
+    const sent = await run({ action: 'submit', event: 'APPROVE', autoMerge: true }, { ...FILES, author: 'valeria' });
+    expect(commentOnIssue).toHaveBeenCalledWith('gho_user', 'acme/product', 904, '@ronin-agent /auto-merge');
+    expect(sent).toEqual({ url: 'https://github.com/acme/product/pull/904#pullrequestreview-1', autoMergeUrl: 'u' });
+    commentOnIssue.mockClear();
+    await run({ action: 'submit', event: 'COMMENT', text: 'nota', autoMerge: true }, { ...FILES, author: 'valeria' });
+    expect(commentOnIssue).not.toHaveBeenCalled();
+  });
+
   it("refuses what GitHub would: approving one's own PR, an empty comment review, an unknown event", async () => {
     await expect(run({ action: 'submit', event: 'APPROVE' }, { ...FILES, author: 'Oskr814' })).rejects.toThrow('tu propio PR');
     await expect(run({ action: 'submit', event: 'COMMENT', text: ' ' })).rejects.toThrow('nada para mandar');
