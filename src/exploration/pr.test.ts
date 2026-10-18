@@ -3,10 +3,20 @@ import { describe, it, expect, vi } from 'vitest';
 vi.mock('../core/config.js', () => ({ config: { worktreeBaseRef: 'origin/main', githubLogin: 'ronin-agent' } }));
 vi.mock('../core/repo-context.js', () => ({ activeRepo: () => ({ productRepo: 'redmotos/shoppingcart', worktreeBaseRef: 'origin/odoo-main' }) }));
 const listOpenPrsByHeadPrefix = vi.hoisted(() => vi.fn());
-vi.mock('../core/github.js', () => ({ listOpenPrsByHeadPrefix: (...a: unknown[]) => listOpenPrsByHeadPrefix(...a) }));
+const listIssuesWithLabel = vi.hoisted(() => vi.fn());
+const createIssue = vi.hoisted(() => vi.fn());
+vi.mock('../core/github.js', () => ({
+  listOpenPrsByHeadPrefix: (...a: unknown[]) => listOpenPrsByHeadPrefix(...a),
+  listIssuesWithLabel: (...a: unknown[]) => listIssuesWithLabel(...a),
+  createIssue: (...a: unknown[]) => createIssue(...a),
+}));
+vi.mock('../core/linear-assign.js', () => ({ queueExplorationProject: vi.fn() }));
 
-import { batchOfBranch, currentBatch, explorationBranch, findingIssueKey, findingsAddedOverBase, renderDigest, renderFindingIssue } from './pr.js';
-import type { Finding, FindingMeta } from './memory.js';
+import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { batchOfBranch, currentBatch, explorationBranch, findingIssueKey, findingsAddedOverBase, LABEL_PROPOSAL, openFindingIssues, renderDigest, renderFindingIssue } from './pr.js';
+import { findingFileName, parseFinding, serializeFinding, type Finding, type FindingMeta } from './memory.js';
 
 function meta(overrides: Partial<FindingMeta> = {}): FindingMeta {
   return {
@@ -45,6 +55,28 @@ describe('renderFindingIssue', () => {
     expect(body).toContain('semilla 83121');
     expect(body).toContain(findingIssueKey('backoffice', 'F-0007'));
     expect(findingIssueKey('backoffice', 'F-0007')).toBe('ronin-ficha:backoffice/F-0007');
+    expect(body).toContain('Ya está asignado a ronin');
+  });
+});
+
+describe('openFindingIssues', () => {
+  it('opens an approved finding\'s issue assigned to ronin, and writes its number into the finding', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'ronin-findings-'));
+    await mkdir(join(dir, 'findings'));
+    const finding: Finding = { ...meta({ estado: 'aprobado' }), body: '## Doble toque duplica el pedido\n\nPasa al tocar dos veces.' };
+    const path = join(dir, 'findings', findingFileName(finding));
+    await writeFile(path, serializeFinding(finding));
+    listIssuesWithLabel.mockResolvedValue([]);
+    createIssue.mockResolvedValue({ number: 950, url: 'u' });
+
+    const opened = await openFindingIssues('backoffice', dir, dir, 'main', (f) => f.estado === 'aprobado');
+
+    expect(opened).toEqual([{ id: 'F-0007', issue: 950 }]);
+    const [title, , labels, assignees] = createIssue.mock.calls[0];
+    expect(title).toBe('Doble toque duplica el pedido');
+    expect(labels).toEqual([LABEL_PROPOSAL]);
+    expect(assignees).toEqual(['ronin-agent']);
+    expect(parseFinding(await readFile(path, 'utf8')).issue).toBe(950);
   });
 });
 

@@ -123,12 +123,13 @@ describe('processExplorationPr feedback', () => {
 
     await processExplorationPr(pr());
 
-    const [title, body, labels] = gh.createIssue.mock.calls[0];
+    const [title, body, labels, assignees] = gh.createIssue.mock.calls[0];
     expect(title).toBe('Endpoint con la info mínima del cliente');
     expect(body).toContain('Para alguien: nombre, teléfono');
     expect(body).toContain('ficha F-0003 del PR de exploración #794');
     expect(labels).toEqual([]);
-    expect(gh.replyToComment.mock.calls[0][2]).toBe('Listo\n\nAbrí #795.');
+    expect(assignees).toEqual(['ronin-agent']);
+    expect(gh.replyToComment.mock.calls[0][2]).toBe('Listo\n\nAbrí #795 y me lo asigné.');
     expect(spawn).not.toHaveBeenCalled();
   });
 
@@ -176,7 +177,7 @@ describe('processExplorationPr feedback — threads and earlier conversation', (
 
     expect(actions.tasks[0].comments.map((c: any) => c.commentId)).toEqual([13]);
     expect(gh.createIssue).toHaveBeenCalled();
-    expect(gh.replyToComment).toHaveBeenCalledWith(794, { id: 13, kind: 'review' }, 'Listo\n\nAbrí #795.');
+    expect(gh.replyToComment).toHaveBeenCalledWith(794, { id: 13, kind: 'review' }, 'Listo\n\nAbrí #795 y me lo asigné.');
   });
 
   it('gives the agent what was said before on the same finding, across threads', async () => {

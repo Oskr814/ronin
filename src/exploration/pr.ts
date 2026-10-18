@@ -148,7 +148,7 @@ export function renderFindingIssue(appName: string, finding: Finding, fileUrl: s
     '',
     `Encontrado por la exploración de ronin en \`${appName}\` (charter \`${finding.charter}\`, ${finding.viewport}, rol ${finding.rol}, semilla ${finding.semilla}). Ficha: [${finding.id}](${fileUrl}).`,
     '',
-    `Para que lo implemente, asignámelo. \`${findingIssueKey(appName, finding.id)}\``,
+    `Ya está asignado a ronin, que lo empieza solo. \`${findingIssueKey(appName, finding.id)}\``,
   ].join('\n');
   return { title: finding.titulo, body };
 }
@@ -160,7 +160,8 @@ function findingPath(memoryDir: string, finding: Pick<FindingMeta, 'id' | 'titul
 // Opens the issue of every finding `select` picks that doesn't have one
 // yet (found by its key, so a retry never opens a second one), and writes
 // the issue number into the finding file. Returns the findings it opened
-// issues for.
+// issues for. Each one goes assigned to ronin: approving the finding was
+// the decision, so it starts like any issue assigned by hand.
 export async function openFindingIssues(
   appName: string,
   memoryDir: string,
@@ -181,7 +182,7 @@ export async function openFindingIssues(
     if (!number) {
       const fileUrl = `https://github.com/${activeRepo().productRepo}/blob/${branchForLinks}/${relative(checkoutDir, path)}`;
       const { title, body } = renderFindingIssue(appName, finding, fileUrl);
-      number = (await createIssue(title, body, finding.tipo === 'idea' ? [LABEL_PROPOSAL, LABEL_IDEA] : [LABEL_PROPOSAL])).number;
+      number = (await createIssue(title, body, finding.tipo === 'idea' ? [LABEL_PROPOSAL, LABEL_IDEA] : [LABEL_PROPOSAL], [config.githubLogin])).number;
       log.info(`exploración ${appName}: issue #${number} para ${meta.id}`);
       await queueExplorationProject(appName, number);
     }
