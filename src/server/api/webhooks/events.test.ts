@@ -54,7 +54,7 @@ describe('scopeForEvent', () => {
 
   it('scopes an event on a PR ronin does not manage to that PR alone', () => {
     expect(scopeForEvent('pull_request', { action: 'opened', pull_request: externalPr, repository }, tracked, 'ronin-agent')?.scope).toEqual({
-      flows: ['issues', 'review', 'exploration', 'portal'],
+      flows: ['issues', 'review', 'exploration', 'portal', 'auto-merge'],
       resources: ['pr-41'],
     });
   });

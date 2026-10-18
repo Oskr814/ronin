@@ -4571,6 +4571,7 @@ const AJ_SETTINGS = {
   'retry.e2eHard': ['Tope de intentos con CI rojo', 'Aunque cada intento falle distinto.', 'intentos'],
   'retry.checksPending': ['CI sin terminar', 'Ticks que se espera un CI pendiente antes de bloquear (60 ≈ 5 h).', 'ticks'],
   'retry.slice': ['Una slice', '', 'intentos'],
+  'autoMerge.default': ['Auto-merge en sus PRs', 'Los PRs que abre ronin para un issue salen con ronin:auto-merge: se mergean apenas un dev los aprueba y CI está en verde. Sacarle el label a uno lo deja esperando el merge a mano.', ''],
   'retry.retarget': ['Cambiar la base de un PR', '', 'intentos'],
   'retry.issueError': ['Un issue que da error', '', 'intentos'],
   'explore.timezone': ['Zona horaria', 'La ventana nocturna, la fecha de cada corrida y la semana de su PR.', ''],
@@ -4712,6 +4713,7 @@ const AJ_PAGES = {
       <section class="aj-sec"><h2>Por tipo de tarea</h2><p class="aj-d">Gana sobre el de arriba y sobre <code>AGENT_MODEL_&lt;TIPO&gt;</code> de .env. Un repo puede tener los suyos en <a href="/ajustes/repos" data-aj-link="repos">Repos</a>.</p>
         <div class="aj-card"><table class="aj-tbl aj-tasks"><thead><tr><th>Tarea</th><th>Modelo</th><th>Esfuerzo</th></tr></thead><tbody>${tareas}</tbody></table></div></section>
       ${ajSec('Tiempos', row('agent.taskTimeoutMinutes') + row('agent.handlerTimeoutMinutes'))}
+      ${ajSec('Merge', row('autoMerge.default'))}
       ${ajSec('Concurrencia', row('tick.concurrency') + row('tick.externalReviewConcurrency'))}
       ${ajSec('Antes de bloquear', row('retry.e2e') + row('retry.e2eHard') + row('retry.checksPending') + row('retry.slice') + row('retry.retarget') + row('retry.issueError'), 'Cuántas veces intenta ronin antes de pedir ayuda (docs/BLOCKING.md).')}`;
   },

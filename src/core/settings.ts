@@ -57,6 +57,7 @@ export const SETTINGS: SettingDef[] = [
   int('retry.e2e', 'E2E_RETRY_LIMIT', ['e2eRetryLimit'], 2, 0, 10),
   int('retry.e2eHard', 'E2E_ATTEMPT_HARD_LIMIT', ['e2eAttemptHardLimit'], 5, 1, 20),
   int('retry.checksPending', 'CHECKS_PENDING_RETRY_LIMIT', ['checksPendingRetryLimit'], 60, 1, 500),
+  { key: 'autoMerge.default', env: 'AUTO_MERGE_DEFAULT', path: ['autoMergeDefault'], type: 'bool', default: true },
   int('retry.slice', 'SLICE_ATTEMPT_LIMIT', ['sliceAttemptLimit'], 3, 1, 10),
   int('retry.retarget', 'RETARGET_RETRY_LIMIT', ['retargetRetryLimit'], 3, 1, 10),
   int('retry.issueError', 'ISSUE_ERROR_RETRY_LIMIT', ['issueErrorRetryLimit'], 3, 1, 10),

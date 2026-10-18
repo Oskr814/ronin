@@ -31,8 +31,9 @@ const FLOWS: Record<string, Record<string, Flow[]>> = {
     // ready for review.
     assigned: ['assign', 'issues', 'review'],
     ready_for_review: ['assign', 'issues', 'review'],
-    // An approved portal request's PR gets ronin:auto-merge right away.
-    opened: ['issues', 'review', 'exploration', 'portal'],
+    // An approved portal request's PR gets ronin:auto-merge right away, and
+    // so does ronin's own slice PR (auto-merge.ts's labelNewSlicePrs).
+    opened: ['issues', 'review', 'exploration', 'portal', 'auto-merge'],
     synchronize: ['issues', 'review', 'exploration'],
     reopened: ['issues', 'review', 'exploration'],
     // A merge too: the merged slice is checked off, its stack retargeted,
