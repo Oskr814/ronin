@@ -14,7 +14,7 @@ El flujo actual para implementar un spec es esencialmente manual más allá de l
 
 - **Nunca una sesión continua.** Cada unidad de trabajo (plan, slice, fix de review) corre en una sesión de Claude nueva, para no degradar la ventana de contexto. La continuidad entre sesiones no vive en la memoria del agente, vive en estado externo verificable.
 - **GitHub como máquina de estados.** No se construye una base de datos propia para trackear progreso. El estado real de un spec es el estado de su issue/PRs en GitHub. Esto hace que "reanudar tras un corte de cuota" no sea un caso especial — es simplemente la siguiente vuelta del loop leyendo el mismo estado.
-- **Autonomía en el descubrimiento, no en el criterio de merge.** El agente decide solo cómo trocear un spec, pero **los PRs de slice los mergea un humano**: ronin no mergea uno por su cuenta, ni siquiera aprobado y con el CI en verde, y se entera del merge en el tick siguiente. Hay tres excepciones, y en ninguna decide ronin: el PR del spec, que se mergea al marcarlo *ready for review* porque es documentación (§1); el PR de exploración, al aprobarlo (§11.7); y un PR al que un humano le puso `ronin:auto-merge` (§13). Las dos últimas pasan por `mergePullRequest`, que lanza sin approval explícito. Este gate no es negociable.
+- **Autonomía en el descubrimiento, no en el criterio de merge.** El agente decide solo cómo trocear un spec, pero **un PR de slice no se mergea sin la aprobación de un humano**. Por defecto sale con `ronin:auto-merge` (§13), así que esa aprobación, con el CI en verde, es la que lo mergea. Sin el label (si alguien lo saca, o en un repo con `autoMerge: false`) lo mergea el humano, cuando le conviene, y ronin se entera en el tick siguiente. Fuera de las slices hay dos casos más: el PR del spec, que se mergea al marcarlo *ready for review* porque es documentación (§1), y el PR de exploración, al aprobarlo (§11.7). Las dos últimas pasan por `mergePullRequest`, que lanza sin approval explícito. Este gate no es negociable.
 - **La revisión humana se mantiene, pero en PRs pequeños.** El review sigue siendo manual (técnica de stacked PRs), la mejora es que cada PR sea revisable en minutos, no horas.
 
 ## Arquitectura
@@ -85,7 +85,7 @@ El estado en sí **no se infiere parseando el body** — vive en labels, que son
 - `ronin:issue-fix` — la pone el supervisor en un issue asignado directamente (§1, variante), para distinguirlo del issue de tracking de un spec.
 - `ronin:runner-<RUNNER_ID>` — el claim de un runner sobre un issue (§9).
 - `ronin:attempts-N` — en un PR, el contador de intentos contra los límites de `docs/BLOCKING.md`.
-- `ronin:auto-merge` — en un PR, lo pone un humano (o `/auto-merge`): mergearlo apenas esté aprobado y en verde (§13).
+- `ronin:auto-merge` — en un PR: mergearlo apenas esté aprobado y en verde (§13). Lo pone ronin en sus PRs de slice, `/auto-merge` o un humano a mano.
 - `ronin:propuesta` / `ronin:idea` — en los issues que abre la exploración (§11).
 
 El body queda como contexto legible para el humano (qué slice va, qué PR corresponde, por qué está bloqueado); las labels son lo que el supervisor realmente lee para decidir la próxima acción.
@@ -446,7 +446,7 @@ Lo mismo que el auto-merge de GitHub, que es de los planes pagos: el PR se merge
 
   Mergea con `mergePullRequest`, que vuelve a exigir la aprobación y reacomoda los PRs que dependían de la rama mergeada. Mientras espera, solo lo anota en el log. En el PR comenta únicamente el merge o la desactivación.
 - **Cuándo se desactiva.** Igual que en GitHub: si el PR tiene conflictos con su base, o si el merge falla. ronin saca el label y comenta el motivo, así no lo reintenta en cada tick. Para volver a activarlo hay que pedir otra vez `/auto-merge`.
-- **Una excepción explícita.** ronin nunca mergea por su cuenta una slice aprobada: la mergea el humano que la aprobó, cuando le conviene. El auto-merge es ese mismo humano pidiéndolo de antemano para un PR puntual. ronin pone el label por su cuenta en un solo caso: el PR de un pedido del portal que la persona aprobó (§16.5). Igual tiene que aprobarlo un dev.
+- **Por defecto en las slices.** Cada PR de slice (rama `ronin/<issue>/slice-N`) recibe el label la primera vez que el barrido lo ve abierto (`labelNewSlicePrs`), también con el webhook del PR recién abierto. Aprobarlo es entonces pedir el merge. Lo pone una sola vez: los que ya lo recibieron quedan en el estado local (`autoMergeDefaulted`), así que sacarlo a mano o con `/auto-merge off` es definitivo. Un PR que ya nace con conflictos no lo recibe, igual que con el comando. La primera vez que corre solo anota los PRs abiertos, para que activarlo no mergee lo que ya esperaba review. Los PRs del spec y de exploración no lo llevan, porque tienen su propio merge (§1, §11.7). Se apaga por repo con `"autoMerge": false` en `repos.json`, que se cambia desde *Ajustes → Repos → Merge* (§19.6). También lo pone en el PR de un pedido del portal que la persona aprobó (§16.5). En todos los casos tiene que aprobarlo un dev.
 - **Rapidez.** Arranca un handler (§14) cuando se pone el label (`pull_request.labeled`, solo con `ronin:auto-merge`), cuando termina el CI de un PR (`check_suite.completed`), con una aprobación (`pull_request_review.submitted`) y cuando se mergea el PR de abajo del stack. Así el merge sale casi en el momento, sin esperar al cron ni a que termine otro trabajo. `check_suite` hay que sumarlo a los webhooks ya creados volviendo a correr `scripts/init-webhooks.sh`.
 
 ### 14. Reacción por evento; el tick como conciliación
@@ -1303,7 +1303,7 @@ Cuando cada uno tiene su correo en el perfil, `portal.notifyTo` se puede vaciar 
 
 #### 19.6 Repos (`server/api/repos-admin.ts`)
 
-`repos.json` sigue siendo donde vive cada repo; lo que se cambia aquí se escribe ahí. Por repo: nombre en el portal, rama base, las apps de `ronin.app.json` (en el portal o no, nombre y descripción, exploración nocturna, proyecto de Linear de sus issues), la key de Linear (el nombre de la variable de `.env`; la key nunca pasa por el tablero), despliegues (prendido, pre-release, PRs elegidos), modelo y esfuerzo de los agentes del repo, y quitar correos de `portal.notifyTo`.
+`repos.json` sigue siendo donde vive cada repo; lo que se cambia aquí se escribe ahí. Por repo: nombre en el portal, rama base, las apps de `ronin.app.json` (en el portal o no, nombre y descripción, exploración nocturna, proyecto de Linear de sus issues), la key de Linear (el nombre de la variable de `.env`; la key nunca pasa por el tablero), auto-merge en los PRs de ronin (`autoMerge`, §13; solo se escribe `false`), despliegues (prendido, pre-release, PRs elegidos), modelo y esfuerzo de los agentes del repo, y quitar correos de `portal.notifyTo`.
 
 - Solo cambia el campo pedido, en la entrada tal como está en el archivo: lo demás queda igual.
 - La lista entera pasa por las mismas reglas que la leen (`validateRepos`, de `loadRepos`) antes de escribirse; lo que no pasa no se escribe. Además: el portal nunca queda sin apps, no se agrega al portal una app que ya no está en `ronin.app.json`, y de `portal.notifyTo` solo se quitan correos.

@@ -1,6 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import type { AutoMergeCandidate } from '../core/github.js';
 
 vi.mock('../core/config.js', () => ({ config: { githubLogin: 'ronin' }, LABEL_AUTO_MERGE: 'ronin:auto-merge' }));
+const repo = vi.hoisted(() => ({ productRepo: 'acme/app', autoMerge: false as boolean | undefined }));
+vi.mock('../core/repo-context.js', () => ({ activeRepo: () => repo }));
 vi.mock('../core/logger.js', () => ({ log: { error: vi.fn(), info: vi.fn() } }));
 
 const listOpenPrsForAutoMerge = vi.fn();
@@ -20,13 +23,22 @@ vi.mock('../core/github.js', () => ({
   addReaction: (...args: unknown[]) => addReaction(...args),
 }));
 
+let defaulted: number[] | undefined;
+const setAutoMergeDefaulted = vi.fn(async (prs: number[]) => {
+  defaulted = prs;
+});
+vi.mock('../core/local-state.js', () => ({
+  getAutoMergeDefaulted: async () => defaulted,
+  setAutoMergeDefaulted: (prs: number[]) => setAutoMergeDefaulted(prs),
+}));
+
 // Done-ness lives in the local state now (processed-comments.ts, tested on
 // its own); here it's still read off the 👀, as these tests set it up.
 vi.mock('../core/processed-comments.js', () => ({
   markProcessed: (c: { id: number; kind: string }) => addReaction(c.id, c.kind, 'eyes'),
 }));
 
-const { applyAutoMergeCommand, autoMergeBlockers, sweepAutoMerge } = await import('./auto-merge.js');
+const { applyAutoMergeCommand, autoMergeBlockers, labelNewSlicePrs, sweepAutoMerge } = await import('./auto-merge.js');
 
 type Overrides = Partial<{ number: number; isDraft: boolean; reviewDecision: string; checksPassing: boolean; checksPending: boolean; mergeable: boolean; headRefName: string; baseRefName: string }>;
 
@@ -174,5 +186,65 @@ describe('applyAutoMergeCommand', () => {
 
     await expect(applyAutoMergeCommand(10, comment, 'on')).rejects.toThrow('gh down');
     expect(addReaction).not.toHaveBeenCalled();
+  });
+});
+
+describe('labelNewSlicePrs', () => {
+  const slice = (number: number, extra: { conflicting?: boolean; labels?: string[] } = {}) =>
+    candidate({ number, headRefName: `ronin/50/slice-${number}`, reviewDecision: 'REVIEW_REQUIRED' }, { labels: [], ...extra }) as unknown as AutoMergeCandidate;
+
+  beforeEach(() => {
+    defaulted = [];
+  });
+
+  it("labels a slice PR it hasn't seen, and only slice PRs", async () => {
+    const prs = [slice(3), candidate({ number: 4, headRefName: 'ronin/50/spec' }, { labels: [] }), candidate({ number: 5, headRefName: 'ronin/exploration/2026-10-12' }, { labels: [] }), candidate({ number: 6 }, { labels: [] })] as unknown as AutoMergeCandidate[];
+    await labelNewSlicePrs(prs);
+    expect(addIssueLabel).toHaveBeenCalledTimes(1);
+    expect(addIssueLabel).toHaveBeenCalledWith(3, 'ronin:auto-merge');
+    expect(prs[0].labels).toContain('ronin:auto-merge');
+    expect(defaulted).toEqual([3]);
+  });
+
+  it('never puts it back on a PR that already had it once (taking it off sticks)', async () => {
+    defaulted = [3];
+    await labelNewSlicePrs([slice(3)]);
+    expect(addIssueLabel).not.toHaveBeenCalled();
+    expect(setAutoMergeDefaulted).not.toHaveBeenCalled();
+  });
+
+  it('the first run only records the PRs already open', async () => {
+    defaulted = undefined;
+    await labelNewSlicePrs([slice(3), slice(4)]);
+    expect(addIssueLabel).not.toHaveBeenCalled();
+    expect(defaulted).toEqual([3, 4]);
+  });
+
+  it("records a conflicting PR without labeling it, and drops the ones that aren't open", async () => {
+    defaulted = [1, 2];
+    await labelNewSlicePrs([slice(2), slice(3, { conflicting: true })]);
+    expect(addIssueLabel).not.toHaveBeenCalled();
+    expect(defaulted).toEqual([2, 3]);
+  });
+
+  it('tries again next tick when the label fails', async () => {
+    addIssueLabel.mockRejectedValueOnce(new Error('boom'));
+    await labelNewSlicePrs([slice(3), slice(4)]);
+    expect(defaulted).toEqual([4]);
+  });
+
+  it("sweepAutoMerge labels new slice PRs unless the repo's autoMerge is false", async () => {
+    listOpenPrsForAutoMerge.mockResolvedValue([slice(3)]);
+    await sweepAutoMerge();
+    expect(addIssueLabel).not.toHaveBeenCalled();
+    repo.autoMerge = undefined;
+    try {
+      await sweepAutoMerge();
+    } finally {
+      repo.autoMerge = false;
+    }
+    expect(addIssueLabel).toHaveBeenCalledWith(3, 'ronin:auto-merge');
+    // Labeled, it waits for its approval like any other.
+    expect(mergePullRequest).not.toHaveBeenCalled();
   });
 });

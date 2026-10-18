@@ -46,7 +46,7 @@ function validateEntry(entry: unknown, index: number): RepoEntry {
   if (typeof entry !== 'object' || entry === null) {
     throw new Error(`${config.reposConfigPath}[${index}] no es un objeto`);
   }
-  const { productRepo, productRepoPath, claudeConfigDir, worktreeBaseRef, changelogRepo, changelogRepoPath, explore, agent, linear, portal, deploy } = entry as Record<string, unknown>;
+  const { productRepo, productRepoPath, claudeConfigDir, worktreeBaseRef, changelogRepo, changelogRepoPath, explore, agent, linear, portal, deploy, autoMerge } = entry as Record<string, unknown>;
   if (typeof productRepo !== 'string' || productRepo.length === 0) {
     throw new Error(`${config.reposConfigPath}[${index}].productRepo falta o no es un string`);
   }
@@ -71,6 +71,9 @@ function validateEntry(entry: unknown, index: number): RepoEntry {
   if (explore !== undefined && (!Array.isArray(explore) || explore.some((a) => typeof a !== 'string' || a.length === 0))) {
     throw new Error(`${config.reposConfigPath}[${index}].explore debe ser una lista de nombres de apps (de ronin.app.json)`);
   }
+  if (autoMerge !== undefined && typeof autoMerge !== 'boolean') {
+    throw new Error(`${config.reposConfigPath}[${index}].autoMerge debe ser true o false si está presente`);
+  }
   return {
     productRepo, productRepoPath, claudeConfigDir, worktreeBaseRef, changelogRepo, changelogRepoPath,
     ...(explore !== undefined ? { explore: explore as string[] } : {}),
@@ -78,6 +81,7 @@ function validateEntry(entry: unknown, index: number): RepoEntry {
     ...(linear !== undefined ? { linear: validateLinear(linear, `${config.reposConfigPath}[${index}].linear`) } : {}),
     ...(portal !== undefined ? { portal: validatePortal(portal, `${config.reposConfigPath}[${index}].portal`) } : {}),
     ...(deploy !== undefined ? { deploy: validateDeploy(deploy, `${config.reposConfigPath}[${index}].deploy`) } : {}),
+    ...(autoMerge !== undefined ? { autoMerge } : {}),
   };
 }
 

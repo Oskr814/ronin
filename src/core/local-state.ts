@@ -49,6 +49,11 @@ export interface LocalState {
   // Linear project or cycle, once the sync creates them there (#101,
   // core/linear-assign.ts).
   linearPending: LinearPending[];
+  // Slice PRs that already got ronin:auto-merge by default (auto-merge.ts's
+  // labelNewSlicePrs), so taking it off sticks. Undefined means "never
+  // seeded": the PRs open then are recorded without the label, so turning
+  // this on doesn't merge what was already waiting for review.
+  autoMergeDefaulted?: number[];
 }
 
 export interface LinearPending {
@@ -122,6 +127,7 @@ export async function readLocalState(): Promise<LocalState> {
       processedComments: raw.processedComments ?? {},
       blocks: raw.blocks ?? {},
       linearPending: raw.linearPending ?? [],
+      ...(raw.autoMergeDefaulted ? { autoMergeDefaulted: raw.autoMergeDefaulted } : {}),
     };
   } catch {
     return { claimedIssues: [], checksPendingCounts: {}, lastReviewedSha: {}, failureSignatures: {}, nightlyExploration: {}, processedComments: {}, blocks: {}, linearPending: [] };
@@ -230,6 +236,19 @@ export async function setNightlyExploration(appName: string, night: string): Pro
   return withLocalStateLock(async () => {
     const state = await readLocalState();
     state.nightlyExploration[appName] = night;
+    await writeLocalState(state);
+  });
+}
+
+export async function getAutoMergeDefaulted(): Promise<number[] | undefined> {
+  return (await readLocalState()).autoMergeDefaulted;
+}
+
+// Only the open ones are kept: a closed PR never comes back.
+export async function setAutoMergeDefaulted(prNumbers: number[]): Promise<void> {
+  return withLocalStateLock(async () => {
+    const state = await readLocalState();
+    state.autoMergeDefaulted = prNumbers;
     await writeLocalState(state);
   });
 }

@@ -10,7 +10,10 @@ import {
   type Comment,
 } from '../core/github.js';
 import { config, LABEL_AUTO_MERGE } from '../core/config.js';
+import { getAutoMergeDefaulted, setAutoMergeDefaulted } from '../core/local-state.js';
 import { log } from '../core/logger.js';
+import { activeRepo } from '../core/repo-context.js';
+import { issueFromSliceBranch } from '../slices/stack.js';
 
 // `@ronin-agent /auto-merge` on a PR, ronin's take on GitHub's auto-merge
 // (an Enterprise/paid-plan feature): the PR is merged as soon as it's
@@ -22,6 +25,11 @@ import { log } from '../core/logger.js';
 // Like GitHub's, it turns itself off (label removed, PR told) when the PR
 // conflicts with its base or the merge itself fails; anything else that's
 // missing (the approval, CI) it just waits for.
+//
+// ronin's own slice PRs get the label by default (the repo's `autoMerge` in
+// repos.json, on unless set to false): an approval is then all it takes. Spec and
+// exploration PRs are left out, since each has its own merge — see
+// labelNewSlicePrs.
 
 export type AutoMergeAction = 'on' | 'off';
 
@@ -60,6 +68,7 @@ function headIndex(candidates: AutoMergeCandidate[]): Map<string, number> {
 // tick, so the PR doesn't fill up with "still waiting".
 export async function sweepAutoMerge(): Promise<void> {
   const candidates = await listOpenPrsForAutoMerge();
+  if (activeRepo().autoMerge !== false) await labelNewSlicePrs(candidates);
   const labeled = candidates.filter((c) => c.labels.includes(LABEL_AUTO_MERGE));
   if (labeled.length === 0) return;
   const heads = headIndex(candidates);
@@ -85,6 +94,38 @@ export async function sweepAutoMerge(): Promise<void> {
     await commentOnSpecPr(prNumber, renderAutoMerged())
       .catch((error) => log.error(`auto-merge PR #${prNumber}: mergeado, pero no se pudo avisar en el PR`, error));
   }
+}
+
+// Puts the label on each slice PR the first time it's seen open, once:
+// taking it off by hand or with `/auto-merge off` sticks. A PR that already
+// conflicts is recorded without it, as the command would refuse it. The
+// first run only records the open ones, so turning this on doesn't merge
+// what was already waiting for review. `candidates` is updated in place.
+export async function labelNewSlicePrs(candidates: AutoMergeCandidate[]): Promise<void> {
+  const slices = candidates.filter((c) => issueFromSliceBranch(c.status.headRefName) !== null);
+  const seen = await getAutoMergeDefaulted();
+  const open = slices.map((c) => c.status.number);
+  if (seen === undefined) {
+    await setAutoMergeDefaulted(open);
+    return;
+  }
+  const done = new Set(seen);
+  const fresh = slices.filter((c) => !done.has(c.status.number));
+  if (fresh.length === 0 && seen.length === open.length) return;
+  const failed = new Set<number>();
+  for (const candidate of fresh) {
+    const prNumber = candidate.status.number;
+    if (candidate.labels.includes(LABEL_AUTO_MERGE) || candidate.conflicting) continue;
+    try {
+      await addIssueLabel(prNumber, LABEL_AUTO_MERGE);
+      candidate.labels.push(LABEL_AUTO_MERGE);
+      log.info(`auto-merge PR #${prNumber}: activado por defecto`);
+    } catch (error) {
+      failed.add(prNumber);
+      log.error(`auto-merge PR #${prNumber}: no se pudo poner el label por defecto`, error);
+    }
+  }
+  await setAutoMergeDefaulted(open.filter((n) => !failed.has(n)));
 }
 
 async function turnOff(prNumber: number, reason: string): Promise<void> {
