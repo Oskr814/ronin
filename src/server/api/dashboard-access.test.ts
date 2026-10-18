@@ -73,6 +73,13 @@ describe('a session that sees only some repos', () => {
     expect(body.access).toEqual(ACCESS);
   });
 
+  it('can neither see nor publish deploys without being an admin (#158)', async () => {
+    expect((await call('/api/snapshot')).body.despliegues).toBe(false);
+    expect((await call('/api/despliegues')).status).toBe(403);
+    expect((await call(`/api/despliegues/${SC}/plan`, 'POST', { tag: 'v1', prs: 'all' })).status).toBe(403);
+    expect((await call(`/api/despliegues/${SC}/publish`, 'POST', { tag: 'v1', prs: 'all' })).status).toBe(403);
+  });
+
   it("gets today's runs of only those", async () => {
     const { body } = await call('/api/today');
     expect(body.timeline.map((r: { repo: string }) => r.repo)).toEqual([SC]);
