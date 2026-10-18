@@ -31,6 +31,7 @@ import { isOpen, requestDetail, requestImage, requestPatch, requestRow } from '.
 import { DuplicateMeeting, createMeeting, getMeeting, launchMeetingWorker, listMeetings, retryMeeting } from '../../meetings/index.js';
 import { MAX_UPLOAD_BODY, MeetingUploadError, meetingDetail, meetingOriginal, meetingRow, parseUpload } from './dashboard-meetings.js';
 import { ApproveError, approveMeeting, discardMeeting } from './dashboard-meetings-approve.js';
+import { exploracionList, exploracionRows } from './dashboard-exploraciones.js';
 
 // The dashboard's data (#65), all behind the session (tailnet.ts checks it
 // before any of this runs):
@@ -57,6 +58,7 @@ import { ApproveError, approveMeeting, discardMeeting } from './dashboard-meetin
 //   GET /api/pedidos/<n>/img/<file>  one of its images (the person's, or a prototype's)
 //   GET /api/pedidos/<n>/prototipo/<round>  a prototype's draft diff
 //   GET /api/pedidos/<n>/reproduccion/<round>  a reproduction's diff (#137)
+//   GET /api/exploraciones           each app a repo explores, with its exploration PR's findings counted and its runs (#155, dashboard-exploraciones.ts)
 //   GET /api/reuniones               the meetings whose notes were uploaded, of the repos it sees (#62, dashboard-meetings.ts)
 //   POST /api/reuniones              uploads one: the notes as a file or pasted
 //   GET /api/reuniones/<n>           one of them, with its notes' text
@@ -129,6 +131,8 @@ export async function snapshot(login: string): Promise<unknown> {
     runner: { slots: { used: slotsInUse(), limit: config.tickConcurrency }, queue: readQueue().filter((job) => !job.repo || repos.includes(job.repo)), tick: readTickInfo() },
     usage: readUsage().filter((u) => entries.some((entry) => accountName(entry.claudeConfigDir ?? '') === u.account)),
     items,
+    // Each app a repo explores, with its exploration PR and whether it runs now (#155).
+    exploraciones: exploracionRows(entries, prsOf(entries, github), runs),
     previews: github.flatMap((gh) => (gh ? gh.previews.map((p) => ({ ...p, repo: gh.repo })) : [])),
     github: github.map((gh, i) => ({ repo: repos[i], fetchedAt: gh?.fetchedAt ?? null, ...(gh?.error ? { error: gh.error } : {}) })),
     // Each repo's apps (ronin.app.json), for /spike and /spec on a new issue.
@@ -143,6 +147,17 @@ export async function snapshot(login: string): Promise<unknown> {
       ...(l.error ? { error: l.error } : {}),
     }] : [])),
   };
+}
+
+const prsOf = (entries: Array<{ productRepo: string }>, github: Array<Awaited<ReturnType<typeof repoGithub>>>) => new Map(entries.map((entry, i) => [entry.productRepo, github[i]?.prs ?? []]));
+
+// GET /api/exploraciones: the apps, with the findings, the last run and the next (#155).
+async function exploraciones(): Promise<unknown> {
+  const entries = await visibleRepos();
+  const runs = listRuns(HISTORY_DAYS);
+  const github = await Promise.all(entries.map((entry) => repoGithub(entry)));
+  const prs = prsOf(entries, github);
+  return { apps: await exploracionList(entries, exploracionRows(entries, prs, runs), runs, prs) };
 }
 
 // The portal's requests of the repos it sees, with whoever asked each.
@@ -672,6 +687,11 @@ async function route(req: IncomingMessage, res: ServerResponse, path: string, se
 
   if (path === '/api/snapshot') {
     json(res, 200, await snapshot(login));
+    return true;
+  }
+
+  if (path === '/api/exploraciones') {
+    json(res, 200, await exploraciones());
     return true;
   }
 

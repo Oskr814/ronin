@@ -104,7 +104,7 @@ function duration(ms) {
 const money = (usd) => (usd < 0.01 ? 'menos de US$0,01' : `US$${usd.toFixed(2).replace('.', ',')}`);
 const pct = (fraction) => `${Math.round(fraction * 100)}%`;
 
-const S = { snap: null, today: null, sel: null, open: [], runIdx: {}, pendingRun: null, filter: null, q: '', itemRuns: {}, run: null, stream: null, detail: {}, view: {}, doc: {}, menu: false, dialog: null, expanded: new Set(), expl: {}, ficha: {}, fichaOpen: {}, fichaFilter: { tipo: 'todas', vp: 'todos' }, antes: {}, oldAfter: new Set(), lightbox: null, fmenu: false, fdialog: null, fdraft: {}, listas: {}, scope: 'all', project: '', attAll: false, extra: {}, newIssue: null, files: {}, fcur: {}, ffold: {}, fexp: {}, fcontent: {}, fq: {}, ftree: false, fcomp: null, fbusy: new Set(), rpanel: null, page: null, portal: { data: null, error: null }, pdialog: null, ped: { list: null, error: null, listAt: 0, detail: {}, n: null, tab: 'act', filter: 'todos', run: null, lb: null, patch: {} }, reu: { list: null, error: null, listAt: 0, detail: {}, n: null, tab: null, up: null, run: null, open: {}, retrying: false, form: {}, approving: false } };
+const S = { snap: null, today: null, sel: null, open: [], runIdx: {}, pendingRun: null, filter: null, q: '', itemRuns: {}, run: null, stream: null, detail: {}, view: {}, doc: {}, menu: false, dialog: null, expanded: new Set(), expl: {}, ficha: {}, fichaOpen: {}, fichaFilter: { tipo: 'todas', vp: 'todos' }, antes: {}, oldAfter: new Set(), lightbox: null, fmenu: false, fdialog: null, fdraft: {}, listas: {}, scope: 'all', project: '', attAll: false, extra: {}, newIssue: null, files: {}, fcur: {}, ffold: {}, fexp: {}, fcontent: {}, fq: {}, ftree: false, fcomp: null, fbusy: new Set(), rpanel: null, page: null, portal: { data: null, error: null }, pdialog: null, ped: { list: null, error: null, listAt: 0, detail: {}, n: null, tab: 'act', filter: 'todos', run: null, lb: null, patch: {} }, reu: { list: null, error: null, listAt: 0, detail: {}, n: null, tab: null, up: null, run: null, open: {}, retrying: false, form: {}, approving: false }, xpl: { list: null, error: null, listAt: 0, repo: null, app: null } };
 // The sidebar's Linear filter (#101), remembered per browser.
 try { Object.assign(S, JSON.parse(localStorage.getItem('ronin-scope') ?? '{}')); } catch { /* sin storage */ }
 function saveScope() {
@@ -192,10 +192,12 @@ function renderQuick() {
     <button data-filter="running" aria-pressed="${S.filter === 'running'}"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg>Corriendo ahora<span class="c">${running}</span></button>
     <button data-filter="queue" aria-pressed="${S.filter === 'queue'}"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg>En cola<span class="c">${queued}</span></button>
     ${S.snap.portalAdmin || S.snap.pedidosTotal ? `<button data-portal aria-pressed="${['pedidos', 'pedido', 'portal'].includes(S.page) && !S.sel}"><svg viewBox="0 0 24 24"><path d="M5 4h14v16H5zM9 9h6M9 13h6M9 17h3"/></svg>Pedidos del portal<span class="c">${S.snap.pedidos?.length || ''}</span></button>` : ''}
-    ${S.snap.repos.length ? `<button data-reuniones aria-pressed="${['reuniones', 'reunion'].includes(S.page) && !S.sel}"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h10M4 18h7"/><circle cx="18" cy="16" r="3"/></svg>Reuniones<span class="c">${S.snap.reunionesPorRevisar || ''}</span></button>` : ''}`;
+    ${S.snap.repos.length ? `<button data-reuniones aria-pressed="${['reuniones', 'reunion'].includes(S.page) && !S.sel}"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h10M4 18h7"/><circle cx="18" cy="16" r="3"/></svg>Reuniones<span class="c">${S.snap.reunionesPorRevisar || ''}</span></button>` : ''}
+    ${xplRows().length ? `<button data-xpl-page aria-pressed="${['exploraciones', 'exploracion'].includes(S.page)}"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="m20 20-4.5-4.5M14 8l-2 4-4 2 2-4z"/></svg>Exploraciones<span class="c">${xplToDecide() || ''}</span></button>` : ''}`;
   $('#quick').querySelector('[data-home]').onclick = goHome;
   $('#quick').querySelector('[data-portal]')?.addEventListener('click', () => openPedidos());
   $('#quick').querySelector('[data-reuniones]')?.addEventListener('click', () => openReuniones());
+  $('#quick').querySelector('[data-xpl-page]')?.addEventListener('click', () => openExploraciones());
   renderScope();
   for (const button of $('#quick').querySelectorAll('[data-filter]')) {
     button.onclick = () => {
@@ -268,6 +270,15 @@ function pedRow(p) {
     <span class="sub">${esc(waitsLabel(p))}</span></button>`;
 }
 
+// An app a repo explores (#155): exploring it now, findings to decide on, or nothing pending.
+function xplRow(r) {
+  const c = xplCounts(r);
+  const tone = r.running ? 'live' : c?.decidir ? 'warn' : c?.esperando ? 'run' : 'idle';
+  const sub = r.running ? `explorando${r.running.fn ? ` ${r.running.fn}` : ''}` : !r.pr ? 'sin PR de exploración' : c ? (c.decidir ? `${c.decidir} ${c.decidir === 1 ? 'ficha' : 'fichas'} por decidir` : c.esperando ? 'esperando a ronin' : 'nada por decidir') : `PR #${r.pr.number}`;
+  return `<button class="item" data-xpl="${esc(xplKey(r))}" aria-current="${S.page === 'exploracion' && S.xpl.repo === r.repo && S.xpl.app === r.app}">${dotClass(tone)}<span class="t">${esc(r.app)}</span><span class="age">${r.pr ? `#${r.pr.number}` : ''}</span>
+    <span class="sub">${esc(repoShort(r.repo))}, ${esc(sub)}</span></button>`;
+}
+
 function renderTree() {
   const tree = $('#tree');
   if (S.filter === 'queue') {
@@ -289,7 +300,7 @@ function renderTree() {
   // without an issue or a changelog entry shows only while it runs.
   const shown = (item) => {
     if (S.filter === 'running') return item.status === 'running' && (!q || matchQ(item));
-    if (item.kind !== 'issue' && !item.pinned) return false;
+    if (item.kind !== 'issue') return false;
     if (q) return matchQ(item) && inScope(item);
     if (S.scope === 'cycle' || S.project) return item.kind === 'issue' && inScope(item);
     return item.listed || S.sel === item.id;
@@ -303,8 +314,11 @@ function renderTree() {
   // The portal's requests still going (#132): not searched, and only the running ones while filtering by that.
   const pedidos = (S.snap.pedidos ?? []).filter((p) => !q && (S.filter !== 'running' || p.running));
   if (pedidos.length) html += `<div class="grp"><span>Pedidos en curso</span><span class="n">${pedidos.length}</span></div>` + pedidos.map(pedRow).join('');
+  // The apps ronin explores (#155), whose exploration PR is no longer pinned in its repo: searched by the app or the PR's number.
+  const xpls = xplRows().filter((r) => (S.filter !== 'running' || r.running) && (!q || r.app.toLowerCase().includes(q) || (num && r.pr?.number === Number(num))));
+  if (xpls.length) html += `<div class="grp"><span>Exploraciones</span><span class="n">${xpls.length}</span></div>` + xpls.map(xplRow).join('');
   for (const repo of S.snap.repos) {
-    const items = S.snap.items.filter((item) => item.repo === repo && item.status !== 'blocked' && shown(item)).sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
+    const items = S.snap.items.filter((item) => item.repo === repo && item.status !== 'blocked' && shown(item));
     html += `<div class="grp"><span class="sq" style="background:${repoColor(repo)}"></span><b>${esc(repoShort(repo))}</b><span class="n">${items.length}</span><button class="grp-add" data-new="${esc(repo)}" title="Nuevo issue en ${esc(repoShort(repo))}" aria-label="Nuevo issue en ${esc(repoShort(repo))}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button></div>`;
     html += items.length ? items.map(row).join('') : `<div class="grp-empty">${q || S.filter ? 'Nada coincide.' : S.scope === 'cycle' || S.project ? `Ningún issue abierto ${S.scope === 'cycle' ? 'en este ciclo' : ''}${S.project ? ' para este proyecto' : ''}.` : 'Nada en curso ni corridas en los últimos 3 días.'}</div>`;
     // A number nothing listed has: open it anyway (a closed issue, a PR without an issue).
@@ -315,6 +329,7 @@ function renderTree() {
   tree.innerHTML = html;
   for (const button of tree.querySelectorAll('[data-id]')) button.onclick = () => select(button.dataset.id);
   for (const button of tree.querySelectorAll('[data-ped]')) button.onclick = () => openPedido(Number(button.dataset.ped));
+  for (const button of tree.querySelectorAll('[data-xpl]')) button.onclick = () => openExploracion(...splitXplKey(button.dataset.xpl));
   for (const button of tree.querySelectorAll('[data-new]')) button.onclick = () => openNewIssue(button.dataset.new);
 }
 
@@ -469,6 +484,10 @@ function renderCenter() {
     }
     return;
   }
+  if (!item && (S.page === 'exploraciones' || S.page === 'exploracion')) {
+    if (setCenter(backBar(S.page === 'exploracion' ? S.xpl.app : 'Exploraciones') + (S.page === 'exploracion' ? xplAppHTML() : xplListHTML()))) wireXpl();
+    return;
+  }
   if (!item && S.page === 'portal') {
     if (setCenter(backBar('Portal de pedidos') + portalHTML())) {
       wirePortal();
@@ -571,6 +590,8 @@ function checksChip(checks) {
 }
 
 function headHTML(item) {
+  const xr = xplOfItem(item.id);
+  if (xr) return xplHeadHTML(item, xr);
   const url = githubUrl(item);
   const [, chip, label] = STATE[item.status] ?? STATE.error;
   const d = S.detail[item.id]?.data;
@@ -1763,7 +1784,7 @@ function fichaHTML(item, data, f, shown) {
 function selectFicha(key) {
   S.ficha[S.sel] = key;
   S.fichaOpen[S.sel] = true;
-  const url = `/i/${encodeURIComponent(S.sel)}?f=${encodeURIComponent(key)}`;
+  const url = `${itemPath(S.sel)}?f=${encodeURIComponent(key)}`;
   if (location.pathname + location.search !== url) history.replaceState(null, '', url);
   renderCenter();
   const fd = $('#fdetail');
@@ -2060,6 +2081,7 @@ const when = (iso) => (iso ? new Date(iso).toLocaleString('es', { dateStyle: 'me
 function wireCenter() {
   for (const button of document.querySelectorAll('[data-tab]')) button.onclick = () => select(button.dataset.tab);
   for (const button of document.querySelectorAll('[data-goped]')) button.onclick = () => openPedido(Number(button.dataset.goped));
+  for (const button of document.querySelectorAll('#center [data-xpl-page]')) button.onclick = () => openExploraciones();
   for (const button of document.querySelectorAll('[data-close]')) {
     button.onclick = () => {
       const id = button.dataset.close;
@@ -2068,6 +2090,7 @@ function wireCenter() {
         if (S.open[0]) select(S.open[0]);
         else {
           S.sel = null;
+          S.page = null;
           stopStream();
           history.pushState(null, '', '/');
           renderAll();
@@ -2505,6 +2528,150 @@ function goHome() {
     scrollTo(0, 0);
   }
   refresh();
+}
+
+// ---------- explorations (#155)
+// One row per app a repo explores, from the snapshot; the list
+// (/api/exploraciones) adds its exploration PR's findings counted, the last
+// run and the next. An app's page is its repo's exploration PR's page (#93),
+// headed as the app's; with no PR open, a page of its own until ronin opens one.
+const XPL_EVERY_MS = 60_000;
+const xplRows = () => S.snap?.exploraciones ?? [];
+const xplKey = (r) => `${r.repo}|${r.app}`;
+const splitXplKey = (key) => key.split('|');
+const xplRow0 = (repo, app) => xplRows().find((r) => r.repo === repo && r.app === app) ?? null;
+const xplListRow = (r) => S.xpl.list?.find((x) => x.repo === r.repo && x.app === r.app) ?? null;
+const xplCounts = (r) => xplListRow(r)?.fichas ?? null;
+const xplToDecide = () => xplRows().reduce((n, r) => n + (xplCounts(r)?.decidir ?? 0), 0);
+const xplPath = (repo, app) => `/exploraciones/${repo}/${encodeURIComponent(app)}`;
+// The app whose page an item is: its repo's exploration PR, the app open
+// now when the repo explores more than one.
+function xplOfItem(id) {
+  const rows = xplRows().filter((r) => r.pr?.id === id);
+  return rows.find((r) => r.repo === S.xpl.repo && r.app === S.xpl.app) ?? rows[0] ?? null;
+}
+function itemPath(id) {
+  const xr = xplOfItem(id);
+  return xr ? xplPath(xr.repo, xr.app) : `/i/${encodeURIComponent(id)}`;
+}
+
+// The nightly run: right now while the window is open and the app didn't start yet.
+const xplNext = (iso) => (!iso ? '' : Date.parse(iso) <= Date.now() + MIN ? 'esta noche, en cuanto haya lugar' : when(iso));
+
+function xplChip(r) {
+  if (r.running) return `<span class="chip run">explorando${r.running.fn ? ` ${esc(r.running.fn)}` : ''}</span>`;
+  if (!r.pr) return '<span class="chip idle">sin PR de exploración</span>';
+  const c = xplCounts(r);
+  if (!c) return '<span class="chip idle">PR abierto</span>';
+  if (c.decidir) return `<span class="chip warn">${c.decidir} ${c.decidir === 1 ? 'ficha' : 'fichas'} por decidir</span>`;
+  if (c.esperando) return '<span class="chip run">esperando a ronin</span>';
+  return '<span class="chip ok">nada por decidir</span>';
+}
+
+function xplFacts(r) {
+  const l = xplListRow(r);
+  const facts = [];
+  if (r.running) facts.push(`desde las ${hhmm(r.running.since)}`);
+  else if (l?.lastRun) facts.push(`última corrida ${ago(l.lastRun.at)}${l.lastRun.state === 'ok' ? '' : `, ${STATE[l.lastRun.state]?.[2] ?? l.lastRun.state}`}`);
+  if (l?.next) facts.push(`próxima: ${xplNext(l.next)}`);
+  return facts;
+}
+
+function xplHead(r, buttons, pill) {
+  return `<div class="head">
+    <div class="crumb"><button class="crumb-l" data-xpl-page>Exploraciones</button><span>/</span><i style="background:${repoColor(r.repo)}"></i>${esc(r.repo)}</div>
+    <div class="row"><h1>${esc(r.app)}</h1>${buttons}</div>
+    <div class="state">${pill}${xplChip(r)}${xplFacts(r).map((f) => `<span>${esc(f)}</span>`).join('')}</div></div>`;
+}
+
+// The head of the exploration PR's page, as its app's (#155).
+function xplHeadHTML(item, r) {
+  const d = S.detail[item.id]?.data;
+  const url = githubUrl(item);
+  const buttons = `${url ? `<a class="gh" href="${esc(url)}" target="_blank" rel="noopener">PR #${item.number} ↗</a>` : ''}${d?.exploration ? '<button class="gh" data-xpr="general">Comentario general</button>' : ''}${actionsHTML(d)}${d?.exploration ? '<button class="act-btn" data-xpr="approve">Aprobar…</button>' : ''}`;
+  return xplHead(r, buttons, ghPill(item, d));
+}
+
+function xplListHTML() {
+  const head = `<div class="reu-top"><div><h1>Exploraciones</h1><p class="lead">ronin usa cada app como lo haría un QA: encuentra dónde duele y propone cómo mejorarlo, con el antes y el después. Corre de noche, o con <code>/explore &lt;app&gt;</code> en un issue. Las fichas se revisan aquí, y ninguna abre su issue hasta que apruebes el PR.</p></div></div>`;
+  const rows = xplRows().map((r) => {
+    const l = xplListRow(r);
+    return `<tr data-xpl="${esc(xplKey(r))}" tabindex="0"><td><span class="tt">${esc(r.app)}</span><small>${esc(r.repo)}</small></td>
+      <td>${xplChip(r)}${r.running?.step ? `<small>${esc(r.running.step)}</small>` : ''}</td>
+      <td class="hide-m">${r.pr ? `<span class="pd-gh">#${r.pr.number}</span>${l?.fichas ? `<small>${l.fichas.total} ${l.fichas.total === 1 ? 'ficha' : 'fichas'}</small>` : ''}` : '<small>se abre con la primera ficha</small>'}</td>
+      <td class="hide-m m">${l?.lastRun ? esc(ago(l.lastRun.at)) : '—'}${l?.next ? `<small>próxima: ${esc(xplNext(l.next))}</small>` : ''}</td></tr>`;
+  }).join('');
+  return `<div class="today pd">${head}${S.xpl.error ? `<p class="bad">${esc(S.xpl.error)}</p>` : ''}
+    <table class="padm-t pd-t"><thead><tr><th>App</th><th>Estado</th><th class="hide-m">PR de exploración</th><th class="hide-m">Última corrida</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+
+// An app with no exploration PR open.
+function xplAppHTML() {
+  const r = xplRow0(S.xpl.repo, S.xpl.app);
+  if (!r) return `<div class="today pd"><p class="bad">Ningún repo de ronin explora la app ${esc(S.xpl.app ?? '')}.</p></div>`;
+  return xplHead(r, '', '') + `<div class="today pd"><div class="pd-card xpl-empty"><h3>Sin PR de exploración</h3>
+    <p>Se abre con la primera ficha que ronin proponga para ${esc(r.app)}, y las corridas siguientes se suman al mismo PR hasta que lo apruebes.${r.running ? ' La corrida de ahora puede abrirlo.' : ''}</p></div></div>`;
+}
+
+function wireXpl() {
+  for (const row of $('#center').querySelectorAll('[data-xpl]')) {
+    const go = () => openExploracion(...splitXplKey(row.dataset.xpl));
+    row.onclick = go;
+    row.onkeydown = (event) => { if (event.key === 'Enter') go(); };
+  }
+}
+
+async function loadExploraciones() {
+  // Taken before asking, so the snapshots meanwhile don't ask again.
+  S.xpl.listAt = Date.now();
+  try {
+    S.xpl.list = (await api('/api/exploraciones')).apps;
+    S.xpl.error = null;
+  } catch (error) {
+    if (error instanceof Unauthorized) return showLogin();
+    S.xpl.error = error.message;
+  }
+  renderQuick();
+  renderTree();
+  if (['exploraciones', 'exploracion'].includes(S.page)) renderCenter();
+}
+
+function openExploraciones() {
+  S.sel = null;
+  S.page = 'exploraciones';
+  stopStream();
+  if (location.pathname !== '/exploraciones') history.pushState(null, '', '/exploraciones');
+  renderAll();
+  if (isMobile()) {
+    $('#shell').dataset.m = 'detail';
+    scrollTo(0, 0);
+  }
+  loadExploraciones();
+}
+
+// `ficha`: the finding to open, from the URL (?f=).
+function openExploracion(repo, app, ficha) {
+  Object.assign(S.xpl, { repo, app });
+  const r = xplRow0(repo, app);
+  if (r?.pr) {
+    if (ficha) {
+      S.ficha[r.pr.id] = ficha;
+      S.fichaOpen[r.pr.id] = true;
+    }
+    select(r.pr.id);
+    return;
+  }
+  S.sel = null;
+  S.page = 'exploracion';
+  stopStream();
+  const path = xplPath(repo, app);
+  if (location.pathname !== path) history.pushState(null, '', path);
+  renderAll();
+  if (isMobile()) {
+    $('#shell').dataset.m = 'detail';
+    scrollTo(0, 0);
+  }
+  loadExploraciones();
 }
 
 // ---------- request portal accounts (#114)
@@ -4003,13 +4170,16 @@ async function select(id) {
   }
   const n = /^(.+)#(\d+)$/.exec(id);
   if (!itemById(id) && n) S.extra[id] = { id, repo: n[1], number: Number(n[2]), kind: 'issue', title: `#${n[2]}`, status: 'open', runs: 0, listed: false };
+  // An exploration PR is its app's page (#155).
+  const xr = xplOfItem(id);
+  if (xr) Object.assign(S.xpl, { repo: xr.repo, app: xr.app });
   S.sel = id;
-  S.page = null;
+  S.page = xr ? 'exploracion' : null;
   S.runIdx[id] = 0;
   delete S.view[id];
   S.menu = false;
   if (!S.open.includes(id)) S.open.push(id);
-  const path = `/i/${encodeURIComponent(id)}`;
+  const path = itemPath(id);
   if (location.pathname !== path) history.pushState(null, '', S.ficha[id] ? `${path}?f=${encodeURIComponent(S.ficha[id])}` : path);
   renderAll();
   if (isMobile()) {
@@ -4045,6 +4215,11 @@ async function refresh() {
   if (S.page === 'pedidos' && Date.now() - S.ped.listAt > PEDIDO_EVERY_MS) loadPedidos();
   if (S.page === 'reunion' && Date.now() - (S.reu.detail[S.reu.n]?.at ?? 0) > PEDIDO_EVERY_MS) loadReunion(S.reu.n);
   if (S.page === 'reuniones' && Date.now() - S.reu.listAt > PEDIDO_EVERY_MS) loadReuniones();
+  // The apps' findings, more often while their page is open: the sidebar counts them too.
+  if (xplRows().length && Date.now() - S.xpl.listAt > (['exploraciones', 'exploracion'].includes(S.page) ? PEDIDO_EVERY_MS : XPL_EVERY_MS)) loadExploraciones();
+  // An app's page with no PR goes on to it once ronin opens one.
+  const xr = S.page === 'exploracion' && !S.sel && xplRow0(S.xpl.repo, S.xpl.app);
+  if (xr?.pr) select(xr.pr.id);
   const item = S.sel && itemById(S.sel);
   const files = S.sel && S.files[S.sel];
   if (item && files && docOf(item) === 'files' && Date.now() - (files.at ?? 0) > DETAIL_EVERY_MS) loadFiles(S.sel);
@@ -4083,11 +4258,15 @@ function tickClocks() {
 }
 
 // /pedidos, /pedidos/<n> (#132), /portal (the accounts, admins only),
-// /reuniones and /reuniones/<n> (#62): false for any other path.
+// /reuniones and /reuniones/<n> (#62), /exploraciones and
+// /exploraciones/<owner>/<repo>/<app> (#155): false for any other path.
 function openPortalPath() {
   const n = /^\/pedidos\/(\d+)$/.exec(location.pathname)?.[1];
   const r = /^\/reuniones\/(\d+)$/.exec(location.pathname)?.[1];
-  if (r) openReunion(Number(r));
+  const x = /^\/exploraciones\/([\w.-]+\/[\w.-]+)\/([^/]+)$/.exec(location.pathname);
+  if (x) openExploracion(x[1], decodeURIComponent(x[2]), new URLSearchParams(location.search).get('f'));
+  else if (location.pathname === '/exploraciones') openExploraciones();
+  else if (r) openReunion(Number(r));
   else if (location.pathname === '/reuniones') openReuniones();
   else if (n) openPedido(Number(n));
   else if (location.pathname === '/pedidos') openPedidos();
