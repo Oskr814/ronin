@@ -829,7 +829,7 @@ button.brow:hover { background: var(--hover); }
 .dlg .pu-org input[type="checkbox"] { width: auto; }
 .pu-more { display: flex; gap: 8px; flex-wrap: wrap; }
 .dlg .pu-link { margin-top: 6px; font: 12px "JetBrains Mono", ui-monospace, monospace; }
-@media (max-width: 760px) { .padm-t .hide-m { display: none; } }
+@media (max-width: 760px) { .padm-t .hide-m { display: none; } .xpl-doc { padding: 12px 16px 32px; } }
 
 /* the portal's requests (#132) */
 .pd-ptabs { padding: 0; margin: 0 0 12px; }
@@ -953,6 +953,39 @@ button.brow:hover { background: var(--hover); }
 .pd-side { display: grid; gap: 14px; align-content: start; }
 .pd-card { border: 1px solid var(--rule); border-radius: 10px; background: var(--panel); padding: 11px 13px; }
 .xpl-empty { max-width: 640px; }
+.xpl-empty + .xr-list, .xpl-empty + .pd-runview, .xpl-empty + .note, .xpl-empty + .empty, .xpl-empty + .xi-lead { margin-top: 16px; }
+.xpl-doc { padding: 14px 20px 40px; max-width: 1100px; }
+.xr-list { display: grid; gap: 8px; }
+.xr { border: 1px solid var(--rule); border-radius: 10px; background: var(--panel); padding: 10px 12px; display: grid; gap: 6px; }
+.xr-h { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.xr-h .dot { margin: 0; }
+.xr-h b { font-weight: 600; }
+.xr-h .tag { font-size: 11.5px; padding: 0 6px; border-radius: 4px; background: var(--raise); color: var(--ink-2); }
+.xr-h .m { color: var(--muted); font-size: 12.5px; }
+.xr-h .st { margin-left: auto; font: 12px "JetBrains Mono", ui-monospace, monospace; color: var(--muted); white-space: nowrap; }
+.xr-fns, .xr-ags { display: flex; gap: 6px; flex-wrap: wrap; }
+.xr-fn { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: var(--raise); color: var(--ink-2); }
+.xr-fn .m { color: var(--muted); }
+.xr-fn.bad { background: var(--crit-bg); color: var(--crit); }
+.xr-fn.off { color: var(--faint); }
+.xr-err { font: 12px "JetBrains Mono", ui-monospace, monospace; color: var(--crit); }
+.xr-f { display: flex; gap: 4px 14px; flex-wrap: wrap; font-size: 12.5px; color: var(--muted); }
+.xr-ag { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; padding: 2px 8px; border: 1px solid var(--rule); border-radius: 6px; color: var(--ink-2); }
+.xr-ag .dot { margin: 0; }
+.xr-ag .m { color: var(--muted); }
+.xr-ag:hover { background: var(--hover); }
+.xr-ag.cur { border-color: var(--run); }
+.xi-lead { margin: 0 0 10px; color: var(--muted); font-size: 12.5px; max-width: 760px; }
+.xi-t tbody tr { cursor: default; }
+.xi-t tr.dim td { opacity: .55; }
+.xi-p { font-size: 11px; padding: 0 6px; border-radius: 4px; background: var(--raise); color: var(--ink-2); white-space: nowrap; }
+.xi-p.hi { background: var(--crit-bg); color: var(--crit); }
+.xi-p.new { background: var(--run-bg); color: var(--run); }
+.xi-p.off { color: var(--faint); }
+.xi-mx { display: inline-flex; gap: 2px; margin-right: 6px; vertical-align: -1px; }
+.xi-mx i { width: 9px; height: 9px; border-radius: 2px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--rule); }
+.xi-mx i.on { background: var(--ok); box-shadow: none; }
+.xi-t .m { color: var(--muted); font-size: 12px; }
 .xpl-empty p { margin: 0; color: var(--ink-2); }
 .pd-card h3 { margin: 0 0 8px; font-size: 12px; font-weight: 500; color: var(--faint); text-transform: uppercase; letter-spacing: .05em; }
 .pd-card .kv { font-size: 12.5px; }

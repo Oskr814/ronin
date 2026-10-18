@@ -3,8 +3,11 @@ import { getNightlyExploration } from '../../core/local-state.js';
 import { withActiveRepo, type RepoEntry } from '../../core/repo-context.js';
 import { addDays, instantAt, wallClock } from '../../core/timezone.js';
 import { currentNight, parseNightWindow, type NightWindow } from '../../exploration/schedule.js';
+import { exploreWorkerBusy } from '../../exploration/flow.js';
+import { CHARTERS, EXPLORATION_DIR, VIEWPORTS, parseInventory } from '../../exploration/memory.js';
+import { listRunRecords, type ExplorationRunFunction, type ExplorationRunRecord, type ExplorationTrigger } from '../../exploration/run-log.js';
 import type { RunSummary } from './dashboard-data.js';
-import { explorationReview, isExplorationPr, type ExplorationPr, type Ficha } from './dashboard-exploration.js';
+import { explorationReview, isExplorationPr, readBranchFile, type ExplorationPr, type Ficha } from './dashboard-exploration.js';
 
 // The dashboard's Exploraciones page (#155): one row per app a repo explores
 // (`explore` in repos.json), with its repo's rolling exploration PR — one
@@ -45,10 +48,13 @@ export interface ExploracionListRow extends ExploracionRow {
   error?: string;
 }
 
-// Every exploration run's label starts with `app <name>`, and the one on a
-// function goes on with ` → <function id>` (exploration/prompts.ts).
+// The agents of an exploration run (exploration/run.ts). Not the ones that
+// answer comments on the PR or redo an after image: those are about findings.
+const EXPLORATION_TASKS = new Set(['explore-inventory', 'explore-function', 'explore-evaluate']);
+// Their label starts with `app <name>`, and the one on a function goes on
+// with ` → <function id>` (exploration/prompts.ts).
 const LABEL_RE = /^app ([\w.-]+)(?: → (.+))?$/;
-export const isExplorationRun = (run: Pick<RunSummary, 'taskType'>) => run.taskType.startsWith('explore-');
+export const isExplorationRun = (run: Pick<RunSummary, 'taskType'>) => EXPLORATION_TASKS.has(run.taskType);
 
 export function runApp(run: Pick<RunSummary, 'taskType' | 'label'>): { app: string; fn?: string } | null {
   if (!isExplorationRun(run)) return null;
@@ -142,4 +148,173 @@ export async function exploracionList(entries: RepoEntry[], rows: ExploracionRow
       ...(error ? { error } : {}),
     };
   }));
+}
+
+// ---------- Corridas (#155, 2/4)
+// Each exploration run of an app: the worker's record (run-log.ts), with the
+// agent runs it was made of (their cost and transcripts). Runs from before
+// those records existed are put together from the agent runs alone, with
+// less to say: no trigger, seed or findings.
+
+export interface CorridaAgent {
+  runId: string;
+  taskType: string;
+  fn?: string;
+  state: RunSummary['state'];
+  startedAt: string;
+  durationMs?: number;
+  costUsd?: number;
+}
+
+export interface Corrida {
+  id: string;
+  trigger: ExplorationTrigger | { kind: 'desconocido' };
+  startedAt: string;
+  endedAt?: string;
+  state: 'running' | 'ok' | 'error' | 'cut';
+  error?: string;
+  runId?: string;
+  seed?: number;
+  prNumber?: number;
+  functions: Array<Pick<ExplorationRunFunction, 'id' | 'status'> & Partial<ExplorationRunFunction>>;
+  findings?: ExplorationRunRecord['findings'];
+  discarded?: number;
+  costUsd: number;
+  agents: CorridaAgent[];
+  // Put together from the agent runs: no record of its own.
+  legacy?: boolean;
+}
+
+// Agent runs further apart than this are separate runs (an exploration's
+// agents run one after another, with the app up in between).
+const LEGACY_GAP_MS = 30 * 60_000;
+
+const agentOf = (run: RunSummary): CorridaAgent => {
+  const fn = runApp(run)?.fn;
+  return {
+    runId: run.runId, taskType: run.taskType, state: run.state, startedAt: run.startedAt,
+    ...(fn ? { fn } : {}), ...(run.durationMs !== undefined ? { durationMs: run.durationMs } : {}), ...(run.costUsd !== undefined ? { costUsd: run.costUsd } : {}),
+  };
+};
+const cost = (agents: CorridaAgent[]) => agents.reduce((sum, a) => sum + (a.costUsd ?? 0), 0);
+
+// `busy`: whether the repo's exploration lock is held — a record still
+// `running` without it was cut (the worker died before closing it).
+export function buildCorridas(records: ExplorationRunRecord[], agentRuns: RunSummary[], busy: boolean, now = Date.now()): Corrida[] {
+  const runs = [...agentRuns].sort((a, b) => a.startedAt.localeCompare(b.startedAt));
+  const used = new Set<string>();
+  const corridas: Corrida[] = records.map((rec) => {
+    const from = Date.parse(rec.startedAt);
+    const to = rec.endedAt ? Date.parse(rec.endedAt) : now;
+    const agents = runs.filter((r) => !used.has(r.runId) && Date.parse(r.startedAt) >= from && Date.parse(r.startedAt) <= to).map((r) => {
+      used.add(r.runId);
+      return agentOf(r);
+    });
+    const state = rec.state === 'running' && !busy ? 'cut' : rec.state;
+    return {
+      id: rec.id, trigger: rec.trigger, startedAt: rec.startedAt, state,
+      ...(rec.endedAt ? { endedAt: rec.endedAt } : {}),
+      ...(rec.error ? { error: rec.error } : {}),
+      ...(rec.runId ? { runId: rec.runId } : {}),
+      ...(rec.seed !== undefined ? { seed: rec.seed } : {}),
+      ...(rec.prNumber ? { prNumber: rec.prNumber } : {}),
+      functions: rec.functions ?? [...new Set(agents.flatMap((a) => (a.fn ? [a.fn] : [])))].map((id) => ({ id, status: 'explorada' as const })),
+      ...(rec.findings ? { findings: rec.findings } : {}),
+      ...(rec.discarded !== undefined ? { discarded: rec.discarded } : {}),
+      costUsd: cost(agents),
+      agents,
+    };
+  });
+
+  const groups: RunSummary[][] = [];
+  for (const run of runs.filter((r) => !used.has(r.runId))) {
+    const last = groups.at(-1)?.at(-1);
+    const lastEnd = last ? Date.parse(last.endedAt ?? last.startedAt) : -Infinity;
+    if (last && Date.parse(run.startedAt) - lastEnd <= LEGACY_GAP_MS) groups.at(-1)!.push(run);
+    else groups.push([run]);
+  }
+  for (const group of groups) {
+    const agents = group.map(agentOf);
+    const failed = group.find((r) => r.state !== 'ok' && r.state !== 'running');
+    const fnState = (fn: string) => (group.some((r) => runApp(r)?.fn === fn && r.state === 'ok') ? 'explorada' as const : 'fallo' as const);
+    const lastRun = group.at(-1)!;
+    corridas.push({
+      id: `legacy-${group[0].runId}`, trigger: { kind: 'desconocido' }, startedAt: group[0].startedAt,
+      ...(lastRun.state !== 'running' ? { endedAt: lastRun.endedAt ?? lastRun.startedAt } : {}),
+      state: group.some((r) => r.state === 'running') ? 'running' : failed ? 'error' : 'ok',
+      ...(failed?.error ? { error: failed.error.split('\n')[0].slice(0, 300) } : {}),
+      functions: [...new Set(agents.flatMap((a) => (a.fn ? [a.fn] : [])))].map((id) => ({ id, status: fnState(id) })),
+      costUsd: cost(agents),
+      agents,
+      legacy: true,
+    });
+  }
+  return corridas.sort((a, b) => b.startedAt.localeCompare(a.startedAt));
+}
+
+export async function corridasOf(entry: RepoEntry, app: string, runs: RunSummary[]): Promise<Corrida[]> {
+  const records = await listRunRecords(entry.productRepo, app);
+  const busy = await withActiveRepo(entry, () => exploreWorkerBusy()).catch(() => false);
+  return buildCorridas(records, appRuns(runs, entry.productRepo, app), busy);
+}
+
+// ---------- Inventario (#155, 2/4)
+// The app's functions as ronin found them (inventory.yml, §11.6): at the
+// open exploration PR's branch, which each run updates, or at the base once
+// there's no PR.
+
+export interface InventarioFn {
+  id: string;
+  nombre: string;
+  rutas: string[];
+  prioridad: string;
+  notas?: string;
+  retirada?: string;
+  // charter → the last date it was explored with, in any viewport.
+  charters: Record<string, string>;
+  viewports: string[];
+  ultima?: string;
+  hallazgos: number;
+}
+
+export interface Inventario {
+  from: { branch: string; pr?: number };
+  actualizado?: { fecha: string; sha: string };
+  charters: readonly string[];
+  funciones: InventarioFn[];
+  error?: string;
+}
+
+export function inventarioFrom(raw: string): Pick<Inventario, 'actualizado' | 'funciones'> {
+  const inventory = parseInventory(raw);
+  return {
+    ...(inventory.actualizado ? { actualizado: inventory.actualizado } : {}),
+    funciones: inventory.funciones.map((f) => {
+      const charters: Record<string, string> = {};
+      const viewports: string[] = [];
+      for (const vp of VIEWPORTS) {
+        const done = f.cobertura?.[vp] ?? {};
+        if (Object.keys(done).length) viewports.push(vp);
+        for (const [charter, date] of Object.entries(done)) if (date && (!charters[charter] || date > charters[charter])) charters[charter] = date;
+      }
+      const dates = Object.values(charters).sort();
+      return {
+        id: f.id, nombre: f.nombre, rutas: f.rutas, prioridad: f.prioridad,
+        ...(f.notas ? { notas: f.notas } : {}), ...(f.retirada ? { retirada: f.retirada } : {}),
+        charters, viewports, ...(dates.length ? { ultima: dates.at(-1) } : {}), hallazgos: f.hallazgos.length,
+      };
+    }),
+  };
+}
+
+export async function inventarioOf(entry: RepoEntry, app: string, pr: Pick<ExplorationPr, 'number' | 'headRefName'> | undefined): Promise<Inventario> {
+  const branch = pr ? pr.headRefName : (entry.worktreeBaseRef ?? config.worktreeBaseRef).replace(/^origin\//, '');
+  const from = { branch, ...(pr ? { pr: pr.number } : {}) };
+  const raw = await readBranchFile(entry, branch, `${EXPLORATION_DIR}/${app}/inventory.yml`);
+  if (raw === null) return { from, charters: CHARTERS, funciones: [], error: `no hay inventory.yml de ${app} en ${branch}` };
+  try {
+    return { from, charters: CHARTERS, ...inventarioFrom(raw) };
+  } catch (error) {
+    return { from, charters: CHARTERS, funciones: [], error: `no se pudo leer inventory.yml: ${(error as Error).message.split('\n')[0]}` };
+  }
 }

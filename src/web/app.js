@@ -104,7 +104,7 @@ function duration(ms) {
 const money = (usd) => (usd < 0.01 ? 'menos de US$0,01' : `US$${usd.toFixed(2).replace('.', ',')}`);
 const pct = (fraction) => `${Math.round(fraction * 100)}%`;
 
-const S = { snap: null, today: null, sel: null, open: [], runIdx: {}, pendingRun: null, filter: null, q: '', itemRuns: {}, run: null, stream: null, detail: {}, view: {}, doc: {}, menu: false, dialog: null, expanded: new Set(), expl: {}, ficha: {}, fichaOpen: {}, fichaFilter: { tipo: 'todas', vp: 'todos' }, antes: {}, oldAfter: new Set(), lightbox: null, fmenu: false, fdialog: null, fdraft: {}, listas: {}, scope: 'all', project: '', attAll: false, extra: {}, newIssue: null, files: {}, fcur: {}, ffold: {}, fexp: {}, fcontent: {}, fq: {}, ftree: false, fcomp: null, fbusy: new Set(), rpanel: null, page: null, portal: { data: null, error: null }, pdialog: null, ped: { list: null, error: null, listAt: 0, detail: {}, n: null, tab: 'act', filter: 'todos', run: null, lb: null, patch: {} }, reu: { list: null, error: null, listAt: 0, detail: {}, n: null, tab: null, up: null, run: null, open: {}, retrying: false, form: {}, approving: false }, xpl: { list: null, error: null, listAt: 0, repo: null, app: null } };
+const S = { snap: null, today: null, sel: null, open: [], runIdx: {}, pendingRun: null, filter: null, q: '', itemRuns: {}, run: null, stream: null, detail: {}, view: {}, doc: {}, menu: false, dialog: null, expanded: new Set(), expl: {}, ficha: {}, fichaOpen: {}, fichaFilter: { tipo: 'todas', vp: 'todos' }, antes: {}, oldAfter: new Set(), lightbox: null, fmenu: false, fdialog: null, fdraft: {}, listas: {}, scope: 'all', project: '', attAll: false, extra: {}, newIssue: null, files: {}, fcur: {}, ffold: {}, fexp: {}, fcontent: {}, fq: {}, ftree: false, fcomp: null, fbusy: new Set(), rpanel: null, page: null, portal: { data: null, error: null }, pdialog: null, ped: { list: null, error: null, listAt: 0, detail: {}, n: null, tab: 'act', filter: 'todos', run: null, lb: null, patch: {} }, reu: { list: null, error: null, listAt: 0, detail: {}, n: null, tab: null, up: null, run: null, open: {}, retrying: false, form: {}, approving: false }, xpl: { list: null, error: null, listAt: 0, repo: null, app: null, cor: {}, inv: {}, tab: 'corridas', run: null } };
 // The sidebar's Linear filter (#101), remembered per browser.
 try { Object.assign(S, JSON.parse(localStorage.getItem('ronin-scope') ?? '{}')); } catch { /* sin storage */ }
 function saveScope() {
@@ -485,7 +485,7 @@ function renderCenter() {
     return;
   }
   if (!item && (S.page === 'exploraciones' || S.page === 'exploracion')) {
-    if (setCenter(backBar(S.page === 'exploracion' ? S.xpl.app : 'Exploraciones') + (S.page === 'exploracion' ? xplAppHTML() : xplListHTML()))) wireXpl();
+    setCenter(backBar(S.page === 'exploracion' ? S.xpl.app : 'Exploraciones') + (S.page === 'exploracion' ? xplAppHTML() : xplListHTML()));
     return;
   }
   if (!item && S.page === 'portal') {
@@ -856,8 +856,9 @@ function activityHTML(item) {
 function docTabsOf(item, d) {
   // Archivos: the PR's "Files changed" (#111), an issue's moving PR's.
   if (item.kind === 'issue') return [['issue', 'Issue'], ...(d?.pr ? [['pr', `PR #${d.pr.number}`]] : []), ['comments', 'Comentarios'], ...(d?.pr ? [['files', 'Archivos']] : [])];
-  // An exploration PR opens on its findings, to review them (#93).
-  return [...(d?.exploration ? [['fichas', 'Fichas']] : []), ['pr', 'Descripción'], ...(d?.issue ? [['issue', `Issue #${d.issue.number}`]] : []), ['comments', 'Comentarios'], ['files', 'Archivos']];
+  // An exploration PR opens on its findings, to review them (#93); as its app's page, with the app's runs and inventory (#155).
+  const xpl = d?.exploration && xplOfItem(item.id) ? [['corridas', 'Corridas'], ['inventario', 'Inventario']] : [];
+  return [...(d?.exploration ? [['fichas', 'Fichas']] : []), ...xpl, ['pr', 'Descripción'], ...(d?.issue ? [['issue', `Issue #${d.issue.number}`]] : []), ['comments', 'Comentarios'], ['files', 'Archivos']];
 }
 const docOf = (item) => {
   const d = S.detail[item.id]?.data;
@@ -886,6 +887,10 @@ function docHTML(item) {
   const bar = `<div class="doctabs" role="tablist">${tabs.map(([k, label]) => `<button class="doctab" role="tab" data-doc="${k}" aria-selected="${k === cur}">${esc(label)}${counter(k)}</button>`).join('')}
     ${cur === 'fichas' ? '<span class="keys"><kbd>j</kbd> <kbd>k</kbd> otra ficha</span>' : cur === 'files' ? '<span class="keys"><kbd>j</kbd> <kbd>k</kbd> otro archivo · <kbd>v</kbd> visto · <kbd>r</kbd> revisión</span>' : ''}<span class="src">${d.error ? `<span class="bad">GitHub no respondió: ${esc(d.error)}</span>, ` : ''}${d.fetchedAt ? `leído hace ${esc(short(Date.now() - Date.parse(d.fetchedAt)))}` : ''}</span></div>`;
   if (cur === 'fichas') return bar + fichasHTML(item);
+  if (cur === 'corridas' || cur === 'inventario') {
+    const xr = xplOfItem(item.id);
+    return bar + `<div class="doc" id="doc" data-key="${esc(`${item.id}:${cur}`)}"><div class="xpl-doc">${cur === 'corridas' ? xplCorridasHTML(xr) : xplInventarioHTML(xr)}</div></div>`;
+  }
   if (cur === 'files') {
     // Read when the tab is first shown, and again once old (refresh).
     if (!files) queueMicrotask(() => loadFiles(item.id));
@@ -2082,6 +2087,7 @@ function wireCenter() {
   for (const button of document.querySelectorAll('[data-tab]')) button.onclick = () => select(button.dataset.tab);
   for (const button of document.querySelectorAll('[data-goped]')) button.onclick = () => openPedido(Number(button.dataset.goped));
   for (const button of document.querySelectorAll('#center [data-xpl-page]')) button.onclick = () => openExploraciones();
+  wireXpl();
   for (const button of document.querySelectorAll('[data-close]')) {
     button.onclick = () => {
       const id = button.dataset.close;
@@ -2609,16 +2615,122 @@ function xplListHTML() {
 function xplAppHTML() {
   const r = xplRow0(S.xpl.repo, S.xpl.app);
   if (!r) return `<div class="today pd"><p class="bad">Ningún repo de ronin explora la app ${esc(S.xpl.app ?? '')}.</p></div>`;
-  return xplHead(r, '', '') + `<div class="today pd"><div class="pd-card xpl-empty"><h3>Sin PR de exploración</h3>
-    <p>Se abre con la primera ficha que ronin proponga para ${esc(r.app)}, y las corridas siguientes se suman al mismo PR hasta que lo apruebes.${r.running ? ' La corrida de ahora puede abrirlo.' : ''}</p></div></div>`;
+  const tab = S.xpl.tab === 'inventario' ? 'inventario' : 'corridas';
+  const bar = `<div class="doctabs" role="tablist">${[['corridas', 'Corridas'], ['inventario', 'Inventario']].map(([k, label]) => `<button class="doctab" role="tab" data-xtab="${k}" aria-selected="${k === tab}">${label}</button>`).join('')}</div>`;
+  return xplHead(r, '', '') + bar + `<div class="doc" id="doc" data-key="${esc(`${xplKey(r)}:${tab}`)}"><div class="xpl-doc"><div class="pd-card xpl-empty"><h3>Sin PR de exploración</h3>
+    <p>Se abre con la primera ficha que ronin proponga para ${esc(r.app)}, y las corridas siguientes se suman al mismo PR hasta que lo apruebes.${r.running ? ' La corrida de ahora puede abrirlo.' : ''}</p></div>
+    ${tab === 'inventario' ? xplInventarioHTML(r) : xplCorridasHTML(r)}</div></div>`;
+}
+
+// ---------- an app's runs and inventory (#155, 2/4)
+// Read when their tab is shown, and again once old: the runs often (one may
+// be going), the inventory seldom (it changes once per run).
+const XPL_PART = { cor: ['corridas', PEDIDO_EVERY_MS], inv: ['inventario', XPL_EVERY_MS] };
+
+async function loadXplPart(bucket, r) {
+  const entry = (S.xpl[bucket][xplKey(r)] ??= {});
+  if (entry.loading) return;
+  entry.loading = true;
+  try {
+    entry.data = await api(`/api/exploraciones/${r.repo}/${encodeURIComponent(r.app)}/${XPL_PART[bucket][0]}`);
+    entry.error = null;
+  } catch (error) {
+    if (error instanceof Unauthorized) return showLogin();
+    entry.error = error.message;
+  } finally {
+    entry.loading = false;
+    entry.at = Date.now();
+  }
+  if (S.page === 'exploracion') renderCenter();
+}
+
+function xplPart(bucket, r) {
+  const entry = S.xpl[bucket][xplKey(r)];
+  if (!entry || (!entry.loading && Date.now() - (entry.at ?? 0) > XPL_PART[bucket][1])) queueMicrotask(() => loadXplPart(bucket, r));
+  return entry;
+}
+
+async function loadXplRun(runId) {
+  try {
+    const { summary, lines } = await api(`/api/runs/${encodeURIComponent(runId)}`);
+    if (S.xpl.run?.runId !== runId) return;
+    S.xpl.run = { runId, summary, lines: lines.filter((line) => line.type !== 'run_start' && line.type !== 'run_end') };
+  } catch (error) {
+    if (error instanceof Unauthorized) return showLogin();
+    if (S.xpl.run?.runId === runId) S.xpl.run.error = error.message;
+  }
+  if (S.page === 'exploracion') renderCenter();
+}
+
+const XPL_TRIGGER = { noche: 'de noche', manual: 'a pedido', desconocido: 'sin registro' };
+const xplTrigger = (t) => (t.kind === 'issue' ? `/explore en #${t.issueNumber}` : XPL_TRIGGER[t.kind] ?? t.kind);
+const XPL_STATE = { running: ['live', 'en curso'], ok: ['ok', 'terminó bien'], error: ['crit', 'falló'], cut: ['crit', 'se cortó'] };
+const agentName = (a) => `${typeName(a.taskType)}${a.fn ? ` ${a.fn}` : ''}`;
+
+function corridaHTML(c) {
+  const [tone, said] = XPL_STATE[c.state] ?? XPL_STATE.error;
+  const took = c.state === 'running' ? `<span data-since="${esc(c.startedAt)}"></span>` : c.endedAt ? esc(duration(Date.parse(c.endedAt) - Date.parse(c.startedAt))) : '';
+  const fns = c.functions.map((f) => `<span class="xr-fn ${f.status === 'fallo' ? 'bad' : f.status === 'omitida' ? 'off' : ''}" title="${esc([f.status, f.reason && `motivo: ${f.reason}`, f.role && `rol: ${f.role}`, f.error].filter(Boolean).join(' · '))}">${esc(f.id)}${f.charter ? ` <span class="m">${esc(f.charter)}${f.viewports?.length ? ` · ${esc(f.viewports.join(', '))}` : ''}</span>` : ''}</span>`).join('');
+  const facts = [];
+  if (c.findings) facts.push(c.findings.length ? `${c.findings.length} ${c.findings.length === 1 ? 'ficha' : 'fichas'}: ${c.findings.map((f) => f.id).join(', ')}` : 'ninguna ficha');
+  if (c.discarded) facts.push(`${c.discarded} ${c.discarded === 1 ? 'descartada' : 'descartadas'}`);
+  if (c.prNumber) facts.push(`PR #${c.prNumber}`);
+  if (c.seed !== undefined) facts.push(`semilla ${c.seed}`);
+  if (c.legacy) facts.push('de antes del registro de corridas: sin semilla ni fichas');
+  const agents = c.agents.map((a) => `<button class="xr-ag ${S.xpl.run?.runId === a.runId ? 'cur' : ''}" data-xrun="${esc(a.runId)}">${dot(a.state)}${esc(agentName(a))}<span class="m">${a.state === 'running' ? 'en curso' : a.durationMs !== undefined ? esc(duration(a.durationMs)) : ''}</span></button>`).join('');
+  return `<div class="xr"><div class="xr-h">${dotClass(tone)}<b>${esc(when(c.startedAt))}</b><span class="tag">${esc(xplTrigger(c.trigger))}</span><span class="m">${esc(said)}</span><span class="st">${took}${c.costUsd ? ` · ${esc(money(c.costUsd))}` : ''}</span></div>
+    ${fns ? `<div class="xr-fns">${fns}</div>` : ''}
+    ${c.error ? `<div class="xr-err">${esc(c.error)}</div>` : ''}
+    ${facts.length ? `<div class="xr-f">${facts.map((f) => `<span>${esc(f)}</span>`).join('')}</div>` : ''}
+    ${agents ? `<div class="xr-ags">${agents}</div>` : ''}</div>`;
+}
+
+function xplCorridasHTML(r) {
+  const entry = xplPart('cor', r);
+  if (!entry?.data) return `<div class="empty">${entry?.error ? `No se pudieron leer las corridas: ${esc(entry.error)}` : 'Leyendo las corridas…'}</div>`;
+  const list = entry.data.corridas;
+  if (!list.length) return '<p class="note">Sin corridas en los últimos 14 días.</p>';
+  const open = S.xpl.run;
+  const view = open ? `<div class="pd-runview"><div class="pd-runbar"><b>${esc(typeName(open.summary?.taskType ?? ''))}</b><span class="m">${open.summary ? esc(when(open.summary.startedAt)) : ''}</span><button class="btn-s" data-xrunx>Cerrar</button></div>${open.summary
+    ? `<div class="tx pd-tx">${open.lines.map(step).join('') || '<div class="empty">El agente todavía no hizo nada.</div>'}${ending(open.summary)}</div>`
+    : `<div class="empty">${open.error ? esc(open.error) : 'Cargando la corrida…'}</div>`}</div>` : '';
+  return `${view}<div class="xr-list">${list.map(corridaHTML).join('')}</div>`;
+}
+
+function xplInventarioHTML(r) {
+  const entry = xplPart('inv', r);
+  if (!entry?.data) return `<div class="empty">${entry?.error ? `No se pudo leer el inventario: ${esc(entry.error)}` : 'Leyendo el inventario…'}</div>`;
+  const inv = entry.data;
+  const from = inv.from.pr ? `la rama del PR #${inv.from.pr}` : inv.from.branch;
+  if (inv.error) return `<p class="note">${esc(inv.error)}.</p>`;
+  const live = inv.funciones.filter((f) => !f.retirada && f.prioridad !== 'excluida');
+  const seen = live.filter((f) => f.ultima).length;
+  const pill = (f) => (f.retirada ? `<span class="xi-p off">retirada el ${esc(dayMonth(`${f.retirada}T12:00:00Z`))}</span>` : f.prioridad === 'alta' ? '<span class="xi-p hi">alta</span>' : f.prioridad === 'excluida' ? '<span class="xi-p off">excluida</span>' : !f.ultima ? '<span class="xi-p new">nunca explorada</span>' : '');
+  const matrix = (f) => `<span class="xi-mx">${inv.charters.map((c) => `<i class="${f.charters[c] ? 'on' : ''}" title="${esc(c)}${f.charters[c] ? `: ${esc(f.charters[c])}` : ': todavía no'}"></i>`).join('')}</span><span class="m">${Object.keys(f.charters).length}/${inv.charters.length}</span>`;
+  const rows = inv.funciones.map((f) => `<tr class="${f.retirada || f.prioridad === 'excluida' ? 'dim' : ''}"><td><span class="tt">${esc(f.nombre)}</span><small>${esc(f.rutas.join(', ') || f.id)}</small>${f.notas ? `<small>${esc(f.notas)}</small>` : ''}</td>
+      <td>${pill(f)}</td><td class="hide-m m">${f.ultima ? esc(dayMonth(`${f.ultima}T12:00:00Z`)) : '—'}${f.viewports.length ? `<small>${esc(f.viewports.join(', '))}</small>` : ''}</td>
+      <td>${matrix(f)}</td><td class="hide-m m">${f.hallazgos || ''}</td></tr>`).join('');
+  return `<p class="xi-lead">${seen} de ${live.length} funciones exploradas al menos una vez. De <code>inventory.yml</code> en ${esc(from)}${inv.actualizado ? `, refrescado el ${esc(dayMonth(`${inv.actualizado.fecha}T12:00:00Z`))}` : ''}. Se edita en el repo.</p>
+    <table class="padm-t xi-t"><thead><tr><th>Función</th><th></th><th class="hide-m">Última vez</th><th>Charters</th><th class="hide-m">Fichas</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
 function wireXpl() {
-  for (const row of $('#center').querySelectorAll('[data-xpl]')) {
+  const center = $('#center');
+  for (const row of center.querySelectorAll('[data-xpl]')) {
     const go = () => openExploracion(...splitXplKey(row.dataset.xpl));
     row.onclick = go;
     row.onkeydown = (event) => { if (event.key === 'Enter') go(); };
   }
+  for (const b of center.querySelectorAll('[data-xtab]')) b.onclick = () => { S.xpl.tab = b.dataset.xtab; renderCenter(); };
+  for (const b of center.querySelectorAll('[data-xrun]')) {
+    b.onclick = () => {
+      S.xpl.run = { runId: b.dataset.xrun };
+      renderCenter();
+      $('#doc')?.scrollTo(0, 0);
+      loadXplRun(b.dataset.xrun);
+    };
+  }
+  center.querySelector('[data-xrunx]')?.addEventListener('click', () => { S.xpl.run = null; renderCenter(); });
 }
 
 async function loadExploraciones() {
@@ -2651,6 +2763,7 @@ function openExploraciones() {
 
 // `ficha`: the finding to open, from the URL (?f=).
 function openExploracion(repo, app, ficha) {
+  if (S.xpl.repo !== repo || S.xpl.app !== app) S.xpl.run = null;
   Object.assign(S.xpl, { repo, app });
   const r = xplRow0(repo, app);
   if (r?.pr) {
@@ -4217,6 +4330,8 @@ async function refresh() {
   if (S.page === 'reuniones' && Date.now() - S.reu.listAt > PEDIDO_EVERY_MS) loadReuniones();
   // The apps' findings, more often while their page is open: the sidebar counts them too.
   if (xplRows().length && Date.now() - S.xpl.listAt > (['exploraciones', 'exploracion'].includes(S.page) ? PEDIDO_EVERY_MS : XPL_EVERY_MS)) loadExploraciones();
+  // An agent's transcript open on an app's runs, while it goes on.
+  if (S.page === 'exploracion' && S.xpl.run?.summary?.state === 'running') loadXplRun(S.xpl.run.runId);
   // An app's page with no PR goes on to it once ronin opens one.
   const xr = S.page === 'exploracion' && !S.sel && xplRow0(S.xpl.repo, S.xpl.app);
   if (xr?.pr) select(xr.pr.id);
