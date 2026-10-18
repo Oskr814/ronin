@@ -4529,6 +4529,7 @@ function renderStatus() {
 // per section, like Linear's settings. Each field saves when it's left.
 const AJ_SECTIONS = {
   perfil: { name: 'Perfil', icon: '<circle cx="12" cy="8" r="4"/><path d="M4 20c1.5-4 4.5-6 8-6s6.5 2 8 6"/>' },
+  notificaciones: { name: 'Notificaciones', icon: '<path d="M6 16V11a6 6 0 0 1 12 0v5l2 2H4zM10 21h4"/>' },
   general: { name: 'General', icon: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1"/>', admin: true },
   usuarios: { name: 'Usuarios', icon: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c1-3.5 3.5-5.5 6.5-5.5s5.5 2 6.5 5.5M16 4.5a3.5 3.5 0 0 1 0 7M18 14.5c2 .7 3.2 2.6 3.7 5.5"/>', admin: true },
   registro: { name: 'Registro', icon: '<path d="M4 6h16M4 12h16M4 18h10"/>', admin: true },
@@ -4582,7 +4583,7 @@ async function loadAjustes() {
 function ajNavHTML() {
   const button = (sec) => `<button data-aj="${sec}" aria-pressed="${S.aj.sec === sec}"><svg viewBox="0 0 24 24">${AJ_SECTIONS[sec].icon}</svg>${AJ_SECTIONS[sec].name}</button>`;
   return `<button data-aj-back><svg viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></svg>Volver al tablero</button>
-    <div class="aj-grp">Tu cuenta <span>${esc(S.snap.me)}</span></div>${button('perfil')}
+    <div class="aj-grp">Tu cuenta <span>${esc(S.snap.me)}</span></div>${button('perfil')}${button('notificaciones')}
     ${S.snap.access.admin ? `<div class="aj-grp">Administración</div>${button('general')}${button('usuarios')}${button('registro')}` : ''}`;
 }
 
@@ -4605,14 +4606,31 @@ function ajSettingRow(s) {
   return ajRow(esc(label), esc(desc), `<input class="aj-num" type="number" min="${s.min}" max="${s.max}" step="1" data-ajkey="${esc(s.key)}" value="${s.value}" aria-label="${esc(label)}"><span class="aj-unit">${esc(unit)}</span>`, src);
 }
 
+// The emails ronin sends the team (#174, stage 4), each person choosing theirs repo by repo.
+const AJ_EVENTS = [
+  ['pedido-equipo', 'Pedido para el equipo', 'Un pedido o un error del portal que pasa al equipo, con su issue.'],
+  ['pedido-revisar', 'Pedido para revisar', 'El PR que ronin abrió para un pedido espera la aprobación de alguien.'],
+  ['reunion', 'Propuestas de una reunión', 'ronin terminó de leer unas notas y hay propuestas para aprobar.'],
+  ['bloqueo', 'Bloqueos', 'Un issue o PR de ronin necesita a alguien (docs/BLOCKING.md).'],
+];
+
 const AJ_PAGES = {
+  notificaciones(d) {
+    const email = d.perfil.email;
+    return `<h1>Notificaciones</h1><p class="lead">Qué te avisa ronin, repo por repo. Lo eliges tú: nadie más lo cambia. ${email ? `Llegan a <b>${esc(email)}</b>.` : ''}</p>
+      ${email ? '' : '<div class="aj-note warn"><b>Sin correo.</b> Agrégalo en <a href="/ajustes/perfil" data-aj-link="perfil">Perfil</a> para recibir algo.</div>'}
+      ${d.notificaciones.map((n) => `<section class="aj-sec"><h2><i class="aj-sq" style="background:${repoColor(n.repo)}"></i>${esc(n.repo)}</h2>${n.chosen ? '' : '<p class="aj-d">Todavía no elegiste: es lo que te llegaba antes (portal.notifyTo de repos.json y NOTIFY_TO).</p>'}<div class="aj-card">
+        ${AJ_EVENTS.map(([id, name, desc]) => ajRow(esc(name), esc(desc), `<button class="aj-sw" role="switch" aria-checked="${n.events.includes(id)}" data-ajev="${esc(n.repo)}" data-e="${id}" ${email ? '' : 'disabled'} aria-label="${esc(name)} de ${esc(n.repo)}"></button>`)).join('')}
+      </div></section>`).join('')}
+      <p class="aj-foot">Si nadie del equipo recibe un aviso de un repo, va a <code>NOTIFY_TO</code>${d.notifyTo ? ` (${esc(d.notifyTo)})` : ''}, para que nunca se pierda.</p>`;
+  },
   perfil(d) {
     const p = d.perfil;
     const dark = document.documentElement.dataset.theme !== 'light';
     return `<h1>Perfil</h1><p class="lead">Cómo te ve ronin. Tu usuario viene de GitHub.</p>
       ${ajSec('Tú', ajRow(`<span class="aj-me">${esc(d.me.login)}</span>`, 'GitHub', `<span class="aj-pill${d.me.admin ? ' admin' : ''}">${d.me.admin ? 'Administrador' : 'Miembro'}</span>`)
         + ajRow('Nombre', 'Con el que apareces en los correos y en lo que ronin propone.', `<input class="aj-in" maxlength="120" data-ajme="name" value="${esc(p.name ?? '')}" placeholder="${esc(d.me.login)}" aria-label="Nombre">`)
-        + ajRow('Correo', 'Adonde te escribe ronin. GitHub no se lo da al tablero.', `<input class="aj-in" type="email" maxlength="254" data-ajme="email" value="${esc(p.email ?? '')}" placeholder="persona@gmail.com" aria-label="Correo">`))}
+        + ajRow('Correo', 'Adonde te escribe ronin: lo que eliges en Notificaciones. GitHub no se lo da al tablero.', `<input class="aj-in" type="email" maxlength="254" data-ajme="email" value="${esc(p.email ?? '')}" placeholder="persona@gmail.com" aria-label="Correo">`))}
       ${d.linear.length ? ajSec('Linear', d.linear.map((t) => ajRow(esc(t.workspace ?? t.team), `${esc(t.repo)} · equipo ${esc(t.team)}`, `<select class="aj-in" data-ajlinear="${esc(t.repo)}" aria-label="Tu usuario en ${esc(t.team)}"><option value="">—</option>${t.people.map((x) => `<option value="${esc(x.id)}" ${p.linear?.[t.repo]?.id === x.id ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select>`)).join(''), 'Quién eres en cada equipo, para sugerirte como líder de un proyecto o como asignado.') : ''}
       ${ajSec('Interfaz', ajRow('Tema', 'Solo en este navegador.', `<div class="aj-seg"><button data-ajtheme="dark" aria-pressed="${dark}">Oscuro</button><button data-ajtheme="light" aria-pressed="${!dark}">Claro</button></div>`))}`;
   },
@@ -4702,6 +4720,7 @@ function ajUserHTML() {
       + ajRow('Correo', '', `<input class="aj-in" type="email" maxlength="254" data-ajufield="email" value="${esc(u.email ?? '')}" placeholder="persona@gmail.com" aria-label="Correo">`))}
     ${admin ? ajSec('Repos', u.repos.map((r) => ajRow(`<i class="aj-sq" style="background:${repoColor(r.repo)}"></i>${esc(r.repo)}`, 'Todo, como administrador.', `<span class="aj-pill">GitHub: ${esc(r.github ?? '—')}</span>`)).join(''))
       : `<section class="aj-sec"><h2>Repos y permisos</h2><p class="aj-d">Un conjunto marca los permisos; tocar uno lo deja como <i>Personalizado</i>. Desplegar se da aparte.</p>${u.repos.map(repoCard).join('')}</section>`}
+    ${ajSec('Notificaciones', u.notificaciones.map((n) => ajRow(`<i class="aj-sq" style="background:${repoColor(n.repo)}"></i>${esc(n.repo)}`, n.events.length ? AJ_EVENTS.filter(([id]) => n.events.includes(id)).map(([, name]) => esc(name)).join(' · ') : 'Ninguna', `<span class="m">${n.events.length} de ${AJ_EVENTS.length}${n.chosen ? '' : ', las de antes'}</span>`)).join(''), u.email ? 'Las elige la persona en su perfil; aquí solo se ven.' : '<span class="warn-t">Sin correo: no le llega nada hasta que tenga uno.</span>')}
     ${u.envAdmin || me ? '' : `<section class="aj-sec"><button class="btn-s danger" data-ajremove>Quitar de la lista</button><p class="aj-foot">${u.entrada === 'lista' ? 'Con la entrada en "solo la lista", deja de poder entrar.' : 'Si vuelve a entrar, tiene lo que le da GitHub y los permisos por defecto.'}</p></section>`}`;
 }
 
@@ -4961,6 +4980,17 @@ function wireAjustes() {
   };
   for (const b of center.querySelectorAll('[data-ajreset]')) b.onclick = () => ajSetValue(b.dataset.ajreset, null);
   for (const input of center.querySelectorAll('[data-ajme]')) input.onchange = () => ajSaveProfile({ [input.dataset.ajme]: input.value });
+  for (const b of center.querySelectorAll('[data-ajev]')) b.onclick = async () => {
+    try {
+      S.aj.data.notificaciones = (await api('/api/ajustes/notificaciones', { method: 'POST', body: JSON.stringify({ repo: b.dataset.ajev, event: b.dataset.e, on: b.getAttribute('aria-checked') !== 'true' }) })).notificaciones;
+      toast('Guardado.');
+    } catch (error) {
+      if (error instanceof Unauthorized) return showLogin();
+      toast(`No se guardó. ${error.message}`);
+    }
+    center._html = null;
+    renderCenter();
+  };
   for (const select of center.querySelectorAll('[data-ajlinear]')) select.onchange = () => ajSaveProfile({ linear: { repo: select.dataset.ajlinear, id: select.value || null } });
   for (const b of center.querySelectorAll('[data-ajtheme]')) b.onclick = () => {
     document.documentElement.dataset.theme = b.dataset.ajtheme;

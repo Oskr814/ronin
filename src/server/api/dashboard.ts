@@ -24,7 +24,7 @@ import { FichaActionError, runApprove, runFichaAction, runGeneralComment } from 
 import { GithubUserError, pendingReview, viewedFiles } from './github-as-user.js';
 import type { Session } from './auth.js';
 import { PortalAdminError, portalAdminView, runPortalAdmin, type PortalAdminContext } from './portal-admin.js';
-import { AjustesError, ajustesView, linearTeams, readRegistro, saveProfile, setValue } from './ajustes.js';
+import { AjustesError, ajustesView, linearTeams, readRegistro, saveNotificacion, saveProfile, setValue } from './ajustes.js';
 import { can, touchSeen, type Perm } from './team.js';
 import { addUsuario, removeUsuario, updateEquipo, updateUsuario, usuariosView, usuarioView } from './usuarios.js';
 import { missingPortalConfig } from '../portal.js';
@@ -628,7 +628,7 @@ async function ajustes(req: IncomingMessage, res: ServerResponse, path: string, 
     }
     return;
   }
-  if (req.method !== 'POST' || !['/api/ajustes/perfil', '/api/ajustes/valores'].includes(path)) {
+  if (req.method !== 'POST' || !['/api/ajustes/perfil', '/api/ajustes/valores', '/api/ajustes/notificaciones'].includes(path)) {
     json(res, 404, { error: 'no existe' });
     return;
   }
@@ -639,6 +639,7 @@ async function ajustes(req: IncomingMessage, res: ServerResponse, path: string, 
   const body = (await readJson(req)) ?? {};
   try {
     if (path === '/api/ajustes/perfil') json(res, 200, await saveProfile(session.login, body, await linearTeams(await visibleRepos())));
+    else if (path === '/api/ajustes/notificaciones') json(res, 200, await saveNotificacion(session.login, body, await visibleRepos()));
     else if (!admin) json(res, 403, { error: 'solo los administradores cambian los ajustes' });
     else json(res, 200, await setValue(session.login, body));
   } catch (error) {

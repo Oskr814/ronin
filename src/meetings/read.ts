@@ -61,7 +61,7 @@ async function context(meeting: Meeting) {
 async function notifyTeam(meeting: Meeting): Promise<void> {
   let ok = true;
   try {
-    await sendMail(meetingMail(meeting, teamTo(), config.dashboard.url), MEETINGS_FROM_NAME);
+    await sendMail(meetingMail(meeting, await teamTo('reunion'), config.dashboard.url), MEETINGS_FROM_NAME);
   } catch (error) {
     ok = false;
     log.error(`reuniones: no se pudo enviar el correo de R-${meeting.number}`, error);

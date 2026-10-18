@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { config } from '../core/config.js';
 import { log } from '../core/logger.js';
 import { activeRepo } from '../core/repo-context.js';
+import { recipientsFor, type NotifyEvent } from '../core/notifications.js';
 import { sendMail, type Mail } from '../core/notifier.js';
 import type { PortalUser } from './accounts.js';
 import { bigRequestMail, PORTAL_FROM_NAME, teamRequestMail } from './mail.js';
@@ -15,7 +16,7 @@ export async function sendPortalMails(request: PortalRequest, mails: Array<Mail 
   const results = await Promise.allSettled(sent.map((m) => sendMail(m, PORTAL_FROM_NAME)));
   for (const [i, result] of results.entries()) {
     if (result.status === 'rejected') log.error(`portal: no se pudo enviar un correo del pedido P-${request.number}`, result.reason);
-    await noteEvent(request.number, { kind: 'mail', to: sent[i].to === config.notifyTo ? 'team' : 'person', subject: sent[i].subject, ok: result.status === 'fulfilled' });
+    await noteEvent(request.number, { kind: 'mail', to: sent[i].team ? 'team' : 'person', subject: sent[i].subject, ok: result.status === 'fulfilled' });
   }
 }
 
@@ -29,16 +30,17 @@ export async function sendRequestsMail(requests: PortalRequest[], mail: Mail): P
   for (const request of requests) await noteEvent(request.number, { kind: 'mail', to: 'person', subject: mail.subject, ok });
 }
 
-// Inside withActiveRepo: the team of the request's repo (its portal.notifyTo
-// in repos.json), never another repo's; NOTIFY_TO when it has none.
-export const teamTo = () => activeRepo().portal?.notifyTo?.join(', ') || config.notifyTo;
+// Inside withActiveRepo: who of the request's repo's team chose that email in
+// Ajustes → Notificaciones (#174), never another repo's; until they choose,
+// its portal.notifyTo in repos.json; NOTIFY_TO when nobody (core/notifications.ts).
+export const teamTo = (event: NotifyEvent) => recipientsFor(activeRepo().productRepo, activeRepo(), event);
 
 // To the dev team, with its issue and the last prototype's diff (or a
 // reported error's reproduction's) when there is one.
 export async function teamMail(request: PortalRequest, user: PortalUser | undefined): Promise<Mail> {
   const file = patchOf(request);
   const patch = file ? await readFile(prototypePatchPath(request.number, file), 'utf8').catch(() => undefined) : undefined;
-  return teamRequestMail(request, user, teamTo(), requestDir(request.number), patch);
+  return { ...teamRequestMail(request, user, await teamTo('pedido-equipo'), requestDir(request.number), patch), team: true };
 }
 
 // A request the team takes now: the person hears right away; the team, with

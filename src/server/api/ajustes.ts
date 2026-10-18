@@ -7,12 +7,14 @@ import { linearKey, teamPeople } from '../../core/linear-api.js';
 import { applySettings, invalidValue, readSettingsSync, settingDef, settingsPath, settingsView, type SettingsFile } from '../../core/settings.js';
 import { withJson } from '../../portal/json-store.js';
 import { readTeam, withTeam, type Member } from './team.js';
+import { EVENTS, eventsOf, isEvent } from '../../core/notifications.js';
 
 // The dashboard's Ajustes (#174), stage 1:
 //   GET  /api/ajustes           the person's profile, and for an admin the settings of General
 //   POST /api/ajustes/perfil    { name?, email?, linear?: { repo, id } }: their own profile (in people.json, team.ts)
 //   POST /api/ajustes/valores   { key, value }: a setting (admins); value null goes back to .env's
 //   GET  /api/ajustes/registro  every change made here, newest first (admins)
+//   POST /api/ajustes/notificaciones  { repo, event, on }: one of their own emails (stage 4)
 //
 // Everything lives in SETTINGS_DATA_DIR: settings.json (core/settings.ts),
 // people.json (the team, team.ts) and registro.jsonl (one line per change,
@@ -77,10 +79,20 @@ export async function linearTeams(entries: RepoEntry[], now = Date.now()) {
   return teams.filter((t) => t !== null);
 }
 
+// Each repo the person sees, with the emails they get from it: what they
+// chose, or the defaults (core/notifications.ts).
+export function notificaciones(member: Member | undefined, entries: RepoEntry[]) {
+  return entries.map((entry) => ({ repo: entry.productRepo, events: eventsOf(member ?? {}, entry.productRepo, entry), chosen: Boolean(member?.notify?.[entry.productRepo]), deploy: Boolean(entry.deploy) }));
+}
+
 export async function ajustesView(login: string, admin: boolean, entries: RepoEntry[]): Promise<unknown> {
+  const member = (await readTeam()).people[login];
   return {
     me: { login, admin },
-    perfil: await profileOf(login),
+    perfil: profile(member),
+    notificaciones: notificaciones(member, entries),
+    // The address itself, only to an admin.
+    ...(admin ? { notifyTo: config.notifyTo } : {}),
     linear: await linearTeams(entries),
     ...(admin ? {
       general: settingsView(readSettingsSync(config.settings.dataDir)),
@@ -179,3 +191,26 @@ export async function readRegistro(): Promise<RegistroEntry[]> {
   return entries.slice(-REGISTRO_MAX).reverse();
 }
 
+
+const EVENT_NAME: Record<string, string> = { 'pedido-equipo': 'pedido para el equipo', 'pedido-revisar': 'pedido para revisar', reunion: 'propuestas de una reunión', bloqueo: 'bloqueos' };
+
+// POST /api/ajustes/notificaciones: only the person's own, only a repo they
+// see. The first change in a repo saves their defaults with it.
+export async function saveNotificacion(login: string, body: Record<string, unknown>, entries: RepoEntry[]): Promise<unknown> {
+  const entry = entries.find((e) => e.productRepo === body.repo);
+  if (!entry) throw new AjustesError('Ese repo no está entre los que ves.');
+  if (!isEvent(body.event)) throw new AjustesError('Ese aviso no existe.');
+  if (typeof body.on !== 'boolean') throw new AjustesError('Falta si lo quieres o no.');
+  const event = body.event;
+  const on = body.on;
+  const changed = await withTeam((team) => {
+    const m: Member = { ...(team.people[login] ?? {}) };
+    const before = eventsOf(m, entry.productRepo, entry);
+    const after = EVENTS.filter((e) => (e === event ? on : before.includes(e)));
+    m.notify = { ...(m.notify ?? {}), [entry.productRepo]: after };
+    team.people[login] = m;
+    return before.includes(event) !== on;
+  });
+  if (changed) await record({ login, what: `Notificaciones · ${entry.productRepo} · ${EVENT_NAME[event]}`, from: on ? 'no' : 'sí', to: on ? 'sí' : 'no' });
+  return { notificaciones: notificaciones((await readTeam()).people[login], entries) };
+}
