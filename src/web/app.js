@@ -104,7 +104,7 @@ function duration(ms) {
 const money = (usd) => (usd < 0.01 ? 'menos de US$0,01' : `US$${usd.toFixed(2).replace('.', ',')}`);
 const pct = (fraction) => `${Math.round(fraction * 100)}%`;
 
-const S = { snap: null, today: null, sel: null, open: [], runIdx: {}, pendingRun: null, filter: null, q: '', itemRuns: {}, run: null, stream: null, detail: {}, view: {}, doc: {}, menu: false, dialog: null, expanded: new Set(), expl: {}, ficha: {}, fichaOpen: {}, fichaFilter: { tipo: 'todas', vp: 'todos' }, antes: {}, oldAfter: new Set(), lightbox: null, fmenu: false, fdialog: null, fdraft: {}, listas: {}, scope: 'all', project: '', attAll: false, extra: {}, newIssue: null, files: {}, fcur: {}, ffold: {}, fexp: {}, fcontent: {}, fq: {}, ftree: false, fcomp: null, fbusy: new Set(), rpanel: null, page: null, portal: { data: null, error: null }, pdialog: null, ped: { list: null, error: null, listAt: 0, detail: {}, n: null, tab: 'act', filter: 'pend', page: 1, run: null, lb: null, patch: {} }, reu: { list: null, error: null, listAt: 0, detail: {}, n: null, tab: null, up: null, run: null, open: {}, retrying: false, form: {}, approving: false }, xpl: { list: null, error: null, listAt: 0, repo: null, app: null, cor: {}, inv: {}, tab: 'corridas', run: null, launched: {} }, xnow: null };
+const S = { snap: null, today: null, sel: null, open: [], runIdx: {}, pendingRun: null, filter: null, q: '', itemRuns: {}, run: null, stream: null, detail: {}, view: {}, doc: {}, menu: false, dialog: null, expanded: new Set(), expl: {}, ficha: {}, fichaOpen: {}, fichaFilter: { tipo: 'todas', vp: 'todos' }, antes: {}, oldAfter: new Set(), lightbox: null, fmenu: false, fdialog: null, fdraft: {}, listas: {}, scope: 'all', project: '', attAll: false, extra: {}, newIssue: null, files: {}, fcur: {}, ffold: {}, fexp: {}, fcontent: {}, fq: {}, ftree: false, fcomp: null, fbusy: new Set(), rpanel: null, page: null, portal: { data: null, error: null }, pdialog: null, ped: { list: null, error: null, listAt: 0, detail: {}, n: null, tab: 'act', gh: 'issue', filter: 'pend', page: 1, run: null, lb: null, patch: {} }, reu: { list: null, error: null, listAt: 0, detail: {}, n: null, tab: null, up: null, run: null, open: {}, retrying: false, form: {}, approving: false }, xpl: { list: null, error: null, listAt: 0, repo: null, app: null, cor: {}, inv: {}, tab: 'corridas', run: null, launched: {} }, xnow: null };
 // The sidebar's Linear filter (#101), remembered per browser.
 try { Object.assign(S, JSON.parse(localStorage.getItem('ronin-scope') ?? '{}')); } catch { /* sin storage */ }
 function saveScope() {
@@ -3051,7 +3051,7 @@ const PED_CLOSED = ['done', 'resolved', 'declined', 'cancelled'];
 // Todos. Null, a separator between the groups.
 const PED_FILTERS = [['pend', 'Pendientes'], null, ['person', 'Esperan a la persona'], ['ronin', 'ronin trabajando'], ['team', 'Esperan al equipo'], null, ['cerrados', 'Cerrados'], ['todos', 'Todos']];
 const PED_PAGE = 25;
-const PED_TABS = [['act', 'Actividad'], ['repro', 'Reproducción'], ['chat', 'Conversación'], ['team', 'Para el equipo'], ['runs', 'Corridas']];
+const PED_TABS = [['act', 'Actividad'], ['repro', 'Reproducción'], ['chat', 'Conversación'], ['team', 'Para el equipo'], ['gh', 'Issue'], ['runs', 'Corridas']];
 // A reported error's tries at reproducing it (#137), and how many it gets.
 const PED_REPRODUCTIONS = 2;
 const PED_ICON = {
@@ -3161,6 +3161,7 @@ function openPedido(n) {
   S.page = 'pedido';
   if (S.ped.n !== n) {
     S.ped.tab = 'act';
+    S.ped.gh = 'issue';
     S.ped.run = null;
   }
   S.ped.n = n;
@@ -3453,16 +3454,55 @@ function pedSideHTML(d) {
   </div>`;
 }
 
+// The request's issue and its PR (#158), read as on their page, from
+// /api/items/<id>/detail, without leaving the request. Acting on them
+// (comments, review, actions) stays on their page.
+const pedGhId = (d) => `${d.repo}#${S.ped.gh === 'pr' && d.pr ? d.pr : d.issue.number}`;
+
+function pedGhHTML(d) {
+  const isPr = Boolean(S.ped.gh === 'pr' && d.pr);
+  const id = pedGhId(d);
+  const prId = d.pr ? `${d.repo}#${d.pr}` : null;
+  // Not in the sidebar (a team issue nobody took): known by its number, as select() does.
+  if (!itemById(id)) S.extra[id] = { id, repo: d.repo, number: isPr ? d.pr : d.issue.number, kind: isPr ? 'pr' : 'issue', title: `#${isPr ? d.pr : d.issue.number}`, status: 'open', runs: 0, listed: false };
+  const entry = S.detail[id];
+  if (!entry?.data && !entry?.loading && !entry?.error) queueMicrotask(() => loadDetail(id));
+  // The PR's checks and review, from the sidebar's issue or PR when it's there.
+  const pr = [itemById(`${d.repo}#${d.issue.number}`), prId && itemById(prId)].map((i) => i?.pr).find((p) => p && p.number === d.pr);
+  const checks = checksChip(pr?.checks);
+  const seg = `<div class="seg"><button data-pgh="issue" aria-pressed="${!isPr}">Issue #${d.issue.number}</button>${d.pr ? `<button data-pgh="pr" aria-pressed="${isPr}">PR #${d.pr}${checks?.[0] === 'crit' ? dotClass('crit') : ''}</button>` : '<button disabled>Sin PR todavía</button>'}</div>`;
+  const dd = entry?.data;
+  const doc = dd && (isPr ? dd.pr : dd.issue);
+  const buttons = `${isPr && doc?.state === 'OPEN' ? '<button class="act-btn" data-pgfiles>Revisar el PR</button>' : ''}<button class="gh" data-pitem="${esc(id)}">Abrir la ficha</button>${doc ? `<a class="gh" href="${esc(doc.url)}" target="_blank" rel="noopener">GitHub ↗</a>` : ''}`;
+  const bar = `<div class="pd-ghbar">${seg}<span class="sp">${buttons}</span></div>`;
+  if (!doc) return bar + `<div class="empty">${entry?.error || dd?.error ? `No se pudo leer de GitHub: ${esc(entry?.error ?? dd.error)}` : 'Cargando de GitHub…'}</div>`;
+  const item = itemById(id);
+  const chips = [];
+  if (isPr && checks) chips.push(checks);
+  if (isPr && doc.mergeable === 'CONFLICTING') chips.push(['crit', `conflictos con ${doc.baseRefName}`]);
+  if (isPr && pr?.reviewDecision === 'APPROVED') chips.push(['ok', 'aprobado']);
+  else if (isPr && pr?.reviewDecision === 'CHANGES_REQUESTED') chips.push(['warn', 'cambios pedidos']);
+  const facts = [];
+  if (!isPr && item?.slices?.length) facts.push(`${item.slices.filter((sl) => sl.status === 'merged').length} de ${item.slices.length} slices mergeadas`);
+  if (isPr && doc.headRefName) facts.push(`${doc.headRefName} → ${doc.baseRefName}`);
+  const entries = conversation(doc);
+  return bar + `<div class="pd-ghhead"><h2>${esc(doc.title)} <span class="n">#${doc.number}</span></h2>
+      <div class="state">${ghPill(item, dd)}${chips.map(([cls, text]) => `<span class="chip ${cls}">${esc(text)}</span>`).join('')}${doc.labels.map((l) => `<span class="chip plain">${esc(l)}</span>`).join('')}${facts.map((f) => `<span>${esc(f)}</span>`).join('')}</div></div>
+    <div class="page pd-ghpage"><div class="meta">${avatar(doc.author)}<b>${esc(doc.author)}</b><span>${esc(when(doc.createdAt))}</span></div>
+      <div class="md">${doc.body.trim() ? md(doc.body, d.repo) : '<p class="m">Sin descripción.</p>'}</div></div>
+    ${entries.length ? `<div class="comments">${entries.map((e) => entryHTML(e, dd, doc, d.repo)).join('')}</div>` : '<p class="m pd-note">Nadie comentó todavía.</p>'}`;
+}
+
 function pedidoHTML() {
   const n = S.ped.n;
   const entry = S.ped.detail[n];
   const d = entry?.data;
   if (!d) return `<div class="today pd">${entry?.error ? `<p class="bad">${esc(entry.error)}</p>` : '<div class="empty">Cargando…</div>'}</div>`;
   const counts = { chat: d.messages.length, runs: d.runs.length, repro: d.bug?.reproductions.length };
-  // Reproducción, only for a reported error.
-  const tabs = PED_TABS.filter(([k]) => k !== 'repro' || d.bug);
+  // Reproducción, only for a reported error; Issue, once it has one, and its PR with it.
+  const tabs = PED_TABS.filter(([k]) => (k !== 'repro' || d.bug) && (k !== 'gh' || d.issue)).map(([k, label]) => [k, k === 'gh' && d.pr ? 'Issue y PR' : label]);
   const tab = tabs.some(([k]) => k === S.ped.tab) ? S.ped.tab : 'act';
-  const body = tab === 'chat' ? pedChatHTML(d) : tab === 'team' ? pedTeamHTML(d) : tab === 'runs' ? pedRunsHTML(d) : tab === 'repro' ? pedReproHTML(d) : pedActivityHTML(d);
+  const body = tab === 'chat' ? pedChatHTML(d) : tab === 'team' ? pedTeamHTML(d) : tab === 'gh' ? pedGhHTML(d) : tab === 'runs' ? pedRunsHTML(d) : tab === 'repro' ? pedReproHTML(d) : pedActivityHTML(d);
   return `<div class="head pd-head"><div class="crumb"><button class="link" data-ppage>Portal de pedidos</button> / <i style="background:${repoColor(d.repo)}"></i>${esc(repoShort(d.repo))} · ${esc(d.appName)}</div>
       <div class="row"><h1>${esc(d.title)} <span class="n">P-${d.number}</span></h1></div>
       <div class="state">${pedChip(d)}${pedBugTag(d)}<span>${esc(d.person)}</span><span class="m">abierto ${esc(ago(d.createdAt))}</span>${d.issue ? `<button class="link" data-pitem="${esc(`${d.repo}#${d.issue.number}`)}">#${d.issue.number}</button>` : ''}${d.pr ? `<button class="link" data-pitem="${esc(`${d.repo}#${d.pr}`)}">PR #${d.pr}</button>` : ''}</div>
@@ -3516,6 +3556,12 @@ function wirePedidos() {
   center.querySelector('[data-ppage]')?.addEventListener('click', openPedidos);
   for (const b of center.querySelectorAll('[data-ptab2]')) b.onclick = () => { S.ped.tab = b.dataset.ptab2; renderCenter(); };
   for (const b of center.querySelectorAll('[data-pitem]')) b.onclick = () => select(b.dataset.pitem);
+  for (const b of center.querySelectorAll('[data-pgh]')) b.onclick = () => { S.ped.gh = b.dataset.pgh; renderCenter(); };
+  center.querySelector('[data-pgfiles]')?.addEventListener('click', () => {
+    const id = pedGhId(S.ped.detail[S.ped.n].data);
+    S.doc[id] = 'files';
+    select(id);
+  });
   for (const b of center.querySelectorAll('[data-prun]')) {
     b.onclick = () => {
       S.ped.tab = 'runs';
@@ -4370,7 +4416,7 @@ async function loadDetail(id) {
     entry.loading = false;
     entry.at = Date.now();
   }
-  if (S.sel === id) renderCenter();
+  if (S.sel === id || (S.page === 'pedido' && S.ped.tab === 'gh')) renderCenter();
 }
 
 async function select(id) {
@@ -4444,6 +4490,8 @@ async function refresh() {
     if (expl && Date.now() - (expl.at ?? 0) > (waiting ? WAITING_EVERY_MS : DETAIL_EVERY_MS)) loadExploration(S.sel);
   }
   if (S.page === 'pedido' && Date.now() - (S.ped.detail[S.ped.n]?.at ?? 0) > PEDIDO_EVERY_MS) loadPedido(S.ped.n);
+  const ped = S.page === 'pedido' && S.ped.tab === 'gh' ? S.ped.detail[S.ped.n]?.data : null;
+  if (ped?.issue && Date.now() - (S.detail[pedGhId(ped)]?.at ?? 0) > DETAIL_EVERY_MS) loadDetail(pedGhId(ped));
   if (S.page === 'pedidos' && Date.now() - S.ped.listAt > PEDIDO_EVERY_MS) loadPedidos();
   if (S.page === 'reunion' && Date.now() - (S.reu.detail[S.reu.n]?.at ?? 0) > PEDIDO_EVERY_MS) loadReunion(S.reu.n);
   if (S.page === 'reuniones' && Date.now() - S.reu.listAt > PEDIDO_EVERY_MS) loadReuniones();

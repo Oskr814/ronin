@@ -851,6 +851,19 @@ button.brow:hover { background: var(--hover); }
 .pd-pager button[aria-current="page"] { background: var(--raise); color: var(--ink); box-shadow: inset 0 0 0 1px var(--rule); }
 .pd-pager button:disabled { opacity: .35; cursor: default; }
 .pd-pager .gap { padding: 0 4px; color: var(--faint); }
+.pd-ghbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+.pd-ghbar .sp { margin-left: auto; display: flex; gap: 6px; align-items: center; }
+.pd-ghbar .seg { display: inline-flex; border: 1px solid var(--rule); border-radius: 7px; padding: 2px; gap: 2px; }
+.pd-ghbar .seg button { padding: 3px 10px; border-radius: 5px; font-size: 12.5px; color: var(--muted); display: inline-flex; gap: 6px; align-items: center; }
+.pd-ghbar .seg button[aria-pressed="true"] { background: var(--raise); color: var(--ink); box-shadow: inset 0 0 0 1px var(--rule); }
+.pd-ghbar .seg button:disabled { cursor: default; opacity: .6; }
+.pd-ghbar .seg .dot { margin: 0; }
+.pd-ghhead { border: 1px solid var(--rule); border-radius: 10px; background: var(--panel); padding: 12px 14px; }
+.pd-ghhead h2 { margin: 0; font-size: 15.5px; font-weight: 600; line-height: 1.35; }
+.pd-ghhead h2 .n { color: var(--muted); font-weight: 400; }
+.pd-ghhead .state { display: flex; flex-wrap: wrap; gap: 6px 10px; margin-top: 8px; font-size: 12.5px; color: var(--ink-2); align-items: center; }
+.pd-main .pd-ghpage { padding: 16px 0 4px; max-width: none; }
+.pd-main .comments { padding: 12px 0 0; max-width: none; }
 .pd-t td.pn { font: 12px "JetBrains Mono", ui-monospace, monospace; color: var(--muted); width: 1%; white-space: nowrap; }
 .pd-t .tt { font-weight: 500; }
 .pd-t .pd-gh { font: 12px "JetBrains Mono", ui-monospace, monospace; color: var(--ink-2); white-space: nowrap; }
