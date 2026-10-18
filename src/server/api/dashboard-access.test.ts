@@ -190,7 +190,7 @@ describe('a session that sees only some repos', () => {
     const view = await call('/api/ajustes');
     expect(view.status).toBe(200);
     expect(view.body.me).toEqual({ login: 'valeria', admin: false });
-    expect(view.body.general).toBeUndefined();
+    expect(view.body.valores).toBeUndefined();
     expect((await call('/api/ajustes/registro')).status).toBe(403);
     expect((await call('/api/ajustes/valores', 'POST', { key: 'portal.dailyLimit', value: 50 })).status).toBe(403);
   });

@@ -6,7 +6,7 @@ import { join } from 'node:path';
 const dir = mkdtempSync(join(tmpdir(), 'ronin-usuarios-'));
 const config = vi.hoisted(() => ({ settings: { dataDir: '' }, githubToken: 'ronin', dashboard: { admins: [] as string[], allowedUsers: [] as string[] } }));
 config.settings.dataDir = dir;
-vi.mock('../../core/config.js', () => ({ config }));
+vi.mock('../../core/config.js', () => ({ config, taskEnvModel: () => undefined, taskEnvEffort: () => undefined, taskDefaultModel: (t: string) => (t === 'update-changelog' ? 'haiku' : undefined) }));
 vi.mock('../../core/logger.js', () => ({ log: { info: vi.fn(), error: vi.fn() } }));
 
 const { readRegistro } = await import('./ajustes.js');

@@ -205,6 +205,9 @@ export const config = {
   settings: {
     dataDir: resolve(process.env.SETTINGS_DATA_DIR || 'settings-data'),
   },
+  // Per task type, the model and effort chosen in Ajustes → Agentes (#174),
+  // put in place by applySettings below.
+  taskOverrides: {} as Record<string, { model?: string; effort?: string }>,
 } as const;
 
 // The values changed in Ajustes win over .env (core/settings.ts). Applied
@@ -237,18 +240,24 @@ function taskEnv(prefix: string, taskType: string): string | undefined {
 }
 
 // Most specific first: the active repo's own per-task value (its `agent`
-// block in repos.json, for an account with tighter limits), then
-// AGENT_MODEL_<TASK_TYPE> / AGENT_EFFORT_<TASK_TYPE> (e.g.
-// AGENT_MODEL_UPDATE_CHANGELOG=sonnet), then TASK_MODEL_DEFAULTS, then the
-// repo's default, then the global one. Empty means "whatever the Claude
-// config says" at every level.
+// block in repos.json, for an account with tighter limits), then the one
+// chosen in Ajustes → Agentes (#174), then AGENT_MODEL_<TASK_TYPE> /
+// AGENT_EFFORT_<TASK_TYPE> (e.g. AGENT_MODEL_UPDATE_CHANGELOG=sonnet), then
+// TASK_MODEL_DEFAULTS, then the repo's default, then the global one. Empty
+// means "whatever the Claude config says" at every level.
 export function agentModelFor(taskType: string): string {
-  return currentRepo()?.agent?.models?.[taskType] ?? taskEnv('AGENT_MODEL', taskType) ?? TASK_MODEL_DEFAULTS[taskType] ?? defaultAgentModel();
+  return currentRepo()?.agent?.models?.[taskType] ?? config.taskOverrides[taskType]?.model ?? taskEnv('AGENT_MODEL', taskType) ?? TASK_MODEL_DEFAULTS[taskType] ?? defaultAgentModel();
 }
 
 export function agentEffortFor(taskType: string): string {
-  return currentRepo()?.agent?.efforts?.[taskType] ?? taskEnv('AGENT_EFFORT', taskType) ?? defaultAgentEffort();
+  return currentRepo()?.agent?.efforts?.[taskType] ?? config.taskOverrides[taskType]?.effort ?? taskEnv('AGENT_EFFORT', taskType) ?? defaultAgentEffort();
 }
+
+// What a task type runs with when nothing more specific says, for Ajustes:
+// .env's per-task value, or its own default.
+export const taskEnvModel = (taskType: string) => taskEnv('AGENT_MODEL', taskType);
+export const taskEnvEffort = (taskType: string) => taskEnv('AGENT_EFFORT', taskType);
+export const taskDefaultModel = (taskType: string) => TASK_MODEL_DEFAULTS[taskType];
 
 export function defaultAgentModel(): string {
   return currentRepo()?.agent?.model ?? config.agentModel;

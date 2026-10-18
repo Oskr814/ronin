@@ -1277,3 +1277,5 @@ select.aj-in { width: auto; min-width: 180px; }
 .aj-app .aj-in { width: 100%; min-width: 0; }
 .ok-t { color: var(--ok); }
 @media (max-width: 760px) { .aj-app { grid-template-columns: 1fr 1fr; } }
+.aj-tasks select.aj-in { min-width: 0; width: 100%; }
+.aj-tasks td:first-child { width: 40%; }

@@ -112,7 +112,7 @@ function duration(ms) {
 const money = (usd) => (usd < 0.01 ? 'menos de US$0,01' : `US$${usd.toFixed(2).replace('.', ',')}`);
 const pct = (fraction) => `${Math.round(fraction * 100)}%`;
 
-const S = { snap: null, today: null, sel: null, open: [], runIdx: {}, pendingRun: null, filter: null, q: '', itemRuns: {}, run: null, stream: null, detail: {}, view: {}, doc: {}, menu: false, dialog: null, expanded: new Set(), expl: {}, ficha: {}, fichaOpen: {}, fichaFilter: { tipo: 'todas', vp: 'todos' }, antes: {}, oldAfter: new Set(), lightbox: null, fmenu: false, fdialog: null, fdraft: {}, listas: {}, scope: 'all', project: '', attAll: false, extra: {}, newIssue: null, files: {}, fcur: {}, ffold: {}, fexp: {}, fcontent: {}, fq: {}, ftree: false, fcomp: null, fbusy: new Set(), rpanel: null, revSent: {}, page: null, portal: { data: null, error: null }, ped: { list: null, error: null, listAt: 0, detail: {}, n: null, tab: 'act', gh: 'issue', filter: 'pend', page: 1, run: null, lb: null, patch: {} }, reu: { list: null, error: null, listAt: 0, detail: {}, n: null, tab: null, up: null, run: null, open: {}, retrying: false, form: {}, approving: false }, xpl: { list: null, error: null, listAt: 0, repo: null, app: null, cor: {}, inv: {}, tab: 'corridas', run: null, launched: {} }, xnow: null, dep: { list: null, error: null, listAt: 0, dlg: null }, aj: { data: null, error: null, sec: 'perfil', registro: null, users: null, user: null, login: null, cuenta: null, f: 'todos', q: '', add: null, link: null, busy: false, repos: null, repo: null } };
+const S = { snap: null, today: null, sel: null, open: [], runIdx: {}, pendingRun: null, filter: null, q: '', itemRuns: {}, run: null, stream: null, detail: {}, view: {}, doc: {}, menu: false, dialog: null, expanded: new Set(), expl: {}, ficha: {}, fichaOpen: {}, fichaFilter: { tipo: 'todas', vp: 'todos' }, antes: {}, oldAfter: new Set(), lightbox: null, fmenu: false, fdialog: null, fdraft: {}, listas: {}, scope: 'all', project: '', attAll: false, extra: {}, newIssue: null, files: {}, fcur: {}, ffold: {}, fexp: {}, fcontent: {}, fq: {}, ftree: false, fcomp: null, fbusy: new Set(), rpanel: null, revSent: {}, page: null, portal: { data: null, error: null }, ped: { list: null, error: null, listAt: 0, detail: {}, n: null, tab: 'act', gh: 'issue', filter: 'pend', page: 1, run: null, lb: null, patch: {} }, reu: { list: null, error: null, listAt: 0, detail: {}, n: null, tab: null, up: null, run: null, open: {}, retrying: false, form: {}, approving: false }, xpl: { list: null, error: null, listAt: 0, repo: null, app: null, cor: {}, inv: {}, tab: 'corridas', run: null, launched: {} }, xnow: null, dep: { list: null, error: null, listAt: 0, dlg: null }, aj: { data: null, error: null, sec: 'perfil', registro: null, users: null, user: null, login: null, cuenta: null, f: 'todos', q: '', add: null, link: null, busy: false, repos: null, repo: null, conex: null } };
 // The sidebar's Linear filter (#101), remembered per browser.
 try { Object.assign(S, JSON.parse(localStorage.getItem('ronin-scope') ?? '{}')); } catch { /* sin storage */ }
 function saveScope() {
@@ -4532,6 +4532,10 @@ const AJ_SECTIONS = {
   notificaciones: { name: 'Notificaciones', icon: '<path d="M6 16V11a6 6 0 0 1 12 0v5l2 2H4zM10 21h4"/>' },
   general: { name: 'General', icon: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1"/>', admin: true },
   repos: { name: 'Repos', icon: '<path d="M5 4h11l3 3v13H5zM9 9h6M9 13h6"/>', admin: true },
+  agentes: { name: 'Agentes', icon: '<rect x="5" y="8" width="14" height="11" rx="2"/><path d="M12 4v4M9 13h.01M15 13h.01"/>', admin: true },
+  exploracion: { name: 'Exploración', icon: '<circle cx="11" cy="11" r="6"/><path d="m20 20-4.5-4.5M14 8l-2 4-4 2 2-4z"/>', admin: true },
+  previews: { name: 'Previews', icon: '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>', admin: true },
+  conexiones: { name: 'Conexiones', icon: '<path d="M9 3v5M15 3v5M6 8h12v3a6 6 0 0 1-12 0zM12 17v4"/>', admin: true },
   usuarios: { name: 'Usuarios', icon: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c1-3.5 3.5-5.5 6.5-5.5s5.5 2 6.5 5.5M16 4.5a3.5 3.5 0 0 1 0 7M18 14.5c2 .7 3.2 2.6 3.7 5.5"/>', admin: true },
   registro: { name: 'Registro', icon: '<path d="M4 6h16M4 12h16M4 18h10"/>', admin: true },
 };
@@ -4541,7 +4545,31 @@ const AJ_SETTINGS = {
   'dashboard.githubTtlSeconds': ['Datos de GitHub', 'Cuánto se reusa lo que el tablero leyó de GitHub antes de volver a pedirlo.', 's'],
   'portal.dailyLimit': ['Pedidos por día', 'Los que puede empezar cada persona del portal por día, salvo que su cuenta tenga otro tope.', 'pedidos'],
   'portal.sessionDays': ['Duración de la sesión del portal', 'Las sesiones que ya están abiertas no cambian.', 'días'],
+  'agent.model': ['Modelo', 'El de todas las corridas, salvo las que tienen el suyo abajo o en su repo. "(lo que diga Claude)": el de la configuración de la cuenta.', ''],
+  'agent.effort': ['Esfuerzo', '', ''],
+  'agent.reviewWorkerModel': ['Modelo de los revisores', 'Los agentes que juntan candidatos en la review de PRs externos; el orquestador usa el modelo de arriba.', ''],
+  'agent.taskTimeoutMinutes': ['Tope de una corrida', 'Pasado este tiempo, una corrida de claude -p se considera colgada y se corta.', 'min'],
+  'agent.handlerTimeoutMinutes': ['Tope de un webhook', 'Todo lo que hace un evento de GitHub: esperar su turno, un lugar y cada agente que lance.', 'min'],
+  'tick.concurrency': ['Tareas por repo', 'Las que corren juntas por repo, de todos los flujos (issues, reviews, /spike, changelog, exploración).', 'a la vez'],
+  'tick.externalReviewConcurrency': ['De ellas, reviews externas', 'Cada review es un orquestador con sus revisores: tres juntas agotaron el límite de la cuenta.', 'a la vez'],
+  'retry.e2e': ['La misma falla de CI', 'Veces que se intenta arreglar una misma falla antes de bloquear.', 'veces'],
+  'retry.e2eHard': ['Tope de intentos con CI rojo', 'Aunque cada intento falle distinto.', 'intentos'],
+  'retry.checksPending': ['CI sin terminar', 'Ticks que se espera un CI pendiente antes de bloquear (60 ≈ 5 h).', 'ticks'],
+  'retry.slice': ['Una slice', '', 'intentos'],
+  'retry.retarget': ['Cambiar la base de un PR', '', 'intentos'],
+  'retry.issueError': ['Un issue que da error', '', 'intentos'],
+  'explore.timezone': ['Zona horaria', 'La ventana nocturna, la fecha de cada corrida y la semana de su PR.', ''],
+  'explore.nightWindow': ['Ventana nocturna', 'HH:MM-HH:MM; puede cruzar la medianoche. Pasado el fin no empieza ninguna función nueva.', ''],
+  'explore.functionsPerNight': ['Funciones por noche', 'El presupuesto: usa el límite semanal de Claude de la cuenta, el mismo del trabajo de día.', 'funciones'],
+  'explore.functionsPerRun': ['Funciones por corrida de /explore', '', 'funciones'],
+  'explore.findingsPerRun': ['Hallazgos que se publican', 'Los más graves primero.', 'fichas'],
+  'explore.ideasPerRun': ['Ideas que se publican', 'Nunca en el lugar de un hallazgo.', 'fichas'],
+  'explore.publishEvidence': ['Subir las capturas', 'A la rama ronin/evidence del repo del producto, para verlas en las fichas y el PR.', ''],
+  'preview.prepareData': ['Preparar datos para probar', 'Un agente lee el PR y deja los datos para probarlo, además de los seeds.', ''],
+  'preview.ttlMinutes': ['Cuánto vive una preview', 'Desde que se levanta. 0: hasta /preview stop o que se cierre el PR.', 'min'],
+  'preview.maxPerRepo': ['Previews a la vez', 'Por repo; la siguiente se rechaza.', 'por repo'],
 };
+const ajWord = (value) => (value === true ? 'sí' : value === false ? 'no' : value === '' ? '(lo que diga Claude)' : String(value));
 const ajAllowed = (sec) => AJ_SECTIONS[sec] && (!AJ_SECTIONS[sec].admin || S.snap?.access.admin);
 
 // `login`: one of the team; `cuenta`: one of the portal's accounts (#174,
@@ -4572,6 +4600,7 @@ async function loadAjustes() {
     S.aj.data = await api('/api/ajustes');
     if (S.aj.sec === 'registro') S.aj.registro = (await api('/api/ajustes/registro')).registro;
     if (S.aj.sec === 'repos') S.aj.repos = await api('/api/ajustes/repos');
+    if (S.aj.sec === 'conexiones') S.aj.conex = await api('/api/ajustes/conexiones');
     if (S.aj.sec === 'usuarios' && S.aj.login) S.aj.user = await api(`/api/ajustes/usuarios/${encodeURIComponent(S.aj.login)}`);
     else if (S.aj.sec === 'usuarios' && !S.aj.cuenta) S.aj.users = await api('/api/ajustes/usuarios');
     // The portal's accounts (role Usuario), when the portal is set up.
@@ -4588,7 +4617,7 @@ function ajNavHTML() {
   const button = (sec) => `<button data-aj="${sec}" aria-pressed="${S.aj.sec === sec && !(sec === 'repos' && S.aj.repo)}"><svg viewBox="0 0 24 24">${AJ_SECTIONS[sec].icon}</svg>${AJ_SECTIONS[sec].name}</button>`;
   return `<button data-aj-back><svg viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></svg>Volver al tablero</button>
     <div class="aj-grp">Tu cuenta <span>${esc(S.snap.me)}</span></div>${button('perfil')}${button('notificaciones')}
-    ${S.snap.access.admin ? `<div class="aj-grp">Administración</div>${button('general')}${button('usuarios')}${button('repos')}${S.snap.repos.map((repo) => `<button class="aj-sub" data-aj="repos" data-ajrepo="${esc(repo)}" aria-pressed="${S.aj.sec === 'repos' && S.aj.repo === repo}"><i style="background:${repoColor(repo)}"></i>${esc(repoShort(repo))}</button>`).join('')}${button('registro')}` : ''}`;
+    ${S.snap.access.admin ? `<div class="aj-grp">Administración</div>${button('general')}${button('usuarios')}${button('repos')}${S.snap.repos.map((repo) => `<button class="aj-sub" data-aj="repos" data-ajrepo="${esc(repo)}" aria-pressed="${S.aj.sec === 'repos' && S.aj.repo === repo}"><i style="background:${repoColor(repo)}"></i>${esc(repoShort(repo))}</button>`).join('')}${button('agentes')}${button('exploracion')}${button('previews')}${button('conexiones')}${button('registro')}` : ''}`;
 }
 
 function wireAjNav() {
@@ -4605,9 +4634,14 @@ function ajSettingRow(s) {
   const [label, desc, unit] = AJ_SETTINGS[s.key] ?? [s.key, '', ''];
   const from = (source) => (source === 'env' ? '.env dice' : 'por defecto');
   const src = s.source === 'tablero'
-    ? `<span class="aj-ov">● Cambiado en el tablero</span><span>${from(s.baseSource)} ${s.base}</span><button data-ajreset="${esc(s.key)}">${s.baseSource === 'env' ? 'Volver al de .env' : 'Volver al de por defecto'}</button>`
+    ? `<span class="aj-ov">● Cambiado en el tablero</span><span>${from(s.baseSource)} ${esc(ajWord(s.base))}</span><button data-ajreset="${esc(s.key)}">${s.baseSource === 'env' ? 'Volver al de .env' : 'Volver al de por defecto'}</button>`
     : `${s.source === 'env' ? '<span class="aj-env">.env</span>' : '<span>Por defecto</span>'}<code>${esc(s.env)}</code>`;
-  return ajRow(esc(label), esc(desc), `<input class="aj-num" type="number" min="${s.min}" max="${s.max}" step="1" data-ajkey="${esc(s.key)}" value="${s.value}" aria-label="${esc(label)}"><span class="aj-unit">${esc(unit)}</span>`, src);
+  const key = esc(s.key);
+  const ctl = s.type === 'bool' ? `<button class="aj-sw" role="switch" aria-checked="${s.value}" data-ajkey="${key}" aria-label="${esc(label)}"></button>`
+    : s.type === 'enum' ? `<select class="aj-in" data-ajkey="${key}" aria-label="${esc(label)}">${[...new Set([...s.options, s.value])].map((o) => `<option value="${esc(o)}" ${o === s.value ? 'selected' : ''}>${esc(ajWord(o))}</option>`).join('')}</select>`
+      : s.type === 'text' ? `<input class="aj-in mono" data-ajkey="${key}" value="${esc(s.value)}" aria-label="${esc(label)}">`
+        : `<input class="aj-num" type="number" min="${s.min}" max="${s.max}" step="1" data-ajkey="${key}" value="${s.value}" aria-label="${esc(label)}"><span class="aj-unit">${esc(unit)}</span>`;
+  return ajRow(esc(label), esc(desc), ctl, src);
 }
 
 // The emails ronin sends the team (#174, stage 4), each person choosing theirs repo by repo.
@@ -4639,13 +4673,59 @@ const AJ_PAGES = {
       ${ajSec('Interfaz', ajRow('Tema', 'Solo en este navegador.', `<div class="aj-seg"><button data-ajtheme="dark" aria-pressed="${dark}">Oscuro</button><button data-ajtheme="light" aria-pressed="${!dark}">Claro</button></div>`))}`;
   },
   general(d) {
-    const row = (key) => ajSettingRow(d.general.find((s) => s.key === key));
+    const row = ajSettingOf(d);
     return `<h1>General</h1><p class="lead">El tablero y el portal de pedidos. Un cambio vale al momento, sin reiniciar, y queda en el <a href="/ajustes/registro" data-aj-link="registro">Registro</a>.</p>
       ${ajSec('Tablero', ajFixed('Dirección', esc(d.dashboard.url || '—'), 'DASHBOARD_URL') + row('dashboard.sessionDays') + row('dashboard.githubTtlSeconds'))}
-      ${ajSec('Portal de pedidos', ajFixed('Dirección', esc(d.portal.url || '—'), 'PORTAL_URL') + row('portal.dailyLimit') + row('portal.sessionDays'), 'Las cuentas del portal siguen en <i>Pedidos del portal → Usuarios</i>.')}`;
+      ${ajSec('Portal de pedidos', ajFixed('Dirección', esc(d.portal.url || '—'), 'PORTAL_URL') + row('portal.dailyLimit') + row('portal.sessionDays'), 'Las cuentas del portal están en <a href="/ajustes/usuarios" data-aj-link="usuarios">Usuarios</a>, con el rol Usuario.')}
+      ${ajSec('Runner', ajFixed('Runner', esc(d.fixed.runnerId), 'RUNNER_ID') + ajFixed('Cuenta de GitHub de ronin', esc(d.fixed.githubLogin), 'RONIN_GITHUB_LOGIN'))}`;
   },
   repos() {
     return S.aj.repo ? ajRepoHTML() : ajReposHTML();
+  },
+  agentes(d) {
+    const row = ajSettingOf(d);
+    const general = (key) => ajWord(d.valores.find((s) => s.key === key).value);
+    const tareas = d.tareas.map((t) => {
+      const fallbackModel = t.envModel ?? t.defaultModel;
+      const fallback = (value, def, kind) => (value !== null ? `${ajWord(value)} (.env)` : def ? `${def} (por defecto)` : `General (${general(kind)})`);
+      return `<tr><td>${esc(typeName(t.task))}<small class="mono">${esc(t.task)}</small></td>
+        <td><select class="aj-in" data-ajtask="${esc(t.task)}" data-f="model" aria-label="Modelo de ${esc(t.task)}"><option value="">${esc(fallback(t.envModel, t.defaultModel, 'agent.model'))}</option>${['opus', 'sonnet', 'haiku'].map((m) => `<option ${t.model === m ? 'selected' : ''}>${m}</option>`).join('')}</select></td>
+        <td><select class="aj-in" data-ajtask="${esc(t.task)}" data-f="effort" aria-label="Esfuerzo de ${esc(t.task)}"><option value="">${esc(fallback(t.envEffort, null, 'agent.effort'))}</option>${['low', 'medium', 'high', 'xhigh', 'max'].map((m) => `<option ${t.effort === m ? 'selected' : ''}>${m}</option>`).join('')}</select></td></tr>`;
+    }).join('');
+    return `<h1>Agentes</h1><p class="lead">Las corridas headless de <code>claude -p</code>. Cada tick y cada webhook leen estos valores al empezar: un cambio vale desde la próxima corrida, sin reiniciar.</p>
+      ${ajSec('Modelo', row('agent.model') + row('agent.effort') + row('agent.reviewWorkerModel'))}
+      <section class="aj-sec"><h2>Por tipo de tarea</h2><p class="aj-d">Gana sobre el de arriba y sobre <code>AGENT_MODEL_&lt;TIPO&gt;</code> de .env. Un repo puede tener los suyos en <a href="/ajustes/repos" data-aj-link="repos">Repos</a>.</p>
+        <div class="aj-card"><table class="aj-tbl aj-tasks"><thead><tr><th>Tarea</th><th>Modelo</th><th>Esfuerzo</th></tr></thead><tbody>${tareas}</tbody></table></div></section>
+      ${ajSec('Tiempos', row('agent.taskTimeoutMinutes') + row('agent.handlerTimeoutMinutes'))}
+      ${ajSec('Concurrencia', row('tick.concurrency') + row('tick.externalReviewConcurrency'))}
+      ${ajSec('Antes de bloquear', row('retry.e2e') + row('retry.e2eHard') + row('retry.checksPending') + row('retry.slice') + row('retry.retarget') + row('retry.issueError'), 'Cuántas veces intenta ronin antes de pedir ayuda (docs/BLOCKING.md).')}`;
+  },
+  exploracion(d) {
+    const row = ajSettingOf(d);
+    return `<h1>Exploración</h1><p class="lead">La exploración nocturna y <code>/explore</code>. Qué apps se exploran se elige en cada repo, en <a href="/ajustes/repos" data-aj-link="repos">Repos</a>.</p>
+      ${ajSec('Noche', row('explore.timezone') + row('explore.nightWindow') + row('explore.functionsPerNight'))}
+      ${ajSec('Cada corrida', row('explore.functionsPerRun') + row('explore.findingsPerRun') + row('explore.ideasPerRun') + row('explore.publishEvidence'))}`;
+  },
+  previews(d) {
+    const row = ajSettingOf(d);
+    return `<h1>Previews</h1><p class="lead"><code>/preview</code> en un PR levanta la app en la tailnet.</p>
+      ${ajSec('Previews', row('preview.prepareData') + row('preview.ttlMinutes') + row('preview.maxPerRepo')
+        + ajRow('Puertos', 'Lo único que la política de Tailscale le abre a alguien de afuera: se cambian juntos, por eso no se tocan aquí.', `<span class="aj-ro">${esc(d.fixed.previewPortRange)}</span>`, '<span class="aj-env">.env</span><code>PREVIEW_PORT_RANGE</code><span>· se cambia en el servidor</span>'))}`;
+  },
+  conexiones() {
+    const c = S.aj.conex;
+    if (!c) return '<h1>Conexiones</h1><div class="empty">Leyendo…</div>';
+    const st = (ok, yes = 'Configurado', no = 'Falta') => (ok ? `<span class="ok-t">● ${esc(yes)}</span>` : `<span class="bad">○ ${esc(no)}</span>`);
+    const env = (name) => `<span class="aj-env">.env</span><code>${esc(name)}</code><span>· se cambia en el servidor</span>`;
+    const days = c.github.expires ? Math.round((Date.parse(c.github.expires) - Date.now()) / 86_400_000) : null;
+    return `<h1>Conexiones</h1><p class="lead">Las credenciales viven en <code>.env</code> del servidor y nunca pasan por el tablero: aquí solo se ve si están y si responden. Linear se configura en cada repo.</p>
+      ${ajSec('GitHub', ajRow('Token de ronin', `PAT fine-grained de la cuenta ${esc(c.github.login ?? 'de ronin')}.`, c.github.ok ? st(true, days !== null ? `Responde · vence en ${days} días` : 'Responde') : st(false, '', c.github.error ?? 'No responde'), env('RONIN_GITHUB_TOKEN'))
+        + ajRow('OAuth App del tablero', 'Con la que se entra al tablero.', st(c.oauth), env('DASHBOARD_GITHUB_CLIENT_ID / _SECRET'))
+        + ajRow('Secreto de los webhooks', '', st(c.webhookSecret), env('WEBHOOK_SECRET')))}
+      ${ajSec('Correo', ajRow('Gmail', 'El remitente de todos los correos de ronin.', `<span class="aj-ro">${esc(c.gmail.user)}</span>`, `${c.gmail.password ? '' : '<span class="bad">○ Falta la contraseña de aplicación</span>'}<span class="aj-env">.env</span><code>GMAIL_USER / GMAIL_APP_PASSWORD</code>`)
+        + ajRow('Probar', 'Te manda un correo de prueba a ti, al de tu Perfil.', `<button class="btn-s" data-ajtestmail ${S.aj.busy ? 'disabled' : ''}>${S.aj.busy ? 'Mandando…' : 'Mandar prueba'}</button>`))}
+      ${ajSec('Sesiones', ajRow('Firma del tablero', 'Cambiarla cierra todas las sesiones.', st(c.sessions.dashboard), env('DASHBOARD_SESSION_SECRET'))
+        + ajRow('Firma del portal', '', st(c.sessions.portal, 'Configurado', 'Falta: el portal está apagado'), env('PORTAL_SESSION_SECRET')))}`;
   },
   usuarios() {
     return S.aj.cuenta ? ajCuentaHTML() : S.aj.login ? ajUserHTML() : ajUsersHTML();
@@ -4658,7 +4738,8 @@ const AJ_PAGES = {
   },
 };
 // "General · portal.dailyLimit" reads as the setting's name.
-const ajWhat = (what) => what.replace(/^General · (.+)$/, (m, key) => (AJ_SETTINGS[key] ? `General · ${AJ_SETTINGS[key][0]}` : m));
+const ajWhat = (what) => what.replace(/^(\S+) · ([\w.]+)$/, (m, sec, key) => (AJ_SETTINGS[key] ? `${sec} · ${AJ_SETTINGS[key][0]}` : m));
+const ajSettingOf = (d) => (key) => ajSettingRow(d.valores.find((s) => s.key === key));
 
 // Ajustes → Usuarios (#174, stage 2): the team, their role and what each
 // can do repo by repo, never more than GitHub gives.
@@ -5065,12 +5146,40 @@ function ajustesHTML() {
 
 function wireAjustes() {
   const center = $('#center');
-  for (const input of center.querySelectorAll('[data-ajkey]')) input.onchange = () => {
-    const value = Number(input.value);
-    ajSetValue(input.dataset.ajkey, input.value.trim() === '' || !Number.isFinite(value) ? NaN : value);
-  };
+  for (const el of center.querySelectorAll('[data-ajkey]')) {
+    if (el.classList.contains('aj-sw')) el.onclick = () => ajSetValue(el.dataset.ajkey, el.getAttribute('aria-checked') !== 'true');
+    else if (el.type === 'number') el.onchange = () => {
+      const value = Number(el.value);
+      ajSetValue(el.dataset.ajkey, el.value.trim() === '' || !Number.isFinite(value) ? NaN : value);
+    };
+    else el.onchange = () => ajSetValue(el.dataset.ajkey, el.value);
+  }
   for (const b of center.querySelectorAll('[data-ajreset]')) b.onclick = () => ajSetValue(b.dataset.ajreset, null);
   for (const input of center.querySelectorAll('[data-ajme]')) input.onchange = () => ajSaveProfile({ [input.dataset.ajme]: input.value });
+  for (const el of center.querySelectorAll('[data-ajtask]')) el.onchange = async () => {
+    try {
+      S.aj.data.tareas = (await api('/api/ajustes/tareas', { method: 'POST', body: JSON.stringify({ task: el.dataset.ajtask, [el.dataset.f]: el.value || null }) })).tareas;
+      toast('Guardado. Vale desde la próxima corrida.');
+    } catch (error) {
+      if (error instanceof Unauthorized) return showLogin();
+      toast(`No se guardó. ${error.message}`);
+    }
+    center._html = null;
+    renderCenter();
+  };
+  center.querySelector('[data-ajtestmail]')?.addEventListener('click', async () => {
+    S.aj.busy = true;
+    renderCenter();
+    try {
+      toast(`Listo: mira tu correo (${(await api('/api/ajustes/conexiones/correo', { method: 'POST', body: '{}' })).to}).`);
+    } catch (error) {
+      if (error instanceof Unauthorized) return showLogin();
+      toast(error.message);
+    }
+    S.aj.busy = false;
+    $('#center')._html = null;
+    renderCenter();
+  });
   for (const b of center.querySelectorAll('[data-ajev]')) b.onclick = async () => {
     try {
       S.aj.data.notificaciones = (await api('/api/ajustes/notificaciones', { method: 'POST', body: JSON.stringify({ repo: b.dataset.ajev, event: b.dataset.e, on: b.getAttribute('aria-checked') !== 'true' }) })).notificaciones;
@@ -5102,8 +5211,8 @@ async function ajSetValue(key, value) {
   try {
     if (Number.isNaN(value)) throw new Error('Tiene que ser un número entero.');
     const { setting } = await api('/api/ajustes/valores', { method: 'POST', body: JSON.stringify({ key, value }) });
-    S.aj.data.general = S.aj.data.general.map((s) => (s.key === key ? setting : s));
-    toast(value === null ? `${AJ_SETTINGS[key]?.[0] ?? key}: vuelve al de ${setting.source === 'env' ? '.env' : 'por defecto'} (${setting.value}).` : 'Guardado. Vale desde ahora.');
+    S.aj.data.valores = S.aj.data.valores.map((s) => (s.key === key ? setting : s));
+    toast(value === null ? `${AJ_SETTINGS[key]?.[0] ?? key}: vuelve al de ${setting.source === 'env' ? '.env' : 'por defecto'} (${ajWord(setting.value)}).` : 'Guardado. Vale desde ahora.');
   } catch (error) {
     if (error instanceof Unauthorized) return showLogin();
     toast(`No se guardó. ${error.message}`);
