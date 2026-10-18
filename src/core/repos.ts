@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { config } from './config.js';
-import type { RepoEntry, AgentDefaults, PortalRepoConfig } from './repo-context.js';
+import type { RepoEntry, AgentDefaults, DeployConfig, PortalRepoConfig } from './repo-context.js';
 
 export async function loadRepos(): Promise<RepoEntry[]> {
   let raw: string;
@@ -40,7 +40,7 @@ function validateEntry(entry: unknown, index: number): RepoEntry {
   if (typeof entry !== 'object' || entry === null) {
     throw new Error(`${config.reposConfigPath}[${index}] no es un objeto`);
   }
-  const { productRepo, productRepoPath, claudeConfigDir, worktreeBaseRef, changelogRepo, changelogRepoPath, explore, agent, linear, portal } = entry as Record<string, unknown>;
+  const { productRepo, productRepoPath, claudeConfigDir, worktreeBaseRef, changelogRepo, changelogRepoPath, explore, agent, linear, portal, deploy } = entry as Record<string, unknown>;
   if (typeof productRepo !== 'string' || productRepo.length === 0) {
     throw new Error(`${config.reposConfigPath}[${index}].productRepo falta o no es un string`);
   }
@@ -71,7 +71,18 @@ function validateEntry(entry: unknown, index: number): RepoEntry {
     ...(agent !== undefined ? { agent: validateAgent(agent, `${config.reposConfigPath}[${index}].agent`) } : {}),
     ...(linear !== undefined ? { linear: validateLinear(linear, `${config.reposConfigPath}[${index}].linear`) } : {}),
     ...(portal !== undefined ? { portal: validatePortal(portal, `${config.reposConfigPath}[${index}].portal`) } : {}),
+    ...(deploy !== undefined ? { deploy: validateDeploy(deploy, `${config.reposConfigPath}[${index}].deploy`) } : {}),
   };
+}
+
+function validateDeploy(deploy: unknown, where: string): DeployConfig {
+  if (typeof deploy !== 'object' || deploy === null || Array.isArray(deploy)) throw new Error(`${where} debe ser un objeto ({} si no usa pre-releases ni PRs elegidos)`);
+  const { prerelease, selective, ...rest } = deploy as Record<string, unknown>;
+  const unknownKeys = Object.keys(rest);
+  if (unknownKeys.length > 0) throw new Error(`${where} tiene campos desconocidos: ${unknownKeys.join(', ')} (válidos: prerelease, selective)`);
+  if (prerelease !== undefined && typeof prerelease !== 'boolean') throw new Error(`${where}.prerelease debe ser true o false`);
+  if (selective !== undefined && typeof selective !== 'boolean') throw new Error(`${where}.selective debe ser true o false`);
+  return { ...(prerelease !== undefined ? { prerelease } : {}), ...(selective !== undefined ? { selective } : {}) };
 }
 
 function validatePortal(portal: unknown, where: string): PortalRepoConfig {

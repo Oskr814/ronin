@@ -21,3 +21,4 @@ process.env.WORKTREE_BASE_PATH = join(scratch, 'worktrees');
 process.env.RONIN_LOGS_DIR = join(scratch, 'logs');
 process.env.PORTAL_DATA_DIR = join(scratch, 'portal-data');
 process.env.MEETINGS_DATA_DIR = join(scratch, 'meetings-data');
+process.env.DEPLOYS_DATA_DIR = join(scratch, 'deploys-data');

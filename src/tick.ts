@@ -62,6 +62,7 @@ import { explorationPrs, exploreWorkerBusy, launchExploreWorker, processExplorat
 import { maybeLaunchNightlyExploration } from './exploration/index.js';
 import { sweepPreviews } from './preview/index.js';
 import { followPortalIssues } from './portal/follow.js';
+import { followDeploys } from './deploy/follow.js';
 import { sweepPortalRequests } from './portal/launch.js';
 import { sweepMeetings } from './meetings/launch.js';
 import { sweepAutoMerge } from './commands/index.js';
@@ -1125,6 +1126,9 @@ export type Flow =
   // ronin:auto-merge, its merge tells the person; so does the team's issue
   // closing.
   | 'portal'
+  // The releases ronin published (#158): their workflow ending tells the
+  // portal requests they carried.
+  | 'deploys'
   | 'issues'
   | 'idle-commands'
   | 'pr-commands'
@@ -1210,6 +1214,8 @@ async function tickOneRepo(scope?: Scope): Promise<void> {
   // Before the flows, so a merge doesn't wait behind a long review run.
   await repoStep(scope, 'auto-merge', () => sweepAutoMerge().catch((error) => log.error('auto-merge: no se pudieron revisar los PRs con el label', error)));
   await repoStep(scope, 'portal', () => followPortalIssues().catch((error) => log.error('portal: no se pudieron seguir los issues de los pedidos', error)));
+  // The releases published from the dashboard (#158): how their workflow ended.
+  if (activeRepo().deploy) await repoStep(scope, 'deploys', () => followDeploys().catch((error) => log.error('deploy: no se pudieron seguir los despliegues', error)));
 
   // What this run's jobs are narrowed to — the event's resources, plus any
   // issue its assignment just started.

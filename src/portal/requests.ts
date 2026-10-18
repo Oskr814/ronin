@@ -172,6 +172,10 @@ export type RequestEvent = { at: string } & (
   | { kind: 'pr-closed'; number: number }
   | { kind: 'closed'; status: 'done' | 'resolved' | 'declined' }
   | { kind: 'cancelled' }
+  // A release that carries its change (#158): published, and how its
+  // workflow ended. Only a deployed one that isn't a pre-release tells the
+  // person.
+  | { kind: 'deploy'; tag: string; state: 'published' | 'deployed' | 'failed'; prerelease: boolean }
 );
 
 // Enough for every round a request can go through, with room for the
@@ -203,6 +207,8 @@ export interface PortalRequest {
   // tell one that died (and start another).
   worker?: { pid: number; since: string };
   events?: RequestEvent[];
+  // The release its change went out in, once its workflow deployed it (#158).
+  deployed?: { tag: string; at: string };
   createdAt: string;
   updatedAt: string;
 }

@@ -15,3 +15,5 @@ repos.json
 portal-data/
 # the meetings' notes uploaded to the dashboard (#62)
 meetings-data/
+# the deploys published from the dashboard (#158)
+deploys-data/

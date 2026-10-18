@@ -3330,6 +3330,7 @@ function pedEvent(d, e) {
     case 'pr-closed': return ['warn', 'crit', `El PR #${e.number} se cerró sin merge`, ''];
     case 'closed': return e.status === 'done' ? ['ok', 'ok', 'Se mergeó: sale en la próxima actualización', ''] : e.status === 'resolved' ? ['ok', 'ok', 'El equipo cerró el issue como resuelto', ''] : ['', 'crit', 'El equipo decidió no hacerlo por ahora', ''];
     case 'cancelled': return ['', 'person', `${who} lo canceló`, ''];
+    case 'deploy': return e.state === 'deployed' ? ['ok', 'ok', `Salió en ${e.tag}${e.prerelease ? ' (pre-release)' : ''}`, ''] : e.state === 'failed' ? ['crit', 'crit', `Falló el despliegue de ${e.tag}`, ''] : ['run', 'run', `Entró en el release ${e.tag}${e.prerelease ? ' (pre-release)' : ''}`, ''];
     default: return ['', 'wait', e.kind, ''];
   }
 }

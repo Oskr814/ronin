@@ -39,6 +39,19 @@ export interface RepoEntry {
   // name of the repo's owner as the portal shows it ("Red Motos"). Absent:
   // the repo isn't offered in the portal.
   portal?: PortalRepoConfig;
+  // Deploys from the dashboard (#158, deploy/): a deploy is a GitHub
+  // release ronin publishes, and the repo's own workflow does the rest.
+  // Absent: the repo can't be deployed from ronin.
+  deploy?: DeployConfig;
+}
+
+export interface DeployConfig {
+  // The repo deploys pre-releases somewhere (QA): a release can be one.
+  prerelease?: boolean;
+  // A release can carry only some of the PRs not deployed yet (cherry-picked
+  // onto the last release): the repo's workflow deploys whatever commit the
+  // tag points to, even one that isn't on its branch.
+  selective?: boolean;
 }
 
 export interface PortalRepoConfig {

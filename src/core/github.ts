@@ -1502,6 +1502,31 @@ export async function listReleases(): Promise<Release[]> {
   return raw.map((r) => ({ ...r, url: `https://github.com/${activeRepo().productRepo}/releases/tag/${r.tagName}` }));
 }
 
+// A deploy (#158, deploy/): the release of a tag ronin already pushed
+// (--verify-tag: never one gh would create from the default branch on its
+// own). The repo's workflow runs on the tag or on the release.
+export async function createRelease(opts: { tag: string; title: string; notes: string; prerelease: boolean }): Promise<string> {
+  const stdout = await gh(['release', 'create', opts.tag, '--verify-tag', '--title', opts.title, '--notes', opts.notes, ...(opts.prerelease ? ['--prerelease'] : [])]);
+  return stdout.trim().split('\n').at(-1) ?? '';
+}
+
+export interface WorkflowRun {
+  databaseId: number;
+  workflowName: string;
+  status: string;
+  conclusion: string;
+  event: string;
+  url: string;
+  headSha: string;
+}
+
+// The workflow runs a tag set off: GitHub names a tag's (pushed, or
+// released) runs after the tag, as it names a branch's.
+export async function listTagRuns(tag: string): Promise<WorkflowRun[]> {
+  const stdout = await gh(['run', 'list', '--branch', tag, '--limit', '20', '--json', 'databaseId,workflowName,status,conclusion,event,url,headSha']);
+  return JSON.parse(stdout) as WorkflowRun[];
+}
+
 // Exploration's weekly PR (exploration/pr.ts) — see docs/DESIGN.md §11.7.
 
 export async function findOpenPrByHead(headBranch: string): Promise<PullRequestStatus | null> {

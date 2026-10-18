@@ -104,6 +104,13 @@ describe('scopeForEvent', () => {
     expect(scopeForEvent('release', { action: 'created', repository }, tracked, 'ronin-agent')).toBeNull();
   });
 
+  it('follows the deploys when a tag or a release workflow ends, not a PR CI run (#158)', () => {
+    expect(scopeForEvent('workflow_run', { action: 'completed', repository, workflow_run: { event: 'push' } }, tracked, 'ronin-agent')?.scope).toEqual({ flows: ['deploys'], resources: ['deploys'] });
+    expect(scopeForEvent('workflow_run', { action: 'completed', repository, workflow_run: { event: 'release' } }, tracked, 'ronin-agent')?.scope).toEqual({ flows: ['deploys'], resources: ['deploys'] });
+    expect(scopeForEvent('workflow_run', { action: 'completed', repository, workflow_run: { event: 'pull_request' } }, tracked, 'ronin-agent')).toBeNull();
+    expect(scopeForEvent('workflow_run', { action: 'requested', repository, workflow_run: { event: 'push' } }, tracked, 'ronin-agent')).toBeNull();
+  });
+
   it('reacts when ronin:auto-merge goes on a PR, and only that label', () => {
     expect(scopeForEvent('pull_request', { action: 'labeled', label: { name: 'ronin:auto-merge' }, pull_request: slicePr, repository }, tracked, 'ronin-agent')?.scope.flows).toEqual(['auto-merge']);
     expect(scopeForEvent('pull_request', { action: 'labeled', label: { name: 'ronin:attempts-2' }, pull_request: slicePr, repository }, tracked, 'ronin-agent')).toBeNull();
