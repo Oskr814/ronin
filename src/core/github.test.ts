@@ -9,7 +9,8 @@ import { describe, it, expect, vi } from 'vitest';
 // pure too, and what tells the agent which thread a mention lives in, and
 // changesRequestedOn — pure too, and what keeps fix-review from looping on a
 // review ronin already answered, and checksStatus — pure too, and what every
-// CI decision on a slice PR reads.
+// CI decision on a slice PR reads, and reviewerDecisions — pure too, and
+// who the dashboard says approved a PR.
 vi.mock('./config.js', () => ({
   config: { githubLogin: 'ronin' },
   LABEL_MANAGED: 'ronin',
@@ -21,7 +22,7 @@ vi.mock('./repo-context.js', () => ({
   activeRepo: () => ({ productRepo: 'bmedical/bmedical', productRepoPath: '/tmp/repo', worktreeBasePath: '/tmp/worktrees' }),
 }));
 
-const { attemptCountFromLabels, isTransientGhError, isExternalReviewable, lastMarkedReviewSha, threadOf, changesRequestedOn, checksStatus } = await import('./github.js');
+const { attemptCountFromLabels, isTransientGhError, isExternalReviewable, lastMarkedReviewSha, threadOf, changesRequestedOn, checksStatus, reviewerDecisions } = await import('./github.js');
 
 describe('changesRequestedOn', () => {
   const review = (login: string, state: string, commitId: string) => ({ login, state, commitId });
@@ -186,5 +187,19 @@ describe('checksStatus', () => {
   it('is pending with no CI at all, even when ronin left a status', () => {
     expect(checksStatus([])).toEqual({ checksPassing: false, checksPending: true });
     expect(checksStatus([status('ronin/review', 'SUCCESS')])).toEqual({ checksPassing: false, checksPending: true });
+  });
+});
+
+describe('reviewerDecisions', () => {
+  const r = (author: string, state: string, submittedAt: string) => ({ author, state, submittedAt });
+  it('keeps each reviewer\'s latest decision: a comment leaves it, a dismissal or a new decision replaces it', () => {
+    expect(reviewerDecisions([
+      r('ana', 'CHANGES_REQUESTED', '2026-10-18T10:00:00Z'),
+      r('beto', 'APPROVED', '2026-10-18T09:00:00Z'),
+      r('ana', 'APPROVED', '2026-10-18T11:00:00Z'),
+      r('ana', 'COMMENTED', '2026-10-18T12:00:00Z'),
+      r('caro', 'APPROVED', '2026-10-18T08:00:00Z'),
+      r('caro', 'DISMISSED', '2026-10-18T13:00:00Z'),
+    ])).toEqual([{ author: 'beto', state: 'APPROVED' }, { author: 'ana', state: 'APPROVED' }]);
   });
 });

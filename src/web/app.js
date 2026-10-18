@@ -918,10 +918,34 @@ function docHTML(item) {
     const doc = cur === 'issue' ? d.issue : d.pr;
     const other = (cur === 'issue') !== (item.kind === 'issue');
     body = `<div class="page">${other ? `<a class="other" href="${esc(doc.url)}" target="_blank" rel="noopener">${esc(doc.title)} <span class="m">${cur === 'pr' ? 'PR' : 'Issue'} #${esc(doc.number)} ↗</span></a>` : ''}
-      <div class="meta">${avatar(doc.author)}<b>${esc(doc.author)}</b><span>${esc(when(doc.createdAt))}</span></div>
+      <div class="meta">${avatar(doc.author)}<b>${esc(doc.author)}</b><span>${esc(when(doc.createdAt))}</span></div>${cur === 'pr' ? prStateHTML(item, doc) : ''}
       <div class="md">${doc.body.trim() ? md(doc.body, item.repo) : '<p class="m">Sin descripción.</p>'}</div></div>`;
   }
   return bar + `<div class="doc" id="doc" data-key="${esc(`${item.id}:${cur}`)}">${body}</div>`;
+}
+
+// Where a PR stands, on its tab (an issue's PR included): open or how it
+// ended, its review and who approved it or asked for changes, auto-merge,
+// checks and conflicts — what was only on GitHub.
+function prStateHTML(item, doc) {
+  if (doc.state === 'MERGED') return '<div class="prstate"><span class="chip ok">mergeado</span></div>';
+  if (doc.state === 'CLOSED') return '<div class="prstate"><span class="chip idle">cerrado sin mergear</span></div>';
+  // The sidebar's read of the PR: its checks, and a review just sent (showSentReviews).
+  const live = item.pr?.number === doc.number ? item.pr : null;
+  const decision = live?.reviewDecision || doc.reviewDecision;
+  const by = (state) => (doc.decisions ?? []).filter((x) => x.state === state).map((x) => x.author);
+  const approved = by('APPROVED');
+  const changes = by('CHANGES_REQUESTED');
+  const chips = [doc.isDraft ? ['idle', 'draft'] : ['run', 'abierto']];
+  if (decision === 'CHANGES_REQUESTED') chips.push(['warn', changes.length ? `cambios pedidos por ${changes.join(', ')}` : 'cambios pedidos']);
+  else if (decision === 'APPROVED') chips.push(['ok', approved.length ? `aprobado por ${approved.join(', ')}` : 'aprobado']);
+  else if (approved.length) chips.push(['warn', `aprobado por ${approved.join(', ')}${decision === 'REVIEW_REQUIRED' ? ', faltan aprobaciones' : ''}`]);
+  else chips.push(['plain', decision === 'REVIEW_REQUIRED' ? 'falta la aprobación' : 'sin aprobar']);
+  chips.push(doc.labels.includes('ronin:auto-merge') ? ['ok', 'auto-merge activo'] : ['plain', 'sin auto-merge']);
+  const checks = checksChip(live?.checks);
+  if (checks) chips.push(checks);
+  if (doc.mergeable === 'CONFLICTING') chips.push(['crit', `conflictos con ${doc.baseRefName}`]);
+  return `<div class="prstate">${chips.map(([cls, text]) => `<span class="chip ${cls}">${esc(text)}</span>`).join('')}</div>`;
 }
 
 // ---------- a PR's files (#111)
