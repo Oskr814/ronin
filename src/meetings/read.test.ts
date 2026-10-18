@@ -56,7 +56,7 @@ beforeEach(async () => {
   await rm(config.meetings.dataDir, { recursive: true, force: true });
   vi.clearAllMocks();
   listOpenIssues.mockResolvedValue([{ number: 915, title: 'Buscar sin tilde no encuentra clientes', url: '', labels: ['bug'] }]);
-  teamContext.mockResolvedValue({ team: 'RED', projects: [{ id: 'p', name: 'Seguridad carrito de compras', status: 'In Progress', statusType: 'started' }], cycles: [{ id: 'c17', number: 17, startsAt: '', endsAt: '', current: true }], people: [{ id: 'u', name: 'Abdias V.' }] });
+  teamContext.mockResolvedValue({ team: 'RED', projects: [{ id: 'p', name: 'Mejoras del checkout', status: 'In Progress', statusType: 'started' }], cycles: [{ id: 'c17', number: 17, startsAt: '', endsAt: '', current: true }], people: [{ id: 'u', name: 'Ana Pérez' }] });
   sendMail.mockResolvedValue(undefined);
 });
 
@@ -72,7 +72,7 @@ describe('readMeeting', () => {
     expect(seen!.notes.split('\n')).toEqual(['[1] Resumen', expect.stringMatching(/^\[2\] Devoluciones/), expect.stringMatching(/^\[3\] Exportar/), expect.stringMatching(/^\[4\] Búsqueda/), '[5] Precios de llantas con el proveedor.']);
     expect(seen!.context).toEqual({
       openIssues: [{ number: 915, title: 'Buscar sin tilde no encuentra clientes', labels: ['bug'] }],
-      linear: { projects: [{ name: 'Seguridad carrito de compras', status: 'In Progress', statusType: 'started' }], cycles: [{ number: 17, startsAt: '', endsAt: '', current: true }], people: ['Abdias V.'] },
+      linear: { projects: [{ name: 'Mejoras del checkout', status: 'In Progress', statusType: 'started' }], cycles: [{ number: 17, startsAt: '', endsAt: '', current: true }], people: ['Ana Pérez'] },
       pending: [],
     });
     expect(seen!.task).toMatchObject({ type: 'meeting-read', meetingNumber: m.number, title: 'Seguimiento', linear: true });

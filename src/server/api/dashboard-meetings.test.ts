@@ -5,7 +5,7 @@ import { meetingOriginal, parseUpload } from './dashboard-meetings.js';
 
 const SC = 'redmotos/shoppingcart';
 const ENTRIES = [{ productRepo: SC }] as RepoEntry[];
-const NOTES = 'Búsqueda de clientes: buscar "nanez" sin tilde no encuentra a nadie; se acordó darle prioridad.';
+const NOTES = 'Búsqueda de clientes: buscar "pena" sin tilde no encuentra a nadie; se acordó darle prioridad.';
 const dataUrl = (text: string, type = 'text/markdown') => `data:${type};base64,${Buffer.from(text).toString('base64')}`;
 
 describe('parseUpload', () => {

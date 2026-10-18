@@ -34,14 +34,14 @@ describe('linearKey', () => {
 describe('linearIssuesFor', () => {
   it('asks by GitHub URL and maps each Linear issue to its GitHub number', async () => {
     const fetchMock = respond({ data: { issues: { nodes: [
-      raw('RED-214', `${PREFIX}909`, { project: { id: 'p1', name: 'Catálogos' }, cycle: { number: 17, name: null, isActive: true }, assignee: { displayName: 'abdias' } }),
+      raw('RED-214', `${PREFIX}909`, { project: { id: 'p1', name: 'Catálogos' }, cycle: { number: 17, name: null, isActive: true }, assignee: { displayName: 'dev-ejemplo' } }),
       raw('RED-1', null),
     ] } } });
     const found = await linearIssuesFor(ENTRY, 'lin_api_x', [909, 910]);
     expect([...found.keys()]).toEqual([909]);
     expect(found.get(909)).toEqual({
       id: 'RED-214', title: 'Issue RED-214', url: 'https://linear.app/red-motos/issue/RED-214/slug',
-      state: { name: 'Todo', type: 'unstarted' }, project: { id: 'p1', name: 'Catálogos' }, assignee: 'abdias',
+      state: { name: 'Todo', type: 'unstarted' }, project: { id: 'p1', name: 'Catálogos' }, assignee: 'dev-ejemplo',
       githubNumber: 909, cycle: { number: 17, current: true },
     });
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
@@ -83,7 +83,7 @@ describe('teamPlanning', () => {
     respond({ data: { issues: { nodes: [{ team: {
       projects: { nodes: [{ id: 'p2', name: 'Seguridad' }, { id: 'p1', name: 'Auditoría' }] },
       cycles: { nodes: [{ id: 'c18', number: 18, name: null, startsAt: '2026-10-19', endsAt: '2026-10-26', isActive: false }, { id: 'c17', number: 17, name: null, startsAt: '2026-10-12', endsAt: '2026-10-19', isActive: true }] },
-      members: { nodes: [{ id: 'u2', name: 'Valeria', active: true }, { id: 'u3', name: 'Se fue', active: false }, { id: 'u1', name: 'Abdias V.', active: true }] },
+      members: { nodes: [{ id: 'u2', name: 'Marta', active: true }, { id: 'u3', name: 'Se fue', active: false }, { id: 'u1', name: 'Ana Pérez', active: true }] },
     } }] } } });
     expect(await teamPlanning(ENTRY, 'k')).toEqual({
       projects: [{ id: 'p1', name: 'Auditoría' }, { id: 'p2', name: 'Seguridad' }],
@@ -91,7 +91,7 @@ describe('teamPlanning', () => {
         { id: 'c17', number: 17, startsAt: '2026-10-12', endsAt: '2026-10-19', current: true },
         { id: 'c18', number: 18, startsAt: '2026-10-19', endsAt: '2026-10-26', current: false },
       ],
-      people: [{ id: 'u1', name: 'Abdias V.' }, { id: 'u2', name: 'Valeria' }],
+      people: [{ id: 'u1', name: 'Ana Pérez' }, { id: 'u2', name: 'Marta' }],
     });
   });
 });
@@ -100,7 +100,7 @@ describe('resolveProject and updateIssue', () => {
   it('takes an id as is, finds a name, and is null for none or several', async () => {
     expect(await resolveProject('k', '0115fd03-c758-490f-8f57-f559d21e9c44')).toBe('0115fd03-c758-490f-8f57-f559d21e9c44');
     respond({ data: { projects: { nodes: [{ id: 'p1' }] } } });
-    expect(await resolveProject('k', 'auditoria de cambios')).toBe('p1');
+    expect(await resolveProject('k', 'historial de pedidos')).toBe('p1');
     respond({ data: { projects: { nodes: [] } } });
     expect(await resolveProject('k', 'nada')).toBeNull();
   });

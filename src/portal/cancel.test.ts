@@ -55,7 +55,7 @@ describe('cancelling a portal request', () => {
 
     closeIssueNotPlanned.mockClear();
     const taken = await request({ status: 'big', issue: { number: 62, url: 'u' } });
-    getIssueAssignees.mockResolvedValue(['abdias98']);
+    getIssueAssignees.mockResolvedValue(['dev-ejemplo']);
     await expect(cancelRequest(taken, entries)).rejects.toThrow(TAKEN);
     expect(closeIssueNotPlanned).not.toHaveBeenCalled();
     expect((await getRequest(taken))?.status).toBe('big');
