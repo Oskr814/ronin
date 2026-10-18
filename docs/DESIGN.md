@@ -166,13 +166,13 @@ Para flujos complejos, el spec incluye un link a un proyecto de Claude Design. E
 
 ### 6. Notificaciones
 
-Los bloqueos se notifican por email solo cuando son reales, no en el progreso rutinario (para evitar fatiga de alertas): van a `NOTIFY_TO`. Las credenciales de Gmail van en variables de entorno (`GMAIL_USER`, `GMAIL_APP_PASSWORD`).
+Los bloqueos se notifican por email solo cuando son reales, no en el progreso rutinario (para evitar fatiga de alertas): van a quien eligió *Bloqueos* del repo en Ajustes, o a `NOTIFY_TO` (§19.5). Las credenciales de Gmail van en variables de entorno (`GMAIL_USER`, `GMAIL_APP_PASSWORD`).
 
 La misma cuenta manda otros dos correos, cada uno solo cuando alguien tiene algo que hacer:
 - **Los del portal de pedidos** (§16.7): a la persona que pidió y al equipo del repo.
 - **Los de las reuniones** (§17.5): al equipo del repo, cuando ronin propone trabajo que revisar.
 
-El equipo de cada repo es su lista `portal.notifyTo` en `repos.json`. Un repo sin lista usa `NOTIFY_TO`, y nunca recibe lo de otro repo.
+Cada persona del equipo elige, repo por repo, qué le llega (Ajustes → Notificaciones, §19.5). Mientras no elige, vale la lista `portal.notifyTo` de `repos.json`; sin nadie, `NOTIFY_TO`. Un repo nunca recibe lo de otro.
 
 ### 7. Identidad del agente en GitHub
 
@@ -558,7 +558,7 @@ La tailnet ya limita quién llega. El login suma una segunda barrera, y el token
 - **OAuth App de la cuenta del dueño, con el scope `repo`:** sirve para comentar y aprobar como la persona. Se configura con `DASHBOARD_GITHUB_CLIENT_ID` y `DASHBOARD_GITHUB_CLIENT_SECRET`, y su callback es `<DASHBOARD_URL>/api/auth/callback`. Funciona aunque esa URL solo se vea en la tailnet, porque la redirección la sigue el navegador.
 - **Por qué `repo`:** el token puede escribir en todos los repos de la persona. Se aceptó porque el tablero solo se ve por la tailnet y solo para los logins de `DASHBOARD_ALLOWED_USERS` (#93). Una GitHub App acotaría mejor los permisos, pero hay que registrarla e instalarla en cada organización.
 - **Flujo.** `/api/auth/login` redirige a GitHub con el scope y con un `state` al azar en una cookie de corta vida. `/api/auth/callback` verifica el `state`, canjea el código desde el servidor y lee `GET /user`. Si la persona destildó el scope en la pantalla de GitHub, el login se rechaza explicando por qué.
-- **Quién entra.** Solo los logins de `DASHBOARD_ALLOWED_USERS`, separados por coma. La lista se vuelve a mirar en cada pedido, así que sacar a alguien lo deja afuera en el momento. Un login rechazado (fuera de la lista o sin el scope) revoca su token en GitHub.
+- **Quién entra.** La *Entrada* de Ajustes → Usuarios (§19.3): quien tenga acceso en GitHub, o solo la lista. Mientras nadie la elija, los logins de `DASHBOARD_ALLOWED_USERS`, separados por coma. Se vuelve a mirar en cada pedido, así que sacar a alguien lo deja afuera en el momento. Un login rechazado (fuera de la lista o sin el scope) revoca su token en GitHub.
 - **Sesión.** Es una cookie con el login, el vencimiento (`DASHBOARD_SESSION_DAYS`, 7) y el token de GitHub, cifrada con AES-256-GCM con una clave derivada de `DASHBOARD_SESSION_SECRET`. GCM oculta el token y rechaza una cookie cambiada a mano, y no hay estado de sesión en el servidor. Es `HttpOnly`, `Secure` y `SameSite=Lax`. Cambiar el secreto cierra todas las sesiones, y una cookie del formato anterior (firmada, sin token) pide volver a entrar.
 - **Salir** revoca el token en GitHub (`DELETE /applications/{client_id}/token`) y borra la cookie, aunque GitHub falle.
 - **Organizaciones.** Si una organización restringe las OAuth Apps de terceros, un admin tiene que aprobar el tablero para que el token vea sus repos. Hasta entonces, GitHub responde 403 o 404 al comentar, y la página lo explica.
@@ -569,9 +569,10 @@ La tailnet ya limita quién llega. El login suma una segunda barrera, y el token
   - El markdown de GitHub (la descripción de un PR de cualquiera, un comentario) no es confiable: lo interpreta `marked` y lo limpia `DOMPurify`, copiados en `src/web/vendor/` porque la CSP no deja cargar scripts de afuera. Se descartan estilos, formularios e iframes, y cualquier link que no sea `http(s)`, `mailto` o `#`. Las imágenes pasan a ser links, porque la CSP tampoco las cargaría.
 
 **Qué repos ve cada sesión (#106, `server/api/access.ts`).**
-- **Administradores:** los de `DASHBOARD_ADMINS` ven todos los repos. Sin definir, no hay ninguno: estar en `DASHBOARD_ALLOWED_USERS` deja entrar, pero no hace administrador. El arranque dice en el log quiénes son.
+- **Administradores:** los de `DASHBOARD_ADMINS` y los que se hagan administradores en Ajustes (§19.3) ven todos los repos. Sin definir, no hay ninguno: estar en `DASHBOARD_ALLOWED_USERS` deja entrar, pero no hace administrador. El arranque dice en el log quiénes son.
 - **El resto:** ve los repos de `repos.json` en los que tiene al menos `triage` según GitHub. Se consulta con el token de la sesión: `GET /repos/{owner}/{repo}` y su campo `permissions`, donde un 404 es sin acceso. El resultado se guarda en memoria por sesión 10 minutos. Si GitHub falla, queda la última respuesta, y sin ninguna no se ve nada. Un 401 cierra la sesión.
-- **Quién entra:** un administrador, o alguien con al menos un repo que ver. `DASHBOARD_ALLOWED_USERS`, si tiene logins, es además la lista de quién entra.
+- **Quién entra:** un administrador, o alguien con al menos un repo que ver. La *Entrada* de Ajustes (o `DASHBOARD_ALLOWED_USERS`) es además la lista de quién entra.
+- **Qué puede hacer en cada repo, y qué repos se le ocultan:** Ajustes → Usuarios (§19.3), aplicado en `teamAccess`.
 - **Dónde se aplica:** en el servidor. `tailnet.ts` calcula el acceso en cada pedido y `handleDashboard` lo guarda para todo el pedido (`AsyncLocalStorage`). Todas las lecturas de `dashboard.ts` pasan por `visibleRepos()` y `listRuns()`, que solo devuelven lo de esos repos, y fuera de un pedido no devuelven nada. El snapshot, *Hoy*, la cola y el uso de las cuentas de Claude salen filtrados. Pedir por nombre algo de otro repo (una ficha, un transcript, una captura, una acción, *Nuevo issue*) responde 404.
 
 #### 15.4 De dónde sale cada dato
@@ -886,7 +887,7 @@ Cada paso que hace ronin corre en un **worker por pedido** (`portal/worker.ts`, 
 
 #### 16.2 Cuentas, sesión y seguridad
 
-- **Las cuentas las crea un admin del tablero** (`DASHBOARD_ADMINS`), en la pestaña *Usuarios* de la página *Pedidos del portal* (`/portal`), que solo ven los admins: nombre, email, las aplicaciones que puede pedir y, si se quiere, un tope diario propio. La persona recibe un correo con un enlace para crear su contraseña. Desde ahí también se cambian sus aplicaciones, se deshabilita la cuenta o se manda otro enlace. Si el correo falla, el tablero muestra el enlace para pasárselo por otro lado.
+- **Las cuentas las crea un admin del tablero**, en Ajustes → Usuarios, con el rol *Usuario* (§19.4), que solo ven los admins: nombre, email, las aplicaciones que puede pedir y, si se quiere, un tope diario propio. La persona recibe un correo con un enlace para crear su contraseña. Desde ahí también se cambian sus aplicaciones, se deshabilita la cuenta o se manda otro enlace. Si el correo falla, el tablero muestra el enlace para pasárselo por otro lado.
 - **Qué aplicaciones hay:** cada repo de `repos.json` con un bloque `portal: { name, apps: { <app de ronin.app.json>: { name, description? } } }`. El login no nombra ninguna: la persona elige entre las que tiene después de entrar.
 - **Contraseñas:** scrypt (N=2^15, r=8, p=1), mínimo 10 caracteres. Un email que no existe responde igual y tarda lo mismo que una contraseña mal puesta (`burnPasswordCheck`).
 - **Sesión:** la cookie `ronin_portal`, firmada con HMAC (`PORTAL_SESSION_SECRET`), por `PORTAL_SESSION_DAYS` días. Lleva una versión de la cuenta: cambiar la contraseña o deshabilitarla cierra todas sus sesiones.
@@ -938,7 +939,7 @@ Un PR cerrado sin merge se olvida hasta que otro cierre el issue. Si `fix-issue`
 
 #### 16.7 Correos
 
-Todos salen de la misma cuenta, `GMAIL_USER` / `GMAIL_APP_PASSWORD` (la de los bloqueos), con el nombre "ronin · Pedidos de ajustes", para todos los repos. A la persona: la invitación, el cambio de contraseña, cada respuesta de ronin, el prototipo listo, el paso al equipo, el merge, el cierre del issue y, cuando el release que lo lleva termina de desplegarse, *Ya está en la aplicación* (§18.6). Al equipo: el issue de un pedido que es suyo y el PR que espera aprobación. El equipo es el de cada repo, la lista `notifyTo` de su bloque `portal` en `repos.json`, y nunca recibe los pedidos de otro repo. Un repo sin `notifyTo` se los manda a `NOTIFY_TO`, que es para los bloqueos. Las imágenes nunca van en el correo: el enlace lleva al portal. Un correo que falla queda en el log y no frena el pedido.
+Todos salen de la misma cuenta, `GMAIL_USER` / `GMAIL_APP_PASSWORD` (la de los bloqueos), con el nombre "ronin · Pedidos de ajustes", para todos los repos. A la persona: la invitación, el cambio de contraseña, cada respuesta de ronin, el prototipo listo, el paso al equipo, el merge, el cierre del issue y, cuando el release que lo lleva termina de desplegarse, *Ya está en la aplicación* (§18.6). Al equipo: el issue de un pedido que es suyo y el PR que espera aprobación, a quien eligió esos avisos del repo en Ajustes → Notificaciones (§19.5). Mientras nadie elige, vale la lista `notifyTo` del bloque `portal` en `repos.json`, y sin nadie, `NOTIFY_TO`. Nunca recibe los pedidos de otro repo. Las imágenes nunca van en el correo: el enlace lleva al portal. Un correo que falla queda en el log y no frena el pedido.
 
 #### 16.8 API
 
@@ -958,12 +959,12 @@ En el listener público, solo con `PORTAL_URL` y `PORTAL_SESSION_SECRET` configu
 | `POST /api/portal/requests/<n>/cancel` | Lo cancela, mientras nadie lo tomó (16.10) |
 | `GET /api/portal/requests/<n>/images/<archivo>` | Una imagen de la conversación |
 
-La administración está en la API del tablero, solo para `DASHBOARD_ADMINS`: `GET /api/portal-admin`, `POST /api/portal-admin/users`, `/users/<id>` y `/users/<id>/link` (15.9).
+La administración está en la API del tablero, solo para sus admins (la página es Ajustes → Usuarios, §19.4): `GET /api/portal-admin`, `POST /api/portal-admin/users`, `/users/<id>` y `/users/<id>/link` (15.9).
 
 #### 16.9 Activarlo
 
 1. En `.env`: `PORTAL_URL` (`https://ronin-agent.redmotoshn.com`) y `PORTAL_SESSION_SECRET` (`openssl rand -hex 32`, distinto del del tablero). Opcionales: `PORTAL_SESSION_DAYS` (30), `PORTAL_DAILY_LIMIT` (5) y `PORTAL_DATA_DIR` (`portal-data`).
-2. En `repos.json`, el bloque `portal` de cada repo que se ofrece, con sus aplicaciones y, en `notifyTo`, los correos de su equipo.
+2. En `repos.json` (o desde Ajustes → Repos, §19.6), el bloque `portal` de cada repo que se ofrece, con sus aplicaciones. Quién del equipo recibe sus correos lo elige cada uno en Ajustes → Notificaciones; `notifyTo` queda como lista de respaldo.
 3. nginx-proxy-manager tiene que pasarle al 3939 todas las rutas del dominio, no solo la de los webhooks.
 4. `pnpm build` y reiniciar `ronin-server`. Las cuentas se crean desde el tablero.
 
@@ -1119,7 +1120,7 @@ La reunión pasa a `done` cuando se creó todo lo marcado. *Descartar* la deja e
 
 #### 17.5 Correos
 
-Cuando ronin propone algo, le llega un correo al equipo del repo, el mismo que el del portal (`teamTo()`: `portal.notifyTo` en `repos.json`, o `NOTIFY_TO`). Nunca va a los participantes de la reunión. Lleva lo propuesto, lo descartado y el link a la ficha (`DASHBOARD_URL`), y **nunca el texto de las notas**. Sale de la cuenta de `GMAIL_USER` con el nombre "ronin · Reuniones". Un correo que falla queda en la actividad y no frena nada.
+Cuando ronin propone algo, le llega un correo a quien eligió *Propuestas de una reunión* del repo en Ajustes → Notificaciones (`teamTo('reunion')`, §19.5; mientras nadie elige, `portal.notifyTo` o `NOTIFY_TO`). Nunca va a los participantes de la reunión. Lleva lo propuesto, lo descartado y el link a la ficha (`DASHBOARD_URL`), y **nunca el texto de las notas**. Sale de la cuenta de `GMAIL_USER` con el nombre "ronin · Reuniones". Un correo que falla queda en la actividad y no frena nada.
 
 #### 17.6 API
 
@@ -1129,7 +1130,7 @@ Ver la tabla de 15.9: `GET|POST /api/reuniones`, `GET /api/reuniones/<n>`, `GET 
 
 - `MEETINGS_DATA_DIR` en `.env` (por defecto `meetings-data`). Es la única copia: hay que respaldarlo, como `PORTAL_DATA_DIR`.
 - Para proyectos y ciclos, la key de Linear del repo (§15.13) con permiso de escritura. Sin ella, ronin propone solo issues y comentarios.
-- Para el correo, `GMAIL_USER` y `GMAIL_APP_PASSWORD`, y el equipo del repo en `portal.notifyTo`. Para que el correo traiga el link, `DASHBOARD_URL`.
+- Para el correo, `GMAIL_USER` y `GMAIL_APP_PASSWORD`, y quién del equipo recibe el aviso, en Ajustes → Notificaciones (§19.5). Para que el correo traiga el link, `DASHBOARD_URL`.
 
 #### 17.8 Pendiente
 
@@ -1211,7 +1212,7 @@ Lo que haría publicar, sin publicar nada:
 
 #### 18.7 La página (`/despliegues`)
 
-Solo para admins (`DASHBOARD_ADMINS`); la API responde 403 a cualquier otra sesión.
+Para los admins, y para quien tenga *Desplegar* en ese repo (Ajustes → Usuarios, §19.3); la API responde 403 a cualquier otra sesión.
 
 - **Una tarjeta por repo con `deploy`:**
   - lo mergeado sin desplegar, con sus apps y "del pedido P-n". Con `selective`, cada PR tiene *Desplegar solo este*;
@@ -1239,6 +1240,101 @@ Solo para admins (`DASHBOARD_ADMINS`); la API responde 403 a cualquier otra sesi
   - qué hacer si la prueba falla;
   - qué pasa en los repos sin `selective`.
 - ***Desplegar solo este*** desde la ficha del pedido y desde la del PR mergeado.
+
+### 19. Ajustes (#174)
+
+Una página del tablero para cambiar la configuración de ronin sin tocar `.env` ni `repos.json` en el servidor, y sin reiniciar: los usuarios, sus permisos, sus correos, los repos y los valores que antes solo cambiaban en `.env`. Reemplaza a #145.
+
+#### 19.1 Qué es
+
+El engranaje junto a *ronin*, arriba de la barra lateral, abre `/ajustes/<sección>`. La barra lateral cambia por la de Ajustes, con *Volver al tablero*:
+
+- **Tu cuenta**, para todos: *Perfil* (nombre, correo, quién eres en cada equipo de Linear, tema) y *Notificaciones* (19.5).
+- **Administración**, solo admins: *General*, *Usuarios* (19.3, 19.4), *Repos* (19.6) con una entrada por repo, *Agentes*, *Exploración*, *Previews*, *Conexiones* (19.7) y *Registro* (19.8).
+
+Cada campo se guarda al salir de él. Lo que ronin necesita del servidor (secretos, rutas, puertos, `RUNNER_ID`, `PREVIEW_PORT_RANGE`) solo se ve.
+
+#### 19.2 Valores: el del tablero, después `.env`, después el de por defecto
+
+`core/settings.ts` lista los ajustes que se cambian desde el tablero, cada uno con su variable de `.env`, su campo en `config`, su tipo (número con su rango, sí/no, una lista de opciones, texto con su chequeo) y su valor por defecto:
+
+- *General*: `DASHBOARD_SESSION_DAYS`, `DASHBOARD_GITHUB_TTL_SECONDS`, `PORTAL_DAILY_LIMIT`, `PORTAL_SESSION_DAYS`.
+- *Agentes*: `AGENT_MODEL`, `AGENT_EFFORT`, `EXTERNAL_REVIEW_WORKER_MODEL`, `AGENT_TASK_TIMEOUT_MINUTES`, `EVENT_HANDLER_TIMEOUT_MINUTES`, `TICK_CONCURRENCY`, `EXTERNAL_REVIEW_CONCURRENCY` y los seis límites de reintentos (`docs/BLOCKING.md`). Además, un modelo y un esfuerzo por tipo de tarea: ganan sobre `AGENT_MODEL_<TIPO>` / `AGENT_EFFORT_<TIPO>` y pierden ante el bloque `agent` del repo (`agentModelFor`, `agentEffortFor`).
+- *Exploración*: `EXPLORE_TIMEZONE`, `EXPLORE_NIGHT_WINDOW`, `EXPLORE_FUNCTIONS_PER_NIGHT`, `EXPLORE_FUNCTIONS_PER_RUN`, `EXPLORE_FINDINGS_PER_RUN`, `EXPLORE_IDEAS_PER_RUN`, `EXPLORE_PUBLISH_EVIDENCE`.
+- *Previews*: `PREVIEW_PREPARE_DATA`, `PREVIEW_TTL_MINUTES`, `PREVIEW_MAX_PER_REPO`.
+
+Lo que se cambia queda en `<SETTINGS_DATA_DIR>/settings.json`. Cada fila dice de dónde viene su valor (`.env`, *Por defecto* o *Cambiado en el tablero*) y ofrece *Volver al de .env*.
+
+- **Cómo llega a cada proceso:** `config.ts` aplica `settings.json` sobre lo que dice `.env` al cargar, así el tick, cada handler de webhook y cada worker arrancan con los valores del tablero. El servidor los vuelve a aplicar sobre el mismo `config` después de guardar uno: como `auth.ts`, el portal y las lecturas de GitHub usan `config.dashboard` y `config.portal`, el cambio vale al momento.
+- **Un archivo editado a mano:** un `settings.json` que no se lee, o un valor fuera de rango, se ignora con un aviso en el log y vale el de `.env`. Nunca tumba un proceso.
+
+#### 19.3 Usuarios del equipo y permisos (`server/api/team.ts`, `usuarios.ts`)
+
+El equipo entra con GitHub (15.3). GitHub sigue diciendo qué repos ve cada uno (triage o más, #106); Ajustes solo le quita repos y limita qué hace en ellos, nunca le da más. Vive en `<SETTINGS_DATA_DIR>/people.json`, junto al perfil de cada login.
+
+- **Rol:** Administrador o Miembro. Los de `DASHBOARD_ADMINS` son administradores de respaldo: no se les quita el rol desde la página, para que nadie quede afuera por un error. Nadie se quita el rol a sí mismo ni se saca de la lista.
+- **Entrada:** "quien tenga acceso en GitHub" o "solo la lista" (las personas de *Usuarios* y los admins). Mientras nadie la elija, la decide `DASHBOARD_ALLOWED_USERS`, como antes; con "solo la lista", esos logins siguen entrando.
+- **Permisos de un miembro, repo por repo:** subir notas de reuniones; aprobar lo que propone una reunión; las acciones del tablero (asignar a ronin, comandos, Archivos, fichas de exploración, nuevo issue, *Explorar ahora*); y desplegar. Los tres primeros salen de un conjunto (*Todo*, que es como antes y el valor por defecto; *Reuniones y pedidos*; *Solo lectura*) o de una elección propia (*Personalizado*). **Desplegar se da aparte**, repo por repo: era solo de admins (§18) y ningún conjunto lo prende. Un repo también se le puede ocultar.
+- **Dónde se aplica:** `teamAccess` reemplaza a `sessionAccess` en el listener del tablero: los admins de `.env` y del panel, sin los repos ocultos, con los permisos de cada repo. Cada ruta que cambia algo pregunta `can(access, repo, permiso)` y responde 403 si no; la página además esconde lo que no se puede. `applyTeam` reescribe `config.dashboard.admins` y `allowedUsers` (lo que lee `auth.ts`) al arrancar y después de cada cambio.
+- **La lista:** quien entró alguna vez (el snapshot anota `lastSeenAt`, como mucho cada 10 minutos) o agregó un admin con *Agregar persona*. Para cada uno, qué le da GitHub en cada repo, leído con el token de ronin (`collaborators/<login>/permission`).
+
+#### 19.4 Usuarios del portal
+
+Las cuentas del portal de pedidos (§16.2) están en la misma lista, con el rol **Usuario**, y un filtro *Todos · Equipo · Portal*. La página de una cuenta tiene lo que antes estaba en *Pedidos del portal → Usuarios*: nombre, apps donde puede pedir, pedidos por día, el enlace de la contraseña y desactivar. *Agregar persona* pregunta si es del equipo o del portal. Usa la API de siempre (`/api/portal-admin`), que anota cada cambio en el Registro. `/portal` lleva a Ajustes.
+
+#### 19.5 Notificaciones (`core/notifications.ts`)
+
+Cada persona del equipo elige, repo por repo, qué correos de ronin le llegan, al correo de su Perfil. Nadie más los cambia; un admin los ve en la página de la persona. Son los cuatro correos al equipo:
+
+| Aviso | De dónde sale |
+|---|---|
+| Pedido para el equipo | `portal/issue.ts`: un pedido o un error que pasa al equipo |
+| Pedido para revisar | `portal/follow.ts`: el PR de un pedido espera aprobación |
+| Propuestas de una reunión | `meetings/read.ts` (§17.5) |
+| Bloqueos | `notifier.ts`, el repo de la URL del issue |
+
+`recipientsFor(repo, entry, aviso)` lo resuelve desde cualquier proceso:
+- quien eligió el aviso para el repo;
+- mientras alguien no elige, lo de antes: si su correo está en `portal.notifyTo` del repo (o en `NOTIFY_TO`, para los bloqueos), cuenta como suscrito;
+- las direcciones de esas listas que no son de nadie del equipo siguen recibiendo;
+- si con eso no queda nadie, `NOTIFY_TO`. Un correo nunca se pierde, y un repo nunca recibe lo de otro.
+
+Cuando cada uno tiene su correo en el perfil, `portal.notifyTo` se puede vaciar desde *Repos*.
+
+#### 19.6 Repos (`server/api/repos-admin.ts`)
+
+`repos.json` sigue siendo donde vive cada repo; lo que se cambia aquí se escribe ahí. Por repo: nombre en el portal, rama base, las apps de `ronin.app.json` (en el portal o no, nombre y descripción, exploración nocturna, proyecto de Linear de sus issues), la key de Linear (el nombre de la variable de `.env`; la key nunca pasa por el tablero), despliegues (prendido, pre-release, PRs elegidos), modelo y esfuerzo de los agentes del repo, y quitar correos de `portal.notifyTo`.
+
+- Solo cambia el campo pedido, en la entrada tal como está en el archivo: lo demás queda igual.
+- La lista entera pasa por las mismas reglas que la leen (`validateRepos`, de `loadRepos`) antes de escribirse; lo que no pasa no se escribe. Además: el portal nunca queda sin apps, no se agrega al portal una app que ya no está en `ronin.app.json`, y de `portal.notifyTo` solo se quitan correos.
+- Antes de escribir, una copia del anterior va a `<SETTINGS_DATA_DIR>/repos-json/` (las últimas 30). El archivo se reescribe con 2 espacios.
+- Agregar o quitar un repo, su checkout, su cuenta de Claude y su changelog (rutas del servidor) se siguen haciendo en el archivo.
+
+#### 19.7 Conexiones
+
+Si cada credencial de `.env` está, nunca su valor: el token de ronin (si GitHub responde, y cuándo vence, del header `github-authentication-token-expiration`), la OAuth App del tablero, el secreto de los webhooks, Gmail y las firmas de sesión. *Mandar prueba* manda un correo al de tu Perfil. Linear se ve en cada repo.
+
+#### 19.8 Registro
+
+Cada cambio en Ajustes, del perfil propio a un repo, queda en `<SETTINGS_DATA_DIR>/registro.jsonl`: cuándo, quién, qué, de qué a qué. Una línea por cambio, que nunca se reescribe; la página muestra las últimas 300.
+
+#### 19.9 API
+
+| Ruta | Quién | Qué |
+|---|---|---|
+| `GET /api/ajustes` | todos | el perfil, las notificaciones y los equipos de Linear de la persona; a un admin, además los valores y los modelos por tarea |
+| `POST /api/ajustes/perfil` | todos | `{ name?, email?, linear?: { repo, id } }`, el propio |
+| `POST /api/ajustes/notificaciones` | todos | `{ repo, event, on }`, las propias, de un repo que ve |
+| `POST /api/ajustes/valores` | admins | `{ key, value }`; `null` vuelve al de `.env` |
+| `POST /api/ajustes/tareas` | admins | `{ task, model?, effort? }` |
+| `GET\|POST /api/ajustes/usuarios[/<login>[/quitar]]`, `POST /api/ajustes/equipo` | admins | el equipo (19.3) |
+| `GET /api/ajustes/repos`, `POST /api/ajustes/repos/<owner>/<repo>` | admins | los repos (19.6) |
+| `GET /api/ajustes/conexiones`, `POST /api/ajustes/conexiones/correo` | admins | 19.7 |
+| `GET /api/ajustes/registro` | admins | 19.8 |
+
+#### 19.10 Activarlo
+
+Nada: sin `SETTINGS_DATA_DIR`, usa `settings-data/` en el checkout del runner (fuera de git). Es la única copia de lo que se cambió en el tablero, del equipo y del registro: hay que respaldarlo, como `portal-data/`.
 
 ## Estado actual
 

@@ -29,7 +29,7 @@ Los límites se cuentan por PR (con el label `ronin:attempts-N`, salvo el de CI 
 
 ## Contenido de la notificación
 
-Cuando se dispara un bloqueo, el email (`src/core/notifier.ts`) incluye:
+Cuando se dispara un bloqueo, el email (`src/core/notifier.ts`) va a quien eligió *Bloqueos* de ese repo en Ajustes → Notificaciones del tablero, o a `NOTIFY_TO` si nadie (`docs/DESIGN.md` §19.5), e incluye:
 
 - Link al issue de tracking y, si aplica, al PR afectado
 - El motivo concreto (una de las categorías de arriba), en una oración
