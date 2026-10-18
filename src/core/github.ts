@@ -526,6 +526,23 @@ export interface Discussion {
   // empty review for every batch of inline comments; those are in `threads`.
   reviews?: Array<{ author: string; body: string; state: string; submittedAt: string }>;
   threads?: DiscussionThread[];
+  // A PR's: GitHub's verdict, and where each reviewer stands (their latest
+  // approval or request for changes still standing). Kept on an issue's page,
+  // which leaves its PR's reviews out.
+  reviewDecision?: 'APPROVED' | 'CHANGES_REQUESTED' | 'REVIEW_REQUIRED' | '';
+  decisions?: Array<{ author: string; state: 'APPROVED' | 'CHANGES_REQUESTED' }>;
+}
+
+// Each reviewer's latest decision, in the order they took it: a later
+// comment-only review leaves it standing, a dismissal takes it away.
+export function reviewerDecisions(reviews: Array<{ author: string; state: string; submittedAt: string }>): NonNullable<Discussion['decisions']> {
+  const latest = new Map<string, { state: string; at: string }>();
+  for (const r of [...reviews].sort((a, b) => a.submittedAt.localeCompare(b.submittedAt))) {
+    if (!r.author || !['APPROVED', 'CHANGES_REQUESTED', 'DISMISSED'].includes(r.state)) continue;
+    latest.delete(r.author);
+    latest.set(r.author, { state: r.state, at: r.submittedAt });
+  }
+  return [...latest].flatMap(([author, { state }]) => (state === 'APPROVED' || state === 'CHANGES_REQUESTED' ? [{ author, state }] : []));
 }
 
 export interface DiscussionThread {
@@ -573,8 +590,9 @@ async function getDiscussionThreads(prNumber: number): Promise<DiscussionThread[
 }
 
 export async function getDiscussion(kind: 'issue' | 'pr', number: number): Promise<Discussion> {
-  const fields = 'number,title,body,author,createdAt,url,state,labels,comments' + (kind === 'pr' ? ',mergeable,baseRefName,headRefName,reviews,isDraft' : '');
-  type Raw = Omit<Discussion, 'author' | 'comments' | 'body' | 'labels' | 'reviews' | 'threads'> & {
+  const fields = 'number,title,body,author,createdAt,url,state,labels,comments' + (kind === 'pr' ? ',mergeable,baseRefName,headRefName,reviews,isDraft,reviewDecision' : '');
+  type Raw = Omit<Discussion, 'author' | 'comments' | 'body' | 'labels' | 'reviews' | 'threads' | 'reviewDecision' | 'decisions'> & {
+    reviewDecision?: Discussion['reviewDecision'] | null;
     body: string | null;
     author: { login: string } | null;
     labels: Array<{ name: string }>;
@@ -585,13 +603,15 @@ export async function getDiscussion(kind: 'issue' | 'pr', number: number): Promi
     gh([kind, 'view', String(number), '--json', fields]).then((out) => JSON.parse(out) as Raw),
     kind === 'pr' ? getDiscussionThreads(number) : undefined,
   ]);
-  const { reviews, ...rest } = raw;
+  const { reviews, reviewDecision, ...rest } = raw;
+  const all = reviews?.map((r) => ({ author: r.author?.login ?? '', body: r.body, state: r.state, submittedAt: r.submittedAt }));
   // How a closed issue closed, which this gh can't say (#129).
   const stateReason = kind === 'issue' && raw.state === 'CLOSED' ? (await getIssueState(number).catch(() => undefined))?.stateReason : undefined;
   return {
     ...rest,
     ...(stateReason ? { stateReason } : {}),
-    ...(reviews ? { reviews: reviews.filter((r) => r.body.trim() || ['APPROVED', 'CHANGES_REQUESTED', 'DISMISSED'].includes(r.state)).map((r) => ({ author: r.author?.login ?? '', body: r.body, state: r.state, submittedAt: r.submittedAt })) } : {}),
+    ...(all ? { reviews: all.filter((r) => r.body.trim() || ['APPROVED', 'CHANGES_REQUESTED', 'DISMISSED'].includes(r.state)), decisions: reviewerDecisions(all) } : {}),
+    ...(kind === 'pr' ? { reviewDecision: reviewDecision ?? '' } : {}),
     ...(threads ? { threads } : {}),
     body: raw.body ?? '',
     author: raw.author?.login ?? '',
