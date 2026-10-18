@@ -1926,7 +1926,7 @@ function openPrDialog(kind) {
 }
 
 // What approving does, with what's left to look at: the findings that open
-// an issue, the rejected ones, those nobody decided on and those ronin is
+// an issue assigned to ronin, the rejected ones, those nobody decided on and those ronin is
 // still applying a comment on (approving waits for them).
 function approveSummaryHTML(itemId) {
   const data = S.expl[itemId]?.data;
@@ -1937,11 +1937,11 @@ function approveSummaryHTML(itemId) {
   const rejected = data.fichas.filter((f) => f.estado === 'rechazado');
   const undecided = data.fichas.filter((f) => status(f) === 'decidir');
   const waiting = data.fichas.filter((f) => status(f) === 'esperando');
-  return `<div class="sum"><p class="sumh">${dotClass('ok')}Abren su issue (${keep.length})</p>${keep.length ? `<ul>${keep.map(li).join('')}</ul>` : ''}
+  return `<div class="sum"><p class="sumh">${dotClass('ok')}Abren su issue y ronin los empieza (${keep.length})</p>${keep.length ? `<ul>${keep.map(li).join('')}</ul>` : ''}
     <p class="sumh">${dotClass('crit')}Rechazadas, sin issue (${rejected.length})</p>${rejected.length ? `<ul>${rejected.map(li).join('')}</ul>` : ''}
-    ${undecided.length ? `<p class="warnbox">${undecided.length === 1 ? 'Queda 1 ficha' : `Quedan ${undecided.length} fichas`} sin revisar (${esc(undecided.map((f) => f.id).join(', '))}). Si aprobás, también abren su issue.</p>` : ''}
+    ${undecided.length ? `<p class="warnbox">${undecided.length === 1 ? 'Queda 1 ficha' : `Quedan ${undecided.length} fichas`} sin revisar (${esc(undecided.map((f) => f.id).join(', '))}). Si apruebas, también abren su issue y ronin los empieza.</p>` : ''}
     ${waiting.length ? `<p class="warnbox">ronin todavía está aplicando comentarios en ${esc(waiting.map((f) => f.id).join(', '))}. Aprobá cuando responda.</p>` : ''}
-    <p class="help">Se envía como tu review <b>Approve</b> en GitHub. Con eso ronin marca las fichas, abre un issue por cada una que siga en pie y mergea el PR.</p></div>`;
+    <p class="help">Se envía como tu review <b>Approve</b> en GitHub. Con eso ronin marca las fichas, abre un issue por cada una que siga en pie, se lo asigna y mergea el PR. Cada issue arranca como uno asignado a mano.</p></div>`;
 }
 const waitingCount = (itemId) => {
   const data = S.expl[itemId]?.data;

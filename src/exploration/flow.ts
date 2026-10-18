@@ -331,15 +331,16 @@ async function applyFeedback(pr: PullRequestStatus, batch: string): Promise<Redo
   };
 
   // `app`: whose exploration it comes from, for its Linear project; unknown in
-  // a general comment on a PR with findings of several apps.
+  // a general comment on a PR with findings of several apps. Assigned to
+  // ronin, like a finding's issue: asking for it in the PR is the decision.
   const openIssue = async (action: FeedbackAction, ref: string, reply: string, app: string | undefined): Promise<string> => {
     if (!action.issue?.titulo?.trim()) return reply;
-    const created = await createIssue(clean(action.issue.titulo.trim()).slice(0, 200), `${clean(action.issue.cuerpo?.trim() ?? '')}\n\n${ref}`, []).catch((error) => {
+    const created = await createIssue(clean(action.issue.titulo.trim()).slice(0, 200), `${clean(action.issue.cuerpo?.trim() ?? '')}\n\n${ref}`, [], [config.githubLogin]).catch((error) => {
       log.error(`exploración: no se pudo crear el issue pedido en el comentario ${action.commentId}`, error);
       return undefined;
     });
     if (created && app) await queueExplorationProject(app, created.number);
-    return created ? `${reply}\n\nAbrí #${created.number}.`.trim() : `${reply}\n\nNo pude abrir el issue; el detalle está en el log del runner.`.trim();
+    return created ? `${reply}\n\nAbrí #${created.number} y me lo asigné.`.trim() : `${reply}\n\nNo pude abrir el issue; el detalle está en el log del runner.`.trim();
   };
 
   for (const p of pending) {

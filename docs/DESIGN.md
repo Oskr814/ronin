@@ -370,7 +370,7 @@ Qué pasó, cómo reproducirlo, evidencia (con las capturas del antes) y propues
    Las mismas decisiones se pueden tomar desde el tablero, que comenta como quien entró (§15.12).
 
    Un comentario general del PR que menciona a ronin también se aplica: puede cubrir varias fichas a la vez ("los de mobile se resuelven con F-0003"), que se rechazan o corrigen como arriba, y dejar en `knowledge.md` lo que las exploraciones siguientes no deben volver a proponer. Se procesa antes del merge, así que no se abren issues de fichas que ese comentario descartó.
-4. Approve + merge (mismo gate que el resto): al ver el PR aprobado, ronin marca como `aprobado` **las fichas que siguen en pie**, les crea su issue, commitea ambos al PR y recién entonces lo mergea (si sigue aprobado), así la base queda con el estado y el número de issue de cada ficha. La corrida siguiente abre el PR nuevo. Asignar ese issue a ronin lo mete en el flujo de `fix-issue` o de spec de siempre.
+4. Approve + merge (mismo gate que el resto): al ver el PR aprobado, ronin marca como `aprobado` **las fichas que siguen en pie**, les crea su issue, commitea ambos al PR y recién entonces lo mergea (si sigue aprobado), así la base queda con el estado y el número de issue de cada ficha. La corrida siguiente abre el PR nuevo. Cada issue sale **asignado a ronin**, así que entra solo al flujo de `fix-issue` de siempre: aprobar la ficha es la decisión de hacerla. Para no hacer una, se rechaza la ficha antes de aprobar el PR.
 5. Sin excepciones: ninguna ficha abre issue antes de la aprobación, ni siquiera un bug de gravedad `bug`. Así una ficha rechazada nunca deja un issue abierto. Los problemas del **entorno de desarrollo** (seed, stubs), que el evaluador marca con `entorno`, siguen el mismo camino.
 
 #### 11.8 Programación nocturna
@@ -772,13 +772,13 @@ La página *Exploraciones* junta lo que antes estaba repartido entre el PR fijo 
   |---|---|
   | Rechazar (`r`), con motivos rápidos | `Rechazo esta ficha: <motivo>` |
   | Pedir cambios (`c`) | el texto; con *Rehacer la captura del después*, suma `También hay que rehacer la captura del después.` |
-  | Pedir un issue aparte | `Abrí un issue aparte: <texto>` |
+  | Pedir un issue aparte | `Abrí un issue aparte: <texto>` (sale asignado a ronin, como el de una ficha) |
   | Preguntar, o la caja del hilo | el texto tal cual |
   | Aprobar (`a`) | nada todavía: es una marca del navegador (`localStorage`) que la pasa a *Listas para aprobar* y cuenta para el progreso; la ficha se aprueba de verdad al aprobar el PR |
 
   En una ficha ya rechazada o aprobada solo se puede preguntar o comentar. Mientras alguna espera a ronin, la página vuelve a leer las fichas cada 10 s en vez de cada 30.
 - **Comentario general.** `@ronin-agent <texto>` en el PR, como la persona, para decidir sobre varias fichas a la vez o dejar en `knowledge.md` lo que no hay que volver a proponer (lo lee `pendingGeneralFeedback`).
-- **Aprobar.** Antes de enviar, el diálogo muestra qué fichas abren issue, cuáles quedan rechazadas y cuáles nadie revisó. Lo que envía es una review *Approve* a nombre de la persona, con un comentario opcional. Desde ahí sigue el gate de siempre: `approveAndMerge` marca las fichas, abre sus issues y mergea. No se puede aprobar mientras ronin esté aplicando un comentario, que podría rechazar alguna ficha.
+- **Aprobar.** Antes de enviar, el diálogo muestra qué fichas abren issue, cuáles quedan rechazadas y cuáles nadie revisó. Lo que envía es una review *Approve* a nombre de la persona, con un comentario opcional. Desde ahí sigue el gate de siempre: `approveAndMerge` marca las fichas, abre sus issues asignados a ronin y mergea. No se puede aprobar mientras ronin esté aplicando un comentario, que podría rechazar alguna ficha.
 - **De dónde sale.** `GET /api/items/<id>/exploration` (`server/api/dashboard-exploration.ts`) lee las fichas del clon del repo de producto, en la rama del PR, como `dashboard-evidence.ts` lee las capturas. Antes trae la rama y su base con un `fetch`, como mucho uno por minuto. Los hilos salen de `listFileReviewComments`, agrupados por app e id de ficha. Usa la misma caché que la ficha (15.8), y se descarta después de comentar desde la página.
 
 #### 15.13 Linear en el tablero (#101)
