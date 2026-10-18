@@ -7,9 +7,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const listReleases = vi.fn();
 const createRelease = vi.fn();
+const listMergedPrs = vi.fn();
 vi.mock('../core/github.js', () => ({
   listReleases: (...args: unknown[]) => listReleases(...args),
   createRelease: (...args: unknown[]) => createRelease(...args),
+  listMergedPrs: (...args: unknown[]) => listMergedPrs(...args),
 }));
 
 const listRequests = vi.fn();
@@ -67,6 +69,7 @@ beforeEach(async () => {
   listRequests.mockResolvedValue([{ number: 7, repo: 'acme/app', pr: 3 }, { number: 8, repo: 'otro/repo', pr: 3 }]);
   createRelease.mockResolvedValue('https://github.com/acme/app/releases/tag/x');
   noteEvent.mockResolvedValue(undefined);
+  listMergedPrs.mockResolvedValue([]);
 });
 
 afterEach(async () => {
@@ -161,6 +164,45 @@ describe('publishRelease', () => {
     createRelease.mockRejectedValue(new Error('HTTP 502'));
     await expect(inRepo(() => publishRelease({ tag: 'v1.1.0', prs: 'all', by: 'persona' }))).rejects.toThrow(/Se subió el tag v1.1.0/);
     expect((await listDeploys('acme/app'))[0]).toMatchObject({ tag: 'v1.1.0', releaseError: 'HTTP 502', state: 'running' });
+  });
+});
+
+// A repo that merges PRs with a merge commit named after the PR's title,
+// without its number: GitHub says which PR each merge commit is.
+describe('a repo with merge commits', () => {
+  beforeEach(async () => {
+    const seed = join(base, 'seed');
+    for (const [branch, file, n] of [['feat/d', 'apps/web/d.txt', 4], ['feat/e', 'apps/api/e.txt', 5]] as const) {
+      await git(seed, ['checkout', '-q', '-b', branch, 'main']);
+      await commit(seed, file, 'uno\n', `wip ${n}`);
+      await commit(seed, file, 'dos\n', `wip ${n} bis`);
+      await git(seed, ['checkout', '-q', 'main']);
+      await git(seed, ['merge', '-q', '--no-ff', '-m', `feat: el cambio ${n}`, branch]);
+    }
+    await git(seed, ['push', '-q', 'origin', 'main']);
+    const merges = (await git(seed, ['rev-list', '--first-parent', '-2', 'main'])).split('\n');
+    listMergedPrs.mockResolvedValue([{ number: 5, title: 'Cambio cinco', mergeCommit: merges[0] }, { number: 4, title: 'Cambio cuatro', mergeCommit: merges[1] }]);
+  });
+
+  it('lists one change per PR, by its merge commit, with the PR GitHub knows', async () => {
+    const pending = await inRepo(() => pendingChanges());
+    expect(pending.changes.map((c) => [c.pr, c.subject, c.files])).toEqual([
+      [1, 'feat: a dice dos (#1)', ['apps/web/a.txt']], [2, 'feat: a dice tres (#2)', ['apps/web/a.txt']], [3, 'fix: agrega b (#3)', ['apps/api/b.txt']],
+      [4, 'Cambio cuatro (#4)', ['apps/web/d.txt']], [5, 'Cambio cinco (#5)', ['apps/api/e.txt']],
+    ]);
+  });
+
+  it('picks a merged PR whole, and does not list it again after its release', async () => {
+    const plan = await inRepo(() => planRelease({ tag: 'v1.0.1', prs: [5] }));
+    expect(plan.problems).toEqual([]);
+    expect(await git(clone, ['show', `${plan.target}:apps/api/e.txt`])).toBe('dos');
+    await inRepo(() => publishRelease({ tag: 'v1.0.1', prs: [5], by: 'persona' }));
+    listReleases.mockResolvedValue([release('v1.0.0', '2026-10-01T00:00:00Z'), release('v1.0.1', '2026-10-02T00:00:00Z')]);
+    expect((await inRepo(() => pendingChanges())).changes.map((c) => c.pr)).toEqual([1, 2, 3, 4]);
+    // And another picked release on top of that one still leaves both out.
+    await inRepo(() => publishRelease({ tag: 'v1.0.2', prs: [3], by: 'persona' }));
+    listReleases.mockResolvedValue([release('v1.0.1', '2026-10-02T00:00:00Z'), release('v1.0.2', '2026-10-03T00:00:00Z')]);
+    expect((await inRepo(() => pendingChanges())).changes.map((c) => c.pr)).toEqual([1, 2, 4]);
   });
 });
 

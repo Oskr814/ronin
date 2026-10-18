@@ -140,6 +140,8 @@ export function requestDetail(r: PortalRequest, user: PortalUser | undefined, en
     decision: r.decision ?? null,
     issue: r.issue ?? null,
     pr: r.pr ?? null,
+    // The release its change went out in (#158).
+    deployed: r.deployed ?? null,
     activity: activity(r, own),
     runs: [...own].sort((a, b) => b.startedAt.localeCompare(a.startedAt)),
     costUsd: own.reduce((sum, run) => sum + (run.costUsd ?? 0), 0),

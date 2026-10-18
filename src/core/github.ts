@@ -1510,6 +1510,15 @@ export async function createRelease(opts: { tag: string; title: string; notes: s
   return stdout.trim().split('\n').at(-1) ?? '';
 }
 
+// The PRs merged into `base`, newest first, with the commit their merge
+// left on it (a merge commit or the squash): what a deploy carries, by PR
+// (#158), in a repo whose merge commits don't name their PR.
+export async function listMergedPrs(base: string): Promise<Array<{ number: number; title: string; mergeCommit: string }>> {
+  const stdout = await gh(['pr', 'list', '--state', 'merged', '--base', base, '--limit', '100', '--json', 'number,title,mergeCommit']);
+  return (JSON.parse(stdout) as Array<{ number: number; title: string; mergeCommit: { oid: string } | null }>)
+    .flatMap((p) => (p.mergeCommit ? [{ number: p.number, title: p.title, mergeCommit: p.mergeCommit.oid }] : []));
+}
+
 export interface WorkflowRun {
   databaseId: number;
   workflowName: string;

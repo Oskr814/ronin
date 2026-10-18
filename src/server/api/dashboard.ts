@@ -31,6 +31,7 @@ import { isOpen, requestDetail, requestImage, requestPatch, requestRow } from '.
 import { DuplicateMeeting, createMeeting, getMeeting, launchMeetingWorker, listMeetings, retryMeeting } from '../../meetings/index.js';
 import { MAX_UPLOAD_BODY, MeetingUploadError, meetingDetail, meetingOriginal, meetingRow, parseUpload } from './dashboard-meetings.js';
 import { ApproveError, approveMeeting, discardMeeting } from './dashboard-meetings-approve.js';
+import { DespliegueError, despliegues, parseRelease, planDespliegue, publishDespliegue } from './dashboard-despliegues.js';
 import { ExploreNowError, corridasOf, exploracionList, exploracionRows, exploreNow, inventarioOf, liveRuns, parseExploreNow } from './dashboard-exploraciones.js';
 
 // The dashboard's data (#65), all behind the session (tailnet.ts checks it
@@ -62,6 +63,9 @@ import { ExploreNowError, corridasOf, exploracionList, exploracionRows, exploreN
 //   GET /api/exploraciones/<owner>/<repo>/<app>/corridas    the app's exploration runs, with their agents
 //   GET /api/exploraciones/<owner>/<repo>/<app>/inventario  the app's functions and their coverage (inventory.yml)
 //   POST /api/exploraciones/<owner>/<repo>/<app>/run         explore it now: { maxFunctions, hours, tonight } (Explorar ahora)
+//   GET /api/despliegues             each repo with deploy in repos.json: what's merged and not deployed, its last releases and their workflow (#158, admins only)
+//   POST /api/despliegues/<owner>/<repo>/plan     what a release would carry: { tag, prs: 'all' | [n…], prerelease? }, with its problems
+//   POST /api/despliegues/<owner>/<repo>/publish  publishes it: the same, and { title?, notes?, fingerprint? }
 //   GET /api/reuniones               the meetings whose notes were uploaded, of the repos it sees (#62, dashboard-meetings.ts)
 //   POST /api/reuniones              uploads one: the notes as a file or pasted
 //   GET /api/reuniones/<n>           one of them, with its notes' text
@@ -134,6 +138,8 @@ export async function snapshot(login: string): Promise<unknown> {
     runner: { slots: { used: slotsInUse(), limit: config.tickConcurrency }, queue: readQueue().filter((job) => !job.repo || repos.includes(job.repo)), tick: readTickInfo() },
     usage: readUsage().filter((u) => entries.some((entry) => accountName(entry.claudeConfigDir ?? '') === u.account)),
     items,
+    // Whether it can deploy (#158): an admin, with a repo that has deploy.
+    despliegues: access.admin && entries.some((entry) => entry.deploy),
     // Each app a repo explores, with its exploration PR and whether it runs now (#155).
     exploraciones: exploracionRows(entries, prsOf(entries, github), runs, await liveRuns(entries)),
     previews: github.flatMap((gh) => (gh ? gh.previews.map((p) => ({ ...p, repo: gh.repo })) : [])),
@@ -192,6 +198,36 @@ async function postExploreNow(req: IncomingMessage, res: ServerResponse, repo: s
     json(res, 200, launched);
   } catch (error) {
     if (error instanceof ExploreNowError) json(res, error.status, { error: error.message });
+    else throw error;
+  }
+}
+
+// POST /api/despliegues/<owner>/<repo>/(plan|publish) (#158): admins only,
+// like the whole page.
+async function postDespliegue(req: IncomingMessage, res: ServerResponse, repo: string, what: string, session: Session): Promise<void> {
+  if (!currentAccess().admin) {
+    json(res, 403, { error: 'solo los administradores del tablero pueden desplegar' });
+    return;
+  }
+  if (!(req.headers['content-type'] ?? '').startsWith('application/json')) {
+    json(res, 415, { error: 'se espera JSON' });
+    return;
+  }
+  const entry = (await visibleRepos()).find((e) => e.productRepo === repo && e.deploy);
+  if (!entry) {
+    json(res, 404, { error: 'ese repo no se despliega desde ronin (deploy en repos.json)' });
+    return;
+  }
+  try {
+    const body = parseRelease((await readJson(req)) ?? {});
+    if (what === 'plan') json(res, 200, await planDespliegue(entry, body));
+    else {
+      const done = await publishDespliegue(entry, body, session.login);
+      log.info(`tablero: ${session.login} publicó ${done.tag} en ${repo}`);
+      json(res, 200, done);
+    }
+  } catch (error) {
+    if (error instanceof DespliegueError) json(res, error.status, { error: error.message, ...(error.plan ? { plan: error.plan } : {}) });
     else throw error;
   }
 }
@@ -709,6 +745,11 @@ async function route(req: IncomingMessage, res: ServerResponse, path: string, se
     await postFilesAction(req, res, decodeURIComponent(filesPost[1]), session);
     return true;
   }
+  const deployPost = /^\/api\/despliegues\/([\w.-]+\/[\w.-]+)\/(plan|publish)$/.exec(path);
+  if (deployPost && req.method === 'POST') {
+    await postDespliegue(req, res, deployPost[1], deployPost[2], session);
+    return true;
+  }
   const exploreRun = /^\/api\/exploraciones\/([\w.-]+\/[\w.-]+)\/([\w.-]+)\/run$/.exec(path);
   if (exploreRun && req.method === 'POST') {
     await postExploreNow(req, res, exploreRun[1], exploreRun[2], session);
@@ -728,6 +769,12 @@ async function route(req: IncomingMessage, res: ServerResponse, path: string, se
 
   if (path === '/api/snapshot') {
     json(res, 200, await snapshot(login));
+    return true;
+  }
+
+  if (path === '/api/despliegues') {
+    if (!currentAccess().admin) json(res, 403, { error: 'solo los administradores del tablero ven los despliegues' });
+    else json(res, 200, { repos: await despliegues(await visibleRepos()) });
     return true;
   }
 

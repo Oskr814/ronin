@@ -4,12 +4,12 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { APP_MANIFEST_FILE } from '../app/manifest.js';
 import { config } from '../core/config.js';
-import { createRelease, listReleases } from '../core/github.js';
+import { createRelease, listMergedPrs, listReleases } from '../core/github.js';
 import { tryLockResource, unlockResource } from '../core/locks.js';
 import { log } from '../core/logger.js';
 import { activeRepo } from '../core/repo-context.js';
 import { errorLine, listRequests, noteEvent } from '../portal/requests.js';
-import { addDeploy, type DeployRecord } from './store.js';
+import { addDeploy, listDeploys, type DeployRecord } from './store.js';
 
 // A deploy (#158) is a GitHub release: ronin publishes it on the tag someone
 // wrote, and the repo's own workflow (on the tag, or on the release) does
@@ -126,9 +126,24 @@ export const appsOf = (files: string[], paths: Record<string, string>) =>
 // A squash merge ends in "(#123)"; a merge commit starts "Merge pull request #123".
 export const prOf = (subject: string): number | null => Number(/\(#(\d+)\)\s*$/.exec(subject)?.[1] ?? /^Merge pull request #(\d+)/.exec(subject)?.[1]) || null;
 
-// What the branch has that the last release doesn't. By patch, not by
-// commit (git cherry): a PR already out in a release of picked PRs is a
-// different commit there, and still doesn't show up again.
+// The PRs a release of picked PRs carried, and the ones of the picked
+// releases it was made on, back to a release cut from the branch: those
+// are out even though their commits on the branch aren't in the release.
+async function carriedBy(tag: string): Promise<Set<number>> {
+  const records = await listDeploys(activeRepo().productRepo);
+  const carried = new Set<number>();
+  for (let record = records.find((d) => d.tag === tag); record?.mode === 'pick'; record = records.find((d) => d.tag === record!.base)) {
+    for (const c of record.changes) if (c.pr) carried.add(c.pr);
+    if (!record.base) break;
+  }
+  return carried;
+}
+
+// What the branch has that the last release doesn't, one change per PR:
+// the branch's own commits (first parent) since the release's place on it —
+// a PR's merge commit, or its squash — never the PR's inner commits. Out
+// already: what the release has by patch (git cherry: a PR cherry-picked by
+// hand), and what a release of picked PRs carried (its record).
 export async function pendingChanges(opts: { prerelease?: boolean } = {}): Promise<Pending> {
   await git(['fetch', '--quiet', '--tags', '--force', 'origin']);
   const branch = deployBranch();
@@ -136,17 +151,24 @@ export async function pendingChanges(opts: { prerelease?: boolean } = {}): Promi
   const release = await lastRelease(Boolean(opts.prerelease));
   if (!release) return { branch, head, base: null, changes: [] };
   const base = { tag: release.tagName, sha: (await git(['rev-parse', `refs/tags/${release.tagName}^{commit}`])).trim() };
-  const lines = (await git(['cherry', '-v', base.sha, head])).split('\n').filter((line) => line.startsWith('+ '));
+  // Where the release left the branch: itself, or what its cherry-picks went onto.
+  const from = (await git(['merge-base', base.sha, head])).trim();
+  const commits = (await git(['rev-list', '--first-parent', '--reverse', `${from}..${head}`])).split('\n').filter(Boolean);
+  const same = new Set((await git(['cherry', base.sha, head])).split('\n').filter((line) => line.startsWith('- ')).map((line) => line.slice(2)));
+  const carried = await carriedBy(base.tag);
+  const merged = new Map((await listMergedPrs(branch)).map((p) => [p.mergeCommit, p]));
   const paths = await appPaths(head);
   const repo = activeRepo().productRepo;
   const requests = (await listRequests()).filter((r) => r.repo === repo && r.pr);
   const changes: PendingChange[] = [];
-  for (const line of lines) {
-    const [, sha, ...words] = line.split(' ');
-    const subject = words.join(' ');
-    const files = (await git(['diff-tree', '--no-commit-id', '--name-only', '-r', sha])).split('\n').filter(Boolean);
-    const pr = prOf(subject);
-    changes.push({ sha, subject, pr, files, apps: appsOf(files, paths), pedidos: pr ? requests.filter((r) => r.pr === pr).map((r) => r.number) : [] });
+  for (const sha of commits) {
+    if (same.has(sha)) continue;
+    const subject = (await git(['log', '-1', '--format=%s', sha])).trim();
+    const known = merged.get(sha);
+    const pr = known?.number ?? prOf(subject);
+    if (pr && carried.has(pr)) continue;
+    const files = (await git(['diff', '--name-only', `${sha}^1`, sha])).split('\n').filter(Boolean);
+    changes.push({ sha, subject: known && !subject.includes(`#${pr}`) ? `${known.title} (#${pr})` : subject, pr, files, apps: appsOf(files, paths), pedidos: pr ? requests.filter((r) => r.pr === pr).map((r) => r.number) : [] });
   }
   return { branch, head, base, changes };
 }
