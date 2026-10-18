@@ -104,7 +104,7 @@ function duration(ms) {
 const money = (usd) => (usd < 0.01 ? 'menos de US$0,01' : `US$${usd.toFixed(2).replace('.', ',')}`);
 const pct = (fraction) => `${Math.round(fraction * 100)}%`;
 
-const S = { snap: null, today: null, sel: null, open: [], runIdx: {}, pendingRun: null, filter: null, q: '', itemRuns: {}, run: null, stream: null, detail: {}, view: {}, doc: {}, menu: false, dialog: null, expanded: new Set(), expl: {}, ficha: {}, fichaOpen: {}, fichaFilter: { tipo: 'todas', vp: 'todos' }, antes: {}, oldAfter: new Set(), lightbox: null, fmenu: false, fdialog: null, fdraft: {}, listas: {}, scope: 'all', project: '', attAll: false, extra: {}, newIssue: null, files: {}, fcur: {}, ffold: {}, fexp: {}, fcontent: {}, fq: {}, ftree: false, fcomp: null, fbusy: new Set(), rpanel: null, page: null, portal: { data: null, error: null }, pdialog: null, ped: { list: null, error: null, listAt: 0, detail: {}, n: null, tab: 'act', filter: 'todos', run: null, lb: null, patch: {} }, reu: { list: null, error: null, listAt: 0, detail: {}, n: null, tab: null, up: null, run: null, open: {}, retrying: false, form: {}, approving: false }, xpl: { list: null, error: null, listAt: 0, repo: null, app: null, cor: {}, inv: {}, tab: 'corridas', run: null, launched: {} }, xnow: null };
+const S = { snap: null, today: null, sel: null, open: [], runIdx: {}, pendingRun: null, filter: null, q: '', itemRuns: {}, run: null, stream: null, detail: {}, view: {}, doc: {}, menu: false, dialog: null, expanded: new Set(), expl: {}, ficha: {}, fichaOpen: {}, fichaFilter: { tipo: 'todas', vp: 'todos' }, antes: {}, oldAfter: new Set(), lightbox: null, fmenu: false, fdialog: null, fdraft: {}, listas: {}, scope: 'all', project: '', attAll: false, extra: {}, newIssue: null, files: {}, fcur: {}, ffold: {}, fexp: {}, fcontent: {}, fq: {}, ftree: false, fcomp: null, fbusy: new Set(), rpanel: null, page: null, portal: { data: null, error: null }, pdialog: null, ped: { list: null, error: null, listAt: 0, detail: {}, n: null, tab: 'act', filter: 'pend', page: 1, run: null, lb: null, patch: {} }, reu: { list: null, error: null, listAt: 0, detail: {}, n: null, tab: null, up: null, run: null, open: {}, retrying: false, form: {}, approving: false }, xpl: { list: null, error: null, listAt: 0, repo: null, app: null, cor: {}, inv: {}, tab: 'corridas', run: null, launched: {} }, xnow: null };
 // The sidebar's Linear filter (#101), remembered per browser.
 try { Object.assign(S, JSON.parse(localStorage.getItem('ronin-scope') ?? '{}')); } catch { /* sin storage */ }
 function saveScope() {
@@ -3047,7 +3047,10 @@ const PED_STATUS = {
   cancelled: ['idle', 'Cancelado'], big: ['warn', 'En el equipo'],
 };
 const PED_CLOSED = ['done', 'resolved', 'declined', 'cancelled'];
-const PED_FILTERS = [['todos', 'Todos'], ['person', 'Esperan a la persona'], ['ronin', 'ronin trabajando'], ['team', 'Esperan al equipo'], ['cerrados', 'Cerrados']];
+// Pendientes first and by default (#158): the closed ones, in Cerrados or
+// Todos. Null, a separator between the groups.
+const PED_FILTERS = [['pend', 'Pendientes'], null, ['person', 'Esperan a la persona'], ['ronin', 'ronin trabajando'], ['team', 'Esperan al equipo'], null, ['cerrados', 'Cerrados'], ['todos', 'Todos']];
+const PED_PAGE = 25;
 const PED_TABS = [['act', 'Actividad'], ['repro', 'Reproducción'], ['chat', 'Conversación'], ['team', 'Para el equipo'], ['runs', 'Corridas']];
 // A reported error's tries at reproducing it (#137), and how many it gets.
 const PED_REPRODUCTIONS = 2;
@@ -3217,18 +3220,34 @@ function portalTabsHTML(cur) {
   return `<div class="doctabs pd-ptabs" role="tablist"><button class="doctab" role="tab" data-ptab="pedidos" aria-selected="${cur === 'pedidos'}">Pedidos <span class="c">${total}</span></button>${S.snap.portalAdmin ? `<button class="doctab" role="tab" data-ptab="usuarios" aria-selected="${cur === 'usuarios'}">Usuarios${S.portal.data ? ` <span class="c">${S.portal.data.users.length}</span>` : ''}</button>` : ''}</div>`;
 }
 
+function pedPagerHTML(total, pages) {
+  const cur = S.ped.page;
+  const from = (cur - 1) * PED_PAGE + 1;
+  const to = Math.min(cur * PED_PAGE, total);
+  // Every number up to 7 pages; past that, the first, the last and the ones around this one.
+  const nums = Array.from({ length: pages }, (_, i) => i + 1).filter((n) => pages <= 7 || n === 1 || n === pages || Math.abs(n - cur) <= 1);
+  const btns = nums.map((n, i) => `${i && n - nums[i - 1] > 1 ? '<span class="gap">…</span>' : ''}<button data-ppg="${n}" aria-current="${n === cur ? 'page' : 'false'}">${n}</button>`).join('');
+  return `<nav class="pd-pager" aria-label="Páginas"><span>${from}–${to} de ${total}</span><span class="pg"><button data-ppg="${cur - 1}" ${cur === 1 ? 'disabled' : ''} aria-label="Anterior">‹</button>${btns}<button data-ppg="${cur + 1}" ${cur === pages ? 'disabled' : ''} aria-label="Siguiente">›</button></span></nav>`;
+}
+
 function pedidosHTML() {
   const head = `<h1>Portal de pedidos</h1><p class="lead">Lo que la gente pide desde el portal y en qué va cada pedido: la conversación, lo que hizo ronin, y el issue y el PR cuando los hay.</p>${portalTabsHTML('pedidos')}`;
   const list = S.ped.list;
   if (!list) return `<div class="today pd">${head}${S.ped.error ? `<p class="bad">${esc(S.ped.error)}</p>` : '<div class="empty">Cargando…</div>'}</div>`;
   const groups = {
+    pend: list.filter((p) => !PED_CLOSED.includes(p.status)),
     todos: list,
     person: list.filter((p) => p.waitsOn === 'person'),
     ronin: list.filter((p) => p.waitsOn === 'ronin'),
     team: list.filter((p) => p.waitsOn === 'team'),
     cerrados: list.filter((p) => PED_CLOSED.includes(p.status)),
   };
-  const shown = groups[S.ped.filter] ?? list;
+  const all = groups[S.ped.filter] ?? list;
+  // The page, kept while the list reloads, inside it if it got shorter.
+  const pages = Math.max(1, Math.ceil(all.length / PED_PAGE));
+  S.ped.page = Math.min(Math.max(1, S.ped.page), pages);
+  const from = (S.ped.page - 1) * PED_PAGE;
+  const shown = all.slice(from, from + PED_PAGE);
   const rows = shown.map((p) => `<tr data-ped="${p.number}" tabindex="0"><td class="pn">P-${p.number}</td>
       <td><span class="tt">${esc(p.title)}</span>${pedBugTag(p)}<small>${esc(p.person)} · ${esc(p.appName)}${S.snap.repos.length > 1 ? ` · ${esc(repoShort(p.repo))}` : ''}</small>${pedMini(p)}</td>
       <td>${pedChip(p)}</td>
@@ -3236,8 +3255,9 @@ function pedidosHTML() {
       <td class="hide-m pd-gh">${p.issue ? `#${p.issue}` : '<span class="m">—</span>'}${p.pr ? ` · PR #${p.pr}` : ''}</td>
       <td class="hide-m m" data-ago="${esc(p.lastAt)}">${esc(ago(p.lastAt))}</td></tr>`).join('');
   return `<div class="today pd">${head}
-    <div class="pd-filters">${PED_FILTERS.map(([k, label]) => `<button data-pfilter="${k}" aria-pressed="${S.ped.filter === k}">${label}<span class="c">${groups[k].length}</span></button>`).join('')}</div>
-    ${rows ? `<table class="padm-t pd-t"><thead><tr><th></th><th>Pedido</th><th>Estado</th><th class="hide-m">Espera a</th><th class="hide-m">GitHub</th><th class="hide-m">Último movimiento</th></tr></thead><tbody>${rows}</tbody></table>` : `<p class="note">${list.length ? 'Ningún pedido aquí.' : 'Todavía nadie pidió nada por el portal.'}</p>`}
+    <div class="pd-filters">${PED_FILTERS.map((f) => (f ? `<button data-pfilter="${f[0]}" aria-pressed="${S.ped.filter === f[0]}">${f[1]}<span class="c">${groups[f[0]].length}</span></button>` : '<span class="sep"></span>')).join('')}</div>
+    ${rows ? `<table class="padm-t pd-t"><thead><tr><th></th><th>Pedido</th><th>Estado</th><th class="hide-m">Espera a</th><th class="hide-m">GitHub</th><th class="hide-m">Último movimiento</th></tr></thead><tbody>${rows}</tbody></table>` : `<p class="note">${!list.length ? 'Todavía nadie pidió nada por el portal.' : S.ped.filter === 'pend' ? 'Nada pendiente: todos los pedidos están cerrados. Los anteriores están en <button class="link" data-pfilter="todos">Todos</button>.' : 'Ningún pedido aquí.'}</p>`}
+    ${pages > 1 ? pedPagerHTML(all.length, pages) : ''}
   </div>`;
 }
 
@@ -3480,7 +3500,15 @@ async function loadPatch(n, round, of = 'prototipo') {
 function wirePedidos() {
   const center = $('#center');
   for (const b of center.querySelectorAll('[data-ptab]')) b.onclick = () => (b.dataset.ptab === 'usuarios' ? openPortal() : openPedidos());
-  for (const b of center.querySelectorAll('[data-pfilter]')) b.onclick = () => { S.ped.filter = b.dataset.pfilter; renderCenter(); };
+  for (const b of center.querySelectorAll('[data-pfilter]')) b.onclick = () => { S.ped.filter = b.dataset.pfilter; S.ped.page = 1; renderCenter(); };
+  for (const b of center.querySelectorAll('[data-ppg]')) {
+    b.onclick = () => {
+      S.ped.page = Number(b.dataset.ppg);
+      renderCenter();
+      if (isMobile()) scrollTo(0, 0);
+      else $('#center .today')?.scrollTo(0, 0);
+    };
+  }
   for (const row of center.querySelectorAll('[data-ped]')) {
     row.onclick = () => openPedido(Number(row.dataset.ped));
     row.onkeydown = (event) => { if (event.key === 'Enter') openPedido(Number(row.dataset.ped)); };
