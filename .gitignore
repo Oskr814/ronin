@@ -8,6 +8,9 @@ logs/
 scripts/run-tick.sh
 .worktrees/
 repos.json
+# while Ajustes → Repos writes it (#174)
+repos.json.lock
+repos.json.*.tmp
 .tick.pending
 .preview-reservations/
 .ronin-slots/

@@ -112,7 +112,7 @@ function duration(ms) {
 const money = (usd) => (usd < 0.01 ? 'menos de US$0,01' : `US$${usd.toFixed(2).replace('.', ',')}`);
 const pct = (fraction) => `${Math.round(fraction * 100)}%`;
 
-const S = { snap: null, today: null, sel: null, open: [], runIdx: {}, pendingRun: null, filter: null, q: '', itemRuns: {}, run: null, stream: null, detail: {}, view: {}, doc: {}, menu: false, dialog: null, expanded: new Set(), expl: {}, ficha: {}, fichaOpen: {}, fichaFilter: { tipo: 'todas', vp: 'todos' }, antes: {}, oldAfter: new Set(), lightbox: null, fmenu: false, fdialog: null, fdraft: {}, listas: {}, scope: 'all', project: '', attAll: false, extra: {}, newIssue: null, files: {}, fcur: {}, ffold: {}, fexp: {}, fcontent: {}, fq: {}, ftree: false, fcomp: null, fbusy: new Set(), rpanel: null, revSent: {}, page: null, portal: { data: null, error: null }, ped: { list: null, error: null, listAt: 0, detail: {}, n: null, tab: 'act', gh: 'issue', filter: 'pend', page: 1, run: null, lb: null, patch: {} }, reu: { list: null, error: null, listAt: 0, detail: {}, n: null, tab: null, up: null, run: null, open: {}, retrying: false, form: {}, approving: false }, xpl: { list: null, error: null, listAt: 0, repo: null, app: null, cor: {}, inv: {}, tab: 'corridas', run: null, launched: {} }, xnow: null, dep: { list: null, error: null, listAt: 0, dlg: null }, aj: { data: null, error: null, sec: 'perfil', registro: null, users: null, user: null, login: null, cuenta: null, f: 'todos', q: '', add: null, link: null, busy: false } };
+const S = { snap: null, today: null, sel: null, open: [], runIdx: {}, pendingRun: null, filter: null, q: '', itemRuns: {}, run: null, stream: null, detail: {}, view: {}, doc: {}, menu: false, dialog: null, expanded: new Set(), expl: {}, ficha: {}, fichaOpen: {}, fichaFilter: { tipo: 'todas', vp: 'todos' }, antes: {}, oldAfter: new Set(), lightbox: null, fmenu: false, fdialog: null, fdraft: {}, listas: {}, scope: 'all', project: '', attAll: false, extra: {}, newIssue: null, files: {}, fcur: {}, ffold: {}, fexp: {}, fcontent: {}, fq: {}, ftree: false, fcomp: null, fbusy: new Set(), rpanel: null, revSent: {}, page: null, portal: { data: null, error: null }, ped: { list: null, error: null, listAt: 0, detail: {}, n: null, tab: 'act', gh: 'issue', filter: 'pend', page: 1, run: null, lb: null, patch: {} }, reu: { list: null, error: null, listAt: 0, detail: {}, n: null, tab: null, up: null, run: null, open: {}, retrying: false, form: {}, approving: false }, xpl: { list: null, error: null, listAt: 0, repo: null, app: null, cor: {}, inv: {}, tab: 'corridas', run: null, launched: {} }, xnow: null, dep: { list: null, error: null, listAt: 0, dlg: null }, aj: { data: null, error: null, sec: 'perfil', registro: null, users: null, user: null, login: null, cuenta: null, f: 'todos', q: '', add: null, link: null, busy: false, repos: null, repo: null } };
 // The sidebar's Linear filter (#101), remembered per browser.
 try { Object.assign(S, JSON.parse(localStorage.getItem('ronin-scope') ?? '{}')); } catch { /* sin storage */ }
 function saveScope() {
@@ -4531,6 +4531,7 @@ const AJ_SECTIONS = {
   perfil: { name: 'Perfil', icon: '<circle cx="12" cy="8" r="4"/><path d="M4 20c1.5-4 4.5-6 8-6s6.5 2 8 6"/>' },
   notificaciones: { name: 'Notificaciones', icon: '<path d="M6 16V11a6 6 0 0 1 12 0v5l2 2H4zM10 21h4"/>' },
   general: { name: 'General', icon: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1"/>', admin: true },
+  repos: { name: 'Repos', icon: '<path d="M5 4h11l3 3v13H5zM9 9h6M9 13h6"/>', admin: true },
   usuarios: { name: 'Usuarios', icon: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c1-3.5 3.5-5.5 6.5-5.5s5.5 2 6.5 5.5M16 4.5a3.5 3.5 0 0 1 0 7M18 14.5c2 .7 3.2 2.6 3.7 5.5"/>', admin: true },
   registro: { name: 'Registro', icon: '<path d="M4 6h16M4 12h16M4 18h10"/>', admin: true },
 };
@@ -4550,11 +4551,13 @@ function openAjustes(sec = 'perfil', login = null, f = null, cuenta = null) {
   S.page = 'ajustes';
   S.aj.sec = ajAllowed(sec) ? sec : 'perfil';
   S.aj.login = S.aj.sec === 'usuarios' && !cuenta ? login : null;
+  // For Repos, `login` is the repo (owner/name).
+  S.aj.repo = S.aj.sec === 'repos' ? login : null;
   S.aj.cuenta = S.aj.sec === 'usuarios' ? cuenta : null;
   if (f) S.aj.f = f;
   if (S.aj.login !== S.aj.user?.login) S.aj.user = null;
   stopStream();
-  const path = `/ajustes/${S.aj.sec}${S.aj.cuenta ? `/cuenta/${encodeURIComponent(S.aj.cuenta)}` : S.aj.login ? `/${encodeURIComponent(S.aj.login)}` : ''}`;
+  const path = `/ajustes/${S.aj.sec}${S.aj.cuenta ? `/cuenta/${encodeURIComponent(S.aj.cuenta)}` : S.aj.login ? `/${encodeURIComponent(S.aj.login)}` : S.aj.repo ? `/${S.aj.repo}` : ''}`;
   if (location.pathname !== path) history.pushState(null, '', path);
   renderAll();
   if (isMobile() && sec) {
@@ -4568,6 +4571,7 @@ async function loadAjustes() {
   try {
     S.aj.data = await api('/api/ajustes');
     if (S.aj.sec === 'registro') S.aj.registro = (await api('/api/ajustes/registro')).registro;
+    if (S.aj.sec === 'repos') S.aj.repos = await api('/api/ajustes/repos');
     if (S.aj.sec === 'usuarios' && S.aj.login) S.aj.user = await api(`/api/ajustes/usuarios/${encodeURIComponent(S.aj.login)}`);
     else if (S.aj.sec === 'usuarios' && !S.aj.cuenta) S.aj.users = await api('/api/ajustes/usuarios');
     // The portal's accounts (role Usuario), when the portal is set up.
@@ -4581,15 +4585,15 @@ async function loadAjustes() {
 }
 
 function ajNavHTML() {
-  const button = (sec) => `<button data-aj="${sec}" aria-pressed="${S.aj.sec === sec}"><svg viewBox="0 0 24 24">${AJ_SECTIONS[sec].icon}</svg>${AJ_SECTIONS[sec].name}</button>`;
+  const button = (sec) => `<button data-aj="${sec}" aria-pressed="${S.aj.sec === sec && !(sec === 'repos' && S.aj.repo)}"><svg viewBox="0 0 24 24">${AJ_SECTIONS[sec].icon}</svg>${AJ_SECTIONS[sec].name}</button>`;
   return `<button data-aj-back><svg viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></svg>Volver al tablero</button>
     <div class="aj-grp">Tu cuenta <span>${esc(S.snap.me)}</span></div>${button('perfil')}${button('notificaciones')}
-    ${S.snap.access.admin ? `<div class="aj-grp">Administración</div>${button('general')}${button('usuarios')}${button('registro')}` : ''}`;
+    ${S.snap.access.admin ? `<div class="aj-grp">Administración</div>${button('general')}${button('usuarios')}${button('repos')}${S.snap.repos.map((repo) => `<button class="aj-sub" data-aj="repos" data-ajrepo="${esc(repo)}" aria-pressed="${S.aj.sec === 'repos' && S.aj.repo === repo}"><i style="background:${repoColor(repo)}"></i>${esc(repoShort(repo))}</button>`).join('')}${button('registro')}` : ''}`;
 }
 
 function wireAjNav() {
   $('#quick').querySelector('[data-aj-back]').onclick = goHome;
-  for (const b of $('#quick').querySelectorAll('[data-aj]')) b.onclick = () => openAjustes(b.dataset.aj);
+  for (const b of $('#quick').querySelectorAll('[data-aj]')) b.onclick = () => openAjustes(b.dataset.aj, b.dataset.ajrepo ?? null);
 }
 
 const ajSec = (title, body, lead = '') => `<section class="aj-sec"><h2>${title}</h2>${lead ? `<p class="aj-d">${lead}</p>` : ''}<div class="aj-card">${body}</div></section>`;
@@ -4639,6 +4643,9 @@ const AJ_PAGES = {
     return `<h1>General</h1><p class="lead">El tablero y el portal de pedidos. Un cambio vale al momento, sin reiniciar, y queda en el <a href="/ajustes/registro" data-aj-link="registro">Registro</a>.</p>
       ${ajSec('Tablero', ajFixed('Dirección', esc(d.dashboard.url || '—'), 'DASHBOARD_URL') + row('dashboard.sessionDays') + row('dashboard.githubTtlSeconds'))}
       ${ajSec('Portal de pedidos', ajFixed('Dirección', esc(d.portal.url || '—'), 'PORTAL_URL') + row('portal.dailyLimit') + row('portal.sessionDays'), 'Las cuentas del portal siguen en <i>Pedidos del portal → Usuarios</i>.')}`;
+  },
+  repos() {
+    return S.aj.repo ? ajRepoHTML() : ajReposHTML();
   },
   usuarios() {
     return S.aj.cuenta ? ajCuentaHTML() : S.aj.login ? ajUserHTML() : ajUsersHTML();
@@ -4966,6 +4973,90 @@ async function ajAddCuenta(a) {
   }
 }
 
+// Ajustes → Repos (#174, stage 5): what of repos.json can change from here,
+// written into the file. Adding a repo, its paths and its Claude account
+// stay in the file.
+function ajReposHTML() {
+  const d = S.aj.repos;
+  if (!d) return '<h1>Repos</h1><div class="empty">Cargando…</div>';
+  return `<h1>Repos</h1><p class="lead">Los repos que supervisa ronin. Todo sigue en <code>repos.json</code>: lo que se cambia aquí se escribe ahí, con las mismas reglas que lo leen y una copia del anterior. Agregar o quitar un repo, su checkout y su cuenta de Claude se hacen en el archivo.</p>
+    <div class="aj-card"><table class="aj-tbl"><thead><tr><th>Repo</th><th class="hide-m">Portal</th><th class="hide-m">Linear</th><th class="hide-m">Despliegues</th><th class="hide-m">Exploración</th></tr></thead><tbody>
+    ${d.repos.map((r) => `<tr data-ajrepo-row="${esc(r.repo)}" tabindex="0"><td><b><i class="aj-sq" style="background:${repoColor(r.repo)}"></i>${esc(r.repo)}</b><small class="mono">${esc(r.baseRef ?? d.defaults.baseRef)}</small></td>
+      <td class="hide-m">${r.portal ? `${esc(r.portal.name)}<small>${r.apps.filter((a) => a.portal).length} apps</small>` : '<span class="m">—</span>'}</td>
+      <td class="hide-m">${r.linear ? (r.linear.connected ? '<span class="ok-t">● conectado</span>' : '<span class="warn-t">○ sin key en .env</span>') : '<span class="m">—</span>'}</td>
+      <td class="hide-m">${r.deploy ? (r.deploy.prerelease ? 'QA y producción' : 'release') : '<span class="m">—</span>'}</td>
+      <td class="hide-m">${r.apps.filter((a) => a.explore).map((a) => esc(a.id)).join(', ') || '<span class="m">—</span>'}</td></tr>`).join('')}
+    </tbody></table></div><p class="aj-foot">Archivo: <code>${esc(d.path)}</code></p>`;
+}
+
+function ajRepoHTML() {
+  const d = S.aj.repos;
+  const crumbs = `<div class="aj-crumbs"><a href="/ajustes/repos" data-aj-link="repos">Repos</a> › <span>${esc(S.aj.repo)}</span></div>`;
+  const r = d?.repos.find((x) => x.repo === S.aj.repo);
+  if (!d) return `${crumbs}<div class="empty">Cargando…</div>`;
+  if (!r) return `${crumbs}<p class="bad">Ese repo no está en repos.json.</p>`;
+  const file = (field) => `<span class="aj-env">repos.json</span><code>${esc(field)}</code><span>· se cambia en el archivo</span>`;
+  const fixed = (label, value, field) => ajRow(label, '', `<span class="aj-ro">${esc(value)}</span>`, file(field));
+  const sw = (attrs, on, label, disabled = false) => `<button class="aj-sw" role="switch" aria-checked="${on}" ${attrs} ${disabled ? 'disabled' : ''} aria-label="${esc(label)}"></button>`;
+  const opt = (value, current, label = value) => `<option value="${esc(value)}" ${value === current ? 'selected' : ''}>${esc(label)}</option>`;
+  const projects = r.linear?.projects ?? [];
+  return `${crumbs}<h1>${esc(repoShort(r.repo))}</h1><p class="lead">${esc(r.repo)}</p>
+    ${ajSec('General', (r.portal ? ajRow('Nombre en el portal', 'Con el que lo ve quien pide.', `<input class="aj-in" maxlength="80" data-ajr="portalName" value="${esc(r.portal.name)}" aria-label="Nombre en el portal">`) : '')
+      + ajRow('Rama base', 'De donde sale cada rama de ronin. Vacío: la de .env.', `<input class="aj-in mono" data-ajr="baseRef" value="${esc(r.baseRef ?? '')}" placeholder="${esc(d.defaults.baseRef)}" aria-label="Rama base">`)
+      + fixed('Checkout', r.productRepoPath, 'productRepoPath')
+      + (r.claudeConfigDir ? fixed('Cuenta de Claude', r.claudeConfigDir, 'claudeConfigDir') : '')
+      + (r.changelogRepo ? fixed('Changelog', r.changelogRepo, 'changelogRepo') : ''))}
+    <section class="aj-sec"><h2>Apps</h2><p class="aj-d">Las de <code>ronin.app.json</code> del repo: si están en el portal, con qué nombre, y si se exploran de noche${r.linear ? ', con el proyecto de Linear de sus issues' : ''}.</p><div class="aj-card">
+      ${r.apps.map((a) => `<div class="aj-app"><div class="id"><b class="mono">${esc(a.id)}</b>${a.inManifest ? '' : '<small class="warn-t">ya no está en ronin.app.json</small>'}</div>
+        <label class="aj-chk"><input type="checkbox" data-ajapp="${esc(a.id)}" data-f="portal" ${a.portal ? 'checked' : ''} ${!a.inManifest && !a.portal ? 'disabled' : ''}><span>En el portal</span></label>
+        ${a.portal ? `<input class="aj-in" maxlength="80" data-ajapp="${esc(a.id)}" data-f="name" value="${esc(a.name ?? '')}" placeholder="Nombre" aria-label="Nombre de ${esc(a.id)} en el portal"><input class="aj-in" maxlength="200" data-ajapp="${esc(a.id)}" data-f="description" value="${esc(a.description ?? '')}" placeholder="Descripción" aria-label="Descripción de ${esc(a.id)}">` : '<span></span><span></span>'}
+        <label class="aj-chk"><input type="checkbox" data-ajapp="${esc(a.id)}" data-f="explore" ${a.explore ? 'checked' : ''}><span>De noche</span></label>
+        ${r.linear ? `<select class="aj-in" data-ajapp="${esc(a.id)}" data-f="project" aria-label="Proyecto de Linear de ${esc(a.id)}"><option value="">Sin proyecto</option>${[...new Set([...(a.project ? [a.project] : []), ...projects])].map((p) => opt(p, a.project ?? '')).join('')}</select>` : ''}</div>`).join('') || '<div class="aj-row"><span class="m">No se pudo leer ronin.app.json del repo.</span></div>'}
+    </div></section>
+    ${r.portal?.notifyTo.length ? ajSec('Correos de repos.json', r.portal.notifyTo.map((mail) => ajRow(esc(mail), '', `<button class="btn-s" data-ajnotify="${esc(mail)}">Quitar</button>`)).join(''), 'Lo que <code>portal.notifyTo</code> manda todavía a quien no eligió en Notificaciones. Cuando cada uno tenga su correo en el perfil, se puede quitar.') : ''}
+    ${ajSec('Linear', ajRow('API key', 'El nombre de la variable de .env que la tiene. La key nunca pasa por el tablero.', `<select class="aj-in mono" data-ajr="linear" aria-label="API key de Linear"><option value="">Sin Linear</option>${[...new Set([...(r.linear ? [r.linear.apiKeyEnv] : []), ...d.linearKeys])].map((k) => opt(k, r.linear?.apiKeyEnv ?? '')).join('')}</select>`,
+      r.linear ? (r.linear.connected ? '<span class="ok-t">● Conectado</span>' : '<span class="warn-t">○ Esa variable no está en .env</span>') : '<span>Solo se listan las variables LINEAR_API_KEY_* que hay en .env.</span>'))}
+    ${ajSec('Despliegues', ajRow('Desplegar desde el tablero', 'Un release de GitHub con el tag escrito a mano.', sw('data-ajdeploy="on"', Boolean(r.deploy), 'Despliegues'))
+      + (r.deploy ? ajRow('Pre-release primero', 'QA antes de producción.', sw('data-ajdeploy="prerelease"', r.deploy.prerelease, 'Pre-release'))
+        + ajRow('Solo los PRs que se elijan', 'En vez de todo lo mergeado desde el último release.', sw('data-ajdeploy="selective"', r.deploy.selective, 'PRs elegidos')) : ''))}
+    ${ajSec('Agentes en este repo', ajRow('Modelo', 'Para una cuenta de Claude con límites más bajos.', `<select class="aj-in" data-ajagent="model" aria-label="Modelo"><option value="">El general (${esc(d.defaults.model)})</option>${d.models.map((m) => opt(m, r.agent.model)).join('')}</select>`)
+      + ajRow('Esfuerzo', '', `<select class="aj-in" data-ajagent="effort" aria-label="Esfuerzo"><option value="">El general (${esc(d.defaults.effort)})</option>${d.efforts.map((m) => opt(m, r.agent.effort)).join('')}</select>`), 'Gana sobre lo general para todo lo que corre en este repo.')}`;
+}
+
+function wireAjRepo(center) {
+  for (const row of center.querySelectorAll('[data-ajrepo-row]')) {
+    row.onclick = () => openAjustes('repos', row.dataset.ajrepoRow);
+    row.onkeydown = (event) => { if (event.key === 'Enter') openAjustes('repos', row.dataset.ajrepoRow); };
+  }
+  if (!S.aj.repo) return;
+  const r = S.aj.repos?.repos.find((x) => x.repo === S.aj.repo);
+  for (const el of center.querySelectorAll('[data-ajr]')) el.onchange = () => ajRepo({ [el.dataset.ajr]: el.value.trim() || (el.dataset.ajr === 'portalName' ? el.value : null) });
+  for (const el of center.querySelectorAll('[data-ajapp]')) el.onchange = () => ajRepo({ app: { id: el.dataset.ajapp, [el.dataset.f]: el.type === 'checkbox' ? el.checked : el.value || (el.dataset.f === 'project' ? null : el.value) } });
+  for (const b of center.querySelectorAll('[data-ajdeploy]')) b.onclick = () => {
+    const on = b.getAttribute('aria-checked') !== 'true';
+    if (b.dataset.ajdeploy === 'on' && !on && !confirm(`¿Dejar de desplegar ${S.aj.repo} desde el tablero?`)) return;
+    ajRepo({ deploy: { [b.dataset.ajdeploy]: on } });
+  };
+  for (const el of center.querySelectorAll('[data-ajagent]')) el.onchange = () => ajRepo({ agent: { [el.dataset.ajagent]: el.value || null } });
+  for (const b of center.querySelectorAll('[data-ajnotify]')) b.onclick = () => {
+    if (!confirm(`¿Quitar ${b.dataset.ajnotify} de portal.notifyTo? Si es de alguien del equipo, recibe lo que elija en Notificaciones.`)) return;
+    ajRepo({ notifyTo: r.portal.notifyTo.filter((m) => m !== b.dataset.ajnotify) });
+  };
+}
+
+async function ajRepo(change) {
+  try {
+    const { changed } = await api(`/api/ajustes/repos/${S.aj.repo}`, { method: 'POST', body: JSON.stringify(change) });
+    S.aj.repos = await api('/api/ajustes/repos');
+    toast(changed ? 'Guardado en repos.json.' : 'Sin cambios.');
+  } catch (error) {
+    if (error instanceof Unauthorized) return showLogin();
+    toast(`No se guardó. ${error.message}`);
+  }
+  $('#center')._html = null;
+  renderCenter();
+}
+
 function ajustesHTML() {
   const d = S.aj.data;
   const body = S.aj.error && !d ? `<p class="bad">${esc(S.aj.error)}</p>` : !d ? '<div class="empty">Cargando…</div>' : AJ_PAGES[S.aj.sec](d);
@@ -5004,6 +5095,7 @@ function wireAjustes() {
     openAjustes(a.dataset.ajLink);
   };
   wireAjUsers(center);
+  wireAjRepo(center);
 }
 
 async function ajSetValue(key, value) {
@@ -5267,7 +5359,8 @@ function openPortalPath() {
   const r = /^\/reuniones\/(\d+)$/.exec(location.pathname)?.[1];
   const x = /^\/exploraciones\/([\w.-]+\/[\w.-]+)\/([^/]+)$/.exec(location.pathname);
   const aj = /^\/ajustes(?:\/(\w+))?(?:\/([\w-]+))?(?:\/([\w-]+))?$/.exec(location.pathname);
-  if (aj && aj[2] === 'cuenta' && aj[3]) openAjustes('usuarios', null, null, aj[3]);
+  if (aj && aj[1] === 'usuarios' && aj[2] === 'cuenta' && aj[3]) openAjustes('usuarios', null, null, aj[3]);
+  else if (aj && aj[1] === 'repos' && aj[3]) openAjustes('repos', `${aj[2]}/${aj[3]}`);
   else if (aj) openAjustes(aj[1] ?? 'perfil', aj[2] ?? null);
   else if (x) openExploracion(x[1], decodeURIComponent(x[2]), new URLSearchParams(location.search).get('f'));
   else if (location.pathname === '/exploraciones') openExploraciones();
