@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { rm } from 'node:fs/promises';
 import { config } from '../../core/config.js';
 import { getUser } from '../../portal/accounts.js';
+import { createRequest } from '../../portal/requests.js';
 import { portalAdminView, runPortalAdmin, type PortalAdminContext } from './portal-admin.js';
 
 vi.mock('../../core/logger.js', () => ({ log: { info: vi.fn(), error: vi.fn() } }));
@@ -70,6 +71,16 @@ describe('portal admin', () => {
     const view = await portalAdminView(ctx);
     expect(view.apps.map((a) => `${a.org} · ${a.name}`)).toEqual(['Red Motos · Backoffice', 'Bmedical · Webapp']);
     expect(JSON.stringify(view)).not.toMatch(/tokenHash|passwordHash/);
+  });
+
+  it("shows each account's requests today against its daily limit", async () => {
+    const { user: mf } = await runPortalAdmin(ctx, '/api/portal-admin/users', { email: 'mf@x.com', name: 'María', grants: [grant], dailyLimit: 2 });
+    const { user: jp } = await runPortalAdmin(ctx, '/api/portal-admin/users', { email: 'jp@x.com', name: 'Juan', grants: [grant] });
+    await createRequest({ userId: mf.id, repo: 'redmotos/shoppingcart', app: 'backoffice', text: 'uno', images: [] });
+    await createRequest({ userId: mf.id, repo: 'redmotos/shoppingcart', app: 'backoffice', text: 'dos', images: [] });
+    await createRequest({ userId: jp.id, repo: 'redmotos/shoppingcart', app: 'backoffice', text: 'de ayer', images: [] }, new Date(Date.now() - 3 * 24 * 3600_000));
+    const users = (await portalAdminView(ctx)).users;
+    expect(users.map((u) => [u.name, u.today])).toEqual([['Juan', { used: 0, limit: 5 }], ['María', { used: 2, limit: 2 }]]);
   });
 
   it('refuses to change anything while the portal is not configured', async () => {
