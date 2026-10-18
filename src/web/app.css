@@ -649,6 +649,9 @@ table.fdiff tr.sel td, table.fdiff td.sel { box-shadow: inset 0 0 0 9999px color
   .back span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .tx, .doc { overflow: visible; flex: none; }
   .head { padding: 12px 14px; }
+  .head .row { flex-wrap: wrap; gap: 8px; position: relative; }
+  .head h1 { flex-basis: 100%; }
+  .head .row .actions { position: static; }
   .act-line, .last-err { padding-left: 14px; padding-right: 14px; }
   .act-line { flex-wrap: wrap; }
   .act-line .latest { flex-basis: 100%; }
@@ -788,7 +791,7 @@ button.brow:hover { background: var(--hover); }
 .grp-add:hover { background: var(--hover); color: var(--ink); }
 .grp-add svg { width: 13px; height: 13px; stroke: currentColor; stroke-width: 2; fill: none; stroke-linecap: round; }
 .dlg-new { width: min(620px, 100%); }
-.dlg input:not([type="radio"]), .dlg select { width: 100%; background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; color: var(--ink); font: inherit; padding: 7px 8px; }
+.dlg input:not([type="radio"]):not([type="checkbox"]), .dlg select { width: 100%; background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; color: var(--ink); font: inherit; padding: 7px 8px; }
 .ni-tabs { display: flex; align-items: center; gap: 4px; }
 .ni-tabs span { margin-right: auto; }
 .ni-tabs button { font-size: 12px; padding: 2px 8px; border-radius: 5px; color: var(--muted); }
