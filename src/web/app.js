@@ -104,7 +104,7 @@ function duration(ms) {
 const money = (usd) => (usd < 0.01 ? 'menos de US$0,01' : `US$${usd.toFixed(2).replace('.', ',')}`);
 const pct = (fraction) => `${Math.round(fraction * 100)}%`;
 
-const S = { snap: null, today: null, sel: null, open: [], runIdx: {}, pendingRun: null, filter: null, q: '', itemRuns: {}, run: null, stream: null, detail: {}, view: {}, doc: {}, menu: false, dialog: null, expanded: new Set(), expl: {}, ficha: {}, fichaOpen: {}, fichaFilter: { tipo: 'todas', vp: 'todos' }, antes: {}, oldAfter: new Set(), lightbox: null, fmenu: false, fdialog: null, fdraft: {}, listas: {}, scope: 'all', project: '', attAll: false, extra: {}, newIssue: null, files: {}, fcur: {}, ffold: {}, fexp: {}, fcontent: {}, fq: {}, ftree: false, fcomp: null, fbusy: new Set(), rpanel: null, page: null, portal: { data: null, error: null }, pdialog: null, ped: { list: null, error: null, listAt: 0, detail: {}, n: null, tab: 'act', filter: 'todos', run: null, lb: null, patch: {} }, reu: { list: null, error: null, listAt: 0, detail: {}, n: null, tab: null, up: null, run: null, open: {}, retrying: false, form: {}, approving: false }, xpl: { list: null, error: null, listAt: 0, repo: null, app: null, cor: {}, inv: {}, tab: 'corridas', run: null } };
+const S = { snap: null, today: null, sel: null, open: [], runIdx: {}, pendingRun: null, filter: null, q: '', itemRuns: {}, run: null, stream: null, detail: {}, view: {}, doc: {}, menu: false, dialog: null, expanded: new Set(), expl: {}, ficha: {}, fichaOpen: {}, fichaFilter: { tipo: 'todas', vp: 'todos' }, antes: {}, oldAfter: new Set(), lightbox: null, fmenu: false, fdialog: null, fdraft: {}, listas: {}, scope: 'all', project: '', attAll: false, extra: {}, newIssue: null, files: {}, fcur: {}, ffold: {}, fexp: {}, fcontent: {}, fq: {}, ftree: false, fcomp: null, fbusy: new Set(), rpanel: null, page: null, portal: { data: null, error: null }, pdialog: null, ped: { list: null, error: null, listAt: 0, detail: {}, n: null, tab: 'act', filter: 'todos', run: null, lb: null, patch: {} }, reu: { list: null, error: null, listAt: 0, detail: {}, n: null, tab: null, up: null, run: null, open: {}, retrying: false, form: {}, approving: false }, xpl: { list: null, error: null, listAt: 0, repo: null, app: null, cor: {}, inv: {}, tab: 'corridas', run: null, launched: {} }, xnow: null };
 // The sidebar's Linear filter (#101), remembered per browser.
 try { Object.assign(S, JSON.parse(localStorage.getItem('ronin-scope') ?? '{}')); } catch { /* sin storage */ }
 function saveScope() {
@@ -2566,6 +2566,7 @@ const xplNext = (iso) => (!iso ? '' : Date.parse(iso) <= Date.now() + MIN ? 'est
 
 function xplChip(r) {
   if (r.running) return `<span class="chip run">explorando${r.running.fn ? ` ${esc(r.running.fn)}` : ''}</span>`;
+  if (xplStarting(r)) return '<span class="chip run">arrancando…</span>';
   if (!r.pr) return '<span class="chip idle">sin PR de exploración</span>';
   const c = xplCounts(r);
   if (!c) return '<span class="chip idle">PR abierto</span>';
@@ -2586,7 +2587,7 @@ function xplFacts(r) {
 function xplHead(r, buttons, pill) {
   return `<div class="head">
     <div class="crumb"><button class="crumb-l" data-xpl-page>Exploraciones</button><span>/</span><i style="background:${repoColor(r.repo)}"></i>${esc(r.repo)}</div>
-    <div class="row"><h1>${esc(r.app)}</h1>${buttons}</div>
+    <div class="row"><h1>${esc(r.app)}</h1>${buttons}${xplNowButton(r)}</div>
     <div class="state">${pill}${xplChip(r)}${xplFacts(r).map((f) => `<span>${esc(f)}</span>`).join('')}</div></div>`;
 }
 
@@ -2663,7 +2664,7 @@ async function loadXplRun(runId) {
 }
 
 const XPL_TRIGGER = { noche: 'de noche', manual: 'a pedido', desconocido: 'sin registro' };
-const xplTrigger = (t) => (t.kind === 'issue' ? `/explore en #${t.issueNumber}` : XPL_TRIGGER[t.kind] ?? t.kind);
+const xplTrigger = (t) => (t.kind === 'issue' ? `/explore en #${t.issueNumber}` : t.kind === 'manual' && t.by ? `a pedido de ${t.by}` : XPL_TRIGGER[t.kind] ?? t.kind);
 const XPL_STATE = { running: ['live', 'en curso'], ok: ['ok', 'terminó bien'], error: ['crit', 'falló'], cut: ['crit', 'se cortó'] };
 const agentName = (a) => `${typeName(a.taskType)}${a.fn ? ` ${a.fn}` : ''}`;
 
@@ -2714,6 +2715,95 @@ function xplInventarioHTML(r) {
     <table class="padm-t xi-t"><thead><tr><th>Función</th><th></th><th class="hide-m">Última vez</th><th>Charters</th><th class="hide-m">Fichas</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
+// ---------- Explorar ahora (#155, 3/4)
+// ronin still chooses the functions and the charters: the dialog only asks
+// how many, for how long, and whether it stands for tonight's run.
+// Launched, the app says "arrancando…" until the snapshot sees its worker.
+const XPL_STARTING_MS = 3 * MIN;
+const xplStarting = (r) => !r.running && S.xpl.launched[r.repo]?.app === r.app && Date.now() - S.xpl.launched[r.repo].at < XPL_STARTING_MS;
+// Why it can't start now, or null: one run per repo at a time.
+function xplBlocked(r) {
+  const other = xplRows().find((x) => x.repo === r.repo && x.running);
+  if (other) return other.app === r.app ? `ronin ya está explorando ${r.app}` : `ronin está explorando ${other.app}, del mismo repo: una por repo a la vez`;
+  return Date.now() - (S.xpl.launched[r.repo]?.at ?? 0) < XPL_STARTING_MS ? 'la exploración que pediste está arrancando' : null;
+}
+const xplNowButton = (r) => {
+  const blocked = xplBlocked(r);
+  return `<button class="act-btn" data-xnow="${esc(xplKey(r))}" ${blocked ? `disabled title="${esc(blocked)}"` : ''}>Explorar ahora</button>`;
+};
+
+function openExploreNow(repo, app) {
+  S.xnow = { repo, app, n: 3, hours: 2, tonight: true, sending: false, error: null };
+  renderExploreNow();
+}
+
+function closeExploreNow() {
+  if (S.xnow?.sending) return;
+  S.xnow = null;
+  renderExploreNow();
+}
+
+function renderExploreNow() {
+  let layer = $('#xlayer');
+  const x = S.xnow;
+  if (!x) {
+    layer?.remove();
+    return;
+  }
+  const r = xplRow0(x.repo, x.app);
+  if (!layer) {
+    layer = Object.assign(document.body.appendChild(document.createElement('div')), { id: 'xlayer' });
+    layer.innerHTML = `<div class="scrim"><div class="dlg" role="dialog" aria-modal="true" aria-labelledby="xn-t">
+      <h2 id="xn-t">Explorar ${esc(x.app)} ahora</h2>
+      <p class="help">ronin elige las funciones y los charters igual que de noche: primero las nuevas y las que cambiaron, después las marcadas <b>alta</b>, la que hace más tiempo que no se explora, y una al azar. ${r?.pr ? `Lo que encuentre se suma al PR #${r.pr.number}.` : 'Si encuentra algo, abre el PR de exploración.'}</p>
+      <div class="xn-row"><label class="field"><span>Funciones</span><select id="xn-n">${[1, 2, 3, 4, 5, 8, 10].map((n) => `<option value="${n}">${n}</option>`).join('')}</select></label>
+        <label class="field"><span>Tope de tiempo</span><select id="xn-h"><option value="1">1 hora</option><option value="2">2 horas</option><option value="4">4 horas</option><option value="">Sin tope</option></select></label></div>
+      <label class="check"><input type="checkbox" id="xn-night"><span>Cuenta como la de esta noche<small id="xn-why"></small></span></label>
+      <p class="help">Usa la cuenta de Claude de ${esc(repoShort(x.repo))}, la misma del trabajo de día. Corre aparte, como de noche, y queda en <i>Corridas</i> a tu nombre.</p>
+      <p class="bad" id="xn-err" hidden></p>
+      <div class="foot-d"><button class="btn-s" id="xn-no">Cancelar</button><button class="btn-s primary" id="xn-yes"></button></div></div></div>`;
+    $('#xn-n').value = String(x.n);
+    $('#xn-h').value = x.hours ? String(x.hours) : '';
+    $('#xn-n').onchange = (e) => { S.xnow.n = Number(e.target.value); };
+    $('#xn-h').onchange = (e) => { S.xnow.hours = e.target.value ? Number(e.target.value) : null; };
+    $('#xn-night').onchange = (e) => { S.xnow.tonight = e.target.checked; renderExploreNow(); };
+    $('#xn-no').onclick = closeExploreNow;
+    layer.querySelector('.scrim').onclick = (event) => { if (event.target.classList.contains('scrim')) closeExploreNow(); };
+    $('#xn-yes').onclick = sendExploreNow;
+    $('#xn-yes').focus();
+  }
+  $('#xn-night').checked = x.tonight;
+  $('#xn-why').textContent = x.tonight ? 'Esta noche no corre otra de esta app: el límite semanal de Claude es el mismo que usa el trabajo de día.' : 'Esta noche corre otra igual, con otras funciones.';
+  const yes = $('#xn-yes');
+  yes.textContent = x.sending ? 'Lanzando…' : 'Explorar';
+  yes.disabled = x.sending;
+  $('#xn-err').hidden = !x.error;
+  $('#xn-err').textContent = x.error ?? '';
+}
+
+async function sendExploreNow() {
+  const x = S.xnow;
+  if (!x || x.sending) return;
+  x.sending = true;
+  x.error = null;
+  renderExploreNow();
+  try {
+    const done = await api(`/api/exploraciones/${x.repo}/${encodeURIComponent(x.app)}/run`, { method: 'POST', body: JSON.stringify({ maxFunctions: x.n, hours: x.hours, tonight: x.tonight }) });
+    S.xpl.launched[x.repo] = { app: x.app, at: Date.now() };
+    S.xnow = null;
+    renderExploreNow();
+    toast(`ronin está levantando ${x.app} para explorarla${done.until ? ` hasta las ${hhmm(done.until)}` : ''}.${done.night ? ' Esta noche no corre otra.' : ''} La corrida se sigue en Corridas.`);
+    S.xpl.cor = {};
+    await refresh();
+    loadExploraciones();
+  } catch (error) {
+    if (error instanceof Unauthorized) return showLogin();
+    x.sending = false;
+    x.error = `No se pudo: ${error.message}`;
+    renderExploreNow();
+  }
+}
+
 function wireXpl() {
   const center = $('#center');
   for (const row of center.querySelectorAll('[data-xpl]')) {
@@ -2722,6 +2812,7 @@ function wireXpl() {
     row.onkeydown = (event) => { if (event.key === 'Enter') go(); };
   }
   for (const b of center.querySelectorAll('[data-xtab]')) b.onclick = () => { S.xpl.tab = b.dataset.xtab; renderCenter(); };
+  for (const b of center.querySelectorAll('[data-xnow]')) b.onclick = () => openExploreNow(...splitXplKey(b.dataset.xnow));
   for (const b of center.querySelectorAll('[data-xrun]')) {
     b.onclick = () => {
       S.xpl.run = { runId: b.dataset.xrun };
@@ -4450,10 +4541,10 @@ async function boot() {
     // On an exploration PR's findings, as long as nothing is being typed:
     // j/k go through them, a marks one as looked at, c and r open the dialog.
     const item = S.sel && itemById(S.sel);
-    const reviewing = !S.dialog && !S.fdialog && !S.newIssue && !event.metaKey && !event.ctrlKey && !event.altKey && item && viewOf(item) === 'ficha' && docOf(item) === 'fichas' && !/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName ?? '');
+    const reviewing = !S.dialog && !S.fdialog && !S.newIssue && !S.xnow && !event.metaKey && !event.ctrlKey && !event.altKey && item && viewOf(item) === 'ficha' && docOf(item) === 'fichas' && !/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName ?? '');
     // On a PR's files, j/k go from one file to the next (#111).
     const typing = event.metaKey || event.ctrlKey || event.altKey || /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName ?? '');
-    if (!typing && !S.dialog && !S.fdialog && !S.newIssue && item && viewOf(item) === 'ficha' && docOf(item) === 'files' && ['j', 'k', 'v', 'r'].includes(event.key)) {
+    if (!typing && !S.dialog && !S.fdialog && !S.newIssue && !S.xnow && item && viewOf(item) === 'ficha' && docOf(item) === 'files' && ['j', 'k', 'v', 'r'].includes(event.key)) {
       event.preventDefault();
       if (event.key === 'r') openReviewPanel();
       else if (event.key === 'v') toggleViewedCurrent();
@@ -4473,6 +4564,7 @@ async function boot() {
       pedLightbox();
     } else if (S.pdialog) closePortalUser();
     else if (S.newIssue) closeNewIssue();
+    else if (S.xnow) closeExploreNow();
     else if (S.rpanel && !S.rpanel.sending) {
       S.rpanel = null;
       renderCenter();

@@ -31,7 +31,7 @@ import { isOpen, requestDetail, requestImage, requestPatch, requestRow } from '.
 import { DuplicateMeeting, createMeeting, getMeeting, launchMeetingWorker, listMeetings, retryMeeting } from '../../meetings/index.js';
 import { MAX_UPLOAD_BODY, MeetingUploadError, meetingDetail, meetingOriginal, meetingRow, parseUpload } from './dashboard-meetings.js';
 import { ApproveError, approveMeeting, discardMeeting } from './dashboard-meetings-approve.js';
-import { corridasOf, exploracionList, exploracionRows, inventarioOf } from './dashboard-exploraciones.js';
+import { ExploreNowError, corridasOf, exploracionList, exploracionRows, exploreNow, inventarioOf, liveRuns, parseExploreNow } from './dashboard-exploraciones.js';
 
 // The dashboard's data (#65), all behind the session (tailnet.ts checks it
 // before any of this runs):
@@ -61,6 +61,7 @@ import { corridasOf, exploracionList, exploracionRows, inventarioOf } from './da
 //   GET /api/exploraciones           each app a repo explores, with its exploration PR's findings counted and its runs (#155, dashboard-exploraciones.ts)
 //   GET /api/exploraciones/<owner>/<repo>/<app>/corridas    the app's exploration runs, with their agents
 //   GET /api/exploraciones/<owner>/<repo>/<app>/inventario  the app's functions and their coverage (inventory.yml)
+//   POST /api/exploraciones/<owner>/<repo>/<app>/run         explore it now: { maxFunctions, hours, tonight } (Explorar ahora)
 //   GET /api/reuniones               the meetings whose notes were uploaded, of the repos it sees (#62, dashboard-meetings.ts)
 //   POST /api/reuniones              uploads one: the notes as a file or pasted
 //   GET /api/reuniones/<n>           one of them, with its notes' text
@@ -134,7 +135,7 @@ export async function snapshot(login: string): Promise<unknown> {
     usage: readUsage().filter((u) => entries.some((entry) => accountName(entry.claudeConfigDir ?? '') === u.account)),
     items,
     // Each app a repo explores, with its exploration PR and whether it runs now (#155).
-    exploraciones: exploracionRows(entries, prsOf(entries, github), runs),
+    exploraciones: exploracionRows(entries, prsOf(entries, github), runs, await liveRuns(entries)),
     previews: github.flatMap((gh) => (gh ? gh.previews.map((p) => ({ ...p, repo: gh.repo })) : [])),
     github: github.map((gh, i) => ({ repo: repos[i], fetchedAt: gh?.fetchedAt ?? null, ...(gh?.error ? { error: gh.error } : {}) })),
     // Each repo's apps (ronin.app.json), for /spike and /spec on a new issue.
@@ -159,7 +160,7 @@ async function exploraciones(): Promise<unknown> {
   const runs = listRuns(HISTORY_DAYS);
   const github = await Promise.all(entries.map((entry) => repoGithub(entry)));
   const prs = prsOf(entries, github);
-  return { apps: await exploracionList(entries, exploracionRows(entries, prs, runs), runs, prs) };
+  return { apps: await exploracionList(entries, exploracionRows(entries, prs, runs, await liveRuns(entries)), runs, prs) };
 }
 
 // GET /api/exploraciones/<owner>/<repo>/<app>/<what>: one app's runs or
@@ -170,6 +171,29 @@ async function exploracion(repo: string, app: string, what: string): Promise<unk
   if (what === 'corridas') return { corridas: await corridasOf(entry, app, listRuns(HISTORY_DAYS)) };
   const pr = (await repoGithub(entry))?.prs.find(isExplorationPr);
   return inventarioOf(entry, app, pr);
+}
+
+// POST /api/exploraciones/<owner>/<repo>/<app>/run: explore the app now, as
+// whoever is logged in (#155). Anyone who sees the repo can, as with a new issue.
+async function postExploreNow(req: IncomingMessage, res: ServerResponse, repo: string, app: string, session: Session): Promise<void> {
+  if (!(req.headers['content-type'] ?? '').startsWith('application/json')) {
+    json(res, 415, { error: 'se espera JSON' });
+    return;
+  }
+  const body = await readJson(req);
+  const entry = (await visibleRepos()).find((e) => e.productRepo === repo);
+  if (!entry || !(entry.explore ?? []).includes(app)) {
+    json(res, 404, { error: 'ningún repo de ronin explora esa app' });
+    return;
+  }
+  try {
+    const launched = await exploreNow(entry, app, session.login, parseExploreNow(body ?? {}));
+    log.info(`tablero: ${session.login} lanzó una exploración de ${app} en ${repo}`);
+    json(res, 200, launched);
+  } catch (error) {
+    if (error instanceof ExploreNowError) json(res, error.status, { error: error.message });
+    else throw error;
+  }
 }
 
 // The portal's requests of the repos it sees, with whoever asked each.
@@ -683,6 +707,11 @@ async function route(req: IncomingMessage, res: ServerResponse, path: string, se
   const filesPost = /^\/api\/items\/(.+)\/files\/actions$/.exec(path);
   if (filesPost && req.method === 'POST') {
     await postFilesAction(req, res, decodeURIComponent(filesPost[1]), session);
+    return true;
+  }
+  const exploreRun = /^\/api\/exploraciones\/([\w.-]+\/[\w.-]+)\/([\w.-]+)\/run$/.exec(path);
+  if (exploreRun && req.method === 'POST') {
+    await postExploreNow(req, res, exploreRun[1], exploreRun[2], session);
     return true;
   }
   const newIssue = /^\/api\/repos\/([\w.-]+\/[\w.-]+)\/issues$/.exec(path);

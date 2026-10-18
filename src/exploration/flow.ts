@@ -464,8 +464,11 @@ export interface ExploreWorkerRequest {
   maxFunctions?: number;
   // The /explore comment that asked for it, to answer and react to.
   trigger?: { issueNumber: number; commentIds: number[] };
-  // Nightly runs stop starting new functions once the window closes.
+  // Nightly runs stop starting new functions once the window closes; one
+  // from the dashboard, once its time cap is up.
   until?: string;
+  // Who started it from the dashboard (#155), for the run's record.
+  by?: string;
   // Instead of a run: redo the after images reviewers asked for.
   redo?: { prNumber: number; batch: string; items: RedoItem[] };
 }

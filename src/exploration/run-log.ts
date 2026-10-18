@@ -13,7 +13,7 @@ import type { RunSummary } from './run.js';
 // worker starts and again when it ends. A run whose file still says
 // `running` once the repo's exploration lock is free was cut.
 
-export type ExplorationTrigger = { kind: 'noche' } | { kind: 'issue'; issueNumber: number } | { kind: 'manual' };
+export type ExplorationTrigger = { kind: 'noche' } | { kind: 'issue'; issueNumber: number } | { kind: 'manual'; by?: string };
 
 export interface ExplorationRunFunction {
   id: string;

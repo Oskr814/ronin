@@ -24,6 +24,7 @@ const request = JSON.parse(process.argv[2] ?? '{}') as ExploreWorkerRequest;
 // Who asked for it, for the dashboard's record of the run (run-log.ts).
 function triggerOf(r: ExploreWorkerRequest): ExplorationTrigger {
   if (r.trigger) return { kind: 'issue', issueNumber: r.trigger.issueNumber };
+  if (r.by) return { kind: 'manual', by: r.by };
   return r.until ? { kind: 'noche' } : { kind: 'manual' };
 }
 

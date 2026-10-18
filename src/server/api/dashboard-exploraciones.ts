@@ -1,9 +1,9 @@
 import { config } from '../../core/config.js';
-import { getNightlyExploration } from '../../core/local-state.js';
+import { getNightlyExploration, setNightlyExploration } from '../../core/local-state.js';
 import { withActiveRepo, type RepoEntry } from '../../core/repo-context.js';
 import { addDays, instantAt, wallClock } from '../../core/timezone.js';
-import { currentNight, parseNightWindow, type NightWindow } from '../../exploration/schedule.js';
-import { exploreWorkerBusy } from '../../exploration/flow.js';
+import { currentNight, parseNightWindow, upcomingNight, type NightWindow } from '../../exploration/schedule.js';
+import { exploreWorkerBusy, launchExploreWorker, type ExploreWorkerRequest } from '../../exploration/flow.js';
 import { CHARTERS, EXPLORATION_DIR, VIEWPORTS, parseInventory } from '../../exploration/memory.js';
 import { listRunRecords, type ExplorationRunFunction, type ExplorationRunRecord, type ExplorationTrigger } from '../../exploration/run-log.js';
 import type { RunSummary } from './dashboard-data.js';
@@ -69,16 +69,20 @@ interface PrLike extends ExplorationPr {
   url?: string;
 }
 
-// The snapshot's rows: cheap, from what the snapshot already read.
-export function exploracionRows(entries: RepoEntry[], prsByRepo: Map<string, PrLike[]>, runs: RunSummary[]): ExploracionRow[] {
+// The snapshot's rows: cheap, from what the snapshot already read. `live`:
+// the apps whose worker is up by their record (liveRuns), since when — its
+// first agent only starts once the app is up, minutes later.
+export function exploracionRows(entries: RepoEntry[], prsByRepo: Map<string, PrLike[]>, runs: RunSummary[], live = new Map<string, string>()): ExploracionRow[] {
   return entries.flatMap((entry) => {
     const repo = entry.productRepo;
     const open = (prsByRepo.get(repo) ?? []).find(isExplorationPr);
     const pr = open ? { number: open.number, id: `${repo}#${open.number}`, title: open.title, ...(open.url ? { url: open.url } : {}) } : null;
     return (entry.explore ?? []).map((app) => {
-      const live = appRuns(runs, repo, app).filter((run) => run.state === 'running').sort((a, b) => b.startedAt.localeCompare(a.startedAt))[0];
-      const fn = live && runApp(live)?.fn;
-      return { repo, app, pr, running: live ? { since: live.startedAt, ...(live.lastStep ? { step: live.lastStep } : {}), ...(fn ? { fn } : {}) } : null };
+      const agent = appRuns(runs, repo, app).filter((run) => run.state === 'running').sort((a, b) => b.startedAt.localeCompare(a.startedAt))[0];
+      const fn = agent && runApp(agent)?.fn;
+      const since = live.get(`${repo}|${app}`);
+      const running = agent ? { since: since ?? agent.startedAt, ...(agent.lastStep ? { step: agent.lastStep } : {}), ...(fn ? { fn } : {}) } : since ? { since } : null;
+      return { repo, app, pr, running };
     });
   });
 }
@@ -98,6 +102,20 @@ export function countFichas(fichas: Ficha[], ronin = config.githubLogin): FichaC
     }
   }
   return counts;
+}
+
+// The apps whose run's record says it's going and whose repo's lock is held
+// (a record left `running` by a worker that died isn't), by `repo|app`.
+export async function liveRuns(entries: RepoEntry[]): Promise<Map<string, string>> {
+  const live = new Map<string, string>();
+  for (const entry of entries) {
+    if (!entry.explore?.length || !(await withActiveRepo(entry, () => exploreWorkerBusy()).catch(() => false))) continue;
+    for (const app of entry.explore) {
+      const [last] = await listRunRecords(entry.productRepo, app, 1);
+      if (last?.state === 'running') live.set(`${entry.productRepo}|${app}`, last.startedAt);
+    }
+  }
+  return live;
 }
 
 // When the nightly exploration starts this app next: tonight's window, or
@@ -317,4 +335,71 @@ export async function inventarioOf(entry: RepoEntry, app: string, pr: Pick<Explo
   } catch (error) {
     return { from, charters: CHARTERS, funciones: [], error: `no se pudo leer inventory.yml: ${(error as Error).message.split('\n')[0]}` };
   }
+}
+
+// ---------- Explorar ahora (#155, 3/4)
+// A run started from the dashboard: ronin still chooses the functions and
+// the charters (§11.1, §11.4) — only how many and for how long are asked.
+// By default it stands for that night's run of the app, since the weekly
+// Claude limit is the one the day's work uses too.
+
+export class ExploreNowError extends Error {
+  constructor(message: string, readonly status = 400) {
+    super(message);
+  }
+}
+
+export interface ExploreNow {
+  maxFunctions: number;
+  // The time cap, in hours; null for none.
+  hours: number | null;
+  // Whether it stands for the app's next nightly run.
+  tonight: boolean;
+}
+
+export const EXPLORE_NOW_MAX_FUNCTIONS = 10;
+export const EXPLORE_NOW_HOURS = [1, 2, 4];
+
+export function parseExploreNow(body: Record<string, unknown>): ExploreNow {
+  const n = body.maxFunctions ?? config.exploreFunctionsPerNight;
+  if (typeof n !== 'number' || !Number.isInteger(n) || n < 1 || n > EXPLORE_NOW_MAX_FUNCTIONS) throw new ExploreNowError(`la cantidad de funciones va de 1 a ${EXPLORE_NOW_MAX_FUNCTIONS}`);
+  const hours = body.hours ?? null;
+  if (hours !== null && !EXPLORE_NOW_HOURS.includes(hours as number)) throw new ExploreNowError(`el tope de tiempo es de ${EXPLORE_NOW_HOURS.join(', ')} horas, o ninguno`);
+  if (body.tonight !== undefined && typeof body.tonight !== 'boolean') throw new ExploreNowError('"tonight" es sí o no');
+  return { maxFunctions: n, hours: hours as number | null, tonight: body.tonight !== false };
+}
+
+// A launch just made, by repo: its worker takes a moment to take the lock,
+// and a second click meanwhile would start another (that would only find
+// the lock taken, but say it was started).
+const launchedAt = new Map<string, number>();
+const LAUNCH_GRACE_MS = 60_000;
+
+export interface ExploreNowDeps {
+  busy: () => Promise<boolean>;
+  launch: (request: ExploreWorkerRequest) => void;
+  markNight: (night: string) => Promise<void>;
+}
+
+export async function exploreNow(entry: RepoEntry, app: string, login: string, ask: ExploreNow, now = new Date(), deps?: Partial<ExploreNowDeps>): Promise<{ until?: string; night?: string }> {
+  const repo = entry.productRepo;
+  const busy = deps?.busy ?? (() => withActiveRepo(entry, () => exploreWorkerBusy()));
+  const launch = deps?.launch ?? launchExploreWorker;
+  const markNight = deps?.markNight ?? ((night: string) => withActiveRepo(entry, () => setNightlyExploration(app, night)));
+  if (now.getTime() - (launchedAt.get(repo) ?? 0) < LAUNCH_GRACE_MS || (await busy())) {
+    throw new ExploreNowError(`ya hay una exploración corriendo en ${repo}: una por repo a la vez`, 409);
+  }
+  let night: string | undefined;
+  if (ask.tonight) {
+    night = upcomingNight(now, parseNightWindow(config.exploreNightWindow), config.exploreTimezone);
+    await markNight(night);
+  }
+  const until = ask.hours ? new Date(now.getTime() + ask.hours * 3600_000).toISOString() : undefined;
+  launchedAt.set(repo, now.getTime());
+  launch({ repo, appName: app, maxFunctions: ask.maxFunctions, by: login, ...(until ? { until } : {}) });
+  return { ...(until ? { until } : {}), ...(night ? { night } : {}) };
+}
+
+export function resetExploreNow(): void {
+  launchedAt.clear();
 }

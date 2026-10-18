@@ -15,7 +15,7 @@ vi.mock('./flow.js', () => ({
   launchExploreWorker: (...args: unknown[]) => launch(...args),
 }));
 
-import { currentNight, maybeLaunchNightlyExploration, nextNightlyApp, parseNightWindow } from './schedule.js';
+import { currentNight, maybeLaunchNightlyExploration, nextNightlyApp, parseNightWindow, upcomingNight } from './schedule.js';
 
 // Times in the exploration's zone (UTC-6, no DST), whatever the server's is.
 const TZ = 'America/Tegucigalpa';
@@ -106,5 +106,24 @@ describe('maybeLaunchNightlyExploration', () => {
     explore = undefined;
     await maybeLaunchNightlyExploration(teg(12, 23, 30));
     expect(launch).not.toHaveBeenCalled();
+  });
+});
+
+describe('upcomingNight', () => {
+  const window = parseNightWindow('23:00-05:00');
+  const tz = 'America/Tegucigalpa';
+
+  it('is the night going on inside the window, across midnight', () => {
+    expect(upcomingNight(new Date('2026-10-19T08:00:00Z'), window, tz)).toBe('2026-10-18'); // 02:00 local
+    expect(upcomingNight(new Date('2026-10-19T05:30:00Z'), window, tz)).toBe('2026-10-18'); // 23:30 local
+  });
+
+  it('is today’s during the day', () => {
+    expect(upcomingNight(new Date('2026-10-18T22:50:00Z'), window, tz)).toBe('2026-10-18'); // 16:50 local
+  });
+
+  it('is tomorrow’s once today’s window has gone by, for one that doesn’t cross midnight', () => {
+    expect(upcomingNight(new Date('2026-10-18T22:50:00Z'), parseNightWindow('01:00-06:00'), tz)).toBe('2026-10-19');
+    expect(upcomingNight(new Date('2026-10-19T06:30:00Z'), parseNightWindow('01:00-06:00'), tz)).toBe('2026-10-19'); // 00:30 local
   });
 });
