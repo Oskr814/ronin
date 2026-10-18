@@ -17,7 +17,7 @@ Los límites se cuentan por PR (con el label `ronin:attempts-N`, salvo el de CI 
 - **Excepciones repetidas**: procesar un issue falla con un error no manejado más de `ISSUE_ERROR_RETRY_LIMIT` (3) veces seguidas: un tick que lo procesa sin errores vuelve el contador a cero. Un error pasajero de GitHub o de la red (un 5xx, 429 o 499 de la API, un timeout, una conexión cortada) no cuenta: se reintenta en el tick siguiente. Un error al tomar un spec o un issue asignado bloquea en el momento. Un error al generar una entrada de changelog solo manda el email, sin label: ese release no se vuelve a procesar.
 - **Plan vacío**: el issue de tracking no tiene ninguna slice en su checklist, porque el plan nunca llegó a escribirse.
 - **Slices huérfanas**: quedan slices sin mergear pero ningún PR abierto (normalmente, un PR se cerró sin mergear), así que nada va a avanzar solo.
-- **Falta información** (`RONIN_STATUS: needs-info`): un issue asignado directamente no tiene contexto suficiente para actuar sin adivinar. El agente comenta en el issue qué necesita. Con `REMOTE_INTERVIEWS`, ronin abre además una conversación de Remote Control para contestarlo (`docs/DESIGN.md` §11.9) y el email lleva ese link; sin ella, el issue queda en `ronin:blocked` sin email, con las preguntas en el issue.
+- **Falta información** (`RONIN_STATUS: needs-info`): un issue asignado directamente no tiene contexto suficiente para actuar sin adivinar. El agente comenta en el issue qué necesita, el issue queda en `ronin:blocked` y el email avisa que hay preguntas. Se responden comentando en el issue. Lo mismo con un `/spec` que necesita información, que se vuelve a pedir una vez respondido.
 
 ## NO dispara bloqueo (estado normal, sin notificación)
 

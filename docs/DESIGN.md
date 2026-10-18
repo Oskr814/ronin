@@ -99,7 +99,7 @@ En producción (y en el cron) lo que se ejecuta es el build compilado en `dist/`
 En cada tick:
 
 1. Escanea specs e issues asignados a la cuenta de ronin (§1) → mergea el spec, crea el issue de tracking y corre el plan; un issue asignado directamente pasa a ser su propio issue de tracking.
-2. Barre lo que vive fuera de un issue: entrevistas de Remote Control terminadas (§11.9), issues cerrados con todas sus slices mergeadas, previews de PRs cerrados o vencidas (§12) y PRs con `ronin:auto-merge` listos para mergear (§13).
+2. Barre lo que vive fuera de un issue: issues cerrados con todas sus slices mergeadas, previews de PRs cerrados o vencidas (§12) y PRs con `ronin:auto-merge` listos para mergear (§13).
 3. Escanea issues abiertos `in-progress` → decide la próxima acción según el estado real del PR/CI/reviews (implementar siguiente slice, resolver comentarios de review, arreglar e2e, registrar las slices que un humano mergeó).
 4. Junta el resto del trabajo: reviews de PRs de humanos y menciones en ellos, `/spike`/`/spec`/`/prototype` y pedidos en issues sin asignar, entradas de changelog, el PR de exploración y la exploración nocturna (§11.8).
 5. Cada acción es una invocación de Claude no interactiva, aislada en su propio worktree, que termina al completar la unidad de trabajo — así nunca se acumula contexto entre tareas.
@@ -124,7 +124,7 @@ Scaffold en TypeScript (`pnpm tick` corre un tick y termina — lo invoca el cro
 |---|---|
 | `src/` (raíz) | `index.ts` (entrada del cron) y `tick.ts` (el orquestador) |
 | `core/` | lo compartido por todas las features: config, GitHub, worktrees, `claude -p`, estado local, claim, notificaciones, logs, el lanzador de workers, cómo corre una tarea de agente (`agent-task.ts`) y las reglas que comparten los prompts (`prompts.ts`) |
-| `slices/` | issues de tracking → PRs apilados: checklist, stack, specs, entrevistas |
+| `slices/` | issues de tracking → PRs apilados: checklist, stack, specs |
 | `review/` | review de PRs ajenos y su publicación (§4) |
 | `commands/` | comandos por mención (`mentions.ts`, `/help`, `/auto-merge`, `/resolve-conflicts`, `/spike`, `/prototype`, pedidos en issues) |
 | `app/` | levantar y manejar la app del producto, y la rama de evidencia (§11.2, §11.5) |
@@ -158,7 +158,7 @@ Los módulos del núcleo (en `core/` salvo que se indique otra carpeta); los de 
 - El agente corre los e2e del repo del producto (p. ej. Playwright en `apps/webapp/e2e/` de bmedical) antes de abrir el PR — si la slice toca comportamiento de usuario, agrega o actualiza un spec y lo corre hasta que pase, en vez de dejárselo a CI.
 - Pipelines: el agente monitorea CI y arregla lo que falla, pero el merge de un PR de slice lo hace siempre un humano.
 
-- Review de GitHub Copilot: **fuera del loop core por ahora**, parametrizable vía `REQUEST_COPILOT_REVIEW` (default `false`). Si se activa, el agente solicita el review y monitorea/resuelve sus comentarios igual que los de un humano — pero no es una dependencia asumida del flujo.
+- Review de GitHub Copilot: ronin no la pide. `REQUEST_COPILOT_REVIEW` se quitó el 2026-10-18: nunca se activó y no dio lo que se esperaba. Si alguien la pide a mano, sus comentarios se resuelven como los de una persona (`/fix-comments`).
 
 ### 5. Parte visual
 
@@ -383,15 +383,9 @@ Sin cron aparte: el tick evalúa `es de noche (EXPLORE_NIGHT_WINDOW, en la hora 
 - **A pedido desde el tablero (#155)**: *Explorar ahora*, en la página de la app (§15.12), lanza el mismo worker sin esperar a la noche. Por defecto cuenta como la corrida de esa noche: guarda en `nightlyExploration` la noche que viene (`upcomingNight`: la que está en curso dentro de la ventana, o si no la próxima que abre), y el tick la salta. Así una corrida de la tarde no suma otra a la noche sobre el mismo límite semanal.
 - **El registro de cada corrida** (`exploration/run-log.ts`): el worker escribe `logs/exploration/<owner>-<repo>/<inicio>-<app>.json` al arrancar y lo cierra al terminar. Guarda quién la lanzó (de noche, `/explore` en un issue o el tablero, con el login), la semilla, cada función con su charter, su rol, el motivo y los viewports, las fichas, las descartadas y el error. Si el registro no se puede escribir, la corrida sigue igual. Uno que sigue en `running` cuando el lock del repo ya está libre es de un worker que murió: el tablero lo muestra como cortado.
 
-#### 11.9 Preguntas por Remote Control
+#### 11.9 Preguntas por Remote Control (retiradas)
 
-Cuando cualquier tarea termina en `RONIN_STATUS: needs-info`, además de dejar las preguntas en el issue, el supervisor puede abrir una sesión `claude --bg --remote-control <nombre>` con el contexto (issue, lo investigado, las preguntas) cuyo único trabajo es entrevistar al humano y escribir `## Respuestas` en el issue. El link (`https://claude.ai/code/session_…`) se lee de `claude logs <id>` y se publica en el issue + email. Al terminar, o tras un timeout (p. ej. 24 h), `claude stop` + `claude rm`; el tick siguiente ve las respuestas y retoma con un worker nuevo.
-
-- Es una sesión **aparte**, no el worker esperando: un worker bloqueado retendría el `flock` del tick, el worktree y el stack de docker.
-- Sin `bypassPermissions`: corre con `--permission-mode default` y solo tiene preaprobado leer el repo y `gh issue view`/`gh issue comment` sobre ese issue, porque del otro lado hay una persona. Las respuestas siempre quedan en el issue, porque la sesión se borra.
-- Debe correr desde un directorio con trust ya dado: sin TTY, `remote-control` no puede preguntarlo y falla con `Workspace not trusted` (los worktrees nuevos no lo tienen).
-- **Solo sirve a la cuenta de claude.ai del runner** (Remote Control no se comparte entre cuentas), así que responder por comentario en el issue sigue siendo el canal para el resto del equipo.
-- Sin verificar: si `claude rm` también archiva la sesión en claude.ai/code.
+Hasta el 2026-10-18, una tarea que terminaba en `RONIN_STATUS: needs-info` abría además una sesión `claude --bg --remote-control` que entrevistaba a quien la abriera y escribía las respuestas en el issue. Se quitó (`REMOTE_INTERVIEWS`, `INTERVIEW_TIMEOUT_HOURS`): no funcionó como se esperaba, y solo la podía abrir la cuenta de Claude del runner. Ahora las preguntas quedan en el issue, el email avisa que las hay (docs/BLOCKING.md) y se responden comentando ahí.
 
 #### 11.10 Etapas
 
@@ -399,7 +393,7 @@ Cuando cualquier tarea termina en `RONIN_STATUS: needs-info`, además de dejar l
 1. ~~`app:up` para el backoffice de shoppingcart: manifiesto, override de compose, seed, login por rol, desktop + mobile~~ — hecho
 2. ~~`/explore` a pedido (por mención): inventario, charters, hallazgos e ideas, antes/después en `ronin/evidence`, memoria en `docs/exploration/`~~ — hecho
 3. ~~Programación nocturna + PR de exploración~~ — hecho
-4. ~~Preguntas por Remote Control para `needs-info`~~ — hecho
+4. ~~Preguntas por Remote Control para `needs-info`~~ — hecho, y retirado el 2026-10-18 (§11.9)
 5. ~~`/spec`: de un pedido en bruto (o una propuesta aprobada) a un PR draft de spec~~ — hecho
 
 Pendiente: calibrar la calidad de las propuestas con varias corridas a mano (ver "Estado actual").
@@ -468,7 +462,7 @@ Ahora cada evento tiene su handler:
 - **Handler** (`server/api/webhooks/handler.ts`): un proceso por evento, como los workers. Corre los mismos flujos que el tick (`runScoped` en `tick.ts`), pero solo los del scope y solo los jobs que tocan sus recursos, con un discovery acotado (`findPrsNeedingReview([N])`, `findIssueCommands([N])`). A un comentario en un PR, que llega sin rama, le busca el issue del PR. Si ya hay otro handler esperando para el mismo scope, no hace falta otro: el que espera va a leer todo cuando le toque.
   - **Reiniciar el servidor no lo corta:** el servicio tiene `KillMode=process`, así que un deploy detiene solo el servidor, y cada handler termina su evento y sale solo.
   - **Tope:** tiene `EVENT_HANDLER_TIMEOUT_MINUTES` (120 por defecto) para todo el evento: esperar su turno y un cupo, y cada agente que lance. Pasado ese tiempo se corta junto con su grupo de procesos, que incluye el `claude -p` que esté corriendo. Los workers que lanzó tienen su propio grupo y siguen. Sus locks llevan su pid, así que el siguiente proceso los toma, y el tablero muestra la corrida como cortada.
-- **Tick** (cron): sigue corriendo todos los flujos sobre todo, como conciliación. Levanta lo que ningún handler hizo (un webhook que no llegó, un runner apagado) y el trabajo periódico (entrevistas, exploración nocturna, poda de estado).
+- **Tick** (cron): sigue corriendo todos los flujos sobre todo, como conciliación. Levanta lo que ningún handler hizo (un webhook que no llegó, un runner apagado) y el trabajo periódico (exploración nocturna, poda de estado).
 
 **Un solo emoji, "procesado" aparte** (`core/processed-comments.ts`): el 👀 de ronin solo dice "recibido" — lo pone el servidor al llegar el comentario, o el flujo que lo procesa si el webhook nunca llegó. Que un comentario ya está atendido se guarda en el estado local (`processedComments`, por repo), y solo cuando el trabajo salió bien: una falla no se anota y se reintenta, como antes. Un comentario de antes de este cambio cuenta como atendido si el 👀 de ronin es anterior a `ACK_EYES_SINCE` (el deploy en el runner, 2026-10-16T01:03:19Z), que es cuando el 👀 todavía significaba "procesado"; el 👀 de acuse, posterior, no cuenta. Es una fecha fija a propósito: tomarla de la primera lectura del estado dejaba afuera el acuse que el servidor pone segundos antes de esa lectura, y ese comentario se daba por atendido sin responderse. Uno de más de 180 días cuenta como atendido siempre, y por eso las entradas de más de 180 días se podan. Es estado de este runner: con un solo runner por repo (hoy `ronin-agent`) no hace falta compartirlo; varios runners sobre el mismo repo necesitarían volver a guardarlo en GitHub.
 
@@ -934,7 +928,7 @@ La persona tiene tres salidas:
 3. `followPortalIssues`, un paso del tick que también corre con el webhook de un PR abierto (flujo `portal`), encuentra ese PR (`closingIssuesReferences`) y le pone **`ronin:auto-merge`**. Además le avisa al equipo del repo (§16.7) que espera su aprobación, y la persona ve en la conversación que el cambio está hecho y lo revisa el equipo.
 4. Con la aprobación de un dev y CI en verde, `sweepAutoMerge` lo mergea (§13). Con el webhook del PR cerrado o el tick siguiente, el pedido queda en `done` y la persona recibe "Listo, sale en la próxima actualización".
 
-Un PR cerrado sin merge se olvida hasta que otro cierre el issue. Si `fix-issue` necesita información, el issue queda bloqueado y se abre la entrevista con el equipo, como con cualquier issue asignado. El merge automático con deploy queda para más adelante: por ahora siempre aprueba una persona.
+Un PR cerrado sin merge se olvida hasta que otro cierre el issue. Si `fix-issue` necesita información, el issue queda bloqueado con las preguntas y el email, como con cualquier issue asignado. El merge automático con deploy queda para más adelante: por ahora siempre aprueba una persona.
 
 #### 16.6 Del equipo: pedidos grandes y "No me sirve"
 
@@ -1269,7 +1263,6 @@ Solo para admins (`DASHBOARD_ADMINS`); la API responde 403 a cualquier otra sesi
 **Pendiente, fuera de este scaffold:**
 
 - Nunca se probó en vivo contra un PR real con specs de e2e afectados (el dry run de §10 usó un spec sin ningún componente de UI)
-- Exploración y propuestas de mejora (§11): implementadas las etapas 1 a 5 (`app:up` y smoke, memoria, inventario y selección, exploración con navegadores y evaluador, PR de exploración rodante, ventana nocturna, entrevistas por Remote Control y `/spec`). Pendiente: calibrar la calidad de las propuestas con varias corridas a mano antes de activar la exploración nocturna (`explore` en `repos.json`)
+- Exploración y propuestas de mejora (§11): implementadas las etapas 1 a 5 (`app:up` y smoke, memoria, inventario y selección, exploración con navegadores y evaluador, PR de exploración rodante, ventana nocturna y `/spec`). Pendiente: calibrar la calidad de las propuestas con varias corridas a mano antes de activar la exploración nocturna (`explore` en `repos.json`)
 
 - Slugs de slice legibles: hoy el branch de `implement-slice` usa el índice crudo (`slice-1`, `slice-2`); una vez que se valore la legibilidad de branches/PRs, debería derivar el slug del título real de la slice
-- Decidir si Copilot review se activa (`REQUEST_COPILOT_REVIEW`) y cómo se resuelven sus comentarios automáticamente

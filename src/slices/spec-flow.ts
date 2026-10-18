@@ -9,7 +9,7 @@ import { log } from '../core/logger.js';
 import { commentOnIssue, findOpenPrByHead, replyToComment } from '../core/github.js';
 import { renderHtmlToPng } from '../app/index.js';
 import { evidenceUrl, publishEvidence } from '../app/index.js';
-import { startInterview } from './interview.js';
+import { notifyBlocker } from '../core/notifier.js';
 import { specBranch } from './stack.js';
 import type { SpecCandidate } from '../commands/index.js';
 
@@ -17,9 +17,8 @@ import type { SpecCandidate } from '../commands/index.js';
 // exploration proposal) to a draft spec PR assigned to ronin. The human
 // edits it there and marks it ready when it should start: from then on it
 // is an ordinary spec PR (discoverAssignedSpecs in tick.ts). If the agent
-// lacks something essential it asks on the issue, and a Remote Control
-// interview offers a faster way to answer; once answered, the /spec runs
-// again on its own (interview.ts's "spec" resume).
+// lacks something essential it asks on the issue and the team gets an
+// email; once it's answered there, someone asks for the /spec again.
 
 export function specNeedsInfo(result: string): boolean {
   return /RONIN_STATUS:\s*needs-info/i.test(result);
@@ -50,8 +49,7 @@ export async function processSpecCandidate(candidate: SpecCandidate): Promise<vo
     }));
     const issueUrl = `https://github.com/${activeRepo().productRepo}/issues/${candidate.issueNumber}`;
     if (specNeedsInfo(result)) {
-      await startInterview(candidate.issueNumber, issueUrl, { kind: 'spec', appName: candidate.appName, ...(candidate.instruction ? { instruction: candidate.instruction } : {}) })
-        .catch((error) => log.error(`spec #${candidate.issueNumber}: no se pudo abrir la entrevista`, error));
+      await notifyBlocker({ issueUrl, reason: 'ronin necesita información para escribir el spec', excerpt: 'Las preguntas están en el issue: respóndelas ahí y vuelve a pedir el /spec.' });
       return;
     }
     const mockup = join(outDir, 'mockup.html');
