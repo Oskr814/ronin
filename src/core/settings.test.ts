@@ -63,3 +63,12 @@ describe('readSettingsSync', () => {
     expect(readSettingsSync(dir)).toEqual({ values: { 'portal.dailyLimit': 9 } });
   });
 });
+
+describe('other kinds', () => {
+  it('reads .env as each kind does, scales minutes and keeps only valid task choices', () => {
+    const config: Record<string, unknown> = { dashboard: {}, portal: {} };
+    applySettings(config, { values: { 'agent.handlerTimeoutMinutes': 60 }, tasks: { plan: { model: 'sonnet', effort: 'nope' }, inventada: { model: 'opus' } } }, { AGENT_MODEL: '', EXPLORE_PUBLISH_EVIDENCE: 'false', PREVIEW_PREPARE_DATA: 'quizás', AGENT_TASK_TIMEOUT_MINUTES: '45' });
+    expect(config).toMatchObject({ agentModel: '', explorePublishEvidence: false, previewPrepareData: true, agentTaskTimeoutMs: 45 * 60_000, eventHandlerTimeoutMs: 60 * 60_000, taskOverrides: { plan: { model: 'sonnet' } } });
+    expect(config.taskOverrides).not.toHaveProperty('inventada');
+  });
+});

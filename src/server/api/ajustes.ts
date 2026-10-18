@@ -4,7 +4,9 @@ import { config } from '../../core/config.js';
 import { log } from '../../core/logger.js';
 import type { RepoEntry } from '../../core/repo-context.js';
 import { linearKey, teamPeople } from '../../core/linear-api.js';
-import { applySettings, invalidValue, readSettingsSync, settingDef, settingsPath, settingsView, type SettingsFile } from '../../core/settings.js';
+import { applySettings, EFFORTS, invalidValue, MODELS, readSettingsSync, settingDef, settingsPath, settingsView, TASK_TYPES, type SettingsFile, type SettingValue } from '../../core/settings.js';
+import { taskDefaultModel, taskEnvEffort, taskEnvModel } from '../../core/config.js';
+import { sendMail } from '../../core/notifier.js';
 import { withJson } from '../../portal/json-store.js';
 import { readTeam, withTeam, type Member } from './team.js';
 import { EVENTS, eventsOf, isEvent } from '../../core/notifications.js';
@@ -95,14 +97,32 @@ export async function ajustesView(login: string, admin: boolean, entries: RepoEn
     ...(admin ? { notifyTo: config.notifyTo } : {}),
     linear: await linearTeams(entries),
     ...(admin ? {
-      general: settingsView(readSettingsSync(config.settings.dataDir)),
+      valores: settingsView(readSettingsSync(config.settings.dataDir)),
+      tareas: tareasView(readSettingsSync(config.settings.dataDir)),
+      fixed: { previewPortRange: config.previewPortRange, runnerId: config.runnerId, githubLogin: config.githubLogin },
       portal: { url: config.portal.url },
       dashboard: { url: config.dashboard.url },
     } : {}),
   };
 }
 
-const shown = (value: number | undefined, source: string) => (value === undefined ? '—' : `${value}${source ? ` (${source})` : ''}`);
+const word = (value: SettingValue) => (value === true ? 'sí' : value === false ? 'no' : value === '' ? '(el de Claude)' : String(value));
+const shown = (value: SettingValue, source: string) => `${word(value)}${source ? ` (${source})` : ''}`;
+// The page of Ajustes a setting is on, for the Registro.
+const SECTION: Record<string, string> = { dashboard: 'General', portal: 'General', agent: 'Agentes', tick: 'Agentes', retry: 'Agentes', explore: 'Exploración', preview: 'Previews' };
+const sectionOf = (key: string) => SECTION[key.split('.')[0]] ?? 'General';
+
+// Per task type: what's chosen here, and what it'd be without it.
+function tareasView(file: SettingsFile) {
+  return TASK_TYPES.map((task) => ({
+    task,
+    model: file.tasks?.[task]?.model ?? '',
+    effort: file.tasks?.[task]?.effort ?? '',
+    envModel: taskEnvModel(task) ?? null,
+    envEffort: taskEnvEffort(task) ?? null,
+    defaultModel: taskDefaultModel(task) ?? null,
+  }));
+}
 
 // POST /api/ajustes/valores: saves one, applies it to this process's config
 // right away, and records it.
@@ -114,16 +134,17 @@ export async function setValue(login: string, body: Record<string, unknown>): Pr
     const problem = invalidValue(def, value);
     if (problem) throw new AjustesError(problem);
   }
+  const clean = typeof value === 'string' && def.type === 'text' ? value.trim() : value;
   const before = settingsView(readSettingsSync(config.settings.dataDir)).find((s) => s.key === def.key)!;
   await withJson(settingsPath(config.settings.dataDir), emptySettings, (file) => {
     file.values ??= {};
     if (value === null) delete file.values[def.key];
-    else file.values[def.key] = value as number;
+    else file.values[def.key] = clean as SettingValue;
   });
   applySettings(config as unknown as Record<string, unknown>, readSettingsSync(config.settings.dataDir));
   const after = settingsView(readSettingsSync(config.settings.dataDir)).find((s) => s.key === def.key)!;
   if (before.value !== after.value || before.source !== after.source) {
-    await record({ login, what: `General · ${def.key}`, from: shown(before.value, before.source === 'tablero' ? '' : before.source === 'env' ? '.env' : 'por defecto'), to: shown(after.value, after.source === 'tablero' ? '' : after.source === 'env' ? '.env' : 'por defecto') });
+    await record({ login, what: `${sectionOf(def.key)} · ${def.key}`, from: shown(before.value, before.source === 'tablero' ? '' : before.source === 'env' ? '.env' : 'por defecto'), to: shown(after.value, after.source === 'tablero' ? '' : after.source === 'env' ? '.env' : 'por defecto') });
     log.info(`ajustes: ${login} cambió ${def.key} a ${after.value} (${after.source})`);
   }
   return { setting: after };
@@ -213,4 +234,73 @@ export async function saveNotificacion(login: string, body: Record<string, unkno
   });
   if (changed) await record({ login, what: `Notificaciones · ${entry.productRepo} · ${EVENT_NAME[event]}`, from: on ? 'no' : 'sí', to: on ? 'sí' : 'no' });
   return { notificaciones: notificaciones((await readTeam()).people[login], entries) };
+}
+
+// POST /api/ajustes/tareas { task, model?, effort? }: a task type's own model
+// or effort; null goes back to .env's (AGENT_MODEL_<TIPO>) or the general one.
+export async function setTask(login: string, body: Record<string, unknown>): Promise<unknown> {
+  const task = typeof body.task === 'string' ? body.task : '';
+  if (!TASK_TYPES.includes(task)) throw new AjustesError('Ese tipo de tarea no existe.');
+  const changes: Array<{ what: string; from: string; to: string }> = [];
+  await withJson(settingsPath(config.settings.dataDir), emptySettings, (file) => {
+    const tasks = { ...(file.tasks ?? {}) };
+    const choice = { ...(tasks[task] ?? {}) };
+    for (const [field, allowed] of [['model', MODELS], ['effort', EFFORTS]] as const) {
+      if (body[field] === undefined) continue;
+      const value = body[field] === null ? '' : String(body[field]);
+      if (value && !allowed.includes(value)) throw new AjustesError(field === 'model' ? 'Ese modelo no existe.' : 'Ese esfuerzo no existe.');
+      const before = choice[field] ?? '';
+      if (value) choice[field] = value;
+      else delete choice[field];
+      if (before !== value) changes.push({ what: `Agentes · ${task} · ${field === 'model' ? 'modelo' : 'esfuerzo'}`, from: before || 'sin elegir', to: value || 'sin elegir' });
+    }
+    if (Object.keys(choice).length) tasks[task] = choice;
+    else delete tasks[task];
+    file.values ??= {};
+    file.tasks = tasks;
+  });
+  applySettings(config as unknown as Record<string, unknown>, readSettingsSync(config.settings.dataDir));
+  for (const change of changes) await record({ login, ...change });
+  return { tareas: tareasView(readSettingsSync(config.settings.dataDir)) };
+}
+
+// GET /api/ajustes/conexiones: whether each credential of .env is there and,
+// for GitHub, whether it answers and when the token expires. Never the
+// values: only whether they're set.
+export async function conexionesView(): Promise<unknown> {
+  let github: { ok: boolean; login?: string; expires?: string; error?: string };
+  try {
+    const response = await fetch('https://api.github.com/user', {
+      headers: { Authorization: `Bearer ${config.githubToken}`, Accept: 'application/vnd.github+json', 'User-Agent': 'ronin-dashboard' },
+      signal: AbortSignal.timeout(15_000),
+    });
+    const expires = response.headers.get('github-authentication-token-expiration') ?? undefined;
+    github = response.ok
+      ? { ok: true, login: ((await response.json()) as { login?: string }).login, ...(expires ? { expires } : {}) }
+      : { ok: false, error: `GitHub respondió ${response.status}` };
+  } catch (error) {
+    github = { ok: false, error: (error as Error).message };
+  }
+  const set = (value: string) => Boolean(value);
+  return {
+    github,
+    oauth: set(config.dashboard.githubClientId) && set(config.dashboard.githubClientSecret),
+    webhookSecret: set(config.webhookSecret),
+    gmail: { user: config.gmailUser, password: set(config.gmailAppPassword) },
+    sessions: { dashboard: set(config.dashboard.sessionSecret), portal: set(config.portal.sessionSecret) },
+    urls: { dashboard: config.dashboard.url, portal: config.portal.url },
+  };
+}
+
+// POST /api/ajustes/conexiones/correo: a test email to the person's own
+// address (Perfil), from GMAIL_USER.
+export async function testMail(login: string): Promise<unknown> {
+  const email = (await profileOf(login)).email;
+  if (!email) throw new AjustesError('Pon tu correo en Perfil para mandarte la prueba.');
+  try {
+    await sendMail({ to: email, subject: '[ronin] Correo de prueba', text: `Si lees esto, ronin puede mandar correos desde ${config.gmailUser}.\n\nLo pediste desde Ajustes → Conexiones.` }, 'ronin');
+  } catch (error) {
+    throw new AjustesError(`No salió: ${(error as Error).message.split('\n')[0]}`, 502);
+  }
+  return { to: email };
 }

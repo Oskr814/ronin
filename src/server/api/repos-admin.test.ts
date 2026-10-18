@@ -7,7 +7,7 @@ const dir = mkdtempSync(join(tmpdir(), 'ronin-repos-'));
 const config = vi.hoisted(() => ({ settings: { dataDir: '' }, reposConfigPath: '', worktreeBaseRef: 'origin/main', agentModel: 'opus', agentEffort: 'high' }));
 config.settings.dataDir = join(dir, 'settings');
 config.reposConfigPath = join(dir, 'repos.json');
-vi.mock('../../core/config.js', () => ({ config }));
+vi.mock('../../core/config.js', () => ({ config, taskEnvModel: () => undefined, taskEnvEffort: () => undefined, taskDefaultModel: (t: string) => (t === 'update-changelog' ? 'haiku' : undefined) }));
 vi.mock('../../core/logger.js', () => ({ log: { info: vi.fn(), error: vi.fn() } }));
 vi.mock('../../core/linear-api.js', () => ({ linearKey: () => null, teamPlanning: async () => null }));
 vi.mock('./dashboard-new-issue.js', () => ({ repoApps: async () => ['backoffice', 'tienda'] }));

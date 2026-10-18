@@ -24,7 +24,7 @@ import { FichaActionError, runApprove, runFichaAction, runGeneralComment } from 
 import { GithubUserError, pendingReview, viewedFiles } from './github-as-user.js';
 import type { Session } from './auth.js';
 import { PortalAdminError, portalAdminView, runPortalAdmin, type PortalAdminContext } from './portal-admin.js';
-import { AjustesError, ajustesView, linearTeams, readRegistro, saveNotificacion, saveProfile, setValue } from './ajustes.js';
+import { AjustesError, ajustesView, conexionesView, linearTeams, readRegistro, saveNotificacion, saveProfile, setTask, setValue, testMail } from './ajustes.js';
 import { can, touchSeen, type Perm } from './team.js';
 import { addUsuario, removeUsuario, updateEquipo, updateUsuario, usuariosView, usuarioView } from './usuarios.js';
 import { editRepo, reposView } from './repos-admin.js';
@@ -597,6 +597,19 @@ async function ajustes(req: IncomingMessage, res: ServerResponse, path: string, 
     else json(res, 200, { registro: await readRegistro() });
     return;
   }
+  if (path === '/api/ajustes/conexiones' || path === '/api/ajustes/conexiones/correo') {
+    if (!admin) json(res, 403, { error: 'solo los administradores ven las conexiones' });
+    else if (req.method === 'GET' && path === '/api/ajustes/conexiones') json(res, 200, await conexionesView());
+    else if (req.method === 'POST' && path === '/api/ajustes/conexiones/correo') {
+      try {
+        json(res, 200, await testMail(session.login));
+      } catch (error) {
+        if (error instanceof AjustesError) json(res, error.status, { error: error.message });
+        else throw error;
+      }
+    } else json(res, 405, { error: 'método no permitido' });
+    return;
+  }
   const repoEdit = /^\/api\/ajustes\/repos(?:\/([\w.-]+\/[\w.-]+))?$/.exec(path);
   if (repoEdit) {
     if (!admin) json(res, 403, { error: 'solo los administradores cambian los repos' });
@@ -646,7 +659,7 @@ async function ajustes(req: IncomingMessage, res: ServerResponse, path: string, 
     }
     return;
   }
-  if (req.method !== 'POST' || !['/api/ajustes/perfil', '/api/ajustes/valores', '/api/ajustes/notificaciones'].includes(path)) {
+  if (req.method !== 'POST' || !['/api/ajustes/perfil', '/api/ajustes/valores', '/api/ajustes/notificaciones', '/api/ajustes/tareas'].includes(path)) {
     json(res, 404, { error: 'no existe' });
     return;
   }
@@ -659,6 +672,7 @@ async function ajustes(req: IncomingMessage, res: ServerResponse, path: string, 
     if (path === '/api/ajustes/perfil') json(res, 200, await saveProfile(session.login, body, await linearTeams(await visibleRepos())));
     else if (path === '/api/ajustes/notificaciones') json(res, 200, await saveNotificacion(session.login, body, await visibleRepos()));
     else if (!admin) json(res, 403, { error: 'solo los administradores cambian los ajustes' });
+    else if (path === '/api/ajustes/tareas') json(res, 200, await setTask(session.login, body));
     else json(res, 200, await setValue(session.login, body));
   } catch (error) {
     if (error instanceof AjustesError) json(res, error.status, { error: error.message });

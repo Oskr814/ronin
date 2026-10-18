@@ -11,12 +11,12 @@ const config = vi.hoisted(() => ({
   portal: { dailyLimit: 5, sessionDays: 30, url: 'https://portal' },
 }));
 config.settings.dataDir = dir;
-vi.mock('../../core/config.js', () => ({ config }));
+vi.mock('../../core/config.js', () => ({ config, taskEnvModel: () => undefined, taskEnvEffort: () => undefined, taskDefaultModel: (t: string) => (t === 'update-changelog' ? 'haiku' : undefined) }));
 vi.mock('../../core/logger.js', () => ({ log: { info: vi.fn(), error: vi.fn() } }));
 const teamPeople = vi.fn();
 vi.mock('../../core/linear-api.js', () => ({ linearKey: (entry: { linear?: unknown }) => (entry.linear ? 'lin_key' : null), teamPeople: (...a: unknown[]) => teamPeople(...a) }));
 
-const { AjustesError, ajustesView, linearTeams, readRegistro, saveNotificacion, saveProfile, setValue } = await import('./ajustes.js');
+const { AjustesError, ajustesView, linearTeams, readRegistro, saveNotificacion, saveProfile, setTask, setValue } = await import('./ajustes.js');
 
 const SC = { productRepo: 'redmotos/shoppingcart', productRepoPath: '/tmp/sc', linear: { apiKeyEnv: 'LINEAR_API_KEY_X' } };
 const BM = { productRepo: 'Bmedical/bmedical', productRepoPath: '/tmp/bm' };
@@ -65,9 +65,9 @@ describe('saveProfile', () => {
     const teams = await linearTeams([SC, BM]);
     expect(teams).toEqual([expect.objectContaining({ repo: SC.productRepo, team: 'RED' })]);
     await saveProfile('ana-dev', { name: ' Ana Rivera ', email: 'Persona@Gmail.com', linear: { repo: SC.productRepo, id: 'u1' } }, teams);
-    const view = await ajustesView('ana-dev', false, [SC]) as { perfil: unknown; general?: unknown };
+    const view = await ajustesView('ana-dev', false, [SC]) as { perfil: unknown; valores?: unknown };
     expect(view.perfil).toEqual({ name: 'Ana Rivera', email: 'persona@gmail.com', linear: { [SC.productRepo]: { id: 'u1', name: 'Ana Rivera' } } });
-    expect(view.general).toBeUndefined();
+    expect(view.valores).toBeUndefined();
     expect((await readRegistro()).map((e) => e.what)).toEqual([`Perfil · Linear de ${SC.productRepo}`, 'Perfil · correo', 'Perfil · nombre']);
   });
 
@@ -88,9 +88,9 @@ describe('saveProfile', () => {
 describe('ajustesView', () => {
   it('gives an admin the settings of General, with where each comes from', async () => {
     await setValue('admin1', { key: 'dashboard.sessionDays', value: 14 });
-    const view = await ajustesView('admin1', true, []) as { general: Array<{ key: string; source: string; value: number }> };
-    expect(view.general.find((s) => s.key === 'dashboard.sessionDays')).toMatchObject({ value: 14, source: 'tablero' });
-    expect(view.general.find((s) => s.key === 'portal.dailyLimit')).toMatchObject({ value: 5, source: 'defecto' });
+    const view = await ajustesView('admin1', true, []) as { valores: Array<{ key: string; source: string; value: number }> };
+    expect(view.valores.find((s) => s.key === 'dashboard.sessionDays')).toMatchObject({ value: 14, source: 'tablero' });
+    expect(view.valores.find((s) => s.key === 'portal.dailyLimit')).toMatchObject({ value: 5, source: 'defecto' });
   });
 });
 
@@ -105,5 +105,33 @@ describe('saveNotificacion', () => {
     await expect(saveNotificacion('ana-dev', { repo: BM.productRepo, event: 'bloqueo', on: true }, [sc])).rejects.toThrow(/no está entre los que ves/);
     await expect(saveNotificacion('ana-dev', { repo: sc.productRepo, event: 'todo', on: true }, [sc])).rejects.toThrow(/no existe/);
     expect((await readRegistro())[0]).toMatchObject({ what: `Notificaciones · ${sc.productRepo} · propuestas de una reunión`, from: 'sí', to: 'no' });
+  });
+});
+
+describe('setTask', () => {
+  it('gives a task type its own model, applies it and records it; null goes back', async () => {
+    const out = await setTask('admin1', { task: 'update-changelog', model: 'sonnet' }) as { tareas: Array<{ task: string; model: string; defaultModel: string | null }> };
+    expect(out.tareas.find((t) => t.task === 'update-changelog')).toMatchObject({ model: 'sonnet', defaultModel: 'haiku' });
+    expect((config as unknown as { taskOverrides: unknown }).taskOverrides).toEqual({ 'update-changelog': { model: 'sonnet' } });
+    await setTask('admin1', { task: 'update-changelog', model: null });
+    expect((config as unknown as { taskOverrides: unknown }).taskOverrides).toEqual({});
+    await expect(setTask('admin1', { task: 'otra', model: 'opus' })).rejects.toThrow(/tipo de tarea/);
+    await expect(setTask('admin1', { task: 'plan', model: 'gpt' })).rejects.toThrow(/modelo/);
+    expect((await readRegistro()).map((e) => `${e.what}: ${e.from} → ${e.to}`)).toEqual(['Agentes · update-changelog · modelo: sonnet → sin elegir', 'Agentes · update-changelog · modelo: sin elegir → sonnet']);
+  });
+});
+
+describe('setValue of other kinds', () => {
+  it('takes a switch, a list and a text, and checks each', async () => {
+    await setValue('admin1', { key: 'explore.publishEvidence', value: false });
+    await setValue('admin1', { key: 'agent.model', value: 'sonnet' });
+    await setValue('admin1', { key: 'explore.nightWindow', value: ' 02:00-05:00 ' });
+    expect(config).toMatchObject({ explorePublishEvidence: false, agentModel: 'sonnet', exploreNightWindow: '02:00-05:00' });
+    await expect(setValue('admin1', { key: 'explore.nightWindow', value: 'de noche' })).rejects.toThrow(/HH:MM/);
+    await expect(setValue('admin1', { key: 'explore.timezone', value: 'Marte/Olympus' })).rejects.toThrow(/zona horaria/);
+    await expect(setValue('admin1', { key: 'agent.model', value: 'gpt' })).rejects.toThrow(/uno de/);
+    await setValue('admin1', { key: 'agent.taskTimeoutMinutes', value: 45 });
+    expect((config as unknown as { agentTaskTimeoutMs: number }).agentTaskTimeoutMs).toBe(45 * 60_000);
+    expect((await readRegistro())[0]).toMatchObject({ what: 'Agentes · agent.taskTimeoutMinutes', to: '45' });
   });
 });
