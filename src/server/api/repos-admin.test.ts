@@ -70,6 +70,14 @@ describe('editRepo', () => {
     expect(sc.agent).toBeUndefined();
   });
 
+  it("turns the auto-merge of ronin's PRs off and on, writing only the false", async () => {
+    await edit({ autoMerge: false });
+    expect(file()[0].autoMerge).toBe(false);
+    await edit({ autoMerge: true });
+    expect(file()[0].autoMerge).toBeUndefined();
+    await expect(edit({ autoMerge: 'no' })).rejects.toThrow(/sí o no/);
+  });
+
   it('refuses what isn\'t valid, and writes nothing then', async () => {
     const before = readFileSync(config.reposConfigPath, 'utf8');
     await expect(edit({ linear: 'LINEAR_API_KEY_NO_EXISTE' })).rejects.toThrow(/no está en .env/);

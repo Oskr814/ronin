@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { AutoMergeCandidate } from '../core/github.js';
 
-const config = vi.hoisted(() => ({ githubLogin: 'ronin', autoMergeDefault: false }));
-vi.mock('../core/config.js', () => ({ config, LABEL_AUTO_MERGE: 'ronin:auto-merge' }));
+vi.mock('../core/config.js', () => ({ config: { githubLogin: 'ronin' }, LABEL_AUTO_MERGE: 'ronin:auto-merge' }));
+const repo = vi.hoisted(() => ({ productRepo: 'acme/app', autoMerge: false as boolean | undefined }));
+vi.mock('../core/repo-context.js', () => ({ activeRepo: () => repo }));
 vi.mock('../core/logger.js', () => ({ log: { error: vi.fn(), info: vi.fn() } }));
 
 const listOpenPrsForAutoMerge = vi.fn();
@@ -232,15 +233,15 @@ describe('labelNewSlicePrs', () => {
     expect(defaulted).toEqual([4]);
   });
 
-  it('sweepAutoMerge labels new slice PRs only when AUTO_MERGE_DEFAULT is on', async () => {
+  it("sweepAutoMerge labels new slice PRs unless the repo's autoMerge is false", async () => {
     listOpenPrsForAutoMerge.mockResolvedValue([slice(3)]);
     await sweepAutoMerge();
     expect(addIssueLabel).not.toHaveBeenCalled();
-    config.autoMergeDefault = true;
+    repo.autoMerge = undefined;
     try {
       await sweepAutoMerge();
     } finally {
-      config.autoMergeDefault = false;
+      repo.autoMerge = false;
     }
     expect(addIssueLabel).toHaveBeenCalledWith(3, 'ronin:auto-merge');
     // Labeled, it waits for its approval like any other.

@@ -43,6 +43,10 @@ export interface RepoEntry {
   // release ronin publishes, and the repo's own workflow does the rest.
   // Absent: the repo can't be deployed from ronin.
   deploy?: DeployConfig;
+  // false: ronin's slice PRs open without ronin:auto-merge, and wait for
+  // someone to merge them (commands/auto-merge.ts's labelNewSlicePrs).
+  // Absent or true: they merge as soon as a dev approves them and CI is green.
+  autoMerge?: boolean;
 }
 
 export interface DeployConfig {

@@ -12,7 +12,7 @@ import { repoApps } from './dashboard-new-issue.js';
 // Ajustes → Repos (#174, stage 5), admins only:
 //   GET  /api/ajustes/repos                  each repo of repos.json, with what can be changed from here
 //   POST /api/ajustes/repos/<owner>/<repo>   one change: { baseRef } | { portalName } | { app: { id, portal?, name?, description?, explore?, project? } }
-//                                            | { linear } | { deploy: { on?, prerelease?, selective? } } | { agent: { model?, effort? } } | { notifyTo }
+//                                            | { linear } | { deploy: { on?, prerelease?, selective? } } | { agent: { model?, effort? } } | { autoMerge } | { notifyTo }
 //
 // repos.json stays where every repo lives: what changes here is written
 // there, checked with the same rules that read it (validateRepos) and with
@@ -72,6 +72,7 @@ export async function reposView(entries: RepoEntry[]): Promise<unknown> {
         linear: entry.linear ? { apiKeyEnv: entry.linear.apiKeyEnv, connected: Boolean(linearKey(entry)), projects: await linearProjects(entry) } : null,
         deploy: entry.deploy ? { prerelease: entry.deploy.prerelease === true, selective: entry.deploy.selective === true } : null,
         agent: { model: entry.agent?.model ?? '', effort: entry.agent?.effort ?? '' },
+        autoMerge: entry.autoMerge !== false,
       };
     })),
   };
@@ -191,6 +192,15 @@ function apply(raw: Raw, body: Record<string, unknown>, manifest: string[]): Arr
     }
     const label = (x: { prerelease?: boolean; selective?: boolean } | undefined) => (x ? ['sí', x.prerelease ? 'pre-release' : '', x.selective ? 'PRs elegidos' : ''].filter(Boolean).join(', ') : 'no');
     if (label(before) !== label(raw.deploy as typeof before)) changes.push({ what: 'despliegues', from: label(before), to: label(raw.deploy as typeof before) });
+  }
+
+  if (body.autoMerge !== undefined) {
+    if (typeof body.autoMerge !== 'boolean') throw new AjustesError('Auto-merge: es sí o no.');
+    const before = raw.autoMerge !== false;
+    // On is the default: only false is written.
+    if (body.autoMerge) delete raw.autoMerge;
+    else raw.autoMerge = false;
+    if (before !== body.autoMerge) changes.push({ what: 'auto-merge en los PRs de ronin', from: yesNo(before), to: yesNo(body.autoMerge) });
   }
 
   if (body.agent !== undefined) {

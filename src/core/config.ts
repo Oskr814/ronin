@@ -104,9 +104,6 @@ export const config = {
   // /preview: after the base seeds, an agent prepares the data the PR needs
   // to be tried out (preview.ts). Off = just the app with its seeds.
   previewPrepareData: process.env.PREVIEW_PREPARE_DATA !== 'false',
-  // ronin's own slice PRs open with ronin:auto-merge (auto-merge.ts): they
-  // merge as soon as a dev approves them and CI is green.
-  autoMergeDefault: process.env.AUTO_MERGE_DEFAULT !== 'false',
   // Tailnet ports previews are published on — what a tailnet policy can open
   // to someone outside without opening anything else. Outside the kernel's
   // ephemeral range (32768-60999 on Linux), where Docker and the slices'

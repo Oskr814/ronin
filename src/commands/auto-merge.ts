@@ -12,6 +12,7 @@ import {
 import { config, LABEL_AUTO_MERGE } from '../core/config.js';
 import { getAutoMergeDefaulted, setAutoMergeDefaulted } from '../core/local-state.js';
 import { log } from '../core/logger.js';
+import { activeRepo } from '../core/repo-context.js';
 import { issueFromSliceBranch } from '../slices/stack.js';
 
 // `@ronin-agent /auto-merge` on a PR, ronin's take on GitHub's auto-merge
@@ -25,8 +26,8 @@ import { issueFromSliceBranch } from '../slices/stack.js';
 // conflicts with its base or the merge itself fails; anything else that's
 // missing (the approval, CI) it just waits for.
 //
-// ronin's own slice PRs get the label by default (AUTO_MERGE_DEFAULT, on
-// unless set to false): an approval is then all it takes. Spec and
+// ronin's own slice PRs get the label by default (the repo's `autoMerge` in
+// repos.json, on unless set to false): an approval is then all it takes. Spec and
 // exploration PRs are left out, since each has its own merge — see
 // labelNewSlicePrs.
 
@@ -67,7 +68,7 @@ function headIndex(candidates: AutoMergeCandidate[]): Map<string, number> {
 // tick, so the PR doesn't fill up with "still waiting".
 export async function sweepAutoMerge(): Promise<void> {
   const candidates = await listOpenPrsForAutoMerge();
-  if (config.autoMergeDefault) await labelNewSlicePrs(candidates);
+  if (activeRepo().autoMerge !== false) await labelNewSlicePrs(candidates);
   const labeled = candidates.filter((c) => c.labels.includes(LABEL_AUTO_MERGE));
   if (labeled.length === 0) return;
   const heads = headIndex(candidates);

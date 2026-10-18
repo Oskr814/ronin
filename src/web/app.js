@@ -4571,7 +4571,6 @@ const AJ_SETTINGS = {
   'retry.e2eHard': ['Tope de intentos con CI rojo', 'Aunque cada intento falle distinto.', 'intentos'],
   'retry.checksPending': ['CI sin terminar', 'Ticks que se espera un CI pendiente antes de bloquear (60 ≈ 5 h).', 'ticks'],
   'retry.slice': ['Una slice', '', 'intentos'],
-  'autoMerge.default': ['Auto-merge en sus PRs', 'Los PRs que abre ronin para un issue salen con ronin:auto-merge: se mergean apenas un dev los aprueba y CI está en verde. Sacarle el label a uno lo deja esperando el merge a mano.', ''],
   'retry.retarget': ['Cambiar la base de un PR', '', 'intentos'],
   'retry.issueError': ['Un issue que da error', '', 'intentos'],
   'explore.timezone': ['Zona horaria', 'La ventana nocturna, la fecha de cada corrida y la semana de su PR.', ''],
@@ -4713,7 +4712,6 @@ const AJ_PAGES = {
       <section class="aj-sec"><h2>Por tipo de tarea</h2><p class="aj-d">Gana sobre el de arriba y sobre <code>AGENT_MODEL_&lt;TIPO&gt;</code> de .env. Un repo puede tener los suyos en <a href="/ajustes/repos" data-aj-link="repos">Repos</a>.</p>
         <div class="aj-card"><table class="aj-tbl aj-tasks"><thead><tr><th>Tarea</th><th>Modelo</th><th>Esfuerzo</th></tr></thead><tbody>${tareas}</tbody></table></div></section>
       ${ajSec('Tiempos', row('agent.taskTimeoutMinutes') + row('agent.handlerTimeoutMinutes'))}
-      ${ajSec('Merge', row('autoMerge.default'))}
       ${ajSec('Concurrencia', row('tick.concurrency') + row('tick.externalReviewConcurrency'))}
       ${ajSec('Antes de bloquear', row('retry.e2e') + row('retry.e2eHard') + row('retry.checksPending') + row('retry.slice') + row('retry.retarget') + row('retry.issueError'), 'Cuántas veces intenta ronin antes de pedir ayuda (docs/BLOCKING.md).')}`;
   },
@@ -5120,6 +5118,7 @@ function ajRepoHTML() {
     ${r.portal?.notifyTo.length ? ajSec('Correos de repos.json', r.portal.notifyTo.map((mail) => ajRow(esc(mail), '', `<button class="btn-s" data-ajnotify="${esc(mail)}">Quitar</button>`)).join(''), 'Lo que <code>portal.notifyTo</code> manda todavía a quien no eligió en Notificaciones. Cuando cada uno tenga su correo en el perfil, se puede quitar.') : ''}
     ${ajSec('Linear', ajRow('API key', 'El nombre de la variable de .env que la tiene. La key nunca pasa por el tablero.', `<select class="aj-in mono" data-ajr="linear" aria-label="API key de Linear"><option value="">Sin Linear</option>${[...new Set([...(r.linear ? [r.linear.apiKeyEnv] : []), ...d.linearKeys])].map((k) => opt(k, r.linear?.apiKeyEnv ?? '')).join('')}</select>`,
       r.linear ? (r.linear.connected ? '<span class="ok-t">● Conectado</span>' : '<span class="warn-t">○ Esa variable no está en .env</span>') : '<span>Solo se listan las variables LINEAR_API_KEY_* que hay en .env.</span>'))}
+    ${ajSec('Merge', ajRow('Auto-merge en los PRs de ronin', 'Los PRs que ronin abre para un issue salen con ronin:auto-merge y se mergean apenas un dev los aprueba y CI está en verde. Sacarle el label a uno lo deja para mergear a mano. Apagado: solo los que alguien marque con /auto-merge.', sw('data-ajautomerge', r.autoMerge, 'Auto-merge en los PRs de ronin')))}
     ${ajSec('Despliegues', ajRow('Desplegar desde el tablero', 'Un release de GitHub con el tag escrito a mano.', sw('data-ajdeploy="on"', Boolean(r.deploy), 'Despliegues'))
       + (r.deploy ? ajRow('Pre-release primero', 'QA antes de producción.', sw('data-ajdeploy="prerelease"', r.deploy.prerelease, 'Pre-release'))
         + ajRow('Solo los PRs que se elijan', 'En vez de todo lo mergeado desde el último release.', sw('data-ajdeploy="selective"', r.deploy.selective, 'PRs elegidos')) : ''))}
@@ -5144,6 +5143,7 @@ function wireAjRepo(center) {
     if (b.dataset.ajdeploy === 'on' && !on && !confirm(`¿Dejar de desplegar ${S.aj.repo} desde el tablero?`)) return;
     ajRepo({ deploy: { [b.dataset.ajdeploy]: on } });
   };
+  for (const b of center.querySelectorAll('[data-ajautomerge]')) b.onclick = () => ajRepo({ autoMerge: b.getAttribute('aria-checked') !== 'true' });
   for (const el of center.querySelectorAll('[data-ajagent]')) el.onchange = () => ajRepo({ agent: { [el.dataset.ajagent]: el.value || null } });
   for (const b of center.querySelectorAll('[data-ajnotify]')) b.onclick = () => {
     if (!confirm(`¿Quitar ${b.dataset.ajnotify} de portal.notifyTo? Si es de alguien del equipo, recibe lo que elija en Notificaciones.`)) return;
