@@ -25,7 +25,7 @@ if [[ ! -f "$REPOS_CONFIG_PATH" ]]; then
   exit 1
 fi
 
-EVENTS=(issues pull_request issue_comment pull_request_review_comment pull_request_review check_suite release)
+EVENTS=(issues pull_request issue_comment pull_request_review_comment pull_request_review check_suite release workflow_run)
 
 for repo in $(jq -r '.[].productRepo' "$REPOS_CONFIG_PATH"); do
   echo "Configurando webhook en $repo..."

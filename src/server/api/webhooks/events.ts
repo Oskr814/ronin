@@ -54,6 +54,8 @@ const FLOWS: Record<string, Record<string, Flow[]>> = {
   // or "created" (fires for drafts). Exactly the trigger changelog.ts wants;
   // see docs on the release event's action types.
   release: { released: ['changelog'] },
+  // A release's workflow ending: a deploy ronin published is done (#158).
+  workflow_run: { completed: ['deploys'] },
 };
 
 // stack.ts's ronin/<issue>/... branches — a PR on one belongs to that
@@ -74,6 +76,7 @@ export interface EventPayload {
   issue?: { number?: number; pull_request?: unknown };
   pull_request?: PrRef;
   check_suite?: { pull_requests?: PrRef[] };
+  workflow_run?: { event?: string };
 }
 
 function prResources(pr: PrRef): string[] {
@@ -84,6 +87,8 @@ function prResources(pr: PrRef): string[] {
 
 function resourcesOf(eventName: string, payload: EventPayload): string[] {
   if (eventName === 'release') return ['changelog'];
+  // A deploy runs on a tag push or on a release; a PR's CI is none of ronin's deploys.
+  if (eventName === 'workflow_run') return ['push', 'release'].includes(payload.workflow_run?.event ?? '') ? ['deploys'] : [];
   if (eventName === 'check_suite') return (payload.check_suite?.pull_requests ?? []).flatMap(prResources);
   if (payload.pull_request) return prResources(payload.pull_request);
   const number = payload.issue?.number;

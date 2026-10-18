@@ -199,6 +199,12 @@ export const config = {
   meetings: {
     dataDir: resolve(process.env.MEETINGS_DATA_DIR || 'meetings-data'),
   },
+  // The deploys ronin published (#158, deploy/): what each release carried
+  // (its PRs and portal requests), who published it and how its workflow
+  // ended. GitHub has the releases; only this says which requests to tell.
+  deploys: {
+    dataDir: resolve(process.env.DEPLOYS_DATA_DIR || 'deploys-data'),
+  },
 } as const;
 
 // Per task type, the model a run uses when its env var isn't set — anything

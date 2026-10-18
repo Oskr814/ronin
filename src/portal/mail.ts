@@ -132,6 +132,25 @@ export function doneMail(request: PortalRequest, user: PortalUser, portalUrl: st
   };
 }
 
+// To the person, once the release that carried its change deployed (#158).
+export function deployedMail(request: PortalRequest, user: PortalUser, portalUrl: string): Mail {
+  const first = user.name.split(/\s+/)[0] || user.name;
+  const lines = [
+    `Hola ${first},`,
+    request.bug
+      ? `El arreglo del error que reportaste en P-${request.number} ("${request.title}") ya está en la aplicación.`
+      : `El cambio de tu pedido P-${request.number} ("${request.title}") ya está en la aplicación.`,
+    'Si no lo ves, recarga la página. Gracias por pedirlo.',
+  ];
+  const url = requestUrl(portalUrl, request.number);
+  return {
+    to: user.email,
+    subject: `Ya está en la aplicación: ${request.title}`,
+    text: `${lines.join('\n\n')}\n\n${url}`,
+    html: html(lines.map(esc), { label: 'Ver el pedido', url }, portalUrl),
+  };
+}
+
 // To the person, when the team closed its issue: solved, or not for now.
 export function closedMail(request: PortalRequest, user: PortalUser, portalUrl: string): Mail {
   const first = user.name.split(/\s+/)[0] || user.name;

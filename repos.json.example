@@ -21,7 +21,8 @@
         "backoffice": { "name": "Backoffice", "description": "Pedidos, clientes y catálogos" }
       },
       "notifyTo": ["dev1@example.com", "dev2@example.com"]
-    }
+    },
+    "deploy": { "selective": true }
   },
   {
     "productRepo": "Oskr814/repo-b",
@@ -34,6 +35,7 @@
         "external-review": "opus"
       },
       "reviewWorkerModel": "haiku"
-    }
+    },
+    "deploy": { "prerelease": true }
   }
 ]
