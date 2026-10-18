@@ -35,9 +35,9 @@ const ENTRY = { productRepo: SC, productRepoPath: '/tmp/sc', linear: { apiKeyEnv
 const SESSION = { login: 'valeria', token: 'gho_v' };
 const CTX = {
   team: 'RED', teamId: 't1',
-  projects: [{ id: 'p-seg', name: 'Seguridad carrito de compras', status: 'In Progress', statusType: 'started' }],
+  projects: [{ id: 'p-seg', name: 'Mejoras del checkout', status: 'In Progress', statusType: 'started' }],
   cycles: [{ id: 'c17', number: 17, startsAt: '2026-10-12', endsAt: '2026-10-19', current: true }, { id: 'c18', number: 18, startsAt: '2026-10-19', endsAt: '2026-10-26', current: false }],
-  people: [{ id: 'u-abdias', name: 'Abdias V.' }],
+  people: [{ id: 'u-ana', name: 'Ana Pérez' }],
 };
 const issue = (id: string, title: string, extra = {}) => ({ id, title, body: `## Qué\n${title}`, why: '', cites: [1], ...extra });
 
@@ -47,8 +47,8 @@ async function meeting() {
     x.status = 'review';
     x.proposals = {
       summary: '', at: '',
-      projects: [{ id: 'p1', name: 'Devoluciones', description: 'Registrar devoluciones.', why: '', cites: [1], lead: 'Abdias V.', issues: [issue('p1-1', 'Modelo de devolución', { cycle: 'current' }), issue('p1-2', 'Pantalla de devolución')] }],
-      issues: [issue('i1', 'Exportar pedidos', { project: 'Seguridad carrito de compras', cycle: 'next' })],
+      projects: [{ id: 'p1', name: 'Devoluciones', description: 'Registrar devoluciones.', why: '', cites: [1], lead: 'Ana Pérez', issues: [issue('p1-1', 'Modelo de devolución', { cycle: 'current' }), issue('p1-2', 'Pantalla de devolución')] }],
+      issues: [issue('i1', 'Exportar pedidos', { project: 'Mejoras del checkout', cycle: 'next' })],
       comments: [{ id: 'c1', issue: 915, issueTitle: 'Buscar sin tilde', body: 'Prioridad acordada.', why: '', cites: [1], cycle: 'next' }],
       discarded: [],
     };
@@ -72,7 +72,7 @@ describe('approveMeeting', () => {
   it('creates what was chosen, with the edits, as the person, and its Linear project and cycles', async () => {
     const n = await meeting();
     const out = await approveMeeting(ENTRY, n, SESSION, [
-      { id: 'p1', title: 'Devoluciones mayoristas', lead: 'Abdias V.' },
+      { id: 'p1', title: 'Devoluciones mayoristas', lead: 'Ana Pérez' },
       { id: 'p1-1' },
       { id: 'i1', title: 'Exportar a Excel la lista de pedidos', cycle: '' },
       { id: 'c1', body: 'Se acordó darle prioridad.' },
@@ -80,7 +80,7 @@ describe('approveMeeting', () => {
     expect(out).toEqual({ created: 4, failed: 0, status: 'done' });
     const footer = origin((await getMeeting(n))!, 'valeria');
     expect(footer).toContain('De la reunión R-1, "Seguimiento" (16 de octubre de 2026): lo propuso ronin y lo aprobó valeria en el tablero.');
-    expect(createProject).toHaveBeenCalledWith('lin_key', { name: 'Devoluciones mayoristas', description: 'Registrar devoluciones.', content: `Registrar devoluciones.\n\n${footer}`, teamId: 't1', leadId: 'u-abdias' });
+    expect(createProject).toHaveBeenCalledWith('lin_key', { name: 'Devoluciones mayoristas', description: 'Registrar devoluciones.', content: `Registrar devoluciones.\n\n${footer}`, teamId: 't1', leadId: 'u-ana' });
     expect(createIssue.mock.calls).toEqual([
       ['gho_v', SC, { title: 'Modelo de devolución', body: `## Qué\nModelo de devolución\n\n${footer}` }],
       ['gho_v', SC, { title: 'Exportar a Excel la lista de pedidos', body: `## Qué\nExportar pedidos\n\n${footer}` }],

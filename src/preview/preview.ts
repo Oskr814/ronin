@@ -74,7 +74,7 @@ export async function releasePreviewLock(prNumber: number): Promise<void> {
 
 // --- tailscale ---
 
-// The runner's MagicDNS name (e.g. media.tail758870.ts.net), the host every
+// The runner's MagicDNS name (e.g. <host>.<tailnet>.ts.net), the host every
 // preview URL is served on.
 export async function tailnetHost(): Promise<string> {
   let stdout: string;
