@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { bigRequestMail, closedMail, doneMail, linkMail, prototypeMail, replyMail, teamPrMail, teamRequestMail } from './mail.js';
+import { bigRequestMail, closedMail, deployedMail, doneMail, linkMail, prototypeMail, replyMail, teamPrMail, teamRequestMail } from './mail.js';
 import type { PortalUser } from './accounts.js';
 import type { PortalRequest } from './requests.js';
 
@@ -68,5 +68,20 @@ describe('portal mails', () => {
   it('escapes what people wrote in the HTML', () => {
     expect(linkMail({ ...user, name: '<script>x</script>' }, 'invite', `${URL}/contrasena#t=abc`, URL, []).html).not.toContain('<script>');
     expect(replyMail(request({ messages: [{ id: 2, from: 'ronin', text: '<img src=x onerror=alert(1)>', images: [], at: '' }] }), user, URL).html).not.toContain('<img');
+  });
+});
+
+describe('deployedMail', () => {
+  it('tells one request as before, and several in one mail with a link to each', () => {
+    const one = deployedMail([request({ status: 'done' })], user, 'https://portal.example.com');
+    expect(one.subject).toBe('Ya está en la aplicación: Abrir la ficha del cliente');
+    expect(one.text).toContain('El cambio de tu pedido P-31 ("Abrir la ficha del cliente") ya está en la aplicación.');
+    const two = deployedMail([request({ status: 'done' }), request({ number: 32, title: 'El <total> visible', bug: { steps: 'Abrir el total', reproductions: [] } })], user, 'https://portal.example.com');
+    expect(two).toMatchObject({ to: 'mf@x.com', subject: 'Ya están en la aplicación: 2 de tus pedidos' });
+    expect(two.text).toContain('Hola María,');
+    expect(two.text).toContain('- P-31: "Abrir la ficha del cliente"\n  https://portal.example.com/p/31');
+    expect(two.text).toContain('- P-32: el arreglo del error "El <total> visible"\n  https://portal.example.com/p/32');
+    expect(two.html).toContain('">P-32</a>: el arreglo del error &quot;El &lt;total&gt; visible&quot;');
+    expect(two.html).toContain('Ver mis pedidos');
   });
 });

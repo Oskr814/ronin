@@ -10,8 +10,8 @@ vi.mock('../portal/requests.js', async (importOriginal) => ({
 }));
 const getUser = vi.fn();
 vi.mock('../portal/accounts.js', () => ({ getUser: (...args: unknown[]) => getUser(...args) }));
-const sendPortalMails = vi.fn();
-vi.mock('../portal/notify.js', () => ({ sendPortalMails: (...args: unknown[]) => sendPortalMails(...args) }));
+const sendRequestsMail = vi.fn();
+vi.mock('../portal/notify.js', () => ({ sendRequestsMail: (...args: unknown[]) => sendRequestsMail(...args) }));
 
 import { rm } from 'node:fs/promises';
 import { config } from '../core/config.js';
@@ -53,7 +53,20 @@ describe('followDeploys', () => {
     const request = requests.get(7)!;
     expect(request.events).toEqual([expect.objectContaining({ kind: 'deploy', tag: 'v1.0.1', state: 'deployed', prerelease: false })]);
     expect(request.deployed).toMatchObject({ tag: 'v1.0.1' });
-    expect(sendPortalMails).toHaveBeenCalledWith(request, [expect.objectContaining({ to: 'persona@example.com', subject: 'Ya está en la aplicación: El total más visible' })]);
+    expect(sendRequestsMail).toHaveBeenCalledWith([request], expect.objectContaining({ to: 'persona@example.com', subject: 'Ya está en la aplicación: El total más visible' }));
+  });
+
+  it('mails each person once, with all of theirs the release carried', async () => {
+    requests.set(8, { number: 8, userId: 'u1', title: 'Otro botón', events: [] });
+    requests.set(9, { number: 9, userId: 'u2', title: 'Un reporte nuevo', events: [] });
+    getUser.mockImplementation(async (id: string) => ({ id, name: `Persona ${id}`, email: `${id}@example.com` }));
+    await addDeploy(record({ pedidos: [7, 8, 9] }));
+    listTagRuns.mockResolvedValue([run('completed', 'success')]);
+    await follow();
+    expect(sendRequestsMail).toHaveBeenCalledTimes(2);
+    expect(sendRequestsMail).toHaveBeenCalledWith([requests.get(7), requests.get(8)], expect.objectContaining({ to: 'u1@example.com', subject: 'Ya están en la aplicación: 2 de tus pedidos' }));
+    expect(sendRequestsMail).toHaveBeenCalledWith([requests.get(9)], expect.objectContaining({ to: 'u2@example.com', subject: 'Ya está en la aplicación: Un reporte nuevo' }));
+    for (const n of [7, 8, 9]) expect(requests.get(n)!.events).toEqual([expect.objectContaining({ kind: 'deploy', state: 'deployed' })]);
   });
 
   it('notes a pre-release on its requests without mailing anyone', async () => {
@@ -62,7 +75,7 @@ describe('followDeploys', () => {
     await follow();
     expect(requests.get(7)!.events).toEqual([expect.objectContaining({ state: 'deployed', prerelease: true })]);
     expect(requests.get(7)!.deployed).toBeUndefined();
-    expect(sendPortalMails).not.toHaveBeenCalled();
+    expect(sendRequestsMail).not.toHaveBeenCalled();
   });
 
   it('notes a failed one, and mails nobody', async () => {
@@ -71,7 +84,7 @@ describe('followDeploys', () => {
     await follow();
     expect((await listDeploys())[0].state).toBe('failed');
     expect(requests.get(7)!.events).toEqual([expect.objectContaining({ state: 'failed' })]);
-    expect(sendPortalMails).not.toHaveBeenCalled();
+    expect(sendRequestsMail).not.toHaveBeenCalled();
   });
 
   it('leaves a running one, and drops one no run showed up for', async () => {
@@ -98,7 +111,7 @@ describe('followDeploys', () => {
     await follow();
     expect((await listDeploys())[0]).toMatchObject({ state: 'deployed', runs: [{ conclusion: 'success' }] });
     expect(requests.get(7)!.events).toEqual([expect.objectContaining({ state: 'deployed' })]);
-    expect(sendPortalMails).toHaveBeenCalledTimes(1);
+    expect(sendRequestsMail).toHaveBeenCalledTimes(1);
   });
 
   it('stops looking at a failed one once GitHub no longer re-runs it', async () => {

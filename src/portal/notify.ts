@@ -19,6 +19,16 @@ export async function sendPortalMails(request: PortalRequest, mails: Array<Mail 
   }
 }
 
+// One mail about several requests (a release that carried them all): sent
+// once, and noted on each.
+export async function sendRequestsMail(requests: PortalRequest[], mail: Mail): Promise<void> {
+  const ok = await sendMail(mail, PORTAL_FROM_NAME).then(() => true, (error) => {
+    log.error(`portal: no se pudo enviar un correo de los pedidos ${requests.map((r) => `P-${r.number}`).join(', ')}`, error);
+    return false;
+  });
+  for (const request of requests) await noteEvent(request.number, { kind: 'mail', to: 'person', subject: mail.subject, ok });
+}
+
 // Inside withActiveRepo: the team of the request's repo (its portal.notifyTo
 // in repos.json), never another repo's; NOTIFY_TO when it has none.
 export const teamTo = () => activeRepo().portal?.notifyTo?.join(', ') || config.notifyTo;
