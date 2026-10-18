@@ -1160,7 +1160,7 @@ button.chip[data-goped]:hover { color: var(--ink); }
 /* Ajustes (#174): its own sidebar, a centered column of rows (label | control) */
 .brand .gear { margin-left: auto; color: var(--muted); padding: 4px; border-radius: 5px; display: grid; place-items: center; }
 .brand .gear:hover { color: var(--ink); background: var(--hover); }
-.brand .gear svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; }
+.brand .gear svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
 .shell.aj .search, .shell.aj .scope, .shell.aj .tree { display: none; }
 .shell.aj .quick { border-bottom: 0; flex: 1; overflow: auto; padding-top: 2px; }
 .shell.aj .brand .gear { color: var(--ink); background: var(--hover); }
