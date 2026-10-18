@@ -5,17 +5,18 @@ import { log } from '../../core/logger.js';
 import type { RepoEntry } from '../../core/repo-context.js';
 import { linearKey, teamPeople } from '../../core/linear-api.js';
 import { applySettings, invalidValue, readSettingsSync, settingDef, settingsPath, settingsView, type SettingsFile } from '../../core/settings.js';
-import { readJson, withJson } from '../../portal/json-store.js';
+import { withJson } from '../../portal/json-store.js';
+import { readTeam, withTeam, type Member } from './team.js';
 
 // The dashboard's Ajustes (#174), stage 1:
 //   GET  /api/ajustes           the person's profile, and for an admin the settings of General
-//   POST /api/ajustes/perfil    { name?, email?, linear?: { repo, id } }: their own profile
+//   POST /api/ajustes/perfil    { name?, email?, linear?: { repo, id } }: their own profile (in people.json, team.ts)
 //   POST /api/ajustes/valores   { key, value }: a setting (admins); value null goes back to .env's
 //   GET  /api/ajustes/registro  every change made here, newest first (admins)
 //
 // Everything lives in SETTINGS_DATA_DIR: settings.json (core/settings.ts),
-// people.json (each login's profile) and registro.jsonl (one line per
-// change, never rewritten).
+// people.json (the team, team.ts) and registro.jsonl (one line per change,
+// never rewritten).
 
 export class AjustesError extends Error {
   constructor(message: string, readonly status = 400) {
@@ -23,16 +24,10 @@ export class AjustesError extends Error {
   }
 }
 
-export interface Profile {
-  name?: string;
-  email?: string;
-  // Who they are in each repo's Linear team, by productRepo.
-  linear?: Record<string, { id: string; name: string }>;
-}
-
-interface PeopleFile {
-  people: Record<string, Profile>;
-}
+// What a person says about themselves (Perfil): part of their entry in the
+// team (team.ts).
+export type Profile = Pick<Member, 'name' | 'email' | 'linear'>;
+const profile = (m: Member | undefined): Profile => ({ ...(m?.name ? { name: m.name } : {}), ...(m?.email ? { email: m.email } : {}), ...(m?.linear ? { linear: m.linear } : {}) });
 
 export interface RegistroEntry {
   at: string;
@@ -48,19 +43,17 @@ const EMAIL_MAX = 254;
 const REGISTRO_MAX = 300;
 const LINEAR_TTL_MS = 10 * 60_000;
 
-const peoplePath = () => join(config.settings.dataDir, 'people.json');
 const registroPath = () => join(config.settings.dataDir, 'registro.jsonl');
-const emptyPeople = (): PeopleFile => ({ people: {} });
 const emptySettings = (): SettingsFile => ({ values: {} });
 const isEmail = (email: string) => email.length <= EMAIL_MAX && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
-async function record(entry: Omit<RegistroEntry, 'at'>, now = new Date()): Promise<void> {
+export async function record(entry: Omit<RegistroEntry, 'at'>, now = new Date()): Promise<void> {
   await mkdir(config.settings.dataDir, { recursive: true, mode: 0o700 });
   await appendFile(registroPath(), `${JSON.stringify({ at: now.toISOString(), ...entry })}\n`, { mode: 0o600 });
 }
 
 export async function profileOf(login: string): Promise<Profile> {
-  return (await readJson(peoplePath(), emptyPeople)).people[login] ?? {};
+  return profile((await readTeam()).people[login]);
 }
 
 // Each repo the person sees that has Linear, with its team's people, read
@@ -127,8 +120,8 @@ export async function setValue(login: string, body: Record<string, unknown>): Pr
 // POST /api/ajustes/perfil: only the person's own. An empty string clears a field.
 export async function saveProfile(login: string, body: Record<string, unknown>, teams: Array<{ repo: string; people: Array<{ id: string; name: string }> }>): Promise<unknown> {
   const changes: Array<Omit<RegistroEntry, 'at' | 'login'>> = [];
-  const profile = await withJson(peoplePath(), emptyPeople, (file) => {
-    const p: Profile = { ...(file.people[login] ?? {}) };
+  const saved = await withTeam((file) => {
+    const p: Member = { ...(file.people[login] ?? {}) };
     if (body.name !== undefined) {
       if (typeof body.name !== 'string' || body.name.trim().length > NAME_MAX) throw new AjustesError(`El nombre puede tener hasta ${NAME_MAX} caracteres.`);
       const name = body.name.trim();
@@ -159,10 +152,10 @@ export async function saveProfile(login: string, body: Record<string, unknown>, 
       else delete p.linear;
     }
     file.people[login] = p;
-    return p;
+    return profile(p);
   });
   for (const change of changes) await record({ login, ...change });
-  return { perfil: profile };
+  return { perfil: saved };
 }
 
 // GET /api/ajustes/registro: the last REGISTRO_MAX, newest first.

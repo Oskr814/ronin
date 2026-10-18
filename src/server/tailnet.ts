@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { handleAuth, readSession, type AuthConfig, type GithubOAuth, type Session } from './api/auth.js';
-import { sessionAccess, type Access } from './api/access.js';
+import type { Access } from './api/access.js';
+import { teamAccess } from './api/team.js';
 import { GithubUserError } from './api/github-as-user.js';
 import { loadRepos } from '../core/repos.js';
 import { handleDashboard } from './api/dashboard.js';
@@ -28,7 +29,8 @@ type AccessOf = (session: Session) => Promise<Access>;
 
 export function createTailnetHandler(auth: AuthConfig, options: { github?: GithubOAuth; webRoot?: string; access?: AccessOf } = {}): Handler {
   const root = options.webRoot ?? WEB_ROOT;
-  const accessOf: AccessOf = options.access ?? (async (session) => sessionAccess(session, await loadRepos(), auth.admins));
+  // The team in Ajustes (#174, team.ts) on top of GitHub's answer: its admins, hidden repos and permissions.
+  const accessOf: AccessOf = options.access ?? (async (session) => teamAccess(session, await loadRepos()));
   // At login, past the lists: an admin, or someone with a repo to see.
   const canEnter = async (login: string, token: string) => {
     const access = await accessOf({ login, token });
