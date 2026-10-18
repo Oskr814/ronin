@@ -104,7 +104,7 @@ function duration(ms) {
 const money = (usd) => (usd < 0.01 ? 'menos de US$0,01' : `US$${usd.toFixed(2).replace('.', ',')}`);
 const pct = (fraction) => `${Math.round(fraction * 100)}%`;
 
-const S = { snap: null, today: null, sel: null, open: [], runIdx: {}, pendingRun: null, filter: null, q: '', itemRuns: {}, run: null, stream: null, detail: {}, view: {}, doc: {}, menu: false, dialog: null, expanded: new Set(), expl: {}, ficha: {}, fichaOpen: {}, fichaFilter: { tipo: 'todas', vp: 'todos' }, antes: {}, oldAfter: new Set(), lightbox: null, fmenu: false, fdialog: null, fdraft: {}, listas: {}, scope: 'all', project: '', attAll: false, extra: {}, newIssue: null, files: {}, fcur: {}, ffold: {}, fexp: {}, fcontent: {}, fq: {}, ftree: false, fcomp: null, fbusy: new Set(), rpanel: null, page: null, portal: { data: null, error: null }, pdialog: null, ped: { list: null, error: null, listAt: 0, detail: {}, n: null, tab: 'act', gh: 'issue', filter: 'pend', page: 1, run: null, lb: null, patch: {} }, reu: { list: null, error: null, listAt: 0, detail: {}, n: null, tab: null, up: null, run: null, open: {}, retrying: false, form: {}, approving: false }, xpl: { list: null, error: null, listAt: 0, repo: null, app: null, cor: {}, inv: {}, tab: 'corridas', run: null, launched: {} }, xnow: null, dep: { list: null, error: null, listAt: 0, dlg: null } };
+const S = { snap: null, today: null, sel: null, open: [], runIdx: {}, pendingRun: null, filter: null, q: '', itemRuns: {}, run: null, stream: null, detail: {}, view: {}, doc: {}, menu: false, dialog: null, expanded: new Set(), expl: {}, ficha: {}, fichaOpen: {}, fichaFilter: { tipo: 'todas', vp: 'todos' }, antes: {}, oldAfter: new Set(), lightbox: null, fmenu: false, fdialog: null, fdraft: {}, listas: {}, scope: 'all', project: '', attAll: false, extra: {}, newIssue: null, files: {}, fcur: {}, ffold: {}, fexp: {}, fcontent: {}, fq: {}, ftree: false, fcomp: null, fbusy: new Set(), rpanel: null, revSent: {}, page: null, portal: { data: null, error: null }, pdialog: null, ped: { list: null, error: null, listAt: 0, detail: {}, n: null, tab: 'act', gh: 'issue', filter: 'pend', page: 1, run: null, lb: null, patch: {} }, reu: { list: null, error: null, listAt: 0, detail: {}, n: null, tab: null, up: null, run: null, open: {}, retrying: false, form: {}, approving: false }, xpl: { list: null, error: null, listAt: 0, repo: null, app: null, cor: {}, inv: {}, tab: 'corridas', run: null, launched: {} }, xnow: null, dep: { list: null, error: null, listAt: 0, dlg: null } };
 // The sidebar's Linear filter (#101), remembered per browser.
 try { Object.assign(S, JSON.parse(localStorage.getItem('ronin-scope') ?? '{}')); } catch { /* sin storage */ }
 function saveScope() {
@@ -1396,6 +1396,26 @@ function wireReviewPanel() {
   }
 }
 
+// An approval or a request for changes shows on the PR's chips at once,
+// until a snapshot brings a read of the repo newer than the one at hand when
+// it was sent (the server reads it again right after); a couple of minutes
+// at most, if that read never comes.
+const REVIEW_DECISION = { APPROVE: 'APPROVED', REQUEST_CHANGES: 'CHANGES_REQUESTED' };
+const REVIEW_SHOWN_MS = 120_000;
+const repoReadAt = (repo) => S.snap?.github?.find((g) => g.repo === repo)?.fetchedAt ?? null;
+
+function showSentReviews() {
+  for (const [key, sent] of Object.entries(S.revSent)) {
+    if (repoReadAt(sent.repo) !== sent.readAt || Date.now() - sent.at > REVIEW_SHOWN_MS) {
+      delete S.revSent[key];
+      continue;
+    }
+    for (const item of [...(S.snap?.items ?? []), ...Object.values(S.extra)]) {
+      if (item.repo === sent.repo && item.pr?.number === sent.pr) item.pr.reviewDecision = sent.decision;
+    }
+  }
+}
+
 const REVIEW_SENT = { COMMENT: 'Mandaste tu revisión', APPROVE: 'Aprobaste el PR', REQUEST_CHANGES: 'Pediste cambios' };
 async function sendReview() {
   const p = S.rpanel;
@@ -1410,6 +1430,13 @@ async function sendReview() {
   try {
     const sent = await filesAction(p.item, { action: 'submit', event, text: p.text, commitId: data.headSha, fixComments: Boolean(fixable && p.fix) });
     S.rpanel = null;
+    const item = itemById(p.item);
+    if (item && REVIEW_DECISION[event]) {
+      S.revSent[`${item.repo}#${data.pr}`] = { repo: item.repo, pr: data.pr, decision: REVIEW_DECISION[event], readAt: repoReadAt(item.repo), at: Date.now() };
+      showSentReviews();
+      renderTree();
+      renderCenter();
+    }
     toast(`${REVIEW_SENT[event]}${sent.fixUrl ? '; ronin ya tiene el /fix-comments' : ''}.`, sent.url);
     afterFilesWrite(p.item);
     refresh();
@@ -4740,6 +4767,7 @@ async function refresh() {
     if (error instanceof Unauthorized) showLogin();
     return;
   }
+  showSentReviews();
   renderQuick();
   renderTree();
   renderCtx();

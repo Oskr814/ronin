@@ -618,6 +618,8 @@ async function postFilesAction(req: IncomingMessage, res: ServerResponse, id: st
       forgetFiles(ctx.entry.productRepo);
       forgetDetails(ctx.entry.productRepo);
     }
+    // An approval or a request for changes is on the PR's chips: the next snapshot reads it.
+    if (body.action === 'submit') forgetGithub(ctx.entry.productRepo);
     json(res, 200, done);
   } catch (error) {
     if (error instanceof FilesActionError) json(res, 400, { error: error.message });
