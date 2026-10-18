@@ -92,6 +92,15 @@ async function fetchBranches(dir: string, branches: string[]): Promise<void> {
   await git(dir, ['fetch', '-q', 'origin', ...branches.map((b) => `+refs/heads/${b}:${remoteRef(b)}`)]).catch(() => {});
 }
 
+// A file at a branch of the product repo's clone, as it is on GitHub (the
+// branch fetched at most once a minute); null when the branch or the file
+// isn't there. For the inventory on the Exploraciones page (#155).
+export async function readBranchFile(entry: RepoEntry, branch: string, path: string): Promise<string | null> {
+  const dir = entry.productRepoPath;
+  await fetchBranches(dir, [branch]);
+  return git(dir, ['show', `${remoteRef(branch)}:${path}`]).catch(() => null);
+}
+
 // The finding's after in each earlier version on the branch, newest first:
 // the first one that isn't the current is the one ronin replaced.
 async function previousAfter(dir: string, base: string, head: string, path: string, current: string | undefined): Promise<FindingImage | undefined> {

@@ -31,7 +31,7 @@ import { isOpen, requestDetail, requestImage, requestPatch, requestRow } from '.
 import { DuplicateMeeting, createMeeting, getMeeting, launchMeetingWorker, listMeetings, retryMeeting } from '../../meetings/index.js';
 import { MAX_UPLOAD_BODY, MeetingUploadError, meetingDetail, meetingOriginal, meetingRow, parseUpload } from './dashboard-meetings.js';
 import { ApproveError, approveMeeting, discardMeeting } from './dashboard-meetings-approve.js';
-import { exploracionList, exploracionRows } from './dashboard-exploraciones.js';
+import { corridasOf, exploracionList, exploracionRows, inventarioOf } from './dashboard-exploraciones.js';
 
 // The dashboard's data (#65), all behind the session (tailnet.ts checks it
 // before any of this runs):
@@ -59,6 +59,8 @@ import { exploracionList, exploracionRows } from './dashboard-exploraciones.js';
 //   GET /api/pedidos/<n>/prototipo/<round>  a prototype's draft diff
 //   GET /api/pedidos/<n>/reproduccion/<round>  a reproduction's diff (#137)
 //   GET /api/exploraciones           each app a repo explores, with its exploration PR's findings counted and its runs (#155, dashboard-exploraciones.ts)
+//   GET /api/exploraciones/<owner>/<repo>/<app>/corridas    the app's exploration runs, with their agents
+//   GET /api/exploraciones/<owner>/<repo>/<app>/inventario  the app's functions and their coverage (inventory.yml)
 //   GET /api/reuniones               the meetings whose notes were uploaded, of the repos it sees (#62, dashboard-meetings.ts)
 //   POST /api/reuniones              uploads one: the notes as a file or pasted
 //   GET /api/reuniones/<n>           one of them, with its notes' text
@@ -158,6 +160,16 @@ async function exploraciones(): Promise<unknown> {
   const github = await Promise.all(entries.map((entry) => repoGithub(entry)));
   const prs = prsOf(entries, github);
   return { apps: await exploracionList(entries, exploracionRows(entries, prs, runs), runs, prs) };
+}
+
+// GET /api/exploraciones/<owner>/<repo>/<app>/<what>: one app's runs or
+// inventory (#155). Null for an app no repo it sees explores.
+async function exploracion(repo: string, app: string, what: string): Promise<unknown | null> {
+  const entry = (await visibleRepos()).find((e) => e.productRepo === repo);
+  if (!entry || !(entry.explore ?? []).includes(app)) return null;
+  if (what === 'corridas') return { corridas: await corridasOf(entry, app, listRuns(HISTORY_DAYS)) };
+  const pr = (await repoGithub(entry))?.prs.find(isExplorationPr);
+  return inventarioOf(entry, app, pr);
 }
 
 // The portal's requests of the repos it sees, with whoever asked each.
@@ -692,6 +704,13 @@ async function route(req: IncomingMessage, res: ServerResponse, path: string, se
 
   if (path === '/api/exploraciones') {
     json(res, 200, await exploraciones());
+    return true;
+  }
+  const xpl = /^\/api\/exploraciones\/([\w.-]+\/[\w.-]+)\/([\w.-]+)\/(corridas|inventario)$/.exec(path);
+  if (xpl) {
+    const body = await exploracion(xpl[1], xpl[2], xpl[3]);
+    if (body) json(res, 200, body);
+    else json(res, 404, { error: 'ningún repo de ronin explora esa app' });
     return true;
   }
 

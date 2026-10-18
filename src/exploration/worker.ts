@@ -17,8 +17,15 @@ import {
   renderRunReply,
   type ExploreWorkerRequest,
 } from './flow.js';
+import { finishRunRecord, startRunRecord, type ExplorationRunRecord, type ExplorationTrigger } from './run-log.js';
 
 const request = JSON.parse(process.argv[2] ?? '{}') as ExploreWorkerRequest;
+
+// Who asked for it, for the dashboard's record of the run (run-log.ts).
+function triggerOf(r: ExploreWorkerRequest): ExplorationTrigger {
+  if (r.trigger) return { kind: 'issue', issueNumber: r.trigger.issueNumber };
+  return r.until ? { kind: 'noche' } : { kind: 'manual' };
+}
 
 async function main(): Promise<void> {
   const entry = (await loadRepos()).find((r) => r.productRepo === request.repo);
@@ -38,6 +45,19 @@ async function main(): Promise<void> {
       }
       return;
     }
+    // The record is a convenience for the dashboard: failing to write it never stops the run.
+    const record: ExplorationRunRecord | null = await startRunRecord({
+      repo: request.repo,
+      app: request.appName,
+      trigger: triggerOf(request),
+      ...(request.maxFunctions ? { maxFunctions: request.maxFunctions } : {}),
+      ...(request.until ? { until: request.until } : {}),
+    }).catch((error) => {
+      log.error(`exploración ${request.appName}: no se pudo registrar la corrida`, error);
+      return null;
+    });
+    // Answering the /explore comment can fail after the run was published: that run still ended well.
+    let published = false;
     try {
       const run = await exploreAndPublish({
         appName: request.appName,
@@ -45,11 +65,14 @@ async function main(): Promise<void> {
         ...(request.until ? { shouldContinue: () => Date.now() < Date.parse(request.until!) } : {}),
       });
       log.info(`exploración ${request.appName}: corrida ${run.summary.runId} publicada en el PR #${run.prNumber}`);
+      published = true;
+      if (record) await finishRunRecord(record, { summary: run.summary, prNumber: run.prNumber }).catch((error) => log.error('exploración: no se pudo cerrar el registro de la corrida', error));
       if (request.trigger) {
         await replyToComment(request.trigger.issueNumber, { id: request.trigger.commentIds[0], kind: 'issue' }, renderRunReply(request.appName, run));
       }
     } catch (error) {
       log.error(`exploración ${request.appName} falló`, error);
+      if (record && !published) await finishRunRecord(record, { error: error as Error }).catch((e) => log.error('exploración: no se pudo cerrar el registro de la corrida', e));
       if (request.trigger) {
         await replyToComment(
           request.trigger.issueNumber,
