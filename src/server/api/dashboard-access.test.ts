@@ -47,14 +47,14 @@ const { handleDashboard } = await import('./dashboard.js');
 const ACCESS = { admin: false, repos: [{ repo: SC, permission: 'triage' as const }] };
 const SESSION = { login: 'valeria', token: 'gho_v' };
 
-async function call(path: string, method = 'GET', body?: unknown): Promise<{ status: number; body: any }> {
+async function call(path: string, method = 'GET', body?: unknown, access: typeof ACCESS = ACCESS): Promise<{ status: number; body: any }> {
   const req = { method, url: path, headers: { 'content-type': 'application/json' }, async *[Symbol.asyncIterator]() { if (body) yield Buffer.from(JSON.stringify(body)); } } as unknown as IncomingMessage;
   const out = { status: 0, body: undefined as any };
   const res = {
     writeHead(status: number) { out.status = status; return res; },
     end(text?: string) { out.body = text ? JSON.parse(text) : undefined; return res; },
   } as unknown as ServerResponse;
-  await handleDashboard(req, res, path.split('?')[0], SESSION, ACCESS);
+  await handleDashboard(req, res, path.split('?')[0], SESSION, access);
   return out;
 }
 
@@ -170,6 +170,22 @@ describe('a session that sees only some repos', () => {
   it("reads only a file the PR changes (#111)", async () => {
     expect((await call(`/api/items/${encodeURIComponent(`${SC}#2`)}/files/content?path=.env`)).status).toBe(404);
   });
+  it('refuses what a read-only member asks, whatever the page shows (#174)', async () => {
+    const readOnly = { admin: false, repos: [{ repo: SC, permission: 'triage' as const, perms: { notas: false, aprobar: false, acciones: false, desplegar: false } }] };
+    const refused = async (path: string, body: unknown) => {
+      const out = await call(path, 'POST', body, readOnly);
+      expect(out.status, path).toBe(403);
+      return out.body.error as string;
+    };
+    expect(await refused(`/api/items/${encodeURIComponent(`${SC}#1`)}/actions`, { action: 'assign' })).toMatch(/acciones del tablero/);
+    await refused(`/api/repos/${SC}/issues`, { title: 'x', body: 'y', after: 'none' });
+    await refused(`/api/items/${encodeURIComponent(`${SC}#2`)}/files/actions`, { action: 'comment', path: 'a.ts', body: 'x' });
+    expect(await refused('/api/reuniones', { repo: SC, text: 'notas de la reunión' })).toMatch(/subir notas/);
+    await refused(`/api/despliegues/${SC}/plan`, { tag: 'v1', prs: 'all' });
+    expect((await call('/api/snapshot', 'GET', undefined, readOnly)).body.despliegues).toBe(false);
+    expect((await call('/api/ajustes/usuarios', 'GET', undefined, readOnly)).status).toBe(403);
+  });
+
   it('gives a member only their own profile in Ajustes (#174)', async () => {
     const view = await call('/api/ajustes');
     expect(view.status).toBe(200);

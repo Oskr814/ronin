@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { log } from '../../core/logger.js';
 import type { RepoEntry } from '../../core/repo-context.js';
 import { GithubUserError } from './github-as-user.js';
+import type { Perms } from './team.js';
 
 // Which repos of repos.json a dashboard session sees (#106). Administrators
 // (DASHBOARD_ADMINS) see them all. Anyone else sees the ones GitHub says
@@ -19,7 +20,8 @@ export type Permission = 'admin' | 'maintain' | 'push' | 'triage' | 'pull';
 export interface Access {
   admin: boolean;
   // The productRepo of each repo the session sees, and the permission that lets it.
-  repos: Array<{ repo: string; permission: Permission | 'admin-del-tablero' }>;
+  // `perms`: what it can do there (#174, team.ts), once worked out.
+  repos: Array<{ repo: string; permission: Permission | 'admin-del-tablero'; perms?: Perms }>;
 }
 
 const RANK: Permission[] = ['pull', 'triage', 'push', 'maintain', 'admin'];

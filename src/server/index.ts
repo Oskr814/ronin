@@ -16,6 +16,7 @@ import { missingAuthConfig } from './api/auth.js';
 import { createPortalHandler, missingPortalConfig } from './portal.js';
 import { createPublicHandler } from './public.js';
 import { createTailnetHandler } from './tailnet.js';
+import { loadTeam } from './api/team.js';
 
 if (!config.webhookSecret) {
   throw new Error('WEBHOOK_SECRET no está seteado — ver .env.example. El servidor no puede arrancar sin validar las firmas de GitHub.');
@@ -46,6 +47,8 @@ const missing = missingAuthConfig(config.dashboard);
 if (missing.length > 0) {
   log.info(`tablero desactivado: falta ${missing.join(', ')} en .env`);
 } else {
+  // The team's admins and who gets in (#174) on top of .env's, before the first request.
+  await loadTeam();
   // 127.0.0.1 only: what reaches it is `tailscale serve`, never the LAN.
   serve(createTailnetHandler(config.dashboard)).listen(config.dashboard.tailnetPort, '127.0.0.1', () => {
     log.info(`tablero escuchando en 127.0.0.1:${config.dashboard.tailnetPort}, publicado en la tailnet como ${config.dashboard.url} (administradores: ${config.dashboard.admins.join(', ') || 'ninguno'})`);

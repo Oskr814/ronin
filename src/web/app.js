@@ -84,6 +84,14 @@ const dot = (state) => `<span class="dot ${(STATE[state] ?? STATE.error)[0]}" ar
 const dotClass = (cls) => `<span class="dot ${cls}" aria-hidden="true"></span>`;
 const hhmm = (iso) => new Date(iso).toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' });
 const isMobile = () => matchMedia('(max-width: 760px)').matches;
+// What the session can do in a repo (#174): the server says it per repo; an
+// admin does everything. The server refuses anyway, this only hides it.
+function canDo(repo, perm) {
+  if (S.snap?.access.admin) return true;
+  const entry = S.snap?.access.repos.find((r) => r.repo === repo);
+  if (!entry) return false;
+  return entry.perms ? entry.perms[perm] : perm !== 'desplegar';
+}
 
 function clock(ms) {
   const s = Math.max(0, Math.floor(ms / 1000));
@@ -104,7 +112,7 @@ function duration(ms) {
 const money = (usd) => (usd < 0.01 ? 'menos de US$0,01' : `US$${usd.toFixed(2).replace('.', ',')}`);
 const pct = (fraction) => `${Math.round(fraction * 100)}%`;
 
-const S = { snap: null, today: null, sel: null, open: [], runIdx: {}, pendingRun: null, filter: null, q: '', itemRuns: {}, run: null, stream: null, detail: {}, view: {}, doc: {}, menu: false, dialog: null, expanded: new Set(), expl: {}, ficha: {}, fichaOpen: {}, fichaFilter: { tipo: 'todas', vp: 'todos' }, antes: {}, oldAfter: new Set(), lightbox: null, fmenu: false, fdialog: null, fdraft: {}, listas: {}, scope: 'all', project: '', attAll: false, extra: {}, newIssue: null, files: {}, fcur: {}, ffold: {}, fexp: {}, fcontent: {}, fq: {}, ftree: false, fcomp: null, fbusy: new Set(), rpanel: null, revSent: {}, page: null, portal: { data: null, error: null }, pdialog: null, ped: { list: null, error: null, listAt: 0, detail: {}, n: null, tab: 'act', gh: 'issue', filter: 'pend', page: 1, run: null, lb: null, patch: {} }, reu: { list: null, error: null, listAt: 0, detail: {}, n: null, tab: null, up: null, run: null, open: {}, retrying: false, form: {}, approving: false }, xpl: { list: null, error: null, listAt: 0, repo: null, app: null, cor: {}, inv: {}, tab: 'corridas', run: null, launched: {} }, xnow: null, dep: { list: null, error: null, listAt: 0, dlg: null }, aj: { data: null, error: null, sec: 'perfil', registro: null } };
+const S = { snap: null, today: null, sel: null, open: [], runIdx: {}, pendingRun: null, filter: null, q: '', itemRuns: {}, run: null, stream: null, detail: {}, view: {}, doc: {}, menu: false, dialog: null, expanded: new Set(), expl: {}, ficha: {}, fichaOpen: {}, fichaFilter: { tipo: 'todas', vp: 'todos' }, antes: {}, oldAfter: new Set(), lightbox: null, fmenu: false, fdialog: null, fdraft: {}, listas: {}, scope: 'all', project: '', attAll: false, extra: {}, newIssue: null, files: {}, fcur: {}, ffold: {}, fexp: {}, fcontent: {}, fq: {}, ftree: false, fcomp: null, fbusy: new Set(), rpanel: null, revSent: {}, page: null, portal: { data: null, error: null }, pdialog: null, ped: { list: null, error: null, listAt: 0, detail: {}, n: null, tab: 'act', gh: 'issue', filter: 'pend', page: 1, run: null, lb: null, patch: {} }, reu: { list: null, error: null, listAt: 0, detail: {}, n: null, tab: null, up: null, run: null, open: {}, retrying: false, form: {}, approving: false }, xpl: { list: null, error: null, listAt: 0, repo: null, app: null, cor: {}, inv: {}, tab: 'corridas', run: null, launched: {} }, xnow: null, dep: { list: null, error: null, listAt: 0, dlg: null }, aj: { data: null, error: null, sec: 'perfil', registro: null, users: null, user: null, login: null, q: '', add: null } };
 // The sidebar's Linear filter (#101), remembered per browser.
 try { Object.assign(S, JSON.parse(localStorage.getItem('ronin-scope') ?? '{}')); } catch { /* sin storage */ }
 function saveScope() {
@@ -331,7 +339,7 @@ function renderTree() {
   if (xpls.length) html += `<div class="grp"><span>Exploraciones</span><span class="n">${xpls.length}</span></div>` + xpls.map(xplRow).join('');
   for (const repo of S.snap.repos) {
     const items = S.snap.items.filter((item) => item.repo === repo && item.status !== 'blocked' && shown(item));
-    html += `<div class="grp"><span class="sq" style="background:${repoColor(repo)}"></span><b>${esc(repoShort(repo))}</b><span class="n">${items.length}</span><button class="grp-add" data-new="${esc(repo)}" title="Nuevo issue en ${esc(repoShort(repo))}" aria-label="Nuevo issue en ${esc(repoShort(repo))}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button></div>`;
+    html += `<div class="grp"><span class="sq" style="background:${repoColor(repo)}"></span><b>${esc(repoShort(repo))}</b><span class="n">${items.length}</span>${canDo(repo, 'acciones') ? `<button class="grp-add" data-new="${esc(repo)}" title="Nuevo issue en ${esc(repoShort(repo))}" aria-label="Nuevo issue en ${esc(repoShort(repo))}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>` : ''}</div>`;
     html += items.length ? items.map(row).join('') : `<div class="grp-empty">${q || S.filter ? 'Nada coincide.' : S.scope === 'cycle' || S.project ? `Ningún issue abierto ${S.scope === 'cycle' ? 'en este ciclo' : ''}${S.project ? ' para este proyecto' : ''}.` : 'Nada en curso ni corridas en los últimos 3 días.'}</div>`;
     // A number nothing listed has: open it anyway (a closed issue, a PR without an issue).
     if (num && !found && safeRepo(repo)) {
@@ -658,7 +666,8 @@ function linearChips(item) {
 }
 
 function actionsHTML(d) {
-  if (!d?.actions?.length) return '';
+  const item = S.sel && itemById(S.sel);
+  if (!d?.actions?.length || (item && !canDo(item.repo, 'acciones'))) return '';
   const menu = S.menu ? `<div class="menu" role="menu">${d.actions.map((a) => `<button role="menuitem" data-action="${esc(a.id)}" class="${a.primary ? 'primary' : ''}"><b>${esc(a.label)}</b><span class="k">${esc(a.command)}</span><small>${esc(a.help)}</small></button>`).join('')}</div>` : '';
   return `<div class="actions"><button class="act-btn" id="act" aria-haspopup="menu" aria-expanded="${S.menu}">Acciones ▾</button>${menu}</div>`;
 }
@@ -2818,6 +2827,7 @@ function xplBlocked(r) {
   return Date.now() - (S.xpl.launched[r.repo]?.at ?? 0) < XPL_STARTING_MS ? 'la exploración que pediste está arrancando' : null;
 }
 const xplNowButton = (r) => {
+  if (!canDo(r.repo, 'acciones')) return '';
   const blocked = xplBlocked(r);
   return `<button class="act-btn" data-xnow="${esc(xplKey(r))}" ${blocked ? `disabled title="${esc(blocked)}"` : ''}>Explorar ahora</button>`;
 };
@@ -4016,7 +4026,7 @@ async function loadReunionRun(runId) {
 
 function reunionesHTML() {
   const head = `<div class="reu-top"><div><h1>Reuniones</h1><p class="lead">Sube las notas de una reunión (PDF, Word o texto) y ronin propone el trabajo que sale de ella: proyectos de Linear, issues y comentarios en issues que ya existen. Nada se crea hasta que alguien lo apruebe aquí.</p></div>
-    <button class="btn-s primary" data-reunew>+ Subir notas</button></div>`;
+    ${notasRepos().length ? '<button class="btn-s primary" data-reunew>+ Subir notas</button>' : ''}</div>`;
   const list = S.reu.list;
   if (!list) return `<div class="today pd">${head}${S.reu.error ? `<p class="bad">${esc(S.reu.error)}</p>` : '<div class="empty">Cargando…</div>'}</div>`;
   const rows = list.map((m) => `<tr data-reu="${m.number}" tabindex="0"><td class="pn">R-${m.number}</td>
@@ -4164,7 +4174,11 @@ function reuChosen(d) {
   return { projects, issues, comments };
 }
 
+// The repos it can upload a meeting's notes to (#174).
+const notasRepos = () => (S.snap?.repos ?? []).filter((repo) => canDo(repo, 'notas'));
+
 function reuApproveBar(d) {
+  if (!canDo(d.repo, 'aprobar')) return '<div class="reu-approve"><div class="sum">Lo que propone esta reunión lo aprueba alguien con permiso para aprobar en este repo.</div></div>';
   const { projects, issues, comments } = reuChosen(d);
   const parts = [projects ? plural(projects, 'proyecto', 'proyectos') : '', issues ? plural(issues, 'issue', 'issues') : '', comments ? plural(comments, 'comentario', 'comentarios') : ''].filter(Boolean);
   const what = parts.length ? parts.join(', ').replace(/, ([^,]*)$/, ' y $1') : 'nada';
@@ -4392,7 +4406,7 @@ function wireReuniones() {
 
 // The upload dialog: a file, or the text pasted.
 function openUpload() {
-  const repos = S.snap?.repos ?? [];
+  const repos = notasRepos();
   S.reu.up = { repo: repos[0] ?? '', title: '', at: '', link: '', text: '', file: null, sending: false, error: null };
   renderUpload();
 }
@@ -4434,7 +4448,7 @@ function renderUpload() {
     return;
   }
   if (!layer) {
-    const repos = S.snap?.repos ?? [];
+    const repos = notasRepos();
     layer = Object.assign(document.body.appendChild(document.createElement('div')), { id: 'rlayer' });
     layer.innerHTML = `<div class="scrim"><div class="dlg dlg-new" role="dialog" aria-modal="true" aria-labelledby="ru-t">
       <h2 id="ru-t">Subir notas de una reunión</h2>
@@ -4661,6 +4675,7 @@ function renderStatus() {
 const AJ_SECTIONS = {
   perfil: { name: 'Perfil', icon: '<circle cx="12" cy="8" r="4"/><path d="M4 20c1.5-4 4.5-6 8-6s6.5 2 8 6"/>' },
   general: { name: 'General', icon: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1"/>', admin: true },
+  usuarios: { name: 'Usuarios', icon: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c1-3.5 3.5-5.5 6.5-5.5s5.5 2 6.5 5.5M16 4.5a3.5 3.5 0 0 1 0 7M18 14.5c2 .7 3.2 2.6 3.7 5.5"/>', admin: true },
   registro: { name: 'Registro', icon: '<path d="M4 6h16M4 12h16M4 18h10"/>', admin: true },
 };
 // What each setting is, in words; the server says its value and where it comes from.
@@ -4672,12 +4687,14 @@ const AJ_SETTINGS = {
 };
 const ajAllowed = (sec) => AJ_SECTIONS[sec] && (!AJ_SECTIONS[sec].admin || S.snap?.access.admin);
 
-function openAjustes(sec = 'perfil') {
+function openAjustes(sec = 'perfil', login = null) {
   S.sel = null;
   S.page = 'ajustes';
   S.aj.sec = ajAllowed(sec) ? sec : 'perfil';
+  S.aj.login = S.aj.sec === 'usuarios' ? login : null;
+  if (S.aj.login !== S.aj.user?.login) S.aj.user = null;
   stopStream();
-  const path = `/ajustes/${S.aj.sec}`;
+  const path = `/ajustes/${S.aj.sec}${S.aj.login ? `/${encodeURIComponent(S.aj.login)}` : ''}`;
   if (location.pathname !== path) history.pushState(null, '', path);
   renderAll();
   if (isMobile() && sec) {
@@ -4691,6 +4708,8 @@ async function loadAjustes() {
   try {
     S.aj.data = await api('/api/ajustes');
     if (S.aj.sec === 'registro') S.aj.registro = (await api('/api/ajustes/registro')).registro;
+    if (S.aj.sec === 'usuarios' && S.aj.login) S.aj.user = await api(`/api/ajustes/usuarios/${encodeURIComponent(S.aj.login)}`);
+    else if (S.aj.sec === 'usuarios') S.aj.users = await api('/api/ajustes/usuarios');
     S.aj.error = null;
   } catch (error) {
     if (error instanceof Unauthorized) return showLogin();
@@ -4703,7 +4722,7 @@ function ajNavHTML() {
   const button = (sec) => `<button data-aj="${sec}" aria-pressed="${S.aj.sec === sec}"><svg viewBox="0 0 24 24">${AJ_SECTIONS[sec].icon}</svg>${AJ_SECTIONS[sec].name}</button>`;
   return `<button data-aj-back><svg viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></svg>Volver al tablero</button>
     <div class="aj-grp">Tu cuenta <span>${esc(S.snap.me)}</span></div>${button('perfil')}
-    ${S.snap.access.admin ? `<div class="aj-grp">Administración</div>${button('general')}${button('registro')}` : ''}`;
+    ${S.snap.access.admin ? `<div class="aj-grp">Administración</div>${button('general')}${button('usuarios')}${button('registro')}` : ''}`;
 }
 
 function wireAjNav() {
@@ -4742,6 +4761,9 @@ const AJ_PAGES = {
       ${ajSec('Tablero', ajFixed('Dirección', esc(d.dashboard.url || '—'), 'DASHBOARD_URL') + row('dashboard.sessionDays') + row('dashboard.githubTtlSeconds'))}
       ${ajSec('Portal de pedidos', ajFixed('Dirección', esc(d.portal.url || '—'), 'PORTAL_URL') + row('portal.dailyLimit') + row('portal.sessionDays'), 'Las cuentas del portal siguen en <i>Pedidos del portal → Usuarios</i>.')}`;
   },
+  usuarios() {
+    return S.aj.login ? ajUserHTML() : ajUsersHTML();
+  },
   registro() {
     const list = S.aj.registro;
     const rows = !list ? '<div class="aj-row"><span class="m">Cargando…</span></div>' : !list.length ? '<div class="aj-row"><span class="m">Todavía nadie cambió nada.</span></div>'
@@ -4751,6 +4773,189 @@ const AJ_PAGES = {
 };
 // "General · portal.dailyLimit" reads as the setting's name.
 const ajWhat = (what) => what.replace(/^General · (.+)$/, (m, key) => (AJ_SETTINGS[key] ? `General · ${AJ_SETTINGS[key][0]}` : m));
+
+// Ajustes → Usuarios (#174, stage 2): the team, their role and what each
+// can do repo by repo, never more than GitHub gives.
+const AJ_SETS = { todo: ['Todo', 'como hoy'], reuniones: ['Reuniones y pedidos', 'sin tocar código'], lectura: ['Solo lectura', 've el repo, no hace nada'] };
+const AJ_PERMS = [['notas', 'Subir notas', 'de reuniones'], ['aprobar', 'Aprobar', 'lo que propone una reunión'], ['acciones', 'Acciones', 'asignar a ronin, /spike, /spec, revisar, auto-merge'], ['desplegar', 'Desplegar', 'publicar un release']];
+const ajSetName = (set, def) => (set === 'custom' ? 'Personalizado' : set ? AJ_SETS[set][0] : `${AJ_SETS[def ?? 'todo'][0]}`);
+const ajSince = (iso) => (iso ? `hace ${short(Date.now() - Date.parse(iso))}` : 'nunca');
+const ajAdminPill = (u) => (u.role === 'admin' ? `<span class="aj-pill admin">Administrador</span>${u.envAdmin ? ' <span class="aj-env" title="DASHBOARD_ADMINS">.env</span>' : ''}` : '<span class="aj-pill">Miembro</span>');
+
+function ajUsersHTML() {
+  const d = S.aj.users;
+  if (!d) return '<h1>Usuarios</h1><div class="empty">Cargando…</div>';
+  const q = S.aj.q.trim().toLowerCase();
+  const people = d.people.filter((u) => !q || `${u.login} ${u.name ?? ''} ${u.email ?? ''}`.toLowerCase().includes(q));
+  const repos = (u) => (u.role === 'admin' ? '<span class="m">Todos</span>' : u.repos.map((r) => {
+    if (!r.github) return '';
+    const label = r.hidden ? 'oculto' : ajSetName(r.set, d.porDefecto) + (r.set ? '' : '*') + (r.desplegar ? ' + desplegar' : '');
+    return `<span class="aj-rp${r.hidden ? ' off' : ''}"><i style="background:${repoColor(r.repo)}"></i>${esc(repoShort(r.repo))} <span class="m">${esc(label)}</span></span>`;
+  }).join('') || '<span class="m">Ninguno en GitHub</span>');
+  const env = d.envAllowed.length ? `.env dice: ${d.envAllowed.join(', ')}` : 'hoy vacío';
+  return `<h1>Usuarios</h1><p class="lead">El equipo que entra al tablero con GitHub. GitHub dice qué repos ve cada uno (permiso <i>triage</i> o más); aquí se le pueden quitar repos y limitar qué hace en ellos, nunca darle más.</p>
+    ${ajSec('Quién puede entrar', ajRow('Entrada', d.entrada === 'github' ? 'Cualquiera con triage en algún repo de ronin. Entra como miembro, con los permisos por defecto.' : 'Solo las personas de la lista de abajo y los administradores.',
+      `<div class="aj-seg"><button data-ajentrada="github" aria-pressed="${d.entrada === 'github'}">Quien tenga acceso en GitHub</button><button data-ajentrada="lista" aria-pressed="${d.entrada === 'lista'}">Solo la lista</button></div>`,
+      `<span>${d.entradaSet ? 'Reemplaza a' : 'Hoy lo dice'}</span><code>DASHBOARD_ALLOWED_USERS</code><span>· ${esc(env)}</span>`)
+      + ajRow('Permisos por defecto', 'Los de un miembro en cada repo, si no se le eligieron otros. Desplegar se da aparte, repo por repo.',
+        `<select class="aj-in" data-ajdef aria-label="Permisos por defecto">${Object.entries(AJ_SETS).map(([id, [name, desc]]) => `<option value="${id}" ${d.porDefecto === id ? 'selected' : ''}>${esc(name)} (${esc(desc)})</option>`).join('')}</select>`))}
+    <div class="aj-bar"><input class="aj-in" data-ajq placeholder="Buscar por nombre, login o correo" value="${esc(S.aj.q)}" aria-label="Buscar"><button class="btn-s primary" data-ajadd>Agregar persona</button></div>
+    <div class="aj-card"><table class="aj-tbl"><thead><tr><th>Persona</th><th>Rol</th><th class="hide-m">Repos</th><th class="hide-m">Entró</th></tr></thead><tbody>
+      ${people.map((u) => `<tr data-ajuser="${esc(u.login)}" tabindex="0"><td><b>${esc(u.name || u.login)}</b><small><span class="mono">@${esc(u.login)}</span>${u.email ? '' : ' · <span class="warn-t">sin correo</span>'}</small></td><td>${ajAdminPill(u)}</td><td class="hide-m">${repos(u)}</td><td class="hide-m m">${esc(ajSince(u.lastSeenAt))}${u.addedBy ? `<small>agregado por @${esc(u.addedBy)}</small>` : ''}</td></tr>`).join('') || '<tr><td colspan="4" class="m">Nadie con esa búsqueda.</td></tr>'}
+    </tbody></table></div>
+    <p class="aj-foot">Aparece quien entró alguna vez o agregó un administrador. * = los permisos por defecto.</p>`;
+}
+
+function ajUserHTML() {
+  const u = S.aj.user;
+  const crumbs = `<div class="aj-crumbs"><a href="/ajustes/usuarios" data-aj-link="usuarios">Usuarios</a> › <span>${esc(S.aj.login)}</span></div>`;
+  if (!u) return `${crumbs}<div class="empty">Cargando…</div>`;
+  const admin = u.role === 'admin';
+  const me = u.login === S.snap.me;
+  const roleSeg = `<div class="aj-seg"><button data-ajrole="admin" aria-pressed="${admin}" ${u.envAdmin ? 'disabled' : ''}>Administrador</button><button data-ajrole="member" aria-pressed="${!admin}" ${u.envAdmin || me ? 'disabled' : ''}>Miembro</button></div>`;
+  const repoCard = (r) => {
+    if (r.githubLets === false || r.github === null) return `<div class="aj-card aj-repo off"><div class="aj-row"><div class="l"><b><i style="background:${repoColor(r.repo)}"></i>${esc(r.repo)}</b><small>GitHub no le da acceso (triage o más). Se le da en GitHub, no aquí.</small></div></div></div>`;
+    const custom = r.set === 'custom';
+    return `<div class="aj-card aj-repo${r.hidden ? ' off' : ''}"><div class="aj-row"><div class="l"><b><i style="background:${repoColor(r.repo)}"></i>${esc(r.repo)}</b><small>GitHub: ${esc(r.github ?? 'no se pudo leer')}${r.hidden ? ' · <span class="warn-t">oculto en el tablero</span>' : ''}</small></div>
+      <div class="ctl"><select class="aj-in" data-ajset="${esc(r.repo)}" ${r.hidden ? 'disabled' : ''} aria-label="Permisos en ${esc(r.repo)}"><option value="" ${!r.set ? 'selected' : ''}>Por defecto (${esc(AJ_SETS[u.porDefecto]?.[0] ?? 'Todo')})</option>${Object.entries(AJ_SETS).map(([id, [name]]) => `<option value="${id}" ${r.set === id ? 'selected' : ''}>${esc(name)}</option>`).join('')}${custom ? '<option value="custom" selected>Personalizado</option>' : ''}</select>
+      <button class="aj-sw" role="switch" aria-checked="${!r.hidden}" data-ajhide="${esc(r.repo)}" title="${r.hidden ? 'Mostrarle este repo' : 'Ocultarle este repo'}" aria-label="Ve ${esc(r.repo)} en el tablero"></button></div></div>
+      ${r.hidden ? '' : `<div class="aj-perm">${AJ_PERMS.map(([id, name, hint]) => `<label title="${esc(hint)}"><input type="checkbox" data-ajperm="${esc(r.repo)}" data-p="${id}" ${r.perms[id] ? 'checked' : ''}><span>${esc(name)}<small>${esc(hint)}</small></span></label>`).join('')}</div>`}</div>`;
+  };
+  return `${crumbs}<h1>${esc(u.name || u.login)}</h1><p class="lead"><span class="mono">@${esc(u.login)}</span> · entró ${esc(ajSince(u.lastSeenAt))}${u.addedBy ? ` · agregado por @${esc(u.addedBy)}` : ''}</p>
+    ${ajSec('Cuenta', ajRow('Rol', admin ? 'Ve todos los repos, hace todo y administra los ajustes.' : 'Ve lo que GitHub le da, con los permisos de cada repo.', roleSeg,
+      u.envAdmin ? '<span class="aj-env">.env</span><code>DASHBOARD_ADMINS</code><span>· administrador de respaldo: no se le quita desde aquí, para que nadie quede afuera por un error.</span>' : me && admin ? '<span>No puedes quitarte el rol a ti mismo.</span>' : '')
+      + ajRow('Nombre', 'Lo pone la persona en su perfil; un administrador puede corregirlo.', `<input class="aj-in" maxlength="120" data-ajufield="name" value="${esc(u.name ?? '')}" placeholder="${esc(u.login)}" aria-label="Nombre">`)
+      + ajRow('Correo', '', `<input class="aj-in" type="email" maxlength="254" data-ajufield="email" value="${esc(u.email ?? '')}" placeholder="persona@gmail.com" aria-label="Correo">`))}
+    ${admin ? ajSec('Repos', u.repos.map((r) => ajRow(`<i class="aj-sq" style="background:${repoColor(r.repo)}"></i>${esc(r.repo)}`, 'Todo, como administrador.', `<span class="aj-pill">GitHub: ${esc(r.github ?? '—')}</span>`)).join(''))
+      : `<section class="aj-sec"><h2>Repos y permisos</h2><p class="aj-d">Un conjunto marca los permisos; tocar uno lo deja como <i>Personalizado</i>. Desplegar se da aparte.</p>${u.repos.map(repoCard).join('')}</section>`}
+    ${u.envAdmin || me ? '' : `<section class="aj-sec"><button class="btn-s danger" data-ajremove>Quitar de la lista</button><p class="aj-foot">${u.entrada === 'lista' ? 'Con la entrada en "solo la lista", deja de poder entrar.' : 'Si vuelve a entrar, tiene lo que le da GitHub y los permisos por defecto.'}</p></section>`}`;
+}
+
+function wireAjUsers(center) {
+  const q = center.querySelector('[data-ajq]');
+  if (q) q.oninput = () => {
+    S.aj.q = q.value;
+    const pos = q.selectionStart;
+    renderCenter();
+    const fresh = $('#center [data-ajq]');
+    fresh?.focus();
+    fresh?.setSelectionRange(pos, pos);
+  };
+  for (const row of center.querySelectorAll('[data-ajuser]')) {
+    row.onclick = () => openAjustes('usuarios', row.dataset.ajuser);
+    row.onkeydown = (event) => { if (event.key === 'Enter') openAjustes('usuarios', row.dataset.ajuser); };
+  }
+  for (const b of center.querySelectorAll('[data-ajentrada]')) b.onclick = () => ajEquipo({ entrada: b.dataset.ajentrada });
+  center.querySelector('[data-ajdef]')?.addEventListener('change', (event) => ajEquipo({ porDefecto: event.target.value }));
+  center.querySelector('[data-ajadd]')?.addEventListener('click', ajOpenAdd);
+  const login = S.aj.login;
+  for (const b of center.querySelectorAll('[data-ajrole]')) b.onclick = () => {
+    if (S.aj.user.role === b.dataset.ajrole) return;
+    if (b.dataset.ajrole === 'admin' && !confirm(`¿Hacer administrador a ${S.aj.user.name || login}? Va a ver todos los repos, aunque GitHub no se los dé, y a poder cambiar todos los ajustes.`)) return;
+    ajUser({ role: b.dataset.ajrole });
+  };
+  for (const input of center.querySelectorAll('[data-ajufield]')) input.onchange = () => ajUser({ [input.dataset.ajufield]: input.value });
+  for (const select of center.querySelectorAll('[data-ajset]')) select.onchange = () => {
+    if (select.value !== 'custom') ajUser({ repo: { repo: select.dataset.ajset, set: select.value || null } });
+  };
+  for (const b of center.querySelectorAll('[data-ajhide]')) b.onclick = () => ajUser({ repo: { repo: b.dataset.ajhide, hidden: b.getAttribute('aria-checked') === 'true' } });
+  for (const box of center.querySelectorAll('[data-ajperm]')) box.onchange = () => {
+    const repo = box.dataset.ajperm;
+    if (box.dataset.p === 'desplegar') return ajUser({ repo: { repo, desplegar: box.checked } });
+    const perms = S.aj.user.repos.find((r) => r.repo === repo).perms;
+    ajUser({ repo: { repo, custom: { notas: perms.notas, aprobar: perms.aprobar, acciones: perms.acciones, [box.dataset.p]: box.checked } } });
+  };
+  center.querySelector('[data-ajremove]')?.addEventListener('click', async () => {
+    if (!confirm(`¿Quitar a ${S.aj.user.name || login} de la lista?`)) return;
+    try {
+      await api(`/api/ajustes/usuarios/${encodeURIComponent(login)}/quitar`, { method: 'POST', body: '{}' });
+      toast(`Quitaste a @${login} de la lista.`);
+      openAjustes('usuarios');
+    } catch (error) {
+      if (error instanceof Unauthorized) return showLogin();
+      toast(`No se pudo. ${error.message}`);
+    }
+  });
+}
+
+async function ajUser(patch) {
+  try {
+    S.aj.user = await api(`/api/ajustes/usuarios/${encodeURIComponent(S.aj.login)}`, { method: 'POST', body: JSON.stringify(patch) });
+    toast('Guardado.');
+  } catch (error) {
+    if (error instanceof Unauthorized) return showLogin();
+    toast(`No se guardó. ${error.message}`);
+  }
+  $('#center')._html = null;
+  renderCenter();
+}
+
+async function ajEquipo(patch) {
+  try {
+    Object.assign(S.aj.users, await api('/api/ajustes/equipo', { method: 'POST', body: JSON.stringify(patch) }), { entradaSet: true });
+    toast('Guardado.');
+  } catch (error) {
+    if (error instanceof Unauthorized) return showLogin();
+    toast(`No se guardó. ${error.message}`);
+  }
+  $('#center')._html = null;
+  renderCenter();
+}
+
+// Agregar persona: someone of the team, before they come in.
+function ajOpenAdd() {
+  S.aj.add = { login: '', role: 'member', sending: false, error: null };
+  ajRenderAdd();
+}
+
+function ajRenderAdd() {
+  let layer = $('#ajlayer');
+  const a = S.aj.add;
+  if (!a) {
+    layer?.remove();
+    return;
+  }
+  const fresh = !layer;
+  layer ??= Object.assign(document.body.appendChild(document.createElement('div')), { id: 'ajlayer' });
+  layer.innerHTML = `<div class="scrim"><div class="dlg" role="dialog" aria-modal="true" aria-labelledby="aj-add-t">
+    <h2 id="aj-add-t">Agregar persona</h2>
+    <p class="help">Para darle un rol o sus permisos antes de que entre. Los repos se los sigue dando GitHub.</p>
+    <label class="field"><span>Login de GitHub</span><input id="aj-add-login" autocomplete="off" value="${esc(a.login)}" placeholder="usuario"></label>
+    <label class="field"><span>Rol</span><select id="aj-add-role"><option value="member" ${a.role === 'member' ? 'selected' : ''}>Miembro</option><option value="admin" ${a.role === 'admin' ? 'selected' : ''}>Administrador</option></select></label>
+    <p class="bad" ${a.error ? '' : 'hidden'}>${esc(a.error ?? '')}</p>
+    <div class="foot-d"><button class="btn-s" data-ajaddx>Cancelar</button><button class="btn-s primary" data-ajaddok ${a.sending || !a.login.trim() ? 'disabled' : ''}>${a.sending ? 'Agregando…' : 'Agregar'}</button></div>
+  </div></div>`;
+  const input = $('#aj-add-login');
+  input.oninput = () => {
+    a.login = input.value;
+    layer.querySelector('[data-ajaddok]').disabled = !a.login.trim();
+  };
+  input.onkeydown = (event) => { if (event.key === 'Enter' && a.login.trim()) ajAdd(); };
+  $('#aj-add-role').onchange = (event) => { a.role = event.target.value; };
+  layer.querySelector('[data-ajaddx]').onclick = () => { S.aj.add = null; ajRenderAdd(); };
+  layer.querySelector('[data-ajaddok]').onclick = ajAdd;
+  layer.querySelector('.scrim').onclick = (event) => { if (event.target.classList.contains('scrim')) { S.aj.add = null; ajRenderAdd(); } };
+  if (fresh) input.focus();
+}
+
+async function ajAdd() {
+  const a = S.aj.add;
+  a.sending = true;
+  a.error = null;
+  ajRenderAdd();
+  try {
+    const { login } = await api('/api/ajustes/usuarios', { method: 'POST', body: JSON.stringify({ login: a.login, role: a.role }) });
+    S.aj.add = null;
+    ajRenderAdd();
+    toast(`Agregaste a @${login}.`);
+    openAjustes('usuarios', login);
+  } catch (error) {
+    if (error instanceof Unauthorized) return showLogin();
+    a.sending = false;
+    a.error = error.message;
+    ajRenderAdd();
+  }
+}
 
 function ajustesHTML() {
   const d = S.aj.data;
@@ -4778,6 +4983,7 @@ function wireAjustes() {
     event.preventDefault();
     openAjustes(a.dataset.ajLink);
   };
+  wireAjUsers(center);
 }
 
 async function ajSetValue(key, value) {
@@ -5040,8 +5246,8 @@ function openPortalPath() {
   const n = /^\/pedidos\/(\d+)$/.exec(location.pathname)?.[1];
   const r = /^\/reuniones\/(\d+)$/.exec(location.pathname)?.[1];
   const x = /^\/exploraciones\/([\w.-]+\/[\w.-]+)\/([^/]+)$/.exec(location.pathname);
-  const aj = /^\/ajustes(?:\/(\w+))?$/.exec(location.pathname);
-  if (aj) openAjustes(aj[1] ?? 'perfil');
+  const aj = /^\/ajustes(?:\/(\w+))?(?:\/([\w-]+))?$/.exec(location.pathname);
+  if (aj) openAjustes(aj[1] ?? 'perfil', aj[2] ?? null);
   else if (x) openExploracion(x[1], decodeURIComponent(x[2]), new URLSearchParams(location.search).get('f'));
   else if (location.pathname === '/exploraciones') openExploraciones();
   else if (location.pathname === '/despliegues' && S.snap.despliegues) openDespliegues();
@@ -5136,6 +5342,9 @@ async function boot() {
     if (S.ped.lb) {
       S.ped.lb = null;
       pedLightbox();
+    } else if (S.aj.add) {
+      S.aj.add = null;
+      ajRenderAdd();
     } else if (S.pdialog) closePortalUser();
     else if (S.newIssue) closeNewIssue();
     else if (S.xnow) closeExploreNow();

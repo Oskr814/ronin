@@ -25,6 +25,8 @@ import { GithubUserError, pendingReview, viewedFiles } from './github-as-user.js
 import type { Session } from './auth.js';
 import { PortalAdminError, portalAdminView, runPortalAdmin, type PortalAdminContext } from './portal-admin.js';
 import { AjustesError, ajustesView, linearTeams, readRegistro, saveProfile, setValue } from './ajustes.js';
+import { can, touchSeen, type Perm } from './team.js';
+import { addUsuario, removeUsuario, updateEquipo, updateUsuario, usuariosView, usuarioView } from './usuarios.js';
 import { missingPortalConfig } from '../portal.js';
 import { listUsers, type PortalUser } from '../../portal/accounts.js';
 import { getRequest, listRequests } from '../../portal/requests.js';
@@ -109,6 +111,20 @@ function json(res: ServerResponse, status: number, body: unknown): void {
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }).end(JSON.stringify(body));
 }
 
+// What a member can do in each repo (#174, team.ts), checked here for every
+// change: the page hides what they can't, but the server is what says no.
+const PERM_REFUSAL: Record<Perm, string> = {
+  notas: 'no tienes permiso para subir notas de reuniones en este repo',
+  aprobar: 'no tienes permiso para aprobar lo que propone una reunión en este repo',
+  acciones: 'no tienes permiso para las acciones del tablero en este repo (asignar a ronin, comandos, revisar, auto-merge)',
+  desplegar: 'no tienes permiso para desplegar este repo',
+};
+function refused(res: ServerResponse, repo: string, perm: Perm): boolean {
+  if (can(currentAccess(), repo, perm)) return false;
+  json(res, 403, { error: PERM_REFUSAL[perm] });
+  return true;
+}
+
 export async function snapshot(login: string): Promise<unknown> {
   const entries = await visibleRepos();
   const repos = entries.map((repo) => repo.productRepo);
@@ -141,7 +157,7 @@ export async function snapshot(login: string): Promise<unknown> {
     usage: readUsage().filter((u) => entries.some((entry) => accountName(entry.claudeConfigDir ?? '') === u.account)),
     items,
     // Whether it can deploy (#158): an admin, with a repo that has deploy.
-    despliegues: access.admin && entries.some((entry) => entry.deploy),
+    despliegues: entries.some((entry) => entry.deploy && can(access, entry.productRepo, 'desplegar')),
     // Each app a repo explores, with its exploration PR and whether it runs now (#155).
     exploraciones: exploracionRows(entries, prsOf(entries, github), runs, await liveRuns(entries)),
     previews: github.flatMap((gh) => (gh ? gh.previews.map((p) => ({ ...p, repo: gh.repo })) : [])),
@@ -194,6 +210,7 @@ async function postExploreNow(req: IncomingMessage, res: ServerResponse, repo: s
     json(res, 404, { error: 'ningún repo de ronin explora esa app' });
     return;
   }
+  if (refused(res, repo, 'acciones')) return;
   try {
     const launched = await exploreNow(entry, app, session.login, parseExploreNow(body ?? {}));
     log.info(`tablero: ${session.login} lanzó una exploración de ${app} en ${repo}`);
@@ -204,13 +221,10 @@ async function postExploreNow(req: IncomingMessage, res: ServerResponse, repo: s
   }
 }
 
-// POST /api/despliegues/<owner>/<repo>/(plan|publish) (#158): admins only,
-// like the whole page.
+// POST /api/despliegues/<owner>/<repo>/(plan|publish) (#158): admins, and
+// whoever an admin let deploy that repo (#174).
 async function postDespliegue(req: IncomingMessage, res: ServerResponse, repo: string, what: string, session: Session): Promise<void> {
-  if (!currentAccess().admin) {
-    json(res, 403, { error: 'solo los administradores del tablero pueden desplegar' });
-    return;
-  }
+  if (refused(res, repo, 'desplegar')) return;
   if (!(req.headers['content-type'] ?? '').startsWith('application/json')) {
     json(res, 415, { error: 'se espera JSON' });
     return;
@@ -280,6 +294,8 @@ async function postReunion(req: IncomingMessage, res: ServerResponse, session: S
     json(res, 400, { error: 'el pedido no llegó bien, o el archivo pesa más de 10 MB' });
     return;
   }
+  // Before reading the notes: a repo it sees but can't upload to.
+  if (typeof body.repo === 'string' && sees(currentAccess(), body.repo) && refused(res, body.repo, 'notas')) return;
   try {
     const meeting = await createMeeting(await parseUpload(body, await visibleRepos(), session.login));
     // ronin reads it right away; if the launch fails, the tick does.
@@ -305,6 +321,7 @@ async function postDecision(req: IncomingMessage, res: ServerResponse, n: number
     json(res, 404, { error: 'no existe esa reunión' });
     return;
   }
+  if (refused(res, meeting.repo, 'aprobar')) return;
   try {
     if (what === 'descartar') {
       await discardMeeting(n, session.login);
@@ -493,6 +510,7 @@ async function postAction(req: IncomingMessage, res: ServerResponse, id: string,
     json(res, 404, { error: 'ese ítem no es un issue ni un PR de un repo de ronin' });
     return;
   }
+  if (refused(res, ctx.entry.productRepo, 'acciones')) return;
   try {
     const done = await runAction(ctx.entry, ctx.ref, ctx.gh, ctx.detail, session, body.action, body.text);
     // The next read shows the comment and whatever the action changed.
@@ -517,6 +535,7 @@ async function postNewIssue(req: IncomingMessage, res: ServerResponse, repo: str
     json(res, 404, { error: 'ese repo no está en repos.json' });
     return;
   }
+  if (refused(res, repo, 'acciones')) return;
   try {
     const linear = await repoLinear(entry, await repoGithub(entry));
     const issue = parseNewIssue(body ?? {}, await repoApps(entry), linear?.planning);
@@ -577,6 +596,38 @@ async function ajustes(req: IncomingMessage, res: ServerResponse, path: string, 
     else json(res, 200, { registro: await readRegistro() });
     return;
   }
+  const usuario = /^\/api\/ajustes\/usuarios(?:\/([a-z\d-]+))?(\/quitar)?$/.exec(path);
+  if (usuario || path === '/api/ajustes/equipo') {
+    if (!admin) {
+      json(res, 403, { error: 'solo los administradores manejan los usuarios' });
+      return;
+    }
+    if (req.method === 'GET' && usuario && !usuario[2]) {
+      const view = usuario[1] ? await usuarioView(usuario[1], await loadRepos()) : await usuariosView(await loadRepos());
+      if (view) json(res, 200, view);
+      else json(res, 404, { error: 'esa persona no está en la lista' });
+      return;
+    }
+    if (req.method !== 'POST') {
+      json(res, 405, { error: 'método no permitido' });
+      return;
+    }
+    if (!(req.headers['content-type'] ?? '').startsWith('application/json')) {
+      json(res, 415, { error: 'se espera JSON' });
+      return;
+    }
+    const body = (await readJson(req)) ?? {};
+    try {
+      if (path === '/api/ajustes/equipo') json(res, 200, await updateEquipo(session.login, body));
+      else if (!usuario![1]) json(res, 200, await addUsuario(session.login, body));
+      else if (usuario![2]) json(res, 200, await removeUsuario(session.login, usuario![1]));
+      else json(res, 200, await updateUsuario(session.login, usuario![1], body, await loadRepos()));
+    } catch (error) {
+      if (error instanceof AjustesError) json(res, error.status, { error: error.message });
+      else throw error;
+    }
+    return;
+  }
   if (req.method !== 'POST' || !['/api/ajustes/perfil', '/api/ajustes/valores'].includes(path)) {
     json(res, 404, { error: 'no existe' });
     return;
@@ -613,6 +664,7 @@ async function postExploration(req: IncomingMessage, res: ServerResponse, id: st
     json(res, 404, { error: 'ese ítem no es un PR de exploración abierto de un repo de ronin' });
     return;
   }
+  if (refused(res, ctx.entry.productRepo, 'acciones')) return;
   try {
     const done = what === 'approve'
       ? await runApprove(ctx.entry, ctx.pr, ctx.review, session, body)
@@ -645,6 +697,8 @@ async function postFilesAction(req: IncomingMessage, res: ServerResponse, id: st
     json(res, 404, { error: 'ese ítem no tiene un PR de un repo de ronin' });
     return;
   }
+  // Marking a file as looked at is only the person's own.
+  if (body.action !== 'viewed' && refused(res, ctx.entry.productRepo, 'acciones')) return;
   try {
     const done = await runFilesAction(ctx.entry, ctx.prNumber, ctx.files, session, body, config.githubLogin);
     // A viewed mark and a pending review are only the person's; the rest changes what everyone reads.
@@ -764,6 +818,7 @@ async function route(req: IncomingMessage, res: ServerResponse, path: string, se
   if (retry && req.method === 'POST') {
     const meeting = await getMeeting(Number(retry[1]));
     if (!meeting || !sees(currentAccess(), meeting.repo)) json(res, 404, { error: 'no existe esa reunión' });
+    else if (refused(res, meeting.repo, 'notas')) return true;
     else if (await retryMeeting(meeting.number, login)) {
       await launchMeetingWorker(meeting.number).catch((error) => log.error(`reuniones: no se pudo lanzar el worker de R-${meeting.number}`, error));
       json(res, 200, { ok: true });
@@ -808,13 +863,15 @@ async function route(req: IncomingMessage, res: ServerResponse, path: string, se
   if (req.method !== 'GET') return false;
 
   if (path === '/api/snapshot') {
+    await touchSeen(login);
     json(res, 200, await snapshot(login));
     return true;
   }
 
   if (path === '/api/despliegues') {
-    if (!currentAccess().admin) json(res, 403, { error: 'solo los administradores del tablero ven los despliegues' });
-    else json(res, 200, { repos: await despliegues(await visibleRepos()) });
+    const mine = (await visibleRepos()).filter((entry) => can(currentAccess(), entry.productRepo, 'desplegar'));
+    if (!mine.length) json(res, 403, { error: 'no tienes permiso para desplegar ningún repo' });
+    else json(res, 200, { repos: await despliegues(mine) });
     return true;
   }
 
