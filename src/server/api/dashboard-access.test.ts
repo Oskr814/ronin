@@ -170,4 +170,12 @@ describe('a session that sees only some repos', () => {
   it("reads only a file the PR changes (#111)", async () => {
     expect((await call(`/api/items/${encodeURIComponent(`${SC}#2`)}/files/content?path=.env`)).status).toBe(404);
   });
+  it('gives a member only their own profile in Ajustes (#174)', async () => {
+    const view = await call('/api/ajustes');
+    expect(view.status).toBe(200);
+    expect(view.body.me).toEqual({ login: 'valeria', admin: false });
+    expect(view.body.general).toBeUndefined();
+    expect((await call('/api/ajustes/registro')).status).toBe(403);
+    expect((await call('/api/ajustes/valores', 'POST', { key: 'portal.dailyLimit', value: 50 })).status).toBe(403);
+  });
 });
