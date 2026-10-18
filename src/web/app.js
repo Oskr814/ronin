@@ -5087,13 +5087,19 @@ function ajRepoHTML() {
       + fixed('Checkout', r.productRepoPath, 'productRepoPath')
       + (r.claudeConfigDir ? fixed('Cuenta de Claude', r.claudeConfigDir, 'claudeConfigDir') : '')
       + (r.changelogRepo ? fixed('Changelog', r.changelogRepo, 'changelogRepo') : ''))}
-    <section class="aj-sec"><h2>Apps</h2><p class="aj-d">Las de <code>ronin.app.json</code> del repo: si están en el portal, con qué nombre, y si se exploran de noche${r.linear ? ', con el proyecto de Linear de sus issues' : ''}.</p><div class="aj-card">
-      ${r.apps.map((a) => `<div class="aj-app"><div class="id"><b class="mono">${esc(a.id)}</b>${a.inManifest ? '' : '<small class="warn-t">ya no está en ronin.app.json</small>'}</div>
-        <label class="aj-chk"><input type="checkbox" data-ajapp="${esc(a.id)}" data-f="portal" ${a.portal ? 'checked' : ''} ${!a.inManifest && !a.portal ? 'disabled' : ''}><span>En el portal</span></label>
-        ${a.portal ? `<input class="aj-in" maxlength="80" data-ajapp="${esc(a.id)}" data-f="name" value="${esc(a.name ?? '')}" placeholder="Nombre" aria-label="Nombre de ${esc(a.id)} en el portal"><input class="aj-in" maxlength="200" data-ajapp="${esc(a.id)}" data-f="description" value="${esc(a.description ?? '')}" placeholder="Descripción" aria-label="Descripción de ${esc(a.id)}">` : '<span></span><span></span>'}
-        <label class="aj-chk"><input type="checkbox" data-ajapp="${esc(a.id)}" data-f="explore" ${a.explore ? 'checked' : ''}><span>De noche</span></label>
-        ${r.linear ? `<select class="aj-in" data-ajapp="${esc(a.id)}" data-f="project" aria-label="Proyecto de Linear de ${esc(a.id)}"><option value="">Sin proyecto</option>${[...new Set([...(a.project ? [a.project] : []), ...projects])].map((p) => opt(p, a.project ?? '')).join('')}</select>` : ''}</div>`).join('') || '<div class="aj-row"><span class="m">No se pudo leer ronin.app.json del repo.</span></div>'}
-    </div></section>
+    <section class="aj-sec"><h2>Apps</h2><p class="aj-d">Las de <code>ronin.app.json</code> del repo, una por tarjeta.</p>
+      ${r.apps.map((a) => {
+        const app = esc(a.id);
+        const lastInPortal = a.portal && r.apps.filter((x) => x.portal).length === 1;
+        return `<div class="aj-card aj-appcard"><div class="aj-apphead"><b class="mono">${app}</b>${a.inManifest ? '' : '<small class="warn-t">ya no está en ronin.app.json</small>'}</div>
+          ${ajRow('En el portal', lastInPortal ? 'Es la única app del portal en este repo: el portal necesita al menos una.' : 'Quien pide ajustes puede elegirla.', sw(`data-ajapp="${app}" data-f="portal"`, a.portal, `${a.id} en el portal`, lastInPortal || (!a.inManifest && !a.portal)))}
+          ${a.portal ? ajRow('Nombre en el portal', 'Con el que la ve quien pide.', `<input class="aj-in" maxlength="80" data-ajapp="${app}" data-f="name" value="${esc(a.name ?? '')}" aria-label="Nombre de ${app} en el portal">`)
+            + ajRow('Descripción', 'Una línea debajo del nombre, para saber cuál elegir.', `<input class="aj-in aj-wide" maxlength="200" data-ajapp="${app}" data-f="description" value="${esc(a.description ?? '')}" placeholder="Opcional" aria-label="Descripción de ${app}">`) : ''}
+          ${ajRow('Exploración nocturna', 'ronin la usa de noche y propone mejoras en el PR de exploración.', sw(`data-ajapp="${app}" data-f="explore"`, a.explore, `Explorar ${a.id} de noche`))}
+          ${r.linear ? ajRow('Proyecto de Linear', 'Donde van los issues que abre su exploración.', `<select class="aj-in" data-ajapp="${app}" data-f="project" aria-label="Proyecto de Linear de ${app}"><option value="">Sin proyecto</option>${[...new Set([...(a.project ? [a.project] : []), ...projects])].map((p) => opt(p, a.project ?? '')).join('')}</select>`) : ''}
+        </div>`;
+      }).join('') || '<div class="aj-card"><div class="aj-row"><span class="m">No se pudo leer ronin.app.json del repo.</span></div></div>'}
+    </section>
     ${r.portal?.notifyTo.length ? ajSec('Correos de repos.json', r.portal.notifyTo.map((mail) => ajRow(esc(mail), '', `<button class="btn-s" data-ajnotify="${esc(mail)}">Quitar</button>`)).join(''), 'Lo que <code>portal.notifyTo</code> manda todavía a quien no eligió en Notificaciones. Cuando cada uno tenga su correo en el perfil, se puede quitar.') : ''}
     ${ajSec('Linear', ajRow('API key', 'El nombre de la variable de .env que la tiene. La key nunca pasa por el tablero.', `<select class="aj-in mono" data-ajr="linear" aria-label="API key de Linear"><option value="">Sin Linear</option>${[...new Set([...(r.linear ? [r.linear.apiKeyEnv] : []), ...d.linearKeys])].map((k) => opt(k, r.linear?.apiKeyEnv ?? '')).join('')}</select>`,
       r.linear ? (r.linear.connected ? '<span class="ok-t">● Conectado</span>' : '<span class="warn-t">○ Esa variable no está en .env</span>') : '<span>Solo se listan las variables LINEAR_API_KEY_* que hay en .env.</span>'))}
@@ -5112,7 +5118,10 @@ function wireAjRepo(center) {
   if (!S.aj.repo) return;
   const r = S.aj.repos?.repos.find((x) => x.repo === S.aj.repo);
   for (const el of center.querySelectorAll('[data-ajr]')) el.onchange = () => ajRepo({ [el.dataset.ajr]: el.value.trim() || (el.dataset.ajr === 'portalName' ? el.value : null) });
-  for (const el of center.querySelectorAll('[data-ajapp]')) el.onchange = () => ajRepo({ app: { id: el.dataset.ajapp, [el.dataset.f]: el.type === 'checkbox' ? el.checked : el.value || (el.dataset.f === 'project' ? null : el.value) } });
+  for (const el of center.querySelectorAll('[data-ajapp]')) {
+    if (el.classList.contains('aj-sw')) el.onclick = () => ajRepo({ app: { id: el.dataset.ajapp, [el.dataset.f]: el.getAttribute('aria-checked') !== 'true' } });
+    else el.onchange = () => ajRepo({ app: { id: el.dataset.ajapp, [el.dataset.f]: el.value || (el.dataset.f === 'project' ? null : el.value) } });
+  }
   for (const b of center.querySelectorAll('[data-ajdeploy]')) b.onclick = () => {
     const on = b.getAttribute('aria-checked') !== 'true';
     if (b.dataset.ajdeploy === 'on' && !on && !confirm(`¿Dejar de desplegar ${S.aj.repo} desde el tablero?`)) return;
