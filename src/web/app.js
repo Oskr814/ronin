@@ -715,6 +715,12 @@ function closeDialog() {
   renderDialog();
 }
 
+// How long an action waits for the server's answer. The comment is usually
+// out within a few seconds; past this, the answer was lost on the way (a
+// phone whose connection to the tailnet dropped), and waiting longer would
+// leave the dialog on "Comentando…" for good.
+const ACTION_TIMEOUT_MS = 30_000;
+
 async function sendAction() {
   const dialog = S.dialog;
   if (!dialog || dialog.sending) return;
@@ -722,7 +728,7 @@ async function sendAction() {
   dialog.error = null;
   renderDialog();
   try {
-    const { url } = await api(`/api/items/${encodeURIComponent(dialog.item)}/actions`, { method: 'POST', body: JSON.stringify({ action: dialog.action.id, ...(dialog.text.trim() ? { text: dialog.text.trim() } : {}) }) });
+    const { url } = await api(`/api/items/${encodeURIComponent(dialog.item)}/actions`, { method: 'POST', body: JSON.stringify({ action: dialog.action.id, ...(dialog.text.trim() ? { text: dialog.text.trim() } : {}) }), signal: AbortSignal.timeout(ACTION_TIMEOUT_MS) });
     S.dialog = null;
     renderDialog();
     toast(`Listo: comentaste en #${dialog.action.target}.`, url);
@@ -735,8 +741,17 @@ async function sendAction() {
   } catch (error) {
     if (error instanceof Unauthorized) return showLogin();
     dialog.sending = false;
-    dialog.error = `No se pudo: ${error.message}`;
+    // No answer, or the connection dropped: the comment may well be out
+    // already. The item is read again so its conversation says.
+    const lost = error.name === 'TimeoutError' || error.name === 'AbortError' || error instanceof TypeError;
+    dialog.error = lost
+      ? 'No llegó la respuesta del servidor. El comentario puede haberse publicado igual: mira la conversación del ítem antes de volver a intentar.'
+      : `No se pudo: ${error.message}`;
     renderDialog();
+    if (lost) {
+      if (S.detail[dialog.item]) S.detail[dialog.item].at = 0;
+      loadDetail(dialog.item).catch(() => {});
+    }
   }
 }
 
