@@ -1,8 +1,7 @@
-import { listReleases } from '../../core/github.js';
 import { withResourceLock } from '../../core/locks.js';
 import { log } from '../../core/logger.js';
 import { withActiveRepo, type RepoEntry } from '../../core/repo-context.js';
-import { DeployError, followDeploys, listDeploys, pendingChanges, planRelease, problemText, publishRelease, type DeployRecord, type Pending, type PendingChange, type Plan, type ReleaseRequest } from '../../deploy/index.js';
+import { DeployError, followDeploys, listDeploys, pendingChanges, planRelease, problemText, publishRelease, readRepo, type DeployRecord, type Pending, type PendingChange, type Plan, type ReleaseRequest } from '../../deploy/index.js';
 
 // The dashboard's deploys (#158): each repo with `deploy` in repos.json,
 // what's merged and not deployed yet, its last releases and how their
@@ -45,11 +44,14 @@ async function repoView(entry: RepoEntry) {
     if ((await listDeploys(entry.productRepo)).some((d) => d.state === 'running')) {
       await withResourceLock('deploys', 'skip', () => followDeploys()).catch((error) => log.error('tablero: no se pudieron seguir los despliegues', error));
     }
-    // One after the other: both fetch the same checkout.
-    const pending = await pendingChanges();
-    const prePending = entry.deploy?.prerelease ? await pendingChanges({ prerelease: true }) : null;
-    const records = await listDeploys(entry.productRepo);
-    const releases = (await listReleases()).filter((r) => !r.isDraft).sort((a, b) => b.publishedAt.localeCompare(a.publishedAt));
+    // One fetch and one read of GitHub for both kinds of release and the releases shown.
+    const read = await readRepo();
+    const [pending, prePending, records] = await Promise.all([
+      pendingChanges({}, read),
+      entry.deploy?.prerelease ? pendingChanges({ prerelease: true }, read) : null,
+      listDeploys(entry.productRepo),
+    ]);
+    const releases = read.releases.filter((r) => !r.isDraft).sort((a, b) => b.publishedAt.localeCompare(a.publishedAt));
     const latest = releases.find((r) => !r.isPrerelease)?.tagName;
     const shown = releases.slice(0, RELEASES_SHOWN).map((r) => {
       const record = records.find((d) => d.tag === r.tagName);

@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const listReleases = vi.fn();
-vi.mock('../../core/github.js', () => ({ listReleases: (...args: unknown[]) => listReleases(...args) }));
 
 const pendingChanges = vi.fn();
 const followDeploys = vi.fn();
@@ -11,6 +10,7 @@ const publishRelease = vi.fn();
 vi.mock('../../deploy/index.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../deploy/index.js')>()),
   pendingChanges: (...args: unknown[]) => pendingChanges(...args),
+  readRepo: async () => ({ releases: await listReleases(), merged: [], requests: [] }),
   followDeploys: (...args: unknown[]) => followDeploys(...args),
   listDeploys: (...args: unknown[]) => listDeploys(...args),
   planRelease: (...args: unknown[]) => planRelease(...args),
