@@ -12,10 +12,15 @@ import { listDeploys, updateDeploy, type DeployRecord } from './store.js';
 // follows the workflow runs of each release ronin published, until they
 // end. Deployed, the portal requests it carried get it in their activity,
 // and their people hear their change is in the app — not for a pre-release,
-// which goes somewhere else (QA).
+// which goes somewhere else (QA). A failed one is still looked at while
+// GitHub lets its runs be re-run: a re-run that goes, or ends well, changes
+// its state as any run would.
 
 // No run of the tag by then: the repo's workflow doesn't run on it.
 export const NO_RUNS_AFTER_MS = 2 * 60 * 60_000;
+
+// GitHub's limit to re-run a workflow run.
+export const RERUN_WINDOW_MS = 30 * 24 * 60 * 60_000;
 
 const OK = ['success', 'skipped', 'neutral'];
 
@@ -44,11 +49,22 @@ async function tellRequests(record: DeployRecord, state: 'deployed' | 'failed'):
 
 export async function followDeploys(now = Date.now()): Promise<void> {
   const repo = activeRepo().productRepo;
-  for (const record of (await listDeploys(repo)).filter((d) => d.state === 'running')) {
+  const followed = (d: DeployRecord) => d.state === 'running' || (d.state === 'failed' && now - Date.parse(d.endedAt ?? d.at) < RERUN_WINDOW_MS);
+  for (const record of (await listDeploys(repo)).filter(followed)) {
     try {
       const runs = (await listTagRuns(record.tag)).filter((run) => run.headSha === record.sha);
       const state = deployState(runs, now - Date.parse(record.at));
-      if (state === 'running') continue;
+      if (state === record.state) continue;
+      if (state === 'running') {
+        // A failed one's runs re-run: going again.
+        await updateDeploy(repo, record.tag, (r) => {
+          r.state = 'running';
+          delete r.endedAt;
+          r.runs = runs.map((run) => ({ name: run.workflowName, conclusion: run.conclusion, url: run.url }));
+        });
+        log.info(`deploy: ${record.tag} de ${repo} se volvió a correr`);
+        continue;
+      }
       const ended = await updateDeploy(repo, record.tag, (r) => {
         r.state = state;
         r.endedAt = new Date(now).toISOString();

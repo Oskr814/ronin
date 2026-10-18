@@ -104,7 +104,7 @@ function duration(ms) {
 const money = (usd) => (usd < 0.01 ? 'menos de US$0,01' : `US$${usd.toFixed(2).replace('.', ',')}`);
 const pct = (fraction) => `${Math.round(fraction * 100)}%`;
 
-const S = { snap: null, today: null, sel: null, open: [], runIdx: {}, pendingRun: null, filter: null, q: '', itemRuns: {}, run: null, stream: null, detail: {}, view: {}, doc: {}, menu: false, dialog: null, expanded: new Set(), expl: {}, ficha: {}, fichaOpen: {}, fichaFilter: { tipo: 'todas', vp: 'todos' }, antes: {}, oldAfter: new Set(), lightbox: null, fmenu: false, fdialog: null, fdraft: {}, listas: {}, scope: 'all', project: '', attAll: false, extra: {}, newIssue: null, files: {}, fcur: {}, ffold: {}, fexp: {}, fcontent: {}, fq: {}, ftree: false, fcomp: null, fbusy: new Set(), rpanel: null, page: null, portal: { data: null, error: null }, pdialog: null, ped: { list: null, error: null, listAt: 0, detail: {}, n: null, tab: 'act', gh: 'issue', filter: 'pend', page: 1, run: null, lb: null, patch: {} }, reu: { list: null, error: null, listAt: 0, detail: {}, n: null, tab: null, up: null, run: null, open: {}, retrying: false, form: {}, approving: false }, xpl: { list: null, error: null, listAt: 0, repo: null, app: null, cor: {}, inv: {}, tab: 'corridas', run: null, launched: {} }, xnow: null, dep: { list: null, error: null, listAt: 0, dlg: null } };
+const S = { snap: null, today: null, sel: null, open: [], runIdx: {}, pendingRun: null, filter: null, q: '', itemRuns: {}, run: null, stream: null, detail: {}, view: {}, doc: {}, menu: false, dialog: null, expanded: new Set(), expl: {}, ficha: {}, fichaOpen: {}, fichaFilter: { tipo: 'todas', vp: 'todos' }, antes: {}, oldAfter: new Set(), lightbox: null, fmenu: false, fdialog: null, fdraft: {}, listas: {}, scope: 'all', project: '', attAll: false, extra: {}, newIssue: null, files: {}, fcur: {}, ffold: {}, fexp: {}, fcontent: {}, fq: {}, ftree: false, fcomp: null, fbusy: new Set(), rpanel: null, revSent: {}, page: null, portal: { data: null, error: null }, pdialog: null, ped: { list: null, error: null, listAt: 0, detail: {}, n: null, tab: 'act', gh: 'issue', filter: 'pend', page: 1, run: null, lb: null, patch: {} }, reu: { list: null, error: null, listAt: 0, detail: {}, n: null, tab: null, up: null, run: null, open: {}, retrying: false, form: {}, approving: false }, xpl: { list: null, error: null, listAt: 0, repo: null, app: null, cor: {}, inv: {}, tab: 'corridas', run: null, launched: {} }, xnow: null, dep: { list: null, error: null, listAt: 0, dlg: null } };
 // The sidebar's Linear filter (#101), remembered per browser.
 try { Object.assign(S, JSON.parse(localStorage.getItem('ronin-scope') ?? '{}')); } catch { /* sin storage */ }
 function saveScope() {
@@ -529,7 +529,7 @@ function renderCenter() {
   $('#shell').classList.toggle('wide', ['fichas', 'files'].includes(docOf(item)));
   // A box being written in survives the redraw (a finding's comment, a comment on the diff).
   const typing = ['fcomment', 'fcbox', 'rsum'].includes(document.activeElement?.id) ? { id: document.activeElement.id, start: document.activeElement.selectionStart, end: document.activeElement.selectionEnd } : null;
-  if (!setCenter(tabs + backBar(item.title) + headHTML(item) + activityHTML(item) + docHTML(item) + reviewPanelHTML(item) + `<div class="ctx-inline">${ctxHTML(item)}</div>`)) return;
+  if (!setCenter(tabs + backBar(item.title) + headHTML(item) + activityHTML(item) + docHTML(item) + `<div class="ctx-inline">${ctxHTML(item)}</div>`)) return;
   const fresh = $('#doc');
   if (fresh && !isMobile()) fresh.scrollTop = keep;
   if ($('#frows')) $('#frows').scrollTop = rows;
@@ -627,7 +627,7 @@ function headHTML(item) {
   if (item.kind === 'pr' && pr?.author) facts.push(`de ${pr.author}`);
   return `<div class="head">
     <div class="crumb"><i style="background:${repoColor(item.repo)}"></i>${esc(item.repo)} · ${item.kind === 'pr' ? 'Pull request' : item.kind === 'issue' ? 'Issue' : 'Tarea'}</div>
-    <div class="row"><h1>${esc(item.title)}${item.number !== undefined ? ` <span class="n">${esc(itemRef(item))}</span>` : ''}</h1>${url ? `<a class="gh" href="${esc(url)}" target="_blank" rel="noopener">GitHub ↗</a>` : ''}${safeLinear((item.linear ?? d?.linear)?.url) ? `<a class="gh" href="${esc((item.linear ?? d.linear).url)}" target="_blank" rel="noopener" title="El issue en Linear">${esc((item.linear ?? d.linear).id)} ↗</a>` : ''}${d?.exploration ? '<button class="gh" data-xpr="general">Comentario general</button>' : ''}${reviewable(item, d) ? (pendingOf(item.id).length ? `<button class="act-btn" data-frev>Terminar revisión <span class="rn">${pendingOf(item.id).length}</span></button>` : `<button class="gh" data-frev>${esc(reviewLabel(item, d))}</button>`) : ''}${actionsHTML(d)}${d?.exploration ? '<button class="act-btn" data-xpr="approve">Aprobar…</button>' : ''}</div>
+    <div class="row"><h1>${esc(item.title)}${item.number !== undefined ? ` <span class="n">${esc(itemRef(item))}</span>` : ''}</h1>${url ? `<a class="gh" href="${esc(url)}" target="_blank" rel="noopener">GitHub ↗</a>` : ''}${safeLinear((item.linear ?? d?.linear)?.url) ? `<a class="gh" href="${esc((item.linear ?? d.linear).url)}" target="_blank" rel="noopener" title="El issue en Linear">${esc((item.linear ?? d.linear).id)} ↗</a>` : ''}${d?.exploration ? '<button class="gh" data-xpr="general">Comentario general</button>' : ''}${reviewable(item, d) ? reviewButton(item, 'head', pendingOf(item.id).length ? `<button class="act-btn" data-frev="head" aria-haspopup="dialog" aria-expanded="${revOpen(item, 'head')}">Terminar revisión <span class="rn">${pendingOf(item.id).length}</span> ▾</button>` : `<button class="gh" data-frev="head" aria-haspopup="dialog" aria-expanded="${revOpen(item, 'head')}">${esc(reviewLabel(item, d))} ▾</button>`) : ''}${actionsHTML(d)}${d?.exploration ? '<button class="act-btn" data-xpr="approve">Aprobar…</button>' : ''}</div>
     <div class="state">${ghPill(item, d)}${d?.pedido ? `<button class="chip plain" data-goped="${d.pedido.number}" title="${esc(d.pedido.title)}">del pedido P-${d.pedido.number}</button>` : ''}${linearChips(item)}${chips.map(([cls, text]) => `<span class="chip ${cls}">${esc(text)}</span>`).join('')}${facts.map((f) => `<span>${esc(f)}</span>`).join('')}</div></div>`;
 }
 
@@ -1016,7 +1016,7 @@ function filesHTML(item) {
   const tree = `<div class="ftree"><div class="ftop"><input type="search" id="fq" placeholder="Filtrar archivos" value="${esc(S.fq[item.id] ?? '')}" aria-label="Filtrar archivos"><button class="btn-s ftreex" data-ftree>Cerrar</button></div>${progress}<div class="frows" id="ftrows">${rows || '<p class="none">Ningún archivo coincide.</p>'}</div></div>`;
   const tool = `<div class="ftool"><button class="btn-s ftreebtn" data-ftree>Archivos ▾</button><span class="seg">${mode('unified', 'Unificado')}${mode('split', 'Lado a lado')}</span>
     <span>${data.files.length} ${data.files.length === 1 ? 'archivo' : 'archivos'} · <span class="addel"><span class="a">+${add}</span> <span class="d">−${del}</span></span></span>${data.error ? `<span class="bad">GitHub no respondió: ${esc(data.error)}</span>` : ''}
-    <span class="m hint-c">Clic en un número de línea para comentarla</span>${reviewOf(item.id) ? `<button class="btn-s primary frevb" data-frev>Terminar revisión <span class="rn">${pendingOf(item.id).length}</span></button>` : reviewable(item, S.detail[item.id]?.data) ? '<button class="btn-s frevb" data-frev>Revisar</button>' : ''}${url ? `<a class="gh" href="${esc(url)}/files" target="_blank" rel="noopener">En GitHub ↗</a>` : ''}</div>`;
+    <span class="m hint-c">Clic en un número de línea para comentarla</span>${reviewOf(item.id) ? reviewButton(item, 'files', `<button class="btn-s primary frevb" data-frev="files" aria-haspopup="dialog" aria-expanded="${revOpen(item, 'files')}">Terminar revisión <span class="rn">${pendingOf(item.id).length}</span> ▾</button>`) : reviewable(item, S.detail[item.id]?.data) ? reviewButton(item, 'files', `<button class="btn-s frevb" data-frev="files" aria-haspopup="dialog" aria-expanded="${revOpen(item, 'files')}">Revisar ▾</button>`) : ''}${url ? `<a class="gh" href="${esc(url)}/files" target="_blank" rel="noopener">En GitHub ↗</a>` : ''}</div>`;
   return `<div class="doc files${S.ftree ? ' tree' : ''}" id="doc" data-key="${esc(`${item.id}:files`)}">${tree}<div class="fdiffs" id="fdiffs">${tool}<div class="fcards">${data.files.map((f) => fileHTML(item, data, f)).join('')}</div></div></div>`;
 }
 
@@ -1313,18 +1313,23 @@ const reviewable = (item, d) => (item.kind === 'pr' || item.kind === 'issue') &&
 // On an issue, the button says which PR it reviews.
 const reviewLabel = (item, d) => (item.kind === 'issue' ? `Revisar PR #${d.pr.number}` : 'Revisar');
 
-function openReviewPanel() {
+// The panel drops from the button that opened it: the page's head or the
+// Archivos toolbar.
+const revOpen = (item, at) => S.rpanel?.item === item.id && S.rpanel.at === at;
+const reviewButton = (item, at, button) => `<div class="actions rwrap">${button}${reviewPanelHTML(item, at)}</div>`;
+
+function openReviewPanel(at) {
   const id = S.sel;
   if (!id) return;
-  S.rpanel = S.rpanel?.item === id ? null : { item: id, event: 'COMMENT', text: '', fix: true, sending: false, error: null };
+  S.rpanel = S.rpanel?.item === id && S.rpanel.at === at ? null : { item: id, at, event: 'COMMENT', text: '', fix: true, sending: false, error: null };
   if (S.rpanel && !S.files[id]?.data) loadFiles(id);
   renderCenter();
   if (S.rpanel) $('#rsum')?.focus();
 }
 
-function reviewPanelHTML(item) {
+function reviewPanelHTML(item, at) {
   const p = S.rpanel;
-  if (!p || p.item !== item.id) return '';
+  if (!p || p.item !== item.id || p.at !== at) return '';
   const entry = S.files[item.id];
   const data = entry?.data;
   const d = S.detail[item.id]?.data;
@@ -1358,6 +1363,13 @@ function reviewPanelHTML(item) {
 function wireReviewPanel() {
   const p = S.rpanel;
   if (!p) return;
+  // Under the Archivos toolbar it lives inside the diffs' scroller: it ends
+  // where that ends, not past it.
+  const panel = $('.rpanel');
+  if (panel && getComputedStyle(panel).position === 'absolute') {
+    const bottom = panel.closest('.fdiffs')?.getBoundingClientRect().bottom ?? window.innerHeight;
+    panel.style.maxHeight = `${Math.max(240, bottom - panel.getBoundingClientRect().top - 12)}px`;
+  }
   for (const button of document.querySelectorAll('[data-rclose]')) button.onclick = () => { S.rpanel = null; renderCenter(); };
   const sum = $('#rsum');
   if (sum) {
@@ -1384,6 +1396,26 @@ function wireReviewPanel() {
   }
 }
 
+// An approval or a request for changes shows on the PR's chips at once,
+// until a snapshot brings a read of the repo newer than the one at hand when
+// it was sent (the server reads it again right after); a couple of minutes
+// at most, if that read never comes.
+const REVIEW_DECISION = { APPROVE: 'APPROVED', REQUEST_CHANGES: 'CHANGES_REQUESTED' };
+const REVIEW_SHOWN_MS = 120_000;
+const repoReadAt = (repo) => S.snap?.github?.find((g) => g.repo === repo)?.fetchedAt ?? null;
+
+function showSentReviews() {
+  for (const [key, sent] of Object.entries(S.revSent)) {
+    if (repoReadAt(sent.repo) !== sent.readAt || Date.now() - sent.at > REVIEW_SHOWN_MS) {
+      delete S.revSent[key];
+      continue;
+    }
+    for (const item of [...(S.snap?.items ?? []), ...Object.values(S.extra)]) {
+      if (item.repo === sent.repo && item.pr?.number === sent.pr) item.pr.reviewDecision = sent.decision;
+    }
+  }
+}
+
 const REVIEW_SENT = { COMMENT: 'Mandaste tu revisión', APPROVE: 'Aprobaste el PR', REQUEST_CHANGES: 'Pediste cambios' };
 async function sendReview() {
   const p = S.rpanel;
@@ -1398,6 +1430,13 @@ async function sendReview() {
   try {
     const sent = await filesAction(p.item, { action: 'submit', event, text: p.text, commitId: data.headSha, fixComments: Boolean(fixable && p.fix) });
     S.rpanel = null;
+    const item = itemById(p.item);
+    if (item && REVIEW_DECISION[event]) {
+      S.revSent[`${item.repo}#${data.pr}`] = { repo: item.repo, pr: data.pr, decision: REVIEW_DECISION[event], readAt: repoReadAt(item.repo), at: Date.now() };
+      showSentReviews();
+      renderTree();
+      renderCenter();
+    }
     toast(`${REVIEW_SENT[event]}${sent.fixUrl ? '; ronin ya tiene el /fix-comments' : ''}.`, sent.url);
     afterFilesWrite(p.item);
     refresh();
@@ -1610,7 +1649,7 @@ function wireFiles() {
   for (const button of document.querySelectorAll('[data-fpdel]')) button.onclick = () => deletePending(button.dataset.fpdel);
   for (const button of document.querySelectorAll('[data-frev]')) button.onclick = (event) => {
     event.stopPropagation();
-    openReviewPanel();
+    openReviewPanel(button.dataset.frev);
   };
   wireReviewPanel();
   const q = $('#fq');
@@ -4728,6 +4767,7 @@ async function refresh() {
     if (error instanceof Unauthorized) showLogin();
     return;
   }
+  showSentReviews();
   renderQuick();
   renderTree();
   renderCtx();
@@ -4879,7 +4919,7 @@ async function boot() {
     const typing = event.metaKey || event.ctrlKey || event.altKey || /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName ?? '');
     if (!typing && !S.dialog && !S.fdialog && !S.newIssue && !S.xnow && item && viewOf(item) === 'ficha' && docOf(item) === 'files' && ['j', 'k', 'v', 'r'].includes(event.key)) {
       event.preventDefault();
-      if (event.key === 'r') openReviewPanel();
+      if (event.key === 'r') openReviewPanel('files');
       else if (event.key === 'v') toggleViewedCurrent();
       else moveFile(event.key === 'j' ? 1 : -1);
       return;
