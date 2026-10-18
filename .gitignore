@@ -17,3 +17,5 @@ portal-data/
 meetings-data/
 # the deploys published from the dashboard (#158)
 deploys-data/
+# what's changed in the dashboard's Ajustes (#174)
+settings-data/

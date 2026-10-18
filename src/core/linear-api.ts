@@ -281,3 +281,24 @@ export async function createProject(key: string, project: { name: string; descri
   if (!data.projectCreate.success || !data.projectCreate.project) throw new Error('Linear no creó el proyecto');
   return { id: data.projectCreate.project.id, url: data.projectCreate.project.url };
 }
+
+// The team's active people, for someone to say which one they are in
+// Ajustes → Perfil (#174). Its workspace too, to name it.
+const PEOPLE_QUERY = `query($prefix: String!) {
+  issues(first: 1, filter: { attachments: { some: { url: { startsWith: $prefix } } } }) {
+    nodes { url team { key members(first: 100) { nodes { id name active } } } }
+  }
+}`;
+
+export async function teamPeople(entry: RepoEntry, key: string): Promise<{ team: string; workspace?: string; people: Array<{ id: string; name: string }> } | null> {
+  type Raw = { issues: { nodes: Array<{ url: string; team: { key: string; members: { nodes: Array<{ id: string; name: string; active: boolean }> } } }> } };
+  const data = await query<Raw>(key, PEOPLE_QUERY, { prefix: issuesPrefix(entry) });
+  const node = data.issues.nodes[0];
+  if (!node) return null;
+  const workspace = /^https:\/\/linear\.app\/([^/]+)\//.exec(node.url)?.[1];
+  return {
+    team: node.team.key,
+    ...(workspace ? { workspace } : {}),
+    people: node.team.members.nodes.filter((m) => m.active).map((m) => ({ id: m.id, name: m.name })).sort((a, b) => a.name.localeCompare(b.name, 'es')),
+  };
+}

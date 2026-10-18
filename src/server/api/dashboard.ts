@@ -24,6 +24,7 @@ import { FichaActionError, runApprove, runFichaAction, runGeneralComment } from 
 import { GithubUserError, pendingReview, viewedFiles } from './github-as-user.js';
 import type { Session } from './auth.js';
 import { PortalAdminError, portalAdminView, runPortalAdmin, type PortalAdminContext } from './portal-admin.js';
+import { AjustesError, ajustesView, linearTeams, readRegistro, saveProfile, setValue } from './ajustes.js';
 import { missingPortalConfig } from '../portal.js';
 import { listUsers, type PortalUser } from '../../portal/accounts.js';
 import { getRequest, listRequests } from '../../portal/requests.js';
@@ -73,6 +74,7 @@ import { ExploreNowError, corridasOf, exploracionList, exploracionRows, exploreN
 //   POST /api/reuniones/<n>/reintentar  reads it again, after its reading failed
 //   POST /api/reuniones/<n>/aprobar  creates what the person chose of its proposals, as them (dashboard-meetings-approve.ts)
 //   POST /api/reuniones/<n>/descartar  sets the rest of it aside
+//   GET|POST /api/ajustes[/…]        the person's profile, and for admins the settings and their record (#174, ajustes.ts)
 
 // How far back the sidebar and an item's history look. Run records are kept
 // 14 days (scripts/setup-cron.sh).
@@ -562,6 +564,38 @@ async function portalAdmin(req: IncomingMessage, res: ServerResponse, path: stri
   }
 }
 
+// Ajustes (#174): the profile is everyone's own; the settings and the
+// record, admins only.
+async function ajustes(req: IncomingMessage, res: ServerResponse, path: string, session: Session): Promise<void> {
+  const admin = currentAccess().admin;
+  if (req.method === 'GET' && path === '/api/ajustes') {
+    json(res, 200, await ajustesView(session.login, admin, await visibleRepos()));
+    return;
+  }
+  if (req.method === 'GET' && path === '/api/ajustes/registro') {
+    if (!admin) json(res, 403, { error: 'solo los administradores ven el registro' });
+    else json(res, 200, { registro: await readRegistro() });
+    return;
+  }
+  if (req.method !== 'POST' || !['/api/ajustes/perfil', '/api/ajustes/valores'].includes(path)) {
+    json(res, 404, { error: 'no existe' });
+    return;
+  }
+  if (!(req.headers['content-type'] ?? '').startsWith('application/json')) {
+    json(res, 415, { error: 'se espera JSON' });
+    return;
+  }
+  const body = (await readJson(req)) ?? {};
+  try {
+    if (path === '/api/ajustes/perfil') json(res, 200, await saveProfile(session.login, body, await linearTeams(await visibleRepos())));
+    else if (!admin) json(res, 403, { error: 'solo los administradores cambian los ajustes' });
+    else json(res, 200, await setValue(session.login, body));
+  } catch (error) {
+    if (error instanceof AjustesError) json(res, error.status, { error: error.message });
+    else throw error;
+  }
+}
+
 // POST /api/items/<id>/exploration/<what>: actions { action, ficha, text,
 // redo? } on a finding, general { text }, approve { text? }.
 async function postExploration(req: IncomingMessage, res: ServerResponse, id: string, what: string, session: Session): Promise<void> {
@@ -707,6 +741,10 @@ async function route(req: IncomingMessage, res: ServerResponse, path: string, se
   const login = session.login;
   if (path === '/api/portal-admin' || path.startsWith('/api/portal-admin/')) {
     await portalAdmin(req, res, path, session);
+    return true;
+  }
+  if (path === '/api/ajustes' || path.startsWith('/api/ajustes/')) {
+    await ajustes(req, res, path, session);
     return true;
   }
   if (req.method === 'GET' && (path === '/api/pedidos' || path.startsWith('/api/pedidos/'))) {

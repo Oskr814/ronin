@@ -1,6 +1,7 @@
 import { join, resolve } from 'node:path';
 import { assertTimezone } from './timezone.js';
 import { currentRepo } from './repo-context.js';
+import { applySettings, readSettingsSync } from './settings.js';
 
 const logins = (value: string | undefined) => (value ?? '').split(',').map((u) => u.trim().toLowerCase()).filter(Boolean);
 
@@ -198,7 +199,18 @@ export const config = {
   deploys: {
     dataDir: resolve(process.env.DEPLOYS_DATA_DIR || 'deploys-data'),
   },
+  // What the dashboard's Ajustes keep (#174): the values changed there, who
+  // the team are (their profile) and the record of every change. The only
+  // copy, like the portal's.
+  settings: {
+    dataDir: resolve(process.env.SETTINGS_DATA_DIR || 'settings-data'),
+  },
 } as const;
+
+// The values changed in Ajustes win over .env (core/settings.ts). Applied
+// here, at load, so every process starts with them; the server applies them
+// again after saving one.
+applySettings(config as unknown as Record<string, unknown>, readSettingsSync(config.settings.dataDir));
 
 // Per task type, the model a run uses when its env var isn't set — anything
 // not listed falls back to config.agentModel. Haiku only where the output is
