@@ -43,6 +43,16 @@ export function nextNightlyApp(apps: string[], done: Record<string, string>, nig
   return apps.find((app) => done[app] !== night) ?? null;
 }
 
+// The night a run started now stands for (#155): tonight's while the window
+// is open, else the next one to open — today's, or tomorrow's once today's
+// start went by.
+export function upcomingNight(now: Date, window: NightWindow, timezone: string): string {
+  const tonight = currentNight(now, window, timezone);
+  if (tonight) return tonight.night;
+  const { day, minutes } = wallClock(now, timezone);
+  return minutes < window.startMinutes ? day : addDays(day, 1);
+}
+
 export async function maybeLaunchNightlyExploration(now = new Date()): Promise<void> {
   const apps = activeRepo().explore ?? [];
   if (apps.length === 0) return;

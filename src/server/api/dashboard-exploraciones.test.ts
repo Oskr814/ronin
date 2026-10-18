@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('../../core/logger.js', () => ({ log: { error: vi.fn(), info: vi.fn() } }));
-vi.mock('../../core/config.js', () => ({ config: { githubLogin: 'ronin-agent', exploreNightWindow: '01:00-06:00', exploreTimezone: 'America/Tegucigalpa', worktreeBaseRef: 'origin/main' } }));
+vi.mock('../../core/config.js', () => ({ config: { githubLogin: 'ronin-agent', exploreNightWindow: '01:00-06:00', exploreTimezone: 'America/Tegucigalpa', worktreeBaseRef: 'origin/main', exploreFunctionsPerNight: 3 } }));
 const review = vi.fn();
 const branchFile = vi.fn();
 vi.mock('./dashboard-exploration.js', () => ({
@@ -10,9 +10,9 @@ vi.mock('./dashboard-exploration.js', () => ({
   isExplorationPr: (pr: { headRefName: string }) => pr.headRefName.startsWith('ronin/exploration/'),
 }));
 const nights = vi.fn();
-vi.mock('../../core/local-state.js', () => ({ getNightlyExploration: () => nights() }));
+vi.mock('../../core/local-state.js', () => ({ getNightlyExploration: () => nights(), setNightlyExploration: vi.fn() }));
 
-const { buildCorridas, countFichas, exploracionList, exploracionRows, inventarioOf, nextNightly, runApp } = await import('./dashboard-exploraciones.js');
+const { buildCorridas, countFichas, exploracionList, exploracionRows, exploreNow, inventarioOf, nextNightly, parseExploreNow, resetExploreNow, runApp, ExploreNowError } = await import('./dashboard-exploraciones.js');
 const { parseNightWindow } = await import('../../exploration/schedule.js');
 
 const ENTRY = { productRepo: 'acme/product', productRepoPath: '/tmp/x', explore: ['backoffice'] } as any;
@@ -40,6 +40,12 @@ describe('runApp', () => {
 });
 
 describe('exploracionRows', () => {
+  it('says an app is being explored from its run’s record, before its first agent starts', () => {
+    const live = new Map([['acme/clinic|webapp', '2026-10-18T22:30:00Z']]);
+    const rows = exploracionRows([ENTRY, OTHER], new Map(), [], live);
+    expect(rows.map((r) => r.running)).toEqual([null, { since: '2026-10-18T22:30:00Z' }]);
+  });
+
   it('gives each app its repo’s exploration PR, and the run going on now', () => {
     const prs = new Map([['acme/product', [FIX, PR]], ['acme/clinic', []]]);
     const runs = [
@@ -167,5 +173,60 @@ funciones:
     branchFile.mockResolvedValue(null);
     const inv = await inventarioOf({ ...ENTRY, worktreeBaseRef: 'origin/odoo-main' }, 'backoffice', undefined);
     expect(inv).toMatchObject({ from: { branch: 'odoo-main' }, funciones: [], error: 'no hay inventory.yml de backoffice en odoo-main' });
+  });
+});
+
+describe('parseExploreNow', () => {
+  it('takes how many functions and for how long, standing for tonight’s run unless said otherwise', () => {
+    expect(parseExploreNow({})).toEqual({ maxFunctions: 3, hours: null, tonight: true });
+    expect(parseExploreNow({ maxFunctions: 5, hours: 2, tonight: false })).toEqual({ maxFunctions: 5, hours: 2, tonight: false });
+  });
+
+  it('refuses what it can’t run', () => {
+    expect(() => parseExploreNow({ maxFunctions: 0 })).toThrow('de 1 a 10');
+    expect(() => parseExploreNow({ maxFunctions: 2.5 })).toThrow(ExploreNowError);
+    expect(() => parseExploreNow({ hours: 3 })).toThrow('1, 2, 4 horas');
+    expect(() => parseExploreNow({ tonight: 'sí' })).toThrow('sí o no');
+  });
+});
+
+describe('exploreNow', () => {
+  const launch = vi.fn();
+  const markNight = vi.fn();
+  beforeEach(() => {
+    resetExploreNow();
+    launch.mockReset();
+    markNight.mockReset().mockResolvedValue(undefined);
+  });
+
+  it('starts the worker as the person, and takes the place of the next night', async () => {
+    const now = new Date('2026-10-18T22:50:00Z'); // 16:50 local: the next night is tonight's, the 19th
+    const done = await exploreNow(ENTRY, 'backoffice', 'persona', { maxFunctions: 2, hours: 1, tonight: true }, now, { busy: async () => false, launch, markNight });
+    expect(markNight).toHaveBeenCalledWith('2026-10-19');
+    expect(launch).toHaveBeenCalledWith({ repo: 'acme/product', appName: 'backoffice', maxFunctions: 2, by: 'persona', until: '2026-10-18T23:50:00.000Z' });
+    expect(done).toEqual({ until: '2026-10-18T23:50:00.000Z', night: '2026-10-19' });
+  });
+
+  it('leaves the night alone and has no cap when asked so', async () => {
+    const done = await exploreNow(ENTRY, 'backoffice', 'persona', { maxFunctions: 3, hours: null, tonight: false }, new Date('2026-10-18T22:50:00Z'), { busy: async () => false, launch, markNight });
+    expect(markNight).not.toHaveBeenCalled();
+    expect(launch).toHaveBeenCalledWith({ repo: 'acme/product', appName: 'backoffice', maxFunctions: 3, by: 'persona' });
+    expect(done).toEqual({});
+  });
+
+  it('inside the window, stands for the night going on', async () => {
+    await exploreNow(ENTRY, 'backoffice', 'persona', { maxFunctions: 3, hours: null, tonight: true }, new Date('2026-10-19T08:00:00Z'), { busy: async () => false, launch, markNight });
+    expect(markNight).toHaveBeenCalledWith('2026-10-19');
+  });
+
+  it('refuses while the repo explores, and right after a launch whose worker hasn’t taken the lock yet', async () => {
+    await expect(exploreNow(ENTRY, 'backoffice', 'persona', { maxFunctions: 3, hours: null, tonight: true }, new Date(), { busy: async () => true, launch, markNight })).rejects.toMatchObject({ status: 409 });
+    expect(launch).not.toHaveBeenCalled();
+    expect(markNight).not.toHaveBeenCalled();
+    const now = new Date('2026-10-18T22:50:00Z');
+    await exploreNow(ENTRY, 'backoffice', 'persona', { maxFunctions: 3, hours: null, tonight: false }, now, { busy: async () => false, launch, markNight });
+    await expect(exploreNow(ENTRY, 'backoffice', 'otra', { maxFunctions: 3, hours: null, tonight: false }, new Date(now.getTime() + 30_000), { busy: async () => false, launch, markNight })).rejects.toThrow('una por repo a la vez');
+    await exploreNow(ENTRY, 'backoffice', 'otra', { maxFunctions: 3, hours: null, tonight: false }, new Date(now.getTime() + 61_000), { busy: async () => false, launch, markNight });
+    expect(launch).toHaveBeenCalledTimes(2);
   });
 });
