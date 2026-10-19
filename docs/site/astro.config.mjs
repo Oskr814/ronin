@@ -31,6 +31,7 @@ export default defineConfig({
             'guias/explorar-una-app',
             'guias/reuniones',
             'guias/desplegar',
+            'guias/metricas',
           ],
         },
         {

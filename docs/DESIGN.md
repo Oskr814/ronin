@@ -1433,7 +1433,20 @@ Un `ronin:blocked` de GitHub sin su par en el registro, como los de antes de #22
 |---|---|---|
 | `GET /api/metricas?dias=7\|30\|90&repo=<owner>/<repo>` | admins | el período (30 por defecto) comparado con el anterior, de todos los repos o de uno: los totales, las barras por día o por semana, la distribución de los tiempos, la tabla por persona, la salud del flujo, los despliegues y lo de ronin; en `sources`, de cuándo es la lectura de cada repo y su error |
 
-#### 20.5 Activarlo
+#### 20.5 La página (`/metricas`)
+
+La entrada *Métricas* de la barra lateral, solo para admins (`access.admin` del snapshot), abre `/metricas`. Lleva el período (7, 30 o 90 días) y el repo. Se vuelve a pedir cada 5 minutos mientras está abierta. Ocupa también la columna del contexto.
+
+Está en cinco bloques:
+- **El resumen:** seis números, cada uno con su variación y su tendencia.
+- **Movimiento:** los issues nuevos y resueltos con la línea del backlog, y la distribución de los tiempos de resolución.
+- **Por persona:** una tabla ordenable. Al tocar una fila se abren sus resueltos por barra y sus issues abiertos, el más quieto primero, cada uno con un enlace a su ficha.
+- **Salud del flujo.**
+- **ronin.**
+
+La página no calcula nada: solo dibuja la respuesta de la API.
+
+#### 20.6 Activarlo
 
 Nada: sin `METRICS_DATA_DIR`, usa `metrics-data/` en el checkout del runner (fuera de git). Lo de GitHub se vuelve a traer solo si se pierde; el registro de bloqueos no, así que hay que respaldarlo.
 
