@@ -700,6 +700,8 @@ Desde la ficha se le piden a ronin los comandos que hoy se piden comentando en G
 
 En un issue, las acciones de PR van al PR de su slice que avanza ("Resolver conflictos en #849").
 
+**Con el teclado.** `M` abre y cierra el menú, con el foco en la primera acción. Con el menú abierto, `1`–`9` piden esa acción, `j`/`k` (o `↓`/`↑`) se mueven y `↵` pide la que tiene el foco; `Esc` lo cierra. Cada acción muestra su número, y `?` las lista.
+
 **Cómo corre.** El tablero escribe el comando como la persona, con su token (`server/api/github-as-user.ts`): `@ronin-agent /resolve-conflicts`, o `@ronin-agent /preview` con lo que hay que preparar en las líneas de abajo, que el parser de `/preview` también lee. Desde ahí es un comentario como cualquiera: llega su webhook, ronin le pone 👀 y lanza el worker, que lo responde. GitHub muestra quién lo pidió. Responder y destrabar comenta la respuesta como la persona, y ronin le pone `ronin:in-progress` al issue; si GitHub rechazó el comentario, el label no se toca.
 
 Antes de #93, ronin comentaba *"**<login>** pidió `/x` desde el tablero"* y lanzaba el worker en el momento. Ahora el worker espera al webhook, como cuando alguien escribe en GitHub, y si no llega lo levanta el tick.
