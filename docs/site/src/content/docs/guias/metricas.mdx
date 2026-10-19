@@ -1,0 +1,80 @@
+---
+title: "Métricas"
+description: "Cómo se mueve el trabajo en los repos: cuánto entra y sale, cuánto tarda, quién lo lleva y dónde se traba."
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+**Métricas**, arriba a la izquierda en el tablero, muestra cómo se mueve el trabajo en los repos: cuánto entra y cuánto sale, cuánto tarda, quién lo lleva y dónde se traba. Solo la ven los administradores.
+
+![La página Métricas: los seis números del período, el gráfico de issues nuevos y resueltos por semana con la línea del backlog, y cuánto tardan en resolverse](../../../assets/capturas/metricas.png)
+
+Arriba elegís el **período** (7, 30 o 90 días) y el **repo**, o todos. Cada número se compara con el período anterior del mismo largo: en verde si mejoró, en rojo si empeoró.
+
+<Aside type="note" title="Cómo se cuenta">
+- **Resuelto** es un issue cerrado como completado. Los cerrados como *not planned* o duplicados se cuentan aparte y no entran en ningún tiempo.
+- **Los tiempos son en días corridos:** un fin de semana cuenta.
+- Los datos salen de GitHub y se actualizan cada 10 minutos. La página dice de cuándo son.
+</Aside>
+
+## Resumen y movimiento
+
+- **Seis números**, cada uno con su tendencia:
+  - issues resueltos;
+  - tiempo de resolución (la mediana, desde que se abre el issue hasta que se cierra);
+  - issues nuevos;
+  - PRs mergeados;
+  - hasta la primera review (la mediana);
+  - backlog abierto.
+- **Entra y sale:** los issues nuevos contra los resueltos, por semana o por día, con la línea del backlog. Si la línea sube, entra más de lo que sale.
+- **Cuánto tarda en resolverse:**
+  - cuántos issues tardan menos de un día, de 1 a 3 días, y así hasta más de un mes;
+  - el tiempo en que se resuelven 9 de cada 10;
+  - el tiempo por tipo (bug, feature u otro), según los labels del issue.
+
+## Por persona
+
+![La tabla Por persona con una fila abierta: sus resueltos semana a semana y sus issues abiertos, el más quieto primero](../../../assets/capturas/metricas-personas.png)
+
+Una fila por cada persona con algo asignado, mergeado o revisado en el período. ronin tiene la suya, marcada como *agente*. La tabla sirve para ver la carga y dónde se traba el trabajo, no para comparar personas.
+
+| Columna | Qué cuenta |
+|---|---|
+| Asignados abiertos | Lo que tiene ahora. En amarillo, cuántos llevan más de 14 días sin movimiento. |
+| Resueltos | Issues asignados a la persona y cerrados como completados. Si un issue tiene dos personas asignadas, cuenta para las dos. |
+| Mediana resolución | De esos issues. |
+| PRs mergeados | Sus PRs que se mergearon. |
+| Rondas de review | Cuántas veces, en promedio, le pidieron cambios a un PR suyo antes de mergearlo. |
+| Reviews hechas | En cuántos PRs de otros dejó una review. |
+| Tarda en revisar | Desde que le piden la review hasta que deja la primera. |
+| Esperan su review | Los PRs abiertos que le pidieron revisar y todavía no revisó. |
+
+Al tocar una fila se ven sus resueltos semana a semana y lo que tiene abierto, empezando por lo que lleva más tiempo sin moverse. Cada número abre su ficha.
+
+Cada columna se ordena con un clic en su título.
+
+## Salud del flujo
+
+- **Antigüedad del backlog:**
+  - los issues abiertos, por cuánto tiempo llevan abiertos;
+  - cuántos no tienen a nadie asignado;
+  - cuántos están asignados pero llevan 30 días sin moverse;
+  - cuántos de los resueltos se reabrieron, y cuántos se cerraron sin hacer.
+- **PRs esperando review:**
+  - los que llevan más de 2 días con una review pedida y sin respuesta, con quién la tiene pendiente;
+  - cuánto tarda un PR de que se abre a que se mergea;
+  - qué parte se mergea sin que pidan cambios.
+- **Despliegues:**
+  - los releases publicados (sin contar los *pre-release*), por semana;
+  - cuánto tarda un PR mergeado en llegar al próximo release.
+
+  Un repo que no publica releases no aparece acá.
+
+## ronin
+
+- **Parte del trabajo:** qué parte de los issues resueltos fueron de ronin, y su tiempo de resolución comparado con el de las personas.
+- **Sin ayuda:**
+  - qué parte de lo que resolvió terminó sin [bloquearse](/ronin/referencia/bloqueos/);
+  - sus PRs aprobados sin pedido de cambios;
+  - sus intentos de fix por PR.
+- **Por qué se bloqueó:** los bloqueos del período, agrupados por motivo. Los que son de antes de que ronin empezara a guardar el motivo aparecen como *Sin motivo registrado*.
