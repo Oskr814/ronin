@@ -624,7 +624,6 @@ function checksChip(checks) {
 function headHTML(item) {
   const xr = xplOfItem(item.id);
   if (xr) return xplHeadHTML(item, xr);
-  const url = githubUrl(item);
   const [, chip, label] = STATE[item.status] ?? STATE.error;
   const d = S.detail[item.id]?.data;
   const pr = item.pr;
@@ -646,7 +645,7 @@ function headHTML(item) {
   if (item.kind === 'pr' && pr?.author) facts.push(`de ${pr.author}`);
   return `<div class="head">
     <div class="crumb"><i style="background:${repoColor(item.repo)}"></i>${esc(item.repo)} · ${item.kind === 'pr' ? 'Pull request' : item.kind === 'issue' ? 'Issue' : 'Tarea'}</div>
-    <div class="row"><h1>${esc(item.title)}${item.number !== undefined ? ` <span class="n">${esc(itemRef(item))}</span>` : ''}</h1>${url ? `<a class="gh" href="${esc(url)}" target="_blank" rel="noopener">GitHub ↗</a>` : ''}${safeLinear((item.linear ?? d?.linear)?.url) ? `<a class="gh" href="${esc((item.linear ?? d.linear).url)}" target="_blank" rel="noopener" title="El issue en Linear">${esc((item.linear ?? d.linear).id)} ↗</a>` : ''}${d?.exploration ? '<button class="gh" data-xpr="general">Comentario general</button>' : ''}${decidable(item, d) ? decideHTML(item, d) : reviewable(item, d) ? reviewButton(item, 'head', pendingOf(item.id).length ? `<button class="act-btn" data-frev="head" aria-haspopup="dialog" aria-expanded="${revOpen(item, 'head')}">Terminar revisión <span class="rn">${pendingOf(item.id).length}</span> ▾</button>` : `<button class="gh" data-frev="head" aria-haspopup="dialog" aria-expanded="${revOpen(item, 'head')}">${esc(reviewLabel(item, d))} ▾</button>`) : ''}${actionsHTML(d)}${d?.exploration ? '<button class="act-btn" data-xpr="approve">Aprobar…</button>' : ''}</div>
+    <div class="row"><h1>${esc(item.title)}${item.number !== undefined ? ` <span class="n">${esc(itemRef(item))}</span>` : ''}</h1>${d?.exploration ? '<button class="gh" data-xpr="general">Comentario general</button>' : ''}${decidable(item, d) ? decideHTML(item, d) : reviewable(item, d) ? reviewButton(item, 'head', pendingOf(item.id).length ? `<button class="act-btn" data-frev="head" aria-haspopup="dialog" aria-expanded="${revOpen(item, 'head')}">Terminar revisión <span class="rn">${pendingOf(item.id).length}</span> ▾</button>` : `<button class="gh" data-frev="head" aria-haspopup="dialog" aria-expanded="${revOpen(item, 'head')}">${esc(reviewLabel(item, d))} ▾</button>`) : ''}${actionsHTML(d)}${d?.exploration ? '<button class="act-btn" data-xpr="approve">Aprobar…</button>' : ''}</div>
     <div class="state">${ghPill(item, d)}${d?.pedido ? `<button class="chip plain" data-goped="${d.pedido.number}" title="${esc(d.pedido.title)}">del pedido P-${d.pedido.number}</button>` : ''}${linearChips(item)}${chips.map(([cls, text]) => `<span class="chip ${cls}">${esc(text)}</span>`).join('')}${decidable(item, d) && pendingOf(item.id).length ? `<span class="chip run">✎ ${pendingOf(item.id).length} en Archivos</span>` : ''}${facts.map((f) => `<span>${esc(f)}</span>`).join('')}</div>${decidedHTML(item)}</div>`;
 }
 
@@ -4772,9 +4771,17 @@ async function sendUpload() {
 }
 
 // ---------- context
+function githubCtxHTML(item) {
+  const url = githubUrl(item);
+  if (!url) return '';
+  return `<section><h3>GitHub</h3><dl class="kv"><dt>${item.kind === 'pr' ? 'PR' : 'Issue'}</dt><dd><a href="${esc(url)}" target="_blank" rel="noopener">#${esc(item.number)} ↗</a></dd></dl></section>`;
+}
+
+// Without the synced issue, only the reference ronin left on GitHub.
 function linearCtxHTML(item) {
   const l = item.linear;
-  if (!l) return '';
+  const ref = S.detail[item.id]?.data?.linear;
+  if (!l) return ref ? `<section><h3>${LIN_ICON} Linear</h3><dl class="kv"><dt>Issue</dt><dd>${safeLinear(ref.url) ? `<a href="${esc(ref.url)}" target="_blank" rel="noopener">${esc(ref.id)} ↗</a>` : esc(ref.id)}</dd></dl></section>` : '';
   const current = l.cycle?.current ? currentCycleOf(item.repo) : null;
   return `<section><h3>${LIN_ICON} Linear</h3><dl class="kv">
     <dt>Issue</dt><dd>${safeLinear(l.url) ? `<a href="${esc(l.url)}" target="_blank" rel="noopener">${esc(l.id)} ↗</a>` : esc(l.id)}</dd>
@@ -4787,7 +4794,7 @@ function linearCtxHTML(item) {
 
 function ctxHTML(item) {
   const runs = itemRuns(item);
-  let html = linearCtxHTML(item);
+  let html = githubCtxHTML(item) + linearCtxHTML(item);
   if (item.status === 'blocked') {
     html += `<section><h3>Por qué está bloqueado</h3><div class="why">${item.block
       ? `<b>Hace ${esc(short(Date.now() - Date.parse(item.block.at)))}.</b> ${esc(item.block.reason)}${item.block.excerpt ? `<span class="ask">${esc(item.block.excerpt)}</span>` : ''}`
@@ -5744,6 +5751,7 @@ async function loadDetail(id) {
     entry.at = Date.now();
   }
   if (S.sel === id || (S.page === 'pedido' && S.ped.tab === 'gh')) renderCenter();
+  if (S.sel === id) renderCtx();
 }
 
 async function select(id) {
