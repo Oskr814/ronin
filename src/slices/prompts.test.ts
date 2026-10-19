@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { AGENT_NOTES_REMINDER, COMMIT_STYLE_RULE } from '../core/prompts.js';
+import { AGENT_NOTES_REMINDER, COMMIT_STYLE_RULE, PR_BODY_RULE, PR_BODY_SECTIONS } from '../core/prompts.js';
 
 vi.mock('../core/config.js', () => ({
   config: {
@@ -139,6 +139,28 @@ describe('runAgentTask — fix-issue prompt', () => {
     const result = await runAgentTask({ type: 'fix-issue', issueNumber: 228, sliceIndex: 0, sliceTitle: 'Fix foo' });
 
     expect(result).toBe('Opened PR #42.\nRONIN_STATUS: done');
+  });
+});
+
+describe('runAgentTask — PR body sections', () => {
+  it.each([
+    ['implement-slice', 'Add foo'],
+    ['fix-issue', 'Fix foo'],
+  ] as const)('asks %s for the fixed sections instead of the repo\'s PR template', async (type, sliceTitle) => {
+    await runAgentTask({ type, issueNumber: 228, sliceIndex: 0, sliceTitle });
+
+    const prompt = runClaudeHeadless.mock.calls[0][1] as string;
+    expect(prompt).toContain(PR_BODY_RULE);
+    for (const heading of PR_BODY_SECTIONS) expect(prompt).toContain(`"## ${heading}"`);
+    expect(prompt).toContain('do not follow this repo\'s pull request template');
+  });
+
+  it('keeps "Closes #N" on the first line and the screenshots under "Qué cambió" for fix-issue', async () => {
+    await runAgentTask({ type: 'fix-issue', issueNumber: 228, sliceIndex: 0, sliceTitle: 'Fix foo' });
+
+    const prompt = runClaudeHeadless.mock.calls[0][1] as string;
+    expect(prompt).toContain('with "Closes #228" on the first line of the body');
+    expect(prompt).toContain('put them in the PR body too, under "## Qué cambió"');
   });
 });
 
