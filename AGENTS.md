@@ -15,3 +15,11 @@ No pongas en nada que vaya a GitHub:
 Los nombres de los repos de producto, el dominio público del portal y las cuentas de GitHub de ronin ya están en la documentación y pueden seguir apareciendo.
 
 Si algo de eso hace falta para trabajar, va en el directorio de datos de ronin, en `.env` o en los repos privados, nunca en este. Antes de publicar un issue, un comentario o un PR, revisa el texto con esta lista.
+
+## La documentación va en el mismo PR
+
+Si un PR cambia algo que se ve (un comando, una acción del tablero, la UI, el portal, la configuración, la instalación), actualiza en ese mismo PR la página que lo cuenta en `docs/site/src/content/docs/`. Si cambia el diseño, actualiza `docs/DESIGN.md`. Si cambia cuándo se bloquea, actualiza `docs/BLOCKING.md`. No dejes la documentación para un PR aparte: quien hace el cambio es quien mejor sabe qué cambió.
+
+Si no cambia nada visible, dilo en la descripción: «Docs: no cambia nada visible».
+
+Cómo escribir y probar el sitio: [Documentar un cambio](https://oskr814.github.io/ronin/contribuir/documentacion/). Las capturas y los ejemplos siguen la lista de arriba: datos inventados.
