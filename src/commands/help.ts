@@ -29,7 +29,7 @@ interface CommandSpec {
 // gets that far — this check exists to answer before it gets that far).
 const SPIKE_HAS_APP_NAME_RE = /^\s+\S/;
 
-export const COMMANDS_WIKI_URL = 'https://github.com/Oskr814/ronin/wiki/Comandos';
+export const COMMANDS_DOCS_URL = 'https://oskr814.github.io/ronin/referencia/comandos/';
 
 // Single source for every command the supervisor recognizes after a mention.
 // Adding a command means adding it here too, or a correct use of it gets
@@ -188,7 +188,7 @@ export function renderMetaReply(meta: MetaCommand, login: string, context: Comma
     const guess = meta.suggestion ? ` ¿Quisiste decir \`/${meta.suggestion}\`?` : '';
     intro = `No conozco \`/${meta.token}\`.${guess} Estos son los comandos que podés usar acá:`;
   }
-  return [intro, '', renderCommandTable(login, context), '', `Más detalle en la [wiki](${COMMANDS_WIKI_URL}).`].join('\n');
+  return [intro, '', renderCommandTable(login, context), '', `Más detalle en la [documentación](${COMMANDS_DOCS_URL}).`].join('\n');
 }
 
 export const HELP_FOOTER_MARKER = '<!-- ronin:help -->';
@@ -204,7 +204,7 @@ export function withHelpFooter(body: string, login: string): string {
     '',
     renderCommandTable(login, 'pr'),
     '',
-    `Más detalle en la [wiki](${COMMANDS_WIKI_URL}).`,
+    `Más detalle en la [documentación](${COMMANDS_DOCS_URL}).`,
     '</details>',
   ].join('\n');
   return body.trim() ? `${body.trimEnd()}\n\n${footer}` : footer;

@@ -4,7 +4,7 @@
 
 Orquestación de agentes autónomos (Claude Code) para desarrollo dirigido por specs. Le asignás un spec o un issue en GitHub y ronin lo trocea en PRs chicos y apilados, corre los tests, pide review, responde a los comentarios y escala a un humano solo cuando se bloquea de verdad.
 
-📖 **Documentación completa en la [wiki](https://github.com/Oskr814/ronin/wiki).**
+📖 **Documentación completa en el [sitio](https://oskr814.github.io/ronin/).**
 
 ## Comandos
 
@@ -30,7 +30,7 @@ Todo se pide desde GitHub, mencionando a [`@ronin-agent`](https://github.com/ron
 - **Spec:** PR draft con el `.md` en `docs/superpowers/specs/`, asignado a `ronin-agent`. Cuando lo marcás *ready for review*, arranca.
 - **Issue:** asignáselo con el picker de Assignees.
 
-Detalle de cada comando: [wiki → Comandos](https://github.com/Oskr814/ronin/wiki/Comandos).
+Detalle de cada comando: [Comandos](https://oskr814.github.io/ronin/referencia/comandos/).
 
 **Exploración y propuestas de mejora** ([`docs/DESIGN.md` §11](docs/DESIGN.md)): con un `ronin.app.json` en el repo del producto, ronin levanta la app, la usa como cada rol y propone mejoras con capturas del antes y del después (en la rama huérfana `ronin/evidence` del repo del producto). Las propuestas van a un PR de exploración (`ronin/exploration/<fecha>`), listo para revisar apenas termina cada corrida; mientras siga abierto, las corridas siguientes se suman a él. Comentando en una ficha (en GitHub, o desde la pestaña *Fichas* del tablero) podés rechazarla, pedir que la corrija (incluso rehacer la captura del después, que reemplaza a la anterior) o pedir un issue aparte. Dentro de un hilo, ronin solo atiende las respuestas que lo mencionan (`@ronin-agent`), y siempre lee lo que ya se habló sobre esa ficha; al aprobar y mergear, abre un issue por cada propuesta que quedó en pie y la próxima corrida abre un PR nuevo. Las apps listadas en `explore` de `repos.json` se exploran solas de noche (`EXPLORE_NIGHT_WINDOW`), o cuando lo pidas con *Explorar ahora* desde su página del tablero.
 
@@ -70,11 +70,11 @@ Desde la ficha se le pide a ronin lo mismo que comentando en GitHub: resolver co
 
 ## Operar un runner
 
-- [Setup](https://github.com/Oskr814/ronin/wiki/Setup): instalación, cuenta de GitHub, cron
-- [Webhooks](https://github.com/Oskr814/ronin/wiki/Webhooks): el servidor de ronin (`pnpm server:setup`), para reaccionar al instante en vez de esperar al próximo tick
-- [Tablero](https://github.com/Oskr814/ronin/wiki/Tablero): activarlo y entrar desde la tailnet
-- [Changelog](https://github.com/Oskr814/ronin/wiki/Changelog): publicación automática de releases
-- [Bloqueos](https://github.com/Oskr814/ronin/wiki/Bloqueos): cuándo ronin se detiene y avisa por email
+- [Setup](https://oskr814.github.io/ronin/operar/instalacion/): instalación, cuenta de GitHub, cron
+- [Webhooks](https://oskr814.github.io/ronin/operar/servidor/): el servidor de ronin (`pnpm server:setup`), para reaccionar al instante en vez de esperar al próximo tick
+- [Tablero](https://oskr814.github.io/ronin/operar/tablero/): activarlo y entrar desde la tailnet
+- [Changelog](https://oskr814.github.io/ronin/operar/changelog/): publicación automática de releases
+- [Bloqueos](https://oskr814.github.io/ronin/referencia/bloqueos/): cuándo ronin se detiene y avisa por email
 - Portal de pedidos: `PORTAL_URL` y `PORTAL_SESSION_SECRET` en `.env`, y el bloque `portal` en `repos.json` ([`docs/DESIGN.md` §16.9](docs/DESIGN.md))
 - Despliegues: el bloque `deploy` en `repos.json`, `DEPLOYS_DATA_DIR` en `.env` (respaldarlo) y el evento `workflow_run` en los webhooks (`scripts/init-webhooks.sh`) ([`docs/DESIGN.md` §18.8](docs/DESIGN.md))
 - Ajustes: nada que configurar; `SETTINGS_DATA_DIR` (por defecto `settings-data/`) guarda lo que se cambia en el tablero, el equipo y el registro: respaldarlo ([`docs/DESIGN.md` §19.10](docs/DESIGN.md))
