@@ -297,6 +297,8 @@ a { color: inherit; }
 .ghi.done { color: var(--gh-done); }
 .ghi.closed { color: var(--gh-closed); }
 .ghi.neutral { color: var(--gh-neutral); }
+.item .sub .ipr { white-space: nowrap; }
+.item .sub .ipr .ghi { margin-right: 2px; }
 .ghs { display: inline-flex; align-items: center; gap: 2px; font-size: 12px; font-weight: 600; padding: 2px 9px 2px 7px; border-radius: 999px; color: #fff; white-space: nowrap; margin-right: -6px; }
 .ghs .ghi { color: inherit; margin-right: 3px; }
 .ghs.open { background: var(--gh-open-bg); }

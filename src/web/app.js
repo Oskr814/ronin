@@ -258,12 +258,14 @@ function renderScope() {
   };
 }
 
+// HTML: an issue with an open PR shows it with GitHub's PR icon (open or
+// draft) right after its own number.
 function itemSub(item) {
-  const parts = [itemRef(item)];
-  if (item.slices?.length) parts.push(`${item.slices.filter((s) => s.status === 'merged').length} de ${item.slices.length} ${item.slices.length === 1 ? 'slice' : 'slices'}`);
-  else if (item.kind === 'pr' && item.pr?.author && item.pr.author !== 'ronin-agent') parts.push(`de ${item.pr.author}`);
-  else if (item.kind === 'issue' && item.pr) parts.push(`PR #${item.pr.number}${item.pr.author && item.pr.author !== 'ronin-agent' ? ` de ${item.pr.author}` : ''}`);
-  else if (item.kind !== 'other' && item.lastRun) parts.push(typeName(item.lastRun.taskType));
+  const parts = [esc(itemRef(item))];
+  if (item.kind === 'issue' && item.pr) parts.push(`<span class="ipr">${ghIcon('pr', item.pr.isDraft ? 'draft' : 'open')}#${esc(item.pr.number)}${item.pr.author && item.pr.author !== 'ronin-agent' ? ` de ${esc(item.pr.author)}` : ''}</span>`);
+  if (item.slices?.length) parts.push(esc(`${item.slices.filter((s) => s.status === 'merged').length} de ${item.slices.length} ${item.slices.length === 1 ? 'slice' : 'slices'}`));
+  else if (item.kind === 'pr' && item.pr?.author && item.pr.author !== 'ronin-agent') parts.push(esc(`de ${item.pr.author}`));
+  else if (item.kind !== 'other' && !item.pr && item.lastRun) parts.push(esc(typeName(item.lastRun.taskType)));
   return parts.filter(Boolean).join(', ');
 }
 
@@ -276,7 +278,7 @@ function itemRow(item, hit) {
   const kids = showSlices ? `<div class="kids">${item.slices.map((slice) => `<button class="kid ${hit && slice.prNumber === hit ? 'hit' : ''}" data-id="${esc(item.id)}">${sliceMark(slice)}<span class="t">${slice.index + 1}. ${esc(slice.title)}</span><span class="age">${slice.prNumber ? `#${slice.prNumber}` : ''}</span></button>`).join('')}</div>` : '';
   return `<button class="item ${item.pinned ? 'pinned' : ''}" data-id="${esc(item.id)}" aria-current="${S.sel === item.id}" ${item.pinned ? 'title="PR de exploración: sus fichas se revisan acá"' : ''}>
     ${item.pinned ? EXPLORE_ICON : dot(item.status)}<span class="t">${esc(item.title)}</span><span class="age" ${item.status === 'running' && item.lastRun ? `data-since="${esc(item.lastRun.startedAt)}"` : ''}>${esc(itemAge(item))}</span>
-    <span class="sub">${ghIcon(item.kind, item.github)}${esc(itemSub(item))}${item.linear ? `, <span class="red">${esc(item.linear.id)}</span>` : ''}${item.linear?.project && !S.project ? `, <span class="ptag"><i style="background:${projectColor(item.linear.project.id)}"></i>${esc(item.linear.project.name)}</span>` : ''}</span>
+    <span class="sub">${ghIcon(item.kind, item.github)}${itemSub(item)}${item.linear ? `, <span class="red">${esc(item.linear.id)}</span>` : ''}${item.linear?.project && !S.project ? `, <span class="ptag"><i style="background:${projectColor(item.linear.project.id)}"></i>${esc(item.linear.project.name)}</span>` : ''}</span>
     ${last ? `<span class="last">${esc(last)}</span>` : ''}</button>${kids}`;
 }
 
