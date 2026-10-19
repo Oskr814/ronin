@@ -23,5 +23,7 @@ deploys-data/
 seed-catalog-data/
 # what's changed in the dashboard's Ajustes (#174)
 settings-data/
+# what the dashboard's Métricas read from GitHub, and every block (#222)
+metrics-data/
 # the docs site's generated types (docs/site, #217)
 docs/site/.astro/

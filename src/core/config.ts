@@ -211,6 +211,13 @@ export const config = {
   seedCatalogs: {
     dataDir: resolve(process.env.SEED_CATALOG_DATA_DIR || 'seed-catalog-data'),
   },
+  // What the dashboard's Métricas read from GitHub (#222), per repo, kept
+  // between reads so each one only asks for what changed; plus the record of
+  // every block, which the local state keeps only while it's recent. A cache
+  // but the record: losing it costs a full read again and the blocks' reasons.
+  metrics: {
+    dataDir: resolve(process.env.METRICS_DATA_DIR || 'metrics-data'),
+  },
   // Per task type, the model and effort chosen in Ajustes → Agentes (#174),
   // put in place by applySettings below.
   taskOverrides: {} as Record<string, { model?: string; effort?: string }>,

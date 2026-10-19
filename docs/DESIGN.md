@@ -1381,6 +1381,62 @@ Cada cambio en Ajustes, del perfil propio a un repo, queda en `<SETTINGS_DATA_DI
 
 Nada: sin `SETTINGS_DATA_DIR`, usa `settings-data/` en el checkout del runner (fuera de git). Es la única copia de lo que se cambió en el tablero, del equipo y del registro: hay que respaldarlo, como `portal-data/`.
 
+### 20. Métricas (#222)
+
+Una sección del tablero, solo para admins, para entender cómo se mueve el trabajo en los repos: cuánto entra y cuánto sale, cuánto tarda, quién lo lleva y dónde se traba. Sirve para mirar la carga y los cuellos de botella, no para rankear personas.
+
+#### 20.1 Qué se cuenta
+
+- **Resuelto:** un issue cerrado como completado. Uno cerrado como *not planned* (o duplicado) se cuenta aparte y no entra en ningún tiempo.
+- **Tiempos en días corridos:** un fin de semana cuenta.
+- **Tiempo de resolución:** de que se abre el issue a que se cierra como completado.
+- **Hasta la primera review:** desde el primer pedido de review, pero no antes de que el PR salga de draft; sin pedido, desde que estuvo listo. Una review del propio autor no cuenta.
+- **Por persona:** cada persona asignada a un issue se lleva el crédito. Lo que se cuenta:
+  - lo que tiene abierto, y cuánto de eso lleva 14 días sin moverse;
+  - lo resuelto y su mediana;
+  - sus PRs mergeados;
+  - las rondas de review: cuántas reviews pidieron cambios por PR;
+  - las reviews que hizo y cuánto tardó en hacerlas, desde que se las pidieron;
+  - los PRs que esperan su review.
+
+  Las cuentas `[bot]` quedan afuera. ronin tiene su propia fila, sin las columnas de quien revisa.
+- **Despliegues:** los releases publicados que no son *prerelease*. Un PR mergeado sale con el primero que viene después de su merge.
+- **ronin:**
+  - qué parte de lo resuelto es suyo;
+  - cuánto terminó sin que le pusieran `ronin:blocked`;
+  - sus PRs mergeados sin pedido de cambios;
+  - sus intentos de fix, contados como los labels `ronin:attempts-<n>` que recibió;
+  - por qué se bloqueó, agrupado como en `docs/BLOCKING.md`.
+
+Todo se calcula en `metrics/compute.ts`, que es puro: los números se prueban ahí, sin GitHub.
+
+#### 20.2 De dónde salen los datos (`metrics/collect.ts`)
+
+- **De GitHub, por GraphQL:**
+  - de los issues: cuándo se abrieron y cerraron y cómo, a quién están asignados, sus labels, cuándo se reabrieron y cada vez que recibieron `ronin:blocked`;
+  - de los PRs: los pedidos de review, las reviews enviadas, cuándo salieron de draft, los labels de intentos y los issues que cierran;
+  - los releases.
+- **Dónde se guarda:** cada repo en `<METRICS_DATA_DIR>/repos/<owner>__<repo>.json`.
+- **Por incrementos:** cada lectura pide, de la más reciente a la más vieja por `updatedAt`, solo lo que cambió desde la anterior, con 5 minutos de solapamiento.
+- **La primera lectura:** trae 180 días, más todo lo abierto aunque sea más viejo. En un repo con cientos de issues y PRs tarda unos 20 s; las siguientes, un par de segundos.
+- **Cada cuánto:** el servidor lee GitHub como mucho cada 10 minutos por repo, lo pida quien lo pida. Mientras lee, sirve la lectura anterior. Si falla, se queda con la anterior y con el error, que la página muestra.
+
+#### 20.3 Los bloqueos (`metrics/blocks.ts`)
+
+El estado local guarda solo el último bloqueo de cada ítem, y solo mientras es reciente, así que con eso no alcanza para saber por qué se bloqueó ronin hace dos meses. Por eso `notifyBlocker` también agrega cada bloqueo a `<METRICS_DATA_DIR>/bloqueos.json`, con su repo, su ítem, su motivo y la hora. Ese archivo no se poda hasta los 5000 bloqueos.
+
+Un `ronin:blocked` de GitHub sin su par en el registro, como los de antes de #222, se cuenta igual, como *Sin motivo registrado*.
+
+#### 20.4 API
+
+| Ruta | Quién | Qué |
+|---|---|---|
+| `GET /api/metricas?dias=7\|30\|90&repo=<owner>/<repo>` | admins | el período (30 por defecto) comparado con el anterior, de todos los repos o de uno: los totales, las barras por día o por semana, la distribución de los tiempos, la tabla por persona, la salud del flujo, los despliegues y lo de ronin; en `sources`, de cuándo es la lectura de cada repo y su error |
+
+#### 20.5 Activarlo
+
+Nada: sin `METRICS_DATA_DIR`, usa `metrics-data/` en el checkout del runner (fuera de git). Lo de GitHub se vuelve a traer solo si se pierde; el registro de bloqueos no, así que hay que respaldarlo.
+
 ## Estado actual
 
 - [x] Definir el esqueleto del supervisor (script + estructura de tick) — ver §3.1 y `src/`
