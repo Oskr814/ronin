@@ -115,9 +115,6 @@ export interface PreviewState {
   published?: Array<{ public: number; local: number }>;
   // Before the preview range: published on the local port itself.
   ports?: number[];
-  // Set once the PR was told this preview is behind its commits — at most
-  // one notice per preview; a new /preview starts a fresh state.
-  staleNotified?: boolean;
   // When it came up (ISO), what PREVIEW_TTL_MINUTES counts from. A state
   // from before the TTL has none: the sweep stamps it on first sight.
   startedAt?: string;
@@ -524,9 +521,10 @@ export async function stopPreview(prNumber: number): Promise<boolean> {
 // there's a preview worktree on disk. A preview whose worker is still running
 // waits for the next tick.
 //
-// A preview stays on the commit it was asked for: once its PR has newer
-// ones (ronin applying a requested change, or anyone's push), the PR is
-// told — once per preview — that `/preview` again brings it up to date.
+// A preview follows its PR: a new commit (ronin applying a requested
+// change, or anyone's push) launches its update — see updatePreview. The
+// pull_request.synchronize event does it right away
+// (launchPreviewUpdates); the sweep catches whatever that missed.
 //
 // Nor does it hold a stack forever on an open PR: PREVIEW_TTL_MINUTES after
 // it came up it goes, and the PR is told `/preview` brings it back.
@@ -576,7 +574,11 @@ export async function sweepPreviews(now: Date = new Date()): Promise<void> {
       log.info(`preview PR #${pr}: el PR ya no está abierto, bajando su preview`);
       await stopPreview(pr);
     } else if (!(await expireIfDue(pr, now))) {
-      await noticeIfStale(pr, head);
+      const state = await readPreviewState(previewDirFor(pr));
+      if (state && state.sha !== head) {
+        log.info(`preview PR #${pr}: quedó atrás de ${head.slice(0, 7)}, actualizándola`);
+        launchUpdate(pr);
+      }
     }
   }
 }
@@ -601,16 +603,25 @@ async function expireIfDue(prNumber: number, now: Date): Promise<boolean> {
   return true;
 }
 
-async function noticeIfStale(prNumber: number, head: string): Promise<void> {
-  const dir = previewDirFor(prNumber);
-  const state = await readPreviewState(dir);
-  if (!state || state.staleNotified || state.sha === head) return;
+function launchUpdate(prNumber: number): void {
   try {
-    await commentOnSpecPr(prNumber, renderPreviewStale(state.sha, config.githubLogin));
-    await writeFile(previewStatePath(dir), JSON.stringify({ ...state, staleNotified: true }, null, 2));
-    log.info(`preview PR #${prNumber}: quedó atrás de ${head.slice(0, 7)}, avisado en el PR`);
+    launchPreviewWorker({ repo: activeRepo().productRepo, prNumber, action: 'update' });
   } catch (error) {
-    log.error(`preview PR #${prNumber}: no se pudo avisar que quedó desactualizada`, error);
+    log.error(`preview PR #${prNumber}: no se pudo lanzar la actualización`, error);
+  }
+}
+
+// New commits on `prs` (pull_request.synchronize — see
+// server/api/webhooks/handler.ts): each one with a preview up gets its
+// update. The worker compares the SHA itself, so this reads nothing from
+// GitHub. One whose worker is busy is skipped: an update reads the PR's
+// head again before it ends, and a /preview still coming up is left to the
+// sweep.
+export async function launchPreviewUpdates(prs: number[]): Promise<void> {
+  for (const pr of prs) {
+    if (!(await readPreviewState(previewDirFor(pr))) || (await previewWorkerBusy(pr))) continue;
+    log.info(`preview PR #${pr}: commit nuevo, actualizándola`);
+    launchUpdate(pr);
   }
 }
 
@@ -623,10 +634,6 @@ export function describeTtl(minutes: number): string {
 
 export function renderPreviewExpired(ttlMinutes: number, login: string): string {
   return `⌛ Bajé la preview de este PR: llevaba ${describeTtl(ttlMinutes)} arriba. Pedí \`@${login} /preview\` para levantarla de nuevo.`;
-}
-
-export function renderPreviewStale(previewSha: string, login: string): string {
-  return `🔄 La preview de este PR sigue en \`${previewSha.slice(0, 7)}\` y el PR ya tiene commits nuevos. Pedí \`@${login} /preview\` para actualizarla.`;
 }
 
 export function renderPreviewStarting(sha: string, withData: boolean): string {
@@ -659,7 +666,7 @@ export function renderPreviewReady(result: PreviewResult, login: string, ttlMinu
     '|---|---|---|',
     ...users,
     '',
-    `${lifetime} Para bajarla antes: \`@${login} /preview stop\`. Con commits nuevos en el PR, volvé a pedir \`/preview\` para actualizarla; lo que escribas después del comando (\`/preview <qué preparar>\`) se suma a lo que piden los pasos de prueba.`,
+    `${lifetime} Para bajarla antes: \`@${login} /preview stop\`. Con cada commit nuevo del PR se actualiza sola; \`/preview\` otra vez la levanta de cero. Lo que escribas después del comando (\`/preview <qué preparar>\`) se suma a lo que piden los pasos de prueba.`,
   ].join('\n');
 }
 

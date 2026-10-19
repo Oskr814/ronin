@@ -66,10 +66,13 @@ describe('repoGithub', () => {
     const now = Date.now();
     const preview = { prNumber: 881, appName: 'web', sha: 'abc', url: 'https://h:20001' };
     listPreviewStates.mockResolvedValue([{ ...preview, preparing: true }]);
-    expect((await repoGithub(ENTRY, 0, now))?.previews).toEqual([{ prNumber: 881, appName: 'web', url: 'https://h:20001', preparing: true }]);
+    expect((await repoGithub(ENTRY, 0, now))?.previews).toEqual([{ prNumber: 881, appName: 'web', url: 'https://h:20001', sha: 'abc', preparing: true }]);
     // Its data got ready: the next poll says so, without asking GitHub again.
     listPreviewStates.mockResolvedValue([preview]);
-    expect((await repoGithub(ENTRY, 0, now + 1000))?.previews).toEqual([{ prNumber: 881, appName: 'web', url: 'https://h:20001' }]);
+    expect((await repoGithub(ENTRY, 0, now + 1000))?.previews).toEqual([{ prNumber: 881, appName: 'web', url: 'https://h:20001', sha: 'abc' }]);
+    // Moving to a new commit.
+    listPreviewStates.mockResolvedValue([{ ...preview, updating: true }]);
+    expect((await repoGithub(ENTRY, 0, now + 2000))?.previews?.[0]).toMatchObject({ sha: 'abc', updating: true });
     expect(listOpenManagedIssues).toHaveBeenCalledTimes(1);
   });
 

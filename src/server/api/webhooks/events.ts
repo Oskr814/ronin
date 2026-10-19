@@ -34,7 +34,8 @@ const FLOWS: Record<string, Record<string, Flow[]>> = {
     // An approved portal request's PR gets ronin:auto-merge right away, and
     // so does ronin's own slice PR (auto-merge.ts's labelNewSlicePrs).
     opened: ['issues', 'review', 'exploration', 'portal', 'auto-merge'],
-    synchronize: ['issues', 'review', 'exploration'],
+    // A new commit also moves the PR's /preview to it.
+    synchronize: ['previews', 'issues', 'review', 'exploration'],
     reopened: ['issues', 'review', 'exploration'],
     // A merge too: the merged slice is checked off, its stack retargeted,
     // its worktree and /preview taken down, and a PR stacked on it can

@@ -19,10 +19,12 @@ vi.mock('../core/github.js', () => ({
 vi.mock('../app/runtime.js', () => ({ appDown: vi.fn(), appUp: vi.fn(), APP_STATE_DIR: '.ronin-app' }));
 const removeWorktreeDir = vi.fn();
 vi.mock('../core/worktree.js', () => ({ removeWorktreeDir: (...args: unknown[]) => removeWorktreeDir(...args) }));
-vi.mock('../core/worker-launch.js', () => ({ lockHeld: vi.fn().mockResolvedValue(false), acquireLock: vi.fn(), launchWorker: vi.fn() }));
+const lockHeld = vi.fn();
+const launchWorker = vi.fn();
+vi.mock('../core/worker-launch.js', () => ({ lockHeld: (...args: unknown[]) => lockHeld(...args), acquireLock: vi.fn(), launchWorker: (...args: unknown[]) => launchWorker(...args) }));
 vi.mock('../core/agent-task.js', () => ({ runAgentTask: vi.fn() }));
 
-const { sweepPreviews } = await import('./preview.js');
+const { launchPreviewUpdates, sweepPreviews } = await import('./preview.js');
 
 async function writePreview(pr: number, state: object): Promise<string> {
   const dir = join(base, `preview-pr-${pr}`, '.ronin-app');
@@ -35,6 +37,7 @@ beforeEach(async () => {
   base = await mkdtemp(join(tmpdir(), 'preview-sweep-'));
   vi.clearAllMocks();
   commentOnSpecPr.mockResolvedValue(undefined);
+  lockHeld.mockResolvedValue(false);
   config.previewTtlMinutes = 60;
 });
 
@@ -43,37 +46,27 @@ afterEach(async () => {
 });
 
 describe('sweepPreviews', () => {
-  it('tells the PR once that its preview is behind new commits', async () => {
-    const statePath = await writePreview(818, { sha: 'aaaaaaa1111' });
+  it('launches the update of a preview that is behind its PR, without a comment of its own', async () => {
+    await writePreview(818, { sha: 'aaaaaaa1111' });
     listOpenPrHeads.mockResolvedValue([{ number: 818, headRefOid: 'bbbbbbb2222' }]);
 
     await sweepPreviews();
-    await sweepPreviews();
 
-    expect(commentOnSpecPr).toHaveBeenCalledTimes(1);
-    expect(commentOnSpecPr).toHaveBeenCalledWith(818, expect.stringContaining('sigue en `aaaaaaa`'));
-    expect(commentOnSpecPr.mock.calls[0][1]).toContain('`@ronin-agent /preview`');
-    expect(JSON.parse(await readFile(statePath, 'utf8')).staleNotified).toBe(true);
+    expect(launchWorker).toHaveBeenCalledWith('preview/worker', { repo: 'acme/product', prNumber: 818, action: 'update' });
+    expect(commentOnSpecPr).not.toHaveBeenCalled();
     expect(removeWorktreeDir).not.toHaveBeenCalled();
   });
 
-  it('says nothing while the preview is on the PR head', async () => {
+  it('leaves alone a preview on the PR head, and one whose worker is busy', async () => {
     await writePreview(818, { sha: 'aaaaaaa1111' });
-    listOpenPrHeads.mockResolvedValue([{ number: 818, headRefOid: 'aaaaaaa1111' }]);
+    await writePreview(819, { sha: 'ccccccc3333' });
+    listOpenPrHeads.mockResolvedValue([{ number: 818, headRefOid: 'aaaaaaa1111' }, { number: 819, headRefOid: 'ddddddd4444' }]);
+    lockHeld.mockImplementation(async (path: string) => path.endsWith('.preview-pr-819.lock'));
 
     await sweepPreviews();
 
+    expect(launchWorker).not.toHaveBeenCalled();
     expect(commentOnSpecPr).not.toHaveBeenCalled();
-  });
-
-  it('tries again next tick when the notice could not be posted', async () => {
-    const statePath = await writePreview(818, { sha: 'aaaaaaa1111' });
-    listOpenPrHeads.mockResolvedValue([{ number: 818, headRefOid: 'bbbbbbb2222' }]);
-    commentOnSpecPr.mockRejectedValueOnce(new Error('gh down'));
-
-    await sweepPreviews();
-
-    expect(JSON.parse(await readFile(statePath, 'utf8')).staleNotified).toBeUndefined();
   });
 
   it('takes down the preview of a PR that is no longer open, without a notice', async () => {
@@ -126,5 +119,19 @@ describe('sweepPreviews', () => {
     await sweepPreviews();
 
     expect(removeWorktreeDir).not.toHaveBeenCalled();
+  });
+});
+
+describe('launchPreviewUpdates', () => {
+  it('launches the update of each PR with a preview up and no worker on it', async () => {
+    await writePreview(818, { sha: 'aaaaaaa1111' });
+    await writePreview(819, { sha: 'ccccccc3333' });
+    lockHeld.mockImplementation(async (path: string) => path.endsWith('.preview-pr-819.lock'));
+
+    await launchPreviewUpdates([818, 819, 820]);
+
+    expect(launchWorker).toHaveBeenCalledTimes(1);
+    expect(launchWorker).toHaveBeenCalledWith('preview/worker', { repo: 'acme/product', prNumber: 818, action: 'update' });
+    expect(listOpenPrHeads).not.toHaveBeenCalled();
   });
 });

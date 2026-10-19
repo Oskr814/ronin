@@ -37,6 +37,9 @@ export interface PreviewView {
   expiresAt?: string;
   // Still making the PR's test data (preview.ts).
   preparing?: boolean;
+  // The commit it's on, and whether it's moving to a newer one.
+  sha: string;
+  updating?: boolean;
 }
 
 export interface RepoGithub {
@@ -119,6 +122,8 @@ async function readPreviews(entry: RepoEntry): Promise<PreviewView[]> {
       prNumber: p.prNumber,
       appName: p.appName,
       url: p.url,
+      sha: p.sha,
+      ...(p.updating ? { updating: true } : {}),
       ...(p.startedAt ? { startedAt: p.startedAt } : {}),
       ...(p.startedAt && ttl > 0 ? { expiresAt: new Date(Date.parse(p.startedAt) + ttl * 60_000).toISOString() } : {}),
       ...(p.preparing ? { preparing: true } : {}),
