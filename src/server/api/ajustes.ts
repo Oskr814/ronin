@@ -5,7 +5,7 @@ import { log } from '../../core/logger.js';
 import type { RepoEntry } from '../../core/repo-context.js';
 import { linearKey, teamPeople } from '../../core/linear-api.js';
 import { applySettings, EFFORTS, invalidValue, MODELS, readSettingsSync, settingDef, settingsPath, settingsView, TASK_TYPES, type SettingsFile, type SettingValue } from '../../core/settings.js';
-import { taskDefaultModel, taskEnvEffort, taskEnvModel } from '../../core/config.js';
+import { taskDefaultEffort, taskDefaultModel, taskEnvEffort, taskEnvModel } from '../../core/config.js';
 import { sendMail } from '../../core/notifier.js';
 import { withJson } from '../../portal/json-store.js';
 import { readTeam, withTeam, type Member } from './team.js';
@@ -121,6 +121,7 @@ function tareasView(file: SettingsFile) {
     envModel: taskEnvModel(task) ?? null,
     envEffort: taskEnvEffort(task) ?? null,
     defaultModel: taskDefaultModel(task) ?? null,
+    defaultEffort: taskDefaultEffort(task) ?? null,
   }));
 }
 

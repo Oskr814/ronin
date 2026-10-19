@@ -126,6 +126,21 @@ describe('buildTask — portal-request (#114)', () => {
     expect(last).not.toContain('If you choose "entrevistar"');
   });
 
+  it('reads the interview’s answers against the analysis already made, without the code (#225)', async () => {
+    const fu = (roundsLeft: number) => buildTask({
+      type: 'portal-interview', requestNumber: 31, appName: 'backoffice', analysis: 'PriceList es única', reason: 'Regla nueva', roundsLeft, dir: '/tmp/fu', outputPath: '/tmp/fu/o.json',
+      conversation: [{ from: 'person', text: '[Their answers to your form:]\n- ¿Quién? → Gerencia', images: [] }],
+    });
+    const prepared = await fu(1);
+    expect(prepared.checkout).toEqual({ kind: 'dir', dir: '/tmp/fu' });
+    expect(prepared.prompt).toContain('<<<ANALYSIS_START>>>PriceList es única<<<ANALYSIS_END>>>');
+    expect(prepared.prompt).toContain('Do not read, search or run anything in the code');
+    expect(prepared.prompt).toContain('- "revisar": their answers change what the request is');
+    expect(prepared.prompt).toContain('{"accion": "grande" | "entrevistar" | "revisar"');
+    expect(prepared.prompt).not.toContain('Not available now');
+    expect((await fu(0)).prompt).toContain('Not available now: choose "grande".');
+  });
+
   it('once out of questions, it has to decide', async () => {
     expect((await task(0)).prompt).toContain('You may not ask anymore');
   });

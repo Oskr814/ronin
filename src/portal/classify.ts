@@ -190,6 +190,65 @@ async function notify(request: PortalRequest, user: PortalUser | undefined): Pro
   else if (request.status !== 'minor' && request.status !== 'reproducing' && user) await sendPortalMails(request, [replyMail(request, user, config.portal.url)]);
 }
 
+async function settle(n: number, result: PortalResult): Promise<void> {
+  const updated = await updateUnlessCancelled(n, (r) => applyResult(r, result));
+  if (!updated) {
+    log.info(`portal: el pedido P-${n} se canceló mientras ronin lo leía`);
+    return;
+  }
+  log.info(`portal: pedido P-${n} → ${result.accion}`);
+  await notify(updated, await getUser(updated.userId));
+}
+
+// The person answered the interview or corrected its summary (#225), and
+// ronin already analyzed the code: what comes next is read against that
+// analysis, without a checkout, on a fast model.
+export function isInterviewFollowUp(r: PortalRequest): boolean {
+  const last = r.messages.at(-1);
+  return r.status === 'thinking' && r.verdict?.kind === 'big' && Boolean(r.verdict.summary) && !r.interview?.skipped
+    && last?.from === 'person' && Boolean(last.answers || last.correction);
+}
+
+const conversationOf = (request: PortalRequest) => request.messages.map((m) => ({ from: m.from, text: interviewText(m), images: m.images.map((file) => requestImagePath(request.number, file)) }));
+
+// Inside withActiveRepo, before the full read: true when it answered the
+// person. False sends it on to classifyRequest — not a follow-up, the
+// answers changed what the request is ("revisar"), or this read failed.
+export async function followUpRequest(n: number): Promise<boolean> {
+  const request = await getRequest(n);
+  if (!request || !isInterviewFollowUp(request)) return false;
+  const dir = join(activeRepo().worktreeBasePath, 'portal-request-out', `P-${n}-respuestas`);
+  try {
+    await rm(dir, { recursive: true, force: true });
+    await mkdir(dir, { recursive: true });
+    const outputPath = join(dir, 'result.json');
+    await runAgentTask(portalTask({
+      type: 'portal-interview',
+      requestNumber: n,
+      appName: request.app,
+      conversation: conversationOf(request),
+      analysis: request.verdict!.summary,
+      ...(request.verdict!.reason ? { reason: request.verdict!.reason } : {}),
+      roundsLeft: Math.max(0, MAX_ROUNDS - (request.interview?.rounds ?? 0)),
+      dir,
+      outputPath,
+    }));
+    const raw = await readFile(outputPath, 'utf8');
+    const result = (JSON.parse(raw) as { accion?: unknown }).accion === 'revisar' ? undefined : parsePortalResult(raw, request.questions, 0, 0, request.interview?.rounds ?? 0);
+    if (result?.accion !== 'grande' && result?.accion !== 'entrevistar') {
+      log.info(`portal: con las respuestas, el pedido P-${n} necesita leer el código de nuevo`);
+      return false;
+    }
+    await settle(n, result!);
+    return true;
+  } catch (error) {
+    log.error(`portal: no se pudieron leer rápido las respuestas del pedido P-${n}; sigue la lectura completa`, error);
+    return false;
+  } finally {
+    await rm(dir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
 // Inside withActiveRepo, for a request that's 'thinking'. Never throws: a
 // failure is answered to the person, who can write again.
 export async function classifyRequest(n: number): Promise<void> {
@@ -206,7 +265,7 @@ export async function classifyRequest(n: number): Promise<void> {
       type: 'portal-request',
       requestNumber: n,
       appName: request.app,
-      conversation: request.messages.map((m) => ({ from: m.from, text: interviewText(m), images: m.images.map((file) => requestImagePath(n, file)) })),
+      conversation: conversationOf(request),
       questionsLeft: Math.max(0, MAX_QUESTIONS - request.questions),
       interviewRoundsLeft: Math.max(0, MAX_ROUNDS - (request.interview?.rounds ?? 0)),
       interviewed: (request.interview?.rounds ?? 0) > 0,
@@ -218,14 +277,7 @@ export async function classifyRequest(n: number): Promise<void> {
       checkoutDir: dir,
       outputPath,
     }));
-    const result = parsePortalResult(await readFile(outputPath, 'utf8'), request.questions, request.prototypes?.length ?? 0, request.bug?.reproductions.length ?? 0, request.interview?.rounds ?? 0);
-    const updated = await updateUnlessCancelled(n, (r) => applyResult(r, result));
-    if (!updated) {
-      log.info(`portal: el pedido P-${n} se canceló mientras ronin lo leía`);
-      return;
-    }
-    log.info(`portal: pedido P-${n} → ${result.accion}`);
-    await notify(updated, await getUser(updated.userId));
+    await settle(n, parsePortalResult(await readFile(outputPath, 'utf8'), request.questions, request.prototypes?.length ?? 0, request.bug?.reproductions.length ?? 0, request.interview?.rounds ?? 0));
   } catch (error) {
     log.error(`portal: no se pudo revisar el pedido P-${n}`, error);
     try {

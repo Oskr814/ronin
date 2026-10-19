@@ -254,6 +254,14 @@ const TASK_MODEL_DEFAULTS: Record<string, string> = {
   'preview-data-triage': 'haiku',
   // A yes/no on a preview's new commits, before paying for the run above.
   'preview-data-delta': 'haiku',
+  // The portal interview's answers, read against the analysis already made
+  // (#225): no code to read, and the person is waiting on the page.
+  'portal-interview': 'sonnet',
+};
+
+// The effort a task type runs with when nothing more specific says.
+const TASK_EFFORT_DEFAULTS: Record<string, string> = {
+  'portal-interview': 'low',
 };
 
 function taskEnv(prefix: string, taskType: string): string | undefined {
@@ -277,7 +285,7 @@ export function agentModelFor(taskType: string): string {
 }
 
 export function agentEffortFor(taskType: string): string {
-  return currentRepo()?.agent?.efforts?.[taskType] ?? config.taskOverrides[taskType]?.effort ?? taskEnv('AGENT_EFFORT', taskType) ?? defaultAgentEffort();
+  return currentRepo()?.agent?.efforts?.[taskType] ?? config.taskOverrides[taskType]?.effort ?? taskEnv('AGENT_EFFORT', taskType) ?? TASK_EFFORT_DEFAULTS[taskType] ?? defaultAgentEffort();
 }
 
 // What a task type runs with when nothing more specific says, for Ajustes:
@@ -285,6 +293,7 @@ export function agentEffortFor(taskType: string): string {
 export const taskEnvModel = (taskType: string) => taskEnv('AGENT_MODEL', taskType);
 export const taskEnvEffort = (taskType: string) => taskEnv('AGENT_EFFORT', taskType);
 export const taskDefaultModel = (taskType: string) => TASK_MODEL_DEFAULTS[taskType];
+export const taskDefaultEffort = (taskType: string) => TASK_EFFORT_DEFAULTS[taskType];
 
 export function defaultAgentModel(): string {
   return currentRepo()?.agent?.model ?? config.agentModel;
