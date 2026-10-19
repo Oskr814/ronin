@@ -12,7 +12,7 @@ const SNAPSHOT_EVERY_MS = 5000;
 const PEDIDO_EVERY_MS = 10_000;
 
 const TYPE = {
-  'plan': 'Planificar', 'implement-slice': 'Implementar slice', 'fix-issue': 'Corregir slice', 'fix-review': 'Responder review',
+  'plan': 'Planificar', 'implement-slice': 'Implementar slice', 'fix-issue': 'Resolver issue', 'fix-review': 'Responder review',
   'fix-e2e': 'Arreglar e2e', 'review-request': 'Pedido en review', 'fix-comments': 'Aplicar comentarios',
   'fix-comments-external': 'Aplicar comentarios', 'resolve-conflicts': 'Resolver conflictos', 'thread-reply-external': 'Responder hilo',
   'external-review': 'Review externa', 'spike': 'Spike', 'write-spec': 'Escribir spec', 'issue-request': 'Pedido en issue',

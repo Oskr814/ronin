@@ -75,6 +75,9 @@ async function buildSliceTask(task: SliceTask): Promise<PreparedTask> {
       };
     }
 
+    // An issue opened from an approved exploration finding carries its key
+    // (exploration/pr.ts's findingIssueKey) and the finding's work: the
+    // agent starts from it instead of investigating again.
     case 'fix-issue': {
       // Always slice 0 — a directly-assigned issue is seeded with exactly
       // one slice (checklist.ts's seedSingleSlice), so unlike implement-slice
@@ -87,6 +90,7 @@ async function buildSliceTask(task: SliceTask): Promise<PreparedTask> {
           `You are ronin, an autonomous agent working on issue #${task.issueNumber} in ${repoUrl()}.`,
           `Read the full issue, including comments: "gh issue view ${task.issueNumber} --comments".`,
           "Figure out what's being asked. If it's a bug report, explore the repository to find the root cause — do not guess or fabricate a fix without evidence. If it's a feature/change request, make sure the scope and approach are clear before writing any code.",
+          `If the issue's body has a "ronin-ficha:" key, it comes from an exploration finding a human already approved: the diagnosis and the proposal are in the issue (and its finding file, linked as "Ficha"), and so may be the draft change used for the "after" screenshot (the "Cambio borrador usado para el después" diff). Start from them instead of investigating from scratch: confirm the diagnosis against the code, then implement the proposal — the draft is where to start, not necessarily the final change — without widening its scope. Investigate further only where the code contradicts the finding.`,
           'If the issue lacks enough information to act on it (a bug you cannot reproduce, or a request whose scope/approach is ambiguous), comment on the issue asking precisely for what you need ("gh issue comment") and stop without touching any code — that needs a human answer.',
           "Once you're confident in the fix or approach, implement it following this repo's CLAUDE.md conventions, including its testing requirements.",
           `When done: run the relevant tests, and make exactly one commit. Push this branch and open a PR ("gh pr create") with "Closes #${task.issueNumber}" in the body, describing what was asked and how it was addressed.`,
