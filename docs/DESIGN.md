@@ -899,6 +899,7 @@ src/portal/            el dominio: cuentas, pedidos, la conversación, el protot
   requests.ts          los pedidos: requests/<n>/request.json, img/ y proto/
   classify.ts          ronin lee el pedido: preguntar, responder, menor, error o grande
   prototype.ts         el prototipo de un ajuste chico, y aprobar o "No me sirve"
+  interview.ts         la entrevista de un pedido grande: las respuestas, el resumen y saltarla (#225)
   reproduce.ts         la reproducción de un error reportado, con su test (#137)
   issue.ts             el issue en el repo del producto: para ronin (aprobado, o el arreglo de un error) o para el equipo
   cancel.ts            la persona cancela un pedido que nadie tomó
@@ -918,6 +919,8 @@ src/portal-web/        la página: HTML, CSS y JS sin build
 | `thinking` | ronin lee el pedido y revisa el código (16.3) | ronin |
 | `asking` | ronin le hizo una pregunta | la persona |
 | `answered` | ronin respondió: no había nada que cambiar | la persona, si quiere escribir de nuevo |
+| `interviewing` | es grande: ronin le dejó preguntas en un formulario (16.13) | la persona: responder, o enviarlo sin responder |
+| `confirming` | después de la entrevista, ronin muestra lo que entendió (16.13) | la persona: confirmarlo o corregirlo |
 | `minor` | es un ajuste chico: ronin arma el prototipo (16.4) | ronin |
 | `proposed` | el prototipo está en pantalla | la persona: aprobar, pedir un ajuste o "No me sirve" |
 | `approved` | aprobado: ronin hace el cambio en un PR (16.5) | ronin, y un dev que apruebe el PR |
@@ -1001,6 +1004,9 @@ En el listener público, solo con `PORTAL_URL` y `PORTAL_SESSION_SECRET` configu
 | `GET /api/portal/requests/<n>` | Uno, con la conversación |
 | `POST /api/portal/requests/<n>/messages` | Su respuesta, o un ajuste al prototipo: `{ text, images? }` |
 | `POST /api/portal/requests/<n>/decision` | Sobre el prototipo: `{ decision: 'aprobar' \| 'rechazar', text? }` |
+| `POST /api/portal/requests/<n>/interview` | Las respuestas de la entrevista: `{ answers, note?, images? }` (16.13) |
+| `POST /api/portal/requests/<n>/skip` | Lo pasa al equipo sin responder la entrevista o sin confirmar el resumen |
+| `POST /api/portal/requests/<n>/understood` | Sobre el resumen: `{ ok: true }` lo confirma; `{ ok: false, text }` lo corrige |
 | `POST /api/portal/requests/<n>/cancel` | Lo cancela, mientras nadie lo tomó (16.10) |
 | `GET /api/portal/requests/<n>/images/<archivo>` | Una imagen de la conversación |
 
@@ -1018,7 +1024,7 @@ La administración está en la API del tablero, solo para sus admins (la página
 La persona puede cancelar un pedido mientras nadie lo tomó, con *Cancelar pedido* en la cabecera y una confirmación:
 
 - **Se puede:**
-  - mientras ronin lo lee o espera su respuesta (`thinking`, `asking`, `answered`);
+  - mientras ronin lo lee o espera su respuesta (`thinking`, `asking`, `answered`), también en la entrevista (`interviewing`, `confirming`);
   - alrededor del prototipo (`minor`, `proposed`);
   - mientras ronin reproduce un error (`reproducing`);
   - ya en manos del equipo (`big`), si su issue sigue sin asignar. Lo comprueba en GitHub al momento, y el issue se cierra como no planeado con un comentario que dice que la persona lo canceló.
@@ -1075,6 +1081,18 @@ Según lo que salió:
 | La corrida falla dos veces, o la app no deja ni intentarlo | `big` | Al equipo, con el motivo |
 
 La persona ve en el portal "Reproduciendo el error", luego lo que encontró ronin con las capturas, y recibe cada paso por correo. Los eventos `reproduced` (intento, si se reprodujo y si el test quedó en rojo, verde o sin test) y `failed` con paso `reproduce` quedan en la actividad.
+
+#### 16.13 La entrevista de un pedido grande (`interview.ts`, #225)
+
+Antes de pasar un pedido grande al equipo, ronin le hace a la persona las preguntas que el equipo le tendría que hacer, en un formulario: quién puede hacerlo, qué pasa en tal caso, qué queda fuera. Así el issue llega con las decisiones tomadas.
+
+- **Las preguntas** van en el mensaje de ronin (`questions`), cada una con su `id`, su tipo (`one`, `many` o `text`), el texto, una ayuda opcional, las opciones, si acepta «Otra» y si es opcional. Las de opciones siempre aceptan **«No sé, que lo decida el equipo»**. El pedido queda en `interviewing`.
+- **Las respuestas** llegan como índices de opciones, el texto de «Otra», el de una pregunta de texto o «No sé». `readAnswers` las pasa a palabras contra las preguntas abiertas: rechaza una opción que no existe, «Otra» donde no se ofrece, dos respuestas a una de una opción y una pregunta obligatoria sin responder. La persona nunca escribe el texto de una opción. Se guardan en su mensaje (`answers`, cada una con su pregunta) junto a una nota y hasta 4 imágenes opcionales. El pedido vuelve a `thinking` y ronin lo lee de nuevo.
+- **El resumen** va en un mensaje de ronin (`understood`): cada decisión (tema → decisión), lo que queda fuera y lo que decide el equipo. El pedido queda en `confirming`. Si la persona lo confirma, pasa a `big`, con el correo de siempre y el issue del equipo (16.6). Si lo corrige, su texto vuelve a `thinking`.
+- **Saltarla:** *Enviar sin responder* lo pasa a `big` tal como llegó, con el veredicto que ya tenía. Desde el resumen, lo pasa con las respuestas.
+- **Los topes son del servidor, no del agente:** 2 rondas de preguntas (`MAX_ROUNDS`), 5 preguntas por ronda (`MAX_INTERVIEW_QUESTIONS`) y 2 correcciones del resumen (`MAX_CORRECTIONS`). `request.interview` lleva las rondas, las correcciones y cómo terminó (`skipped` o `confirmed`).
+- **Actividad:** el evento `interview`, con su paso (`asked`, `answered`, `summary`, `corrected`, `confirmed` o `skipped`) y la ronda.
+- **Pendiente** (las etapas siguientes de #225): que el agente entreviste (`entrevistar`), el formulario en el portal, el resumen y la sección del issue.
 
 ### 17. Reuniones: de las notas al trabajo planificado (#62)
 

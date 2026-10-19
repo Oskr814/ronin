@@ -135,6 +135,48 @@ describe('portal requests API', () => {
     expect((await post(other.cookie, '/api/portal/requests/1/decision', { decision: 'aprobar' })).status).toBe(404);
   });
 
+  it('shows the interview’s questions, takes the answers, the summary’s confirmation or correction, and skipping it (#225)', async () => {
+    const { cookie } = await person('mf@x.com');
+    await post(cookie, '/api/portal/requests', { repo: 'redmotos/shoppingcart', app: 'backoffice', text: 'Precios para mayoristas' });
+    expect((await post(cookie, '/api/portal/requests/1/interview', { answers: [] })).status).toBe(400);
+    const questions = [{ id: 'quien', kind: 'one', text: '¿Quién decide?', options: ['Ventas', 'Administración'] }];
+    await updateRequest(1, (r) => {
+      r.status = 'interviewing';
+      r.interview = { rounds: 1, corrections: 0 };
+      r.verdict = { kind: 'big', reason: 'Regla nueva', summary: 'PriceListService.cs', at: '' };
+      r.messages.push({ id: 2, from: 'ronin', text: 'Respóndeme esto', images: [], questions: questions as never, at: '' });
+    });
+    const view = await (await get(cookie, '/api/portal/requests/1')).json();
+    expect(view).toMatchObject({ status: 'interviewing', interview: { round: 1, rounds: 2, correctionsLeft: 2 }, messages: [{}, { questions }] });
+    expect(JSON.stringify(view)).not.toMatch(/PriceListService/);
+    const other = await person('otro@x.com');
+    expect((await post(other.cookie, '/api/portal/requests/1/interview', { answers: [{ id: 'quien', choices: [0] }] })).status).toBe(404);
+    expect((await post(cookie, '/api/portal/requests/1/interview', { answers: [{ id: 'quien', choices: [7] }] })).status).toBe(400);
+    const answered = await post(cookie, '/api/portal/requests/1/interview', { answers: [{ id: 'quien', choices: [1] }], note: 'Nada más' });
+    expect(answered.status).toBe(200);
+    expect(await answered.json()).toMatchObject({ status: 'thinking', messages: [{}, {}, { from: 'person', text: 'Nada más', answers: [{ id: 'quien', question: '¿Quién decide?', answer: 'Administración' }] }] });
+    expect(launch).toHaveBeenCalledTimes(2);
+
+    await updateRequest(1, (r) => {
+      r.status = 'confirming';
+      r.messages.push({ id: 4, from: 'ronin', text: 'Así lo entendí', images: [], understood: { decisions: [{ topic: 'Quién decide', decision: 'Administración' }], out: [], team: [] }, at: '' });
+    });
+    expect((await post(cookie, '/api/portal/requests/1/understood', { text: 'x' })).status).toBe(400);
+    const corrected = await post(cookie, '/api/portal/requests/1/understood', { ok: false, text: 'También ventas' });
+    expect(await corrected.json()).toMatchObject({ status: 'thinking', interview: { correctionsLeft: 1 } });
+    await updateRequest(1, (r) => { r.status = 'confirming'; });
+    const confirmed = await post(cookie, '/api/portal/requests/1/understood', { ok: true });
+    expect(await confirmed.json()).toMatchObject({ status: 'big', messages: [{}, {}, {}, { understood: { decisions: [{ topic: 'Quién decide' }] } }, {}, { confirmed: true }, { from: 'ronin' }] });
+    expect((await post(cookie, '/api/portal/requests/1/skip', {})).status).toBe(400);
+
+    await post(cookie, '/api/portal/requests', { repo: 'redmotos/shoppingcart', app: 'backoffice', text: 'Otro' });
+    await updateRequest(2, (r) => {
+      r.status = 'interviewing';
+      r.messages.push({ id: 2, from: 'ronin', text: 'Respóndeme esto', images: [], questions: questions as never, at: '' });
+    });
+    expect(await (await post(cookie, '/api/portal/requests/2/skip', {})).json()).toMatchObject({ status: 'big', messages: [{}, {}, { skipped: true }, { from: 'ronin' }] });
+  });
+
   it('cancels a request while nobody took it, only its owner', async () => {
     const { cookie } = await person('mf@x.com');
     await post(cookie, '/api/portal/requests', { repo: 'redmotos/shoppingcart', app: 'backoffice', text: 'Hola' });
