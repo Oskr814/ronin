@@ -19,7 +19,7 @@ import { json, portalUser, readJson, type PortalConfig, type PortalDeps } from '
 //   POST /api/portal/requests/<n>/decision        { decision: 'aprobar' | 'rechazar', text? }: on the prototype on screen
 //   POST /api/portal/requests/<n>/interview       { answers, note?, images? }: the answers to ronin's questions (#225)
 //   POST /api/portal/requests/<n>/skip            to the team without answering them, or without confirming the summary
-//   POST /api/portal/requests/<n>/understood      { ok, text? }: the summary after the interview is right, or what to correct
+//   POST /api/portal/requests/<n>/understood      { ok, text?, images? }: the summary after the interview is right, or what to correct
 //   POST /api/portal/requests/<n>/cancel          while nobody took it (portal/cancel.ts)
 //   GET  /api/portal/requests/<n>/images/<file>   an image of the conversation
 // Images travel as data URLs in the JSON, so these bodies can be large.
@@ -159,11 +159,11 @@ export async function handlePortalRequests(req: IncomingMessage, res: ServerResp
     }
 
     if (one[2] === 'understood' && method === 'POST') {
-      const body = await readJson(req, 64 * 1024);
+      const body = await readJson(req, MAX_REQUEST_BODY);
       if (typeof body?.ok !== 'boolean') throw new RequestError('Elige si está bien o qué corregir.');
       const text = typeof body.text === 'string' ? body.text.trim() : '';
       if (text.length > TEXT_MAX) throw new RequestError(`El mensaje puede tener hasta ${TEXT_MAX} caracteres.`);
-      await confirmUnderstood(request.number, body.ok, text, launch);
+      await confirmUnderstood(request.number, body.ok, text, body.ok ? [] : parseImages(body.images), launch);
       json(res, 200, personView((await getRequest(request.number)) ?? request, appOf(request)));
       return;
     }

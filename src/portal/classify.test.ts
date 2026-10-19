@@ -57,6 +57,16 @@ describe('parsePortalResult — the interview (#225)', () => {
   });
 });
 
+describe('parsePortalResult — the summary after the interview (#225)', () => {
+  const entendido = { decisiones: [{ tema: 'Quién decide', decision: 'Ventas' }], fuera: [], equipo: ['Los avisos'] };
+
+  it('keeps it only after an interview', () => {
+    expect(parsePortalResult(json({ accion: 'grande', mensaje: 'Así lo entendí.', entendido }), 0, 0, 0, 1).entendido).toEqual({ decisions: [{ topic: 'Quién decide', decision: 'Ventas' }], out: [], team: ['Los avisos'] });
+    expect(parsePortalResult(json({ accion: 'grande', mensaje: 'Es grande.', entendido }), 0).entendido).toBeUndefined();
+    expect(parsePortalResult(json({ accion: 'grande', mensaje: 'Así lo entendí.', entendido: { decisiones: [] } }), 0, 0, 0, 1).entendido).toBeUndefined();
+  });
+});
+
 describe('applyResult', () => {
   it('an interview leaves the questions in ronin’s message and waits on the person, already big (#225)', () => {
     const r = request();
@@ -70,6 +80,19 @@ describe('applyResult', () => {
     applyResult(r, { accion: 'grande', mensaje: 'Gracias.', resumen: 'PriceList, con las respuestas' });
     expect(r).toMatchObject({ status: 'big', verdict: { kind: 'big', summary: 'PriceList, con las respuestas' } });
     expect(r.messages.at(-1)?.text).toBe(`Gracias.\n\n${NEXT_STEP.entrevistado}`);
+  });
+
+  it('after the interview, shows what it understood for the person to confirm (#225)', () => {
+    const r = { ...request(), status: 'thinking' as const, interview: { rounds: 1, corrections: 0 }, verdict: { kind: 'big' as const, reason: 'Regla nueva', summary: 'PriceList', at: '' } };
+    const entendido = { decisions: [{ topic: 'Quién decide', decision: 'Ventas' }], out: [], team: [] };
+    applyResult(r, { accion: 'grande', mensaje: 'Así entendí lo que necesitas.', resumen: 'PriceList, con las respuestas', entendido });
+    expect(r).toMatchObject({ status: 'confirming', verdict: { kind: 'big', reason: 'Regla nueva', summary: 'PriceList, con las respuestas' } });
+    expect(r.messages.at(-1)).toMatchObject({ from: 'ronin', text: 'Así entendí lo que necesitas.', understood: entendido });
+    expect(r.events?.at(-1)).toMatchObject({ kind: 'interview', step: 'summary', round: 1 });
+    // Without a summary, or once the questions were skipped, straight to the team.
+    const skipped = { ...request(), interview: { rounds: 1, corrections: 0, skipped: true as const } };
+    applyResult(skipped, { accion: 'grande', mensaje: 'Va al equipo.', entendido });
+    expect(skipped.status).toBe('big');
   });
 
   it('a question waits on the person, counts, and names the request', () => {

@@ -7,7 +7,7 @@ const $ = (selector) => document.querySelector(selector);
 const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const initials = (name) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join('');
 
-const S = { me: null, view: 'login', error: null, info: null, busy: false, token: null, link: null, picked: null, menu: false, requests: [], cur: null, detail: null, pending: [], draft: '', sending: false, zoom: null, deciding: null, cancelling: false, answers: {}, skipping: false, round: null };
+const S = { me: null, view: 'login', error: null, info: null, busy: false, token: null, link: null, picked: null, menu: false, requests: [], cur: null, detail: null, pending: [], draft: '', sending: false, zoom: null, deciding: null, cancelling: false, answers: {}, skipping: false, round: null, correcting: false };
 
 class ApiError extends Error {
   constructor(message, status) {
@@ -217,7 +217,7 @@ function threadHTML(d) {
       : m.captions ? `<div class="shots">${m.images.map((src, i) => `<figure class="shot"><button class="att" data-zoom="${esc(src)}"><img src="${esc(src)}" alt="${esc(m.captions[i] ?? `Imagen ${i + 1}`)}"></button><figcaption>${esc(m.captions[i] ?? '')}</figcaption></figure>`).join('')}</div>`
         : `<div class="atts">${m.images.map((src, i) => `<button class="att" data-zoom="${esc(src)}"><img src="${esc(src)}" alt="Imagen ${i + 1}" loading="lazy"></button>`).join('')}</div>`;
     out.push(`<div class="msg ${m.from === 'ronin' ? '' : 'mine'}">${who}<div class="body"><div class="who"><b>${m.from === 'ronin' ? 'ronin' : esc(S.me.name)}</b> ${esc(hhmm(m.at))}</div>
-      <div class="bubble">${m.answers ? answersHTML(m) : m.skipped ? '<p class="ack">Lo envié sin responder las preguntas.</p>' : m.text ? paragraphs(m.text) : ''}${images}</div></div></div>`);
+      <div class="bubble">${m.answers ? answersHTML(m) : m.skipped ? '<p class="ack">Lo envié sin responder las preguntas.</p>' : m.confirmed ? '<p class="ack">✓ Está bien, envíalo al equipo.</p>' : m.text ? paragraphs(m.text) : ''}${m.understood ? understoodHTML(m.understood) : ''}${images}</div></div></div>`);
   }
   if (d.status === 'interviewing' && !S.skipping) out.push(formHTML(d));
   const working = WORKING[d.status];
@@ -337,6 +337,36 @@ async function sendAnswers(note) {
   return api(`/api/portal/requests/${S.cur}/interview`, { answers: answersPayload(qs), note, images: S.pending });
 }
 
+// What ronin understood after the interview: the person confirms it, or
+// corrects it while there are corrections left.
+function understoodHTML(u) {
+  return `<div class="spec"><dl>${u.decisions.map((d) => `<div><dt>${esc(d.topic)}</dt><dd>${esc(d.decision)}</dd></div>`).join('')}</dl>
+    ${u.team.length ? `<div class="spec-x"><b>Lo decide el equipo</b>${u.team.map((t) => `<span>${esc(t)}</span>`).join('')}</div>` : ''}
+    ${u.out.length ? `<div class="spec-x"><b>Queda fuera</b>${u.out.map((t) => `<span>${esc(t)}</span>`).join('')}</div>` : ''}</div>`;
+}
+
+function understoodFootHTML(d) {
+  if (S.correcting) return composerHTML('¿Qué entendí mal o qué falta?', 'Enviar corrección', 'ronin corrige el resumen y te lo muestra de nuevo', '<div class="iv-f"><span class="prog">Corregir el resumen</span><button class="btn ghost" data-uncorrect>Volver</button></div>');
+  const left = d.interview.correctionsLeft;
+  return `<div class="composer"><div class="composer-in"><div class="decide"><span>¿Lo entendí bien?</span>${left > 0 ? '<button class="btn" data-correct>Corregir algo</button>' : ''}<button class="btn primary" data-confirm ${S.sending ? 'disabled' : ''}>${S.sending ? 'Enviando…' : 'Sí, enviarlo al equipo'}</button></div>${left > 0 ? '' : '<p class="hint">No quedan correcciones: lo que falte, el equipo lo ve contigo.</p>'}${S.error ? `<p class="msg-bad" role="alert">${esc(S.error)}</p>` : ''}</div></div>`;
+}
+
+async function confirmRequest() {
+  if (S.sending) return;
+  S.sending = true;
+  S.error = null;
+  render();
+  try {
+    S.detail = await api(`/api/portal/requests/${S.cur}/understood`, { ok: true });
+    await loadList();
+  } catch (error) {
+    if (error.status === 401) return toLogin();
+    S.error = error.message;
+  }
+  S.sending = false;
+  render();
+}
+
 async function skipRequest() {
   if (S.sending) return;
   S.sending = true;
@@ -361,6 +391,7 @@ function requestHTML() {
   const open = d.status === 'asking' || d.status === 'answered';
   const foot = S.cancelling ? cancelHTML(d) : d.status === 'proposed' ? decisionHTML(d)
     : d.status === 'interviewing' ? interviewFootHTML(d)
+      : d.status === 'confirming' ? understoodFootHTML(d)
     : open ? composerHTML(d.status === 'asking' ? 'Responde a ronin…' : 'Escríbele a ronin si necesitas algo más…', 'Enviar')
       : `<div class="closed-bar">${CLOSED[d.status] ?? ''}</div>`;
   return `<div class="top">${MENU}<h2>${esc(d.title)}</h2><span class="proj-l">${esc(d.appName)} · P-${d.number}</span>${chip(d.status)}${d.cancellable && !S.cancelling ? '<button class="btn cancel-btn" data-cancel>Cancelar<span class="wide"> pedido</span></button>' : ''}</div>
@@ -485,6 +516,7 @@ function wireComposer() {
 async function send() {
   const text = ($('#ta')?.value ?? '').trim();
   const answering = S.detail?.status === 'interviewing' && S.cur;
+  const correcting = S.detail?.status === 'confirming' && S.correcting && S.cur;
   if (S.sending || (!answering && !text && !S.pending.length)) return;
   S.sending = true;
   S.error = null;
@@ -495,6 +527,9 @@ async function send() {
       d = await sendAnswers(text);
       if (!d) throw new ApiError(S.error, 400);
       S.answers = {};
+    } else if (correcting) {
+      d = await api(`/api/portal/requests/${S.cur}/understood`, { ok: false, text, images: S.pending });
+      S.correcting = false;
     } else if (S.cur) d = await api(`/api/portal/requests/${S.cur}/messages`, { text, images: S.pending });
     else {
       const app = S.me.apps.find((a) => key(a) === S.picked);
@@ -553,6 +588,7 @@ async function openRequest(n, push = true) {
   S.deciding = null;
   S.cancelling = false;
   S.skipping = false;
+  S.correcting = false;
   S.answers = {};
   if (push && location.pathname !== `/p/${n}`) history.pushState(null, '', `/p/${n}`);
   render();
@@ -717,6 +753,17 @@ document.addEventListener('click', async (event) => {
     render();
   } else if ('skipped' in t.dataset) {
     skipRequest();
+  } else if ('confirm' in t.dataset) {
+    confirmRequest();
+  } else if ('correct' in t.dataset) {
+    S.correcting = true;
+    S.error = null;
+    render();
+    $('#ta')?.focus();
+  } else if ('uncorrect' in t.dataset) {
+    S.correcting = false;
+    S.error = null;
+    render();
   } else if ('logout' in t.dataset) {
     await api('/api/portal/logout', {}).catch(() => {});
     toLogin();

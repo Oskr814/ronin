@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { bigRequestMail, closedMail, deployedMail, doneMail, interviewMail, linkMail, prototypeMail, replyMail, teamPrMail, teamRequestMail } from './mail.js';
+import { bigRequestMail, closedMail, deployedMail, doneMail, interviewMail, linkMail, understoodMail, prototypeMail, replyMail, teamPrMail, teamRequestMail } from './mail.js';
 import type { PortalUser } from './accounts.js';
 import type { PortalRequest } from './requests.js';
 
@@ -34,6 +34,17 @@ describe('portal mails', () => {
     expect(mail.text).toContain('Es más que un ajuste.');
     expect(mail.text).toContain(`${URL}/p/31`);
     expect(mail.html).toContain('Responder las preguntas');
+  });
+
+  it('the summary after the interview lists the decisions and links to confirm them (#225)', () => {
+    const shown = request({ status: 'confirming', messages: [
+      { id: 1, from: 'person', text: 'Precios para mayoristas', images: [], at: '' },
+      { id: 2, from: 'ronin', text: 'Así lo entendí.', images: [], understood: { decisions: [{ topic: 'Quién decide', decision: 'Ventas' }], out: [], team: [] }, at: '' },
+    ] });
+    const mail = understoodMail(shown, user, URL);
+    expect(mail.subject).toBe('Revisa lo que entendí: Abrir la ficha del cliente');
+    expect(mail.text).toContain('- Quién decide: Ventas');
+    expect(mail.html).toContain('Revisar el resumen');
   });
 
   it('a big one tells the person the team has it', () => {
