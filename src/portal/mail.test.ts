@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { bigRequestMail, closedMail, deployedMail, doneMail, linkMail, prototypeMail, replyMail, teamPrMail, teamRequestMail } from './mail.js';
+import { bigRequestMail, closedMail, deployedMail, doneMail, interviewMail, linkMail, prototypeMail, replyMail, teamPrMail, teamRequestMail } from './mail.js';
 import type { PortalUser } from './accounts.js';
 import type { PortalRequest } from './requests.js';
 
@@ -21,6 +21,19 @@ describe('portal mails', () => {
     expect(mail.text).toContain('¿En las tres pantallas?');
     expect(mail.text).toContain(`${URL}/p/31`);
     expect(replyMail(request({ status: 'minor' }), user, URL).subject).toMatch(/^ronin te respondió/);
+  });
+
+  it('an interview says how many questions ronin left and links to the form (#225)', () => {
+    const asked = request({ status: 'interviewing', messages: [
+      { id: 1, from: 'person', text: 'Precios para mayoristas', images: [], at: '' },
+      { id: 2, from: 'ronin', text: 'Es más que un ajuste.', images: [], questions: [{ id: 'a', kind: 'text', text: '¿Quién?' }, { id: 'b', kind: 'text', text: '¿Cuándo?' }], at: '' },
+    ] });
+    const mail = interviewMail(asked, user, URL);
+    expect(mail.subject).toBe('ronin te dejó unas preguntas: Abrir la ficha del cliente');
+    expect(mail.text).toContain('ronin te dejó 2 preguntas sobre tu pedido P-31');
+    expect(mail.text).toContain('Es más que un ajuste.');
+    expect(mail.text).toContain(`${URL}/p/31`);
+    expect(mail.html).toContain('Responder las preguntas');
   });
 
   it('a big one tells the person the team has it', () => {

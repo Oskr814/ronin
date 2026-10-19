@@ -141,6 +141,8 @@ export function requestDetail(r: PortalRequest, user: PortalUser | undefined, en
     prototypes: r.prototypes ?? [],
     bug: r.bug ?? null,
     decision: r.decision ?? null,
+    // The interview of a big request (#225): rounds, corrections, how it ended.
+    interview: r.interview ?? null,
     issue: r.issue ?? null,
     pr: r.pr ?? null,
     // The release its change went out in (#158).

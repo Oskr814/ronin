@@ -72,6 +72,25 @@ export function replyMail(request: PortalRequest, user: PortalUser, portalUrl: s
   };
 }
 
+// To the person, when ronin left them questions about a big request
+// (#225): they answer them in the portal, in a form.
+export function interviewMail(request: PortalRequest, user: PortalUser, portalUrl: string): Mail {
+  const first = user.name.split(/\s+/)[0] || user.name;
+  const reply = request.messages.filter((m) => m.from === 'ronin').at(-1);
+  const count = reply?.questions?.length ?? 0;
+  const lines = [
+    `Hola ${first},`,
+    `ronin te dejó ${count === 1 ? 'una pregunta' : `${count} preguntas`} sobre tu pedido P-${request.number} ("${request.title}"). Con tus respuestas, el equipo de desarrollo lo tiene claro desde el principio.`,
+  ];
+  const url = requestUrl(portalUrl, request.number);
+  return {
+    to: user.email,
+    subject: `ronin te dejó unas preguntas: ${request.title}`,
+    text: `${lines.join('\n\n')}\n\n${reply?.text ?? ''}\n\nRespóndelas desde el portal: ${url}`,
+    html: html([...lines.map(esc), `<i>${esc(reply?.text ?? '').replace(/\n/g, '<br>')}</i>`], { label: 'Responder las preguntas', url }, portalUrl),
+  };
+}
+
 // To the person, when the prototype is ready: they approve it, ask for an
 // adjustment or turn it down in the portal (the images are only there,
 // behind their login).
