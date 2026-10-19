@@ -672,7 +672,7 @@ function openAction(id) {
   const action = S.detail[S.sel]?.data?.actions?.find((a) => a.id === id);
   if (!action) return;
   S.menu = false;
-  S.dialog = { item: S.sel, action, text: '', sending: false, error: null };
+  S.dialog = { item: S.sel, action, text: '', app: action.apps?.[0] ?? '', sending: false, error: null };
   renderCenter();
   renderDialog();
 }
@@ -719,21 +719,29 @@ function renderDialog() {
     return;
   }
   if (!layer) layer = Object.assign(document.body.appendChild(document.createElement('div')), { id: 'layer' });
-  const { action, text, sending, error } = S.dialog;
+  const { action, text, app, sending, error } = S.dialog;
   // `…` stands for the text: filled as it's typed, left out when the text is optional and empty.
-  const typed = text.trim();
-  const preview = !action.text ? action.preview : typed ? action.preview.replace('…', typed) : action.text.required ? action.preview : action.preview.replace(/\n\n…$/, '');
+  // `{app}`, for the app picked. On one line, as the server writes it.
+  const typed = action.apps ? text.trim().replace(/\s+/g, ' ') : text.trim();
+  const preview = (!action.text ? action.preview : typed ? action.preview.replace('…', typed) : action.text.required ? action.preview : action.preview.replace(/(\n\n| )?…$/, '')).replace('{app}', app);
+  const me = esc(S.snap?.me ?? '');
+  const bot = esc(S.detail[S.dialog.item]?.data?.ronin ?? 'ronin');
+  // Assigning comments only when there's context to leave.
+  const said = action.id !== 'assign' ? `Comentás en #${esc(action.target)} como ${me}` : typed ? `Comentás en #${esc(action.target)} y se lo asignás a @${bot}, como ${me}` : `Se lo asignás a @${bot} como ${me}, sin comentario`;
   const fresh = !layer.firstChild;
   if (fresh) {
     layer.innerHTML = `<div class="scrim"><div class="dlg" role="dialog" aria-modal="true" aria-labelledby="dlg-t">
       <h2 id="dlg-t">${esc(action.label)}</h2>
       <p class="help">${esc(action.help)}</p>
+      ${action.apps ? `<label class="field"><span>App</span><select id="dlg-app">${action.apps.map((a) => `<option${a === app ? ' selected' : ''}>${esc(a)}</option>`).join('')}</select></label>` : ''}
       ${action.text ? `<label class="field"><span>${esc(action.text.label)}</span><textarea id="dlg-text" rows="4" maxlength="4000" placeholder="${esc(action.text.placeholder)}"></textarea></label>` : ''}
-      <div class="prev"><div class="lbl">Comentás en #${esc(action.target)} como ${esc(S.snap?.me ?? '')}</div><div class="md" id="dlg-prev"></div></div>
+      <div class="prev"><div class="lbl" id="dlg-said"></div><div class="md" id="dlg-prev"></div></div>
       <p class="bad" id="dlg-err" hidden></p>
-      <div class="foot-d"><span class="kbd-hint"><kbd>Ctrl</kbd> <kbd>Enter</kbd> para comentar</span><button class="btn-s" id="dlg-no">Cancelar</button><button class="btn-s primary" id="dlg-yes"></button></div></div></div>`;
+      <div class="foot-d"><span class="kbd-hint"><kbd>Ctrl</kbd> <kbd>Enter</kbd> para ${action.id === 'assign' ? 'asignar' : 'comentar'}</span><button class="btn-s" id="dlg-no">Cancelar</button><button class="btn-s primary" id="dlg-yes"></button></div></div></div>`;
     const area = $('#dlg-text');
     if (area) area.oninput = () => { S.dialog.text = area.value; renderDialog(); };
+    const pick = $('#dlg-app');
+    if (pick) pick.onchange = () => { S.dialog.app = pick.value; renderDialog(); };
     $('#dlg-no').onclick = closeDialog;
     layer.querySelector('.scrim').onclick = (event) => { if (event.target.classList.contains('scrim')) closeDialog(); };
     $('#dlg-yes').onclick = sendAction;
@@ -746,9 +754,11 @@ function renderDialog() {
     };
     (area ?? $('#dlg-yes')).focus();
   }
+  $('#dlg-said').innerHTML = said;
   $('#dlg-prev').innerHTML = md(preview, itemById(S.dialog.item)?.repo ?? '');
+  $('#dlg-prev').hidden = !preview;
   const yes = $('#dlg-yes');
-  yes.textContent = sending ? 'Comentando…' : action.id === 'unblock' ? 'Comentar y destrabar' : 'Comentar';
+  yes.textContent = action.id === 'assign' ? (sending ? 'Asignando…' : 'Asignar a ronin') : sending ? 'Comentando…' : action.id === 'unblock' ? 'Comentar y destrabar' : 'Comentar';
   yes.disabled = sending || Boolean(action.text?.required && !text.trim());
   $('#dlg-err').hidden = !error;
   $('#dlg-err').textContent = error ?? '';
@@ -773,10 +783,10 @@ async function sendAction() {
   dialog.error = null;
   renderDialog();
   try {
-    const { url } = await api(`/api/items/${encodeURIComponent(dialog.item)}/actions`, { method: 'POST', body: JSON.stringify({ action: dialog.action.id, ...(dialog.text.trim() ? { text: dialog.text.trim() } : {}) }), signal: AbortSignal.timeout(ACTION_TIMEOUT_MS) });
+    const { url } = await api(`/api/items/${encodeURIComponent(dialog.item)}/actions`, { method: 'POST', body: JSON.stringify({ action: dialog.action.id, ...(dialog.text.trim() ? { text: dialog.text.trim() } : {}), ...(dialog.action.apps ? { app: dialog.app } : {}) }), signal: AbortSignal.timeout(ACTION_TIMEOUT_MS) });
     S.dialog = null;
     renderDialog();
-    toast(`Listo: comentaste en #${dialog.action.target}.`, url);
+    toast(dialog.action.id === 'assign' ? `Listo: se lo asignaste a ronin. Lo toma en el próximo tick.` : `Listo: comentaste en #${dialog.action.target}.`, url);
     const item = itemById(dialog.item);
     // Its comment is where the answer will come: shown when it's this item's own.
     if (item && item.number === dialog.action.target) S.doc[dialog.item] = 'comments';

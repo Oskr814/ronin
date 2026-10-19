@@ -1,11 +1,11 @@
-import { config, LABEL_AUTO_MERGE } from '../../core/config.js';
+import { config, LABEL_AUTO_MERGE, LABEL_MANAGED } from '../../core/config.js';
 import { setIssueState } from '../../core/github.js';
 import { log } from '../../core/logger.js';
 import { withActiveRepo, type RepoEntry } from '../../core/repo-context.js';
 import type { Session } from './auth.js';
 import type { ItemDetail, ItemRef } from './dashboard-detail.js';
 import type { RepoGithub } from './dashboard-github.js';
-import { commentOnIssue, type Posted } from './github-as-user.js';
+import { assignIssue, commentOnIssue, type Posted } from './github-as-user.js';
 
 // What can be asked of ronin from an item's page (#85). Each action is a
 // command that already exists on GitHub, and the dashboard writes it as
@@ -13,8 +13,14 @@ import { commentOnIssue, type Posted } from './github-as-user.js';
 // with their GitHub token. From there it's a comment like any other — its
 // webhook, the mention handler, the worker that answers it — and GitHub
 // shows who asked.
+//
+// An issue ronin doesn't manage yet can be handed to it: assigned to
+// its account, which it takes like any issue assigned on GitHub
+// (discoverAssignedIssues) and, if what's asked isn't clear, asks on the
+// issue before touching code. Or a /spike or a /prototype first, on one of
+// the repo's apps.
 
-export type ActionId = 'resolve-conflicts' | 'preview' | 'preview-stop' | 'auto-merge-on' | 'auto-merge-off' | 'unblock';
+export type ActionId = 'resolve-conflicts' | 'preview' | 'preview-stop' | 'auto-merge-on' | 'auto-merge-off' | 'unblock' | 'assign' | 'spike' | 'prototype';
 
 export interface ActionView {
   id: ActionId;
@@ -26,6 +32,8 @@ export interface ActionView {
   target: number;
   // Whether it takes words: what to prepare for a preview, the answer that unblocks an issue.
   text?: { required: boolean; label: string; placeholder: string };
+  // The app it runs on, one of the repo's ronin.app.json: `{app}` in the preview stands for it.
+  apps?: string[];
   // The one that fits what the item is waiting for.
   primary?: boolean;
   // The comment that will be left, shown before it's sent; with text, `…` stands for it.
@@ -34,7 +42,7 @@ export interface ActionView {
 
 const MAX_TEXT = 4000;
 
-export function listActions(ref: ItemRef, gh: RepoGithub | undefined, detail: ItemDetail | undefined, login: string): ActionView[] {
+export function listActions(ref: ItemRef, gh: RepoGithub | undefined, detail: ItemDetail | undefined, login: string, apps: string[] = []): ActionView[] {
   const actions: Array<Omit<ActionView, 'preview'>> = [];
   const prNumber = ref.kind === 'pr' ? ref.number : ref.pr;
   const pr = prNumber !== undefined ? gh?.prs.find((p) => p.number === prNumber) : undefined;
@@ -59,6 +67,26 @@ export function listActions(ref: ItemRef, gh: RepoGithub | undefined, detail: It
       : { id: 'auto-merge-on', label: `Activar el auto-merge${on}`, command: '/auto-merge', target: prNumber, help: 'Se mergea solo cuando esté aprobado y con los checks en verde.' });
   }
   const issue = ref.kind === 'issue' ? gh?.issues.find((i) => i.number === ref.number) : undefined;
+  const open = ref.kind === 'issue' ? gh?.openIssues.find((i) => i.number === ref.number) : undefined;
+  if (open && !issue && !open.labels.includes(LABEL_MANAGED)) {
+    const before: Array<Omit<ActionView, 'preview'>> = [{
+      id: 'assign', label: 'Asignar a ronin', command: `assignee @${config.githubLogin}`, target: ref.number, primary: true,
+      help: 'Lo toma en el próximo tick: lee el issue con sus comentarios y, si no queda claro qué hacer, pregunta en el issue antes de tocar código. Si queda claro, abre un PR.',
+      text: { required: false, label: 'Contexto para ronin (opcional): queda como comentario tuyo antes de asignarlo', placeholder: 'Por ejemplo: el caso que falla es con un cliente sin pedidos' },
+    }];
+    if (apps.length) {
+      before.push({
+        id: 'spike', label: 'Investigar (spike)', command: '/spike', target: ref.number, apps,
+        help: 'Investiga en solo lectura y agrega una sección de contexto al issue. No lo toma ni abre un PR.',
+        text: { required: false, label: 'Qué investigar (opcional)', placeholder: 'Por ejemplo: de dónde sale el total del checkout' },
+      }, {
+        id: 'prototype', label: 'Prototipar', command: '/prototype', target: ref.number, apps,
+        help: 'Levanta la app, aplica un cambio borrador y deja en el issue las capturas del antes y el después, con el diff. No abre rama ni PR.',
+        text: { required: false, label: 'Qué probar (opcional)', placeholder: 'Por ejemplo: el botón arriba a la derecha' },
+      });
+    }
+    actions.unshift(...before);
+  }
   if (issue?.status === 'blocked') {
     actions.unshift({
       id: 'unblock', label: 'Responder y destrabar', command: 'ronin:in-progress', target: ref.number, primary: true,
@@ -66,15 +94,19 @@ export function listActions(ref: ItemRef, gh: RepoGithub | undefined, detail: It
       text: { required: true, label: 'Tu respuesta', placeholder: 'Lo que hacía falta decidir o resolver' },
     });
   }
-  return actions.map((a) => ({ ...a, preview: actionComment(a, a.text ? '…' : undefined) }));
+  return actions.map((a) => ({ ...a, preview: actionComment(a, a.text ? '…' : undefined, a.apps ? '{app}' : undefined) }));
 }
 
 // The comment written as the person, which the page also shows before it's
 // sent: the command after the mention, and what to prepare below it (the
 // /preview parser reads the lines after the command too). The answer that
-// unblocks an issue is just the answer.
-export function actionComment(action: Pick<ActionView, 'id' | 'command'>, text?: string): string {
-  if (action.id === 'unblock') return text ?? '';
+// unblocks an issue is just the answer, and so is the context that goes
+// with an assignment: a mention there would also be read as a request. A
+// /spike or /prototype takes its app and instruction on one line, as
+// "Nuevo issue" writes them.
+export function actionComment(action: Pick<ActionView, 'id' | 'command'>, text?: string, app?: string): string {
+  if (action.id === 'unblock' || action.id === 'assign') return text ?? '';
+  if (app) return `@${config.githubLogin} ${action.command} ${app}${text ? ` ${text}` : ''}`;
   return `@${config.githubLogin} ${action.command}${text ? `\n\n${text}` : ''}`;
 }
 
@@ -89,14 +121,27 @@ export async function runAction(
   id: string,
   rawText?: unknown,
   post: (token: string, repo: string, number: number, body: string) => Promise<Posted> = commentOnIssue,
+  apps: string[] = [],
+  rawApp?: unknown,
+  assign: (token: string, repo: string, number: number, assignees: string[]) => Promise<{ url: string }> = assignIssue,
 ): Promise<{ url: string }> {
-  const action = listActions(ref, gh, detail, session.login).find((a) => a.id === id);
+  const action = listActions(ref, gh, detail, session.login, apps).find((a) => a.id === id);
   if (!action) throw new ActionError('Esa acción no está disponible para este ítem ahora.');
-  const text = typeof rawText === 'string' ? rawText.trim().slice(0, MAX_TEXT) : '';
+  let text = typeof rawText === 'string' ? rawText.trim().slice(0, MAX_TEXT) : '';
   if (action.text?.required && !text) throw new ActionError('Falta el texto.');
   if (!action.text && text) throw new ActionError('Esta acción no lleva texto.');
+  const app = typeof rawApp === 'string' ? rawApp : '';
+  if (action.apps && !action.apps.includes(app)) throw new ActionError(`Falta la app: una de ${action.apps.join(', ')}.`);
+  if (action.apps) text = text.replace(/\s+/g, ' ');
 
-  const posted = await post(session.token, entry.productRepo, action.target, actionComment(action, text || undefined));
+  if (action.id === 'assign') {
+    // The context first, so it's on the issue when ronin reads it.
+    if (text) await post(session.token, entry.productRepo, action.target, text);
+    const assigned = await assign(session.token, entry.productRepo, action.target, [config.githubLogin]);
+    log.info(`tablero: ${session.login} le asignó ${entry.productRepo}#${action.target} a ronin`);
+    return assigned;
+  }
+  const posted = await post(session.token, entry.productRepo, action.target, actionComment(action, text || undefined, app || undefined));
   log.info(`tablero: ${session.login} pidió ${action.id} en ${entry.productRepo}#${action.target} (${posted.url})`);
   // The answer is all the person writes; putting the issue back in the
   // pipeline is ronin's, as when someone moves the label by hand.
