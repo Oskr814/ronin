@@ -245,6 +245,12 @@ function taskEnv(prefix: string, taskType: string): string | undefined {
 // AGENT_EFFORT_<TASK_TYPE> (e.g. AGENT_MODEL_UPDATE_CHANGELOG=sonnet), then
 // TASK_MODEL_DEFAULTS, then the repo's default, then the global one. Empty
 // means "whatever the Claude config says" at every level.
+// How many agent tasks run at once in the active repo: its own
+// `concurrency` in repos.json, or TICK_CONCURRENCY.
+export function concurrencyFor(): number {
+  return currentRepo()?.concurrency ?? config.tickConcurrency;
+}
+
 export function agentModelFor(taskType: string): string {
   return currentRepo()?.agent?.models?.[taskType] ?? config.taskOverrides[taskType]?.model ?? taskEnv('AGENT_MODEL', taskType) ?? TASK_MODEL_DEFAULTS[taskType] ?? defaultAgentModel();
 }

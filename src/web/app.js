@@ -4507,7 +4507,7 @@ function renderCtx() {
   }
   const { tick, slots } = S.snap.runner;
   $('#ctx').innerHTML = `${accessHTML()}<section><h3>Runner</h3><dl class="kv">
-    <dt>Agentes</dt><dd>${slots.used} de ${slots.limit} lugares ocupados</dd>
+    <dt>Agentes</dt><dd>${(slots.repos ?? []).map((r) => `${esc(repoShort(r.repo))}: ${r.used} de ${r.limit}`).join('<br>') || `${slots.used} de ${slots.limit} lugares ocupados`}</dd>
     <dt>Último tick</dt><dd>${tick.lastTickAt ? `hace ${esc(short(Date.now() - Date.parse(tick.lastTickAt)))}, duró ${esc(duration(tick.lastTickDurationMs ?? 0))}` : 'sin datos hoy'}</dd>
     <dt>Último evento</dt><dd>${tick.lastEventAt ? `hace ${esc(short(Date.now() - Date.parse(tick.lastEventAt)))}` : 'sin datos hoy'}</dd>
     <dt>Repos</dt><dd>${S.snap.repos.map((repo) => `<span class="repo-tag"><i style="background:${repoColor(repo)}"></i>${esc(repo)}</span>`).join('<br>')}</dd></dl></section>
@@ -4538,7 +4538,7 @@ function renderStatus() {
   const tickAge = tick.lastTickAt ? Date.now() - Date.parse(tick.lastTickAt) : null;
   const dark = document.documentElement.dataset.theme !== 'light';
   $('#statusbar').innerHTML = S.snap.usage.map(usageMeter).join('') +
-    `<span class="sp hide-m">agentes ${slots.used}/${slots.limit}</span>` +
+    `<span class="sp hide-m" title="${esc((slots.repos ?? []).map((r) => `${repoShort(r.repo)}: ${r.used} de ${r.limit}`).join(', '))}">agentes ${slots.used}/${slots.limit}</span>` +
     `<span class="hide-m">en cola ${queue.length}</span>` +
     `<span class="hide-m">previews ${S.snap.previews.length}</span>` +
     (S.snap.github.some((g) => g.error) ? `<span class="hide-m bad" title="${esc(S.snap.github.filter((g) => g.error).map((g) => `${g.repo}: ${g.error}`).join('; '))}">GitHub sin responder</span>` : '') +
@@ -4583,7 +4583,7 @@ const AJ_SETTINGS = {
   'agent.reviewWorkerModel': ['Modelo de los revisores', 'Los agentes que juntan candidatos en la review de PRs externos; el orquestador usa el modelo de arriba.', ''],
   'agent.taskTimeoutMinutes': ['Tope de una corrida', 'Pasado este tiempo, una corrida de claude -p se considera colgada y se corta.', 'min'],
   'agent.handlerTimeoutMinutes': ['Tope de un webhook', 'Todo lo que hace un evento de GitHub: esperar su turno, un lugar y cada agente que lance.', 'min'],
-  'tick.concurrency': ['Tareas por repo', 'Las que corren juntas por repo, de todos los flujos (issues, reviews, /spike, changelog, exploración).', 'a la vez'],
+  'tick.concurrency': ['Tareas por repo', 'Las que corren juntas en cada repo, de todos los flujos (issues, reviews, /spike, changelog, exploración). Cada repo tiene su propia cola, y puede tener su número en Repos.', 'a la vez'],
   'tick.externalReviewConcurrency': ['De ellas, reviews externas', 'Cada review es un orquestador con sus revisores: tres juntas agotaron el límite de la cuenta.', 'a la vez'],
   'retry.e2e': ['La misma falla de CI', 'Veces que se intenta arreglar una misma falla antes de bloquear.', 'veces'],
   'retry.e2eHard': ['Tope de intentos con CI rojo', 'Aunque cada intento falle distinto.', 'intentos'],
@@ -5136,6 +5136,7 @@ function ajRepoHTML() {
     ${r.portal?.notifyTo.length ? ajSec('Correos de repos.json', r.portal.notifyTo.map((mail) => ajRow(esc(mail), '', `<button class="btn-s" data-ajnotify="${esc(mail)}">Quitar</button>`)).join(''), 'Lo que <code>portal.notifyTo</code> manda todavía a quien no eligió en Notificaciones. Cuando cada uno tenga su correo en el perfil, se puede quitar.') : ''}
     ${ajSec('Linear', ajRow('API key', 'El nombre de la variable de .env que la tiene. La key nunca pasa por el tablero.', `<select class="aj-in mono" data-ajr="linear" aria-label="API key de Linear"><option value="">Sin Linear</option>${[...new Set([...(r.linear ? [r.linear.apiKeyEnv] : []), ...d.linearKeys])].map((k) => opt(k, r.linear?.apiKeyEnv ?? '')).join('')}</select>`,
       r.linear ? (r.linear.connected ? '<span class="ok-t">● Conectado</span>' : '<span class="warn-t">○ Esa variable no está en .env</span>') : '<span>Solo se listan las variables LINEAR_API_KEY_* que hay en .env.</span>'))}
+    ${ajSec('Ejecución', ajRow('Tareas en paralelo', `Los agentes de este repo que corren a la vez; el resto espera en su cola, que no comparte con los otros repos. Vacío: el general (${esc(d.defaults.concurrency)}, en Agentes).`, `<input class="aj-num" type="number" min="1" step="1" max="${esc(d.maxConcurrency)}" data-ajconc value="${esc(r.concurrency ?? '')}" placeholder="${esc(d.defaults.concurrency)}" aria-label="Tareas en paralelo"><span class="aj-unit">a la vez</span>`))}
     ${ajSec('Merge', ajRow('Auto-merge en los PRs de ronin', 'Los PRs que ronin abre para un issue salen con ronin:auto-merge y se mergean apenas un dev los aprueba y CI está en verde. Sacarle el label a uno lo deja para mergear a mano. Apagado: solo los que alguien marque con /auto-merge.', sw('data-ajautomerge', r.autoMerge, 'Auto-merge en los PRs de ronin')))}
     ${ajSec('Despliegues', ajRow('Desplegar desde el tablero', 'Un release de GitHub con el tag escrito a mano.', sw('data-ajdeploy="on"', Boolean(r.deploy), 'Despliegues'))
       + (r.deploy ? ajRow('Pre-release primero', 'QA antes de producción.', sw('data-ajdeploy="prerelease"', r.deploy.prerelease, 'Pre-release'))
@@ -5161,6 +5162,7 @@ function wireAjRepo(center) {
     if (b.dataset.ajdeploy === 'on' && !on && !confirm(`¿Dejar de desplegar ${S.aj.repo} desde el tablero?`)) return;
     ajRepo({ deploy: { [b.dataset.ajdeploy]: on } });
   };
+  for (const el of center.querySelectorAll('[data-ajconc]')) el.onchange = () => ajRepo({ concurrency: el.value.trim() ? Number(el.value) : null });
   for (const b of center.querySelectorAll('[data-ajautomerge]')) b.onclick = () => ajRepo({ autoMerge: b.getAttribute('aria-checked') !== 'true' });
   for (const el of center.querySelectorAll('[data-ajagent]')) el.onchange = () => ajRepo({ agent: { [el.dataset.ajagent]: el.value || null } });
   for (const b of center.querySelectorAll('[data-ajnotify]')) b.onclick = () => {

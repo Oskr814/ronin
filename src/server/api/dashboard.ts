@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import type { RepoEntry } from '../../core/repo-context.js';
 import { existsSync } from 'node:fs';
 import { config } from '../../core/config.js';
 import { log } from '../../core/logger.js';
@@ -126,6 +127,14 @@ function refused(res: ServerResponse, repo: string, perm: Perm): boolean {
   return true;
 }
 
+// Each repo's agent slots, taken and its limit (its own queue, core/locks.ts),
+// and the sum of them for the status bar.
+function slotsView(entries: RepoEntry[]) {
+  const used = slotsInUse();
+  const repos = entries.map((entry) => ({ repo: entry.productRepo, used: used[entry.productRepo] ?? 0, limit: entry.concurrency ?? config.tickConcurrency }));
+  return { used: repos.reduce((n, r) => n + r.used, 0), limit: repos.reduce((n, r) => n + r.limit, 0), repos };
+}
+
 export async function snapshot(login: string): Promise<unknown> {
   const entries = await visibleRepos();
   const repos = entries.map((repo) => repo.productRepo);
@@ -154,7 +163,7 @@ export async function snapshot(login: string): Promise<unknown> {
     reunionesPorRevisar: (await visibleMeetings()).filter((m) => m.status === 'review').length,
     repos,
     // The queue and the Claude accounts, only of the repos it sees.
-    runner: { slots: { used: slotsInUse(), limit: config.tickConcurrency }, queue: readQueue().filter((job) => !job.repo || repos.includes(job.repo)), tick: readTickInfo() },
+    runner: { slots: slotsView(entries), queue: readQueue().filter((job) => !job.repo || repos.includes(job.repo)), tick: readTickInfo() },
     usage: readUsage().filter((u) => entries.some((entry) => accountName(entry.claudeConfigDir ?? '') === u.account)),
     items,
     // Whether it can deploy (#158): an admin, with a repo that has deploy.

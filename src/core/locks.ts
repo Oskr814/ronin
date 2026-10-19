@@ -92,11 +92,24 @@ export async function unpinResources(): Promise<void> {
   }
 }
 
-// Slots shared by every process on the runner, not per repo: the quota they
-// protect is the Claude account's. `limit` slots overall, and caps[kind] of
-// one kind — the same numbers runJobs applies inside one process.
+// Slots shared by every process on the runner, per repo: each repo is its
+// own queue (and usually its own Claude account, whose quota they protect),
+// so a repo with a lot assigned never holds another back. `limit` slots
+// overall in the repo (its `concurrency`, see config.ts's concurrencyFor),
+// and caps[kind] of one kind — the same numbers runJobs applies inside one
+// process. Named <repo, URI-encoded>~all-<i>.lock (dashboard-data.ts's
+// slotsInUse reads them).
 function slotPath(name: string): string {
-  return join(process.cwd(), '.ronin-slots', `${name}.lock`);
+  const repo = repoName();
+  return join(process.cwd(), '.ronin-slots', `${repo ? `${encodeURIComponent(repo)}~` : ''}${name}.lock`);
+}
+
+function repoName(): string | undefined {
+  try {
+    return activeRepo().productRepo;
+  } catch {
+    return undefined;
+  }
 }
 
 async function takeSlot(prefix: string, count: number, onWait: () => Promise<void>): Promise<string> {
@@ -123,12 +136,7 @@ class WaitMark {
   async set(): Promise<void> {
     if (this.path) return;
     this.path = join(process.cwd(), '.ronin-slots', 'waiting', `${process.pid}-${++waitSeq}.json`);
-    let repo: string | undefined;
-    try {
-      repo = activeRepo().productRepo;
-    } catch {
-      repo = undefined;
-    }
+    const repo = repoName();
     try {
       await mkdir(dirname(this.path), { recursive: true });
       await writeFile(this.path, JSON.stringify({ pid: process.pid, kind: this.kind, label: this.label, repo, since: new Date().toISOString() }));

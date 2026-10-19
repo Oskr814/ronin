@@ -71,7 +71,19 @@ describe('slots, queue and tick', () => {
     writeFileSync(join(root, '.ronin-slots', 'all-0.lock'), String(process.pid));
     writeFileSync(join(root, '.ronin-slots', 'all-1.lock'), String(DEAD_PID));
     writeFileSync(join(root, '.ronin-slots', 'kind-changelog-0.lock'), String(process.pid));
-    expect(slotsInUse(root)).toBe(1);
+    expect(slotsInUse(root)).toEqual({ '': 1 });
+  });
+
+  it('counts each repo on its own: every repo is its own queue', () => {
+    const root = mkdtempSync(join(tmpdir(), 'ronin-root-'));
+    mkdirSync(join(root, '.ronin-slots'));
+    const slot = (repo: string, name: string, pid: number) => writeFileSync(join(root, '.ronin-slots', `${encodeURIComponent(repo)}~${name}.lock`), String(pid));
+    slot('acme/product', 'all-0', process.pid);
+    slot('acme/product', 'all-1', process.pid);
+    slot('acme/other', 'all-0', process.pid);
+    slot('acme/other', 'all-1', DEAD_PID);
+    slot('acme/other', 'kind-external-review-0', process.pid);
+    expect(slotsInUse(root)).toEqual({ 'acme/product': 2, 'acme/other': 1 });
   });
 
   it('lists what waits for a slot, skipping marks of dead processes', () => {

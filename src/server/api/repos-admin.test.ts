@@ -70,6 +70,15 @@ describe('editRepo', () => {
     expect(sc.agent).toBeUndefined();
   });
 
+  it('sets how many tasks of the repo run at once, and back to the general one', async () => {
+    await edit({ concurrency: 2 });
+    expect(file()[0].concurrency).toBe(2);
+    await edit({ concurrency: null });
+    expect(file()[0].concurrency).toBeUndefined();
+    await expect(edit({ concurrency: 0 })).rejects.toThrow(/entre 1 y 10/);
+    await expect(edit({ concurrency: 2.5 })).rejects.toThrow(/entre 1 y 10/);
+  });
+
   it("turns the auto-merge of ronin's PRs off and on, writing only the false", async () => {
     await edit({ autoMerge: false });
     expect(file()[0].autoMerge).toBe(false);

@@ -45,10 +45,12 @@ const ensuredLabels = new Set<string>();
 // yet — unlike topics, labels aren't auto-created. `--force` makes this
 // idempotent (create-or-update), and the in-process cache avoids repeating
 // the call for a label already confirmed this tick.
+// Per repo: the cron tick runs every repo at once in one process.
 async function ensureLabel(name: string): Promise<void> {
-  if (ensuredLabels.has(name)) return;
+  const key = `${activeRepo().productRepo}:${name}`;
+  if (ensuredLabels.has(key)) return;
   await gh(['label', 'create', name, '--force', '--color', 'ededed']);
-  ensuredLabels.add(name);
+  ensuredLabels.add(key);
 }
 
 export async function getIssueLabels(issueNumber: number): Promise<string[]> {
