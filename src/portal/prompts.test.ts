@@ -117,6 +117,8 @@ describe('buildTask — portal-request (#114)', () => {
     const { prompt } = await after(1);
     expect(prompt).toContain('you already interviewed them');
     expect(prompt).toContain('"entrevistar" once more');
+    expect(prompt).toContain('"entendido": what you understood, which they confirm before it goes to the team');
+    expect(prompt).toContain('If their latest message corrects the summary you showed them');
     expect(prompt).toContain('<<<PERSON_START>>>\n[Their answers to your form:]\n- ¿Quién? → Ventas\n<<<PERSON_END>>>');
     const last = (await after(0)).prompt;
     expect(last).toContain('You may not interview them again');

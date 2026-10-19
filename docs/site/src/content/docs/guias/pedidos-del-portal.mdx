@@ -19,7 +19,7 @@ El portal, `https://ronin-agent.redmotoshn.com`, es para que la gente que usa la
 
 4. **Aprobado:** ronin abre un issue asignado a sí mismo, con `ronin:portal`, hace el cambio en un PR y le pone `ronin:auto-merge`. **El PR se mergea cuando un dev lo aprueba** y el CI está en verde. La persona recibe «listo, sale en la próxima actualización» y, cuando el release que lo lleva termina de [desplegarse](/ronin/guias/desplegar/), «ya está en la aplicación».
 
-5. **Si es grande, ronin primero entrevista a la persona.** Si al equipo le faltarían decisiones que solo ella puede tomar (quién puede hacerlo, qué pasa en tal caso, qué queda fuera), le deja **un formulario** de una a cinco preguntas, la mayoría con opciones sacadas de lo que vio en el código. Siempre puede marcar **«No sé, que lo decida el equipo»**, agregar algo con capturas, o **enviarlo sin responder**. Con las respuestas, ronin puede hacer una segunda ronda (no más), decidir que al final es un ajuste chico, o pasarlo al equipo. Si el pedido ya viene claro, lo pasa directo.
+5. **Si es grande, ronin primero entrevista a la persona.** Si al equipo le faltarían decisiones que solo ella puede tomar (quién puede hacerlo, qué pasa en tal caso, qué queda fuera), le deja **un formulario** de una a cinco preguntas, la mayoría con opciones sacadas de lo que vio en el código. Siempre puede marcar **«No sé, que lo decida el equipo»**, agregar algo con capturas, o **enviarlo sin responder**. Con las respuestas, ronin puede hacer una segunda ronda (no más) o decidir que al final es un ajuste chico. Si es para el equipo, le muestra **«Así lo entendí»**: cada decisión en una línea, lo que decide el equipo y lo que queda fuera. La persona lo confirma (*Sí, enviarlo al equipo*) o lo corrige (hasta 2 veces). Si el pedido ya viene claro, lo pasa directo.
 
 6. **Si es grande, o la persona no aprueba el prototipo:** ronin abre un issue para el equipo, sin asignar. Cuando se cierra, la persona recibe un correo: resuelto si se cerró como completado, o que no se hará por ahora si se cerró como no planeado.
 
@@ -31,14 +31,14 @@ El portal, `https://ronin-agent.redmotoshn.com`, es para que la gente que usa la
 
 ## Los correos
 
-- **A la persona:** cada respuesta de ronin, las preguntas de la entrevista, el prototipo, el paso al equipo, el merge, el despliegue y el cierre.
+- **A la persona:** cada respuesta de ronin, las preguntas de la entrevista y su resumen, el prototipo, el paso al equipo, el merge, el despliegue y el cierre.
 - **Al equipo del repo:** el issue de un pedido que es suyo y el PR que espera aprobación. Le llega a quien eligió esos avisos en [Ajustes → Notificaciones](/ronin/operar/ajustes/#tu-cuenta).
 
 ## Los pedidos en el tablero
 
 **Pedidos del portal** (`/pedidos`) muestra los pedidos de los repos que ves.
 
-- **La lista** dice en qué está cada pedido y a quién espera: a **la persona** (responder, contestar la entrevista o decidir sobre el prototipo), a **ronin** (leerlo, prototipar, abrir el issue o hacer el cambio) o al **equipo** (su issue, o aprobar el PR). Abre en *Pendientes*, con filtros por a quién espera, *Cerrados* y *Todos*, de 25 en 25.
+- **La lista** dice en qué está cada pedido y a quién espera: a **la persona** (responder, contestar la entrevista, confirmar su resumen o decidir sobre el prototipo), a **ronin** (leerlo, prototipar, abrir el issue o hacer el cambio) o al **equipo** (su issue, o aprobar el PR). Abre en *Pendientes*, con filtros por a quién espera, *Cerrados* y *Todos*, de 25 en 25.
 - **La ficha de un pedido** (`/pedidos/<n>`):
   - **Las etapas:** Pedido → Conversación → Prototipo → Aprobación → Issue → PR → Listo.
   - **Ahora:** qué falta y quién lo tiene que hacer. Si ronin está trabajando, la corrida en vivo.

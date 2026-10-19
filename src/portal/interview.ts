@@ -3,7 +3,7 @@ import { getUser } from './accounts.js';
 import type { ImageUpload } from './images.js';
 import { launchPortalWorker } from './launch.js';
 import { handOverMail } from './notify.js';
-import { addEvent, addRoninMessage, nextMessageId, RequestError, saveImages, updateRequest, type InterviewAnswer, type InterviewQuestion, type PortalMessage, type PortalRequest } from './requests.js';
+import { addEvent, addRoninMessage, nextMessageId, RequestError, saveImages, updateRequest, type InterviewAnswer, type InterviewQuestion, type PortalMessage, type PortalRequest, type Understood } from './requests.js';
 
 // The interview (#225): before a big request goes to the team, ronin asks
 // the person what the team would otherwise have to ask them, in a form —
@@ -115,15 +115,16 @@ export async function skipInterview(n: number, launch = launchPortalWorker, now 
 
 // The summary on screen: right ("ok"), it goes to the team; or what ronin
 // got wrong, and ronin writes it again.
-export async function confirmUnderstood(n: number, ok: boolean, text: string, launch = launchPortalWorker, now = new Date()): Promise<PortalRequest> {
+export async function confirmUnderstood(n: number, ok: boolean, text: string, images: ImageUpload[] = [], launch = launchPortalWorker, now = new Date()): Promise<PortalRequest> {
   if (ok) return handOver(n, 'confirmed', now, launch);
   if (!text.trim()) throw new RequestError('Escribe qué entendió mal ronin o qué falta.');
-  const corrected = await updateRequest(n, (r) => {
+  const corrected = await updateRequest(n, async (r) => {
     if (r.status !== 'confirming') throw new RequestError('Este pedido no espera tu confirmación ahora.');
     const interview = (r.interview ??= { rounds: 0, corrections: 0 });
     if (interview.corrections >= MAX_CORRECTIONS) throw new RequestError('Ya no quedan correcciones: envíalo al equipo como está y diles ahí lo que falte.');
     interview.corrections += 1;
-    r.messages.push({ id: nextMessageId(r), from: 'person', text: text.trim(), images: [], at: now.toISOString() });
+    const id = nextMessageId(r);
+    r.messages.push({ id, from: 'person', text: text.trim(), images: await saveImages(n, id, images), at: now.toISOString() });
     addEvent(r, { kind: 'interview', step: 'corrected', round: interview.corrections }, now);
     r.status = 'thinking';
     delete r.worker;
@@ -206,7 +207,7 @@ export function parseQuestions(raw: unknown): InterviewQuestion[] {
 
 // A message of the interview as the agent reads it in the conversation: the
 // questions it left, or the person's answers in words.
-export function interviewText(m: Pick<PortalMessage, 'text' | 'questions' | 'answers' | 'skipped' | 'confirmed'>): string {
+export function interviewText(m: Pick<PortalMessage, 'text' | 'questions' | 'answers' | 'understood' | 'skipped' | 'confirmed'>): string {
   if (m.questions) {
     const form = m.questions.map((q, i) => `${i + 1}. ${q.text}${q.options ? ` (options: ${q.options.join(' | ')}${q.other ? ' | Otra' : ''})` : ' (free text)'}${q.optional ? ' (optional)' : ''}`).join('\n');
     return `${m.text}\n\n[The form you left them:]\n${form}`;
@@ -215,7 +216,37 @@ export function interviewText(m: Pick<PortalMessage, 'text' | 'questions' | 'ans
     const answers = m.answers.map((a) => `- ${a.question} → ${a.answer}`).join('\n');
     return `[Their answers to your form:]\n${answers}${m.text ? `\n\n[Anything else they added:] ${m.text}` : ''}`;
   }
+  if (m.understood) {
+    const u = m.understood;
+    return [
+      m.text,
+      '[The summary you showed them:]',
+      ...u.decisions.map((d) => `- ${d.topic}: ${d.decision}`),
+      ...(u.out.length ? [`Left out: ${u.out.join('; ')}`] : []),
+      ...(u.team.length ? [`For the team to decide: ${u.team.join('; ')}`] : []),
+    ].join('\n');
+  }
   if (m.skipped) return '[They sent it to the team without answering.]';
   if (m.confirmed) return '[They confirmed your summary.]';
   return m.text;
+}
+
+const MAX_DECISIONS = 12;
+const MAX_TOPIC = 80;
+const MAX_DECISION = 500;
+
+// What ronin understood after the interview ("entendido", with "grande"):
+// each decision as topic → decision, what's left out and what the team
+// decides. Undefined without a single decision: then it goes to the team
+// without asking the person to confirm anything.
+export function parseUnderstood(raw: unknown): Understood | undefined {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return undefined;
+  const r = raw as Record<string, unknown>;
+  const decisions = (Array.isArray(r.decisiones) ? r.decisiones : [])
+    .map((d) => (typeof d === 'object' && d !== null ? { topic: clean((d as Record<string, unknown>).tema, MAX_TOPIC), decision: clean((d as Record<string, unknown>).decision, MAX_DECISION) } : {}))
+    .filter((d): d is { topic: string; decision: string } => Boolean(d.topic && d.decision))
+    .slice(0, MAX_DECISIONS);
+  if (!decisions.length) return undefined;
+  const list = (value: unknown) => (Array.isArray(value) ? value.map((v) => clean(v, MAX_DECISION)).filter((v): v is string => Boolean(v)).slice(0, MAX_DECISIONS) : []);
+  return { decisions, out: list(r.fuera), team: list(r.equipo) };
 }

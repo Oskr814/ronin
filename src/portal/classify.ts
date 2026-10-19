@@ -10,10 +10,10 @@ import { log } from '../core/logger.js';
 import { activeRepo } from '../core/repo-context.js';
 import { removeWorktreeDir } from '../core/worktree.js';
 import { getUser, type PortalUser } from './accounts.js';
-import { interviewText, MAX_ROUNDS, parseQuestions } from './interview.js';
-import { interviewMail, replyMail } from './mail.js';
+import { interviewText, MAX_ROUNDS, parseQuestions, parseUnderstood } from './interview.js';
+import { interviewMail, replyMail, understoodMail } from './mail.js';
 import { handOverMail, sendPortalMails } from './notify.js';
-import { addEvent, addRoninMessage, errorLine, getRequest, MAX_PROTOTYPES, MAX_REPRODUCTIONS, requestImagePath, TITLE_MAX, updateUnlessCancelled, type InterviewQuestion, type PortalRequest, type Verdict } from './requests.js';
+import { addEvent, addRoninMessage, errorLine, getRequest, MAX_PROTOTYPES, MAX_REPRODUCTIONS, requestImagePath, TITLE_MAX, updateUnlessCancelled, type InterviewQuestion, type PortalRequest, type Understood, type Verdict } from './requests.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -43,6 +43,9 @@ export interface PortalResult {
   pasos?: string;
   // entrevistar: the form's questions (#225).
   preguntas?: InterviewQuestion[];
+  // grande, after an interview: what ronin understood, for the person to
+  // confirm (#225).
+  entendido?: Understood;
 }
 
 const text = (value: unknown, max: number): string | undefined => {
@@ -85,6 +88,10 @@ export function parsePortalResult(raw: string, questionsAsked: number, prototype
     if (!preguntas.length) return { ...result, accion: 'grande', motivo: result.motivo ?? 'No quedaron preguntas claras para la persona.' };
     if (interviewRounds >= MAX_ROUNDS) return { ...result, accion: 'grande', mensaje: 'Gracias por tus respuestas: con esto el equipo tiene lo que necesita para empezar.' };
     result.preguntas = preguntas;
+  }
+  if (result.accion === 'grande' && interviewRounds > 0) {
+    const entendido = parseUnderstood(r.entendido);
+    if (entendido) result.entendido = entendido;
   }
   if (result.accion === 'preguntar' && questionsAsked >= MAX_QUESTIONS) {
     return { ...result, accion: 'grande', motivo: result.motivo ?? 'Hicieron falta más datos de los que se pueden pedir aquí.', mensaje: 'Para entender bien lo que necesitas hace falta conversarlo con el equipo.' };
@@ -133,6 +140,16 @@ export function applyResult(request: PortalRequest, result: PortalResult, now = 
     addRoninMessage(request, `${result.mensaje}\n\n${NEXT_STEP.error}`, now);
     return;
   }
+  if (result.accion === 'grande' && result.entendido && request.interview?.rounds && !request.interview.skipped) {
+    // After the interview: what ronin understood, for the person to confirm
+    // before it goes to the team (interview.ts).
+    request.verdict = { kind: 'big', summary: result.resumen ?? request.verdict?.summary ?? '', at: now.toISOString(), ...(result.motivo ?? request.verdict?.reason ? { reason: result.motivo ?? request.verdict?.reason } : {}) };
+    request.status = 'confirming';
+    const id = addRoninMessage(request, result.mensaje, now);
+    request.messages.find((m) => m.id === id)!.understood = result.entendido;
+    addEvent(request, { kind: 'interview', step: 'summary', round: request.interview.rounds }, now);
+    return;
+  }
   const kind = result.accion === 'menor' ? 'minor' : 'big';
   const verdict: Verdict = { kind, summary: result.resumen ?? '', at: now.toISOString() };
   if (kind === 'minor') {
@@ -167,8 +184,8 @@ async function checkout(n: number): Promise<string> {
 // for the team comes next, in the same worker.
 async function notify(request: PortalRequest, user: PortalUser | undefined): Promise<void> {
   if (request.status === 'big') await handOverMail(request, user);
-  else if (request.status === 'interviewing') {
-    if (user) await sendPortalMails(request, [interviewMail(request, user, config.portal.url)]);
+  else if (request.status === 'interviewing' || request.status === 'confirming') {
+    if (user) await sendPortalMails(request, [(request.status === 'interviewing' ? interviewMail : understoodMail)(request, user, config.portal.url)]);
   }
   else if (request.status !== 'minor' && request.status !== 'reproducing' && user) await sendPortalMails(request, [replyMail(request, user, config.portal.url)]);
 }

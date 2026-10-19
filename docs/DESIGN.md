@@ -1006,7 +1006,7 @@ En el listener público, solo con `PORTAL_URL` y `PORTAL_SESSION_SECRET` configu
 | `POST /api/portal/requests/<n>/decision` | Sobre el prototipo: `{ decision: 'aprobar' \| 'rechazar', text? }` |
 | `POST /api/portal/requests/<n>/interview` | Las respuestas de la entrevista: `{ answers, note?, images? }` (16.13) |
 | `POST /api/portal/requests/<n>/skip` | Lo pasa al equipo sin responder la entrevista o sin confirmar el resumen |
-| `POST /api/portal/requests/<n>/understood` | Sobre el resumen: `{ ok: true }` lo confirma; `{ ok: false, text }` lo corrige |
+| `POST /api/portal/requests/<n>/understood` | Sobre el resumen: `{ ok: true }` lo confirma; `{ ok: false, text, images? }` lo corrige |
 | `POST /api/portal/requests/<n>/cancel` | Lo cancela, mientras nadie lo tomó (16.10) |
 | `GET /api/portal/requests/<n>/images/<archivo>` | Una imagen de la conversación |
 
@@ -1092,11 +1092,11 @@ Antes de pasar un pedido grande al equipo, ronin le hace a la persona las pregun
 
 - **Las preguntas** van en el mensaje de ronin (`questions`), cada una con su `id`, su tipo (`one`, `many` o `text`), el texto, una ayuda opcional, las opciones, si acepta «Otra» y si es opcional. Las de opciones siempre aceptan **«No sé, que lo decida el equipo»**. El pedido queda en `interviewing`.
 - **Las respuestas** llegan como índices de opciones, el texto de «Otra», el de una pregunta de texto o «No sé». `readAnswers` las pasa a palabras contra las preguntas abiertas: rechaza una opción que no existe, «Otra» donde no se ofrece, dos respuestas a una de una opción y una pregunta obligatoria sin responder. La persona nunca escribe el texto de una opción. Se guardan en su mensaje (`answers`, cada una con su pregunta) junto a una nota y hasta 4 imágenes opcionales. El pedido vuelve a `thinking` y ronin lo lee de nuevo.
-- **El resumen** va en un mensaje de ronin (`understood`): cada decisión (tema → decisión), lo que queda fuera y lo que decide el equipo. El pedido queda en `confirming`. Si la persona lo confirma, pasa a `big`, con el correo de siempre y el issue del equipo (16.6). Si lo corrige, su texto vuelve a `thinking`.
+- **El resumen** lo escribe el agente con `grande` después de una entrevista (`entendido`: decisiones como tema → decisión, lo que queda fuera y lo que la persona dejó al equipo, como cada «No sé»). `parseUnderstood` lo valida; sin una sola decisión, o si la persona saltó las preguntas, el pedido pasa al equipo sin mostrarlo. Va en un mensaje de ronin (`understood`) y el pedido queda en `confirming`, con el correo «Revisa lo que entendí». Si la persona lo confirma, pasa a `big`, con el correo de siempre y el issue del equipo (16.6). Si lo corrige (con texto y, si quiere, capturas), su mensaje vuelve a `thinking` y el agente escribe el resumen entero otra vez con la corrección. Sin correcciones restantes, el portal solo ofrece confirmarlo.
 - **Saltarla:** *Enviar sin responder* lo pasa a `big` tal como llegó, con el veredicto que ya tenía. Desde el resumen, lo pasa con las respuestas.
 - **Los topes son del servidor, no del agente:** 2 rondas de preguntas (`MAX_ROUNDS`), 5 preguntas por ronda (`MAX_INTERVIEW_QUESTIONS`) y 2 correcciones del resumen (`MAX_CORRECTIONS`). `request.interview` lleva las rondas, las correcciones y cómo terminó (`skipped` o `confirmed`).
 - **Actividad:** el evento `interview`, con su paso (`asked`, `answered`, `summary`, `corrected`, `confirmed` o `skipped`) y la ronda.
-- **Pendiente** (las etapas siguientes de #225): el resumen para confirmar y la sección del issue.
+- **Pendiente** (la última etapa de #225): la sección del issue y la conversación en el tablero.
 
 ### 17. Reuniones: de las notas al trabajo planificado (#62)
 

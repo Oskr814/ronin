@@ -91,6 +91,25 @@ export function interviewMail(request: PortalRequest, user: PortalUser, portalUr
   };
 }
 
+// To the person, when ronin wrote what it understood after the interview
+// (#225): they confirm it, or correct it, in the portal.
+export function understoodMail(request: PortalRequest, user: PortalUser, portalUrl: string): Mail {
+  const first = user.name.split(/\s+/)[0] || user.name;
+  const decisions = request.messages.filter((m) => m.from === 'ronin').at(-1)?.understood?.decisions ?? [];
+  const lines = [
+    `Hola ${first},`,
+    `Con tus respuestas, ronin escribió lo que entendió de tu pedido P-${request.number} ("${request.title}"). Revísalo: si está bien, se lo pasa al equipo de desarrollo; si no, dile qué corregir.`,
+  ];
+  const list = decisions.map((d) => `${d.topic}: ${d.decision}`);
+  const url = requestUrl(portalUrl, request.number);
+  return {
+    to: user.email,
+    subject: `Revisa lo que entendí: ${request.title}`,
+    text: `${lines.join('\n\n')}\n\n${list.map((l) => `- ${l}`).join('\n')}\n\nRevísalo en el portal: ${url}`,
+    html: html([...lines.map(esc), list.map(esc).join('<br>')], { label: 'Revisar el resumen', url }, portalUrl),
+  };
+}
+
 // To the person, when the prototype is ready: they approve it, ask for an
 // adjustment or turn it down in the portal (the images are only there,
 // behind their login).

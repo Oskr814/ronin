@@ -8,7 +8,7 @@ const handOverMail = vi.fn(async (_r: PortalRequest, _u: unknown) => {});
 vi.mock('./notify.js', () => ({ handOverMail: (r: PortalRequest, u: unknown) => handOverMail(r, u) }));
 vi.mock('./launch.js', () => ({ launchPortalWorker: vi.fn(async () => {}) }));
 
-const { answerInterview, confirmUnderstood, CONFIRMED_REPLY, interviewText, MAX_CORRECTIONS, MAX_INTERVIEW_QUESTIONS, openQuestions, parseQuestions, readAnswers, skipInterview, SKIPPED_REPLY, UNSURE } = await import('./interview.js');
+const { answerInterview, confirmUnderstood, CONFIRMED_REPLY, interviewText, MAX_CORRECTIONS, MAX_INTERVIEW_QUESTIONS, openQuestions, parseQuestions, parseUnderstood, readAnswers, skipInterview, SKIPPED_REPLY, UNSURE } = await import('./interview.js');
 
 const QUESTIONS: InterviewQuestion[] = [
   { id: 'quien', kind: 'one', text: '¿Quién decide qué cliente es mayorista?', options: ['Ventas', 'Administración'], other: true },
@@ -113,7 +113,7 @@ describe('the interview', () => {
 describe('what ronin understood', () => {
   it('goes to the team once the person confirms it', async () => {
     const n = await confirming();
-    const r = await confirmUnderstood(n, true, '', launch);
+    const r = await confirmUnderstood(n, true, '', [], launch);
     expect(r.status).toBe('big');
     expect(r.interview).toMatchObject({ confirmed: true });
     expect(r.messages.at(-2)).toMatchObject({ from: 'person', confirmed: true });
@@ -125,15 +125,15 @@ describe('what ronin understood', () => {
 
   it('goes back to ronin with a correction, up to the limit', async () => {
     const n = await confirming();
-    const r = await confirmUnderstood(n, false, 'También lo decide administración', launch);
+    const r = await confirmUnderstood(n, false, 'También lo decide administración', [], launch);
     expect(r.status).toBe('thinking');
     expect(r.interview?.corrections).toBe(1);
     expect(r.messages.at(-1)).toMatchObject({ from: 'person', text: 'También lo decide administración' });
     expect(handOverMail).not.toHaveBeenCalled();
 
     const last = await confirming(MAX_CORRECTIONS);
-    await expect(confirmUnderstood(last, false, 'Otra cosa', launch)).rejects.toThrow(/no quedan correcciones/);
-    await expect(confirmUnderstood(last, false, '  ', launch)).rejects.toThrow(/Escribe qué/);
+    await expect(confirmUnderstood(last, false, 'Otra cosa', [], launch)).rejects.toThrow(/no quedan correcciones/);
+    await expect(confirmUnderstood(last, false, '  ', [], launch)).rejects.toThrow(/Escribe qué/);
   });
 
   it('keeps the answers when the person sends it on without confirming the summary', async () => {
@@ -146,7 +146,7 @@ describe('what ronin understood', () => {
 
   it('refuses a confirmation when the request does not wait for one', async () => {
     const n = await interviewing();
-    await expect(confirmUnderstood(n, true, '', launch)).rejects.toThrow(/no espera tu confirmación/);
+    await expect(confirmUnderstood(n, true, '', [], launch)).rejects.toThrow(/no espera tu confirmación/);
   });
 });
 
@@ -177,5 +177,24 @@ describe('the questions the agent wrote', () => {
     expect(interviewText({ text: 'Respóndeme esto.', questions: QUESTIONS })).toBe('Respóndeme esto.\n\n[The form you left them:]\n1. ¿Quién decide qué cliente es mayorista? (options: Ventas | Administración | Otra)\n2. ¿Dónde deben verse esos precios? (options: En el pedido | En la factura | En el catálogo)\n3. ¿En qué casos lo necesitan? (free text) (optional)');
     expect(interviewText({ text: 'Es urgente', answers: [{ id: 'quien', question: '¿Quién?', answer: UNSURE, unsure: true }] })).toBe(`[Their answers to your form:]\n- ¿Quién? → ${UNSURE}\n\n[Anything else they added:] Es urgente`);
     expect(interviewText({ text: 'Hola' })).toBe('Hola');
+  });
+});
+
+describe('what ronin understood, as the agent wrote it', () => {
+  it('takes the decisions, what stays out and what the team decides', () => {
+    expect(parseUnderstood({
+      decisiones: [{ tema: ' Quién lo decide ', decision: 'Ventas' }, { tema: 'Sin decisión' }, 'nada'],
+      fuera: ['La factura', ''], equipo: 'no es lista',
+    })).toEqual({ decisions: [{ topic: 'Quién lo decide', decision: 'Ventas' }], out: ['La factura'], team: [] });
+  });
+
+  it('is nothing without a decision', () => {
+    expect(parseUnderstood({ decisiones: [], fuera: ['x'] })).toBeUndefined();
+    expect(parseUnderstood('texto')).toBeUndefined();
+  });
+
+  it('reads back to the agent as the summary it showed', () => {
+    expect(interviewText({ text: 'Así lo entendí.', understood: { decisions: [{ topic: 'Quién', decision: 'Ventas' }], out: ['La factura'], team: ['Los avisos'] } }))
+      .toBe('Así lo entendí.\n[The summary you showed them:]\n- Quién: Ventas\nLeft out: La factura\nFor the team to decide: Los avisos');
   });
 });
