@@ -5,7 +5,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 vi.mock('../core/logger.js', () => ({ log: { error: vi.fn(), info: vi.fn() } }));
-vi.mock('../core/config.js', () => ({ config: { githubLogin: 'ronin-agent', previewReservationsDir: '/nonexistent', previewPrepareData: false } }));
+const config = { githubLogin: 'ronin-agent', previewReservationsDir: '/nonexistent', previewPrepareData: false };
+vi.mock('../core/config.js', () => ({ config }));
+const runAgentTask = vi.fn();
+vi.mock('../core/agent-task.js', () => ({ runAgentTask: (...args: unknown[]) => runAgentTask(...args) }));
 
 let root: string;
 vi.mock('../core/repo-context.js', () => ({
@@ -14,7 +17,7 @@ vi.mock('../core/repo-context.js', () => ({
 const appRerun = vi.fn();
 vi.mock('../app/runtime.js', async (importOriginal) => ({ ...(await importOriginal<object>()), appRerun: (...args: unknown[]) => appRerun(...args) }));
 
-const { planInPlaceUpdate, renderPreviewUpdated, updatePreview } = await import('./preview.js');
+const { parseDataDecision, planInPlaceUpdate, renderPreviewUpdated, updatePreview } = await import('./preview.js');
 
 const manifest = (steps: object[]) => JSON.stringify({
   apps: {
@@ -61,13 +64,17 @@ const statePath = () => join(previewDir(), '.ronin-app', 'preview.json');
 
 beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), 'preview-update-'));
-  appRerun.mockReset().mockResolvedValue({});
+  config.previewPrepareData = false;
+  runAgentTask.mockReset();
+  appRerun.mockReset().mockImplementation(async (dir: string, app: unknown) => ({ appName: 'web', app, dir, baseUrl: 'http://127.0.0.1:5173', ctx: { ports: {}, port: {}, compose: 'docker compose -p p', dir }, stateDir: join(dir, '.ronin-app') }));
   git(root, 'init', '-q', '--bare', 'origin.git');
   git(root, 'init', '-q', '-b', 'main', 'repo');
   git(join(root, 'repo'), 'remote', 'add', 'origin', join(root, 'origin.git'));
   first = await commit({ 'ronin.app.json': MANIFEST, 'pnpm-lock.yaml': 'a', 'apps/web/page.tsx': 'a' }, 'base');
   git(join(root, 'repo'), 'push', '-q', 'origin', 'main');
   git(join(root, 'repo'), 'worktree', 'add', '-q', '--detach', previewDir(), first);
+  // What appUp's excludeFromGit leaves, so prepareData's `git clean` keeps the state.
+  await writeFile(join(root, 'repo', '.git', 'info', 'exclude'), '.ronin-app/\n');
   await mkdir(join(previewDir(), '.ronin-app'), { recursive: true });
   await writeFile(join(previewDir(), '.ronin-app', 'preview-manifest.json'), MANIFEST);
   await writeFile(statePath(), JSON.stringify({ prNumber: 7, appName: 'web', sha: first, url: 'https://h:20001', startedAt: '2026-10-19T10:00:00.000Z' }));
@@ -137,11 +144,87 @@ describe('updatePreview', () => {
   });
 });
 
+describe('updatePreview — data', () => {
+  const dataPath = () => join(previewDir(), '.ronin-app', 'preview-data.json');
+  const previous = { preparado: ['Cliente demo con 30 catálogos'], noPreparado: [] };
+
+  beforeEach(async () => {
+    config.previewPrepareData = true;
+    await writeFile(dataPath(), JSON.stringify(previous));
+  });
+
+  it('keeps the data when the cheap model says the new commits are covered', async () => {
+    runAgentTask.mockResolvedValueOnce('{"completar": false, "motivo": "solo cambia un estilo"}');
+    const sha = await pushPr({ 'apps/web/page.tsx': 'b' });
+
+    const update = await updatePreview(7, head(sha));
+
+    expect(runAgentTask).toHaveBeenCalledTimes(1);
+    expect(runAgentTask.mock.calls[0][0]).toMatchObject({ type: 'preview-data-delta', diff: { from: first }, previous });
+    expect(update).toMatchObject({ kind: 'in-place', dataKept: 'solo cambia un estilo' });
+    expect(JSON.parse(await readFile(dataPath(), 'utf8'))).toEqual(previous);
+  });
+
+  it('prepares only what the new commits need, on their diff, and adds it to what was there', async () => {
+    runAgentTask
+      .mockResolvedValueOnce('Mirando el diff:\n{"completar": true, "motivo": "agrega un estado vencido"}')
+      .mockImplementationOnce(async (task: { outputPath: string }) => {
+        await writeFile(task.outputPath, JSON.stringify({ preparado: ['3 catálogos vencidos'], noPreparado: ['un cliente sin email'] }));
+        return '';
+      });
+    const sha = await pushPr({ 'apps/web/page.tsx': 'b' });
+
+    const update = await updatePreview(7, head(sha));
+
+    // No seed catalog or triage: the database is no longer the base seed's.
+    expect(runAgentTask).toHaveBeenCalledTimes(2);
+    expect(runAgentTask.mock.calls[1][0]).toMatchObject({ type: 'prepare-preview-data', diff: { mergeBase: first }, previous });
+    expect(runAgentTask.mock.calls[1][0]).not.toHaveProperty('catalog');
+    expect(update).toMatchObject({ kind: 'in-place', data: { preparado: ['3 catálogos vencidos'], noPreparado: ['un cliente sin email'] } });
+    expect(JSON.parse(await readFile(dataPath(), 'utf8'))).toEqual({ preparado: ['Cliente demo con 30 catálogos', '3 catálogos vencidos'], noPreparado: ['un cliente sin email'] });
+    expect(JSON.parse(await readFile(statePath(), 'utf8')).preparing).toBeUndefined();
+  });
+
+  it('asks nothing when the earlier preparation left no data to build on', async () => {
+    await rm(dataPath());
+    const sha = await pushPr({ 'apps/web/page.tsx': 'b' });
+
+    expect(await updatePreview(7, head(sha))).toMatchObject({ kind: 'in-place' });
+    expect(runAgentTask).not.toHaveBeenCalled();
+  });
+
+  it('keeps the update when the decision fails', async () => {
+    runAgentTask.mockResolvedValueOnce('no sé');
+    const sha = await pushPr({ 'apps/web/page.tsx': 'b' });
+
+    const update = await updatePreview(7, head(sha));
+
+    expect(update).toMatchObject({ kind: 'in-place', sha });
+    expect(update).not.toHaveProperty('data');
+  });
+});
+
+describe('parseDataDecision', () => {
+  it('reads the JSON out of the answer', () => {
+    expect(parseDataDecision('```json\n{"completar": true, "motivo": " nuevo filtro "}\n```')).toEqual({ completar: true, motivo: 'nuevo filtro' });
+  });
+
+  it('rejects an answer that does not say whether to complete', () => {
+    expect(() => parseDataDecision('{"motivo": "x"}')).toThrow(/si completar/);
+    expect(() => parseDataDecision('sí')).toThrow(/no tiene JSON/);
+  });
+});
+
 describe('renderPreviewUpdated', () => {
   it('names the commits and what ran again', () => {
     const body = renderPreviewUpdated({ kind: 'in-place', from: 'aaaaaaa111', sha: 'bbbbbbb222', url: 'https://h:1', rerun: ['dependencias', 'api'] });
     expect(body).toContain('`aaaaaaa` → `bbbbbbb`');
     expect(body).toContain('Volví a correr: *dependencias*, *api*.');
+  });
+
+  it('says why the data stays, or lists what was added', () => {
+    expect(renderPreviewUpdated({ kind: 'in-place', from: 'a', sha: 'b', url: 'u', rerun: [], dataKept: 'solo cambia un estilo' })).toContain('Los datos que ya había siguen sirviendo: solo cambia un estilo');
+    expect(renderPreviewUpdated({ kind: 'in-place', from: 'a', sha: 'b', url: 'u', rerun: [], data: { preparado: ['3 vencidos'], noPreparado: [] } })).toContain('- 3 vencidos');
   });
 
   it('says when no step had to run', () => {

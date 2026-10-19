@@ -82,7 +82,7 @@ export const TASK_TYPES = [
   'plan', 'implement-slice', 'fix-issue', 'fix-review', 'fix-e2e', 'review-request', 'fix-comments', 'fix-comments-external',
   'resolve-conflicts', 'thread-reply-external', 'external-review', 'spike', 'write-spec', 'issue-request', 'prototype',
   'update-changelog', 'explore-inventory', 'explore-function', 'explore-evaluate', 'explore-redo-after', 'explore-feedback',
-  'commit-subject', 'prepare-preview-data', 'preview-seed-catalog', 'preview-data-triage', 'portal-request', 'portal-prototype', 'portal-reproduce', 'meeting-read',
+  'commit-subject', 'prepare-preview-data', 'preview-seed-catalog', 'preview-data-triage', 'preview-data-delta', 'portal-request', 'portal-prototype', 'portal-reproduce', 'meeting-read',
 ];
 
 export interface SettingsFile {
