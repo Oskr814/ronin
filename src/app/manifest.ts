@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, matchesGlob } from 'node:path';
 
 // ronin.app.json, at the root of the product repo: how to bring each of its
 // apps up in a worktree so ronin can use it — see docs/DESIGN.md §11.2. It is
@@ -14,11 +14,17 @@ export const APP_MANIFEST_FILE = 'ronin.app.json';
 // - run: a command that has to finish (install, seed, migrate).
 // - start: a long-running process (a dev server), stopped by appDown.
 // - wait: poll a URL until it answers, e.g. an API that migrates on startup.
+//
+// `rerunOn`: globs over the repo's paths (`pnpm-lock.yaml`,
+// `apps/api/src/migrations/**`). When a running preview moves to a new
+// commit of its PR, only the steps whose globs match a changed file run
+// again — the dev servers pick up the rest on their own (see
+// stepsToRerun).
 export type AppStep =
-  | { compose: 'up' }
-  | { run: string; name?: string; cwd?: string; env?: Record<string, string>; timeoutSeconds?: number }
-  | { start: string; name: string; cwd?: string; env?: Record<string, string> }
-  | { wait: string; name?: string; timeoutSeconds?: number };
+  | { compose: 'up'; rerunOn?: string[] }
+  | { run: string; name?: string; cwd?: string; env?: Record<string, string>; timeoutSeconds?: number; rerunOn?: string[] }
+  | { start: string; name: string; cwd?: string; env?: Record<string, string>; rerunOn?: string[] }
+  | { wait: string; name?: string; timeoutSeconds?: number; rerunOn?: string[] };
 
 // A step of the browser login, run with Playwright for each user — see
 // app/browser.ts. `{{username}}`/`{{password}}` are filled per user.
@@ -94,35 +100,48 @@ function optEnv(value: unknown, where: string): Record<string, string> | undefin
   return value as Record<string, string>;
 }
 
+function optGlobs(value: unknown, where: string): string[] | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value) || value.length === 0) throw new Error(`${where} debe ser una lista no vacía de globs`);
+  return value.map((g, i) => str(g, `${where}[${i}]`));
+}
+
+// Only set when the manifest has it, so a step without it compares equal to
+// one written before rerunOn existed.
+function withRerunOn<T extends AppStep>(step: T, raw: Record<string, unknown>, where: string): T {
+  const rerunOn = optGlobs(raw.rerunOn, `${where}.rerunOn`);
+  return rerunOn ? { ...step, rerunOn } : step;
+}
+
 function parseStep(raw: unknown, where: string): AppStep {
   if (!isObject(raw)) throw new Error(`${where} no es un objeto`);
   if ('compose' in raw) {
     if (raw.compose !== 'up') throw new Error(`${where}.compose solo admite "up"`);
-    return { compose: 'up' };
+    return withRerunOn({ compose: 'up' }, raw, where);
   }
   if ('run' in raw) {
-    return {
+    return withRerunOn({
       run: str(raw.run, `${where}.run`),
       name: optStr(raw.name, `${where}.name`),
       cwd: optStr(raw.cwd, `${where}.cwd`),
       env: optEnv(raw.env, `${where}.env`),
       timeoutSeconds: optNumber(raw.timeoutSeconds, `${where}.timeoutSeconds`),
-    };
+    }, raw, where);
   }
   if ('start' in raw) {
-    return {
+    return withRerunOn({
       start: str(raw.start, `${where}.start`),
       name: str(raw.name, `${where}.name`),
       cwd: optStr(raw.cwd, `${where}.cwd`),
       env: optEnv(raw.env, `${where}.env`),
-    };
+    }, raw, where);
   }
   if ('wait' in raw) {
-    return {
+    return withRerunOn({
       wait: str(raw.wait, `${where}.wait`),
       name: optStr(raw.name, `${where}.name`),
       timeoutSeconds: optNumber(raw.timeoutSeconds, `${where}.timeoutSeconds`),
-    };
+    }, raw, where);
   }
   throw new Error(`${where} no es un paso conocido (compose, run, start o wait)`);
 }
@@ -203,6 +222,17 @@ export function parseAppManifest(raw: string): AppManifest {
   const apps: Record<string, AppDefinition> = {};
   for (const [name, app] of Object.entries(parsed.apps)) apps[name] = parseApp(app, `${APP_MANIFEST_FILE}.apps.${name}`);
   return { apps };
+}
+
+// Which steps a running app has to go through again after its checkout
+// moved and `changedFiles` (repo paths) changed: those whose `rerunOn`
+// matches one of them, in the manifest's order. Null when no step of the
+// app declares `rerunOn` at all — a manifest that hasn't adopted it can't
+// say what's safe to skip, so the caller brings the app up from scratch.
+// An empty list means nothing has to run: the dev servers reload the rest.
+export function stepsToRerun(app: Pick<AppDefinition, 'steps'>, changedFiles: string[]): AppStep[] | null {
+  if (!app.steps.some((step) => step.rerunOn)) return null;
+  return app.steps.filter((step) => step.rerunOn?.some((glob) => changedFiles.some((file) => matchesGlob(file, glob))));
 }
 
 // `manifest`: the manifest's text, when the caller read it from somewhere
