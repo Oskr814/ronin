@@ -546,6 +546,7 @@ function renderCenter() {
   $('#shell').classList.toggle('wide', ['fichas', 'files'].includes(docOf(item)));
   // A box being written in survives the redraw (a finding's comment, a comment on the diff).
   const typing = ['fcomment', 'fcbox', 'rsum', 'dtext'].includes(document.activeElement?.id) ? { id: document.activeElement.id, start: document.activeElement.selectionStart, end: document.activeElement.selectionEnd } : null;
+  const menuAt = document.activeElement?.closest?.('.menu [data-action]')?.dataset.action;
   if (!setCenter(tabs + backBar(item.title) + headHTML(item) + activityHTML(item) + docHTML(item) + `<div class="ctx-inline">${ctxHTML(item)}</div>`)) return;
   const fresh = $('#doc');
   if (fresh && !isMobile()) fresh.scrollTop = keep;
@@ -559,6 +560,7 @@ function renderCenter() {
     box.focus();
     box.setSelectionRange(typing.start, typing.end);
   }
+  if (menuAt) [...document.querySelectorAll('.menu [data-action]')].find((b) => b.dataset.action === menuAt)?.focus();
 }
 
 // Only touches the page when something changed, so a snapshot that changes
@@ -663,8 +665,8 @@ function linearChips(item) {
 function actionsHTML(d) {
   const item = S.sel && itemById(S.sel);
   if (!d?.actions?.length || (item && !canDo(item.repo, 'acciones'))) return '';
-  const menu = S.menu ? `<div class="menu" role="menu">${d.actions.map((a) => `<button role="menuitem" data-action="${esc(a.id)}" class="${a.primary ? 'primary' : ''}"><b>${esc(a.label)}</b><span class="k">${esc(a.command)}</span><small>${esc(a.help)}</small></button>`).join('')}</div>` : '';
-  return `<div class="actions"><button class="act-btn" id="act" aria-haspopup="menu" aria-expanded="${S.menu}">Acciones ▾</button>${menu}</div>`;
+  const menu = S.menu ? `<div class="menu" role="menu">${d.actions.map((a, i) => `<button role="menuitem" data-action="${esc(a.id)}" class="${a.primary ? 'primary' : ''}"><b>${i < 9 ? `<kbd>${i + 1}</kbd> ` : ''}${esc(a.label)}</b><span class="k">${esc(a.command)}</span><small>${esc(a.help)}</small></button>`).join('')}</div>` : '';
+  return `<div class="actions"><button class="act-btn" id="act" aria-haspopup="menu" aria-expanded="${S.menu}" title="Acciones (M)">Acciones <kbd>M</kbd> ▾</button>${menu}</div>`;
 }
 
 function openAction(id) {
@@ -674,6 +676,41 @@ function openAction(id) {
   S.dialog = { item: S.sel, action, text: '', sending: false, error: null };
   renderCenter();
   renderDialog();
+}
+
+// The Actions menu from the keyboard: M opens it on its first action, and
+// in it a digit picks one, j/k or the arrows move, Enter asks for it.
+function toggleActions() {
+  S.menu = !S.menu;
+  S.fmenu = false;
+  renderCenter();
+  if (S.menu) document.querySelector('.menu [data-action]')?.focus();
+  else $('#act')?.focus();
+}
+
+// True when the key was the menu's.
+function actionsKey(event) {
+  if (!S.menu || event.ctrlKey || event.metaKey || event.altKey) return false;
+  const all = [...document.querySelectorAll('.menu [data-action]')];
+  if (!all.length) return false;
+  if (/^[1-9]$/.test(event.key) && all[Number(event.key) - 1]) {
+    event.preventDefault();
+    openAction(all[Number(event.key) - 1].dataset.action);
+    return true;
+  }
+  const step = { j: 1, ArrowDown: 1, k: -1, ArrowUp: -1 }[event.key];
+  if (step) {
+    event.preventDefault();
+    const at = all.indexOf(document.activeElement);
+    all[at < 0 ? (step > 0 ? 0 : all.length - 1) : (at + step + all.length) % all.length].focus();
+    return true;
+  }
+  if (event.key.toLowerCase() === 'm') {
+    event.preventDefault();
+    toggleActions();
+    return true;
+  }
+  return false;
 }
 
 function renderDialog() {
@@ -1433,6 +1470,7 @@ function openDecide(kind) {
   const id = S.sel;
   if (!id) return;
   S.rpanel = null;
+  S.menu = false;
   S.decide = S.decide?.item === id && S.decide.kind === kind ? null : { item: id, kind, text: '', closeIssue: true, sending: false, error: null };
   // The pending comments it carries.
   if (S.decide && !S.files[id]?.data) loadFiles(id);
@@ -1640,6 +1678,7 @@ function navigate(event, item) {
 const KEYS_HELP = [
   ['Moverse', [['1 – 9', 'Ir a una pestaña'], ['j / k', 'Siguiente / anterior sección, comentario, archivo o ficha'], ['d / u', 'Media página abajo / arriba'], ['gg / G', 'Al inicio / al final'], [']p / [p', 'Siguiente / anterior PR de ronin que espera una decisión']]],
   ['En un PR de ronin', [['A', 'Aprobar y mergear (↵ confirma)'], ['P', 'Pedir un ajuste (Ctrl ↵ manda)'], ['X', 'Cerrar el PR (Ctrl ↵ confirma)'], ['1 – 3', 'Fuera del texto del ajuste: sumar una sugerencia'], ['I', 'Fuera del texto del cierre: cerrar también el issue, o no']]],
+  ['Acciones', [['M', 'Abrir o cerrar el menú de acciones'], ['1 – 9', 'En el menú: pedir esa acción'], ['j / k', 'En el menú: la siguiente / anterior (también ↓ ↑, y ↵ la pide)']]],
   ['En Archivos', [['v', 'Marcar el archivo como visto'], ['r', 'Revisión, en los PRs de personas']]],
   ['General', [['?', 'Esta ayuda'], ['Esc', 'Cerrar lo que esté abierto']]],
 ];
@@ -5920,8 +5959,15 @@ async function boot() {
     // j/k go through them, a marks one as looked at, c and r open the dialog.
     const item = S.sel && itemById(S.sel);
     const reviewing = !S.dialog && !S.fdialog && !S.newIssue && !S.xnow && !event.metaKey && !event.ctrlKey && !event.altKey && item && viewOf(item) === 'ficha' && docOf(item) === 'fichas' && !/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName ?? '');
-    // On a PR's files, j/k go from one file to the next (#111).
     const typing = event.metaKey || event.ctrlKey || event.altKey || /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName ?? '');
+    // The Actions menu: M opens it, and while it's open its keys come first.
+    if (!typing && !S.dialog && !S.fdialog && !S.newIssue && !S.xnow && !S.decide && !S.rpanel && actionsKey(event)) return;
+    if (!typing && !S.dialog && !S.fdialog && !S.newIssue && !S.xnow && !S.decide && !S.rpanel && !S.menu && event.key.toLowerCase() === 'm' && $('#act')) {
+      event.preventDefault();
+      toggleActions();
+      return;
+    }
+    // On a PR's files, j/k go from one file to the next (#111).
     if (!typing && !S.dialog && !S.fdialog && !S.newIssue && !S.xnow && item && viewOf(item) === 'ficha' && docOf(item) === 'files' && ['j', 'k', 'v', ...(decidable(item, S.detail[item.id]?.data) ? [] : ['r'])].includes(event.key)) {
       event.preventDefault();
       if (event.key === 'r') openReviewPanel('files');
@@ -5985,6 +6031,7 @@ async function boot() {
     else if (S.menu) {
       S.menu = false;
       renderCenter();
+      $('#act')?.focus();
     }
   });
   $('#q').oninput = (event) => {
