@@ -112,7 +112,7 @@ function duration(ms) {
 const money = (usd) => (usd < 0.01 ? 'menos de US$0,01' : `US$${usd.toFixed(2).replace('.', ',')}`);
 const pct = (fraction) => `${Math.round(fraction * 100)}%`;
 
-const S = { snap: null, today: null, sel: null, open: [], runIdx: {}, pendingRun: null, filter: null, q: '', itemRuns: {}, run: null, stream: null, detail: {}, view: {}, doc: {}, menu: false, dialog: null, expanded: new Set(), expl: {}, ficha: {}, fichaOpen: {}, fichaFilter: { tipo: 'todas', vp: 'todos' }, antes: {}, oldAfter: new Set(), lightbox: null, fmenu: false, fdialog: null, fdraft: {}, listas: {}, scope: 'all', project: '', attAll: false, extra: {}, newIssue: null, files: {}, fcur: {}, ffold: {}, fexp: {}, fcontent: {}, fq: {}, ftree: false, fcomp: null, fbusy: new Set(), rpanel: null, revSent: {}, page: null, portal: { data: null, error: null }, ped: { list: null, error: null, listAt: 0, detail: {}, n: null, tab: 'act', gh: 'issue', filter: 'pend', page: 1, run: null, lb: null, patch: {} }, reu: { list: null, error: null, listAt: 0, detail: {}, n: null, tab: null, up: null, run: null, open: {}, retrying: false, form: {}, approving: false }, xpl: { list: null, error: null, listAt: 0, repo: null, app: null, cor: {}, inv: {}, tab: 'corridas', run: null, launched: {} }, xnow: null, dep: { list: null, error: null, listAt: 0, dlg: null }, aj: { data: null, error: null, sec: 'perfil', registro: null, users: null, user: null, login: null, cuenta: null, f: 'todos', q: '', add: null, link: null, busy: false, repos: null, repo: null, conex: null } };
+const S = { snap: null, today: null, sel: null, open: [], runIdx: {}, pendingRun: null, filter: null, q: '', itemRuns: {}, run: null, stream: null, detail: {}, view: {}, doc: {}, menu: false, dialog: null, expanded: new Set(), expl: {}, ficha: {}, fichaOpen: {}, fichaFilter: { tipo: 'todas', vp: 'todos' }, antes: {}, oldAfter: new Set(), lightbox: null, fmenu: false, fdialog: null, fdraft: {}, listas: {}, scope: 'all', project: '', attAll: false, extra: {}, newIssue: null, files: {}, fcur: {}, ffold: {}, fexp: {}, fcontent: {}, fq: {}, ftree: false, fcomp: null, fbusy: new Set(), rpanel: null, revSent: {}, decide: null, decided: {}, page: null, portal: { data: null, error: null }, ped: { list: null, error: null, listAt: 0, detail: {}, n: null, tab: 'act', gh: 'issue', filter: 'pend', page: 1, run: null, lb: null, patch: {} }, reu: { list: null, error: null, listAt: 0, detail: {}, n: null, tab: null, up: null, run: null, open: {}, retrying: false, form: {}, approving: false }, xpl: { list: null, error: null, listAt: 0, repo: null, app: null, cor: {}, inv: {}, tab: 'corridas', run: null, launched: {} }, xnow: null, dep: { list: null, error: null, listAt: 0, dlg: null }, aj: { data: null, error: null, sec: 'perfil', registro: null, users: null, user: null, login: null, cuenta: null, f: 'todos', q: '', add: null, link: null, busy: false, repos: null, repo: null, conex: null } };
 // The sidebar's Linear filter (#101), remembered per browser.
 try { Object.assign(S, JSON.parse(localStorage.getItem('ronin-scope') ?? '{}')); } catch { /* sin storage */ }
 function saveScope() {
@@ -644,8 +644,8 @@ function headHTML(item) {
   if (item.kind === 'pr' && pr?.author) facts.push(`de ${pr.author}`);
   return `<div class="head">
     <div class="crumb"><i style="background:${repoColor(item.repo)}"></i>${esc(item.repo)} · ${item.kind === 'pr' ? 'Pull request' : item.kind === 'issue' ? 'Issue' : 'Tarea'}</div>
-    <div class="row"><h1>${esc(item.title)}${item.number !== undefined ? ` <span class="n">${esc(itemRef(item))}</span>` : ''}</h1>${url ? `<a class="gh" href="${esc(url)}" target="_blank" rel="noopener">GitHub ↗</a>` : ''}${safeLinear((item.linear ?? d?.linear)?.url) ? `<a class="gh" href="${esc((item.linear ?? d.linear).url)}" target="_blank" rel="noopener" title="El issue en Linear">${esc((item.linear ?? d.linear).id)} ↗</a>` : ''}${d?.exploration ? '<button class="gh" data-xpr="general">Comentario general</button>' : ''}${reviewable(item, d) ? reviewButton(item, 'head', pendingOf(item.id).length ? `<button class="act-btn" data-frev="head" aria-haspopup="dialog" aria-expanded="${revOpen(item, 'head')}">Terminar revisión <span class="rn">${pendingOf(item.id).length}</span> ▾</button>` : `<button class="gh" data-frev="head" aria-haspopup="dialog" aria-expanded="${revOpen(item, 'head')}">${esc(reviewLabel(item, d))} ▾</button>`) : ''}${actionsHTML(d)}${d?.exploration ? '<button class="act-btn" data-xpr="approve">Aprobar…</button>' : ''}</div>
-    <div class="state">${ghPill(item, d)}${d?.pedido ? `<button class="chip plain" data-goped="${d.pedido.number}" title="${esc(d.pedido.title)}">del pedido P-${d.pedido.number}</button>` : ''}${linearChips(item)}${chips.map(([cls, text]) => `<span class="chip ${cls}">${esc(text)}</span>`).join('')}${facts.map((f) => `<span>${esc(f)}</span>`).join('')}</div></div>`;
+    <div class="row"><h1>${esc(item.title)}${item.number !== undefined ? ` <span class="n">${esc(itemRef(item))}</span>` : ''}</h1>${url ? `<a class="gh" href="${esc(url)}" target="_blank" rel="noopener">GitHub ↗</a>` : ''}${safeLinear((item.linear ?? d?.linear)?.url) ? `<a class="gh" href="${esc((item.linear ?? d.linear).url)}" target="_blank" rel="noopener" title="El issue en Linear">${esc((item.linear ?? d.linear).id)} ↗</a>` : ''}${d?.exploration ? '<button class="gh" data-xpr="general">Comentario general</button>' : ''}${decidable(item, d) ? decideHTML(item, d) : reviewable(item, d) ? reviewButton(item, 'head', pendingOf(item.id).length ? `<button class="act-btn" data-frev="head" aria-haspopup="dialog" aria-expanded="${revOpen(item, 'head')}">Terminar revisión <span class="rn">${pendingOf(item.id).length}</span> ▾</button>` : `<button class="gh" data-frev="head" aria-haspopup="dialog" aria-expanded="${revOpen(item, 'head')}">${esc(reviewLabel(item, d))} ▾</button>`) : ''}${actionsHTML(d)}${d?.exploration ? '<button class="act-btn" data-xpr="approve">Aprobar…</button>' : ''}</div>
+    <div class="state">${ghPill(item, d)}${d?.pedido ? `<button class="chip plain" data-goped="${d.pedido.number}" title="${esc(d.pedido.title)}">del pedido P-${d.pedido.number}</button>` : ''}${linearChips(item)}${chips.map(([cls, text]) => `<span class="chip ${cls}">${esc(text)}</span>`).join('')}${decidable(item, d) && pendingOf(item.id).length ? `<span class="chip run">✎ ${pendingOf(item.id).length} en Archivos</span>` : ''}${facts.map((f) => `<span>${esc(f)}</span>`).join('')}</div>${decidedHTML(item)}</div>`;
 }
 
 // ---------- actions (#85)
@@ -952,9 +952,24 @@ function docHTML(item) {
     const other = (cur === 'issue') !== (item.kind === 'issue');
     body = `<div class="page">${other ? `<a class="other" href="${esc(doc.url)}" target="_blank" rel="noopener">${esc(doc.title)} <span class="m">${cur === 'pr' ? 'PR' : 'Issue'} #${esc(doc.number)} ↗</span></a>` : ''}
       <div class="meta">${avatar(doc.author)}<b>${esc(doc.author)}</b><span>${esc(when(doc.createdAt))}</span></div>${cur === 'pr' ? prStateHTML(item, doc) : ''}
-      <div class="md">${doc.body.trim() ? md(doc.body, item.repo) : '<p class="m">Sin descripción.</p>'}</div></div>`;
+      ${cur === 'pr' && sameLogin(doc.author, d.ronin) ? prBodyHTML(doc.body, item.repo) : `<div class="md">${doc.body.trim() ? md(doc.body, item.repo) : '<p class="m">Sin descripción.</p>'}</div>`}</div>`;
   }
   return bar + `<div class="doc" id="doc" data-key="${esc(`${item.id}:${cur}`)}">${body}</div>`;
+}
+
+const sameLogin = (a, b) => Boolean(a && b) && a.toLowerCase() === b.toLowerCase();
+
+// The sections every PR ronin opens has (#195, PR_BODY_SECTIONS in
+// core/prompts.ts), each under its heading; what it decided on its own
+// stands out, it's what most needs a look. A body without them (an older
+// PR) shows as it is.
+const PR_SECTIONS = ['Qué se pidió', 'Qué cambió', 'Cómo se verificó', 'Decisiones propias', 'Fuera de alcance'];
+function prBodyHTML(body, repo) {
+  const parts = body.split(/^##[ \t]+(.+?)[ \t]*$/m);
+  if (!parts.some((part, i) => i % 2 === 1 && PR_SECTIONS.includes(part))) return `<div class="md">${body.trim() ? md(body, repo) : '<p class="m">Sin descripción.</p>'}</div>`;
+  const sections = [];
+  for (let i = 1; i < parts.length; i += 2) sections.push(`<section class="psec${parts[i] === 'Decisiones propias' ? ' decis' : ''}"><h3>${esc(parts[i])}</h3><div class="md">${md(parts[i + 1].trim(), repo)}</div></section>`);
+  return `${parts[0].trim() ? `<div class="md pre">${md(parts[0].trim(), repo)}</div>` : ''}${sections.join('')}`;
 }
 
 // Where a PR stands, on its tab (an issue's PR included): open or how it
@@ -1355,6 +1370,128 @@ async function deletePending(nodeId) {
   }
 }
 
+// ---------- deciding a PR ronin opened (#195)
+// Its page asks what's decided, not how to review it: merge it, ask ronin
+// for an adjustment, or close it. Always in the header, so on every tab,
+// and a key away (A, P, X). A PR by anyone else keeps the review panel below.
+const decidable = (item, d) => reviewable(item, d) && Boolean(d.ronin) && (d.pr.author ?? '').toLowerCase() === d.ronin.toLowerCase() && !d.pr.isDraft;
+const DECIDE_QUICK = ['Agregá un test para este caso', 'Revertí una de las decisiones propias', 'Separá esto en otro PR'];
+const oneOr = (n, one, many) => (n === 1 ? one : many);
+
+function decideHTML(item, d) {
+  const open = (kind) => S.decide?.item === item.id && S.decide.kind === kind;
+  return `<div class="actions dwrap"><button class="gh dbtn danger" data-decide="close" aria-haspopup="dialog" aria-expanded="${open('close')}" title="Cerrar el PR (X)">Cerrar <kbd>X</kbd></button><button class="gh dbtn run" data-decide="adjust" aria-haspopup="dialog" aria-expanded="${open('adjust')}" title="Pedir un ajuste (P)">Pedir un ajuste <kbd>P</kbd></button><button class="act-btn dbtn ok" data-decide="approve" aria-haspopup="dialog" aria-expanded="${open('approve')}" title="Aprobar y mergear (A)">Aprobar y mergear <kbd>A</kbd></button>${dropHTML(item, d)}</div>`;
+}
+
+// What was just decided here, for a few minutes: GitHub takes a moment to show it.
+const DECIDED_SHOWN_MS = 10 * 60_000;
+function decidedHTML(item) {
+  const done = S.decided[item.id];
+  if (!done || Date.now() - done.at > DECIDED_SHOWN_MS) return '';
+  const what = done.kind === 'approve'
+    ? `Aprobaste el PR${done.autoMerge ? ' y le pediste el auto-merge a ronin' : ''}.`
+    : done.kind === 'adjust'
+      ? `Le pediste un ajuste a ronin${done.count ? ` con ${oneOr(done.count, 'un comentario', `${done.count} comentarios`)} de Archivos` : ''}. Lo toma en el próximo tick.`
+      : `Cerraste el PR${done.issue ? ' y su issue' : ''}.`;
+  return `<div class="decided">${what}${done.url ? ` <a href="${esc(done.url)}" target="_blank" rel="noopener">Ver ↗</a>` : ''}</div>`;
+}
+
+function dropHTML(item, d) {
+  const p = S.decide;
+  if (!p || p.item !== item.id) return '';
+  const n = pendingOf(item.id).length;
+  const me = esc(S.snap?.me ?? '');
+  const bot = esc(d.ronin);
+  const err = p.error ? `<p class="bad">${esc(p.error)}</p>` : '';
+  const busy = p.sending ? ' disabled' : '';
+  if (p.kind === 'approve') {
+    const checks = checksChip(item.pr?.checks);
+    const autoMerge = !d.pr.labels?.includes('ronin:auto-merge') && d.pr.mergeable !== 'CONFLICTING';
+    const when = d.pr.mergeable === 'CONFLICTING' ? `Tiene conflictos con ${esc(d.pr.baseRefName ?? 'la base')}: no se va a mergear hasta que se resuelvan.`
+      : checks?.[0] === 'crit' ? '<span class="crit">Un check falla: no se va a mergear hasta que pase.</span> Quizá conviene <b>Pedir un ajuste</b>.'
+        : checks?.[0] === 'run' ? 'ronin lo mergea apenas pasen los checks.' : 'ronin lo mergea en el próximo tick.';
+    return `<div class="drop ok" role="dialog" aria-label="Aprobar y mergear"><div class="dt">Lo aprobás como <b>${me}</b>${autoMerge ? ` y comentás <code>@${bot} /auto-merge</code> a tu nombre` : ''}. ${when}
+      ${n ? `<p class="warnbox">${oneOr(n, 'Tu comentario', `Tus ${n} comentarios`)} de Archivos ${n === 1 ? 'va' : 'van'} con la aprobación, pero ronin no ${n === 1 ? 'lo atiende' : 'los atiende'}: para eso, <b>Pedir un ajuste</b>.</p>` : ''}</div>${err}
+      <footer><span class="m"><kbd>↵</kbd> confirma · <kbd>Esc</kbd></span><button class="btn-s" data-dcancel>Cancelar</button><button class="btn-s ok-solid" data-dsend${busy}>Aprobar y mergear</button></footer></div>`;
+  }
+  if (p.kind === 'close') {
+    const issue = item.kind === 'issue' ? item.number : d.issue?.number;
+    return `<div class="drop crit" role="dialog" aria-label="Cerrar el PR"><textarea id="dtext" rows="3" placeholder="Por qué lo cerrás (opcional). Queda como comentario en el PR.">${esc(p.text)}</textarea>
+      ${issue !== undefined ? `<label class="dchk"><input type="checkbox" id="dissue"${p.closeIssue ? ' checked' : ''}><span>Cerrar también el issue #${esc(issue)}<small>Si queda abierto, ronin lo bloquea y avisa: se queda sin PR para seguir.</small></span></label>` : ''}${err}
+      <footer><span class="m"><kbd>Ctrl ↵</kbd> cierra · <kbd>Esc</kbd></span><button class="btn-s" data-dcancel>Cancelar</button><button class="btn-s danger-solid" data-dsend${busy}>Cerrar el PR</button></footer></div>`;
+  }
+  const how = n
+    ? `Se manda una revisión con ${oneOr(n, 'tu comentario', `tus ${n} comentarios`)} y después <code>@${bot} /fix-comments</code> con este texto, a tu nombre.`
+    : `Se comenta <code>@${bot}</code> y este texto en el PR, a tu nombre.`;
+  return `<div class="drop" role="dialog" aria-label="Pedir un ajuste"><textarea id="dtext" rows="4" placeholder="¿Qué debería cambiar ronin?">${esc(p.text)}</textarea>
+    <div class="quick">${DECIDE_QUICK.map((q) => `<button data-dquick="${esc(q)}">${esc(q)}</button>`).join('')}</div>
+    ${n ? `<div class="carry">✎ Incluye ${oneOr(n, 'tu comentario', `tus ${n} comentarios`)} de Archivos</div>` : ''}<p class="how">${how}</p>${err}
+    <footer><span class="m"><kbd>Ctrl ↵</kbd> manda · <kbd>Esc</kbd></span><button class="btn-s" data-dcancel>Cancelar</button><button class="btn-s primary" data-dsend${busy || (!p.text.trim() && !n) ? ' disabled' : ''}>Mandar a ronin</button></footer></div>`;
+}
+
+function openDecide(kind) {
+  const id = S.sel;
+  if (!id) return;
+  S.rpanel = null;
+  S.decide = S.decide?.item === id && S.decide.kind === kind ? null : { item: id, kind, text: '', closeIssue: true, sending: false, error: null };
+  // The pending comments it carries.
+  if (S.decide && !S.files[id]?.data) loadFiles(id);
+  renderCenter();
+  $('#dtext')?.focus();
+}
+
+async function sendDecision() {
+  const p = S.decide;
+  if (!p || p.sending) return;
+  const n = pendingOf(p.item).length;
+  if (p.kind === 'adjust' && !p.text.trim() && !n) return;
+  p.sending = true;
+  p.error = null;
+  renderCenter();
+  try {
+    const sent = await api(`/api/items/${encodeURIComponent(p.item)}/decision`, { method: 'POST', body: JSON.stringify({ decision: p.kind, text: p.text, closeIssue: p.closeIssue }) });
+    S.decide = null;
+    S.decided[p.item] = { at: Date.now(), kind: p.kind, url: sent.url, autoMerge: Boolean(sent.autoMergeUrl), issue: Boolean(sent.issueUrl), count: n };
+    toast(p.kind === 'approve' ? 'Aprobaste el PR.' : p.kind === 'adjust' ? 'Se lo mandaste a ronin.' : 'Cerraste el PR.', sent.url);
+    afterFilesWrite(p.item);
+    refresh();
+  } catch (error) {
+    if (error instanceof Unauthorized) return showLogin();
+    p.sending = false;
+    p.error = `No se pudo: ${error.message}`;
+    renderCenter();
+  }
+}
+
+function wireDecide() {
+  for (const button of document.querySelectorAll('[data-decide]')) button.onclick = (event) => {
+    event.stopPropagation();
+    openDecide(button.dataset.decide);
+  };
+  const p = S.decide;
+  if (!p) return;
+  for (const button of document.querySelectorAll('[data-dcancel]')) button.onclick = () => { S.decide = null; renderCenter(); };
+  for (const button of document.querySelectorAll('[data-dsend]')) button.onclick = sendDecision;
+  const text = $('#dtext');
+  if (text) {
+    text.oninput = () => {
+      p.text = text.value;
+      const send = $('[data-dsend]');
+      if (send && p.kind === 'adjust' && !p.sending) send.disabled = !p.text.trim() && !pendingOf(p.item).length;
+    };
+    text.onkeydown = (event) => { if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) sendDecision(); };
+  }
+  const issue = $('#dissue');
+  if (issue) issue.onchange = () => { p.closeIssue = issue.checked; };
+  for (const button of document.querySelectorAll('[data-dquick]')) button.onclick = () => {
+    p.text = `${p.text.trim() ? `${p.text.replace(/\s+$/, '')}\n` : ''}${button.dataset.dquick}.`;
+    renderCenter();
+    const fresh = $('#dtext');
+    fresh?.focus();
+    fresh?.setSelectionRange(fresh.value.length, fresh.value.length);
+  };
+}
+
 // ---------- the review panel (#111)
 // Finishing the review as in GitHub's "Review changes": a summary, Comment,
 // Approve or Request changes, and the pending comments it carries.
@@ -1727,6 +1864,7 @@ function wireFiles() {
     openReviewPanel(button.dataset.frev);
   };
   wireReviewPanel();
+  wireDecide();
   const q = $('#fq');
   if (q) q.oninput = () => {
     S.fq[S.sel] = q.value;
@@ -5595,6 +5733,11 @@ async function boot() {
       renderCenter();
       return;
     }
+    if (S.decide && !S.decide.sending && event.target.isConnected && !event.target.closest('.drop')) {
+      S.decide = null;
+      renderCenter();
+      return;
+    }
     if (!S.menu && !S.fmenu) return;
     S.menu = false;
     S.fmenu = false;
@@ -5623,6 +5766,19 @@ async function boot() {
       else moveFile(event.key === 'j' ? 1 : -1);
       return;
     }
+    // On a PR ronin opened: A, P and X decide (#195); Enter confirms an approval.
+    const decidingHere = !typing && !S.dialog && !S.fdialog && !S.newIssue && !S.xnow && !S.rpanel && item && decidable(item, S.detail[item.id]?.data);
+    if (decidingHere && event.key === 'Enter' && S.decide?.item === item.id && S.decide.kind === 'approve') {
+      event.preventDefault();
+      sendDecision();
+      return;
+    }
+    const kind = { a: 'approve', p: 'adjust', x: 'close' }[event.key.toLowerCase()];
+    if (decidingHere && kind && !S.decide?.sending) {
+      event.preventDefault();
+      openDecide(kind);
+      return;
+    }
     if (reviewing && ['j', 'k', 'a', 'c', 'r'].includes(event.key)) {
       event.preventDefault();
       if (event.key === 'j' || event.key === 'k') moveFicha(event.key === 'j' ? 1 : -1);
@@ -5641,7 +5797,10 @@ async function boot() {
     else if (S.newIssue) closeNewIssue();
     else if (S.xnow) closeExploreNow();
     else if (S.dep.dlg) closeDeploy();
-    else if (S.rpanel && !S.rpanel.sending) {
+    else if (S.decide && !S.decide.sending) {
+      S.decide = null;
+      renderCenter();
+    } else if (S.rpanel && !S.rpanel.sending) {
       S.rpanel = null;
       renderCenter();
     } else if (S.fcomp && !S.fcomp.sending) {

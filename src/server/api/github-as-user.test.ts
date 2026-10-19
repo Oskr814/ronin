@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { addReviewThread, approvePr, commentOnDiff, pendingReview, submitReview, commentOnFile, commentOnIssue, GithubUserError, replyToReviewComment, setFileViewed, setThreadResolved, viewedFiles } from './github-as-user.js';
+import { addReviewThread, approvePr, closeIssue, closePr, commentOnDiff, pendingReview, submitReview, commentOnFile, commentOnIssue, GithubUserError, replyToReviewComment, setFileViewed, setThreadResolved, viewedFiles } from './github-as-user.js';
 
 const reply = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
 const fetchMock = vi.fn();
@@ -28,6 +28,17 @@ describe('github-as-user', () => {
     await approvePr('gho_user', 'acme/product', 840, 'dale');
     expect(fetchMock.mock.calls[0][0]).toBe('https://api.github.com/repos/acme/product/pulls/840/reviews');
     expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ event: 'APPROVE', body: 'dale' });
+  });
+
+  it('closes a PR, and an issue as not planned (#195)', async () => {
+    fetchMock.mockResolvedValueOnce(reply(200, { html_url: 'https://github.com/acme/product/pull/918' })).mockResolvedValueOnce(reply(200, { html_url: 'https://github.com/acme/product/issues/912' }));
+    expect(await closePr('gho_user', 'acme/product', 918)).toEqual({ url: 'https://github.com/acme/product/pull/918' });
+    expect(fetchMock.mock.calls[0][0]).toBe('https://api.github.com/repos/acme/product/pulls/918');
+    expect(fetchMock.mock.calls[0][1].method).toBe('PATCH');
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ state: 'closed' });
+    await closeIssue('gho_user', 'acme/product', 912);
+    expect(fetchMock.mock.calls[1][0]).toBe('https://api.github.com/repos/acme/product/issues/912');
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({ state: 'closed', state_reason: 'not_planned' });
   });
 
   it('asks to log in again for a token GitHub no longer takes, and explains a refusal', async () => {
