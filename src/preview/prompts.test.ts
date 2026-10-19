@@ -121,6 +121,15 @@ describe('runAgentTask — prepare-preview-data', () => {
     expect(prompt).toMatch(/never write to github/i);
   });
 
+  it('on an update, gives only the new commits and what was already there', async () => {
+    await runAgentTask({ ...task, diff: { mergeBase: 'old123', stat: ' 1 file changed' }, previous: { preparado: ['Cliente demo con 30 catálogos'], noPreparado: [] } });
+
+    const prompt = runClaudeHeadless.mock.calls[0][1] as string;
+    expect(prompt).toContain('git diff old123..HEAD');
+    expect(prompt).toContain('<<<PREVIOUS_START>>>\nPreparado:\n- Cliente demo con 30 catálogos\nNo preparado:\n- (nada)');
+    expect(prompt).toMatch(/never delete or redo what the earlier run left/);
+  });
+
   it('leaves out the request block when nothing was asked', async () => {
     const { instruction: _, ...withoutRequest } = task;
     await runAgentTask(withoutRequest);
@@ -210,5 +219,26 @@ describe('runAgentTask — preview-data-triage', () => {
     expect(prompt).toContain('git diff abc123..HEAD');
     expect(prompt).toMatch(/unsure, it is not enough/);
     expect(prompt).toContain(`JSON object to ${task.outputPath}`);
+  });
+});
+
+describe('runAgentTask — preview-data-delta', () => {
+  it('asks for a yes/no on the new commits, with what the data already covers', async () => {
+    await runAgentTask(previewTask({
+      type: 'preview-data-delta',
+      prNumber: 818,
+      checkoutDir: '/tmp/worktrees/preview-pr-818',
+      title: 'fix: mostrar todos los catálogos',
+      body: '## ¿Cómo probar?',
+      diff: { from: 'old123', stat: ' 1 file changed' },
+      previous: { preparado: ['Cliente demo con 30 catálogos'], noPreparado: ['un cliente sin email'] },
+    }));
+
+    expect(runClaudeHeadless.mock.calls[0][0]).toBe('/tmp/worktrees/preview-pr-818');
+    const prompt = runClaudeHeadless.mock.calls[0][1] as string;
+    expect(prompt).toContain('git diff old123..HEAD');
+    expect(prompt).toContain('- un cliente sin email');
+    expect(prompt).toContain('{"completar": true | false');
+    expect(prompt).not.toContain('REQUEST_START');
   });
 });

@@ -245,6 +245,8 @@ const TASK_MODEL_DEFAULTS: Record<string, string> = {
   // Yes or no from the catalog and the PR; a wrong yes costs one preview
   // without its data, a wrong no only the time it saved.
   'preview-data-triage': 'haiku',
+  // A yes/no on a preview's new commits, before paying for the run above.
+  'preview-data-delta': 'haiku',
 };
 
 function taskEnv(prefix: string, taskType: string): string | undefined {

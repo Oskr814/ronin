@@ -124,8 +124,10 @@ export interface PreviewState {
   // be tried without them. Cleared once the data is done (or failed).
   preparing?: boolean;
   // What followed /preview, so a full rebuild during an update (see
-  // updatePreview) prepares the same data again.
+  // updatePreview) prepares the same data again; and the part of it that
+  // describes the data, for completing it on an update in place.
   args?: string;
+  instruction?: string;
   // Moving to a new commit of the PR right now (updatePreview).
   updating?: boolean;
   // When it last moved to a new commit (ISO). startedAt doesn't change:
@@ -279,6 +281,15 @@ export interface PreviewResult {
   data?: PreviewData;
 }
 
+// What preview-data-delta answers: whether the new commits need more data.
+export function parseDataDecision(raw: string): { completar: boolean; motivo: string } {
+  const json = raw.match(/\{[\s\S]*\}/)?.[0];
+  if (!json) throw new Error(`la respuesta no tiene JSON: ${raw.trim().slice(0, 120)}`);
+  const parsed = JSON.parse(json) as { completar?: unknown; motivo?: unknown };
+  if (typeof parsed.completar !== 'boolean') throw new Error(`la respuesta no dice si completar: ${json.slice(0, 120)}`);
+  return { completar: parsed.completar, motivo: typeof parsed.motivo === 'string' ? parsed.motivo.trim() : '' };
+}
+
 export function parsePreviewData(raw: string): { preparado: string[]; noPreparado: string[] } {
   const parsed = JSON.parse(raw) as { preparado?: unknown; noPreparado?: unknown };
   return { preparado: stringLines(parsed.preparado), noPreparado: stringLines(parsed.noPreparado) };
@@ -342,19 +353,30 @@ async function seedCatalog(prNumber: number, sha: string, session: AppSession): 
 // steps, its diff) and whatever the requester asked for, and leaves the
 // data that exercises the change — see prompts.ts. Never fails the
 // preview: an app without the extra data is still worth handing over.
+//
+// `since`: the preview already had data and moved to newer commits — the
+// agent gets only their diff and what was there, adds what they need, and
+// writes to a file of its own so the earlier one stays until it's merged
+// (see completeData).
 async function prepareData(opts: {
   prNumber: number;
   pr: Pick<PrHead, 'title' | 'body' | 'baseRefName' | 'headRefOid'>;
   session: AppSession;
   instruction?: string;
+  since?: { from: string; previous: { preparado: string[]; noPreparado: string[] } };
 }): Promise<PreviewData> {
-  const { prNumber, pr, session } = opts;
+  const { prNumber, pr, session, since } = opts;
   const dir = session.dir;
-  const outputPath = join(session.stateDir, 'preview-data.json');
+  const outputPath = join(session.stateDir, since ? 'preview-data-delta.json' : 'preview-data.json');
   try {
     await rm(outputPath, { force: true });
-    await execFileAsync('git', ['fetch', 'origin', pr.baseRefName], { cwd: activeRepo().productRepoPath });
-    const mergeBase = (await execFileAsync('git', ['merge-base', `origin/${pr.baseRefName}`, pr.headRefOid], { cwd: dir })).stdout.trim();
+    let mergeBase: string;
+    if (since) {
+      mergeBase = since.from;
+    } else {
+      await execFileAsync('git', ['fetch', 'origin', pr.baseRefName], { cwd: activeRepo().productRepoPath });
+      mergeBase = (await execFileAsync('git', ['merge-base', `origin/${pr.baseRefName}`, pr.headRefOid], { cwd: dir })).stdout.trim();
+    }
     const stat = (await execFileAsync('git', ['diff', '--stat', mergeBase, pr.headRefOid], { cwd: dir })).stdout.trim();
     const about = {
       prNumber,
@@ -365,7 +387,9 @@ async function prepareData(opts: {
       ...(opts.instruction ? { instruction: opts.instruction } : {}),
       diff: { mergeBase, stat },
     };
-    const catalog = await seedCatalog(prNumber, pr.headRefOid, session);
+    // On an update the database is no longer the base seed's, and the delta
+    // already decided the data needs completing.
+    const catalog = since ? null : await seedCatalog(prNumber, pr.headRefOid, session);
     if (catalog) {
       const triage = await triageData({ ...about, catalog }, session.stateDir);
       if (triage?.alcanzan) return { preparado: [], noPreparado: [], base: triage.usar };
@@ -377,6 +401,7 @@ async function prepareData(opts: {
       appPath: session.app.path,
       outputPath,
       ...(catalog ? { catalog } : {}),
+      ...(since ? { previous: since.previous } : {}),
       baseUrl: session.baseUrl,
       services: describeServices(session.ctx),
       compose: session.ctx.compose,
@@ -462,6 +487,7 @@ export async function startPreview(prNumber: number, pr: PrHead, args?: string, 
       published,
       startedAt: opts.startedAt ?? new Date().toISOString(),
       ...(args?.trim() ? { args: args.trim() } : {}),
+      ...(instruction ? { instruction } : {}),
       ...(config.previewPrepareData ? { preparing: true } : {}),
     };
     await writePreviewState(dir, state);
@@ -480,6 +506,55 @@ export async function startPreview(prNumber: number, pr: PrHead, args?: string, 
   return { ...result, data };
 }
 
+// After an in-place update, on top of the data an earlier run left: a cheap
+// model reads the new commits and decides whether they change what has to
+// be tried (preview-data-delta), and only then prepare-preview-data adds
+// what they need, on their diff alone. Nothing when the earlier
+// preparation left nothing to build on (it failed, or never ran) — a
+// /preview brings everything back. Never fails the update.
+async function completeData(opts: {
+  prNumber: number;
+  pr: Pick<PrHead, 'title' | 'body' | 'baseRefName' | 'headRefOid'>;
+  session: AppSession;
+  from: string;
+  instruction?: string;
+}): Promise<{ data: PreviewData } | { kept: string } | null> {
+  const { prNumber, pr, session, from, instruction } = opts;
+  const dataPath = join(session.stateDir, 'preview-data.json');
+  const previous = await readFile(dataPath, 'utf8').then(parsePreviewData, () => null);
+  if (!previous) return null;
+  let decision: { completar: boolean; motivo: string };
+  try {
+    const stat = (await execFileAsync('git', ['diff', '--stat', from, pr.headRefOid], { cwd: session.dir })).stdout.trim();
+    decision = parseDataDecision(await runAgentTask(previewTask({
+      type: 'preview-data-delta',
+      prNumber,
+      checkoutDir: session.dir,
+      title: pr.title,
+      body: pr.body.split(HELP_FOOTER_MARKER)[0],
+      ...(instruction ? { instruction } : {}),
+      diff: { from, stat },
+      previous,
+    })));
+  } catch (error) {
+    log.error(`preview PR #${prNumber}: no se pudo decidir si los commits nuevos necesitan más datos, quedan los que había`, error);
+    return null;
+  }
+  log.info(`preview PR #${prNumber}: ${decision.completar ? 'completando los datos' : 'los datos siguen sirviendo'} (${decision.motivo})`);
+  if (!decision.completar) return { kept: decision.motivo };
+  const state = await readPreviewState(session.dir);
+  if (state) await writePreviewState(session.dir, { ...state, preparing: true });
+  const data = await prepareData({ prNumber, pr, session, since: { from, previous }, ...(instruction ? { instruction } : {}) });
+  // What the next update builds on: everything left ready so far, and what
+  // is still missing as of now.
+  if (!('error' in data)) {
+    await writeFile(dataPath, JSON.stringify({ preparado: [...previous.preparado, ...data.preparado], noPreparado: data.noPreparado }, null, 2))
+      .catch((error) => log.error(`preview PR #${prNumber}: no se pudieron guardar los datos completados`, error));
+  }
+  await markPrepared(session.dir);
+  return { data };
+}
+
 async function markPrepared(dir: string): Promise<void> {
   const state = await readPreviewState(dir);
   if (!state?.preparing) return;
@@ -494,7 +569,9 @@ export type PreviewUpdate =
   | { kind: 'current' }
   // Same app, same stack, ports and data; `rerun` names the manifest steps
   // that ran again (none when the dev servers took the change on their own).
-  | { kind: 'in-place'; from: string; sha: string; url: string; rerun: string[] }
+  // `data`: what was added for the new commits; `dataKept`: why what was
+  // there still covers them (see completeData).
+  | { kind: 'in-place'; from: string; sha: string; url: string; rerun: string[]; data?: PreviewData; dataKept?: string }
   // Brought up from scratch, like /preview, because of `reason`.
   | { kind: 'rebuilt'; from: string; reason: string; result: PreviewResult };
 
@@ -562,8 +639,9 @@ export async function updatePreview(prNumber: number, pr: PrHead): Promise<Previ
     return rebuild((error as Error).message.split('\n')[0].slice(0, 200));
   }
   if ('reason' in plan) return rebuild(plan.reason);
+  let session: AppSession;
   try {
-    await appRerun(dir, plan.app, plan.steps);
+    session = await appRerun(dir, plan.app, plan.steps);
   } catch (error) {
     log.error(`preview PR #${prNumber}: la actualización en el lugar falló`, error);
     return rebuild((error as Error).message.split('\n')[0].slice(0, 200));
@@ -571,7 +649,11 @@ export async function updatePreview(prNumber: number, pr: PrHead): Promise<Previ
   const { updating: _, ...rest } = (await readPreviewState(dir)) ?? state;
   await writePreviewState(dir, { ...rest, sha: pr.headRefOid, updatedAt: new Date().toISOString() });
   log.info(`preview PR #${prNumber}: actualizada en el lugar a ${pr.headRefOid.slice(0, 7)}`);
-  return { kind: 'in-place', from, sha: pr.headRefOid, url: state.url, rerun: plan.steps.map(stepLabel) };
+  const update: PreviewUpdate = { kind: 'in-place', from, sha: pr.headRefOid, url: state.url, rerun: plan.steps.map(stepLabel) };
+  if (!config.previewPrepareData) return update;
+  const completed = await completeData({ prNumber, pr, session, from, ...(state.instruction ? { instruction: state.instruction } : {}) });
+  if (!completed) return update;
+  return 'data' in completed ? { ...update, data: completed.data } : { ...update, dataKept: completed.kept };
 }
 
 // Unpublishes, stops and deletes the PR's preview. False when there was none.
@@ -757,7 +839,11 @@ export function renderPreviewUpdated(update: Exclude<PreviewUpdate, { kind: 'cur
   const rerun = update.rerun.length > 0
     ? `Volví a correr: ${update.rerun.map((s) => `*${s}*`).join(', ')}.`
     : 'No hizo falta volver a correr ningún paso: los dev servers tomaron el cambio solos.';
-  return `🔄 Actualicé la preview de este PR (${commits}), en la misma URL y con los mismos datos. ${rerun}`;
+  return [
+    `🔄 Actualicé la preview de este PR (${commits}), en la misma URL y con los mismos datos. ${rerun}`,
+    ...(update.dataKept ? ['', `Los datos que ya había siguen sirviendo: ${update.dataKept}`] : []),
+    ...(update.data ? ['', ...renderData(update.data)] : []),
+  ].join('\n').trim();
 }
 
 export function renderPreviewUpdateFailed(error: Error): string {
