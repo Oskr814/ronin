@@ -1,0 +1,33 @@
+---
+title: "Tu primer issue"
+description: "De un issue en GitHub a un PR mergeado, paso a paso."
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+Lo más corto para ver a ronin trabajar: un issue chico y concreto en un repo que ronin ya supervisa.
+
+<Steps>
+
+1. **Escribí el issue** como se lo escribirías a alguien del equipo: qué pasa, qué esperabas y, si es un bug, cómo reproducirlo. Cuanto más concreto, menos preguntas.
+
+   ```md
+   El botón «Guardar» del formulario de clientes queda habilitado mientras se envía,
+   y un doble clic crea el cliente dos veces. Debería deshabilitarse hasta que responda.
+   ```
+
+2. **Asignáselo a `ronin-agent`**, desde el picker de **Assignees** de GitHub o con **Acciones → Asignar a ronin** en el [tablero](/ronin/empezar/el-tablero/).
+
+3. **Esperá el `ronin:in-progress`.** Con webhooks llega en segundos; si no, en el próximo tick (cada 5 minutos por defecto). Mientras trabaja, el tablero muestra la corrida en vivo.
+
+4. **Si pregunta, respondé en el issue.** Cuando le falta información, comenta exactamente qué necesita, le pone `ronin:blocked` y te avisa por email. Respondé y destrabalo: ver [Cuándo se bloquea](/ronin/referencia/bloqueos/).
+
+5. **Revisá el PR.** Llega con `Closes #<n>` y una descripción por secciones: qué se pidió, qué cambió, cómo se verificó, sus decisiones propias y lo que dejó fuera. Si tiene una app con `ronin.app.json`, pedí una [preview](/ronin/guias/probar-con-preview/) para probarlo.
+
+6. **Decidí:** aprobalo, pedile un ajuste o cerralo. Ver [Decidir un PR de ronin](/ronin/guias/decidir-un-pr/). Aprobado y en verde, se mergea solo y el issue se cierra.
+
+</Steps>
+
+<Aside type="tip">
+Si no sabés bien cómo plantearlo, antes de asignarlo podés pedirle que investigue (`/spike`) o que te muestre el cambio en capturas (`/prototype`). Ver [Darle forma antes de asignarlo](/ronin/guias/darle-trabajo/#darle-forma-antes-de-asignarlo).
+</Aside>

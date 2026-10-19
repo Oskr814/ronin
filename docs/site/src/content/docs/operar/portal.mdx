@@ -1,0 +1,51 @@
+---
+title: "El portal de pedidos"
+description: "Activar el portal público de pedidos y administrar sus cuentas."
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+El portal es para que la gente que usa las apps le pida a ronin ajustes chicos sin GitHub. Corre en el listener público del [servidor](/ronin/operar/servidor/), junto a los webhooks. Cómo se atienden los pedidos: ver [Atender pedidos del portal](/ronin/guias/pedidos-del-portal/).
+
+## Activarlo
+
+<Steps>
+
+1. **En `.env`:**
+   - `PORTAL_URL`: dónde se abre, por ejemplo `https://ronin-agent.redmotoshn.com`;
+   - `PORTAL_SESSION_SECRET`: `openssl rand -hex 32`, distinto del del tablero;
+   - opcionales: `PORTAL_SESSION_DAYS` (30), `PORTAL_DAILY_LIMIT` (5) y `PORTAL_DATA_DIR` (`portal-data`).
+
+2. **En `repos.json`**, un bloque `portal` en cada repo que se ofrece:
+
+   ```json
+   "portal": {
+     "name": "Acme",
+     "apps": { "backoffice": { "name": "Backoffice", "description": "Pedidos, catálogo e inventario" } }
+   }
+   ```
+
+   Las claves de `apps` son las de [`ronin.app.json`](/ronin/referencia/app-json/). El nombre y las apps también se cambian desde [Ajustes → Repos](/ronin/operar/ajustes/#administración).
+
+3. **El proxy** tiene que pasarle al `SERVER_PORT` todas las rutas del dominio del portal, no solo la de los webhooks.
+
+4. `pnpm build` y `systemctl --user restart ronin-server`.
+
+</Steps>
+
+<Aside type="caution">
+Los pedidos y las cuentas viven en `PORTAL_DATA_DIR`, fuera de git. `accounts.json` es la única copia de las cuentas: respaldalo.
+</Aside>
+
+## Las cuentas
+
+Nadie se registra solo. En **Ajustes → Usuarios** (filtro *Portal*: son las personas con el rol *Usuario*), un administrador:
+
+- **invita a alguien:** nombre, correo, las aplicaciones que puede pedir y, si querés, un tope de pedidos por día distinto del general;
+- **cambia sus aplicaciones,** desactiva la cuenta o le manda otro enlace para la contraseña.
+
+La persona recibe un correo con un enlace para crear su contraseña, que vence a las 24 horas. Si el correo no sale, el tablero muestra el enlace para pasárselo por otro medio.
+
+## Quién del equipo recibe los correos
+
+Cada persona del equipo lo elige en [Ajustes → Notificaciones](/ronin/operar/ajustes/#tu-cuenta): *Pedido para el equipo* y *Pedido para revisar*, repo por repo. Mientras nadie elige, van a `portal.notifyTo` del repo en `repos.json` y, si no hay, a `NOTIFY_TO`.

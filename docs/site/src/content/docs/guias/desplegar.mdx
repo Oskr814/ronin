@@ -1,0 +1,54 @@
+---
+title: "Desplegar"
+description: "Publicar un release de cada repo desde el tablero, con todo lo mergeado o solo los PRs que elijas."
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+**Despliegues**, arriba a la izquierda en el tablero, publica los releases de cada repo. Un despliegue es un release de GitHub: ronin sube el tag que escribas y crea el release, y el workflow del repo hace el resto (construir, desplegar). La ven los administradores y quien tenga permiso de desplegar ese repo en [Ajustes → Usuarios](/ronin/operar/ajustes/#administración).
+
+## Cada repo
+
+Cada repo con `deploy` en [`repos.json`](/ronin/referencia/repos-json/) tiene su tarjeta:
+
+- **Lo mergeado sin desplegar,** un cambio por PR, con las apps que toca y «del pedido P-n» si salió del portal. Donde el repo lo permite, cada PR tiene **Desplegar solo este**.
+- **Los últimos releases,** con *Latest*, *Pre-release* o *Solo elegidos*, cuándo se publicaron y quién. Los que publicó ronin muestran el estado de su workflow (en curso, desplegado, falló), con un enlace a cada run, y qué pedidos llevaron.
+
+## Publicar uno
+
+<Steps>
+
+1. **Nuevo despliegue** abre un diálogo como *Draft a new release* de GitHub.
+
+2. **Tag:** lo escribís vos, con el último release a la vista. Avisa si ya existe o no es válido. Si el repo usa **pre-releases** (por ejemplo, para QA), se marca ahí.
+
+3. **Qué entra:** *Todo lo de la rama* o, donde el repo lo permite, **Solo lo que elijas**, con una casilla por PR. Con *Solo lo que elijas*, ronin aplica esos PRs sobre el último release y prueba que entren limpio. Si uno choca, dice en qué archivos y qué otro PR tenés que elegir también.
+
+4. **Título y notas:** **Generar notas** pone la lista de lo que entra. Si las dejás vacías, ronin pone esa lista.
+
+5. **Publicar** se habilita cuando ronin terminó de revisarlo y no hay problemas. Publica exactamente lo que viste: si mientras tanto se mergeó algo o salió otro release, te lo vuelve a mostrar.
+
+</Steps>
+
+**Cuando el workflow termina bien,** cada pedido del portal que entró en el release lo anota en su actividad, y su persona recibe «Ya está en la aplicación». Un pre-release solo se anota, sin correo.
+
+**Si el workflow falla,** podés volver a correrlo desde GitHub (*Re-run jobs*). ronin lo sigue mirando durante 30 días: si termina bien, queda *desplegado* y avisa a sus pedidos.
+
+## Activarlo
+
+1. En `repos.json`, un bloque `deploy` en cada repo que se despliega desde ronin:
+
+   ```json
+   "deploy": { "prerelease": true, "selective": true }
+   ```
+
+   - `prerelease`: el repo despliega pre-releases.
+   - `selective`: un release puede llevar solo algunos PRs. Solo si el workflow del repo despliega el commit al que apunta el tag aunque no esté en la rama.
+
+2. `DEPLOYS_DATA_DIR` en `.env` (por defecto `deploys-data`) guarda qué llevó cada release. Es la única copia: respaldalo.
+
+3. Que los [webhooks](/ronin/operar/servidor/) reciban `workflow_run`. Sin eso, ronin sigue el workflow con el tick, cada 30 minutos.
+
+<Aside type="tip">
+Si algo no anda (un release *en curso* mucho tiempo, un tag sin release), ver [Problemas comunes](/ronin/operar/problemas/#despliegues).
+</Aside>

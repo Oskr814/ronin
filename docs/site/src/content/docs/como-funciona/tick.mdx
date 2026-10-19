@@ -1,0 +1,48 @@
+---
+title: "El tick y los eventos"
+description: "Cómo ronin decide qué hacer: un tick por cron que concilia todo, y un handler por cada evento de GitHub."
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+ronin no es un proceso que queda corriendo con un agente adentro. Hay dos formas de que algo se mueva, y las dos leen el mismo estado de GitHub.
+
+## El tick
+
+`pnpm start` corre un tick y termina. Lo dispara el cron, cada 5 minutos por defecto. En cada tick:
+
+<Steps>
+
+1. Busca specs e issues asignados a la cuenta de ronin y los toma: mergea el spec y arma su plan, o pone el issue en curso.
+
+2. Barre lo que vive fuera de un issue: issues con todas sus slices mergeadas, previews vencidas o de PRs cerrados, y PRs con `ronin:auto-merge` listos para mergear.
+
+3. Recorre los issues en curso y decide la próxima acción según el estado real del PR, el CI y las reviews: implementar la siguiente slice, atender comentarios, arreglar el CI o registrar lo que una persona mergeó.
+
+4. Junta el resto: reviews de PRs de personas, `/spike`, `/spec`, `/prototype` y pedidos en issues, changelog, el PR de exploración y la exploración nocturna.
+
+</Steps>
+
+Cada acción es una corrida de Claude aislada en su worktree, que termina al completar su unidad de trabajo. **Un tick a la vez por máquina:** si el cron dispara mientras otro sigue corriendo, el que corre hace otra vuelta al terminar.
+
+## Los eventos
+
+Con el [servidor](/ronin/operar/servidor/), cada evento de GitHub tiene su handler: un proceso que corre solo los flujos que ese evento puede mover, solo sobre ese issue o PR. Un comentario en un PR mueve sus comandos, su review y su issue; un CI que termina, el auto-merge y el issue de esa suite.
+
+- **El 👀 llega al instante:** el servidor lo pone apenas recibe un comentario que menciona a ronin, antes de procesarlo.
+- **Lo propio no cuenta:** los comentarios y reviews de la cuenta de ronin no lanzan nada.
+- **El tick sigue:** levanta lo que ningún handler hizo (un webhook que no llegó, un runner apagado) y el trabajo periódico.
+
+## Quién trabaja en qué
+
+- **Un lock por recurso:** cada trabajo toma lo que toca (`issue-N` para todo el stack de un issue, `pr-N` para un PR ajeno) antes de leer GitHub. El tick saltea lo que está tomado; un handler espera a que se libere, así lo que lee es el estado posterior.
+- **Un cupo por repo:** a lo sumo `concurrency` (o `TICK_CONCURRENCY`) agentes a la vez en cada repo, y cada repo tiene su cola: uno con mucho asignado nunca deja esperando a otro. Los comandos que no corren un agente, como `/help`, no esperan cupo.
+- **Entre runners:** el primero que procesa un issue le pone `ronin:runner-<id>`. Si dos lo hacen a la vez, gana el id menor y el otro se retira.
+
+## Cuota de Claude
+
+Si una corrida se corta por el límite de uso de la cuenta, no es un bloqueo: la tarea queda como estaba y la retoma un tick posterior, cuando vuelve la cuota. El tablero muestra el uso de cada cuenta abajo.
+
+<Aside type="note">
+El detalle está en [`docs/DESIGN.md` §3, §9 y §14](https://github.com/Oskr814/ronin/blob/main/docs/DESIGN.md).
+</Aside>

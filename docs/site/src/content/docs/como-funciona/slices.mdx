@@ -1,0 +1,48 @@
+---
+title: "Specs y slices"
+description: "Cómo un spec se convierte en un issue de tracking y en PRs chicos, en secuencia o apilados."
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+Un spec es para un cambio grande. ronin lo trocea en **slices**: unidades chicas, cada una con su PR, que se revisan en minutos.
+
+## De un spec a PRs
+
+<Steps>
+
+1. **El spec es un PR draft** en el repo del producto, con un `.md` en `docs/superpowers/specs/`, asignado a `ronin-agent`. Mientras sea draft, ronin lo ignora.
+
+2. **Marcarlo *ready for review* es la señal.** ronin lo marca `ronin:in-progress`, lo mergea (es documentación: el gate de aprobación es para el código) y abre un **issue de tracking**.
+
+3. **El plan:** un agente lee el spec y el código, y escribe en el issue de tracking un checklist de slices.
+
+4. **Una slice, un PR**, en una rama `ronin/<issue>/slice-<n>`. Cada PR sale con [`ronin:auto-merge`](/ronin/referencia/comandos/#auto-merge): aprobado y en verde, se mergea solo.
+
+5. **Al mergearse la última**, el issue pasa a `ronin:done`.
+
+</Steps>
+
+Un **issue asignado directamente** sigue el mismo camino con una sola slice: el issue es su propio issue de tracking.
+
+## En secuencia o apiladas
+
+- **Por defecto, en secuencia:** la siguiente slice arranca cuando no queda ningún PR abierto del issue, es decir, cuando se mergeó la anterior.
+- **Con `ronin:stack-prs`** en el issue de tracking, apiladas: cada PR se abre sobre la rama de la slice anterior, sin esperar el merge. Al mergearse una, ronin mueve a su base los PRs de arriba.
+
+ronin no rebasea los PRs contra `main`. Si hace falta ponerlo al día, lo hace quien mergea, o [`/resolve-conflicts`](/ronin/referencia/comandos/#resolve-conflicts).
+
+## Mientras tanto
+
+En cada vuelta, ronin mira el PR de la slice en curso:
+
+| Si… | ronin… |
+|---|---|
+| Hay comentarios de review sin resolver | Los atiende y responde en cada hilo. |
+| El CI falla | Lo arregla. Si la misma falla se repite, se bloquea y avisa. |
+| Está aprobado y en verde | Lo mergea el auto-merge, o espera a que lo mergee una persona. |
+| Lo mergeó una persona | Marca la slice en el checklist y sigue con la siguiente. |
+
+<Aside type="note">
+Los límites antes de bloquear están en [Cuándo se bloquea](/ronin/referencia/bloqueos/).
+</Aside>

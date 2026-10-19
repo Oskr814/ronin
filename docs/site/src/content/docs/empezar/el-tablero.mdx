@@ -1,0 +1,60 @@
+---
+title: "El tablero"
+description: "Qué muestra el tablero de ronin, quién lo ve y qué se puede hacer desde ahí."
+---
+
+import { Aside, CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+Una página con lo que está haciendo ronin. Desde ahí también se le piden los comandos más usados, se deciden sus PRs, se revisa cualquier PR archivo por archivo, se siguen las exploraciones y, quien tenga permiso, se despliega. Se ve solo por la tailnet y pide entrar con GitHub: **lo que hagas desde ahí queda en GitHub a tu nombre.** Se actualiza sola, sin recargar la página.
+
+![Hoy en el tablero: los números del día, lo que necesita tu atención y las corridas de las últimas 12 horas](../../../assets/capturas/hoy.png)
+
+## Hoy, la pantalla de inicio
+
+- **Los números del día:** corridas, cuántas terminaron bien, duración mediana y costo, cada uno con una mini línea de la semana.
+- **Necesitan tu atención:** los issues bloqueados con su motivo, los PRs de ronin que esperan tu review o tu merge (el que más espera primero), el PR de exploración y las previews. Cada fila abre su ficha.
+- **El ciclo actual**, si el repo usa [Linear](/ronin/operar/linear/): cuántos issues están hechos, en review, bloqueados o sin empezar, el avance día por día, el desglose por proyecto y quién tiene lo que falta.
+- **Las últimas 12 horas**, con cada corrida de agente. Un clic abre esa corrida.
+
+## A la izquierda, los issues
+
+- **Necesitan a alguien:** los issues bloqueados.
+- **Exploraciones:** cada app que ronin explora y su estado.
+- **Cada repo**, con los issues de ronin y sus slices, y los issues sobre los que ronin trabajó en los últimos días. Cada fila dice lo que espera: «esperando review en #881», «conflictos en #904», «aprobado, falta el merge de #401».
+- **Los PRs viven dentro de su issue:** el de una slice, el que lo cierra (`Closes #N`) o el que lleva su número en la rama (`feat/405-…`). El PR de una persona aparece en la fila del issue.
+- **El buscador** encuentra cualquier issue abierto del repo, de ronin o no, por título, número, `RED-n` o el número de uno de sus PRs. Con un número que no está en la lista ofrece **Abrir #N**, aunque esté cerrado o sea un PR sin issue.
+- El botón **+** de cada repo crea un issue nuevo a tu nombre. Ver [Darle trabajo](/ronin/guias/darle-trabajo/).
+
+## En el centro, la ficha
+
+- **Su estado:** conflictos, checks y review del PR.
+- **Lo que hicieron los agentes:** la última corrida, o la que está corriendo con sus últimos pasos en vivo. El transcript completo, paso a paso, se abre desde ahí.
+- **Pestañas** con la descripción del issue, la de su PR y los comentarios, como en GitHub. La del PR dice dónde está (abierto, draft, mergeado o cerrado), si está aprobado y por quién, si tiene auto-merge, sus checks y si tiene conflictos.
+- **Archivos**, con el diff del PR, para [revisarlo](/ronin/guias/revisar-un-pr/).
+- **En un PR de ronin**, la descripción por secciones y las [tres decisiones](/ronin/guias/decidir-un-pr/) en el encabezado.
+- **Acciones** (`M`), con lo que se le puede pedir en ese momento. Ver [Acciones del tablero](/ronin/referencia/acciones/).
+
+## A la derecha y abajo
+
+- **A la derecha:** los links al issue o PR en GitHub y a su issue de Linear; el motivo de un bloqueo y cómo destrabarlo; las slices con sus PRs y checks; la preview con su URL y su commit; los datos de la corrida (modelo, cuenta, duración, costo).
+- **Abajo:** el uso de cada cuenta de Claude (ventana de 5 horas y semanal), los agentes corriendo, la cola, las previews y el último tick.
+
+## Quién ve qué
+
+- **Administradores** ven todos los repos, despliegan y manejan [Ajustes](/ronin/operar/ajustes/).
+- **Cualquier otra persona** ve los repos de `repos.json` en los que puede gestionar issues (*triage* o más) en GitHub. El tablero lo vuelve a consultar cada 10 minutos: si le dan o le sacan acceso a un repo, lo sigue. Solo lectura no alcanza, porque el tablero muestra transcripts, costos y previews.
+- **De un repo que no ves**, nada aparece: ni en la lista, ni en *Hoy*, ni en la búsqueda, la cola o el uso de las cuentas. Si lo pedís por número, responde que no existe.
+- **Qué puede hacer cada uno en cada repo** lo dice [Ajustes → Usuarios](/ronin/operar/ajustes/#administración); sin configurar, todo menos desplegar.
+
+<Aside type="note">
+Para instalarlo y dar acceso, ver [Operar → El tablero](/ronin/operar/tablero/).
+</Aside>
+
+## Las otras páginas
+
+<CardGrid>
+  <LinkCard title="Pedidos del portal" description="Lo que la gente pide sin GitHub, con su actividad, su issue y su PR." href="/ronin/guias/pedidos-del-portal/" />
+  <LinkCard title="Exploraciones" description="Las apps que ronin usa de noche y las fichas que propone." href="/ronin/guias/explorar-una-app/" />
+  <LinkCard title="Reuniones" description="De las notas de una reunión a issues y proyectos." href="/ronin/guias/reuniones/" />
+  <LinkCard title="Despliegues" description="Publicar un release de cada repo." href="/ronin/guias/desplegar/" />
+</CardGrid>

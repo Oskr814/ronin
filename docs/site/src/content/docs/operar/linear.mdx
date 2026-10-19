@@ -1,0 +1,35 @@
+---
+title: "Linear"
+description: "Qué aprovechan ronin y el tablero si el repo sincroniza sus issues con Linear."
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Si el repo sincroniza sus issues con Linear, ronin y el tablero lo aprovechan. GitHub sigue siendo la fuente de verdad: ronin nunca crea un issue en Linear, la sincronización lo hace.
+
+## Sin configurar nada
+
+Cada PR de slice lleva `Part of RED-n` (o `Fixes RED-n` en la última), así Linear lo muestra en su issue y lo mueve de estado. La ficha del tablero muestra `RED-n ↗`.
+
+## Con una API key del workspace
+
+En la entrada del repo en [`repos.json`](/ronin/referencia/repos-json/):
+
+```json
+"linear": { "apiKeyEnv": "LINEAR_API_KEY_ACME" }
+```
+
+y la key en `.env` (*Linear → Settings → Security & access → Personal API keys*). Con eso:
+
+- **Cada issue** muestra su proyecto y su ciclo en la lista, en la ficha y en el panel de la derecha.
+- **A la izquierda**, un filtro **Ciclo N / Todos** y otro por proyecto. Con un filtro, la lista muestra todos los issues abiertos del ciclo o del proyecto, también los del equipo.
+- **Hoy** suma el ciclo actual: cuántos issues están hechos, en review, bloqueados o sin empezar, el avance día por día, el desglose por proyecto y quién tiene lo que falta.
+- **Si no alcanzan los lugares** para agentes, ronin toma primero los issues del ciclo actual.
+- **Nuevo issue** deja elegir el proyecto y el ciclo. ronin se los pone apenas la sincronización lo crea en Linear.
+- **El issue de tracking** que nace de un spec toma el proyecto del issue del que salió.
+- **Las reuniones** pueden proponer proyectos nuevos. Ver [Planificar desde una reunión](/ronin/guias/reuniones/).
+- Opcional: los issues que abre la exploración van a un proyecto fijo por app, con `"explorationProject": { "backoffice": "<proyecto>" }` dentro de `linear`.
+
+<Aside type="note">
+Sin key, nada de esto aparece y el tablero funciona igual.
+</Aside>

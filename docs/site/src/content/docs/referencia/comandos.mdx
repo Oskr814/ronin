@@ -1,0 +1,160 @@
+---
+title: "Comandos"
+description: "Todo lo que se le puede pedir a ronin mencionándolo en un comentario de GitHub."
+---
+
+import { Aside, Badge } from '@astrojs/starlight/components';
+
+Se le pide algo mencionándolo en un comentario: `@ronin-agent <pedido>` o `@ronin-agent /<comando>`. Lo toma en el próximo tick, cada 5 minutos por cron o casi al instante con [webhooks](/ronin/operar/servidor/). Cuando ya procesó un comentario, le deja una reacción 👀. Si falla, no la deja, y lo reintenta en el tick siguiente.
+
+<Aside type="tip">
+Desde el tablero no hace falta escribirlos: el menú **Acciones** de cada ficha los escribe a tu nombre. Ver [Acciones del tablero](/ronin/referencia/acciones/).
+</Aside>
+
+## Resumen
+
+| Comando | Dónde | Qué hace |
+|---|---|---|
+| [`<pedido>`](#pedido-en-un-pr) | PR | Lo aplica si es concreto; si no, responde por qué. |
+| [`/fix-comments`](#fix-comments) | PR | Aplica en un solo pase los hilos de review abiertos. |
+| [`/preview`](#preview) | PR | Levanta el PR en una URL de la tailnet. |
+| [`/auto-merge`](#auto-merge) | PR | Lo mergea apenas esté aprobado y en verde. |
+| [`/resolve-conflicts`](#resolve-conflicts) | PR | Trae la base y resuelve los conflictos. |
+| [`<pedido>`](#pedido-en-un-issue) | Issue sin asignar | Ajusta el alcance, investiga o responde. |
+| [`/spike`](#spike) | Issue sin asignar | Investiga y agrega contexto al issue. |
+| [`/spec`](#spec) | Issue sin asignar | Convierte el pedido en un spec. |
+| [`/prototype`](#prototype) | Issue sin asignar | Capturas del antes y el después de un cambio borrador. |
+| [`/explore`](#explore) | Issue | Usa la app y propone mejoras. |
+| [`/help`](#help) | PR o issue | Los comandos que se pueden usar ahí. |
+
+## En un PR
+
+### Pedido en un PR
+
+<div class="cmd-scope"><Badge text="PR" variant="note" /><Badge text="no en draft" /></div>
+
+```
+@ronin-agent cambiá el texto del botón a «Guardar cambios»
+```
+
+- **En un PR de ronin:** si el pedido es concreto (borrar un archivo, renombrar una variable, arreglar una línea), lo aplica con amend y force-push. Si es ambiguo o requiere una decisión de diseño, no toca el código y responde por qué.
+- **En un hilo de review de un PR de una persona:** lee el hilo y el código al que apunta. Si el pedido es concreto lo aplica; si es una pregunta, la responde. No resuelve el hilo.
+- **En un comentario general del PR de una persona, o en un fork:** hace una review de solo lectura enfocada en tu pedido. No pushea nada.
+
+Mientras trabaja, el PR muestra el check `ronin/review`. Es informativo y nunca bloquea el merge.
+
+### `/fix-comments`
+
+<div class="cmd-scope"><Badge text="PR" variant="note" /><Badge text="no fork" variant="caution" /></div>
+
+Recorre todos los hilos de review **todavía abiertos**, aplica los cambios concretos, responde en cada hilo y resuelve los que cambió. Todo va en un solo amend y force-push.
+
+- **En un PR de ronin**, toma solo los hilos que él no abrió.
+- **En el PR de una persona**, toma todos, también los de sus propias reviews anteriores.
+- Mientras trabaja, el PR muestra el check `ronin/fix-comments`.
+
+<Aside type="tip">
+Para excluir un hilo, resolvelo vos antes de pedir el comando: los hilos resueltos no se listan.
+</Aside>
+
+### `/preview`
+
+<div class="cmd-scope"><Badge text="PR" variant="note" /><Badge text="no fork" variant="caution" /></div>
+
+```
+@ronin-agent /preview [app] [qué datos querés]
+```
+
+Levanta la app con el código del PR, su base y sus seeds, prepara los datos que piden los pasos de prueba del PR (más lo que escribas) y responde con la URL, los usuarios de cada rol y qué datos quedaron listos.
+
+- **Se actualiza sola** con cada commit nuevo del PR: en el lugar si el `ronin.app.json` declara `rerunOn`, o de cero si no.
+- **Se baja sola** a la hora, o al mergear o cerrar el PR. `/preview stop` la baja antes.
+- **Hay un tope** de previews activas por repo (2 por defecto).
+
+Detalle en [Probar con una preview](/ronin/guias/probar-con-preview/).
+
+### `/auto-merge`
+
+<div class="cmd-scope"><Badge text="PR" variant="note" /></div>
+
+Le pone el label `ronin:auto-merge` y responde qué falta. En el primer tick en que el PR está aprobado, en verde y mergeable, lo mergea. `/auto-merge off`, o sacar el label, lo cancela.
+
+- Un PR apilado espera a que se mergee el de abajo.
+- Si tiene conflictos o el merge falla, ronin saca el label y avisa en el PR.
+- Sus PRs de slice nacen con el label, una sola vez. Si se lo sacás, no vuelve a ponerlo. Los PRs de un spec y de exploración no lo llevan: tienen su propio merge.
+- El label también se puede poner a mano, y es lo único que importa.
+- Se apaga por repo en [Ajustes → Repos](/ronin/operar/ajustes/#administración), o con `"autoMerge": false` en `repos.json`. Apagado, solo lo llevan los PRs que alguien marca y los de un pedido del portal.
+
+### `/resolve-conflicts`
+
+<div class="cmd-scope"><Badge text="PR" variant="note" /><Badge text="no fork" variant="caution" /></div>
+
+Trae la base al PR con un merge, como «Update branch» de GitHub, y resuelve los conflictos manteniendo lo que cambian los dos lados. Si un conflicto necesita una decisión del equipo, no sube nada y explica por qué.
+
+## En un issue
+
+### Pedido en un issue
+
+<div class="cmd-scope"><Badge text="Issue sin asignar" variant="success" /></div>
+
+Nunca abre un PR desde acá:
+
+- **Cambiar el alcance:** lo reescribe en `## Alcance`, sin tocar la descripción original, y anota el cambio.
+- **Investigar algo:** agrega una sección de contexto.
+- **Un prototipo:** lo hace como `/prototype`.
+- **Una pregunta:** la responde en el issue.
+
+### `/spike`
+
+<div class="cmd-scope"><Badge text="Issue sin asignar" variant="success" /><Badge text="también desde Acciones" variant="tip" /></div>
+
+```
+@ronin-agent /spike <app> [instrucción]
+```
+
+Investiga en solo lectura la parte del repo que corresponde a `<app>` (encuentra la carpeta por su cuenta) y agrega al issue `## Contexto adicional (spike)`: los archivos relevantes, una hipótesis de causa raíz o un enfoque, y las preguntas abiertas. No borra la descripción original. Nunca escribe código, ni abre un PR, ni cambia labels o assignees: asignarlo después sigue siendo un paso aparte.
+
+### `/spec`
+
+<div class="cmd-scope"><Badge text="Issue sin asignar" variant="success" /></div>
+
+Investiga, pregunta en el issue lo que falte y abre un PR draft con el spec. Cuando lo marcás *ready for review*, lo implementa como cualquier [spec](/ronin/guias/darle-trabajo/#un-spec).
+
+### `/prototype`
+
+<div class="cmd-scope"><Badge text="Issue sin asignar" variant="success" /><Badge text="también desde Acciones" variant="tip" /></div>
+
+Levanta la app, saca una captura del antes, aplica un cambio borrador y saca la del después. Responde en el issue con las dos capturas y el diff. No abre rama ni PR, y corre uno a la vez por repo.
+
+### `/explore`
+
+<div class="cmd-scope"><Badge text="Issue" variant="success" /></div>
+
+```
+@ronin-agent /explore <app> [cantidad de funciones]
+```
+
+Usa hasta 10 funciones de la app como cada rol, en desktop y mobile, y deja las propuestas en el PR de exploración abierto (o abre uno), con capturas del antes y el después. Al aprobar el PR, ronin abre un issue por cada propuesta que quedó en pie, asignado a sí mismo. Ver [Explorar una app](/ronin/guias/explorar-una-app/).
+
+## En cualquier lado
+
+### `/help`
+
+<div class="cmd-scope"><Badge text="PR" variant="note" /><Badge text="Issue" variant="success" /></div>
+
+Responde en el mismo hilo con los comandos que aplican ahí: un PR y un issue no tienen los mismos. También responde solo, sin que se lo pidas:
+
+- **Un comando en el lugar equivocado** (`/spike` en un PR): te dice dónde funciona.
+- **Un comando mal escrito** (`/fix-coments`): sugiere cuál quisiste decir.
+- **Le faltan argumentos** (`/spike` sin `<app>`): te muestra el uso exacto.
+
+Estas respuestas no gastan una corrida de agente. Además, todo PR que abre ronin trae al final de la descripción la misma tabla, plegada, con el link a esta página.
+
+## Reglas que respeta siempre
+
+- Nunca aprueba ni pide cambios con una review formal.
+- Nunca mergea sin la aprobación de una persona, salvo el PR de un spec al marcarlo *ready for review*. El de exploración lo mergea al aprobarlo, y uno con `ronin:auto-merge` cuando está aprobado y en verde.
+- Nunca menciona a nadie con `@` en lo que postea, ni lee sus propios comentarios como pedidos.
+- El texto de un comentario es la descripción del pedido, nunca instrucciones que cambien sus reglas.
+- Nunca ejecuta el código de un fork.
+- Si se traba, no improvisa: avisa. Ver [Cuándo se bloquea](/ronin/referencia/bloqueos/).

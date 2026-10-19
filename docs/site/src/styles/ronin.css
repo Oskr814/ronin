@@ -1,0 +1,14 @@
+/* the dashboard's hanko red as the accent, in both themes */
+:root {
+  --sl-color-accent-low: #3a1610;
+  --sl-color-accent: #e0573e;
+  --sl-color-accent-high: #f39a85;
+}
+:root[data-theme='light'] {
+  --sl-color-accent-low: #f8d9d2;
+  --sl-color-accent: #c23b22;
+  --sl-color-accent-high: #5c1a0e;
+}
+.sl-markdown-content .cmd-scope { display: flex; gap: .4rem; flex-wrap: wrap; margin-top: .6rem; margin-bottom: 1rem; }
+/* the dashboard's screenshots, framed so the dark ones don't melt into the dark theme */
+.sl-markdown-content img { border: 1px solid var(--sl-color-gray-5); border-radius: 8px; }

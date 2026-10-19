@@ -1,0 +1,89 @@
+---
+title: "ronin.app.json"
+description: "El manifiesto en el repo del producto que dice cómo levantar cada app, para previews, prototipos y exploración."
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+`ronin.app.json`, en la raíz del repo del producto, dice cómo levantar cada app en un worktree aislado. Lo necesitan [`/preview`](/ronin/guias/probar-con-preview/), `/prototype`, `/spike` (para elegir la app), la [exploración](/ronin/guias/explorar-una-app/) y el portal. Lo escribe el equipo del repo, y sus comandos corren en el runner con la misma confianza que el `CLAUDE.md` del repo.
+
+Se lee del checkout que se levanta: una rama puede cambiar cómo arranca su propia app.
+
+```json
+{
+  "apps": {
+    "backoffice": {
+      "path": "apps/backoffice",
+      "compose": { "files": ["docker-compose.yml"] },
+      "steps": [
+        { "compose": "up" },
+        { "run": "pnpm install --frozen-lockfile", "name": "install", "rerunOn": ["pnpm-lock.yaml"] },
+        { "run": "pnpm db:migrate && pnpm db:seed", "name": "migrar", "rerunOn": ["apps/api/src/migrations/**"] },
+        { "start": "pnpm --filter backoffice dev", "name": "web" },
+        { "wait": "http://localhost:5173", "timeoutSeconds": 120 }
+      ],
+      "baseUrl": "http://localhost:5173",
+      "homePath": "/pedidos",
+      "users": [
+        { "role": "admin", "username": "admin@example.com", "password": "seed-admin" },
+        { "role": "bodega", "username": "bodega@example.com", "password": "seed-bodega", "notes": "Lo usa desde el teléfono" }
+      ],
+      "login": [
+        { "goto": "/login" },
+        { "fill": "#email", "value": "{{username}}" },
+        { "fill": "#password", "value": "{{password}}" },
+        { "click": "button[type=submit]" },
+        { "waitForUrl": "**/pedidos" }
+      ],
+      "seedPaths": ["apps/api/seeds"]
+    }
+  }
+}
+```
+
+## Campos de una app
+
+| Campo | Qué es |
+|---|---|
+| `path` | La carpeta de la app en el repo. La exploración la usa para saber qué funciones cambiaron. |
+| `compose.files` | Los compose de la app. ronin los levanta con los puertos publicados remapeados a puertos libres, para no chocar con el stack de desarrollo de nadie. |
+| `steps` | Cómo levantarla, en orden (abajo). |
+| `baseUrl` | Dónde responde la app una vez arriba. |
+| `homePath` | Adónde llega un usuario logueado. La exploración empieza ahí. |
+| `users` | Un usuario de prueba por rol: `role`, `username`, `password` y, opcional, `notes` sobre quién usa ese rol y cómo. **Siempre de seed, nunca reales.** |
+| `login` | Los pasos del login en el navegador (Playwright): `goto`, `fill`, `click`, `waitForUrl`, `waitFor`. `{{username}}` y `{{password}}` se llenan por usuario. |
+| `viewports` | Opcional. `desktop` y `mobile`, con `width`, `height` e `isMobile`. Por defecto, 1440×900 y 390×844. |
+| `seedPaths` | Opcional. Los archivos y carpetas que definen los datos base, para el catálogo de seeds de las previews. Sin esto, ronin los busca por nombre. |
+
+## Los pasos
+
+| Paso | Qué hace |
+|---|---|
+| `{ "compose": "up" }` | Levanta los compose de la app. |
+| `{ "run": "…" }` | Un comando que tiene que terminar: instalar, migrar, sembrar. Acepta `name`, `cwd`, `env` y `timeoutSeconds`. |
+| `{ "start": "…", "name": "…" }` | Un proceso que queda corriendo, como un dev server. Acepta `cwd` y `env`. |
+| `{ "wait": "<url>" }` | Espera a que la URL responda, por ejemplo una API que migra al arrancar. Acepta `timeoutSeconds`. |
+
+### rerunOn
+
+Cualquier paso puede llevar `rerunOn`: globs sobre las rutas del repo que dicen cuándo tiene que volver a correr si la app ya está arriba y el checkout pasa a otro commit. Es lo que permite que una preview se [actualice en el lugar](/ronin/guias/probar-con-preview/#se-actualiza-sola) con cada commit nuevo del PR:
+
+- un `run` vuelve a correr su comando, `compose` corre `compose up -d --build`, `start` reinicia ese proceso y `wait` vuelve a esperar, en el orden del manifiesto;
+- un paso sin `rerunOn` no se repite, porque los dev servers recompilan solos lo que cambia en el código;
+- **si ningún paso lo declara**, ronin no sabe qué es seguro saltear y levanta la preview de cero.
+
+<Aside type="caution">
+Los globs son los de `path.matchesGlob` de Node: `**` no entra en carpetas que empiezan con punto.
+</Aside>
+
+## Probarlo
+
+En el runner, sin pasar por GitHub:
+
+```bash
+pnpm app up    --repo acme/tienda --app backoffice   # la deja arriba y dice dónde
+pnpm app smoke --repo acme/tienda --app backoffice   # entra con cada usuario y saca capturas
+pnpm app down  --repo acme/tienda --app backoffice
+```
+
+`smoke` deja las capturas, en desktop y mobile, en `logs/app-smoke/`. `--ref` levanta otra rama. Los navegadores se instalan una vez con `pnpm browsers:install`.

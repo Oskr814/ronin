@@ -1,0 +1,58 @@
+---
+title: "Atender pedidos del portal"
+description: "Cómo la gente que usa las apps le pide ajustes a ronin sin GitHub, y cómo el equipo los sigue desde el tablero."
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+El portal, `https://ronin-agent.redmotoshn.com`, es para que la gente que usa las aplicaciones le pida a ronin ajustes chicos sin cuenta de GitHub. El equipo sigue cada pedido desde el tablero. Para activarlo y dar cuentas, ver [Operar → El portal](/ronin/operar/portal/).
+
+## Cómo avanza un pedido
+
+<Steps>
+
+1. **La persona entra** con correo y contraseña, elige la aplicación y le cuenta a ronin qué necesita, con texto y capturas.
+
+2. **ronin lo lee y revisa el código.** Puede preguntarle algo (hasta 3 veces), responderle si no hay nada que cambiar, o decidir si es un ajuste chico o algo para el equipo. Ante la duda, lo pasa al equipo.
+
+3. **Si es chico, le muestra un prototipo:** capturas del antes y el después, con la app levantada y un cambio borrador. La persona lo aprueba, pide un ajuste (hasta 3 prototipos en total) o elige *No me sirve*.
+
+4. **Aprobado:** ronin abre un issue asignado a sí mismo, con `ronin:portal`, hace el cambio en un PR y le pone `ronin:auto-merge`. **El PR se mergea cuando un dev lo aprueba** y el CI está en verde. La persona recibe «listo, sale en la próxima actualización» y, cuando el release que lo lleva termina de [desplegarse](/ronin/guias/desplegar/), «ya está en la aplicación».
+
+5. **Si es grande, o la persona no aprueba el prototipo:** ronin abre un issue para el equipo, sin asignar. Cuando se cierra, la persona recibe un correo: resuelto si se cerró como completado, o que no se hará por ahora si se cerró como no planeado.
+
+</Steps>
+
+**Si reporta un error,** ronin primero lo reproduce en una copia de la app con datos de prueba y escribe un test que falla por ese error. Si el arreglo es chico y el test pasa a verde con él, abre el issue asignado a sí mismo, sin prototipo. Si no, lo pasa al equipo con los pasos, la causa y el test. Un error que no pudo reproducir nunca se cierra como «no es un error»: va al equipo, porque puede depender de datos reales.
+
+**Cancelar:** la persona puede cancelar un pedido mientras nadie lo tomó. Si ya tenía un issue del equipo sin asignar, ese issue se cierra como no planeado.
+
+## Los correos
+
+- **A la persona:** cada respuesta de ronin, el prototipo, el paso al equipo, el merge, el despliegue y el cierre.
+- **Al equipo del repo:** el issue de un pedido que es suyo y el PR que espera aprobación. Le llega a quien eligió esos avisos en [Ajustes → Notificaciones](/ronin/operar/ajustes/#tu-cuenta).
+
+## Los pedidos en el tablero
+
+**Pedidos del portal** (`/pedidos`) muestra los pedidos de los repos que ves.
+
+- **La lista** dice en qué está cada pedido y a quién espera: a **la persona** (responder o decidir sobre el prototipo), a **ronin** (leerlo, prototipar, abrir el issue o hacer el cambio) o al **equipo** (su issue, o aprobar el PR). Abre en *Pendientes*, con filtros por a quién espera, *Cerrados* y *Todos*, de 25 en 25.
+- **La ficha de un pedido** (`/pedidos/<n>`):
+  - **Las etapas:** Pedido → Conversación → Prototipo → Aprobación → Issue → PR → Listo.
+  - **Ahora:** qué falta y quién lo tiene que hacer. Si ronin está trabajando, la corrida en vivo.
+  - **Actividad:** todo en orden con su hora: los mensajes, cada corrida con su duración y costo, la clasificación, la decisión, cada correo (y si salió), el issue, el PR, el merge y el release que lo llevó.
+  - **Conversación:** lo mismo que ve la persona.
+  - **Para el equipo:** por qué es chico o grande, el resumen técnico, lo que se le pidió al prototipo y el diff de cada uno.
+  - **Issue y PR:** como en su ficha, con **Revisar el PR** (abre *Archivos*) y **Abrir la ficha**.
+  - **Corridas:** todas las del pedido, con su transcripción.
+- **El issue o PR que salió de un pedido** dice «del pedido P-n» en su ficha, con enlace al pedido.
+
+<Aside type="note">
+Los pedidos anteriores al 17 de octubre de 2026 no guardaban su historial de eventos: su actividad muestra los mensajes, la clasificación, la decisión y las corridas, pero no los correos ni las fallas.
+</Aside>
+
+## Si algo no anda
+
+- **Un pedido parece trabado:** en su ficha, *Ahora* dice a quién espera. Si espera a ronin y lo último fue una falla, el error está ahí, y el tick lanza otro worker en su próxima vuelta.
+- **La persona dice que no le llegó un correo:** la actividad y la columna de la derecha muestran cada correo y si salió. Los que fallan quedan también en el log del tick.
+- **No aparece *Pedidos del portal*:** solo aparece si hay pedidos en algún repo que ves, o si sos administrador.

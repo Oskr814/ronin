@@ -1,0 +1,50 @@
+---
+title: "ronin"
+description: "Agentes autónomos que trabajan tus issues y PRs en GitHub."
+template: splash
+hero:
+  tagline: Le asignás un issue o un spec en GitHub y ronin lo trabaja en PRs chicos y revisables, arregla lo que falla en CI y te avisa solo cuando de verdad necesita a alguien.
+  actions:
+    - text: Darle trabajo
+      link: /ronin/guias/darle-trabajo/
+      icon: right-arrow
+    - text: Comandos
+      link: /ronin/referencia/comandos/
+      variant: minimal
+---
+
+import { Card, CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+> *Del japonés 浪人 (rōnin): samurái sin señor, que actúa por su propio juicio.*
+
+## Qué hace
+
+<CardGrid>
+  <Card title="Trocea el trabajo" icon="list-format">
+    Un spec se convierte en slices chicas, un PR por slice, en secuencia o apiladas.
+  </Card>
+  <Card title="Se hace cargo del CI" icon="approve-check">
+    Corre los tests e2e y arregla lo que falla por su cuenta. Si no converge, avisa.
+  </Card>
+  <Card title="Responde en los PRs" icon="comment-alt">
+    Aplica pedidos y comentarios de review, y revisa los PRs de las personas.
+  </Card>
+  <Card title="Previews en la tailnet" icon="laptop">
+    Levanta el PR en una URL con datos listos para probarlo, que se actualiza con cada commit.
+  </Card>
+  <Card title="Explora de noche" icon="magnifier">
+    Usa la app como cada rol y propone mejoras con capturas del antes y el después.
+  </Card>
+  <Card title="No improvisa" icon="warning">
+    Cuando se traba de verdad, se detiene y le escribe a una persona, en vez de adivinar.
+  </Card>
+</CardGrid>
+
+## Por dónde seguir
+
+<CardGrid>
+  <LinkCard title="Darle trabajo" description="Asignarle un issue o un spec, desde el tablero o desde GitHub." href="/ronin/guias/darle-trabajo/" />
+  <LinkCard title="Decidir un PR de ronin" description="Aprobar, ajustar o cerrar, desde su descripción." href="/ronin/guias/decidir-un-pr/" />
+  <LinkCard title="Comandos" description="Todo lo que se le puede pedir con @ronin-agent." href="/ronin/referencia/comandos/" />
+  <LinkCard title="Operar un runner" description="Instalarlo, el servidor, Linear y los ajustes." href="/ronin/operar/instalacion/" />
+</CardGrid>

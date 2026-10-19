@@ -1,0 +1,36 @@
+---
+title: "Ajustes"
+description: "La configuración de ronin desde el tablero: tu cuenta y, para administradores, usuarios, repos, agentes y conexiones."
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+El engranaje junto a *ronin*, arriba a la izquierda del tablero, abre **Ajustes** (`/ajustes`): la configuración que antes solo se cambiaba en el servidor, en `.env` o en `repos.json`. Cada campo se guarda al salir de él, vale al momento, sin reiniciar, y queda en el **Registro**.
+
+Cada valor dice de dónde viene (`.env`, *Por defecto* o *Cambiado en el tablero*) y ofrece *Volver al de .env*. Los secretos, rutas y puertos solo se ven: se cambian en `.env`.
+
+## Tu cuenta
+
+Para todos:
+
+- **Perfil:** tu nombre, tu correo (GitHub no se lo da al tablero: sin él no te llega ningún correo), quién sos en cada equipo de Linear y el tema.
+- **Notificaciones:** qué correos de ronin te llegan, repo por repo: *Pedido para el equipo*, *Pedido para revisar*, *Propuestas de una reunión* y *Bloqueos*. Las elegís vos y nadie más las cambia. Lo que no le llega a nadie va a `NOTIFY_TO`.
+
+## Administración
+
+Solo para administradores:
+
+- **General:** la duración de las sesiones del tablero y del portal, cuánto se reusa lo leído de GitHub y los pedidos por día del portal.
+- **Usuarios:** todos en un solo lugar, con un filtro *Todos · Equipo · Portal*.
+  - **El equipo** entra con GitHub. Su rol es *Administrador* o *Miembro*. Los de `DASHBOARD_ADMINS` son administradores de respaldo y no se les quita el rol desde acá.
+  - **Entrada:** «quien tenga acceso en GitHub» o «solo la lista». Mientras nadie la elija, manda `DASHBOARD_ALLOWED_USERS`.
+  - **Qué puede hacer un miembro en cada repo:** un conjunto (*Todo*; *Reuniones y pedidos*; *Solo lectura*) o *Personalizado*: subir notas, aprobar reuniones y las acciones del tablero. **Desplegar** se da aparte, repo por repo. También se le puede ocultar un repo. Nunca más de lo que le da GitHub.
+  - **Los usuarios del portal** (rol *Usuario*): sus apps, sus pedidos por día, el enlace de la contraseña y desactivarlos. Ver [El portal](/ronin/operar/portal/#las-cuentas).
+- **Repos:** una página por repo con lo que se escribe en [`repos.json`](/ronin/referencia/repos-json/): el nombre en el portal, la rama base, las apps (nombre, descripción, exploración nocturna y proyecto de Linear), la key de Linear, el auto-merge, los despliegues y el modelo de los agentes. Antes de escribir, ronin lo valida y guarda una copia del anterior.
+- **Agentes:** modelo y esfuerzo (también por tipo de tarea), topes de tiempo, concurrencia y reintentos antes de bloquear.
+- **Exploración** y **Previews:** la ventana nocturna y sus topes; cuánto vive una preview y cuántas a la vez.
+- **Conexiones:** si cada credencial de `.env` está y si GitHub responde (y cuándo vence el token), nunca su valor; y un correo de prueba.
+
+<Aside type="caution">
+Agregar o quitar un repo, y sus rutas, se sigue haciendo en el archivo. Lo cambiado en Ajustes queda en `SETTINGS_DATA_DIR`: es la única copia, respaldalo.
+</Aside>
