@@ -1,4 +1,5 @@
 import { closeSync, existsSync, openSync, readFileSync, readSync, readdirSync, statSync } from 'node:fs';
+import { cpus, freemem, loadavg, totalmem } from 'node:os';
 import { join } from 'node:path';
 import { logsDir, localDay } from '../../core/run-files.js';
 import type { AccountUsage } from '../../core/claude-usage.js';
@@ -261,4 +262,57 @@ export function readTickInfo(now = new Date(), dir = logsDir()): TickInfo {
     }
   }
   return info;
+}
+
+// How loaded the runner's machine is, for the status bar: CPU used since the
+// last read (every core together, 0–1) and the memory in use (0–1). The
+// first read, or one after a long while, has no interval to measure, so its
+// CPU is the last minute's load average over the cores instead.
+export interface HostLoad {
+  cpu: number;
+  ram: number;
+  cores: number;
+  load: number[];
+  memUsedBytes: number;
+  memTotalBytes: number;
+}
+
+const CPU_SAMPLE_MAX_AGE_MS = 5 * 60_000;
+let lastCpu: { at: number; idle: number; total: number } | null = null;
+
+function cpuTimes(): { idle: number; total: number } {
+  let idle = 0;
+  let total = 0;
+  for (const cpu of cpus()) {
+    const t = cpu.times;
+    idle += t.idle;
+    total += t.user + t.nice + t.sys + t.idle + t.irq;
+  }
+  return { idle, total };
+}
+
+// MemAvailable, not MemFree: on Linux the page cache counts as free memory
+// the kernel gives back, and os.freemem() leaves it out.
+function memAvailable(meminfo = '/proc/meminfo'): number {
+  try {
+    const kb = /^MemAvailable:\s+(\d+) kB/m.exec(readFileSync(meminfo, 'utf8'));
+    if (kb) return Number(kb[1]) * 1024;
+  } catch {
+    // Not Linux: what node knows.
+  }
+  return freemem();
+}
+
+export function hostLoad(now = Date.now(), meminfo?: string): HostLoad {
+  const cores = cpus().length || 1;
+  const load = loadavg();
+  const times = cpuTimes();
+  let cpu = Math.min(1, load[0] / cores);
+  if (lastCpu && now - lastCpu.at <= CPU_SAMPLE_MAX_AGE_MS && times.total > lastCpu.total) {
+    cpu = 1 - (times.idle - lastCpu.idle) / (times.total - lastCpu.total);
+  }
+  lastCpu = { at: now, ...times };
+  const total = totalmem();
+  const used = Math.max(0, total - memAvailable(meminfo));
+  return { cpu: Math.max(0, Math.min(1, cpu)), ram: total ? used / total : 0, cores, load: load.map((n) => Math.round(n * 100) / 100), memUsedBytes: used, memTotalBytes: total };
 }

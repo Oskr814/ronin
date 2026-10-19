@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { listRuns, readQueue, readTickInfo, slotsInUse, summarizeRun, type RunLine } from './dashboard-data.js';
+import { hostLoad, listRuns, readQueue, readTickInfo, slotsInUse, summarizeRun, type RunLine } from './dashboard-data.js';
 
 let logs: string;
 beforeEach(() => {
@@ -103,5 +103,21 @@ describe('slots, queue and tick', () => {
       '{"event":"tick_complete","ts":"2026-10-16T09:30:00.000Z","durationMs":2000}',
     ].join('\n'));
     expect(readTickInfo(now)).toEqual({ lastTickAt: '2026-10-16T09:30:00.000Z', lastTickDurationMs: 2000, lastEventAt: '2026-10-16T09:40:00.000Z' });
+  });
+});
+
+describe('hostLoad', () => {
+  it('measures memory by MemAvailable, and CPU between two reads', () => {
+    const root = mkdtempSync(join(tmpdir(), 'ronin-host-'));
+    const meminfo = join(root, 'meminfo');
+    writeFileSync(meminfo, `MemTotal:       16000000 kB\nMemFree:          500000 kB\nMemAvailable:    8000000 kB\n`);
+    const first = hostLoad(1_000, meminfo);
+    expect(first.memUsedBytes).toBe(Math.max(0, first.memTotalBytes - 8_000_000 * 1024));
+    expect(first.cpu).toBeGreaterThanOrEqual(0);
+    expect(first.cpu).toBeLessThanOrEqual(1);
+    expect(first.cores).toBeGreaterThan(0);
+    const second = hostLoad(2_000, meminfo);
+    expect(second.cpu).toBeGreaterThanOrEqual(0);
+    expect(second.cpu).toBeLessThanOrEqual(1);
   });
 });

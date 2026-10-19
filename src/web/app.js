@@ -4545,11 +4545,22 @@ function usageMeter(usage) {
   return `<span class="meter${out ? ' out' : ''}" title="${esc(title)}">${esc(usage.account)}<span class="m"><span class="${five !== null && five >= 0.75 ? 'hot' : ''}" style="width:${five === null ? 0 : Math.min(100, five * 100)}%"></span></span><b>${esc(value)}</b>${week !== null ? `<span class="hide-m">${pct(week)} sem</span>` : ''}</span>`;
 }
 
+// The runner's machine: CPU and memory in use, hot from 85%.
+const HOST_HOT = 0.85;
+function hostMeter(host) {
+  if (!host) return '';
+  const gb = (bytes) => `${(bytes / 1024 ** 3).toFixed(1)} GB`;
+  const bar = (label, value) => `<span class="meter${value >= HOST_HOT ? ' hot' : ''}">${label}<span class="m"><span class="${value >= HOST_HOT ? 'hot' : ''}" style="width:${Math.min(100, value * 100)}%"></span></span><b>${pct(value)}</b></span>`;
+  const title = `Runner: CPU ${pct(host.cpu)} de ${host.cores} núcleos (carga ${host.load.join(' / ')}), memoria ${gb(host.memUsedBytes)} de ${gb(host.memTotalBytes)}`;
+  return `<span class="host hide-m" title="${esc(title)}">${bar('cpu', host.cpu)}${bar('ram', host.ram)}</span>`;
+}
+
 function renderStatus() {
   const { slots, queue, tick } = S.snap.runner;
   const tickAge = tick.lastTickAt ? Date.now() - Date.parse(tick.lastTickAt) : null;
   const dark = document.documentElement.dataset.theme !== 'light';
   $('#statusbar').innerHTML = S.snap.usage.map(usageMeter).join('') +
+    hostMeter(S.snap.runner.host) +
     `<span class="sp hide-m" title="${esc((slots.repos ?? []).map((r) => `${repoShort(r.repo)}: ${r.used} de ${r.limit}`).join(', '))}">agentes ${slots.used}/${slots.limit}</span>` +
     `<span class="hide-m">en cola ${queue.length}</span>` +
     `<span class="hide-m">previews ${S.snap.previews.length}</span>` +

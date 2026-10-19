@@ -361,6 +361,8 @@ a { color: inherit; }
 .meter .m span.hot { background: var(--warn); }
 .meter b { color: var(--ink-2); font-weight: 500; font-variant-numeric: tabular-nums; }
 .meter.out b { color: var(--crit); }
+.host { display: flex; gap: 14px; }
+.meter.hot b { color: var(--warn); }
 .bar-s .sp { margin-left: auto; }
 .bar-s .ok-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--ok); margin-right: 6px; }
 .bar-s .ok-dot.stale { background: var(--warn); }
