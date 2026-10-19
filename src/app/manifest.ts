@@ -56,6 +56,10 @@ export interface AppDefinition {
   users: AppUser[];
   login: LoginStep[];
   viewports: { desktop: Viewport; mobile: Viewport };
+  // The files and directories whose content defines the base data (seeds,
+  // migrations), for the preview's seed catalog — see preview/seed-catalog.ts.
+  // Without it, a convention finds them.
+  seedPaths?: string[];
 }
 
 export interface AppManifest {
@@ -174,6 +178,12 @@ function parseApp(raw: unknown, where: string): AppDefinition {
   });
   if (!Array.isArray(raw.login) || raw.login.length === 0) throw new Error(`${where}.login debe ser una lista no vacía`);
 
+  let seedPaths: string[] | undefined;
+  if (raw.seedPaths !== undefined) {
+    if (!Array.isArray(raw.seedPaths) || raw.seedPaths.length === 0) throw new Error(`${where}.seedPaths debe ser una lista no vacía`);
+    seedPaths = raw.seedPaths.map((p, i) => str(p, `${where}.seedPaths[${i}]`));
+  }
+
   const viewports = isObject(raw.viewports) ? raw.viewports : {};
   return {
     path: str(raw.path, `${where}.path`),
@@ -187,6 +197,7 @@ function parseApp(raw: unknown, where: string): AppDefinition {
       desktop: parseViewport(viewports.desktop, DEFAULT_VIEWPORTS.desktop, `${where}.viewports.desktop`),
       mobile: parseViewport(viewports.mobile, DEFAULT_VIEWPORTS.mobile, `${where}.viewports.mobile`),
     },
+    ...(seedPaths ? { seedPaths } : {}),
   };
 }
 

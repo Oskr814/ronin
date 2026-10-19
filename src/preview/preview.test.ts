@@ -3,7 +3,7 @@ import { describe, it, expect, vi } from 'vitest';
 vi.mock('../core/logger.js', () => ({ log: { error: vi.fn(), info: vi.fn() } }));
 vi.mock('../core/config.js', () => ({ config: { githubLogin: 'ronin-agent' } }));
 
-import { chooseManifest, describeTtl, parsePreviewData, previewPorts, previewPrFromDirName, renderPreviewFailed, renderPreviewReady, resolvePreviewArgs } from './preview.js';
+import { chooseManifest, describeTtl, parsePreviewData, parsePreviewTriage, previewPorts, previewPrFromDirName, renderPreviewFailed, renderPreviewReady, resolvePreviewArgs } from './preview.js';
 import type { AppDefinition, TemplateContext } from '../app/manifest.js';
 
 const app = {
@@ -101,6 +101,11 @@ describe('renderPreviewReady with prepared data', () => {
     expect(renderPreviewReady({ ...base, data: { error: 'timed out' } }, 'r')).toContain('No pude preparar los datos para probar el PR (timed out)');
   });
 
+  it('lists the seeded records to use when the base seed was enough', () => {
+    const body = renderPreviewReady({ ...base, data: { preparado: [], noPreparado: [], base: ['Cliente Ejemplo: 14 catálogos, 3 vencidos'] } }, 'r');
+    expect(body).toContain('No hizo falta preparar datos: el PR se prueba con los seeds base.\n\n- Cliente Ejemplo: 14 catálogos, 3 vencidos\n');
+  });
+
   it('says nothing about data when it was not attempted', () => {
     expect(renderPreviewReady(base, 'r')).not.toMatch(/datos/i);
   });
@@ -109,6 +114,14 @@ describe('renderPreviewReady with prepared data', () => {
 describe('parsePreviewData', () => {
   it('keeps only non-empty strings and tolerates missing fields', () => {
     expect(parsePreviewData('{"preparado": ["a", "", 3, " b "]}')).toEqual({ preparado: ['a', 'b'], noPreparado: [] });
+  });
+});
+
+describe('parsePreviewTriage', () => {
+  it('skips preparing only on an explicit true', () => {
+    expect(parsePreviewTriage('{"alcanzan": true, "usar": ["a", ""]}')).toEqual({ alcanzan: true, usar: ['a'] });
+    expect(parsePreviewTriage('{"alcanzan": "true"}')).toEqual({ alcanzan: false, usar: [] });
+    expect(parsePreviewTriage('{}')).toEqual({ alcanzan: false, usar: [] });
   });
 });
 

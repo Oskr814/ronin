@@ -44,6 +44,12 @@ describe('parseAppManifest', () => {
     expect(() => parseAppManifest(manifest({ steps }))).toThrow(/mismo name/);
   });
 
+  it('takes the paths that define the base data, when declared', () => {
+    expect(parseAppManifest(manifest()).apps.backoffice.seedPaths).toBeUndefined();
+    expect(parseAppManifest(manifest({ seedPaths: ['db/seeds', 'db/migrations'] })).apps.backoffice.seedPaths).toEqual(['db/seeds', 'db/migrations']);
+    expect(() => parseAppManifest(manifest({ seedPaths: [] }))).toThrow(/seedPaths/);
+  });
+
   it('rejects an app without users', () => {
     expect(() => parseAppManifest(manifest({ users: [] }))).toThrow(/users/);
   });

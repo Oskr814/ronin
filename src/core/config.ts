@@ -205,6 +205,12 @@ export const config = {
   settings: {
     dataDir: resolve(process.env.SETTINGS_DATA_DIR || 'settings-data'),
   },
+  // What each app's base seed has (#202), per repo, app and hash of what
+  // defines it — see preview/seed-catalog.ts. Never in the product repo: it
+  // names the seeded clients and users, and ronin regenerates it on its own.
+  seedCatalogs: {
+    dataDir: resolve(process.env.SEED_CATALOG_DATA_DIR || 'seed-catalog-data'),
+  },
   // Per task type, the model and effort chosen in Ajustes → Agentes (#174),
   // put in place by applySettings below.
   taskOverrides: {} as Record<string, { model?: string; effort?: string }>,
@@ -233,6 +239,12 @@ const TASK_MODEL_DEFAULTS: Record<string, string> = {
   // Reading a PR and its seeds, then a few API calls or inserts, checked by
   // reading them back.
   'prepare-preview-data': 'sonnet',
+  // Reading the base seed once per hash into a catalog every later preview
+  // trusts: it has to get the cases right.
+  'preview-seed-catalog': 'sonnet',
+  // Yes or no from the catalog and the PR; a wrong yes costs one preview
+  // without its data, a wrong no only the time it saved.
+  'preview-data-triage': 'haiku',
 };
 
 function taskEnv(prefix: string, taskType: string): string | undefined {
