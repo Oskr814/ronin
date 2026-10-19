@@ -1119,6 +1119,10 @@ export type Flow =
   // The releases ronin published (#158): their workflow ending tells the
   // portal requests they carried.
   | 'deploys'
+  // A running /preview moving to its PR's new commit. Only an event's
+  // handler launches it, before it waits for anything (see
+  // server/api/webhooks/handler.ts); the cron pass does it in the sweeps.
+  | 'previews'
   | 'issues'
   | 'idle-commands'
   | 'pr-commands'

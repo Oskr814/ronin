@@ -11,6 +11,7 @@ import { getPrHead } from '../../../core/github.js';
 import { tryLockResource, unlockResource } from '../../../core/locks.js';
 import { log } from '../../../core/logger.js';
 import { issueFromSliceBranch } from '../../../slices/index.js';
+import { launchPreviewUpdates } from '../../../preview/index.js';
 import { runScoped, type Scope } from '../../../tick.js';
 
 export interface EventHandlerRequest {
@@ -65,6 +66,13 @@ async function main(): Promise<void> {
   const entry = (await loadRepos()).find((r) => r.productRepo === request.repo);
   if (!entry) throw new Error(`${request.repo} no está en repos.json`);
   await withActiveRepo(entry, async () => {
+    // Before waiting for anything: it only launches workers, which hold
+    // their own lock, and the push that sent this event is often ronin's own
+    // issue job, which still holds the issue it would wait for.
+    if (request.scope.flows.includes('previews')) {
+      const prs = request.scope.resources.flatMap((r) => (/^pr-\d+$/.test(r) ? [Number(r.slice(3))] : []));
+      await launchPreviewUpdates(prs).catch((error) => log.error('evento: no se pudieron lanzar las actualizaciones de previews', error));
+    }
     const scope = await withSliceIssues(request.scope);
     // At most one handler waiting per scope: the one already waiting reads
     // everything once it gets its turn, this event included.

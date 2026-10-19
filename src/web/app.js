@@ -2759,7 +2759,7 @@ function attentionHTML(a) {
     ${a.previews.map((p) => {
       const left = p.expiresAt ? Date.parse(p.expiresAt) - Date.now() : null;
       const item = S.snap.items.find((i) => i.repo === p.repo && (i.number === p.prNumber || i.slices?.some((sl) => sl.prNumber === p.prNumber)));
-      return row(p.preparing ? 'live' : 'ok', `Preview de #${p.prNumber} ${p.preparing ? 'preparando datos' : 'arriba'}`, `${p.appName} · ${repoShort(p.repo)}${left !== null ? ` · se baja en ${short(left)}` : ''}`, p.startedAt ? short(Date.now() - Date.parse(p.startedAt)) : '', item?.id);
+      return row(p.preparing || p.updating ? 'live' : 'ok', `Preview de #${p.prNumber} ${p.updating ? 'actualizando' : p.preparing ? 'preparando datos' : 'arriba'}`, `${p.appName} · ${repoShort(p.repo)}${left !== null ? ` · se baja en ${short(left)}` : ''}`, p.startedAt ? short(Date.now() - Date.parse(p.startedAt)) : '', item?.id);
     }).join('')}
   </div></div>`;
 }
@@ -4825,12 +4825,15 @@ function ctxHTML(item) {
 }
 
 // While its test data is being prepared, the preview is up but not ready to
-// try: the URL is shown as such, not as a link to open yet.
+// try: the URL is shown as such, not as a link to open yet. While it moves
+// to a new commit of the PR it still answers, on the commit it had.
 function previewHTML(preview) {
   const left = preview.expiresAt ? Date.parse(preview.expiresAt) - Date.now() : null;
   const safe = /^https?:\/\//.test(preview.url);
   const host = esc(preview.url.replace(/^https?:\/\//, ''));
-  return `<section><h3>Preview</h3><div class="pv">${esc(preview.appName)} con #${esc(preview.prNumber)}</div>
+  const sha = preview.sha ? `<span class="mono">${esc(preview.sha.slice(0, 7))}</span>` : '';
+  return `<section><h3>Preview</h3><div class="pv">${esc(preview.appName)} con #${esc(preview.prNumber)}${sha ? ` en ${sha}` : ''}</div>
+    ${preview.updating ? `<div class="pv-prep">${dotClass('live')}<span>Actualizándose con el commit nuevo del PR.</span></div>` : ''}
     ${preview.preparing
       ? `<div class="pv-prep">${dotClass('live')}<span>Preparando los datos para probar el PR. La URL queda lista cuando termine.</span></div>${safe ? `<span class="url off">${host}</span>` : ''}`
       : safe ? `<a class="url" href="${esc(preview.url)}" target="_blank" rel="noopener">${host}</a>` : ''}
@@ -4861,7 +4864,7 @@ function renderCtx() {
     <dt>Último tick</dt><dd>${tick.lastTickAt ? `hace ${esc(short(Date.now() - Date.parse(tick.lastTickAt)))}, duró ${esc(duration(tick.lastTickDurationMs ?? 0))}` : 'sin datos hoy'}</dd>
     <dt>Último evento</dt><dd>${tick.lastEventAt ? `hace ${esc(short(Date.now() - Date.parse(tick.lastEventAt)))}` : 'sin datos hoy'}</dd>
     <dt>Repos</dt><dd>${S.snap.repos.map((repo) => `<span class="repo-tag"><i style="background:${repoColor(repo)}"></i>${esc(repo)}</span>`).join('<br>')}</dd></dl></section>
-    <section><h3>Previews arriba</h3>${S.snap.previews.length ? S.snap.previews.map((p) => `<div class="pv-row"><div>${esc(p.appName)} con #${esc(p.prNumber)} <span class="m">${esc(repoShort(p.repo))}${p.preparing ? ', preparando datos' : ''}</span></div>${/^https?:\/\//.test(p.url) ? (p.preparing ? `<span class="url off">${esc(p.url.replace(/^https?:\/\//, ''))}</span>` : `<a class="url" href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.url.replace(/^https?:\/\//, ''))}</a>`) : ''}</div>`).join('') : '<p class="note">Ninguna.</p>'}</section>
+    <section><h3>Previews arriba</h3>${S.snap.previews.length ? S.snap.previews.map((p) => `<div class="pv-row"><div>${esc(p.appName)} con #${esc(p.prNumber)} <span class="m">${esc(repoShort(p.repo))}${p.updating ? ', actualizando' : p.preparing ? ', preparando datos' : ''}</span></div>${/^https?:\/\//.test(p.url) ? (p.preparing ? `<span class="url off">${esc(p.url.replace(/^https?:\/\//, ''))}</span>` : `<a class="url" href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.url.replace(/^https?:\/\//, ''))}</a>`) : ''}</div>`).join('') : '<p class="note">Ninguna.</p>'}</section>
     ${linearRepos().map((l) => `<section><h3>${LIN_ICON} Linear · ${esc(repoShort(l.repo))}</h3><dl class="kv">
       ${l.workspace ? `<dt>Workspace</dt><dd>${esc(l.workspace)}${l.cycle ? ` (equipo ${esc(l.cycle.team)})` : ''}</dd>` : ''}
       <dt>Ciclo actual</dt><dd>${l.cycle ? `${esc(cycleName(l.cycle))}, ${esc(dayMonth(l.cycle.startsAt))} – ${esc(endDay(l.cycle.endsAt))}` : 'ninguno'}</dd>
