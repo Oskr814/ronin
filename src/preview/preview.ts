@@ -9,7 +9,8 @@ import { APP_MANIFEST_FILE, parseAppManifest, publicizeTemplate, publicPortsIn, 
 import { removeWorktreeDir } from '../core/worktree.js';
 import { commentOnSpecPr, listOpenPrHeads, type PrHead } from '../core/github.js';
 import { runAgentTask } from '../core/agent-task.js';
-import { previewTask } from './prompts.js';
+import { previewTask, type PreviewTask } from './prompts.js';
+import { parseSeedCatalog, readSeedCatalog, saveSeedCatalog, seedCatalogPath } from './seed-catalog.js';
 import { HELP_FOOTER_MARKER } from '../commands/index.js';
 import { config } from '../core/config.js';
 import { acquireLock, launchWorker, lockHeld } from '../core/worker-launch.js';
@@ -244,9 +245,10 @@ async function takeDownPreviewApp(dir: string): Promise<void> {
 }
 
 // What prepare-preview-data left ready, or why it couldn't run — the preview
-// is delivered either way.
+// is delivered either way. `base`: the seeded records to try the PR with,
+// when the triage found the base seed enough and nothing was prepared.
 export type PreviewData =
-  | { preparado: string[]; noPreparado: string[] }
+  | { preparado: string[]; noPreparado: string[]; base?: string[] }
   | { error: string };
 
 export interface PreviewResult {
@@ -259,8 +261,15 @@ export interface PreviewResult {
 
 export function parsePreviewData(raw: string): { preparado: string[]; noPreparado: string[] } {
   const parsed = JSON.parse(raw) as { preparado?: unknown; noPreparado?: unknown };
-  const lines = (value: unknown) => (Array.isArray(value) ? value.filter((l): l is string => typeof l === 'string' && l.trim() !== '').map((l) => l.trim()) : []);
-  return { preparado: lines(parsed.preparado), noPreparado: lines(parsed.noPreparado) };
+  return { preparado: stringLines(parsed.preparado), noPreparado: stringLines(parsed.noPreparado) };
+}
+
+const stringLines = (value: unknown) => (Array.isArray(value) ? value.filter((l): l is string => typeof l === 'string' && l.trim() !== '').map((l) => l.trim()) : []);
+
+// Only an explicit true skips preparing the data.
+export function parsePreviewTriage(raw: string): { alcanzan: boolean; usar: string[] } {
+  const parsed = JSON.parse(raw) as { alcanzan?: unknown; usar?: unknown };
+  return { alcanzan: parsed.alcanzan === true, usar: stringLines(parsed.usar) };
 }
 
 function describeServices(ctx: TemplateContext): string {
@@ -270,9 +279,48 @@ function describeServices(ctx: TemplateContext): string {
   return [...compose, ...named].join('\n');
 }
 
-// After the app is up with its base seeds, an agent reads the PR (its
-// testing steps, its diff) and whatever the requester asked for, and leaves
-// the data that exercises the change — see prompts.ts. Never fails the
+// What the base seed has, from the catalog for its hash, written now — by
+// an agent, before anything else touches the database — when there's none
+// yet: that preview takes longer once, and every later one with the same
+// seeds starts from it (seed-catalog.ts). Null when it couldn't be written:
+// the data is prepared as without a catalog.
+async function seedCatalog(prNumber: number, sha: string, session: AppSession): Promise<string | null> {
+  try {
+    const path = await seedCatalogPath(session.dir, sha, session.appName, session.app);
+    const existing = await readSeedCatalog(path);
+    if (existing) {
+      log.info(`preview PR #${prNumber}: catálogo de seeds ${path}`);
+      return existing;
+    }
+    const outputPath = join(session.stateDir, 'seed-catalog.yaml');
+    await rm(outputPath, { force: true });
+    await runAgentTask(previewTask({
+      type: 'preview-seed-catalog',
+      prNumber,
+      appName: session.appName,
+      appPath: session.app.path,
+      checkoutDir: session.dir,
+      outputPath,
+      baseUrl: session.baseUrl,
+      services: describeServices(session.ctx),
+      compose: session.ctx.compose,
+      users: session.app.users,
+    }));
+    const catalog = parseSeedCatalog(await readFile(outputPath, 'utf8'));
+    await saveSeedCatalog(path, catalog, `${activeRepo().productRepo} · ${session.appName}: lo que traen los seeds base.\nLo escribió ronin en la preview del PR #${prNumber} (${sha.slice(0, 7)}), ${new Date().toISOString()}.`);
+    log.info(`preview PR #${prNumber}: catálogo de seeds nuevo en ${path}`);
+    return catalog;
+  } catch (error) {
+    log.error(`preview PR #${prNumber}: no se pudo leer ni escribir el catálogo de seeds`, error);
+    return null;
+  }
+}
+
+// After the app is up with its base seeds: with the catalog of those seeds,
+// a small model decides whether they're already enough to try the PR. When
+// they aren't (or there's no catalog), an agent reads the PR (its testing
+// steps, its diff) and whatever the requester asked for, and leaves the
+// data that exercises the change — see prompts.ts. Never fails the
 // preview: an app without the extra data is still worth handing over.
 async function prepareData(opts: {
   prNumber: number;
@@ -288,18 +336,27 @@ async function prepareData(opts: {
     await execFileAsync('git', ['fetch', 'origin', pr.baseRefName], { cwd: activeRepo().productRepoPath });
     const mergeBase = (await execFileAsync('git', ['merge-base', `origin/${pr.baseRefName}`, pr.headRefOid], { cwd: dir })).stdout.trim();
     const stat = (await execFileAsync('git', ['diff', '--stat', mergeBase, pr.headRefOid], { cwd: dir })).stdout.trim();
-    await runAgentTask(previewTask({
-      type: 'prepare-preview-data',
+    const about = {
       prNumber,
-      appName: session.appName,
-      appPath: session.app.path,
       checkoutDir: dir,
-      outputPath,
       title: pr.title,
       // The cheat sheet ronin appends to its own PRs says nothing about the data.
       body: pr.body.split(HELP_FOOTER_MARKER)[0],
       ...(opts.instruction ? { instruction: opts.instruction } : {}),
       diff: { mergeBase, stat },
+    };
+    const catalog = await seedCatalog(prNumber, pr.headRefOid, session);
+    if (catalog) {
+      const triage = await triageData({ ...about, catalog }, session.stateDir);
+      if (triage?.alcanzan) return { preparado: [], noPreparado: [], base: triage.usar };
+    }
+    await runAgentTask(previewTask({
+      type: 'prepare-preview-data',
+      ...about,
+      appName: session.appName,
+      appPath: session.app.path,
+      outputPath,
+      ...(catalog ? { catalog } : {}),
       baseUrl: session.baseUrl,
       services: describeServices(session.ctx),
       compose: session.ctx.compose,
@@ -316,6 +373,21 @@ async function prepareData(opts: {
     await execFileAsync('git', ['checkout', '--force', '--detach', pr.headRefOid], { cwd: dir })
       .then(() => execFileAsync('git', ['clean', '-fd'], { cwd: dir }))
       .catch((error) => log.error(`preview PR #${prNumber}: no se pudo limpiar el checkout`, error));
+  }
+}
+
+// Null when it couldn't decide: the data is prepared as if they weren't enough.
+async function triageData(task: Omit<Extract<PreviewTask, { type: 'preview-data-triage' }>, 'type' | 'outputPath'>, stateDir: string): Promise<{ alcanzan: boolean; usar: string[] } | null> {
+  const outputPath = join(stateDir, 'preview-triage.json');
+  try {
+    await rm(outputPath, { force: true });
+    await runAgentTask(previewTask({ type: 'preview-data-triage', ...task, outputPath }));
+    const triage = parsePreviewTriage(await readFile(outputPath, 'utf8'));
+    log.info(`preview PR #${task.prNumber}: ${triage.alcanzan ? 'los seeds base alcanzan' : 'hay que preparar datos'}`);
+    return triage;
+  } catch (error) {
+    log.error(`preview PR #${task.prNumber}: no se pudo decidir si alcanzan los seeds base`, error);
+    return null;
   }
 }
 
@@ -512,7 +584,10 @@ export function renderPreviewStarting(sha: string, withData: boolean): string {
 function renderData(data: PreviewData | undefined): string[] {
   if (!data) return [];
   if ('error' in data) return [`⚠️ No pude preparar los datos para probar el PR (${data.error}): la app tiene solo los seeds base.`, ''];
-  if (data.preparado.length === 0 && data.noPreparado.length === 0) return ['No hizo falta preparar datos: el PR se prueba con los seeds base.', ''];
+  if (data.preparado.length === 0 && data.noPreparado.length === 0) {
+    const base = data.base ?? [];
+    return ['No hizo falta preparar datos: el PR se prueba con los seeds base.', ...(base.length > 0 ? ['', ...base.map((l) => `- ${l}`)] : []), ''];
+  }
   return [
     ...(data.preparado.length > 0 ? ['**Datos listos para probar el PR**', ...data.preparado.map((l) => `- ${l}`), ''] : []),
     ...(data.noPreparado.length > 0 ? ['**Lo que no pude preparar**', ...data.noPreparado.map((l) => `- ${l}`), ''] : []),
