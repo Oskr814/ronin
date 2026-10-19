@@ -545,7 +545,7 @@ function renderCenter() {
   // Reviewing findings or a diff takes the room of the context column.
   $('#shell').classList.toggle('wide', ['fichas', 'files'].includes(docOf(item)));
   // A box being written in survives the redraw (a finding's comment, a comment on the diff).
-  const typing = ['fcomment', 'fcbox', 'rsum'].includes(document.activeElement?.id) ? { id: document.activeElement.id, start: document.activeElement.selectionStart, end: document.activeElement.selectionEnd } : null;
+  const typing = ['fcomment', 'fcbox', 'rsum', 'dtext'].includes(document.activeElement?.id) ? { id: document.activeElement.id, start: document.activeElement.selectionStart, end: document.activeElement.selectionEnd } : null;
   if (!setCenter(tabs + backBar(item.title) + headHTML(item) + activityHTML(item) + docHTML(item) + `<div class="ctx-inline">${ctxHTML(item)}</div>`)) return;
   const fresh = $('#doc');
   if (fresh && !isMobile()) fresh.scrollTop = keep;
@@ -1417,14 +1417,14 @@ function dropHTML(item, d) {
   if (p.kind === 'close') {
     const issue = item.kind === 'issue' ? item.number : d.issue?.number;
     return `<div class="drop crit" role="dialog" aria-label="Cerrar el PR"><textarea id="dtext" rows="3" placeholder="Por qué lo cerrás (opcional). Queda como comentario en el PR.">${esc(p.text)}</textarea>
-      ${issue !== undefined ? `<label class="dchk"><input type="checkbox" id="dissue"${p.closeIssue ? ' checked' : ''}><span>Cerrar también el issue #${esc(issue)}<small>Si queda abierto, ronin lo bloquea y avisa: se queda sin PR para seguir.</small></span></label>` : ''}${err}
+      ${issue !== undefined ? `<label class="dchk"><input type="checkbox" id="dissue"${p.closeIssue ? ' checked' : ''}><span>Cerrar también el issue #${esc(issue)} <kbd>I</kbd><small>Si queda abierto, ronin lo bloquea y avisa: se queda sin PR para seguir.</small></span></label>` : ''}${err}
       <footer><span class="m"><kbd>Ctrl ↵</kbd> cierra · <kbd>Esc</kbd></span><button class="btn-s" data-dcancel>Cancelar</button><button class="btn-s danger-solid" data-dsend${busy}>Cerrar el PR</button></footer></div>`;
   }
   const how = n
     ? `Se manda una revisión con ${oneOr(n, 'tu comentario', `tus ${n} comentarios`)} y después <code>@${bot} /fix-comments</code> con este texto, a tu nombre.`
     : `Se comenta <code>@${bot}</code> y este texto en el PR, a tu nombre.`;
   return `<div class="drop" role="dialog" aria-label="Pedir un ajuste"><textarea id="dtext" rows="4" placeholder="¿Qué debería cambiar ronin?">${esc(p.text)}</textarea>
-    <div class="quick">${DECIDE_QUICK.map((q) => `<button data-dquick="${esc(q)}">${esc(q)}</button>`).join('')}</div>
+    <div class="quick">${DECIDE_QUICK.map((q, i) => `<button data-dquick="${i}"><kbd>${i + 1}</kbd> ${esc(q)}</button>`).join('')}</div>
     ${n ? `<div class="carry">✎ Incluye ${oneOr(n, 'tu comentario', `tus ${n} comentarios`)} de Archivos</div>` : ''}<p class="how">${how}</p>${err}
     <footer><span class="m"><kbd>Ctrl ↵</kbd> manda · <kbd>Esc</kbd></span><button class="btn-s" data-dcancel>Cancelar</button><button class="btn-s primary" data-dsend${busy || (!p.text.trim() && !n) ? ' disabled' : ''}>Mandar a ronin</button></footer></div>`;
 }
@@ -1479,17 +1479,54 @@ function wireDecide() {
       const send = $('[data-dsend]');
       if (send && p.kind === 'adjust' && !p.sending) send.disabled = !p.text.trim() && !pendingOf(p.item).length;
     };
-    text.onkeydown = (event) => { if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) sendDecision(); };
   }
   const issue = $('#dissue');
   if (issue) issue.onchange = () => { p.closeIssue = issue.checked; };
-  for (const button of document.querySelectorAll('[data-dquick]')) button.onclick = () => {
-    p.text = `${p.text.trim() ? `${p.text.replace(/\s+$/, '')}\n` : ''}${button.dataset.dquick}.`;
-    renderCenter();
-    const fresh = $('#dtext');
-    fresh?.focus();
-    fresh?.setSelectionRange(fresh.value.length, fresh.value.length);
-  };
+  for (const button of document.querySelectorAll('[data-dquick]')) button.onclick = () => addDecideQuick(Number(button.dataset.dquick));
+}
+
+function addDecideQuick(i) {
+  const p = S.decide;
+  p.text = `${p.text.trim() ? `${p.text.replace(/\s+$/, '')}\n` : ''}${DECIDE_QUICK[i]}.`;
+  renderCenter();
+  focusDecideText();
+}
+
+function focusDecideText() {
+  const text = $('#dtext');
+  text?.focus();
+  text?.setSelectionRange(text.value.length, text.value.length);
+}
+
+// The keys of an open adjustment or closing, with the focus off its text: 1–3
+// a suggestion, I the issue's box, Ctrl ↵ sends. Any other key goes back to
+// the text and is typed there, so nothing typed lands somewhere else.
+function decideKey(event) {
+  const p = S.decide;
+  const text = $('#dtext');
+  if (!p || p.kind === 'approve' || p.sending || !text || p.item !== S.sel) return false;
+  if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+    event.preventDefault();
+    sendDecision();
+    return true;
+  }
+  const at = document.activeElement;
+  if (at === text || event.ctrlKey || event.metaKey || event.altKey || event.key.length !== 1) return false;
+  // A button or the box of the dropdown keep their space.
+  if (event.key === ' ' && at?.closest?.('.drop')) return false;
+  if (p.kind === 'adjust' && DECIDE_QUICK[Number(event.key) - 1]) {
+    event.preventDefault();
+    addDecideQuick(Number(event.key) - 1);
+    return true;
+  }
+  if (p.kind === 'close' && event.key.toLowerCase() === 'i' && $('#dissue')) {
+    event.preventDefault();
+    p.closeIssue = !p.closeIssue;
+    $('#dissue').checked = p.closeIssue;
+    return true;
+  }
+  focusDecideText();
+  return true;
 }
 
 // ---------- moving around an item's page with the keyboard (#195)
@@ -1602,7 +1639,7 @@ function navigate(event, item) {
 
 const KEYS_HELP = [
   ['Moverse', [['1 – 9', 'Ir a una pestaña'], ['j / k', 'Siguiente / anterior sección, comentario, archivo o ficha'], ['d / u', 'Media página abajo / arriba'], ['gg / G', 'Al inicio / al final'], [']p / [p', 'Siguiente / anterior PR de ronin que espera una decisión']]],
-  ['En un PR de ronin', [['A', 'Aprobar y mergear (↵ confirma)'], ['P', 'Pedir un ajuste (Ctrl ↵ manda)'], ['X', 'Cerrar el PR (Ctrl ↵ confirma)']]],
+  ['En un PR de ronin', [['A', 'Aprobar y mergear (↵ confirma)'], ['P', 'Pedir un ajuste (Ctrl ↵ manda)'], ['X', 'Cerrar el PR (Ctrl ↵ confirma)'], ['1 – 3', 'Fuera del texto del ajuste: sumar una sugerencia'], ['I', 'Fuera del texto del cierre: cerrar también el issue, o no']]],
   ['En Archivos', [['v', 'Marcar el archivo como visto'], ['r', 'Revisión, en los PRs de personas']]],
   ['General', [['?', 'Esta ayuda'], ['Esc', 'Cerrar lo que esté abierto']]],
 ];
@@ -5877,6 +5914,8 @@ async function boot() {
       renderLightbox();
       return;
     }
+    // An open adjustment or closing first: what's typed is for its text.
+    if (!S.dialog && !S.fdialog && !S.newIssue && !S.xnow && decideKey(event)) return;
     // On an exploration PR's findings, as long as nothing is being typed:
     // j/k go through them, a marks one as looked at, c and r open the dialog.
     const item = S.sel && itemById(S.sel);
