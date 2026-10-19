@@ -731,12 +731,19 @@ function renderDialog() {
       ${action.text ? `<label class="field"><span>${esc(action.text.label)}</span><textarea id="dlg-text" rows="4" maxlength="4000" placeholder="${esc(action.text.placeholder)}"></textarea></label>` : ''}
       <div class="prev"><div class="lbl">Comentás en #${esc(action.target)} como ${esc(S.snap?.me ?? '')}</div><div class="md" id="dlg-prev"></div></div>
       <p class="bad" id="dlg-err" hidden></p>
-      <div class="foot-d"><button class="btn-s" id="dlg-no">Cancelar</button><button class="btn-s primary" id="dlg-yes"></button></div></div></div>`;
+      <div class="foot-d"><span class="kbd-hint"><kbd>Ctrl</kbd> <kbd>Enter</kbd> para comentar</span><button class="btn-s" id="dlg-no">Cancelar</button><button class="btn-s primary" id="dlg-yes"></button></div></div></div>`;
     const area = $('#dlg-text');
     if (area) area.oninput = () => { S.dialog.text = area.value; renderDialog(); };
     $('#dlg-no').onclick = closeDialog;
     layer.querySelector('.scrim').onclick = (event) => { if (event.target.classList.contains('scrim')) closeDialog(); };
     $('#dlg-yes').onclick = sendAction;
+    // Anywhere in the dialog, as long as the button could be pressed.
+    layer.querySelector('.dlg').onkeydown = (event) => {
+      if (event.key === 'Enter' && (event.ctrlKey || event.metaKey) && !$('#dlg-yes').disabled) {
+        event.preventDefault();
+        sendAction();
+      }
+    };
     (area ?? $('#dlg-yes')).focus();
   }
   $('#dlg-prev').innerHTML = md(preview, itemById(S.dialog.item)?.repo ?? '');
@@ -1677,7 +1684,7 @@ function navigate(event, item) {
 const KEYS_HELP = [
   ['Moverse', [['1 – 9', 'Ir a una pestaña'], ['j / k', 'Siguiente / anterior sección, comentario, archivo o ficha'], ['d / u', 'Media página abajo / arriba'], ['gg / G', 'Al inicio / al final'], [']p / [p', 'Siguiente / anterior PR de ronin que espera una decisión']]],
   ['En un PR de ronin', [['A', 'Aprobar y mergear (↵ confirma)'], ['P', 'Pedir un ajuste (Ctrl ↵ manda)'], ['X', 'Cerrar el PR (Ctrl ↵ confirma)'], ['1 – 3', 'Fuera del texto del ajuste: sumar una sugerencia'], ['I', 'Fuera del texto del cierre: cerrar también el issue, o no']]],
-  ['Acciones', [['M', 'Abrir o cerrar el menú de acciones'], ['1 – 9', 'En el menú: pedir esa acción'], ['j / k', 'En el menú: la siguiente / anterior (también ↓ ↑, y ↵ la pide)']]],
+  ['Acciones', [['M', 'Abrir o cerrar el menú de acciones'], ['1 – 9', 'En el menú: pedir esa acción'], ['j / k', 'En el menú: la siguiente / anterior (también ↓ ↑, y ↵ la pide)'], ['Ctrl ↵', 'En el diálogo de la acción: comentar']]],
   ['En Archivos', [['v', 'Marcar el archivo como visto'], ['r', 'Revisión, en los PRs de personas']]],
   ['General', [['?', 'Esta ayuda'], ['Esc', 'Cerrar lo que esté abierto']]],
 ];
