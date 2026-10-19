@@ -120,10 +120,10 @@ describe('renderMetaReply', () => {
     expect(onIssue).not.toContain('/fix-comments');
   });
 
-  it('includes the suggestion for a typo and links the wiki', () => {
+  it('includes the suggestion for a typo and links the docs', () => {
     const reply = renderMetaReply({ kind: 'unknown', token: 'fix-coments', suggestion: 'fix-comments' }, 'ronin', 'pr');
     expect(reply).toContain('No conozco `/fix-coments`. ¿Quisiste decir `/fix-comments`?');
-    expect(reply).toContain('https://github.com/Oskr814/ronin/wiki/Comandos');
+    expect(reply).toContain('https://oskr814.github.io/ronin/referencia/comandos/');
   });
 
   it('shows the exact usage for a command missing a required argument', () => {

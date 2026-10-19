@@ -198,7 +198,7 @@ Segunda limitación encontrada en el primer dry run: el prompt de una tarea punt
 
 ### 7.2 Usuario mencionable
 
-A diferencia de un GitHub App (cuyo bot user no siempre es confiablemente @mencionable/notificable), `ronin` es una cuenta real — la misma que abre los PRs es la que se @menciona para pedirle una review puntual (ver la [wiki → Comandos](https://github.com/Oskr814/ronin/wiki/Comandos)). No hace falta ninguna cuenta ni setup adicional para esto.
+A diferencia de un GitHub App (cuyo bot user no siempre es confiablemente @mencionable/notificable), `ronin` es una cuenta real — la misma que abre los PRs es la que se @menciona para pedirle una review puntual (ver [Comandos](https://oskr814.github.io/ronin/referencia/comandos/)). No hace falta ninguna cuenta ni setup adicional para esto.
 
 ### 8. Idioma
 

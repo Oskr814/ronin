@@ -2,7 +2,7 @@
 
 ## El repo es público
 
-`Oskr814/ronin` es público: el código, los issues, los PRs, los comentarios, los commits y la wiki los puede leer cualquiera. Los repos de producto que ronin atiende son privados, y lo que se ve de ellos no puede salir de ahí.
+`Oskr814/ronin` es público: el código, los issues, los PRs, los comentarios, los commits y el sitio de documentación los puede leer cualquiera. Los repos de producto que ronin atiende son privados, y lo que se ve de ellos no puede salir de ahí.
 
 No pongas en nada que vaya a GitHub:
 

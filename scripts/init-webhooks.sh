@@ -2,7 +2,7 @@
 # One-time (idempotent, safe to re-run) setup step: registers a GitHub
 # webhook in every repo listed in repos.json, pointing at the ronin server's
 # public URL (see scripts/setup-server-service.sh for running that server,
-# and the wiki (https://github.com/Oskr814/ronin/wiki/Webhooks) for exposing it via a reverse proxy/tunnel). Run manually,
+# and the docs (https://oskr814.github.io/ronin/operar/servidor/) for exposing it via a reverse proxy/tunnel). Run manually,
 # using your own `gh auth` session — same convention as init-labels.sh.
 set -euo pipefail
 
