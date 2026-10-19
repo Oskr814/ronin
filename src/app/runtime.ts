@@ -7,7 +7,7 @@ import { activeRepo } from '../core/repo-context.js';
 import { config } from '../core/config.js';
 import { getFreePort } from '../core/worktree.js';
 import { log } from '../core/logger.js';
-import { loadAppDefinition, namedPortsIn, publicizeTemplate, publicPortsIn, renderTemplate, type AppDefinition, type TemplateContext } from './manifest.js';
+import { loadAppDefinition, namedPortsIn, publicizeTemplate, publicPortsIn, renderTemplate, type AppDefinition, type AppStep, type TemplateContext } from './manifest.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -196,6 +196,61 @@ async function reservePorts(templates: string[], ctx: TemplateContext, options: 
   }
 }
 
+interface StepRun {
+  appName: string;
+  dir: string;
+  state: AppState;
+  ctx: TemplateContext;
+  options: AppUpOptions;
+  logFile: string;
+}
+
+// How a step is named in logs and in what a preview tells the PR.
+export function stepLabel(step: AppStep): string {
+  if ('compose' in step) return 'compose';
+  if ('run' in step) return step.name ?? step.run;
+  if ('start' in step) return step.name;
+  return step.name ?? step.wait;
+}
+
+// One step of the manifest, on the app's stack and ports. A `start` whose
+// process is already running (appRerun) stops it first, so the step
+// restarts it.
+async function runStep(step: AppStep, run: StepRun): Promise<void> {
+  const { appName, dir, state, ctx, options, logFile } = run;
+  if ('compose' in step) {
+    log.info(`app ${appName}: docker compose up (${state.project})`);
+    await runCommand(`docker ${composeArgs(state).join(' ')} up -d --build`, dir, appEnv(), logFile, 20 * 60_000);
+  } else if ('run' in step) {
+    await reservePorts([step.run, ...Object.values(step.env ?? {})], ctx, options);
+    const env = Object.fromEntries(Object.entries(step.env ?? {}).map(([k, v]) => [k, renderTemplate(v, ctx)]));
+    log.info(`app ${appName}: ${stepLabel(step)}`);
+    await runCommand(renderTemplate(step.run, ctx), join(dir, step.cwd ?? '.'), appEnv(env), logFile, (step.timeoutSeconds ?? 600) * 1000);
+  } else if ('start' in step) {
+    // A no-op without a public host: {{public.…}} renders the same
+    // loopback URL — see publicizeTemplate.
+    const envTemplates = Object.entries(step.env ?? {}).map(([k, v]) => [k, publicizeTemplate(v)] as const);
+    await reservePorts([step.start, ...envTemplates.map(([, v]) => v)], ctx, options);
+    const env = Object.fromEntries(envTemplates.map(([k, v]) => [k, renderTemplate(v, ctx)]));
+    const running = state.processes.find((p) => p.name === step.name);
+    if (running) {
+      log.info(`app ${appName}: reiniciando ${step.name}`);
+      await stopProcessGroup(running.pid);
+      state.processes = state.processes.filter((p) => p !== running);
+    } else {
+      log.info(`app ${appName}: arrancando ${step.name}`);
+    }
+    const pid = startProcess(renderTemplate(step.start, ctx), join(dir, step.cwd ?? '.'), appEnv(env), join(stateDirOf(dir), `${step.name}.log`));
+    state.processes.push({ name: step.name, pid });
+    await writeState(dir, state);
+  } else {
+    await reservePorts([step.wait], ctx, options);
+    const url = renderTemplate(step.wait, ctx);
+    log.info(`app ${appName}: esperando ${step.name ?? url}`);
+    await waitForUrl(url, (step.timeoutSeconds ?? 300) * 1000);
+  }
+}
+
 // Brings the app up in `dir` (any checkout of the product repo: an
 // exploration worktree today, a slice's own worktree later). On failure it
 // tears down whatever it already started before rethrowing.
@@ -227,32 +282,7 @@ export async function appUp(dir: string, appName: string, options: AppUpOptions 
     }
     ctx.compose = ['docker', ...composeArgs(state)].join(' ');
 
-    for (const step of app.steps) {
-      if ('compose' in step) {
-        log.info(`app ${appName}: docker compose up (${state.project})`);
-        await runCommand(`docker ${composeArgs(state).join(' ')} up -d --build`, dir, appEnv(), logFile, 20 * 60_000);
-      } else if ('run' in step) {
-        await reservePorts([step.run, ...Object.values(step.env ?? {})], ctx, options);
-        const env = Object.fromEntries(Object.entries(step.env ?? {}).map(([k, v]) => [k, renderTemplate(v, ctx)]));
-        log.info(`app ${appName}: ${step.name ?? step.run}`);
-        await runCommand(renderTemplate(step.run, ctx), join(dir, step.cwd ?? '.'), appEnv(env), logFile, (step.timeoutSeconds ?? 600) * 1000);
-      } else if ('start' in step) {
-        // A no-op without a public host: {{public.…}} renders the same
-        // loopback URL — see publicizeTemplate.
-        const envTemplates = Object.entries(step.env ?? {}).map(([k, v]) => [k, publicizeTemplate(v)] as const);
-        await reservePorts([step.start, ...envTemplates.map(([, v]) => v)], ctx, options);
-        const env = Object.fromEntries(envTemplates.map(([k, v]) => [k, renderTemplate(v, ctx)]));
-        log.info(`app ${appName}: arrancando ${step.name}`);
-        const pid = startProcess(renderTemplate(step.start, ctx), join(dir, step.cwd ?? '.'), appEnv(env), join(stateDir, `${step.name}.log`));
-        state.processes.push({ name: step.name, pid });
-        await writeState(dir, state);
-      } else {
-        await reservePorts([step.wait], ctx, options);
-        const url = renderTemplate(step.wait, ctx);
-        log.info(`app ${appName}: esperando ${step.name ?? url}`);
-        await waitForUrl(url, (step.timeoutSeconds ?? 300) * 1000);
-      }
-    }
+    for (const step of app.steps) await runStep(step, { appName, dir, state, ctx, options, logFile });
 
     await reservePorts([app.baseUrl], ctx, options);
     const baseUrl = renderTemplate(app.baseUrl, ctx).replace(/\/$/, '');
@@ -265,6 +295,31 @@ export async function appUp(dir: string, appName: string, options: AppUpOptions 
     await appDown(dir);
     throw error;
   }
+}
+
+// Runs `steps` of `app` again on the app appUp left running in `dir`, after
+// its checkout moved to another commit: same compose stack, same ports, same
+// data (see app/manifest.ts's stepsToRerun for which steps). Then waits for
+// the app to answer again. Unlike appUp, a failure tears nothing down —
+// the caller decides (a preview brings the app up from scratch instead).
+// The log of this run is <stateDir>/rerun.log.
+export async function appRerun(dir: string, app: AppDefinition, steps: AppStep[]): Promise<AppSession> {
+  const state = await readState(dir);
+  if (!state?.baseUrl || !state.ctx) throw new Error(`no hay una app arriba en ${dir}`);
+  const { ctx, baseUrl } = state;
+  const logFile = join(stateDirOf(dir), 'rerun.log');
+  await writeFile(logFile, '');
+  for (const step of steps) {
+    try {
+      await runStep(step, { appName: state.appName, dir, state, ctx, options: {}, logFile });
+    } catch (error) {
+      throw new Error(`falló "${stepLabel(step)}": ${(error as Error).message}`);
+    }
+  }
+  await waitForUrl(baseUrl, 120_000);
+  await writeState(dir, state);
+  log.info(`app ${state.appName}: actualizada en ${baseUrl} (${steps.length === 0 ? 'sin pasos' : steps.map(stepLabel).join(', ')})`);
+  return { appName: state.appName, app, dir, baseUrl, ctx, stateDir: stateDirOf(dir) };
 }
 
 // An app another process brought up with appUp and left running (the CLI's
