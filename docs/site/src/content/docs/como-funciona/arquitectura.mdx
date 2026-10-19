@@ -1,0 +1,54 @@
+---
+title: "Arquitectura"
+description: "Los principios de diseño de ronin, cómo está organizado src/ y dónde vive el diseño completo."
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+## Principios
+
+<CardGrid>
+  <Card title="Nunca una sesión continua" icon="seti:clock">
+    Cada unidad de trabajo (un plan, una slice, un arreglo de review) corre en una sesión de Claude nueva, en su propio worktree, y termina. La continuidad vive en estado externo verificable, no en la memoria del agente.
+  </Card>
+  <Card title="GitHub como máquina de estados" icon="github">
+    No hay una base de datos de progreso. El estado de un trabajo es el de su issue, sus PRs, sus labels y sus checks. Reanudar tras un corte de cuota es la siguiente vuelta leyendo lo mismo.
+  </Card>
+  <Card title="Autonomía en el cómo, no en el merge" icon="approve-check">
+    ronin decide solo cómo trocear y cómo implementar, pero un PR de slice no se mergea sin la aprobación de una persona. El gate está en el código: `mergePullRequest` falla sin aprobación.
+  </Card>
+  <Card title="PRs chicos" icon="list-format">
+    La revisión sigue siendo humana, pero en PRs que se revisan en minutos, no en horas.
+  </Card>
+</CardGrid>
+
+## Cómo está organizado `src/`
+
+| Carpeta | Qué tiene |
+|---|---|
+| `src/` (raíz) | `index.ts`, la entrada del cron, y `tick.ts`, el orquestador. |
+| `core/` | Lo compartido: config, GitHub, worktrees, `claude -p`, estado local, claim entre runners, locks, notificaciones, logs y cómo corre una tarea de agente. |
+| `slices/` | Issues de tracking → PRs apilados: checklist, stack, specs. |
+| `review/` | La review de PRs de personas y su publicación. |
+| `commands/` | Los comandos por mención: `/help`, `/auto-merge`, `/resolve-conflicts`, `/spike`, `/prototype` y los pedidos en issues. |
+| `app/` | Levantar la app del producto desde `ronin.app.json`, entrar con cada rol y la rama de evidencia. |
+| `preview/` | `/preview` y el catálogo de seeds. |
+| `exploration/` | La exploración y su PR rodante. |
+| `portal/`, `portal-web/` | El portal de pedidos: el dominio y la web. |
+| `meetings/` | Las reuniones: leer las notas y proponer trabajo. |
+| `deploy/` | Los despliegues desde el tablero. |
+| `changelog/` | La entrada del changelog en cada release. |
+| `server/` | El servidor: los webhooks (un handler por evento), el login y la API del tablero. |
+| `web/` | La aplicación web del tablero, archivos estáticos sin build. |
+
+## El diseño completo
+
+El diseño vive en el repo, junto al código que describe, y el código lo cita desde sus comentarios («ver docs/DESIGN.md §7.1»):
+
+- [`docs/DESIGN.md`](https://github.com/Oskr814/ronin/blob/main/docs/DESIGN.md): la arquitectura completa y cada decisión tomada, sección por sección.
+- [`docs/BLOCKING.md`](https://github.com/Oskr814/ronin/blob/main/docs/BLOCKING.md): el criterio de bloqueo.
+- [`docs/superpowers/specs/`](https://github.com/Oskr814/ronin/tree/main/docs/superpowers/specs): el diseño de los features más viejos. Los nuevos se documentan directo en `DESIGN.md`.
+
+<Aside type="note">
+Este sitio cuenta cómo se usa ronin. `DESIGN.md` cuenta por qué está hecho así. Ver [Documentar un cambio](/ronin/contribuir/documentacion/).
+</Aside>

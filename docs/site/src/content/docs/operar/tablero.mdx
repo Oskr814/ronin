@@ -1,0 +1,47 @@
+---
+title: "El tablero"
+description: "Activar el tablero en la tailnet, el login con GitHub y quién puede entrar."
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+El tablero lo sirve el [servidor de ronin](/ronin/operar/servidor/), en un listener que escucha en `127.0.0.1:<SERVER_TAILNET_PORT>` y que `pnpm server:setup` publica en la tailnet con `tailscale serve`, en `DASHBOARD_TAILNET_HTTPS_PORT`. Mientras falte alguna de las variables de abajo, queda apagado y el servidor solo atiende los webhooks. Para usarlo, ver [El tablero](/ronin/empezar/el-tablero/).
+
+## Activarlo
+
+<Steps>
+
+1. **Creá una OAuth App** en GitHub (*Settings → Developer settings → OAuth Apps*):
+   - *Homepage URL:* `https://<host>.<tailnet>.ts.net:8443`
+   - *Authorization callback URL:* `https://<host>.<tailnet>.ts.net:8443/api/auth/callback`
+
+   El scope no se configura en la app: el tablero pide `repo` al entrar.
+
+2. **Completá `.env`:**
+   - `DASHBOARD_GITHUB_CLIENT_ID` y `DASHBOARD_GITHUB_CLIENT_SECRET`, los de la OAuth App;
+   - `DASHBOARD_SESSION_SECRET`: `openssl rand -hex 32`;
+   - `DASHBOARD_ADMINS`: los logins de GitHub que ven todo, separados por coma. Son los administradores de respaldo; los demás se agregan en [Ajustes](/ronin/operar/ajustes/);
+   - `DASHBOARD_URL`: la URL de arriba, sin barra al final;
+   - `DASHBOARD_ALLOWED_USERS`, opcional: si tiene logins, solo ellos y los administradores entran.
+
+3. `pnpm build && pnpm server:setup`.
+
+</Steps>
+
+Lo que se cambia en Ajustes queda en `SETTINGS_DATA_DIR`, fuera de git. Es la única copia: respaldalo.
+
+## Entrar
+
+Abrí `DASHBOARD_URL` desde un equipo con Tailscale y entrá con GitHub. GitHub te pide aceptar el permiso `repo`: con él, el tablero comenta y aprueba **a tu nombre**. Si lo destildás, no te deja entrar.
+
+- La sesión dura `DASHBOARD_SESSION_DAYS` (7 días) y guarda el permiso cifrado. Al salir, el tablero lo revoca en GitHub.
+- Si alguien sale de la lista, deja de entrar en el momento, aunque tenga la sesión abierta. Si pierde en GitHub el acceso a todos los repos, en 10 minutos como mucho.
+- Si en la pantalla de GitHub aparece **Request access** junto a una organización, pedilo y que un admin lo apruebe: sin eso, el tablero no puede comentar en sus repos.
+
+## Quién lo ve en la red
+
+Para llegar al tablero, una persona necesita acceso por Tailscale al puerto del tablero en la máquina. Ese puerto queda fuera de `PREVIEW_PORT_RANGE`, lo único que la política de la tailnet les abre a usuarios externos, así que solo lo ve quien tiene acceso completo. Para sumar a alguien sin acceso completo, hay que abrirle también ese puerto en la política.
+
+<Aside type="note">
+Quién ve qué repo y qué puede hacer en cada uno: ver [El tablero → Quién ve qué](/ronin/empezar/el-tablero/#quién-ve-qué) y [Ajustes → Usuarios](/ronin/operar/ajustes/#administración).
+</Aside>

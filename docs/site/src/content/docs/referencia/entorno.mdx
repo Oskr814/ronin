@@ -1,0 +1,107 @@
+---
+title: "Variables de entorno"
+description: "Las variables de .env de un runner, agrupadas por lo que configuran."
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Van en `.env`, en la raíz de ronin. [`.env.example`](https://github.com/Oskr814/ronin/blob/main/.env.example) las trae todas comentadas.
+
+<Aside type="tip" title="Muchas se cambian desde el tablero">
+En [Ajustes](/ronin/operar/ajustes/), el valor del tablero gana sobre el de `.env`, vale al momento y *Volver al de .env* lo deshace. Los secretos, rutas y puertos solo se cambian acá.
+</Aside>
+
+## Lo básico
+
+| Variable | Por defecto | Qué es |
+|---|---|---|
+| `RUNNER_ID` | — | Tu usuario de GitHub, no un hostname. Identifica al runner frente a otros. **Obligatoria.** |
+| `RONIN_GITHUB_TOKEN` | — | El fine-grained PAT de la cuenta de ronin. **Obligatoria.** |
+| `RONIN_GITHUB_LOGIN` | — | El usuario de esa cuenta: su mención es la que ronin escucha. **Obligatoria.** |
+| `REPOS_CONFIG_PATH` | `./repos.json` | Dónde está [`repos.json`](/ronin/referencia/repos-json/). |
+| `SPEC_DIR` | `docs/superpowers` | Dónde trae sus `.md` un PR de spec, en el repo del producto. |
+| `WORKTREE_BASE_PATH` | junto a cada repo | Dónde viven los worktrees. Con más de un repo, dejalo vacío. |
+| `WORKTREE_BASE_REF` | `origin/main` | La rama base, si el repo no trae la suya en `repos.json`. |
+| `LOCAL_STATE_PATH` | `.ronin-state.json` | El estado local del runner. |
+
+## Los agentes
+
+| Variable | Por defecto | Qué es |
+|---|---|---|
+| `CLAUDE_COMMAND` | `claude` | El binario de Claude Code. |
+| `CLAUDE_CONFIG_DIR` | — | La cuenta de Claude por defecto. Un repo puede tener la suya. |
+| `AGENT_MODEL`, `AGENT_EFFORT` | `opus`, `high` | Modelo y esfuerzo de todas las corridas. |
+| `AGENT_MODEL_<TIPO>`, `AGENT_EFFORT_<TIPO>` | — | Por tipo de tarea, en mayúsculas: `AGENT_MODEL_FIX_REVIEW=sonnet`. |
+| `AGENT_TASK_TIMEOUT_MINUTES` | `30` | Cuánto puede tardar una corrida antes de darla por colgada. |
+| `TICK_CONCURRENCY` | `3` | Tareas a la vez por repo, de todos los flujos. |
+| `EXTERNAL_REVIEW_CONCURRENCY` | `2` | Cuántas de esas pueden ser reviews de PRs de personas. |
+| `EXTERNAL_REVIEW_WORKER_MODEL` | `sonnet` | El modelo de los agentes que revisan cada dimensión de esas reviews. |
+
+## Bloqueos y correos
+
+| Variable | Por defecto | Qué es |
+|---|---|---|
+| `GMAIL_USER`, `GMAIL_APP_PASSWORD` | — | La cuenta que manda los correos, con una app password. |
+| `NOTIFY_TO` | — | Respaldo: a quién va lo que nadie eligió recibir en Ajustes. |
+| `E2E_RETRY_LIMIT` | `2` | Veces que se repite una misma falla de CI antes de bloquear. |
+| `E2E_ATTEMPT_HARD_LIMIT` | `5` | Tope de intentos aunque cada falla sea distinta. |
+| `SLICE_ATTEMPT_LIMIT` | `3` | Intentos de atender una review antes de bloquear. |
+| `RETARGET_RETRY_LIMIT` | `3` | Intentos de apuntar el fondo de un stack a la raíz. |
+| `ISSUE_ERROR_RETRY_LIMIT` | `3` | Errores inesperados seguidos en un issue. |
+| `CHECKS_PENDING_RETRY_LIMIT` | `60` | Ticks con checks pendientes antes de bloquear (unas 5 horas). |
+
+Ver [Cuándo se bloquea](/ronin/referencia/bloqueos/).
+
+## Servidor y tablero
+
+| Variable | Por defecto | Qué es |
+|---|---|---|
+| `WEBHOOK_SECRET` | — | El secreto de los webhooks de GitHub. Sin él, no hay servidor. |
+| `SERVER_PORT` | `3939` | El listener público, el de los webhooks y el portal. |
+| `WEBHOOK_DEBOUNCE_MS` | `1000` | Cuánto esperar para juntar una ráfaga de eventos. |
+| `EVENT_HANDLER_TIMEOUT_MINUTES` | `120` | Tope de un handler de webhook entero. |
+| `DASHBOARD_GITHUB_CLIENT_ID`, `DASHBOARD_GITHUB_CLIENT_SECRET` | — | La OAuth App del tablero. |
+| `DASHBOARD_SESSION_SECRET` | — | Firma las sesiones. Cambiarlo las cierra todas. |
+| `DASHBOARD_URL` | — | Dónde se abre el tablero. |
+| `DASHBOARD_ADMINS` | — | Los administradores de respaldo. |
+| `DASHBOARD_ALLOWED_USERS` | — | Si tiene logins, solo ellos entran, hasta que se elija la Entrada en Ajustes. |
+| `DASHBOARD_SESSION_DAYS` | `7` | Cuánto dura una sesión. |
+| `SERVER_TAILNET_PORT`, `DASHBOARD_TAILNET_HTTPS_PORT` | `3940`, `8443` | El listener del tablero y el puerto con el que se publica en la tailnet. |
+| `SETTINGS_DATA_DIR` | `settings-data` | Lo que se cambia en Ajustes. Única copia: respaldalo. |
+
+Ver [El servidor y los webhooks](/ronin/operar/servidor/) y [El tablero](/ronin/operar/tablero/).
+
+## Portal, reuniones y despliegues
+
+| Variable | Por defecto | Qué es |
+|---|---|---|
+| `PORTAL_URL` | — | Dónde se abre el portal. |
+| `PORTAL_SESSION_SECRET` | — | Firma las sesiones del portal, distinto del del tablero. |
+| `PORTAL_SESSION_DAYS` | `30` | Cuánto dura una sesión del portal. |
+| `PORTAL_DAILY_LIMIT` | `5` | Pedidos por día por persona. |
+| `PORTAL_DATA_DIR` | `portal-data` | Los pedidos y las cuentas. Única copia: respaldalo. |
+| `MEETINGS_DATA_DIR` | `meetings-data` | Las notas de las reuniones. Única copia: respaldalo. |
+| `DEPLOYS_DATA_DIR` | `deploys-data` | Qué llevó cada release. Única copia: respaldalo. |
+
+## Exploración y previews
+
+| Variable | Por defecto | Qué es |
+|---|---|---|
+| `EXPLORE_FUNCTIONS_PER_RUN` | `3` | Funciones por corrida de `/explore`. |
+| `EXPLORE_FINDINGS_PER_RUN`, `EXPLORE_IDEAS_PER_RUN` | `8`, `2` | Cuántos hallazgos e ideas se publican por corrida. |
+| `EXPLORE_PUBLISH_EVIDENCE` | `true` | Subir las capturas a la rama `ronin/evidence` del repo. |
+| `EXPLORE_TIMEZONE` | `America/Tegucigalpa` | La zona horaria de la ventana nocturna. |
+| `EXPLORE_NIGHT_WINDOW` | `01:00-06:00` | Cuándo se explora de noche. |
+| `EXPLORE_FUNCTIONS_PER_NIGHT` | `3` | El presupuesto de funciones por noche. |
+| `PREVIEW_PREPARE_DATA` | `true` | Preparar los datos de prueba del PR. En `false`, solo los seeds. |
+| `PREVIEW_PORT_RANGE` | `20000-20999` | Los puertos públicos de las previews en la tailnet. |
+| `PREVIEW_MAX_PER_REPO` | `2` | Previews a la vez por repo. |
+| `PREVIEW_TTL_MINUTES` | `60` | Cuánto vive una preview. En `0`, no vence. |
+| `PREVIEW_RESERVATIONS_DIR` | `.preview-reservations` | Dónde se reservan puertos y cupos. |
+| `SEED_CATALOG_DATA_DIR` | `seed-catalog-data` | El catálogo de seeds. Se regenera solo. |
+
+## Linear
+
+| Variable | Qué es |
+|---|---|
+| `LINEAR_API_KEY_<WORKSPACE>` | Una key por workspace, con el nombre que diga `linear.apiKeyEnv` en `repos.json`. Ver [Linear](/ronin/operar/linear/). |

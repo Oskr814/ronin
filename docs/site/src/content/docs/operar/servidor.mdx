@@ -1,0 +1,58 @@
+---
+title: "El servidor y los webhooks"
+description: "El servidor de ronin: reaccionar a GitHub al instante en vez de esperar al próximo tick."
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+Por defecto, ronin descubre todo por polling, con el cron. Con el **servidor de ronin** reacciona casi al instante: a una asignación, a un PR nuevo, actualizado o cerrado, a una review, a un comentario o comando, al label `ronin:auto-merge` o a un CI que termina.
+
+El servidor (servicio `ronin-server`) recibe los webhooks de GitHub. Por cada evento lanza un handler, un proceso aparte que corre solo lo que ese evento puede mover y solo sobre ese issue o PR. Los eventos que llegan juntos sobre lo mismo se agrupan durante `WEBHOOK_DEBOUNCE_MS`. **El cron sigue corriendo** como conciliación: levanta lo que un webhook perdido no hizo.
+
+El mismo servidor sirve el [tablero](/ronin/operar/tablero/), en un listener aparte que solo ve la tailnet, y el [portal](/ronin/operar/portal/).
+
+## Qué tiene que ser alcanzable
+
+GitHub tiene que llegar al **listener público** (`SERVER_PORT`). Si la máquina no tiene IP pública, exponelo con lo que ya tengas, por ejemplo un túnel y un reverse proxy hacia `127.0.0.1:<SERVER_PORT>`.
+
+El listener público atiende solo `POST /api/webhooks/github` y el portal. Cualquier otra ruta responde 404, aunque el proxy reenvíe todo: **el tablero nunca queda expuesto por ahí.**
+
+## Instalarlo
+
+<Steps>
+
+1. Generá un secreto con `openssl rand -hex 32` y completá `WEBHOOK_SECRET` en `.env`.
+
+2. `pnpm build`: el servidor corre el `dist/` compilado, igual que el cron.
+
+3. `pnpm server:setup` lo instala como servicio systemd `--user` (`ronin-server`), con reinicio automático. `pnpm server:remove` lo saca. Los logs:
+
+   ```bash
+   journalctl --user -u ronin-server -f
+   ```
+
+4. Exponé el puerto con tu proxy o túnel bajo una URL HTTPS, por ejemplo `https://ronin.example.com`.
+
+5. Registrá el webhook en cada repo de `repos.json`:
+
+   ```bash
+   pnpm init-webhooks https://ronin.example.com/api/webhooks/github
+   ```
+
+   Suscribe `issues`, `pull_request`, `issue_comment`, `pull_request_review_comment`, `pull_request_review`, `check_suite`, `release` y `workflow_run`. Es idempotente: si el hook ya existe, le actualiza la URL y los eventos en vez de crear otro. Si una versión de ronin suma un evento, volvé a correrlo.
+
+</Steps>
+
+Para confirmar que GitHub llega, mirá en cada repo *Settings → Webhooks → Recent Deliveries*: tienen que dar 202.
+
+<Aside type="tip">
+Con el servidor andando, bajale la frecuencia al cron en vez de sacarlo: `pnpm cron:setup 30`, cada 30 minutos. Los webhooks pueden perderse (el túnel caído, un reinicio).
+</Aside>
+
+## Al desplegar una versión nueva
+
+```bash
+git pull && pnpm install --frozen-lockfile && pnpm build && systemctl --user restart ronin-server
+```
+
+El proceso no recarga `dist/` solo. Reiniciarlo no corta los handlers que estén corriendo.

@@ -1,0 +1,34 @@
+---
+title: "Qué es ronin"
+description: "Un orquestador de agentes Claude Code para desarrollo dirigido por specs e issues."
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+ronin orquesta agentes autónomos (Claude Code) que trabajan sobre tus repos de GitHub. No hay que tener una sesión abierta: corre por cron y por webhooks, se reanuda solo tras un corte de cuota y varios runners trabajan en paralelo sin pisarse.
+
+## Cómo se le habla
+
+Todo empieza en GitHub, o en el tablero, que escribe en GitHub a tu nombre:
+
+- **Asignándole** un issue o el PR de un spec a la cuenta `ronin-agent`.
+- **Mencionándolo** en un comentario: `@ronin-agent <pedido>` o un comando como `/preview`.
+- **Desde el tablero**, con el menú *Acciones* de cada ficha y las decisiones de sus PRs.
+
+## El ciclo de un issue
+
+<Steps>
+
+1. **Se lo asignás.** En el próximo tick (enseguida, con webhooks) lo marca `ronin:in-progress`.
+
+2. **Lo lee entero**, con los comentarios. Si no queda claro qué hacer, pregunta en el issue y se detiene: lo bloquea y avisa por email.
+
+3. **Abre un PR** con `Closes #N`, con una descripción que siempre tiene las mismas secciones: qué se pidió, qué cambió, cómo se verificó, sus decisiones propias y lo que quedó fuera.
+
+4. **Lo decidís.** Lo aprobás, le pedís un ajuste o lo cerrás. Aprobado y con los checks en verde, se mergea solo.
+
+</Steps>
+
+<Aside type="tip">
+¿Querés darle forma antes de asignarlo? Un [spike](/ronin/referencia/comandos/#spike) investiga y un [prototipo](/ronin/referencia/comandos/#prototype) te muestra el cambio en capturas, sin abrir un PR.
+</Aside>

@@ -1,0 +1,60 @@
+---
+title: "Probar con una preview"
+description: "Levantar el PR en una URL de la tailnet, con datos listos para probarlo, que se actualiza con cada commit."
+---
+
+import { Aside, Steps, Tabs, TabItem } from '@astrojs/starlight/components';
+
+Una preview es la app del PR levantada en el runner, con una URL de la tailnet, usuarios de prueba y los datos que hacen falta para probarlo. Hace falta un [`ronin.app.json`](/ronin/referencia/app-json/) en el repo del producto.
+
+## Pedirla
+
+<Tabs syncKey="donde">
+  <TabItem label="Desde el tablero" icon="laptop">
+    En la ficha del PR, **Acciones** → **Levantar la preview**. Podés escribir qué datos querés, y el diálogo te muestra el comentario que va a quedar.
+  </TabItem>
+  <TabItem label="Desde GitHub" icon="github">
+    ```
+    @ronin-agent /preview [app] [qué datos querés]
+    ```
+    Por ejemplo: `@ronin-agent /preview un cliente con 40 catálogos, algunos vencidos`. La app es opcional si el manifiesto define una sola. No funciona en un PR que viene de un fork.
+  </TabItem>
+</Tabs>
+
+## Qué hace
+
+<Steps>
+
+1. Levanta la app con el código del PR, su base y sus seeds.
+
+2. Prepara los datos que piden los pasos de prueba del PR, más lo que escribiste después del comando.
+
+3. Responde en el PR con la URL (solo se abre desde la tailnet), los usuarios de prueba de cada rol, y qué datos quedaron listos y cuáles no pudo preparar.
+
+</Steps>
+
+**Los datos base.** La primera preview con unos seeds y migraciones dados escribe un catálogo de lo que traen (usuarios, clientes, pedidos, sus casos) y tarda un poco más. Las siguientes con los mismos seeds parten de él: si ya alcanzan para probar el PR, ronin no prepara nada y te dice con qué registros del seed probarlo; si no, crea solo lo que falta.
+
+## Se actualiza sola
+
+Con cada commit nuevo del PR, de ronin aplicando un pedido o de cualquiera, sin que nadie lo pida:
+
+- **En el lugar**, si el `ronin.app.json` dice con [`rerunOn`](/ronin/referencia/app-json/#rerunon) qué pasos repetir según los archivos que cambian: ronin mueve la preview al commit nuevo y vuelve a correr solo esos pasos (instalar si cambió el lockfile, migrar si hay migraciones nuevas). La URL, los usuarios y los datos se conservan.
+- **De cero**, como un `/preview`, si ningún paso declara `rerunOn`, si cambió el `ronin.app.json` o un compose de la app, o si algo falla al actualizar. La URL puede cambiar.
+- **Los datos:** un modelo barato mira los commits nuevos y decide si cambian lo que hay que probar. Si los cambian, ronin agrega lo que falta sobre lo que ya estaba, sin borrar nada.
+
+Cada actualización deja un comentario corto en el PR: qué commits, qué pasos volvieron a correr (o por qué se levantó de cero) y qué datos se sumaron. El tablero dice «actualizándose» mientras tanto.
+
+<Aside type="tip">
+Si algo quedó raro, un `/preview` a mano (o **Actualizar la preview** en el tablero) la levanta de cero.
+</Aside>
+
+## Cuánto dura
+
+- **Se baja sola** a la hora de levantarse (`PREVIEW_TTL_MINUTES`), o al mergear o cerrar el PR. Las actualizaciones no reinician la hora.
+- `@ronin-agent /preview stop`, o **Bajar la preview** en el tablero, la baja antes.
+- **Hay un tope** de previews activas a la vez por repo (`PREVIEW_MAX_PER_REPO`, 2 por defecto). Si no queda lugar, ronin te dice qué PRs las tienen.
+
+## Para alguien de afuera
+
+Los puertos públicos de las previews salen de `PREVIEW_PORT_RANGE`. Es lo único que una política de la tailnet tiene que abrirle a alguien sin acceso completo a la máquina para que pruebe una preview.

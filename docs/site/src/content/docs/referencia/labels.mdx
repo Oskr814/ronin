@@ -1,0 +1,40 @@
+---
+title: "Labels y estados"
+description: "Los labels ronin:* que ronin lee y escribe en los issues y PRs, y qué significa cada uno."
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+GitHub es la máquina de estados de ronin: no tiene una base de datos propia de progreso, y lo que decide en cada tick sale de los labels, los PRs y los checks. `pnpm init-labels` crea en cada repo los que hacen falta.
+
+## El estado de un issue
+
+| Label | Qué significa |
+|---|---|
+| `ronin` | ronin gestiona el issue. Sin él, el tablero ofrece **Asignar a ronin**. |
+| `ronin:ready` | Un spec listo para que un runner lo tome. |
+| `ronin:in-progress` | ronin lo está trabajando. Para destrabar un issue, se vuelve a poner este. |
+| `ronin:blocked` | ronin necesita una decisión de una persona. Ver [Cuándo se bloquea](/ronin/referencia/bloqueos/). |
+| `ronin:done` | Completado: todas sus slices se mergearon. |
+
+## Cómo trabaja
+
+| Label | Dónde | Qué hace |
+|---|---|---|
+| `ronin:stack-prs` | Issue de tracking | Apila las slices sin esperar a que se mergee la anterior. Lo pone una persona. Ver [Specs y slices](/ronin/como-funciona/slices/). |
+| `ronin:auto-merge` | PR | Lo mergea apenas esté aprobado, en verde y mergeable. Ver [`/auto-merge`](/ronin/referencia/comandos/#auto-merge). |
+| `ronin:issue-fix` | Issue | Un issue asignado directamente, no el de tracking de un spec. Lo pone ronin. |
+| `ronin:portal` | Issue | Salió de un pedido del [portal](/ronin/guias/pedidos-del-portal/). Lo pone ronin. |
+| `ronin:attempts-<n>` | Issue o PR | Cuántos intentos de arreglo lleva (review, CI, errores), contra el límite antes de bloquear. Lo maneja ronin. |
+| `ronin:runner-<id>` | Issue | Qué runner lo reclamó, para que dos runners no tomen el mismo. Lo maneja ronin. |
+
+## Exploración
+
+| Label | Qué significa |
+|---|---|
+| `ronin:propuesta` | Un issue abierto por una ficha de exploración aprobada. |
+| `ronin:idea` | Además de `ronin:propuesta`: la ficha era una idea, no un problema encontrado. |
+
+<Aside type="caution">
+Los que maneja ronin no se tocan a mano, salvo `ronin:in-progress` para destrabar, `ronin:stack-prs` y `ronin:auto-merge`.
+</Aside>

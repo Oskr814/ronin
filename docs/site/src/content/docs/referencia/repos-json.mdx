@@ -1,0 +1,47 @@
+---
+title: "repos.json"
+description: "La lista de repos que supervisa un runner, y lo que se configura por cada uno."
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+`repos.json`, en la raíz de ronin (o donde diga `REPOS_CONFIG_PATH`), lista los repos que supervisa el runner. Va en `.gitignore`: nunca se commitea. Casi todo lo que no son rutas también se cambia desde [Ajustes → Repos](/ronin/operar/ajustes/#administración), que valida el archivo antes de escribirlo y guarda una copia del anterior.
+
+```json
+[
+  {
+    "productRepo": "acme/tienda",
+    "productRepoPath": "/srv/repos/tienda",
+    "claudeConfigDir": "/home/ronin/.claude-acme",
+    "worktreeBaseRef": "origin/main",
+    "explore": ["backoffice"],
+    "linear": { "apiKeyEnv": "LINEAR_API_KEY_ACME" },
+    "portal": {
+      "name": "Acme",
+      "apps": { "backoffice": { "name": "Backoffice", "description": "Pedidos, clientes y catálogo" } }
+    },
+    "deploy": { "selective": true }
+  }
+]
+```
+
+## Campos
+
+| Campo | Qué es |
+|---|---|
+| `productRepo` | `owner/repo` en GitHub. **Obligatorio.** |
+| `productRepoPath` | Un clon local del repo, hecho a mano. ronin nunca lo clona: hace fetch y crea worktrees al lado. **Obligatorio.** |
+| `claudeConfigDir` | La carpeta de config de Claude Code con la que corren los agentes de este repo, si es una cuenta distinta de la global (`CLAUDE_CONFIG_DIR`). |
+| `worktreeBaseRef` | La rama base, si no es `origin/main` (por ejemplo `origin/odoo-main`). Sin esto, todo lo que depende de la base (specs, stacks, merges) va contra la rama equivocada. |
+| `concurrency` | Cuántas tareas de este repo corren a la vez. Por defecto, `TICK_CONCURRENCY`. Cada repo tiene su propia cola. |
+| `autoMerge` | `false` para que los PRs de slice salgan sin `ronin:auto-merge` y los mergee una persona. |
+| `explore` | Las apps de `ronin.app.json` que se [exploran](/ronin/guias/explorar-una-app/) de noche. |
+| `agent` | Modelo y esfuerzo para la cuenta de este repo: `model`, `effort`, y por tipo de tarea `models` y `efforts` (por ejemplo `{ "external-review": "opus" }`), más `reviewWorkerModel`. Ganan sobre las variables de entorno. |
+| `linear` | `apiKeyEnv`: el nombre de la variable de `.env` con la key de Linear del workspace. `explorationProject`: app → proyecto donde van los issues de su exploración. Ver [Linear](/ronin/operar/linear/). |
+| `portal` | El repo en el [portal de pedidos](/ronin/operar/portal/): `name` (como lo ve la gente), `apps` (las claves son las de `ronin.app.json`, con `name` y `description`) y `notifyTo` (correos de respaldo del equipo). |
+| `deploy` | Que se pueda [desplegar](/ronin/guias/desplegar/) desde el tablero: `prerelease` y `selective`. |
+| `changelogRepo`, `changelogRepoPath` | Publicar una entrada en un repo de changelog con cada release. Van juntos. Ver [Changelog](/ronin/operar/changelog/). |
+
+<Aside type="note">
+Agregar o quitar un repo, y cambiar sus rutas, se hace en el archivo. Después de agregar uno, corré `pnpm init-labels` y, con el servidor, `pnpm init-webhooks <url>`.
+</Aside>

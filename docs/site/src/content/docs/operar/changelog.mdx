@@ -1,0 +1,16 @@
+---
+title: "Publicar el changelog"
+description: "Una entrada en el repo de changelog por cada release de un repo, escrita por ronin."
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Opcional, por repo. Si una entrada de [`repos.json`](/ronin/referencia/repos-json/) trae `changelogRepo` (por ejemplo `"acme/changelog"`) y `changelogRepoPath` (un clon local, hecho a mano: ronin nunca lo clona), cada vez que ese repo publica un release real ronin escribe su entrada en el repo de changelog y la publica.
+
+- **Las reglas son las del repo de changelog:** el agente sigue su `AGENTS.md` o `README.md` (el formato, el tono, cómo traer los datos del release y de sus PRs, las imágenes, cómo se publica). Si el repo de changelog cambia su convención, ronin cambia solo.
+- **Se dispara** con el webhook `release` (acción `released`, que GitHub manda solo para releases reales, nunca para drafts ni pre-releases), y el tick lo concilia por si se perdió.
+- **La primera vez** no genera entradas viejas: marca el último release como punto de partida.
+
+<Aside type="caution" title="Capturas con datos reales">
+Si encuentra una captura que podría tener datos de un cliente, publica la entrada sin ella, lo dice, y avisa por email para que una persona la revise.
+</Aside>

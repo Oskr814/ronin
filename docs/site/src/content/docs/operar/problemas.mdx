@@ -1,0 +1,38 @@
+---
+title: "Problemas comunes"
+description: "Qué revisar cuando algo del runner, el tablero, el portal o los despliegues no anda."
+---
+
+## El runner
+
+- **No toma un issue asignado:** revisá el log del día (`logs/tick-$(date +%F).log`) y que el cron esté instalado (`crontab -l`). Sin webhooks, lo toma en el próximo tick.
+- **Corre una versión vieja:** el cron y el servidor corren `dist/`. Después de un `git pull`, `pnpm build` (y reiniciar el servidor).
+- **Un comentario no recibió 👀:** ronin no lo procesó todavía, o falló y lo reintenta en el tick siguiente. Con webhooks, mirá *Recent Deliveries* del webhook en el repo: tienen que dar 202.
+
+## El tablero
+
+- **No carga:** `tailscale serve status` tiene que mostrar el puerto del tablero apuntando a `127.0.0.1:<SERVER_TAILNET_PORT>`. Revisá `journalctl --user -u ronin-server`: si al arrancar dice «tablero desactivado», ahí nombra la variable que falta.
+- **El login vuelve con error:** el callback de la OAuth App tiene que ser exactamente `<DASHBOARD_URL>/api/auth/callback`.
+- **«GitHub no te deja escribir en …» al comentar o aprobar:** la organización restringe las OAuth Apps. Un admin tiene que aprobar el tablero en *Settings → Third-party access* de la organización.
+- **Te pide entrar de nuevo al comentar:** GitHub ya no acepta tu token (lo revocaste, o cambió el permiso). Entrá otra vez.
+- **«GitHub sin responder» en la barra de estado:** el tablero sigue mostrando la última lectura, y el motivo está en el log del servidor.
+- **Alguien entra y no ve un repo:** en GitHub tiene que poder gestionar issues (*triage* o más) en ese repo, no solo leerlo.
+- **«No tenés acceso a este tablero»:** no sos administrador y GitHub no te da *triage* en ningún repo de `repos.json`.
+- **«No tenés permiso para …» al pedir algo:** tus permisos en ese repo no lo incluyen. Un administrador los cambia en Ajustes → Usuarios.
+- **Un comentario en una línea vuelve con «line must be part of the diff»:** el PR cambió mientras lo revisabas. Esperá a que la página lea el diff nuevo, o recargá, y comentá de nuevo.
+- **No te llegan correos:** revisá que tu Perfil tenga correo y qué elegiste en Notificaciones. *Ajustes → Conexiones → Mandar prueba* dice si el correo sale.
+- **Un cambio en Ajustes → Repos no se guardó:** el aviso dice qué regla de `repos.json` no pasaba; el archivo queda como estaba. Las copias anteriores están en `settings-data/repos-json/`.
+- **No hay uso de una cuenta de Claude:** se mide en cada corrida de esa cuenta. Hasta la primera, no hay dato.
+
+## El portal
+
+- **Un pedido parece trabado:** en su ficha, *Ahora* dice a quién espera. Si espera a ronin y lo último fue una falla, el error está ahí, y el tick lanza otro worker en su próxima vuelta.
+- **La persona dice que no le llegó un correo:** la actividad del pedido muestra cada correo y si salió.
+- **No aparecen las cuentas del portal en Ajustes → Usuarios:** son solo para administradores, y con `PORTAL_URL` y `PORTAL_SESSION_SECRET` configurados.
+
+## Despliegues
+
+- **No aparece *Despliegues*:** la ven los administradores y quien tenga permiso de desplegar, y solo si algún repo tiene `deploy` en `repos.json`.
+- **Un release quedó *en curso* mucho tiempo:** ronin espera hasta 2 horas a que aparezca un run del workflow con ese tag; si no aparece, lo marca *sin workflow*. Sin el webhook `workflow_run`, el estado se actualiza recién con el tick.
+- **Dice *falló*, pero lo volviste a correr y terminó bien:** se actualiza con el webhook del re-run, o con el tick. Pasados 30 días del fallo, ronin deja de mirarlo.
+- **«Se subió el tag, pero no se pudo crear el release»:** el tag ya está en GitHub, y un workflow que corre con tags puede estar desplegando. Creá el release a mano sobre ese tag, o borrá el tag si no querías desplegar.

@@ -1,0 +1,45 @@
+---
+title: "Documentar un cambio"
+description: "La documentación va en el mismo PR que el código: dónde vive cada cosa y cómo probar el sitio."
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+**La documentación va en el mismo PR que el cambio.** Quien arma el PR, persona o agente, es quien mejor sabe qué cambió y por qué, así que ese PR también actualiza lo que lo cuenta. Se revisa junto con el código y llega a `main` en el mismo merge.
+
+## Dónde va cada cosa
+
+| Qué cambia | Dónde se documenta |
+|---|---|
+| Algo que se ve: un comando, una acción del tablero, la UI, el portal, la configuración, la instalación | La página de este sitio que lo cuenta, en `docs/site/src/content/docs/`. |
+| El diseño: por qué está hecho así, cómo funciona por dentro | [`docs/DESIGN.md`](https://github.com/Oskr814/ronin/blob/main/docs/DESIGN.md). |
+| Cuándo se bloquea | [`docs/BLOCKING.md`](https://github.com/Oskr814/ronin/blob/main/docs/BLOCKING.md) y [Cuándo se bloquea](/ronin/referencia/bloqueos/). |
+
+Si el cambio no toca nada visible, el PR lo dice en su descripción: «Docs: no cambia nada visible».
+
+## Cómo se escribe
+
+- **Por tarea, no por pieza:** una guía responde «¿cómo hago X?»; la referencia, «¿qué hace exactamente Y?».
+- **Voseo**, como el resto del sitio: «asigná», «podés».
+- **Los links internos empiezan con `/ronin/`**, la base del sitio en GitHub Pages. El build falla con un link roto.
+- **Las capturas, con datos inventados.** El sitio es público, como el repo: nada de nombres de clientes, pedidos, correos ni repos privados. Van en `src/assets/capturas/`.
+
+## Probarlo
+
+<Steps>
+
+1. Instalá las dependencias del sitio, aparte de las de ronin:
+
+   ```bash
+   cd docs/site && pnpm install
+   ```
+
+2. `pnpm dev` lo sirve con recarga en vivo, en `http://localhost:4321/ronin/`.
+
+3. `pnpm build` lo construye como en CI, con el chequeo de links.
+
+</Steps>
+
+<Aside type="note">
+Cada PR que toca `docs/site/` corre el build en CI. Al mergear a `main`, una Action lo publica en GitHub Pages.
+</Aside>

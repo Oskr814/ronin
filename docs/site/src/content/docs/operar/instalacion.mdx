@@ -1,0 +1,53 @@
+---
+title: "Instalación"
+description: "Poner en marcha un runner de ronin: la cuenta de GitHub, la configuración y el cron."
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+Un runner es una máquina que corre ronin para unos repos. Corre por cron, sin sesión abierta, y opcionalmente con un [servidor](/ronin/operar/servidor/) que reacciona a los webhooks y sirve el [tablero](/ronin/operar/tablero/).
+
+**Hace falta:** Node.js 24, pnpm, `gh`, `jq`, Docker (para levantar las apps) y Claude Code con una sesión iniciada.
+
+<Steps>
+
+1. **Cloná ronin** e instalá las dependencias:
+
+   ```bash
+   git clone https://github.com/Oskr814/ronin.git && cd ronin
+   pnpm install
+   ```
+
+2. **Copiá la configuración:** `.env.example` a `.env` y `repos.json.example` a `repos.json`. En `.env`, completá `RUNNER_ID` con tu usuario de GitHub (no un hostname). En [`repos.json`](/ronin/referencia/repos-json/), cada repo con su `productRepo` y un clon local en `productRepoPath`. Si la rama base no es `main`, completá `worktreeBaseRef`.
+
+3. **Creá la cuenta de ronin en GitHub**, una cuenta dedicada, e invitala como colaboradora en cada repo. Desde esa cuenta, generá un **fine-grained PAT** (*Settings → Developer settings → Personal access tokens → Fine-grained tokens*):
+   - solo para esos repos;
+   - *Contents*, *Issues* y *Pull requests* en lectura y escritura;
+   - opcional, *Commit statuses* en escritura, para el check `ronin/review` mientras revisa;
+   - con vencimiento. No se renueva solo: hay que rotarlo antes de que venza.
+
+   Completá `RONIN_GITHUB_TOKEN` y `RONIN_GITHUB_LOGIN` en `.env`.
+
+4. **Comprobá el token:** `pnpm smoke-test` confirma que autentica como `RONIN_GITHUB_LOGIN` y que puede leer cada repo.
+
+5. **Creá los labels:** `pnpm init-labels` crea los [`ronin:*`](/ronin/referencia/labels/) en cada repo de `repos.json`.
+
+6. **Compilá:** `pnpm build`. El cron corre el `dist/` compilado y nunca recompila solo: hay que volver a correrlo después de cada cambio.
+
+7. **Instalá el cron:** `pnpm cron:setup [minutos] [días]` (por defecto, cada 5 minutos y 14 días de logs). `pnpm cron:remove` lo saca. Los logs quedan en `logs/tick-YYYY-MM-DD.log`:
+
+   ```bash
+   tail -f logs/tick-$(date +%F).log
+   ```
+
+</Steps>
+
+## Opcional
+
+- **Reaccionar al instante y el tablero:** el [servidor de ronin](/ronin/operar/servidor/), con [el tablero](/ronin/operar/tablero/) y el [portal](/ronin/operar/portal/).
+- **Previews, prototipos y exploración:** un [`ronin.app.json`](/ronin/referencia/app-json/) en el repo del producto y `pnpm browsers:install` una vez. `/preview` necesita además Tailscale en el runner.
+- **Memoria entre corridas:** en el repo del producto, un `docs/agent-notes/INDEX.md` vacío y una sección en su `CLAUDE.md` que apunte a él. Ahí dejan los agentes lo que aprenden. Sin esto la convención queda inerte, sin error.
+
+<Aside type="caution" title="Al desplegar una versión nueva">
+`git pull && pnpm install --frozen-lockfile && pnpm build`, y reiniciar el servidor si lo usás. Mientras `pnpm build` reconstruye `dist/`, un tick o un evento que arranque falla; lo retoma el tick siguiente.
+</Aside>

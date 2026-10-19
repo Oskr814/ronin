@@ -1,0 +1,46 @@
+---
+title: "Planificar desde una reunión"
+description: "Subir las notas de una reunión y aprobar los issues, comentarios y proyectos que ronin propone a partir de ellas."
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+Las reuniones ya dejan notas escritas, pero pasar de las notas a trabajo planificado era manual y muchas veces no pasaba. En **Reuniones**, en el tablero, subís las notas y ronin propone el trabajo que sale de ellas: issues nuevos, comentarios en issues que ya existen y, con [Linear](/ronin/operar/linear/), proyectos con sus issues.
+
+<Aside type="note">
+**Nada se crea hasta que alguien lo aprueba.** No hay borradores en Linear, y GitHub sigue siendo la fuente de verdad.
+</Aside>
+
+## El recorrido
+
+<Steps>
+
+1. **Subí las notas** de una reunión de un repo: un PDF, un Word `.docx`, texto o Markdown (hasta 10 MB), o el texto pegado. De Google Docs se bajan como PDF o `.docx`. Un PDF escaneado no tiene texto y se rechaza. Las mismas notas en el mismo repo también se rechazan, diciendo qué reunión las tiene.
+
+2. **ronin las lee** con el contexto del repo: los issues abiertos, el código y, con Linear, los proyectos, ciclos y personas del equipo. Cada propuesta cita las líneas de las notas que la justifican. Lo que no se sostiene (sin citas, un comentario en un issue cerrado, un proyecto que ya existe) queda fuera.
+
+3. **Te llega un correo** si elegiste *Propuestas de una reunión* en [Ajustes → Notificaciones](/ronin/operar/ajustes/#tu-cuenta), con lo propuesto, lo descartado y el link. Nunca lleva el texto de las notas.
+
+4. **Revisá en la ficha:** marcá qué propuestas querés y, si hace falta, cambiá el título y la descripción, el líder de un proyecto, el proyecto y el ciclo de un issue.
+
+5. **Crear seleccionados** crea los issues y comentarios en GitHub **a tu nombre**, y los proyectos en Linear. Al final de cada uno va de dónde salió: la reunión, su fecha y quién lo aprobó, nunca las notas.
+
+</Steps>
+
+Si algo falla a mitad de camino, reintentar nunca crea dos veces lo mismo. *Descartar* deja la reunión cerrada, y lo que ya se creó queda creado.
+
+## Estados de una reunión
+
+| Estado | Qué significa |
+|---|---|
+| **En cola para ronin** | Se subió y espera un lugar para leerla. |
+| **ronin la está leyendo** | ronin la está leyendo. |
+| **Espera revisión** | Propuso algo y espera que alguien lo revise. |
+| **Nada accionable** | No salió nada. No hay correo. |
+| **Falló la lectura** | La lectura falló (por ejemplo, Linear no respondió). Desde la ficha se pide de nuevo. |
+| **Creado** | Se creó todo lo aprobado. |
+| **Descartada** | Alguien la descartó. |
+
+<Aside type="caution" title="Las notas no salen del runner">
+Se guardan en `MEETINGS_DATA_DIR`, fuera de git, y nunca van al repo ni a GitHub: dicen más de lo que debería decir un issue. Lo que es de otro repo se descarta, así que una reunión nunca cruza información entre clientes.
+</Aside>
