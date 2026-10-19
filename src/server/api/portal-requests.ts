@@ -58,6 +58,7 @@ function personView(r: PortalRequest, app: PortalApp | undefined) {
       ...(m.understood ? { understood: m.understood } : {}),
       ...(m.skipped ? { skipped: true } : {}),
       ...(m.confirmed ? { confirmed: true } : {}),
+      ...(m.correction ? { correction: true } : {}),
     })),
   };
 }

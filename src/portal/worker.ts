@@ -1,7 +1,8 @@
 // One portal request worked by ronin, in its own process (#114): started by
 // the server when the person writes or decides (launchPortalWorker), or by
 // the tick when the one before died. Reading it waits for a slot of the
-// runner's shared quota like any other agent run; a small change then waits
+// runner's shared quota like any other agent run, except the interview's
+// answers (#225), read right away; a small change then waits
 // for the repo's prototype lock (one app stack at a time, shared with the
 // issues' /prototype) and gets its prototype, and a reported error waits
 // for it too and gets reproduced (#137). An approved one, or one the
@@ -13,7 +14,7 @@ import { log } from '../core/logger.js';
 import { withActiveRepo } from '../core/repo-context.js';
 import { loadRepos } from '../core/repos.js';
 import { releasePrototypeLock, waitForPrototypeLock } from '../commands/prototype.js';
-import { classifyRequest } from './classify.js';
+import { classifyRequest, followUpRequest } from './classify.js';
 import { needsIssue, openPortalIssue } from './issue.js';
 import { prototypeRequest } from './prototype.js';
 import { reproduceRequest } from './reproduce.js';
@@ -61,7 +62,9 @@ async function main(): Promise<void> {
     try {
       if (request.status === 'thinking') {
         await claim(n);
-        await withSlots('portal-request', concurrencyFor(), {}, () => classifyRequest(n), `pedido P-${n}`);
+        // The interview's answers (#225) skip the runner's queue: a short
+        // read without the code, while the person waits on the page.
+        if (!(await followUpRequest(n))) await withSlots('portal-request', concurrencyFor(), {}, () => classifyRequest(n), `pedido P-${n}`);
       }
       const next = (await getRequest(n))?.status;
       if (next === 'minor') await onApp(n, 'prototype');

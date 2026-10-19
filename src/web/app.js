@@ -18,7 +18,7 @@ const TYPE = {
   'external-review': 'Review externa', 'spike': 'Spike', 'write-spec': 'Escribir spec', 'issue-request': 'Pedido en issue',
   'prototype': 'Prototipo', 'update-changelog': 'Changelog', 'explore-inventory': 'Inventario de exploración',
   'explore-function': 'Explorar', 'explore-evaluate': 'Evaluar exploración', 'explore-redo-after': 'Rehacer captura',
-  'explore-feedback': 'Comentarios de exploración', 'commit-subject': 'Mensaje de commit', 'prepare-preview-data': 'Datos de preview', 'preview-seed-catalog': 'Catálogo de seeds', 'preview-data-triage': '¿Alcanzan los seeds?', 'preview-data-delta': 'Datos de preview al actualizarse', 'portal-request': 'Pedido del portal', 'portal-prototype': 'Prototipo del portal', 'portal-reproduce': 'Reproducción del portal', 'meeting-read': 'Lectura de reunión',
+  'explore-feedback': 'Comentarios de exploración', 'commit-subject': 'Mensaje de commit', 'prepare-preview-data': 'Datos de preview', 'preview-seed-catalog': 'Catálogo de seeds', 'preview-data-triage': '¿Alcanzan los seeds?', 'preview-data-delta': 'Datos de preview al actualizarse', 'portal-request': 'Pedido del portal', 'portal-interview': 'Respuestas de la entrevista', 'portal-prototype': 'Prototipo del portal', 'portal-reproduce': 'Reproducción del portal', 'meeting-read': 'Lectura de reunión',
 };
 const VERB = { Bash: 'Corrió', Read: 'Leyó', Edit: 'Editó', MultiEdit: 'Editó', Write: 'Escribió', NotebookEdit: 'Editó', Grep: 'Buscó', Glob: 'Buscó', WebFetch: 'Abrió', WebSearch: 'Buscó en la web', Task: 'Lanzó un agente', Agent: 'Lanzó un agente', TodoWrite: 'Anotó tareas' };
 const STATE = {
@@ -3738,7 +3738,7 @@ function pedThumbs(d, m) {
 
 function pedEntryHTML(d, e) {
   const item = (tone, icon, title, extra, time, small = false, body = '') => `<li class="pd-ev ${tone} ${small ? 'small' : ''}"><span class="ic">${PED_ICON[icon] ?? PED_ICON.wait}</span><div class="h"><b>${title}</b>${extra}<span class="tm" title="${esc(time ? when(time) : '')}">${time ? esc(hhmm(time)) : 'sin hora'}</span></div>${body}</li>`;
-  if (e.type === 'run') return item('run', 'run', esc(e.run.taskType === 'portal-prototype' ? 'Armó el prototipo' : e.run.taskType === 'portal-reproduce' ? 'Intentó reproducirlo' : e.run.taskType === 'portal-request' ? 'ronin lo leyó' : typeName(e.run.taskType)), '', e.at, false, pedRunCard(e.run));
+  if (e.type === 'run') return item('run', 'run', esc(e.run.taskType === 'portal-prototype' ? 'Armó el prototipo' : e.run.taskType === 'portal-reproduce' ? 'Intentó reproducirlo' : e.run.taskType === 'portal-request' ? 'ronin lo leyó' : e.run.taskType === 'portal-interview' ? 'ronin leyó sus respuestas' : typeName(e.run.taskType)), '', e.at, false, pedRunCard(e.run));
   if (e.type === 'message') {
     const m = e.message;
     const long = m.text.length > 320;
@@ -5418,7 +5418,7 @@ const AJ_PAGES = {
       const fallback = (value, def, kind) => (value !== null ? `${ajWord(value)} (.env)` : def ? `${def} (por defecto)` : `General (${general(kind)})`);
       return `<tr><td>${esc(typeName(t.task))}<small class="mono">${esc(t.task)}</small></td>
         <td><select class="aj-in" data-ajtask="${esc(t.task)}" data-f="model" aria-label="Modelo de ${esc(t.task)}"><option value="">${esc(fallback(t.envModel, t.defaultModel, 'agent.model'))}</option>${['opus', 'sonnet', 'haiku'].map((m) => `<option ${t.model === m ? 'selected' : ''}>${m}</option>`).join('')}</select></td>
-        <td><select class="aj-in" data-ajtask="${esc(t.task)}" data-f="effort" aria-label="Esfuerzo de ${esc(t.task)}"><option value="">${esc(fallback(t.envEffort, null, 'agent.effort'))}</option>${['low', 'medium', 'high', 'xhigh', 'max'].map((m) => `<option ${t.effort === m ? 'selected' : ''}>${m}</option>`).join('')}</select></td></tr>`;
+        <td><select class="aj-in" data-ajtask="${esc(t.task)}" data-f="effort" aria-label="Esfuerzo de ${esc(t.task)}"><option value="">${esc(fallback(t.envEffort, t.defaultEffort, 'agent.effort'))}</option>${['low', 'medium', 'high', 'xhigh', 'max'].map((m) => `<option ${t.effort === m ? 'selected' : ''}>${m}</option>`).join('')}</select></td></tr>`;
     }).join('');
     return `<h1>Agentes</h1><p class="lead">Las corridas headless de <code>claude -p</code>. Cada tick y cada webhook leen estos valores al empezar: un cambio vale desde la próxima corrida, sin reiniciar.</p>
       ${ajSec('Modelo', row('agent.model') + row('agent.effort') + row('agent.reviewWorkerModel'))}

@@ -91,6 +91,8 @@ export interface PortalMessage {
   understood?: Understood;
   skipped?: true;
   confirmed?: true;
+  // The person's correction to that summary.
+  correction?: true;
   at: string;
 }
 

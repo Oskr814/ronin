@@ -152,7 +152,7 @@ const WORKING = {
   minor: ['ronin está armando el prototipo…', 'Abre la aplicación, hace el cambio de prueba y toma capturas de antes y después. Suele tardar entre 5 y 15 minutos.'],
   reproducing: ['ronin está reproduciendo el error…', 'Abre una copia de la aplicación con datos de prueba y sigue tus pasos. Suele tardar entre 5 y 15 minutos.'],
 };
-const POLL_MS = 4000;
+const POLL_MS = 2000;
 const hhmm = (iso) => new Date(iso).toLocaleString('es', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 const paragraphs = (text) => esc(text).split(/\n{2,}/).map((p) => `<p>${p.replace(/\n/g, '<br>')}</p>`).join('');
 const chip = (status) => {
@@ -220,7 +220,10 @@ function threadHTML(d) {
       <div class="bubble">${m.answers ? answersHTML(m) : m.skipped ? '<p class="ack">Lo envié sin responder las preguntas.</p>' : m.confirmed ? '<p class="ack">✓ Está bien, envíalo al equipo.</p>' : m.text ? paragraphs(m.text) : ''}${m.understood ? understoodHTML(m.understood) : ''}${images}</div></div></div>`);
   }
   if (d.status === 'interviewing' && !S.skipping) out.push(formHTML(d));
-  const working = WORKING[d.status];
+  // Reading the interview's answers takes seconds, not minutes (#225).
+  const lastMine = d.messages.at(-1);
+  const working = d.status === 'thinking' && lastMine?.from === 'person' && (lastMine.answers || lastMine.correction)
+    ? ['ronin está leyendo tus respuestas…', 'Suele tardar unos segundos.'] : WORKING[d.status];
   if (working) out.push(`<div class="working"><div class="spin" aria-hidden="true"></div><div>${working[0]}<small>${working[1]}</small></div></div>`);
   return out.join('');
 }

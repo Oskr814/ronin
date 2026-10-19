@@ -124,7 +124,7 @@ export async function confirmUnderstood(n: number, ok: boolean, text: string, im
     if (interview.corrections >= MAX_CORRECTIONS) throw new RequestError('Ya no quedan correcciones: envíalo al equipo como está y diles ahí lo que falte.');
     interview.corrections += 1;
     const id = nextMessageId(r);
-    r.messages.push({ id, from: 'person', text: text.trim(), images: await saveImages(n, id, images), at: now.toISOString() });
+    r.messages.push({ id, from: 'person', text: text.trim(), images: await saveImages(n, id, images), correction: true, at: now.toISOString() });
     addEvent(r, { kind: 'interview', step: 'corrected', round: interview.corrections }, now);
     r.status = 'thinking';
     delete r.worker;
