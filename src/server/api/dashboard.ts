@@ -17,6 +17,7 @@ import { buildItems, itemRunKeys } from './dashboard-items.js';
 import { forgetDetails, itemDetail, resolveItem } from './dashboard-detail.js';
 import { fileContent, forgetFiles, prFiles } from './dashboard-files.js';
 import { FilesActionError, runFilesAction } from './dashboard-files-actions.js';
+import { DecisionError, runDecision } from './dashboard-decision.js';
 import { ActionError, listActions, runAction } from './dashboard-actions.js';
 import { today, WEEK_DAYS } from './dashboard-today.js';
 import { readEvidence } from './dashboard-evidence.js';
@@ -50,6 +51,7 @@ import { ExploreNowError, corridasOf, exploracionList, exploracionRows, exploreN
 //   GET /api/items/<id>/files/content?path=  one of those files at the PR's head, for the lines around its hunks
 //   GET /api/items/<id>/files/mine    the person's own: the files they marked as viewed, and their pending review
 //   POST /api/items/<id>/files/actions  a comment, a reply, resolving a thread, marking a file viewed, the review, as the person (dashboard-files-actions.ts)
+//   POST /api/items/<id>/decision    on a PR ronin opened: approve and merge it, ask for an adjustment, or close it, as the person (dashboard-decision.ts, #195)
 //   POST /api/items/<id>/exploration/actions  a comment on one of them, as the person (dashboard-exploration-actions.ts)
 //   POST /api/items/<id>/exploration/general  a general comment on the PR, as the person
 //   POST /api/items/<id>/exploration/approve  an approving review, as the person
@@ -757,6 +759,37 @@ async function postFilesAction(req: IncomingMessage, res: ServerResponse, id: st
   }
 }
 
+// POST /api/items/<id>/decision { decision: approve | adjust | close, text?, closeIssue? }.
+async function postPrDecision(req: IncomingMessage, res: ServerResponse, id: string, session: Session): Promise<void> {
+  if (!(req.headers['content-type'] ?? '').startsWith('application/json')) {
+    json(res, 415, { error: 'se espera JSON' });
+    return;
+  }
+  const body = await readJson(req);
+  if (!body) {
+    json(res, 400, { error: 'falta el pedido' });
+    return;
+  }
+  const [ctx, files] = await Promise.all([itemContext(id), filesContext(id)]);
+  if (!ctx?.detail.pr || !files) {
+    json(res, 404, { error: 'ese ítem no tiene un PR de un repo de ronin' });
+    return;
+  }
+  if (refused(res, ctx.entry.productRepo, 'acciones')) return;
+  const issueNumber = ctx.ref.kind === 'issue' ? ctx.ref.number : ctx.ref.issue;
+  try {
+    const done = await runDecision(ctx.entry, { prNumber: files.prNumber, ...(issueNumber !== undefined ? { issueNumber } : {}), files: files.files, pr: ctx.detail.pr }, session, body, config.githubLogin);
+    // Its review, its comments, its state: all of it on the page and in the sidebar.
+    forgetFiles(ctx.entry.productRepo);
+    forgetDetails(ctx.entry.productRepo);
+    forgetGithub(ctx.entry.productRepo);
+    json(res, 200, done);
+  } catch (error) {
+    if (error instanceof DecisionError) json(res, 400, { error: error.message });
+    else if (!githubRefusal(res, error)) throw error;
+  }
+}
+
 function streamRun(req: IncomingMessage, res: ServerResponse, path: string, from: number): void {
   res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-store', Connection: 'keep-alive' });
   let sent = from;
@@ -880,6 +913,11 @@ async function route(req: IncomingMessage, res: ServerResponse, path: string, se
   const filesPost = /^\/api\/items\/(.+)\/files\/actions$/.exec(path);
   if (filesPost && req.method === 'POST') {
     await postFilesAction(req, res, decodeURIComponent(filesPost[1]), session);
+    return true;
+  }
+  const decisionPost = /^\/api\/items\/(.+)\/decision$/.exec(path);
+  if (decisionPost && req.method === 'POST') {
+    await postPrDecision(req, res, decodeURIComponent(decisionPost[1]), session);
     return true;
   }
   const deployPost = /^\/api\/despliegues\/([\w.-]+\/[\w.-]+)\/(plan|publish)$/.exec(path);

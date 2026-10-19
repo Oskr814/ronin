@@ -1284,3 +1284,54 @@ select.aj-in { width: auto; min-width: 180px; }
 .aj-apphead small { font-size: 12px; }
 .aj-in.aj-wide { width: 360px; }
 @media (max-width: 760px) { .aj-in.aj-wide { width: 100%; } }
+
+/* deciding a PR ronin opened (#195): the header's three decisions */
+.dwrap { display: inline-flex; gap: 6px; align-items: center; }
+.dbtn { align-items: center; gap: 6px; }
+.dbtn kbd { font-size: 10.5px; padding: 0 4px; }
+.gh.dbtn.danger { color: var(--crit); }
+.gh.dbtn.run { color: var(--run); border-color: color-mix(in srgb, var(--run) 45%, var(--rule)); }
+.act-btn.dbtn.ok { background: var(--ok); color: #0d1a0c; }
+.act-btn.dbtn.ok kbd { color: inherit; background: transparent; border-color: color-mix(in srgb, #0d1a0c 35%, transparent); }
+:root[data-theme="light"] .act-btn.dbtn.ok { color: #fff; }
+:root[data-theme="light"] .act-btn.dbtn.ok kbd { border-color: rgba(255, 255, 255, .45); }
+.dbtn[aria-expanded="true"] { box-shadow: 0 0 0 2px color-mix(in srgb, currentColor 35%, transparent); }
+.btn-s.ok-solid { background: var(--ok); color: #0d1a0c; border-color: var(--ok); font-weight: 600; }
+:root[data-theme="light"] .btn-s.ok-solid { color: #fff; }
+.drop { position: absolute; top: calc(100% + 8px); right: 0; width: min(520px, calc(100vw - 32px)); text-align: left; color: var(--ink); font-size: 13px; z-index: 30; background: var(--raise); border: 1px solid var(--run); border-radius: 10px; box-shadow: 0 20px 60px rgba(0, 0, 0, .45); }
+.drop.ok { border-color: var(--ok); }
+.drop.crit { border-color: var(--crit); }
+.drop .dt { padding: 11px 13px; color: var(--ink-2); line-height: 1.5; }
+.drop .dt .crit { color: var(--crit); }
+.drop textarea { display: block; width: 100%; min-height: 84px; background: transparent; border: 0; color: var(--ink); font: inherit; padding: 10px 12px; resize: vertical; outline: none; }
+.drop .quick { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 10px 8px; }
+.drop .quick button { font-size: 12px; padding: 2px 9px; border-radius: 999px; border: 1px solid var(--rule); color: var(--ink-2); }
+.drop .quick button:hover { background: var(--hover); }
+.drop .carry { margin: 0 10px 8px; padding: 6px 9px; border-radius: 6px; background: var(--run-bg); font-size: 12.5px; color: var(--ink-2); }
+.drop .how { margin: 0 12px 8px; font-size: 12px; color: var(--faint); }
+.drop code, .decided code { font: 11.5px "JetBrains Mono", monospace; color: var(--muted); }
+.drop .warnbox { margin: 8px 0 0; background: var(--warn-bg); border-radius: 6px; padding: 7px 9px; font-size: 12.5px; color: var(--ink); }
+.drop .dchk { display: grid; grid-template-columns: 18px 1fr; gap: 0 8px; margin: 0 12px 10px; font-size: 12.5px; color: var(--ink-2); cursor: pointer; }
+.drop .dchk input { margin: 3px 0 0; accent-color: var(--crit); }
+.drop .dchk small { display: block; color: var(--muted); font-size: 12px; }
+.drop .bad { margin: 0 12px 8px; font-size: 12.5px; }
+.drop footer { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 8px 10px 10px; border-top: 1px solid var(--rule); }
+.drop footer .m { margin-right: auto; font-size: 12px; color: var(--muted); }
+.head .decided { margin-top: 10px; padding: 8px 12px; border-radius: 8px; background: var(--panel); border: 1px solid var(--rule); font-size: 13px; color: var(--ink-2); }
+.head .decided a { color: var(--run); }
+/* its description, by sections */
+.page .md.pre { color: var(--muted); font-size: 12.5px; }
+.psec h3 { margin: 20px 0 6px; font-size: 12.5px; font-weight: 600; color: var(--ink); text-transform: uppercase; letter-spacing: .05em; }
+.psec.decis { margin-top: 20px; border: 1px solid color-mix(in srgb, var(--warn) 55%, var(--rule)); background: var(--warn-bg); border-radius: 8px; padding: 2px 14px 8px; }
+.psec.decis h3 { margin-top: 10px; }
+@media (max-width: 760px) {
+  .head .row { flex-wrap: wrap; }
+  .dwrap { flex-basis: 100%; }
+  .dwrap > .dbtn { flex: 1; justify-content: center; }
+  .dbtn kbd { display: none; }
+  .drop { position: fixed; left: 8px; right: 8px; top: auto; bottom: 38px; width: auto; }
+  .drop footer .m { display: none; }
+}
+/* with the decisions, the title keeps room: they drop below it if they don't fit */
+.head .row:has(.dwrap) { flex-wrap: wrap; }
+.head .row:has(.dwrap) h1 { flex: 1 1 320px; }

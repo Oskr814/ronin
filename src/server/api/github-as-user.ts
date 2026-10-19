@@ -61,6 +61,19 @@ export async function approvePr(token: string, repo: string, prNumber: number, b
   return { id: created.id, url: created.html_url };
 }
 
+// Closing a PR without merging it, as the person: its branch stays (#195).
+export async function closePr(token: string, repo: string, prNumber: number): Promise<{ url: string }> {
+  const closed = await call<{ html_url: string }>(token, 'PATCH', `/repos/${repo}/pulls/${prNumber}`, { state: 'closed' });
+  return { url: closed.html_url };
+}
+
+// Closing an issue as not planned, as the person: what GitHub's "Close as
+// not planned" sends.
+export async function closeIssue(token: string, repo: string, number: number): Promise<{ url: string }> {
+  const closed = await call<{ html_url: string }>(token, 'PATCH', `/repos/${repo}/issues/${number}`, { state: 'closed', state_reason: 'not_planned' });
+  return { url: closed.html_url };
+}
+
 // A new issue, as the person; `assignees` set at creation (ronin, to take it).
 export async function createIssue(token: string, repo: string, issue: { title: string; body: string; assignees?: string[] }): Promise<{ number: number; url: string }> {
   const created = await call<{ number: number; html_url: string }>(token, 'POST', `/repos/${repo}/issues`, issue);
