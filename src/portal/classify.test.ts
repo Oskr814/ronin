@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { applyResult, MAX_QUESTIONS, NEXT_STEP, parsePortalResult } from './classify.js';
+import { MAX_ROUNDS } from './interview.js';
 import { MAX_PROTOTYPES, MAX_REPRODUCTIONS, type PortalRequest } from './requests.js';
 
 vi.mock('../core/logger.js', () => ({ log: { info: vi.fn(), error: vi.fn() } }));
@@ -40,7 +41,37 @@ describe('parsePortalResult', () => {
   });
 });
 
+describe('parsePortalResult — the interview (#225)', () => {
+  const preguntas = [{ id: 'quien', tipo: 'una', pregunta: '¿Quién decide?', opciones: ['Ventas', 'Administración'] }];
+
+  it('keeps the questions in the portal’s shape', () => {
+    expect(parsePortalResult(json({ accion: 'entrevistar', mensaje: 'Es más que un ajuste.', motivo: 'Regla nueva', resumen: 'PriceList', preguntas }), 0)).toMatchObject({
+      accion: 'entrevistar', motivo: 'Regla nueva', preguntas: [{ id: 'quien', kind: 'one', text: '¿Quién decide?', options: ['Ventas', 'Administración'] }],
+    });
+  });
+
+  it('goes to the team without usable questions, or past its rounds', () => {
+    expect(parsePortalResult(json({ accion: 'entrevistar', mensaje: 'x', preguntas: [{ tipo: 'una', pregunta: '¿Sí?', opciones: ['Sí'] }] }), 0)).toMatchObject({ accion: 'grande', motivo: expect.any(String) });
+    expect(parsePortalResult(json({ accion: 'entrevistar', mensaje: 'x', motivo: 'Regla nueva', preguntas }), 0, 0, 0, MAX_ROUNDS)).toMatchObject({ accion: 'grande', motivo: 'Regla nueva' });
+    expect(parsePortalResult(json({ accion: 'entrevistar', mensaje: 'x', preguntas }), 0, 0, 0, MAX_ROUNDS - 1).accion).toBe('entrevistar');
+  });
+});
+
 describe('applyResult', () => {
+  it('an interview leaves the questions in ronin’s message and waits on the person, already big (#225)', () => {
+    const r = request();
+    const preguntas = [{ id: 'quien', kind: 'one' as const, text: '¿Quién decide?', options: ['Ventas', 'Administración'] }];
+    applyResult(r, { accion: 'entrevistar', mensaje: 'Es más que un ajuste: respóndeme esto.', titulo: 'Precios para mayoristas', motivo: 'Regla nueva', resumen: 'PriceList', preguntas });
+    expect(r).toMatchObject({ status: 'interviewing', title: 'Precios para mayoristas', interview: { rounds: 1, corrections: 0 }, verdict: { kind: 'big', reason: 'Regla nueva', summary: 'PriceList' } });
+    expect(r.worker).toBeUndefined();
+    expect(r.messages.at(-1)).toMatchObject({ from: 'ronin', text: 'Es más que un ajuste: respóndeme esto.', questions: preguntas });
+    expect(r.events?.at(-1)).toMatchObject({ kind: 'interview', step: 'asked', round: 1 });
+    // With the answers, to the team saying so.
+    applyResult(r, { accion: 'grande', mensaje: 'Gracias.', resumen: 'PriceList, con las respuestas' });
+    expect(r).toMatchObject({ status: 'big', verdict: { kind: 'big', summary: 'PriceList, con las respuestas' } });
+    expect(r.messages.at(-1)?.text).toBe(`Gracias.\n\n${NEXT_STEP.entrevistado}`);
+  });
+
   it('a question waits on the person, counts, and names the request', () => {
     const r = request();
     applyResult(r, { accion: 'preguntar', mensaje: '¿En las tres pantallas?', titulo: 'Abrir la ficha del cliente desde un pedido' });

@@ -3417,6 +3417,7 @@ function portalStatus(u) {
 // Usuarios (#174), for admins only.
 const PED_STATUS = {
   thinking: ['run', 'ronin lo está leyendo'], asking: ['warn', 'Espera a la persona'], answered: ['idle', 'Respondido'],
+  interviewing: ['warn', 'Espera sus respuestas'], confirming: ['warn', 'Espera que confirme'],
   minor: ['run', 'Armando el prototipo'], proposed: ['warn', 'Espera que apruebe'], approved: ['run', 'Aprobado'],
   reproducing: ['run', 'Reproduciendo el error'], fixing: ['run', 'En corrección'],
   done: ['ok', 'Listo'], resolved: ['ok', 'Resuelto por el equipo'], declined: ['idle', 'No se hará'],
@@ -3448,7 +3449,7 @@ const ago = (iso) => (iso ? `hace ${short(Date.now() - Date.parse(iso))}` : '');
 function waitsLabel(p) {
   const who = firstName(p.person);
   switch (p.waitsOn) {
-    case 'person': return p.status === 'proposed' ? `${who}: aprobar o ajustar` : `${who}: responder`;
+    case 'person': return p.status === 'proposed' ? `${who}: aprobar o ajustar` : p.status === 'interviewing' ? `${who}: responder las preguntas` : p.status === 'confirming' ? `${who}: confirmar el resumen` : `${who}: responder`;
     case 'ronin': return p.running ? 'ronin trabajando' : p.status === 'approved' && p.issue ? `ronin: el cambio en #${p.issue}` : p.status === 'fixing' && p.issue ? `ronin: el arreglo en #${p.issue}` : p.status === 'minor' ? 'ronin: el prototipo' : p.status === 'reproducing' ? 'ronin: reproducirlo' : p.status === 'thinking' ? 'ronin: leerlo' : 'ronin: abrir el issue';
     case 'team': return p.pr ? `Un dev: aprobar el PR #${p.pr}` : `El equipo: #${p.issue}`;
     default: return PED_CLOSED.includes(p.status) ? 'Cerrado' : 'Nadie';
@@ -3487,6 +3488,7 @@ function pedStage(p) {
   let tone = 'run';
   switch (p.status) {
     case 'thinking': case 'asking': case 'answered': cur = 1; tone = p.status === 'asking' ? 'warn' : p.status === 'answered' ? 'idle' : 'run'; break;
+    case 'interviewing': case 'confirming': cur = 1; tone = 'warn'; break;
     case 'minor': cur = 2; break;
     case 'proposed': cur = 3; tone = 'warn'; break;
     case 'approved': cur = p.pr ? 5 : 4; tone = p.pr ? 'warn' : 'run'; break;
@@ -3663,6 +3665,8 @@ function pedNowHTML(d) {
       return card('running', k, 'ronin va a abrir el issue del arreglo');
     case 'asking': return card('waiting', k, esc(`Espera a ${who}: ronin le preguntó algo`), `<div class="d">Le escribió ${esc(ago(d.messages.at(-1)?.at))} y le avisó por correo. Lleva ${d.questions} de 3 preguntas.</div>`);
     case 'answered': return card('', k, esc(`ronin le respondió a ${who}`), '<div class="d">Puede seguir escribiendo si necesita algo más.</div>');
+    case 'interviewing': return card('waiting', k, esc(`Espera a ${who}: las preguntas de la entrevista`), `<div class="d">Es para el equipo. ronin le dejó preguntas ${esc(ago(d.messages.at(-1)?.at))} para que el issue llegue con las decisiones tomadas, y le avisó por correo. Ronda ${d.interview?.rounds ?? 1} de 2. Si no responde, el pedido puede pasarse al equipo sin las respuestas.</div>`);
+    case 'confirming': return card('waiting', k, esc(`Espera a ${who}: confirmar lo que entendió ronin`), '<div class="d">Al confirmarlo pasa al equipo, con sus respuestas y el resumen.</div>');
     case 'proposed': {
       const left = 3 - d.prototypes.length;
       return card('waiting', k, esc(`Espera a ${who}: aprobar el prototipo, pedir un ajuste o pasarlo al equipo`), `<div class="d">Se lo mostró ${esc(ago(d.prototypes.at(-1)?.at))} y le avisó por correo. ${left > 0 ? `Le ${left === 1 ? 'queda 1 ajuste' : `quedan ${left} ajustes`}.` : 'No le quedan ajustes.'}</div>`);
@@ -3699,6 +3703,14 @@ function pedEvent(d, e) {
       ? ['ok', 'ok', 'Lo clasificó como cambio menor', d.verdict?.kind === 'minor' && d.verdict.proposal ? `<div class="bx">${esc(d.verdict.proposal)}</div>` : '']
       : e.verdict === 'error' ? ['run', 'run', 'Lo leyó como un reporte de error', d.bug?.steps ? `<div class="bx">${esc(d.bug.steps)}</div>` : '']
       : ['warn', 'crit', 'Lo pasó al equipo', d.verdict?.kind === 'big' && d.verdict.reason ? `<div class="bx">${esc(d.verdict.reason)}</div>` : ''];
+    case 'interview': return {
+      asked: ['warn', 'ronin', `Le dejó preguntas a ${who} (ronda ${e.round})`, '', false],
+      answered: ['ok', 'person', `${who} respondió las preguntas (ronda ${e.round})`, '', false],
+      summary: ['run', 'ronin', `Le mostró a ${who} lo que entendió`, '', false],
+      corrected: ['warn', 'person', `${who} corrigió el resumen`, '', false],
+      confirmed: ['ok', 'person', `${who} confirmó el resumen`, '', false],
+      skipped: ['warn', 'person', `${who} lo envió al equipo sin terminar la entrevista`, '', false],
+    }[e.step] ?? ['', 'wait', 'Entrevista', ''];
     case 'decided': return e.decision === 'approved' ? ['ok', 'ok', `${who} aprobó el prototipo`, ''] : ['warn', 'person', `${who} no aprobó el prototipo`, ''];
     case 'mail': return [e.ok ? 'mail' : 'crit', 'mail', e.ok ? `Correo a ${MAIL_TO(d, e.to)}` : `No salió el correo a ${MAIL_TO(d, e.to)}`, `<span class="m">${esc(e.subject)}</span>`, e.ok];
     case 'issue': return ['ok', 'ok', e.team ? `Abrió el issue del equipo #${e.number}` : `Abrió el issue #${e.number} para ronin`, ''];

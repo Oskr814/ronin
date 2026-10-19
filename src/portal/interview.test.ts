@@ -8,7 +8,7 @@ const handOverMail = vi.fn(async (_r: PortalRequest, _u: unknown) => {});
 vi.mock('./notify.js', () => ({ handOverMail: (r: PortalRequest, u: unknown) => handOverMail(r, u) }));
 vi.mock('./launch.js', () => ({ launchPortalWorker: vi.fn(async () => {}) }));
 
-const { answerInterview, confirmUnderstood, CONFIRMED_REPLY, MAX_CORRECTIONS, openQuestions, readAnswers, skipInterview, SKIPPED_REPLY, UNSURE } = await import('./interview.js');
+const { answerInterview, confirmUnderstood, CONFIRMED_REPLY, interviewText, MAX_CORRECTIONS, MAX_INTERVIEW_QUESTIONS, openQuestions, parseQuestions, readAnswers, skipInterview, SKIPPED_REPLY, UNSURE } = await import('./interview.js');
 
 const QUESTIONS: InterviewQuestion[] = [
   { id: 'quien', kind: 'one', text: '¿Quién decide qué cliente es mayorista?', options: ['Ventas', 'Administración'], other: true },
@@ -147,5 +147,35 @@ describe('what ronin understood', () => {
   it('refuses a confirmation when the request does not wait for one', async () => {
     const n = await interviewing();
     await expect(confirmUnderstood(n, true, '', launch)).rejects.toThrow(/no espera tu confirmación/);
+  });
+});
+
+describe('the questions the agent wrote', () => {
+  it('takes the portal’s shape, with unique ids, and leaves out what it cannot show', () => {
+    expect(parseQuestions([
+      { id: 'quien', tipo: 'una', pregunta: ' ¿Quién  decide? ', ayuda: 'Hoy nadie', opciones: ['Ventas', 'Ventas', ' Administración '], otra: true },
+      { id: 'quien', tipo: 'varias', pregunta: '¿Dónde?', opciones: ['Pedido', 'Factura'], opcional: true },
+      { id: 'No Vale', tipo: 'texto', pregunta: '¿En qué casos?', ejemplo: 'Cuando…', opciones: ['ignorada'] },
+      { tipo: 'una', pregunta: '¿Una sola opción?', opciones: ['Sí'] },
+      { tipo: 'escala', pregunta: '¿Del 1 al 5?' },
+      { tipo: 'una', opciones: ['a', 'b'] },
+      'nada',
+    ])).toEqual([
+      { id: 'quien', kind: 'one', text: '¿Quién decide?', help: 'Hoy nadie', options: ['Ventas', 'Administración'], other: true },
+      { id: 'quien-2', kind: 'many', text: '¿Dónde?', options: ['Pedido', 'Factura'], optional: true },
+      { id: 'p3', kind: 'text', text: '¿En qué casos?', example: 'Cuando…' },
+    ]);
+    expect(parseQuestions('nada')).toEqual([]);
+  });
+
+  it('keeps the first ones, up to the limit', () => {
+    const many = Array.from({ length: 8 }, (_, i) => ({ id: `q${i}`, tipo: 'texto', pregunta: `¿${i}?` }));
+    expect(parseQuestions(many).map((q) => q.id)).toEqual(['q0', 'q1', 'q2', 'q3', 'q4'].slice(0, MAX_INTERVIEW_QUESTIONS));
+  });
+
+  it('reads the form and the answers back to the agent as text', () => {
+    expect(interviewText({ text: 'Respóndeme esto.', questions: QUESTIONS })).toBe('Respóndeme esto.\n\n[The form you left them:]\n1. ¿Quién decide qué cliente es mayorista? (options: Ventas | Administración | Otra)\n2. ¿Dónde deben verse esos precios? (options: En el pedido | En la factura | En el catálogo)\n3. ¿En qué casos lo necesitan? (free text) (optional)');
+    expect(interviewText({ text: 'Es urgente', answers: [{ id: 'quien', question: '¿Quién?', answer: UNSURE, unsure: true }] })).toBe(`[Their answers to your form:]\n- ¿Quién? → ${UNSURE}\n\n[Anything else they added:] Es urgente`);
+    expect(interviewText({ text: 'Hola' })).toBe('Hola');
   });
 });

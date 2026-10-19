@@ -3,7 +3,7 @@ import { getUser } from './accounts.js';
 import type { ImageUpload } from './images.js';
 import { launchPortalWorker } from './launch.js';
 import { handOverMail } from './notify.js';
-import { addEvent, addRoninMessage, nextMessageId, RequestError, saveImages, updateRequest, type InterviewAnswer, type InterviewQuestion, type PortalRequest } from './requests.js';
+import { addEvent, addRoninMessage, nextMessageId, RequestError, saveImages, updateRequest, type InterviewAnswer, type InterviewQuestion, type PortalMessage, type PortalRequest } from './requests.js';
 
 // The interview (#225): before a big request goes to the team, ronin asks
 // the person what the team would otherwise have to ask them, in a form —
@@ -155,4 +155,67 @@ async function handOver(n: number, how: 'skipped' | 'confirmed', now: Date, laun
   await handOverMail(handed, await getUser(handed.userId));
   await launch(n);
   return handed;
+}
+
+const MAX_QUESTION = 300;
+const MAX_OPTION = 200;
+const MAX_OPTIONS = 6;
+const KINDS = { una: 'one', varias: 'many', texto: 'text' } as const;
+
+const clean = (value: unknown, max: number): string | undefined => {
+  if (typeof value !== 'string' || !value.trim()) return undefined;
+  const trimmed = value.trim().replace(/\s+/g, ' ');
+  return trimmed.length > max ? `${trimmed.slice(0, max - 1)}…` : trimmed;
+};
+
+// The questions the agent wrote ("entrevistar"), as the portal shows them:
+// at most MAX_INTERVIEW_QUESTIONS, the first ones; a question without its
+// text, or with options but fewer than two, is left out. Ids are the
+// agent's when they're usable, unique either way.
+export function parseQuestions(raw: unknown): InterviewQuestion[] {
+  if (!Array.isArray(raw)) return [];
+  const questions: InterviewQuestion[] = [];
+  for (const item of raw) {
+    if (questions.length >= MAX_INTERVIEW_QUESTIONS) break;
+    if (typeof item !== 'object' || item === null) continue;
+    const q = item as Record<string, unknown>;
+    const text = clean(q.pregunta, MAX_QUESTION);
+    const kind = KINDS[q.tipo as keyof typeof KINDS];
+    if (!text || !kind) continue;
+    const question: InterviewQuestion = { id: '', kind, text };
+    const help = clean(q.ayuda, MAX_QUESTION);
+    if (help) question.help = help;
+    if (kind === 'text') {
+      const example = clean(q.ejemplo, MAX_QUESTION);
+      if (example) question.example = example;
+    } else {
+      const options = [...new Set((Array.isArray(q.opciones) ? q.opciones : []).map((o) => clean(o, MAX_OPTION)).filter((o): o is string => Boolean(o)))].slice(0, MAX_OPTIONS);
+      if (options.length < 2) continue;
+      question.options = options;
+      if (q.otra === true) question.other = true;
+    }
+    if (q.opcional === true) question.optional = true;
+    const wanted = typeof q.id === 'string' && /^[a-z0-9][a-z0-9-]{0,39}$/.test(q.id) ? q.id : `p${questions.length + 1}`;
+    let id = wanted;
+    for (let i = 2; questions.some((x) => x.id === id); i++) id = `${wanted}-${i}`;
+    question.id = id;
+    questions.push(question);
+  }
+  return questions;
+}
+
+// A message of the interview as the agent reads it in the conversation: the
+// questions it left, or the person's answers in words.
+export function interviewText(m: Pick<PortalMessage, 'text' | 'questions' | 'answers' | 'skipped' | 'confirmed'>): string {
+  if (m.questions) {
+    const form = m.questions.map((q, i) => `${i + 1}. ${q.text}${q.options ? ` (options: ${q.options.join(' | ')}${q.other ? ' | Otra' : ''})` : ' (free text)'}${q.optional ? ' (optional)' : ''}`).join('\n');
+    return `${m.text}\n\n[The form you left them:]\n${form}`;
+  }
+  if (m.answers) {
+    const answers = m.answers.map((a) => `- ${a.question} → ${a.answer}`).join('\n');
+    return `[Their answers to your form:]\n${answers}${m.text ? `\n\n[Anything else they added:] ${m.text}` : ''}`;
+  }
+  if (m.skipped) return '[They sent it to the team without answering.]';
+  if (m.confirmed) return '[They confirmed your summary.]';
+  return m.text;
 }

@@ -897,7 +897,7 @@ src/portal/            el dominio: cuentas, pedidos, la conversación, el protot
   password.ts          scrypt, y el chequeo de mentira que iguala los tiempos
   session.ts           la cookie firmada del portal
   requests.ts          los pedidos: requests/<n>/request.json, img/ y proto/
-  classify.ts          ronin lee el pedido: preguntar, responder, menor, error o grande
+  classify.ts          ronin lee el pedido: preguntar, responder, menor, error, grande o entrevistar
   prototype.ts         el prototipo de un ajuste chico, y aprobar o "No me sirve"
   interview.ts         la entrevista de un pedido grande: las respuestas, el resumen y saltarla (#225)
   reproduce.ts         la reproducción de un error reportado, con su test (#137)
@@ -1086,13 +1086,17 @@ La persona ve en el portal "Reproduciendo el error", luego lo que encontró roni
 
 Antes de pasar un pedido grande al equipo, ronin le hace a la persona las preguntas que el equipo le tendría que hacer, en un formulario: quién puede hacerlo, qué pasa en tal caso, qué queda fuera. Así el issue llega con las decisiones tomadas.
 
+- **El agente decide** (`classify.ts`, la sexta acción, `entrevistar`): es grande, pero faltan decisiones que solo la persona puede tomar. Elige cuántas preguntas hacer (de una a cinco, lo mínimo que haga falta), las de negocio y nunca las técnicas, con opciones sacadas del código y de la app. Si no falta nada, `grande` directo. Con `entrevistar` deja también el motivo y el resumen técnico, así que el pedido ya es grande si la persona no responde. `parseQuestions` pasa las preguntas a la forma del portal: se queda con las primeras cinco, descarta una sin texto o con menos de dos opciones, recorta textos y hace los `id` únicos. Sin preguntas válidas, o pasado de las rondas, se vuelve `grande`.
+- **Con las respuestas** el agente vuelve a leer el pedido. La conversación le llega con el formulario que dejó y las respuestas en palabras (`interviewText`), y «No sé» significa que esa decisión es del equipo. Decide `grande` con el resumen ya escrito con las respuestas, `menor` si resultó chico, o una segunda ronda solo si las respuestas abrieron una decisión nueva.
+- **El portal** muestra el formulario debajo del mensaje de ronin: una opción, varias o texto, con «Otra» y «No sé». Abajo, el progreso, *Enviar sin responder* y el cuadro de siempre para agregar algo con capturas. La persona recibe el correo «ronin te dejó unas preguntas».
+
 - **Las preguntas** van en el mensaje de ronin (`questions`), cada una con su `id`, su tipo (`one`, `many` o `text`), el texto, una ayuda opcional, las opciones, si acepta «Otra» y si es opcional. Las de opciones siempre aceptan **«No sé, que lo decida el equipo»**. El pedido queda en `interviewing`.
 - **Las respuestas** llegan como índices de opciones, el texto de «Otra», el de una pregunta de texto o «No sé». `readAnswers` las pasa a palabras contra las preguntas abiertas: rechaza una opción que no existe, «Otra» donde no se ofrece, dos respuestas a una de una opción y una pregunta obligatoria sin responder. La persona nunca escribe el texto de una opción. Se guardan en su mensaje (`answers`, cada una con su pregunta) junto a una nota y hasta 4 imágenes opcionales. El pedido vuelve a `thinking` y ronin lo lee de nuevo.
 - **El resumen** va en un mensaje de ronin (`understood`): cada decisión (tema → decisión), lo que queda fuera y lo que decide el equipo. El pedido queda en `confirming`. Si la persona lo confirma, pasa a `big`, con el correo de siempre y el issue del equipo (16.6). Si lo corrige, su texto vuelve a `thinking`.
 - **Saltarla:** *Enviar sin responder* lo pasa a `big` tal como llegó, con el veredicto que ya tenía. Desde el resumen, lo pasa con las respuestas.
 - **Los topes son del servidor, no del agente:** 2 rondas de preguntas (`MAX_ROUNDS`), 5 preguntas por ronda (`MAX_INTERVIEW_QUESTIONS`) y 2 correcciones del resumen (`MAX_CORRECTIONS`). `request.interview` lleva las rondas, las correcciones y cómo terminó (`skipped` o `confirmed`).
 - **Actividad:** el evento `interview`, con su paso (`asked`, `answered`, `summary`, `corrected`, `confirmed` o `skipped`) y la ronda.
-- **Pendiente** (las etapas siguientes de #225): que el agente entreviste (`entrevistar`), el formulario en el portal, el resumen y la sección del issue.
+- **Pendiente** (las etapas siguientes de #225): el resumen para confirmar y la sección del issue.
 
 ### 17. Reuniones: de las notas al trabajo planificado (#62)
 

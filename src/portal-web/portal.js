@@ -7,7 +7,7 @@ const $ = (selector) => document.querySelector(selector);
 const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const initials = (name) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join('');
 
-const S = { me: null, view: 'login', error: null, info: null, busy: false, token: null, link: null, picked: null, menu: false, requests: [], cur: null, detail: null, pending: [], draft: '', sending: false, zoom: null, deciding: null, cancelling: false };
+const S = { me: null, view: 'login', error: null, info: null, busy: false, token: null, link: null, picked: null, menu: false, requests: [], cur: null, detail: null, pending: [], draft: '', sending: false, zoom: null, deciding: null, cancelling: false, answers: {}, skipping: false, round: null };
 
 class ApiError extends Error {
   constructor(message, status) {
@@ -121,6 +121,8 @@ const key = (a) => `${a.repo}:${a.app}`;
 const STATUS = {
   thinking: ['run', 'ronin lo está revisando'],
   asking: ['warn', 'Espera tu respuesta'],
+  interviewing: ['warn', 'Espera tus respuestas'],
+  confirming: ['warn', 'Revisa el resumen'],
   answered: ['idle', 'Respondido'],
   minor: ['run', 'Preparando prototipo'],
   proposed: ['warn', 'Prototipo listo'],
@@ -215,11 +217,142 @@ function threadHTML(d) {
       : m.captions ? `<div class="shots">${m.images.map((src, i) => `<figure class="shot"><button class="att" data-zoom="${esc(src)}"><img src="${esc(src)}" alt="${esc(m.captions[i] ?? `Imagen ${i + 1}`)}"></button><figcaption>${esc(m.captions[i] ?? '')}</figcaption></figure>`).join('')}</div>`
         : `<div class="atts">${m.images.map((src, i) => `<button class="att" data-zoom="${esc(src)}"><img src="${esc(src)}" alt="Imagen ${i + 1}" loading="lazy"></button>`).join('')}</div>`;
     out.push(`<div class="msg ${m.from === 'ronin' ? '' : 'mine'}">${who}<div class="body"><div class="who"><b>${m.from === 'ronin' ? 'ronin' : esc(S.me.name)}</b> ${esc(hhmm(m.at))}</div>
-      <div class="bubble">${m.text ? paragraphs(m.text) : ''}${images}</div></div></div>`);
+      <div class="bubble">${m.answers ? answersHTML(m) : m.skipped ? '<p class="ack">Lo envié sin responder las preguntas.</p>' : m.text ? paragraphs(m.text) : ''}${images}</div></div></div>`);
   }
+  if (d.status === 'interviewing' && !S.skipping) out.push(formHTML(d));
   const working = WORKING[d.status];
   if (working) out.push(`<div class="working"><div class="spin" aria-hidden="true"></div><div>${working[0]}<small>${working[1]}</small></div></div>`);
   return out.join('');
+}
+
+// ---------- the interview (#225): a big request, with questions in a form
+// before it goes to the team. ronin's last message has them; the person's
+// answers go back as option indexes, and the server writes them in words.
+const UNSURE = 'No sé, que lo decida el equipo';
+const openQuestions = (d) => (d.status === 'interviewing' ? d.messages.filter((m) => m.from === 'ronin').at(-1)?.questions ?? [] : []);
+
+function answersHTML(m) {
+  return `<dl class="qa">${m.answers.map((a) => `<div><dt>${esc(a.question)}</dt><dd class="${a.unsure ? 'unsure-a' : ''}">${esc(a.answer)}</dd></div>`).join('')}</dl>${m.text ? `<div class="qa-note"><b>Algo más:</b> ${paragraphs(m.text)}</div>` : ''}`;
+}
+
+function answered(q) {
+  const a = S.answers[q.id];
+  if (!a) return false;
+  if (a.unsure) return true;
+  if (q.kind === 'text') return Boolean(a.text?.trim());
+  const picked = q.kind === 'many' ? a.picked ?? [] : a.picked === undefined ? [] : [a.picked];
+  return picked.length > 0 && (!picked.includes('otra') || Boolean(a.other?.trim()));
+}
+
+function questionHTML(q, i) {
+  const a = S.answers[q.id] ?? {};
+  const multi = q.kind === 'many';
+  const on = (v) => (multi ? (a.picked ?? []).includes(v) : a.picked === v);
+  const type = multi ? 'checkbox' : 'radio';
+  const body = q.kind === 'text'
+    ? `<textarea class="iv-text" data-q="${esc(q.id)}" data-k="text" rows="2" maxlength="1000" placeholder="${esc(q.example ?? '')}" aria-label="${esc(q.text)}">${esc(a.text ?? '')}</textarea>`
+    : `<div class="opts">${q.options.map((o, j) => `<label class="opt"><input type="${type}" name="q-${esc(q.id)}" data-q="${esc(q.id)}" value="${j}" ${on(String(j)) ? 'checked' : ''}><span>${esc(o)}</span></label>`).join('')}
+      ${q.other ? `<label class="opt other"><input type="${type}" name="q-${esc(q.id)}" data-q="${esc(q.id)}" value="otra" ${on('otra') ? 'checked' : ''}><span>Otra:</span><input type="text" class="other-t" data-q="${esc(q.id)}" data-k="other" maxlength="300" value="${esc(a.other ?? '')}" placeholder="escríbela" aria-label="Otra respuesta"></label>` : ''}</div>
+      <label class="unsure"><input type="checkbox" data-q="${esc(q.id)}" data-k="unsure" ${a.unsure ? 'checked' : ''}>${UNSURE}</label>`;
+  const done = answered(q);
+  return `<fieldset class="iv-q ${done ? 'done' : ''} ${a.unsure ? 'is-unsure' : ''}" data-qid="${esc(q.id)}">
+    <legend><span class="n" aria-hidden="true">${done ? '✓' : i + 1}</span><span>${esc(q.text)}${q.optional ? ' <small>(opcional)</small>' : ''}</span></legend>
+    ${q.help ? `<p class="why">${esc(q.help)}</p>` : ''}${body}</fieldset>`;
+}
+
+function formHTML(d) {
+  const qs = openQuestions(d);
+  const { round, rounds } = d.interview;
+  return `<form class="iv" id="iv" onsubmit="return false">
+    <div class="iv-h"><b>${round > 1 ? 'Unas preguntas más' : 'Preguntas para el equipo'}</b><span>${qs.length} ${qs.length === 1 ? 'pregunta' : 'preguntas'} · ronda ${round} de ${rounds}</span></div>
+    ${qs.map(questionHTML).join('')}
+  </form>`;
+}
+
+const progress = (qs) => {
+  const required = qs.filter((q) => !q.optional);
+  return [required.filter(answered).length, required.length];
+};
+
+function interviewFootHTML(d) {
+  if (S.skipping) {
+    return `<div class="composer"><div class="composer-in"><div class="confirm">
+      <b>¿Enviarlo al equipo sin responder?</b>
+      <p>El equipo verá tu pedido tal como lo escribiste. Si les falta algo, te lo preguntan después y puede tardar más.</p>
+      <div class="confirm-f"><button class="btn" data-unskip ${S.sending ? 'disabled' : ''}>Volver a las preguntas</button><button class="btn primary" data-skipped ${S.sending ? 'disabled' : ''}>${S.sending ? 'Enviando…' : 'Enviar sin responder'}</button></div>
+    </div>${S.error ? `<p class="msg-bad" role="alert">${esc(S.error)}</p>` : ''}</div></div>`;
+  }
+  const [done, total] = progress(openQuestions(d));
+  const bar = `<div class="iv-f"><span class="prog"><b id="iv-n">${done}</b> de ${total} respondidas<i class="bar" aria-hidden="true"><i id="iv-bar" style="width:${total ? (100 * done) / total : 100}%"></i></i></span><button class="btn ghost" data-skip>Enviar sin responder</button></div>`;
+  return composerHTML('¿Algo más que el equipo deba saber? (opcional)', 'Enviar respuestas', 'Si no sabes alguna, marca «No sé»: lo decide el equipo', bar);
+}
+
+// The form is updated in place: drawing it again would lose the scroll and the focus.
+function onAnswer(input) {
+  const qs = openQuestions(S.detail);
+  const q = qs.find((x) => x.id === input.dataset.q);
+  if (!q) return;
+  const a = (S.answers[q.id] ??= {});
+  if (S.error) {
+    S.error = null;
+    $('.composer .msg-bad')?.remove();
+  }
+  if (input.dataset.k === 'unsure') a.unsure = input.checked;
+  else if (input.dataset.k === 'text') a.text = input.value;
+  else if (input.dataset.k === 'other') {
+    a.other = input.value;
+    const box = input.closest('.opt').querySelector('input[value="otra"]');
+    if (input.value.trim() && !box.checked) {
+      box.checked = true;
+      return onAnswer(box);
+    }
+  } else if (q.kind === 'many') a.picked = [...document.querySelectorAll(`input[name="q-${CSS.escape(q.id)}"]:checked`)].map((x) => x.value);
+  else a.picked = input.value;
+  const set = input.closest('.iv-q');
+  set.classList.toggle('done', answered(q));
+  set.classList.toggle('is-unsure', Boolean(a.unsure));
+  set.querySelector('.n').textContent = answered(q) ? '✓' : String(qs.indexOf(q) + 1);
+  const [done, total] = progress(qs);
+  $('#iv-n').textContent = String(done);
+  $('#iv-bar').style.width = `${total ? (100 * done) / total : 100}%`;
+}
+
+function answersPayload(qs) {
+  return qs.filter((q) => S.answers[q.id]).map((q) => {
+    const a = S.answers[q.id];
+    if (a.unsure) return { id: q.id, unsure: true };
+    if (q.kind === 'text') return { id: q.id, text: a.text ?? '' };
+    const picked = q.kind === 'many' ? a.picked ?? [] : a.picked === undefined ? [] : [a.picked];
+    return { id: q.id, choices: picked.filter((v) => v !== 'otra').map(Number), ...(picked.includes('otra') ? { other: a.other ?? '' } : {}) };
+  });
+}
+
+async function sendAnswers(note) {
+  const qs = openQuestions(S.detail);
+  const missing = qs.find((q) => !q.optional && !answered(q));
+  if (missing) {
+    S.error = `Te falta responder: «${missing.text}». Si no sabes, marca «No sé».`;
+    return null;
+  }
+  return api(`/api/portal/requests/${S.cur}/interview`, { answers: answersPayload(qs), note, images: S.pending });
+}
+
+async function skipRequest() {
+  if (S.sending) return;
+  S.sending = true;
+  S.error = null;
+  render();
+  try {
+    S.detail = await api(`/api/portal/requests/${S.cur}/skip`, {});
+    S.skipping = false;
+    S.answers = {};
+    await loadList();
+  } catch (error) {
+    if (error.status === 401) return toLogin();
+    S.error = error.message;
+  }
+  S.sending = false;
+  render();
 }
 
 function requestHTML() {
@@ -227,6 +360,7 @@ function requestHTML() {
   if (!d) return `<div class="top">${MENU}<h2>Cargando…</h2></div><div class="content"></div>`;
   const open = d.status === 'asking' || d.status === 'answered';
   const foot = S.cancelling ? cancelHTML(d) : d.status === 'proposed' ? decisionHTML(d)
+    : d.status === 'interviewing' ? interviewFootHTML(d)
     : open ? composerHTML(d.status === 'asking' ? 'Responde a ronin…' : 'Escríbele a ronin si necesitas algo más…', 'Enviar')
       : `<div class="closed-bar">${CLOSED[d.status] ?? ''}</div>`;
   return `<div class="top">${MENU}<h2>${esc(d.title)}</h2><span class="proj-l">${esc(d.appName)} · P-${d.number}</span>${chip(d.status)}${d.cancellable && !S.cancelling ? '<button class="btn cancel-btn" data-cancel>Cancelar<span class="wide"> pedido</span></button>' : ''}</div>
@@ -350,13 +484,18 @@ function wireComposer() {
 
 async function send() {
   const text = ($('#ta')?.value ?? '').trim();
-  if (S.sending || (!text && !S.pending.length)) return;
+  const answering = S.detail?.status === 'interviewing' && S.cur;
+  if (S.sending || (!answering && !text && !S.pending.length)) return;
   S.sending = true;
   S.error = null;
   render();
   try {
     let d;
-    if (S.cur) d = await api(`/api/portal/requests/${S.cur}/messages`, { text, images: S.pending });
+    if (answering) {
+      d = await sendAnswers(text);
+      if (!d) throw new ApiError(S.error, 400);
+      S.answers = {};
+    } else if (S.cur) d = await api(`/api/portal/requests/${S.cur}/messages`, { text, images: S.pending });
     else {
       const app = S.me.apps.find((a) => key(a) === S.picked);
       d = await api('/api/portal/requests', { repo: app.repo, app: app.app, text, images: S.pending });
@@ -413,6 +552,8 @@ async function openRequest(n, push = true) {
   S.draft = '';
   S.deciding = null;
   S.cancelling = false;
+  S.skipping = false;
+  S.answers = {};
   if (push && location.pathname !== `/p/${n}`) history.pushState(null, '', `/p/${n}`);
   render();
   try {
@@ -497,7 +638,13 @@ function render(keep = {}) {
   if (S.view === 'app') {
     wireComposer();
     const fresh = $('#thread');
-    if (fresh && atBottom) {
+    // A new round of questions opens at ronin's message, not at the bottom.
+    const round = S.detail?.status === 'interviewing' && !S.skipping ? `${S.cur}:${S.detail.interview.round}` : null;
+    if (fresh && round && S.round !== round) {
+      S.round = round;
+      const msgs = fresh.querySelectorAll('.msg');
+      fresh.scrollTop = msgs[msgs.length - 1].offsetTop - fresh.offsetTop - 16;
+    } else if (fresh && atBottom && !round) {
       fresh.scrollTop = fresh.scrollHeight;
       // Images grow the thread as they load: stay at the bottom.
       for (const img of fresh.querySelectorAll('img')) if (!img.complete) img.addEventListener('load', () => { fresh.scrollTop = fresh.scrollHeight; }, { once: true });
@@ -560,10 +707,29 @@ document.addEventListener('click', async (event) => {
     document.documentElement.dataset.theme = next;
     try { localStorage.setItem('ronin-portal-theme', next); } catch { /* sin storage */ }
     render();
+  } else if ('skip' in t.dataset) {
+    S.skipping = true;
+    S.error = null;
+    render();
+  } else if ('unskip' in t.dataset) {
+    S.skipping = false;
+    S.error = null;
+    render();
+  } else if ('skipped' in t.dataset) {
+    skipRequest();
   } else if ('logout' in t.dataset) {
     await api('/api/portal/logout', {}).catch(() => {});
     toLogin();
   }
+});
+
+document.addEventListener('change', (event) => {
+  const input = event.target.closest?.('[data-q]');
+  if (input && input.type !== 'text' && input.tagName !== 'TEXTAREA') onAnswer(input);
+});
+document.addEventListener('input', (event) => {
+  const input = event.target;
+  if (input.dataset?.q && (input.type === 'text' || input.tagName === 'TEXTAREA')) onAnswer(input);
 });
 
 document.addEventListener('keydown', (event) => {
