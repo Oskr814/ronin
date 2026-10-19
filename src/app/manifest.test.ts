@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { DEFAULT_VIEWPORTS, namedPortsIn, parseAppManifest, publicizeTemplate, publicPortsIn, renderTemplate } from './manifest.js';
+import { DEFAULT_VIEWPORTS, namedPortsIn, parseAppManifest, publicizeTemplate, publicPortsIn, renderTemplate, stepsToRerun, type AppStep } from './manifest.js';
 
 function manifest(app: Record<string, unknown> = {}) {
   return JSON.stringify({
@@ -60,6 +60,48 @@ describe('parseAppManifest', () => {
 
   it('rejects invalid JSON', () => {
     expect(() => parseAppManifest('{')).toThrow(/no es JSON válido/);
+  });
+
+  it('keeps the rerunOn globs of every kind of step', () => {
+    const steps = [
+      { compose: 'up', rerunOn: ['apps/api/**'] },
+      { name: 'deps', run: 'pnpm install', rerunOn: ['pnpm-lock.yaml', '**/package.json'] },
+      { name: 'api', start: 'pnpm start', rerunOn: ['packages/types/**'] },
+      { wait: 'http://127.0.0.1:{{port.api}}/health', rerunOn: ['packages/types/**'] },
+    ];
+    const parsed = parseAppManifest(manifest({ steps })).apps.backoffice.steps;
+    expect(parsed.map((s) => s.rerunOn)).toEqual([['apps/api/**'], ['pnpm-lock.yaml', '**/package.json'], ['packages/types/**'], ['packages/types/**']]);
+  });
+
+  it('leaves rerunOn out of a step that does not declare it', () => {
+    expect(parseAppManifest(manifest()).apps.backoffice.steps[0]).toStrictEqual({ compose: 'up' });
+  });
+
+  it('rejects a rerunOn that is not a non-empty list of globs', () => {
+    expect(() => parseAppManifest(manifest({ steps: [{ run: 'x', rerunOn: [] }] }))).toThrow(/steps\[0\]\.rerunOn debe ser una lista no vacía/);
+    expect(() => parseAppManifest(manifest({ steps: [{ run: 'x', rerunOn: 'pnpm-lock.yaml' }] }))).toThrow(/rerunOn debe ser una lista/);
+    expect(() => parseAppManifest(manifest({ steps: [{ run: 'x', rerunOn: [''] }] }))).toThrow(/rerunOn\[0\] falta/);
+  });
+});
+
+describe('stepsToRerun', () => {
+  const install: AppStep = { name: 'deps', run: 'pnpm install', rerunOn: ['pnpm-lock.yaml'] };
+  const migrate: AppStep = { name: 'migraciones', run: 'pnpm migrate', rerunOn: ['apps/api/src/migrations/**'] };
+  const api: AppStep = { name: 'api', start: 'pnpm start', rerunOn: ['pnpm-lock.yaml', 'packages/types/**'] };
+  const web: AppStep = { name: 'web', start: 'vite' };
+
+  it('picks, in order, the steps whose globs match a changed file', () => {
+    const app = { steps: [install, migrate, api, web] };
+    expect(stepsToRerun(app, ['pnpm-lock.yaml', 'apps/web/src/a.tsx'])).toEqual([install, api]);
+    expect(stepsToRerun(app, ['apps/api/src/migrations/1700-add-x.ts'])).toEqual([migrate]);
+  });
+
+  it('runs nothing when only code the dev servers reload changed', () => {
+    expect(stepsToRerun({ steps: [install, migrate, api, web] }, ['apps/web/src/a.tsx'])).toEqual([]);
+  });
+
+  it('is null for a manifest where no step declares rerunOn', () => {
+    expect(stepsToRerun({ steps: [{ compose: 'up' }, web] }, ['pnpm-lock.yaml'])).toBeNull();
   });
 });
 

@@ -249,6 +249,7 @@ Requisito para todo lo demás. Un manifiesto por repo (`ronin.app.json` en la ra
 - URL base y healthcheck
 - credenciales de prueba por rol — siempre de seed, nunca reales
 - viewports: desktop y mobile
+- `rerunOn` en cada paso (opcional): globs sobre las rutas del repo (`pnpm-lock.yaml`, `apps/api/src/migrations/**`) que dicen cuándo ese paso tiene que volver a correr si la app ya está arriba y el checkout pasa a otro commit. Una preview (§12) lo usa al actualizarse con un commit nuevo del PR: un `run` vuelve a correr su comando, `compose` corre `compose up -d --build`, `start` reinicia ese proceso y `wait` vuelve a esperar, en el orden del manifiesto. Un paso sin `rerunOn` no se repite, porque los dev servers recompilan solos lo que cambia en el código. Si ningún paso de la app lo declara, ronin no puede saber qué es seguro saltear y reconstruye todo (`stepsToRerun` en `app/manifest.ts`). Los globs son los de `path.matchesGlob` de Node: `**` no entra en carpetas que empiezan con punto.
 
 Siempre contra datos de seed, nunca contra producción. El seed tiene que incluir casos de volumen realista (un pedido de 3 líneas no muestra los problemas de uno de 80). La baja es un `docker compose down --volumes` del proyecto de la app (`appDown` en `app/runtime.ts`). Si `app:up` falla, la corrida lo reporta como primer hallazgo en vez de bloquearse.
 

@@ -48,6 +48,10 @@ describe('scopeForEvent', () => {
     });
   });
 
+  it("moves a new commit's PR preview along with the PR's other flows", () => {
+    expect(scopeForEvent('pull_request', { action: 'synchronize', pull_request: externalPr, repository }, tracked, 'ronin-agent')?.scope.flows).toEqual(['previews', 'issues', 'review', 'exploration']);
+  });
+
   it("scopes an event on a slice PR to the PR and its issue, whose job holds the whole stack", () => {
     expect(scopeForEvent('pull_request', { action: 'synchronize', pull_request: slicePr, repository }, tracked, 'ronin-agent')?.scope.resources).toEqual(['pr-40', 'issue-12']);
   });

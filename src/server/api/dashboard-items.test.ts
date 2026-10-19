@@ -111,7 +111,7 @@ describe('buildItems', () => {
     const [item] = buildItems([REPO], [], [github({
       issues: [{ ...ISSUE_879, status: 'blocked' }],
       prs: [pr({ number: 894 })],
-      previews: [{ prNumber: 894, appName: 'backoffice', url: 'https://media.ts.net:20001' }],
+      previews: [{ prNumber: 894, appName: 'backoffice', url: 'https://media.ts.net:20001', sha: 'abc1234' }],
       blocks: { 879: block },
     })]);
     expect(item).toMatchObject({ status: 'blocked', block, preview: { prNumber: 894 } });

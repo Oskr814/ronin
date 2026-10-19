@@ -2,10 +2,10 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, normalize } from 'node:path';
 import { activeRepo } from '../core/repo-context.js';
-import { appDown, appUp, APP_STATE_DIR, type AppSession } from '../app/index.js';
-import { APP_MANIFEST_FILE, parseAppManifest, publicizeTemplate, publicPortsIn, publicUrl, type AppStep, type AppUser, type TemplateContext } from '../app/index.js';
+import { appDown, appRerun, appUp, APP_STATE_DIR, stepLabel, type AppSession } from '../app/index.js';
+import { APP_MANIFEST_FILE, parseAppManifest, publicizeTemplate, publicPortsIn, publicUrl, stepsToRerun, type AppDefinition, type AppStep, type AppUser, type TemplateContext } from '../app/index.js';
 import { removeWorktreeDir } from '../core/worktree.js';
 import { commentOnSpecPr, listOpenPrHeads, type PrHead } from '../core/github.js';
 import { runAgentTask } from '../core/agent-task.js';
@@ -26,16 +26,20 @@ const execFileAsync = promisify(execFile);
 // event wakes up), until `/preview stop`, or until PREVIEW_TTL_MINUTES after
 // it came up. See docs/DESIGN.md §12.
 
-export interface PreviewWorkerRequest {
-  repo: string;
-  prNumber: number;
-  action: 'up' | 'stop';
-  // What followed the command: an app and/or what the data should look
-  // like — see resolvePreviewArgs.
-  args?: string;
-  // The /preview comment, to answer in its own place.
-  comment: { id: number; kind: 'issue' | 'review' };
-}
+// `update` moves a preview that's up to its PR's new head (updatePreview):
+// nobody asked for it in a comment, so it answers on the PR.
+export type PreviewWorkerRequest =
+  | {
+      repo: string;
+      prNumber: number;
+      action: 'up' | 'stop';
+      // What followed the command: an app and/or what the data should look
+      // like — see resolvePreviewArgs.
+      args?: string;
+      // The /preview comment, to answer in its own place.
+      comment: { id: number; kind: 'issue' | 'review' };
+    }
+  | { repo: string; prNumber: number; action: 'update' };
 
 export function launchPreviewWorker(request: PreviewWorkerRequest): void {
   const pid = launchWorker('preview/worker', request);
@@ -112,9 +116,6 @@ export interface PreviewState {
   published?: Array<{ public: number; local: number }>;
   // Before the preview range: published on the local port itself.
   ports?: number[];
-  // Set once the PR was told this preview is behind its commits — at most
-  // one notice per preview; a new /preview starts a fresh state.
-  staleNotified?: boolean;
   // When it came up (ISO), what PREVIEW_TTL_MINUTES counts from. A state
   // from before the TTL has none: the sweep stamps it on first sight.
   startedAt?: string;
@@ -122,6 +123,14 @@ export interface PreviewState {
   // steps need: the dashboard says so instead of offering a URL that would
   // be tried without them. Cleared once the data is done (or failed).
   preparing?: boolean;
+  // What followed /preview, so a full rebuild during an update (see
+  // updatePreview) prepares the same data again.
+  args?: string;
+  // Moving to a new commit of the PR right now (updatePreview).
+  updating?: boolean;
+  // When it last moved to a new commit (ISO). startedAt doesn't change:
+  // the TTL counts from the first boot.
+  updatedAt?: string;
 }
 
 const reservations = (): PreviewReservations => new PreviewReservations(config.previewReservationsDir);
@@ -142,6 +151,16 @@ async function readPreviewState(dir: string): Promise<PreviewState | null> {
   } catch {
     return null;
   }
+}
+
+async function writePreviewState(dir: string, state: PreviewState): Promise<void> {
+  await writeFile(previewStatePath(dir), JSON.stringify(state, null, 2));
+}
+
+// The ronin.app.json the preview was brought up with, as text: an update
+// can only run steps again if the manifest is still the same one.
+function previewManifestPath(dir: string): string {
+  return join(dir, APP_STATE_DIR, 'preview-manifest.json');
 }
 
 // Read the way appUp renders them: a `start` step's env goes through
@@ -242,6 +261,7 @@ async function takeDownPreviewApp(dir: string): Promise<void> {
   await appDown(dir);
   await reservations().releasePorts(dir);
   await rm(previewStatePath(dir), { force: true });
+  await rm(previewManifestPath(dir), { force: true });
 }
 
 // What prepare-preview-data left ready, or why it couldn't run — the preview
@@ -391,7 +411,9 @@ async function triageData(task: Omit<Extract<PreviewTask, { type: 'preview-data-
   }
 }
 
-export async function startPreview(prNumber: number, pr: PrHead, args?: string): Promise<PreviewResult> {
+// `startedAt`: when the preview first came up, for a rebuild that an update
+// fell back to — the TTL keeps counting from there.
+export async function startPreview(prNumber: number, pr: PrHead, args?: string, opts: { startedAt?: string } = {}): Promise<PreviewResult> {
   const host = await tailnetHost();
   const sha = pr.headRefOid;
   const existing = previewDirFor(prNumber);
@@ -432,8 +454,18 @@ export async function startPreview(prNumber: number, pr: PrHead, args?: string):
     const url = publicUrl(locals[0], session.ctx);
     // Written before publishing, so a failure halfway still knows which
     // ports to unpublish.
-    const state: PreviewState = { prNumber, appName, sha, url, published, startedAt: new Date().toISOString(), ...(config.previewPrepareData ? { preparing: true } : {}) };
-    await writeFile(previewStatePath(dir), JSON.stringify(state, null, 2));
+    const state: PreviewState = {
+      prNumber,
+      appName,
+      sha,
+      url,
+      published,
+      startedAt: opts.startedAt ?? new Date().toISOString(),
+      ...(args?.trim() ? { args: args.trim() } : {}),
+      ...(config.previewPrepareData ? { preparing: true } : {}),
+    };
+    await writePreviewState(dir, state);
+    await writeFile(previewManifestPath(dir), manifest);
     for (const p of published) await servePort(p.public, p.local);
     log.info(`preview PR #${prNumber}: ${appName} arriba en ${url}`);
     result = { appName, sha, url, users: session.app.users };
@@ -455,6 +487,93 @@ async function markPrepared(dir: string): Promise<void> {
   await writeFile(previewStatePath(dir), JSON.stringify(state, null, 2)).catch((error) => log.error('preview: no se pudo marcar los datos como listos', error));
 }
 
+// --- moving to a new commit ---
+
+export type PreviewUpdate =
+  // Already on the PR's head: nothing to do.
+  | { kind: 'current' }
+  // Same app, same stack, ports and data; `rerun` names the manifest steps
+  // that ran again (none when the dev servers took the change on their own).
+  | { kind: 'in-place'; from: string; sha: string; url: string; rerun: string[] }
+  // Brought up from scratch, like /preview, because of `reason`.
+  | { kind: 'rebuilt'; from: string; reason: string; result: PreviewResult };
+
+// The files that changed between two commits, as repo paths. A force-push
+// still diffs fine as long as the old commit is still in the repo: it was
+// the preview's own checkout.
+async function changedFiles(dir: string, from: string, to: string): Promise<string[]> {
+  const { stdout } = await execFileAsync('git', ['diff', '--name-only', from, to], { cwd: dir, maxBuffer: 10 * 1024 * 1024 });
+  return stdout.split('\n').filter(Boolean);
+}
+
+// Moves the checkout to the PR's head and works out which steps have to
+// run again on the app that's up, or why it can't be done in place: the
+// manifest the preview would use now isn't the one it came up with (the
+// PR's or its base's, §12), a compose file of the app changed (appUp
+// rendered it once, at boot), or no step of the app declares `rerunOn`
+// (see app/manifest.ts's stepsToRerun).
+export async function planInPlaceUpdate(
+  prNumber: number,
+  state: Pick<PreviewState, 'sha' | 'appName'>,
+  pr: Pick<PrHead, 'baseRefName' | 'headRefOid'>,
+): Promise<{ app: AppDefinition; steps: AppStep[] } | { reason: string }> {
+  const dir = previewDirFor(prNumber);
+  await execFileAsync('git', ['fetch', 'origin', `pull/${prNumber}/head`], { cwd: activeRepo().productRepoPath });
+  let changed: string[];
+  try {
+    changed = await changedFiles(dir, state.sha, pr.headRefOid);
+  } catch {
+    return { reason: `no pude comparar \`${state.sha.slice(0, 7)}\` con \`${pr.headRefOid.slice(0, 7)}\`` };
+  }
+  await execFileAsync('git', ['checkout', '--detach', '--force', pr.headRefOid], { cwd: dir });
+  const manifest = await previewManifest(dir, pr);
+  const used = await readFile(previewManifestPath(dir), 'utf8').catch(() => null);
+  if (used === null) return { reason: `no sé con qué ${APP_MANIFEST_FILE} se levantó` };
+  if (manifest !== used) return { reason: `cambió el ${APP_MANIFEST_FILE}` };
+  const app = parseAppManifest(manifest).apps[state.appName];
+  if (!app) return { reason: `el ${APP_MANIFEST_FILE} ya no define la app "${state.appName}"` };
+  if (app.compose?.files.some((file) => changed.includes(normalize(file)))) return { reason: 'cambió el compose de la app' };
+  const steps = stepsToRerun(app, changed);
+  if (!steps) return { reason: `ningún paso del ${APP_MANIFEST_FILE} dice cuándo volver a correr (\`rerunOn\`)` };
+  return { app, steps };
+}
+
+// A new commit on a PR whose preview is up (pull_request.synchronize, or
+// the sweep noticing it): the preview moves to it in place when it can —
+// the dev servers recompile on their own, and only the steps the change
+// touches run again — and is brought up from scratch otherwise, or when a
+// step fails. Null when the PR has no preview up.
+export async function updatePreview(prNumber: number, pr: PrHead): Promise<PreviewUpdate | null> {
+  const dir = previewDirFor(prNumber);
+  const state = await readPreviewState(dir);
+  if (!state) return null;
+  const from = state.sha;
+  if (from === pr.headRefOid) return { kind: 'current' };
+  await writePreviewState(dir, { ...state, updating: true });
+  const rebuild = async (reason: string): Promise<PreviewUpdate> => {
+    log.info(`preview PR #${prNumber}: reconstruyéndola de cero en ${pr.headRefOid.slice(0, 7)} (${reason})`);
+    const result = await startPreview(prNumber, pr, state.args, state.startedAt ? { startedAt: state.startedAt } : {});
+    return { kind: 'rebuilt', from, reason, result };
+  };
+  let plan: Awaited<ReturnType<typeof planInPlaceUpdate>>;
+  try {
+    plan = await planInPlaceUpdate(prNumber, state, pr);
+  } catch (error) {
+    return rebuild((error as Error).message.split('\n')[0].slice(0, 200));
+  }
+  if ('reason' in plan) return rebuild(plan.reason);
+  try {
+    await appRerun(dir, plan.app, plan.steps);
+  } catch (error) {
+    log.error(`preview PR #${prNumber}: la actualización en el lugar falló`, error);
+    return rebuild((error as Error).message.split('\n')[0].slice(0, 200));
+  }
+  const { updating: _, ...rest } = (await readPreviewState(dir)) ?? state;
+  await writePreviewState(dir, { ...rest, sha: pr.headRefOid, updatedAt: new Date().toISOString() });
+  log.info(`preview PR #${prNumber}: actualizada en el lugar a ${pr.headRefOid.slice(0, 7)}`);
+  return { kind: 'in-place', from, sha: pr.headRefOid, url: state.url, rerun: plan.steps.map(stepLabel) };
+}
+
 // Unpublishes, stops and deletes the PR's preview. False when there was none.
 export async function stopPreview(prNumber: number): Promise<boolean> {
   const dir = previewDirFor(prNumber);
@@ -474,9 +593,10 @@ export async function stopPreview(prNumber: number): Promise<boolean> {
 // there's a preview worktree on disk. A preview whose worker is still running
 // waits for the next tick.
 //
-// A preview stays on the commit it was asked for: once its PR has newer
-// ones (ronin applying a requested change, or anyone's push), the PR is
-// told — once per preview — that `/preview` again brings it up to date.
+// A preview follows its PR: a new commit (ronin applying a requested
+// change, or anyone's push) launches its update — see updatePreview. The
+// pull_request.synchronize event does it right away
+// (launchPreviewUpdates); the sweep catches whatever that missed.
 //
 // Nor does it hold a stack forever on an open PR: PREVIEW_TTL_MINUTES after
 // it came up it goes, and the PR is told `/preview` brings it back.
@@ -495,9 +615,12 @@ export async function listPreviewStates(): Promise<PreviewState[]> {
     if (pr === null) continue;
     const state = await readPreviewState(previewDirFor(pr));
     if (!state) continue;
-    // A worker that died mid-preparation never cleared it: nothing is
-    // preparing anymore.
-    if (state.preparing && !(await previewWorkerBusy(pr))) delete state.preparing;
+    // A worker that died mid-preparation (or mid-update) never cleared it:
+    // nothing is preparing anymore.
+    if ((state.preparing || state.updating) && !(await previewWorkerBusy(pr))) {
+      delete state.preparing;
+      delete state.updating;
+    }
     states.push(state);
   }
   return states;
@@ -523,7 +646,11 @@ export async function sweepPreviews(now: Date = new Date()): Promise<void> {
       log.info(`preview PR #${pr}: el PR ya no está abierto, bajando su preview`);
       await stopPreview(pr);
     } else if (!(await expireIfDue(pr, now))) {
-      await noticeIfStale(pr, head);
+      const state = await readPreviewState(previewDirFor(pr));
+      if (state && state.sha !== head) {
+        log.info(`preview PR #${pr}: quedó atrás de ${head.slice(0, 7)}, actualizándola`);
+        launchUpdate(pr);
+      }
     }
   }
 }
@@ -548,16 +675,25 @@ async function expireIfDue(prNumber: number, now: Date): Promise<boolean> {
   return true;
 }
 
-async function noticeIfStale(prNumber: number, head: string): Promise<void> {
-  const dir = previewDirFor(prNumber);
-  const state = await readPreviewState(dir);
-  if (!state || state.staleNotified || state.sha === head) return;
+function launchUpdate(prNumber: number): void {
   try {
-    await commentOnSpecPr(prNumber, renderPreviewStale(state.sha, config.githubLogin));
-    await writeFile(previewStatePath(dir), JSON.stringify({ ...state, staleNotified: true }, null, 2));
-    log.info(`preview PR #${prNumber}: quedó atrás de ${head.slice(0, 7)}, avisado en el PR`);
+    launchPreviewWorker({ repo: activeRepo().productRepo, prNumber, action: 'update' });
   } catch (error) {
-    log.error(`preview PR #${prNumber}: no se pudo avisar que quedó desactualizada`, error);
+    log.error(`preview PR #${prNumber}: no se pudo lanzar la actualización`, error);
+  }
+}
+
+// New commits on `prs` (pull_request.synchronize — see
+// server/api/webhooks/handler.ts): each one with a preview up gets its
+// update. The worker compares the SHA itself, so this reads nothing from
+// GitHub. One whose worker is busy is skipped: an update reads the PR's
+// head again before it ends, and a /preview still coming up is left to the
+// sweep.
+export async function launchPreviewUpdates(prs: number[]): Promise<void> {
+  for (const pr of prs) {
+    if (!(await readPreviewState(previewDirFor(pr))) || (await previewWorkerBusy(pr))) continue;
+    log.info(`preview PR #${pr}: commit nuevo, actualizándola`);
+    launchUpdate(pr);
   }
 }
 
@@ -570,10 +706,6 @@ export function describeTtl(minutes: number): string {
 
 export function renderPreviewExpired(ttlMinutes: number, login: string): string {
   return `⌛ Bajé la preview de este PR: llevaba ${describeTtl(ttlMinutes)} arriba. Pedí \`@${login} /preview\` para levantarla de nuevo.`;
-}
-
-export function renderPreviewStale(previewSha: string, login: string): string {
-  return `🔄 La preview de este PR sigue en \`${previewSha.slice(0, 7)}\` y el PR ya tiene commits nuevos. Pedí \`@${login} /preview\` para actualizarla.`;
 }
 
 export function renderPreviewStarting(sha: string, withData: boolean): string {
@@ -609,8 +741,27 @@ export function renderPreviewReady(result: PreviewResult, login: string, ttlMinu
     '|---|---|---|',
     ...users,
     '',
-    `${lifetime} Para bajarla antes: \`@${login} /preview stop\`. Con commits nuevos en el PR, volvé a pedir \`/preview\` para actualizarla; lo que escribas después del comando (\`/preview <qué preparar>\`) se suma a lo que piden los pasos de prueba.`,
+    `${lifetime} Para bajarla antes: \`@${login} /preview stop\`. Con cada commit nuevo del PR se actualiza sola; \`/preview\` otra vez la levanta de cero. Lo que escribas después del comando (\`/preview <qué preparar>\`) se suma a lo que piden los pasos de prueba.`,
   ].join('\n');
+}
+
+export function renderPreviewUpdated(update: Exclude<PreviewUpdate, { kind: 'current' }>): string {
+  const commits = `\`${update.from.slice(0, 7)}\` → \`${(update.kind === 'in-place' ? update.sha : update.result.sha).slice(0, 7)}\``;
+  if (update.kind === 'rebuilt') {
+    return [
+      `🔄 Actualicé la preview de este PR (${commits}) levantándola de cero, porque ${update.reason}: **${update.result.url}**`,
+      '',
+      ...renderData(update.result.data),
+    ].join('\n').trim();
+  }
+  const rerun = update.rerun.length > 0
+    ? `Volví a correr: ${update.rerun.map((s) => `*${s}*`).join(', ')}.`
+    : 'No hizo falta volver a correr ningún paso: los dev servers tomaron el cambio solos.';
+  return `🔄 Actualicé la preview de este PR (${commits}), en la misma URL y con los mismos datos. ${rerun}`;
+}
+
+export function renderPreviewUpdateFailed(error: Error): string {
+  return renderPreviewFailed(error).replace('❌ No pude levantar la app:', '❌ No pude actualizar la preview con el commit nuevo, y quedó abajo:');
 }
 
 export function renderPreviewFailed(error: Error): string {
