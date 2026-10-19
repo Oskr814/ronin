@@ -112,7 +112,7 @@ function duration(ms) {
 const money = (usd) => (usd < 0.01 ? 'menos de US$0,01' : `US$${usd.toFixed(2).replace('.', ',')}`);
 const pct = (fraction) => `${Math.round(fraction * 100)}%`;
 
-const S = { snap: null, today: null, sel: null, open: [], runIdx: {}, pendingRun: null, filter: null, q: '', itemRuns: {}, run: null, stream: null, detail: {}, view: {}, doc: {}, menu: false, dialog: null, expanded: new Set(), expl: {}, ficha: {}, fichaOpen: {}, fichaFilter: { tipo: 'todas', vp: 'todos' }, antes: {}, oldAfter: new Set(), lightbox: null, fmenu: false, fdialog: null, fdraft: {}, listas: {}, scope: 'all', project: '', attAll: false, extra: {}, newIssue: null, files: {}, fcur: {}, ffold: {}, fexp: {}, fcontent: {}, fq: {}, ftree: false, fcomp: null, fbusy: new Set(), rpanel: null, revSent: {}, decide: null, decided: {}, page: null, portal: { data: null, error: null }, ped: { list: null, error: null, listAt: 0, detail: {}, n: null, tab: 'act', gh: 'issue', filter: 'pend', page: 1, run: null, lb: null, patch: {} }, reu: { list: null, error: null, listAt: 0, detail: {}, n: null, tab: null, up: null, run: null, open: {}, retrying: false, form: {}, approving: false }, xpl: { list: null, error: null, listAt: 0, repo: null, app: null, cor: {}, inv: {}, tab: 'corridas', run: null, launched: {} }, xnow: null, dep: { list: null, error: null, listAt: 0, dlg: null }, aj: { data: null, error: null, sec: 'perfil', registro: null, users: null, user: null, login: null, cuenta: null, f: 'todos', q: '', add: null, link: null, busy: false, repos: null, repo: null, conex: null } };
+const S = { snap: null, today: null, sel: null, open: [], runIdx: {}, pendingRun: null, filter: null, q: '', itemRuns: {}, run: null, stream: null, detail: {}, view: {}, doc: {}, menu: false, dialog: null, expanded: new Set(), expl: {}, ficha: {}, fichaOpen: {}, fichaFilter: { tipo: 'todas', vp: 'todos' }, antes: {}, oldAfter: new Set(), lightbox: null, fmenu: false, fdialog: null, fdraft: {}, listas: {}, scope: 'all', project: '', attAll: false, extra: {}, newIssue: null, files: {}, fcur: {}, ffold: {}, fexp: {}, fcontent: {}, fq: {}, ftree: false, fcomp: null, fbusy: new Set(), rpanel: null, revSent: {}, decide: null, decided: {}, kunit: null, page: null, portal: { data: null, error: null }, ped: { list: null, error: null, listAt: 0, detail: {}, n: null, tab: 'act', gh: 'issue', filter: 'pend', page: 1, run: null, lb: null, patch: {} }, reu: { list: null, error: null, listAt: 0, detail: {}, n: null, tab: null, up: null, run: null, open: {}, retrying: false, form: {}, approving: false }, xpl: { list: null, error: null, listAt: 0, repo: null, app: null, cor: {}, inv: {}, tab: 'corridas', run: null, launched: {} }, xnow: null, dep: { list: null, error: null, listAt: 0, dlg: null }, aj: { data: null, error: null, sec: 'perfil', registro: null, users: null, user: null, login: null, cuenta: null, f: 'todos', q: '', add: null, link: null, busy: false, repos: null, repo: null, conex: null } };
 // The sidebar's Linear filter (#101), remembered per browser.
 try { Object.assign(S, JSON.parse(localStorage.getItem('ronin-scope') ?? '{}')); } catch { /* sin storage */ }
 function saveScope() {
@@ -931,7 +931,7 @@ function docHTML(item) {
   const files = S.files[item.id];
   const counter = (k) => (k === 'comments' ? `<span class="c">${count}</span>` : k === 'fichas' && fichas ? `<span class="c">${fichas.length}</span>` : k === 'files' && files?.data ? `<span class="c">${files.data.files.length}</span>` : '');
   const bar = `<div class="doctabs" role="tablist">${tabs.map(([k, label]) => `<button class="doctab" role="tab" data-doc="${k}" aria-selected="${k === cur}">${esc(label)}${counter(k)}</button>`).join('')}
-    ${cur === 'fichas' ? '<span class="keys"><kbd>j</kbd> <kbd>k</kbd> otra ficha</span>' : cur === 'files' ? '<span class="keys"><kbd>j</kbd> <kbd>k</kbd> otro archivo · <kbd>v</kbd> visto · <kbd>r</kbd> revisión</span>' : ''}<span class="src">${d.error ? `<span class="bad">GitHub no respondió: ${esc(d.error)}</span>, ` : ''}${d.fetchedAt ? `leído hace ${esc(short(Date.now() - Date.parse(d.fetchedAt)))}` : ''}</span></div>`;
+    <span class="keys"><kbd>1</kbd>–<kbd>${tabs.length}</kbd> pestaña · ${cur === 'fichas' ? '<kbd>j</kbd> <kbd>k</kbd> otra ficha' : cur === 'files' ? `<kbd>j</kbd> <kbd>k</kbd> otro archivo · <kbd>v</kbd> visto${decidable(item, d) ? '' : ' · <kbd>r</kbd> revisión'}` : `<kbd>j</kbd> <kbd>k</kbd> ${cur === 'comments' ? 'comentario' : 'sección'}`} <button class="kh" data-keys title="Atajos (?)" aria-label="Atajos">?</button></span><span class="src">${d.error ? `<span class="bad">GitHub no respondió: ${esc(d.error)}</span>, ` : ''}${d.fetchedAt ? `leído hace ${esc(short(Date.now() - Date.parse(d.fetchedAt)))}` : ''}</span></div>`;
   if (cur === 'fichas') return bar + fichasHTML(item);
   if (cur === 'corridas' || cur === 'inventario') {
     const xr = xplOfItem(item.id);
@@ -1088,7 +1088,7 @@ function filesHTML(item) {
   const tree = `<div class="ftree"><div class="ftop"><input type="search" id="fq" placeholder="Filtrar archivos" value="${esc(S.fq[item.id] ?? '')}" aria-label="Filtrar archivos"><button class="btn-s ftreex" data-ftree>Cerrar</button></div>${progress}<div class="frows" id="ftrows">${rows || '<p class="none">Ningún archivo coincide.</p>'}</div></div>`;
   const tool = `<div class="ftool"><button class="btn-s ftreebtn" data-ftree>Archivos ▾</button><span class="seg">${mode('unified', 'Unificado')}${mode('split', 'Lado a lado')}</span>
     <span>${data.files.length} ${data.files.length === 1 ? 'archivo' : 'archivos'} · <span class="addel"><span class="a">+${add}</span> <span class="d">−${del}</span></span></span>${data.error ? `<span class="bad">GitHub no respondió: ${esc(data.error)}</span>` : ''}
-    <span class="m hint-c">Clic en un número de línea para comentarla</span>${reviewOf(item.id) ? reviewButton(item, 'files', `<button class="btn-s primary frevb" data-frev="files" aria-haspopup="dialog" aria-expanded="${revOpen(item, 'files')}">Terminar revisión <span class="rn">${pendingOf(item.id).length}</span> ▾</button>`) : reviewable(item, S.detail[item.id]?.data) ? reviewButton(item, 'files', `<button class="btn-s frevb" data-frev="files" aria-haspopup="dialog" aria-expanded="${revOpen(item, 'files')}">Revisar ▾</button>`) : ''}${url ? `<a class="gh" href="${esc(url)}/files" target="_blank" rel="noopener">En GitHub ↗</a>` : ''}</div>`;
+    <span class="m hint-c">Clic en un número de línea para comentarla</span>${decidable(item, S.detail[item.id]?.data) ? (pendingOf(item.id).length ? `<span class="m dcarry">${oneOr(pendingOf(item.id).length, 'Un comentario', `${pendingOf(item.id).length} comentarios`)} para ronin: los lleva <b>Pedir un ajuste</b> <kbd>P</kbd></span>` : '') : reviewOf(item.id) ? reviewButton(item, 'files', `<button class="btn-s primary frevb" data-frev="files" aria-haspopup="dialog" aria-expanded="${revOpen(item, 'files')}">Terminar revisión <span class="rn">${pendingOf(item.id).length}</span> ▾</button>`) : reviewable(item, S.detail[item.id]?.data) ? reviewButton(item, 'files', `<button class="btn-s frevb" data-frev="files" aria-haspopup="dialog" aria-expanded="${revOpen(item, 'files')}">Revisar ▾</button>`) : ''}${url ? `<a class="gh" href="${esc(url)}/files" target="_blank" rel="noopener">En GitHub ↗</a>` : ''}</div>`;
   return `<div class="doc files${S.ftree ? ' tree' : ''}" id="doc" data-key="${esc(`${item.id}:files`)}">${tree}<div class="fdiffs" id="fdiffs">${tool}<div class="fcards">${data.files.map((f) => fileHTML(item, data, f)).join('')}</div></div></div>`;
 }
 
@@ -1343,7 +1343,7 @@ async function sendComment(mode) {
     const posted = await filesAction(c.item, body);
     S.fcomp = null;
     if (mode === 'now') toast(c.reply ? 'Respondiste en el hilo.' : 'Comentaste en el PR.', posted?.url);
-    else toast(mode === 'edit' ? 'Guardado en tu revisión.' : started ? 'Empezaste una revisión: nadie la ve hasta que la mandes.' : 'Sumado a tu revisión.');
+    else toast(mode === 'edit' ? 'Guardado en tu revisión.' : started ? `Empezaste una revisión: nadie la ve hasta que la mandes${decidable(itemById(c.item) ?? {}, S.detail[c.item]?.data) ? ' con Pedir un ajuste' : ''}.` : 'Sumado a tu revisión.');
     afterFilesWrite(c.item);
   } catch (error) {
     if (error instanceof Unauthorized) return showLogin();
@@ -1490,6 +1490,123 @@ function wireDecide() {
     fresh?.focus();
     fresh?.setSelectionRange(fresh.value.length, fresh.value.length);
   };
+}
+
+// ---------- moving around an item's page with the keyboard (#195)
+// As in vim where it fits: j/k the next unit of the tab (a section, a
+// comment; a file and a finding have their own), d/u half a page, gg/G the
+// top and the bottom. The digits go to a tab, and ]p/[p to the next PR that
+// waits on a decision. Two-key sequences wait a moment for their second key.
+const KEY_SEQ_MS = 900;
+const seq = { key: null, timer: 0 };
+const UNITS = { pr: '.page .psec, .page .md > :is(h1, h2, h3)', issue: '.page .md > :is(h1, h2, h3)', comments: '.comments > article' };
+
+// A PR of ronin's that's ready for someone to decide: open, not a draft,
+// nobody approved it yet and no agent is on it.
+function awaitsDecision(item) {
+  const pr = item.pr;
+  return Boolean(pr && S.snap?.ronin) && sameLogin(pr.author, S.snap.ronin) && !pr.isDraft && pr.reviewDecision !== 'APPROVED' && item.status !== 'running';
+}
+
+function movePr(step) {
+  const waiting = (S.snap?.items ?? []).filter((i) => i.listed && awaitsDecision(i));
+  if (!waiting.length) return toast('Ningún PR de ronin espera una decisión.');
+  // A ronin PR is listed as its issue: its own page is the issue's too.
+  const at = waiting.findIndex((i) => i.id === S.sel || `${i.repo}#${i.pr.number}` === S.sel);
+  const next = waiting[at < 0 ? (step > 0 ? 0 : waiting.length - 1) : (at + step + waiting.length) % waiting.length];
+  if (next.id !== S.sel) select(next.id);
+}
+
+function moveUnit(item, tab, step) {
+  const all = UNITS[tab] ? [...document.querySelectorAll(`#doc :is(${UNITS[tab]})`)] : [];
+  const scroller = $('#doc');
+  if (!all.length) return scroller?.scrollBy({ top: step * 80 });
+  const key = docKeyOf(item);
+  const at = S.kunit?.key === key ? Math.min(S.kunit.i, all.length - 1) : -1;
+  const i = Math.max(0, Math.min(all.length - 1, at < 0 ? (step > 0 ? 0 : all.length - 1) : at + step));
+  S.kunit = { key, i };
+  const next = all[i];
+  markUnit();
+  next.scrollIntoView({ block: 'start', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+}
+
+// The unit j/k is on, marked again after the page is redrawn.
+function markUnit() {
+  const item = S.sel && itemById(S.sel);
+  const tab = item && docOf(item);
+  if (!tab || !UNITS[tab]) return;
+  const all = [...document.querySelectorAll(`#doc :is(${UNITS[tab]})`)];
+  const on = S.kunit?.key === docKeyOf(item) ? all[S.kunit.i] : null;
+  for (const el of all) el.classList.toggle('kcur', el === on);
+}
+
+// True when the key was one of these.
+function navigate(event, item) {
+  if (event.ctrlKey || event.metaKey || event.altKey) return false;
+  const prev = seq.key;
+  seq.key = null;
+  clearTimeout(seq.timer);
+  if ((prev === ']' || prev === '[') && event.key === 'p') {
+    event.preventDefault();
+    movePr(prev === ']' ? 1 : -1);
+    return true;
+  }
+  if (event.key === ']' || event.key === '[') {
+    seq.key = event.key;
+    seq.timer = setTimeout(() => { seq.key = null; }, KEY_SEQ_MS);
+    return true;
+  }
+  const d = item && S.detail[item.id]?.data;
+  if (!item || !d || item.kind === 'other' || viewOf(item) !== 'ficha') return false;
+  const tab = docOf(item);
+  const scroller = tab === 'files' ? $('#fdiffs') : $('#doc');
+  if (prev === 'g' && event.key === 'g') {
+    event.preventDefault();
+    scroller?.scrollTo({ top: 0 });
+    return true;
+  }
+  if (event.key === 'g') {
+    seq.key = 'g';
+    seq.timer = setTimeout(() => { seq.key = null; }, KEY_SEQ_MS);
+    return true;
+  }
+  if (event.key === 'G') {
+    event.preventDefault();
+    scroller?.scrollTo({ top: scroller.scrollHeight });
+    return true;
+  }
+  if (event.key === 'd' || event.key === 'u') {
+    event.preventDefault();
+    scroller?.scrollBy({ top: (event.key === 'd' ? 1 : -1) * scroller.clientHeight / 2 });
+    return true;
+  }
+  const tabs = docTabsOf(item, d);
+  if (/^[1-9]$/.test(event.key) && tabs[Number(event.key) - 1]) {
+    event.preventDefault();
+    S.doc[item.id] = tabs[Number(event.key) - 1][0];
+    renderCenter();
+    return true;
+  }
+  if ((event.key === 'j' || event.key === 'k') && tab !== 'files' && tab !== 'fichas') {
+    event.preventDefault();
+    moveUnit(item, tab, event.key === 'j' ? 1 : -1);
+    return true;
+  }
+  return false;
+}
+
+const KEYS_HELP = [
+  ['Moverse', [['1 – 9', 'Ir a una pestaña'], ['j / k', 'Siguiente / anterior sección, comentario, archivo o ficha'], ['d / u', 'Media página abajo / arriba'], ['gg / G', 'Al inicio / al final'], [']p / [p', 'Siguiente / anterior PR de ronin que espera una decisión']]],
+  ['En un PR de ronin', [['A', 'Aprobar y mergear (↵ confirma)'], ['P', 'Pedir un ajuste (Ctrl ↵ manda)'], ['X', 'Cerrar el PR (Ctrl ↵ confirma)']]],
+  ['En Archivos', [['v', 'Marcar el archivo como visto'], ['r', 'Revisión, en los PRs de personas']]],
+  ['General', [['?', 'Esta ayuda'], ['Esc', 'Cerrar lo que esté abierto']]],
+];
+function toggleKeysHelp() {
+  if ($('#keys-help')) return $('#keys-help').remove();
+  const el = Object.assign(document.body.appendChild(document.createElement('div')), { id: 'keys-help', className: 'scrim' });
+  const keys = (k) => k.split(' ').map((x) => (/^[/–]$/.test(x) ? x : `<kbd>${esc(x)}</kbd>`)).join(' ');
+  el.innerHTML = `<div class="dlg keys-dlg" role="dialog" aria-modal="true" aria-labelledby="keys-t"><h2 id="keys-t">Atajos</h2>${KEYS_HELP.map(([h, rows]) => `<h3>${esc(h)}</h3><dl>${rows.map(([k, what]) => `<dt>${keys(k)}</dt><dd>${esc(what)}</dd>`).join('')}</dl>`).join('')}</div>`;
+  el.onclick = (event) => { if (event.target === el) el.remove(); };
 }
 
 // ---------- the review panel (#111)
@@ -1865,6 +1982,8 @@ function wireFiles() {
   };
   wireReviewPanel();
   wireDecide();
+  for (const button of document.querySelectorAll('[data-keys]')) button.onclick = toggleKeysHelp;
+  markUnit();
   const q = $('#fq');
   if (q) q.oninput = () => {
     S.fq[S.sel] = q.value;
@@ -5759,7 +5878,7 @@ async function boot() {
     const reviewing = !S.dialog && !S.fdialog && !S.newIssue && !S.xnow && !event.metaKey && !event.ctrlKey && !event.altKey && item && viewOf(item) === 'ficha' && docOf(item) === 'fichas' && !/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName ?? '');
     // On a PR's files, j/k go from one file to the next (#111).
     const typing = event.metaKey || event.ctrlKey || event.altKey || /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName ?? '');
-    if (!typing && !S.dialog && !S.fdialog && !S.newIssue && !S.xnow && item && viewOf(item) === 'ficha' && docOf(item) === 'files' && ['j', 'k', 'v', 'r'].includes(event.key)) {
+    if (!typing && !S.dialog && !S.fdialog && !S.newIssue && !S.xnow && item && viewOf(item) === 'ficha' && docOf(item) === 'files' && ['j', 'k', 'v', ...(decidable(item, S.detail[item.id]?.data) ? [] : ['r'])].includes(event.key)) {
       event.preventDefault();
       if (event.key === 'r') openReviewPanel('files');
       else if (event.key === 'v') toggleViewedCurrent();
@@ -5774,7 +5893,7 @@ async function boot() {
       return;
     }
     const kind = { a: 'approve', p: 'adjust', x: 'close' }[event.key.toLowerCase()];
-    if (decidingHere && kind && !S.decide?.sending) {
+    if (decidingHere && kind && !seq.key && !S.decide?.sending) {
       event.preventDefault();
       openDecide(kind);
       return;
@@ -5786,8 +5905,15 @@ async function boot() {
       else if (document.querySelector(`[data-fact="${event.key === 'c' ? 'cambios' : 'rechazar'}"]`)) openFichaAction(event.key === 'c' ? 'cambios' : 'rechazar');
       return;
     }
+    if (event.key === '?' && !typing && !S.dialog && !S.newIssue) {
+      event.preventDefault();
+      toggleKeysHelp();
+      return;
+    }
+    if (!typing && !S.dialog && !S.fdialog && !S.newIssue && !S.xnow && !S.decide && !S.rpanel && !S.fcomp && navigate(event, item)) return;
     if (event.key !== 'Escape') return;
-    if (S.ped.lb) {
+    if ($('#keys-help')) $('#keys-help').remove();
+    else if (S.ped.lb) {
       S.ped.lb = null;
       pedLightbox();
     } else if (S.aj.add) {

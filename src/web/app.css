@@ -1335,3 +1335,17 @@ select.aj-in { width: auto; min-width: 180px; }
 /* with the decisions, the title keeps room: they drop below it if they don't fit */
 .head .row:has(.dwrap) { flex-wrap: wrap; }
 .head .row:has(.dwrap) h1 { flex: 1 1 320px; }
+/* the keyboard (#195): the unit j/k is on, the help */
+.doctabs .keys .kh { width: 18px; height: 18px; margin-left: 4px; border: 1px solid var(--rule); border-radius: 50%; font-size: 11px; text-align: center; color: var(--muted); line-height: 16px; }
+.doctabs .keys .kh:hover { color: var(--ink); background: var(--hover); }
+.page .kcur { scroll-margin-top: 12px; }
+.page h1.kcur, .page h2.kcur, .page h3.kcur { box-shadow: -10px 0 0 -7px var(--hanko); }
+.psec.kcur:not(.decis) h3, .comments > article.kcur { box-shadow: -10px 0 0 -7px var(--hanko); }
+.psec.decis.kcur, .comments > article.kcur { outline: 1px solid var(--hanko); outline-offset: 2px; border-radius: 8px; }
+.comments > article { scroll-margin-top: 12px; }
+.keys-dlg { width: min(460px, 100%); }
+.keys-dlg h3 { margin: 14px 0 6px; font-size: 12.5px; color: var(--ink); }
+.keys-dlg dl { display: grid; grid-template-columns: 96px 1fr; gap: 6px 12px; margin: 0; font-size: 13px; }
+.keys-dlg dt { white-space: nowrap; color: var(--muted); }
+.keys-dlg dd { margin: 0; color: var(--ink-2); }
+.fbar .dcarry kbd, .dcarry kbd { margin-left: 2px; }
