@@ -1131,7 +1131,7 @@ function filesHTML(item) {
   const tree = `<div class="ftree"><div class="ftop"><input type="search" id="fq" placeholder="Filtrar archivos" value="${esc(S.fq[item.id] ?? '')}" aria-label="Filtrar archivos"><button class="btn-s ftreex" data-ftree>Cerrar</button></div>${progress}<div class="frows" id="ftrows">${rows || '<p class="none">Ningún archivo coincide.</p>'}</div></div>`;
   const tool = `<div class="ftool"><button class="btn-s ftreebtn" data-ftree>Archivos ▾</button><span class="seg">${mode('unified', 'Unificado')}${mode('split', 'Lado a lado')}</span>
     <span>${data.files.length} ${data.files.length === 1 ? 'archivo' : 'archivos'} · <span class="addel"><span class="a">+${add}</span> <span class="d">−${del}</span></span></span>${data.error ? `<span class="bad">GitHub no respondió: ${esc(data.error)}</span>` : ''}
-    <span class="m hint-c">Clic en un número de línea para comentarla</span>${decidable(item, S.detail[item.id]?.data) ? (pendingOf(item.id).length ? `<span class="m dcarry">${oneOr(pendingOf(item.id).length, 'Un comentario', `${pendingOf(item.id).length} comentarios`)} para ronin: los lleva <b>Pedir un ajuste</b> <kbd>P</kbd></span>` : '') : reviewOf(item.id) ? reviewButton(item, 'files', `<button class="btn-s primary frevb" data-frev="files" aria-haspopup="dialog" aria-expanded="${revOpen(item, 'files')}">Terminar revisión <span class="rn">${pendingOf(item.id).length}</span> ▾</button>`) : reviewable(item, S.detail[item.id]?.data) ? reviewButton(item, 'files', `<button class="btn-s frevb" data-frev="files" aria-haspopup="dialog" aria-expanded="${revOpen(item, 'files')}">Revisar ▾</button>`) : ''}${url ? `<a class="gh" href="${esc(url)}/files" target="_blank" rel="noopener">En GitHub ↗</a>` : ''}</div>`;
+    <span class="m hint-c">Clic en un número de línea para comentarla</span>${decidable(item, S.detail[item.id]?.data) ? (pendingOf(item.id).length ? `<span class="m dcarry">${oneOr(pendingOf(item.id).length, 'Un comentario', `${pendingOf(item.id).length} comentarios`)} para ronin: los lleva <b>Ajustar</b> <kbd>P</kbd></span>` : '') : reviewOf(item.id) ? reviewButton(item, 'files', `<button class="btn-s primary frevb" data-frev="files" aria-haspopup="dialog" aria-expanded="${revOpen(item, 'files')}">Terminar revisión <span class="rn">${pendingOf(item.id).length}</span> ▾</button>`) : reviewable(item, S.detail[item.id]?.data) ? reviewButton(item, 'files', `<button class="btn-s frevb" data-frev="files" aria-haspopup="dialog" aria-expanded="${revOpen(item, 'files')}">Revisar ▾</button>`) : ''}${url ? `<a class="gh" href="${esc(url)}/files" target="_blank" rel="noopener">En GitHub ↗</a>` : ''}</div>`;
   return `<div class="doc files${S.ftree ? ' tree' : ''}" id="doc" data-key="${esc(`${item.id}:files`)}">${tree}<div class="fdiffs" id="fdiffs">${tool}<div class="fcards">${data.files.map((f) => fileHTML(item, data, f)).join('')}</div></div></div>`;
 }
 
@@ -1386,7 +1386,7 @@ async function sendComment(mode) {
     const posted = await filesAction(c.item, body);
     S.fcomp = null;
     if (mode === 'now') toast(c.reply ? 'Respondiste en el hilo.' : 'Comentaste en el PR.', posted?.url);
-    else toast(mode === 'edit' ? 'Guardado en tu revisión.' : started ? `Empezaste una revisión: nadie la ve hasta que la mandes${decidable(itemById(c.item) ?? {}, S.detail[c.item]?.data) ? ' con Pedir un ajuste' : ''}.` : 'Sumado a tu revisión.');
+    else toast(mode === 'edit' ? 'Guardado en tu revisión.' : started ? `Empezaste una revisión: nadie la ve hasta que la mandes${decidable(itemById(c.item) ?? {}, S.detail[c.item]?.data) ? ' con Ajustar' : ''}.` : 'Sumado a tu revisión.');
     afterFilesWrite(c.item);
   } catch (error) {
     if (error instanceof Unauthorized) return showLogin();
@@ -1423,7 +1423,7 @@ const oneOr = (n, one, many) => (n === 1 ? one : many);
 
 function decideHTML(item, d) {
   const open = (kind) => S.decide?.item === item.id && S.decide.kind === kind;
-  return `<div class="actions dwrap"><button class="gh dbtn danger" data-decide="close" aria-haspopup="dialog" aria-expanded="${open('close')}" title="Cerrar el PR (X)">Cerrar <kbd>X</kbd></button><button class="gh dbtn run" data-decide="adjust" aria-haspopup="dialog" aria-expanded="${open('adjust')}" title="Pedir un ajuste (P)">Pedir un ajuste <kbd>P</kbd></button><button class="act-btn dbtn ok" data-decide="approve" aria-haspopup="dialog" aria-expanded="${open('approve')}" title="Aprobar y mergear (A)">Aprobar y mergear <kbd>A</kbd></button>${dropHTML(item, d)}</div>`;
+  return `<div class="actions dwrap"><button class="gh dbtn danger" data-decide="close" aria-haspopup="dialog" aria-expanded="${open('close')}" title="Cerrar el PR (X)">Cerrar <kbd>X</kbd></button><button class="gh dbtn run" data-decide="adjust" aria-haspopup="dialog" aria-expanded="${open('adjust')}" title="Pedirle un ajuste a ronin (P)">Ajustar <kbd>P</kbd></button><button class="act-btn dbtn ok" data-decide="approve" aria-haspopup="dialog" aria-expanded="${open('approve')}" title="Aprobar y mergear (A)">Aprobar <kbd>A</kbd></button>${dropHTML(item, d)}</div>`;
 }
 
 // What was just decided here, for a few minutes: GitHub takes a moment to show it.
@@ -1451,10 +1451,10 @@ function dropHTML(item, d) {
     const checks = checksChip(item.pr?.checks);
     const autoMerge = !d.pr.labels?.includes('ronin:auto-merge') && d.pr.mergeable !== 'CONFLICTING';
     const when = d.pr.mergeable === 'CONFLICTING' ? `Tiene conflictos con ${esc(d.pr.baseRefName ?? 'la base')}: no se va a mergear hasta que se resuelvan.`
-      : checks?.[0] === 'crit' ? '<span class="crit">Un check falla: no se va a mergear hasta que pase.</span> Quizá conviene <b>Pedir un ajuste</b>.'
+      : checks?.[0] === 'crit' ? '<span class="crit">Un check falla: no se va a mergear hasta que pase.</span> Quizá conviene <b>Ajustar</b>.'
         : checks?.[0] === 'run' ? 'ronin lo mergea apenas pasen los checks.' : 'ronin lo mergea en el próximo tick.';
     return `<div class="drop ok" role="dialog" aria-label="Aprobar y mergear"><div class="dt">Lo aprobás como <b>${me}</b>${autoMerge ? ` y comentás <code>@${bot} /auto-merge</code> a tu nombre` : ''}. ${when}
-      ${n ? `<p class="warnbox">${oneOr(n, 'Tu comentario', `Tus ${n} comentarios`)} de Archivos ${n === 1 ? 'va' : 'van'} con la aprobación, pero ronin no ${n === 1 ? 'lo atiende' : 'los atiende'}: para eso, <b>Pedir un ajuste</b>.</p>` : ''}</div>${err}
+      ${n ? `<p class="warnbox">${oneOr(n, 'Tu comentario', `Tus ${n} comentarios`)} de Archivos ${n === 1 ? 'va' : 'van'} con la aprobación, pero ronin no ${n === 1 ? 'lo atiende' : 'los atiende'}: para eso, <b>Ajustar</b>.</p>` : ''}</div>${err}
       <footer><span class="m"><kbd>↵</kbd> confirma · <kbd>Esc</kbd></span><button class="btn-s" data-dcancel>Cancelar</button><button class="btn-s ok-solid" data-dsend${busy}>Aprobar y mergear</button></footer></div>`;
   }
   if (p.kind === 'close') {
@@ -1683,7 +1683,7 @@ function navigate(event, item) {
 
 const KEYS_HELP = [
   ['Moverse', [['1 – 9', 'Ir a una pestaña'], ['j / k', 'Siguiente / anterior sección, comentario, archivo o ficha'], ['d / u', 'Media página abajo / arriba'], ['gg / G', 'Al inicio / al final'], [']p / [p', 'Siguiente / anterior PR de ronin que espera una decisión']]],
-  ['En un PR de ronin', [['A', 'Aprobar y mergear (↵ confirma)'], ['P', 'Pedir un ajuste (Ctrl ↵ manda)'], ['X', 'Cerrar el PR (Ctrl ↵ confirma)'], ['1 – 3', 'Fuera del texto del ajuste: sumar una sugerencia'], ['I', 'Fuera del texto del cierre: cerrar también el issue, o no']]],
+  ['En un PR de ronin', [['A', 'Aprobar: aprueba y mergea (↵ confirma)'], ['P', 'Ajustar: le pide un cambio a ronin (Ctrl ↵ manda)'], ['X', 'Cerrar el PR (Ctrl ↵ confirma)'], ['1 – 3', 'Fuera del texto del ajuste: sumar una sugerencia'], ['I', 'Fuera del texto del cierre: cerrar también el issue, o no']]],
   ['Acciones', [['M', 'Abrir o cerrar el menú de acciones'], ['1 – 9', 'En el menú: pedir esa acción'], ['j / k', 'En el menú: la siguiente / anterior (también ↓ ↑, y ↵ la pide)'], ['Ctrl ↵', 'En el diálogo de la acción: comentar']]],
   ['En Archivos', [['v', 'Marcar el archivo como visto'], ['r', 'Revisión, en los PRs de personas']]],
   ['General', [['?', 'Esta ayuda'], ['Esc', 'Cerrar lo que esté abierto']]],
