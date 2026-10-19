@@ -23,3 +23,4 @@ process.env.PORTAL_DATA_DIR = join(scratch, 'portal-data');
 process.env.SETTINGS_DATA_DIR = join(scratch, 'settings-data');
 process.env.MEETINGS_DATA_DIR = join(scratch, 'meetings-data');
 process.env.DEPLOYS_DATA_DIR = join(scratch, 'deploys-data');
+process.env.SEED_CATALOG_DATA_DIR = join(scratch, 'seed-catalog-data');

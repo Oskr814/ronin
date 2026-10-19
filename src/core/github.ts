@@ -159,21 +159,13 @@ export interface TrackingIssue {
   labels: string[];
 }
 
+// GraphQL, not `gh issue list --label` (issuesByLabel): its two labels
+// are both required here, while GraphQL's `labels` takes any of them.
 export async function listTrackingIssues(state: SpecStatus, issueState: 'open' | 'closed' = 'open'): Promise<TrackingIssue[]> {
-  const stdout = await gh([
-    'issue', 'list',
-    '--label', LABEL_MANAGED,
-    '--label', LABEL_STATES[state],
-    '--state', issueState,
-    '--json', 'number,title,url,labels',
-  ]);
-  const raw = JSON.parse(stdout) as Array<{ number: number; title: string; url: string; labels: Array<{ name: string }> }>;
-  return raw.map((issue) => ({
-    number: issue.number,
-    title: issue.title,
-    url: issue.url,
-    labels: issue.labels.map((l) => l.name),
-  }));
+  const issues = await issuesByLabel(LABEL_STATES[state], issueState);
+  return issues
+    .filter((issue) => issue.labels.includes(LABEL_MANAGED))
+    .map(({ number, title, url, labels }) => ({ number, title, url, labels }));
 }
 
 export async function createTrackingIssue(title: string, body: string): Promise<{ number: number; url: string }> {
@@ -389,11 +381,40 @@ export async function listAllOpenRoninPrs(): Promise<PullRequestStatus[]> {
 
 // --- for the dashboard (#65): the whole repo in two reads ---
 
+const ISSUES_WITH_LABEL_QUERY = `
+query($owner: String!, $repo: String!, $label: String!, $states: [IssueState!], $after: String) {
+  repository(owner: $owner, name: $repo) {
+    issues(states: $states, labels: [$label], first: 100, after: $after, orderBy: { field: CREATED_AT, direction: DESC }) {
+      nodes { number title url body labels(first: 50) { nodes { name } } }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+}`;
+const ISSUES_WITH_LABEL_LIMIT = 200;
+
+// The issues with a label, newest first, with their bodies. GraphQL, not
+// `gh issue list --label`: with a label, this gh searches, and the search
+// lags behind — an issue just closed from the dashboard stayed listed as
+// open for a while after its PR showed closed, and the tick could miss an
+// issue just labeled or take one just closed.
+async function issuesByLabel(label: string, state: 'open' | 'closed'): Promise<Array<TrackingIssue & { body: string }>> {
+  const [owner, repo] = activeRepo().productRepo.split('/');
+  type Raw = { data: { repository: { issues: { nodes: Array<{ number: number; title: string; url: string; body: string | null; labels: { nodes: Array<{ name: string }> } }>; pageInfo: { hasNextPage: boolean; endCursor: string | null } } } } };
+  const issues: Array<TrackingIssue & { body: string }> = [];
+  let after: string | null = null;
+  do {
+    const raw = JSON.parse(await ghApi(['api', 'graphql', '-f', `query=${ISSUES_WITH_LABEL_QUERY}`, '-f', `owner=${owner}`, '-f', `repo=${repo}`, '-f', `label=${label}`, '-f', `states[]=${state.toUpperCase()}`, ...(after ? ['-f', `after=${after}`] : [])])) as Raw;
+    const page = raw.data.repository.issues;
+    issues.push(...page.nodes.map((issue) => ({ number: issue.number, title: issue.title, url: issue.url, labels: issue.labels.nodes.map((l) => l.name), body: issue.body ?? '' })));
+    after = page.pageInfo.hasNextPage ? page.pageInfo.endCursor : null;
+  } while (after && issues.length < ISSUES_WITH_LABEL_LIMIT);
+  if (issues.length >= ISSUES_WITH_LABEL_LIMIT) log.error(`issuesByLabel: alcanzó el límite de ${ISSUES_WITH_LABEL_LIMIT} issues con ${label} — puede haber issues no traídos`);
+  return issues.slice(0, ISSUES_WITH_LABEL_LIMIT);
+}
+
 // Every open issue ronin manages, with its body (the slice checklist).
 export async function listOpenManagedIssues(): Promise<Array<TrackingIssue & { body: string }>> {
-  const stdout = await gh(['issue', 'list', '--label', LABEL_MANAGED, '--state', 'open', '--limit', '200', '--json', 'number,title,url,labels,body']);
-  return (JSON.parse(stdout) as Array<{ number: number; title: string; url: string; labels: Array<{ name: string }>; body: string | null }>)
-    .map((issue) => ({ number: issue.number, title: issue.title, url: issue.url, labels: issue.labels.map((l) => l.name), body: issue.body ?? '' }));
+  return issuesByLabel(LABEL_MANAGED, 'open');
 }
 
 export interface OpenPr {

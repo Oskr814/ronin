@@ -128,3 +128,87 @@ describe('runAgentTask — prepare-preview-data', () => {
     expect(runClaudeHeadless.mock.calls[0][1]).not.toContain('REQUEST_START');
   });
 });
+
+describe('runAgentTask — prepare-preview-data with a catalog', () => {
+  const task = {
+    type: 'prepare-preview-data' as const,
+    prNumber: 818,
+    appName: 'backoffice',
+    appPath: 'apps/backoffice',
+    checkoutDir: '/tmp/worktrees/preview-pr-818',
+    outputPath: '/tmp/out.json',
+    title: 't',
+    body: 'b',
+    diff: { mergeBase: 'abc123', stat: '' },
+    baseUrl: 'http://127.0.0.1:5173',
+    services: '',
+    compose: 'docker compose',
+    users: [],
+  };
+
+  it('hands it fenced, and says not to explore the schema again', async () => {
+    const { prompt } = await buildTask({ ...task, catalog: 'clientes:\n  total: 8' });
+
+    expect(prompt).toContain('<<<CATALOG_START>>>\nclientes:\n  total: 8\n<<<CATALOG_END>>>');
+    expect(prompt).toMatch(/trust it: don't explore the schema/);
+  });
+
+  it('says nothing about a catalog without one', async () => {
+    const { prompt } = await buildTask(task);
+
+    expect(prompt).not.toContain('CATALOG_START');
+  });
+});
+
+describe('runAgentTask — preview-seed-catalog', () => {
+  const task = {
+    type: 'preview-seed-catalog' as const,
+    prNumber: 818,
+    appName: 'backoffice',
+    appPath: 'apps/backoffice',
+    checkoutDir: '/tmp/worktrees/preview-pr-818',
+    outputPath: '/tmp/worktrees/preview-pr-818/.ronin-app/seed-catalog.yaml',
+    baseUrl: 'http://127.0.0.1:5173',
+    services: '- web:80 → http://127.0.0.1:41234',
+    compose: 'docker compose -p p -f f.json',
+    users: [{ role: 'Admin', username: 'admin@x.com', password: 'password' }],
+  };
+
+  it('runs in the preview checkout, read only, and writes YAML to its output', async () => {
+    await runAgentTask(task);
+
+    expect(runClaudeHeadless.mock.calls[0][0]).toBe('/tmp/worktrees/preview-pr-818');
+    const prompt = runClaudeHeadless.mock.calls[0][1] as string;
+    expect(prompt).toMatch(/don't create, change or delete any data/);
+    expect(prompt).toMatch(/never write to github/i);
+    expect(prompt).toContain('docker compose -p p -f f.json exec -T');
+    expect(prompt).toContain('Admin: admin@x.com / password');
+    expect(prompt).toContain(`YAML to ${task.outputPath}`);
+  });
+});
+
+describe('runAgentTask — preview-data-triage', () => {
+  const task = {
+    type: 'preview-data-triage' as const,
+    prNumber: 818,
+    checkoutDir: '/tmp/worktrees/preview-pr-818',
+    outputPath: '/tmp/triage.json',
+    title: 'fix: mostrar todos los catálogos',
+    body: '## ¿Cómo probar?\n1. Asignar más de 12 catálogos a un cliente',
+    instruction: 'que algunos estén vencidos',
+    diff: { mergeBase: 'abc123', stat: ' 4 files changed' },
+    catalog: 'clientes:\n  total: 8',
+  };
+
+  it('gives the PR, the request and the catalog, fenced, and asks for yes or no', async () => {
+    await runAgentTask(task);
+
+    const prompt = runClaudeHeadless.mock.calls[0][1] as string;
+    expect(prompt).toContain('<<<PR_START>>>\n# fix: mostrar todos los catálogos');
+    expect(prompt).toContain('<<<REQUEST_START>>>\nque algunos estén vencidos\n<<<REQUEST_END>>>');
+    expect(prompt).toContain('<<<CATALOG_START>>>\nclientes:\n  total: 8\n<<<CATALOG_END>>>');
+    expect(prompt).toContain('git diff abc123..HEAD');
+    expect(prompt).toMatch(/unsure, it is not enough/);
+    expect(prompt).toContain(`JSON object to ${task.outputPath}`);
+  });
+});
