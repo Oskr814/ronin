@@ -36,7 +36,7 @@ vi.mock('./dashboard-data.js', async (importOriginal) => ({
   readQueue: () => [{ kind: 'issue', label: '#1', repo: SC, since: '' }, { kind: 'issue', label: '#2', repo: BM, since: '' }],
   readUsage: () => [{ account: 'redmotos' }, { account: 'bmedical' }],
   readTickInfo: () => ({}),
-  slotsInUse: () => 0,
+  slotsInUse: () => ({}),
   runPath: (runId: string) => join(dir, `${runId}.jsonl`),
 }));
 

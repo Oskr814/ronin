@@ -27,6 +27,7 @@ vi.mock('./core/config.js', () => ({
     tickConcurrency: 3,
     externalReviewConcurrency: 1,
   },
+  concurrencyFor: () => 3,
   LABEL_DIRECT_ISSUE: 'ronin:issue-fix',
   LABEL_MANAGED: 'ronin',
   LABEL_STACK_PRS: 'ronin:stack-prs',

@@ -67,7 +67,7 @@ import { sweepMeetings } from './meetings/launch.js';
 import { sweepAutoMerge } from './commands/index.js';
 import { findReleasesNeedingChangelog, type ChangelogCandidate } from './changelog/index.js';
 import { setLastChangelogRelease } from './core/local-state.js';
-import { config, LABEL_DIRECT_ISSUE, LABEL_MANAGED, LABEL_STACK_PRS, LABEL_STATES } from './core/config.js';
+import { concurrencyFor, config, LABEL_DIRECT_ISSUE, LABEL_MANAGED, LABEL_STACK_PRS, LABEL_STATES } from './core/config.js';
 import { activeRepo, withActiveRepo } from './core/repo-context.js';
 import { loadRepos } from './core/repos.js';
 import { log } from './core/logger.js';
@@ -801,7 +801,7 @@ export async function externalReviewJobs(only?: number[]): Promise<TickJob[]> {
 }
 
 export async function runExternalReviews(): Promise<void> {
-  await runJobs(await externalReviewJobs(), config.tickConcurrency, JOB_CAPS);
+  await runJobs(await externalReviewJobs(), concurrencyFor(), JOB_CAPS);
 }
 
 // A /spike is fully independent of every other flow this tick runs — a
@@ -916,7 +916,7 @@ export async function explorationPrJobs(): Promise<TickJob[]> {
 }
 
 export async function runSpikes(): Promise<void> {
-  await runJobs(await spikeJobs(), config.tickConcurrency, JOB_CAPS);
+  await runJobs(await spikeJobs(), concurrencyFor(), JOB_CAPS);
 }
 
 // A release's changelog entry is fully independent of every other flow this
@@ -966,10 +966,10 @@ export async function changelogJobs(): Promise<TickJob[]> {
 }
 
 export async function runChangelogUpdates(): Promise<void> {
-  await runJobs(await changelogJobs(), config.tickConcurrency, JOB_CAPS);
+  await runJobs(await changelogJobs(), concurrencyFor(), JOB_CAPS);
 }
 
-// Per-kind limits inside a tick's single job pool (config.tickConcurrency
+// Per-kind limits inside a tick's single job pool (concurrencyFor()
 // overall): external reviews are the heaviest run on the account's quota —
 // three at once once exhausted its session limit — and changelog jobs share
 // one checkout.
@@ -1014,7 +1014,7 @@ function guarded(job: TickJob): Job {
     kind: job.kind,
     label: job.label,
     run: async () => {
-      const work = NO_SLOT_KINDS.has(job.kind) ? job.run : () => withSlots(job.kind, config.tickConcurrency, JOB_CAPS, job.run, job.label);
+      const work = NO_SLOT_KINDS.has(job.kind) ? job.run : () => withSlots(job.kind, concurrencyFor(), JOB_CAPS, job.run, job.label);
       const ran = await withResourceLock(job.lock, 'skip', work);
       if (!ran) log.info(`${job.kind} ${job.label}: ya lo está atendiendo otro proceso, se salta`);
     },
@@ -1258,7 +1258,7 @@ async function tickOneRepo(scope?: Scope): Promise<void> {
       runs('exploration') ? explorationPrJobs() : [],
     ]);
     const jobs = discovered.flat().filter((job) => !resources || job.resources.some((r) => resources.includes(r)));
-    await runJobs(jobs.map(guarded), config.tickConcurrency, JOB_CAPS);
+    await runJobs(jobs.map(guarded), concurrencyFor(), JOB_CAPS);
   } finally {
     // Always emitted, even when a discovery failed — durationMs vs.
     // agentRunsDurationMs is what tells whether a tick was mostly spent
@@ -1273,9 +1273,9 @@ async function tickOneRepo(scope?: Scope): Promise<void> {
 // pass, over every flow and everything in them — it picks up whatever no
 // event handler did (a webhook that never arrived, a runner that was down)
 // and the periodic work no event starts (sweeps, nightly exploration).
-// Repos run strictly in sequence — see
-// docs/superpowers/specs/2026-08-19-multi-repo-pat-auth-design.md §3/§5 for
-// why a mutable activeRepo() singleton is safe under that constraint. A repo
+// Every repo at once, each in its own withActiveRepo (an AsyncLocalStorage,
+// so they never see each other's), with its own queue of agent slots
+// (locks.ts): a repo with a lot of work never holds another's back. A repo
 // whose tick throws is logged and skipped for this run; it never stops the
 // rest of repos.json from ticking.
 export async function tick(): Promise<void> {
@@ -1284,13 +1284,13 @@ export async function tick(): Promise<void> {
   // Meetings (#62) still to read whose worker died, likewise.
   await sweepMeetings().catch((error) => log.error('reuniones: no se pudieron revisar las reuniones por leer', error));
   const repos = await loadRepos();
-  for (const repo of repos) {
+  await Promise.all(repos.map(async (repo) => {
     try {
       await withActiveRepo(repo, () => tickOneRepo());
     } catch (error) {
       log.error(`tick: ${repo.productRepo} falló, sigue con el resto: ${(error as Error).message}`);
     }
-  }
+  }));
 }
 
 // One event's run, in its own process (server/api/webhooks/handler.ts) inside

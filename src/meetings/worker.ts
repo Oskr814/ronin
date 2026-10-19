@@ -3,7 +3,7 @@
 // the tick when the one before died. Reading waits for a slot of the
 // runner's shared quota like any other agent run, and holds the meeting's
 // lock throughout, so two workers never read the same meeting.
-import { config } from '../core/config.js';
+import { concurrencyFor, config } from '../core/config.js';
 import { tryLockResource, unlockResource, withSlots } from '../core/locks.js';
 import { log } from '../core/logger.js';
 import { withActiveRepo } from '../core/repo-context.js';
@@ -26,7 +26,7 @@ async function main(): Promise<void> {
       await updateMeeting(n, (m) => {
         m.worker = { pid: process.pid, since: new Date().toISOString() };
       });
-      await withSlots('meeting-read', config.tickConcurrency, {}, () => readMeeting(n), `reunión R-${n}`);
+      await withSlots('meeting-read', concurrencyFor(), {}, () => readMeeting(n), `reunión R-${n}`);
     } finally {
       await unlockResource(resource);
     }

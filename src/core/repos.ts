@@ -2,6 +2,9 @@ import { readFile } from 'node:fs/promises';
 import { config } from './config.js';
 import type { RepoEntry, AgentDefaults, DeployConfig, PortalRepoConfig } from './repo-context.js';
 
+// The same top as TICK_CONCURRENCY's in Ajustes (core/settings.ts).
+export const MAX_REPO_CONCURRENCY = 10;
+
 export async function loadRepos(): Promise<RepoEntry[]> {
   let raw: string;
   try {
@@ -46,7 +49,7 @@ function validateEntry(entry: unknown, index: number): RepoEntry {
   if (typeof entry !== 'object' || entry === null) {
     throw new Error(`${config.reposConfigPath}[${index}] no es un objeto`);
   }
-  const { productRepo, productRepoPath, claudeConfigDir, worktreeBaseRef, changelogRepo, changelogRepoPath, explore, agent, linear, portal, deploy, autoMerge } = entry as Record<string, unknown>;
+  const { productRepo, productRepoPath, claudeConfigDir, worktreeBaseRef, changelogRepo, changelogRepoPath, explore, agent, linear, portal, deploy, autoMerge, concurrency } = entry as Record<string, unknown>;
   if (typeof productRepo !== 'string' || productRepo.length === 0) {
     throw new Error(`${config.reposConfigPath}[${index}].productRepo falta o no es un string`);
   }
@@ -74,6 +77,9 @@ function validateEntry(entry: unknown, index: number): RepoEntry {
   if (autoMerge !== undefined && typeof autoMerge !== 'boolean') {
     throw new Error(`${config.reposConfigPath}[${index}].autoMerge debe ser true o false si está presente`);
   }
+  if (concurrency !== undefined && (!Number.isInteger(concurrency) || (concurrency as number) < 1 || (concurrency as number) > MAX_REPO_CONCURRENCY)) {
+    throw new Error(`${config.reposConfigPath}[${index}].concurrency debe ser un entero entre 1 y ${MAX_REPO_CONCURRENCY} si está presente`);
+  }
   return {
     productRepo, productRepoPath, claudeConfigDir, worktreeBaseRef, changelogRepo, changelogRepoPath,
     ...(explore !== undefined ? { explore: explore as string[] } : {}),
@@ -82,6 +88,7 @@ function validateEntry(entry: unknown, index: number): RepoEntry {
     ...(portal !== undefined ? { portal: validatePortal(portal, `${config.reposConfigPath}[${index}].portal`) } : {}),
     ...(deploy !== undefined ? { deploy: validateDeploy(deploy, `${config.reposConfigPath}[${index}].deploy`) } : {}),
     ...(autoMerge !== undefined ? { autoMerge } : {}),
+    ...(concurrency !== undefined ? { concurrency: concurrency as number } : {}),
   };
 }
 

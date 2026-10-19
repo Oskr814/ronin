@@ -7,7 +7,7 @@
 // for it too and gets reproduced (#137). An approved one, or one the
 // team takes, gets its issue in the product repo (issue.ts). Holds the
 // request's lock throughout, so two workers never work the same request.
-import { config } from '../core/config.js';
+import { concurrencyFor, config } from '../core/config.js';
 import { tryLockResource, unlockResource, withSlots } from '../core/locks.js';
 import { log } from '../core/logger.js';
 import { withActiveRepo } from '../core/repo-context.js';
@@ -61,7 +61,7 @@ async function main(): Promise<void> {
     try {
       if (request.status === 'thinking') {
         await claim(n);
-        await withSlots('portal-request', config.tickConcurrency, {}, () => classifyRequest(n), `pedido P-${n}`);
+        await withSlots('portal-request', concurrencyFor(), {}, () => classifyRequest(n), `pedido P-${n}`);
       }
       const next = (await getRequest(n))?.status;
       if (next === 'minor') await onApp(n, 'prototype');

@@ -5,7 +5,16 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 let base = '';
-vi.mock('./repo-context.js', () => ({ activeRepo: () => ({ worktreeBasePath: base }) }));
+let repo: string | undefined;
+vi.mock('./repo-context.js', () => ({ activeRepo: () => ({ worktreeBasePath: base, productRepo: repo }) }));
+async function withActiveRepoName<T>(name: string, fn: () => Promise<T>): Promise<T> {
+  repo = name;
+  try {
+    return await fn();
+  } finally {
+    repo = undefined;
+  }
+}
 
 const { tryLockResource, unlockResource, withResourceLock, pinResources, unpinResources, withSlots } = await import('./locks.js');
 
@@ -83,6 +92,15 @@ describe('withSlots', () => {
     });
     await Promise.all([job(), job()]);
     expect(peak).toBe(1);
+  });
+
+  it('gives each repo its own slots: a full repo never holds another back', async () => {
+    const { readdir } = await import('node:fs/promises');
+    await mkdir(join(base, '.ronin-slots'), { recursive: true });
+    // acme/busy has its only slot taken by another live process.
+    await writeFile(join(base, '.ronin-slots', `${encodeURIComponent('acme/busy')}~all-0.lock`), String(process.ppid));
+    const ran = await withActiveRepoName('acme/idle', () => withSlots('issue', 1, {}, async () => readdir(join(base, '.ronin-slots'))));
+    expect(ran).toContain(`${encodeURIComponent('acme/idle')}~all-0.lock`);
   });
 
   it("returns fn's result and frees its slots", async () => {

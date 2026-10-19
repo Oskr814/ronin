@@ -168,16 +168,20 @@ export function readUsage(): AccountUsage[] {
   return usage.sort((a, b) => a.account.localeCompare(b.account));
 }
 
-// The runner-wide agent slots (core/locks.ts): one lock file per slot taken,
-// holding its process's pid.
-export function slotsInUse(root = process.cwd()): number {
+// The agent slots taken in each repo (core/locks.ts): one lock file per slot,
+// holding its process's pid. Repo → how many; '' for a slot taken outside
+// any repo.
+export function slotsInUse(root = process.cwd()): Record<string, number> {
   const dir = join(root, '.ronin-slots');
-  if (!existsSync(dir)) return 0;
-  let used = 0;
+  const used: Record<string, number> = {};
+  if (!existsSync(dir)) return used;
   for (const file of readdirSync(dir)) {
-    if (!/^all-\d+\.lock$/.test(file)) continue;
+    const match = /^(?:(.+)~)?all-\d+\.lock$/.exec(file);
+    if (!match) continue;
     try {
-      if (pidAlive(Number(readFileSync(join(dir, file), 'utf8').trim()))) used += 1;
+      if (!pidAlive(Number(readFileSync(join(dir, file), 'utf8').trim()))) continue;
+      const repo = match[1] ? decodeURIComponent(match[1]) : '';
+      used[repo] = (used[repo] ?? 0) + 1;
     } catch {
       // Released between the listing and the read.
     }

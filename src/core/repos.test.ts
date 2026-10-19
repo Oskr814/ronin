@@ -56,6 +56,15 @@ describe('loadRepos', () => {
     await expect(loadRepos()).rejects.toThrow('explore');
   });
 
+  it("loads the repo's own concurrency, and rejects anything but a whole number from 1 to 10", async () => {
+    await writeFile(reposConfigPath, JSON.stringify([{ productRepo: 'a/b', productRepoPath: '/tmp/a', concurrency: 2 }]));
+    expect((await loadRepos())[0].concurrency).toBe(2);
+    for (const bad of [0, 11, 1.5, '2']) {
+      await writeFile(reposConfigPath, JSON.stringify([{ productRepo: 'a/b', productRepoPath: '/tmp/a', concurrency: bad }]));
+      await expect(loadRepos()).rejects.toThrow('concurrency');
+    }
+  });
+
   it('throws when worktreeBaseRef is present but not a string', async () => {
     await writeFile(reposConfigPath, JSON.stringify([{ productRepo: 'a/b', productRepoPath: '/tmp/a', worktreeBaseRef: 42 }]));
     await expect(loadRepos()).rejects.toThrow('worktreeBaseRef');

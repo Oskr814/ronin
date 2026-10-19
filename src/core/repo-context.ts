@@ -47,6 +47,10 @@ export interface RepoEntry {
   // someone to merge them (commands/auto-merge.ts's labelNewSlicePrs).
   // Absent or true: they merge as soon as a dev approves them and CI is green.
   autoMerge?: boolean;
+  // How many agent tasks of this repo run at once (core/locks.ts's slots):
+  // each repo has its own queue, so one with a lot assigned never holds
+  // another back. Absent: TICK_CONCURRENCY (Ajustes → Agentes).
+  concurrency?: number;
 }
 
 export interface DeployConfig {

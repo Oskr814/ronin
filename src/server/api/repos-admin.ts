@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { config } from '../../core/config.js';
 import { log } from '../../core/logger.js';
 import type { RepoEntry } from '../../core/repo-context.js';
-import { validateRepos } from '../../core/repos.js';
+import { MAX_REPO_CONCURRENCY, validateRepos } from '../../core/repos.js';
 import { linearKey, teamPlanning } from '../../core/linear-api.js';
 import { withJson } from '../../portal/json-store.js';
 import { AjustesError, record } from './ajustes.js';
@@ -12,7 +12,7 @@ import { repoApps } from './dashboard-new-issue.js';
 // Ajustes → Repos (#174, stage 5), admins only:
 //   GET  /api/ajustes/repos                  each repo of repos.json, with what can be changed from here
 //   POST /api/ajustes/repos/<owner>/<repo>   one change: { baseRef } | { portalName } | { app: { id, portal?, name?, description?, explore?, project? } }
-//                                            | { linear } | { deploy: { on?, prerelease?, selective? } } | { agent: { model?, effort? } } | { autoMerge } | { notifyTo }
+//                                            | { linear } | { deploy: { on?, prerelease?, selective? } } | { agent: { model?, effort? } } | { autoMerge } | { concurrency } | { notifyTo }
 //
 // repos.json stays where every repo lives: what changes here is written
 // there, checked with the same rules that read it (validateRepos) and with
@@ -50,7 +50,8 @@ export async function reposView(entries: RepoEntry[]): Promise<unknown> {
     linearKeys: linearKeyNames(),
     models: MODELS,
     efforts: EFFORTS,
-    defaults: { baseRef: config.worktreeBaseRef, model: config.agentModel, effort: config.agentEffort },
+    defaults: { baseRef: config.worktreeBaseRef, model: config.agentModel, effort: config.agentEffort, concurrency: config.tickConcurrency },
+    maxConcurrency: MAX_REPO_CONCURRENCY,
     repos: await Promise.all(entries.map(async (entry) => {
       const manifest = await repoApps(entry);
       const ids = [...new Set([...manifest, ...Object.keys(entry.portal?.apps ?? {}), ...(entry.explore ?? [])])];
@@ -73,6 +74,7 @@ export async function reposView(entries: RepoEntry[]): Promise<unknown> {
         deploy: entry.deploy ? { prerelease: entry.deploy.prerelease === true, selective: entry.deploy.selective === true } : null,
         agent: { model: entry.agent?.model ?? '', effort: entry.agent?.effort ?? '' },
         autoMerge: entry.autoMerge !== false,
+        concurrency: entry.concurrency ?? null,
       };
     })),
   };
@@ -192,6 +194,16 @@ function apply(raw: Raw, body: Record<string, unknown>, manifest: string[]): Arr
     }
     const label = (x: { prerelease?: boolean; selective?: boolean } | undefined) => (x ? ['sí', x.prerelease ? 'pre-release' : '', x.selective ? 'PRs elegidos' : ''].filter(Boolean).join(', ') : 'no');
     if (label(before) !== label(raw.deploy as typeof before)) changes.push({ what: 'despliegues', from: label(before), to: label(raw.deploy as typeof before) });
+  }
+
+  if (body.concurrency !== undefined) {
+    const value = body.concurrency;
+    if (value !== null && (!Number.isInteger(value) || (value as number) < 1 || (value as number) > MAX_REPO_CONCURRENCY)) throw new AjustesError(`Tareas en paralelo: un número entre 1 y ${MAX_REPO_CONCURRENCY}, o vacío para el general.`);
+    const before = (raw.concurrency as number | undefined) ?? null;
+    if (value === null) delete raw.concurrency;
+    else raw.concurrency = value;
+    const label = (n: number | null) => (n === null ? `el general (${config.tickConcurrency})` : String(n));
+    if (before !== value) changes.push({ what: 'tareas en paralelo', from: label(before), to: label(value as number | null) });
   }
 
   if (body.autoMerge !== undefined) {
