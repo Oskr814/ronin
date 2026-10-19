@@ -43,6 +43,9 @@ vi.mock('./dashboard-data.js', async (importOriginal) => ({
 const launchMeetingWorker = vi.fn(async (_n: number) => {});
 vi.mock('../../meetings/launch.js', async (importOriginal) => ({ ...(await importOriginal<typeof import('../../meetings/launch.js')>()), launchMeetingWorker: (n: number) => launchMeetingWorker(n) }));
 
+const metricsView = vi.fn(async (repos: string[], days: number, repo: string | null) => ({ repos, days, repo }));
+vi.mock('../../metrics/index.js', async (importOriginal) => ({ ...(await importOriginal<typeof import('../../metrics/index.js')>()), metricsView: (...args: [string[], number, string | null]) => metricsView(...args) }));
+
 const { handleDashboard } = await import('./dashboard.js');
 const ACCESS = { admin: false, repos: [{ repo: SC, permission: 'triage' as const }] };
 const SESSION = { login: 'valeria', token: 'gho_v' };
@@ -78,6 +81,11 @@ describe('a session that sees only some repos', () => {
     expect((await call('/api/despliegues')).status).toBe(403);
     expect((await call(`/api/despliegues/${SC}/plan`, 'POST', { tag: 'v1', prs: 'all' })).status).toBe(403);
     expect((await call(`/api/despliegues/${SC}/publish`, 'POST', { tag: 'v1', prs: 'all' })).status).toBe(403);
+  });
+
+  it('cannot see the metrics without being an admin (#222)', async () => {
+    expect((await call('/api/metricas')).status).toBe(403);
+    expect(metricsView).not.toHaveBeenCalled();
   });
 
   it("gets today's runs of only those", async () => {
@@ -193,5 +201,19 @@ describe('a session that sees only some repos', () => {
     expect(view.body.valores).toBeUndefined();
     expect((await call('/api/ajustes/registro')).status).toBe(403);
     expect((await call('/api/ajustes/valores', 'POST', { key: 'portal.dailyLimit', value: 50 })).status).toBe(403);
+  });
+});
+
+describe('an admin (#222)', () => {
+  const ADMIN = { admin: true, repos: [{ repo: SC, permission: 'admin-del-tablero' as const }, { repo: BM, permission: 'admin-del-tablero' as const }] };
+
+  it('gets the metrics of every repo, or of the one asked', async () => {
+    expect((await call('/api/metricas', 'GET', undefined, ADMIN as never)).body).toEqual({ repos: [SC, BM], days: 30, repo: null });
+    expect((await call(`/api/metricas?dias=7&repo=${encodeURIComponent(BM)}`, 'GET', undefined, ADMIN as never)).body).toEqual({ repos: [SC, BM], days: 7, repo: BM });
+  });
+
+  it('is told what it asked wrong', async () => {
+    expect((await call('/api/metricas?dias=14', 'GET', undefined, ADMIN as never)).status).toBe(400);
+    expect((await call('/api/metricas?repo=otro%2Frepo', 'GET', undefined, ADMIN as never)).status).toBe(404);
   });
 });

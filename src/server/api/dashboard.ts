@@ -38,6 +38,7 @@ import { DuplicateMeeting, createMeeting, getMeeting, launchMeetingWorker, listM
 import { MAX_UPLOAD_BODY, MeetingUploadError, meetingDetail, meetingOriginal, meetingRow, parseUpload } from './dashboard-meetings.js';
 import { ApproveError, approveMeeting, discardMeeting } from './dashboard-meetings-approve.js';
 import { DespliegueError, despliegues, parseRelease, planDespliegue, publishDespliegue } from './dashboard-despliegues.js';
+import { metricsView, parsePeriod } from '../../metrics/index.js';
 import { ExploreNowError, corridasOf, exploracionList, exploracionRows, exploreNow, inventarioOf, liveRuns, parseExploreNow } from './dashboard-exploraciones.js';
 
 // The dashboard's data (#65), all behind the session (tailnet.ts checks it
@@ -81,6 +82,7 @@ import { ExploreNowError, corridasOf, exploracionList, exploracionRows, exploreN
 //   POST /api/reuniones/<n>/aprobar  creates what the person chose of its proposals, as them (dashboard-meetings-approve.ts)
 //   POST /api/reuniones/<n>/descartar  sets the rest of it aside
 //   GET|POST /api/ajustes[/…]        the person's profile, and for admins the settings and their record (#174, ajustes.ts)
+//   GET /api/metricas?dias=7|30|90&repo=<owner>/<repo>  how work moves in the repos: what comes in and out, how long it takes, who carries it (#222, metrics/, admins only)
 
 // How far back the sidebar and an item's history look. Run records are kept
 // 14 days (scripts/setup-cron.sh).
@@ -954,6 +956,18 @@ async function route(req: IncomingMessage, res: ServerResponse, path: string, se
     const mine = (await visibleRepos()).filter((entry) => can(currentAccess(), entry.productRepo, 'desplegar'));
     if (!mine.length) json(res, 403, { error: 'no tienes permiso para desplegar ningún repo' });
     else json(res, 200, { repos: await despliegues(mine) });
+    return true;
+  }
+
+  if (path === '/api/metricas') {
+    const params = new URL(req.url ?? '/', 'http://localhost').searchParams;
+    const repos = (await visibleRepos()).map((entry) => entry.productRepo);
+    const days = parsePeriod(params.get('dias'));
+    const repo = params.get('repo') || null;
+    if (!currentAccess().admin) json(res, 403, { error: 'solo los administradores ven las métricas' });
+    else if (!days) json(res, 400, { error: 'dias debe ser 7, 30 o 90' });
+    else if (repo && !repos.includes(repo)) json(res, 404, { error: `no hay un repo ${repo}` });
+    else json(res, 200, await metricsView(repos, days, repo));
     return true;
   }
 

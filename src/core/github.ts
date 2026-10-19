@@ -39,6 +39,18 @@ async function ghApi(args: string[]): Promise<string> {
   return stdout;
 }
 
+// A GraphQL query with its variables, for callers that name the repo
+// themselves (metrics/, #222). Strings go with -f and numbers with -F, so
+// `first: Int` stays a number.
+export async function ghGraphql<T>(query: string, variables: Record<string, string | number | undefined>): Promise<T> {
+  const args = ['api', 'graphql', '-f', `query=${query}`];
+  for (const [name, value] of Object.entries(variables)) {
+    if (value === undefined) continue;
+    args.push(typeof value === 'number' ? '-F' : '-f', `${name}=${value}`);
+  }
+  return JSON.parse(await ghApi(args)) as T;
+}
+
 const ensuredLabels = new Set<string>();
 
 // GitHub rejects `--add-label` for a label that doesn't exist in the repo

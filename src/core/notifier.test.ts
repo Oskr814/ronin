@@ -16,6 +16,8 @@ vi.mock('nodemailer', () => ({
 
 const recordBlock = vi.fn();
 vi.mock('./local-state.js', () => ({ recordBlock: (...args: unknown[]) => recordBlock(...args) }));
+const recordBlockEvent = vi.fn();
+vi.mock('../metrics/blocks.js', () => ({ recordBlockEvent: (...args: unknown[]) => recordBlockEvent(...args) }));
 
 const { notifyBlocker, blockedItemNumber } = await import('./notifier.js');
 
@@ -23,6 +25,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   sendMail.mockResolvedValue(undefined);
   recordBlock.mockResolvedValue(undefined);
+  recordBlockEvent.mockResolvedValue(undefined);
 });
 
 describe('notifyBlocker', () => {
@@ -57,9 +60,21 @@ describe('notifyBlocker — reason kept for the dashboard', () => {
     }, expect.any(Number));
   });
 
+  it('also records it for the metrics, with its repo (#222)', async () => {
+    await notifyBlocker({ issueUrl: 'https://github.com/a/b/issues/401', reason: 'e2e falla 3 veces' });
+    expect(recordBlockEvent).toHaveBeenCalledWith({ repo: 'a/b', item: 401, reason: 'e2e falla 3 veces', at: expect.any(String) });
+  });
+
+  it('still sends the email when the metrics record fails', async () => {
+    recordBlockEvent.mockRejectedValueOnce(new Error('disk full'));
+    await expect(notifyBlocker({ issueUrl: 'https://github.com/a/b/issues/1', reason: 'x' })).resolves.toBeUndefined();
+    expect(sendMail).toHaveBeenCalled();
+  });
+
   it('keeps nothing for a release, which has no issue or PR', async () => {
     await notifyBlocker({ issueUrl: 'https://github.com/a/b/releases/tag/v1.2.3', reason: 'changelog falló' });
     expect(recordBlock).not.toHaveBeenCalled();
+    expect(recordBlockEvent).not.toHaveBeenCalled();
     expect(sendMail).toHaveBeenCalled();
   });
 

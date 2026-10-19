@@ -3,6 +3,7 @@ import { config } from './config.js';
 import { log } from './logger.js';
 import { recipientsFor } from './notifications.js';
 import { recordBlock } from './local-state.js';
+import { recordBlockEvent } from '../metrics/blocks.js';
 
 const BLOCK_MAX_AGE_MS = 180 * 24 * 60 * 60 * 1000;
 
@@ -83,6 +84,12 @@ export async function notifyBlocker(notification: BlockerNotification): Promise<
       ...(notification.excerpt ? { excerpt: notification.excerpt } : {}),
       at: new Date().toISOString(),
     }, BLOCK_MAX_AGE_MS).catch((error) => log.error('notifyBlocker: no se pudo guardar el motivo en el estado local', error));
+    // And in the record Métricas reads (#222), which doesn't forget it.
+    const repo = /^https:\/\/github\.com\/([^/]+\/[^/]+)\//.exec(notification.issueUrl)?.[1];
+    if (repo) {
+      await recordBlockEvent({ repo, item: itemNumber, reason: notification.reason, at: new Date().toISOString() })
+        .catch((error) => log.error('notifyBlocker: no se pudo guardar el bloqueo para las métricas', error));
+    }
   }
 
   const lines = [
