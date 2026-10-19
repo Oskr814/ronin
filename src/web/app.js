@@ -1508,13 +1508,18 @@ function awaitsDecision(item) {
   return Boolean(pr && S.snap?.ronin) && sameLogin(pr.author, S.snap.ronin) && !pr.isDraft && pr.reviewDecision !== 'APPROVED' && item.status !== 'running';
 }
 
+// In the sidebar's order: repo by repo, as listed (renderTree). From where
+// the page is, so one just decided (no longer waiting) still moves on.
 function movePr(step) {
-  const waiting = (S.snap?.items ?? []).filter((i) => i.listed && awaitsDecision(i));
-  if (!waiting.length) return toast('Ningún PR de ronin espera una decisión.');
+  const listed = (S.snap?.repos ?? []).flatMap((repo) => (S.snap?.items ?? []).filter((i) => i.repo === repo && i.listed && i.status !== 'blocked'));
   // A ronin PR is listed as its issue: its own page is the issue's too.
-  const at = waiting.findIndex((i) => i.id === S.sel || `${i.repo}#${i.pr.number}` === S.sel);
-  const next = waiting[at < 0 ? (step > 0 ? 0 : waiting.length - 1) : (at + step + waiting.length) % waiting.length];
-  if (next.id !== S.sel) select(next.id);
+  const here = (i) => i.id === S.sel || (i.pr && `${i.repo}#${i.pr.number}` === S.sel);
+  const at = listed.findIndex(here);
+  for (let k = 1; k <= listed.length; k++) {
+    const i = listed[((at < 0 ? (step > 0 ? -1 : 0) : at) + step * k + listed.length * k) % listed.length];
+    if (awaitsDecision(i) && !here(i)) return select(i.id);
+  }
+  toast('Ningún otro PR de ronin espera una decisión.');
 }
 
 function moveUnit(item, tab, step) {
