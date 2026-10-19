@@ -21,6 +21,8 @@ describe("a portal request on the dashboard (#132)", () => {
   it('says who it waits on', () => {
     expect(waitsOn({ status: 'thinking' })).toBe('ronin');
     expect(waitsOn({ status: 'proposed' })).toBe('person');
+    expect(waitsOn({ status: 'interviewing' })).toBe('person');
+    expect(waitsOn({ status: 'confirming' })).toBe('person');
     expect(waitsOn({ status: 'answered' })).toBeNull();
     expect(waitsOn({ status: 'approved' })).toBe('ronin');
     expect(waitsOn({ status: 'approved', pr: 9 })).toBe('team');

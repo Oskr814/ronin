@@ -16,6 +16,12 @@ export type RequestStatus =
   | 'thinking'
   // ronin asked something: it waits for the person.
   | 'asking'
+  // A big request (#225): ronin left questions in a form, for the team to
+  // get it with its decisions taken; it waits for the person's answers.
+  | 'interviewing'
+  // After the interview, ronin's summary of what it understood: the person
+  // confirms it (to the team, 'big') or corrects it (back to 'thinking').
+  | 'confirming'
   // ronin answered without a change to make (a question about the app): the
   // person can write again.
   | 'answered'
@@ -59,7 +65,7 @@ export const RONINS: RequestStatus[] = ['approved', 'fixing'];
 // When the person can cancel it: while nobody took it. Approved or fixing,
 // its issue is assigned to ronin; the team's, cancel.ts checks no one assigned its
 // issue yet.
-export const CANCELLABLE: RequestStatus[] = ['thinking', 'asking', 'answered', 'minor', 'proposed', 'reproducing', 'big'];
+export const CANCELLABLE: RequestStatus[] = ['thinking', 'asking', 'answered', 'interviewing', 'confirming', 'minor', 'proposed', 'reproducing', 'big'];
 
 // Prototypes per request: the first and up to two adjustments.
 export const MAX_PROTOTYPES = 3;
@@ -76,7 +82,48 @@ export interface PortalMessage {
   images: string[];
   // One per image, for a prototype's ("Antes: …", "Después: …").
   captions?: string[];
+  // The interview (#225): ronin's questions; the person's answers (the
+  // text, then, is their optional note); ronin's summary of what it
+  // understood; or the person sending it on without answering or
+  // confirming it.
+  questions?: InterviewQuestion[];
+  answers?: InterviewAnswer[];
+  understood?: Understood;
+  skipped?: true;
+  confirmed?: true;
   at: string;
+}
+
+// A question of the interview (#225), as the agent wrote it: one option,
+// several, or free text. Options questions may offer "Otra" (free text) and
+// always offer "No sé": the team decides.
+export interface InterviewQuestion {
+  id: string;
+  kind: 'one' | 'many' | 'text';
+  text: string;
+  // Why it asks, or what it's about, in a line.
+  help?: string;
+  options?: string[];
+  other?: boolean;
+  optional?: boolean;
+  // For a text question: an example of an answer.
+  example?: string;
+}
+
+// An answer in words, with its question, as the team reads it.
+export interface InterviewAnswer {
+  id: string;
+  question: string;
+  answer: string;
+  unsure?: true;
+}
+
+// What ronin understood after the interview: each decision (topic →
+// decision), what's left out, and what the team decides.
+export interface Understood {
+  decisions: Array<{ topic: string; decision: string }>;
+  out: string[];
+  team: string[];
 }
 
 export interface Prototype {
@@ -166,6 +213,9 @@ export type RequestEvent = { at: string } & (
   // A try at reproducing a reported error (#137).
   | { kind: 'reproduced'; round: number; reproduced: boolean; test: 'red' | 'green' | 'none' }
   | { kind: 'decided'; decision: 'approved' | 'rejected' }
+  // The interview (#225): a round of questions, its answers, a summary, a
+  // correction, or sending it to the team (confirmed, or without answering).
+  | { kind: 'interview'; step: 'asked' | 'answered' | 'summary' | 'corrected' | 'confirmed' | 'skipped'; round: number }
   | { kind: 'mail'; to: 'person' | 'team'; subject: string; ok: boolean }
   | { kind: 'issue'; number: number; team: boolean }
   | { kind: 'pr'; number: number }
@@ -196,6 +246,9 @@ export interface PortalRequest {
   prototypes?: Prototype[];
   // A reported error (#137), from the moment ronin read it as one.
   bug?: BugReport;
+  // The interview (#225): rounds of questions asked, corrections to the
+  // summary, and how it went to the team.
+  interview?: { rounds: number; corrections: number; skipped?: true; confirmed?: true };
   // When the person approved the prototype or turned it down.
   decision?: { kind: 'approved' | 'rejected'; at: string };
   // The issue it became in the product repo (approved: for ronin; big: for
@@ -278,7 +331,7 @@ export async function startedTodayByUser(now = new Date()): Promise<Map<string, 
   return counts;
 }
 
-async function saveImages(n: number, messageId: number, images: ImageUpload[]): Promise<string[]> {
+export async function saveImages(n: number, messageId: number, images: ImageUpload[]): Promise<string[]> {
   const names: string[] = [];
   for (const [i, image] of images.entries()) {
     const name = `${messageId}-${i + 1}.${image.ext}`;
@@ -332,8 +385,10 @@ export async function addPersonMessage(n: number, text: string, images: ImageUpl
   });
 }
 
+export const nextMessageId = (request: PortalRequest) => Math.max(0, ...request.messages.map((m) => m.id)) + 1;
+
 export function addRoninMessage(request: PortalRequest, text: string, now = new Date(), shots?: { images: string[]; captions: string[] }): number {
-  const id = Math.max(0, ...request.messages.map((m) => m.id)) + 1;
+  const id = nextMessageId(request);
   request.messages.push({ id, from: 'ronin', text, images: shots?.images ?? [], ...(shots ? { captions: shots.captions } : {}), at: now.toISOString() });
   return id;
 }

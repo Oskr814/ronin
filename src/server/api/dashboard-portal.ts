@@ -10,7 +10,8 @@ import type { RunSummary } from './dashboard-data.js';
 // so its page is its own: the conversation, what ronin did with it (its
 // events and its runs) and, once it has them, its issue's and PR's runs.
 
-// Who it waits on now: the person (to answer or decide), ronin (reading it,
+// Who it waits on now: the person (to answer, decide, or answer the
+// interview and confirm its summary, #225), ronin (reading it,
 // drawing a prototype, reproducing an error, opening its issue, making the
 // change) or the dev
 // team (its issue, or approving the PR). Null: nobody — closed, or ronin
@@ -24,6 +25,8 @@ export function waitsOn(r: Pick<PortalRequest, 'status' | 'issue' | 'pr'>): Wait
     case 'reproducing':
       return 'ronin';
     case 'asking':
+    case 'interviewing':
+    case 'confirming':
     case 'proposed':
       return 'person';
     case 'approved':
