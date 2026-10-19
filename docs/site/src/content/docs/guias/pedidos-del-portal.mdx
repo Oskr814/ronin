@@ -21,7 +21,7 @@ El portal, `https://ronin-agent.redmotoshn.com`, es para que la gente que usa la
 
 5. **Si es grande, ronin primero entrevista a la persona.** Si al equipo le faltarían decisiones que solo ella puede tomar (quién puede hacerlo, qué pasa en tal caso, qué queda fuera), le deja **un formulario** de una a cinco preguntas, la mayoría con opciones sacadas de lo que vio en el código. Siempre puede marcar **«No sé, que lo decida el equipo»**, agregar algo con capturas, o **enviarlo sin responder**. Con las respuestas, ronin puede hacer una segunda ronda (no más) o decidir que al final es un ajuste chico. Si es para el equipo, le muestra **«Así lo entendí»**: cada decisión en una línea, lo que decide el equipo y lo que queda fuera. La persona lo confirma (*Sí, enviarlo al equipo*) o lo corrige (hasta 2 veces). Si el pedido ya viene claro, lo pasa directo.
 
-6. **Si es grande, o la persona no aprueba el prototipo:** ronin abre un issue para el equipo, sin asignar. Cuando se cierra, la persona recibe un correo: resuelto si se cerró como completado, o que no se hará por ahora si se cerró como no planeado.
+6. **Si es grande, o la persona no aprueba el prototipo:** ronin abre un issue para el equipo, sin asignar. Si hubo entrevista, el issue trae **«Lo que definió la persona»**: el resumen (y si lo confirmó), lo que queda fuera, lo que decide el equipo y las preguntas y respuestas tal cual. El correo al equipo también lo trae. Cuando se cierra, la persona recibe un correo: resuelto si se cerró como completado, o que no se hará por ahora si se cerró como no planeado.
 
 </Steps>
 
@@ -43,8 +43,8 @@ El portal, `https://ronin-agent.redmotoshn.com`, es para que la gente que usa la
   - **Las etapas:** Pedido → Conversación → Prototipo → Aprobación → Issue → PR → Listo.
   - **Ahora:** qué falta y quién lo tiene que hacer. Si ronin está trabajando, la corrida en vivo.
   - **Actividad:** todo en orden con su hora: los mensajes, cada corrida con su duración y costo, la clasificación, cada ronda de la entrevista, la decisión, cada correo (y si salió), el issue, el PR, el merge y el release que lo llevó.
-  - **Conversación:** lo mismo que ve la persona.
-  - **Para el equipo:** por qué es chico o grande, el resumen técnico, lo que se le pidió al prototipo y el diff de cada uno.
+  - **Conversación:** lo mismo que ve la persona, con las preguntas de la entrevista, sus respuestas y el resumen.
+  - **Para el equipo:** por qué es chico o grande, lo que definió la persona en la entrevista, el resumen técnico, lo que se le pidió al prototipo y el diff de cada uno.
   - **Issue y PR:** como en su ficha, con **Revisar el PR** (abre *Archivos*) y **Abrir la ficha**.
   - **Corridas:** todas las del pedido, con su transcripción.
 - **El issue o PR que salió de un pedido** dice «del pedido P-n» en su ficha, con enlace al pedido.

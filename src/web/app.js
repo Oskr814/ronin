@@ -3704,12 +3704,12 @@ function pedEvent(d, e) {
       : e.verdict === 'error' ? ['run', 'run', 'Lo leyó como un reporte de error', d.bug?.steps ? `<div class="bx">${esc(d.bug.steps)}</div>` : '']
       : ['warn', 'crit', 'Lo pasó al equipo', d.verdict?.kind === 'big' && d.verdict.reason ? `<div class="bx">${esc(d.verdict.reason)}</div>` : ''];
     case 'interview': return {
-      asked: ['warn', 'ronin', `Le dejó preguntas a ${who} (ronda ${e.round})`, '', false],
-      answered: ['ok', 'person', `${who} respondió las preguntas (ronda ${e.round})`, '', false],
-      summary: ['run', 'ronin', `Le mostró a ${who} lo que entendió`, '', false],
-      corrected: ['warn', 'person', `${who} corrigió el resumen`, '', false],
-      confirmed: ['ok', 'person', `${who} confirmó el resumen`, '', false],
-      skipped: ['warn', 'person', `${who} lo envió al equipo sin terminar la entrevista`, '', false],
+      asked: ['', 'ronin', `Ronda ${e.round} de la entrevista`, '', true],
+      answered: ['', 'person', `${who} respondió la ronda ${e.round}`, '', true],
+      summary: ['', 'ronin', `Resumen para que ${who} lo confirme`, '', true],
+      corrected: ['', 'person', `${who} corrigió el resumen`, '', true],
+      confirmed: ['ok', 'ok', `${who} confirmó el resumen: pasa al equipo`, '', true],
+      skipped: ['warn', 'person', `${who} lo envió al equipo sin terminar la entrevista`, '', true],
     }[e.step] ?? ['', 'wait', 'Entrevista', ''];
     case 'decided': return e.decision === 'approved' ? ['ok', 'ok', `${who} aprobó el prototipo`, ''] : ['warn', 'person', `${who} no aprobó el prototipo`, ''];
     case 'mail': return [e.ok ? 'mail' : 'crit', 'mail', e.ok ? `Correo a ${MAIL_TO(d, e.to)}` : `No salió el correo a ${MAIL_TO(d, e.to)}`, `<span class="m">${esc(e.subject)}</span>`, e.ok];
@@ -3742,9 +3742,11 @@ function pedEntryHTML(d, e) {
   if (e.type === 'message') {
     const m = e.message;
     const long = m.text.length > 320;
-    const text = `<div class="bx ${m.from === 'person' ? 'q' : 'r'}">${esc(long ? `${m.text.slice(0, 300)}…` : m.text)}${long ? ' <button class="more" data-ptab2="chat">Ver completo</button>' : ''}</div>`;
+    const text = (m.text ? `<div class="bx ${m.from === 'person' ? 'q' : 'r'}">${esc(long ? `${m.text.slice(0, 300)}…` : m.text)}${long ? ' <button class="more" data-ptab2="chat">Ver completo</button>' : ''}</div>` : '') + pedInterviewHTML(m);
     const tried = d.bug?.reproductions.find((t) => t.messageId === m.id);
-    const title = m.from === 'person' ? (e.first ? `${esc(d.person)} abrió el pedido` : `${esc(d.person)} escribió`) : e.prototype ? `Le mostró el prototipo ${e.prototype}` : tried ? `Le contó lo que encontró (intento ${tried.round})` : 'ronin le respondió';
+    const title = m.answers ? `${esc(d.person)} respondió las preguntas` : m.confirmed ? `${esc(d.person)} confirmó el resumen` : m.skipped ? `${esc(d.person)} lo envió sin responder`
+      : m.questions ? 'Le dejó preguntas' : m.understood ? 'Le mostró lo que entendió'
+        : m.from === 'person' ? (e.first ? `${esc(d.person)} abrió el pedido` : `${esc(d.person)} escribió`) : e.prototype ? `Le mostró el prototipo ${e.prototype}` : tried ? `Le contó lo que encontró (intento ${tried.round})` : 'ronin le respondió';
     const extra = e.first ? `<span class="m">${esc(d.appName)}</span>` : '';
     const proto = e.prototype && d.prototypes.find((p) => p.round === e.prototype)?.patch ? `<button class="more" data-ptab2="team">Ver el borrador para el equipo →</button>`
       : tried ? `<button class="more" data-ptab2="repro">Ver la reproducción →</button>` : '';
@@ -3759,8 +3761,24 @@ function pedActivityHTML(d) {
   return pedNowHTML(d) + `<ol class="pd-tl">${entries.map((e) => pedEntryHTML(d, e)).join('')}${untimed.map((ev) => pedEntryHTML(d, { type: 'event', at: '', event: ev })).join('')}</ol>`;
 }
 
+// The interview of a big request (#225), in a message: the questions ronin
+// left, the person's answers, ronin's summary, or how the person sent it on.
+const PED_KIND = { one: 'una opción', many: 'varias', text: 'texto' };
+function pedInterviewHTML(m) {
+  if (m.questions) return `<ol class="pd-qs">${m.questions.map((q) => `<li>${esc(q.text)} <span class="m">${PED_KIND[q.kind] ?? ''}${q.optional ? ', opcional' : ''}</span>${q.options ? `<span class="o">${q.options.map(esc).join(' · ')}${q.other ? ' · Otra' : ''}</span>` : ''}</li>`).join('')}</ol>`;
+  const dl = (rows) => `<dl class="pd-qa">${rows.map(([k, v, cls]) => `<div><dt>${esc(k)}</dt><dd class="${cls ?? ''}">${esc(v)}</dd></div>`).join('')}</dl>`;
+  if (m.answers) return dl(m.answers.map((a) => [a.question, a.answer, a.unsure ? 'unsure' : '']));
+  if (m.understood) {
+    const u = m.understood;
+    return dl([...u.decisions.map((x) => [x.topic, x.decision]), ...(u.team.length ? [['Lo decide el equipo', u.team.join(' · '), 'unsure']] : []), ...(u.out.length ? [['Queda fuera', u.out.join(' · ')]] : [])]);
+  }
+  if (m.confirmed) return '<p class="m">Confirmó el resumen.</p>';
+  if (m.skipped) return '<p class="m">Lo envió al equipo sin responder.</p>';
+  return '';
+}
+
 function pedChatHTML(d) {
-  return `<p class="m pd-note">Lo mismo que ve ${esc(firstName(d.person))} en el portal.</p><div class="pd-chat">${d.messages.map((m) => `<div class="msg ${m.from}"><div class="w">${m.from === 'person' ? esc(d.person) : 'ronin'} · ${esc(when(m.at))}</div>${esc(m.text)}${pedThumbs(d, m)}</div>`).join('')}</div>`;
+  return `<p class="m pd-note">Lo mismo que ve ${esc(firstName(d.person))} en el portal.</p><div class="pd-chat">${d.messages.map((m) => `<div class="msg ${m.from}"><div class="w">${m.from === 'person' ? esc(d.person) : 'ronin'} · ${esc(when(m.at))}</div>${esc(m.text)}${pedInterviewHTML(m)}${pedThumbs(d, m)}</div>`).join('')}</div>`;
 }
 
 function pedTeamHTML(d) {
@@ -3771,7 +3789,12 @@ function pedTeamHTML(d) {
     const patch = S.ped.patch[`${d.number}:${p.round}`];
     return `<h4>Prototipo ${p.round} · ${esc(when(p.at))}</h4><p>${esc(p.summary)}</p>${p.patch ? (patch?.text ? `<div class="m">${esc(diffStat(patch.text))}</div>${diffHTML(patch.text)}` : `<button class="btn-s" data-ppatch="${p.round}">${patch?.loading ? 'Cargando…' : patch?.error ? 'No se pudo leer: reintentar' : 'Ver el diff'}</button>`) : '<p class="m">Sin diff: el después es una maqueta.</p>'}`;
   }).join('');
-  return `<div class="pd-doc">${v.kind === 'big' ? block('Por qué es para el equipo', v.reason) : block('Qué cambia, en palabras de la persona', v.proposal)}${block('Cómo reproducirlo, según ronin', d.bug?.steps)}${block('Resumen técnico', v.summary)}${block('Lo que se le pidió al prototipo', v.instruction)}${protos}</div>`;
+  // What the person decided in the interview (#225): the last summary, or their answers.
+  const summary = d.messages.filter((m) => m.understood).at(-1);
+  const answers = d.messages.filter((m) => m.answers);
+  const decided = summary ? `<h4>Lo que definió ${esc(firstName(d.person))}${d.interview?.confirmed ? '' : ' (sin confirmar)'}</h4>${pedInterviewHTML(summary)}`
+    : answers.length ? `<h4>Lo que respondió ${esc(firstName(d.person))}</h4>${answers.map(pedInterviewHTML).join('')}` : '';
+  return `<div class="pd-doc">${v.kind === 'big' ? block('Por qué es para el equipo', v.reason) : block('Qué cambia, en palabras de la persona', v.proposal)}${decided}${block('Cómo reproducirlo, según ronin', d.bug?.steps)}${block('Resumen técnico', v.summary)}${block('Lo que se le pidió al prototipo', v.instruction)}${protos}</div>`;
 }
 
 // Where a try left it: ronin fixes it, the person answers, or the team.

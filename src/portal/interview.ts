@@ -250,3 +250,19 @@ export function parseUnderstood(raw: unknown): Understood | undefined {
   const list = (value: unknown) => (Array.isArray(value) ? value.map((v) => clean(v, MAX_DECISION)).filter((v): v is string => Boolean(v)).slice(0, MAX_DECISIONS) : []);
   return { decisions, out: list(r.fuera), team: list(r.equipo) };
 }
+
+// What the interview left for the team: each round's answers, the last
+// summary, and how it ended. Undefined when ronin never interviewed them.
+export interface InterviewRecord {
+  ended: 'confirmed' | 'skipped' | 'answered';
+  rounds: InterviewAnswer[][];
+  understood?: Understood;
+}
+
+export function interviewRecord(r: Pick<PortalRequest, 'interview' | 'messages'>): InterviewRecord | undefined {
+  if (!r.interview?.rounds) return undefined;
+  const rounds = r.messages.filter((m) => m.answers?.length).map((m) => m.answers!);
+  const understood = r.messages.filter((m) => m.understood).at(-1)?.understood;
+  const ended = r.interview.confirmed ? 'confirmed' : r.interview.skipped || !rounds.length ? 'skipped' : 'answered';
+  return { ended, rounds, ...(understood && ended !== 'skipped' ? { understood } : {}) };
+}
