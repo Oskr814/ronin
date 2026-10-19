@@ -2208,25 +2208,35 @@ function entryHTML(e, d, own, repo) {
 const avatar = (login) => (/^[\w-]+$/.test(login ?? '') ? `<img class="av" src="https://avatars.githubusercontent.com/${login}?s=40" alt="">` : '<span class="av"></span>');
 const when = (iso) => (iso ? new Date(iso).toLocaleString('es', { dateStyle: 'medium', timeStyle: 'short' }) : '');
 
+function closeTab(id) {
+  S.open = S.open.filter((x) => x !== id);
+  if (S.sel === id) {
+    if (S.open[0]) select(S.open[0]);
+    else {
+      S.sel = null;
+      S.page = null;
+      stopStream();
+      history.pushState(null, '', '/');
+      renderAll();
+    }
+  } else renderCenter();
+}
+
 function wireCenter() {
   for (const button of document.querySelectorAll('[data-tab]')) button.onclick = () => select(button.dataset.tab);
   for (const button of document.querySelectorAll('[data-goped]')) button.onclick = () => openPedido(Number(button.dataset.goped));
   for (const button of document.querySelectorAll('#center [data-xpl-page]')) button.onclick = () => openExploraciones();
   wireXpl();
-  for (const button of document.querySelectorAll('[data-close]')) {
-    button.onclick = () => {
-      const id = button.dataset.close;
-      S.open = S.open.filter((x) => x !== id);
-      if (S.sel === id) {
-        if (S.open[0]) select(S.open[0]);
-        else {
-          S.sel = null;
-          S.page = null;
-          stopStream();
-          history.pushState(null, '', '/');
-          renderAll();
-        }
-      } else renderCenter();
+  for (const button of document.querySelectorAll('[data-close]')) button.onclick = () => closeTab(button.dataset.close);
+  // The wheel's click closes a tab, as in a browser; holding it down there
+  // doesn't start the browser's autoscroll.
+  for (const tab of document.querySelectorAll('.tabs .tab')) {
+    const id = tab.querySelector('[data-close]')?.dataset.close;
+    tab.onmousedown = (event) => { if (event.button === 1) event.preventDefault(); };
+    tab.onauxclick = (event) => {
+      if (event.button !== 1 || !id) return;
+      event.preventDefault();
+      closeTab(id);
     };
   }
   for (const button of document.querySelectorAll('[data-run]')) {
