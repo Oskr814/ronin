@@ -9,7 +9,7 @@ import { accountName } from '../../core/claude-usage.js';
 import { sees, type Access } from './access.js';
 import { itemKindOf } from '../../core/github.js';
 import { withActiveRepo } from '../../core/repo-context.js';
-import { itemKey, listRuns as listAllRuns, readQueue, readRunLines, readTickInfo, readUsage, runPath, slotsInUse, summarizeRun } from './dashboard-data.js';
+import { hostLoad, itemKey, listRuns as listAllRuns, readQueue, readRunLines, readTickInfo, readUsage, runPath, slotsInUse, summarizeRun } from './dashboard-data.js';
 import { forgetGithub, repoGithub } from './dashboard-github.js';
 import { createFromDashboard, NewIssueError, parseNewIssue, repoApps } from './dashboard-new-issue.js';
 import { cycleView, repoLinear } from './dashboard-linear.js';
@@ -163,7 +163,7 @@ export async function snapshot(login: string): Promise<unknown> {
     reunionesPorRevisar: (await visibleMeetings()).filter((m) => m.status === 'review').length,
     repos,
     // The queue and the Claude accounts, only of the repos it sees.
-    runner: { slots: slotsView(entries), queue: readQueue().filter((job) => !job.repo || repos.includes(job.repo)), tick: readTickInfo() },
+    runner: { slots: slotsView(entries), queue: readQueue().filter((job) => !job.repo || repos.includes(job.repo)), tick: readTickInfo(), host: hostLoad() },
     usage: readUsage().filter((u) => entries.some((entry) => accountName(entry.claudeConfigDir ?? '') === u.account)),
     items,
     // Whether it can deploy (#158): an admin, with a repo that has deploy.
