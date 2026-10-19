@@ -1,7 +1,7 @@
 import type { AgentTask, PreparedTask } from '../core/agent-task.js';
 import { config } from '../core/config.js';
 import { getPullRequestStatus, type Comment } from '../core/github.js';
-import { AGENT_NOTES_REMINDER, COMMIT_STYLE_RULE, fence, repoUrl } from '../core/prompts.js';
+import { AGENT_NOTES_REMINDER, COMMIT_STYLE_RULE, fence, PR_BODY_RULE, repoUrl } from '../core/prompts.js';
 import { activeRepo } from '../core/repo-context.js';
 import { remoteBranchExists } from '../core/worktree.js';
 import { baseBranchFor, planBranch, sliceBranch, specBranch } from './stack.js';
@@ -67,7 +67,8 @@ async function buildSliceTask(task: SliceTask): Promise<PreparedTask> {
           `You are ronin, an autonomous agent working on tracking issue #${task.issueNumber} in ${repoUrl()}.`,
           `Implement this single slice: "${task.sliceTitle}".`,
           "Follow this repo's CLAUDE.md conventions, including its testing requirements.",
-          `When done: run the relevant tests, and make exactly one commit for this slice (squash any work-in-progress commits into one before pushing). Push this branch and open a PR (\`${prCommand}\`) describing the slice.`,
+          `When done: run the relevant tests, and make exactly one commit for this slice (squash any work-in-progress commits into one before pushing). Push this branch and open a PR (\`${prCommand}\`).`,
+          PR_BODY_RULE,
           COMMIT_STYLE_RULE,
           'Scope: only touch files needed for this slice. Do not edit the tracking issue (body, labels, assignees, or anything else) — that is owned entirely by the supervisor, not by you.',
           AGENT_NOTES_REMINDER,
@@ -93,8 +94,9 @@ async function buildSliceTask(task: SliceTask): Promise<PreparedTask> {
           `If the issue's body has a "ronin-ficha:" key, it comes from an exploration finding a human already approved: the diagnosis and the proposal are in the issue (and its finding file, linked as "Ficha"), and so may be the draft change used for the "after" screenshot (the "Cambio borrador usado para el después" diff). Start from them instead of investigating from scratch: confirm the diagnosis against the code, then implement the proposal — the draft is where to start, not necessarily the final change — without widening its scope. Investigate further only where the code contradicts the finding.`,
           'If the issue lacks enough information to act on it (a bug you cannot reproduce, or a request whose scope/approach is ambiguous), comment on the issue asking precisely for what you need ("gh issue comment") and stop without touching any code — that needs a human answer.',
           "Once you're confident in the fix or approach, implement it following this repo's CLAUDE.md conventions, including its testing requirements.",
-          `When done: run the relevant tests, and make exactly one commit. Push this branch and open a PR ("gh pr create") with "Closes #${task.issueNumber}" in the body, describing what was asked and how it was addressed.`,
-          'If the issue shows images (e.g. the "after" of an exploration finding), put them in the PR body too, wherever it shows screenshots, reusing the same image URLs and captions exactly as the issue has them — never just say they are in the issue. Leave out the "before" of an exploration finding (its image URL ends in "/antes-<n>.<ext>", e.g. "antes-1.png?raw=true", and it shows the problem as it was): the changelog takes every screenshot a PR shows.',
+          `When done: run the relevant tests, and make exactly one commit. Push this branch and open a PR ("gh pr create") with "Closes #${task.issueNumber}" on the first line of the body.`,
+          PR_BODY_RULE,
+          'If the issue shows images (e.g. the "after" of an exploration finding), put them in the PR body too, under "## Qué cambió", reusing the same image URLs and captions exactly as the issue has them — never just say they are in the issue. Leave out the "before" of an exploration finding (its image URL ends in "/antes-<n>.<ext>", e.g. "antes-1.png?raw=true", and it shows the problem as it was): the changelog takes every screenshot a PR shows.',
           COMMIT_STYLE_RULE,
           'Scope: only touch files needed for this. Do not edit the tracking issue (body, labels, assignees, or anything else) — that is owned entirely by the supervisor, not by you.',
           AGENT_NOTES_REMINDER,

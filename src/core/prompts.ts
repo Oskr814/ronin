@@ -49,6 +49,20 @@ export const COMMIT_STYLE_RULE =
   '("git log --format=%s -20 <base branch>") and its CLAUDE.md, and match them — format (e.g. "type(scope): description"), scope names and language. ' +
   'The PR title follows the same format as a commit subject, since a squash merge turns it into the commit on the base branch.';
 
+// The body of a PR ronin opens: the same sections every time, so a reviewer
+// can decide from the description alone (#195) and the dashboard can find
+// each one by its heading. The repo's own PR template doesn't apply.
+export const PR_BODY_SECTIONS = ['Qué se pidió', 'Qué cambió', 'Cómo se verificó', 'Decisiones propias', 'Fuera de alcance'] as const;
+
+export const PR_BODY_RULE =
+  'Write the PR body in Spanish with exactly these sections, in this order, each as a "## " heading spelled exactly like this — the dashboard finds them by heading, so do not follow this repo\'s pull request template (.github/pull_request_template.md) even if it has one: ' +
+  '"## Qué se pidió" (what was asked — the issue, or this slice of the spec — in two or three sentences); ' +
+  '"## Qué cambió" (the changes, as a short list someone can follow without reading the diff); ' +
+  '"## Cómo se verificó" (each check you actually ran and its result — tests, a build, the app opened in a preview — and, said plainly, what you did not verify); ' +
+  '"## Decisiones propias" (every choice the request did not settle and you made on your own, each with the reason; "Ninguna." if there were none); ' +
+  '"## Fuera de alcance" (what you noticed but left alone on purpose, e.g. the same problem somewhere else; "Nada." if nothing). ' +
+  'No other sections. A closing reference ("Closes #N") goes on the first line, before the first section; screenshots go under "## Qué cambió".';
+
 export const AGENT_NOTES_REMINDER =
   "If you are committing code changes for this task and learned something " +
   "non-obvious while doing it (a hidden constraint, a subtle invariant, a " +
