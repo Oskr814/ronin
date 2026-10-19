@@ -477,9 +477,9 @@ Ahora cada evento tiene su handler:
 
 **Métricas**: el handler loguea `event_start` con `delayMs` (desde que llegó el evento hasta que tiene sus recursos) y `event_complete` al terminar, junto al `tick_complete` del tick.
 
-### 15. Tablero web (#65, #85, #93, #111, #155, #158)
+### 15. Tablero web (#65, #85, #93, #111, #155, #158, #195)
 
-Una página para ver qué está haciendo ronin sin recorrer GitHub issue por issue ni leer el log: qué agentes corren y qué hacen paso a paso, qué issues esperan a alguien y por qué, cómo va cada stack de slices, qué previews están arriba y cuánto le queda a cada cuenta de Claude. Cada issue o PR tiene su ficha, con lo que dice en GitHub, y desde ahí se le pueden pedir a ronin los comandos más usados (15.11). Cada app que ronin explora tiene su página, con las fichas de su PR de exploración para revisarlas una por una, sus corridas y su inventario, y desde ahí se la explora a pedido (15.12). Cualquier PR se revisa archivo por archivo, con su revisión (15.14). Los admins publican los despliegues de cada repo (§18). Lo que se hace desde la página sale en GitHub a nombre de quien entró (15.3). Se ve solo por la tailnet.
+Una página para ver qué está haciendo ronin sin recorrer GitHub issue por issue ni leer el log: qué agentes corren y qué hacen paso a paso, qué issues esperan a alguien y por qué, cómo va cada stack de slices, qué previews están arriba y cuánto le queda a cada cuenta de Claude. Cada issue o PR tiene su ficha, con lo que dice en GitHub, y desde ahí se le pueden pedir a ronin los comandos más usados (15.11). Cada app que ronin explora tiene su página, con las fichas de su PR de exploración para revisarlas una por una, sus corridas y su inventario, y desde ahí se la explora a pedido (15.12). Cualquier PR se revisa archivo por archivo, con su revisión (15.14); uno de ronin se decide desde su encabezado: aprobar y mergear, pedir un ajuste o cerrar (15.15). Los admins publican los despliegues de cada repo (§18). Lo que se hace desde la página sale en GitHub a nombre de quien entró (15.3). Se ve solo por la tailnet.
 
 #### 15.1 Qué muestra
 
@@ -500,11 +500,11 @@ Una página para ver qué está haciendo ronin sin recorrer GitHub issue por iss
 
   Cada fila lleva un punto de estado, el número, cuántas slices van mergeadas (o el PR de una persona: "PR #910 de dev-ejemplo"), el `RED-n` y el proyecto si hay Linear, la última línea del agente (o lo que espera: "esperando review en #881", "conflictos en #904", "aprobado, falta el merge de #401") y hace cuánto. Un issue elegido, corriendo o bloqueado se despliega en sus slices.
 - **Centro: la ficha del ítem.** Pestañas, una por ítem abierto; al cargar se abren las de los agentes que corren. Cada una muestra la ficha del issue o PR, tenga corridas o no:
-  - **Encabezado.** Título, repo, el link a GitHub y el botón *Acciones* (15.11). Debajo, chips con su estado. El PR del ítem (o, en un issue, el de la slice que avanza) suma si tiene conflictos con su base, sus checks, la review y si es draft. Un issue suma cuántas slices van mergeadas y qué espera.
+  - **Encabezado.** Título, repo, el link a GitHub y el botón *Acciones* (15.11). En un PR de ronin, también *Cerrar*, *Pedir un ajuste* y *Aprobar y mergear* (15.15); en el de una persona, *Revisar* (15.14). Debajo, chips con su estado. El PR del ítem (o, en un issue, el de la slice que avanza) suma si tiene conflictos con su base, sus checks, la review y si es draft. Un issue suma cuántas slices van mergeadas y qué espera.
   - **Actividad.** Una línea con la última corrida (estado, hace cuánto, duración, costo y el error si falló) y las anteriores de los últimos 14 días, cada una con su transcript. Si hay una en curso, una tarjeta con lo último que dijo el agente, sus últimos cuatro pasos y el reloj, que se sigue en vivo.
   - **Pestañas *Fichas*, *Corridas* e *Inventario*,** solo en un PR de exploración, que es la página de su app (15.12). *Fichas* va primera: las propuestas que trae, para revisarlas y decidir. Mientras está abierta, la columna de contexto se oculta para dejarle lugar.
   - **Pestaña *Archivos*,** en un PR y en un issue con un PR que avanza: el diff con sus hilos, para comentar y revisar (15.14). Como *Fichas*, ocupa también la columna de contexto.
-  - **Pestañas *Issue*, *PR* y *Comentarios*.** La descripción del issue y la de su PR (o la del PR y la de su issue de tracking), y los comentarios del ítem, con los de ronin marcados. Es el markdown de GitHub, saneado (15.3). Un `#123` abre ese ítem en el tablero si está en la barra lateral, y si no, en GitHub.
+  - **Pestañas *Issue*, *PR* y *Comentarios*.** La descripción del issue y la de su PR (o la del PR y la de su issue de tracking), y los comentarios del ítem, con los de ronin marcados. Es el markdown de GitHub, saneado (15.3). La de un PR de ronin se muestra por secciones, con *Decisiones propias* destacada (15.15). Un `#123` abre ese ítem en el tablero si está en la barra lateral, y si no, en GitHub.
   - **El transcript de una corrida** se abre desde la actividad, con "← Ficha" para volver: los textos del agente y sus pasos (leyó, buscó, editó, corrió), arriba las corridas del ítem y abajo el estado, el reloj, el modelo y el worktree. Una corrida en curso se sigue en vivo, y si arranca una nueva sobre el ítem abierto, aparece sola. Lo que no es un issue ni un PR (el changelog) abre directo en el transcript, igual que una corrida elegida en *Hoy*.
 - **Contexto, a la derecha.**
   - El motivo de un bloqueo y cómo destrabarlo.
@@ -518,6 +518,7 @@ Una página para ver qué está haciendo ronin sin recorrer GitHub issue por iss
   - ***Necesitan tu atención*:** los issues bloqueados con su motivo, los PRs de ronin que esperan review o merge (el que más espera primero, desde la última corrida), el PR de exploración y las previews arriba. Cada fila abre su ítem; la del PR de exploración, la página de su app.
   - **Con Linear (§15.13), el ciclo actual:** una barra por estado y un gráfico de issues en el ciclo contra hechos, día por día. Debajo, el desglose por proyecto (un clic filtra la barra lateral) y quién tiene lo que falta.
   - **Las últimas 12 horas:** un carril por repo y cada corrida como una barra. Al hacerle clic, se abre esa corrida.
+- **Teclado (#195).** En la ficha, mientras no se escribe: `1`–`9` van a una pestaña; `j`/`k` a la siguiente o anterior unidad de la pestaña (sección de la descripción, comentario, archivo en *Archivos*, ficha en *Fichas*); `d`/`u` media página; `gg`/`G` al inicio o al final; `]p`/`[p` al siguiente o anterior PR de ronin que espera una decisión (listado, no draft, sin aprobar y sin un agente corriendo). `?` abre la ayuda con todos, también desde el botón junto a las pistas de la barra de pestañas. `Ctrl/Cmd + número` no se usa: el navegador lo reserva.
 - **Celular.** La barra lateral es la lista principal, y un ítem abre su ficha con el contexto debajo.
 - **Actualización.** La página pide el snapshot cada 5 segundos mientras está visible, y el transcript de una corrida en curso le llega por *server-sent events*. La ficha se vuelve a pedir cada 30 segundos (el servidor la tiene en caché, 15.8). El centro solo se redibuja si algo cambió, así que leer, seleccionar texto o tener el menú abierto no se interrumpe. No hace falta recargar.
 
@@ -657,6 +658,7 @@ Todo, salvo los webhooks y `/api/auth/*`, pide sesión:
 | `GET /api/items/<id>/files/content?path=` | Uno de esos archivos en el head del PR, para mostrar más líneas |
 | `GET /api/items/<id>/files/mine` | Lo que la persona marcó como visto y su revisión pendiente |
 | `POST /api/items/<id>/files/actions` | Comenta, responde, resuelve, marca visto o maneja la revisión: `{ action, … }` (15.14) |
+| `POST /api/items/<id>/decision` | En un PR abierto de ronin que no es draft: `{ decision: approve \| adjust \| close, text?, closeIssue? }` (15.15) |
 | `GET /api/runs/<runId>` | El transcript de una corrida |
 | `GET /api/runs/<runId>/stream` | Lo que se le agrega, por *server-sent events*, hasta que termina |
 | `GET /api/pedidos` | Los pedidos del portal de los repos que ve la sesión, con a quién espera cada uno (§16.11) |
@@ -810,7 +812,7 @@ La pestaña *Archivos* de la ficha de un PR (o de un issue, con los archivos de 
   - el diff unificado o lado a lado (en el celular, unificado);
   - cada hilo bajo su línea. Los resueltos van plegados; los que son sobre el archivo, o sobre código que ya cambió, van arriba del archivo;
   - los diffs de más de 400 líneas y los archivos vistos empiezan plegados;
-  - `j`/`k` pasan de archivo, `v` marca visto y salta al siguiente sin ver, `r` abre la revisión.
+  - `j`/`k` pasan de archivo, `v` marca visto y salta al siguiente sin ver, `r` abre la revisión (en un PR de ronin no: sus comentarios pendientes los lleva *Pedir un ajuste*, 15.15).
 - **Comentar:**
   - **Una línea:** clic en su número, del lado viejo o del nuevo. Shift+clic elige un rango del mismo lado y del mismo hunk. Las líneas de contexto que se agregan con "mostrar más" no se pueden comentar, porque GitHub solo acepta líneas del diff.
   - **El archivo entero:** "Comentar archivo".
@@ -823,14 +825,14 @@ La pestaña *Archivos* de la ficha de un PR (o de un issue, con los archivos de 
   - "Empezar una revisión" la crea sobre el commit a la vista (`addPullRequestReview`). Desde ahí, cada comentario o respuesta "Se suma a la revisión" (`addPullRequestReviewThread`, `addPullRequestReviewThreadReply`);
   - lo pendiente se ve en el diff como *Pendiente*, con editar y borrar, y solo lo ve su autor;
   - se lee de los hilos del PR con el token de la persona: cada comentario dice si está `PENDING`, y los pendientes de otros no aparecen.
-- ***Revisar*** / ***Terminar revisión***, en la cabecera de la ficha (en un issue, *Revisar PR #N*, para su PR que avanza), en la barra de *Archivos* o con `r`:
+- ***Revisar*** / ***Terminar revisión***, en un PR de una persona o en el draft de ronin (un spec), en la cabecera de la ficha (en un issue, *Revisar PR #N*, para su PR que avanza), en la barra de *Archivos* o con `r`:
   - **El panel:** un resumen, Comentar / Aprobar / Pedir cambios y la lista de lo pendiente.
   - **Se cierra** con la ×, con Escape o con un clic fuera de él, salvo mientras se manda.
   - **Mandar:** `submitPullRequestReview`. Sin nada pendiente, va una revisión con solo el resumen (aprobar sin comentarios).
   - **Descartar:** `deletePullRequestReview`.
   - **En un PR propio,** aprobar y pedir cambios no se ofrecen y el servidor los rechaza, como GitHub.
   - **En un PR de exploración** el panel no aparece: se aprueba con su propio gate (15.12).
-- **Que ronin la atienda.** ronin no lee el resumen de una review (`findUnprocessedMentions` lee los comentarios sueltos y los de review), y sus comentarios solos no disparan `/fix-comments`. Por eso, en un PR de ronin con comentarios pendientes o pidiendo cambios, el panel ofrece *Que ronin los atienda ahora*: después de mandar la revisión comenta `@ronin-agent /fix-comments` a nombre de la persona.
+- **Que ronin la atienda.** ronin no lee el resumen de una review (`findUnprocessedMentions` lee los comentarios sueltos y los de review), y sus comentarios solos no disparan `/fix-comments`. Por eso, en un draft de ronin con comentarios pendientes o pidiendo cambios, el panel ofrece *Que ronin los atienda ahora* (en un PR de ronin listo para revisar, eso es *Pedir un ajuste*, 15.15): después de mandar la revisión comenta `@ronin-agent /fix-comments` a nombre de la persona.
 - **Aprobar y mergear.** Al aprobar cualquier PR, de ronin o de otra persona, el panel ofrece *Mergear apenas pasen los checks*, marcada por defecto: después de la aprobación comenta `@ronin-agent /auto-merge` a nombre de la persona, y ronin contesta qué falta (§13). No aparece si el PR ya tiene `ronin:auto-merge`, si es draft (ronin no lee comandos en el draft de un humano) o si tiene conflictos (el comando lo rechazaría). Junto con *Que ronin los atienda ahora* queda deshabilitada: el PR se mergearía antes de que ronin atienda los comentarios.
 - **API** (15.9):
   - `GET /api/items/<id>/files`, `/files/content?path=` y `/files/mine`. Este último trae lo visto y la revisión pendiente de la persona, sin caché.
@@ -842,6 +844,18 @@ La pestaña *Archivos* de la ficha de un PR (o de un issue, con los archivos de 
     - `submit` (`event`, `text`, `commitId`, `fixComments`).
   - Cada pedido se valida contra el PR leído: un archivo que cambia, un hilo o comentario suyo, un comentario de la revisión de la persona. Si no pasa, responde 400; lo demás lo decide GitHub y la página muestra su mensaje.
   - Después de escribir algo público se descartan las cachés de archivos y de la ficha. Lo pendiente y lo visto no las tocan.
+
+#### 15.15 Decidir un PR de ronin (#195)
+
+Ante un PR de ronin casi siempre se decide una de tres cosas, y se decide leyendo su descripción: mergearlo, pedirle un ajuste o descartarlo. Por eso su ficha no ofrece la revisión de GitHub (15.14), cuyo "Pedir cambios" ronin no lee, sino esas tres decisiones.
+
+- **La descripción.** `implement-slice` y `fix-issue` escriben el cuerpo del PR siempre con las mismas secciones, en este orden y con estos títulos (`PR_BODY_RULE` y `PR_BODY_SECTIONS` en `core/prompts.ts`): *Qué se pidió*, *Qué cambió* (con las capturas), *Cómo se verificó* (lo que corrió y lo que no probó), *Decisiones propias* (lo que el pedido no definía, con el porqué) y *Fuera de alcance*. `Closes #N` va en la primera línea. La plantilla de PR del repo no se usa. La pestaña *Descripción* (o *PR #N* en un issue) las muestra por separado, con *Decisiones propias* destacada, que es lo que más vale revisar. Un cuerpo sin esas secciones (un PR viejo) se muestra tal cual.
+- **Dónde.** En el encabezado de la ficha, así están en todas las pestañas: *Cerrar*, *Pedir un ajuste* y *Aprobar y mergear*, con `X`, `P` y `A`. Solo en un PR de ronin abierto que no es draft (`decidable`); en un issue, para su PR que avanza. Cada una abre un panel debajo de los botones que dice qué se va a mandar; se cierra con Escape o con un clic fuera, salvo mientras se manda.
+- **Aprobar y mergear** (`↵` confirma): la aprobación (`submitPullRequestReview`, con la revisión pendiente si hay: GitHub admite una sola por persona) y `@ronin-agent /auto-merge`, salvo que el PR ya tenga `ronin:auto-merge` o conflictos. El panel dice si los checks pasaron, corren o fallan, y que los comentarios pendientes van con la aprobación sin que ronin los atienda.
+- **Pedir un ajuste** (`Ctrl ↵` manda): un texto, con frases rápidas. Sin comentarios pendientes, se comenta `@ronin-agent <texto>`: el flujo `review-request` (§7.2), que aplica lo pedido y responde. Con comentarios pendientes, se manda la revisión como COMMENT y después `@ronin-agent /fix-comments` con el texto, que llega al prompt de `fix-comments` como su comentario disparador. Un texto que empieza con `/` se rechaza: se leería como un comando (para eso está *Acciones*). En *Archivos*, la barra dice cuántos comentarios pendientes hay y que los lleva *Pedir un ajuste*.
+- **Cerrar** (`Ctrl ↵` confirma): el motivo, opcional, como comentario; se descarta la revisión pendiente y se cierra el PR (`closePr`). *Cerrar también el issue* viene marcada y lo cierra como no planeado (`closeIssue`). Si queda abierto, `processIssue` lo bloquea y avisa: una slice sin PR abierto ni mergeado.
+- **Después de decidir,** una línea bajo el encabezado dice qué se hizo durante unos minutos, mientras GitHub lo refleja, y se descartan las cachés de archivos, de la ficha y de la lectura del repo.
+- **Servidor:** `POST /api/items/<id>/decision` (`server/api/dashboard-decision.ts`), a nombre de quien entró (`github-as-user.ts`, 15.3) y con el permiso `acciones`. Rechaza con 400 lo que no es un PR abierto de ronin fuera de draft, una decisión que no existe y un ajuste vacío.
 
 ### 16. Portal de pedidos (#114)
 
