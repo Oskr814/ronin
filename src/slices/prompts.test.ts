@@ -123,6 +123,16 @@ describe('runAgentTask — fix-issue prompt', () => {
     expect(prompt).toContain('/antes-<n>.<ext>');
   });
 
+  it("starts an exploration finding's issue from the finding's diagnosis and draft, instead of from scratch", async () => {
+    await runAgentTask({ type: 'fix-issue', issueNumber: 228, sliceIndex: 0, sliceTitle: 'Fix foo' });
+
+    const prompt = runClaudeHeadless.mock.calls[0][1] as string;
+    expect(prompt).toContain('"ronin-ficha:" key');
+    expect(prompt).toContain('Cambio borrador usado para el después');
+    expect(prompt).toContain('Start from them instead of investigating from scratch');
+    expect(prompt).toContain('without widening its scope');
+  });
+
   it('returns runClaudeHeadless\'s result so the caller can read the RONIN_STATUS marker', async () => {
     runClaudeHeadless.mockResolvedValueOnce('Opened PR #42.\nRONIN_STATUS: done');
 
