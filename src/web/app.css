@@ -1330,15 +1330,19 @@ select.aj-in { width: auto; min-width: 180px; }
 .psec.decis h3 { margin-top: 10px; }
 @media (max-width: 760px) {
   .head .row { flex-wrap: wrap; }
+  .hbtns { flex-wrap: wrap; flex-basis: 100%; }
   .dwrap { flex-basis: 100%; }
   .dwrap > .dbtn { flex: 1; justify-content: center; }
   .dbtn kbd, #act kbd, .menu b kbd { display: none; }
   .drop { position: fixed; left: 8px; right: 8px; top: auto; bottom: 38px; width: auto; }
   .drop footer .m { display: none; }
 }
-/* with the decisions, the title keeps room: they drop below it if they don't fit */
+/* with the decisions, the title keeps room: they drop below it if they don't fit,
+   all together with Acciones and to the right, where a dialog has room to open */
 .head .row:has(.dwrap) { flex-wrap: wrap; }
 .head .row:has(.dwrap) h1 { flex: 1 1 320px; }
+.hbtns { display: flex; gap: 6px; align-items: center; margin-left: auto; position: relative; flex: none; max-width: 100%; }
+.hbtns .dwrap { position: static; }
 /* the keyboard (#195): the unit j/k is on, the help */
 .doctabs .keys .kh { width: 18px; height: 18px; margin-left: 4px; border: 1px solid var(--rule); border-radius: 50%; font-size: 11px; text-align: center; color: var(--muted); line-height: 16px; }
 .doctabs .keys .kh:hover { color: var(--ink); background: var(--hover); }
