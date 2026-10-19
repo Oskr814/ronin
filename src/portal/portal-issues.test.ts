@@ -156,6 +156,30 @@ describe('portal issues', () => {
     for (const part of ['**No se pudo reproducir** con datos de prueba', '**Lo que sospecha ronin:**', '**El test que se intentó** (e2e)', 'no prueba el error']) expect(body).toContain(part);
   });
 
+  it("a big one that went through the interview carries what the person decided (#225)", () => {
+    const answers = [{ id: 'quien', question: '¿Quién | decide?', answer: 'Gerencia' }, { id: 'aviso', question: '¿A quién se avisa?', answer: 'No sé, que lo decida el equipo', unsure: true }];
+    const base = {
+      number: 3, title: 'Precios para mayoristas', app: 'backoffice', status: 'big', verdict: { kind: 'big', reason: 'Regla nueva', summary: 'PriceList', at: '' },
+      messages: [
+        { id: 1, from: 'person', text: 'Precios para mayoristas', images: [], at: '' },
+        { id: 2, from: 'ronin', text: 'Respóndeme esto', images: [], questions: [], at: '' },
+        { id: 3, from: 'person', text: '', images: [], answers, at: '' },
+        { id: 4, from: 'ronin', text: 'Así lo entendí', images: [], understood: { decisions: [{ topic: 'Quién decide', decision: 'Gerencia' }], out: ['Precios por producto'], team: ['A quién se avisa'] }, at: '' },
+      ],
+    };
+    const body = (over: object) => portalIssueBody({ ...base, ...over } as unknown as PortalRequest, undefined, { prototype: [], attached: [] }, undefined, undefined);
+    const confirmed = body({ interview: { rounds: 1, corrections: 0, confirmed: true } });
+    for (const part of ['## Lo que definió la persona', 'la persona confirmó este resumen', '| Quién decide | Gerencia |', '**Queda fuera:** Precios por producto.', '**Para decidir el equipo:** A quién se avisa.', '- ¿Quién | decide? → Gerencia', '- ¿A quién se avisa? → _No sé, que lo decida el equipo_']) expect(confirmed).toContain(part);
+    expect(confirmed.indexOf('## Lo que definió la persona')).toBeLessThan(confirmed.indexOf('## Lo que vio ronin'));
+    expect(body({ interview: { rounds: 1, corrections: 0 } })).toContain('La persona **no confirmó** este resumen');
+    // Answered, no summary: the answers as a table.
+    const answered = body({ interview: { rounds: 1, corrections: 0 }, messages: base.messages.slice(0, 3) });
+    expect(answered).toContain('| ¿Quién \\| decide? | Gerencia |');
+    expect(answered).toContain('| ¿A quién se avisa? | _Sin decidir: lo decide el equipo._ |');
+    expect(body({ interview: { rounds: 1, corrections: 0, skipped: true }, messages: base.messages.slice(0, 2) })).toContain('prefirió enviarlo sin responderlas');
+    expect(body({})).not.toContain('Lo que definió la persona');
+  });
+
   it('cuts a huge diff and says where the whole one is', () => {
     const body = portalIssueBody({ number: 3, title: 't', app: 'backoffice', messages: [], verdict: { kind: 'minor', summary: '', at: '' } } as unknown as PortalRequest, undefined, { prototype: [], attached: [] }, 'x'.repeat(50_000), '/data/requests/3/proto/1.diff');
     expect(body.length).toBeLessThan(45_000);

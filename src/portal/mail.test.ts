@@ -59,6 +59,17 @@ describe('portal mails', () => {
     for (const part of ['María Fernández <mf@x.com>', 'Propuesta: Un enlace', 'ClientInfoPanel.tsx', '¿En las tres pantallas?', '/data/requests/31/img']) expect(mail.text).toContain(part);
   });
 
+  it("the team's mail has what the person decided in the interview (#225)", () => {
+    const r = request({ status: 'big', interview: { rounds: 1, corrections: 0, confirmed: true }, verdict: { kind: 'big', reason: 'Regla nueva', summary: 'PriceList', at: '' }, messages: [
+      { id: 1, from: 'person', text: 'Precios', images: [], at: '2026-10-17T10:00:00Z' },
+      { id: 2, from: 'person', text: '', images: [], answers: [{ id: 'q', question: '¿Quién?', answer: 'Gerencia' }], at: '2026-10-17T10:05:00Z' },
+      { id: 3, from: 'ronin', text: 'Así lo entendí', images: [], understood: { decisions: [{ topic: 'Quién decide', decision: 'Gerencia' }], out: [], team: ['Los avisos'] }, at: '2026-10-17T10:06:00Z' },
+    ] });
+    const mail = teamRequestMail(r, user, 'team@x.com', '/data');
+    expect(mail.text).toContain('Lo que definió la persona (lo confirmó):\n- Quién decide: Gerencia\nPara decidir el equipo: Los avisos');
+    expect(teamRequestMail(request(), user, 'team@x.com', '/data').text).not.toContain('Lo que definió');
+  });
+
   it('the prototype mail sends the person to the portal, where the images are', () => {
     const mail = prototypeMail(request({ status: 'proposed' }), user, URL);
     expect(mail.subject).toBe('Tu prototipo está listo: Abrir la ficha del cliente');

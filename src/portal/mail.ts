@@ -1,6 +1,7 @@
 import type { Mail } from '../core/notifier.js';
 import type { LinkKind, PortalUser } from './accounts.js';
 import type { PortalApp } from './apps.js';
+import { interviewRecord } from './interview.js';
 import type { PortalRequest } from './requests.js';
 
 // The portal's emails (#114): plain text, and a simple HTML with inline
@@ -253,6 +254,18 @@ function teamKind(request: PortalRequest): string {
 // its prototype turned down or impossible), with its issue and its
 // conversation. `patch` is the last prototype's diff, or a reported error's
 // last reproduction's.
+// The interview (#225), for the team's mail: the decisions, or the answers.
+function interviewLines(request: PortalRequest): string | null {
+  const record = interviewRecord(request);
+  if (!record) return null;
+  if (!record.rounds.length) return 'La persona prefirió enviarlo sin responder las preguntas de ronin.';
+  const u = record.understood;
+  const lines = u
+    ? [`Lo que definió la persona (${record.ended === 'confirmed' ? 'lo confirmó' : 'no lo confirmó'}):`, ...u.decisions.map((d) => `- ${d.topic}: ${d.decision}`), ...(u.out.length ? [`Queda fuera: ${u.out.join('; ')}`] : []), ...(u.team.length ? [`Para decidir el equipo: ${u.team.join('; ')}`] : [])]
+    : ['Lo que respondió la persona:', ...record.rounds.flat().map((a) => `- ${a.question} → ${a.answer}`)];
+  return lines.join('\n');
+}
+
 export function teamRequestMail(request: PortalRequest, user: PortalUser | undefined, to: string, dataDir: string, patch?: string): Mail {
   const kind = teamKind(request);
   const who = user ? `${user.name} <${user.email}>` : request.userId;
@@ -271,6 +284,7 @@ export function teamRequestMail(request: PortalRequest, user: PortalUser | undef
     request.bug ? `Es un reporte de error; ronin ${repro ? `intentó reproducirlo ${request.bug.reproductions.length === 1 ? 'una vez' : `${request.bug.reproductions.length} veces`}` : 'no llegó a reproducirlo'}.` : request.status === 'approved' || request.decision ? `La persona vio ${request.prototypes?.length === 1 ? 'el prototipo' : `${request.prototypes?.length ?? 0} prototipos`}: ${kind}.` : `ronin lo clasificó como ${kind}.`,
     v?.proposal ? `Propuesta: ${v.proposal}` : null,
     v?.reason ? `Motivo: ${v.reason}` : null,
+    interviewLines(request),
     v?.summary ? `Resumen técnico:\n${v.summary}` : null,
     last ? `El prototipo ${last.round}:\n${last.summary}` : null,
     request.bug?.steps ? `Cómo reproducirlo, según ronin:\n${request.bug.steps}` : null,

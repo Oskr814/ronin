@@ -1096,7 +1096,8 @@ Antes de pasar un pedido grande al equipo, ronin le hace a la persona las pregun
 - **Saltarla:** *Enviar sin responder* lo pasa a `big` tal como llegó, con el veredicto que ya tenía. Desde el resumen, lo pasa con las respuestas.
 - **Los topes son del servidor, no del agente:** 2 rondas de preguntas (`MAX_ROUNDS`), 5 preguntas por ronda (`MAX_INTERVIEW_QUESTIONS`) y 2 correcciones del resumen (`MAX_CORRECTIONS`). `request.interview` lleva las rondas, las correcciones y cómo terminó (`skipped` o `confirmed`).
 - **Actividad:** el evento `interview`, con su paso (`asked`, `answered`, `summary`, `corrected`, `confirmed` o `skipped`) y la ronda.
-- **Pendiente** (la última etapa de #225): la sección del issue y la conversación en el tablero.
+- **Para el equipo:** `interviewRecord` junta las respuestas de cada ronda, el último resumen y cómo terminó (`confirmed`, `answered` o `skipped`). El issue del equipo (16.6) trae **«Lo que definió la persona»** después de «Lo que pide»: la tabla del resumen (o la de las respuestas si no hubo resumen), si la persona lo confirmó, lo que queda fuera, lo que decide el equipo y las preguntas y respuestas tal cual. Si saltó las preguntas, lo dice. El correo al equipo trae lo mismo en texto.
+- **En el tablero** (16.11): la conversación y la actividad muestran las preguntas, las respuestas y el resumen; *Para el equipo* muestra lo que definió la persona. Los eventos `interview` van como líneas cortas en la actividad.
 
 ### 17. Reuniones: de las notas al trabajo planificado (#62)
 

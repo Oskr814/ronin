@@ -6,6 +6,7 @@ import { closeIssueNotPlanned, createIssue, listIssuesWithLabel } from '../core/
 import { log } from '../core/logger.js';
 import { activeRepo } from '../core/repo-context.js';
 import { getUser, type PortalUser } from './accounts.js';
+import { interviewRecord } from './interview.js';
 import { sendPortalMails, teamMail } from './notify.js';
 import { addEvent, getRequest, patchOf, prototypePatchPath, requestImagePath, RONINS, updateRequest, type PortalRequest } from './requests.js';
 
@@ -45,6 +46,38 @@ function teamReason(request: PortalRequest): string {
 }
 
 const fencedOutput = (label: string, output: string) => `<details><summary>${label}</summary>\n\n\`\`\`\n${output.replace(/```/g, "'''")}\n\`\`\`\n\n</details>`;
+
+// A table cell of what a person wrote: one line, no pipes, no pings.
+const cell = (text: string) => text.replace(/@/g, '@​').replace(/\|/g, '\\|').replace(/\s*\n\s*/g, ' ');
+const bullet = (text: string) => text.replace(/@/g, '@​').replace(/\s*\n\s*/g, ' ');
+
+// The interview of a big request (#225): what the person decided, as the
+// summary they confirmed (or the last one ronin showed them), what stays
+// out, what the team decides, and the questions and answers as they were.
+export function interviewSection(request: PortalRequest): string {
+  const record = interviewRecord(request);
+  if (!record) return '';
+  if (record.ended === 'skipped' && !record.rounds.length) return '## Lo que definió la persona\n\nronin le dejó preguntas, pero la persona prefirió enviarlo sin responderlas.';
+  const rounds = record.rounds.length;
+  const intro = record.ended === 'confirmed'
+    ? `ronin le hizo ${rounds === 1 ? 'una ronda' : `${rounds} rondas`} de preguntas y la persona confirmó este resumen antes de enviarlo.`
+    : record.understood
+      ? `ronin le hizo ${rounds === 1 ? 'una ronda' : `${rounds} rondas`} de preguntas. La persona **no confirmó** este resumen: lo envió sin confirmarlo.`
+      : `ronin le hizo ${rounds === 1 ? 'una ronda' : `${rounds} rondas`} de preguntas; estas son sus respuestas.`;
+  const u = record.understood;
+  const table = u
+    ? ['| Tema | Decisión |', '|---|---|', ...u.decisions.map((d) => `| ${cell(d.topic)} | ${cell(d.decision)} |`)].join('\n')
+    : ['| Pregunta | Respuesta |', '|---|---|', ...record.rounds.flat().map((a) => `| ${cell(a.question)} | ${a.unsure ? '_Sin decidir: lo decide el equipo._' : cell(a.answer)} |`)].join('\n');
+  const raw = record.rounds.map((answers, i) => `${rounds > 1 ? `**Ronda ${i + 1}**\n\n` : ''}${answers.map((a) => `- ${bullet(a.question)} → ${a.unsure ? '_No sé, que lo decida el equipo_' : bullet(a.answer)}`).join('\n')}`).join('\n\n');
+  return [
+    '## Lo que definió la persona',
+    intro,
+    table,
+    u?.out.length ? `**Queda fuera:** ${u.out.map(bullet).join('; ')}.` : '',
+    u?.team.length ? `**Para decidir el equipo:** ${u.team.map(bullet).join('; ')}.` : '',
+    u ? `<details><summary>Las preguntas y respuestas tal cual</summary>\n\n${raw}\n\n</details>` : '',
+  ].filter(Boolean).join('\n\n');
+}
 
 // A reported error's last try at reproducing it: what ronin did, the test
 // and the images. A test that never failed goes as what was tried, never as
@@ -102,6 +135,7 @@ export function portalIssueBody(request: PortalRequest, user: PortalUser | undef
       : `${where} ${bug ? 'Es un **reporte de error**, para' : 'Es para'} el equipo de desarrollo: ${teamReason(request)}`,
     approved ? '## El cambio aprobado' : bug ? '## Lo que reporta' : '## Lo que pide',
     approved ? (v?.proposal ?? request.title) : `${request.title}${v?.proposal ? `\n\nLo que ronin le propuso: ${v.proposal}` : ''}`,
+    approved ? '' : interviewSection(request),
     shots.prototype.length ? `## ${approved ? 'El prototipo' : `El último prototipo que vio${rounds > 1 ? ` (de ${rounds})` : ''}`}\n\n${shots.prototype.map((s) => `**${s.caption}**\n\n${image(s)}`).join('\n\n')}` : '',
     bug ? reproductionSection(request, shots.reproduction ?? [], image) : '',
     approved ? '## Para implementarlo' : '## Lo que vio ronin',
