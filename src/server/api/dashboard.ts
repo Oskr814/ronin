@@ -449,7 +449,7 @@ async function detail(id: string, login: string): Promise<unknown | null> {
   // `ronin`: its login, so the page can tell its comments apart. `exploration`:
   // an exploration PR, whose page has its findings to review (#93).
   const pr = ctx.ref.kind === 'pr' ? ctx.gh?.prs.find((p) => p.number === ctx.ref.number) : undefined;
-  return { ref: ctx.ref, ronin: config.githubLogin, ...ctx.detail, exploration: Boolean(pr && isExplorationPr(pr)), actions: listActions(ctx.ref, ctx.gh, ctx.detail, login), pedido: await pedidoOf(ctx.entry.productRepo, ctx.ref) };
+  return { ref: ctx.ref, ronin: config.githubLogin, ...ctx.detail, exploration: Boolean(pr && isExplorationPr(pr)), actions: listActions(ctx.ref, ctx.gh, ctx.detail, login, await repoApps(ctx.entry)), pedido: await pedidoOf(ctx.entry.productRepo, ctx.ref) };
 }
 
 // The portal request an issue or PR came from (#132), to link its page.
@@ -505,7 +505,7 @@ async function readJson(req: IncomingMessage, max = MAX_BODY): Promise<Record<st
   }
 }
 
-// POST /api/items/<id>/actions { action, text? }. Only JSON: a form from
+// POST /api/items/<id>/actions { action, text?, app? }. Only JSON: a form from
 // another site can't send it, on top of tailnet.ts's Origin check.
 async function postAction(req: IncomingMessage, res: ServerResponse, id: string, session: Session): Promise<void> {
   if (!(req.headers['content-type'] ?? '').startsWith('application/json')) {
@@ -524,10 +524,12 @@ async function postAction(req: IncomingMessage, res: ServerResponse, id: string,
   }
   if (refused(res, ctx.entry.productRepo, 'acciones')) return;
   try {
-    const done = await runAction(ctx.entry, ctx.ref, ctx.gh, ctx.detail, session, body.action, body.text);
+    const done = await runAction(ctx.entry, ctx.ref, ctx.gh, ctx.detail, session, body.action, body.text, undefined, await repoApps(ctx.entry), body.app);
     // The next read shows the comment and whatever the action changed.
     forgetDetails(ctx.entry.productRepo);
     forgetFiles(ctx.entry.productRepo);
+    // Taken, it moves to ronin's issues: read again on the next poll.
+    if (body.action === 'assign') forgetGithub(ctx.entry.productRepo);
     json(res, 200, done);
   } catch (error) {
     if (error instanceof ActionError) json(res, 409, { error: error.message });

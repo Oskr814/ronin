@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const setIssueState = vi.fn();
 vi.mock('../../core/github.js', () => ({ setIssueState: (...args: unknown[]) => setIssueState(...args) }));
-vi.mock('../../core/config.js', () => ({ config: { githubLogin: 'ronin-agent' }, LABEL_AUTO_MERGE: 'ronin:auto-merge' }));
+vi.mock('../../core/config.js', () => ({ config: { githubLogin: 'ronin-agent' }, LABEL_AUTO_MERGE: 'ronin:auto-merge', LABEL_MANAGED: 'ronin' }));
 vi.mock('../../core/logger.js', () => ({ log: { error: vi.fn(), info: vi.fn() } }));
 vi.mock('../../core/repo-context.js', () => ({ withActiveRepo: (_entry: unknown, fn: () => unknown) => fn() }));
 
@@ -19,11 +19,16 @@ const gh = (over: Record<string, unknown> = {}) => ({
   ...over,
 });
 const discussion = (number: number, extra: Record<string, unknown> = {}) => ({ number, title: '', body: '', author: '', createdAt: '', url: '', state: 'OPEN', labels: [], comments: [], ...extra });
+const NEW_REF = { kind: 'issue' as const, number: 901 };
+const unmanaged = (labels: string[] = []) => gh({ openIssues: [{ number: 901, title: '', url: '', labels }] });
+const assign = vi.fn();
+const APPS = ['webapp', 'backoffice'];
 const PR_REF = { kind: 'pr' as const, number: 849, issue: 844 };
 const ids = (actions: Array<{ id: string }>) => actions.map((a) => a.id);
 
 beforeEach(() => {
   setIssueState.mockReset();
+  assign.mockReset().mockResolvedValue({ url: 'https://github.com/acme/product/issues/901' });
   post.mockReset().mockResolvedValue({ id: 77, url: 'https://github.com/acme/product/pull/849#issuecomment-77' });
 });
 
@@ -45,6 +50,19 @@ describe('listActions', () => {
     expect(ids(actions)).toEqual(['unblock', 'resolve-conflicts', 'preview', 'auto-merge-on']);
     expect(actions[0]).toMatchObject({ target: 844, text: { required: true }, preview: '…' });
     expect(actions[1]).toMatchObject({ target: 849, label: 'Resolver conflictos en #849' });
+  });
+
+  it("offers an issue ronin doesn't manage to assign it, and a spike or a prototype on one of the repo's apps", () => {
+    const actions = listActions(NEW_REF, unmanaged(), undefined, 'Oskr814', APPS);
+    expect(ids(actions)).toEqual(['assign', 'spike', 'prototype']);
+    expect(actions[0]).toMatchObject({ primary: true, target: 901, text: { required: false }, preview: '…' });
+    expect(actions[1]).toMatchObject({ apps: APPS, preview: '@ronin-agent /spike {app} …' });
+  });
+
+  it('offers only the assignment in a repo without apps, and nothing new once ronin manages the issue', () => {
+    expect(ids(listActions(NEW_REF, unmanaged(), undefined, 'Oskr814'))).toEqual(['assign']);
+    expect(listActions(NEW_REF, unmanaged(['ronin']), undefined, 'Oskr814', APPS)).toEqual([]);
+    expect(ids(listActions({ kind: 'issue', number: 844 }, gh({ openIssues: [{ number: 844, title: '', url: '', labels: [] }] }), undefined, 'Oskr814', APPS))).toEqual(['unblock']);
   });
 
   it('offers nothing for a PR that is no longer open', () => {
@@ -87,6 +105,33 @@ describe('runAction', () => {
     await expect(runAction(ENTRY, PR_REF, gh(), detail, SESSION, 'unblock', 'x', post)).rejects.toBeInstanceOf(ActionError);
     await expect(runAction(ENTRY, { kind: 'issue', number: 844 }, gh(), undefined, SESSION, 'unblock', '   ', post)).rejects.toThrow('Falta el texto.');
     await expect(runAction(ENTRY, PR_REF, gh(), detail, SESSION, 'auto-merge-on', 'algo', post)).rejects.toThrow('no lleva texto');
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  it('assigns an issue to ronin as the person, after leaving the context as a plain comment', async () => {
+    const done = await runAction(ENTRY, NEW_REF, unmanaged(), undefined, SESSION, 'assign', ' el caso es un cliente sin pedidos ', post, APPS, undefined, assign);
+    expect(post).toHaveBeenCalledWith('gho_user', 'acme/product', 901, 'el caso es un cliente sin pedidos');
+    expect(assign).toHaveBeenCalledWith('gho_user', 'acme/product', 901, ['ronin-agent']);
+    expect(post.mock.invocationCallOrder[0]).toBeLessThan(assign.mock.invocationCallOrder[0]);
+    expect(done.url).toBe('https://github.com/acme/product/issues/901');
+  });
+
+  it('assigns without commenting when there is no context', async () => {
+    await runAction(ENTRY, NEW_REF, unmanaged(), undefined, SESSION, 'assign', '', post, APPS, undefined, assign);
+    expect(post).not.toHaveBeenCalled();
+    expect(assign).toHaveBeenCalledOnce();
+  });
+
+  it('writes a spike or a prototype with its app and instruction on one line', async () => {
+    await runAction(ENTRY, NEW_REF, unmanaged(), undefined, SESSION, 'spike', 'de dónde sale\nel total', post, APPS, 'backoffice', assign);
+    expect(post).toHaveBeenLastCalledWith('gho_user', 'acme/product', 901, '@ronin-agent /spike backoffice de dónde sale el total');
+    await runAction(ENTRY, NEW_REF, unmanaged(), undefined, SESSION, 'prototype', undefined, post, APPS, 'webapp', assign);
+    expect(post).toHaveBeenLastCalledWith('gho_user', 'acme/product', 901, '@ronin-agent /prototype webapp');
+    expect(assign).not.toHaveBeenCalled();
+  });
+
+  it("refuses a spike on an app the repo doesn't have", async () => {
+    await expect(runAction(ENTRY, NEW_REF, unmanaged(), undefined, SESSION, 'spike', '', post, APPS, 'otra', assign)).rejects.toThrow('Falta la app');
     expect(post).not.toHaveBeenCalled();
   });
 

@@ -80,6 +80,12 @@ export async function createIssue(token: string, repo: string, issue: { title: s
   return { number: created.number, url: created.html_url };
 }
 
+// Adding assignees to an issue, as the person: GitHub's "Assignees" field.
+export async function assignIssue(token: string, repo: string, number: number, assignees: string[]): Promise<{ url: string }> {
+  const issue = await call<{ html_url: string }>(token, 'POST', `/repos/${repo}/issues/${number}/assignees`, { assignees });
+  return { url: issue.html_url };
+}
+
 // GraphQL, as the person: what REST doesn't have (resolving a thread,
 // marking a file as viewed). GitHub answers 200 with `errors` when it says no.
 async function graphql<T>(token: string, query: string, variables: Record<string, unknown>, repo: string): Promise<T> {

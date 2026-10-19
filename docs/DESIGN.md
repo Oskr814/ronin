@@ -666,7 +666,7 @@ Todo, salvo los webhooks y `/api/auth/*`, pide sesión:
 | `GET /api/today` | Las corridas de las últimas 12 horas y los totales de hoy y de ayer |
 | `GET /api/items/<id>` | Las corridas de un ítem en los últimos 14 días |
 | `GET /api/items/<id>/detail` | Su ficha: el issue y el PR con los comentarios del ítem, y las acciones que se le pueden pedir, cada una con el comentario que dejaría |
-| `POST /api/items/<id>/actions` | Pide una de esas acciones: `{ action, text? }` (15.11) |
+| `POST /api/items/<id>/actions` | Pide una de esas acciones: `{ action, text?, app? }` (15.11) |
 | `POST /api/repos/<owner>/<repo>/issues` | Crea un issue a nombre de la persona y, si se pide, lo asigna a ronin o le comenta `/spike` o `/spec`: `{ title, body, after, app?, instruction? }` (15.11.1) |
 | `GET /api/exploraciones` | Cada app que se explora, con las fichas de su PR contadas, la última corrida y la próxima de la noche (15.12) |
 | `GET /api/exploraciones/<owner>/<repo>/<app>/corridas` | Sus corridas de los últimos 14 días, cada una con sus agentes |
@@ -719,6 +719,9 @@ Desde la ficha se le piden a ronin los comandos que hoy se piden comentando en G
 | Bajar la preview | `/preview stop` | Hay una preview arriba |
 | Activar o desactivar el auto-merge | `/auto-merge`, `/auto-merge off` | Según si el PR tiene `ronin:auto-merge` |
 | Responder y destrabar | Comentar y volver a `ronin:in-progress` | Issue con `ronin:blocked`. Lleva un texto obligatorio, la respuesta |
+| Asignar a ronin | Asignarle el issue a `@ronin-agent` | Issue abierto que ronin no gestiona (sin el label `ronin`). Se destaca. Lleva un contexto opcional |
+| Investigar (spike) | `/spike <app> <qué investigar>` | Igual que *Asignar*, en un repo con `ronin.app.json`. Se elige la app y lleva un texto opcional |
+| Prototipar | `/prototype <app> <qué probar>` | Igual que *Investigar* |
 
 En un issue, las acciones de PR van al PR de su slice que avanza ("Resolver conflictos en #849").
 
@@ -726,13 +729,15 @@ En un issue, las acciones de PR van al PR de su slice que avanza ("Resolver conf
 
 **Cómo corre.** El tablero escribe el comando como la persona, con su token (`server/api/github-as-user.ts`): `@ronin-agent /resolve-conflicts`, o `@ronin-agent /preview` con lo que hay que preparar en las líneas de abajo, que el parser de `/preview` también lee. Desde ahí es un comentario como cualquiera: llega su webhook, ronin le pone 👀 y lanza el worker, que lo responde. GitHub muestra quién lo pidió. Responder y destrabar comenta la respuesta como la persona, y ronin le pone `ronin:in-progress` al issue; si GitHub rechazó el comentario, el label no se toca.
 
+*Asignar a ronin* deja el contexto, si lo hay, como un comentario común de la persona, sin mencionar a ronin (una mención se leería como un pedido aparte). Después le asigna el issue a `@ronin-agent` con el token de la persona. Desde ahí es lo de siempre (`discoverAssignedIssues`): ronin lo toma en el próximo tick y `fix-issue` lee el issue con sus comentarios. Si no queda claro qué hacer, pregunta en el issue y lo bloquea sin tocar código. *Investigar* y *Prototipar* comentan el comando con la app y el texto en una sola línea, como *Nuevo issue* (15.11.1).
+
 Antes de #93, ronin comentaba *"**<login>** pidió `/x` desde el tablero"* y lanzaba el worker en el momento. Ahora el worker espera al webhook, como cuando alguien escribe en GitHub, y si no llega lo levanta el tick.
 
 **Antes de pedirla,** un diálogo muestra el comentario que va a quedar ("Comentás en #849 como oskr814"), renderizado y actualizado mientras se escribe. Abre con el foco en su texto, si lo lleva, y `Ctrl`/`⌘` + `↵` comenta. El servidor la valida contra la misma lista, armada con lo que leyó de GitHub. Si la acción ya no aplica, o le falta o le sobra el texto, responde 409 sin comentar nada. Si GitHub ya no acepta el token de la persona, responde 401 y la página pide volver a entrar.
 
-**No están** `/fix-comments` (va con la revisión de un PR, 15.14) ni `/spike`, aunque ahora que las acciones son comentarios sumarlos es agregarlos a la lista. Tampoco cancelar o reintentar una corrida, que necesitan coordinarse con los locks del tick.
+**No están** `/fix-comments` (va con la revisión de un PR, 15.14), `/spec` ni `/explore` en un issue, aunque ahora que las acciones son comentarios sumarlos es agregarlos a la lista. Tampoco cancelar o reintentar una corrida, que necesitan coordinarse con los locks del tick.
 
-**Pendiente:** cancelar y reintentar corridas, `/spike` desde la página, una vista de varios runners juntos y sacar el alias `/webhook`.
+**Pendiente:** cancelar y reintentar corridas, una vista de varios runners juntos y sacar el alias `/webhook`.
 
 #### 15.11.1 Nuevo issue (#100, `server/api/dashboard-new-issue.ts`)
 
