@@ -73,7 +73,8 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
-  await rm(base, { recursive: true, force: true });
+  // A git process can still be writing under it (ENOTEMPTY once in the CI): retried.
+  await rm(base, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
 });
 
 const inRepo = <T>(fn: () => Promise<T>) => withActiveRepo(entry, fn);
