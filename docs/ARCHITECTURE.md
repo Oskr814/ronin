@@ -117,7 +117,7 @@ La base guarda la ruta y los metadatos.
 - **Migraciones versionadas** en `src/db/migrations/`, que corren al arrancar.
 - **Un repositorio por módulo** (`portal/store.ts`, `deploy/store.ts`…) con la misma interfaz que hoy exponen los módulos. Los servicios no cambian de forma.
 
-**Hecho:** la base (`src/db/`: Kysely, migraciones en `src/db/migrations/` que el servidor corre al arrancar, `compose.postgres.yml`, `compose.test.yml` y un Postgres en el CI) y los módulos **Ajustes** (`core/settings-store.ts`) **Despliegues** (`deploy/store.ts`) **Portal** (`portal/accounts.ts`, `portal/requests.ts`: `portal_users` y `portal_requests`, con cada pedido como un documento en vez de `request_messages` y `request_events`) y **Reuniones** (`meetings/meetings.ts`; cada una como un documento `jsonb`, en vez de `meeting_items`, porque se lee y se escribe entera). Mientras dura la etapa, `DATABASE_URL` la activa y sin ella todo sigue en archivos: cada módulo se despliega primero y se pasa después con su `pnpm db:import-<módulo>`. `config.ts` lee Ajustes con `await` al cargar, así que cada proceso abre su pool (chico, que no impide que el proceso termine).
+**Hecho:** la base (`src/db/`: Kysely, migraciones en `src/db/migrations/` que el servidor corre al arrancar, `compose.postgres.yml`, `compose.test.yml` y un Postgres en el CI) y los módulos **Ajustes** (`core/settings-store.ts`) **Despliegues** (`deploy/store.ts`) **Portal** (`portal/accounts.ts`, `portal/requests.ts`: `portal_users` y `portal_requests`, con cada pedido como un documento en vez de `request_messages` y `request_events`) y **Reuniones** (`meetings/meetings.ts`; cada una como un documento `jsonb`, en vez de `meeting_items`, porque se lee y se escribe entera). El **estado local**, el **índice de corridas** y la **cuota** pasan a la etapa 3: los tres viven dentro del tick y de los agentes (locks durante llamadas a GitHub, escrituras síncronas), y la cola rediseña justo los claims, los locks y el registro de trabajos. Mientras dura la etapa, `DATABASE_URL` la activa y sin ella todo sigue en archivos: cada módulo se despliega primero y se pasa después con su `pnpm db:import-<módulo>`. `config.ts` lee Ajustes con `await` al cargar, así que cada proceso abre su pool (chico, que no impide que el proceso termine).
 
 **Migración, un módulo por vez:**
 1. Se crea la tabla.
@@ -159,6 +159,18 @@ Lo que **desaparece**:
 - el cron, `flock` y `.tick.pending`;
 - los handlers por evento como proceso propio;
 - los locks con pid.
+
+**Por pasos,** cada uno desplegable:
+
+| Paso | Qué | Reemplaza |
+|---|---|---|
+| 3.1 | Tabla `jobs`, el planificador y el runner local en el servidor: el tick y los handlers son trabajos, con lease renovado por su propio proceso | el cron, `flock`, `.tick.pending`, lanzar handlers directo |
+| 3.2 | Locks de recursos y cupos en la base, con lease | `.locks/` y `.ronin-slots/` con pid |
+| 3.3 | Estado local en tablas (claims, comentarios procesados, firmas de fallas, bloqueos…) | `.ronin-state.*.json` |
+| 3.4 | Índice de corridas | recorrer `logs/runs/` |
+| 3.5 | Cuota de las cuentas de Claude | `logs/usage/` |
+
+**Hecho (3.1):** `jobs/store.ts`, `jobs/runner.ts`, `jobs/scheduler.ts`, `jobs/child.ts` (DESIGN §14). Por ahora sin reintentos: un trabajo cuyo lease vence queda `lost` y el próximo tick concilia, como antes.
 
 El claim entre supervisores por label (DESIGN §9) deja de hacer falta con un solo nodo central que reparte el trabajo. Se mantiene mientras haya instalaciones viejas y después se simplifica.
 

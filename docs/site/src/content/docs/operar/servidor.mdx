@@ -7,7 +7,9 @@ import { Aside, Steps } from '@astrojs/starlight/components';
 
 Por defecto, ronin descubre todo por polling, con el cron. Con el **servidor de ronin** reacciona casi al instante: a una asignación, a un PR nuevo, actualizado o cerrado, a una review, a un comentario o comando, al label `ronin:auto-merge` o a un CI que termina.
 
-El servidor (servicio `ronin-server`) recibe los webhooks de GitHub. Por cada evento lanza un handler, un proceso aparte que corre solo lo que ese evento puede mover y solo sobre ese issue o PR. Los eventos que llegan juntos sobre lo mismo se agrupan durante `WEBHOOK_DEBOUNCE_MS`. **El cron sigue corriendo** como conciliación: levanta lo que un webhook perdido no hizo.
+El servidor (servicio `ronin-server`) recibe los webhooks de GitHub. Por cada evento lanza un handler, un proceso aparte que corre solo lo que ese evento puede mover y solo sobre ese issue o PR. Los eventos que llegan juntos sobre lo mismo se agrupan durante `WEBHOOK_DEBOUNCE_MS`. **El tick sigue corriendo** como conciliación: levanta lo que un webhook perdido no hizo.
+
+**Con [la base de datos](/ronin/operar/base-de-datos/)**, el servidor también pone en cola el tick a sus horas (cada `TICK_INTERVAL_MINUTES`, 30 por defecto y editable en Ajustes, desde la hora en punto) y arranca él mismo cada tick y cada handler como un trabajo de la cola. El cron ya no hace falta: `pnpm cron:remove`. Si el servidor no está corriendo, no hay ticks.
 
 El mismo servidor sirve el [tablero](/ronin/operar/tablero/), en un listener aparte que solo ve la tailnet, y el [portal](/ronin/operar/portal/).
 
@@ -46,7 +48,7 @@ El listener público atiende solo `POST /api/webhooks/github` y el portal. Cualq
 Para confirmar que GitHub llega, mirá en cada repo *Settings → Webhooks → Recent Deliveries*: tienen que dar 202.
 
 <Aside type="tip">
-Con el servidor andando, bajale la frecuencia al cron en vez de sacarlo: `pnpm cron:setup 30`, cada 30 minutos. Los webhooks pueden perderse (el túnel caído, un reinicio).
+Sin la base de datos, con el servidor andando, bajale la frecuencia al cron en vez de sacarlo: `pnpm cron:setup 30`, cada 30 minutos. Los webhooks pueden perderse (el túnel caído, un reinicio). Con la base, el cron se saca: el servidor corre los ticks.
 </Aside>
 
 ## Al desplegar una versión nueva

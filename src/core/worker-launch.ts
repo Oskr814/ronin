@@ -50,16 +50,22 @@ export async function acquireLock(path: string): Promise<boolean> {
 // cron wrapper writes the tick to (scripts/setup-cron.sh), so its lines sit
 // next to the tick's. Returns the worker's pid.
 export function launchWorker(name: string, request: unknown): number | undefined {
+  return launchScript(name, [JSON.stringify(request)]);
+}
+
+// The same for any of ronin's entry points, with its arguments and anything
+// added to its environment (the job queue's RONIN_JOB_ID, jobs/runner.ts).
+export function launchScript(name: string, args: string[], env: Record<string, string> = {}): number | undefined {
   const here = fileURLToPath(import.meta.url);
-  const worker = join(dirname(here), '..', `${name}${here.endsWith('.ts') ? '.ts' : '.js'}`);
+  const script = join(dirname(here), '..', `${name}${here.endsWith('.ts') ? '.ts' : '.js'}`);
   const now = new Date();
   const day = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
   mkdirSync(join(process.cwd(), 'logs'), { recursive: true });
   const out = openSync(join(process.cwd(), 'logs', `tick-${day}.log`), 'a');
   try {
-    const child = spawn(process.execPath, [...process.execArgv, worker, JSON.stringify(request)], {
+    const child = spawn(process.execPath, [...process.execArgv, script, ...args], {
       cwd: process.cwd(),
-      env: process.env,
+      env: { ...process.env, ...env },
       detached: true,
       stdio: ['ignore', out, out],
     });

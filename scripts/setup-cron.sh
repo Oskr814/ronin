@@ -71,6 +71,13 @@ set -a
 source "$REPO_DIR/.env"
 set +a
 
+# With DATABASE_URL, the server's scheduler queues the tick (#235, stage 3):
+# a tick from here too would run alongside it. This cron entry is left over.
+if [ -n "\${DATABASE_URL:-}" ]; then
+  echo "\$(date -Is) [cron] con DATABASE_URL los ticks los pone en cola el servidor: este cron sobra (pnpm cron:remove)"
+  exit 0
+fi
+
 if [ ! -f dist/index.js ]; then
   echo "\$(date -Is) [cron] dist/index.js no existe — correr pnpm build" >&2
   exit 1

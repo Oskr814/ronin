@@ -92,6 +92,25 @@ export interface PortalRequestsTable {
   updated_at: ColumnType<Date, string, string>;
 }
 
+// The job queue (jobs/store.ts).
+type MaybeStamp = ColumnType<Date | null, string | null | undefined, string | null>;
+export interface JobsTable {
+  id: Generated<string>;
+  kind: string;
+  repo: string | null;
+  payload: ColumnType<unknown, string | undefined, string>;
+  dedupe_key: string | null;
+  status: string;
+  created_at: ColumnType<Date, string | undefined, never>;
+  run_after: ColumnType<Date, string | undefined, string>;
+  started_at: MaybeStamp;
+  finished_at: MaybeStamp;
+  lease_until: MaybeStamp;
+  runner: string | null;
+  pid: number | null;
+  error: string | null;
+}
+
 export interface Database {
   settings: SettingsTable;
   task_settings: TaskSettingsTable;
@@ -101,4 +120,5 @@ export interface Database {
   meetings: MeetingsTable;
   portal_users: PortalUsersTable;
   portal_requests: PortalRequestsTable;
+  jobs: JobsTable;
 }
