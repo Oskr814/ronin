@@ -96,6 +96,10 @@ export interface FindingMeta {
   // the app: recorded and reviewed, but never an issue before the review.
   entorno?: boolean;
   motivo?: string;
+  // Who decided its state in the review (the GitHub login of whoever
+  // rejected, edited or approved it), and when.
+  revisor?: string;
+  revisado?: string;
 }
 
 export interface Finding extends FindingMeta {
@@ -192,6 +196,8 @@ export function parseFinding(raw: string): Finding {
     ...(typeof meta.issue === 'number' ? { issue: meta.issue } : {}),
     ...(meta.entorno === true ? { entorno: true } : {}),
     ...(typeof meta.motivo === 'string' ? { motivo: meta.motivo } : {}),
+    ...(typeof meta.revisor === 'string' && meta.revisor ? { revisor: meta.revisor } : {}),
+    ...(typeof meta.revisado === 'string' && meta.revisado ? { revisado: meta.revisado } : {}),
     body: match[2].trim(),
   };
 }

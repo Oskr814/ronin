@@ -45,19 +45,21 @@ En **Fichas**, a la izquierda la lista agrupada (por decidir, esperando a ronin,
 | **Pedir cambios** (`c`) | Lo que hay que cambiar. Podés marcar que rehaga la captura del después. |
 | **Más → Pedir un issue aparte** | `Abrí un issue aparte: <qué>` |
 | **Más → Preguntar** | Tu texto |
-| **Aprobar** (`a`) | Nada todavía: la marca como *Para aprobar* en tu navegador. Se aprueba de verdad al aprobar el PR. |
+| **Aprobar** (`a`) | Nada todavía: la marca como *Para aprobar* en tu navegador. Se aprueba de verdad al finalizar la revisión. |
 
 ronin aplica cada comentario como si lo hubieras escrito en GitHub y responde en la conversación de la ficha.
 
-## Aprobar el PR
+La ficha dice quién la decidió: *Rechazada por <usuario>* o *Aprobada por <usuario>*, con el usuario de GitHub de quien comentó o aprobó, y *editada por <usuario>* si alguien pidió cambios. Queda también en el archivo de la ficha (`revisor` y `revisado`).
+
+## Finalizar la revisión
 
 <Steps>
 
 1. **Comentario general**, si hace falta: para decidir sobre varias fichas a la vez («los de mobile se resuelven con F-0003») o lo que no querés que vuelva a proponer.
 
-2. **Aprobar…** muestra qué fichas abren su issue y cuáles quedan rechazadas, y te avisa si alguna quedó sin revisar. No deja aprobar mientras ronin está aplicando un comentario.
+2. **Finalizar…** muestra qué fichas abren su issue y cuáles quedan rechazadas, y te avisa si alguna quedó sin revisar. No deja finalizar mientras ronin está aplicando un comentario.
 
-3. Al aprobar, ronin marca las fichas, abre un issue por cada una que quedó en pie, **asignado a sí mismo** (lo empieza solo), y mergea el PR.
+3. Al finalizar, se manda tu review **Approve** en GitHub; ronin marca las fichas, abre un issue por cada una que quedó en pie, **asignado a sí mismo** (lo empieza solo), y mergea el PR.
 
 </Steps>
 

@@ -17,6 +17,7 @@ const gh = vi.hoisted(() => ({
   markPullRequestReady: vi.fn(),
   mergePullRequest: vi.fn(),
   listOpenPrsByHeadPrefix: vi.fn(),
+  getDiscussion: vi.fn(async () => ({ decisions: [{ author: 'Oskr814', state: 'APPROVED' }, { author: 'ronin-agent', state: 'APPROVED' }, { author: 'otra', state: 'CHANGES_REQUESTED' }] })),
 }));
 vi.mock('../core/github.js', () => gh);
 const actions = vi.hoisted(() => ({ value: [] as unknown[], tasks: [] as any[] }));
@@ -156,6 +157,9 @@ describe('processExplorationPr feedback', () => {
 
     const estados = Object.fromEntries((await loadMemory(memoryDir())).findings.map((f) => [f.id, f.estado]));
     expect(estados).toEqual({ 'F-0002': 'aprobado', 'F-0003': 'aprobado', 'F-0004': 'rechazado' });
+    // Who approved the PR is who approved them; one rejected before keeps its own.
+    const revisores = Object.fromEntries((await loadMemory(memoryDir())).findings.map((f) => [f.id, f.revisor]));
+    expect(revisores).toEqual({ 'F-0002': 'Oskr814', 'F-0003': 'Oskr814', 'F-0004': undefined });
     expect(order).toEqual(['commit', 'merge']);
     expect(prMod.commitAndPush.mock.calls[0][2].fallback.es).toBe('aprobar F-0002, F-0003 del PR #794');
     expect(prMod.upsertExplorationPr).toHaveBeenCalled();
@@ -226,7 +230,7 @@ describe('processExplorationPr feedback — general comments', () => {
     expect(task.general[0].conversacion.map((m: any) => m.texto)).toEqual(['sin mención, entre nosotros']);
     expect(task.fichas.map((f: any) => `${f.app}/${f.id}`)).toEqual(['backoffice/F-0002', 'backoffice/F-0003']);
     const memory = await loadMemory(memoryDir());
-    expect(memory.findings.find((f) => f.id === 'F-0002')!.estado).toBe('rechazado');
+    expect(memory.findings.find((f) => f.id === 'F-0002')).toMatchObject({ estado: 'rechazado', revisor: 'Oskr814', revisado: expect.any(String) });
     expect(memory.findings.find((f) => f.id === 'F-0003')!.estado).toBe('aprobado');
     expect(memory.knowledge).toContain('Mientras no haya soporte móvil, no proponer arreglos de mobile (pedido en #794)');
     expect(prMod.commitAndPush.mock.calls[0][2].description).toContain('added to the backoffice knowledge file');

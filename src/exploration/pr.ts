@@ -193,13 +193,14 @@ export async function openFindingIssues(
 }
 
 // Marks as approved every proposed finding `select` picks. Returns their ids.
-export async function approveFindings(memoryDir: string, select: (f: FindingMeta) => boolean | Promise<boolean>): Promise<string[]> {
+// `revisor`: who approved them (their GitHub logins), when it's known.
+export async function approveFindings(memoryDir: string, select: (f: FindingMeta) => boolean | Promise<boolean>, revisor?: string): Promise<string[]> {
   const memory = await loadMemory(memoryDir);
   const changed: string[] = [];
   for (const meta of memory.findings.filter((f) => f.estado === 'propuesto')) {
     if (!(await select(meta))) continue;
     const path = findingPath(memoryDir, meta);
-    await writeFile(path, serializeFinding({ ...parseFinding(await readFile(path, 'utf8')), estado: 'aprobado' }));
+    await writeFile(path, serializeFinding({ ...parseFinding(await readFile(path, 'utf8')), estado: 'aprobado', ...(revisor ? { revisor, revisado: new Date().toISOString() } : {}) }));
     changed.push(meta.id);
   }
   return changed;

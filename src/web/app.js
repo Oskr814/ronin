@@ -680,7 +680,7 @@ function headHTML(item) {
   if (item.kind === 'pr' && pr?.author) facts.push(`de ${pr.author}`);
   return `<div class="head">
     <div class="crumb"><i style="background:${repoColor(item.repo)}"></i>${esc(item.repo)} · ${item.kind === 'pr' ? 'Pull request' : item.kind === 'issue' ? 'Issue' : 'Tarea'}</div>
-    <div class="row"><h1>${esc(item.title)}${item.number !== undefined ? ` <span class="n">${esc(itemRef(item))}</span>` : ''}</h1>${d?.exploration ? '<button class="gh" data-xpr="general">Comentario general</button>' : ''}${decidable(item, d) ? `<div class="hbtns">${decideHTML(item, d)}${actionsHTML(d)}</div>` : reviewable(item, d) ? reviewButton(item, 'head', pendingOf(item.id).length ? `<button class="act-btn" data-frev="head" aria-haspopup="dialog" aria-expanded="${revOpen(item, 'head')}">Terminar revisión <span class="rn">${pendingOf(item.id).length}</span> ▾</button>` : `<button class="gh" data-frev="head" aria-haspopup="dialog" aria-expanded="${revOpen(item, 'head')}">${esc(reviewLabel(item, d))} ▾</button>`) : ''}${decidable(item, d) ? '' : actionsHTML(d)}${d?.exploration ? '<button class="act-btn" data-xpr="approve">Aprobar…</button>' : ''}</div>
+    <div class="row"><h1>${esc(item.title)}${item.number !== undefined ? ` <span class="n">${esc(itemRef(item))}</span>` : ''}</h1>${d?.exploration ? '<button class="gh" data-xpr="general">Comentario general</button>' : ''}${decidable(item, d) ? `<div class="hbtns">${decideHTML(item, d)}${actionsHTML(d)}</div>` : reviewable(item, d) ? reviewButton(item, 'head', pendingOf(item.id).length ? `<button class="act-btn" data-frev="head" aria-haspopup="dialog" aria-expanded="${revOpen(item, 'head')}">Terminar revisión <span class="rn">${pendingOf(item.id).length}</span> ▾</button>` : `<button class="gh" data-frev="head" aria-haspopup="dialog" aria-expanded="${revOpen(item, 'head')}">${esc(reviewLabel(item, d))} ▾</button>`) : ''}${decidable(item, d) ? '' : actionsHTML(d)}${d?.exploration ? '<button class="act-btn" data-xpr="approve" title="Termina la revisión: aprueba las fichas que quedan y mergea el PR">Finalizar…</button>' : ''}</div>
     <div class="state">${ghPill(item, d)}${d?.pedido ? `<button class="chip plain" data-goped="${d.pedido.number}" title="${esc(d.pedido.title)}">del pedido P-${d.pedido.number}</button>` : ''}${linearChips(item)}${chips.map(([cls, text]) => `<span class="chip ${cls}">${esc(text)}</span>`).join('')}${decidable(item, d) && pendingOf(item.id).length ? `<span class="chip run">✎ ${pendingOf(item.id).length} en Archivos</span>` : ''}${facts.map((f) => `<span>${esc(f)}</span>`).join('')}</div>${decidedHTML(item)}</div>`;
 }
 
@@ -2283,12 +2283,14 @@ function decisionsHTML(f, status) {
 function fichaHTML(item, data, f, shown) {
   const status = fichaStatus(f, data.ronin, item.id);
   const idx = shown.findIndex((x) => fichaKey(x) === fichaKey(f));
+  // Who decided it in the review, and when (their GitHub login).
+  const by = f.revisor ? ` <span class="m">por ${esc(f.revisor)}${f.revisado ? `, hace ${short(Date.now() - Date.parse(f.revisado))}` : ''}</span>` : '';
   const banner = {
-    rechazada: `<div class="banner crit">${dotClass('crit')}<div><b>Rechazada</b>${f.motivo ? `<p>${esc(f.motivo)}</p>` : ''}</div></div>`,
-    aprobada: `<div class="banner ok">${dotClass('ok')}<div><b>Aprobada</b>${f.issue ? `<p>Issue <a href="${esc(`https://github.com/${item.repo}/issues/${f.issue}`)}" target="_blank" rel="noopener">#${esc(f.issue)}</a>.</p>` : ''}</div></div>`,
+    rechazada: `<div class="banner crit">${dotClass('crit')}<div><b>Rechazada</b>${by}${f.motivo ? `<p>${esc(f.motivo)}</p>` : ''}</div></div>`,
+    aprobada: `<div class="banner ok">${dotClass('ok')}<div><b>Aprobada</b>${by}${f.issue ? `<p>Issue <a href="${esc(`https://github.com/${item.repo}/issues/${f.issue}`)}" target="_blank" rel="noopener">#${esc(f.issue)}</a>.</p>` : ''}</div></div>`,
     esperando: `<div class="banner run">${dotClass('live')}<div><b>Esperando a ronin</b><p>Hay un comentario que ronin todavía no respondió. Cuando lo aplique, su respuesta aparece abajo.</p></div></div>`,
   }[status] ?? '';
-  const meta = [f.senal && f.senal !== f.gravedad && f.tipo !== 'idea' ? esc(f.senal) : '', `rol ${esc(f.rol)}`, esc(f.functionName || f.funcion), f.entorno ? 'entorno de dev' : ''].filter(Boolean).map((m) => `<span>${m}</span>`).join('');
+  const meta = [f.senal && f.senal !== f.gravedad && f.tipo !== 'idea' ? esc(f.senal) : '', `rol ${esc(f.rol)}`, esc(f.functionName || f.funcion), f.entorno ? 'entorno de dev' : '', f.revisor && f.estado === 'propuesto' ? `editada por ${esc(f.revisor)}` : ''].filter(Boolean).map((m) => `<span>${m}</span>`).join('');
   return `<div class="fwrap">
     <div class="fnav"><button class="pill fback" data-fback>← Fichas</button>${decisionsHTML(f, status)}<span class="m">${idx >= 0 ? `${idx + 1} de ${shown.length}` : ''}</span><button class="pill" data-fmove="-1" ${idx <= 0 ? 'disabled' : ''} aria-label="Ficha anterior">↑</button><button class="pill" data-fmove="1" ${idx < 0 || idx >= shown.length - 1 ? 'disabled' : ''} aria-label="Ficha siguiente">↓</button></div>
     <div class="fmeta"><span class="id">${esc(f.id)}</span><span class="sev ${esc(sevClass(f))}">${esc(sevLabel(f))}</span>${vp(f.viewport)}${meta}<a class="link fgh" href="${esc(f.url)}" target="_blank" rel="noopener">archivo ↗</a></div>
@@ -2354,7 +2356,7 @@ const FICHA_ACTIONS = {
   pregunta: { title: 'Preguntarle a ronin', field: 'Tu pregunta', btn: 'Preguntar', placeholder: '¿Esto pasa también como Sales?' },
   // On the whole PR, not a finding.
   general: { pr: true, title: 'Comentario general', field: 'Sobre varias fichas a la vez, o lo que las próximas exploraciones no deben volver a proponer', btn: 'Comentar', placeholder: 'Por ejemplo: F-0017 y F-0018 no aplican, el listado de catálogos lo usa una sola persona' },
-  approve: { pr: true, optional: true, title: 'Aprobar la exploración', field: 'Comentario de la review (opcional)', btn: 'Aprobar', placeholder: 'Por ejemplo: las de catálogos van primero' },
+  approve: { pr: true, optional: true, title: 'Finalizar la revisión', field: 'Comentario de la review (opcional)', btn: 'Finalizar', placeholder: 'Por ejemplo: las de catálogos van primero' },
 };
 
 function openPrDialog(kind) {
@@ -2380,8 +2382,8 @@ function approveSummaryHTML(itemId) {
   const waiting = data.fichas.filter((f) => status(f) === 'esperando');
   return `<div class="sum"><p class="sumh">${dotClass('ok')}Abren su issue y ronin los empieza (${keep.length})</p>${keep.length ? `<ul>${keep.map(li).join('')}</ul>` : ''}
     <p class="sumh">${dotClass('crit')}Rechazadas, sin issue (${rejected.length})</p>${rejected.length ? `<ul>${rejected.map(li).join('')}</ul>` : ''}
-    ${undecided.length ? `<p class="warnbox">${undecided.length === 1 ? 'Queda 1 ficha' : `Quedan ${undecided.length} fichas`} sin revisar (${esc(undecided.map((f) => f.id).join(', '))}). Si apruebas, también abren su issue y ronin los empieza.</p>` : ''}
-    ${waiting.length ? `<p class="warnbox">ronin todavía está aplicando comentarios en ${esc(waiting.map((f) => f.id).join(', '))}. Aprobá cuando responda.</p>` : ''}
+    ${undecided.length ? `<p class="warnbox">${undecided.length === 1 ? 'Queda 1 ficha' : `Quedan ${undecided.length} fichas`} sin revisar (${esc(undecided.map((f) => f.id).join(', '))}). Si finalizás, también abren su issue y ronin los empieza.</p>` : ''}
+    ${waiting.length ? `<p class="warnbox">ronin todavía está aplicando comentarios en ${esc(waiting.map((f) => f.id).join(', '))}. Finalizá cuando responda.</p>` : ''}
     <p class="help">Se envía como tu review <b>Approve</b> en GitHub. Con eso ronin marca las fichas, abre un issue por cada una que siga en pie, se lo asigna y mergea el PR. Cada issue arranca como uno asignado a mano.</p></div>`;
 }
 const waitingCount = (itemId) => {
@@ -2449,7 +2451,7 @@ function renderFichaDialog() {
     if (sum._html !== html) sum.innerHTML = sum._html = html;
   }
   const yes = $('#fdlg-yes');
-  yes.textContent = d.sending ? (d.action === 'approve' ? 'Aprobando…' : 'Comentando…') : meta.btn;
+  yes.textContent = d.sending ? (d.action === 'approve' ? 'Finalizando…' : 'Comentando…') : meta.btn;
   yes.disabled = d.sending || (!meta.optional && !typed) || (d.action === 'approve' && waitingCount(d.item) > 0);
   $('#fdlg-err').hidden = !d.error;
   $('#fdlg-err').textContent = d.error ?? '';
@@ -2476,7 +2478,7 @@ async function postFichaComment(itemId, ficha, action, text, redo) {
 async function postPrDecision(d) {
   const text = d.text.trim();
   const done = await api(`/api/items/${encodeURIComponent(d.item)}/exploration/${d.action}`, { method: 'POST', body: JSON.stringify(text ? { text } : {}) });
-  toast(d.action === 'approve' ? `Aprobaste el PR #${d.pr}. ronin marca las fichas, abre sus issues y lo mergea.` : `Comentaste en el PR #${d.pr}. ronin lo va a aplicar y te responde ahí.`, done.url);
+  toast(d.action === 'approve' ? `Finalizaste la revisión del PR #${d.pr}. ronin marca las fichas, abre sus issues y lo mergea.` : `Comentaste en el PR #${d.pr}. ronin lo va a aplicar y te responde ahí.`, done.url);
   if (S.detail[d.item]) S.detail[d.item].at = 0;
   if (S.expl[d.item]) S.expl[d.item].at = 0;
   await Promise.all([loadDetail(d.item), loadExploration(d.item)]);
@@ -3122,7 +3124,7 @@ function xplHead(r, buttons, pill) {
 function xplHeadHTML(item, r) {
   const d = S.detail[item.id]?.data;
   const url = githubUrl(item);
-  const buttons = `${url ? `<a class="gh" href="${esc(url)}" target="_blank" rel="noopener">PR #${item.number} ↗</a>` : ''}${d?.exploration ? '<button class="gh" data-xpr="general">Comentario general</button>' : ''}${actionsHTML(d)}${d?.exploration ? '<button class="act-btn" data-xpr="approve">Aprobar…</button>' : ''}`;
+  const buttons = `${url ? `<a class="gh" href="${esc(url)}" target="_blank" rel="noopener">PR #${item.number} ↗</a>` : ''}${d?.exploration ? '<button class="gh" data-xpr="general">Comentario general</button>' : ''}${actionsHTML(d)}${d?.exploration ? '<button class="act-btn" data-xpr="approve" title="Termina la revisión: aprueba las fichas que quedan y mergea el PR">Finalizar…</button>' : ''}`;
   return xplHead(r, buttons, ghPill(item, d));
 }
 

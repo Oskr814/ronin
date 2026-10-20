@@ -12,6 +12,7 @@ import { explorationTask, type FindingFeedback, type FindingSummary, type Genera
 import {
   closeIssueNotPlanned,
   createIssue,
+  getDiscussion,
   listFileReviewComments,
   listIssueComments,
   listOpenPrsByHeadPrefix,
@@ -189,6 +190,8 @@ interface PendingFeedback {
   commentId: number;
   app: string;
   findingId: string;
+  // Who wrote it: who the finding's decision is recorded under.
+  author: string;
   body: string;
   conversacion: NonNullable<FindingFeedback['conversacion']>;
 }
@@ -213,7 +216,7 @@ async function pendingFeedback(pr: PullRequestStatus): Promise<PendingFeedback[]
       .filter((o) => o.id < c.id && findingOf(o.path)?.[1] === match[1] && findingOf(o.path)?.[2] === match[2])
       .sort((a, b) => a.id - b.id)
       .map((o) => ({ autor: isBot(o.authorLogin) ? ('ronin' as const) : ('persona' as const), texto: o.body, mismoHilo: rootOf(o) === rootOf(c) }));
-    result.push({ commentId: c.id, app: match[1], findingId: match[2], body: c.body, conversacion });
+    result.push({ commentId: c.id, app: match[1], findingId: match[2], author: c.authorLogin, body: c.body, conversacion });
   }
   return result;
 }
@@ -221,16 +224,16 @@ async function pendingFeedback(pr: PullRequestStatus): Promise<PendingFeedback[]
 // A general comment on the PR that mentions ronin is feedback too: it can
 // speak about several findings at once ("los de mobile") or about what the
 // next explorations should leave alone.
-async function pendingGeneralFeedback(pr: PullRequestStatus): Promise<GeneralFeedback[]> {
+async function pendingGeneralFeedback(pr: PullRequestStatus): Promise<Array<GeneralFeedback & { author: string }>> {
   const comments = (await listIssueComments(pr.number)).sort((a, b) => a.id - b.id);
-  const result: GeneralFeedback[] = [];
+  const result: Array<GeneralFeedback & { author: string }> = [];
   for (const c of comments) {
     if (isBot(c.authorLogin) || !c.authorLogin || !mentionsHandle(c.body, config.githubLogin)) continue;
     if (await isProcessed(c)) continue;
     const conversacion = comments
       .filter((o) => o.id < c.id)
       .map((o) => ({ autor: isBot(o.authorLogin) ? ('ronin' as const) : ('persona' as const), texto: o.body, mismoHilo: true }));
-    result.push({ commentId: c.id, body: c.body, conversacion });
+    result.push({ commentId: c.id, author: c.authorLogin, body: c.body, conversacion });
   }
   return result;
 }
@@ -293,7 +296,7 @@ async function applyFeedback(pr: PullRequestStatus, batch: string): Promise<Redo
   await mkdir(explorationOutDir(), { recursive: true });
   const outputPath = join(explorationOutDir(), `feedback-${pr.number}.json`);
   await rm(outputPath, { force: true });
-  await runAgentTask(explorationTask({ type: 'explore-feedback', prNumber: pr.number, checkoutDir: batchDir, comments, ...(general.length > 0 ? { general, fichas } : {}), outputPath }));
+  await runAgentTask(explorationTask({ type: 'explore-feedback', prNumber: pr.number, checkoutDir: batchDir, comments, ...(general.length > 0 ? { general: general.map(({ author: _author, ...g }) => g), fichas } : {}), outputPath }));
   const parsed = JSON.parse(await readFile(outputPath, 'utf8')) as { acciones?: FeedbackAction[] };
 
   const replies: Array<{ commentId: number; kind: 'issue' | 'review'; body: string }> = [];
@@ -304,7 +307,8 @@ async function applyFeedback(pr: PullRequestStatus, batch: string): Promise<Redo
   // away): closed once the rejection is committed.
   const toClose: Array<{ issue: number; findingId: string; motivo: string }> = [];
 
-  const applyToFinding = async (app: string, findingId: string, action: FindingAction, commentId: number, kind: 'issue' | 'review'): Promise<void> => {
+  const applyToFinding = async (app: string, findingId: string, action: FindingAction, commentId: number, kind: 'issue' | 'review', author: string): Promise<void> => {
+    const reviewed = { revisor: author, revisado: new Date().toISOString() };
     const memoryDir = memoryDirFor(batchDir, app);
     const meta = (await loadMemory(memoryDir)).findings.find((f) => f.id === findingId);
     if (!meta) return;
@@ -312,7 +316,7 @@ async function applyFeedback(pr: PullRequestStatus, batch: string): Promise<Redo
     if (action.accion === 'rechazar' && action.motivo) {
       const finding = parseFinding(await readFile(path, 'utf8'));
       const motivo = action.motivo.trim().slice(0, 300);
-      await writeFile(path, serializeFinding({ ...finding, estado: 'rechazado', motivo }));
+      await writeFile(path, serializeFinding({ ...finding, estado: 'rechazado', motivo, ...reviewed }));
       await appendKnowledge(memoryDir, `${motivo} (${findingId}, rechazada en #${pr.number})`);
       changes.push({ findingId, titulo: finding.titulo, kind: 'rechazada', detail: motivo });
       if (finding.issue) toClose.push({ issue: finding.issue, findingId, motivo });
@@ -323,7 +327,7 @@ async function applyFeedback(pr: PullRequestStatus, batch: string): Promise<Redo
       if (titulo !== finding.titulo) body = body.replace(/^## .*$/m, `## ${titulo}`);
       // The file name follows the title: a new title moves the file.
       await rm(path, { force: true });
-      await writeFile(join(memoryDir, 'findings', findingFileName({ id: finding.id, titulo })), serializeFinding({ ...finding, titulo, body }));
+      await writeFile(join(memoryDir, 'findings', findingFileName({ id: finding.id, titulo })), serializeFinding({ ...finding, titulo, body, ...reviewed }));
       if (action.rehacerDespues?.trim()) redo.push({ app, findingId, instruction: action.rehacerDespues.trim().slice(0, 1200), commentId, ...(kind === 'issue' ? { kind } : {}) });
       const what = [titulo !== finding.titulo ? `new title "${titulo}"` : '', action.propuesta?.trim() ? `new proposal: ${action.propuesta.trim().slice(0, 300)}` : ''].filter(Boolean).join('; ');
       changes.push({ findingId, titulo, kind: 'editada', detail: what || 'proposal adjusted', redo: Boolean(action.rehacerDespues?.trim()) });
@@ -348,7 +352,7 @@ async function applyFeedback(pr: PullRequestStatus, batch: string): Promise<Redo
     if (!action) continue;
     let reply = action.respuesta ? clean(action.respuesta) : '';
     if (action.accion === 'crear-issue') reply = await openIssue(action, `Pedido en un comentario sobre la ficha ${p.findingId} del PR de exploración #${pr.number}.`, reply, p.app);
-    else await applyToFinding(p.app, p.findingId, action, p.commentId, 'review');
+    else await applyToFinding(p.app, p.findingId, action, p.commentId, 'review', p.author);
     if (reply) replies.push({ commentId: p.commentId, kind: 'review', body: reply });
   }
 
@@ -360,7 +364,7 @@ async function applyFeedback(pr: PullRequestStatus, batch: string): Promise<Redo
     const appOf = (app?: string) => (app && apps.includes(app) ? app : apps.length === 1 ? apps[0] : undefined);
     for (const f of action.fichas ?? []) {
       const app = appOf(f.app);
-      if (app && f.findingId) await applyToFinding(app, f.findingId, f, g.commentId, 'issue');
+      if (app && f.findingId) await applyToFinding(app, f.findingId, f, g.commentId, 'issue', g.author);
     }
     for (const k of action.conocimiento ?? []) {
       const app = appOf(k.app);
@@ -395,9 +399,13 @@ async function approveAndMerge(pr: PullRequestStatus, batch: string): Promise<vo
   // The issues link to the finding on the base, where it lands with the merge.
   const base = (activeRepo().worktreeBaseRef ?? config.worktreeBaseRef).replace(/^origin\//, '');
   const approved: Array<{ id: string; titulo: string }> = [];
+  // Who approved the PR: the findings' reviewers.
+  const revisor = await getDiscussion('pr', pr.number)
+    .then((d) => (d.decisions ?? []).filter((x) => x.state === 'APPROVED' && !isBot(x.author)).map((x) => x.author).join(', ') || undefined)
+    .catch(() => undefined);
   for (const app of await appsWithMemory(batchDir)) {
     const memoryDir = memoryDirFor(batchDir, app);
-    const ids = await approveFindings(memoryDir, () => true);
+    const ids = await approveFindings(memoryDir, () => true, revisor);
     await openFindingIssues(app, memoryDir, batchDir, base, (f) => f.estado === 'aprobado');
     const { findings } = await loadMemory(memoryDir);
     approved.push(...ids.map((id) => ({ id, titulo: findings.find((f) => f.id === id)?.titulo ?? id })));

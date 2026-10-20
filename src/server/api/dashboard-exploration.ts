@@ -42,6 +42,9 @@ export interface Ficha extends FindingBodyParts {
   rol: string;
   estado: FindingMeta['estado'];
   motivo?: string;
+  // Who decided it in the review (GitHub login), and when.
+  revisor?: string;
+  revisado?: string;
   issue?: number;
   entorno?: boolean;
   // The file in the PR's branch: its path, where a comment on it goes, and on GitHub.
