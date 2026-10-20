@@ -27,7 +27,7 @@ El spec se escribe como un **PR draft contra el repo del producto** (ej. `bmedic
 
 Flujo:
 
-1. El humano escribe el spec, abre el PR **en draft** y lo asigna a la cuenta de ronin (`RONIN_GITHUB_LOGIN`) con el picker de Assignees de GitHub. Mientras está en draft, el agente lo ignora por completo: el humano puede seguir iterando el contenido sin que nada dispare.
+1. El humano escribe el spec, abre el PR **en draft** y lo asigna a la cuenta de ronin (`RONIN_GITHUB_LOGIN`) con el picker de Assignees de GitHub. Mientras está en draft, el agente no lo implementa: el humano puede seguir iterando el contenido sin que nada arranque. Si el spec lo escribió ronin con `/spec` (rama `ronin/<issue>/spec`), se puede conversar en el PR (§1.1).
 2. Cuando el spec está listo, el humano lo marca **ready for review** (sin necesidad de aprobación — undraft es la señal de "andá"). Esta es la única señal que importa; no hace falta más.
 3. El runner detecta el PR (abierto, no-draft, asignado a su cuenta y sin un label de estado `ronin:in-progress`/`done`/`blocked` — ver `listAssignedSpecPrs` en `github.ts`), lo marca `ronin:in-progress` antes de cualquier otra cosa, lo mergea (sin el gate de approval que aplica a PRs de implementación — es documentación, no código de producto, y el humano ya señaló que está listo con la asignación + el undraft), y a partir de ahí sigue el flujo normal: crear issue de tracking, plan, slicing.
 
@@ -58,6 +58,22 @@ agente se abstuvo — sin esto, el issue quedaría reintentándose sin límite e
 cada tick. Ver
 [`docs/superpowers/specs/2026-07-28-bug-issue-intake-design.md`](superpowers/specs/2026-07-28-bug-issue-intake-design.md)
 (diseño original, desde entonces generalizado de "solo bugs" a cualquier issue asignado).
+
+
+#### 1.1 Conversar un spec de ronin en su PR (#241, `slices/spec-revise.ts`)
+
+Mientras el PR de un spec que escribió ronin con `/spec` sigue en draft, mencionarlo ahí abre una conversación sobre el spec, en un comentario general o en una línea del archivo.
+
+- **Detección:** en el flujo `review`, del tick y del handler de un evento, los PRs de ronin abiertos, en draft y con rama `ronin/<issue>/spec`. Se buscan las menciones sin procesar con `findUnprocessedMentions`, que antes contesta los meta-comandos.
+- **Quién puede:** cualquiera con identidad de GitHub, igual que `/fix-comments` en los PRs externos.
+- **Una corrida por PR:** la tarea `revise-spec` recibe juntas todas las menciones pendientes.
+  - Corre en el worktree de la rama, puesto al día con `origin` antes de empezar, para que una edición a mano en GitHub no se pierda.
+  - Si se pide un cambio, edita el spec para que siga siendo un documento coherente (alcance, diseño, decisiones, cómo se trocea, criterios) y lo sube en **un commit nuevo**, sin amend ni force-push.
+  - Contesta cada mención en su hilo, o con un comentario en el PR si fue general: qué cambió, con el enlace al commit, la respuesta, o qué necesita saber.
+  - Si dibuja un mockup nuevo, se publica como el de `/spec`.
+- **Estado en el PR:** `ronin/spec`, pendiente mientras trabaja.
+- **Si falla:** las menciones quedan sin procesar y se reintentan en el tick siguiente.
+- **Lo que no cambia:** marcarlo *ready for review* sigue siendo la única señal para mergearlo e implementarlo, y la tarea nunca lo hace. Los specs que escribe una persona se siguen editando a mano.
 
 ### 2. Mapeo a GitHub
 
@@ -143,6 +159,7 @@ Los módulos del núcleo (en `core/` salvo que se indique otra carpeta); los de 
 - `config.ts` — env vars, labels, límites de reintento
 - `github.ts` — wrappers sobre `gh` CLI (execFile con argv array, nunca shell string) para issues/PRs/labels/merge/body/contador de intentos. El gate de approval está *en código*, no solo documentado: `mergePullRequest` (que usan el PR de exploración y el auto-merge) lanza si `reviewDecision !== 'APPROVED'`
 - `slices/checklist.ts` — parsea y edita el checklist de slices del body del issue (índice de próxima slice, marcar merged, registrar PR); es la fuente de verdad para "qué slice sigue", no un contador aparte
+- `slices/spec-revise.ts` — las menciones en el PR draft de un spec de ronin: responde y edita el spec (§1.1)
 - `slices/spec-content.ts` — lee el contenido de un spec ya mergeado vía `git show origin/main:<path>` (nunca toca el working directory del checkout principal, así que no importa qué branch tenga el humano checked-out ahí)
 - `notifier.ts` — el notificador de bloqueos (nodemailer + Gmail SMTP)
 - `logger.ts` — formato `[ISO_TIMESTAMP] LEVEL mensaje`, usado en vez de `console.log` suelto (ver `logs/tick-YYYY-MM-DD.log`, §3)

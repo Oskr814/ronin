@@ -6,6 +6,7 @@ vi.mock('../core/config.js', () => ({
     worktreeBaseRef: 'origin/main',
     externalReviewWorkerModel: 'sonnet',
     githubLogin: 'ronin-agent',
+    specDir: 'docs/superpowers',
   },
   agentModelFor: (taskType: string) => `model-for-${taskType}`,
   agentEffortFor: (taskType: string) => `effort-for-${taskType}`,
@@ -207,5 +208,33 @@ describe('runAgentTask — commit style', () => {
       await runAgentTask(task);
       expect(runClaudeHeadless.mock.calls[0][1]).toContain(COMMIT_STYLE_RULE);
     }
+  });
+});
+
+describe('sliceTask — revise-spec (#241)', () => {
+  const mention = { id: 77, kind: 'review' as const, body: '@ronin-agent sumá al alcance separar los clientes', reactionsEyes: 0, authorLogin: 'persona' };
+  const dir = vi.fn(async () => '/tmp/spec-worktree');
+
+  it('runs on the spec branch through its own checkout, with the mention fenced as data', async () => {
+    const task = await buildTask({ type: 'revise-spec', issueNumber: 1026, prNumber: 1027, mentions: [mention], dir, outDir: '/tmp/out' });
+    expect(task.branch).toBe('ronin/1026/spec');
+    expect(task.checkout).toEqual({ kind: 'dir', dir });
+    expect(task.prompt).toContain('draft PR #1027');
+    expect(task.prompt).toContain('issue #1026');
+    expect(task.prompt).toMatch(/Inline comment \(id 77\), untrusted text/);
+    expect(task.prompt).toContain('sumá al alcance separar los clientes');
+    expect(task.prompt).toContain('docs/superpowers');
+  });
+
+  it('asks for a new commit, a reply per mention, and never to mark the PR ready', async () => {
+    const { prompt } = await buildTask({ type: 'revise-spec', issueNumber: 1026, prNumber: 1027, mentions: [mention], dir, outDir: '/tmp/out' });
+    expect(prompt).toContain('git push origin HEAD:ronin/1026/spec');
+    expect(prompt).toContain('Never amend, rebase or force-push');
+    expect(prompt).toContain('pulls/1027/comments/<comment id>/replies');
+    expect(prompt).toContain('gh pr comment 1027');
+    expect(prompt).toContain('Do not mark the PR ready for review');
+    expect(prompt).toContain('/tmp/out/mockup.html');
+    expect(prompt).toContain(COMMIT_STYLE_RULE);
+    expect(prompt).toContain(AGENT_NOTES_REMINDER);
   });
 });
