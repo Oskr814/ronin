@@ -1,6 +1,6 @@
 ---
 title: "Ajustes"
-description: "La configuración de ronin desde el tablero: tu cuenta y, para administradores, usuarios, repos, agentes y conexiones."
+description: "La configuración de ronin desde el tablero: tu cuenta y, para administradores, usuarios, repos, agentes, cuentas de Claude y conexiones."
 ---
 
 import { Aside } from '@astrojs/starlight/components';
@@ -28,6 +28,7 @@ Solo para administradores:
   - **Los usuarios del portal** (rol *Usuario*): sus apps, sus pedidos por día, el enlace de la contraseña y desactivarlos. Ver [El portal](/ronin/operar/portal/#las-cuentas).
 - **Repos:** una página por repo con lo que se escribe en [`repos.json`](/ronin/referencia/repos-json/): el nombre en el portal, la rama base, las apps (nombre, descripción, exploración nocturna y proyecto de Linear), la key de Linear, el auto-merge, los despliegues y el modelo de los agentes. Antes de escribir, ronin lo valida y guarda una copia del anterior.
 - **Agentes:** modelo y esfuerzo (también por tipo de tarea), topes de tiempo, concurrencia y reintentos antes de bloquear.
+- **Cuentas de Claude:** una por cada `claudeConfigDir` de `repos.json`, con los repos que la usan y su uso de ahora. Para cada una se elige el plan que paga (Pro, Max 5×, Max 20×, Team, Enterprise u Otro) y su precio al mes, que se completa con el de lista y se puede cambiar. Una cuenta sin elegir cuenta como Max 5× ($100). Sirve para calcular en Métricas cuánto rinde cada cuenta.
 - **Exploración** y **Previews:** la ventana nocturna y sus topes; cuánto vive una preview y cuántas a la vez.
 - **Conexiones:** si cada credencial de `.env` está y si GitHub responde (y cuándo vence el token), nunca su valor; y un correo de prueba.
 
