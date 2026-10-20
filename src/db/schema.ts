@@ -111,6 +111,28 @@ export interface JobsTable {
   error: string | null;
 }
 
+// The locks on issues and PRs and the agent slots (core/locks-db.ts).
+export interface LocksTable {
+  scope: string;
+  name: string;
+  holder: string;
+  host: string;
+  pid: number;
+  acquired_at: ColumnType<Date, string | undefined, string>;
+  lease_until: ColumnType<Date, string, string>;
+}
+
+// What's waiting for a slot (core/locks-db.ts), for the dashboard's queue.
+export interface LockWaitsTable {
+  id: Generated<string>;
+  holder: string;
+  kind: string;
+  label: string;
+  repo: string | null;
+  since: ColumnType<Date, string, string>;
+  lease_until: ColumnType<Date, string, string>;
+}
+
 export interface Database {
   settings: SettingsTable;
   task_settings: TaskSettingsTable;
@@ -121,4 +143,6 @@ export interface Database {
   portal_users: PortalUsersTable;
   portal_requests: PortalRequestsTable;
   jobs: JobsTable;
+  locks: LocksTable;
+  lock_waits: LockWaitsTable;
 }

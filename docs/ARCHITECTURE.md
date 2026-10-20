@@ -172,6 +172,8 @@ Lo que **desaparece**:
 
 **Hecho (3.1):** `jobs/store.ts`, `jobs/runner.ts`, `jobs/scheduler.ts`, `jobs/child.ts` (DESIGN §14). Por ahora sin reintentos: un trabajo cuyo lease vence queda `lost` y el próximo tick concilia, como antes.
 
+**Hecho (3.2):** `core/locks-db.ts`: tablas `locks` y `lock_waits`. `locks.ts` conserva su interfaz (`withResourceLock`, `pinResources`, `withSlots`) y elige la base o los archivos según `DATABASE_URL`. Los locks de los workers (preview, portal, reuniones) y el del estado local siguen en archivos: son de esta máquina y el paso 3.3 rediseña el segundo.
+
 El claim entre supervisores por label (DESIGN §9) deja de hacer falta con un solo nodo central que reparte el trabajo. Se mantiene mientras haya instalaciones viejas y después se simplifica.
 
 ### `Host`: dónde se ejecuta
