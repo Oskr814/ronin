@@ -162,6 +162,10 @@ a { color: inherit; }
 .lb { position: fixed; inset: 0; z-index: 60; background: rgba(10, 12, 18, .85); display: grid; place-items: center; padding: 24px; cursor: zoom-out; }
 .lb img { max-width: 100%; max-height: 100%; border-radius: 8px; }
 
+/* a page opened before a deploy, with something half-written */
+.stale { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 8px 16px; background: var(--warn-bg); color: var(--warn); font-size: 13px; font-weight: 500; }
+.stale .btn { padding: 3px 10px; font-size: 12.5px; }
+
 /* the interview (#225) */
 .btn.ghost { background: none; border-color: transparent; color: var(--muted); font-weight: 500; }
 .btn.ghost:hover { color: var(--ink); background: var(--hover); }
