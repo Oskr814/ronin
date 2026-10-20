@@ -370,6 +370,8 @@ viewport: mobile
 semilla: 83121
 estado: propuesto         # propuesto | aprobado → issue #N | rechazado | resuelto
 huella: confirmar|doble-click|pedido-duplicado
+revisor: persona          # quien la decidió en la review: su usuario de GitHub (rechazo, edición o aprobación)
+revisado: 2026-10-20T05:30:00Z
 ---
 Qué pasó, cómo reproducirlo, evidencia (con las capturas del antes) y propuesta (con la del después).
 ```
@@ -786,7 +788,7 @@ La página *Exploraciones* junta lo que antes estaba repartido entre el PR fijo 
 
   El PR es uno por repo (§11.7), así que un repo con dos apps muestra el mismo en las dos, aunque las fichas se cuentan por app. "Explorando" sale del agente en curso y, antes de que arranque el primero (la app tarda en levantarse), del registro de la corrida mientras el lock del repo está tomado (`liveRuns`).
 - **La página de una app (`/exploraciones/<owner>/<repo>/<app>`).**
-  - **Con un PR abierto,** es la página de ese PR con el encabezado de la app: la miga *Exploraciones / repo*, el PR, *Comentario general*, *Aprobar…*, *Explorar ahora* y la próxima corrida. *Hoy*, *Abrir #N* y las URLs `/i/<repo>#<pr>` llevan aquí.
+  - **Con un PR abierto,** es la página de ese PR con el encabezado de la app: la miga *Exploraciones / repo*, el PR, *Comentario general*, *Finalizar…*, *Explorar ahora* y la próxima corrida. *Hoy*, *Abrir #N* y las URLs `/i/<repo>#<pr>` llevan aquí.
   - **Sin PR,** una página que lo explica, con sus corridas y su inventario, y que pasa sola al PR cuando ronin lo abre.
 - **Corridas.** Cada corrida de la app, de su registro (§11.8), con los agentes que corrieron durante ella:
   - quién la lanzó y cómo terminó: bien, falló o se cortó, con el error;
