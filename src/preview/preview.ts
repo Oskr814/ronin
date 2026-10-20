@@ -213,11 +213,35 @@ async function previewManifest(dir: string, pr: Pick<PrHead, 'baseRefName' | 'he
   return chosen.raw;
 }
 
+// What the PR changes against its base (previewManifest already fetched it),
+// to tell which app it's about. Nothing when it can't be compared: then the
+// app has to be named.
+async function prFiles(dir: string, pr: Pick<PrHead, 'baseRefName' | 'headRefOid'>): Promise<string[]> {
+  try {
+    const mergeBase = (await execFileAsync('git', ['merge-base', `origin/${pr.baseRefName}`, pr.headRefOid], { cwd: dir })).stdout.trim();
+    return await changedFiles(dir, mergeBase, pr.headRefOid);
+  } catch {
+    return [];
+  }
+}
+
+// The apps whose folder has a file the PR changes. An app at the repo's root
+// would have them all, so it doesn't count.
+export function appsTouched(apps: Record<string, { path: string }>, changed: string[]): string[] {
+  return Object.entries(apps)
+    .filter(([, app]) => {
+      const folder = app.path.replace(/^\.\/?/, '').replace(/\/+$/, '');
+      return folder !== '' && changed.some((file) => file.startsWith(`${folder}/`));
+    })
+    .map(([name]) => name);
+}
+
 // `/preview backoffice un cliente con 40 catálogos`, `/preview un cliente
 // con 40 catálogos` and `/preview` all work: the first word is the app only
-// when the manifest has an app by that name; otherwise the manifest's only
-// app is used and everything is the instruction for the data.
-export function resolvePreviewArgs(args: string | undefined, appNames: string[]): { appName: string; instruction?: string } {
+// when the manifest has an app by that name; otherwise it's the manifest's
+// only app, or the only one the PR touches (`touched`), and everything is the
+// instruction for the data.
+export function resolvePreviewArgs(args: string | undefined, appNames: string[], touched: string[] = []): { appName: string; instruction?: string } {
   const text = (args ?? '').trim();
   const first = text.split(/\s+/)[0];
   const named = appNames.find((name) => name.toLowerCase() === first.toLowerCase());
@@ -225,10 +249,12 @@ export function resolvePreviewArgs(args: string | undefined, appNames: string[])
     const instruction = text.slice(first.length).trim();
     return instruction ? { appName: named, instruction } : { appName: named };
   }
-  if (appNames.length !== 1) {
-    throw new Error(`hay varias apps en ${APP_MANIFEST_FILE} (${appNames.join(', ')}): pedí \`/preview <app>\``);
+  const only = appNames.length === 1 ? appNames[0] : touched.length === 1 ? touched[0] : null;
+  if (!only) {
+    const which = touched.length > 1 ? `y este PR toca ${touched.join(' y ')}` : 'y este PR no toca la carpeta de ninguna';
+    throw new Error(`hay varias apps en ${APP_MANIFEST_FILE} (${appNames.join(', ')}) ${which}: pedí \`/preview <app>\``);
   }
-  return text ? { appName: appNames[0], instruction: text } : { appName: appNames[0] };
+  return text ? { appName: only, instruction: text } : { appName: only };
 }
 
 function isLiveWorktree(dir: string): Promise<boolean> {
@@ -445,7 +471,9 @@ export async function startPreview(prNumber: number, pr: PrHead, args?: string, 
   if (existsSync(existing)) await takeDownPreviewApp(existing);
   const dir = await ensurePreviewWorktree(prNumber, sha);
   const manifest = await previewManifest(dir, pr);
-  const { appName, instruction } = resolvePreviewArgs(args, Object.keys(parseAppManifest(manifest).apps));
+  const { apps } = parseAppManifest(manifest);
+  const touched = Object.keys(apps).length > 1 ? appsTouched(apps, await prFiles(dir, pr)) : [];
+  const { appName, instruction } = resolvePreviewArgs(args, Object.keys(apps), touched);
   // Checked before anything starts: a preview is a whole stack, and this
   // host runs a handful at most. A second /preview on the same PR keeps its
   // slot.

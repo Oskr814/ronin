@@ -434,7 +434,7 @@ Antes de asignárselo a ronin, el issue se puede ir dando forma con él: cualqui
 
 ### 12. Previews por PR en la tailnet (`/preview`)
 
-Para probar un PR sin entrar al server, armar el worktree y levantar la app a mano. `@ronin-agent /preview [app]` en un PR (no fork) hace eso mismo con el código del head del PR y responde con una URL de la tailnet y los usuarios de seed. La app es opcional cuando el manifiesto define una sola.
+Para probar un PR sin entrar al server, armar el worktree y levantar la app a mano. `@ronin-agent /preview [app]` en un PR (no fork) hace eso mismo con el código del head del PR y responde con una URL de la tailnet y los usuarios de seed. La app es opcional cuando el manifiesto define una sola, o cuando el PR cambia archivos en la carpeta (`path`) de una sola de sus apps (`appsTouched`): un cambio en `apps/backoffice` y `packages/ui` es del backoffice. Una app con `path` en la raíz no cuenta, porque las tocaría todas.
 
 - **Qué manifiesto.** El `ronin.app.json` (§11.2) de la rama base del PR, salvo que el PR lo modifique: en ese caso, el del PR. Un PR que salió de la base antes de un arreglo al manifiesto (como #367 de bmedical, de antes de `ALLOWED_DEV_ORIGINS`) levantaría la app rota, y ronin no pone al día sus propios PRs con la base.
 - **Dónde corre.** Un worker aparte (`preview/worker.ts`), como el de exploración: levantar la app tarda minutos y no puede retener el tick. El comando se intercepta en `findUnprocessedMentions`, así que nunca llega a la review ni a fix-comments. El comando queda como procesado al lanzar el worker, y el worker contesta en el mismo lugar del comentario. Hay un lock por PR, así que dos `/preview` seguidos no se pisan.
