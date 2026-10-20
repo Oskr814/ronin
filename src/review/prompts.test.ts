@@ -747,3 +747,18 @@ describe('reviewAgentDefinitions', () => {
     expect(Object.keys(reviewAgentDefinitions(criteria, 'incremental'))).toEqual(['review-security', 'review-delta']);
   });
 });
+
+describe('runAgentTask — the PR description kept up to date', () => {
+  const mentions = [{ id: 1, kind: 'issue' as const, body: 'test', reactionsEyes: 0, authorLogin: 'someone' }];
+  it.each([
+    ['fix-review', { type: 'fix-review' as const, issueNumber: 228, prNumber: 229 }],
+    ['review-request', { type: 'review-request' as const, issueNumber: 228, prNumber: 229, mentions }],
+    ['fix-comments', { type: 'fix-comments' as const, issueNumber: 228, prNumber: 229, trigger: mentions, openThreads: [] }],
+  ])('asks %s to update it through the API, keeping the help footer', async (_name, task) => {
+    await runAgentTask(task as never);
+    const prompt = runClaudeHeadless.mock.calls[0][1] as string;
+    expect(prompt).toContain('bring the PR description up to date');
+    expect(prompt).toContain('gh api -X PATCH repos/{owner}/{repo}/pulls/229 -F body=@<file>');
+    expect(prompt).toContain('<!-- ronin:help -->');
+  });
+});

@@ -177,7 +177,7 @@ async function buildSliceTask(task: SliceTask): Promise<PreparedTask> {
           COMMIT_STYLE_RULE,
           `Then reply to each mention, in Spanish like the rest of the PR, in a few sentences: what you changed in the spec (with the commit's link), the answer, or your question. An inline comment gets its reply in its own thread: "gh api repos/{owner}/{repo}/pulls/${task.prNumber}/comments/<comment id>/replies -f body=<text>". A general comment gets one PR comment: "gh pr comment ${task.prNumber} --body-file <file>". One reply per mention id.`,
           'Never write "@" followed by a name/handle anywhere in what you post — not even when echoing a commenter. Refer to people by role or "el comentario de arriba".',
-          `Do not mark the PR ready for review, change its title, labels, assignees or base, resolve threads, approve it or merge it: marking it ready is the team\'s signal to start implementing it. You may update the PR body only if it lists the decisions you made on your own and those changed ("gh pr edit ${task.prNumber} --body-file <file>"), keeping its last note as it is.`,
+          `Do not mark the PR ready for review, change its title, labels, assignees or base, resolve threads, approve it or merge it: marking it ready is the team\'s signal to start implementing it. You may update the PR body only if it lists the decisions you made on your own and those changed ("gh api -X PATCH repos/{owner}/{repo}/pulls/${task.prNumber} -F body=@<file>"; never "gh pr edit", which fails on this repo), keeping its last note as it is.`,
           AGENT_NOTES_REMINDER,
         ].join('\n\n'),
       };
