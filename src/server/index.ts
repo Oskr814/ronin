@@ -19,9 +19,25 @@ import { createTailnetHandler } from './tailnet.js';
 import { loadTeam } from './api/team.js';
 import { warmDashboard } from './api/dashboard.js';
 import { timedRequests } from './timing.js';
+import { getDb } from '../db/db.js';
+import { migrateToLatest } from '../db/migrate.js';
 
 if (!config.webhookSecret) {
   throw new Error('WEBHOOK_SECRET no está seteado — ver .env.example. El servidor no puede arrancar sin validar las firmas de GitHub.');
+}
+
+// With DATABASE_URL (#235, stage 2), the database is brought up to date
+// before anything is served. A migration that fails is logged and the
+// server comes up anyway: what reads the database falls back as when it
+// doesn't answer (settings-store.ts), and the dashboard stays reachable.
+const db = getDb();
+if (db) {
+  try {
+    const ran = await migrateToLatest(db);
+    log.info(ran.length ? `base de datos: migraciones aplicadas: ${ran.join(', ')}` : 'base de datos: al día');
+  } catch (error) {
+    log.error('base de datos: no se pudo migrar', error);
+  }
 }
 
 // A request that throws answers 500 and is logged: it never takes the

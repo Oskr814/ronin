@@ -15,7 +15,7 @@ import { listRuns } from './dashboard-data.js';
 const RUN_DAYS = 63;
 
 export async function suscripcionView(entries: RepoEntry[], account: string | null, now = Date.now()): Promise<{ accounts: string[]; cuentas: Subscription[] } | null> {
-  const all = cuentasView(entries).cuentas;
+  const all = (await cuentasView(entries)).cuentas;
   const shown = account ? all.filter((c) => c.account === account) : all;
   if (account && !shown.length) return null;
   const runs = listRuns(RUN_DAYS, new Date(now));

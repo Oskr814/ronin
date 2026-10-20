@@ -670,7 +670,7 @@ async function ajustes(req: IncomingMessage, res: ServerResponse, path: string, 
   const cuenta = /^\/api\/ajustes\/cuentas(?:\/([\w.-]+))?$/.exec(path);
   if (cuenta) {
     if (!admin) json(res, 403, { error: 'solo los administradores ven las cuentas de Claude' });
-    else if (req.method === 'GET' && !cuenta[1]) json(res, 200, cuentasView(await loadRepos()));
+    else if (req.method === 'GET' && !cuenta[1]) json(res, 200, await cuentasView(await loadRepos()));
     else if (req.method !== 'POST' || !cuenta[1]) json(res, 405, { error: 'método no permitido' });
     else if (!(req.headers['content-type'] ?? '').startsWith('application/json')) json(res, 415, { error: 'se espera JSON' });
     else {

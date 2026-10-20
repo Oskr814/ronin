@@ -56,6 +56,7 @@ export default defineConfig({
             'operar/tablero',
             'operar/portal',
             'operar/ajustes',
+            'operar/base-de-datos',
             'operar/linear',
             'operar/changelog',
             'operar/problemas',

@@ -31,7 +31,7 @@ Cuando una etapa de #235 se mergea, lo que cambió se pasa a `DESIGN.md` y la se
 | Cuentas, pedidos y eventos del portal; sus imágenes | `PORTAL_DATA_DIR` (un `request.json` por pedido) | `withJson`: lock de archivo y escritura atómica |
 | Reuniones | `MEETINGS_DATA_DIR` | ídem |
 | Despliegues | `DEPLOYS_DATA_DIR` | ídem |
-| Ajustes | `SETTINGS_DATA_DIR` | ídem |
+| Ajustes | `SETTINGS_DATA_DIR` (Postgres con `DATABASE_URL` desde la etapa 2) | ídem |
 | Métricas (caché de GitHub) | `METRICS_DATA_DIR` | ídem |
 | Catálogo de seeds | `SEED_CATALOG_DATA_DIR` | ídem |
 | Corridas de agentes | `logs/runs/<día>/<corrida>.jsonl` | un archivo por corrida; el tablero los recorre |
@@ -116,6 +116,8 @@ La base guarda la ruta y los metadatos.
 - **Kysely** sobre `pg`: consultas tipadas sin un ORM que esconda lo que hace.
 - **Migraciones versionadas** en `src/db/migrations/`, que corren al arrancar.
 - **Un repositorio por módulo** (`portal/store.ts`, `deploy/store.ts`…) con la misma interfaz que hoy exponen los módulos. Los servicios no cambian de forma.
+
+**Hecho:** la base (`src/db/`: Kysely, migraciones en `src/db/migrations/` que el servidor corre al arrancar, `compose.postgres.yml`, `compose.test.yml` y un Postgres en el CI) y **Ajustes** (`core/settings-store.ts`). Mientras dura la etapa, `DATABASE_URL` la activa y sin ella todo sigue en archivos: cada módulo se despliega primero y se pasa después con su `pnpm db:import-<módulo>`. `config.ts` lee Ajustes con `await` al cargar, así que cada proceso abre su pool (chico, que no impide que el proceso termine).
 
 **Migración, un módulo por vez:**
 1. Se crea la tabla.

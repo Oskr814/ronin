@@ -1,7 +1,8 @@
 import { join, resolve } from 'node:path';
 import { assertTimezone } from './timezone.js';
 import { currentRepo } from './repo-context.js';
-import { applySettings, readSettingsSync } from './settings.js';
+import { applySettings } from './settings.js';
+import { readSettings } from './settings-store.js';
 
 const logins = (value: string | undefined) => (value ?? '').split(',').map((u) => u.trim().toLowerCase()).filter(Boolean);
 
@@ -225,8 +226,10 @@ export const config = {
 
 // The values changed in Ajustes win over .env (core/settings.ts). Applied
 // here, at load, so every process starts with them; the server applies them
-// again after saving one.
-applySettings(config as unknown as Record<string, unknown>, readSettingsSync(config.settings.dataDir));
+// again after saving one. Read from Postgres when DATABASE_URL is set
+// (settings-store.ts), hence the await: every module that imports config
+// waits for it.
+applySettings(config as unknown as Record<string, unknown>, await readSettings(config.settings.dataDir));
 
 // Per task type, the model a run uses when its env var isn't set — anything
 // not listed falls back to config.agentModel. Haiku only where the output is

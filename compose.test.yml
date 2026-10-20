@@ -1,0 +1,15 @@
+# A Postgres for the tests that need a real one (src/db/testing.ts):
+#   docker compose -f compose.test.yml up -d
+#   TEST_DATABASE_URL=postgres://ronin:ronin@127.0.0.1:54329/ronin_test pnpm test
+# Throwaway: its data lives in memory and goes with the container.
+services:
+  postgres-test:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ronin
+      POSTGRES_PASSWORD: ronin
+      POSTGRES_DB: ronin_test
+    ports:
+      - "127.0.0.1:${TEST_PG_PORT:-54329}:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
