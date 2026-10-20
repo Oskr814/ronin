@@ -605,7 +605,7 @@ La tailnet ya limita quién llega. El login suma una segunda barrera, y el token
 | Dato | Fuente |
 |---|---|
 | Corridas, transcripts, *Hoy* | El registro por corrida, `logs/runs/` (15.5) |
-| Uso de cada cuenta de Claude | `logs/usage/<cuenta>.json` (15.6) |
+| Uso de cada cuenta de Claude | `logs/usage/<cuenta>.json`, y su historial en `logs/usage/history/<cuenta>.jsonl` (15.6) |
 | Motivo de un bloqueo | `blocks` en el estado local del repo (15.7) |
 | Lo que espera un cupo | `.ronin-slots/waiting/` (15.7) |
 | Cupos ocupados | `.ronin-slots/all-*.lock` con un pid vivo |
@@ -630,7 +630,7 @@ Cada campo pasa por `redact()` antes de escribirse. Una corrida sin `run_end` cu
 
 #### 15.6 Uso de cada cuenta (`core/claude-usage.ts`)
 
-Cada corrida de `claude -p` emite en el stream un `rate_limit_event` con el uso de la cuenta en la ventana de 5 horas y en la semanal, y cuándo se reinicia cada una. `runClaudeHeadless` guarda el último en `logs/usage/<cuenta>.json`, con la hora en que se midió. La cuenta se nombra por su `claudeConfigDir` (`.claude-redmotos` → `redmotos`). Cuando una corrida termina por límite de uso, la cuenta queda marcada sin cuota (`limitHitAt`) hasta la próxima medición.
+Cada corrida de `claude -p` emite en el stream un `rate_limit_event` con el uso de la cuenta en la ventana de 5 horas y en la semanal, y cuándo se reinicia cada una. `runClaudeHeadless` guarda el último en `logs/usage/<cuenta>.json`, con la hora en que se midió. La cuenta se nombra por su `claudeConfigDir` (`.claude-redmotos` → `redmotos`). Cuando una corrida termina por límite de uso, la cuenta queda marcada sin cuota (`limitHitAt`) hasta la próxima medición. Cada medición, y cada vez que se topa el límite (`limitHit`), se agrega además como una línea a `logs/usage/history/<cuenta>.jsonl`: es lo que permite ver cuánto se llenó cada ventana antes de reiniciarse, para el aprovechamiento de la suscripción en Métricas.
 
 Una cuenta sin corridas recientes muestra un dato viejo, con su antigüedad a la vista. No se usa el endpoint que lee `/usage` de Claude Code (`/api/oauth/usage`): no está documentado, y con un token vencido habría que refrescarlo, compitiendo con Claude Code por el mismo `.credentials.json`.
 
