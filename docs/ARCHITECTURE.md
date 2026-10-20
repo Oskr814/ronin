@@ -263,7 +263,7 @@ La base de datos resuelve los dos primeros.
 | Base | Postgres | Varias conexiones y procesos escribiendo, colas con `SKIP LOCKED`, respaldos estándar. Abre la puerta a un nodo central con runners. |
 | Acceso a datos | Kysely sobre `pg`, migraciones versionadas | Consultas tipadas y visibles; sin ORM. |
 | Cola | Tablas propias (`jobs`, `resource_locks`, `slots`) con `FOR UPDATE SKIP LOCKED` | Necesita recursos exclusivos por issue o PR y cupos por repo y por tipo, que una librería como pg-boss no modela; y el tablero la tiene que leer tal cual. |
-| Router | Hono, con zod | Liviano, sobre Request/Response estándar, rutas tipadas y un cliente con los mismos tipos para el frontend. |
+| Router | Hono, con zod | Liviano, sobre Request/Response estándar, rutas tipadas y un cliente con los mismos tipos para el frontend (`hc<typeof app>`), sin generar código. Se evaluó NestJS, que el equipo conoce: da estructura (módulos, guards, pipes) pero suma mucha dependencia y ceremonia para unas 40 rutas, pide decoradores y es incómodo con el ESM de ronin, y su contrato con el frontend pasa por OpenAPI y un generador. Lo que se toma de su enfoque: middlewares para sesión, validación, errores y tiempos, y servicios separados de las rutas. |
 | Frontend | Vite, TypeScript, React, TanStack Query | El equipo ya usa React en los productos; el polling y la caché son el patrón dominante. |
 | Contenedores | Una imagen, Compose, Docker-in-Docker para las apps de prueba | Instalar y recuperar con pocos pasos; aislar las apps de prueba del host. |
 | Respaldos | `pg_dump` diario y restic del volumen de archivos, a un destino del `.env`; 7 diarios y 4 semanales | Lo único que no se reconstruye solo es la base y los archivos. |
