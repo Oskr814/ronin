@@ -5,7 +5,7 @@ import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { join, normalize } from 'node:path';
 import { activeRepo } from '../core/repo-context.js';
 import { appDown, appRerun, appUp, APP_STATE_DIR, stepLabel, type AppSession } from '../app/index.js';
-import { APP_MANIFEST_FILE, parseAppManifest, publicizeTemplate, publicPortsIn, publicUrl, stepsToRerun, type AppDefinition, type AppStep, type AppUser, type TemplateContext } from '../app/index.js';
+import { APP_MANIFEST_FILE, appsTouched, parseAppManifest, publicizeTemplate, publicPortsIn, publicUrl, stepsToRerun, type AppDefinition, type AppStep, type AppUser, type TemplateContext } from '../app/index.js';
 import { removeWorktreeDir } from '../core/worktree.js';
 import { commentOnSpecPr, listOpenPrHeads, type PrHead } from '../core/github.js';
 import { runAgentTask } from '../core/agent-task.js';
@@ -223,17 +223,6 @@ async function prFiles(dir: string, pr: Pick<PrHead, 'baseRefName' | 'headRefOid
   } catch {
     return [];
   }
-}
-
-// The apps whose folder has a file the PR changes. An app at the repo's root
-// would have them all, so it doesn't count.
-export function appsTouched(apps: Record<string, { path: string }>, changed: string[]): string[] {
-  return Object.entries(apps)
-    .filter(([, app]) => {
-      const folder = app.path.replace(/^\.\/?/, '').replace(/\/+$/, '');
-      return folder !== '' && changed.some((file) => file.startsWith(`${folder}/`));
-    })
-    .map(([name]) => name);
 }
 
 // `/preview backoffice un cliente con 40 catálogos`, `/preview un cliente

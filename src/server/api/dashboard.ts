@@ -11,7 +11,7 @@ import { itemKindOf } from '../../core/github.js';
 import { withActiveRepo } from '../../core/repo-context.js';
 import { hostLoad, itemKey, listRuns as listAllRuns, readQueue, readRunLines, readTickInfo, readUsage, runPath, slotsInUse, summarizeRun } from './dashboard-data.js';
 import { forgetGithub, repoGithub } from './dashboard-github.js';
-import { createFromDashboard, NewIssueError, parseNewIssue, repoApps } from './dashboard-new-issue.js';
+import { createFromDashboard, NewIssueError, parseNewIssue, repoAppPaths, repoApps } from './dashboard-new-issue.js';
 import { cycleView, repoLinear } from './dashboard-linear.js';
 import { buildItems, itemRunKeys } from './dashboard-items.js';
 import { forgetDetails, itemDetail, resolveItem } from './dashboard-detail.js';
@@ -449,13 +449,19 @@ async function filesContext(id: string) {
   return { entry: ctx.entry, prNumber, files: await prFiles(ctx.entry, prNumber, ctx.changedSince) };
 }
 
+// The item's actions, with the repo's apps and where each one lives.
+async function actionsOf(ctx: NonNullable<Awaited<ReturnType<typeof itemContext>>>, login: string) {
+  const paths = await repoAppPaths(ctx.entry);
+  return listActions(ctx.ref, ctx.gh, ctx.detail, login, Object.keys(paths), paths);
+}
+
 async function detail(id: string, login: string): Promise<unknown | null> {
   const ctx = await itemContext(id);
   if (!ctx) return null;
   // `ronin`: its login, so the page can tell its comments apart. `exploration`:
   // an exploration PR, whose page has its findings to review (#93).
   const pr = ctx.ref.kind === 'pr' ? ctx.gh?.prs.find((p) => p.number === ctx.ref.number) : undefined;
-  return { ref: ctx.ref, ronin: config.githubLogin, ...ctx.detail, exploration: Boolean(pr && isExplorationPr(pr)), actions: listActions(ctx.ref, ctx.gh, ctx.detail, login, await repoApps(ctx.entry)), pedido: await pedidoOf(ctx.entry.productRepo, ctx.ref) };
+  return { ref: ctx.ref, ronin: config.githubLogin, ...ctx.detail, exploration: Boolean(pr && isExplorationPr(pr)), actions: await actionsOf(ctx, login), pedido: await pedidoOf(ctx.entry.productRepo, ctx.ref) };
 }
 
 // The portal request an issue or PR came from (#132), to link its page.

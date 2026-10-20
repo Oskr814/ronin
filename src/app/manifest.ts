@@ -241,6 +241,17 @@ export function parseAppManifest(raw: string): AppManifest {
 // app declares `rerunOn` at all — a manifest that hasn't adopted it can't
 // say what's safe to skip, so the caller brings the app up from scratch.
 // An empty list means nothing has to run: the dev servers reload the rest.
+// The apps whose folder has a file the PR changes. An app at the repo's root
+// would have them all, so it doesn't count.
+export function appsTouched(apps: Record<string, { path: string }>, changed: string[]): string[] {
+  return Object.entries(apps)
+    .filter(([, app]) => {
+      const folder = app.path.replace(/^\.\/?/, '').replace(/\/+$/, '');
+      return folder !== '' && changed.some((file) => file.startsWith(`${folder}/`));
+    })
+    .map(([name]) => name);
+}
+
 export function stepsToRerun(app: Pick<AppDefinition, 'steps'>, changedFiles: string[]): AppStep[] | null {
   if (!app.steps.some((step) => step.rerunOn)) return null;
   return app.steps.filter((step) => step.rerunOn?.some((glob) => changedFiles.some((file) => matchesGlob(file, glob))));

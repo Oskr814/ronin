@@ -567,6 +567,9 @@ export interface Discussion {
   // which leaves its PR's reviews out.
   reviewDecision?: 'APPROVED' | 'CHANGES_REQUESTED' | 'REVIEW_REQUIRED' | '';
   decisions?: Array<{ author: string; state: 'APPROVED' | 'CHANGES_REQUESTED' }>;
+  // A PR's: the paths it changes (GitHub gives the first 100), to tell which
+  // app of ronin.app.json it's about.
+  files?: string[];
 }
 
 // Each reviewer's latest decision, in the order they took it: a later
@@ -626,8 +629,9 @@ async function getDiscussionThreads(prNumber: number): Promise<DiscussionThread[
 }
 
 export async function getDiscussion(kind: 'issue' | 'pr', number: number): Promise<Discussion> {
-  const fields = 'number,title,body,author,createdAt,url,state,labels,comments' + (kind === 'pr' ? ',mergeable,baseRefName,headRefName,reviews,isDraft,reviewDecision' : '');
-  type Raw = Omit<Discussion, 'author' | 'comments' | 'body' | 'labels' | 'reviews' | 'threads' | 'reviewDecision' | 'decisions'> & {
+  const fields = 'number,title,body,author,createdAt,url,state,labels,comments' + (kind === 'pr' ? ',mergeable,baseRefName,headRefName,reviews,isDraft,reviewDecision,files' : '');
+  type Raw = Omit<Discussion, 'author' | 'comments' | 'body' | 'labels' | 'reviews' | 'threads' | 'reviewDecision' | 'decisions' | 'files'> & {
+    files?: Array<{ path: string }>;
     reviewDecision?: Discussion['reviewDecision'] | null;
     body: string | null;
     author: { login: string } | null;
@@ -639,7 +643,7 @@ export async function getDiscussion(kind: 'issue' | 'pr', number: number): Promi
     gh([kind, 'view', String(number), '--json', fields]).then((out) => JSON.parse(out) as Raw),
     kind === 'pr' ? getDiscussionThreads(number) : undefined,
   ]);
-  const { reviews, reviewDecision, ...rest } = raw;
+  const { reviews, reviewDecision, files, ...rest } = raw;
   const all = reviews?.map((r) => ({ author: r.author?.login ?? '', body: r.body, state: r.state, submittedAt: r.submittedAt }));
   // How a closed issue closed, which this gh can't say (#129).
   const stateReason = kind === 'issue' && raw.state === 'CLOSED' ? (await getIssueState(number).catch(() => undefined))?.stateReason : undefined;
@@ -649,6 +653,7 @@ export async function getDiscussion(kind: 'issue' | 'pr', number: number): Promi
     ...(all ? { reviews: all.filter((r) => r.body.trim() || ['APPROVED', 'CHANGES_REQUESTED', 'DISMISSED'].includes(r.state)), decisions: reviewerDecisions(all) } : {}),
     ...(kind === 'pr' ? { reviewDecision: reviewDecision ?? '' } : {}),
     ...(threads ? { threads } : {}),
+    ...(files ? { files: files.map((f) => f.path) } : {}),
     body: raw.body ?? '',
     author: raw.author?.login ?? '',
     labels: raw.labels.map((l) => l.name),

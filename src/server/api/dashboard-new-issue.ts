@@ -1,6 +1,9 @@
+import { execFile } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { promisify } from 'node:util';
 import { APP_MANIFEST_FILE, parseAppManifest } from '../../app/manifest.js';
+import { config } from '../../core/config.js';
 import { applyLinearSoon, queueLinearAssignment } from '../../core/linear-assign.js';
 import type { LinearPlanning } from '../../core/linear-api.js';
 import { withActiveRepo, type RepoEntry } from '../../core/repo-context.js';
@@ -34,14 +37,27 @@ export class NewIssueError extends Error {}
 const TITLE_MAX = 256;
 const BODY_MAX = 60_000;
 
-// The apps of the repo's ronin.app.json, for /spike and /spec; none if it has
-// no manifest.
-export async function repoApps(entry: RepoEntry): Promise<string[]> {
+const execFileAsync = promisify(execFile);
+
+// The apps of the repo's ronin.app.json, each with its folder: the one on
+// the base branch ronin works from (the checkout can be on any branch), or
+// the checkout's if git can't say. None if there's no manifest.
+export async function repoAppPaths(entry: RepoEntry): Promise<Record<string, string>> {
+  const base = entry.worktreeBaseRef ?? config.worktreeBaseRef;
+  const raw = await execFileAsync('git', ['show', `${base}:${APP_MANIFEST_FILE}`], { cwd: entry.productRepoPath, maxBuffer: 10 * 1024 * 1024 })
+    .then(({ stdout }) => stdout, () => readFile(join(entry.productRepoPath, APP_MANIFEST_FILE), 'utf8'))
+    .catch(() => null);
+  if (raw === null) return {};
   try {
-    return Object.keys(parseAppManifest(await readFile(join(entry.productRepoPath, APP_MANIFEST_FILE), 'utf8')).apps);
+    return Object.fromEntries(Object.entries(parseAppManifest(raw).apps).map(([name, app]) => [name, app.path]));
   } catch {
-    return [];
+    return {};
   }
+}
+
+// Their names, for /spike, /spec, /prototype and /preview.
+export async function repoApps(entry: RepoEntry): Promise<string[]> {
+  return Object.keys(await repoAppPaths(entry));
 }
 
 export function parseNewIssue(raw: Record<string, unknown>, apps: string[], planning?: LinearPlanning): NewIssue {
