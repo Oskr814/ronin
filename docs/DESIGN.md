@@ -1476,6 +1476,19 @@ La página no calcula nada: solo dibuja la respuesta de la API.
 
 Nada: sin `METRICS_DATA_DIR`, usa `metrics-data/` en el checkout del runner (fuera de git). Lo de GitHub se vuelve a traer solo si se pierde; el registro de bloqueos no, así que hay que respaldarlo.
 
+### 21. Tiempos (#235, etapa 1)
+
+Antes de optimizar nada se mide. `core/timing.ts` abre una medición (`measure`, un `AsyncLocalStorage`) y cualquier código que corre adentro suma sus tramos con `timed(nombre, fn)` sin que se lo pasen. Hoy el único tramo es `github`: las llamadas con `gh` de `core/github.ts` y las de `fetch` del tablero (como la persona, sus permisos, los usuarios). Los tramos que corren a la vez se suman, así que el de GitHub dice cuánto se gastó ahí, no cuánto se esperó.
+
+- **Cada request de `/api/*`** (`server/timing.ts`, en los dos listeners):
+  - responde con `Server-Timing`, con el total hasta la cabecera y cada tramo con sus llamadas;
+  - si pasa de `SLOW_REQUEST_MS` (500), deja una línea `slow_request` con la ruta (sin números ni ids: `/api/portal/requests/:n/interview`), el estado y los tramos.
+
+  Quedan afuera los archivos de la web y los streams en vivo (`text/event-stream`).
+- **Resumen por ruta:** cada 10 minutos, una línea por ruta en `logs/timings/<día>.jsonl` con la cantidad, los errores 5xx, el total, el máximo, el tiempo en GitHub y cuántos requests cayeron en cada tramo (`≤25, 50, 100, 250, 500 ms, 1, 2.5, 5, 10 s` y más). Se guardan tramos y no percentiles para poder juntar ventanas sin perder exactitud. Un reinicio pierde a lo sumo los últimos 10 minutos.
+- **El tick:** `tick_complete` (y `event_complete`) suma `steps` (cuánto tardó cada paso: `assign`, `sweeps`, `auto-merge`, `portal`, `deploys`, `nightly`), `discoveryMs`, `jobsMs`, `githubMs` y `githubCalls`.
+- **`pnpm timings [días]`** (`scripts/timings.ts`, la cuenta en `core/timing-report.ts`) arma la tabla: por ruta, la cantidad, el promedio, los percentiles por tramo, el máximo y GitHub por request; por repo, los ticks con su p50, p90 y máximo y la mediana de cada paso. Lee también los `tick_complete` de antes de esta medición, que solo traen el total.
+
 ## Estado actual
 
 - [x] Definir el esqueleto del supervisor (script + estructura de tick) — ver §3.1 y `src/`

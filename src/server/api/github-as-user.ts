@@ -3,6 +3,7 @@
 // written this way reaches ronin like one written on GitHub — its webhook,
 // then the same handler — so nothing downstream needs to know it came from
 // the dashboard.
+import { timed } from '../../core/timing.js';
 
 export interface Posted {
   id: number;
@@ -20,7 +21,7 @@ export class GithubUserError extends Error {
 const API = 'https://api.github.com';
 
 async function call<T>(token: string, method: string, path: string, body?: unknown): Promise<T> {
-  const response = await fetch(`${API}${path}`, {
+  const response = await timed('github', () => fetch(`${API}${path}`, {
     method,
     headers: {
       Authorization: `Bearer ${token}`,
@@ -30,7 +31,7 @@ async function call<T>(token: string, method: string, path: string, body?: unkno
       ...(body ? { 'Content-Type': 'application/json' } : {}),
     },
     ...(body ? { body: JSON.stringify(body) } : {}),
-  });
+  }));
   if (response.ok) return (await response.json()) as T;
   // A 422 says what was wrong in `errors` (a line outside the diff), not in `message`.
   const said = await response.json().then((b: { message?: string; errors?: Array<string | { message?: string }> }) => [b?.message, ...(b?.errors ?? []).map((e) => (typeof e === 'string' ? e : e?.message))].filter(Boolean).join(': ') || undefined).catch(() => undefined);

@@ -7,6 +7,7 @@ import { config, LABEL_MANAGED, LABEL_STATES, type SpecStatus } from './config.j
 import { activeRepo } from './repo-context.js';
 import { log } from './logger.js';
 import type { FailedCheck } from './failure-signature.js';
+import { timed } from './timing.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -17,9 +18,9 @@ const execFileAsync = promisify(execFile);
 // host, so every issue/PR is authored by that account regardless of who
 // else is logged into `gh` there.
 async function gh(args: string[]): Promise<string> {
-  const { stdout } = await execFileAsync('gh', [...args, '--repo', activeRepo().productRepo], {
+  const { stdout } = await timed('github', () => execFileAsync('gh', [...args, '--repo', activeRepo().productRepo], {
     env: { ...process.env, GH_TOKEN: config.githubToken },
-  });
+  }));
   return stdout;
 }
 
@@ -31,11 +32,11 @@ async function gh(args: string[]): Promise<string> {
 // wrong repo anyway. Every caller therefore spells out
 // `repos/${activeRepo().productRepo}/...` literally instead.
 async function ghApi(args: string[]): Promise<string> {
-  const { stdout } = await execFileAsync('gh', args, {
+  const { stdout } = await timed('github', () => execFileAsync('gh', args, {
     env: { ...process.env, GH_TOKEN: config.githubToken },
     // A big PR's files with their patches (getPrFiles) are well over the 1 MB default.
     maxBuffer: 64 * 1024 * 1024,
-  });
+  }));
   return stdout;
 }
 
@@ -353,10 +354,10 @@ export async function getFailedChecks(prNumber: number): Promise<FailedCheck[]> 
     const jobId = c.detailsUrl?.match(ACTIONS_JOB_URL)?.[1];
     if (!jobId) return { name, log: '' };
     try {
-      const { stdout: jobLog } = await execFileAsync('gh', ['api', `repos/${activeRepo().productRepo}/actions/jobs/${jobId}/logs`], {
+      const { stdout: jobLog } = await timed('github', () => execFileAsync('gh', ['api', `repos/${activeRepo().productRepo}/actions/jobs/${jobId}/logs`], {
         env: { ...process.env, GH_TOKEN: config.githubToken },
         maxBuffer: JOB_LOG_MAX_BUFFER,
-      });
+      }));
       return { name, log: jobLog };
     } catch (error) {
       log.info(`getFailedChecks: no se pudo leer el log del job ${jobId} (PR #${prNumber}): ${(error as Error).message}`);

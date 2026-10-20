@@ -3,6 +3,7 @@ import { log } from '../../core/logger.js';
 import type { RepoEntry } from '../../core/repo-context.js';
 import { AjustesError, notificaciones, record } from './ajustes.js';
 import { applyTeam, entradaOf, envAdmins, isAdmin, isSetName, permsFor, readTeam, SETS, withTeam, type Member, type RepoGrant, type TeamFile } from './team.js';
+import { timed } from '../../core/timing.js';
 
 // Ajustes → Usuarios (#174, stage 2), admins only:
 //   GET  /api/ajustes/usuarios                 the team, who gets in and the default set
@@ -21,10 +22,10 @@ const SET_NAME = { todo: 'Todo', reuniones: 'Reuniones y pedidos', lectura: 'Sol
 const PERM_NAME = { notas: 'subir notas', aprobar: 'aprobar', acciones: 'acciones', desplegar: 'desplegar' };
 
 async function githubGet(path: string): Promise<Response> {
-  return fetch(`https://api.github.com/${path}`, {
+  return timed('github', () => fetch(`https://api.github.com/${path}`, {
     headers: { Authorization: `Bearer ${config.githubToken}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', 'User-Agent': 'ronin-dashboard' },
     signal: AbortSignal.timeout(15_000),
-  });
+  }));
 }
 
 // What GitHub gives the login on the repo (admin, maintain, write, triage,
