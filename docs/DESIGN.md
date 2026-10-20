@@ -19,6 +19,8 @@ El flujo actual para implementar un spec es esencialmente manual más allá de l
 
 ## Arquitectura
 
+Hacia dónde va la arquitectura del sistema (Postgres, cola de trabajos, Docker, API y frontend, y la proyección de runners) está en [`ARCHITECTURE.md`](ARCHITECTURE.md). Este documento sigue contando cada feature tal como está hoy.
+
 ### 1. Descubrimiento de specs
 
 El spec se escribe como un **PR draft contra el repo del producto** (ej. `bmedical`), con el archivo `.md` en `docs/superpowers/specs/` — sin frontmatter, un doc markdown normal, igual que los specs ya existentes en el repo.
