@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { log } from './logger.js';
 import { logsDir } from './run-files.js';
@@ -43,6 +43,45 @@ function usagePath(account: string): string {
   return join(logsDir(), 'usage', `${account}.json`);
 }
 
+// Every measurement too, one line each, oldest first: how full each window
+// got before it reset, for the subscription's use in Métricas. Its own
+// folder, so the readers of usage/*.json never take it for an account.
+export const usageHistoryPath = (account: string) => join(logsDir(), 'usage', 'history', `${account}.jsonl`);
+
+export interface UsageMeasurement {
+  at: string;
+  status?: string;
+  fiveHour?: UsageWindow;
+  sevenDay?: UsageWindow;
+  // The run that hit the account's limit, instead of a measurement.
+  limitHit?: true;
+}
+
+function appendHistory(account: string, entry: UsageMeasurement): void {
+  mkdirSync(join(logsDir(), 'usage', 'history'), { recursive: true });
+  appendFileSync(usageHistoryPath(account), `${JSON.stringify(entry)}\n`);
+}
+
+// Oldest first; a line that can't be read (cut by a crash) is skipped.
+export function readUsageHistory(account: string): UsageMeasurement[] {
+  let text: string;
+  try {
+    text = readFileSync(usageHistoryPath(account), 'utf8');
+  } catch {
+    return [];
+  }
+  const entries: UsageMeasurement[] = [];
+  for (const line of text.split('\n')) {
+    if (!line.trim()) continue;
+    try {
+      entries.push(JSON.parse(line) as UsageMeasurement);
+    } catch {
+      // Half a line.
+    }
+  }
+  return entries;
+}
+
 function toWindow(raw: any): UsageWindow | undefined {
   if (typeof raw?.utilization !== 'number' || typeof raw?.resetsAt !== 'number') return undefined;
   return { utilization: raw.utilization, resetsAt: new Date(raw.resetsAt * 1000).toISOString() };
@@ -81,6 +120,9 @@ export function recordRateLimit(claudeConfigDir: string, info: any, now = new Da
     if (fiveHour) usage.fiveHour = fiveHour;
     if (sevenDay) usage.sevenDay = sevenDay;
     write(usage);
+    if (fiveHour || sevenDay) {
+      appendHistory(usage.account, { at: usage.measuredAt, ...(usage.status ? { status: usage.status } : {}), ...(fiveHour ? { fiveHour } : {}), ...(sevenDay ? { sevenDay } : {}) });
+    }
   } catch (error) {
     log.error('no se pudo guardar el uso de la cuenta de Claude', error);
   }
@@ -91,6 +133,7 @@ export function recordUsageLimitHit(claudeConfigDir: string, now = new Date()): 
     const account = accountName(claudeConfigDir);
     const previous = readAccountUsage(account);
     write({ ...(previous ?? { account, claudeConfigDir, measuredAt: now.toISOString() }), limitHitAt: now.toISOString() });
+    appendHistory(account, { at: now.toISOString(), limitHit: true });
   } catch (error) {
     log.error('no se pudo guardar el límite de uso de la cuenta de Claude', error);
   }

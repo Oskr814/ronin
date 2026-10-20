@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { mkdtempSync } from 'node:fs';
+import { appendFileSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { accountName, readAccountUsage, recordRateLimit, recordUsageLimitHit } from './claude-usage.js';
+import { accountName, readAccountUsage, readUsageHistory, recordRateLimit, recordUsageLimitHit, usageHistoryPath } from './claude-usage.js';
 
 beforeEach(() => {
   process.env.RONIN_LOGS_DIR = mkdtempSync(join(tmpdir(), 'ronin-usage-'));
@@ -68,5 +68,27 @@ describe('recordUsageLimitHit', () => {
     recordUsageLimitHit('/x/.claude-a');
     recordRateLimit('/x/.claude-a', INFO);
     expect(readAccountUsage('a')).not.toHaveProperty('limitHitAt');
+  });
+});
+
+describe('the usage history', () => {
+  it('keeps every measurement and every limit hit, oldest first', () => {
+    recordRateLimit('/x/.claude-a', INFO, new Date('2026-10-16T01:40:00Z'));
+    recordUsageLimitHit('/x/.claude-a', new Date('2026-10-16T02:00:00Z'));
+    recordRateLimit('/x/.claude-a', { status: 'allowed', unifiedWindows: { seven_day: { utilization: 0.2, resetsAt: 1792544400 } } }, new Date('2026-10-16T03:00:00Z'));
+    expect(readUsageHistory('a')).toEqual([
+      { at: '2026-10-16T01:40:00.000Z', status: 'allowed', fiveHour: { utilization: 0.4, resetsAt: new Date(1792116600 * 1000).toISOString() }, sevenDay: { utilization: 0.17, resetsAt: new Date(1792544400 * 1000).toISOString() } },
+      { at: '2026-10-16T02:00:00.000Z', limitHit: true },
+      { at: '2026-10-16T03:00:00.000Z', status: 'allowed', sevenDay: { utilization: 0.2, resetsAt: new Date(1792544400 * 1000).toISOString() } },
+    ]);
+  });
+
+  it('leaves out an event without windows, and a line cut halfway', () => {
+    recordRateLimit('/x/.claude-a', { status: 'allowed' });
+    expect(readUsageHistory('a')).toEqual([]);
+    recordRateLimit('/x/.claude-a', INFO, new Date('2026-10-16T01:40:00Z'));
+    appendFileSync(usageHistoryPath('a'), '{"at":"2026-10');
+    expect(readUsageHistory('a')).toHaveLength(1);
+    expect(readUsageHistory('nadie')).toEqual([]);
   });
 });
