@@ -1,11 +1,14 @@
 ---
 title: "Métricas"
-description: "Cómo se mueve el trabajo en los repos: cuánto entra y sale, cuánto tarda, quién lo lleva y dónde se traba."
+description: "Cómo se mueve el trabajo en los repos y cuánto se aprovecha cada cuenta de Claude."
 ---
 
 import { Aside } from '@astrojs/starlight/components';
 
-**Métricas**, arriba a la izquierda en el tablero, muestra cómo se mueve el trabajo en los repos: cuánto entra y cuánto sale, cuánto tarda, quién lo lleva y dónde se traba. Solo la ven los administradores.
+**Métricas**, arriba a la izquierda en el tablero, tiene dos pestañas y solo la ven los administradores:
+
+- **Trabajo** (`/metricas`): cómo se mueve el trabajo en los repos: cuánto entra y cuánto sale, cuánto tarda, quién lo lleva y dónde se traba.
+- **[Suscripción](#suscripción)** (`/metricas/suscripcion`): cuánto se aprovecha cada cuenta de Claude con la que corre ronin.
 
 ![La página Métricas: los seis números del período, el gráfico de issues nuevos y resueltos por semana con la línea del backlog, y cuánto tardan en resolverse](../../../assets/capturas/metricas.png)
 
@@ -78,3 +81,33 @@ Cada columna se ordena con un clic en su título.
   - sus PRs aprobados sin pedido de cambios;
   - sus intentos de fix por PR.
 - **Por qué se bloqueó:** los bloqueos del período, agrupados por motivo. Los que son de antes de que ronin empezara a guardar el motivo aparecen como *Sin motivo registrado*.
+
+## Suscripción
+
+![La pestaña Suscripción de una cuenta inventada: los cinco números, el uso de la semana con ronin y otros apilados y la proyección, cómo cerró cada semana, en qué se va lo de ronin y cuánto cuesta cada resultado](../../../assets/capturas/metricas-suscripcion.png)
+
+Cuánto se aprovecha cada cuenta de Claude: cuánto de la cuota semanal se usa antes de que se reinicie, qué parte es de ronin y en qué se va. Cuenta **todo** lo que usa la cuenta, sea ronin o una persona con Claude Code. Arriba se elige una cuenta, o todas.
+
+Para cada cuenta, su plan y su precio, que se cambian en [Ajustes → Cuentas de Claude](/ronin/operar/ajustes/#administración), y cinco números:
+
+| Número | Qué cuenta |
+|---|---|
+| Esta semana | El % usado de la cuota semanal, partido en ronin y otros, y cuánto falta para que se reinicie. |
+| Proyección | Con el ritmo de las últimas 48 horas, en qué % cerraría la semana, o qué día se agota. |
+| Aprovechamiento | El % promedio en que cerraron las últimas 4 semanas, con todos los usos. Es el número principal. |
+| Ventanas de 5 h | Cuántas pasaron del 90 % esta semana, y si alguna llegó al tope. |
+| Rinde | Lo que habrían costado las corridas de ronin de los últimos 30 días pagando la API, dividido por el precio del plan. Solo cuenta ronin. |
+
+Debajo:
+- **Esta semana:** el uso acumulado, con ronin y otros apilados, la proyección hasta el reinicio y la última medición.
+- **Cómo cerró cada semana:** las últimas 8 y la de ahora, con lo que quedó sin usar.
+- **En qué se va lo de ronin:** el equivalente en API de los últimos 30 días, por tipo de tarea y por repo.
+- **Cuánto cuesta cada resultado:** por issue resuelto, por PR mergeado y por pedido del portal. Suma las corridas del issue, de su PR y de sus reviews, también las que fallaron.
+
+Cada gráfico muestra el valor al pasar el mouse (o al tocarlo en el teléfono) y tiene *Ver como tabla*.
+
+<Aside type="note" title="Cómo se calcula">
+- **El uso de la cuenta** lo informa Anthropic en cada corrida de ronin. Entre una corrida y otra no hay mediciones: lo que otros usen en ese rato aparece en la siguiente, y la página dice de cuándo es la última.
+- **La parte de ronin es un estimado.** ronin sabe cuánto habría costado cada corrida suya en la API. En los ratos en que solo ronin usa la cuenta, eso dice cuánta cuota mueve cada dólar; lo que sube por encima de eso se asigna a otros usos. Hacen falta varias mediciones para tenerlo: hasta entonces, la página muestra el uso de toda la cuenta sin partirlo.
+- **Las semanas** se cuentan desde que ronin empezó a guardar cada medición: el aprovechamiento aparece cuando cierra la primera.
+</Aside>

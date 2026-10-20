@@ -1448,3 +1448,43 @@ select.aj-in { width: auto; min-width: 180px; }
   .mt-filters { margin-left: 0; }
   .mt-ppl tr.mt-det td { padding-left: 14px; }
 }
+/* Métricas → Suscripción (#234) */
+.mt-tabs { padding: 0; margin: 16px 0 4px; }
+.su-acc { margin-top: 22px; }
+.su-acc + .su-acc { border-top: 1px solid var(--rule); padding-top: 22px; }
+.su-h { display: flex; align-items: baseline; gap: 6px 12px; flex-wrap: wrap; margin-bottom: 10px; }
+.su-h h2 { margin: 0; font-size: 17px; }
+.su-plan { font-size: 12.5px; color: var(--muted); }
+.su-plan b { color: var(--ink-2); font-weight: 600; }
+.su-h .link { font-size: 12.5px; color: var(--muted); text-decoration: underline; text-underline-offset: 2px; }
+.su-h .link:hover { color: var(--ink); }
+.su-tiles { grid-template-columns: repeat(5, minmax(0, 1fr)); max-width: none; }
+.su-tiles .v small { font-size: 12.5px; color: var(--muted); font-weight: 500; margin-left: 4px; letter-spacing: 0; }
+.su-split { display: flex; gap: 2px; height: 6px; border-radius: 99px; overflow: hidden; background: var(--raise); margin-top: 8px; }
+.su-split i { display: block; height: 100%; }
+.su-key { display: flex; gap: 10px; flex-wrap: wrap; font-size: 11.5px; color: var(--muted); margin-top: 5px; }
+.su-key i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 4px; }
+.su-g { margin-top: 12px; }
+.su-g .mt-card h3 { flex-wrap: wrap; row-gap: 2px; }
+.su-facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 12px; }
+.su-facts .v { font-size: 20px; }
+.su-tbl { margin-top: 10px; font-size: 12px; color: var(--muted); }
+.su-tbl summary { cursor: pointer; color: var(--muted); }
+.su-tbl summary:hover { color: var(--ink); }
+.su-table { width: 100%; border-collapse: collapse; margin-top: 6px; font: 12px "JetBrains Mono", ui-monospace, monospace; color: var(--ink-2); }
+.su-table th, .su-table td { text-align: right; padding: 5px 8px; border-bottom: 1px solid var(--rule); white-space: nowrap; }
+.su-table th { font: 500 12px "Schibsted Grotesk", system-ui, sans-serif; color: var(--muted); }
+.su-table th:first-child, .su-table td:first-child { text-align: left; }
+.su-how { margin: 26px 0 10px; font-size: 12.5px; color: var(--muted); max-width: 860px; }
+.su-how summary { cursor: pointer; color: var(--ink-2); }
+.su-how p { margin: 8px 0 0; }
+.su-how b { color: var(--ink-2); font-weight: 600; }
+@media (max-width: 1180px) { .su-tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); } .su-tiles .tile:nth-child(4) { border-left: 0; } .su-tiles .tile:nth-child(n+4) { border-top: 1px solid var(--rule); } }
+@media (max-width: 760px) {
+  .su-tiles { grid-template-columns: 1fr 1fr; }
+  .su-tiles .tile:nth-child(odd) { border-left: 0; } .su-tiles .tile:nth-child(4) { border-left: 1px solid var(--rule); } .su-tiles .tile:nth-child(n+3) { border-top: 1px solid var(--rule); }
+  .su-tiles .tile:last-child { grid-column: 1 / -1; }
+  .su-facts { grid-template-columns: 1fr; gap: 8px; }
+  .su-acc .mt-chart text { font-size: 12px; }
+  .su-table th, .su-table td { padding: 5px 6px; }
+}
