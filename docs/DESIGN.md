@@ -153,6 +153,7 @@ Los módulos del núcleo (en `core/` salvo que se indique otra carpeta); los de 
 - `claim.ts` — lock por label (`ronin:runner-<runner-id>`) + cache local (`.ronin-state.json`) para que dos supervisores no procesen el mismo issue — ver §9
 - `run-record.ts` — el registro de cada corrida de agente en `logs/runs/`, que lee el tablero (§15.5)
 - `claude-usage.ts` — el uso de cada cuenta de Claude, del `rate_limit_event` de cada corrida (§15.6)
+- `claude-plans.ts` — el plan que paga cada cuenta de Claude, Max 5× si nadie lo eligió (§19.11)
 - `tick.ts` (raíz) — el loop de decisión: descubre specs asignados, y por cada issue `in-progress` decide la próxima acción leyendo el checklist y el contador de intentos por PR contra los límites de `docs/BLOCKING.md`
 
 ### 4. Testing y review externo
@@ -1323,7 +1324,7 @@ Una página del tablero para cambiar la configuración de ronin sin tocar `.env`
 El engranaje junto a *ronin*, arriba de la barra lateral, abre `/ajustes/<sección>`. La barra lateral cambia por la de Ajustes, con *Volver al tablero*:
 
 - **Tu cuenta**, para todos: *Perfil* (nombre, correo, quién eres en cada equipo de Linear, tema) y *Notificaciones* (19.5).
-- **Administración**, solo admins: *General*, *Usuarios* (19.3, 19.4), *Repos* (19.6) con una entrada por repo, *Agentes*, *Exploración*, *Previews*, *Conexiones* (19.7) y *Registro* (19.8).
+- **Administración**, solo admins: *General*, *Usuarios* (19.3, 19.4), *Repos* (19.6) con una entrada por repo, *Agentes*, *Cuentas de Claude* (19.11), *Exploración*, *Previews*, *Conexiones* (19.7) y *Registro* (19.8).
 
 Cada campo se guarda al salir de él. Lo que ronin necesita del servidor (secretos, rutas, puertos, `RUNNER_ID`, `PREVIEW_PORT_RANGE`) solo se ve.
 
@@ -1403,11 +1404,22 @@ Cada cambio en Ajustes, del perfil propio a un repo, queda en `<SETTINGS_DATA_DI
 | `GET\|POST /api/ajustes/usuarios[/<login>[/quitar]]`, `POST /api/ajustes/equipo` | admins | el equipo (19.3) |
 | `GET /api/ajustes/repos`, `POST /api/ajustes/repos/<owner>/<repo>` | admins | los repos (19.6) |
 | `GET /api/ajustes/conexiones`, `POST /api/ajustes/conexiones/correo` | admins | 19.7 |
+| `GET /api/ajustes/cuentas`, `POST /api/ajustes/cuentas/<cuenta>` | admins | `{ plan?, priceUsd? }`; `plan: null` vuelve a Max 5× (19.11) |
 | `GET /api/ajustes/registro` | admins | 19.8 |
 
 #### 19.10 Activarlo
 
 Nada: sin `SETTINGS_DATA_DIR`, usa `settings-data/` en el checkout del runner (fuera de git). Es la única copia de lo que se cambió en el tablero, del equipo y del registro: hay que respaldarlo, como `portal-data/`.
+
+#### 19.11 Cuentas de Claude (#234, `core/claude-plans.ts`, `server/api/cuentas-claude.ts`)
+
+El plan que paga cada cuenta de Claude, para calcular en Métricas cuánto se aprovecha (#234).
+
+- **Las cuentas:** una por `claudeConfigDir` de `repos.json`, con el nombre que le da `accountName` (`.claude-redmotos` → `redmotos`; un repo sin `claudeConfigDir` usa `default`). También aparecen las que tienen uso registrado en `logs/usage/`, aunque ya ningún repo las use.
+- **Por cuenta:** los repos que la usan, el plan, el precio al mes, el uso de ahora (la última medición, §15.6) y el directorio de configuración, que solo se ve.
+- **Planes:** Pro ($20), Max 5× ($100), Max 20× ($200), Team, Enterprise y Otro. Elegir un plan pone su precio de lista; los tres últimos no tienen y conservan el que había. El precio se puede cambiar a mano.
+- **Una cuenta sin elegir cuenta como Max 5× ($100).**
+- **Dónde queda:** en `settings.json`, bajo `accounts.<cuenta>`: `{ plan, priceUsd? }`, con el precio solo si no es el de lista. Una entrada editada a mano que no se lee cuenta como sin elegir. Cada cambio queda en el Registro.
 
 ### 20. Métricas (#222)
 

@@ -26,6 +26,7 @@ import { FichaActionError, runApprove, runFichaAction, runGeneralComment } from 
 import { GithubUserError, pendingReview, viewedFiles } from './github-as-user.js';
 import type { Session } from './auth.js';
 import { PortalAdminError, portalAdminView, runPortalAdmin, type PortalAdminContext } from './portal-admin.js';
+import { cuentasView, setCuenta } from './cuentas-claude.js';
 import { AjustesError, ajustesView, conexionesView, linearTeams, readRegistro, saveNotificacion, saveProfile, setTask, setValue, testMail } from './ajustes.js';
 import { can, touchSeen, type Perm } from './team.js';
 import { addUsuario, removeUsuario, updateEquipo, updateUsuario, usuariosView, usuarioView } from './usuarios.js';
@@ -82,6 +83,7 @@ import { ExploreNowError, corridasOf, exploracionList, exploracionRows, exploreN
 //   POST /api/reuniones/<n>/aprobar  creates what the person chose of its proposals, as them (dashboard-meetings-approve.ts)
 //   POST /api/reuniones/<n>/descartar  sets the rest of it aside
 //   GET|POST /api/ajustes[/…]        the person's profile, and for admins the settings and their record (#174, ajustes.ts)
+//                                    and the plan of each Claude account (#234, cuentas-claude.ts)
 //   GET /api/metricas?dias=7|30|90&repo=<owner>/<repo>  how work moves in the repos: what comes in and out, how long it takes, who carries it (#222, metrics/, admins only)
 
 // How far back the sidebar and an item's history look. Run records are kept
@@ -635,6 +637,22 @@ async function ajustes(req: IncomingMessage, res: ServerResponse, path: string, 
       try {
         json(res, 200, await editRepo(session.login, repoEdit[1], (await readJson(req)) ?? {}, await loadRepos()));
         forgetGithub(repoEdit[1]);
+      } catch (error) {
+        if (error instanceof AjustesError) json(res, error.status, { error: error.message });
+        else throw error;
+      }
+    }
+    return;
+  }
+  const cuenta = /^\/api\/ajustes\/cuentas(?:\/([\w.-]+))?$/.exec(path);
+  if (cuenta) {
+    if (!admin) json(res, 403, { error: 'solo los administradores ven las cuentas de Claude' });
+    else if (req.method === 'GET' && !cuenta[1]) json(res, 200, cuentasView(await loadRepos()));
+    else if (req.method !== 'POST' || !cuenta[1]) json(res, 405, { error: 'método no permitido' });
+    else if (!(req.headers['content-type'] ?? '').startsWith('application/json')) json(res, 415, { error: 'se espera JSON' });
+    else {
+      try {
+        json(res, 200, await setCuenta(session.login, cuenta[1], (await readJson(req)) ?? {}, await loadRepos()));
       } catch (error) {
         if (error instanceof AjustesError) json(res, error.status, { error: error.message });
         else throw error;

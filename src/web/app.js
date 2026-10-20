@@ -5261,6 +5261,7 @@ const AJ_SECTIONS = {
   general: { name: 'General', icon: '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>', admin: true },
   repos: { name: 'Repos', icon: '<path d="M5 4h11l3 3v13H5zM9 9h6M9 13h6"/>', admin: true },
   agentes: { name: 'Agentes', icon: '<rect x="5" y="8" width="14" height="11" rx="2"/><path d="M12 4v4M9 13h.01M15 13h.01"/>', admin: true },
+  cuentas: { name: 'Cuentas de Claude', icon: '<rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M7 15h4"/>', admin: true },
   exploracion: { name: 'Exploración', icon: '<circle cx="11" cy="11" r="6"/><path d="m20 20-4.5-4.5M14 8l-2 4-4 2 2-4z"/>', admin: true },
   previews: { name: 'Previews', icon: '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>', admin: true },
   conexiones: { name: 'Conexiones', icon: '<path d="M9 3v5M15 3v5M6 8h12v3a6 6 0 0 1-12 0zM12 17v4"/>', admin: true },
@@ -5329,6 +5330,7 @@ async function loadAjustes() {
     if (S.aj.sec === 'registro') S.aj.registro = (await api('/api/ajustes/registro')).registro;
     if (S.aj.sec === 'repos') S.aj.repos = await api('/api/ajustes/repos');
     if (S.aj.sec === 'conexiones') S.aj.conex = await api('/api/ajustes/conexiones');
+    if (S.aj.sec === 'cuentas') S.aj.cuentas = await api('/api/ajustes/cuentas');
     if (S.aj.sec === 'usuarios' && S.aj.login) S.aj.user = await api(`/api/ajustes/usuarios/${encodeURIComponent(S.aj.login)}`);
     else if (S.aj.sec === 'usuarios' && !S.aj.cuenta) S.aj.users = await api('/api/ajustes/usuarios');
     // The portal's accounts (role Usuario), when the portal is set up.
@@ -5345,7 +5347,7 @@ function ajNavHTML() {
   const button = (sec) => `<button data-aj="${sec}" aria-pressed="${S.aj.sec === sec && !(sec === 'repos' && S.aj.repo)}"><svg viewBox="0 0 24 24">${AJ_SECTIONS[sec].icon}</svg>${AJ_SECTIONS[sec].name}</button>`;
   return `<button data-aj-back><svg viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></svg>Volver al tablero</button>
     <div class="aj-grp">Tu cuenta <span>${esc(S.snap.me)}</span></div>${button('perfil')}${button('notificaciones')}
-    ${S.snap.access.admin ? `<div class="aj-grp">Administración</div>${button('general')}${button('usuarios')}${button('repos')}${S.snap.repos.map((repo) => `<button class="aj-sub" data-aj="repos" data-ajrepo="${esc(repo)}" aria-pressed="${S.aj.sec === 'repos' && S.aj.repo === repo}"><i style="background:${repoColor(repo)}"></i>${esc(repoShort(repo))}</button>`).join('')}${button('agentes')}${button('exploracion')}${button('previews')}${button('conexiones')}${button('registro')}` : ''}`;
+    ${S.snap.access.admin ? `<div class="aj-grp">Administración</div>${button('general')}${button('usuarios')}${button('repos')}${S.snap.repos.map((repo) => `<button class="aj-sub" data-aj="repos" data-ajrepo="${esc(repo)}" aria-pressed="${S.aj.sec === 'repos' && S.aj.repo === repo}"><i style="background:${repoColor(repo)}"></i>${esc(repoShort(repo))}</button>`).join('')}${button('agentes')}${button('cuentas')}${button('exploracion')}${button('previews')}${button('conexiones')}${button('registro')}` : ''}`;
 }
 
 function wireAjNav() {
@@ -5427,6 +5429,35 @@ const AJ_PAGES = {
       ${ajSec('Tiempos', row('agent.taskTimeoutMinutes') + row('agent.handlerTimeoutMinutes'))}
       ${ajSec('Concurrencia', row('tick.concurrency') + row('tick.externalReviewConcurrency'))}
       ${ajSec('Antes de bloquear', row('retry.e2e') + row('retry.e2eHard') + row('retry.checksPending') + row('retry.slice') + row('retry.retarget') + row('retry.issueError'), 'Cuántas veces intenta ronin antes de pedir ayuda (docs/BLOCKING.md).')}`;
+  },
+  // #234: the plan each account pays, for Métricas → Suscripción.
+  cuentas() {
+    const d = S.aj.cuentas;
+    if (!d) return '<h1>Cuentas de Claude</h1><div class="empty">Cargando…</div>';
+    const def = d.plans.find((p) => p.id === 'max5');
+    const usd = (n) => (n === null ? '—' : `$${n}`);
+    const cards = d.cuentas.map((c) => {
+      const a = esc(c.account);
+      const p = c.plan;
+      const list = d.plans.find((x) => x.id === p.plan)?.priceUsd ?? null;
+      const planSrc = p.source === 'tablero'
+        ? `<span class="aj-ov">● Cambiado en el tablero</span><button data-ajplanreset="${a}">Volver al de por defecto (${esc(def.name)})</button>`
+        : `<span>Por defecto: ${esc(def.name)}</span>`;
+      const priceSrc = list === null ? `<span>${esc(p.name)} no tiene precio de lista: pon lo que pagan al mes.</span>`
+        : p.priceUsd === list ? `<span>El de lista de ${esc(p.name)}</span>` : `<span>El de lista de ${esc(p.name)} es ${usd(list)}</span><button data-ajprice="${a}" data-v="">Usar ${usd(list)}</button>`;
+      const u = c.usage;
+      const fresh = (w) => w && Date.parse(w.resetsAt) > Date.now();
+      const now = !u ? '<span class="m">Sin uso registrado</span>'
+        : `${fresh(u.sevenDay) ? `<b>${pct(u.sevenDay.utilization)}</b> de la semana` : 'La semana se reinició'} · ${fresh(u.fiveHour) ? `${pct(u.fiveHour.utilization)} de la ventana de 5 h` : 'ventana de 5 h libre'}`;
+      return `<section class="aj-sec"><h2>${a}</h2><p class="aj-d">${c.repos.length ? c.repos.map(esc).join(', ') : 'Ningún repo la usa ahora; tiene uso registrado.'}</p><div class="aj-card">
+        ${ajRow('Plan', '', `<select class="aj-in" data-ajplan="${a}" aria-label="Plan de ${a}">${d.plans.map((x) => `<option value="${esc(x.id)}" ${x.id === p.plan ? 'selected' : ''}>${esc(x.name)}${x.priceUsd === null ? '' : ` · $${x.priceUsd}`}</option>`).join('')}</select>`, planSrc)}
+        ${ajRow('Precio al mes', 'En dólares. Se completa con el del plan.', `<span class="aj-unit pre">$</span><input class="aj-num" type="number" min="0" step="1" data-ajprice="${a}" value="${p.priceUsd ?? ''}" placeholder="—" aria-label="Precio al mes de ${a}"><span class="aj-unit">al mes</span>`, priceSrc)}
+        ${ajRow('Uso ahora', u ? `Lo que dijo la última corrida de ronin, ${esc(ago(u.measuredAt))}. Cuenta todo lo que usa la cuenta, no solo ronin.` : 'Aparece con la primera corrida de ronin en esta cuenta.', `<span>${now}</span>`)}
+        ${ajRow('Configuración', '', `<span class="aj-ro">${esc(c.claudeConfigDir || '~/.claude (la de Claude Code por defecto)')}</span>`, '<span class="aj-env">repos.json</span><code>claudeConfigDir</code><span>· se cambia en el archivo</span>')}
+      </div></section>`;
+    }).join('');
+    return `<h1>Cuentas de Claude</h1><p class="lead">Las cuentas con las que corre ronin, una por <code>claudeConfigDir</code> de <code>repos.json</code>. El plan sirve para calcular en Métricas cuánto rinde cada una. Una cuenta sin elegir cuenta como ${esc(def.name)} (${usd(def.priceUsd)}).</p>
+      ${cards || '<div class="aj-card"><div class="aj-row"><span class="m">Ningún repo tiene cuenta todavía.</span></div></div>'}`;
   },
   exploracion(d) {
     const row = ajSettingOf(d);
@@ -5944,8 +5975,29 @@ function wireAjustes() {
     event.preventDefault();
     openAjustes(a.dataset.ajLink);
   };
+  for (const el of center.querySelectorAll('select[data-ajplan]')) el.onchange = () => ajCuenta(el.dataset.ajplan, { plan: el.value });
+  for (const b of center.querySelectorAll('[data-ajplanreset]')) b.onclick = () => ajCuenta(b.dataset.ajplanreset, { plan: null });
+  for (const el of center.querySelectorAll('input[data-ajprice]')) el.onchange = () => {
+    const value = Number(el.value);
+    ajCuenta(el.dataset.ajprice, { priceUsd: el.value.trim() === '' ? null : Number.isFinite(value) ? value : NaN });
+  };
+  for (const b of center.querySelectorAll('button[data-ajprice]')) b.onclick = () => ajCuenta(b.dataset.ajprice, { priceUsd: null });
   wireAjUsers(center);
   wireAjRepo(center);
+}
+
+async function ajCuenta(account, change) {
+  try {
+    if (Number.isNaN(change.priceUsd)) throw new Error('El precio tiene que ser un número.');
+    const { cuenta } = await api(`/api/ajustes/cuentas/${encodeURIComponent(account)}`, { method: 'POST', body: JSON.stringify(change) });
+    S.aj.cuentas.cuentas = S.aj.cuentas.cuentas.map((c) => (c.account === account ? cuenta : c));
+    toast(`Guardado: ${account} en ${cuenta.plan.name}${cuenta.plan.priceUsd === null ? '' : `, $${cuenta.plan.priceUsd} al mes`}.`);
+  } catch (error) {
+    if (error instanceof Unauthorized) return showLogin();
+    toast(`No se guardó. ${error.message}`);
+  }
+  $('#center')._html = null;
+  renderCenter();
 }
 
 async function ajSetValue(key, value) {

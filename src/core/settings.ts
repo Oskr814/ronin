@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { log } from './logger.js';
+import type { AccountPlanChoice } from './claude-plans.js';
 
 // The settings that can be changed from the dashboard (#174) instead of .env.
 // What wins: the dashboard's value, then .env, then the default. The
@@ -89,6 +90,8 @@ export interface SettingsFile {
   values: Record<string, SettingValue>;
   // Per task type, its own model and effort.
   tasks?: Record<string, { model?: string; effort?: string }>;
+  // Per Claude account, the plan it pays (claude-plans.ts).
+  accounts?: Record<string, AccountPlanChoice>;
 }
 
 export const settingsPath = (dataDir: string) => join(dataDir, 'settings.json');
@@ -145,6 +148,7 @@ export function readSettingsSync(dataDir: string): SettingsFile {
     return {
       values: parsed.values && typeof parsed.values === 'object' ? parsed.values : {},
       ...(parsed.tasks && typeof parsed.tasks === 'object' ? { tasks: parsed.tasks } : {}),
+      ...(parsed.accounts && typeof parsed.accounts === 'object' ? { accounts: parsed.accounts } : {}),
     };
   } catch (error) {
     log.error(`ajustes: ${settingsPath(dataDir)} no es JSON válido, uso los de .env: ${(error as Error).message}`);
