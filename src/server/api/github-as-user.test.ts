@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { addReviewThread, approvePr, closeIssue, closePr, commentOnDiff, pendingReview, submitReview, commentOnFile, commentOnIssue, GithubUserError, replyToReviewComment, setFileViewed, setThreadResolved, viewedFiles } from './github-as-user.js';
+import { measure } from '../../core/timing.js';
 
 const reply = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
 const fetchMock = vi.fn();
@@ -88,6 +89,16 @@ describe('github-as-user', () => {
     expect(sent[1][1].query).toContain('unresolveReviewThread');
     expect(sent[2][1].query).toContain('markFileAsViewed');
     expect(sent[2][1].variables).toEqual({ id: 'PR_1', path: 'src/a.ts' });
+  });
+
+  it('counts its GraphQL calls as GitHub time of the request (#235)', async () => {
+    const page = reply(200, { data: { repository: { pullRequest: { files: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [] } } } } });
+    fetchMock.mockResolvedValueOnce(page);
+    const spans = await measure(async (m) => {
+      await viewedFiles('gho_user', 'acme/product', 904);
+      return m.spans;
+    });
+    expect(spans.get('github')?.count).toBe(1);
   });
 
   it('reads the files the person viewed, page by page, and turns GraphQL errors into refusals', async () => {

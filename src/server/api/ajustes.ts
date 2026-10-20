@@ -2,6 +2,7 @@ import { appendFile, mkdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { config } from '../../core/config.js';
 import { log } from '../../core/logger.js';
+import { timed } from '../../core/timing.js';
 import type { RepoEntry } from '../../core/repo-context.js';
 import { linearKey, teamPeople } from '../../core/linear-api.js';
 import { applySettings, EFFORTS, invalidValue, MODELS, readSettingsSync, settingDef, settingsPath, settingsView, TASK_TYPES, type SettingsFile, type SettingValue } from '../../core/settings.js';
@@ -271,10 +272,10 @@ export async function setTask(login: string, body: Record<string, unknown>): Pro
 export async function conexionesView(): Promise<unknown> {
   let github: { ok: boolean; login?: string; expires?: string; error?: string };
   try {
-    const response = await fetch('https://api.github.com/user', {
+    const response = await timed('github', () => fetch('https://api.github.com/user', {
       headers: { Authorization: `Bearer ${config.githubToken}`, Accept: 'application/vnd.github+json', 'User-Agent': 'ronin-dashboard' },
       signal: AbortSignal.timeout(15_000),
-    });
+    }));
     const expires = response.headers.get('github-authentication-token-expiration') ?? undefined;
     github = response.ok
       ? { ok: true, login: ((await response.json()) as { login?: string }).login, ...(expires ? { expires } : {}) }
