@@ -90,11 +90,11 @@ export async function assignIssue(token: string, repo: string, number: number, a
 // GraphQL, as the person: what REST doesn't have (resolving a thread,
 // marking a file as viewed). GitHub answers 200 with `errors` when it says no.
 async function graphql<T>(token: string, query: string, variables: Record<string, unknown>, repo: string): Promise<T> {
-  const response = await fetch(`${API}/graphql`, {
+  const response = await timed('github', () => fetch(`${API}/graphql`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'User-Agent': 'ronin-dashboard' },
     body: JSON.stringify({ query, variables }),
-  });
+  }));
   if (response.status === 401) throw new GithubUserError('Tu sesión de GitHub venció o se revocó. Volvé a entrar.', true);
   const body = (await response.json().catch(() => ({}))) as { data?: T; errors?: Array<{ message: string; type?: string }> };
   if (body.errors?.length) {

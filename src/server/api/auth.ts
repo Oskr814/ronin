@@ -1,6 +1,7 @@
 import { createCipheriv, createDecipheriv, hkdfSync, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { log } from '../../core/logger.js';
+import { timed } from '../../core/timing.js';
 
 // Login with GitHub for the dashboard (#65). The OAuth App asks for the
 // `repo` scope (#93): what the dashboard does on GitHub — a comment, a
@@ -137,17 +138,17 @@ export interface GithubOAuth {
 
 export const githubOAuth: GithubOAuth = {
   async exchangeCode(code, config) {
-    const response = await fetch('https://github.com/login/oauth/access_token', {
+    const response = await timed('github', () => fetch('https://github.com/login/oauth/access_token', {
       method: 'POST',
       headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
       body: JSON.stringify({ client_id: config.githubClientId, client_secret: config.githubClientSecret, code, redirect_uri: callbackUrl(config) }),
-    });
+    }));
     const body = (await response.json()) as { access_token?: string; scope?: string; error?: string };
     if (!body.access_token) throw new Error(`GitHub no devolvió un token: ${body.error ?? response.status}`);
     return { token: body.access_token, scopes: (body.scope ?? '').split(',').map((s) => s.trim()).filter(Boolean) };
   },
   async userLogin(token) {
-    const response = await fetch('https://api.github.com/user', { headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'User-Agent': 'ronin-dashboard' } });
+    const response = await timed('github', () => fetch('https://api.github.com/user', { headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'User-Agent': 'ronin-dashboard' } }));
     if (!response.ok) throw new Error(`GitHub /user respondió ${response.status}`);
     const body = (await response.json()) as { login?: string };
     if (!body.login) throw new Error('GitHub /user no trajo el login');
@@ -155,11 +156,11 @@ export const githubOAuth: GithubOAuth = {
   },
   async revokeToken(token, config) {
     const basic = Buffer.from(`${config.githubClientId}:${config.githubClientSecret}`).toString('base64');
-    const response = await fetch(`https://api.github.com/applications/${config.githubClientId}/token`, {
+    const response = await timed('github', () => fetch(`https://api.github.com/applications/${config.githubClientId}/token`, {
       method: 'DELETE',
       headers: { Authorization: `Basic ${basic}`, Accept: 'application/vnd.github+json', 'Content-Type': 'application/json', 'User-Agent': 'ronin-dashboard' },
       body: JSON.stringify({ access_token: token }),
-    });
+    }));
     // 404: GitHub no longer knows it (revoked from the account settings).
     if (!response.ok && response.status !== 404) throw new Error(`GitHub respondió ${response.status} al revocar el token`);
   },
