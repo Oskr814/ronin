@@ -133,8 +133,6 @@ function runStatus(runs: RunSummary[]): RunState {
   return runs.some((run) => run.state === 'running') ? 'running' : runs[0].state;
 }
 
-const ORDER: Record<string, number> = { running: 0, blocked: 1, waiting: 2, open: 4 };
-
 // `runs`: newest first (listRuns). `github`: one per repo, or missing for a
 // repo GitHub couldn't be read for — its runs still show.
 export function buildItems(repos: string[], runs: RunSummary[], github: Array<RepoGithub | undefined>): Item[] {
@@ -254,6 +252,10 @@ export function buildItems(repos: string[], runs: RunSummary[], github: Array<Re
     });
   }
 
+  // A fixed order, the newest issue or PR first: one doesn't jump to the top
+  // of the sidebar because a run started on it (a preview's data, a
+  // review) — its dot says it's running. What has no number (a changelog
+  // entry) goes last, the latest first.
   const activity = (item: Item) => item.lastRun?.endedAt ?? item.lastRun?.startedAt ?? '';
-  return items.sort((a, b) => (ORDER[a.status] ?? 3) - (ORDER[b.status] ?? 3) || activity(b).localeCompare(activity(a)));
+  return items.sort((a, b) => (b.number ?? -1) - (a.number ?? -1) || activity(b).localeCompare(activity(a)));
 }

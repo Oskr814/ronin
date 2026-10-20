@@ -54,34 +54,32 @@ describe('resolveItem', () => {
 });
 
 describe('itemDetail', () => {
-  it("reads both halves, keeping only the item's own comments", async () => {
+  it('reads both halves, each with its own comments', async () => {
     const detail = await itemDetail(ENTRY, { kind: 'pr', number: 849, issue: 844 });
     expect(getDiscussion).toHaveBeenCalledWith('issue', 844);
     expect(getDiscussion).toHaveBeenCalledWith('pr', 849);
     expect(detail.pr?.comments).toHaveLength(3);
-    expect(detail.issue?.comments).toEqual([]);
+    expect(detail.issue?.comments).toHaveLength(3);
   });
 
-  it("brings the issue's Linear issue, also on a PR's page, where the issue's comments aren't kept", async () => {
+  it("brings the issue's Linear issue, also on a PR's page", async () => {
     const linkback = { author: 'linear-code', body: '<!-- linear-linkback -->\n<p><a href="https://linear.app/red-motos/issue/RED-214/slug">RED-214</a></p>', createdAt: '', url: '' };
     getDiscussion.mockImplementation(async (kind: string, number: number) => ({ ...discussion(number), comments: kind === 'issue' ? [linkback] : [] }));
     const detail = await itemDetail(ENTRY, { kind: 'pr', number: 849, issue: 844 });
     expect(detail.linear).toEqual({ id: 'RED-214', url: 'https://linear.app/red-motos/issue/RED-214/slug' });
-    expect(detail.issue?.comments).toEqual([]);
   });
 
   it('has no Linear issue when the issue has no linkback', async () => {
     expect(await itemDetail(ENTRY, { kind: 'issue', number: 844 })).not.toHaveProperty('linear');
   });
 
-  it("keeps a PR's reviews and threads only when the PR is the item itself", async () => {
+  it("keeps a PR's reviews and threads, also on its issue's page", async () => {
     getDiscussion.mockImplementation(async (kind: string, number: number) => ({ ...discussion(number, 1), ...(kind === 'pr' ? { reviews: [{ author: 'a', body: 'ok', state: 'APPROVED', submittedAt: '' }], threads: [{ path: 'a.ts', line: 1, isResolved: false, isOutdated: false, url: '', comments: [] }] } : {}) }));
     const own = await itemDetail(ENTRY, { kind: 'pr', number: 849, issue: 844 });
     expect(own.pr).toMatchObject({ reviews: [{ state: 'APPROVED' }], threads: [{ path: 'a.ts' }] });
     resetDetailCache();
     const other = await itemDetail(ENTRY, { kind: 'issue', number: 844, pr: 849 });
-    expect(other.pr).not.toHaveProperty('reviews');
-    expect(other.pr).not.toHaveProperty('threads');
+    expect(other.pr).toMatchObject({ reviews: [{ state: 'APPROVED' }], threads: [{ path: 'a.ts' }] });
   });
 
   it('reuses a read while it is fresh, and reads again once a run changed after it', async () => {

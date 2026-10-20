@@ -20,7 +20,7 @@ Una página con lo que está haciendo ronin. Desde ahí también se le piden los
 
 - **Necesitan a alguien:** los issues bloqueados.
 - **Exploraciones:** cada app que ronin explora y su estado.
-- **Cada repo**, con los issues de ronin y sus slices, y los issues sobre los que ronin trabajó en los últimos días. Cada fila dice lo que espera: «esperando review en #881», «conflictos en #904», «aprobado, falta el merge de #401».
+- **Cada repo**, con los issues de ronin y sus slices, y los issues sobre los que ronin trabajó en los últimos días, el más nuevo primero. El orden no cambia cuando ronin trabaja en uno: lo dice su punto. Cada fila dice lo que espera («esperando review en #881», «conflictos en #904», «aprobado, falta el merge de #401») y si tiene una preview: **preview** en verde cuando está lista para abrir, **preview…** mientras prepara los datos o se actualiza.
 - **Los PRs viven dentro de su issue:** el de una slice, el que lo cierra (`Closes #N`) o el que lleva su número en la rama (`feat/405-…`). El PR de una persona aparece en la fila del issue.
 - **El buscador** encuentra cualquier issue abierto del repo, de ronin o no, por título, número, `RED-n` o el número de uno de sus PRs. Con un número que no está en la lista ofrece **Abrir #N**, aunque esté cerrado o sea un PR sin issue.
 - El botón **+** de cada repo crea un issue nuevo a tu nombre. Ver [Darle trabajo](/ronin/guias/darle-trabajo/).
@@ -29,7 +29,7 @@ Una página con lo que está haciendo ronin. Desde ahí también se le piden los
 
 - **Su estado:** conflictos, checks y review del PR.
 - **Lo que hicieron los agentes:** la última corrida, o la que está corriendo con sus últimos pasos en vivo. El transcript completo, paso a paso, se abre desde ahí.
-- **Pestañas** con la descripción del issue, la de su PR y los comentarios, como en GitHub. La del PR dice dónde está (abierto, draft, mergeado o cerrado), si está aprobado y por quién, si tiene auto-merge, sus checks y si tiene conflictos.
+- **Pestañas** con la descripción del issue y la de su PR, cada una con sus comentarios debajo: los del issue en la del issue, y los comentarios y las reviews del PR en la del PR. Un issue que ya tiene un PR abre en la pestaña del PR, que cuenta qué se hizo y, en *Qué se pidió*, qué se pidió. La del PR dice dónde está (abierto, draft, mergeado o cerrado), si está aprobado y por quién, si tiene auto-merge, sus checks y si tiene conflictos.
 - **Archivos**, con el diff del PR, para [revisarlo](/ronin/guias/revisar-un-pr/).
 - **En un PR de ronin**, la descripción por secciones y las [tres decisiones](/ronin/guias/decidir-un-pr/) en el encabezado.
 - **Acciones** (`M`), con lo que se le puede pedir en ese momento. Ver [Acciones del tablero](/ronin/referencia/acciones/).

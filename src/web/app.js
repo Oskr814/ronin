@@ -295,13 +295,22 @@ function itemSub(item) {
 const EXPLORE_ICON = '<svg class="pin-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="m15 9-2 4-4 2 2-4z"/></svg>';
 
 // `hit`: the PR number the search found the issue by, whose slice shows highlighted.
+// An item's preview, on its sidebar row: ready to open, or still on its way
+// (its data being prepared, or moving to a new commit).
+function previewTag(preview) {
+  if (!preview) return '';
+  const ready = !preview.preparing && !preview.updating;
+  const title = ready ? `Preview de #${preview.prNumber} lista` : preview.preparing ? `Preview de #${preview.prNumber}: preparando los datos` : `Preview de #${preview.prNumber}: actualizándose`;
+  return `<span class="pvtag ${ready ? 'ok' : 'prep'}" title="${esc(title)}"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>${ready ? 'preview' : 'preview…'}</span>`;
+}
+
 function itemRow(item, hit) {
   const last = itemLast(item);
   const showSlices = item.slices?.length && (S.sel === item.id || item.status === 'running' || item.status === 'blocked' || hit);
   const kids = showSlices ? `<div class="kids">${item.slices.map((slice) => `<button class="kid ${hit && slice.prNumber === hit ? 'hit' : ''}" data-id="${esc(item.id)}">${sliceMark(slice)}<span class="t">${slice.index + 1}. ${esc(slice.title)}</span><span class="age">${slice.prNumber ? `#${slice.prNumber}` : ''}</span></button>`).join('')}</div>` : '';
   return `<button class="item ${item.pinned ? 'pinned' : ''}" data-id="${esc(item.id)}" aria-current="${S.sel === item.id}" ${item.pinned ? 'title="PR de exploración: sus fichas se revisan acá"' : ''}>
     ${item.pinned ? EXPLORE_ICON : dot(item.status)}<span class="t">${esc(item.title)}</span><span class="age" ${item.status === 'running' && item.lastRun ? `data-since="${esc(item.lastRun.startedAt)}"` : ''}>${esc(itemAge(item))}</span>
-    <span class="sub">${ghIcon(item.kind, item.github)}${itemSub(item)}${item.linear ? `, <span class="red">${esc(item.linear.id)}</span>` : ''}${item.linear?.project && !S.project ? `, <span class="ptag"><i style="background:${projectColor(item.linear.project.id)}"></i>${esc(item.linear.project.name)}</span>` : ''}</span>
+    <span class="sub">${previewTag(item.preview)}${ghIcon(item.kind, item.github)}${itemSub(item)}${item.linear ? `, <span class="red">${esc(item.linear.id)}</span>` : ''}${item.linear?.project && !S.project ? `, <span class="ptag"><i style="background:${projectColor(item.linear.project.id)}"></i>${esc(item.linear.project.name)}</span>` : ''}</span>
     ${last ? `<span class="last">${esc(last)}</span>` : ''}</button>${kids}`;
 }
 
@@ -823,8 +832,9 @@ async function sendAction() {
     renderDialog();
     toast(dialog.action.id === 'assign' ? `Listo: se lo asignaste a ronin. Lo toma en el próximo tick.` : `Listo: comentaste en #${dialog.action.target}.`, url);
     const item = itemById(dialog.item);
-    // Its comment is where the answer will come: shown when it's this item's own.
-    if (item && item.number === dialog.action.target) S.doc[dialog.item] = 'comments';
+    // Its comment is where the answer will come: the tab of what it was on (the issue or its PR).
+    const d = S.detail[dialog.item]?.data;
+    if (item && d) S.doc[dialog.item] = d.pr?.number === dialog.action.target ? 'pr' : 'issue';
     if (S.detail[dialog.item]) S.detail[dialog.item].at = 0;
     await loadDetail(dialog.item);
     refresh();
@@ -989,10 +999,11 @@ function activityHTML(item) {
 
 function docTabsOf(item, d) {
   // Archivos: the PR's "Files changed" (#111), an issue's moving PR's.
-  if (item.kind === 'issue') return [['issue', 'Issue'], ...(d?.pr ? [['pr', `PR #${d.pr.number}`]] : []), ['comments', 'Comentarios'], ...(d?.pr ? [['files', 'Archivos']] : [])];
+  // An issue with a PR opens on the PR, what was done (its "Qué se pidió" says what was asked).
+  if (item.kind === 'issue') return d?.pr ? [['pr', `PR #${d.pr.number}`], ['issue', 'Issue'], ['files', 'Archivos']] : [['issue', 'Issue']];
   // An exploration PR opens on its findings, to review them (#93); as its app's page, with the app's runs and inventory (#155).
   const xpl = d?.exploration && xplOfItem(item.id) ? [['corridas', 'Corridas'], ['inventario', 'Inventario']] : [];
-  return [...(d?.exploration ? [['fichas', 'Fichas']] : []), ...xpl, ['pr', 'Descripción'], ...(d?.issue ? [['issue', `Issue #${d.issue.number}`]] : []), ['comments', 'Comentarios'], ['files', 'Archivos']];
+  return [...(d?.exploration ? [['fichas', 'Fichas']] : []), ...xpl, ['pr', 'Descripción'], ...(d?.issue ? [['issue', `Issue #${d.issue.number}`]] : []), ['files', 'Archivos']];
 }
 const docOf = (item) => {
   const d = S.detail[item.id]?.data;
@@ -1012,14 +1023,14 @@ function docHTML(item) {
   if (!d) return `<div class="doc" id="doc"><div class="empty">${entry?.error ? `No se pudo leer de GitHub: ${esc(entry.error)}` : 'Cargando de GitHub…'}</div></div>`;
   const tabs = docTabsOf(item, d);
   const cur = tabs.some(([k]) => k === S.doc[item.id]) ? S.doc[item.id] : tabs[0][0];
-  const own = item.kind === 'issue' ? d.issue : d.pr;
-  const entries = own ? conversation(own) : [];
-  const count = entries.length;
+  // Each tab's own conversation: the issue's comments, the PR's comments and reviews.
+  const convOf = (k) => (k === 'issue' ? d.issue : k === 'pr' ? d.pr : undefined);
+  const count = (k) => (convOf(k) ? conversation(convOf(k)).length : 0);
   const fichas = S.expl[item.id]?.data?.fichas;
   const files = S.files[item.id];
-  const counter = (k) => (k === 'comments' ? `<span class="c">${count}</span>` : k === 'fichas' && fichas ? `<span class="c">${fichas.length}</span>` : k === 'files' && files?.data ? `<span class="c">${files.data.files.length}</span>` : '');
+  const counter = (k) => ((k === 'issue' || k === 'pr') && count(k) ? `<span class="c">${count(k)}</span>` : k === 'fichas' && fichas ? `<span class="c">${fichas.length}</span>` : k === 'files' && files?.data ? `<span class="c">${files.data.files.length}</span>` : '');
   const bar = `<div class="doctabs" role="tablist">${tabs.map(([k, label]) => `<button class="doctab" role="tab" data-doc="${k}" aria-selected="${k === cur}">${esc(label)}${counter(k)}</button>`).join('')}
-    <span class="keys"><kbd>1</kbd>–<kbd>${tabs.length}</kbd> pestaña · ${cur === 'fichas' ? '<kbd>j</kbd> <kbd>k</kbd> otra ficha' : cur === 'files' ? `<kbd>j</kbd> <kbd>k</kbd> otro archivo · <kbd>v</kbd> visto${decidable(item, d) ? '' : ' · <kbd>r</kbd> revisión'}` : `<kbd>j</kbd> <kbd>k</kbd> ${cur === 'comments' ? 'comentario' : 'sección'}`} <button class="kh" data-keys title="Atajos (?)" aria-label="Atajos">?</button></span><span class="src">${d.error ? `<span class="bad">GitHub no respondió: ${esc(d.error)}</span>, ` : ''}${d.fetchedAt ? `leído hace ${esc(short(Date.now() - Date.parse(d.fetchedAt)))}` : ''}</span></div>`;
+    <span class="keys"><kbd>1</kbd>–<kbd>${tabs.length}</kbd> pestaña · ${cur === 'fichas' ? '<kbd>j</kbd> <kbd>k</kbd> otra ficha' : cur === 'files' ? `<kbd>j</kbd> <kbd>k</kbd> otro archivo · <kbd>v</kbd> visto${decidable(item, d) ? '' : ' · <kbd>r</kbd> revisión'}` : '<kbd>j</kbd> <kbd>k</kbd> sección o comentario'} <button class="kh" data-keys title="Atajos (?)" aria-label="Atajos">?</button></span><span class="src">${d.error ? `<span class="bad">GitHub no respondió: ${esc(d.error)}</span>, ` : ''}${d.fetchedAt ? `leído hace ${esc(short(Date.now() - Date.parse(d.fetchedAt)))}` : ''}</span></div>`;
   if (cur === 'fichas') return bar + fichasHTML(item);
   if (cur === 'corridas' || cur === 'inventario') {
     const xr = xplOfItem(item.id);
@@ -1030,18 +1041,15 @@ function docHTML(item) {
     if (!files) queueMicrotask(() => loadFiles(item.id));
     return bar + filesHTML(item);
   }
-  let body;
-  if (cur === 'comments') {
-    body = count
-      ? `<div class="comments">${entries.map((e) => entryHTML(e, d, own, item.repo)).join('')}</div>`
-      : '<div class="empty">Nadie comentó todavía.</div>';
-  } else {
-    const doc = cur === 'issue' ? d.issue : d.pr;
-    const other = (cur === 'issue') !== (item.kind === 'issue');
-    body = `<div class="page">${other ? `<a class="other" href="${esc(doc.url)}" target="_blank" rel="noopener">${esc(doc.title)} <span class="m">${cur === 'pr' ? 'PR' : 'Issue'} #${esc(doc.number)} ↗</span></a>` : ''}
+  const doc = cur === 'issue' ? d.issue : d.pr;
+  const other = (cur === 'issue') !== (item.kind === 'issue');
+  const entries = conversation(doc);
+  const conv = `<section class="conv"><h3>Comentarios ${cur === 'pr' ? 'del PR' : 'del issue'}${entries.length ? ` <span class="c">${entries.length}</span>` : ''}</h3>${entries.length
+    ? `<div class="comments">${entries.map((e) => entryHTML(e, d, doc, item.repo)).join('')}</div>`
+    : '<p class="m">Nadie comentó todavía.</p>'}</section>`;
+  const body = `<div class="page">${other ? `<a class="other" href="${esc(doc.url)}" target="_blank" rel="noopener">${esc(doc.title)} <span class="m">${cur === 'pr' ? 'PR' : 'Issue'} #${esc(doc.number)} ↗</span></a>` : ''}
       <div class="meta">${avatar(doc.author)}<b>${esc(doc.author)}</b><span>${esc(when(doc.createdAt))}</span></div>${cur === 'pr' ? prStateHTML(item, doc) : ''}
-      ${cur === 'pr' && sameLogin(doc.author, d.ronin) ? prBodyHTML(doc.body, item.repo) : `<div class="md">${doc.body.trim() ? md(doc.body, item.repo) : '<p class="m">Sin descripción.</p>'}</div>`}</div>`;
-  }
+      ${cur === 'pr' && sameLogin(doc.author, d.ronin) ? prBodyHTML(doc.body, item.repo) : `<div class="md">${doc.body.trim() ? md(doc.body, item.repo) : '<p class="m">Sin descripción.</p>'}</div>`}</div>${conv}`;
   return bar + `<div class="doc" id="doc" data-key="${esc(`${item.id}:${cur}`)}">${body}</div>`;
 }
 
@@ -1626,7 +1634,7 @@ function decideKey(event) {
 // waits on a decision. Two-key sequences wait a moment for their second key.
 const KEY_SEQ_MS = 900;
 const seq = { key: null, timer: 0 };
-const UNITS = { pr: '.page .psec, .page .md > :is(h1, h2, h3)', issue: '.page .md > :is(h1, h2, h3)', comments: '.comments > article' };
+const UNITS = { pr: '.page .psec, .page .md > :is(h1, h2, h3), .conv .comments > article', issue: '.page .md > :is(h1, h2, h3), .conv .comments > article' };
 
 // A PR of ronin's that's ready for someone to decide: open, not a draft,
 // nobody approved it yet and no agent is on it.
