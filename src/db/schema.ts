@@ -62,10 +62,22 @@ export interface DeploysTable {
   release_error: string | null;
 }
 
+// Reuniones (meetings/meetings.ts): each meeting, its record as a document.
+export interface MeetingsTable {
+  number: number;
+  repo: string;
+  hash: string;
+  status: string;
+  data: Json<unknown>;
+  created_at: ColumnType<Date, string, string>;
+  updated_at: Stamp;
+}
+
 export interface Database {
   settings: SettingsTable;
   task_settings: TaskSettingsTable;
   claude_account_plans: ClaudeAccountPlansTable;
   settings_log: SettingsLogTable;
   deploys: DeploysTable;
+  meetings: MeetingsTable;
 }

@@ -26,7 +26,8 @@
     "server:remove": "bash scripts/setup-server-service.sh --remove",
     "db:migrate": "tsx --env-file=.env scripts/db-migrate.ts",
     "db:import-ajustes": "tsx --env-file=.env scripts/db-import-ajustes.ts",
-    "db:import-despliegues": "tsx --env-file=.env scripts/db-import-despliegues.ts"
+    "db:import-despliegues": "tsx --env-file=.env scripts/db-import-despliegues.ts",
+    "db:import-reuniones": "tsx --env-file=.env scripts/db-import-reuniones.ts"
   },
   "dependencies": {
     "@playwright/mcp": "0.0.83",

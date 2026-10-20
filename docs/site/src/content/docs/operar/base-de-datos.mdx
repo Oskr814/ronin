@@ -11,6 +11,7 @@ ronin pasa de guardar sus datos en archivos a guardarlos en Postgres de a un mó
 |---|---|---|
 | **Ajustes** | Los valores cambiados desde el tablero, el modelo y el esfuerzo de cada tipo de tarea, el plan de cada cuenta de Claude y el registro de cambios. | `pnpm db:import-ajustes` |
 | **Despliegues** | Cada release que publicó ronin: qué llevó, quién y cómo terminó su workflow. | `pnpm db:import-despliegues` |
+| **Reuniones** | Cada reunión: sus propuestas, lo que se creó y su actividad. Las notas y el archivo subido siguen en `MEETINGS_DATA_DIR`. | `pnpm db:import-reuniones` |
 
 Todo lo demás sigue en sus carpetas.
 
@@ -39,6 +40,7 @@ Todo lo demás sigue en sus carpetas.
    ```bash
    pnpm db:import-ajustes
    pnpm db:import-despliegues
+   pnpm db:import-reuniones
    ```
 
 4. Desplegar y reiniciar el servidor. Al arrancar pone la base al día (`pnpm db:migrate` hace lo mismo a mano); el tick y los workers toman `DATABASE_URL` en su próxima corrida.
