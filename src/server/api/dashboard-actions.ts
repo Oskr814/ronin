@@ -6,7 +6,7 @@ import { withActiveRepo, type RepoEntry } from '../../core/repo-context.js';
 import type { Session } from './auth.js';
 import type { ItemDetail, ItemRef } from './dashboard-detail.js';
 import type { RepoGithub } from './dashboard-github.js';
-import { assignIssue, commentOnIssue, type Posted } from './github-as-user.js';
+import { assignIssue, closeIssue, commentOnIssue, type Posted } from './github-as-user.js';
 
 // What can be asked of ronin from an item's page (#85). Each action is a
 // command that already exists on GitHub, and the dashboard writes it as
@@ -19,9 +19,10 @@ import { assignIssue, commentOnIssue, type Posted } from './github-as-user.js';
 // its account, which it takes like any issue assigned on GitHub
 // (discoverAssignedIssues) and, if what's asked isn't clear, asks on the
 // issue before touching code. Or a /spike or a /prototype first, on one of
-// the repo's apps.
+// the repo's apps. Any open issue can also be closed, as not planned, with
+// its reason as a comment first.
 
-export type ActionId = 'resolve-conflicts' | 'preview' | 'preview-stop' | 'auto-merge-on' | 'auto-merge-off' | 'unblock' | 'assign' | 'spike' | 'prototype';
+export type ActionId = 'resolve-conflicts' | 'preview' | 'preview-stop' | 'auto-merge-on' | 'auto-merge-off' | 'unblock' | 'assign' | 'spike' | 'prototype' | 'close-issue';
 
 export interface ActionView {
   id: ActionId;
@@ -105,6 +106,16 @@ export function listActions(ref: ItemRef, gh: RepoGithub | undefined, detail: It
       text: { required: true, label: 'Tu respuesta', placeholder: 'Lo que hacía falta decidir o resolver' },
     });
   }
+  // Last: the one that ends it.
+  if (issue || open) {
+    actions.push({
+      id: 'close-issue', label: 'Cerrar el issue', command: 'close', target: ref.number,
+      help: prNumber !== undefined
+        ? `Lo cierra como no planeado. El PR #${prNumber} queda abierto: para cerrarlo también, usá Cerrar en el PR.`
+        : 'Lo cierra como no planeado. ronin deja de trabajarlo.',
+      text: { required: false, label: 'Por qué (opcional): queda como comentario tuyo antes de cerrarlo', placeholder: 'Por ejemplo: ya no hace falta, lo cubre otro issue' },
+    });
+  }
   return actions.map((a) => ({ ...a, preview: actionComment(a, a.text ? '…' : undefined, a.apps ? '{app}' : undefined) }));
 }
 
@@ -116,7 +127,7 @@ export function listActions(ref: ItemRef, gh: RepoGithub | undefined, detail: It
 // /spike or /prototype takes its app and instruction on one line, as
 // "Nuevo issue" writes them.
 export function actionComment(action: Pick<ActionView, 'id' | 'command'>, text?: string, app?: string): string {
-  if (action.id === 'unblock' || action.id === 'assign') return text ?? '';
+  if (action.id === 'unblock' || action.id === 'assign' || action.id === 'close-issue') return text ?? '';
   // A preview keeps what to prepare below, on its own lines.
   if (app && action.id === 'preview') return `@${config.githubLogin} ${action.command} ${app}${text ? `\n\n${text}` : ''}`;
   if (app) return `@${config.githubLogin} ${action.command} ${app}${text ? ` ${text}` : ''}`;
@@ -137,6 +148,7 @@ export async function runAction(
   apps: string[] = [],
   rawApp?: unknown,
   assign: (token: string, repo: string, number: number, assignees: string[]) => Promise<{ url: string }> = assignIssue,
+  close: (token: string, repo: string, number: number) => Promise<{ url: string }> = closeIssue,
 ): Promise<{ url: string }> {
   const action = listActions(ref, gh, detail, session.login, apps).find((a) => a.id === id);
   if (!action) throw new ActionError('Esa acción no está disponible para este ítem ahora.');
@@ -153,6 +165,13 @@ export async function runAction(
     const assigned = await assign(session.token, entry.productRepo, action.target, [config.githubLogin]);
     log.info(`tablero: ${session.login} le asignó ${entry.productRepo}#${action.target} a ronin`);
     return assigned;
+  }
+  if (action.id === 'close-issue') {
+    // The reason first, so it's on the issue when it closes.
+    if (text) await post(session.token, entry.productRepo, action.target, text);
+    const closed = await close(session.token, entry.productRepo, action.target);
+    log.info(`tablero: ${session.login} cerró ${entry.productRepo}#${action.target}`);
+    return closed;
   }
   const posted = await post(session.token, entry.productRepo, action.target, actionComment(action, text || undefined, app || undefined));
   log.info(`tablero: ${session.login} pidió ${action.id} en ${entry.productRepo}#${action.target} (${posted.url})`);

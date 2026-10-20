@@ -19,6 +19,7 @@ El botón **Acciones** de la ficha (`M`) muestra lo que se le puede pedir a roni
 | **Levantar o actualizar la preview** | `/preview [app] [qué preparar]` | Un PR abierto. Lleva un texto opcional. *Actualizar* la levanta de cero. Si el repo tiene varias apps, se elige una: viene marcada la que está arriba, o la única que cambia el PR. |
 | **Bajar la preview** | `/preview stop` | Hay una preview arriba. |
 | **Activar o desactivar el auto-merge** | `/auto-merge`, `/auto-merge off` | Según si el PR tiene `ronin:auto-merge`. |
+| **Cerrar el issue** | *Close as not planned* en GitHub | Cualquier issue abierto. Va al final. Lleva un motivo opcional. |
 
 En un issue, las acciones de PR van al PR de su slice que avanza («Resolver conflictos en #849»).
 
@@ -28,6 +29,7 @@ Un diálogo muestra el comentario que va a quedar, tal cual y a tu nombre, mient
 
 - **Asignar a ronin** deja tu contexto, si escribiste uno, como un comentario común en el issue, sin mencionar a ronin (una mención se leería como un pedido aparte). Después le asigna el issue. Si a ronin no le queda claro qué hacer, pregunta en el issue antes de tocar código.
 - **Responder y destrabar** comenta tu respuesta y ronin le vuelve a poner `ronin:in-progress` al issue. Si GitHub rechazó el comentario, el label no se toca.
+- **Cerrar el issue** deja el motivo, si escribiste uno, como un comentario común, y después lo cierra como no planeado. Si es el issue de un pedido del portal, el motivo también le llega a quien lo pidió, en la conversación y por correo. Si el issue tiene un PR abierto, el PR queda abierto: para cerrar los dos, usá **Cerrar** en el PR con *Cerrar también el issue* (ver [Decidir un PR](/ronin/guias/decidir-un-pr/)). Si ronin lo estaba trabajando, lo pasa a `ronin:done` en el próximo tick, salvo que siga abierto el PR de una de sus slices.
 
 ## Nuevo issue
 

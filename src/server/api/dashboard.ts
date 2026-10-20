@@ -543,15 +543,22 @@ async function postAction(req: IncomingMessage, res: ServerResponse, id: string,
     return;
   }
   if (refused(res, ctx.entry.productRepo, 'acciones')) return;
+  // Closing a portal request's issue with a reason: the person gets it too,
+  // as when its PR is closed from the tablero (postDecision).
+  const reason = typeof body.text === 'string' ? body.text.trim() : '';
+  const noted = body.action === 'close-issue' && ctx.ref.kind === 'issue' && reason
+    ? await noteClosing(ctx.entry.productRepo, { issue: ctx.ref.number }, reason, session.login)
+    : null;
   try {
     const done = await runAction(ctx.entry, ctx.ref, ctx.gh, ctx.detail, session, body.action, body.text, undefined, await repoApps(ctx.entry), body.app);
     // The next read shows the comment and whatever the action changed.
     forgetDetails(ctx.entry.productRepo);
     forgetFiles(ctx.entry.productRepo);
-    // Taken, it moves to ronin's issues: read again on the next poll.
-    if (body.action === 'assign') forgetGithub(ctx.entry.productRepo);
+    // Taken, it moves to ronin's issues; closed, it leaves the list: read again on the next poll.
+    if (body.action === 'assign' || body.action === 'close-issue') forgetGithub(ctx.entry.productRepo);
     json(res, 200, done);
   } catch (error) {
+    if (noted !== null) await dropCloseNote(noted).catch((e) => log.error(`tablero: no se pudo quitar el motivo del pedido P-${noted}`, e));
     if (error instanceof ActionError) json(res, 409, { error: error.message });
     else if (!githubRefusal(res, error)) throw error;
   }
