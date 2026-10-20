@@ -43,9 +43,29 @@ export interface SettingsLogTable {
   to_value: string;
 }
 
+// Despliegues (deploy/store.ts): each release ronin published.
+export interface DeploysTable {
+  repo: string;
+  tag: string;
+  prerelease: boolean;
+  mode: string;
+  base: string | null;
+  sha: string;
+  url: string;
+  changes: Json<unknown>;
+  pedidos: number[];
+  by: string;
+  at: ColumnType<Date, string, string>;
+  state: string;
+  runs: ColumnType<unknown | null, string | null, string | null>;
+  ended_at: ColumnType<Date | null, string | null, string | null>;
+  release_error: string | null;
+}
+
 export interface Database {
   settings: SettingsTable;
   task_settings: TaskSettingsTable;
   claude_account_plans: ClaudeAccountPlansTable;
   settings_log: SettingsLogTable;
+  deploys: DeploysTable;
 }
