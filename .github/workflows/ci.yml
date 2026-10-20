@@ -12,6 +12,23 @@ concurrency:
 jobs:
   test:
     runs-on: ubuntu-latest
+    # The tests that need a real Postgres (src/db/testing.ts).
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: ronin
+          POSTGRES_PASSWORD: ronin
+          POSTGRES_DB: ronin_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ronin"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgres://ronin:ronin@localhost:5432/ronin_test
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4

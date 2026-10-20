@@ -1,14 +1,12 @@
-import { appendFile, mkdir, readFile } from 'node:fs/promises';
-import { join } from 'node:path';
 import { config } from '../../core/config.js';
 import { log } from '../../core/logger.js';
 import { timed } from '../../core/timing.js';
 import type { RepoEntry } from '../../core/repo-context.js';
 import { linearKey, teamPeople } from '../../core/linear-api.js';
-import { applySettings, EFFORTS, invalidValue, MODELS, readSettingsSync, settingDef, settingsPath, settingsView, TASK_TYPES, type SettingsFile, type SettingValue } from '../../core/settings.js';
+import { applySettings, EFFORTS, invalidValue, MODELS, settingDef, settingsView, TASK_TYPES, type SettingsFile, type SettingValue } from '../../core/settings.js';
+import { appendRegistro, readRegistro as readRegistroStore, readSettings, updateSettings, type RegistroEntry } from '../../core/settings-store.js';
 import { taskDefaultEffort, taskDefaultModel, taskEnvEffort, taskEnvModel } from '../../core/config.js';
 import { sendMail } from '../../core/notifier.js';
-import { withJson } from '../../portal/json-store.js';
 import { readTeam, withTeam, type Member } from './team.js';
 import { EVENTS, eventsOf, isEvent } from '../../core/notifications.js';
 
@@ -19,9 +17,9 @@ import { EVENTS, eventsOf, isEvent } from '../../core/notifications.js';
 //   GET  /api/ajustes/registro  every change made here, newest first (admins)
 //   POST /api/ajustes/notificaciones  { repo, event, on }: one of their own emails (stage 4)
 //
-// Everything lives in SETTINGS_DATA_DIR: settings.json (core/settings.ts),
-// people.json (the team, team.ts) and registro.jsonl (one line per change,
-// never rewritten).
+// The values, the task types' choices and the record of changes are kept by
+// core/settings-store.ts: Postgres with DATABASE_URL, else SETTINGS_DATA_DIR's
+// settings.json and registro.jsonl. The team is people.json there (team.ts).
 
 export class AjustesError extends Error {
   constructor(message: string, readonly status = 400) {
@@ -34,28 +32,19 @@ export class AjustesError extends Error {
 export type Profile = Pick<Member, 'name' | 'email' | 'linear'>;
 const profile = (m: Member | undefined): Profile => ({ ...(m?.name ? { name: m.name } : {}), ...(m?.email ? { email: m.email } : {}), ...(m?.linear ? { linear: m.linear } : {}) });
 
-export interface RegistroEntry {
-  at: string;
-  login: string;
-  // What changed, in words ("General · portal.dailyLimit", "Perfil · correo").
-  what: string;
-  from: string;
-  to: string;
-}
+export type { RegistroEntry };
 
 const NAME_MAX = 120;
 const EMAIL_MAX = 254;
-const REGISTRO_MAX = 300;
 const LINEAR_TTL_MS = 10 * 60_000;
 
-const registroPath = () => join(config.settings.dataDir, 'registro.jsonl');
-const emptySettings = (): SettingsFile => ({ values: {} });
 const isEmail = (email: string) => email.length <= EMAIL_MAX && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
 export async function record(entry: Omit<RegistroEntry, 'at'>, now = new Date()): Promise<void> {
-  await mkdir(config.settings.dataDir, { recursive: true, mode: 0o700 });
-  await appendFile(registroPath(), `${JSON.stringify({ at: now.toISOString(), ...entry })}\n`, { mode: 0o600 });
+  await appendRegistro(config.settings.dataDir, { at: now.toISOString(), ...entry });
 }
+
+const currentSettings = () => readSettings(config.settings.dataDir);
 
 export async function profileOf(login: string): Promise<Profile> {
   return profile((await readTeam()).people[login]);
@@ -98,8 +87,8 @@ export async function ajustesView(login: string, admin: boolean, entries: RepoEn
     ...(admin ? { notifyTo: config.notifyTo } : {}),
     linear: await linearTeams(entries),
     ...(admin ? {
-      valores: settingsView(readSettingsSync(config.settings.dataDir)),
-      tareas: tareasView(readSettingsSync(config.settings.dataDir)),
+      valores: settingsView(await currentSettings()),
+      tareas: tareasView(await currentSettings()),
       fixed: { previewPortRange: config.previewPortRange, runnerId: config.runnerId, githubLogin: config.githubLogin },
       portal: { url: config.portal.url },
       dashboard: { url: config.dashboard.url },
@@ -137,14 +126,14 @@ export async function setValue(login: string, body: Record<string, unknown>): Pr
     if (problem) throw new AjustesError(problem);
   }
   const clean = typeof value === 'string' && def.type === 'text' ? value.trim() : value;
-  const before = settingsView(readSettingsSync(config.settings.dataDir)).find((s) => s.key === def.key)!;
-  await withJson(settingsPath(config.settings.dataDir), emptySettings, (file) => {
+  const before = settingsView(await currentSettings()).find((s) => s.key === def.key)!;
+  await updateSettings(config.settings.dataDir, login, (file) => {
     file.values ??= {};
     if (value === null) delete file.values[def.key];
     else file.values[def.key] = clean as SettingValue;
   });
-  applySettings(config as unknown as Record<string, unknown>, readSettingsSync(config.settings.dataDir));
-  const after = settingsView(readSettingsSync(config.settings.dataDir)).find((s) => s.key === def.key)!;
+  applySettings(config as unknown as Record<string, unknown>, await currentSettings());
+  const after = settingsView(await currentSettings()).find((s) => s.key === def.key)!;
   if (before.value !== after.value || before.source !== after.source) {
     await record({ login, what: `${sectionOf(def.key)} · ${def.key}`, from: shown(before.value, before.source === 'tablero' ? '' : before.source === 'env' ? '.env' : 'por defecto'), to: shown(after.value, after.source === 'tablero' ? '' : after.source === 'env' ? '.env' : 'por defecto') });
     log.info(`ajustes: ${login} cambió ${def.key} a ${after.value} (${after.source})`);
@@ -193,25 +182,9 @@ export async function saveProfile(login: string, body: Record<string, unknown>, 
   return { perfil: saved };
 }
 
-// GET /api/ajustes/registro: the last REGISTRO_MAX, newest first.
-export async function readRegistro(): Promise<RegistroEntry[]> {
-  let raw: string;
-  try {
-    raw = await readFile(registroPath(), 'utf8');
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
-    throw error;
-  }
-  const entries: RegistroEntry[] = [];
-  for (const line of raw.split('\n')) {
-    if (!line.trim()) continue;
-    try {
-      entries.push(JSON.parse(line) as RegistroEntry);
-    } catch {
-      // A torn line (a write cut short) doesn't hide the rest.
-    }
-  }
-  return entries.slice(-REGISTRO_MAX).reverse();
+// GET /api/ajustes/registro: the last ones, newest first.
+export function readRegistro(): Promise<RegistroEntry[]> {
+  return readRegistroStore(config.settings.dataDir);
 }
 
 
@@ -244,7 +217,7 @@ export async function setTask(login: string, body: Record<string, unknown>): Pro
   const task = typeof body.task === 'string' ? body.task : '';
   if (!TASK_TYPES.includes(task)) throw new AjustesError('Ese tipo de tarea no existe.');
   const changes: Array<{ what: string; from: string; to: string }> = [];
-  await withJson(settingsPath(config.settings.dataDir), emptySettings, (file) => {
+  await updateSettings(config.settings.dataDir, login, (file) => {
     const tasks = { ...(file.tasks ?? {}) };
     const choice = { ...(tasks[task] ?? {}) };
     for (const [field, allowed] of [['model', MODELS], ['effort', EFFORTS]] as const) {
@@ -261,9 +234,9 @@ export async function setTask(login: string, body: Record<string, unknown>): Pro
     file.values ??= {};
     file.tasks = tasks;
   });
-  applySettings(config as unknown as Record<string, unknown>, readSettingsSync(config.settings.dataDir));
+  applySettings(config as unknown as Record<string, unknown>, await currentSettings());
   for (const change of changes) await record({ login, ...change });
-  return { tareas: tareasView(readSettingsSync(config.settings.dataDir)) };
+  return { tareas: tareasView(await currentSettings()) };
 }
 
 // GET /api/ajustes/conexiones: whether each credential of .env is there and,

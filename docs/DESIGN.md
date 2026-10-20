@@ -1365,10 +1365,11 @@ Cada campo se guarda al salir de él. Lo que ronin necesita del servidor (secret
 - *Exploración*: `EXPLORE_TIMEZONE`, `EXPLORE_NIGHT_WINDOW`, `EXPLORE_FUNCTIONS_PER_NIGHT`, `EXPLORE_FUNCTIONS_PER_RUN`, `EXPLORE_FINDINGS_PER_RUN`, `EXPLORE_IDEAS_PER_RUN`, `EXPLORE_PUBLISH_EVIDENCE`.
 - *Previews*: `PREVIEW_PREPARE_DATA`, `PREVIEW_TTL_MINUTES`, `PREVIEW_MAX_PER_REPO`.
 
-Lo que se cambia queda en `<SETTINGS_DATA_DIR>/settings.json`. Cada fila dice de dónde viene su valor (`.env`, *Por defecto* o *Cambiado en el tablero*) y ofrece *Volver al de .env*.
+Lo que se cambia lo guarda `core/settings-store.ts`: en Postgres con `DATABASE_URL` (tablas `settings`, `task_settings` y `claude_account_plans`, con quién y cuándo, #235), o si no en `<SETTINGS_DATA_DIR>/settings.json`. Cada fila dice de dónde viene su valor (`.env`, *Por defecto* o *Cambiado en el tablero*) y ofrece *Volver al de .env*.
 
-- **Cómo llega a cada proceso:** `config.ts` aplica `settings.json` sobre lo que dice `.env` al cargar, así el tick, cada handler de webhook y cada worker arrancan con los valores del tablero. El servidor los vuelve a aplicar sobre el mismo `config` después de guardar uno: como `auth.ts`, el portal y las lecturas de GitHub usan `config.dashboard` y `config.portal`, el cambio vale al momento.
-- **Un archivo editado a mano:** un `settings.json` que no se lee, o un valor fuera de rango, se ignora con un aviso en el log y vale el de `.env`. Nunca tumba un proceso.
+- **Cómo llega a cada proceso:** `config.ts` los lee (con `await`, al cargarse) y los aplica sobre lo que dice `.env`, así el tick, cada handler de webhook y cada worker arrancan con los valores del tablero. El servidor los vuelve a aplicar sobre el mismo `config` después de guardar uno: como `auth.ts`, el portal y las lecturas de GitHub usan `config.dashboard` y `config.portal`, el cambio vale al momento.
+- **Un archivo editado a mano o una base que no responde:** un `settings.json` que no se lee, una base caída o un valor fuera de rango se ignoran con un aviso en el log y vale el de `.env`. Nunca tumba un proceso.
+- **De a un cambio por vez:** con archivos, el lock de `withJson`; en la base, una transacción con un lock de Postgres (`pg_advisory_xact_lock`) que escribe solo lo que cambió.
 
 #### 19.3 Usuarios del equipo y permisos (`server/api/team.ts`, `usuarios.ts`)
 
@@ -1418,7 +1419,7 @@ Si cada credencial de `.env` está, nunca su valor: el token de ronin (si GitHub
 
 #### 19.8 Registro
 
-Cada cambio en Ajustes, del perfil propio a un repo, queda en `<SETTINGS_DATA_DIR>/registro.jsonl`: cuándo, quién, qué, de qué a qué. Una línea por cambio, que nunca se reescribe; la página muestra las últimas 300.
+Cada cambio en Ajustes, del perfil propio a un repo, queda en el registro: la tabla `settings_log` con `DATABASE_URL`, o `<SETTINGS_DATA_DIR>/registro.jsonl`. Cuándo, quién, qué, de qué a qué. Una línea por cambio, que nunca se reescribe; la página muestra las últimas 300.
 
 #### 19.9 API
 
@@ -1437,7 +1438,7 @@ Cada cambio en Ajustes, del perfil propio a un repo, queda en `<SETTINGS_DATA_DI
 
 #### 19.10 Activarlo
 
-Nada: sin `SETTINGS_DATA_DIR`, usa `settings-data/` en el checkout del runner (fuera de git). Es la única copia de lo que se cambió en el tablero, del equipo y del registro: hay que respaldarlo, como `portal-data/`.
+Nada: sin `SETTINGS_DATA_DIR`, usa `settings-data/` en el checkout del runner (fuera de git). Con `DATABASE_URL`, los valores, las tareas, las cuentas y el registro van a Postgres (`pnpm db:import-ajustes` los copia de los archivos); el equipo y las copias de `repos.json` siguen ahí. Es la única copia de lo que se cambió en el tablero, del equipo y del registro: hay que respaldarlo, como `portal-data/`.
 
 #### 19.11 Cuentas de Claude (#234, `core/claude-plans.ts`, `server/api/cuentas-claude.ts`)
 
@@ -1447,7 +1448,7 @@ El plan que paga cada cuenta de Claude, para calcular en Métricas cuánto se ap
 - **Por cuenta:** los repos que la usan, el plan, el precio al mes, el uso de ahora (la última medición, §15.6) y el directorio de configuración, que solo se ve.
 - **Planes:** Pro ($20), Max 5× ($100), Max 20× ($200), Team, Enterprise y Otro. Elegir un plan pone su precio de lista; los tres últimos no tienen y conservan el que había. El precio se puede cambiar a mano.
 - **Una cuenta sin elegir cuenta como Max 5× ($100).**
-- **Dónde queda:** en `settings.json`, bajo `accounts.<cuenta>`: `{ plan, priceUsd? }`, con el precio solo si no es el de lista. Una entrada editada a mano que no se lee cuenta como sin elegir. Cada cambio queda en el Registro.
+- **Dónde queda:** con el resto de Ajustes (tabla `claude_account_plans`, o `settings.json` bajo `accounts.<cuenta>`): `{ plan, priceUsd? }`, con el precio solo si no es el de lista. Una entrada editada a mano que no se lee cuenta como sin elegir. Cada cambio queda en el Registro.
 
 ### 20. Métricas (#222)
 

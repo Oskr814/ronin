@@ -20,7 +20,7 @@ const ENTRIES = [
   { productRepo: 'Bmedical/bmedical', productRepoPath: '/bm', claudeConfigDir: '/home/x/.claude-bmedical' },
 ];
 const set = (account: string, body: Record<string, unknown>) => setCuenta('jefa', account, body, ENTRIES);
-const plan = (account: string) => cuentasView(ENTRIES).cuentas.find((c) => c.account === account)!.plan;
+const plan = async (account: string) => (await cuentasView(ENTRIES)).cuentas.find((c) => c.account === account)!.plan;
 const saved = () => JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8'));
 
 beforeEach(() => {
@@ -29,27 +29,27 @@ beforeEach(() => {
 });
 
 describe('cuentasView', () => {
-  it('lists each account of repos.json with its repos, plus the ones with usage only, and counts an unset one as Max 5×', () => {
+  it('lists each account of repos.json with its repos, plus the ones with usage only, and counts an unset one as Max 5×', async () => {
     usage.list = [
       { account: 'redmotos', claudeConfigDir: '/home/x/.claude-redmotos', measuredAt: '2026-10-20T10:00:00Z', sevenDay: { utilization: 0.4, resetsAt: '2026-10-23T00:00:00Z' } },
       { account: 'vieja', claudeConfigDir: '/home/x/.claude-vieja', measuredAt: '2026-10-01T10:00:00Z' },
     ];
-    const { cuentas, plans } = cuentasView(ENTRIES);
+    const { cuentas, plans } = await cuentasView(ENTRIES);
     expect(cuentas.map((c) => [c.account, c.repos])).toEqual([['bmedical', ['Bmedical/bmedical']], ['redmotos', ['redmotos/shoppingcart', 'redmotos/backoffice']], ['vieja', []]]);
     expect(cuentas[1]).toMatchObject({ claudeConfigDir: '/home/x/.claude-redmotos', plan: { plan: 'max5', name: 'Max 5×', priceUsd: 100, source: 'defecto' }, usage: { sevenDay: { utilization: 0.4 } } });
     expect(cuentas[0].usage).toBeNull();
     expect(plans.map((p) => p.name)).toEqual(['Pro', 'Max 5×', 'Max 20×', 'Team', 'Enterprise', 'Otro']);
   });
 
-  it('names a repo without claudeConfigDir after Claude Code\'s default account', () => {
-    expect(cuentasView([{ productRepo: 'a/b', productRepoPath: '/b' }]).cuentas).toEqual([expect.objectContaining({ account: 'default', claudeConfigDir: '', repos: ['a/b'] })]);
+  it('names a repo without claudeConfigDir after Claude Code\'s default account', async () => {
+    expect((await cuentasView([{ productRepo: 'a/b', productRepoPath: '/b' }])).cuentas).toEqual([expect.objectContaining({ account: 'default', claudeConfigDir: '', repos: ['a/b'] })]);
   });
 });
 
 describe('setCuenta', () => {
   it('saves a plan with its list price, and records the change', async () => {
     await set('bmedical', { plan: 'pro' });
-    expect(plan('bmedical')).toEqual({ plan: 'pro', name: 'Pro', priceUsd: 20, source: 'tablero' });
+    expect(await plan('bmedical')).toEqual({ plan: 'pro', name: 'Pro', priceUsd: 20, source: 'tablero' });
     expect(saved().accounts).toEqual({ bmedical: { plan: 'pro' } });
     expect((await readRegistro()).map((e) => `${e.what}: ${e.from} → ${e.to}`)).toEqual([
       'Cuentas de Claude · bmedical · precio al mes: $100 → $20',
@@ -59,18 +59,18 @@ describe('setCuenta', () => {
 
   it('keeps a price typed by hand, and a plan without a list price keeps the one there was', async () => {
     await set('redmotos', { priceUsd: 90 });
-    expect(plan('redmotos')).toMatchObject({ plan: 'max5', priceUsd: 90, source: 'tablero' });
+    expect(await plan('redmotos')).toMatchObject({ plan: 'max5', priceUsd: 90, source: 'tablero' });
     await set('redmotos', { plan: 'team' });
-    expect(plan('redmotos')).toMatchObject({ plan: 'team', name: 'Team', priceUsd: 90 });
+    expect(await plan('redmotos')).toMatchObject({ plan: 'team', name: 'Team', priceUsd: 90 });
     await set('redmotos', { plan: 'max20' });
-    expect(plan('redmotos')).toMatchObject({ plan: 'max20', priceUsd: 200 });
+    expect(await plan('redmotos')).toMatchObject({ plan: 'max20', priceUsd: 200 });
     expect(saved().accounts.redmotos).toEqual({ plan: 'max20' });
   });
 
   it('goes back to the default with plan null', async () => {
     await set('redmotos', { plan: 'pro' });
     await set('redmotos', { plan: null });
-    expect(plan('redmotos')).toMatchObject({ plan: 'max5', priceUsd: 100, source: 'defecto' });
+    expect(await plan('redmotos')).toMatchObject({ plan: 'max5', priceUsd: 100, source: 'defecto' });
     expect(saved().accounts).toEqual({});
   });
 

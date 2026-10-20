@@ -23,13 +23,17 @@
     "server": "tsx src/server/index.ts",
     "init-webhooks": "bash scripts/init-webhooks.sh",
     "server:setup": "bash scripts/setup-server-service.sh",
-    "server:remove": "bash scripts/setup-server-service.sh --remove"
+    "server:remove": "bash scripts/setup-server-service.sh --remove",
+    "db:migrate": "tsx --env-file=.env scripts/db-migrate.ts",
+    "db:import-ajustes": "tsx --env-file=.env scripts/db-import-ajustes.ts"
   },
   "dependencies": {
     "@playwright/mcp": "0.0.83",
     "gray-matter": "^4.0.3",
+    "kysely": "0.29.6",
     "mammoth": "1.13.0",
     "nodemailer": "^6.9.16",
+    "pg": "8.23.1",
     "playwright": "1.64.0",
     "unpdf": "1.8.1",
     "yaml": "2.9.1"
@@ -37,6 +41,7 @@
   "devDependencies": {
     "@types/node": "^22.10.2",
     "@types/nodemailer": "^6.4.17",
+    "@types/pg": "8.23.1",
     "jszip": "3.10.1",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",

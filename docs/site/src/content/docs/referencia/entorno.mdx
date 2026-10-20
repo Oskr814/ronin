@@ -68,7 +68,10 @@ Ver [Cuándo se bloquea](/ronin/referencia/bloqueos/).
 | `DASHBOARD_ALLOWED_USERS` | — | Si tiene logins, solo ellos entran, hasta que se elija la Entrada en Ajustes. |
 | `DASHBOARD_SESSION_DAYS` | `7` | Cuánto dura una sesión. |
 | `SERVER_TAILNET_PORT`, `DASHBOARD_TAILNET_HTTPS_PORT` | `3940`, `8443` | El listener del tablero y el puerto con el que se publica en la tailnet. |
-| `SETTINGS_DATA_DIR` | `settings-data` | Lo que se cambia en Ajustes. Única copia: respaldalo. |
+| `SETTINGS_DATA_DIR` | `settings-data` | Lo que se cambia en Ajustes, sin `DATABASE_URL`. Única copia: respaldalo. |
+| `DATABASE_URL` | — | Postgres para lo que ronin guarda (por ahora, Ajustes). Sin ella, archivos. Ver [La base de datos](/ronin/operar/base-de-datos/). |
+| `RONIN_PG_PASSWORD`, `RONIN_PG_PORT` | — | La contraseña y el puerto local del Postgres de `compose.postgres.yml`. |
+| `TEST_DATABASE_URL` | — | Solo para las pruebas que necesitan un Postgres real. |
 
 Ver [El servidor y los webhooks](/ronin/operar/servidor/) y [El tablero](/ronin/operar/tablero/).
 

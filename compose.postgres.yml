@@ -1,0 +1,26 @@
+# ronin's Postgres on this machine (#235, stage 2), until stage 5 puts all of
+# ronin in Compose. Only on 127.0.0.1; its data in the ronin-pg volume.
+#   docker compose -p ronin-db -f compose.postgres.yml --env-file .env up -d
+# Reads RONIN_PG_PASSWORD and RONIN_PG_PORT from .env; DATABASE_URL there
+# points at it.
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: ronin-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ronin
+      POSTGRES_PASSWORD: ${RONIN_PG_PASSWORD:?falta RONIN_PG_PASSWORD en .env}
+      POSTGRES_DB: ronin
+    ports:
+      - "127.0.0.1:${RONIN_PG_PORT:?falta RONIN_PG_PORT en .env}:5432"
+    volumes:
+      - ronin-pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "ronin"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  ronin-pg:

@@ -1,0 +1,67 @@
+---
+title: "La base de datos"
+description: "Postgres para lo que ronin guarda: cómo activarlo, pasar los datos y volver atrás."
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+ronin pasa de guardar sus datos en archivos a guardarlos en Postgres de a un módulo por vez ([#235](https://github.com/Oskr814/ronin/issues/235), etapa 2). Por ahora están en la base **Ajustes**: los valores cambiados desde el tablero, el modelo y el esfuerzo de cada tipo de tarea, el plan de cada cuenta de Claude y el registro de cambios. Todo lo demás sigue en sus carpetas.
+
+**Es opcional mientras dura la etapa.** Sin `DATABASE_URL`, ronin sigue con los archivos como siempre.
+
+## Activarla
+
+<Steps>
+
+1. En `.env`, una contraseña y un puerto libre de esta máquina para Postgres, y la URL que apunta a ellos:
+
+   ```bash
+   RONIN_PG_PASSWORD=<contraseña>
+   RONIN_PG_PORT=<puerto>
+   DATABASE_URL=postgres://ronin:<contraseña>@127.0.0.1:<puerto>/ronin
+   ```
+
+2. Levantar Postgres con `compose.postgres.yml`. Escucha solo en `127.0.0.1` y guarda sus datos en el volumen `ronin-pg`:
+
+   ```bash
+   docker compose -p ronin-db -f compose.postgres.yml --env-file .env up -d
+   ```
+
+3. Copiar los datos de los archivos a la base. Crea las tablas, compara lo copiado con los archivos y termina con error si algo no coincide. Se puede correr de nuevo sin duplicar nada:
+
+   ```bash
+   pnpm db:import-ajustes
+   ```
+
+4. Desplegar y reiniciar el servidor. Al arrancar pone la base al día (`pnpm db:migrate` hace lo mismo a mano); el tick y los workers toman `DATABASE_URL` en su próxima corrida.
+
+</Steps>
+
+Los archivos de `SETTINGS_DATA_DIR` quedan como estaban, de respaldo: desde ahí ya no se escriben.
+
+## Volver atrás
+
+Sacar `DATABASE_URL` de `.env` y reiniciar el servidor: ronin vuelve a los archivos. Lo que se cambió en Ajustes mientras estaba la base no está en los archivos.
+
+<Aside type="caution">
+Si la base no responde, ronin no se detiene: cada proceso usa los valores de `.env`, como cuando el archivo de Ajustes no se puede leer, y lo dice en el log. Guardar un cambio en Ajustes falla hasta que vuelva.
+</Aside>
+
+## Respaldo
+
+La base es la única copia de lo que guarda. Hasta que la etapa 5 sume los respaldos automáticos, un `pg_dump` periódico:
+
+```bash
+docker exec ronin-postgres pg_dump -U ronin ronin > ronin-$(date +%F).sql
+```
+
+## Las pruebas
+
+Las pruebas de los repositorios corren contra un Postgres real. En el CI hay uno; en local, `compose.test.yml` levanta uno descartable:
+
+```bash
+docker compose -f compose.test.yml up -d
+TEST_DATABASE_URL=postgres://ronin:ronin@127.0.0.1:54329/ronin_test pnpm test
+```
+
+Sin `TEST_DATABASE_URL`, esas pruebas se saltan y el resto corre igual.
