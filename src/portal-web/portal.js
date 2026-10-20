@@ -16,10 +16,31 @@ class ApiError extends Error {
   }
 }
 
+// The server's fingerprint of this page's files, from the first answer: once
+// it changes, a deploy happened and this page runs old code. It reloads
+// itself, unless the person is in the middle of writing something.
+let version = null;
+function checkVersion(response) {
+  const now = response.headers.get('X-Portal-Version');
+  if (!now) return;
+  if (version === null) version = now;
+  else if (now !== version && !S.stale) {
+    S.stale = true;
+    setTimeout(() => reloadIfIdle() || render());
+  }
+}
+
+function reloadIfIdle() {
+  const busy = S.sending || ($('#ta')?.value ?? '').trim() || S.pending.length || Object.keys(S.answers).length;
+  if (!busy) location.reload();
+  return !busy;
+}
+
 async function api(path, body) {
   const response = await fetch(path, body === undefined
     ? { headers: { Accept: 'application/json' } }
     : { method: 'POST', headers: { Accept: 'application/json', 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  checkVersion(response);
   if (!response.ok) {
     const said = await response.json().then((b) => b?.error).catch(() => null);
     throw new ApiError(said ?? 'Algo falló. Prueba de nuevo.', response.status);
@@ -447,7 +468,8 @@ function decisionHTML(d) {
 }
 
 function appHTML() {
-  return `<div class="app ${S.menu ? 'menu' : ''}">${sideHTML()}<main class="main">${S.cur ? requestHTML() : newHTML()}</main></div>`;
+  const stale = S.stale ? '<div class="stale" role="status">Hay una versión nueva del portal. <button class="btn" data-reload>Recargar</button></div>' : '';
+  return `<div class="app ${S.menu ? 'menu' : ''}">${sideHTML()}<main class="main">${stale}${S.cur ? requestHTML() : newHTML()}</main></div>`;
 }
 
 // ---------- images: pasted, dropped or picked; big ones are scaled down here
@@ -622,23 +644,26 @@ let pollTimer = null;
 function poll() {
   clearTimeout(pollTimer);
   if (!WORKING[S.detail?.status]) return;
-  pollTimer = setTimeout(async () => {
-    if (document.hidden || !S.cur) return poll();
-    const n = S.cur;
-    try {
-      const d = await api(`/api/portal/requests/${n}`);
-      if (S.cur !== n) return;
-      const changed = d.status !== S.detail.status || d.messages.length !== S.detail.messages.length;
-      S.detail = d;
-      if (changed) {
-        await loadList();
-        render();
-      }
-    } catch (error) {
-      if (error.status === 401) return toLogin();
+  pollTimer = setTimeout(pollNow, POLL_MS);
+}
+
+async function pollNow() {
+  if (document.hidden || !S.cur) return poll();
+  const n = S.cur;
+  try {
+    const d = await api(`/api/portal/requests/${n}`);
+    if (S.stale && reloadIfIdle()) return;
+    if (S.cur !== n) return;
+    const changed = d.status !== S.detail.status || d.messages.length !== S.detail.messages.length;
+    S.detail = d;
+    if (changed) {
+      await loadList();
+      render();
     }
-    poll();
-  }, POLL_MS);
+  } catch (error) {
+    if (error.status === 401) return toLogin();
+  }
+  poll();
 }
 
 function toLogin() {
@@ -767,6 +792,8 @@ document.addEventListener('click', async (event) => {
     S.correcting = false;
     S.error = null;
     render();
+  } else if ('reload' in t.dataset) {
+    location.reload();
   } else if ('logout' in t.dataset) {
     await api('/api/portal/logout', {}).catch(() => {});
     toLogin();
@@ -786,6 +813,14 @@ document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape' && S.zoom) {
     S.zoom = null;
     renderZoom();
+  }
+});
+
+// Back on the tab: ask right away instead of at the next turn of the poll.
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && S.cur && WORKING[S.detail?.status]) {
+    clearTimeout(pollTimer);
+    pollTimer = setTimeout(pollNow);
   }
 });
 

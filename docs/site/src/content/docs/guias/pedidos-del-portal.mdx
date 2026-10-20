@@ -56,5 +56,6 @@ Los pedidos anteriores al 17 de octubre de 2026 no guardaban su historial de eve
 ## Si algo no anda
 
 - **Un pedido parece trabado:** en su ficha, *Ahora* dice a quién espera. Si espera a ronin y lo último fue una falla, el error está ahí, y el tick lanza otro worker en su próxima vuelta.
+- **La persona tenía el portal abierto durante un despliegue:** la página se recarga sola en cuanto le pregunta algo al servidor. Si estaba escribiendo, le muestra *Hay una versión nueva del portal* con un botón para recargar.
 - **La persona dice que no le llegó un correo:** la actividad y la columna de la derecha muestran cada correo y si salió. Los que fallan quedan también en el log del tick.
 - **No aparece *Pedidos del portal*:** solo aparece si hay pedidos en algún repo que ves, o si sos administrador.

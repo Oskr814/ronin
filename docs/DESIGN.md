@@ -944,6 +944,8 @@ Cada paso que hace ronin corre en un **worker por pedido** (`portal/worker.ts`, 
 - **Lo demás:** los POST solo aceptan JSON y del mismo origen; CSP, `Referrer-Policy: no-referrer` y HSTS. Cada persona ve solo sus pedidos: uno ajeno responde 404, igual que uno que no existe. Nunca ve el resumen técnico, la instrucción del prototipo ni su diff.
 - **Archivos:** `PORTAL_DATA_DIR` (`portal-data/`, fuera de git), con modo 0600. Las escrituras toman un lock entre procesos y reemplazan el archivo de forma atómica (`json-store.ts`). `accounts.json` es la única copia de las cuentas: hay que respaldarlo.
 
+**Una página abierta antes de un despliegue:** cada respuesta de la API del portal lleva `X-Portal-Version`, una huella de `index.html`, `portal.js` y `portal.css` (`portalVersion`). La página guarda la primera que ve. Si cambia, corre código viejo contra un servidor nuevo (por ejemplo, no conoce un estado nuevo y deja de consultar), así que se recarga sola. Si la persona está escribiendo o enviando algo, en cambio, muestra *Hay una versión nueva del portal* con *Recargar*, y recarga en la próxima consulta cuando ya no hay nada a medio escribir. Al volver a la pestaña, consulta enseguida en vez de esperar su turno.
+
 #### 16.3 La conversación (`classify.ts`)
 
 La persona escribe y adjunta hasta 4 capturas (png, jpg, webp o gif, validadas por sus primeros bytes, hasta 5 MB cada una; la página achica las grandes antes de mandarlas). Un agente de solo lectura (`portal-request`) lee la conversación y las imágenes en un checkout aparte de la rama base (`portal-P-<n>`, sin rama, que se borra al terminar), revisa el código de esa app y decide una de seis cosas (la sexta, `entrevistar`, en 16.13):

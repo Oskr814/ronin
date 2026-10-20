@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { loadRepos } from '../core/repos.js';
 import { handlePortalApi, type PortalConfig, type PortalDeps } from './api/portal.js';
@@ -27,10 +29,26 @@ export function missingPortalConfig(config: PortalConfig): string[] {
 
 type Handler = (req: IncomingMessage, res: ServerResponse) => Promise<void>;
 
+// A fingerprint of the page's files, sent with every API answer: a page
+// opened before a deploy sees it change and reloads, instead of running its
+// old code against what the new server answers (portal.js).
+export function portalVersion(root: string): string {
+  const hash = createHash('sha256');
+  for (const file of ['index.html', 'portal.js', 'portal.css']) {
+    try {
+      hash.update(readFileSync(join(root, file)));
+    } catch {
+      // Missing in a test's web root: it just doesn't count.
+    }
+  }
+  return hash.digest('hex').slice(0, 12);
+}
+
 export function createPortalHandler(config: PortalConfig, options: { webRoot?: string; fontsRoot?: string; deps?: Partial<PortalDeps> } = {}): Handler {
   const root = options.webRoot ?? PORTAL_WEB_ROOT;
   const fonts = options.fontsRoot ?? join(WEB_ROOT, 'fonts');
   const deps: PortalDeps = { entries: loadRepos, ...options.deps };
+  const version = portalVersion(root);
   return async (req, res) => {
     for (const [name, value] of Object.entries(SECURITY_HEADERS)) res.setHeader(name, value);
     const path = new URL(req.url ?? '/', 'http://localhost').pathname;
@@ -47,6 +65,7 @@ export function createPortalHandler(config: PortalConfig, options: { webRoot?: s
     }
 
     if (path.startsWith('/api/')) {
+      res.setHeader('X-Portal-Version', version);
       if (path.startsWith('/api/portal/') && (await handlePortalApi(req, res, path, config, deps))) return;
       res.writeHead(404, { 'Content-Type': 'application/json; charset=utf-8' }).end(JSON.stringify({ error: 'no existe' }));
       return;

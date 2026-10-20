@@ -9,7 +9,7 @@ import { config } from '../core/config.js';
 import { createUser, issueLink, redeemLink, updateUser } from '../portal/accounts.js';
 import { hashPassword } from '../portal/password.js';
 import { resetPortalLimits } from './api/portal.js';
-import { createPortalHandler } from './portal.js';
+import { createPortalHandler, portalVersion } from './portal.js';
 
 vi.mock('../core/logger.js', () => ({ log: { info: vi.fn(), error: vi.fn() } }));
 
@@ -71,6 +71,17 @@ describe('request portal', () => {
     const src = /src="(\/portal\.js\?v=\w+)"/.exec(html)?.[1];
     expect(src).toBeDefined();
     expect(await (await fetch(`${base}${src}`)).text()).toBe('console.log(1)');
+  });
+
+  it('answers its API with the version of the page, which changes with its files, so a page opened before a deploy reloads', async () => {
+    const version = (await fetch(`${base}/api/portal/me`)).headers.get('x-portal-version');
+    expect(version).toMatch(/^[0-9a-f]{12}$/);
+    expect((await fetch(`${base}/api/nada`)).headers.get('x-portal-version')).toBe(version);
+    const web = mkdtempSync(join(tmpdir(), 'ronin-portal-v-'));
+    writeFileSync(join(web, 'portal.js'), 'console.log(1)');
+    const before = portalVersion(web);
+    writeFileSync(join(web, 'portal.js'), 'console.log(2)');
+    expect(portalVersion(web)).not.toBe(before);
   });
 
   it('knows nothing of the dashboard API', async () => {
