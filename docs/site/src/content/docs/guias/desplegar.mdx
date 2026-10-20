@@ -45,7 +45,7 @@ Cada repo con `deploy` en [`repos.json`](/ronin/referencia/repos-json/) tiene su
    - `prerelease`: el repo despliega pre-releases.
    - `selective`: un release puede llevar solo algunos PRs. Solo si el workflow del repo despliega el commit al que apunta el tag aunque no esté en la rama.
 
-2. `DEPLOYS_DATA_DIR` en `.env` (por defecto `deploys-data`) guarda qué llevó cada release. Es la única copia: respaldalo.
+2. Qué llevó cada release lo guarda [la base de datos](/ronin/operar/base-de-datos/) o, sin ella, `DEPLOYS_DATA_DIR` (por defecto `deploys-data`). Es la única copia: respaldala.
 
 3. Que los [webhooks](/ronin/operar/servidor/) reciban `workflow_run`. Sin eso, ronin sigue el workflow con el tick, cada 30 minutos.
 

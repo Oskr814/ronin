@@ -5,7 +5,14 @@ description: "Postgres para lo que ronin guarda: cómo activarlo, pasar los dato
 
 import { Aside, Steps } from '@astrojs/starlight/components';
 
-ronin pasa de guardar sus datos en archivos a guardarlos en Postgres de a un módulo por vez ([#235](https://github.com/Oskr814/ronin/issues/235), etapa 2). Por ahora están en la base **Ajustes**: los valores cambiados desde el tablero, el modelo y el esfuerzo de cada tipo de tarea, el plan de cada cuenta de Claude y el registro de cambios. Todo lo demás sigue en sus carpetas.
+ronin pasa de guardar sus datos en archivos a guardarlos en Postgres de a un módulo por vez ([#235](https://github.com/Oskr814/ronin/issues/235), etapa 2). Por ahora están en la base:
+
+| Módulo | Qué | Para pasarlo |
+|---|---|---|
+| **Ajustes** | Los valores cambiados desde el tablero, el modelo y el esfuerzo de cada tipo de tarea, el plan de cada cuenta de Claude y el registro de cambios. | `pnpm db:import-ajustes` |
+| **Despliegues** | Cada release que publicó ronin: qué llevó, quién y cómo terminó su workflow. | `pnpm db:import-despliegues` |
+
+Todo lo demás sigue en sus carpetas.
 
 **Es opcional mientras dura la etapa.** Sin `DATABASE_URL`, ronin sigue con los archivos como siempre.
 
@@ -27,17 +34,20 @@ ronin pasa de guardar sus datos en archivos a guardarlos en Postgres de a un mó
    docker compose -p ronin-db -f compose.postgres.yml --env-file .env up -d
    ```
 
-3. Copiar los datos de los archivos a la base. Crea las tablas, compara lo copiado con los archivos y termina con error si algo no coincide. Se puede correr de nuevo sin duplicar nada:
+3. Copiar los datos de los archivos a la base, un módulo por vez. Cada script crea las tablas, compara lo copiado con los archivos y termina con error si algo no coincide. Se puede correr de nuevo sin duplicar nada:
 
    ```bash
    pnpm db:import-ajustes
+   pnpm db:import-despliegues
    ```
 
 4. Desplegar y reiniciar el servidor. Al arrancar pone la base al día (`pnpm db:migrate` hace lo mismo a mano); el tick y los workers toman `DATABASE_URL` en su próxima corrida.
 
 </Steps>
 
-Los archivos de `SETTINGS_DATA_DIR` quedan como estaban, de respaldo: desde ahí ya no se escriben.
+Los archivos quedan como estaban, de respaldo: desde ahí ya no se escriben.
+
+**Con la base ya activa,** un módulo nuevo empieza a usarla apenas se despliega: hay que correr su `pnpm db:import-<módulo>` antes de desplegar, o lo que había en su archivo no se ve hasta que se corra.
 
 ## Volver atrás
 

@@ -117,7 +117,7 @@ La base guarda la ruta y los metadatos.
 - **Migraciones versionadas** en `src/db/migrations/`, que corren al arrancar.
 - **Un repositorio por módulo** (`portal/store.ts`, `deploy/store.ts`…) con la misma interfaz que hoy exponen los módulos. Los servicios no cambian de forma.
 
-**Hecho:** la base (`src/db/`: Kysely, migraciones en `src/db/migrations/` que el servidor corre al arrancar, `compose.postgres.yml`, `compose.test.yml` y un Postgres en el CI) y **Ajustes** (`core/settings-store.ts`). Mientras dura la etapa, `DATABASE_URL` la activa y sin ella todo sigue en archivos: cada módulo se despliega primero y se pasa después con su `pnpm db:import-<módulo>`. `config.ts` lee Ajustes con `await` al cargar, así que cada proceso abre su pool (chico, que no impide que el proceso termine).
+**Hecho:** la base (`src/db/`: Kysely, migraciones en `src/db/migrations/` que el servidor corre al arrancar, `compose.postgres.yml`, `compose.test.yml` y un Postgres en el CI) y los módulos **Ajustes** (`core/settings-store.ts`) y **Despliegues** (`deploy/store.ts`). Mientras dura la etapa, `DATABASE_URL` la activa y sin ella todo sigue en archivos: cada módulo se despliega primero y se pasa después con su `pnpm db:import-<módulo>`. `config.ts` lee Ajustes con `await` al cargar, así que cada proceso abre su pool (chico, que no impide que el proceso termine).
 
 **Migración, un módulo por vez:**
 1. Se crea la tabla.

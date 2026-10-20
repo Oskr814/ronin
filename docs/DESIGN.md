@@ -1248,7 +1248,7 @@ Los repos de producto despliegan publicando un release de GitHub: su workflow co
 src/deploy/          el dominio, sin saber quién lo llama
   deploy.ts          lo pendiente, el plan (con la prueba del cherry-pick) y la publicación
   follow.ts          el seguimiento del workflow y el aviso a los pedidos
-  store.ts           el registro: deploys-data/deploys.json
+  store.ts           el registro: tabla deploys, o deploys-data/deploys.json
 src/server/api/dashboard-despliegues.ts   la página, el plan y la publicación del tablero
 ```
 
@@ -1297,7 +1297,7 @@ Lo que haría publicar, sin publicar nada:
 
 #### 18.5 El registro (`store.ts`)
 
-`deploys-data/deploys.json`, la única copia (respaldarla, como `PORTAL_DATA_DIR`), con tope de 500. Por cada release que publicó ronin: el repo y el tag, si es pre-release, si lleva todo o lo elegido, el release base, el sha, la URL, sus cambios (PR y asunto), sus pedidos, quién lo publicó y cuándo, y cómo terminó su workflow. GitHub tiene los releases; solo esto dice qué pedidos llevó cada uno.
+La tabla `deploys` de Postgres con `DATABASE_URL` (#235: los cambios y los pedidos van en el mismo registro, como `jsonb` e `integer[]`; un cambio de estado toma la fila con `FOR UPDATE`), o si no `deploys-data/deploys.json`, con tope de 500. Es la única copia: respaldarla. Por cada release que publicó ronin: el repo y el tag, si es pre-release, si lleva todo o lo elegido, el release base, el sha, la URL, sus cambios (PR y asunto), sus pedidos, quién lo publicó y cuándo, y cómo terminó su workflow. GitHub tiene los releases; solo esto dice qué pedidos llevó cada uno.
 
 #### 18.6 El seguimiento (`followDeploys`) y los pedidos
 

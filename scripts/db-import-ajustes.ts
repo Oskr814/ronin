@@ -8,6 +8,7 @@ import { closeDb, getDb, setDb } from '../src/db/db.js';
 import { migrateToLatest } from '../src/db/migrate.js';
 import { readSettingsSync } from '../src/core/settings.js';
 import { appendRegistro, readRegistro, readSettings, updateSettings } from '../src/core/settings-store.js';
+import { sameContent } from './db-compare.js';
 
 const dataDir = resolve(process.env.SETTINGS_DATA_DIR || 'settings-data');
 const db = getDb();
@@ -33,7 +34,7 @@ if (already === 0) for (const entry of registro) await appendRegistro(dataDir, e
 else console.log(`El registro ya tenía ${already} cambios en la base: no se copió de nuevo.`);
 
 const inDb = await readSettings(dataDir);
-const same = JSON.stringify(inDb) === JSON.stringify({ values: file.values, ...(file.tasks && Object.keys(file.tasks).length ? { tasks: file.tasks } : {}), ...(file.accounts && Object.keys(file.accounts).length ? { accounts: file.accounts } : {}) });
+const same = sameContent(inDb, { values: file.values, ...(file.tasks && Object.keys(file.tasks).length ? { tasks: file.tasks } : {}), ...(file.accounts && Object.keys(file.accounts).length ? { accounts: file.accounts } : {}) });
 const logCount = Number((await db.selectFrom('settings_log').select((eb) => eb.fn.countAll().as('n')).executeTakeFirstOrThrow()).n);
 console.log(`Ajustes: ${Object.keys(file.values).length} valores, ${Object.keys(file.tasks ?? {}).length} tareas, ${Object.keys(file.accounts ?? {}).length} cuentas en ${join(dataDir, 'settings.json')}.`);
 console.log(`En la base: ${same ? 'iguales' : 'DISTINTOS, revisar'}. Registro: ${registro.length} en el archivo, ${logCount} en la base.`);
