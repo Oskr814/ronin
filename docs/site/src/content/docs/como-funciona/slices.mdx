@@ -23,6 +23,8 @@ Un spec es para un cambio grande. ronin lo trocea en **slices**: unidades chicas
 
 </Steps>
 
+Si una persona **cierra el issue a mano** antes de terminar, ronin lo pasa a `ronin:done` en el siguiente tick, salvo que le quede un PR abierto: en ese caso espera a ese PR. Si después se reabre, ronin no lo retoma solo: para eso hay que volver a ponerle `ronin:in-progress`.
+
 Un **issue asignado directamente** sigue el mismo camino con una sola slice: el issue es su propio issue de tracking.
 
 ## En secuencia o apiladas

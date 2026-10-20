@@ -17,6 +17,7 @@ import { createPortalHandler, missingPortalConfig } from './portal.js';
 import { createPublicHandler } from './public.js';
 import { createTailnetHandler } from './tailnet.js';
 import { loadTeam } from './api/team.js';
+import { warmDashboard } from './api/dashboard.js';
 import { timedRequests } from './timing.js';
 
 if (!config.webhookSecret) {
@@ -54,4 +55,6 @@ if (missing.length > 0) {
   serve(timedRequests('tablero', createTailnetHandler(config.dashboard))).listen(config.dashboard.tailnetPort, '127.0.0.1', () => {
     log.info(`tablero escuchando en 127.0.0.1:${config.dashboard.tailnetPort}, publicado en la tailnet como ${config.dashboard.url} (administradores: ${config.dashboard.admins.join(', ') || 'ninguno'})`);
   });
+  // Read before anyone asks (see warmDashboard).
+  warmDashboard().catch((error) => log.error('tablero: no se pudo leer GitHub al arrancar', error));
 }

@@ -1107,15 +1107,21 @@ function commandJob(prNumber: number): TickJob {
 // docs/superpowers/specs/2026-07-28-bug-issue-intake-design.md) makes GitHub
 // close the issue as soon as a human merges it, and listTrackingIssues only
 // reads open issues, so processIssue never sees it again to mark it done.
-// This finishes those off. One closed with slices still unmerged (closed by
-// hand mid-work) keeps its label: that's a human's call.
-async function finishClosedIssues(): Promise<void> {
+// This finishes those off. One closed by hand with slices still unmerged is
+// done too, once none of them has a PR open: nothing will move it anymore,
+// and left in-progress it was read again every tick — 12 of them cost
+// redmotos/shoppingcart 15 s a tick. One with a slice PR still open waits
+// for that PR.
+export async function finishClosedIssues(openPrs: PullRequestStatus[]): Promise<void> {
+  const open = new Set(openPrs.map((pr) => pr.number));
   for (const issue of await listTrackingIssues('in-progress', 'closed')) {
-    await syncMergedSlices(issue, []);
-    if (!(await hasRemainingSlices(issue.number))) {
-      await setIssueState(issue.number, 'done');
-      log.info(`issue #${issue.number}: cerrado con todas sus slices mergeadas, done`);
-    }
+    await syncMergedSlices(issue, openPrs);
+    const pending = (await getSlices(issue.number)).filter((slice) => !slice.checked);
+    if (pending.some((slice) => slice.prNumber !== null && open.has(slice.prNumber))) continue;
+    await setIssueState(issue.number, 'done');
+    log.info(pending.length
+      ? `issue #${issue.number}: cerrado a mano con ${pending.length} slice(s) sin mergear y ningún PR abierto, done`
+      : `issue #${issue.number}: cerrado con todas sus slices mergeadas, done`);
   }
 }
 
@@ -1216,10 +1222,14 @@ async function tickRepo(scope: Scope | undefined, measurement: Measurement): Pro
   // the worktrees of slices no longer open — sweepOrphanedWorktrees skips
   // the issues another process holds right now (see its own comment).
   await repoStep(scope, 'sweeps', async () => {
-    await finishClosedIssues().catch((error) => log.error('no se pudieron cerrar los issues ya mergeados', error));
+    const open = await listAllOpenRoninPrs().catch((error) => {
+      log.error('no se pudieron leer los PRs abiertos de ronin', error);
+      return null;
+    });
+    if (open) await finishClosedIssues(open).catch((error) => log.error('no se pudieron cerrar los issues ya terminados', error));
     await sweepPreviews().catch((error) => log.error('previews: no se pudieron barrer las de PRs cerrados', error));
     try {
-      const open = await listAllOpenRoninPrs();
+      if (!open) return;
       await sweepOrphanedWorktrees(open);
       await pruneFailureSignatures(open.map((pr) => pr.number));
     } catch (error) {

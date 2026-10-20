@@ -18,7 +18,7 @@ vi.mock('../../deploy/index.js', async (importOriginal) => ({
 }));
 
 import { DeployError, type DeployRecord, type Plan } from '../../deploy/index.js';
-import { DespliegueError, despliegues, parseRelease, planDespliegue, publishDespliegue } from './dashboard-despliegues.js';
+import { DespliegueError, despliegues, parseRelease, planDespliegue, publishDespliegue, resetDespliegueReads } from './dashboard-despliegues.js';
 
 const entry = { productRepo: 'acme/app', productRepoPath: '/tmp/app', deploy: { prerelease: true, selective: true } };
 const change = { sha: 'c1', subject: 'fix: algo (#3)', pr: 3, files: ['apps/web/a.ts'], apps: ['web'], pedidos: [7] };
@@ -29,6 +29,7 @@ const plan = (over: Partial<Plan> = {}): Plan => ({ repo: 'acme/app', tag: 'v1.0
 
 beforeEach(() => {
   vi.clearAllMocks();
+  resetDespliegueReads();
   pendingChanges.mockImplementation(async (opts?: { prerelease?: boolean }) => pending(Boolean(opts?.prerelease)));
   listReleases.mockResolvedValue([release('v0.9.0', '2026-10-17T00:00:00Z'), release('rc1', '2026-10-18T09:00:00Z', true), release('v1.0.0', '2026-10-18T10:00:00Z'), { ...release('borrador', '2026-10-18T11:00:00Z'), isDraft: true }]);
   listDeploys.mockResolvedValue([record({}), record({ tag: 'v1.0.2', releaseError: 'HTTP 502', state: 'running' })]);
@@ -52,6 +53,30 @@ describe('despliegues', () => {
     followDeploys.mockClear();
     await despliegues([entry]);
     expect(followDeploys).not.toHaveBeenCalled();
+  });
+
+  it('reads GitHub once while the page keeps asking, and again after a publish', async () => {
+    await despliegues([entry]);
+    await despliegues([entry]);
+    expect(listReleases).toHaveBeenCalledTimes(1);
+    publishRelease.mockResolvedValue({ ...record({ tag: 'v1.0.1' }), url: 'u' });
+    await publishDespliegue(entry, { tag: 'v1.0.1', prs: [3] }, 'persona');
+    await despliegues([entry]);
+    expect(listReleases).toHaveBeenCalledTimes(2);
+  });
+
+  it('serves the last read while a newer one is on its way', async () => {
+    vi.useFakeTimers({ now: Date.parse('2026-10-20T10:00:00Z'), toFake: ['Date'] });
+    try {
+      await despliegues([entry]);
+      vi.setSystemTime(Date.parse('2026-10-20T10:05:00Z'));
+      listReleases.mockReturnValue(new Promise(() => {}));
+      const [repo] = await despliegues([entry]) as any[];
+      expect(repo.releases.map((r: any) => r.tag)).toContain('v1.0.0');
+      expect(listReleases).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('says a repo could not be read, and still shows the others', async () => {
