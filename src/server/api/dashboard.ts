@@ -43,6 +43,9 @@ import { ApproveError, approveMeeting, discardMeeting } from './dashboard-meetin
 import { DespliegueError, despliegues, parseRelease, planDespliegue, publishDespliegue } from './dashboard-despliegues.js';
 import { metricsView, parsePeriod } from '../../metrics/index.js';
 import { ExploreNowError, corridasOf, exploracionList, exploracionRows, exploreNow, inventarioOf, liveRuns, parseExploreNow } from './dashboard-exploraciones.js';
+import { getDb } from '../../db/db.js';
+import { slotsInUseDb, waitingDb } from '../../core/locks-db.js';
+import { timed } from '../../core/timing.js';
 
 // The dashboard's data (#65), all behind the session (tailnet.ts checks it
 // before any of this runs):
@@ -143,10 +146,17 @@ function refused(res: ServerResponse, repo: string, perm: Perm): boolean {
   return true;
 }
 
+// What waits for a slot: from Postgres with DATABASE_URL (core/locks-db.ts).
+async function waitingQueue() {
+  const db = getDb();
+  return db ? timed('db', () => waitingDb(db)) : readQueue();
+}
+
 // Each repo's agent slots, taken and its limit (its own queue, core/locks.ts),
 // and the sum of them for the status bar.
-function slotsView(entries: RepoEntry[]) {
-  const used = slotsInUse();
+async function slotsView(entries: RepoEntry[]) {
+  const db = getDb();
+  const used = db ? await timed('db', () => slotsInUseDb(db)) : slotsInUse();
   const repos = entries.map((entry) => ({ repo: entry.productRepo, used: used[entry.productRepo] ?? 0, limit: entry.concurrency ?? config.tickConcurrency }));
   return { used: repos.reduce((n, r) => n + r.used, 0), limit: repos.reduce((n, r) => n + r.limit, 0), repos };
 }
@@ -179,7 +189,7 @@ export async function snapshot(login: string): Promise<unknown> {
     reunionesPorRevisar: (await visibleMeetings()).filter((m) => m.status === 'review').length,
     repos,
     // The queue and the Claude accounts, only of the repos it sees.
-    runner: { slots: slotsView(entries), queue: readQueue().filter((job) => !job.repo || repos.includes(job.repo)), tick: readTickInfo(), host: hostLoad() },
+    runner: { slots: await slotsView(entries), queue: (await waitingQueue()).filter((job) => !job.repo || repos.includes(job.repo)), tick: readTickInfo(), host: hostLoad() },
     usage: readUsage().filter((u) => entries.some((entry) => accountName(entry.claudeConfigDir ?? '') === u.account)),
     items,
     // Whether it can deploy (#158): an admin, with a repo that has deploy.
