@@ -171,7 +171,7 @@ vi.mock('./changelog/changelog.js', () => ({
   findReleasesNeedingChangelog: (...args: unknown[]) => findReleasesNeedingChangelog(...args),
 }));
 
-const { runScoped, runIssueStep, idleCommandJobs, processSlicePr, processIssue, agentTaskFor, needsMoreInfo, discoverAssignedIssues, processExternalReviewCandidate, processTrustedFixCandidate, runExternalReviews, processSpikeCandidate, processChangelogCandidate, runChangelogUpdates, renderTrackingIssueBody, cycleFirst } = await import('./tick.js');
+const { runScoped, runIssueStep, idleCommandJobs, specRevisionJobs, processSlicePr, processIssue, agentTaskFor, needsMoreInfo, discoverAssignedIssues, processExternalReviewCandidate, processTrustedFixCandidate, runExternalReviews, processSpikeCandidate, processChangelogCandidate, runChangelogUpdates, renderTrackingIssueBody, cycleFirst } = await import('./tick.js');
 
 function issue(overrides: Partial<TrackingIssue> = {}): TrackingIssue {
   return { number: 228, title: 'Test issue', url: 'https://github.com/x/y/issues/228', labels: [], ...overrides };
@@ -1302,6 +1302,24 @@ describe('idleCommandJobs', () => {
     for (const job of jobs) await job.run();
 
     expect(findUnprocessedMentions.mock.calls).toEqual([[1], [2]]);
+  });
+});
+
+describe('specRevisionJobs (#241)', () => {
+  it('makes one job per draft spec PR with mentions to answer, found by an event on the PR or on its issue', async () => {
+    const mention = { id: 9, kind: 'review', body: '@ronin-agent sumá esto', reactionsEyes: 0, authorLogin: 'persona' };
+    findUnprocessedMentions.mockReset().mockImplementation(async (n: number) => (n === 1027 ? [mention] : []));
+    const prs = [
+      { number: 1027, headRefName: 'ronin/1026/spec', isDraft: true },
+      { number: 1030, headRefName: 'ronin/1029/spec', isDraft: false },
+      { number: 1031, headRefName: 'ronin/1028/slice-1', isDraft: true },
+    ] as any[];
+
+    const jobs = await specRevisionJobs(prs);
+
+    expect(findUnprocessedMentions.mock.calls).toEqual([[1027]]);
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0]).toMatchObject({ kind: 'revise-spec', lock: 'pr-1027', resources: ['pr-1027', 'issue-1026'] });
   });
 });
 

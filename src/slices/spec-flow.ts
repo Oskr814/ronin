@@ -26,7 +26,7 @@ export function specNeedsInfo(result: string): boolean {
 
 // The mockup the agent drew, as a PNG in the evidence branch (the same one
 // the exploration's screenshots go to), so the spec PR can show it.
-async function publishMockup(issueNumber: number, htmlPath: string, outDir: string): Promise<string> {
+export async function publishMockup(issueNumber: number, htmlPath: string, outDir: string): Promise<string> {
   const png = join(outDir, 'mockup.png');
   await renderHtmlToPng(htmlPath, png, { width: 1440, height: 900 });
   const path = `specs/${issueNumber}/mockup-${Date.now()}.png`;

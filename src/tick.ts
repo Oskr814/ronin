@@ -56,7 +56,7 @@ import { findPrsNeedingReview, type ReviewCandidate, type ThreadMentionCandidate
 import { findIssueCommands, type ExploreCandidate, type PrototypeCandidate, type RequestCandidate, type SpecCandidate, type SpikeCandidate } from './commands/index.js';
 import { processIssueRequest } from './commands/index.js';
 import { launchPrototypeWorker } from './commands/index.js';
-import { processSpecCandidate } from './slices/index.js';
+import { processSpecCandidate, findSpecRevisionCandidates, processSpecRevision } from './slices/index.js';
 import { explorationPrs, exploreWorkerBusy, launchExploreWorker, processExplorationPr } from './exploration/index.js';
 import { maybeLaunchNightlyExploration } from './exploration/index.js';
 import { sweepPreviews } from './preview/index.js';
@@ -801,6 +801,19 @@ export async function externalReviewJobs(only?: number[]): Promise<TickJob[]> {
   ];
 }
 
+// Mentions on the draft PR of a spec ronin wrote (#241, slices/spec-revise.ts).
+// Uses the run's list of ronin's PRs when it has one. Same isolation as the
+// other flows: a failed discovery only leaves its own jobs out.
+export async function specRevisionJobs(allPrs: PullRequestStatus[] | null, only?: number[]): Promise<TickJob[]> {
+  try {
+    const candidates = await findSpecRevisionCandidates(allPrs ?? (await listAllOpenRoninPrs()), only);
+    return candidates.map((c) => ({ ...prJob('revise-spec', c.prNumber, () => processSpecRevision(c)), resources: [prResource(c.prNumber), issueResource(c.issueNumber)] }));
+  } catch (error) {
+    log.info(`tick: no se pudieron buscar los comentarios en PRs de spec, reintentando en el próximo tick: ${(error as Error).message}`);
+    return [];
+  }
+}
+
 export async function runExternalReviews(): Promise<void> {
   await runJobs(await externalReviewJobs(), concurrencyFor(), JOB_CAPS);
 }
@@ -1271,6 +1284,7 @@ async function tickRepo(scope: Scope | undefined, measurement: Measurement): Pro
       // Only ever in an event's scope: a command on a PR, straight to it.
       runs('pr-commands') && prs ? prs.map((pr) => commandJob(pr)) : [],
       runs('review') ? externalReviewJobs(prs) : [],
+      runs('review') ? specRevisionJobs(allPrs, prs) : [],
       runs('issue-commands') ? spikeJobs(issues) : [],
       runs('changelog') ? changelogJobs() : [],
       runs('exploration') ? explorationPrJobs() : [],
