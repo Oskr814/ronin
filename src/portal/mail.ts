@@ -207,11 +207,14 @@ export function deployedMail(requests: PortalRequest[], user: PortalUser, portal
 export function closedMail(request: PortalRequest, user: PortalUser, portalUrl: string): Mail {
   const first = user.name.split(/\s+/)[0] || user.name;
   const solved = request.status === 'resolved';
+  // The team's reason, when they wrote one closing it from the tablero.
+  const note = request.closeNote?.text.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean) ?? [];
   const lines = [
     `Hola ${first},`,
     solved
-      ? `El equipo de desarrollo resolvió tu pedido P-${request.number} ("${request.title}"). Si era un cambio en la aplicación, sale en una próxima actualización.`
-      : `El equipo de desarrollo revisó tu pedido P-${request.number} ("${request.title}") y decidió no hacerlo por ahora.`,
+      ? `El equipo de desarrollo resolvió tu pedido P-${request.number} ("${request.title}").${note.length ? '' : ' Si era un cambio en la aplicación, sale en una próxima actualización.'}`
+      : `El equipo de desarrollo revisó tu pedido P-${request.number} ("${request.title}") y decidió no hacerlo por ahora${note.length ? ':' : '.'}`,
+    ...note,
     solved ? 'Gracias por pedirlo.' : 'Si necesitas algo más, puedes enviar un pedido nuevo desde el portal.',
   ];
   const url = requestUrl(portalUrl, request.number);
@@ -219,7 +222,7 @@ export function closedMail(request: PortalRequest, user: PortalUser, portalUrl: 
     to: user.email,
     subject: `${solved ? 'Resuelto' : 'Revisamos tu pedido'}: ${request.title}`,
     text: `${lines.join('\n\n')}\n\n${url}`,
-    html: html(lines.map(esc), { label: 'Ver el pedido', url }, portalUrl),
+    html: html(lines.map((line) => esc(line).replace(/\n/g, '<br>')), { label: 'Ver el pedido', url }, portalUrl),
   };
 }
 

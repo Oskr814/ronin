@@ -27,7 +27,7 @@ const team: { notifyTo?: string[] } = {};
 vi.mock('../core/repo-context.js', () => ({ activeRepo: () => ({ productRepo: 'redmotos/shoppingcart', productRepoPath: '/repo', portal: { name: 'Red Motos', apps: { backoffice: { name: 'Backoffice' } }, ...team } }) }));
 
 const { portalIssueBody, issueMarker, openPortalIssue } = await import('./issue.js');
-const { DECLINED_REPLY, DONE_REPLY, FIX_READY_REPLY, FIXED_REPLY, followPortalIssues, PR_READY_REPLY, RESOLVED_REPLY } = await import('./follow.js');
+const { closedReply, DECLINED_REPLY, DONE_REPLY, dropCloseNote, FIX_READY_REPLY, FIXED_REPLY, followPortalIssues, noteClosing, PR_READY_REPLY, RESOLVED_REPLY } = await import('./follow.js');
 
 async function approvedRequest(over: Partial<PortalRequest> = {}): Promise<number> {
   const user = await createUser({ email: `mf${Math.random()}@x.com`, name: 'María Fernández', grants: [], createdBy: 'oskr814' });
@@ -269,6 +269,30 @@ describe('portal issues', () => {
     expect((await getRequest(declined))).toMatchObject({ status: 'declined', messages: expect.arrayContaining([expect.objectContaining({ text: DECLINED_REPLY })]) });
     expect((await getRequest(open))?.status).toBe('big');
     expect(sendMail.mock.calls.map((c) => (c as unknown as [{ subject: string }])[0].subject).sort()).toEqual(['Resuelto: Total en negrita en Gestionar pedidos', 'Revisamos tu pedido: Total en negrita en Gestionar pedidos']);
+  });
+
+  it('closed from the tablero with a reason, the person gets those same words, in the portal and by mail', async () => {
+    const n = await approvedRequest({ pr: 950, issue: { number: 901, url: 'u' } });
+    const other = await approvedRequest({ issue: { number: 902, url: 'u' } });
+    expect(await noteClosing('redmotos/shoppingcart', { issue: 901, pr: 950 }, 'Ya lo cubre el reporte de ventas.\n\nLo vemos en el próximo ciclo.', 'oskr814')).toBe(n);
+    expect(await noteClosing('redmotos/shoppingcart', { pr: 999 }, 'x', 'oskr814')).toBeNull();
+    expect(await noteClosing('acme/otro', { issue: 901 }, 'x', 'oskr814')).toBeNull();
+    // Its PR closed, then its issue as not planned.
+    gh.getPullRequestStatus.mockResolvedValue({ state: 'CLOSED' });
+    await followPortalIssues();
+    gh.listIssuesWithLabel.mockResolvedValue([{ number: 901, body: '', state: 'CLOSED' }]);
+    gh.getIssueState.mockResolvedValue({ state: 'CLOSED', stateReason: 'NOT_PLANNED' });
+    await followPortalIssues();
+    const reply = closedReply('declined', 'Ya lo cubre el reporte de ventas.\n\nLo vemos en el próximo ciclo.');
+    expect(await getRequest(n)).toMatchObject({ status: 'declined', messages: expect.arrayContaining([expect.objectContaining({ from: 'ronin', text: reply })]) });
+    expect(reply).toContain('decidió no hacerlo por ahora:\n\nYa lo cubre');
+    const [mail] = (sendMail.mock.calls.at(-1) as unknown as [{ text: string; html: string }]);
+    expect(mail.text).toContain('Ya lo cubre el reporte de ventas.\n\nLo vemos en el próximo ciclo.');
+    expect(mail.html).toContain('Lo vemos en el próximo ciclo.');
+    // Without one, the usual words; a note taken back leaves nothing.
+    await noteClosing('redmotos/shoppingcart', { issue: 902 }, 'x', 'oskr814');
+    await dropCloseNote(other);
+    expect((await getRequest(other))?.closeNote).toBeUndefined();
   });
 
   it('an approved one the team closed as not planned, without its PR, is declined', async () => {

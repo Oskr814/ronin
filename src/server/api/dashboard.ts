@@ -35,6 +35,7 @@ import { editRepo, reposView } from './repos-admin.js';
 import { missingPortalConfig } from '../portal.js';
 import { listUsers, type PortalUser } from '../../portal/accounts.js';
 import { getRequest, listRequests } from '../../portal/requests.js';
+import { dropCloseNote, noteClosing } from '../../portal/follow.js';
 import { isOpen, requestDetail, requestImage, requestPatch, requestRow } from './dashboard-portal.js';
 import { DuplicateMeeting, createMeeting, getMeeting, launchMeetingWorker, listMeetings, retryMeeting } from '../../meetings/index.js';
 import { MAX_UPLOAD_BODY, MeetingUploadError, meetingDetail, meetingOriginal, meetingRow, parseUpload } from './dashboard-meetings.js';
@@ -807,6 +808,12 @@ async function postPrDecision(req: IncomingMessage, res: ServerResponse, id: str
   }
   if (refused(res, ctx.entry.productRepo, 'acciones')) return;
   const issueNumber = ctx.ref.kind === 'issue' ? ctx.ref.number : ctx.ref.issue;
+  // Closing it with its issue: the reason also goes to whoever asked for it
+  // in the portal, kept before GitHub hears of it (follow.ts).
+  const reason = typeof body.text === 'string' ? body.text.trim() : '';
+  const noted = body.decision === 'close' && body.closeIssue === true && reason
+    ? await noteClosing(ctx.entry.productRepo, { issue: issueNumber, pr: files.prNumber }, reason, session.login)
+    : null;
   try {
     const done = await runDecision(ctx.entry, { prNumber: files.prNumber, ...(issueNumber !== undefined ? { issueNumber } : {}), files: files.files, pr: ctx.detail.pr }, session, body, config.githubLogin);
     // Its review, its comments, its state: all of it on the page and in the sidebar.
@@ -815,6 +822,7 @@ async function postPrDecision(req: IncomingMessage, res: ServerResponse, id: str
     forgetGithub(ctx.entry.productRepo);
     json(res, 200, done);
   } catch (error) {
+    if (noted !== null) await dropCloseNote(noted).catch((e) => log.error(`tablero: no se pudo quitar el motivo del pedido P-${noted}`, e));
     if (error instanceof DecisionError) json(res, 400, { error: error.message });
     else if (!githubRefusal(res, error)) throw error;
   }
