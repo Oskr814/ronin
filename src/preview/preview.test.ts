@@ -3,7 +3,7 @@ import { describe, it, expect, vi } from 'vitest';
 vi.mock('../core/logger.js', () => ({ log: { error: vi.fn(), info: vi.fn() } }));
 vi.mock('../core/config.js', () => ({ config: { githubLogin: 'ronin-agent' } }));
 
-import { chooseManifest, describeTtl, parsePreviewData, parsePreviewTriage, previewPorts, previewPrFromDirName, renderPreviewFailed, renderPreviewReady, resolvePreviewArgs } from './preview.js';
+import { chooseManifest, describeTtl, parsePreviewData, parsePreviewTriage, previewPorts, previewPrFromDirName, renderPreviewFailed, renderPreviewReady, resolvePreviewArgs, appsTouched } from './preview.js';
 import type { AppDefinition, TemplateContext } from '../app/manifest.js';
 
 const app = {
@@ -140,7 +140,24 @@ describe('resolvePreviewArgs', () => {
   });
 
   it('asks for the app when there are several and none was named', () => {
-    expect(() => resolvePreviewArgs('un cliente', ['backoffice', 'web'])).toThrow(/backoffice, web/);
+    expect(() => resolvePreviewArgs('un cliente', ['backoffice', 'web'])).toThrow(/backoffice, web\) y este PR no toca/);
+    expect(() => resolvePreviewArgs(undefined, ['backoffice', 'web'], ['backoffice', 'web'])).toThrow(/toca backoffice y web/);
+  });
+
+  it('uses the only app the PR touches when there are several', () => {
+    expect(resolvePreviewArgs(undefined, ['backoffice', 'web'], ['backoffice'])).toEqual({ appName: 'backoffice' });
+    expect(resolvePreviewArgs('un cliente', ['backoffice', 'web'], ['backoffice'])).toEqual({ appName: 'backoffice', instruction: 'un cliente' });
+    expect(resolvePreviewArgs('web', ['backoffice', 'web'], ['backoffice'])).toEqual({ appName: 'web' });
+  });
+});
+
+describe('appsTouched', () => {
+  const apps = { backoffice: { path: 'apps/backoffice' }, web: { path: './apps/web/' }, root: { path: '.' } };
+
+  it('names the apps with a changed file in their folder, never one at the root', () => {
+    expect(appsTouched(apps, ['apps/backoffice/src/a.tsx', 'packages/ui/b.tsx'])).toEqual(['backoffice']);
+    expect(appsTouched(apps, ['apps/web/x.ts', 'apps/backoffice/y.ts'])).toEqual(['backoffice', 'web']);
+    expect(appsTouched(apps, ['apps/backoffice-old/z.ts', 'README.md'])).toEqual([]);
   });
 });
 

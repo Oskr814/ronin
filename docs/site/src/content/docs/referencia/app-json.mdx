@@ -45,7 +45,7 @@ Se lee del checkout que se levanta: una rama puede cambiar cómo arranca su prop
 
 | Campo | Qué es |
 |---|---|
-| `path` | La carpeta de la app en el repo. La exploración la usa para saber qué funciones cambiaron. |
+| `path` | La carpeta de la app en el repo. La exploración la usa para saber qué funciones cambiaron, y `/preview` sin app para saber cuál levantar cuando hay varias. |
 | `compose.files` | Los compose de la app. ronin los levanta con los puertos publicados remapeados a puertos libres, para no chocar con el stack de desarrollo de nadie. |
 | `steps` | Cómo levantarla, en orden (abajo). |
 | `baseUrl` | Dónde responde la app una vez arriba. |
