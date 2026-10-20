@@ -208,6 +208,13 @@ a { color: inherit; }
 .md details { margin: 8px 0; }
 .md summary { cursor: pointer; color: var(--ink); }
 .comments { max-width: 84ch; padding: 14px 24px 40px; display: grid; gap: 12px; }
+/* Each tab's conversation, under its body: the issue's comments, or the PR's comments and reviews. */
+.page:has(+ .conv) { padding-bottom: 8px; }
+.conv { max-width: 84ch; padding: 0 24px 40px; }
+.conv > h3 { margin: 12px 0 10px; padding-top: 14px; border-top: 1px solid var(--rule); font-size: 12.5px; font-weight: 600; color: var(--ink); text-transform: uppercase; letter-spacing: .05em; }
+.conv > h3 .c { margin-left: 4px; color: var(--muted); font-weight: 500; }
+.conv .comments { padding: 0; }
+.conv .kcur { scroll-margin-top: 12px; }
 .cm { border: 1px solid var(--rule); border-radius: 8px; background: var(--panel); min-width: 0; }
 .cm.bot { border-color: color-mix(in srgb, var(--hanko) 35%, var(--rule)); }
 .cm header { display: flex; align-items: center; gap: 8px; padding: 7px 12px; border-bottom: 1px solid var(--rule); font-size: 12.5px; color: var(--muted); }
@@ -305,6 +312,11 @@ a { color: inherit; }
 .ghi.closed { color: var(--gh-closed); }
 .ghi.neutral { color: var(--gh-neutral); }
 .item .sub .ipr { white-space: nowrap; }
+/* The item's preview: ready (green) or on its way. */
+.item .sub .pvtag { display: inline-flex; align-items: center; gap: 3px; margin-right: 6px; padding: 0 5px; border-radius: 4px; font-size: 11px; line-height: 16px; vertical-align: 1px; }
+.item .sub .pvtag svg { width: 11px; height: 11px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.item .sub .pvtag.ok { color: var(--ok); background: var(--ok-bg); }
+.item .sub .pvtag.prep { color: var(--run); background: var(--run-bg); }
 .item .sub .ipr .ghi { margin-right: 2px; }
 .ghs { display: inline-flex; align-items: center; gap: 2px; font-size: 12px; font-weight: 600; padding: 2px 9px 2px 7px; border-radius: 999px; color: #fff; white-space: nowrap; margin-right: -6px; }
 .ghs .ghi { color: inherit; margin-right: 3px; }

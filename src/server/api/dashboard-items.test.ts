@@ -34,8 +34,8 @@ describe('buildItems — issues only (#100)', () => {
     const items = buildItems([REPO], [], [github({ issues: [ISSUE_879], openIssues: [{ number: 879, title: 'Validar stock y reservar', url: 'u', labels: ['ronin'] }, ...OPEN] })]);
     expect(items.map((i) => [i.id, i.listed, i.status])).toEqual([
       ['acme/product#879', true, 'waiting'],
-      ['acme/product#405', false, 'open'],
       ['acme/product#406', false, 'open'],
+      ['acme/product#405', false, 'open'],
     ]);
   });
 
@@ -88,6 +88,14 @@ describe('buildItems', () => {
     ], [github({ issues: [ISSUE_879], prs: [pr({ number: 894 })] })]);
     expect(items.map((item) => item.id)).toEqual(['acme/product#879']);
     expect(items[0]).toMatchObject({ status: 'running', runs: 2, lastRun: { runId: 'c' } });
+  });
+
+  it('keeps a fixed order, the newest first, whatever is running', () => {
+    const items = buildItems([REPO], [
+      run({ runId: 'a', issueNumber: 870, state: 'running', startedAt: '2026-10-16T12:00:00Z' }),
+      run({ runId: 'b', issueNumber: 879, startedAt: '2026-10-16T09:00:00Z', state: 'ok' }),
+    ], [github({ issues: [ISSUE_879, { ...ISSUE_879, number: 870, status: 'blocked' }, { ...ISSUE_879, number: 875 }] })]);
+    expect(items.map((item) => item.number)).toEqual([879, 875, 870]);
   });
 
   it("shows an issue ronin manages with its slices and what it's waiting for, even with no recent runs", () => {

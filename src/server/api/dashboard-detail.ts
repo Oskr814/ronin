@@ -5,8 +5,8 @@ import { log } from '../../core/logger.js';
 import { withActiveRepo, type RepoEntry } from '../../core/repo-context.js';
 import type { RepoGithub } from './dashboard-github.js';
 
-// An item's page in the dashboard (#85): the issue's and the PR's bodies and
-// the item's own conversation (comments; a PR's reviews and review threads too), so the center has something to show whether or
+// An item's page in the dashboard (#85): the issue's and the PR's bodies,
+// each with its conversation (comments; a PR's reviews and review threads too), so the center has something to show whether or
 // not an agent ran on it. An issue brings the slice PR that's moving; a
 // slice PR, its tracking issue.
 //
@@ -64,18 +64,15 @@ async function fetchDetail(entry: RepoEntry, ref: ItemRef): Promise<ItemDetail> 
       issueNumber !== undefined ? getDiscussion('issue', issueNumber) : undefined,
       prNumber !== undefined ? getDiscussion('pr', prNumber) : undefined,
     ]);
-    // Only the item's own comments are shown; the other half's are on GitHub.
-    const trim = (d: Discussion | undefined, own: boolean): Discussion | undefined => {
-      if (!d) return undefined;
-      const { reviews, threads, ...rest } = d;
-      return own ? { ...d, comments: d.comments.slice(-MAX_COMMENTS) } : { ...rest, comments: [] };
-    };
+    // Each half with its own conversation, shown on its own tab: the issue's
+    // comments under the issue, the PR's comments and reviews under the PR.
+    const trim = (d: Discussion): Discussion => ({ ...d, comments: d.comments.slice(-MAX_COMMENTS) });
     const linear = issue ? linearRefFrom(issue.comments) : null;
     return {
       fetchedAt: new Date().toISOString(),
       ...(linear ? { linear } : {}),
-      ...(issue ? { issue: trim(issue, ref.kind === 'issue') } : {}),
-      ...(pr ? { pr: trim(pr, ref.kind === 'pr') } : {}),
+      ...(issue ? { issue: trim(issue) } : {}),
+      ...(pr ? { pr: trim(pr) } : {}),
     };
   });
 }
