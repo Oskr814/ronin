@@ -923,10 +923,10 @@ Una página pública, `https://ronin-agent.redmotoshn.com`, para que la gente qu
 
 ```
 src/portal/            el dominio: cuentas, pedidos, la conversación, el prototipo y los issues
-  accounts.ts          las cuentas (accounts.json), sus permisos y los enlaces para la contraseña
+  accounts.ts          las cuentas (tabla portal_users, o accounts.json), sus permisos y los enlaces para la contraseña
   password.ts          scrypt, y el chequeo de mentira que iguala los tiempos
   session.ts           la cookie firmada del portal
-  requests.ts          los pedidos: requests/<n>/request.json, img/ y proto/
+  requests.ts          los pedidos: tabla portal_requests (o requests/<n>/request.json), y img/ y proto/
   classify.ts          ronin lee el pedido: preguntar, responder, menor, error, grande o entrevistar
   prototype.ts         el prototipo de un ajuste chico, y aprobar o "No me sirve"
   interview.ts         la entrevista de un pedido grande: las respuestas, el resumen y saltarla (#225)
@@ -972,7 +972,7 @@ Cada paso que hace ronin corre en un **worker por pedido** (`portal/worker.ts`, 
 - **Enlaces para la contraseña:** de un uso, vencen a las 24 horas, se guardan solo como su sha256 y viajan en el fragmento de la URL (`/contrasena#t=…`), que no llega a los logs ni al `Referer`.
 - **Límites, en memoria:** el login, 5 fallos por email y 30 por IP cada 15 minutos; "olvidé mi contraseña", 3 por email y 10 por IP por hora; los enlaces, 20 chequeos por IP cada 15 minutos. La IP es la de `cf-connecting-ip`. Pedidos nuevos: `PORTAL_DAILY_LIMIT` por persona y por día, en la zona de `EXPLORE_TIMEZONE`.
 - **Lo demás:** los POST solo aceptan JSON y del mismo origen; CSP, `Referrer-Policy: no-referrer` y HSTS. Cada persona ve solo sus pedidos: uno ajeno responde 404, igual que uno que no existe. Nunca ve el resumen técnico, la instrucción del prototipo ni su diff.
-- **Archivos:** `PORTAL_DATA_DIR` (`portal-data/`, fuera de git), con modo 0600. Las escrituras toman un lock entre procesos y reemplazan el archivo de forma atómica (`json-store.ts`). `accounts.json` es la única copia de las cuentas: hay que respaldarlo.
+- **Dónde queda:** con `DATABASE_URL`, las cuentas y los pedidos en Postgres (#235): `portal_users` (una fila por cuenta, su registro como `jsonb` y el correo como columna única; un cambio toma un lock de Postgres y escribe solo las cuentas que cambiaron) y `portal_requests` (un documento por pedido, con persona, repo y estado como columnas; el número nuevo y la fila en una transacción, con las imágenes escritas antes de confirmar). Sin ella, `PORTAL_DATA_DIR` (`portal-data/`, fuera de git), con modo 0600: las escrituras toman un lock entre procesos y reemplazan el archivo de forma atómica (`json-store.ts`). Las imágenes y los diffs de los prototipos son archivos en los dos casos. Es la única copia de las cuentas: hay que respaldarla.
 
 **Una página abierta antes de un despliegue:** cada respuesta de la API del portal lleva `X-Portal-Version`, una huella de `index.html`, `portal.js` y `portal.css` (`portalVersion`). La página guarda la primera que ve. Si cambia, corre código viejo contra un servidor nuevo (por ejemplo, no conoce un estado nuevo y deja de consultar), así que se recarga sola. Si la persona está escribiendo o enviando algo, en cambio, muestra *Hay una versión nueva del portal* con *Recargar*, y recarga en la próxima consulta cuando ya no hay nada a medio escribir. Al volver a la pestaña, consulta enseguida en vez de esperar su turno.
 

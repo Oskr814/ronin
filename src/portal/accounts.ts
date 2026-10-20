@@ -2,6 +2,9 @@ import { createHash, randomBytes } from 'node:crypto';
 import { join } from 'node:path';
 import { config } from '../core/config.js';
 import { readJson, withJson } from './json-store.js';
+import { sql } from 'kysely';
+import { timed } from '../core/timing.js';
+import { getDb } from '../db/db.js';
 
 // The request portal's accounts (#114): people without GitHub, who enter
 // with their email and a password. Kept in <PORTAL_DATA_DIR>/accounts.json,
@@ -59,7 +62,14 @@ const hashToken = (token: string) => createHash('sha256').update(token).digest('
 
 const empty = (): AccountsFile => ({ users: [] });
 
+// With DATABASE_URL (#235, stage 2), the table portal_users instead of
+// accounts.json: the same list, read and changed as a whole, one change at a
+// time (an advisory lock), writing only the accounts that changed.
+const ACCOUNTS_LOCK = 114_001;
+
 async function readAccounts(): Promise<AccountsFile> {
+  const db = getDb();
+  if (db) return { users: (await timed('db', () => db.selectFrom('portal_users').select('data').execute())).map((r) => r.data as PortalUser) };
   const data = await readJson(accountsPath(), empty);
   if (!Array.isArray(data.users)) throw new Error(`${accountsPath()} no tiene la lista de usuarios`);
   return data;
@@ -68,7 +78,38 @@ async function readAccounts(): Promise<AccountsFile> {
 // Read, change and write under a lock: the server writes them, and the
 // portal's workers and the tick read them for the requests' emails.
 function withAccounts<T>(fn: (data: AccountsFile) => T | Promise<T>): Promise<T> {
-  return withJson(accountsPath(), empty, fn);
+  const db = getDb();
+  if (!db) return withJson(accountsPath(), empty, fn);
+  return timed('db', () => db.transaction().execute(async (trx) => {
+    await sql`select pg_advisory_xact_lock(${ACCOUNTS_LOCK})`.execute(trx);
+    const users = (await trx.selectFrom('portal_users').select('data').execute()).map((r) => r.data as PortalUser);
+    const before = new Map(users.map((u) => [u.id, JSON.stringify(u)]));
+    const data = { users };
+    const result = await fn(data);
+    for (const user of data.users) {
+      if (before.get(user.id) === JSON.stringify(user)) continue;
+      const row = { email: user.email, data: JSON.stringify(user), updated_at: new Date().toISOString() };
+      await trx.insertInto('portal_users').values({ id: user.id, ...row }).onConflict((oc) => oc.column('id').doUpdateSet(row)).execute();
+    }
+    const gone = [...before.keys()].filter((id) => !data.users.some((u) => u.id === id));
+    if (gone.length) await trx.deleteFrom('portal_users').where('id', 'in', gone).execute();
+    return result;
+  }));
+}
+
+// The import (scripts/db-import-portal.ts): the accounts in accounts.json,
+// and writing them into the table.
+export async function fileUsers(): Promise<PortalUser[]> {
+  return (await readJson(accountsPath(), empty)).users ?? [];
+}
+export async function putUsers(users: PortalUser[]): Promise<void> {
+  await withAccounts((data) => {
+    for (const user of users) {
+      const at = data.users.findIndex((u) => u.id === user.id);
+      if (at >= 0) data.users[at] = user;
+      else data.users.push(user);
+    }
+  });
 }
 
 export async function listUsers(): Promise<PortalUser[]> {

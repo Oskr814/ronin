@@ -69,7 +69,7 @@ Ver [Cuándo se bloquea](/ronin/referencia/bloqueos/).
 | `DASHBOARD_SESSION_DAYS` | `7` | Cuánto dura una sesión. |
 | `SERVER_TAILNET_PORT`, `DASHBOARD_TAILNET_HTTPS_PORT` | `3940`, `8443` | El listener del tablero y el puerto con el que se publica en la tailnet. |
 | `SETTINGS_DATA_DIR` | `settings-data` | Lo que se cambia en Ajustes, sin `DATABASE_URL`. Única copia: respaldalo. |
-| `DATABASE_URL` | — | Postgres para lo que ronin guarda (por ahora, Ajustes, Despliegues y Reuniones). Sin ella, archivos. Ver [La base de datos](/ronin/operar/base-de-datos/). |
+| `DATABASE_URL` | — | Postgres para lo que ronin guarda (por ahora, Ajustes, Despliegues, Reuniones y el Portal). Sin ella, archivos. Ver [La base de datos](/ronin/operar/base-de-datos/). |
 | `RONIN_PG_PASSWORD`, `RONIN_PG_PORT` | — | La contraseña y el puerto local del Postgres de `compose.postgres.yml`. |
 | `TEST_DATABASE_URL` | — | Solo para las pruebas que necesitan un Postgres real. |
 
@@ -83,7 +83,7 @@ Ver [El servidor y los webhooks](/ronin/operar/servidor/) y [El tablero](/ronin/
 | `PORTAL_SESSION_SECRET` | — | Firma las sesiones del portal, distinto del del tablero. |
 | `PORTAL_SESSION_DAYS` | `30` | Cuánto dura una sesión del portal. |
 | `PORTAL_DAILY_LIMIT` | `5` | Pedidos por día por persona. |
-| `PORTAL_DATA_DIR` | `portal-data` | Los pedidos y las cuentas. Única copia: respaldalo. |
+| `PORTAL_DATA_DIR` | `portal-data` | Las imágenes de los pedidos y, sin `DATABASE_URL`, los pedidos y las cuentas. Única copia: respaldalo. |
 | `MEETINGS_DATA_DIR` | `meetings-data` | Las notas de las reuniones. Única copia: respaldalo. |
 | `DEPLOYS_DATA_DIR` | `deploys-data` | Qué llevó cada release, sin `DATABASE_URL`. Única copia: respaldalo. |
 | `METRICS_DATA_DIR` | `metrics-data` | Lo que Métricas lee de GitHub y el registro de los bloqueos. Lo de GitHub se vuelve a traer solo; los motivos de los bloqueos no: respaldalo. |

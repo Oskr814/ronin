@@ -27,7 +27,8 @@
     "db:migrate": "tsx --env-file=.env scripts/db-migrate.ts",
     "db:import-ajustes": "tsx --env-file=.env scripts/db-import-ajustes.ts",
     "db:import-despliegues": "tsx --env-file=.env scripts/db-import-despliegues.ts",
-    "db:import-reuniones": "tsx --env-file=.env scripts/db-import-reuniones.ts"
+    "db:import-reuniones": "tsx --env-file=.env scripts/db-import-reuniones.ts",
+    "db:import-portal": "tsx --env-file=.env scripts/db-import-portal.ts"
   },
   "dependencies": {
     "@playwright/mcp": "0.0.83",
