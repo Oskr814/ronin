@@ -54,6 +54,12 @@ export async function metricsView(repos: string[], days: Period, repo: string | 
   };
 }
 
+// What Métricas has of each repo, read the same way (Suscripción, #234).
+export async function repoDataOf(repos: string[], now = Date.now()): Promise<RepoData[]> {
+  const read = await Promise.all(repos.map((r) => repoData(r, now)));
+  return read.flatMap((r) => (r.data ? [r.data] : []));
+}
+
 export function parsePeriod(value: string | null): Period | null {
   const n = Number(value ?? 30);
   return (PERIODS as number[]).includes(n) ? (n as Period) : null;

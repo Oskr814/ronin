@@ -1472,6 +1472,7 @@ Un `ronin:blocked` de GitHub sin su par en el registro, como los de antes de #22
 | Ruta | Quién | Qué |
 |---|---|---|
 | `GET /api/metricas?dias=7\|30\|90&repo=<owner>/<repo>` | admins | el período (30 por defecto) comparado con el anterior, de todos los repos o de uno: los totales, las barras por día o por semana, la distribución de los tiempos, la tabla por persona, la salud del flujo, los despliegues y lo de ronin; en `sources`, de cuándo es la lectura de cada repo y su error |
+| `GET /api/metricas/suscripcion?cuenta=<cuenta>` | admins | el aprovechamiento de cada cuenta de Claude, o de una (20.7) |
 
 #### 20.5 La página (`/metricas`)
 
@@ -1489,6 +1490,35 @@ La página no calcula nada: solo dibuja la respuesta de la API.
 #### 20.6 Activarlo
 
 Nada: sin `METRICS_DATA_DIR`, usa `metrics-data/` en el checkout del runner (fuera de git). Lo de GitHub se vuelve a traer solo si se pierde; el registro de bloqueos no, así que hay que respaldarlo.
+
+#### 20.7 Suscripción (#234, `metrics/subscription.ts`)
+
+Cuánto se aprovecha el plan de cada cuenta de Claude (19.11), contando todo lo que usa la cuenta, sea ronin o no, y qué parte es de ronin. `server/api/dashboard-suscripcion.ts` lee los archivos y `computeSubscription` calcula, sin tocar nada más: los tests le pasan historiales y corridas inventados.
+
+- **La cuota:** cada medición de `logs/usage/history/<cuenta>.jsonl` (§15.6) trae el % usado de la ventana semanal y de la de 5 h, y cuándo se reinicia cada una.
+  - Las mediciones se agrupan por semana según su `resetsAt`. Dos que difieren en menos de 2 h son la misma semana.
+  - Una semana cerró cuando su `resetsAt` ya pasó. Su cierre es la medición más alta, porque el uso es acumulado.
+  - Sin corridas de ronin no hay mediciones, así que el uso de otros entre dos corridas aparece recién en la siguiente. La respuesta dice de cuándo es la última (`lastMeasuredAt`).
+- **Esta semana:**
+  - el % usado;
+  - la serie acumulada, una entrada por medición;
+  - la proyección: el ritmo desde la medición más cercana a 48 h antes de la última (o desde el inicio de la semana, en 0), llevado hasta el reinicio, y qué día se agota si llega al 100 %;
+  - las ventanas de 5 h que pasaron del 90 % y las veces que se topó el límite.
+- **Las semanas cerradas:** las últimas 8, cada una con su cierre, la parte de ronin, la de otros y lo que quedó sin usar. El aprovechamiento es el promedio de los cierres de las últimas 4.
+- **La parte de ronin es un estimado:**
+  - Entre dos mediciones, ronin sabe cuánto gastó: el `costUsd` de cada corrida, repartido parejo en su duración.
+  - Los intervalos se juntan hasta que ronin gastó al menos $1 en ellos, porque la cuota viene en % enteros.
+  - Cuando solo ronin usa la cuenta, cada intervalo da cuánta cuota mueve un dólar; si alguien más la usa a la vez, ese número solo sube. Por eso se toma el percentil 25 de las últimas 4 semanas como la tasa de ronin, por cuenta y no por modelo, porque `costUsd` ya pesa el modelo igual que la cuota. Hacen falta al menos 4 intervalos; antes, `ronin` y `others` vienen en `null`.
+  - En cada intervalo, ronin se lleva la subida hasta lo que explica su gasto, y el resto va a otros.
+  - El primer tramo de una semana cuyo historial empieza a mitad de semana no entra en la tasa: tiene uso de antes de que ronin midiera nada.
+- **Rinde:** lo que habrían costado en la API las corridas de ronin de los últimos 30 días, dividido por el precio del plan. Solo cuenta ronin. Sin precio, `ratio` es `null`.
+- **En qué se va:** el `costUsd` de los últimos 30 días, por tipo de tarea y por repo.
+- **Cuánto cuesta cada resultado**, en los últimos 30 días y solo con lo que ronin trabajó:
+  - un issue resuelto: sus corridas y las de los PRs que lo cierran, con sus reviews;
+  - un PR mergeado: las suyas y las de los issues que cierra;
+  - un pedido del portal: las suyas.
+
+  Cuentan también las corridas que fallaron. Los issues y los PRs salen de lo que Métricas ya leyó de GitHub (20.2).
 
 ### 21. Tiempos (#235, etapa 1)
 
