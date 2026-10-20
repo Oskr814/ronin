@@ -54,6 +54,7 @@ a { color: inherit; }
 .login-card { max-width: 340px; text-align: center; display: grid; justify-items: center; gap: 10px; }
 .login-card h1 { margin: 6px 0 0; font-size: 22px; }
 .login-card p { margin: 0 0 8px; color: var(--muted); }
+.login-card .bad { color: var(--crit); }
 .btn { display: inline-block; background: var(--ink); color: var(--bg); text-decoration: none; padding: 9px 16px; border-radius: 6px; font-weight: 600; }
 
 .shell { display: grid; grid-template-columns: 288px minmax(0, 1fr) 316px; grid-template-rows: minmax(0, 1fr) 30px; height: 100vh; }
@@ -258,6 +259,9 @@ a { color: inherit; }
 .btn-s:disabled { opacity: .5; cursor: default; }
 .toast { position: fixed; bottom: 44px; left: 50%; transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 8px 14px; border-radius: 8px; font-size: 13px; z-index: 50; box-shadow: 0 8px 24px rgba(0, 0, 0, .3); max-width: calc(100vw - 32px); }
 .toast a { color: inherit; font-weight: 600; }
+.relogin { position: fixed; top: 12px; left: 50%; transform: translateX(-50%); width: min(520px, calc(100vw - 32px)); display: flex; align-items: center; gap: 12px; flex-wrap: wrap; background: var(--raise); color: var(--ink); border: 1px solid var(--crit); border-radius: 10px; padding: 10px 14px; font-size: 13px; z-index: 55; box-shadow: 0 12px 32px rgba(0, 0, 0, .35); }
+.relogin span { flex: 1 1 220px; }
+.relogin a { text-decoration: none; }
 
 /* today */
 .today { flex: 1; overflow: auto; padding: 22px 24px 32px; min-height: 0; }

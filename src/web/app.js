@@ -123,9 +123,17 @@ const WAITING_EVERY_MS = 10_000;
 
 class Unauthorized extends Error {}
 
+// Why the session ended, in the server's words when it says more than that
+// there's none (a GitHub token revoked).
+async function sessionEnded(response) {
+  const why = (await response.json().catch(() => null))?.error;
+  return why && why !== 'sin sesión' ? why : 'Tu sesión del tablero venció. Volvé a entrar.';
+}
+
 async function api(path, init) {
   const response = await fetch(path, { ...init, headers: { Accept: 'application/json', ...(init?.body ? { 'Content-Type': 'application/json' } : {}) } });
-  if (response.status === 401) throw new Unauthorized();
+  if (response.status === 401) throw new Unauthorized(await sessionEnded(response));
+  $('#relogin')?.remove();
   if (!response.ok) {
     // The API's own explanation when it has one (an action it refused).
     const body = await response.json().catch(() => null);
@@ -135,9 +143,22 @@ async function api(path, init) {
   return response.status === 204 ? null : response.json();
 }
 
-function showLogin() {
+// The session ended. With something written on screen (a dialog open, a
+// comment half done) the page stays: a notice on top logs in again in
+// another tab, and what was written is still here to send again. Returns
+// whether the page went to the login (otherwise the caller shows its error).
+function showLogin(error) {
+  const writing = document.querySelector('body > div > .scrim, body > .scrim') || [...document.querySelectorAll('#shell textarea')].some((area) => area.value.trim());
+  if (error && writing) {
+    const note = $('#relogin') ?? Object.assign(document.body.appendChild(document.createElement('div')), { id: 'relogin', className: 'relogin', role: 'alert' });
+    note.innerHTML = `<span>${esc(error.message)} Lo que escribiste sigue acá: entrá en otra pestaña y volvé a enviarlo.</span><a class="btn-s primary" href="/api/auth/login" target="_blank" rel="noopener">Entrar con GitHub</a>`;
+    return false;
+  }
+  $('#login-why').hidden = !error || !S.snap;
+  $('#login-why').textContent = error?.message ?? '';
   $('#shell').hidden = true;
   $('#login').hidden = false;
+  return true;
 }
 
 // ---------- items
@@ -808,7 +829,7 @@ async function sendAction() {
     await loadDetail(dialog.item);
     refresh();
   } catch (error) {
-    if (error instanceof Unauthorized) return showLogin();
+    if (error instanceof Unauthorized && showLogin(error)) return;
     dialog.sending = false;
     // No answer, or the connection dropped: the comment may well be out
     // already. The item is read again so its conversation says.
@@ -927,7 +948,7 @@ async function sendNewIssue() {
     await refresh();
     select(created.id);
   } catch (error) {
-    if (error instanceof Unauthorized) return showLogin();
+    if (error instanceof Unauthorized && showLogin(error)) return;
     n.sending = false;
     n.error = `No se pudo: ${error.message}`;
     renderNewIssue();
@@ -1336,7 +1357,7 @@ async function loadFiles(id) {
     }
     entry.error = null;
   } catch (error) {
-    if (error instanceof Unauthorized) return showLogin();
+    if (error instanceof Unauthorized && showLogin(error)) return;
     entry.error = error.message;
   } finally {
     entry.loading = false;
@@ -1364,7 +1385,7 @@ async function showMoreLines(id, path, key) {
     content.lines = got.text.split('\n');
     if (content.lines[content.lines.length - 1] === '') content.lines.pop();
   } catch (error) {
-    if (error instanceof Unauthorized) return showLogin();
+    if (error instanceof Unauthorized && showLogin(error)) return;
     content.error = error.message;
     exp[key] -= MORE_LINES;
   } finally {
@@ -1413,7 +1434,7 @@ async function sendComment(mode) {
     else toast(mode === 'edit' ? 'Guardado en tu revisión.' : started ? `Empezaste una revisión: nadie la ve hasta que la mandes${decidable(itemById(c.item) ?? {}, S.detail[c.item]?.data) ? ' con Ajustar' : ''}.` : 'Sumado a tu revisión.');
     afterFilesWrite(c.item);
   } catch (error) {
-    if (error instanceof Unauthorized) return showLogin();
+    if (error instanceof Unauthorized && showLogin(error)) return;
     c.sending = false;
     c.error = `No se pudo: ${error.message}`;
     renderCenter();
@@ -1429,7 +1450,7 @@ async function deletePending(nodeId) {
     toast('Borrado de tu revisión.');
     afterFilesWrite(id);
   } catch (error) {
-    if (error instanceof Unauthorized) return showLogin();
+    if (error instanceof Unauthorized && showLogin(error)) return;
     toast(`No se pudo: ${error.message}`);
   } finally {
     S.fbusy.delete(nodeId);
@@ -1524,7 +1545,7 @@ async function sendDecision() {
     afterFilesWrite(p.item);
     refresh();
   } catch (error) {
-    if (error instanceof Unauthorized) return showLogin();
+    if (error instanceof Unauthorized && showLogin(error)) return;
     p.sending = false;
     p.error = `No se pudo: ${error.message}`;
     renderCenter();
@@ -1881,7 +1902,7 @@ async function sendReview() {
     afterFilesWrite(p.item);
     refresh();
   } catch (error) {
-    if (error instanceof Unauthorized) return showLogin();
+    if (error instanceof Unauthorized && showLogin(error)) return;
     p.sending = false;
     p.error = `No se pudo: ${error.message}`;
     renderCenter();
@@ -1900,7 +1921,7 @@ async function discardPendingReview() {
     toast('Descartaste tu revisión.');
     afterFilesWrite(p.item);
   } catch (error) {
-    if (error instanceof Unauthorized) return showLogin();
+    if (error instanceof Unauthorized && showLogin(error)) return;
     p.sending = false;
     p.error = `No se pudo: ${error.message}`;
     renderCenter();
@@ -1916,7 +1937,7 @@ async function resolveThread(threadId, resolved) {
     toast(resolved ? 'Conversación resuelta.' : 'Conversación reabierta.');
     afterFilesWrite(id);
   } catch (error) {
-    if (error instanceof Unauthorized) return showLogin();
+    if (error instanceof Unauthorized && showLogin(error)) return;
     toast(`No se pudo: ${error.message}`);
   } finally {
     S.fbusy.delete(threadId);
@@ -1937,7 +1958,7 @@ async function setViewed(path, viewed) {
   try {
     await filesAction(id, { action: 'viewed', path, viewed });
   } catch (error) {
-    if (error instanceof Unauthorized) return showLogin();
+    if (error instanceof Unauthorized && showLogin(error)) return;
     if (viewed) entry.viewed.delete(path);
     else entry.viewed.add(path);
     toast(`No se pudo marcar como visto: ${error.message}`);
@@ -2473,7 +2494,7 @@ async function sendFichaAction() {
     S.fdialog = null;
     renderFichaDialog();
   } catch (error) {
-    if (error instanceof Unauthorized) return showLogin();
+    if (error instanceof Unauthorized && showLogin(error)) return;
     d.sending = false;
     d.error = `No se pudo: ${error.message}`;
     renderFichaDialog();
@@ -2491,7 +2512,7 @@ async function sendFreeComment() {
   try {
     await postFichaComment(S.sel, key, 'comentar', text, false);
   } catch (error) {
-    if (error instanceof Unauthorized) return showLogin();
+    if (error instanceof Unauthorized && showLogin(error)) return;
     toast(`No se pudo comentar: ${error.message}`);
     button.disabled = false;
     button.textContent = 'Comentar';
@@ -2522,7 +2543,7 @@ async function loadExploration(id) {
     entry.data = await api(`/api/items/${encodeURIComponent(id)}/exploration`);
     entry.error = null;
   } catch (error) {
-    if (error instanceof Unauthorized) return showLogin();
+    if (error instanceof Unauthorized && showLogin(error)) return;
     entry.error = error.message;
   } finally {
     entry.loading = false;
@@ -3141,7 +3162,7 @@ async function loadXplPart(bucket, r) {
     entry.data = await api(`/api/exploraciones/${r.repo}/${encodeURIComponent(r.app)}/${XPL_PART[bucket][0]}`);
     entry.error = null;
   } catch (error) {
-    if (error instanceof Unauthorized) return showLogin();
+    if (error instanceof Unauthorized && showLogin(error)) return;
     entry.error = error.message;
   } finally {
     entry.loading = false;
@@ -3162,7 +3183,7 @@ async function loadXplRun(runId) {
     if (S.xpl.run?.runId !== runId) return;
     S.xpl.run = { runId, summary, lines: lines.filter((line) => line.type !== 'run_start' && line.type !== 'run_end') };
   } catch (error) {
-    if (error instanceof Unauthorized) return showLogin();
+    if (error instanceof Unauthorized && showLogin(error)) return;
     if (S.xpl.run?.runId === runId) S.xpl.run.error = error.message;
   }
   if (S.page === 'exploracion') renderCenter();
@@ -3303,7 +3324,7 @@ async function sendExploreNow() {
     await refresh();
     loadExploraciones();
   } catch (error) {
-    if (error instanceof Unauthorized) return showLogin();
+    if (error instanceof Unauthorized && showLogin(error)) return;
     x.sending = false;
     x.error = `No se pudo: ${error.message}`;
     renderExploreNow();
@@ -3337,7 +3358,7 @@ async function loadExploraciones() {
     S.xpl.list = (await api('/api/exploraciones')).apps;
     S.xpl.error = null;
   } catch (error) {
-    if (error instanceof Unauthorized) return showLogin();
+    if (error instanceof Unauthorized && showLogin(error)) return;
     S.xpl.error = error.message;
   }
   renderQuick();
@@ -3391,7 +3412,7 @@ async function loadPortal() {
   try {
     S.portal = { data: await api('/api/portal-admin'), error: null };
   } catch (error) {
-    if (error instanceof Unauthorized) return showLogin();
+    if (error instanceof Unauthorized && showLogin(error)) return;
     S.portal = { ...S.portal, error: error.message };
   }
   renderQuick();
@@ -3559,7 +3580,7 @@ async function loadPedidos() {
     S.ped.list = requests;
     S.ped.error = null;
   } catch (error) {
-    if (error instanceof Unauthorized) return showLogin();
+    if (error instanceof Unauthorized && showLogin(error)) return;
     S.ped.error = error.message;
   }
   S.ped.listAt = Date.now();
@@ -3570,7 +3591,7 @@ async function loadPedido(n) {
   try {
     S.ped.detail[n] = { data: await api(pedPath(n)), at: Date.now() };
   } catch (error) {
-    if (error instanceof Unauthorized) return showLogin();
+    if (error instanceof Unauthorized && showLogin(error)) return;
     S.ped.detail[n] = { ...S.ped.detail[n], error: error.message, at: Date.now() };
   }
   if (S.page === 'pedido' && S.ped.n === n) {
@@ -3587,7 +3608,7 @@ async function loadPedidoRun(runId) {
     if (S.ped.run?.runId !== runId) return;
     S.ped.run = { runId, summary, lines: lines.filter((line) => line.type !== 'run_start' && line.type !== 'run_end') };
   } catch (error) {
-    if (error instanceof Unauthorized) return showLogin();
+    if (error instanceof Unauthorized && showLogin(error)) return;
     if (S.ped.run?.runId === runId) S.ped.run.error = error.message;
   }
   if (S.page === 'pedido') renderCenter();
@@ -3943,7 +3964,7 @@ async function loadPatch(n, round, of = 'prototipo') {
   try {
     S.ped.patch[key] = { text: (await api(pedPath(n, `/${of}/${round}`))).patch };
   } catch (error) {
-    if (error instanceof Unauthorized) return showLogin();
+    if (error instanceof Unauthorized && showLogin(error)) return;
     S.ped.patch[key] = { error: error.message };
   }
   renderCenter();
@@ -4017,7 +4038,7 @@ async function loadDespliegues() {
     S.dep.list = (await api('/api/despliegues')).repos;
     S.dep.error = null;
   } catch (error) {
-    if (error instanceof Unauthorized) return showLogin();
+    if (error instanceof Unauthorized && showLogin(error)) return;
     S.dep.error = error.message;
   }
   if (S.page === 'despliegues') renderCenter();
@@ -4113,7 +4134,7 @@ async function planDeploy() {
     if (S.dep.dlg !== x || depKey(x) !== key) return;
     Object.assign(x, { plan, planKey: key, error: null });
   } catch (error) {
-    if (error instanceof Unauthorized) return showLogin();
+    if (error instanceof Unauthorized && showLogin(error)) return;
     if (S.dep.dlg !== x || depKey(x) !== key) return;
     Object.assign(x, { plan: null, planKey: null, error: error.message });
   } finally {
@@ -4135,7 +4156,7 @@ async function sendDeploy() {
     toast(`Publicado ${done.tag}: el workflow del repo ya arrancó.${done.pedidos.length ? ` ${done.pedidos.map((n) => `P-${n}`).join(', ')} ${done.pedidos.length === 1 ? 'recibe' : 'reciben'} el aviso cuando termine bien.` : ''}`, done.url || undefined);
     loadDespliegues();
   } catch (error) {
-    if (error instanceof Unauthorized) return showLogin();
+    if (error instanceof Unauthorized && showLogin(error)) return;
     x.sending = false;
     x.error = error.message;
     // What goes in changed: the new plan, to look at again.
@@ -4266,7 +4287,7 @@ async function loadMetricas() {
     S.mt.error = null;
     S.mt.at = Date.now();
   } catch (error) {
-    if (error instanceof Unauthorized) return showLogin();
+    if (error instanceof Unauthorized && showLogin(error)) return;
     if (S.mt.key === key) S.mt.error = error.message;
   }
   if (S.mt.key === key) S.mt.loading = false;
@@ -4476,7 +4497,7 @@ async function loadSuscripcion() {
     su.error = null;
     su.at = Date.now();
   } catch (error) {
-    if (error instanceof Unauthorized) return showLogin();
+    if (error instanceof Unauthorized && showLogin(error)) return;
     su.error = error.message;
   }
   su.loading = false;
@@ -4729,7 +4750,7 @@ async function loadReuniones() {
     S.reu.list = (await api('/api/reuniones')).meetings;
     S.reu.error = null;
   } catch (error) {
-    if (error instanceof Unauthorized) return showLogin();
+    if (error instanceof Unauthorized && showLogin(error)) return;
     S.reu.error = error.message;
   }
   S.reu.listAt = Date.now();
@@ -4740,7 +4761,7 @@ async function loadReunion(n) {
   try {
     S.reu.detail[n] = { data: await api(reuPath(n)), at: Date.now() };
   } catch (error) {
-    if (error instanceof Unauthorized) return showLogin();
+    if (error instanceof Unauthorized && showLogin(error)) return;
     S.reu.detail[n] = { ...S.reu.detail[n], error: error.message, at: Date.now() };
   }
   if (S.page === 'reunion' && S.reu.n === n) {
@@ -4757,7 +4778,7 @@ async function loadReunionRun(runId) {
     if (S.reu.run?.runId !== runId) return;
     S.reu.run = { runId, summary, lines: lines.filter((line) => line.type !== 'run_start' && line.type !== 'run_end') };
   } catch (error) {
-    if (error instanceof Unauthorized) return showLogin();
+    if (error instanceof Unauthorized && showLogin(error)) return;
     if (S.reu.run?.runId === runId) S.reu.run.error = error.message;
   }
   if (S.page === 'reunion') renderCenter();
@@ -4941,7 +4962,7 @@ async function approveReunion(n) {
     toast(out.failed ? `Se crearon ${out.created}; ${out.failed} no se pudieron crear: puedes intentarlo de nuevo.` : `Listo: se crearon ${out.created}.`);
     refresh();
   } catch (error) {
-    if (error instanceof Unauthorized) return showLogin();
+    if (error instanceof Unauthorized && showLogin(error)) return;
     toast(`No se pudo: ${error.message}`);
   }
   S.reu.approving = false;
@@ -4956,7 +4977,7 @@ async function discardReunion(n) {
     toast('Listo: la reunión quedó descartada.');
     refresh();
   } catch (error) {
-    if (error instanceof Unauthorized) return showLogin();
+    if (error instanceof Unauthorized && showLogin(error)) return;
     toast(`No se pudo: ${error.message}`);
   }
   await loadReunion(n);
@@ -5072,7 +5093,7 @@ async function retryReunion(n) {
     await api(reuPath(n, '/reintentar'), { method: 'POST', body: '{}' });
     toast(`Listo: ronin vuelve a leer R-${n}.`);
   } catch (error) {
-    if (error instanceof Unauthorized) return showLogin();
+    if (error instanceof Unauthorized && showLogin(error)) return;
     toast(`No se pudo: ${error.message}`);
   }
   S.reu.retrying = false;
@@ -5247,7 +5268,7 @@ async function sendUpload() {
   try {
     const body = { repo: u.repo, title: u.title, link: u.link, ...(u.at ? { at: new Date(u.at).toISOString() } : {}), ...(u.file ? { file: { name: u.file.name, data: u.file.data } } : { text: u.text }) };
     const response = await fetch('/api/reuniones', { method: 'POST', headers: { Accept: 'application/json', 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-    if (response.status === 401) throw new Unauthorized();
+    if (response.status === 401) throw new Unauthorized(await sessionEnded(response));
     const out = await response.json().catch(() => ({}));
     if (!response.ok) {
       u.sending = false;
@@ -5265,7 +5286,7 @@ async function sendUpload() {
     refresh();
     openReunion(out.number);
   } catch (error) {
-    if (error instanceof Unauthorized) return showLogin();
+    if (error instanceof Unauthorized && showLogin(error)) return;
     u.sending = false;
     u.error = esc(`No se pudo: ${error.message}`);
     renderUpload();
@@ -5515,7 +5536,7 @@ async function loadAjustes() {
     if (S.aj.sec === 'usuarios' && !S.aj.login && S.snap.portalAdmin) S.portal = { data: await api('/api/portal-admin'), error: null };
     S.aj.error = null;
   } catch (error) {
-    if (error instanceof Unauthorized) return showLogin();
+    if (error instanceof Unauthorized && showLogin(error)) return;
     S.aj.error = error.message;
   }
   if (S.page === 'ajustes') renderCenter();
@@ -5799,7 +5820,7 @@ function wireAjUsers(center) {
       toast(`Quitaste a @${login} de la lista.`);
       openAjustes('usuarios');
     } catch (error) {
-      if (error instanceof Unauthorized) return showLogin();
+      if (error instanceof Unauthorized && showLogin(error)) return;
       toast(`No se pudo. ${error.message}`);
     }
   });
@@ -5810,7 +5831,7 @@ async function ajUser(patch) {
     S.aj.user = await api(`/api/ajustes/usuarios/${encodeURIComponent(S.aj.login)}`, { method: 'POST', body: JSON.stringify(patch) });
     toast('Guardado.');
   } catch (error) {
-    if (error instanceof Unauthorized) return showLogin();
+    if (error instanceof Unauthorized && showLogin(error)) return;
     toast(`No se guardó. ${error.message}`);
   }
   $('#center')._html = null;
@@ -5822,7 +5843,7 @@ async function ajEquipo(patch) {
     Object.assign(S.aj.users, await api('/api/ajustes/equipo', { method: 'POST', body: JSON.stringify(patch) }), { entradaSet: true });
     toast('Guardado.');
   } catch (error) {
-    if (error instanceof Unauthorized) return showLogin();
+    if (error instanceof Unauthorized && showLogin(error)) return;
     toast(`No se guardó. ${error.message}`);
   }
   $('#center')._html = null;
@@ -5892,7 +5913,7 @@ async function ajAdd() {
     toast(`Agregaste a @${login}.`);
     openAjustes('usuarios', login);
   } catch (error) {
-    if (error instanceof Unauthorized) return showLogin();
+    if (error instanceof Unauthorized && showLogin(error)) return;
     a.sending = false;
     a.error = error.message;
     ajRenderAdd();
@@ -5966,7 +5987,7 @@ async function ajCuentaWrite(path, body) {
     // The limit and today's use come with the list.
     if (body.dailyLimit !== undefined) S.portal.data = await api('/api/portal-admin');
   } catch (error) {
-    if (error instanceof Unauthorized) return showLogin();
+    if (error instanceof Unauthorized && showLogin(error)) return;
     toast(`No se guardó. ${error.message}`);
   }
   S.aj.busy = false;
@@ -5984,7 +6005,7 @@ async function ajAddCuenta(a) {
     S.aj.link = out.sent ? { id: out.user.id, text: `Le mandamos la invitación a ${out.user.email}.` } : { id: out.user.id, text: 'La cuenta quedó, pero el correo no salió. Pásale este enlace por otro medio (vence en 24 horas):', url: out.url };
     openAjustes('usuarios', null, null, out.user.id);
   } catch (error) {
-    if (error instanceof Unauthorized) return showLogin();
+    if (error instanceof Unauthorized && showLogin(error)) return;
     a.sending = false;
     a.error = error.message;
     ajRenderAdd();
@@ -6081,7 +6102,7 @@ async function ajRepo(change) {
     S.aj.repos = await api('/api/ajustes/repos');
     toast(changed ? 'Guardado en repos.json.' : 'Sin cambios.');
   } catch (error) {
-    if (error instanceof Unauthorized) return showLogin();
+    if (error instanceof Unauthorized && showLogin(error)) return;
     toast(`No se guardó. ${error.message}`);
   }
   $('#center')._html = null;
@@ -6111,7 +6132,7 @@ function wireAjustes() {
       S.aj.data.tareas = (await api('/api/ajustes/tareas', { method: 'POST', body: JSON.stringify({ task: el.dataset.ajtask, [el.dataset.f]: el.value || null }) })).tareas;
       toast('Guardado. Vale desde la próxima corrida.');
     } catch (error) {
-      if (error instanceof Unauthorized) return showLogin();
+      if (error instanceof Unauthorized && showLogin(error)) return;
       toast(`No se guardó. ${error.message}`);
     }
     center._html = null;
@@ -6123,7 +6144,7 @@ function wireAjustes() {
     try {
       toast(`Listo: mira tu correo (${(await api('/api/ajustes/conexiones/correo', { method: 'POST', body: '{}' })).to}).`);
     } catch (error) {
-      if (error instanceof Unauthorized) return showLogin();
+      if (error instanceof Unauthorized && showLogin(error)) return;
       toast(error.message);
     }
     S.aj.busy = false;
@@ -6135,7 +6156,7 @@ function wireAjustes() {
       S.aj.data.notificaciones = (await api('/api/ajustes/notificaciones', { method: 'POST', body: JSON.stringify({ repo: b.dataset.ajev, event: b.dataset.e, on: b.getAttribute('aria-checked') !== 'true' }) })).notificaciones;
       toast('Guardado.');
     } catch (error) {
-      if (error instanceof Unauthorized) return showLogin();
+      if (error instanceof Unauthorized && showLogin(error)) return;
       toast(`No se guardó. ${error.message}`);
     }
     center._html = null;
@@ -6171,7 +6192,7 @@ async function ajCuenta(account, change) {
     S.aj.cuentas.cuentas = S.aj.cuentas.cuentas.map((c) => (c.account === account ? cuenta : c));
     toast(`Guardado: ${account} en ${cuenta.plan.name}${cuenta.plan.priceUsd === null ? '' : `, $${cuenta.plan.priceUsd} al mes`}.`);
   } catch (error) {
-    if (error instanceof Unauthorized) return showLogin();
+    if (error instanceof Unauthorized && showLogin(error)) return;
     toast(`No se guardó. ${error.message}`);
   }
   $('#center')._html = null;
@@ -6185,7 +6206,7 @@ async function ajSetValue(key, value) {
     S.aj.data.valores = S.aj.data.valores.map((s) => (s.key === key ? setting : s));
     toast(value === null ? `${AJ_SETTINGS[key]?.[0] ?? key}: vuelve al de ${setting.source === 'env' ? '.env' : 'por defecto'} (${ajWord(setting.value)}).` : 'Guardado. Vale desde ahora.');
   } catch (error) {
-    if (error instanceof Unauthorized) return showLogin();
+    if (error instanceof Unauthorized && showLogin(error)) return;
     toast(`No se guardó. ${error.message}`);
   }
   $('#center')._html = null;
@@ -6197,7 +6218,7 @@ async function ajSaveProfile(patch) {
     S.aj.data.perfil = (await api('/api/ajustes/perfil', { method: 'POST', body: JSON.stringify(patch) })).perfil;
     toast('Guardado.');
   } catch (error) {
-    if (error instanceof Unauthorized) return showLogin();
+    if (error instanceof Unauthorized && showLogin(error)) return;
     toast(`No se guardó. ${error.message}`);
   }
   $('#center')._html = null;
@@ -6241,7 +6262,7 @@ async function loadShownRun() {
     renderCenter();
     if (summary.state === 'running') follow(shown.runId, lines.length);
   } catch (error) {
-    if (error instanceof Unauthorized) showLogin();
+    if (error instanceof Unauthorized) showLogin(error);
   }
 }
 
@@ -6278,7 +6299,7 @@ async function loadItem(id) {
       S.pendingRun = null;
     }
   } catch (error) {
-    if (error instanceof Unauthorized) return showLogin();
+    if (error instanceof Unauthorized && showLogin(error)) return;
   }
   if (S.sel === id) await loadShownRun();
 }
@@ -6298,7 +6319,7 @@ async function loadDetail(id) {
     if (doc) Object.assign(extra, { kind: entry.data.ref.kind, title: doc.title, url: doc.url, status: doc.state === 'OPEN' ? 'open' : 'ok' });
     if (entry.data.exploration) loadExploration(id);
   } catch (error) {
-    if (error instanceof Unauthorized) return showLogin();
+    if (error instanceof Unauthorized && showLogin(error)) return;
     entry.error = error.message;
   } finally {
     entry.loading = false;
@@ -6361,7 +6382,7 @@ async function refresh() {
   try {
     [S.snap, S.today] = await Promise.all([api('/api/snapshot'), S.sel ? Promise.resolve(S.today) : api('/api/today')]);
   } catch (error) {
-    if (error instanceof Unauthorized) showLogin();
+    if (error instanceof Unauthorized) showLogin(error);
     return;
   }
   showSentReviews();
@@ -6415,7 +6436,7 @@ async function followNewRun() {
   try {
     ({ runs } = await api(`/api/items/${encodeURIComponent(id)}`));
   } catch (error) {
-    if (error instanceof Unauthorized) showLogin();
+    if (error instanceof Unauthorized) showLogin(error);
     return;
   }
   if (S.sel !== id) return;
