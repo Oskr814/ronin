@@ -27,6 +27,7 @@ import { GithubUserError, pendingReview, viewedFiles } from './github-as-user.js
 import type { Session } from './auth.js';
 import { PortalAdminError, portalAdminView, runPortalAdmin, type PortalAdminContext } from './portal-admin.js';
 import { cuentasView, setCuenta } from './cuentas-claude.js';
+import { suscripcionView } from './dashboard-suscripcion.js';
 import { AjustesError, ajustesView, conexionesView, linearTeams, readRegistro, saveNotificacion, saveProfile, setTask, setValue, testMail } from './ajustes.js';
 import { can, touchSeen, type Perm } from './team.js';
 import { addUsuario, removeUsuario, updateEquipo, updateUsuario, usuariosView, usuarioView } from './usuarios.js';
@@ -85,6 +86,7 @@ import { ExploreNowError, corridasOf, exploracionList, exploracionRows, exploreN
 //   GET|POST /api/ajustes[/…]        the person's profile, and for admins the settings and their record (#174, ajustes.ts)
 //                                    and the plan of each Claude account (#234, cuentas-claude.ts)
 //   GET /api/metricas?dias=7|30|90&repo=<owner>/<repo>  how work moves in the repos: what comes in and out, how long it takes, who carries it (#222, metrics/, admins only)
+//   GET /api/metricas/suscripcion?cuenta=<cuenta>  how much of each Claude account's plan gets used, and ronin's share (#234, dashboard-suscripcion.ts, admins only)
 
 // How far back the sidebar and an item's history look. Run records are kept
 // 14 days (scripts/setup-cron.sh).
@@ -986,6 +988,15 @@ async function route(req: IncomingMessage, res: ServerResponse, path: string, se
     else if (!days) json(res, 400, { error: 'dias debe ser 7, 30 o 90' });
     else if (repo && !repos.includes(repo)) json(res, 404, { error: `no hay un repo ${repo}` });
     else json(res, 200, await metricsView(repos, days, repo));
+    return true;
+  }
+
+  if (path === '/api/metricas/suscripcion') {
+    const account = new URL(req.url ?? '/', 'http://localhost').searchParams.get('cuenta') || null;
+    const view = currentAccess().admin ? await suscripcionView(await loadRepos(), account) : undefined;
+    if (view === undefined) json(res, 403, { error: 'solo los administradores ven las métricas' });
+    else if (!view) json(res, 404, { error: `no hay una cuenta de Claude ${account}` });
+    else json(res, 200, view);
     return true;
   }
 
