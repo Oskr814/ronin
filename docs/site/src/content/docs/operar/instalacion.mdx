@@ -34,7 +34,7 @@ Un runner es una máquina que corre ronin para unos repos. Corre por cron, sin s
 
 6. **Compilá:** `pnpm build`. El cron corre el `dist/` compilado y nunca recompila solo: hay que volver a correrlo después de cada cambio.
 
-7. **Instalá el cron:** `pnpm cron:setup [minutos] [días]` (por defecto, cada 5 minutos y 14 días de logs). `pnpm cron:remove` lo saca. Los logs quedan en `logs/tick-YYYY-MM-DD.log`:
+7. **Instalá el cron** (solo sin [la base de datos](/ronin/operar/base-de-datos/): con ella, el servidor corre los ticks): `pnpm cron:setup [minutos] [días]` (por defecto, cada 5 minutos y 14 días de logs). `pnpm cron:remove` lo saca. Los logs quedan en `logs/tick-YYYY-MM-DD.log`:
 
    ```bash
    tail -f logs/tick-$(date +%F).log

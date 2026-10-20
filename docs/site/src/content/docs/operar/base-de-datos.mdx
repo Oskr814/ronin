@@ -16,6 +16,8 @@ ronin pasa de guardar sus datos en archivos a guardarlos en Postgres de a un mó
 
 Todo lo demás sigue en sus carpetas.
 
+Con la base, además, **el servidor corre los ticks**: los pone en cola a sus horas y los arranca, igual que los handlers de los webhooks. Hay que sacar el cron (`pnpm cron:remove`); si queda, no hace nada.
+
 **Es opcional mientras dura la etapa.** Sin `DATABASE_URL`, ronin sigue con los archivos como siempre.
 
 ## Activarla

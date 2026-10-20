@@ -21,6 +21,8 @@ import { warmDashboard } from './api/dashboard.js';
 import { timedRequests } from './timing.js';
 import { getDb } from '../db/db.js';
 import { migrateToLatest } from '../db/migrate.js';
+import { startRunner } from '../jobs/runner.js';
+import { startScheduler } from '../jobs/scheduler.js';
 
 if (!config.webhookSecret) {
   throw new Error('WEBHOOK_SECRET no está seteado — ver .env.example. El servidor no puede arrancar sin validar las firmas de GitHub.');
@@ -38,6 +40,11 @@ if (db) {
   } catch (error) {
     log.error('base de datos: no se pudo migrar', error);
   }
+  // The job queue (#235, stage 3): the scheduler queues the tick at its
+  // times, and the local runner starts every job — the tick and the
+  // webhooks' handlers — in its own process. Cron isn't needed anymore.
+  startScheduler(db);
+  startRunner(db);
 }
 
 // A request that throws answers 500 and is logged: it never takes the

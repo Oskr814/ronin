@@ -53,6 +53,7 @@ export const SETTINGS: SettingDef[] = [
   { key: 'agent.reviewWorkerModel', env: 'EXTERNAL_REVIEW_WORKER_MODEL', path: ['externalReviewWorkerModel'], type: 'enum', default: 'sonnet', options: MODELS },
   int('agent.taskTimeoutMinutes', 'AGENT_TASK_TIMEOUT_MINUTES', ['agentTaskTimeoutMs'], 30, 5, 240, MIN),
   int('agent.handlerTimeoutMinutes', 'EVENT_HANDLER_TIMEOUT_MINUTES', ['eventHandlerTimeoutMs'], 120, 10, 720, MIN),
+  int('tick.intervalMinutes', 'TICK_INTERVAL_MINUTES', ['tickIntervalMinutes'], 30, 5, 240),
   int('tick.concurrency', 'TICK_CONCURRENCY', ['tickConcurrency'], 3, 1, 10),
   int('tick.externalReviewConcurrency', 'EXTERNAL_REVIEW_CONCURRENCY', ['externalReviewConcurrency'], 2, 0, 10),
   int('retry.e2e', 'E2E_RETRY_LIMIT', ['e2eRetryLimit'], 2, 0, 10),

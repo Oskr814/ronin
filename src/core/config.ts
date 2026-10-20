@@ -80,6 +80,9 @@ export const config = {
   // global-across-repos. Every flow shares one job pool (tick.ts's runJobs),
   // so this bounds issues, external reviews, /spikes and changelog entries
   // together.
+  // How often the scheduler queues the tick (jobs/scheduler.ts), counted
+  // from the hour. Only with DATABASE_URL: without it, cron decides.
+  tickIntervalMinutes: Number(process.env.TICK_INTERVAL_MINUTES ?? 30),
   tickConcurrency: Number(process.env.TICK_CONCURRENCY ?? 3),
   // Of those, how many external reviews at once: each one is an orchestrator
   // plus its workers, and three at once exhausted the account's session

@@ -8,6 +8,8 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { config } from '../../../core/config.js';
 import { loadRepos } from '../../../core/repos.js';
 import { launchWorker } from '../../../core/worker-launch.js';
+import { getDb } from '../../../db/db.js';
+import { enqueue } from '../../../jobs/store.js';
 import { verifySignature, scopeForEvent, ackTarget, type EventPayload } from './events.js';
 import { addAckReaction } from '../../../core/github.js';
 import { log } from '../../../core/logger.js';
@@ -36,16 +38,28 @@ function scheduleHandler(repo: string, scope: Scope): void {
     timer: setTimeout(() => {
       pending.delete(key);
       log.info(`webhook: atendiendo ${entry.scope.resources.join(', ')} en ${repo} (${entry.scope.flows.join(', ')})`);
-      try {
-        const request: EventHandlerRequest = { repo, scope: entry.scope, receivedAt: entry.receivedAt };
-        launchWorker('server/api/webhooks/handler', request);
-      } catch (error) {
-        // The cron tick picks the event up anyway, just later.
+      const request: EventHandlerRequest = { repo, scope: entry.scope, receivedAt: entry.receivedAt };
+      startHandler(request).catch((error) => {
+        // The tick picks the event up anyway, just later.
         log.error('webhook: no se pudo lanzar el handler', error);
-      }
+      });
     }, config.webhookDebounceMs),
   };
   pending.set(key, entry);
+}
+
+// With DATABASE_URL (#235, stage 3), a job in the queue that the runner
+// starts (jobs/runner.ts): one already queued for the same thing isn't
+// queued twice. Without it, its process right away, as before.
+async function startHandler(request: EventHandlerRequest): Promise<void> {
+  const db = getDb();
+  if (!db) {
+    launchWorker('server/api/webhooks/handler', request);
+    return;
+  }
+  const dedupeKey = `event:${JSON.stringify([request.repo, [...request.scope.flows].sort(), [...request.scope.resources].sort()])}`;
+  const id = await enqueue(db, 'event', { repo: request.repo, payload: request, dedupeKey });
+  if (!id) log.info(`webhook: ya hay uno en cola para ${request.scope.resources.join(', ')}, este no hace falta`);
 }
 
 function readBody(req: IncomingMessage): Promise<Buffer> {

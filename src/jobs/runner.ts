@@ -1,0 +1,71 @@
+import { hostname } from 'node:os';
+import type { Db } from '../db/db.js';
+import { log } from '../core/logger.js';
+import { launchScript } from '../core/worker-launch.js';
+import { claimNext, finish, reapExpired, type Job, type JobKind } from './store.js';
+
+// The local runner (#235, stage 3): a loop inside the server that takes the
+// queue's jobs and starts each in its own process — as the cron and the
+// webhook server did — so one that hangs doesn't hold the rest. The process
+// renews the job's lease itself (child.ts): restarting the server leaves it
+// running.
+
+// How many of each run at once: one tick (a second one waits its turn, as
+// .tick.pending made it), and the events' handlers, which mostly wait on
+// their issue's lock.
+export const CAPS: Record<JobKind, number> = { tick: 1, event: 20 };
+
+const SCRIPTS: Record<JobKind, (job: Job) => [string, string[]]> = {
+  tick: () => ['index', []],
+  event: (job) => ['server/api/webhooks/handler', [JSON.stringify(job.payload)]],
+};
+
+const POLL_MS = 2000;
+const REAP_EVERY = 15;
+
+export function runnerName(): string {
+  return `${hostname()}:${process.pid}`;
+}
+
+// One pass: the lost ones marked, and every job there's room for started.
+export async function runOnce(db: Db, launch = launchScript): Promise<Job[]> {
+  const started: Job[] = [];
+  for (const kind of Object.keys(CAPS) as JobKind[]) {
+    for (let job = await claimNext(db, kind, CAPS[kind], runnerName()); job; job = await claimNext(db, kind, CAPS[kind], runnerName())) {
+      const [script, args] = SCRIPTS[kind](job);
+      try {
+        const pid = launch(script, args, { RONIN_JOB_ID: job.id });
+        if (!pid) throw new Error('el proceso no arrancó');
+        log.info(`cola: ${kind} ${job.id}${job.repo ? ` (${job.repo})` : ''} arrancó, pid ${pid}`);
+        started.push(job);
+      } catch (error) {
+        log.error(`cola: no se pudo arrancar ${kind} ${job.id}`, error);
+        await finish(db, job.id, { error: (error as Error).message });
+      }
+    }
+  }
+  return started;
+}
+
+export function startRunner(db: Db): () => void {
+  let passes = 0;
+  let busy = false;
+  const timer = setInterval(async () => {
+    if (busy) return;
+    busy = true;
+    try {
+      if (passes++ % REAP_EVERY === 0) {
+        const lost = await reapExpired(db);
+        if (lost) log.error(`cola: ${lost} trabajo(s) perdido(s): su proceso dejó de renovar el lease`);
+      }
+      await runOnce(db);
+    } catch (error) {
+      log.error('cola: falló una vuelta del runner', error);
+    } finally {
+      busy = false;
+    }
+  }, POLL_MS);
+  timer.unref();
+  log.info(`cola: runner local ${runnerName()} tomando trabajos (tick: ${CAPS.tick}, eventos: ${CAPS.event})`);
+  return () => clearInterval(timer);
+}

@@ -5535,6 +5535,7 @@ const AJ_SETTINGS = {
   'agent.reviewWorkerModel': ['Modelo de los revisores', 'Los agentes que juntan candidatos en la review de PRs externos; el orquestador usa el modelo de arriba.', ''],
   'agent.taskTimeoutMinutes': ['Tope de una corrida', 'Pasado este tiempo, una corrida de claude -p se considera colgada y se corta.', 'min'],
   'agent.handlerTimeoutMinutes': ['Tope de un webhook', 'Todo lo que hace un evento de GitHub: esperar su turno, un lugar y cada agente que lance.', 'min'],
+  'tick.intervalMinutes': ['Cada cuánto corre el tick', 'La conciliación de todos los repos, contada desde la hora en punto (30: a las :00 y a las :30). Solo con la base de datos: sin ella, la frecuencia la decide el cron.', 'min'],
   'tick.concurrency': ['Tareas por repo', 'Las que corren juntas en cada repo, de todos los flujos (issues, reviews, /spike, changelog, exploración). Cada repo tiene su propia cola, y puede tener su número en Repos.', 'a la vez'],
   'tick.externalReviewConcurrency': ['De ellas, reviews externas', 'Cada review es un orquestador con sus revisores: tres juntas agotaron el límite de la cuenta.', 'a la vez'],
   'retry.e2e': ['La misma falla de CI', 'Veces que se intenta arreglar una misma falla antes de bloquear.', 'veces'],
@@ -5683,7 +5684,7 @@ const AJ_PAGES = {
       <section class="aj-sec"><h2>Por tipo de tarea</h2><p class="aj-d">Gana sobre el de arriba y sobre <code>AGENT_MODEL_&lt;TIPO&gt;</code> de .env. Un repo puede tener los suyos en <a href="/ajustes/repos" data-aj-link="repos">Repos</a>.</p>
         <div class="aj-card"><table class="aj-tbl aj-tasks"><thead><tr><th>Tarea</th><th>Modelo</th><th>Esfuerzo</th></tr></thead><tbody>${tareas}</tbody></table></div></section>
       ${ajSec('Tiempos', row('agent.taskTimeoutMinutes') + row('agent.handlerTimeoutMinutes'))}
-      ${ajSec('Concurrencia', row('tick.concurrency') + row('tick.externalReviewConcurrency'))}
+      ${ajSec('Concurrencia', row('tick.intervalMinutes') + row('tick.concurrency') + row('tick.externalReviewConcurrency'))}
       ${ajSec('Antes de bloquear', row('retry.e2e') + row('retry.e2eHard') + row('retry.checksPending') + row('retry.slice') + row('retry.retarget') + row('retry.issueError'), 'Cuántas veces intenta ronin antes de pedir ayuda (docs/BLOCKING.md).')}`;
   },
   // #234: the plan each account pays, for Métricas → Suscripción.

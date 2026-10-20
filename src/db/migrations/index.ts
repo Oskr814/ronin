@@ -3,6 +3,7 @@ import * as m0001 from './0001_ajustes.js';
 import * as m0002 from './0002_despliegues.js';
 import * as m0003 from './0003_reuniones.js';
 import * as m0004 from './0004_portal.js';
+import * as m0005 from './0005_jobs.js';
 
 // Every migration, in order, by name. Listed here rather than read from the
 // folder: they're compiled into dist like the rest, and a missing one is a
@@ -13,4 +14,5 @@ export const migrations: Record<string, Migration> = {
   '0002_despliegues': m0002,
   '0003_reuniones': m0003,
   '0004_portal': m0004,
+  '0005_jobs': m0005,
 };

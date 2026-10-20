@@ -9,7 +9,7 @@ ronin no es un proceso que queda corriendo con un agente adentro. Hay dos formas
 
 ## El tick
 
-`pnpm start` corre un tick y termina. Lo dispara el cron, cada 5 minutos por defecto. En cada tick:
+`pnpm start` corre un tick y termina. Lo pone en cola el servidor cada 30 minutos (con [la base de datos](/ronin/operar/base-de-datos/)), o lo dispara el cron. En cada tick:
 
 <Steps>
 
@@ -23,7 +23,7 @@ ronin no es un proceso que queda corriendo con un agente adentro. Hay dos formas
 
 </Steps>
 
-Cada acción es una corrida de Claude aislada en su worktree, que termina al completar su unidad de trabajo. **Un tick a la vez por máquina:** si el cron dispara mientras otro sigue corriendo, el que corre hace otra vuelta al terminar.
+Cada acción es una corrida de Claude aislada en su worktree, que termina al completar su unidad de trabajo. **Un tick a la vez por máquina:** si llega la hora del siguiente mientras otro sigue corriendo, queda uno en cola y corre al terminar el anterior.
 
 ## Los eventos
 

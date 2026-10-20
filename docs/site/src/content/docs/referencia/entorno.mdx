@@ -33,6 +33,7 @@ En [Ajustes](/ronin/operar/ajustes/), el valor del tablero gana sobre el de `.en
 | `AGENT_MODEL`, `AGENT_EFFORT` | `opus`, `high` | Modelo y esfuerzo de todas las corridas. |
 | `AGENT_MODEL_<TIPO>`, `AGENT_EFFORT_<TIPO>` | — | Por tipo de tarea, en mayúsculas: `AGENT_MODEL_FIX_REVIEW=sonnet`. |
 | `AGENT_TASK_TIMEOUT_MINUTES` | `30` | Cuánto puede tardar una corrida antes de darla por colgada. |
+| `TICK_INTERVAL_MINUTES` | `30` | Cada cuánto el servidor pone en cola un tick, desde la hora en punto. Solo con `DATABASE_URL`. |
 | `TICK_CONCURRENCY` | `3` | Tareas a la vez por repo, de todos los flujos. |
 | `EXTERNAL_REVIEW_CONCURRENCY` | `2` | Cuántas de esas pueden ser reviews de PRs de personas. |
 | `EXTERNAL_REVIEW_WORKER_MODEL` | `sonnet` | El modelo de los agentes que revisan cada dimensión de esas reviews. |
