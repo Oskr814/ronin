@@ -3,6 +3,7 @@ import { log } from '../../core/logger.js';
 import type { RepoEntry } from '../../core/repo-context.js';
 import { GithubUserError } from './github-as-user.js';
 import type { Perms } from './team.js';
+import { timed } from '../../core/timing.js';
 
 // Which repos of repos.json a dashboard session sees (#106). Administrators
 // (DASHBOARD_ADMINS) see them all. Anyone else sees the ones GitHub says
@@ -38,10 +39,10 @@ export const enough = (permission: Permission | null) => permission !== null && 
 // The person's permission on one repo, with their token. 404: no access. A
 // 401 (token revoked or expired) is the session's end, as with the actions.
 export async function repoPermission(token: string, repo: string): Promise<Permission | null> {
-  const response = await fetch(`https://api.github.com/repos/${repo}`, {
+  const response = await timed('github', () => fetch(`https://api.github.com/repos/${repo}`, {
     headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', 'User-Agent': 'ronin-dashboard' },
     signal: AbortSignal.timeout(15_000),
-  });
+  }));
   if (response.status === 401) throw new GithubUserError('Tu sesión de GitHub venció o se revocó. Volvé a entrar.', true);
   // An org that restricts OAuth apps answers 403 or 404 too: no access until it approves the dashboard.
   if (response.status === 404 || response.status === 403) return null;

@@ -71,6 +71,7 @@ import { concurrencyFor, config, LABEL_DIRECT_ISSUE, LABEL_MANAGED, LABEL_STACK_
 import { activeRepo, withActiveRepo } from './core/repo-context.js';
 import { loadRepos } from './core/repos.js';
 import { log } from './core/logger.js';
+import { measure, type Measurement } from './core/timing.js';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
@@ -1144,10 +1145,13 @@ export interface Scope {
 // taken, a handler waits for it. Never holds anything else while it waits —
 // whoever has a step's lock is running it, not waiting — so it can't
 // deadlock with the resources a handler pinned.
-async function repoStep(scope: Scope | undefined, flow: Flow, fn: () => Promise<void>): Promise<void> {
+// `steps` gets how long each step took (#235, stage 1), for tick_complete.
+async function repoStep(scope: Scope | undefined, flow: Flow, fn: () => Promise<void>, steps?: Record<string, number>): Promise<void> {
   if (scope && !scope.flows.includes(flow)) return;
+  const start = performance.now();
   const ran = await withResourceLock(flow, scope ? 'wait' : 'skip', fn);
   if (!ran) log.info(`${flow}: ya lo está haciendo otro proceso, se salta`);
+  else if (steps) steps[flow] = Math.round(performance.now() - start);
 }
 
 function numbersOf(resources: string[], prefix: 'pr' | 'issue'): number[] {
@@ -1174,8 +1178,15 @@ export async function cycleFirst(issues: TrackingIssue[]): Promise<TrackingIssue
   }
 }
 
-async function tickOneRepo(scope?: Scope): Promise<void> {
+// Measured (core/timing.ts): its steps, its discovery, its jobs and how much
+// of it went to GitHub go in tick_complete.
+function tickOneRepo(scope?: Scope): Promise<void> {
+  return measure((measurement) => tickRepo(scope, measurement));
+}
+
+async function tickRepo(scope: Scope | undefined, measurement: Measurement): Promise<void> {
   const start = Date.now();
+  const steps: Record<string, number> = {};
   resetTickMetrics();
   const runs = (flow: Flow) => !scope || scope.flows.includes(flow);
   if (scope) log.info(`evento en ${activeRepo().productRepo}: ${scope.flows.join(', ')} sobre ${scope.resources.join(', ')}`);
@@ -1183,7 +1194,7 @@ async function tickOneRepo(scope?: Scope): Promise<void> {
   let justStarted: TrackingIssue[] = [];
   await repoStep(scope, 'assign', async () => {
     justStarted = [...(await discoverAssignedSpecs()), ...(await discoverAssignedIssues())];
-  });
+  }, steps);
   // The Linear projects and cycles still owed to issues ronin opened (#101);
   // a failure is only logged, and retried next tick.
   if (!scope) await processLinearAssignments().catch((error) => log.error('Linear: no se pudieron aplicar los proyectos pendientes', error));
@@ -1201,19 +1212,22 @@ async function tickOneRepo(scope?: Scope): Promise<void> {
     } catch (error) {
       log.error('worktrees: no se pudieron barrer los de PRs cerrados', error);
     }
-  });
+  }, steps);
   // Before the flows, so a merge doesn't wait behind a long review run.
-  await repoStep(scope, 'auto-merge', () => sweepAutoMerge().catch((error) => log.error('auto-merge: no se pudieron revisar los PRs con el label', error)));
-  await repoStep(scope, 'portal', () => followPortalIssues().catch((error) => log.error('portal: no se pudieron seguir los issues de los pedidos', error)));
+  await repoStep(scope, 'auto-merge', () => sweepAutoMerge().catch((error) => log.error('auto-merge: no se pudieron revisar los PRs con el label', error)), steps);
+  await repoStep(scope, 'portal', () => followPortalIssues().catch((error) => log.error('portal: no se pudieron seguir los issues de los pedidos', error)), steps);
   // The releases published from the dashboard (#158): how their workflow ended.
-  if (activeRepo().deploy) await repoStep(scope, 'deploys', () => followDeploys().catch((error) => log.error('deploy: no se pudieron seguir los despliegues', error)));
+  if (activeRepo().deploy) await repoStep(scope, 'deploys', () => followDeploys().catch((error) => log.error('deploy: no se pudieron seguir los despliegues', error)), steps);
 
   // What this run's jobs are narrowed to — the event's resources, plus any
   // issue its assignment just started.
   const resources = scope ? [...scope.resources, ...justStarted.map((issue) => issueResource(issue.number))] : null;
   let inProgress: TrackingIssue[] = [];
   let allPrs: PullRequestStatus[] | null = null;
+  let discoveryMs: number | undefined;
+  let jobsMs: number | undefined;
   try {
+    const discoveryStart = performance.now();
     if (runs('issues') || runs('idle-commands')) {
       inProgress = await listTrackingIssues('in-progress');
       // Merge in whatever this same run just moved to in-progress — GitHub's
@@ -1242,7 +1256,7 @@ async function tickOneRepo(scope?: Scope): Promise<void> {
     }
     // Only starts a separate process (see exploration/schedule.ts), so it
     // never holds this tick up; a failure here is logged, never escalated.
-    await repoStep(scope, 'nightly', () => maybeLaunchNightlyExploration().catch((error) => log.error('exploración nocturna: no se pudo lanzar', error)));
+    await repoStep(scope, 'nightly', () => maybeLaunchNightlyExploration().catch((error) => log.error('exploración nocturna: no se pudo lanzar', error)), steps);
 
     // Every flow's discovery at once, then all of their work in one pool:
     // a long external review no longer holds back an issue's quick fix, a
@@ -1262,14 +1276,21 @@ async function tickOneRepo(scope?: Scope): Promise<void> {
       runs('exploration') ? explorationPrJobs() : [],
     ]);
     const jobs = discovered.flat().filter((job) => !resources || job.resources.some((r) => resources.includes(r)));
+    discoveryMs = Math.round(performance.now() - discoveryStart);
+    const jobsStart = performance.now();
     await runJobs(jobs.map(guarded), concurrencyFor(), JOB_CAPS);
+    jobsMs = Math.round(performance.now() - jobsStart);
   } finally {
     // Always emitted, even when a discovery failed — durationMs vs.
     // agentRunsDurationMs is what tells whether a tick was mostly spent
     // waiting on sequential `claude -p` runs (an argument for parallelizing
     // them) or on something else entirely.
     const { agentRuns, agentRunsDurationMs } = getTickAgentMetrics();
-    log.metric(scope ? 'event_complete' : 'tick_complete', { durationMs: Date.now() - start, issuesInProgress: inProgress.length, agentRuns, agentRunsDurationMs, repo: activeRepo().productRepo });
+    const github = measurement.spans.get('github');
+    log.metric(scope ? 'event_complete' : 'tick_complete', {
+      durationMs: Date.now() - start, issuesInProgress: inProgress.length, agentRuns, agentRunsDurationMs, repo: activeRepo().productRepo,
+      steps, discoveryMs, jobsMs, githubMs: Math.round(github?.ms ?? 0), githubCalls: github?.count ?? 0,
+    });
   }
 }
 

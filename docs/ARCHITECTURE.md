@@ -245,6 +245,8 @@ Los trabajos que estaban corriendo vuelven a la cola cuando vencen sus leases. L
 
 ### Rendimiento
 
+> **Hecho** (etapa 1): ver [`DESIGN.md` §21](DESIGN.md#21-tiempos-235-etapa-1).
+
 Antes de optimizar nada, se mide (etapa 1):
 - **Cada request** de la API del tablero y del portal: cabecera `Server-Timing` (lectura de datos, GitHub, armado) y una línea de log para los que pasan de 500 ms.
 - **Cada paso del tick:** su duración en el log, junto al `tick_complete` que ya existe.

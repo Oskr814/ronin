@@ -17,6 +17,7 @@ import { createPortalHandler, missingPortalConfig } from './portal.js';
 import { createPublicHandler } from './public.js';
 import { createTailnetHandler } from './tailnet.js';
 import { loadTeam } from './api/team.js';
+import { timedRequests } from './timing.js';
 
 if (!config.webhookSecret) {
   throw new Error('WEBHOOK_SECRET no está seteado — ver .env.example. El servidor no puede arrancar sin validar las firmas de GitHub.');
@@ -39,7 +40,7 @@ const missingPortal = missingPortalConfig(config.portal);
 if (missingPortal.length > 0) log.info(`portal de pedidos desactivado: falta ${missingPortal.join(', ')} en .env`);
 const portal = missingPortal.length === 0 ? createPortalHandler(config.portal) : undefined;
 
-serve(createPublicHandler(undefined, portal)).listen(config.serverPort, () => {
+serve(timedRequests('público', createPublicHandler(undefined, portal))).listen(config.serverPort, () => {
   log.info(`ronin-server escuchando en :${config.serverPort} (público: los webhooks de GitHub${portal ? ` y el portal de pedidos, ${config.portal.url}` : ''})`);
 });
 
@@ -50,7 +51,7 @@ if (missing.length > 0) {
   // The team's admins and who gets in (#174) on top of .env's, before the first request.
   await loadTeam();
   // 127.0.0.1 only: what reaches it is `tailscale serve`, never the LAN.
-  serve(createTailnetHandler(config.dashboard)).listen(config.dashboard.tailnetPort, '127.0.0.1', () => {
+  serve(timedRequests('tablero', createTailnetHandler(config.dashboard))).listen(config.dashboard.tailnetPort, '127.0.0.1', () => {
     log.info(`tablero escuchando en 127.0.0.1:${config.dashboard.tailnetPort}, publicado en la tailnet como ${config.dashboard.url} (administradores: ${config.dashboard.admins.join(', ') || 'ninguno'})`);
   });
 }
