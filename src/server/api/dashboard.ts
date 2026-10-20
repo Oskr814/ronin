@@ -108,6 +108,13 @@ function currentAccess(): Access {
   return access;
 }
 
+// Every repo's GitHub and Linear read, started when the server comes up:
+// otherwise the first visit after a restart (each deploy) waited for all of
+// it — 7 s on 2026-10-20. A failed read stays in its cache, as any read's does.
+export async function warmDashboard(): Promise<void> {
+  await Promise.all((await loadRepos()).map(async (entry) => repoLinear(entry, await repoGithub(entry))));
+}
+
 async function visibleRepos() {
   const access = currentAccess();
   return (await loadRepos()).filter((entry) => sees(access, entry.productRepo));

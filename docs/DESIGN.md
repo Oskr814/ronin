@@ -89,6 +89,7 @@ Mientras el PR de un spec que escribió ronin con `/spec` sigue en draft, mencio
   - PR abierto → slice en curso (con `ronin:stack-prs`, pueden ser varios PRs de un mismo issue abiertos a la vez, cada uno una slice apilada sobre la anterior; sin el label, a lo sumo uno)
   - comentarios sin resolver → ciclo de fix
   - PR **approved** y en verde → espera a que un humano lo mergee; al tick siguiente ronin marca la slice como mergeada (`syncMergedSlices`), mueve a su base los PRs apilados encima y, si era la última, pasa el issue a `done`
+  - issue **cerrado** con `in-progress` → el tick (`finishClosedIssues`) anota las slices que se mergearon y lo pasa a `done`, aunque le queden slices sin mergear (lo cerró una persona a mano), salvo que una de ellas tenga su PR abierto: entonces espera a ese PR. Un issue `done` que se reabre no se retoma solo
   - Sin `ronin:stack-prs`: la siguiente slice recién arranca cuando el stack queda vacío. Con `ronin:stack-prs`: un PR abierto (aunque no esté mergeado) ya dispara la siguiente slice apilada encima. ronin no rebasea ningún PR contra `main`: si hace falta ponerlo al día, lo hace el humano que mergea (p. ej. con "Update branch" de GitHub). Solo vigila que el PR de menor índice apunte a `main` después del retarget
 
 ### 2.1 Template del issue de tracking
@@ -667,7 +668,7 @@ Por repo, dos llamadas:
 
 A eso se suman los motivos de bloqueo y las previews arriba.
 
-Cada repo se vuelve a leer a los `DASHBOARD_GITHUB_TTL_SECONDS` (60), o antes si una corrida suya empezó o terminó después de la última lectura. Mientras tanto se muestra la lectura anterior, así que varias pestañas abiertas no multiplican las llamadas. Si GitHub falla, se conserva la última lectura con el error, que la página muestra, y las corridas locales se siguen viendo. Las previews no entran en esa caché: son archivos de esta máquina y se leen en cada pedido, así que una preview que terminó de preparar sus datos ofrece su URL en el siguiente refresco.
+El servidor hace la primera lectura de cada repo (GitHub y Linear) al arrancar (`warmDashboard`), para que la primera visita después de un reinicio no la espere. Cada repo se vuelve a leer a los `DASHBOARD_GITHUB_TTL_SECONDS` (60), o antes si una corrida suya empezó o terminó después de la última lectura. Mientras tanto se muestra la lectura anterior, así que varias pestañas abiertas no multiplican las llamadas. Si GitHub falla, se conserva la última lectura con el error, que la página muestra, y las corridas locales se siguen viendo. Las previews no entran en esa caché: son archivos de esta máquina y se leen en cada pedido, así que una preview que terminó de preparar sus datos ofrece su URL en el siguiente refresco.
 
 `dashboard-items.ts` arma los ítems de la barra lateral con eso y con las corridas: estado, lo que espera cada issue, slices, el PR que avanza y su preview.
 
@@ -1321,6 +1322,7 @@ Para los admins, y para quien tenga *Desplegar* en ese repo (Ajustes → Usuario
 
   Mientras se escribe, el servidor planea (`POST …/plan`, con 450 ms de espera): el tag, la prueba del cherry-pick ("✓ se aplica limpio sobre v…", o el PR que choca y el que falta) y las apps que cambian. *Publicar* se habilita solo con un plan vigente y sin problemas, y manda su `fingerprint`.
 - **Se relee cada 30 segundos,** o cada 10 mientras corre un workflow, y no mientras el diálogo está abierto.
+- **Lo que lee de GitHub se guarda en caché:** el `fetch`, los releases y los PRs mergeados (`readRepo`) se vuelven a leer a los `DASHBOARD_GITHUB_TTL_SECONDS` (60) y, mientras tanto, la página sirve la lectura anterior (como 15.8). Publicar la descarta. El plan y la publicación leen siempre de nuevo, y el workflow en curso se sigue en cada lectura.
 
 #### 18.8 Activarlo
 

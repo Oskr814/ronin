@@ -171,7 +171,7 @@ vi.mock('./changelog/changelog.js', () => ({
   findReleasesNeedingChangelog: (...args: unknown[]) => findReleasesNeedingChangelog(...args),
 }));
 
-const { runScoped, runIssueStep, idleCommandJobs, specRevisionJobs, processSlicePr, processIssue, agentTaskFor, needsMoreInfo, discoverAssignedIssues, processExternalReviewCandidate, processTrustedFixCandidate, runExternalReviews, processSpikeCandidate, processChangelogCandidate, runChangelogUpdates, renderTrackingIssueBody, cycleFirst } = await import('./tick.js');
+const { runScoped, runIssueStep, idleCommandJobs, specRevisionJobs, processSlicePr, processIssue, finishClosedIssues, agentTaskFor, needsMoreInfo, discoverAssignedIssues, processExternalReviewCandidate, processTrustedFixCandidate, runExternalReviews, processSpikeCandidate, processChangelogCandidate, runChangelogUpdates, renderTrackingIssueBody, cycleFirst } = await import('./tick.js');
 
 function issue(overrides: Partial<TrackingIssue> = {}): TrackingIssue {
   return { number: 228, title: 'Test issue', url: 'https://github.com/x/y/issues/228', labels: [], ...overrides };
@@ -757,6 +757,34 @@ describe('processIssue — starting a next slice while the stack is still open',
     const result = await processIssue(issue({ labels: ['ronin:stack-prs'] }), [openBottomPr()]);
 
     expect(result).toEqual({ issue: issue({ labels: ['ronin:stack-prs'] }), index: 1, title: 'Slice 2', stackSize: 1 });
+  });
+});
+
+describe('finishClosedIssues — closed issues still labeled in-progress', () => {
+  const slice = (index: number, checked: boolean, prNumber: number | null) => ({ index, title: `Slice ${index + 1}`, checked, prNumber });
+
+  beforeEach(() => {
+    listTrackingIssues.mockResolvedValue([issue()]);
+  });
+
+  it('marks done one whose slices all merged', async () => {
+    getSlices.mockResolvedValue([slice(0, true, 229)]);
+    await finishClosedIssues([]);
+    expect(setIssueState).toHaveBeenCalledWith(228, 'done');
+  });
+
+  it('marks done one closed by hand with a slice never merged and no PR open', async () => {
+    getSlices.mockResolvedValue([slice(0, true, 229), slice(1, false, 230), slice(2, false, null)]);
+    getPullRequestStatus.mockResolvedValue(pr({ number: 230, state: 'CLOSED' }));
+    await finishClosedIssues([]);
+    expect(setIssueState).toHaveBeenCalledWith(228, 'done');
+  });
+
+  it('waits while a pending slice still has its PR open', async () => {
+    getSlices.mockResolvedValue([slice(0, false, 229)]);
+    await finishClosedIssues([pr({ number: 229 })]);
+    expect(setIssueState).not.toHaveBeenCalled();
+    expect(getPullRequestStatus).not.toHaveBeenCalled();
   });
 });
 
