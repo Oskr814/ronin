@@ -73,6 +73,25 @@ export interface MeetingsTable {
   updated_at: Stamp;
 }
 
+// The portal's accounts (portal/accounts.ts), each its record as a document.
+export interface PortalUsersTable {
+  id: string;
+  email: string;
+  data: Json<unknown>;
+  updated_at: Stamp;
+}
+
+// The portal's requests (portal/requests.ts), each its record as a document.
+export interface PortalRequestsTable {
+  number: number;
+  user_id: string;
+  repo: string;
+  status: string;
+  data: Json<unknown>;
+  created_at: ColumnType<Date, string, string>;
+  updated_at: ColumnType<Date, string, string>;
+}
+
 export interface Database {
   settings: SettingsTable;
   task_settings: TaskSettingsTable;
@@ -80,4 +99,6 @@ export interface Database {
   settings_log: SettingsLogTable;
   deploys: DeploysTable;
   meetings: MeetingsTable;
+  portal_users: PortalUsersTable;
+  portal_requests: PortalRequestsTable;
 }

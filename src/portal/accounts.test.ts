@@ -2,11 +2,19 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { readFile, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { config } from '../core/config.js';
+import { getDb } from '../db/db.js';
 import { adminView, createUser, findUserByEmail, getUser, issueLink, LINK_TTL_MS, listUsers, redeemLink, updateUser, userForLink } from './accounts.js';
 
 vi.mock('../core/logger.js', () => ({ log: { info: vi.fn(), error: vi.fn() } }));
 
 const file = () => join(config.portal.dataDir, 'accounts.json');
+// store.pg.test.ts runs these again with the accounts in Postgres. What's
+// kept, as text: the file, or the table's rows.
+const onFiles = process.env.RONIN_TEST_STORE !== 'pg';
+const stored = async () => {
+  const db = getDb();
+  return db ? JSON.stringify(await db.selectFrom('portal_users').selectAll().execute()) : readFile(file(), 'utf8');
+};
 const maria = { email: ' MFernandez@RedMotosHN.com ', name: 'María Fernández', grants: [{ repo: 'redmotos/shoppingcart', app: 'backoffice' }], createdBy: 'oskr814' };
 
 beforeEach(async () => {
@@ -19,7 +27,7 @@ describe('portal accounts', () => {
     expect(user).toMatchObject({ email: 'mfernandez@redmotoshn.com', name: 'María Fernández', disabled: false, sessionVersion: 1, createdBy: 'oskr814' });
     expect(user.passwordHash).toBeUndefined();
     expect((await findUserByEmail('MFERNANDEZ@redmotoshn.com'))?.id).toBe(user.id);
-    expect((await stat(file())).mode & 0o777).toBe(0o600);
+    if (onFiles) expect((await stat(file())).mode & 0o777).toBe(0o600);
   });
 
   it('refuses a second account with the same email, and an invalid one', async () => {
@@ -33,7 +41,7 @@ describe('portal accounts', () => {
   it('sets the password with a link once, and only while it lasts; the token is stored only as its hash', async () => {
     const user = await createUser(maria);
     const { token } = await issueLink(user.id, 'invite');
-    expect(await readFile(file(), 'utf8')).not.toContain(token);
+    expect(await stored()).not.toContain(token);
     expect((await userForLink(token))?.id).toBe(user.id);
 
     const done = await redeemLink(token, 'scrypt$hash');
@@ -83,7 +91,7 @@ describe('portal accounts', () => {
     expect(JSON.stringify(view)).not.toMatch(/scrypt|tokenHash/);
   });
 
-  it('a file that does not read is an error, never an empty list', async () => {
+  it.skipIf(!onFiles)('a file that does not read is an error, never an empty list', async () => {
     await createUser(maria);
     const { writeFile } = await import('node:fs/promises');
     await writeFile(file(), '{ roto');
