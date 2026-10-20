@@ -22,6 +22,7 @@ const discussion = (number: number, extra: Record<string, unknown> = {}) => ({ n
 const NEW_REF = { kind: 'issue' as const, number: 901 };
 const unmanaged = (labels: string[] = []) => gh({ openIssues: [{ number: 901, title: '', url: '', labels }] });
 const assign = vi.fn();
+const close = vi.fn();
 const APPS = ['webapp', 'backoffice'];
 const PR_REF = { kind: 'pr' as const, number: 849, issue: 844 };
 const ids = (actions: Array<{ id: string }>) => actions.map((a) => a.id);
@@ -29,6 +30,7 @@ const ids = (actions: Array<{ id: string }>) => actions.map((a) => a.id);
 beforeEach(() => {
   setIssueState.mockReset();
   assign.mockReset().mockResolvedValue({ url: 'https://github.com/acme/product/issues/901' });
+  close.mockReset().mockResolvedValue({ url: 'https://github.com/acme/product/issues/844' });
   post.mockReset().mockResolvedValue({ id: 77, url: 'https://github.com/acme/product/pull/849#issuecomment-77' });
 });
 
@@ -57,22 +59,24 @@ describe('listActions', () => {
 
   it("gives a blocked issue the way to unblock it, and its PR's commands aimed at the PR", () => {
     const actions = listActions({ kind: 'issue', number: 844, pr: 849 }, gh(), undefined, 'Oskr814');
-    expect(ids(actions)).toEqual(['unblock', 'resolve-conflicts', 'preview', 'auto-merge-on']);
+    expect(ids(actions)).toEqual(['unblock', 'resolve-conflicts', 'preview', 'auto-merge-on', 'close-issue']);
     expect(actions[0]).toMatchObject({ target: 844, text: { required: true }, preview: '…' });
     expect(actions[1]).toMatchObject({ target: 849, label: 'Resolver conflictos en #849' });
+    expect(actions[4]).toMatchObject({ target: 844, text: { required: false }, preview: '…' });
+    expect(actions[4].help).toContain('#849 queda abierto');
   });
 
   it("offers an issue ronin doesn't manage to assign it, and a spike or a prototype on one of the repo's apps", () => {
     const actions = listActions(NEW_REF, unmanaged(), undefined, 'Oskr814', APPS);
-    expect(ids(actions)).toEqual(['assign', 'spike', 'prototype']);
+    expect(ids(actions)).toEqual(['assign', 'spike', 'prototype', 'close-issue']);
     expect(actions[0]).toMatchObject({ primary: true, target: 901, text: { required: false }, preview: '…' });
     expect(actions[1]).toMatchObject({ apps: APPS, preview: '@ronin-agent /spike {app} …' });
   });
 
-  it('offers only the assignment in a repo without apps, and nothing new once ronin manages the issue', () => {
-    expect(ids(listActions(NEW_REF, unmanaged(), undefined, 'Oskr814'))).toEqual(['assign']);
-    expect(listActions(NEW_REF, unmanaged(['ronin']), undefined, 'Oskr814', APPS)).toEqual([]);
-    expect(ids(listActions({ kind: 'issue', number: 844 }, gh({ openIssues: [{ number: 844, title: '', url: '', labels: [] }] }), undefined, 'Oskr814', APPS))).toEqual(['unblock']);
+  it('offers only the assignment in a repo without apps, and only closing once ronin manages the issue', () => {
+    expect(ids(listActions(NEW_REF, unmanaged(), undefined, 'Oskr814'))).toEqual(['assign', 'close-issue']);
+    expect(ids(listActions(NEW_REF, unmanaged(['ronin']), undefined, 'Oskr814', APPS))).toEqual(['close-issue']);
+    expect(ids(listActions({ kind: 'issue', number: 844 }, gh({ openIssues: [{ number: 844, title: '', url: '', labels: [] }] }), undefined, 'Oskr814', APPS))).toEqual(['unblock', 'close-issue']);
   });
 
   it('offers nothing for a PR that is no longer open', () => {
@@ -146,6 +150,26 @@ describe('runAction', () => {
   it("refuses a spike on an app the repo doesn't have", async () => {
     await expect(runAction(ENTRY, NEW_REF, unmanaged(), undefined, SESSION, 'spike', '', post, APPS, 'otra', assign)).rejects.toThrow('Falta la app');
     expect(post).not.toHaveBeenCalled();
+  });
+
+  it('closes an issue as the person, after leaving the reason as a plain comment', async () => {
+    const done = await runAction(ENTRY, NEW_REF, unmanaged(), undefined, SESSION, 'close-issue', '  Lo cubre otro issue ', post, [], undefined, assign, close);
+    expect(post).toHaveBeenCalledWith('gho_user', 'acme/product', 901, 'Lo cubre otro issue');
+    expect(close).toHaveBeenCalledWith('gho_user', 'acme/product', 901);
+    expect(post.mock.invocationCallOrder[0]).toBeLessThan(close.mock.invocationCallOrder[0]);
+    expect(done).toEqual({ url: 'https://github.com/acme/product/issues/844' });
+  });
+
+  it('closes without commenting when there is no reason', async () => {
+    await runAction(ENTRY, NEW_REF, unmanaged(), undefined, SESSION, 'close-issue', '', post, [], undefined, assign, close);
+    expect(post).not.toHaveBeenCalled();
+    expect(close).toHaveBeenCalledOnce();
+  });
+
+  it('does not close when GitHub refused the reason', async () => {
+    post.mockRejectedValueOnce(new Error('403'));
+    await expect(runAction(ENTRY, NEW_REF, unmanaged(), undefined, SESSION, 'close-issue', 'motivo', post, [], undefined, assign, close)).rejects.toThrow('403');
+    expect(close).not.toHaveBeenCalled();
   });
 
   it('does not unblock when GitHub refused the comment', async () => {
