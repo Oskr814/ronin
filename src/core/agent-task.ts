@@ -8,6 +8,7 @@ import { config, agentModelFor, agentEffortFor } from './config.js';
 import { activeRepo } from './repo-context.js';
 import { log } from './logger.js';
 import { recordAgentRun } from './metrics.js';
+import { currentRunGroup } from './run-group.js';
 
 // The mechanics every agent run shares: the checkout it runs in, `claude -p`
 // with its type's model and effort, the run record, metrics and cleanup.
@@ -121,6 +122,7 @@ export async function runAgentTask(task: AgentTask): Promise<string> {
   const start = Date.now();
   const model = agentModelFor(task.type);
   const effort = agentEffortFor(task.type);
+  const group = currentRunGroup();
   // The run's own record, for the dashboard (run-record.ts).
   const record = RunRecord.start({
     repo: activeRepo().productRepo,
@@ -131,6 +133,7 @@ export async function runAgentTask(task: AgentTask): Promise<string> {
     ...(task.requestNumber !== undefined ? { portalRequest: task.requestNumber } : {}),
     ...(task.meetingNumber !== undefined ? { meeting: task.meetingNumber } : {}),
     ...(task.sliceIndex !== undefined ? { sliceIndex: task.sliceIndex, sliceTitle: task.sliceTitle } : {}),
+    ...(group ? { group } : {}),
     ...(model ? { model } : {}),
     ...(effort ? { effort } : {}),
     account: accountName(activeRepo().claudeConfigDir ?? config.claudeConfigDir ?? ''),

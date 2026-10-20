@@ -13,6 +13,8 @@ export interface TimelineRun {
   repo: string;
   itemId: string;
   taskType: string;
+  // What it's a step of (core/run-group.ts): "Preview: …" on its bar.
+  group?: string;
   startedAt: string;
   endedAt?: string;
   state: RunState;
@@ -78,6 +80,7 @@ export function today(runs: RunSummary[], now = new Date()): Today {
         repo: run.repo,
         itemId: itemKey(run),
         taskType: run.taskType,
+        ...(run.group ? { group: run.group } : {}),
         startedAt: run.startedAt,
         ...(run.endedAt ? { endedAt: run.endedAt } : {}),
         state: run.state,

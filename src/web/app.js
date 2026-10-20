@@ -80,6 +80,14 @@ const CHECK_STATE = { passed: ['ok', 'pasó'], pending: ['live', 'corriendo'], f
 const $ = (selector) => document.querySelector(selector);
 const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const typeName = (type) => TYPE[type] ?? type;
+// Runs that are steps of one thing (core/run-group.ts): a preview's seed
+// catalog, "¿alcanzan los seeds?" and its data are one preview.
+const GROUP_NAME = { preview: 'Preview' };
+const groupName = (run) => (run?.group ? GROUP_NAME[run.group.split(':')[0]] : undefined);
+// What a run is: its group's name, or its own task's.
+const runKind = (run) => groupName(run) ?? typeName(run.taskType);
+// A step of a group says which one: "Preview: ¿Alcanzan los seeds?".
+const runTitle = (run) => (groupName(run) ? `${groupName(run)}: ${typeName(run.taskType)}` : typeName(run.taskType));
 const dot = (state) => `<span class="dot ${(STATE[state] ?? STATE.error)[0]}" aria-hidden="true"></span>`;
 const dotClass = (cls) => `<span class="dot ${cls}" aria-hidden="true"></span>`;
 const hhmm = (iso) => new Date(iso).toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' });
@@ -191,7 +199,7 @@ const inScope = (item) => (S.scope !== 'cycle' || item.linear?.cycle?.current) &
 function itemRef(item) {
   if (item.kind === 'issue') return `#${item.number}`;
   if (item.kind === 'pr') return `PR #${item.number}`;
-  return item.lastRun ? typeName(item.lastRun.taskType) : '';
+  return item.lastRun ? runKind(item.lastRun) : '';
 }
 const safeRepo = (repo) => /^[\w.-]+\/[\w.-]+$/.test(repo);
 function githubUrl(item) {
@@ -288,7 +296,7 @@ function itemSub(item) {
   if (item.kind === 'issue' && item.pr) parts.push(`<span class="ipr">${ghIcon('pr', item.pr.isDraft ? 'draft' : 'open')}#${esc(item.pr.number)}${item.pr.author && item.pr.author !== 'ronin-agent' ? ` de ${esc(item.pr.author)}` : ''}</span>`);
   if (item.slices?.length) parts.push(esc(`${item.slices.filter((s) => s.status === 'merged').length} de ${item.slices.length} ${item.slices.length === 1 ? 'slice' : 'slices'}`));
   else if (item.kind === 'pr' && item.pr?.author && item.pr.author !== 'ronin-agent') parts.push(esc(`de ${item.pr.author}`));
-  else if (item.kind !== 'other' && !item.pr && item.lastRun) parts.push(esc(typeName(item.lastRun.taskType)));
+  else if (item.kind !== 'other' && !item.pr && item.lastRun) parts.push(esc(runKind(item.lastRun)));
   return parts.filter(Boolean).join(', ');
 }
 
@@ -499,8 +507,31 @@ function backBar(title) {
 
 // A run's task, and the PR it was on when that's not the item itself: an
 // issue's history carries its slices' PR runs too (/resolve-conflicts on #849).
-const runName = (item, run) => typeName(run.taskType) + (run.issueNumber == null && run.prNumber != null && run.prNumber !== item.number ? ` en #${run.prNumber}` : '');
+const runName = (item, run, title = runTitle) => title(run) + (run.issueNumber == null && run.prNumber != null && run.prNumber !== item.number ? ` en #${run.prNumber}` : '');
 const itemRuns = (item) => S.itemRuns[item.id] ?? (item.lastRun ? [item.lastRun] : []);
+// The item's runs as they're listed (newest first, as itemRuns): one entry
+// per run, but a group's steps together as one, its newest first. `idx`:
+// their places in itemRuns.
+function runEntries(runs) {
+  const out = [];
+  runs.forEach((run, i) => {
+    const last = out.at(-1);
+    if (groupName(run) && last?.group === run.group) last.idx.push(i);
+    else out.push({ group: groupName(run) ? run.group : undefined, idx: [i] });
+  });
+  return out;
+}
+// A group as one run: running while a step runs, else how its last step
+// ended (or the first one that failed); from its first step to its last.
+function entryRun(runs, entry) {
+  const steps = entry.idx.map((i) => runs[i]);
+  if (steps.length === 1) return steps[0];
+  const failed = steps.find((run) => ['error', 'timeout', 'cut', 'usage_limit'].includes(run.state));
+  const state = steps.some((run) => run.state === 'running') ? 'running' : failed?.state ?? steps[0].state;
+  const sum = (key) => (steps.some((run) => run[key] !== undefined) ? steps.reduce((total, run) => total + (run[key] ?? 0), 0) : undefined);
+  return { ...steps[0], state, startedAt: steps.at(-1).startedAt, durationMs: sum('durationMs'), costUsd: sum('costUsd'), ...(failed?.error ? { error: failed.error } : {}) };
+}
+const entryName = (item, runs, entry) => runName(item, runs[entry.idx[0]], entry.idx.length > 1 ? runKind : runTitle);
 // The item's page by default; the transcript for what has no page (a changelog entry).
 const viewOf = (item) => S.view[item.id] ?? (item.kind === 'other' ? 'tx' : 'ficha');
 
@@ -628,7 +659,14 @@ function renderTranscript(item, tabs) {
     return;
   }
   const index = Math.min(S.runIdx[item.id] ?? 0, runs.length - 1);
-  const pills = `<div class="runs">${back}<span class="lbl">Corridas</span>${runs.map((run, i) => `<button class="pill" data-run="${i}" aria-pressed="${i === index}">${dot(run.state)}${esc(runName(item, run))}<span class="m">${run.state === 'running' ? 'en curso' : `${hhmm(run.startedAt)}${run.durationMs !== undefined ? `, ${duration(run.durationMs)}` : ''}`}</span></button>`).join('')}</div>`;
+  const pill = (run, i, label, pressed) => `<button class="pill" data-run="${i}" aria-pressed="${pressed}">${dot(run.state)}${esc(label)}<span class="m">${run.state === 'running' ? 'en curso' : `${hhmm(run.startedAt)}${run.durationMs !== undefined ? `, ${duration(run.durationMs)}` : ''}`}</span></button>`;
+  const entries = runEntries(runs);
+  const open = entries.find((entry) => entry.idx.includes(index));
+  // A group's steps, oldest first, under its pill.
+  const steps = open.idx.length > 1
+    ? `<div class="runs steps"><span class="lbl">Pasos</span>${[...open.idx].reverse().map((i) => pill(runs[i], i, typeName(runs[i].taskType), i === index)).join('')}</div>`
+    : '';
+  const pills = `<div class="runs">${back}<span class="lbl">Corridas</span>${entries.map((entry) => pill(entryRun(runs, entry), entry.idx[0], entryName(item, runs, entry), entry === open)).join('')}</div>${steps}`;
 
   const shown = runs[index];
   const loaded = S.run && S.run.runId === shown.runId ? S.run : null;
@@ -640,7 +678,7 @@ function renderTranscript(item, tabs) {
     body = `<div class="tx" id="tx">${steps || '<div class="empty">El agente todavía no hizo nada.</div>'}${ending(loaded.summary)}</div>
       <div class="foot">${loaded.summary.state === 'running'
         ? `<span class="w">● Trabajando</span><span data-since="${esc(loaded.summary.startedAt)}"></span>`
-        : `<span>${esc(STATE[loaded.summary.state]?.[2] ?? loaded.summary.state)}</span>`}<span>${esc(typeName(loaded.summary.taskType))}</span><span class="r">${esc([loaded.summary.model, loaded.summary.worktree].filter(Boolean).join('  '))}</span></div>`;
+        : `<span>${esc(STATE[loaded.summary.state]?.[2] ?? loaded.summary.state)}</span>`}<span>${esc(runTitle(loaded.summary))}</span><span class="r">${esc([loaded.summary.model, loaded.summary.worktree].filter(Boolean).join('  '))}</span></div>`;
   }
   // Whoever was reading further up stays there, whoever was at the bottom
   // of a run still going follows it.
@@ -977,14 +1015,18 @@ function activityHTML(item) {
   const runs = itemRuns(item);
   const loading = !(item.id in S.itemRuns);
   if (runs.length === 0) return `<div class="activity"><div class="act-line"><span class="lbl">Actividad</span><span class="m">${loading ? 'Cargando…' : 'Sin corridas de agentes en los últimos 14 días.'}</span></div></div>`;
-  const latest = runs[0];
-  // The latest run is the line itself (or the card below it); the older ones, pills that open their transcript.
-  const older = runs.slice(1).map((run, i) => `<button class="pill" data-runview="${i + 1}">${dot(run.state)}${esc(runName(item, run))}<span class="m">${esc(short(Date.now() - Date.parse(run.endedAt ?? run.startedAt)))}</span></button>`).join('');
+  const entries = runEntries(runs);
+  // The latest run (a group of steps as one) is the line itself, or the card below it; the older ones, pills that open their transcript.
+  const latest = entryRun(runs, entries[0]);
+  const older = entries.slice(1).map((entry) => {
+    const run = entryRun(runs, entry);
+    return `<button class="pill" data-runview="${entry.idx[0]}">${dot(run.state)}${esc(entryName(item, runs, entry))}<span class="m">${esc(short(Date.now() - Date.parse(run.endedAt ?? run.startedAt)))}</span></button>`;
+  }).join('');
   let summary = '';
   if (latest.state !== 'running') {
     const [, , label] = STATE[latest.state] ?? STATE.error;
     const facts = [label, `hace ${short(Date.now() - Date.parse(latest.endedAt ?? latest.startedAt))}`, latest.durationMs !== undefined ? duration(latest.durationMs) : null, latest.costUsd !== undefined ? money(latest.costUsd) : null].filter(Boolean).join(' · ');
-    summary = `<span class="latest">${dot(latest.state)}<b>${esc(runName(item, latest))}</b><span class="m">${esc(facts)}</span></span>`;
+    summary = `<span class="latest">${dot(latest.state)}<b>${esc(entryName(item, runs, entries[0]))}</b><span class="m">${esc(facts)}</span></span>`;
   }
   const line = `<div class="act-line"><span class="lbl">Actividad</span>${summary}${older ? `<span class="pills">${older}</span>` : ''}<span class="sp"><button class="link" data-runview="0">transcript →</button></span></div>`;
   if (latest.state !== 'running') return `<div class="activity">${line}${latest.state === 'error' && latest.error ? `<div class="last-err">${esc(latest.error)}</div>` : ''}</div>`;
@@ -2970,7 +3012,7 @@ function renderToday() {
       const item = itemById(run.itemId);
       const [, , label] = STATE[run.state] ?? STATE.error;
       const when = `${hhmm(run.startedAt)}${run.endedAt ? `–${hhmm(run.endedAt)}` : ', en curso'}`;
-      const tip = `${typeName(run.taskType)}${item ? `\n${item.title}` : ''}\n${when}, ${label}`;
+      const tip = `${runTitle(run)}${item ? `\n${item.title}` : ''}\n${when}, ${label}`;
       const cls = run.state === 'running' ? 'live' : ['error', 'timeout', 'cut'].includes(run.state) ? 'fail' : run.state === 'usage_limit' ? 'quota' : '';
       return `<button class="bar ${cls}" style="left:${start}%;width:max(6px,${end - start}%);top:${6 + row * 15}px;background-color:${repoColor(repo)}" data-item="${esc(run.itemId)}" data-run="${esc(run.runId)}" data-tip="${esc(tip)}" aria-label="${esc(tip.replace(/\n/g, ', '))}"></button>`;
     }).join('');
@@ -3680,7 +3722,7 @@ function pedNowHTML(d) {
   const card = (cls, k, t, body = '', acts = '') => `<div class="pd-now ${cls}"><div class="k">${k}</div><div class="t">${t}</div>${body}${acts ? `<div class="acts">${acts}</div>` : ''}</div>`;
   const open = (number, label) => `<button class="btn-s" data-pitem="${esc(`${d.repo}#${number}`)}">${esc(label)}</button>`;
   if (running) {
-    return card('running', `${dotClass('live')} Ahora · ronin trabajando`, esc(`${typeName(running.taskType)}${running.issueNumber ? ` en #${running.issueNumber}` : running.prNumber ? ` en el PR #${running.prNumber}` : ''}`),
+    return card('running', `${dotClass('live')} Ahora · ronin trabajando`, esc(`${runTitle(running)}${running.issueNumber ? ` en #${running.issueNumber}` : running.prNumber ? ` en el PR #${running.prNumber}` : ''}`),
       `<div class="feed">${running.lastStep ? `▸ ${esc(running.lastStep)}` : 'Arrancando…'}</div>`, `<button class="btn-s" data-prun="${esc(running.runId)}">Ver la corrida</button>`);
   }
   if (d.waitsOn === 'ronin' && lastEvent?.kind === 'failed') {
@@ -5354,7 +5396,7 @@ function ctxHTML(item) {
   const cost = runs.reduce((sum, run) => sum + (run.costUsd ?? 0), 0);
   const failed = runs.filter((run) => ['error', 'timeout', 'cut'].includes(run.state)).length;
   html += `<section><h3>Esta corrida</h3><dl class="kv">
-    <dt>Tarea</dt><dd>${esc(typeName(shown.taskType))}${shown.sliceIndex !== undefined ? `, slice ${shown.sliceIndex + 1}` : ''}</dd>
+    <dt>Tarea</dt><dd>${esc(runTitle(shown))}${shown.sliceIndex !== undefined ? `, slice ${shown.sliceIndex + 1}` : ''}</dd>
     ${shown.model ? `<dt>Modelo</dt><dd>${esc(shown.model)}${shown.effort ? `, ${esc(shown.effort)}` : ''}</dd>` : ''}
     <dt>Cuenta</dt><dd>${esc(shown.account)}</dd>
     <dt>Empezó</dt><dd>${esc(new Date(shown.startedAt).toLocaleString('es', { dateStyle: 'short', timeStyle: 'short' }))}</dd>
