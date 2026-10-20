@@ -264,6 +264,9 @@ export interface PortalRequest {
   events?: RequestEvent[];
   // The release its change went out in, once its workflow deployed it (#158).
   deployed?: { tag: string; at: string };
+  // Why the team closed it, as written when closing its PR from the
+  // tablero: the same words go to the person when its issue closes.
+  closeNote?: { text: string; by: string; at: string };
   createdAt: string;
   updatedAt: string;
 }

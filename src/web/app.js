@@ -1505,6 +1505,7 @@ function dropHTML(item, d) {
   if (p.kind === 'close') {
     const issue = item.kind === 'issue' ? item.number : d.issue?.number;
     return `<div class="drop crit" role="dialog" aria-label="Cerrar el PR"><textarea id="dtext" rows="3" placeholder="Por qué lo cerrás (opcional). Queda como comentario en el PR.">${esc(p.text)}</textarea>
+      ${d.pedido && issue !== undefined ? `<p class="help">Es el pedido P-${esc(d.pedido.number)} del portal: si cerrás también el issue, este motivo le llega a quien lo pidió, en el portal y por correo. Sin motivo, recibe el aviso de siempre.</p>` : ''}
       ${issue !== undefined ? `<label class="dchk"><input type="checkbox" id="dissue"${p.closeIssue ? ' checked' : ''}><span>Cerrar también el issue #${esc(issue)} <kbd>I</kbd><small>Si queda abierto, ronin lo bloquea y avisa: se queda sin PR para seguir.</small></span></label>` : ''}${err}
       <footer><span class="m"><kbd>Ctrl ↵</kbd> cierra · <kbd>Esc</kbd></span><button class="btn-s" data-dcancel>Cancelar</button><button class="btn-s danger-solid" data-dsend${busy}>Cerrar el PR</button></footer></div>`;
   }

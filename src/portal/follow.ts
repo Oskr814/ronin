@@ -26,12 +26,42 @@ export const FIXED_REPLY = '¡Listo! El error ya está corregido y el arreglo sa
 export const RESOLVED_REPLY = 'El equipo de desarrollo resolvió tu pedido. Si era un cambio en la aplicación, sale en una próxima actualización.';
 export const DECLINED_REPLY = 'El equipo de desarrollo revisó tu pedido y decidió no hacerlo por ahora. Si necesitas algo más, puedes enviar un pedido nuevo.';
 
+const FOLLOWED: RequestStatus[] = [...RONINS, 'big'];
+
 const CLOSE: Record<'done' | 'resolved' | 'declined', string> = { done: DONE_REPLY, resolved: RESOLVED_REPLY, declined: DECLINED_REPLY };
+
+// With the team's reason, it goes in the middle, in their words.
+export function closedReply(status: 'resolved' | 'declined', note: string): string {
+  return status === 'declined'
+    ? `El equipo de desarrollo revisó tu pedido y decidió no hacerlo por ahora:\n\n${note}\n\nSi necesitas algo más, puedes enviar un pedido nuevo.`
+    : `El equipo de desarrollo resolvió tu pedido:\n\n${note}`;
+}
+
+// The reason written when closing the PR from the tablero, kept on the open
+// request of that issue or PR until its issue closes. Before the issue is
+// closed, so it's there whichever sees it closed first (a webhook, the tick).
+// Null when no open request is behind it.
+export async function noteClosing(repo: string, ref: { issue?: number; pr?: number }, text: string, by: string): Promise<number | null> {
+  const request = (await listRequests()).find((r) => r.repo === repo && FOLLOWED.includes(r.status) && ((ref.issue !== undefined && r.issue?.number === ref.issue) || (ref.pr !== undefined && r.pr === ref.pr)));
+  if (!request) return null;
+  await updateRequest(request.number, (r) => {
+    r.closeNote = { text, by, at: new Date().toISOString() };
+  });
+  return request.number;
+}
+
+// Takes it back, when closing failed: the request stays open.
+export async function dropCloseNote(n: number): Promise<void> {
+  await updateRequest(n, (r) => {
+    delete r.closeNote;
+  });
+}
 
 async function close(request: PortalRequest, status: 'done' | 'resolved' | 'declined'): Promise<void> {
   const closed = await updateRequest(request.number, (r) => {
     r.status = status;
-    addRoninMessage(r, status === 'done' && r.bug ? FIXED_REPLY : CLOSE[status]);
+    const note = status !== 'done' ? r.closeNote?.text : undefined;
+    addRoninMessage(r, note && status !== 'done' ? closedReply(status, note) : status === 'done' && r.bug ? FIXED_REPLY : CLOSE[status]);
     addEvent(r, { kind: 'closed', status });
     return r;
   });
@@ -48,7 +78,6 @@ async function closedAs(request: PortalRequest): Promise<'done' | 'resolved' | '
   return RONINS.includes(request.status) ? 'done' : 'resolved';
 }
 
-const FOLLOWED: RequestStatus[] = [...RONINS, 'big'];
 
 export async function followPortalIssues(): Promise<void> {
   const repo = activeRepo().productRepo;
