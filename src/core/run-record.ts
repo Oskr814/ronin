@@ -26,6 +26,8 @@ export interface RunContext {
   meeting?: number;
   sliceIndex?: number;
   sliceTitle?: string;
+  // What it's a step of (run-group.ts): "preview:<pr>:<when>".
+  group?: string;
   model?: string;
   effort?: string;
   account: string;

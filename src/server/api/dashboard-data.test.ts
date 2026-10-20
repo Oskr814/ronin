@@ -32,6 +32,11 @@ describe('summarizeRun', () => {
     expect(summary).toMatchObject({ state: 'ok', costUsd: 0.4, durationMs: 360000, steps: 2, lastStep: '$ pnpm test', sliceTitle: 'Validar stock' });
   });
 
+  it('keeps the group a run is a step of, and nothing for one that is not', () => {
+    expect(summarizeRun([start('20261016T100000-preview-data-triage-849-aaaa', { group: 'preview:849:t' })])?.group).toBe('preview:849:t');
+    expect(summarizeRun([start('20261016T100000-x-1-aaaa')])).not.toHaveProperty('group');
+  });
+
   it('tells a run still going from one whose process died without closing it', () => {
     expect(summarizeRun([start('20261016T100000-x-1-aaaa')])?.state).toBe('running');
     expect(summarizeRun([start('20261016T100000-x-1-aaaa', { pid: DEAD_PID })])?.state).toBe('cut');

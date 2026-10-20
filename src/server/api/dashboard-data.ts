@@ -39,6 +39,8 @@ export interface RunSummary {
   meeting?: number;
   sliceIndex?: number;
   sliceTitle?: string;
+  // What it's a step of (core/run-group.ts): the dashboard shows a group as one run.
+  group?: string;
   model?: string;
   effort?: string;
   account: string;
@@ -100,6 +102,7 @@ export function summarizeRun(lines: RunLine[]): RunSummary | null {
     ...(portalRequest !== undefined ? { portalRequest } : {}),
     ...(pick<number>('meeting') !== undefined ? { meeting: pick<number>('meeting') } : {}),
     ...(pick<number>('sliceIndex') !== undefined ? { sliceIndex: pick<number>('sliceIndex'), sliceTitle: pick<string>('sliceTitle') } : {}),
+    ...(pick<string>('group') ? { group: pick<string>('group') } : {}),
     ...(pick<string>('model') ? { model: pick<string>('model') } : {}),
     ...(pick<string>('effort') ? { effort: pick<string>('effort') } : {}),
     account: String(start.account ?? ''),

@@ -16,6 +16,7 @@ import { config } from '../core/config.js';
 import { acquireLock, launchWorker, lockHeld } from '../core/worker-launch.js';
 import { parsePortRange, PreviewReservations } from './reservations.js';
 import { log } from '../core/logger.js';
+import { previewRunGroup, withRunGroup } from '../core/run-group.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -518,7 +519,8 @@ export async function startPreview(prNumber: number, pr: PrHead, args?: string, 
     throw error;
   }
   if (!config.previewPrepareData) return result;
-  const data = await prepareData({ prNumber, pr, session, ...(instruction ? { instruction } : {}) });
+  // Its agents are one run on the dashboard: the preview (run-group.ts).
+  const data = await withRunGroup(previewRunGroup(prNumber), () => prepareData({ prNumber, pr, session, ...(instruction ? { instruction } : {}) }));
   await markPrepared(dir);
   return { ...result, data };
 }
@@ -668,7 +670,7 @@ export async function updatePreview(prNumber: number, pr: PrHead): Promise<Previ
   log.info(`preview PR #${prNumber}: actualizada en el lugar a ${pr.headRefOid.slice(0, 7)}`);
   const update: PreviewUpdate = { kind: 'in-place', from, sha: pr.headRefOid, url: state.url, rerun: plan.steps.map(stepLabel) };
   if (!config.previewPrepareData) return update;
-  const completed = await completeData({ prNumber, pr, session, from, ...(state.instruction ? { instruction: state.instruction } : {}) });
+  const completed = await withRunGroup(previewRunGroup(prNumber), () => completeData({ prNumber, pr, session, from, ...(state.instruction ? { instruction: state.instruction } : {}) }));
   if (!completed) return update;
   return 'data' in completed ? { ...update, data: completed.data } : { ...update, dataKept: completed.kept };
 }

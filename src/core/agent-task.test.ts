@@ -268,6 +268,14 @@ describe('runAgentTask — run record', () => {
     expect((await lastRecord())[0]).toMatchObject({ label: 'pedido P-31', portalRequest: 31 });
   });
 
+  it('records the group it is a step of, only inside one', async () => {
+    const { withRunGroup } = await import('./run-group.js');
+    await withRunGroup('preview:849:t', () => runAgentTask(task({ type: 'preview-data-triage', prNumber: 849 })));
+    expect((await lastRecord())[0]).toMatchObject({ taskType: 'preview-data-triage', group: 'preview:849:t' });
+    await runAgentTask(slice());
+    expect((await lastRecord())[0]).not.toHaveProperty('group');
+  });
+
   it('closes it with the kind of failure', async () => {
     const { ClaudeTimeoutError, ClaudeUsageLimitError } = await import('./claude-runner.js');
     for (const [error, outcome] of [[new ClaudeTimeoutError('t'), 'timeout'], [new ClaudeUsageLimitError('u'), 'usage_limit'], [new Error('boom'), 'error']] as const) {
