@@ -1139,7 +1139,7 @@ Las reuniones ya dejan notas escritas (las de Gemini en Meet, u otro agente), pe
 ```
 src/meetings/            el dominio: las reuniones, sus notas y lo que ronin propone
   extract.ts             el texto de un PDF (unpdf), un .docx (mammoth), texto o lo pegado
-  meetings.ts            las reuniones: meetings/<n>/meeting.json, notes.txt y el original
+  meetings.ts            las reuniones: tabla meetings (o meeting.json), y meetings/<n>/ con notes.txt y el original
   prompts.ts             lo que se le dice al agente que las lee
   proposals.ts           lo que propone, contrastado con las notas, los issues y Linear
   read.ts                la lectura: el contexto, el agente, las propuestas y el correo
@@ -1165,7 +1165,7 @@ Cada reunión es de **un** repo y se numera entre todos los repos (R-1, R-2…).
 
 - **Qué se acepta:** un PDF, un Word `.docx`, texto o Markdown (hasta 10 MB), o el texto pegado. De Google Docs se bajan como PDF o `.docx`. El tipo sale de los primeros bytes, nunca del nombre. Un PDF escaneado no tiene texto y se rechaza explicando por qué.
 - **El archivo** viaja como data URL dentro del JSON, como las imágenes del portal: solo JSON pasa las defensas del tablero.
-- **Dónde queda:** en `MEETINGS_DATA_DIR/meetings/<n>/` se guardan `meeting.json`, `notes.txt` (el texto extraído) y el original, con permisos 0600 y 0700. Es la única copia y **nunca va al repo del producto ni a GitHub**: las notas de una reunión dicen más de lo que debería decir un issue.
+- **Dónde queda:** en `MEETINGS_DATA_DIR/meetings/<n>/` se guardan `notes.txt` (el texto extraído) y el original, con permisos 0600 y 0700. El registro de la reunión (sus propuestas, lo creado, su actividad) es la tabla `meetings` de Postgres con `DATABASE_URL` (un documento `jsonb` por reunión, con `repo`, `hash` y `status` como columnas; el número y el control de notas repetidas van en una transacción con un lock de Postgres, #235), o si no `meeting.json` en esa misma carpeta, numerado con `counter.json`. Es la única copia y **nunca va al repo del producto ni a GitHub**: las notas de una reunión dicen más de lo que debería decir un issue.
 - **Sin duplicados:** se guarda un hash del texto normalizado, sin espacios ni mayúsculas. Las mismas notas en el mismo repo se rechazan, diciendo qué reunión las tiene. El control va bajo el mismo lock que el contador, así que dos subidas a la vez no pasan las dos.
 - **Quién:** cualquiera que vea el repo en el tablero (#106) sube y ve sus reuniones. Una reunión de un repo que no ve no existe para esa sesión. La configuración fina (quién sube, quién aprueba) es #145.
 
