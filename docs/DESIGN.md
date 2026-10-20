@@ -1487,6 +1487,17 @@ Está en cinco bloques:
 
 La página no calcula nada: solo dibuja la respuesta de la API.
 
+Una segunda pestaña, *Suscripción* (`/metricas/suscripcion`), dibuja `GET /api/metricas/suscripcion` (20.7), con un filtro de cuenta:
+- **Por cuenta:** su plan con un enlace a Ajustes → Cuentas de Claude, y cinco números: esta semana partida en ronin y otros, la proyección, el aprovechamiento, las ventanas de 5 h y el rinde.
+- **Cuatro tarjetas:**
+  - el uso acumulado de la semana, con ronin y otros apilados, la proyección punteada y la última medición;
+  - el cierre de las últimas semanas;
+  - el gasto por tarea y por repo;
+  - el costo por resultado.
+- **Colores:** ronin en `--repo-0` y otros en `--repo-1`, el par validado para daltonismo y contraste en los dos temas. Sin estimado de ronin todavía, el uso va entero en `--faint`, como *Toda la cuenta*.
+- **Hover y tabla:** cada gráfico tiene hover y *Ver como tabla*.
+- **En el teléfono:** los gráficos usan otro ancho, con menos marcas en los ejes y texto más grande, y las tarjetas van apiladas.
+
 #### 20.6 Activarlo
 
 Nada: sin `METRICS_DATA_DIR`, usa `metrics-data/` en el checkout del runner (fuera de git). Lo de GitHub se vuelve a traer solo si se pierde; el registro de bloqueos no, así que hay que respaldarlo.
