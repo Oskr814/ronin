@@ -1,4 +1,8 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 const createIssue = vi.fn();
 const commentOnIssue = vi.fn();
@@ -7,7 +11,7 @@ vi.mock('./github-as-user.js', () => ({
   commentOnIssue: (...args: unknown[]) => commentOnIssue(...args),
 }));
 
-const { commandComment, createFromDashboard, NewIssueError, parseNewIssue } = await import('./dashboard-new-issue.js');
+const { commandComment, createFromDashboard, NewIssueError, parseNewIssue, repoAppPaths } = await import('./dashboard-new-issue.js');
 
 const ENTRY = { productRepo: 'acme/product', productRepoPath: '/tmp/x' };
 const SESSION = { login: 'Oskr814', token: 'gho_x' };
@@ -57,5 +61,23 @@ describe('createFromDashboard', () => {
     expect(createIssue).toHaveBeenCalledWith('gho_x', 'acme/product', { title: 't', body: '' });
     expect(commentOnIssue).toHaveBeenCalledWith('gho_x', 'acme/product', 950, '@ronin-agent /spec backoffice con permisos');
     expect(commandComment('ronin-agent', { ...issue, after: 'spike', instruction: undefined })).toBe('@ronin-agent /spike backoffice');
+  });
+});
+
+describe('repoAppPaths', () => {
+  const manifest = (apps: string[]) => JSON.stringify({ apps: Object.fromEntries(apps.map((a) => [a, { path: `apps/${a}`, steps: [{ run: 'true' }], baseUrl: 'http://127.0.0.1:1', users: [{ role: 'admin', username: 'admin', password: 'x' }], login: [{ goto: '/' }] }])) });
+  const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.com', ...args], { cwd, stdio: 'pipe' });
+
+  it("reads the base branch's manifest, not the checkout's, and the checkout's when the base has none", async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ronin-apps-'));
+    git(dir, 'init', '-q', '-b', 'main');
+    writeFileSync(join(dir, 'ronin.app.json'), manifest(['backoffice', 'tienda']));
+    git(dir, 'add', '.');
+    git(dir, 'commit', '-qm', 'base');
+    git(dir, 'checkout', '-qb', 'vieja');
+    writeFileSync(join(dir, 'ronin.app.json'), manifest(['backoffice']));
+    expect(await repoAppPaths({ ...ENTRY, productRepoPath: dir, worktreeBaseRef: 'main' })).toEqual({ backoffice: 'apps/backoffice', tienda: 'apps/tienda' });
+    expect(await repoAppPaths({ ...ENTRY, productRepoPath: dir, worktreeBaseRef: 'no-existe' })).toEqual({ backoffice: 'apps/backoffice' });
+    expect(await repoAppPaths({ ...ENTRY, productRepoPath: join(dir, 'nada') })).toEqual({});
   });
 });

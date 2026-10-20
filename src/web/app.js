@@ -707,7 +707,7 @@ function openAction(id) {
   const action = S.detail[S.sel]?.data?.actions?.find((a) => a.id === id);
   if (!action) return;
   S.menu = false;
-  S.dialog = { item: S.sel, action, text: '', app: action.apps?.[0] ?? '', sending: false, error: null };
+  S.dialog = { item: S.sel, action, text: '', app: action.app ?? action.apps?.[0] ?? '', sending: false, error: null };
   renderCenter();
   renderDialog();
 }
@@ -757,7 +757,7 @@ function renderDialog() {
   const { action, text, app, sending, error } = S.dialog;
   // `…` stands for the text: filled as it's typed, left out when the text is optional and empty.
   // `{app}`, for the app picked. On one line, as the server writes it.
-  const typed = action.apps ? text.trim().replace(/\s+/g, ' ') : text.trim();
+  const typed = action.apps && action.id !== 'preview' ? text.trim().replace(/\s+/g, ' ') : text.trim();
   const preview = (!action.text ? action.preview : typed ? action.preview.replace('…', typed) : action.text.required ? action.preview : action.preview.replace(/(\n\n| )?…$/, '')).replace('{app}', app);
   const me = esc(S.snap?.me ?? '');
   const bot = esc(S.detail[S.dialog.item]?.data?.ronin ?? 'ronin');
@@ -768,7 +768,7 @@ function renderDialog() {
     layer.innerHTML = `<div class="scrim"><div class="dlg" role="dialog" aria-modal="true" aria-labelledby="dlg-t">
       <h2 id="dlg-t">${esc(action.label)}</h2>
       <p class="help">${esc(action.help)}</p>
-      ${action.apps ? `<label class="field"><span>App</span><select id="dlg-app">${action.apps.map((a) => `<option${a === app ? ' selected' : ''}>${esc(a)}</option>`).join('')}</select></label>` : ''}
+      ${action.apps ? `<label class="field"><span>App</span><select id="dlg-app">${action.apps.map((a) => `<option value="${esc(a)}"${a === app ? ' selected' : ''}>${esc(a)}${a === action.app && action.appNote ? ` · ${esc(action.appNote)}` : ''}</option>`).join('')}</select></label>` : ''}
       ${action.text ? `<label class="field"><span>${esc(action.text.label)}</span><textarea id="dlg-text" rows="4" maxlength="4000" placeholder="${esc(action.text.placeholder)}"></textarea></label>` : ''}
       <div class="prev"><div class="lbl" id="dlg-said"></div><div class="md" id="dlg-prev"></div></div>
       <p class="bad" id="dlg-err" hidden></p>

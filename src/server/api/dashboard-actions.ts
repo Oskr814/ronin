@@ -1,3 +1,4 @@
+import { appsTouched } from '../../app/manifest.js';
 import { config, LABEL_AUTO_MERGE, LABEL_MANAGED } from '../../core/config.js';
 import { setIssueState } from '../../core/github.js';
 import { log } from '../../core/logger.js';
@@ -34,6 +35,10 @@ export interface ActionView {
   text?: { required: boolean; label: string; placeholder: string };
   // The app it runs on, one of the repo's ronin.app.json: `{app}` in the preview stands for it.
   apps?: string[];
+  // The one picked to start with, and why, next to it in the list: for a
+  // preview, the one up now or the only app the PR changes.
+  app?: string;
+  appNote?: string;
   // The one that fits what the item is waiting for.
   primary?: boolean;
   // The comment that will be left, shown before it's sent; with text, `…` stands for it.
@@ -42,7 +47,8 @@ export interface ActionView {
 
 const MAX_TEXT = 4000;
 
-export function listActions(ref: ItemRef, gh: RepoGithub | undefined, detail: ItemDetail | undefined, login: string, apps: string[] = []): ActionView[] {
+// `paths`: each app's folder, to tell which one a PR changes.
+export function listActions(ref: ItemRef, gh: RepoGithub | undefined, detail: ItemDetail | undefined, login: string, apps: string[] = [], paths: Record<string, string> = {}): ActionView[] {
   const actions: Array<Omit<ActionView, 'preview'>> = [];
   const prNumber = ref.kind === 'pr' ? ref.number : ref.pr;
   const pr = prNumber !== undefined ? gh?.prs.find((p) => p.number === prNumber) : undefined;
@@ -55,8 +61,13 @@ export function listActions(ref: ItemRef, gh: RepoGithub | undefined, detail: It
       help: conflicting ? `Trae ${pr.baseRefName} al PR y resuelve lo que git no pudo.` : `No tiene conflictos con ${pr.baseRefName}: solo lo pone al día.`,
     });
     const preview = gh?.previews.find((p) => p.prNumber === prNumber);
+    // With several apps, which one: the one up now, or the only one the PR changes.
+    const touched = apps.length > 1 && prDoc?.files ? appsTouched(Object.fromEntries(apps.map((a) => [a, { path: paths[a] ?? '' }])), prDoc.files) : [];
+    const up = preview && apps.includes(preview.appName) ? preview.appName : undefined;
+    const pick = up ? { app: up, appNote: 'arriba ahora' } : touched.length === 1 ? { app: touched[0], appNote: 'la que cambia el PR' } : {};
     actions.push({
       id: 'preview', label: `${preview ? 'Actualizar la preview' : 'Levantar una preview'}${on}`, command: '/preview', target: prNumber,
+      ...(apps.length > 1 ? { apps, ...pick } : {}),
       help: preview ? 'La vuelve a levantar con el código de ahora.' : 'Con los datos que piden los pasos de prueba del PR.',
       text: { required: false, label: 'Qué preparar, además de los pasos de prueba (opcional)', placeholder: 'Por ejemplo: un cliente con más de 10 pedidos creados' },
     });
@@ -106,6 +117,8 @@ export function listActions(ref: ItemRef, gh: RepoGithub | undefined, detail: It
 // "Nuevo issue" writes them.
 export function actionComment(action: Pick<ActionView, 'id' | 'command'>, text?: string, app?: string): string {
   if (action.id === 'unblock' || action.id === 'assign') return text ?? '';
+  // A preview keeps what to prepare below, on its own lines.
+  if (app && action.id === 'preview') return `@${config.githubLogin} ${action.command} ${app}${text ? `\n\n${text}` : ''}`;
   if (app) return `@${config.githubLogin} ${action.command} ${app}${text ? ` ${text}` : ''}`;
   return `@${config.githubLogin} ${action.command}${text ? `\n\n${text}` : ''}`;
 }
@@ -132,7 +145,7 @@ export async function runAction(
   if (!action.text && text) throw new ActionError('Esta acción no lleva texto.');
   const app = typeof rawApp === 'string' ? rawApp : '';
   if (action.apps && !action.apps.includes(app)) throw new ActionError(`Falta la app: una de ${action.apps.join(', ')}.`);
-  if (action.apps) text = text.replace(/\s+/g, ' ');
+  if (action.apps && action.id !== 'preview') text = text.replace(/\s+/g, ' ');
 
   if (action.id === 'assign') {
     // The context first, so it's on the issue when ronin reads it.

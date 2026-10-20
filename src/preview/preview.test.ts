@@ -3,7 +3,8 @@ import { describe, it, expect, vi } from 'vitest';
 vi.mock('../core/logger.js', () => ({ log: { error: vi.fn(), info: vi.fn() } }));
 vi.mock('../core/config.js', () => ({ config: { githubLogin: 'ronin-agent' } }));
 
-import { chooseManifest, describeTtl, parsePreviewData, parsePreviewTriage, previewPorts, previewPrFromDirName, renderPreviewFailed, renderPreviewReady, resolvePreviewArgs, appsTouched } from './preview.js';
+import { chooseManifest, describeTtl, parsePreviewData, parsePreviewTriage, previewPorts, previewPrFromDirName, renderPreviewFailed, renderPreviewReady, resolvePreviewArgs } from './preview.js';
+import { appsTouched } from '../app/manifest.js';
 import type { AppDefinition, TemplateContext } from '../app/manifest.js';
 
 const app = {

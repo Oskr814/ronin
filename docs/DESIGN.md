@@ -735,7 +735,7 @@ Desde la ficha se le piden a ronin los comandos que hoy se piden comentando en G
 | Acción | Igual que | Cuándo aparece |
 |---|---|---|
 | Resolver conflictos | `/resolve-conflicts` | PR abierto. Se destaca si tiene conflictos con su base |
-| Levantar o actualizar la preview | `/preview <qué preparar>` | PR abierto. Lleva un texto opcional |
+| Levantar o actualizar la preview | `/preview [app] <qué preparar>` | PR abierto. Lleva un texto opcional. Con varias apps en el manifiesto, se elige la app: viene marcada la que está arriba o, si no hay ninguna, la única que cambia el PR |
 | Bajar la preview | `/preview stop` | Hay una preview arriba |
 | Activar o desactivar el auto-merge | `/auto-merge`, `/auto-merge off` | Según si el PR tiene `ronin:auto-merge` |
 | Responder y destrabar | Comentar y volver a `ronin:in-progress` | Issue con `ronin:blocked`. Lleva un texto obligatorio, la respuesta |
@@ -749,7 +749,9 @@ En un issue, las acciones de PR van al PR de su slice que avanza ("Resolver conf
 
 **Cómo corre.** El tablero escribe el comando como la persona, con su token (`server/api/github-as-user.ts`): `@ronin-agent /resolve-conflicts`, o `@ronin-agent /preview` con lo que hay que preparar en las líneas de abajo, que el parser de `/preview` también lee. Desde ahí es un comentario como cualquiera: llega su webhook, ronin le pone 👀 y lanza el worker, que lo responde. GitHub muestra quién lo pidió. Responder y destrabar comenta la respuesta como la persona, y ronin le pone `ronin:in-progress` al issue; si GitHub rechazó el comentario, el label no se toca.
 
-*Asignar a ronin* deja el contexto, si lo hay, como un comentario común de la persona, sin mencionar a ronin (una mención se leería como un pedido aparte). Después le asigna el issue a `@ronin-agent` con el token de la persona. Desde ahí es lo de siempre (`discoverAssignedIssues`): ronin lo toma en el próximo tick y `fix-issue` lee el issue con sus comentarios. Si no queda claro qué hacer, pregunta en el issue y lo bloquea sin tocar código. *Investigar* y *Prototipar* comentan el comando con la app y el texto en una sola línea, como *Nuevo issue* (15.11.1).
+*Asignar a ronin* deja el contexto, si lo hay, como un comentario común de la persona, sin mencionar a ronin (una mención se leería como un pedido aparte). Después le asigna el issue a `@ronin-agent` con el token de la persona. Desde ahí es lo de siempre (`discoverAssignedIssues`): ronin lo toma en el próximo tick y `fix-issue` lee el issue con sus comentarios. Si no queda claro qué hacer, pregunta en el issue y lo bloquea sin tocar código. *Investigar* y *Prototipar* comentan el comando con la app y el texto en una sola línea, como *Nuevo issue* (15.11.1). La preview, con la app en la línea del comando y el texto abajo.
+
+**Las apps** salen del `ronin.app.json` de la rama base del repo (`worktreeBaseRef`), no del checkout, que puede estar en cualquier rama; si git no lo encuentra ahí, del checkout (`repoAppPaths`). Para la preview, el detalle de un PR trae sus archivos (`gh pr view --json files`, los primeros 100) y `appsTouched` dice qué apps cambia por su `path`, la misma regla que usa `/preview` sin app (§12).
 
 Antes de #93, ronin comentaba *"**<login>** pidió `/x` desde el tablero"* y lanzaba el worker en el momento. Ahora el worker espera al webhook, como cuando alguien escribe en GitHub, y si no llega lo levanta el tick.
 

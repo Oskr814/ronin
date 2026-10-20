@@ -39,6 +39,16 @@ describe('listActions', () => {
     expect(actions[0]).toMatchObject({ primary: true, target: 849 });
   });
 
+  it('offers the apps for a preview when there are several, picking the one up or the only one the PR changes', () => {
+    const PATHS = { webapp: 'apps/webapp', backoffice: 'apps/backoffice' };
+    const changes = (files: string[]) => ({ fetchedAt: '', pr: discussion(849, { files }) });
+    const of = (actions: Array<{ id: string }>) => actions.find((a) => a.id === 'preview');
+    expect(of(listActions(PR_REF, gh(), changes(['apps/backoffice/src/a.tsx', 'packages/ui/b.tsx']), 'Oskr814', APPS, PATHS))).toMatchObject({ apps: APPS, app: 'backoffice', appNote: 'la que cambia el PR', preview: '@ronin-agent /preview {app}\n\n…' });
+    expect(of(listActions(PR_REF, gh(), changes(['apps/backoffice/a.ts', 'apps/webapp/b.ts']), 'Oskr814', APPS, PATHS))).not.toHaveProperty('app');
+    expect(of(listActions(PR_REF, gh({ previews: [{ prNumber: 849, appName: 'webapp', url: '' }] }), changes(['apps/backoffice/a.ts']), 'Oskr814', APPS, PATHS))).toMatchObject({ app: 'webapp', appNote: 'arriba ahora' });
+    expect(of(listActions(PR_REF, gh(), changes(['apps/backoffice/a.ts']), 'Oskr814', ['backoffice'], PATHS))).not.toHaveProperty('apps');
+  });
+
   it('offers to stop a preview that is up, and auto-merge off when its label is on', () => {
     const actions = listActions(PR_REF, gh({ previews: [{ prNumber: 849, appName: 'backoffice', url: '' }] }), { fetchedAt: '', pr: discussion(849, { labels: ['ronin:auto-merge'] }) }, 'Oskr814');
     expect(ids(actions)).toEqual(['resolve-conflicts', 'preview', 'preview-stop', 'auto-merge-off']);
@@ -91,6 +101,9 @@ describe('runAction', () => {
   it('puts what to prepare under /preview, and auto-merge through its own command', async () => {
     await runAction(ENTRY, PR_REF, gh(), detail, SESSION, 'preview', '  un cliente con 12 pedidos ', post);
     expect(post).toHaveBeenLastCalledWith('gho_user', 'acme/product', 849, '@ronin-agent /preview\n\nun cliente con 12 pedidos');
+    await runAction(ENTRY, PR_REF, gh(), detail, SESSION, 'preview', 'un cliente\ncon 12 pedidos', post, APPS, 'backoffice');
+    expect(post).toHaveBeenLastCalledWith('gho_user', 'acme/product', 849, '@ronin-agent /preview backoffice\n\nun cliente\ncon 12 pedidos');
+    await expect(runAction(ENTRY, PR_REF, gh(), detail, SESSION, 'preview', '', post, APPS, 'otra')).rejects.toThrow('Falta la app');
     await runAction(ENTRY, PR_REF, gh(), detail, SESSION, 'auto-merge-on', undefined, post);
     expect(post).toHaveBeenLastCalledWith('gho_user', 'acme/product', 849, '@ronin-agent /auto-merge');
   });
