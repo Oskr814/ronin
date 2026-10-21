@@ -141,16 +141,20 @@ function sameLocation(a: CodeLocation, b: CodeLocation): boolean {
   return a.path === b.path && a.line === b.line;
 }
 
-// Evidence and the other instances in one line; an instance already linked
-// as evidence (or the anchor itself) is not repeated.
-function whereLine(finding: ReviewFinding, ctx: RenderContext): string | undefined {
-  const parts = finding.evidence.map((e) => `${locationLink(ctx, e.path, e.line)} ${inline(e.note)}`);
+// The anchor, the evidence and the other instances in one line; a location
+// already linked is not repeated.
+function whereLine(finding: ReviewFinding, ctx: RenderContext): string {
   const anchor = { path: finding.path, line: finding.line };
+  const atAnchor = finding.evidence.find((e) => sameLocation(e, anchor));
+  const parts = [
+    `${locationLink(ctx, finding.path, finding.line)}${atAnchor ? ` ${inline(atAnchor.note)}` : ''}`,
+    ...finding.evidence.filter((e) => e !== atAnchor).map((e) => `${locationLink(ctx, e.path, e.line)} ${inline(e.note)}`),
+  ];
   const extra = (finding.extraLocations ?? []).filter(
     (l) => !sameLocation(l, anchor) && !finding.evidence.some((e) => sameLocation(e, l)),
   );
   if (extra.length > 0) parts.push(`también ${extra.map((l) => locationLink(ctx, l.path, l.line)).join(', ')}`);
-  return parts.length > 0 ? `**Dónde:** ${parts.join(' · ')}` : undefined;
+  return `**Dónde:** ${parts.join(' · ')}`;
 }
 
 // Only a test that was actually run earns a visible line; a reasoned
@@ -214,38 +218,42 @@ export function renderCombinedAgentPrompt(findings: ReviewFinding[]): string {
   return fenced(body, 'markdown', 4);
 }
 
+// What a person reads first is only what to look at: the title and the plain
+// explanation (impact), which says it when the PR made worse something that
+// was already there. Where it came from, how it happens, where, the fix, the
+// verification and the prompt wait in one collapsed «Detalle».
 export function renderFindingComment(finding: ReviewFinding, ctx: RenderContext, opts: { includeDetail?: boolean; includePrompt?: boolean } = {}): string {
   const includeDetail = opts.includeDetail ?? true;
   const includePrompt = opts.includePrompt ?? true;
-  const parts: string[] = [
+  const visible = [sentence(finding.impact)];
+  if (finding.type === 'decision') visible.push('', '**Si es intencional:** resolvé el hilo.');
+
+  const detail: string[] = [`${TYPE_LABEL[finding.type]} · ${SEVERITY_LABEL[finding.severity]} · ${inline(finding.category)}`];
+  const origin = originLine(finding);
+  if (origin) detail.push(origin);
+  if (finding.scenario) detail.push(scenarioBlock(finding));
+  detail.push(whereLine(finding, ctx));
+  const fix = fixBlock(finding);
+  if (fix) detail.push(fix);
+  if (finding.verification.status === 'verified') {
+    const test = finding.verification.test;
+    detail.push(test
+      ? `**Verificación:** ✅ comprobado con un test que falla:\n\n${details(`\`${test.path}\``, `${fenced(neutralizeMentions(test.code), languageOf(test.path))}\n\n${fenced(neutralizeMentions(test.output))}`)}`
+      : '**Verificación:** ✅ comprobado con un test que falla.');
+  } else {
+    detail.push(reasonedNote(finding)!);
+  }
+  if (includeDetail && finding.detail) detail.push(neutralizeMentions(finding.detail));
+  if (includePrompt) detail.push(details('Prompt para agentes de IA 🤖', renderAgentPrompt(finding)));
+
+  return [
     findingMarker(finding, ctx),
     `### ${TYPE_EMOJI[finding.type]}${SEVERITY_EMOJI[finding.severity]} ${inline(finding.title)}`,
-    `<sub>${TYPE_LABEL[finding.type]} · ${SEVERITY_LABEL[finding.severity]} · ${inline(finding.category)}</sub>`,
     '',
-  ];
-  const visible: string[] = [];
-  const origin = originLine(finding);
-  if (origin) visible.push(origin, '');
-  visible.push(finding.scenario ? scenarioBlock(finding) : `**Impacto:** ${inline(finding.impact)}`);
-  const where = whereLine(finding, ctx);
-  if (where) visible.push('', where);
-  if (finding.verification.status === 'verified') visible.push('**Verificación:** ✅ comprobado con un test que falla (ver abajo).');
-  if (finding.type === 'decision') visible.push('**Si es intencional:** resolvé el hilo.');
-  parts.push(visible.join('\n'));
-
-  const fix = fixBlock(finding);
-  if (fix) parts.push('', fix);
-
-  if (finding.verification.status === 'verified' && finding.verification.test) {
-    const { test } = finding.verification;
-    parts.push('', details(`Test que lo comprueba (\`${test.path}\`)`, `${fenced(neutralizeMentions(test.code), languageOf(test.path))}\n\n${fenced(neutralizeMentions(test.output))}`));
-  }
-  if (includeDetail) {
-    const body = [finding.detail ? neutralizeMentions(finding.detail) : undefined, reasonedNote(finding)].filter(Boolean).join('\n\n');
-    if (body) parts.push('', details('Detalle', body));
-  }
-  if (includePrompt) parts.push('', details('Prompt para agentes de IA 🤖', renderAgentPrompt(finding)));
-  return parts.join('\n');
+    visible.join('\n'),
+    '',
+    details('Detalle', detail.join('\n\n')),
+  ].join('\n');
 }
 
 const SEVERITY_ORDER: FindingSeverity[] = ['critical', 'important', 'minor'];
@@ -258,34 +266,40 @@ function tableCell(text: string): string {
   return inline(text).replace(/\|/g, '\\|');
 }
 
-function buildSummary(
-  findings: { inline: ReviewFinding[]; outOfDiff: ReviewFinding[] },
-  ctx: RenderContext,
-  level: 0 | 1 | 2,
-): string {
-  const all = [...findings.inline, ...findings.outOfDiff];
-  const lines = [
-    '## Review de ronin',
-    `${all.length} ${all.length === 1 ? 'hallazgo' : 'hallazgos'} · commit \`${ctx.headSha.slice(0, 7)}\` · criterio \`${ctx.criteriaHash.slice(0, 7)}\``,
-    '',
-    '| Tipo | Severidad | Hallazgo |',
-    '|---|---|---|',
-    ...bySeverity(all).map((f) => `| ${`${TYPE_EMOJI[f.type]} ${TYPE_LABEL[f.type]}`.trim()} | ${SEVERITY_EMOJI[f.severity]} ${SEVERITY_LABEL[f.severity]} | ${tableCell(f.title)} (${locationLink(ctx, f.path, f.line)}) |`),
-  ];
+function buildSummary(findings: ReviewFindings, ctx: RenderContext, level: 0 | 1 | 2): string {
+  const published = [...findings.inline, ...findings.outOfDiff];
+  const lines: string[] = [];
   if (findings.outOfDiff.length > 0) {
-    lines.push('', '### Fuera del diff', '', 'Estos hallazgos apuntan a líneas que el PR no modifica, así que no se pueden anclar como comentario en la línea.');
-    for (const f of findings.outOfDiff) {
+    lines.push('Estos apuntan a líneas que el PR no modifica, así que van aquí y no en la línea:');
+    for (const f of bySeverity(findings.outOfDiff)) {
       lines.push('', '---', '', renderFindingComment(f, ctx, { includeDetail: level < 2, includePrompt: level < 2 }));
     }
   }
-  if (level === 0) lines.push('', details('Prompt para atender todos los hallazgos 🤖', renderCombinedAgentPrompt(all)));
-  return lines.join('\n');
+  if (findings.minor.length > 0) lines.push('', renderMinorList(findings.minor, ctx));
+  if (level === 0 && published.length > 0) lines.push('', details('Prompt para atender todos los hallazgos 🤖', renderCombinedAgentPrompt(published)));
+  return lines.join('\n').trim();
+}
+
+// The minor findings don't get a comment of their own (#193): one line each,
+// collapsed, so they are there for whoever wants them without opening threads.
+export function renderMinorList(minor: ReviewFinding[], ctx: RenderContext): string {
+  const items = minor.map((f) => `- ${`${TYPE_EMOJI[f.type]} `.trimStart()}${inline(f.title)} (${locationLink(ctx, f.path, f.line)})`);
+  return details(`${minor.length === 1 ? '1 observación menor' : `${minor.length} observaciones menores`}`, items.join('\n'));
+}
+
+// What the review body carries: the findings that can't be anchored on a
+// line, the minor ones (collapsed) and one prompt for everything published.
+// No list of the inline findings: each speaks for itself on its line.
+export interface ReviewFindings {
+  inline: ReviewFinding[];
+  outOfDiff: ReviewFinding[];
+  minor: ReviewFinding[];
 }
 
 // Degrades in steps when the body would exceed GitHub's limit: first the
 // combined prompt goes, then the per-finding detail and prompts of the
 // out-of-diff findings (the inline comments keep theirs).
-export function renderReviewSummary(findings: { inline: ReviewFinding[]; outOfDiff: ReviewFinding[] }, ctx: RenderContext): string {
+export function renderReviewSummary(findings: ReviewFindings, ctx: RenderContext): string {
   for (const level of [0, 1, 2] as const) {
     const body = buildSummary(findings, ctx, level);
     if (body.length <= SUMMARY_MAX || level === 2) return body.length <= SUMMARY_MAX ? body : `${body.slice(0, SUMMARY_MAX - 1)}…`;
