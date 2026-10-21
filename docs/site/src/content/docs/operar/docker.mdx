@@ -13,7 +13,7 @@ Con Docker Compose, ronin se instala y se recupera en pocos pasos: clonar, `scri
 
 | Servicio | Qué es |
 |---|---|
-| `ronin` | El servidor, el planificador y el runner local, con todo lo que usan sus agentes: Node y pnpm, git, `gh`, Claude Code, el cliente de Docker y Chromium para el navegador. |
+| `ronin` | El servidor, el planificador y el runner local, con todo lo que usan sus agentes: Node y pnpm, git, `gh`, Claude Code, el cliente de Docker y Chromium para el navegador. La imagen pesa unos 2 GB. |
 | `postgres` | [La base](/ronin/operar/base-de-datos/). Solo se alcanza desde adentro del compose. |
 | `tailscale` | El nodo de ronin en la tailnet. Publica el tablero y las previews con `tailscale serve`. |
 | `docker` | Un Docker propio (Docker-in-Docker) donde corren las previews, los prototipos y las reproducciones. ronin le habla por TCP con TLS; **el socket del host nunca se monta**. |

@@ -17,7 +17,7 @@
     "fix:replay": "tsx scripts/fix-replay.ts",
     "app": "tsx --env-file=.env scripts/app.ts",
     "explore": "tsx --env-file=.env scripts/explore.ts",
-    "browsers:install": "playwright install chromium && playwright-mcp install-browser chrome-for-testing",
+    "browsers:install": "playwright install --no-shell chromium",
     "init-labels": "bash scripts/init-labels.sh",
     "cron:setup": "bash scripts/setup-cron.sh",
     "cron:remove": "bash scripts/setup-cron.sh --remove",
@@ -71,5 +71,11 @@
     "typescript": "^5.7.2",
     "vite": "8.3.3",
     "vitest": "^4.1.10"
+  },
+  "pnpm": {
+    "overrides": {
+      "@playwright/mcp>playwright": "$playwright",
+      "@playwright/mcp>playwright-core": "1.64.0"
+    }
   }
 }

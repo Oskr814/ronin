@@ -13,6 +13,13 @@ import type { AppUser, LoginStep, Viewport } from './manifest.js';
 
 export type ViewportName = 'desktop' | 'mobile';
 
+// The full Chromium, headless too (#311): without the channel, headless
+// Playwright takes its separate headless shell, which the image doesn't
+// carry. The browser MCP uses the same one (--browser chromium).
+function launch(): Promise<Browser> {
+  return chromium.launch({ channel: 'chromium' });
+}
+
 export function authStatePath(session: AppSession, role: string): string {
   return join(session.stateDir, 'auth', `${role.replace(/[^\w-]+/g, '_')}.json`);
 }
@@ -49,7 +56,7 @@ export async function runLoginSteps(context: BrowserContext, baseUrl: string, st
 // failed: a manifest with wrong credentials or selectors must say so, not
 // leave exploration wandering around a login page.
 export async function loginAllUsers(session: AppSession): Promise<Record<string, string>> {
-  const browser = await chromium.launch();
+  const browser = await launch();
   try {
     const states: Record<string, string> = {};
     await mkdir(join(session.stateDir, 'auth'), { recursive: true });
@@ -85,7 +92,7 @@ export interface SmokeShot {
 // whatever the console complained about.
 export async function smokeScreenshots(session: AppSession, authStates: Record<string, string>, outDir: string): Promise<SmokeShot[]> {
   await mkdir(outDir, { recursive: true });
-  const browser: Browser = await chromium.launch();
+  const browser: Browser = await launch();
   const shots: SmokeShot[] = [];
   try {
     for (const role of Object.keys(authStates)) {
@@ -113,7 +120,7 @@ export async function smokeScreenshots(session: AppSession, authStates: Record<s
 // the real app) as a PNG at the app's viewport. It only loads local files:
 // whatever else it asks for is blocked.
 export async function renderHtmlToPng(htmlPath: string, pngPath: string, viewport: Viewport): Promise<void> {
-  const browser = await chromium.launch();
+  const browser = await launch();
   try {
     // Not emulating a phone: a drawn page rarely has a viewport meta tag, and
     // a phone would lay it out 980px wide.

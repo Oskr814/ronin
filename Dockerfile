@@ -43,8 +43,10 @@ FROM docker:29-cli AS docker-cli
 FROM base
 ARG CLAUDE_CODE_VERSION=2.1.304
 
+# git talks to GitHub over HTTPS with gh's credentials: no ssh. The key of
+# gh's repository comes already binary: no gnupg.
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates curl git gnupg jq openssh-client procps \
+  && apt-get install -y --no-install-recommends ca-certificates curl git jq procps \
   && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg -o /usr/share/keyrings/githubcli-archive-keyring.gpg \
   && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list \
   && apt-get update \
@@ -62,12 +64,21 @@ RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION} && npm cache
 ENV DISABLE_AUTOUPDATER=1
 
 # The browsers in the image, not in a volume: they go with ronin's version.
+# One Chromium (#311): the browser MCP uses ronin's Playwright (the override
+# in package.json), and both run the full Chromium headless, without the
+# headless shell. Of what `--with-deps` would bring, only the libraries
+# Chromium loads and the fonts of a Latin page with emoji: no Xvfb (and its
+# Mesa), no CJK or Thai fonts.
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends \
+    libasound2 libatk-bridge2.0-0 libatk1.0-0 libatspi2.0-0 libcairo2 libcups2 libdbus-1-3 libdrm2 libgbm1 \
+    libglib2.0-0 libnspr4 libnss3 libpango-1.0-0 libx11-6 libxcb1 libxcomposite1 libxdamage1 libxext6 \
+    libxfixes3 libxkbcommon0 libxrandr2 libfontconfig1 fonts-liberation fonts-noto-color-emoji \
+  && rm -rf /var/lib/apt/lists/*
 COPY --from=deps /app/node_modules ./node_modules
 COPY package.json pnpm-lock.yaml ./
-RUN node_modules/.bin/playwright install --with-deps chromium \
-  && node_modules/.bin/playwright-mcp install-browser chrome-for-testing \
-  && rm -rf /var/lib/apt/lists/*
+RUN node_modules/.bin/playwright install --no-shell chromium
 
 COPY --from=build /app/dist ./dist
 COPY prompts ./prompts
