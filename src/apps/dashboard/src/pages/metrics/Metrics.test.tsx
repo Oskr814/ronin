@@ -30,7 +30,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-const host: Host = { toast: vi.fn(), openPedido: vi.fn(), unauthorized: vi.fn(), repoColor: () => 'red', openItem: vi.fn(), openSettings: vi.fn(), openMetrics: vi.fn(), repos: () => ['acme/tienda', 'acme/web'], typeName: (t) => `tipo ${t}` };
+const host: Host = { toast: vi.fn(), openPedido: vi.fn(), openPedidos: vi.fn(), unauthorized: vi.fn(), repoColor: () => 'red', openItem: vi.fn(), openSettings: vi.fn(), openMetrics: vi.fn(), repos: () => ['acme/tienda', 'acme/web'], typeName: (t) => `tipo ${t}`, requestsTotal: () => 0, portalAdmin: () => false, openPortalAccounts: vi.fn(), requestDoc: () => () => {} };
 const show = (page: ReactNode) => render(
   <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
     <HostContext.Provider value={host}>{page}</HostContext.Provider>
