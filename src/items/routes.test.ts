@@ -1,0 +1,54 @@
+import { describe, it, expect, vi } from 'vitest';
+import type { Access } from '../server/api/access.js';
+
+vi.mock('../core/logger.js', () => ({ log: { info: vi.fn(), error: vi.fn() } }));
+vi.mock('../core/repos.js', () => ({ loadRepos: async () => [{ productRepo: 'acme/tienda', productRepoPath: '/x' }] }));
+const RUN = { runId: 'r1', repo: 'acme/tienda', taskType: 'update-changelog', label: 'v1.2 (notas)', account: 'a', worktree: '/w', startedAt: new Date().toISOString(), state: 'ok', steps: 1 };
+vi.mock('../server/api/visible.js', async (importOriginal) => ({ ...(await importOriginal<typeof import('../server/api/visible.js')>()), visibleRuns: async () => [RUN] }));
+vi.mock('../server/api/dashboard-github.js', () => ({ repoGithub: async () => ({ prs: [], issues: [] }), forgetGithub: () => {} }));
+// The item and its PR's files, as GitHub would have them.
+const ref = { kind: 'issue', number: 12 };
+vi.mock('./service.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./service.js')>()),
+  itemContext: async () => ({ entry: { productRepo: 'acme/tienda', productRepoPath: '/x' }, ref, gh: null, detail: {} }),
+  filesContext: async () => ({ entry: { productRepo: 'acme/tienda', productRepoPath: '/x' }, prNumber: 13, files: { files: [] } }),
+}));
+const dropped = vi.fn(async (_n: number) => {});
+vi.mock('../portal/follow.js', () => ({ noteClosing: async () => 7, dropCloseNote: (n: number) => dropped(n) }));
+vi.mock('../server/api/dashboard-new-issue.js', async (importOriginal) => ({ ...(await importOriginal<typeof import('../server/api/dashboard-new-issue.js')>()), repoApps: async () => [] }));
+vi.mock('../server/api/dashboard-actions.js', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../server/api/dashboard-actions.js')>();
+  return { ...original, runAction: async () => { throw new original.ActionError('Ese issue ya está cerrado.'); } };
+});
+vi.mock('../server/api/github-as-user.js', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../server/api/github-as-user.js')>();
+  return { ...original, viewedFiles: async () => { throw new original.GithubUserError('Tu sesión de GitHub venció: vuelve a entrar.', true); }, pendingReview: async () => null };
+});
+
+const { dashboardApp } = await import('../server/dashboard-app.js');
+
+const ACCESS: Access = { admin: false, repos: [{ repo: 'acme/tienda', permission: 'push', perms: { notas: true, aprobar: true, acciones: true, desplegar: false } }] };
+const call = (path: string, init: RequestInit = {}) => dashboardApp.request(path, init, { session: { login: 'oskr814', token: 't' }, access: ACCESS, incoming: {} as never, outgoing: {} as never });
+
+describe("the dashboard's items, in Hono", () => {
+  it('finds an item that is only a run, by its id with colons and spaces', async () => {
+    const id = 'acme/tienda:update-changelog:v1.2 (notas)';
+    expect(await (await call(`/api/items/${encodeURIComponent(id)}`)).json()).toEqual({ id, runs: [RUN] });
+    expect((await call(`/api/items/${encodeURIComponent('acme/tienda:otra:cosa')}`)).status).toBe(404);
+  });
+
+  it("answers an action that doesn't fit with a 409, and takes back the reason kept for the portal", async () => {
+    const res = await call(`/api/items/${encodeURIComponent('acme/tienda#12')}/actions`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'close-issue', text: 'Ya no hace falta' }) });
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: 'Ese issue ya está cerrado.' });
+    expect(dropped).toHaveBeenCalledWith(7);
+    const bad = await call(`/api/items/${encodeURIComponent('acme/tienda#12')}/actions`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: 'x' }) });
+    expect(await bad.json()).toEqual({ error: 'falta la acción' });
+  });
+
+  it('asks to log in again when GitHub no longer takes the person’s token', async () => {
+    const res = await call(`/api/items/${encodeURIComponent('acme/tienda#12')}/files/mine`);
+    expect(res.status).toBe(401);
+    expect((await res.json()).error).toMatch(/vuelve a entrar/);
+  });
+});
