@@ -142,6 +142,38 @@ export interface RepoStateTable {
   updated_at: Stamp;
 }
 
+// The index of the agents' runs (core/runs-store.ts); each transcript stays a file.
+type MaybeNum = number | null;
+export interface RunsTable {
+  run_id: string;
+  day: string;
+  repo: string;
+  task_type: string;
+  label: string;
+  issue_number: MaybeNum;
+  pr_number: MaybeNum;
+  portal_request: MaybeNum;
+  meeting: MaybeNum;
+  slice_index: MaybeNum;
+  slice_title: string | null;
+  grp: string | null;
+  model: string | null;
+  effort: string | null;
+  account: string;
+  worktree: string;
+  host: string | null;
+  pid: MaybeNum;
+  started_at: ColumnType<Date, string, string>;
+  ended_at: ColumnType<Date | null, string | null, string | null>;
+  duration_ms: MaybeNum;
+  outcome: string | null;
+  cost_usd: MaybeNum;
+  error: string | null;
+  steps: ColumnType<number, number | undefined, number>;
+  last_step: string | null;
+  updated_at: Stamp;
+}
+
 export interface Database {
   settings: SettingsTable;
   task_settings: TaskSettingsTable;
@@ -155,4 +187,5 @@ export interface Database {
   locks: LocksTable;
   lock_waits: LockWaitsTable;
   repo_state: RepoStateTable;
+  runs: RunsTable;
 }

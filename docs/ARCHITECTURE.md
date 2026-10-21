@@ -176,6 +176,8 @@ Lo que **desaparece**:
 
 **Hecho (3.3):** `core/local-state-db.ts`: tabla `repo_state`, una fila por entrada (repo, tipo, clave y su valor), en vez de una tabla por cosa: son diez listas chicas que se leen juntas y ninguna se consulta por sus columnas. `local-state.ts` conserva su interfaz y una escritura toca solo las entradas que cambiaron. Su lock pasa a la tabla `locks` (uno por repo, con lease) y no a una transacción, porque abarca llamadas a GitHub (el claim de un issue).
 
+**Hecho (3.4):** `core/runs-store.ts`: tabla `runs`, una fila por corrida que `RunRecord` escribe al empezar y al terminar; la transcripción sigue en su archivo. `listRuns` lee la base y solo abre el archivo de una corrida en curso (sus pasos, y si su proceso sigue vivo; el de otra máquina no se puede saber y cuenta como en curso). Si el archivo dice que terminó y la base no (la base no respondía), la pone al día. Las filas no se podan con los archivos (14 días): la vista de suscripción, que mira 63 días, ve la historia completa.
+
 El claim entre supervisores por label (DESIGN §9) deja de hacer falta con un solo nodo central que reparte el trabajo. Se mantiene mientras haya instalaciones viejas y después se simplifica.
 
 ### `Host`: dónde se ejecuta

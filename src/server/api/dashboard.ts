@@ -123,9 +123,9 @@ async function visibleRepos() {
   return (await loadRepos()).filter((entry) => sees(access, entry.productRepo));
 }
 
-function listRuns(days: number) {
+async function listRuns(days: number) {
   const access = currentAccess();
-  return listAllRuns(days).filter((run) => sees(access, run.repo));
+  return (await listAllRuns(days)).filter((run) => sees(access, run.repo));
 }
 
 function json(res: ServerResponse, status: number, body: unknown): void {
@@ -164,7 +164,7 @@ async function slotsView(entries: RepoEntry[]) {
 export async function snapshot(login: string): Promise<unknown> {
   const entries = await visibleRepos();
   const repos = entries.map((repo) => repo.productRepo);
-  const runs = listRuns(SIDEBAR_DAYS);
+  const runs = await listRuns(SIDEBAR_DAYS);
   // A repo's GitHub read is stale once one of its runs started or ended after it.
   const changedSince = (repo: string) => Math.max(0, ...runs.filter((run) => run.repo === repo).map((run) => Date.parse(run.endedAt ?? run.startedAt)));
   const github = await Promise.all(entries.map((entry) => repoGithub(entry, changedSince(entry.productRepo))));
@@ -217,7 +217,7 @@ const prsOf = (entries: Array<{ productRepo: string }>, github: Array<Awaited<Re
 // GET /api/exploraciones: the apps, with the findings, the last run and the next (#155).
 async function exploraciones(): Promise<unknown> {
   const entries = await visibleRepos();
-  const runs = listRuns(HISTORY_DAYS);
+  const runs = await listRuns(HISTORY_DAYS);
   const github = await Promise.all(entries.map((entry) => repoGithub(entry)));
   const prs = prsOf(entries, github);
   return { apps: await exploracionList(entries, exploracionRows(entries, prs, runs, await liveRuns(entries)), runs, prs) };
@@ -228,7 +228,7 @@ async function exploraciones(): Promise<unknown> {
 async function exploracion(repo: string, app: string, what: string): Promise<unknown | null> {
   const entry = (await visibleRepos()).find((e) => e.productRepo === repo);
   if (!entry || !(entry.explore ?? []).includes(app)) return null;
-  if (what === 'corridas') return { corridas: await corridasOf(entry, app, listRuns(HISTORY_DAYS)) };
+  if (what === 'corridas') return { corridas: await corridasOf(entry, app, await listRuns(HISTORY_DAYS)) };
   const pr = (await repoGithub(entry))?.prs.find(isExplorationPr);
   return inventarioOf(entry, app, pr);
 }
@@ -311,7 +311,7 @@ async function reuniones(res: ServerResponse, path: string): Promise<void> {
     return;
   }
   if (!match[2]) {
-    json(res, 200, await meetingDetail(meeting, listRuns(HISTORY_DAYS)));
+    json(res, 200, await meetingDetail(meeting, await listRuns(HISTORY_DAYS)));
     return;
   }
   const original = await meetingOriginal(meeting);
@@ -374,7 +374,7 @@ async function postDecision(req: IncomingMessage, res: ServerResponse, n: number
   }
 }
 
-async function portalSummary(runs: ReturnType<typeof listRuns>) {
+async function portalSummary(runs: Awaited<ReturnType<typeof listRuns>>) {
   const { requests, users } = await visibleRequests();
   const entries = await visibleRepos();
   return {
@@ -387,7 +387,7 @@ async function pedidos(res: ServerResponse, path: string): Promise<void> {
   if (path === '/api/pedidos') {
     const { requests, users } = await visibleRequests();
     const entries = await visibleRepos();
-    const runs = listRuns(HISTORY_DAYS);
+    const runs = await listRuns(HISTORY_DAYS);
     json(res, 200, { requests: requests.map((r) => requestRow(r, users.get(r.userId), entries, runs)).sort((a, b) => b.number - a.number) });
     return;
   }
@@ -418,7 +418,7 @@ async function pedidos(res: ServerResponse, path: string): Promise<void> {
     return;
   }
   const users = new Map((await listUsers()).map((u) => [u.id, u]));
-  json(res, 200, requestDetail(request, users.get(request.userId), await visibleRepos(), listRuns(HISTORY_DAYS)));
+  json(res, 200, requestDetail(request, users.get(request.userId), await visibleRepos(), await listRuns(HISTORY_DAYS)));
 }
 
 // Hoy: the runs, and each repo's current Linear cycle, where ronin's issues
@@ -430,7 +430,7 @@ async function todayWithCycles(): Promise<unknown> {
     const linear = await repoLinear(entry, gh);
     return linear ? cycleView(linear, gh) : null;
   }));
-  return { ...today(listRuns(WEEK_DAYS)), cycles: cycles.filter(Boolean) };
+  return { ...today(await listRuns(WEEK_DAYS)), cycles: cycles.filter(Boolean) };
 }
 
 // An issue or PR of a repo in repos.json: what it is, and when one of its
@@ -442,7 +442,7 @@ async function itemRef(id: string) {
   if (!entry) return null;
   const gh = await repoGithub(entry);
   const keys = itemRunKeys(id, gh);
-  const runs = listRuns(HISTORY_DAYS).filter((run) => keys.includes(itemKey(run)));
+  const runs = (await listRuns(HISTORY_DAYS)).filter((run) => keys.includes(itemKey(run)));
   const changedSince = Math.max(0, ...runs.map((run) => Date.parse(run.endedAt ?? run.startedAt)));
   const runKind = runs[0] ? (runs[0].issueNumber !== undefined ? 'issue' : 'pr') : undefined;
   // Neither listed nor run on lately (opened by its number): GitHub says what it is.
@@ -500,7 +500,7 @@ async function explorationContext(id: string) {
   const pr = gh?.prs.find((p) => p.number === Number(match[2]));
   if (!pr || !isExplorationPr(pr)) return null;
   const keys = itemRunKeys(id, gh);
-  const changedSince = Math.max(0, ...listRuns(HISTORY_DAYS).filter((run) => keys.includes(itemKey(run))).map((run) => Date.parse(run.endedAt ?? run.startedAt)));
+  const changedSince = Math.max(0, ...(await listRuns(HISTORY_DAYS)).filter((run) => keys.includes(itemKey(run))).map((run) => Date.parse(run.endedAt ?? run.startedAt)));
   return { entry, pr, review: await explorationReview(entry, pr, changedSince) };
 }
 
@@ -1095,12 +1095,12 @@ async function route(req: IncomingMessage, res: ServerResponse, path: string, se
     // An issue ronin manages can have no runs in that window: an empty list.
     // Its slices' PR runs are its own too (itemRunKeys), as in the sidebar.
     const entry = (await visibleRepos()).find((repo) => id.startsWith(`${repo.productRepo}#`));
-    if (!entry && !listRuns(HISTORY_DAYS).some((run) => itemKey(run) === id)) {
+    if (!entry && !(await listRuns(HISTORY_DAYS)).some((run) => itemKey(run) === id)) {
       json(res, 404, { error: 'no existe ese ítem' });
       return true;
     }
     const keys = itemRunKeys(id, entry ? await repoGithub(entry) : undefined);
-    json(res, 200, { id, runs: listRuns(HISTORY_DAYS).filter((run) => keys.includes(itemKey(run))) });
+    json(res, 200, { id, runs: (await listRuns(HISTORY_DAYS)).filter((run) => keys.includes(itemKey(run))) });
     return true;
   }
 
