@@ -9,7 +9,7 @@ import { config } from '../core/config.js';
 import { createUser, issueLink, redeemLink, updateUser } from '../portal/accounts.js';
 import { hashPassword } from '../portal/password.js';
 import { getRequest, updateRequest } from '../portal/requests.js';
-import { resetPortalLimits } from './api/portal.js';
+import { resetPortalLimits } from '../portal/routes.js';
 import { createPortalHandler } from './portal.js';
 
 vi.mock('../core/logger.js', () => ({ log: { info: vi.fn(), error: vi.fn() } }));
@@ -73,6 +73,13 @@ describe('portal requests API', () => {
     expect((await post(cookie, '/api/portal/requests', { repo: 'redmotos/shoppingcart', app: 'tienda', text: 'x' })).status).toBe(400);
     expect((await (await post(cookie, '/api/portal/requests', { repo: 'redmotos/shoppingcart', app: 'backoffice', text: '  ' })).json()).error).toMatch(/Escribe qué necesitas/);
     expect(launch).not.toHaveBeenCalled();
+  });
+
+  it('refuses a body larger than its images allow, with what the page shows', async () => {
+    const { cookie } = await person('mfernandez@redmotoshn.com');
+    const res = await post(cookie, '/api/portal/requests', { repo: 'redmotos/shoppingcart', app: 'backoffice', text: 'x'.repeat(30 * 1024 * 1024) });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toMatch(/no llegó bien/);
   });
 
   it('stops at the daily limit, the account’s own when it has one', async () => {

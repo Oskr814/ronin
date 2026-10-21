@@ -201,6 +201,9 @@ La única implementación es `LocalHost`. El código de dominio no vuelve a llam
 - **Contratos:** los tipos de cada endpoint se exportan desde el servidor y el frontend los importa (el cliente de Hono, o tipos compartidos). Un cambio en la API rompe el build del frontend, no la página.
 - **No cambia:** los dos listeners (público y tailnet), la autenticación del tablero con GitHub, la sesión del portal, las cabeceras de seguridad y `X-Portal-Version`.
 - **Migración:** por grupo de rutas (portal, pedidos, despliegues, métricas, ajustes, ítems). Hono se monta en el servidor actual, y las rutas viejas siguen respondiendo hasta que cada grupo pasa.
+- **Carpetas por dominio:** las rutas de un dominio viven con él, junto a su servicio y su repositorio: `portal/routes.ts`, `deploy/routes.ts`… Lo que comparten todas (el cuerpo JSON con su tope, la validación con zod, los errores) está en `server/hono.ts`. Al terminar la migración, `server/app.ts` monta cada dominio y `server/api/` queda vacío.
+
+**Hecho (6, portal):** la API del portal (`/api/portal/*`) en Hono: `portal/routes.ts` y `portal/routes-requests.ts`, montadas por `server/portal.ts` con `@hono/node-server` sin tocar los `Request`/`Response` globales. Respondía y sigue respondiendo lo mismo: las pruebas HTTP de antes pasan sin cambios. `PortalApi` es el tipo que va a usar el cliente de la etapa 7.
 
 ### Frontend
 

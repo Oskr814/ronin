@@ -69,9 +69,11 @@ describe.skipIf(!TEST_DATABASE_URL)('locks and slots in Postgres', () => {
     const job = (n: number) => withSlots('issue', 2, {}, async () => {
       running++;
       most = Math.max(most, running);
-      seenWaiting = Math.max(seenWaiting, (await waitingDb(db)).length);
       seenSlots = Math.max(seenSlots, (await slotsInUseDb(db))['acme/app'] ?? 0);
       await new Promise((r) => setTimeout(r, 150));
+      // After the work, not at its start: by then the ones left out have
+      // surely said they wait.
+      seenWaiting = Math.max(seenWaiting, (await waitingDb(db)).length);
       running--;
       return n;
     }, `issue #${n}`);
