@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setDb, type Db } from '../db/db.js';
 import { TEST_DATABASE_URL, testDb } from '../db/testing.js';
-import { appendRegistro, readRegistro, readSettings, updateSettings } from './settings-store.js';
+import { appendSettingsLog, readSettingsLog, readSettings, updateSettings } from './settings-store.js';
 
 const dir = mkdtempSync(join(tmpdir(), 'ronin-settings-store-'));
 const entry = (n: number) => ({ at: new Date(Date.UTC(2026, 9, 20, 10, n)).toISOString(), login: 'persona', what: `General · cosa ${n}`, from: String(n), to: String(n + 1) });
@@ -54,10 +54,10 @@ function behaves(name: string, setup: () => Promise<void>) {
     });
 
     it('keeps the record of changes, newest first and up to a limit', async () => {
-      expect(await readRegistro(dir)).toEqual([]);
-      for (const n of [1, 2, 3]) await appendRegistro(dir, entry(n));
-      expect(await readRegistro(dir)).toEqual([entry(3), entry(2), entry(1)]);
-      expect(await readRegistro(dir, 2)).toEqual([entry(3), entry(2)]);
+      expect(await readSettingsLog(dir)).toEqual([]);
+      for (const n of [1, 2, 3]) await appendSettingsLog(dir, entry(n));
+      expect(await readSettingsLog(dir)).toEqual([entry(3), entry(2), entry(1)]);
+      expect(await readSettingsLog(dir, 2)).toEqual([entry(3), entry(2)]);
     });
   });
 }
@@ -71,7 +71,7 @@ it('in files, keeps them where they always were', async () => {
   setDb(null);
   rmSync(dir, { recursive: true, force: true });
   await updateSettings(dir, 'persona', (file) => { file.values['portal.dailyLimit'] = 7; });
-  await appendRegistro(dir, entry(1));
+  await appendSettingsLog(dir, entry(1));
   expect(JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8'))).toEqual({ values: { 'portal.dailyLimit': 7 } });
   expect(readFileSync(join(dir, 'registro.jsonl'), 'utf8').trim()).toBe(JSON.stringify(entry(1)));
 });

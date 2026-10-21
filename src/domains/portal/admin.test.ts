@@ -87,8 +87,8 @@ describe('portal admin', () => {
     await rm(config.settings.dataDir, { recursive: true, force: true });
     const { user } = await runPortalAdmin(ctx, '/api/portal-admin/users', { email: 'persona@x.com', name: 'María', grants: [grant] });
     await runPortalAdmin(ctx, `/api/portal-admin/users/${user.id}`, { name: 'María José', dailyLimit: 9, disabled: true });
-    const { readRegistro } = await import('../settings/settings.js');
-    expect((await readRegistro()).map((e) => `${e.what}: ${e.from} → ${e.to}`)).toEqual([
+    const { readSettingsLog } = await import('../settings/settings.js');
+    expect((await readSettingsLog()).map((e) => `${e.what}: ${e.from} → ${e.to}`)).toEqual([
       'Usuarios · persona@x.com · cuenta: activa → desactivada',
       'Usuarios · persona@x.com · pedidos por día: el de General → 9',
       'Usuarios · persona@x.com · nombre: María → María José',

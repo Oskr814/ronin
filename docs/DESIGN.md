@@ -1375,7 +1375,7 @@ El engranaje junto a *ronin*, arriba de la barra lateral, abre `/ajustes/<secci�
 
 Cada campo se guarda al salir de él. Lo que ronin necesita del servidor (secretos, rutas, puertos, `RUNNER_ID`, `PREVIEW_PORT_RANGE`) solo se ve.
 
-Las rutas (`/api/ajustes/*`) están en `domains/settings/routes.ts`, en Hono: quién puede qué, el JSON y los errores. Lo que valida y guarda cada sección está en la misma carpeta: `settings.ts`, `users.ts`, `repos.ts` y `claude-accounts.ts`.
+Las rutas (`/api/settings/*`) están en `domains/settings/routes.ts`, en Hono: quién puede qué, el JSON y los errores. Lo que valida y guarda cada sección está en la misma carpeta: `settings.ts`, `users.ts`, `repos.ts` y `claude-accounts.ts`.
 
 #### 19.2 Valores: el del tablero, después `.env`, después el de por defecto
 
@@ -1446,20 +1446,20 @@ Cada cambio en Ajustes, del perfil propio a un repo, queda en el registro: la ta
 
 | Ruta | Quién | Qué |
 |---|---|---|
-| `GET /api/ajustes` | todos | el perfil, las notificaciones y los equipos de Linear de la persona; a un admin, además los valores y los modelos por tarea |
-| `POST /api/ajustes/perfil` | todos | `{ name?, email?, linear?: { repo, id } }`, el propio |
-| `POST /api/ajustes/notificaciones` | todos | `{ repo, event, on }`, las propias, de un repo que ve |
-| `POST /api/ajustes/valores` | admins | `{ key, value }`; `null` vuelve al de `.env` |
-| `POST /api/ajustes/tareas` | admins | `{ task, model?, effort? }` |
-| `GET\|POST /api/ajustes/usuarios[/<login>[/quitar]]`, `POST /api/ajustes/equipo` | admins | el equipo (19.3) |
-| `GET /api/ajustes/repos`, `POST /api/ajustes/repos/<owner>/<repo>` | admins | los repos (19.6) |
-| `GET /api/ajustes/conexiones`, `POST /api/ajustes/conexiones/correo` | admins | 19.7 |
-| `GET /api/ajustes/cuentas`, `POST /api/ajustes/cuentas/<cuenta>` | admins | `{ plan?, priceUsd? }`; `plan: null` vuelve a Max 5× (19.11) |
-| `GET /api/ajustes/registro` | admins | 19.8 |
+| `GET /api/settings` | todos | el perfil, las notificaciones y los equipos de Linear de la persona; a un admin, además los valores y los modelos por tarea |
+| `POST /api/settings/profile` | todos | `{ name?, email?, linear?: { repo, id } }`, el propio |
+| `POST /api/settings/notifications` | todos | `{ repo, event, on }`, las propias, de un repo que ve |
+| `POST /api/settings/values` | admins | `{ key, value }`; `null` vuelve al de `.env` |
+| `POST /api/settings/tasks` | admins | `{ task, model?, effort? }` |
+| `GET\|POST /api/settings/users[/<login>[/quitar]]`, `POST /api/settings/team` | admins | el equipo (19.3) |
+| `GET /api/settings/repos`, `POST /api/settings/repos/<owner>/<repo>` | admins | los repos (19.6) |
+| `GET /api/settings/connections`, `POST /api/settings/connections/mail` | admins | 19.7 |
+| `GET /api/settings/accounts`, `POST /api/settings/accounts/<cuenta>` | admins | `{ plan?, priceUsd? }`; `plan: null` vuelve a Max 5× (19.11) |
+| `GET /api/settings/log` | admins | 19.8 |
 
 #### 19.10 Activarlo
 
-Nada: sin `SETTINGS_DATA_DIR`, usa `settings-data/` en el checkout del runner (fuera de git). Con `DATABASE_URL`, los valores, las tareas, las cuentas y el registro van a Postgres (`pnpm db:import-ajustes` los copia de los archivos); el equipo y las copias de `repos.json` siguen ahí. Es la única copia de lo que se cambió en el tablero, del equipo y del registro: hay que respaldarlo, como `portal-data/`.
+Nada: sin `SETTINGS_DATA_DIR`, usa `settings-data/` en el checkout del runner (fuera de git). Con `DATABASE_URL`, los valores, las tareas, las cuentas y el registro van a Postgres (`pnpm db:import-settings` los copia de los archivos); el equipo y las copias de `repos.json` siguen ahí. Es la única copia de lo que se cambió en el tablero, del equipo y del registro: hay que respaldarlo, como `portal-data/`.
 
 #### 19.11 Cuentas de Claude (#234, `platform/claude/claude-plans.ts`, `domains/settings/claude-accounts.ts`)
 

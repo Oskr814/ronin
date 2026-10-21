@@ -16,7 +16,7 @@ import type { AccountPlanChoice } from '../claude/claude-plans.js';
 // Doesn't import config: config loads the settings from here. Each call
 // takes the data dir, which only the files use.
 
-export interface RegistroEntry {
+export interface SettingsLogEntry {
   at: string;
   login: string;
   // What changed, in words ("General · portal.dailyLimit", "Perfil · correo").
@@ -26,9 +26,9 @@ export interface RegistroEntry {
 }
 
 // The last ones Ajustes → Registro shows.
-export const REGISTRO_MAX = 300;
+export const SETTINGS_LOG_MAX = 300;
 
-const registroPath = (dataDir: string) => join(dataDir, 'registro.jsonl');
+const settingsLogPath = (dataDir: string) => join(dataDir, 'registro.jsonl');
 const emptySettings = (): SettingsFile => ({ values: {} });
 
 async function readFromDb(conn: Pick<Db, 'selectFrom'>): Promise<SettingsFile> {
@@ -96,43 +96,43 @@ export function updateSettings<R>(dataDir: string, by: string, fn: (file: Settin
 }
 
 // One more line in the record of changes; the record is never rewritten.
-export function appendRegistro(dataDir: string, entry: RegistroEntry): Promise<void> {
+export function appendSettingsLog(dataDir: string, entry: SettingsLogEntry): Promise<void> {
   return onStore({
     db: async (conn) => {
       await conn.insertInto('settings_log').values({ at: entry.at, login: entry.login, what: entry.what, from_value: entry.from, to_value: entry.to }).execute();
     },
     files: async () => {
       await mkdir(dataDir, { recursive: true, mode: 0o700 });
-      await appendFile(registroPath(dataDir), `${JSON.stringify(entry)}\n`, { mode: 0o600 });
+      await appendFile(settingsLogPath(dataDir), `${JSON.stringify(entry)}\n`, { mode: 0o600 });
     },
   });
 }
 
-// The last REGISTRO_MAX, newest first.
-export function readRegistro(dataDir: string, limit = REGISTRO_MAX): Promise<RegistroEntry[]> {
+// The last SETTINGS_LOG_MAX, newest first.
+export function readSettingsLog(dataDir: string, limit = SETTINGS_LOG_MAX): Promise<SettingsLogEntry[]> {
   return onStore({
     db: async (conn) => {
       const rows = await conn.selectFrom('settings_log').select(['at', 'login', 'what', 'from_value', 'to_value'])
         .orderBy('at', 'desc').orderBy('id', 'desc').limit(limit).execute();
       return rows.map((r) => ({ at: r.at.toISOString(), login: r.login, what: r.what, from: r.from_value, to: r.to_value }));
     },
-    files: () => readRegistroFile(dataDir, limit),
+    files: () => readSettingsLogFile(dataDir, limit),
   });
 }
 
-async function readRegistroFile(dataDir: string, limit: number): Promise<RegistroEntry[]> {
+async function readSettingsLogFile(dataDir: string, limit: number): Promise<SettingsLogEntry[]> {
   let raw: string;
   try {
-    raw = await readFile(registroPath(dataDir), 'utf8');
+    raw = await readFile(settingsLogPath(dataDir), 'utf8');
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
     throw error;
   }
-  const entries: RegistroEntry[] = [];
+  const entries: SettingsLogEntry[] = [];
   for (const line of raw.split('\n')) {
     if (!line.trim()) continue;
     try {
-      entries.push(JSON.parse(line) as RegistroEntry);
+      entries.push(JSON.parse(line) as SettingsLogEntry);
     } catch {
       // A torn line (a write cut short) doesn't hide the rest.
     }

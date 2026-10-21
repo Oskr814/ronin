@@ -1,4 +1,4 @@
-// `pnpm db:import-cuota`: copies each Claude account's usage
+// `pnpm db:import-usage`: copies each Claude account's usage
 // (logs/usage/<account>.json, and its history in
 // logs/usage/history/<account>.jsonl) into DATABASE_URL's database (#235,
 // stage 3.5). The files stay where they are, as a backup. Safe to run again

@@ -11,16 +11,16 @@ vi.mock('../../platform/logger.js', () => ({ log: { info: vi.fn(), error: vi.fn(
 const usage = vi.hoisted(() => ({ list: [] as unknown[] }));
 vi.mock('../../platform/claude/claude-usage.js', async (importOriginal) => ({ ...(await importOriginal<typeof import('../../platform/claude/claude-usage.js')>()), listUsage: async () => usage.list }));
 
-const { readRegistro } = await import('./settings.js');
-const { cuentasView, setCuenta } = await import('./claude-accounts.js');
+const { readSettingsLog } = await import('./settings.js');
+const { accountsView, setAccountPlan } = await import('./claude-accounts.js');
 
 const ENTRIES = [
   { productRepo: 'redmotos/shoppingcart', productRepoPath: '/sc', claudeConfigDir: '/home/x/.claude-redmotos' },
   { productRepo: 'redmotos/backoffice', productRepoPath: '/bo', claudeConfigDir: '/home/x/.claude-redmotos' },
   { productRepo: 'Bmedical/bmedical', productRepoPath: '/bm', claudeConfigDir: '/home/x/.claude-bmedical' },
 ];
-const set = (account: string, body: Record<string, unknown>) => setCuenta('jefa', account, body, ENTRIES);
-const plan = async (account: string) => (await cuentasView(ENTRIES)).cuentas.find((c) => c.account === account)!.plan;
+const set = (account: string, body: Record<string, unknown>) => setAccountPlan('jefa', account, body, ENTRIES);
+const plan = async (account: string) => (await accountsView(ENTRIES)).cuentas.find((c) => c.account === account)!.plan;
 const saved = () => JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8'));
 
 beforeEach(() => {
@@ -28,13 +28,13 @@ beforeEach(() => {
   usage.list = [];
 });
 
-describe('cuentasView', () => {
+describe('accountsView', () => {
   it('lists each account of repos.json with its repos, plus the ones with usage only, and counts an unset one as Max 5×', async () => {
     usage.list = [
       { account: 'redmotos', claudeConfigDir: '/home/x/.claude-redmotos', measuredAt: '2026-10-20T10:00:00Z', sevenDay: { utilization: 0.4, resetsAt: '2026-10-23T00:00:00Z' } },
       { account: 'vieja', claudeConfigDir: '/home/x/.claude-vieja', measuredAt: '2026-10-01T10:00:00Z' },
     ];
-    const { cuentas, plans } = await cuentasView(ENTRIES);
+    const { cuentas, plans } = await accountsView(ENTRIES);
     expect(cuentas.map((c) => [c.account, c.repos])).toEqual([['bmedical', ['Bmedical/bmedical']], ['redmotos', ['redmotos/shoppingcart', 'redmotos/backoffice']], ['vieja', []]]);
     expect(cuentas[1]).toMatchObject({ claudeConfigDir: '/home/x/.claude-redmotos', plan: { plan: 'max5', name: 'Max 5×', priceUsd: 100, source: 'defecto' }, usage: { sevenDay: { utilization: 0.4 } } });
     expect(cuentas[0].usage).toBeNull();
@@ -42,16 +42,16 @@ describe('cuentasView', () => {
   });
 
   it('names a repo without claudeConfigDir after Claude Code\'s default account', async () => {
-    expect((await cuentasView([{ productRepo: 'a/b', productRepoPath: '/b' }])).cuentas).toEqual([expect.objectContaining({ account: 'default', claudeConfigDir: '', repos: ['a/b'] })]);
+    expect((await accountsView([{ productRepo: 'a/b', productRepoPath: '/b' }])).cuentas).toEqual([expect.objectContaining({ account: 'default', claudeConfigDir: '', repos: ['a/b'] })]);
   });
 });
 
-describe('setCuenta', () => {
+describe('setAccountPlan', () => {
   it('saves a plan with its list price, and records the change', async () => {
     await set('bmedical', { plan: 'pro' });
     expect(await plan('bmedical')).toEqual({ plan: 'pro', name: 'Pro', priceUsd: 20, source: 'tablero' });
     expect(saved().accounts).toEqual({ bmedical: { plan: 'pro' } });
-    expect((await readRegistro()).map((e) => `${e.what}: ${e.from} → ${e.to}`)).toEqual([
+    expect((await readSettingsLog()).map((e) => `${e.what}: ${e.from} → ${e.to}`)).toEqual([
       'Cuentas de Claude · bmedical · precio al mes: $100 → $20',
       'Cuentas de Claude · bmedical · plan: Max 5× (por defecto) → Pro',
     ]);
@@ -87,12 +87,12 @@ describe('setCuenta', () => {
     await expect(set('bmedical', { priceUsd: -1 })).rejects.toThrow(/entre 0/);
     await expect(set('bmedical', { priceUsd: '20' })).rejects.toThrow(/entre 0/);
     await expect(set('bmedical', {})).rejects.toThrow(/Falta/);
-    expect(await readRegistro()).toEqual([]);
+    expect(await readSettingsLog()).toEqual([]);
   });
 
   it('records nothing when nothing changed', async () => {
     await set('bmedical', { plan: 'pro' });
     await set('bmedical', { plan: 'pro' });
-    expect(await readRegistro()).toHaveLength(2);
+    expect(await readSettingsLog()).toHaveLength(2);
   });
 });

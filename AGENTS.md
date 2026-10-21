@@ -16,6 +16,12 @@ Los nombres de los repos de producto, el dominio público del portal y las cuent
 
 Si algo de eso hace falta para trabajar, va en el directorio de datos de ronin, en `.env` o en los repos privados, nunca en este. Antes de publicar un issue, un comentario o un PR, revisa el texto con esta lista.
 
+## El código en inglés
+
+El código va en inglés: los nombres de archivos y carpetas, las rutas de la API, las funciones, las variables, los tipos y las clases. Los comentarios pueden ir en español, y en español siguen también lo que lee la gente (la UI, los correos, lo que ronin escribe en GitHub), la documentación y los prompts.
+
+Lo que ya está guardado se queda como está: las tablas y columnas, los nombres de las migraciones aplicadas, y los valores y claves de los datos (los permisos del equipo, los archivos de datos, las claves del JSON que devuelven los agentes). Una tabla o migración nueva va en inglés.
+
 ## La documentación va en el mismo PR
 
 Si un PR cambia algo que se ve (un comando, una acción del tablero, la UI, el portal, la configuración, la instalación), actualiza en ese mismo PR la página que lo cuenta en `docs/site/src/content/docs/`. Si cambia el diseño, actualiza `docs/DESIGN.md`. Si cambia cuándo se bloquea, actualiza `docs/BLOCKING.md`. No dejes la documentación para un PR aparte: quien hace el cambio es quien mejor sabe qué cambió.

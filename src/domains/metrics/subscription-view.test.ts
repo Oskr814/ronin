@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 
 const PLAN = { plan: 'max5', name: 'Max 5×', priceUsd: 100, source: 'defecto' };
-vi.mock('../settings/claude-accounts.js', () => ({ cuentasView: () => ({ cuentas: [{ account: 'redmotos', repos: ['redmotos/shoppingcart'], plan: PLAN }, { account: 'bmedical', repos: ['Bmedical/bmedical'], plan: { ...PLAN, plan: 'pro', priceUsd: 20 } }] }) }));
+vi.mock('../settings/claude-accounts.js', () => ({ accountsView: () => ({ cuentas: [{ account: 'redmotos', repos: ['redmotos/shoppingcart'], plan: PLAN }, { account: 'bmedical', repos: ['Bmedical/bmedical'], plan: { ...PLAN, plan: 'pro', priceUsd: 20 } }] }) }));
 const runs = [
   { account: 'redmotos', repo: 'redmotos/shoppingcart', taskType: 'fix-issue', startedAt: '2026-10-19T10:00:00Z', endedAt: '2026-10-19T11:00:00Z', costUsd: 3 },
   { account: 'bmedical', repo: 'Bmedical/bmedical', taskType: 'plan', startedAt: '2026-10-19T10:00:00Z', endedAt: '2026-10-19T11:00:00Z', costUsd: 1 },

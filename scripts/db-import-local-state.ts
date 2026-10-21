@@ -1,4 +1,4 @@
-// `pnpm db:import-estado-local`: copies the local state of each repo in
+// `pnpm db:import-local-state`: copies the local state of each repo in
 // repos.json (<LOCAL_STATE_PATH>.<owner-repo>.json) into DATABASE_URL's
 // database (#235, stage 3.3): its claims, its comments done, its block
 // reasons… The files stay where they are, as a backup. Safe to run again

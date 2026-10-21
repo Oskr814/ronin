@@ -1,4 +1,4 @@
-// `pnpm db:import-reuniones`: copies each <MEETINGS_DATA_DIR>/meetings/<n>/
+// `pnpm db:import-meetings`: copies each <MEETINGS_DATA_DIR>/meetings/<n>/
 // meeting.json into DATABASE_URL's database (#235, stage 2), with its
 // number. The notes and the uploaded files stay where they are (the database
 // doesn't keep them), and so do meeting.json and counter.json, as a backup.

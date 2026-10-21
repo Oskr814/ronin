@@ -5386,13 +5386,13 @@ function openAjustes(sec = 'perfil', login = null, f = null, cuenta = null) {
 
 async function loadAjustes() {
   try {
-    S.aj.data = await api('/api/ajustes');
-    if (S.aj.sec === 'registro') S.aj.registro = (await api('/api/ajustes/registro')).registro;
-    if (S.aj.sec === 'repos') S.aj.repos = await api('/api/ajustes/repos');
-    if (S.aj.sec === 'conexiones') S.aj.conex = await api('/api/ajustes/conexiones');
-    if (S.aj.sec === 'cuentas') S.aj.cuentas = await api('/api/ajustes/cuentas');
-    if (S.aj.sec === 'usuarios' && S.aj.login) S.aj.user = await api(`/api/ajustes/usuarios/${encodeURIComponent(S.aj.login)}`);
-    else if (S.aj.sec === 'usuarios' && !S.aj.cuenta) S.aj.users = await api('/api/ajustes/usuarios');
+    S.aj.data = await api('/api/settings');
+    if (S.aj.sec === 'registro') S.aj.registro = (await api('/api/settings/log')).registro;
+    if (S.aj.sec === 'repos') S.aj.repos = await api('/api/settings/repos');
+    if (S.aj.sec === 'conexiones') S.aj.conex = await api('/api/settings/connections');
+    if (S.aj.sec === 'cuentas') S.aj.cuentas = await api('/api/settings/accounts');
+    if (S.aj.sec === 'usuarios' && S.aj.login) S.aj.user = await api(`/api/settings/users/${encodeURIComponent(S.aj.login)}`);
+    else if (S.aj.sec === 'usuarios' && !S.aj.cuenta) S.aj.users = await api('/api/settings/users');
     // The portal's accounts (role Usuario), when the portal is set up.
     if (S.aj.sec === 'usuarios' && !S.aj.login && S.snap.portalAdmin) S.portal = { data: await api('/api/portal-admin'), error: null };
     S.aj.error = null;
@@ -5677,7 +5677,7 @@ function wireAjUsers(center) {
   center.querySelector('[data-ajremove]')?.addEventListener('click', async () => {
     if (!confirm(`¿Quitar a ${S.aj.user.name || login} de la lista?`)) return;
     try {
-      await api(`/api/ajustes/usuarios/${encodeURIComponent(login)}/quitar`, { method: 'POST', body: '{}' });
+      await api(`/api/settings/users/${encodeURIComponent(login)}/remove`, { method: 'POST', body: '{}' });
       toast(`Quitaste a @${login} de la lista.`);
       openAjustes('usuarios');
     } catch (error) {
@@ -5689,7 +5689,7 @@ function wireAjUsers(center) {
 
 async function ajUser(patch) {
   try {
-    S.aj.user = await api(`/api/ajustes/usuarios/${encodeURIComponent(S.aj.login)}`, { method: 'POST', body: JSON.stringify(patch) });
+    S.aj.user = await api(`/api/settings/users/${encodeURIComponent(S.aj.login)}`, { method: 'POST', body: JSON.stringify(patch) });
     toast('Guardado.');
   } catch (error) {
     if (error instanceof Unauthorized && showLogin(error)) return;
@@ -5701,7 +5701,7 @@ async function ajUser(patch) {
 
 async function ajEquipo(patch) {
   try {
-    Object.assign(S.aj.users, await api('/api/ajustes/equipo', { method: 'POST', body: JSON.stringify(patch) }), { entradaSet: true });
+    Object.assign(S.aj.users, await api('/api/settings/team', { method: 'POST', body: JSON.stringify(patch) }), { entradaSet: true });
     toast('Guardado.');
   } catch (error) {
     if (error instanceof Unauthorized && showLogin(error)) return;
@@ -5768,7 +5768,7 @@ async function ajAdd() {
   ajRenderAdd();
   if (a.kind === 'portal') return ajAddCuenta(a);
   try {
-    const { login } = await api('/api/ajustes/usuarios', { method: 'POST', body: JSON.stringify({ login: a.login, role: a.role }) });
+    const { login } = await api('/api/settings/users', { method: 'POST', body: JSON.stringify({ login: a.login, role: a.role }) });
     S.aj.add = null;
     ajRenderAdd();
     toast(`Agregaste a @${login}.`);
@@ -5959,8 +5959,8 @@ function wireAjRepo(center) {
 
 async function ajRepo(change) {
   try {
-    const { changed } = await api(`/api/ajustes/repos/${S.aj.repo}`, { method: 'POST', body: JSON.stringify(change) });
-    S.aj.repos = await api('/api/ajustes/repos');
+    const { changed } = await api(`/api/settings/repos/${S.aj.repo}`, { method: 'POST', body: JSON.stringify(change) });
+    S.aj.repos = await api('/api/settings/repos');
     toast(changed ? 'Guardado en repos.json.' : 'Sin cambios.');
   } catch (error) {
     if (error instanceof Unauthorized && showLogin(error)) return;
@@ -5990,7 +5990,7 @@ function wireAjustes() {
   for (const input of center.querySelectorAll('[data-ajme]')) input.onchange = () => ajSaveProfile({ [input.dataset.ajme]: input.value });
   for (const el of center.querySelectorAll('[data-ajtask]')) el.onchange = async () => {
     try {
-      S.aj.data.tareas = (await api('/api/ajustes/tareas', { method: 'POST', body: JSON.stringify({ task: el.dataset.ajtask, [el.dataset.f]: el.value || null }) })).tareas;
+      S.aj.data.tareas = (await api('/api/settings/tasks', { method: 'POST', body: JSON.stringify({ task: el.dataset.ajtask, [el.dataset.f]: el.value || null }) })).tareas;
       toast('Guardado. Vale desde la próxima corrida.');
     } catch (error) {
       if (error instanceof Unauthorized && showLogin(error)) return;
@@ -6003,7 +6003,7 @@ function wireAjustes() {
     S.aj.busy = true;
     renderCenter();
     try {
-      toast(`Listo: mira tu correo (${(await api('/api/ajustes/conexiones/correo', { method: 'POST', body: '{}' })).to}).`);
+      toast(`Listo: mira tu correo (${(await api('/api/settings/connections/mail', { method: 'POST', body: '{}' })).to}).`);
     } catch (error) {
       if (error instanceof Unauthorized && showLogin(error)) return;
       toast(error.message);
@@ -6014,7 +6014,7 @@ function wireAjustes() {
   });
   for (const b of center.querySelectorAll('[data-ajev]')) b.onclick = async () => {
     try {
-      S.aj.data.notificaciones = (await api('/api/ajustes/notificaciones', { method: 'POST', body: JSON.stringify({ repo: b.dataset.ajev, event: b.dataset.e, on: b.getAttribute('aria-checked') !== 'true' }) })).notificaciones;
+      S.aj.data.notificaciones = (await api('/api/settings/notifications', { method: 'POST', body: JSON.stringify({ repo: b.dataset.ajev, event: b.dataset.e, on: b.getAttribute('aria-checked') !== 'true' }) })).notificaciones;
       toast('Guardado.');
     } catch (error) {
       if (error instanceof Unauthorized && showLogin(error)) return;
@@ -6049,7 +6049,7 @@ function wireAjustes() {
 async function ajCuenta(account, change) {
   try {
     if (Number.isNaN(change.priceUsd)) throw new Error('El precio tiene que ser un número.');
-    const { cuenta } = await api(`/api/ajustes/cuentas/${encodeURIComponent(account)}`, { method: 'POST', body: JSON.stringify(change) });
+    const { cuenta } = await api(`/api/settings/accounts/${encodeURIComponent(account)}`, { method: 'POST', body: JSON.stringify(change) });
     S.aj.cuentas.cuentas = S.aj.cuentas.cuentas.map((c) => (c.account === account ? cuenta : c));
     toast(`Guardado: ${account} en ${cuenta.plan.name}${cuenta.plan.priceUsd === null ? '' : `, $${cuenta.plan.priceUsd} al mes`}.`);
   } catch (error) {
@@ -6063,7 +6063,7 @@ async function ajCuenta(account, change) {
 async function ajSetValue(key, value) {
   try {
     if (Number.isNaN(value)) throw new Error('Tiene que ser un número entero.');
-    const { setting } = await api('/api/ajustes/valores', { method: 'POST', body: JSON.stringify({ key, value }) });
+    const { setting } = await api('/api/settings/values', { method: 'POST', body: JSON.stringify({ key, value }) });
     S.aj.data.valores = S.aj.data.valores.map((s) => (s.key === key ? setting : s));
     toast(value === null ? `${AJ_SETTINGS[key]?.[0] ?? key}: vuelve al de ${setting.source === 'env' ? '.env' : 'por defecto'} (${ajWord(setting.value)}).` : 'Guardado. Vale desde ahora.');
   } catch (error) {
@@ -6076,7 +6076,7 @@ async function ajSetValue(key, value) {
 
 async function ajSaveProfile(patch) {
   try {
-    S.aj.data.perfil = (await api('/api/ajustes/perfil', { method: 'POST', body: JSON.stringify(patch) })).perfil;
+    S.aj.data.perfil = (await api('/api/settings/profile', { method: 'POST', body: JSON.stringify(patch) })).perfil;
     toast('Guardado.');
   } catch (error) {
     if (error instanceof Unauthorized && showLogin(error)) return;

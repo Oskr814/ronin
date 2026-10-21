@@ -237,7 +237,7 @@ export function createMeeting(input: NewMeeting, now = new Date()): Promise<Meet
   });
 }
 
-// For the import (scripts/db-import-reuniones.ts): writes one as it is, and
+// For the import (scripts/db-import-meetings.ts): writes one as it is, and
 // the meetings in the folder as meeting.json has them.
 export const putMeeting = store.put;
 export const fileMeetings = store.files;

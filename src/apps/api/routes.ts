@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { ajustesRoutes } from '../../domains/settings/routes.js';
+import { settingsRoutes } from '../../domains/settings/routes.js';
 import { deployRoutes } from '../../domains/deploys/routes.js';
 import { explorationRoutes } from '../../domains/explorations/routes.js';
 import { boardRoutes, itemsRoutes } from '../../domains/items/routes.js';
@@ -20,7 +20,7 @@ export const dashboardApp = new Hono<DashboardEnv>()
   .route('/api/despliegues', deployRoutes())
   .route('/api/metricas', metricsRoutes())
   .route('/api/exploraciones', explorationRoutes())
-  .route('/api/ajustes', ajustesRoutes())
+  .route('/api/settings', settingsRoutes())
   .route('/api/runs', runsRoutes())
   .route('/api/evidence', evidenceRoutes())
   .route('/api/items', itemsRoutes())

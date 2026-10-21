@@ -6,12 +6,12 @@ import type { RepoEntry } from '../../platform/agents/repo-context.js';
 import { MAX_REPO_CONCURRENCY, validateRepos } from '../../platform/config/repos.js';
 import { linearKey, teamPlanning } from '../../platform/linear/linear-api.js';
 import { withJson } from '../../platform/fs/atomic-json.js';
-import { AjustesError, record } from './settings.js';
+import { SettingsError, record } from './settings.js';
 import { repoApps } from '../items/new-issue.js';
 
 // Ajustes → Repos (#174, stage 5), admins only:
-//   GET  /api/ajustes/repos                  each repo of repos.json, with what can be changed from here
-//   POST /api/ajustes/repos/<owner>/<repo>   one change: { baseRef } | { portalName } | { app: { id, portal?, name?, description?, explore?, project? } }
+//   GET  /api/settings/repos                  each repo of repos.json, with what can be changed from here
+//   POST /api/settings/repos/<owner>/<repo>   one change: { baseRef } | { portalName } | { app: { id, portal?, name?, description?, explore?, project? } }
 //                                            | { linear } | { deploy: { on?, prerelease?, selective? } } | { agent: { model?, effort? } } | { autoMerge } | { concurrency } | { notifyTo }
 //
 // repos.json stays where every repo lives: what changes here is written
@@ -100,7 +100,7 @@ function apply(raw: Raw, body: Record<string, unknown>, manifest: string[]): Arr
 
   if (body.baseRef !== undefined) {
     const ref = body.baseRef === null ? '' : str(body.baseRef);
-    if (ref === undefined || (ref && !/^[\w./-]+$/.test(ref))) throw new AjustesError('La rama base no es válida (p. ej. origin/main).');
+    if (ref === undefined || (ref && !/^[\w./-]+$/.test(ref))) throw new SettingsError('La rama base no es válida (p. ej. origin/main).');
     const before = (raw.worktreeBaseRef as string | undefined) ?? '';
     if (ref) raw.worktreeBaseRef = ref;
     else delete raw.worktreeBaseRef;
@@ -109,8 +109,8 @@ function apply(raw: Raw, body: Record<string, unknown>, manifest: string[]): Arr
 
   if (body.portalName !== undefined) {
     const name = str(body.portalName);
-    if (!portal) throw new AjustesError('Este repo no está en el portal: hace falta al menos una app en el portal.');
-    if (!name) throw new AjustesError('El nombre en el portal no puede quedar vacío.');
+    if (!portal) throw new SettingsError('Este repo no está en el portal: hace falta al menos una app en el portal.');
+    if (!name) throw new SettingsError('El nombre en el portal no puede quedar vacío.');
     if (portal.name !== name) changes.push({ what: 'nombre en el portal', from: portal.name, to: name });
     portal.name = name;
   }
@@ -118,18 +118,18 @@ function apply(raw: Raw, body: Record<string, unknown>, manifest: string[]): Arr
   if (body.app !== undefined) {
     const app = (body.app ?? {}) as Record<string, unknown>;
     const id = str(app.id);
-    if (!id) throw new AjustesError('Falta la app.');
+    if (!id) throw new SettingsError('Falta la app.');
     const known = manifest.includes(id) || Boolean(portal?.apps[id]) || ((raw.explore as string[] | undefined) ?? []).includes(id);
-    if (!known) throw new AjustesError(`${id} no está en el ronin.app.json del repo.`);
+    if (!known) throw new SettingsError(`${id} no está en el ronin.app.json del repo.`);
     if (app.portal !== undefined) {
       const on = app.portal === true;
       const was = Boolean(portal?.apps[id]);
       if (on && !was) {
-        if (!manifest.includes(id)) throw new AjustesError(`${id} ya no está en el ronin.app.json del repo: no se puede agregar al portal.`);
+        if (!manifest.includes(id)) throw new SettingsError(`${id} ya no está en el ronin.app.json del repo: no se puede agregar al portal.`);
         if (!portal) raw.portal = { name: raw.productRepo.split('/')[1], apps: { [id]: { name: id } } };
         else portal.apps[id] = { name: id };
       } else if (!on && was) {
-        if (Object.keys(portal!.apps).length === 1) throw new AjustesError('Es la única app del portal en este repo: el portal necesita al menos una.');
+        if (Object.keys(portal!.apps).length === 1) throw new SettingsError('Es la única app del portal en este repo: el portal necesita al menos una.');
         delete portal!.apps[id];
       }
       if (on !== was) changes.push({ what: `${id} · en el portal`, from: yesNo(was), to: yesNo(on) });
@@ -137,9 +137,9 @@ function apply(raw: Raw, body: Record<string, unknown>, manifest: string[]): Arr
     const portalApp = (raw.portal as typeof portal)?.apps[id];
     for (const field of ['name', 'description'] as const) {
       if (app[field] === undefined) continue;
-      if (!portalApp) throw new AjustesError(`${id} no está en el portal.`);
+      if (!portalApp) throw new SettingsError(`${id} no está en el portal.`);
       const value = str(app[field]) ?? '';
-      if (field === 'name' && !value) throw new AjustesError('El nombre de la app en el portal no puede quedar vacío.');
+      if (field === 'name' && !value) throw new SettingsError('El nombre de la app en el portal no puede quedar vacío.');
       const before = portalApp[field] ?? '';
       if (value) portalApp[field] = value;
       else delete portalApp[field];
@@ -155,7 +155,7 @@ function apply(raw: Raw, body: Record<string, unknown>, manifest: string[]): Arr
     }
     if (app.project !== undefined) {
       const linear = raw.linear as { apiKeyEnv: string; explorationProject?: Record<string, string> } | undefined;
-      if (!linear) throw new AjustesError('Este repo no tiene Linear.');
+      if (!linear) throw new SettingsError('Este repo no tiene Linear.');
       const project = app.project === null ? '' : str(app.project) ?? '';
       const before = linear.explorationProject?.[id] ?? '';
       const map = { ...(linear.explorationProject ?? {}) };
@@ -169,7 +169,7 @@ function apply(raw: Raw, body: Record<string, unknown>, manifest: string[]): Arr
 
   if (body.linear !== undefined) {
     const name = body.linear === null ? '' : str(body.linear) ?? '';
-    if (name && !linearKeyNames().includes(name)) throw new AjustesError(`${name} no está en .env.`);
+    if (name && !linearKeyNames().includes(name)) throw new SettingsError(`${name} no está en .env.`);
     const linear = raw.linear as { apiKeyEnv: string } | undefined;
     const before = linear?.apiKeyEnv ?? '';
     if (!name) delete raw.linear;
@@ -180,11 +180,11 @@ function apply(raw: Raw, body: Record<string, unknown>, manifest: string[]): Arr
 
   if (body.deploy !== undefined) {
     const d = (body.deploy ?? {}) as Record<string, unknown>;
-    for (const k of ['on', 'prerelease', 'selective']) if (d[k] !== undefined && typeof d[k] !== 'boolean') throw new AjustesError('Despliegues: cada opción es sí o no.');
+    for (const k of ['on', 'prerelease', 'selective']) if (d[k] !== undefined && typeof d[k] !== 'boolean') throw new SettingsError('Despliegues: cada opción es sí o no.');
     const before = raw.deploy as { prerelease?: boolean; selective?: boolean } | undefined;
     if (d.on === false) delete raw.deploy;
     else {
-      if (d.on !== true && !before) throw new AjustesError('Este repo no se despliega desde ronin: primero hay que prenderlo.');
+      if (d.on !== true && !before) throw new SettingsError('Este repo no se despliega desde ronin: primero hay que prenderlo.');
       const next: { prerelease?: boolean; selective?: boolean } = { ...(before ?? {}) };
       for (const k of ['prerelease', 'selective'] as const) {
         if (d[k] === true) next[k] = true;
@@ -198,7 +198,7 @@ function apply(raw: Raw, body: Record<string, unknown>, manifest: string[]): Arr
 
   if (body.concurrency !== undefined) {
     const value = body.concurrency;
-    if (value !== null && (!Number.isInteger(value) || (value as number) < 1 || (value as number) > MAX_REPO_CONCURRENCY)) throw new AjustesError(`Tareas en paralelo: un número entre 1 y ${MAX_REPO_CONCURRENCY}, o vacío para el general.`);
+    if (value !== null && (!Number.isInteger(value) || (value as number) < 1 || (value as number) > MAX_REPO_CONCURRENCY)) throw new SettingsError(`Tareas en paralelo: un número entre 1 y ${MAX_REPO_CONCURRENCY}, o vacío para el general.`);
     const before = (raw.concurrency as number | undefined) ?? null;
     if (value === null) delete raw.concurrency;
     else raw.concurrency = value;
@@ -207,7 +207,7 @@ function apply(raw: Raw, body: Record<string, unknown>, manifest: string[]): Arr
   }
 
   if (body.autoMerge !== undefined) {
-    if (typeof body.autoMerge !== 'boolean') throw new AjustesError('Auto-merge: es sí o no.');
+    if (typeof body.autoMerge !== 'boolean') throw new SettingsError('Auto-merge: es sí o no.');
     const before = raw.autoMerge !== false;
     // On is the default: only false is written.
     if (body.autoMerge) delete raw.autoMerge;
@@ -221,7 +221,7 @@ function apply(raw: Raw, body: Record<string, unknown>, manifest: string[]): Arr
     for (const [field, allowed] of [['model', MODELS], ['effort', EFFORTS]] as const) {
       if (a[field] === undefined) continue;
       const value = a[field] === null ? '' : str(a[field]) ?? '';
-      if (value && !allowed.includes(value)) throw new AjustesError(`${field === 'model' ? 'Ese modelo' : 'Ese esfuerzo'} no existe.`);
+      if (value && !allowed.includes(value)) throw new SettingsError(`${field === 'model' ? 'Ese modelo' : 'Ese esfuerzo'} no existe.`);
       const before = (agent[field] as string | undefined) ?? '';
       if (value) agent[field] = value;
       else delete agent[field];
@@ -232,11 +232,11 @@ function apply(raw: Raw, body: Record<string, unknown>, manifest: string[]): Arr
   }
 
   if (body.notifyTo !== undefined) {
-    if (!portal) throw new AjustesError('Este repo no está en el portal.');
-    if (!Array.isArray(body.notifyTo) || body.notifyTo.some((a) => typeof a !== 'string')) throw new AjustesError('notifyTo es una lista de correos.');
+    if (!portal) throw new SettingsError('Este repo no está en el portal.');
+    if (!Array.isArray(body.notifyTo) || body.notifyTo.some((a) => typeof a !== 'string')) throw new SettingsError('notifyTo es una lista de correos.');
     const keep = (body.notifyTo as string[]).map((a) => a.trim()).filter(Boolean);
     // Only taking addresses off: who gets what is chosen in Notificaciones now.
-    if (keep.some((a) => !(portal.notifyTo ?? []).includes(a))) throw new AjustesError('Desde aquí solo se quitan correos de portal.notifyTo; cada persona elige los suyos en Notificaciones.');
+    if (keep.some((a) => !(portal.notifyTo ?? []).includes(a))) throw new SettingsError('Desde aquí solo se quitan correos de portal.notifyTo; cada persona elige los suyos en Notificaciones.');
     const before = portal.notifyTo ?? [];
     if (keep.length) portal.notifyTo = keep;
     else delete portal.notifyTo;
@@ -247,17 +247,17 @@ function apply(raw: Raw, body: Record<string, unknown>, manifest: string[]): Arr
 
 export async function editRepo(admin: string, repo: string, body: Record<string, unknown>, entries: RepoEntry[]): Promise<unknown> {
   const entry = entries.find((e) => e.productRepo === repo);
-  if (!entry) throw new AjustesError('Ese repo no está en repos.json.', { status: 404 });
+  if (!entry) throw new SettingsError('Ese repo no está en repos.json.', { status: 404 });
   const manifest = await repoApps(entry);
-  const changes = await withJson<Raw[], Array<{ what: string; from: string; to: string }>>(config.reposConfigPath, () => { throw new AjustesError(`No existe ${config.reposConfigPath}.`, { status: 500 }); }, async (list) => {
+  const changes = await withJson<Raw[], Array<{ what: string; from: string; to: string }>>(config.reposConfigPath, () => { throw new SettingsError(`No existe ${config.reposConfigPath}.`, { status: 500 }); }, async (list) => {
     const raw = list.find((e) => e.productRepo === repo);
-    if (!raw) throw new AjustesError('Ese repo no está en repos.json.', { status: 404 });
+    if (!raw) throw new SettingsError('Ese repo no está en repos.json.', { status: 404 });
     const found = apply(raw, body, manifest);
     if (!found.length) return found;
     try {
       validateRepos(list);
     } catch (error) {
-      throw new AjustesError(`No se guardó: repos.json quedaría mal. ${(error as Error).message}`);
+      throw new SettingsError(`No se guardó: repos.json quedaría mal. ${(error as Error).message}`);
     }
     await backup();
     return found;

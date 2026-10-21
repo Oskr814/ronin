@@ -16,7 +16,7 @@ vi.mock('../../platform/logger.js', () => ({ log: { info: vi.fn(), error: vi.fn(
 const teamPeople = vi.fn();
 vi.mock('../../platform/linear/linear-api.js', () => ({ linearKey: (entry: { linear?: unknown }) => (entry.linear ? 'lin_key' : null), teamPeople: (...a: unknown[]) => teamPeople(...a) }));
 
-const { AjustesError, ajustesView, linearTeams, readRegistro, saveNotificacion, saveProfile, setTask, setValue } = await import('./settings.js');
+const { SettingsError, settingsPageView, linearTeams, readSettingsLog, saveNotifications, saveProfile, setTask, setValue } = await import('./settings.js');
 
 const SC = { productRepo: 'redmotos/shoppingcart', productRepoPath: '/tmp/sc', linear: { apiKeyEnv: 'LINEAR_API_KEY_X' } };
 const BM = { productRepo: 'Bmedical/bmedical', productRepoPath: '/tmp/bm' };
@@ -35,7 +35,7 @@ describe('setValue', () => {
     expect(out.setting).toMatchObject({ value: 8, source: 'tablero' });
     expect(config.portal.dailyLimit).toBe(8);
     expect(JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8'))).toEqual({ values: { 'portal.dailyLimit': 8 } });
-    expect(await readRegistro()).toEqual([expect.objectContaining({ login: 'admin1', what: 'General · portal.dailyLimit', from: '5 (.env)', to: '8' })]);
+    expect(await readSettingsLog()).toEqual([expect.objectContaining({ login: 'admin1', what: 'General · portal.dailyLimit', from: '5 (.env)', to: '8' })]);
   });
 
   it('goes back to .env\'s with null, and records that too', async () => {
@@ -43,20 +43,20 @@ describe('setValue', () => {
     await setValue('admin1', { key: 'portal.dailyLimit', value: 8 });
     await setValue('admin1', { key: 'portal.dailyLimit', value: null });
     expect(config.portal.dailyLimit).toBe(5);
-    const [last] = await readRegistro();
+    const [last] = await readSettingsLog();
     expect(last).toMatchObject({ from: '8', to: '5 (.env)' });
   });
 
   it('refuses an unknown setting or a value out of range, and saves nothing', async () => {
-    await expect(setValue('admin1', { key: 'DASHBOARD_SESSION_SECRET', value: 1 })).rejects.toBeInstanceOf(AjustesError);
+    await expect(setValue('admin1', { key: 'DASHBOARD_SESSION_SECRET', value: 1 })).rejects.toBeInstanceOf(SettingsError);
     await expect(setValue('admin1', { key: 'portal.dailyLimit', value: 500 })).rejects.toThrow(/entre 0 y 100/);
-    expect(await readRegistro()).toEqual([]);
+    expect(await readSettingsLog()).toEqual([]);
   });
 
   it('records nothing when the value didn\'t change', async () => {
     await setValue('admin1', { key: 'portal.dailyLimit', value: 8 });
     await setValue('admin1', { key: 'portal.dailyLimit', value: 8 });
-    expect(await readRegistro()).toHaveLength(1);
+    expect(await readSettingsLog()).toHaveLength(1);
   });
 });
 
@@ -65,10 +65,10 @@ describe('saveProfile', () => {
     const teams = await linearTeams([SC, BM]);
     expect(teams).toEqual([expect.objectContaining({ repo: SC.productRepo, team: 'RED' })]);
     await saveProfile('ana-dev', { name: ' Ana Rivera ', email: 'Persona@Gmail.com', linear: { repo: SC.productRepo, id: 'u1' } }, teams);
-    const view = await ajustesView('ana-dev', false, [SC]) as { perfil: unknown; valores?: unknown };
+    const view = await settingsPageView('ana-dev', false, [SC]) as { perfil: unknown; valores?: unknown };
     expect(view.perfil).toEqual({ name: 'Ana Rivera', email: 'persona@gmail.com', linear: { [SC.productRepo]: { id: 'u1', name: 'Ana Rivera' } } });
     expect(view.valores).toBeUndefined();
-    expect((await readRegistro()).map((e) => e.what)).toEqual([`Perfil · Linear de ${SC.productRepo}`, 'Perfil · correo', 'Perfil · nombre']);
+    expect((await readSettingsLog()).map((e) => e.what)).toEqual([`Perfil · Linear de ${SC.productRepo}`, 'Perfil · correo', 'Perfil · nombre']);
   });
 
   it('refuses a bad email, or someone who isn\'t in the team', async () => {
@@ -81,30 +81,30 @@ describe('saveProfile', () => {
   it('clears a field with an empty string', async () => {
     await saveProfile('ana-dev', { email: 'persona@gmail.com' }, []);
     await saveProfile('ana-dev', { email: '' }, []);
-    expect((await ajustesView('ana-dev', false, [])) as { perfil: unknown }).toMatchObject({ perfil: {} });
+    expect((await settingsPageView('ana-dev', false, [])) as { perfil: unknown }).toMatchObject({ perfil: {} });
   });
 });
 
-describe('ajustesView', () => {
+describe('settingsPageView', () => {
   it('gives an admin the settings of General, with where each comes from', async () => {
     await setValue('admin1', { key: 'dashboard.sessionDays', value: 14 });
-    const view = await ajustesView('admin1', true, []) as { valores: Array<{ key: string; source: string; value: number }> };
+    const view = await settingsPageView('admin1', true, []) as { valores: Array<{ key: string; source: string; value: number }> };
     expect(view.valores.find((s) => s.key === 'dashboard.sessionDays')).toMatchObject({ value: 14, source: 'tablero' });
     expect(view.valores.find((s) => s.key === 'portal.dailyLimit')).toMatchObject({ value: 5, source: 'defecto' });
   });
 });
 
-describe('saveNotificacion', () => {
+describe('saveNotifications', () => {
   it('saves the person\'s choice in a repo they see, starting from their defaults, and records it', async () => {
     const sc = { ...SC, portal: { name: 'Red Motos', apps: {}, notifyTo: ['persona@gmail.com'] } };
     await saveProfile('ana-dev', { email: 'persona@gmail.com' }, []);
-    let view = await ajustesView('ana-dev', false, [sc]) as { notificaciones: Array<{ events: string[]; chosen: boolean }> };
+    let view = await settingsPageView('ana-dev', false, [sc]) as { notificaciones: Array<{ events: string[]; chosen: boolean }> };
     expect(view.notificaciones[0]).toMatchObject({ events: ['pedido-equipo', 'pedido-revisar', 'reunion'], chosen: false });
-    const out = await saveNotificacion('ana-dev', { repo: sc.productRepo, event: 'reunion', on: false }, [sc]) as typeof view;
+    const out = await saveNotifications('ana-dev', { repo: sc.productRepo, event: 'reunion', on: false }, [sc]) as typeof view;
     expect(out.notificaciones[0]).toMatchObject({ events: ['pedido-equipo', 'pedido-revisar'], chosen: true });
-    await expect(saveNotificacion('ana-dev', { repo: BM.productRepo, event: 'bloqueo', on: true }, [sc])).rejects.toThrow(/no está entre los que ves/);
-    await expect(saveNotificacion('ana-dev', { repo: sc.productRepo, event: 'todo', on: true }, [sc])).rejects.toThrow(/no existe/);
-    expect((await readRegistro())[0]).toMatchObject({ what: `Notificaciones · ${sc.productRepo} · propuestas de una reunión`, from: 'sí', to: 'no' });
+    await expect(saveNotifications('ana-dev', { repo: BM.productRepo, event: 'bloqueo', on: true }, [sc])).rejects.toThrow(/no está entre los que ves/);
+    await expect(saveNotifications('ana-dev', { repo: sc.productRepo, event: 'todo', on: true }, [sc])).rejects.toThrow(/no existe/);
+    expect((await readSettingsLog())[0]).toMatchObject({ what: `Notificaciones · ${sc.productRepo} · propuestas de una reunión`, from: 'sí', to: 'no' });
   });
 });
 
@@ -117,7 +117,7 @@ describe('setTask', () => {
     expect((config as unknown as { taskOverrides: unknown }).taskOverrides).toEqual({});
     await expect(setTask('admin1', { task: 'otra', model: 'opus' })).rejects.toThrow(/tipo de tarea/);
     await expect(setTask('admin1', { task: 'plan', model: 'gpt' })).rejects.toThrow(/modelo/);
-    expect((await readRegistro()).map((e) => `${e.what}: ${e.from} → ${e.to}`)).toEqual(['Agentes · update-changelog · modelo: sonnet → sin elegir', 'Agentes · update-changelog · modelo: sin elegir → sonnet']);
+    expect((await readSettingsLog()).map((e) => `${e.what}: ${e.from} → ${e.to}`)).toEqual(['Agentes · update-changelog · modelo: sonnet → sin elegir', 'Agentes · update-changelog · modelo: sin elegir → sonnet']);
   });
 });
 
@@ -132,6 +132,6 @@ describe('setValue of other kinds', () => {
     await expect(setValue('admin1', { key: 'agent.model', value: 'gpt' })).rejects.toThrow(/uno de/);
     await setValue('admin1', { key: 'agent.taskTimeoutMinutes', value: 45 });
     expect((config as unknown as { agentTaskTimeoutMs: number }).agentTaskTimeoutMs).toBe(45 * 60_000);
-    expect((await readRegistro())[0]).toMatchObject({ what: 'Agentes · agent.taskTimeoutMinutes', to: '45' });
+    expect((await readSettingsLog())[0]).toMatchObject({ what: 'Agentes · agent.taskTimeoutMinutes', to: '45' });
   });
 });

@@ -131,7 +131,7 @@ export function updateDeploy(repo: string, tag: string, fn: (record: DeployRecor
   });
 }
 
-// For the import (scripts/db-import-despliegues.ts): every one in the file.
+// For the import (scripts/db-import-deploys.ts): every one in the file.
 export async function fileDeploys(dataDir = config.deploys.dataDir): Promise<DeployRecord[]> {
   return (await readJson(join(dataDir, 'deploys.json'), empty)).deploys;
 }
