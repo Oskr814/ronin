@@ -1,13 +1,13 @@
 import { Hono } from 'hono';
-import { z } from 'zod';
 import { log } from '../../platform/logger.js';
 import { HISTORY_DAYS } from '../runs/data.js';
 import { isExplorationPr } from './review.js';
-import { corridasOf, exploracionList, exploracionRows, ExploreNowError, exploreNow, inventarioOf, liveRuns, parseExploreNow, prsOf } from './board.js';
+import { corridasOf, exploracionList, exploracionRows, exploreNow, inventarioOf, liveRuns, parseExploreNow, prsOf } from './board.js';
 import { repoGithub } from '../items/github.js';
 import { refusal, visibleRepos, visibleRuns } from '../access/visible.js';
 import type { Access } from '../access/access.js';
-import { body, jsonBody, onError, type DashboardEnv } from '../../apps/api/http/hono.js';
+import { anyObject, jsonBody, onError, onlyJson } from '../../platform/http/middleware.js';
+import type { DashboardEnv } from '../access/http.js';
 
 // Exploraciones (#155) from the dashboard, in Hono (#235, stage 6) —
 // apps/api/routes.ts mounts them under /api/exploraciones:
@@ -26,7 +26,7 @@ async function exploring(access: Access, owner: string, name: string, app: strin
 
 export function explorationRoutes() {
   return new Hono<DashboardEnv>()
-    .onError(onError([ExploreNowError]))
+    .onError(onError)
     .get('/', async (c) => {
       const entries = await visibleRepos(c.env.access);
       const runs = await visibleRuns(c.env.access, HISTORY_DAYS);
@@ -46,8 +46,8 @@ export function explorationRoutes() {
       return c.json(await inventarioOf(entry, c.req.param('app'), pr), 200);
     })
     // Anyone who sees the repo can, as with a new issue, with the permission for actions (#174).
-    .post('/:owner/:name/:app/run', async (c, next) => ((c.req.header('content-type') ?? '').startsWith('application/json') ? next() : c.json({ error: 'se espera JSON' }, 415)),
-      jsonBody(64 * 1024, 'el pedido no llegó bien'), body(z.record(z.string(), z.unknown())), async (c) => {
+    .post('/:owner/:name/:app/run', onlyJson,
+      jsonBody(64 * 1024, 'el pedido no llegó bien'), anyObject(), async (c) => {
         const app = c.req.param('app');
         const entry = await exploring(c.env.access, c.req.param('owner'), c.req.param('name'), app);
         if (!entry) return c.json(MISSING, 404);

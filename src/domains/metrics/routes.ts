@@ -4,7 +4,8 @@ import { z } from 'zod';
 import { loadRepos } from '../../platform/config/repos.js';
 import { suscripcionView } from './subscription-view.js';
 import { visibleRepos } from '../access/visible.js';
-import type { DashboardEnv } from '../../apps/api/http/hono.js';
+import type { DashboardEnv } from '../access/http.js';
+import { adminsOnly } from '../../platform/http/middleware.js';
 import { metricsView, parsePeriod } from './index.js';
 
 // Métricas (#222, #234) from the dashboard, in Hono (#235, stage 6) —
@@ -19,10 +20,7 @@ const query = <T extends z.ZodType>(schema: T) => zValidator('query', schema, (r
 
 export function metricsRoutes() {
   return new Hono<DashboardEnv>()
-    .use('*', async (c, next) => {
-      if (!c.env.access.admin) return c.json({ error: 'solo los administradores ven las métricas' }, 403);
-      await next();
-    })
+    .use('*', adminsOnly('solo los administradores ven las métricas'))
     .get('/', query(z.object({
       // 30 when it doesn't say.
       dias: z.string().optional().transform((v) => parsePeriod(v ?? null)).refine((days) => days !== null, 'dias debe ser 7, 30 o 90'),

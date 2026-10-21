@@ -112,6 +112,6 @@ describe('plan and publish', () => {
     publishRelease.mockRejectedValue(new DeployError('Lo que entra cambió desde que lo viste', plan()));
     const refused = await publishDespliegue(entry, { tag: 'v1.0.1', prs: [3] }, 'persona').catch((e) => e);
     expect(refused).toBeInstanceOf(DespliegueError);
-    expect(refused).toMatchObject({ status: 409, plan: { tag: 'v1.0.1', fingerprint: 'f' } });
+    expect(refused).toMatchObject({ status: 409, details: { plan: { tag: 'v1.0.1', fingerprint: 'f' } } });
   });
 });

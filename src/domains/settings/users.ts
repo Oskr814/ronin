@@ -114,14 +114,14 @@ export async function addUsuario(admin: string, body: Record<string, unknown>): 
   const role = body.role === 'admin' ? 'admin' : 'member';
   const response = await githubGet(`users/${login}`);
   if (response.status === 404) throw new AjustesError(`GitHub no conoce a @${login}.`);
-  if (!response.ok) throw new AjustesError(`GitHub respondió ${response.status} al buscar a @${login}.`, 502);
+  if (!response.ok) throw new AjustesError(`GitHub respondió ${response.status} al buscar a @${login}.`, { status: 502 });
   const added = await withTeam((team) => {
     if (team.people[login] || envAdmins().includes(login)) return false;
     team.people[login] = { role, addedBy: admin, addedAt: new Date().toISOString() };
     applyTeam(team);
     return true;
   });
-  if (!added) throw new AjustesError(`@${login} ya está en la lista.`, 409);
+  if (!added) throw new AjustesError(`@${login} ya está en la lista.`, { status: 409 });
   await record({ login: admin, what: `Usuarios · @${login}`, from: '—', to: role === 'admin' ? 'agregado como administrador' : 'agregado como miembro' });
   log.info(`usuarios: ${admin} agregó a ${login} (${role})`);
   return { login };
@@ -133,13 +133,13 @@ const setLabel = (grant: RepoGrant | undefined, team: TeamFile) => (grant?.custo
 export async function updateUsuario(admin: string, login: string, body: Record<string, unknown>, entries: RepoEntry[]): Promise<unknown> {
   const changes: Array<{ what: string; from: string; to: string }> = [];
   await withTeam((team) => {
-    if (!team.people[login] && !envAdmins().includes(login)) throw new AjustesError('Esa persona no está en la lista.', 404);
+    if (!team.people[login] && !envAdmins().includes(login)) throw new AjustesError('Esa persona no está en la lista.', { status: 404 });
     const m: Member = { ...(team.people[login] ?? {}) };
     const who = `@${login}`;
     if (body.role !== undefined) {
       if (body.role !== 'admin' && body.role !== 'member') throw new AjustesError('El rol es administrador o miembro.');
-      if (envAdmins().includes(login)) throw new AjustesError('Es administrador por DASHBOARD_ADMINS: eso se cambia en .env, no aquí.', 409);
-      if (login === admin && body.role === 'member') throw new AjustesError('No puedes quitarte el rol de administrador a ti mismo: pídeselo a otro administrador.', 409);
+      if (envAdmins().includes(login)) throw new AjustesError('Es administrador por DASHBOARD_ADMINS: eso se cambia en .env, no aquí.', { status: 409 });
+      if (login === admin && body.role === 'member') throw new AjustesError('No puedes quitarte el rol de administrador a ti mismo: pídeselo a otro administrador.', { status: 409 });
       if ((m.role ?? 'member') !== body.role) changes.push({ what: `${who} · rol`, from: m.role === 'admin' ? 'Administrador' : 'Miembro', to: body.role === 'admin' ? 'Administrador' : 'Miembro' });
       m.role = body.role;
     }
@@ -205,15 +205,15 @@ export async function updateUsuario(admin: string, login: string, body: Record<s
 // POST /api/ajustes/usuarios/<login>/quitar. With entrada "lista", they're
 // out; with "github", they come back with GitHub's repos and the default set.
 export async function removeUsuario(admin: string, login: string): Promise<unknown> {
-  if (envAdmins().includes(login)) throw new AjustesError('Es administrador por DASHBOARD_ADMINS: se quita en .env.', 409);
-  if (login === admin) throw new AjustesError('No puedes quitarte a ti mismo de la lista.', 409);
+  if (envAdmins().includes(login)) throw new AjustesError('Es administrador por DASHBOARD_ADMINS: se quita en .env.', { status: 409 });
+  if (login === admin) throw new AjustesError('No puedes quitarte a ti mismo de la lista.', { status: 409 });
   const removed = await withTeam((team) => {
     if (!team.people[login]) return false;
     delete team.people[login];
     applyTeam(team);
     return true;
   });
-  if (!removed) throw new AjustesError('Esa persona no está en la lista.', 404);
+  if (!removed) throw new AjustesError('Esa persona no está en la lista.', { status: 404 });
   await record({ login: admin, what: `Usuarios · @${login}`, from: 'en la lista', to: 'quitado' });
   return { ok: true };
 }

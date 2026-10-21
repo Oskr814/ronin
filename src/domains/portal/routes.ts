@@ -1,13 +1,12 @@
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import { log } from '../../platform/logger.js';
-import { body, jsonBody, onError, type NodeEnv } from '../../apps/api/http/hono.js';
+import { body, jsonBody, onError, type NodeEnv } from '../../platform/http/middleware.js';
 import { findUserByEmail, normalizeEmail, recordLogin, redeemLink, userForLink, type PortalUser } from './accounts.js';
 import { grantedApps } from './apps.js';
-import { ImageError } from './images.js';
 import { burnPasswordCheck, hashPassword, passwordProblem, verifyPassword } from './password.js';
 import { RateLimit } from './rate-limit.js';
-import { RequestError, startedToday } from './requests.js';
+import { startedToday } from './requests.js';
 import { requestRoutes } from './routes-requests.js';
 import { sendPasswordLink } from './send-link.js';
 import { portalCookie, sealPortalSession } from './session.js';
@@ -68,7 +67,7 @@ const POSTS = ['/login', '/forgot', '/link', '/password'];
 
 export function portalRoutes(config: PortalConfig, deps: PortalDeps) {
   const routes = new Hono<NodeEnv>()
-    .onError(onError([RequestError, ImageError]))
+    .onError(onError)
     .notFound((c) => c.json({ error: 'no existe' }, 404))
 
     .get('/me', async (c) => {

@@ -1,3 +1,5 @@
+import { DomainError } from '../../platform/errors.js';
+
 // The images a person attaches to a message (#114): sent as data URLs inside
 // the JSON (the portal only takes JSON, which a plain form can't send). What
 // the file is comes from its first bytes, never from what the browser says,
@@ -21,7 +23,7 @@ function kindOf(data: Buffer): ImageUpload['ext'] | null {
   return null;
 }
 
-export class ImageError extends Error {}
+export class ImageError extends DomainError {}
 
 export function parseImages(raw: unknown): ImageUpload[] {
   if (raw === undefined) return [];

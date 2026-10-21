@@ -9,6 +9,7 @@ import { taskDefaultEffort, taskDefaultModel, taskEnvEffort, taskEnvModel } from
 import { sendMail } from '../../platform/notify/notifier.js';
 import { readTeam, withTeam, type Member } from '../access/team.js';
 import { EVENTS, eventsOf, isEvent } from '../../platform/notify/notifications.js';
+import { DomainError } from '../../platform/errors.js';
 
 // The dashboard's Ajustes (#174), stage 1:
 //   GET  /api/ajustes           the person's profile, and for an admin the settings of General
@@ -21,11 +22,7 @@ import { EVENTS, eventsOf, isEvent } from '../../platform/notify/notifications.j
 // platform/config/settings-store.ts: Postgres with DATABASE_URL, else SETTINGS_DATA_DIR's
 // settings.json and registro.jsonl. The team is people.json there (access/team.ts).
 
-export class AjustesError extends Error {
-  constructor(message: string, readonly status = 400) {
-    super(message);
-  }
-}
+export class AjustesError extends DomainError {}
 
 // What a person says about themselves (Perfil): part of their entry in the
 // team (access/team.ts).
@@ -275,7 +272,7 @@ export async function testMail(login: string): Promise<unknown> {
   try {
     await sendMail({ to: email, subject: '[ronin] Correo de prueba', text: `Si lees esto, ronin puede mandar correos desde ${config.gmailUser}.\n\nLo pediste desde Ajustes → Conexiones.` }, 'ronin');
   } catch (error) {
-    throw new AjustesError(`No salió: ${(error as Error).message.split('\n')[0]}`, 502);
+    throw new AjustesError(`No salió: ${(error as Error).message.split('\n')[0]}`, { status: 502 });
   }
   return { to: email };
 }

@@ -5,6 +5,7 @@ import { portalApps, validGrants } from './apps.js';
 import { startedTodayByUser } from './requests.js';
 import { sendPasswordLink, type Send } from './send-link.js';
 import { record } from '../settings/settings.js';
+import { DomainError } from '../../platform/errors.js';
 
 // The request portal's accounts from the dashboard (#114), for its admins
 // only; since #174 they're shown in Ajustes → Usuarios, with the role
@@ -15,11 +16,7 @@ import { record } from '../settings/settings.js';
 //   POST /api/portal-admin/users/<id>/link   emails a new link to set the password
 // When an email fails, the answer carries the link so the admin can pass it on.
 
-export class PortalAdminError extends Error {
-  constructor(message: string, readonly status = 400) {
-    super(message);
-  }
-}
+export class PortalAdminError extends DomainError {}
 
 export interface PortalAdminContext {
   // PORTAL_URL; empty while the portal isn't configured.
@@ -84,7 +81,7 @@ const linkResult = (sent: boolean, url: string) => (sent ? { sent } : { sent, ur
 // Every change needs the portal configured, and an account's own errors
 // (a repeated email, a grant that doesn't exist) are the admin's to fix.
 async function change<T>(ctx: PortalAdminContext, fn: () => Promise<T>): Promise<T> {
-  if (!ctx.enabled) throw new PortalAdminError('El portal no está configurado: falta PORTAL_URL o PORTAL_SESSION_SECRET en .env.', 409);
+  if (!ctx.enabled) throw new PortalAdminError('El portal no está configurado: falta PORTAL_URL o PORTAL_SESSION_SECRET en .env.', { status: 409 });
   try {
     return await fn();
   } catch (error) {
@@ -107,7 +104,7 @@ export function createAccount(ctx: PortalAdminContext, body: Record<string, unkn
 export function sendAccountLink(ctx: PortalAdminContext, id: string) {
   return change(ctx, async () => {
     const user = await getUser(id);
-    if (!user) throw new PortalAdminError('No existe esa cuenta.', 404);
+    if (!user) throw new PortalAdminError('No existe esa cuenta.', { status: 404 });
     const { sent, url } = await sendPasswordLink(user, user.passwordHash ? 'reset' : 'invite', { portalUrl: ctx.url, entries: ctx.entries, send: ctx.send });
     await record({ login: ctx.admin, what: `Usuarios · ${user.email}`, from: '—', to: user.passwordHash ? 'enlace para nueva contraseña' : 'invitación de nuevo' });
     return { user: adminView((await getUser(user.id)) ?? user), ...linkResult(sent, url) };
@@ -131,5 +128,5 @@ export async function runPortalAdmin(ctx: PortalAdminContext, path: string, body
   if (link) return sendAccountLink(ctx, link[1]);
   const edit = /^\/api\/portal-admin\/users\/([\w-]+)$/.exec(path);
   if (edit) return editAccount(ctx, edit[1], body);
-  throw new PortalAdminError('No existe.', 404);
+  throw new PortalAdminError('No existe.', { status: 404 });
 }

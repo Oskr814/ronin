@@ -3,10 +3,11 @@ import { config, LABEL_AUTO_MERGE, LABEL_MANAGED } from '../../platform/config/c
 import { setIssueState } from '../../platform/github/github.js';
 import { log } from '../../platform/logger.js';
 import { withActiveRepo, type RepoEntry } from '../../platform/agents/repo-context.js';
-import type { Session } from '../../apps/api/http/auth.js';
+import type { Session } from '../access/http.js';
 import type { ItemDetail, ItemRef } from './detail.js';
 import type { RepoGithub } from './github.js';
 import { assignIssue, closeIssue, commentOnIssue, type Posted } from '../../platform/github/github-as-user.js';
+import { DomainError } from '../../platform/errors.js';
 
 // What can be asked of ronin from an item's page (#85). Each action is a
 // command that already exists on GitHub, and the dashboard writes it as
@@ -135,8 +136,10 @@ export function actionComment(action: Pick<ActionView, 'id' | 'command'>, text?:
 }
 
 // A 409: the item isn't in a state for it.
-export class ActionError extends Error {
-  readonly status = 409;
+export class ActionError extends DomainError {
+  constructor(message: string) {
+    super(message, { status: 409 });
+  }
 }
 
 export async function runAction(

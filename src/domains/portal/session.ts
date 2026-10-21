@@ -1,6 +1,6 @@
 import { createHmac, hkdfSync, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage } from 'node:http';
-import { parseCookies } from '../../apps/api/http/auth.js';
+import { parseCookies } from '../../platform/http/cookies.js';
 
 // The portal's session (#114): a cookie with the account's id, its
 // sessionVersion and the expiry, signed with HMAC under a key derived from

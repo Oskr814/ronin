@@ -1,9 +1,10 @@
 import { config } from '../../platform/config/config.js';
 import { log } from '../../platform/logger.js';
 import type { RepoEntry } from '../../platform/agents/repo-context.js';
-import type { Session } from '../../apps/api/http/auth.js';
+import type { Session } from '../access/http.js';
 import type { ExplorationPr, ExplorationReview, Ficha } from './review.js';
 import { approvePr, commentOnFile, commentOnIssue, type Posted } from '../../platform/github/github-as-user.js';
+import { DomainError } from '../../platform/errors.js';
 
 // Deciding on a finding from the dashboard (#93): a comment on its file in
 // the exploration PR, written as whoever is logged in — what they'd write in
@@ -19,8 +20,10 @@ const ON_DECIDED: FichaActionId[] = ['pregunta', 'comentar'];
 const MAX_TEXT = 4000;
 
 // A 409: the item isn't in a state for it.
-export class FichaActionError extends Error {
-  readonly status = 409;
+export class FichaActionError extends DomainError {
+  constructor(message: string) {
+    super(message, { status: 409 });
+  }
 }
 
 export function fichaComment(action: FichaActionId, text: string, redo = false): string {

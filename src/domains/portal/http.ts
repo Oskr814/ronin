@@ -15,6 +15,14 @@ export interface PortalConfig {
   dailyLimit: number;
 }
 
+// What's missing for the portal to run; empty means it can.
+export function missingPortalConfig(config: PortalConfig): string[] {
+  const missing: string[] = [];
+  if (!config.url) missing.push('PORTAL_URL');
+  if (config.sessionSecret.length < 32) missing.push('PORTAL_SESSION_SECRET (32+ caracteres)');
+  return missing;
+}
+
 export interface PortalDeps {
   entries: () => Promise<RepoEntry[]>;
   send?: Send;

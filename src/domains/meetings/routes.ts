@@ -1,16 +1,16 @@
-import { Hono, type Context } from 'hono';
+import { Hono } from 'hono';
 import { z } from 'zod';
 import { log } from '../../platform/logger.js';
 import { sees, type Access } from '../access/access.js';
 import { HISTORY_DAYS } from '../runs/data.js';
 import { forgetGithub } from '../items/github.js';
-import { MAX_UPLOAD_BODY, MeetingUploadError, meetingDetail, meetingOriginal, meetingRow, parseUpload } from './board.js';
-import { ApproveError, approveMeeting, discardMeeting } from './approve.js';
-import { GithubUserError } from '../../platform/github/github-as-user.js';
+import { MAX_UPLOAD_BODY, meetingDetail, meetingOriginal, meetingRow, parseUpload } from './board.js';
+import { approveMeeting, discardMeeting } from './approve.js';
 import { refusal, visibleRepos, visibleRuns } from '../access/visible.js';
-import { body, jsonBody, onError, type DashboardEnv } from '../../apps/api/http/hono.js';
+import { body, jsonBody, onError, onlyJson } from '../../platform/http/middleware.js';
+import type { DashboardEnv } from '../access/http.js';
 import { launchMeetingWorker, retryMeeting } from './launch.js';
-import { createMeeting, DuplicateMeeting, getMeeting, listMeetings } from './meetings.js';
+import { createMeeting, getMeeting, listMeetings } from './meetings.js';
 
 // Reuniones (#62) from the dashboard, in Hono (#235, stage 6) — server/
 // apps/api/routes.ts mounts them under /api/reuniones:
@@ -32,7 +32,6 @@ async function visibleMeeting(access: Access, n: string) {
 }
 
 // A change only as JSON, which a plain HTML form can't send.
-const asJson = (c: Context) => ((c.req.header('content-type') ?? '').startsWith('application/json') ? null : c.json({ error: 'se espera JSON' }, 415));
 
 // ronin reads it right away; if the launch fails, the tick does.
 const launch = (n: number) => launchMeetingWorker(n).catch((error) => log.error(`reuniones: no se pudo lanzar el worker de R-${n}`, error));
@@ -40,25 +39,21 @@ const launch = (n: number) => launchMeetingWorker(n).catch((error) => log.error(
 export function meetingsRoutes() {
   const upload = z.record(z.string(), z.unknown());
   return new Hono<DashboardEnv>()
-    .onError(onError([MeetingUploadError, ApproveError, GithubUserError]))
+    .onError(onError)
     .get('/', async (c) => {
       const access = c.env.access;
       const meetings = (await listMeetings()).filter((m) => sees(access, m.repo));
       return c.json({ meetings: meetings.map(meetingRow).sort((a, b) => b.number - a.number) }, 200);
     })
-    .post('/', async (c, next) => asJson(c) ?? next(), jsonBody(MAX_UPLOAD_BODY, 'el pedido no llegó bien, o el archivo pesa más de 10 MB'), body(upload), async (c) => {
+    .post('/', onlyJson, jsonBody(MAX_UPLOAD_BODY, 'el pedido no llegó bien, o el archivo pesa más de 10 MB'), body(upload), async (c) => {
       const given = c.req.valid('json');
       // Before reading the notes: a repo it sees but can't upload to.
       const refused = typeof given.repo === 'string' && sees(c.env.access, given.repo) ? refusal(c, c.env.access, given.repo, 'notas') : null;
       if (refused) return refused;
-      try {
-        const meeting = await createMeeting(await parseUpload(given, await visibleRepos(c.env.access), c.env.session.login));
-        await launch(meeting.number);
-        return c.json(meetingRow((await getMeeting(meeting.number)) ?? meeting), 200);
-      } catch (error) {
-        if (error instanceof DuplicateMeeting) return c.json({ error: error.message, number: error.number }, 409);
-        throw error;
-      }
+      // The same notes twice: a 409 with the meeting they went to (DuplicateMeeting).
+      const meeting = await createMeeting(await parseUpload(given, await visibleRepos(c.env.access), c.env.session.login));
+      await launch(meeting.number);
+      return c.json(meetingRow((await getMeeting(meeting.number)) ?? meeting), 200);
     })
     .get('/:n', async (c) => {
       const meeting = await visibleMeeting(c.env.access, c.req.param('n'));
@@ -81,9 +76,7 @@ export function meetingsRoutes() {
       await launch(meeting.number);
       return c.json({ ok: true }, 200);
     })
-    .post('/:n/descartar', async (c) => {
-      const refusedAsJson = asJson(c);
-      if (refusedAsJson) return refusedAsJson;
+    .post('/:n/descartar', onlyJson, async (c) => {
       const meeting = await visibleMeeting(c.env.access, c.req.param('n'));
       if (!meeting) return c.json(MISSING, 404);
       const refused = refusal(c, c.env.access, meeting.repo, 'aprobar');
@@ -91,7 +84,7 @@ export function meetingsRoutes() {
       await discardMeeting(meeting.number, c.env.session.login);
       return c.json({ status: 'discarded' }, 200);
     })
-    .post('/:n/aprobar', async (c, next) => asJson(c) ?? next(), jsonBody(512 * 1024, 'el pedido no llegó bien'), body(z.object({ items: z.unknown().optional() })), async (c) => {
+    .post('/:n/aprobar', onlyJson, jsonBody(512 * 1024, 'el pedido no llegó bien'), body(z.object({ items: z.unknown().optional() })), async (c) => {
       const meeting = await visibleMeeting(c.env.access, c.req.param('n'));
       const entry = meeting && (await visibleRepos(c.env.access)).find((e) => e.productRepo === meeting.repo);
       if (!meeting || !entry) return c.json(MISSING, 404);

@@ -23,14 +23,6 @@ const SECURITY_HEADERS = {
   'Strict-Transport-Security': 'max-age=31536000',
 };
 
-// What's missing for the portal to run; empty means it can.
-export function missingPortalConfig(config: PortalConfig): string[] {
-  const missing: string[] = [];
-  if (!config.url) missing.push('PORTAL_URL');
-  if (config.sessionSecret.length < 32) missing.push('PORTAL_SESSION_SECRET (32+ caracteres)');
-  return missing;
-}
-
 type Handler = (req: IncomingMessage, res: ServerResponse) => Promise<void>;
 
 // A fingerprint of the page's files, sent with every API answer: a page

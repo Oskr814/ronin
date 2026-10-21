@@ -1,7 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { IncomingMessage } from 'node:http';
 import { createHmac } from 'node:crypto';
-import { missingAuthConfig, parseCookies, readSession, sealSession, sessionLogin, SESSION_COOKIE, type AuthConfig } from './auth.js';
+import { missingAuthConfig, readSession, sealSession, sessionLogin, SESSION_COOKIE, type AuthConfig } from './auth.js';
+import { parseCookies } from '../../../platform/http/cookies.js';
 
 const CONFIG: AuthConfig = {
   url: 'https://media.example.ts.net:8443',

@@ -8,6 +8,7 @@ import { CHARTERS, EXPLORATION_DIR, VIEWPORTS, parseInventory } from './memory.j
 import { listRunRecords, type ExplorationRunFunction, type ExplorationRunRecord, type ExplorationTrigger } from './run-log.js';
 import type { RunSummary } from '../runs/data.js';
 import { explorationReview, isExplorationPr, readBranchFile, type ExplorationPr, type Ficha } from './review.js';
+import { DomainError } from '../../platform/errors.js';
 
 // The dashboard's Exploraciones page (#155): one row per app a repo explores
 // (`explore` in repos.json), with its repo's rolling exploration PR — one
@@ -346,11 +347,7 @@ export async function inventarioOf(entry: RepoEntry, app: string, pr: Pick<Explo
 // Each repo's open PRs, from its GitHub read (items/github.ts), by repo.
 export const prsOf = <P>(entries: Array<{ productRepo: string }>, github: Array<{ prs: P[] } | null | undefined>) => new Map(entries.map((entry, i) => [entry.productRepo, github[i]?.prs ?? []]));
 
-export class ExploreNowError extends Error {
-  constructor(message: string, readonly status = 400) {
-    super(message);
-  }
-}
+export class ExploreNowError extends DomainError {}
 
 export interface ExploreNow {
   maxFunctions: number;
@@ -390,7 +387,7 @@ export async function exploreNow(entry: RepoEntry, app: string, login: string, a
   const launch = deps?.launch ?? launchExploreWorker;
   const markNight = deps?.markNight ?? ((night: string) => withActiveRepo(entry, () => setNightlyExploration(app, night)));
   if (now.getTime() - (launchedAt.get(repo) ?? 0) < LAUNCH_GRACE_MS || (await busy())) {
-    throw new ExploreNowError(`ya hay una exploración corriendo en ${repo}: una por repo a la vez`, 409);
+    throw new ExploreNowError(`ya hay una exploración corriendo en ${repo}: una por repo a la vez`, { status: 409 });
   }
   let night: string | undefined;
   if (ask.tonight) {

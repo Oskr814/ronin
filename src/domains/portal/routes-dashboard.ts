@@ -1,14 +1,14 @@
 import { Hono } from 'hono';
-import { z } from 'zod';
 import { config } from '../../platform/config/config.js';
 import { loadRepos } from '../../platform/config/repos.js';
-import { body, jsonBody, onError, type DashboardEnv } from '../../apps/api/http/hono.js';
+import { adminsOnly, anyObject, jsonBody, onError, onlyJson } from '../../platform/http/middleware.js';
+import type { DashboardEnv } from '../access/http.js';
 import { sees, type Access } from '../access/access.js';
 import { HISTORY_DAYS } from '../runs/data.js';
 import { requestDetail, requestImage, requestPatch, requestRow } from './board.js';
-import { createAccount, editAccount, PortalAdminError, portalAdminView, sendAccountLink, type PortalAdminContext } from './admin.js';
+import { createAccount, editAccount, portalAdminView, sendAccountLink, type PortalAdminContext } from './admin.js';
 import { visibleRepos, visibleRuns } from '../access/visible.js';
-import { missingPortalConfig } from '../../apps/api/http/portal.js';
+import { missingPortalConfig } from './http.js';
 import { listUsers } from './accounts.js';
 import { getRequest, listRequests } from './requests.js';
 
@@ -68,7 +68,7 @@ export function pedidosRoutes() {
 // POST /api/portal-admin/users/<id>/link   emails a new link to set the password
 // The fields are checked by portal/admin.ts, with what's wrong in words.
 export function portalAdminRoutes() {
-  const account = body(z.record(z.string(), z.unknown()));
+  const account = anyObject();
   const json = () => jsonBody(64 * 1024, 'se espera JSON');
   const ctx = async (admin: string): Promise<PortalAdminContext> => ({
     url: config.portal.url,
@@ -78,13 +78,8 @@ export function portalAdminRoutes() {
     admin,
   });
   return new Hono<DashboardEnv>()
-    .onError(onError([PortalAdminError]))
-    .use('*', async (c, next) => {
-      if (!c.env.access.admin) return c.json({ error: 'solo los administradores del tablero manejan las cuentas del portal' }, 403);
-      // A change only as JSON, which a plain HTML form can't send.
-      if (c.req.method !== 'GET' && !(c.req.header('content-type') ?? '').startsWith('application/json')) return c.json({ error: 'se espera JSON' }, 415);
-      await next();
-    })
+    .onError(onError)
+    .use('*', adminsOnly('solo los administradores del tablero manejan las cuentas del portal'), onlyJson)
     .get('/', async (c) => c.json(await portalAdminView(await ctx(c.env.session.login)), 200))
     .post('/users', json(), account, async (c) => c.json(await createAccount(await ctx(c.env.session.login), c.req.valid('json')), 200))
     .post('/users/:id/link', async (c) => c.json(await sendAccountLink(await ctx(c.env.session.login), c.req.param('id')), 200))

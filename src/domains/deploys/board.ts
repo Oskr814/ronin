@@ -3,23 +3,14 @@ import { withResourceLock } from '../../platform/locks/locks.js';
 import { log } from '../../platform/logger.js';
 import { withActiveRepo, type RepoEntry } from '../../platform/agents/repo-context.js';
 import { DeployError, followDeploys, listDeploys, pendingChanges, planRelease, problemText, publishRelease, readRepo, type DeployRecord, type RepoRead, type Pending, type PendingChange, type Plan, type ReleaseRequest } from './index.js';
+import { DomainError } from '../../platform/errors.js';
 
 // The dashboard's deploys (#158): each repo with `deploy` in repos.json,
 // what's merged and not deployed yet, its last releases and how their
 // workflow went, and the dialog's plan and publish — all through deploy/,
 // which knows nothing of the dashboard. Admins only (apps/api/http/dashboard.ts).
 
-export class DespliegueError extends Error {
-  constructor(message: string, readonly status = 400, readonly plan?: unknown) {
-    super(message);
-  }
-
-  // With the plan as it is now, when it changed under the person (a
-  // fingerprint that no longer matches).
-  get details() {
-    return this.plan ? { plan: this.plan } : {};
-  }
-}
+export class DespliegueError extends DomainError {}
 
 // The last releases a repo's card shows.
 const RELEASES_SHOWN = 8;
@@ -158,7 +149,7 @@ export async function publishDespliegue(entry: RepoEntry, body: ReleaseBody, log
       const record = await publishRelease({ ...body, by: login }).finally(() => reads.delete(entry.productRepo));
       return { tag: record.tag, url: record.url, pedidos: record.pedidos };
     } catch (error) {
-      if (error instanceof DeployError) throw new DespliegueError(error.message, 409, error.plan ? planView(error.plan) : undefined);
+      if (error instanceof DeployError) throw new DespliegueError(error.message, { status: 409, details: error.plan ? { plan: planView(error.plan) } : {} });
       throw error;
     }
   });

@@ -99,13 +99,13 @@ src/
 │                      portal, meetings, deploys, explorations, metrics, settings, items, runs, access,
 │                      slices, review, commands, previews, changelog, product-app
 ├── platform/          lo técnico que usan todos: config/, db/, github/, linear/, git/, claude/, agents/, state/, locks/, workers/, notify/,
-│                      logger, timing; y con las piezas comunes, store/, fs/ y errors.ts
+│                      http/, store/, fs/, logger, timing, errors.ts
 └── ui/                React compartido por el tablero y el portal: components/, api-client.ts, time.ts
 ```
 
 **Reglas:**
 - **Cada cosa en un solo lugar.** Lo que dos dominios necesitan va a `platform/` (si es técnico) o a un dominio propio (si es de ronin: quién ve qué es `domains/access`); lo que dos apps web necesitan, a `ui/`. Nada se copia «como lo hace el otro».
-- **Un dominio no sabe de HTTP salvo en su `routes.ts`**, que usa las piezas comunes de `apps/api/http/` (validar JSON, solo administradores, lo que la sesión no ve es un 404) en vez de declararlas.
+- **Un dominio no sabe de HTTP salvo en su `routes.ts`**, que usa las piezas comunes de `platform/http/middleware.ts` (solo JSON, el cuerpo con su tope y su esquema, solo administradores, el repo del path, los errores) en vez de declararlas. Quién pregunta en el tablero (`Session`, `DashboardEnv`) es de `domains/access/http.ts`.
 - **Las pruebas van junto a su archivo** (`x.ts` y `x.test.ts`); las que cruzan dominios (el HTTP del tablero, Postgres, los recorridos con Playwright), en `test/`.
 - **Una carpeta que crece se parte en subcarpetas**, no en archivos más largos.
 
@@ -115,8 +115,8 @@ src/
 |---|---|
 | El almacén con dos backends (Postgres o archivos) escrito por cada módulo — reuniones, pedidos, cuentas, ajustes, despliegues —, con locks de números mágicos | `platform/store/`: `documentStore` (reuniones y pedidos: el documento numerado), `onStore` (Postgres o archivos, medido), `requireDb` y `STORE_LOCKS` (cada lock de Postgres con su nombre). **Hecho.** Cuentas, Ajustes y despliegues guardan cada uno una forma distinta (una lista, tres tablas, filas por repo y tag): usan `onStore` y su lock, sin una abstracción para un solo usuario. |
 | Escribir JSON con tmp + rename y el lock de archivo, en `domains/portal/json-store.ts` y copias | `platform/fs/atomic-json.ts`: `readJson`, `withJson`, `writeJson` y `writeFileAtomic`, que reemplaza las cuatro copias (corridas de exploración, catálogo de seeds, uso de Claude, estado local). **Hecho.** |
-| En cada `routes.ts`: solo JSON (415), solo administradores, `z.record(...)`, el tope del cuerpo, `owner/name`, «no lo ves: 404» | `apps/api/http/middleware.ts` |
-| ~15 clases de error de dominio con su status, y la lista de cada `onError` | `platform/errors.ts`: `DomainError(message, { status, details })` |
+| En cada `routes.ts`: solo JSON (415), solo administradores, `z.record(...)`, el tope del cuerpo, `owner/name`, «no lo ves: 404» | `platform/http/middleware.ts`: `onlyJson`, `jsonBody`, `body`, `anyObject`, `adminsOnly`, `repoParam`, `onError`. **Hecho.** El permiso (403) ya era uno solo, `refusal` en `domains/access/visible.ts`; cada «no existe: 404» se queda en su ruta, con el mensaje de su dominio. Los dominios ya no importan nada de `apps/`. |
+| ~15 clases de error de dominio con su status, y la lista de cada `onError` | `platform/errors.ts`: `DomainError(message, { status, details })`; cada clase de un dominio la extiende y `onError` ya no lleva lista. **Hecho.** |
 | `pidAlive` (6 copias), lanzar un worker y relanzar los que murieron, el arranque de cada worker | `platform/workers/`: `pidAlive`, `runWorker` y `withProductRepo`, `trackedWorker`, `worktreeLock`. **Hecho.** |
 | Llamadas a la API de GitHub con sus headers y errores, en 5 archivos; `owner/name` partido a mano | `platform/github/rest.ts`, `parseRepo()` |
 | El cliente de la API, las fechas y los chips de estado en el tablero y el portal | `ui/api-client.ts`, `ui/time.ts`, `ui/components/`; el estado de un pedido, en `domains/portal/status.ts` |
@@ -243,7 +243,7 @@ La única implementación es `LocalHost`. El código de dominio no vuelve a llam
 - **Contratos:** los tipos de cada endpoint se exportan desde el servidor y el frontend los importa (el cliente de Hono, o tipos compartidos). Un cambio en la API rompe el build del frontend, no la página.
 - **No cambia:** los dos listeners (público y tailnet), la autenticación del tablero con GitHub, la sesión del portal, las cabeceras de seguridad y `X-Portal-Version`.
 - **Migración:** por grupo de rutas (portal, pedidos, despliegues, métricas, ajustes, ítems). Hono se monta en el servidor actual, y las rutas viejas siguen respondiendo hasta que cada grupo pasa.
-- **Carpetas por dominio:** las rutas de un dominio viven con él, junto a su servicio y su repositorio: `domains/portal/routes.ts`, `domains/deploys/routes.ts`… Lo que comparten todas (el cuerpo JSON con su tope, la validación con zod, los errores) está en `apps/api/http/hono.ts`. Al terminar la migración, `server/app.ts` monta cada dominio y `server/api/` queda vacío.
+- **Carpetas por dominio:** las rutas de un dominio viven con él, junto a su servicio y su repositorio: `domains/portal/routes.ts`, `domains/deploys/routes.ts`… Lo que comparten todas (el cuerpo JSON con su tope, la validación con zod, los errores) está en `platform/http/middleware.ts`, y `apps/api/routes.ts` monta cada dominio.
 
 **Hecho (6, portal):** la API del portal (`/api/portal/*`) en Hono: `domains/portal/routes.ts` y `domains/portal/routes-requests.ts`, montadas por `apps/api/http/portal.ts` con `@hono/node-server` sin tocar los `Request`/`Response` globales. Respondía y sigue respondiendo lo mismo: las pruebas HTTP de antes pasan sin cambios. `PortalApi` es el tipo que va a usar el cliente de la etapa 7.
 

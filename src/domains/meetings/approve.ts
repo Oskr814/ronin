@@ -5,8 +5,9 @@ import { log } from '../../platform/logger.js';
 import { withActiveRepo, type RepoEntry } from '../../platform/agents/repo-context.js';
 import { tryLockResource, unlockResource } from '../../platform/locks/locks.js';
 import { addEvent, getMeeting, updateMeeting, type Meeting, type ProposalOutcome, type ProposalResult, type ProposedCycle, type ProposedIssue } from './index.js';
-import type { Session } from '../../apps/api/http/auth.js';
+import type { Session } from '../access/http.js';
 import { commentOnIssue, createIssue, GithubUserError } from '../../platform/github/github-as-user.js';
+import { DomainError } from '../../platform/errors.js';
 
 // Someone approves what they chose of a meeting's proposals (#62), with
 // their edits: the issues and comments go to GitHub as them, with their
@@ -15,11 +16,7 @@ import { commentOnIssue, createIssue, GithubUserError } from '../../platform/git
 // linear-assign once the sync brings them. Each proposal's outcome is kept
 // as soon as it's known, so trying again never creates one twice.
 
-export class ApproveError extends Error {
-  constructor(message: string, readonly status = 400) {
-    super(message);
-  }
-}
+export class ApproveError extends DomainError {}
 
 const TITLE_MAX = 256;
 const BODY_MAX = 60_000;
@@ -38,7 +35,7 @@ const str = (v: unknown) => (typeof v === 'string' ? v.trim() : undefined);
 
 export function parseChoices(raw: unknown, meeting: Meeting): Choice[] {
   const p = meeting.proposals;
-  if (!p) throw new ApproveError('Esa reunión no tiene propuestas.', 409);
+  if (!p) throw new ApproveError('Esa reunión no tiene propuestas.', { status: 409 });
   if (!Array.isArray(raw) || !raw.length) throw new ApproveError('Marca al menos una propuesta.');
   const ids = new Set([...p.projects.flatMap((x) => [x.id, ...x.issues.map((i) => i.id)]), ...p.issues.map((i) => i.id), ...p.comments.map((c) => c.id)]);
   const choices = raw.map((item): Choice => {
@@ -88,7 +85,7 @@ export interface ApproveOutcome {
 export async function approveMeeting(entry: RepoEntry, n: number, session: Session, raw: unknown): Promise<ApproveOutcome> {
   return withActiveRepo(entry, async () => {
     const resource = `meeting-approve-${n}`;
-    if (!(await tryLockResource(resource))) throw new ApproveError('Alguien ya está creando lo de esta reunión.', 409);
+    if (!(await tryLockResource(resource))) throw new ApproveError('Alguien ya está creando lo de esta reunión.', { status: 409 });
     try {
       return await approve(entry, n, session, raw);
     } finally {
@@ -99,13 +96,13 @@ export async function approveMeeting(entry: RepoEntry, n: number, session: Sessi
 
 async function approve(entry: RepoEntry, n: number, session: Session, raw: unknown): Promise<ApproveOutcome> {
   const meeting = await getMeeting(n);
-  if (!meeting || meeting.status !== 'review') throw new ApproveError('Esa reunión no espera revisión.', 409);
+  if (!meeting || meeting.status !== 'review') throw new ApproveError('Esa reunión no espera revisión.', { status: 409 });
   const choices = parseChoices(raw, meeting);
   const chosen = new Map(choices.map((c) => [c.id, c]));
   const p = meeting.proposals!;
   const key = linearKey(entry);
   const ctx = key ? await teamContext(entry, key) : null;
-  if (key && !ctx) throw new ApproveError('No se pudo leer el equipo de Linear del repo.', 502);
+  if (key && !ctx) throw new ApproveError('No se pudo leer el equipo de Linear del repo.', { status: 502 });
   const results: Record<string, ProposalResult> = { ...meeting.results };
   let created = 0;
   let failed = 0;
@@ -205,5 +202,5 @@ export async function discardMeeting(n: number, login: string): Promise<void> {
     addEvent(m, { kind: 'discarded', by: login });
     return true;
   });
-  if (!ok) throw new ApproveError('Esa reunión ya no se puede descartar.', 409);
+  if (!ok) throw new ApproveError('Esa reunión ya no se puede descartar.', { status: 409 });
 }
