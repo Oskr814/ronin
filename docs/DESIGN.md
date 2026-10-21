@@ -1498,7 +1498,7 @@ Una sección del tablero, solo para admins, para entender cómo se mueve el trab
   - sus intentos de fix, contados como los labels `ronin:attempts-<n>` que recibió;
   - por qué se bloqueó, agrupado como en `docs/BLOCKING.md`.
 
-Todo se calcula en `domains/metrics/compute.ts`, que es puro: los números se prueban ahí, sin GitHub. Las rutas (`/api/metricas`, `/api/metricas/suscripcion`, solo administradores) están en `domains/metrics/routes.ts`, en Hono.
+Todo se calcula en `domains/metrics/compute.ts`, que es puro: los números se prueban ahí, sin GitHub. Las rutas (`/api/metrics`, `/api/metrics/subscription`, solo administradores) están en `domains/metrics/routes.ts`, en Hono.
 
 #### 20.2 De dónde salen los datos (`domains/metrics/collect.ts`)
 
@@ -1521,8 +1521,8 @@ Un `ronin:blocked` de GitHub sin su par en el registro, como los de antes de #22
 
 | Ruta | Quién | Qué |
 |---|---|---|
-| `GET /api/metricas?dias=7\|30\|90&repo=<owner>/<repo>` | admins | el período (30 por defecto) comparado con el anterior, de todos los repos o de uno: los totales, las barras por día o por semana, la distribución de los tiempos, la tabla por persona, la salud del flujo, los despliegues y lo de ronin; en `sources`, de cuándo es la lectura de cada repo y su error |
-| `GET /api/metricas/suscripcion?cuenta=<cuenta>` | admins | el aprovechamiento de cada cuenta de Claude, o de una (20.7) |
+| `GET /api/metrics?days=7\|30\|90&repo=<owner>/<repo>` | admins | el período (30 por defecto) comparado con el anterior, de todos los repos o de uno: los totales, las barras por día o por semana, la distribución de los tiempos, la tabla por persona, la salud del flujo, los despliegues y lo de ronin; en `sources`, de cuándo es la lectura de cada repo y su error |
+| `GET /api/metrics/subscription?account=<account>` | admins | el aprovechamiento de cada cuenta de Claude, o de una (20.7) |
 
 #### 20.5 La página (`/metricas`)
 
@@ -1537,7 +1537,7 @@ Está en cinco bloques:
 
 La página no calcula nada: solo dibuja la respuesta de la API.
 
-Una segunda pestaña, *Suscripción* (`/metricas/suscripcion`), dibuja `GET /api/metricas/suscripcion` (20.7), con un filtro de cuenta:
+Una segunda pestaña, *Suscripción* (`/metricas/suscripcion`), dibuja `GET /api/metrics/subscription` (20.7), con un filtro de cuenta:
 - **Por cuenta:** su plan con un enlace a Ajustes → Cuentas de Claude, y cinco números: esta semana partida en ronin y otros, la proyección, el aprovechamiento, las ventanas de 5 h y el rinde.
 - **Cuatro tarjetas:**
   - el uso acumulado de la semana, con ronin y otros apilados, la proyección punteada y la última medición;

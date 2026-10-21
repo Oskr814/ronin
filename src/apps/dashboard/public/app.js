@@ -4141,7 +4141,7 @@ async function loadMetricas() {
   S.mt.loading = true;
   if (S.page === 'metricas') renderCenter();
   try {
-    const data = await api(`/api/metricas?dias=${S.mt.days}${S.mt.repo ? `&repo=${encodeURIComponent(S.mt.repo)}` : ''}`);
+    const data = await api(`/api/metrics?days=${S.mt.days}${S.mt.repo ? `&repo=${encodeURIComponent(S.mt.repo)}` : ''}`);
     if (S.mt.key !== key) return;
     S.mt.data = data;
     S.mt.error = null;
@@ -4353,7 +4353,7 @@ async function loadSuscripcion() {
   su.loading = true;
   if (S.page === 'metricas') renderCenter();
   try {
-    su.data = await api('/api/metricas/suscripcion');
+    su.data = await api('/api/metrics/subscription');
     su.error = null;
     su.at = Date.now();
   } catch (error) {

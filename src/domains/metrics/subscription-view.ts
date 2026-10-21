@@ -5,7 +5,7 @@ import { computeSubscription, type Subscription } from './subscription.js';
 import { accountsView } from '../settings/claude-accounts.js';
 import { listRuns } from '../runs/data.js';
 
-// GET /api/metricas/suscripcion[?cuenta=<cuenta>] (#234, admins only): each
+// GET /api/metrics/subscription[?account=<account>] (#234, admins only): each
 // Claude account's use of its plan, computed by domains/metrics/subscription.ts
 // from the quota's history, ronin's runs and what Métricas read from GitHub.
 // The accounts are those of Ajustes → Cuentas de Claude.
@@ -14,7 +14,7 @@ import { listRuns } from '../runs/data.js';
 // PRs that closed in the last 30 days.
 const RUN_DAYS = 63;
 
-export async function suscripcionView(entries: RepoEntry[], account: string | null, now = Date.now()): Promise<{ accounts: string[]; cuentas: Subscription[] } | null> {
+export async function subscriptionView(entries: RepoEntry[], account: string | null, now = Date.now()): Promise<{ accounts: string[]; cuentas: Subscription[] } | null> {
   const all = (await accountsView(entries)).cuentas;
   const shown = account ? all.filter((c) => c.account === account) : all;
   if (account && !shown.length) return null;
