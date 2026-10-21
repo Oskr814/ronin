@@ -5,6 +5,7 @@ import { explorationRoutes } from '../exploration/routes.js';
 import { meetingsRoutes } from '../meetings/routes.js';
 import { metricsRoutes } from '../metrics/routes.js';
 import { pedidosRoutes, portalAdminRoutes } from '../portal/routes-dashboard.js';
+import { evidenceRoutes, runsRoutes } from '../runs/routes.js';
 import type { DashboardEnv } from './hono.js';
 
 // The dashboard's API in Hono (#235, stage 6), a group of routes at a time:
@@ -19,10 +20,12 @@ export const dashboardApp = new Hono<DashboardEnv>()
   .route('/api/despliegues', deployRoutes())
   .route('/api/metricas', metricsRoutes())
   .route('/api/exploraciones', explorationRoutes())
-  .route('/api/ajustes', ajustesRoutes());
+  .route('/api/ajustes', ajustesRoutes())
+  .route('/api/runs', runsRoutes())
+  .route('/api/evidence', evidenceRoutes());
 
 export type DashboardApi = typeof dashboardApp;
 
 // The paths it owns.
-const GROUPS = ['/api/pedidos', '/api/portal-admin', '/api/reuniones', '/api/despliegues', '/api/metricas', '/api/exploraciones', '/api/ajustes'];
+const GROUPS = ['/api/pedidos', '/api/portal-admin', '/api/reuniones', '/api/despliegues', '/api/metricas', '/api/exploraciones', '/api/ajustes', '/api/runs', '/api/evidence'];
 export const ownsPath = (path: string) => GROUPS.some((group) => path === group || path.startsWith(`${group}/`));

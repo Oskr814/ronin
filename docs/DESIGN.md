@@ -692,7 +692,7 @@ La caché es la misma idea que la de los repos: `DASHBOARD_GITHUB_TTL_SECONDS`, 
 
 #### 15.9 API
 
-Todo, salvo los webhooks y `/api/auth/*`, pide sesión. Las rutas pasan a Hono de a un grupo (#235, etapa 6): cada grupo vive con su dominio (`portal/routes-dashboard.ts`, `meetings/routes.ts`, `deploy/routes.ts`, `metrics/routes.ts`, `exploration/routes.ts`, `ajustes/routes.ts`) y `server/dashboard-app.ts` los monta; el resto sigue en `server/api/dashboard.ts`. Las rutas y lo que devuelven no cambian:
+Todo, salvo los webhooks y `/api/auth/*`, pide sesión. Las rutas pasan a Hono de a un grupo (#235, etapa 6): cada grupo vive con su dominio (`portal/routes-dashboard.ts`, `meetings/routes.ts`, `deploy/routes.ts`, `metrics/routes.ts`, `exploration/routes.ts`, `ajustes/routes.ts`, `runs/routes.ts`) y `server/dashboard-app.ts` los monta; el resto sigue en `server/api/dashboard.ts`. Las rutas y lo que devuelven no cambian:
 
 | Ruta | Qué devuelve |
 |---|---|
