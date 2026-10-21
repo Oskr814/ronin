@@ -27,13 +27,13 @@ export function ReviewButton({ v, review, at, button }: { v: ItemPage; review: R
 
 const STATE_CHIP: Record<string, [string, string]> = { running: ['run', 'trabajando'], blocked: ['crit', 'bloqueado'], waiting: ['warn', 'esperando a alguien'] };
 
-export function Head({ v, actions, decide, review }: { v: ItemPage; actions: ReactNode; decide: Decide; review: Review }) {
+export function Head({ v, actions, decide, review, explore }: { v: ItemPage; actions: ReactNode; decide: Decide; review: Review; explore: (action: 'general' | 'approve') => void }) {
   const host = useHost();
   const names = useRunNames();
   const { item } = v;
   const d = v.detail?.data;
-  const general = d?.exploration && <button className="gh" onClick={() => host.explorationDialog('general')}>Comentario general</button>;
-  const finish = d?.exploration && <button className="act-btn" title="Termina la revisión: aprueba las fichas que quedan y mergea el PR" onClick={() => host.explorationDialog('approve')}>Finalizar…</button>;
+  const general = d?.exploration && <button className="gh" onClick={() => explore('general')}>Comentario general</button>;
+  const finish = d?.exploration && <button className="act-btn" title="Termina la revisión: aprueba las fichas que quedan y mergea el PR" onClick={() => explore('approve')}>Finalizar…</button>;
   if (v.exploration) {
     const url = item.url?.startsWith('https://github.com/') ? item.url : /^[\w.-]+\/[\w.-]+$/.test(item.repo) && item.number !== undefined ? `https://github.com/${item.repo}/${item.kind === 'pr' ? 'pull' : 'issues'}/${item.number}` : null;
     return <XplHead r={v.exploration} pill={<GhPill item={item} d={d} />} buttons={<>{url && <a className="gh" href={url} target="_blank" rel="noopener">PR #{item.number} ↗</a>}{general}{actions}{finish}</>} />;

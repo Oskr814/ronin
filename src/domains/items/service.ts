@@ -14,7 +14,7 @@ import { sees, type Access } from '../access/access.js';
 import { listActions } from './actions.js';
 import { HISTORY_DAYS, hostLoad, itemKey, readQueue, readTickInfo, slotsInUse } from '../runs/data.js';
 import { itemDetail, resolveItem } from './detail.js';
-import { explorationReview, isExplorationPr } from '../explorations/review.js';
+import { explorationReview, isExplorationPr, type ExplorationReview } from '../explorations/review.js';
 import { explorationRows, liveRuns, prsOf } from '../explorations/board.js';
 import { prFiles } from './files.js';
 import { repoGithub } from './github.js';
@@ -212,7 +212,7 @@ export async function explorationContext(access: Access, id: string) {
   return { entry, pr, review: await explorationReview(entry, pr, changedSince) };
 }
 
-export async function exploration(access: Access, id: string): Promise<unknown | null> {
+export async function exploration(access: Access, id: string): Promise<(ExplorationReview & { ronin: string }) | null> {
   const ctx = await explorationContext(access, id);
   return ctx && { ronin: config.githubLogin, ...ctx.review };
 }

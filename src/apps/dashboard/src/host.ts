@@ -88,8 +88,8 @@ export interface Host {
   subscribe(onChange: () => void): () => void;
 
   // An item's page (#85, pages/item). The shell keeps what it reads of the
-  // item, because its context column, the sidebar and the Fichas tab read
-  // it too: the detail from GitHub, the runs, the run shown
+  // item, because its context column and the sidebar read it too: the
+  // detail from GitHub, the runs, the run shown
   // (live while it goes) and which tab and run are shown. A new view each
   // time the shell draws (`subscribe`); null for an item it doesn't know.
   item(key: string): ItemView | null;
@@ -109,26 +109,16 @@ export interface Host {
   movePr(step: 1 | -1): void;
   // The keys' help (?), which the whole dashboard has.
   keysHelp(): void;
-  // What the shell has open on top of the page (a dialog, the lightbox,
-  // Fichas' menu): the page leaves the keys to it.
-  shellLayer(): 'dialog' | 'menu' | null;
-
-  // ---- Fichas, still drawn by app.js (#235: it goes to React in its own
-  // PR, and what's below goes with it).
-  // The page gives the tab's room; the shell draws the tab there, again as
-  // its state changes, and wires it. It keeps the tab's keys (j, k, a, c,
-  // r) unless `bridge.blocks()`. Returns how to stop.
-  itemTab(element: HTMLElement, key: string, tab: 'fichas', bridge: ItemTabBridge): () => void;
-  // An exploration PR's dialogs on the whole PR (#93), which read its findings.
-  explorationDialog(kind: 'general' | 'approve'): void;
+  // What the shell has open on top of the page (a dialog): the page leaves
+  // the keys to it.
+  shellLayer(): 'dialog' | null;
+  // The finding an exploration PR's Fichas tab shows (#93), and whether it's
+  // open (on a phone, over the list): the shell keeps it, since the address
+  // carries it (?f=). Null before one was picked.
+  ficha(key: string): { ficha: string | null; open: boolean };
+  showFicha(key: string, ficha: string | null, open: boolean): void;
 }
 
-// The page's side of a tab the shell draws (Host.itemTab).
-export interface ItemTabBridge {
-  // Whether the page has something open that takes the keys (a menu, a
-  // dialog, deciding a PR).
-  blocks(): boolean;
-}
 
 export type SnapshotItem = Snapshot['items'][number];
 export type { ItemDetail, ItemRun, ShownRun };
@@ -145,7 +135,7 @@ export interface ItemView {
   runIdx: number;
   view: 'ficha' | 'tx';
   // The page's tabs ([key, label]) and the one shown, once the detail is
-  // read; Fichas is drawn by the shell (itemTab).
+  // read.
   tabs: Array<[string, string]>;
   doc: string | null;
   // A PR of ronin's that's decided here (Aprobar, Ajustar, Cerrar), or
@@ -154,9 +144,6 @@ export interface ItemView {
   reviewable: boolean;
   // An exploration PR's app (#155), whose page it is.
   exploration: ExplorationRow | null;
-  // How many findings Fichas has, for its tab's counter: the shell's until
-  // Fichas is in React.
-  fichas: number | null;
 }
 
 export interface ExplorationsView {

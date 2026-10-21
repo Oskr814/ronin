@@ -21,6 +21,7 @@ export type MeetingDetail = InferResponseType<(typeof client.api.meetings)[':n']
 export type Snapshot = InferResponseType<typeof client.api.snapshot.$get, 200>;
 export type Today = InferResponseType<typeof client.api.today.$get, 200>;
 export type ItemDetail = InferResponseType<(typeof client.api.items)[':id']['detail']['$get'], 200>;
+export type Exploration = InferResponseType<(typeof client.api.items)[':id']['exploration']['$get'], 200>;
 export type ItemRun = InferResponseType<(typeof client.api.items)[':id']['$get'], 200>['runs'][number];
 // The run an item's page shows, as the shell reads it (app.js's S.run): its
 // lines without its start and end, and more as they come while it goes.

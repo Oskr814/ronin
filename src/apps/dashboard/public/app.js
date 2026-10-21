@@ -101,14 +101,13 @@ function duration(ms) {
 const money = (usd) => (usd < 0.01 ? 'menos de US$0,01' : `US$${usd.toFixed(2).replace('.', ',')}`);
 const pct = (fraction) => `${Math.round(fraction * 100)}%`;
 
-const S = { snap: null, today: null, sel: null, open: [], runIdx: {}, pendingRun: null, filter: null, q: '', itemRuns: {}, run: null, stream: null, detail: {}, view: {}, doc: {}, expl: {}, ficha: {}, fichaOpen: {}, fichaFilter: { tipo: 'todas', vp: 'todos' }, antes: {}, oldAfter: new Set(), lightbox: null, fmenu: false, fdialog: null, fdraft: {}, listas: {}, scope: 'all', project: '', extra: {}, newIssue: null, revSent: {}, page: null, ped: { n: null, run: null }, reu: { n: null, run: null }, xpl: { list: null, error: null, listAt: 0, repo: null, app: null, launched: {} }, xnow: null, dep: { list: null }, mt: { tab: 'trabajo' }, aj: { sec: 'perfil', login: null, repo: null, cuenta: null, f: null } };
+const S = { snap: null, today: null, sel: null, open: [], runIdx: {}, pendingRun: null, filter: null, q: '', itemRuns: {}, run: null, stream: null, detail: {}, view: {}, doc: {}, ficha: {}, fichaOpen: {}, scope: 'all', project: '', extra: {}, newIssue: null, revSent: {}, page: null, ped: { n: null, run: null }, reu: { n: null, run: null }, xpl: { list: null, error: null, listAt: 0, repo: null, app: null, launched: {} }, xnow: null, dep: { list: null }, mt: { tab: 'trabajo' }, aj: { sec: 'perfil', login: null, repo: null, cuenta: null, f: null } };
 // The sidebar's Linear filter (#101), remembered per browser.
 try { Object.assign(S, JSON.parse(localStorage.getItem('ronin-scope') ?? '{}')); } catch { /* sin storage */ }
 function saveScope() {
   try { localStorage.setItem('ronin-scope', JSON.stringify({ scope: S.scope, project: S.project })); } catch { /* sin storage */ }
 }
 const DETAIL_EVERY_MS = 30_000;
-const WAITING_EVERY_MS = 10_000;
 
 class Unauthorized extends Error {}
 
@@ -524,7 +523,6 @@ function renderCenter() {
   // phone. Reviewing findings or a diff takes the room of the context column.
   $('#shell').classList.toggle('wide', viewOf(item) !== 'tx' && ['fichas', 'files'].includes(docOf(item)));
   showPage('item', tabs + backBar(item.title), { id: item.id }, '', `<div class="ctx-inline">${ctxHTML(item)}</div>`);
-  drawItemTab();
 }
 
 // A page in React (src/apps/dashboard/, #235 stage 7): mounted once where
@@ -629,15 +627,17 @@ const PAGE_HOST = {
   },
   movePr,
   keysHelp: () => toggleKeysHelp(),
-  shellLayer: () => (S.newIssue || S.xnow || S.fdialog || S.lightbox ? 'dialog' : S.fmenu ? 'menu' : null),
-  itemTab(element, key, tab, bridge) {
-    itemTab = { element, key, tab, bridge };
-    drawItemTab();
-    return () => {
-      if (itemTab?.element === element) itemTab = null;
-    };
+  shellLayer: () => (S.newIssue || S.xnow ? 'dialog' : null),
+  // The finding an exploration PR's Fichas shows (pages/item/Fichas.tsx),
+  // kept here for the address (?f=).
+  ficha: (key) => ({ ficha: S.ficha[key] ?? null, open: Boolean(S.fichaOpen[key]) }),
+  showFicha(key, ficha, open) {
+    S.fichaOpen[key] = open;
+    if (ficha === null) return;
+    S.ficha[key] = ficha;
+    const url = `${itemPath(key)}?f=${encodeURIComponent(ficha)}`;
+    if (location.pathname + location.search !== url) history.replaceState(null, '', url);
   },
-  explorationDialog: (kind) => openPrDialog(kind),
   // What the sidebar shows of a page: whether a deploy is going, the
   // projects of the cycles (their colors).
   read(name, data) {
@@ -691,9 +691,9 @@ function setCenter(html) {
 
 // ---------- the item's page (#85)
 // In React (src/apps/dashboard/src/pages/item/). The shell keeps what it
-// reads of the item, which its context column, the sidebar and the Fichas
-// tab read too, and gives the page a view of it (PAGE_HOST.item),
-// made again each time the center is drawn.
+// reads of the item, which its context column and the sidebar read too,
+// and gives the page a view of it (PAGE_HOST.item), made again each time
+// the center is drawn.
 const itemViews = new Map();
 // The items a request's page shows (PAGE_HOST.watchItem), read again once old.
 const watched = new Set();
@@ -715,45 +715,7 @@ function itemView(key) {
     decidable: Boolean(d) && decidable(item, d),
     reviewable: Boolean(d) && reviewable(item, d),
     exploration: xplOfItem(key),
-    fichas: S.expl[key]?.data?.fichas.length ?? null,
   };
-}
-
-// The Fichas tab, still drawn here (#235: it goes to React in its own PR),
-// in the room the item's page gives it (PAGE_HOST.itemTab). Drawn again as
-// its state changes (each renderCenter), keeping where the person was
-// reading and what they were writing.
-let itemTab = null;
-function drawItemTab() {
-  if (!itemTab?.element.isConnected) return;
-  const { element, key, tab } = itemTab;
-  const item = itemById(key);
-  if (!item) return;
-  const html = fichasHTML(item);
-  if (element._html !== html) {
-    const doc = $('#doc');
-    const keep = doc && element._key === `${key}:${tab}` ? doc.scrollTop : 0;
-    const rows = $('#frows')?.scrollTop ?? 0;
-    const fd = $('#fdetail');
-    const fdKeep = fd ? { ficha: fd.dataset.current, top: fd.scrollTop } : null;
-    // A box being written in survives (a finding's comment).
-    const typing = ['fcomment'].includes(document.activeElement?.id) ? { id: document.activeElement.id, start: document.activeElement.selectionStart, end: document.activeElement.selectionEnd } : null;
-    element._html = html;
-    element._key = `${key}:${tab}`;
-    element.innerHTML = html;
-    const fresh = $('#doc');
-    if (fresh && !isMobile()) fresh.scrollTop = keep;
-    if ($('#frows')) $('#frows').scrollTop = rows;
-    const fdFresh = $('#fdetail');
-    if (fdFresh && fdKeep && fdFresh.dataset.current === fdKeep.ficha) fdFresh.scrollTop = fdKeep.top;
-    const box = typing && document.getElementById(typing.id);
-    if (box) {
-      box.focus();
-      box.setSelectionRange(typing.start, typing.end);
-    }
-    tickClocks();
-    wireItemTab();
-  }
 }
 
 // ---------- new issue (#100)
@@ -984,425 +946,6 @@ function showSentReviews() {
   }
 }
 
-// ---------- reviewing an exploration PR (#93)
-// The findings the PR brings, read into their parts, with their threads:
-// a list on the left, the finding on the right (one after the other on a
-// phone). Deciding on one is a comment on its file, written as whoever is
-// logged in — what they'd write in "Files changed" — and ronin applies it
-// as it does any other.
-const RONIN_MENTION = /@ronin-agent\b/i;
-const fichaKey = (f) => `${f.app}/${f.id}`;
-const FICHA_GROUPS = [['decidir', 'Por decidir'], ['esperando', 'Esperando a ronin'], ['respondida', 'Respondidas por ronin'], ['lista', 'Listas para aprobar'], ['aprobada', 'Aprobadas'], ['rechazada', 'Rechazadas']];
-const FICHA_DOT = { decidir: 'pending', esperando: 'live', respondida: 'run', lista: 'ok', aprobada: 'ok', rechazada: 'crit' };
-
-// "Aprobar" on a finding leaves nothing on GitHub yet: it's this browser's
-// mark of what was looked at and stays, so the review's progress shows. The
-// finding is approved for real when the PR is (approveAndMerge).
-const listasKey = (id) => `ronin-listas:${id}`;
-function listas(id) {
-  if (!S.listas[id]) {
-    try { S.listas[id] = new Set(JSON.parse(localStorage.getItem(listasKey(id)) ?? '[]')); } catch { S.listas[id] = new Set(); }
-  }
-  return S.listas[id];
-}
-function setLista(id, key, on) {
-  const set = listas(id);
-  if (on) set.add(key);
-  else set.delete(key);
-  try { localStorage.setItem(listasKey(id), JSON.stringify([...set])); } catch { /* sin storage */ }
-}
-
-// Where a finding stands: decided in its file, or by its thread — ronin
-// answers a first comment, or a reply that mentions it. Once ronin answered
-// (applied the changes asked for), it can be marked to approve again.
-function fichaStatus(f, ronin, id) {
-  if (f.estado === 'rechazado') return 'rechazada';
-  if (f.estado === 'aprobado') return 'aprobada';
-  const marked = id && listas(id).has(fichaKey(f));
-  const last = f.comments[f.comments.length - 1];
-  if (!last) return marked ? 'lista' : 'decidir';
-  if (last.author !== ronin && (!last.replyTo || RONIN_MENTION.test(last.body))) return 'esperando';
-  return marked ? 'lista' : 'respondida';
-}
-
-function visibleFichas(data, id) {
-  const { tipo, vp } = S.fichaFilter;
-  const shown = data.fichas.filter((f) => (tipo === 'todas' || f.tipo === tipo) && (vp === 'todos' || f.viewport === vp));
-  return FICHA_GROUPS.flatMap(([k]) => shown.filter((f) => fichaStatus(f, data.ronin, id) === k));
-}
-
-function currentFicha(item, data) {
-  const list = visibleFichas(data, item.id);
-  return list.find((f) => fichaKey(f) === S.ficha[item.id]) ?? data.fichas.find((f) => fichaKey(f) === S.ficha[item.id]) ?? list[0];
-}
-
-const sevClass = (f) => (f.tipo === 'idea' ? 'pulido' : f.gravedad);
-const sevLabel = (f) => (f.tipo === 'idea' ? 'idea' : f.gravedad);
-const VP_ICON = {
-  mobile: '<svg width="10" height="12" viewBox="0 0 10 12" aria-hidden="true"><rect x=".75" y=".75" width="8.5" height="10.5" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>',
-  desktop: '<svg width="13" height="11" viewBox="0 0 13 11" aria-hidden="true"><rect x=".75" y=".75" width="11.5" height="7.5" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M4 10.25h5" stroke="currentColor" stroke-width="1.3"/></svg>',
-};
-const TALK_ICON = '<svg width="11" height="11" viewBox="0 0 11 11" aria-hidden="true"><path d="M1 1.5h9v6H4.5L2 9.8V7.5H1z" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>';
-const vp = (v) => `<span class="vp">${VP_ICON[v] ?? ''}${esc(v)}</span>`;
-
-function fichasHTML(item) {
-  const entry = S.expl[item.id];
-  const data = entry?.data;
-  if (!data) return `<div class="doc" id="doc"><div class="empty">${entry?.error ? `No se pudieron leer las fichas: ${esc(entry.error)}` : 'Leyendo las fichas…'}</div></div>`;
-  if (!data.fichas.length) return `<div class="doc" id="doc"><div class="empty"><b>Este PR no trae fichas nuevas</b>${data.error ? esc(data.error) : 'Solo cambia el inventario o el registro de corridas.'}</div></div>`;
-  const f = currentFicha(item, data);
-  const filter = (key, value, label) => `<button class="fchip" data-ffilter="${key}:${value}" aria-pressed="${S.fichaFilter[key] === value}">${label}</button>`;
-  const shown = visibleFichas(data, item.id);
-  const reviewed = data.fichas.filter((x) => fichaStatus(x, data.ronin, item.id) !== 'decidir').length;
-  const groups = FICHA_GROUPS.map(([k, label]) => {
-    const rows = shown.filter((x) => fichaStatus(x, data.ronin, item.id) === k);
-    if (!rows.length) return '';
-    return `<div class="fgrp"><span>${label}</span><span>${rows.length}</span></div>` + rows.map((x) => `<button class="frow${k === 'rechazada' ? ' rej' : ''}" data-ficha="${esc(fichaKey(x))}" aria-current="${f && fichaKey(x) === fichaKey(f)}">
-      ${dotClass(FICHA_DOT[k])}<span class="tl">${esc(x.titulo)}</span>
-      <span class="sub"><span class="id">${esc(x.id)}</span><span class="sev ${esc(sevClass(x))}">${esc(sevLabel(x))}</span>${vp(x.viewport)}${x.comments.length ? `<span class="vp">${TALK_ICON}${x.comments.length}</span>` : ''}</span></button>`).join('');
-  }).join('');
-  const progress = `<div class="fprog"><span class="fprog-bar"><i style="width:${(reviewed / data.fichas.length) * 100}%"></i></span>Revisadas ${reviewed} de ${data.fichas.length}</div>`;
-  const list = `<div class="flist">${progress}<div class="filters">${filter('tipo', 'todas', 'Todas')}${filter('tipo', 'hallazgo', 'Hallazgos')}${filter('tipo', 'idea', 'Ideas')}<span class="gap"></span>${filter('vp', 'todos', 'Todos')}${filter('vp', 'desktop', 'Desktop')}${filter('vp', 'mobile', 'Mobile')}</div>
-    <div class="frows" id="frows">${groups || '<p class="none">Ninguna ficha con esos filtros.</p>'}</div>
-    ${data.runs.length ? `<div class="fruns">Corridas: ${data.runs.map((run) => `<a href="${esc(run.url)}" target="_blank" rel="noopener">${esc(run.id)}</a>`).join(', ')}</div>` : ''}</div>`;
-  return `<div class="doc review${S.fichaOpen[item.id] ? ' open' : ''}" id="doc" data-key="${esc(`${item.id}:fichas`)}">${list}<div class="fdetail" id="fdetail" data-current="${esc(f ? fichaKey(f) : '')}">${f ? fichaHTML(item, data, f, shown) : ''}</div></div>`;
-}
-
-function shotHTML(img, label, which, extra = '') {
-  const local = evidenceSrc(img.url);
-  const pic = local
-    ? `<button class="img" data-zoom="${which}"><img class="ev" src="${esc(local)}" alt="${esc(img.nota ?? label)}" data-label="${esc(`[imagen${img.nota ? `: ${img.nota}` : ''}]`)}"></button>`
-    : `<a class="img" href="${esc(img.url)}" target="_blank" rel="noopener noreferrer">[imagen${img.nota ? `: ${esc(img.nota)}` : ''}]</a>`;
-  return `<figure class="shot ${which === 'despues' ? 'after' : ''}"><div class="lab"><b>${label}</b>${extra}</div>${pic}${img.nota ? `<figcaption>${esc(img.nota)}</figcaption>` : ''}</figure>`;
-}
-
-function compareHTML(f) {
-  const key = fichaKey(f);
-  const i = Math.min(S.antes[key] ?? 0, Math.max(0, f.antes.length - 1));
-  const old = S.oldAfter.has(key) && f.previousAfterImage;
-  const after = f.despues && (old ? f.previousAfterImage : f.despues);
-  const thumbs = f.antes.length > 1 ? `<span class="thumbs">${f.antes.map((a, k) => {
-    const local = evidenceSrc(a.url);
-    return `<button class="thumb" data-antes="${k}" aria-pressed="${k === i}" title="${esc(a.nota ?? `Antes ${k + 1}`)}">${local ? `<img class="ev" src="${esc(local)}" alt="" data-label="${k + 1}">` : k + 1}</button>`;
-  }).join('')}</span>` : '';
-  const before = f.antes[i];
-  if (!before && !after) return '';
-  const afterExtra = f.previousAfterImage ? `<button class="link tag" data-oldafter>${old ? 'ver la actual' : 'ver la anterior'}</button>` : '';
-  const cls = [f.viewport === 'desktop' ? 'wide' : '', before && after ? '' : 'one'].filter(Boolean).join(' ');
-  return `<div class="compare"><div class="ctop"><h3>Antes y después</h3>${thumbs}</div>
-    <div class="pair ${cls}">${before ? shotHTML(before, 'Antes', 'antes', f.antes.length > 1 ? `<span>${i + 1} de ${f.antes.length}</span>` : '') : ''}${after ? shotHTML(after, 'Después', 'despues', `${old ? '<span>versión anterior</span>' : ''}${afterExtra}`) : ''}</div>
-    ${after ? '' : '<p class="nodesp">Sin captura del después: ronin consideró que la propuesta se entiende sin ella.</p>'}</div>`;
-}
-
-function diffHTML(patch) {
-  return `<pre class="diff">${patch.split('\n').map((l) => `<span class="${l.startsWith('diff --git') ? 'f' : l.startsWith('@@') ? 'h' : /^\+(?!\+\+)/.test(l) ? 'a' : /^-(?!--)/.test(l) ? 'd' : ''}">${esc(l) || ' '}</span>`).join('')}</pre>`;
-}
-function diffStat(patch) {
-  const lines = patch.split('\n');
-  const files = lines.filter((l) => l.startsWith('diff --git')).length;
-  return `+${lines.filter((l) => /^\+(?!\+\+)/.test(l)).length} −${lines.filter((l) => /^-(?!--)/.test(l)).length}${files ? ` · ${files} ${files === 1 ? 'archivo' : 'archivos'}` : ''}`;
-}
-
-function fichaThreadHTML(item, data, f) {
-  const roots = f.comments.filter((c) => !c.replyTo || !f.comments.some((o) => o.id === c.replyTo));
-  const ordered = roots.flatMap((root) => [root, ...f.comments.filter((c) => c.replyTo === root.id)]);
-  const files = prUrl(item.repo, item.number);
-  const cms = ordered.map((c) => `<article class="cm${c.author === data.ronin ? ' bot' : ''}${c.replyTo ? ' reply' : ''}"><header>${avatar(c.author)}<b>${esc(c.author)}</b>${c.url ? `<a href="${esc(c.url)}" target="_blank" rel="noopener">${esc(when(c.createdAt))}</a>` : `<span>${esc(when(c.createdAt))}</span>`}</header><div class="md">${md(c.body, item.repo)}</div></article>`).join('');
-  return `<div class="fthread"><h3>Conversación <span class="m">${f.comments.length ? `${f.comments.length} ${f.comments.length === 1 ? 'comentario' : 'comentarios'} en la ficha` : 'nadie comentó esta ficha'}</span></h3>
-    ${cms ? `<div class="cms">${cms}</div>` : ''}
-    <div class="composer"><textarea id="fcomment" rows="3" maxlength="4000" placeholder="Comentar en la ficha… ronin lo lee como en GitHub: puede rechazarla, corregirla, abrir un issue o responder.">${esc(S.fdraft[fichaKey(f)] ?? '')}</textarea>
-      <div class="cf"><span>Comentás como ${esc(S.snap?.me ?? '')} sobre el archivo de la ficha${files ? `, en <a href="${esc(files)}/files" target="_blank" rel="noopener">“Files changed”</a>` : ''}.</span><button class="btn-s" id="fcomment-send">Comentar</button></div></div></div>`;
-}
-
-function decisionsHTML(f, status) {
-  if (status === 'rechazada' || status === 'aprobada') return '';
-  const marked = status === 'lista';
-  const menu = S.fmenu ? `<div class="menu fmenu" role="menu">
-    <button role="menuitem" data-fact="issue"><b>Pedir un issue aparte</b><small>Algo que surge de esta ficha pero no es su propuesta.</small></button>
-    <button role="menuitem" data-fact="pregunta"><b>Preguntarle a ronin</b><small>Responde en el hilo, sin tocar la ficha.</small></button></div>` : '';
-  return `<span class="decide">${status !== 'esperando' ? `<button class="btn-s ok" data-flista aria-pressed="${marked}" title="${marked ? 'Se aprueba cuando apruebes el PR. Clic para deshacer.' : 'Queda para aprobar: se aprueba cuando apruebes el PR.'}">${marked ? '✓ Para aprobar' : '✓ Aprobar'} <kbd>a</kbd></button>` : ''}
-    <button class="btn-s" data-fact="cambios">Pedir cambios <kbd>c</kbd></button>
-    <button class="btn-s danger" data-fact="rechazar">Rechazar <kbd>r</kbd></button>
-    <span class="actions"><button class="btn-s" id="fmore" aria-haspopup="menu" aria-expanded="${S.fmenu}">Más ▾</button>${menu}</span></span>`;
-}
-
-function fichaHTML(item, data, f, shown) {
-  const status = fichaStatus(f, data.ronin, item.id);
-  const idx = shown.findIndex((x) => fichaKey(x) === fichaKey(f));
-  // Who decided it in the review, and when (their GitHub login).
-  const by = f.revisor ? ` <span class="m">por ${esc(f.revisor)}${f.revisado ? `, hace ${short(Date.now() - Date.parse(f.revisado))}` : ''}</span>` : '';
-  const banner = {
-    rechazada: `<div class="banner crit">${dotClass('crit')}<div><b>Rechazada</b>${by}${f.motivo ? `<p>${esc(f.motivo)}</p>` : ''}</div></div>`,
-    aprobada: `<div class="banner ok">${dotClass('ok')}<div><b>Aprobada</b>${by}${f.issue ? `<p>Issue <a href="${esc(`https://github.com/${item.repo}/issues/${f.issue}`)}" target="_blank" rel="noopener">#${esc(f.issue)}</a>.</p>` : ''}</div></div>`,
-    esperando: `<div class="banner run">${dotClass('live')}<div><b>Esperando a ronin</b><p>Hay un comentario que ronin todavía no respondió. Cuando lo aplique, su respuesta aparece abajo.</p></div></div>`,
-  }[status] ?? '';
-  const meta = [f.senal && f.senal !== f.gravedad && f.tipo !== 'idea' ? esc(f.senal) : '', `rol ${esc(f.rol)}`, esc(f.functionName || f.funcion), f.entorno ? 'entorno de dev' : '', f.revisor && f.estado === 'propuesto' ? `editada por ${esc(f.revisor)}` : ''].filter(Boolean).map((m) => `<span>${m}</span>`).join('');
-  return `<div class="fwrap">
-    <div class="fnav"><button class="pill fback" data-fback>← Fichas</button>${decisionsHTML(f, status)}<span class="m">${idx >= 0 ? `${idx + 1} de ${shown.length}` : ''}</span><button class="pill" data-fmove="-1" ${idx <= 0 ? 'disabled' : ''} aria-label="Ficha anterior">↑</button><button class="pill" data-fmove="1" ${idx < 0 || idx >= shown.length - 1 ? 'disabled' : ''} aria-label="Ficha siguiente">↓</button></div>
-    <div class="fmeta"><span class="id">${esc(f.id)}</span><span class="sev ${esc(sevClass(f))}">${esc(sevLabel(f))}</span>${vp(f.viewport)}${meta}<a class="link fgh" href="${esc(f.url)}" target="_blank" rel="noopener">archivo ↗</a></div>
-    <h2 class="ftitle">${esc(f.titulo)}</h2>
-    ${banner}
-    ${f.observado || f.esperado ? `<div class="obs">${f.observado ? `<div><h3>Qué pasa</h3><div class="md">${md(f.observado, item.repo)}</div></div>` : ''}${f.esperado ? `<div class="exp"><h3>Qué se esperaba</h3><div class="md">${md(f.esperado, item.repo)}</div></div>` : ''}</div>` : ''}
-    ${compareHTML(f)}
-    <div class="prop"><h3>Propuesta</h3><div class="md">${md(f.propuesta, item.repo)}</div></div>
-    ${f.pasos.length ? `<details class="sec"><summary><h3>Cómo reproducirlo</h3><span class="m">${f.pasos.length} ${f.pasos.length === 1 ? 'paso' : 'pasos'}</span></summary><ol class="in">${f.pasos.map((p) => `<li>${esc(p)}</li>`).join('')}</ol></details>` : ''}
-    ${f.evidencia.length ? `<details class="sec"><summary><h3>Evidencia</h3><span class="m">${esc([...new Set(f.evidencia.map((e) => e.tipo))].join(', '))}</span></summary><div class="in">${f.evidencia.map((e) => `<div class="ev-row"><span class="k">${esc(e.tipo)}</span><span class="v">${esc(e.detalle)}</span></div>`).join('')}</div></details>` : ''}
-    ${f.parche ? `<details class="sec"><summary><h3>Cambio borrador del después</h3><span class="m">${esc(diffStat(f.parche))}</span></summary><div class="in">${diffHTML(f.parche)}</div></details>` : ''}
-    ${fichaThreadHTML(item, data, f)}</div>`;
-}
-
-function selectFicha(key) {
-  S.ficha[S.sel] = key;
-  S.fichaOpen[S.sel] = true;
-  const url = `${itemPath(S.sel)}?f=${encodeURIComponent(key)}`;
-  if (location.pathname + location.search !== url) history.replaceState(null, '', url);
-  renderCenter();
-  const fd = $('#fdetail');
-  if (fd) fd.scrollTop = 0;
-  if (isMobile()) scrollTo(0, 0);
-  document.querySelector(`.frow[aria-current="true"]`)?.scrollIntoView({ block: 'nearest' });
-}
-
-function moveFicha(delta) {
-  const item = S.sel && itemById(S.sel);
-  const data = item && S.expl[item.id]?.data;
-  if (!data?.fichas.length) return;
-  const list = visibleFichas(data, item.id);
-  const cur = currentFicha(item, data);
-  const i = list.findIndex((f) => cur && fichaKey(f) === fichaKey(cur));
-  const next = list[Math.max(0, Math.min(list.length - 1, i + delta))];
-  if (next) selectFicha(fichaKey(next));
-}
-
-// The finding's screenshots in large: the before shown next to the after; ←/→ go through the befores.
-function renderLightbox() {
-  let box = $('#lightbox');
-  const lb = S.lightbox;
-  const item = lb && itemById(lb.item);
-  const f = item && S.expl[item.id]?.data?.fichas.find((x) => fichaKey(x) === lb.ficha);
-  if (!f) {
-    box?.remove();
-    S.lightbox = null;
-    return;
-  }
-  if (!box) box = Object.assign(document.body.appendChild(document.createElement('div')), { id: 'lightbox', className: 'lightbox' });
-  const key = fichaKey(f);
-  const after = f.despues && (S.oldAfter.has(key) && f.previousAfterImage ? f.previousAfterImage : f.despues);
-  const before = f.antes[lb.antes];
-  const shots = lb.only === 'despues' || !before ? [['Después', after]] : [[`Antes${f.antes.length > 1 ? ` ${lb.antes + 1} de ${f.antes.length}` : ''}`, before], ...(after ? [['Después', after]] : [])];
-  box.innerHTML = `<div class="lt"><b>${esc(f.id)}</b><span class="m">${esc(f.titulo)}</span>${f.antes.length > 1 ? '<span class="m keys"><kbd>←</kbd> <kbd>→</kbd> otra captura del antes</span>' : ''}<button id="lb-x">Cerrar ✕</button></div>
-    <div class="lb">${shots.filter(([, img]) => img && evidenceSrc(img.url)).map(([label, img]) => `<figure><div><img src="${esc(evidenceSrc(img.url))}" alt="${esc(img.nota ?? label)}"></div><figcaption><b>${esc(label)}</b>${img.nota ? ` · ${esc(img.nota)}` : ''}</figcaption></figure>`).join('')}</div>`;
-  $('#lb-x').onclick = () => { S.lightbox = null; renderLightbox(); };
-}
-
-const FICHA_ACTIONS = {
-  rechazar: { title: 'Rechazar', field: 'Motivo: queda en knowledge.md para que no se vuelva a proponer', btn: 'Rechazar', cls: 'danger', placeholder: 'Por qué no va', quick: ['Muy poco probable: es una app interna con pocos usuarios', 'Ya está cubierto', 'No es un problema para el equipo', 'Lo resolvemos con otra ficha'] },
-  cambios: { title: 'Pedir cambios', field: 'Qué cambiar en la propuesta', btn: 'Pedir cambios', placeholder: 'Por ejemplo: que el aviso diga “No se encontró el producto o ya fue eliminado por otro usuario”', redo: true },
-  issue: { title: 'Pedir un issue aparte', field: 'Qué tiene que tener el issue', btn: 'Pedir el issue', placeholder: 'Por ejemplo: revisar todos los toasts de error de catálogos' },
-  pregunta: { title: 'Preguntarle a ronin', field: 'Tu pregunta', btn: 'Preguntar', placeholder: '¿Esto pasa también como Sales?' },
-  // On the whole PR, not a finding.
-  general: { pr: true, title: 'Comentario general', field: 'Sobre varias fichas a la vez, o lo que las próximas exploraciones no deben volver a proponer', btn: 'Comentar', placeholder: 'Por ejemplo: F-0017 y F-0018 no aplican, el listado de catálogos lo usa una sola persona' },
-  approve: { pr: true, optional: true, title: 'Finalizar la revisión', field: 'Comentario de la review (opcional)', btn: 'Finalizar', placeholder: 'Por ejemplo: las de catálogos van primero' },
-};
-
-function openPrDialog(kind) {
-  const item = S.sel && itemById(S.sel);
-  if (!item || !FICHA_ACTIONS[kind]) return;
-  S.fmenu = false;
-  S.fdialog = { item: item.id, pr: item.number, action: kind, text: '', redo: false, sending: false, error: null };
-  renderFichaDialog();
-}
-
-// What approving does, with what's left to look at: the findings that open
-// an issue assigned to ronin, the rejected ones, those nobody decided on and those ronin is
-// still applying a comment on (approving waits for them).
-function approveSummaryHTML(itemId) {
-  const data = S.expl[itemId]?.data;
-  if (!data) return '<p class="help">Leyendo las fichas…</p>';
-  const status = (f) => fichaStatus(f, data.ronin, itemId);
-  const li = (f) => `<li><span class="id">${esc(f.id)}</span><span class="t">${esc(f.titulo)}</span></li>`;
-  const keep = data.fichas.filter((f) => f.estado !== 'rechazado');
-  const rejected = data.fichas.filter((f) => f.estado === 'rechazado');
-  const undecided = data.fichas.filter((f) => status(f) === 'decidir');
-  const waiting = data.fichas.filter((f) => status(f) === 'esperando');
-  return `<div class="sum"><p class="sumh">${dotClass('ok')}Abren su issue y ronin los empieza (${keep.length})</p>${keep.length ? `<ul>${keep.map(li).join('')}</ul>` : ''}
-    <p class="sumh">${dotClass('crit')}Rechazadas, sin issue (${rejected.length})</p>${rejected.length ? `<ul>${rejected.map(li).join('')}</ul>` : ''}
-    ${undecided.length ? `<p class="warnbox">${undecided.length === 1 ? 'Queda 1 ficha' : `Quedan ${undecided.length} fichas`} sin revisar (${esc(undecided.map((f) => f.id).join(', '))}). Si finalizás, también abren su issue y ronin los empieza.</p>` : ''}
-    ${waiting.length ? `<p class="warnbox">ronin todavía está aplicando comentarios en ${esc(waiting.map((f) => f.id).join(', '))}. Finalizá cuando responda.</p>` : ''}
-    <p class="help">Se envía como tu review <b>Approve</b> en GitHub. Con eso ronin marca las fichas, abre un issue por cada una que siga en pie, se lo asigna y mergea el PR. Cada issue arranca como uno asignado a mano.</p></div>`;
-}
-const waitingCount = (itemId) => {
-  const data = S.expl[itemId]?.data;
-  return data ? data.fichas.filter((f) => fichaStatus(f, data.ronin, itemId) === 'esperando').length : 0;
-};
-
-// The comment as it will be written — the same words the server writes
-// (explorations/review-actions.ts's fichaComment).
-function fichaCommentText(action, text, redo) {
-  if (action === 'rechazar') return `Rechazo esta ficha: ${text}`;
-  if (action === 'cambios') return redo ? `${text}\n\nTambién hay que rehacer la captura del después.` : text;
-  if (action === 'issue') return `Abrí un issue aparte: ${text}`;
-  return text;
-}
-
-function openFichaAction(action, opts = {}) {
-  const item = S.sel && itemById(S.sel);
-  const data = item && S.expl[item.id]?.data;
-  const f = data && currentFicha(item, data);
-  if (!f || !FICHA_ACTIONS[action]) return;
-  S.fmenu = false;
-  S.fdialog = { item: item.id, pr: item.number, ficha: fichaKey(f), fid: f.id, titulo: f.titulo, action, text: '', redo: Boolean(opts.redo), sending: false, error: null };
-  renderCenter();
-  renderFichaDialog();
-}
-
-function renderFichaDialog() {
-  let layer = $('#flayer');
-  const d = S.fdialog;
-  if (!d) {
-    layer?.remove();
-    return;
-  }
-  const meta = FICHA_ACTIONS[d.action];
-  if (!layer) {
-    layer = Object.assign(document.body.appendChild(document.createElement('div')), { id: 'flayer' });
-    layer.innerHTML = `<div class="scrim"><div class="dlg" role="dialog" aria-modal="true" aria-labelledby="fdlg-t">
-      <p class="help">${meta.pr ? `PR #${esc(d.pr)}` : `${esc(d.fid)} · ${esc(d.titulo)}`}</p>
-      <h2 id="fdlg-t">${esc(meta.title)}</h2>
-      ${d.action === 'approve' ? `<div id="fdlg-sum">${approveSummaryHTML(d.item)}</div>` : ''}
-      <label class="field"><span>${esc(meta.field)}</span><textarea id="fdlg-text" rows="${meta.optional ? 2 : 4}" maxlength="4000" placeholder="${esc(meta.placeholder)}"></textarea></label>
-      ${meta.quick ? `<div class="quick-r">${meta.quick.map((q) => `<button class="pill" data-quick="${esc(q)}">${esc(q)}</button>`).join('')}</div>` : ''}
-      ${meta.redo ? `<label class="check"><input type="checkbox" id="fdlg-redo"${d.redo ? ' checked' : ''}><span>Rehacer la captura del después<small>ronin levanta la app con el cambio borrador corregido y reemplaza la imagen. Tarda unos minutos.</small></span></label>` : ''}
-      ${d.action === 'approve' ? '' : `<div class="prev"><div class="lbl">${d.action === 'general' ? `Comentás como ${esc(S.snap?.me ?? '')} en el PR #${esc(d.pr)}` : `Comentás como ${esc(S.snap?.me ?? '')} en ${esc(d.fid)}, en “Files changed” del PR #${esc(d.pr)}`}</div><div class="md" id="fdlg-prev"></div></div>`}
-      <p class="bad" id="fdlg-err" hidden></p>
-      <div class="foot-d"><span class="kbd-hint"><kbd>Ctrl</kbd> <kbd>Enter</kbd> para enviar</span><button class="btn-s" id="fdlg-no">Cancelar</button><button class="btn-s ${meta.cls === 'danger' ? 'danger-solid' : 'primary'}" id="fdlg-yes"></button></div></div></div>`;
-    const area = $('#fdlg-text');
-    area.oninput = () => { S.fdialog.text = area.value; renderFichaDialog(); };
-    area.onkeydown = (event) => { if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) sendFichaAction(); };
-    const redo = $('#fdlg-redo');
-    if (redo) redo.onchange = () => { S.fdialog.redo = redo.checked; renderFichaDialog(); };
-    for (const b of layer.querySelectorAll('[data-quick]')) b.onclick = () => { area.value = b.dataset.quick; S.fdialog.text = area.value; renderFichaDialog(); area.focus(); };
-    $('#fdlg-no').onclick = closeFichaDialog;
-    layer.querySelector('.scrim').onclick = (event) => { if (event.target.classList.contains('scrim')) closeFichaDialog(); };
-    $('#fdlg-yes').onclick = sendFichaAction;
-    area.focus();
-  }
-  const typed = d.text.trim();
-  const prev = $('#fdlg-prev');
-  if (prev) prev.innerHTML = md(d.action === 'general' ? `@ronin-agent ${typed || '…'}` : fichaCommentText(d.action, typed || '…', d.redo), itemById(d.item)?.repo ?? '');
-  const sum = $('#fdlg-sum');
-  if (sum) {
-    const html = approveSummaryHTML(d.item);
-    if (sum._html !== html) sum.innerHTML = sum._html = html;
-  }
-  const yes = $('#fdlg-yes');
-  yes.textContent = d.sending ? (d.action === 'approve' ? 'Finalizando…' : 'Comentando…') : meta.btn;
-  yes.disabled = d.sending || (!meta.optional && !typed) || (d.action === 'approve' && waitingCount(d.item) > 0);
-  $('#fdlg-err').hidden = !d.error;
-  $('#fdlg-err').textContent = d.error ?? '';
-}
-
-function closeFichaDialog() {
-  if (S.fdialog?.sending) return;
-  S.fdialog = null;
-  renderFichaDialog();
-}
-
-// Sends a comment on the finding (from the dialog, or the box under its
-// thread) and reads the review again, so the finding shows it's waiting on ronin.
-async function postFichaComment(itemId, ficha, action, text, redo) {
-  const done = await api(`/api/items/${encodeURIComponent(itemId)}/exploration/actions`, { method: 'POST', body: JSON.stringify({ action, ficha, text, ...(redo ? { redo: true } : {}) }) });
-  setLista(itemId, ficha, false);
-  delete S.fdraft[ficha];
-  toast(`Comentaste en ${ficha.split('/')[1]}. ronin lo va a aplicar y te responde en el hilo.`, done.url);
-  if (S.expl[itemId]) S.expl[itemId].at = 0;
-  await loadExploration(itemId);
-}
-
-// The general comment and the approval, on the whole PR.
-async function postPrDecision(d) {
-  const text = d.text.trim();
-  const done = await api(`/api/items/${encodeURIComponent(d.item)}/exploration/${d.action}`, { method: 'POST', body: JSON.stringify(text ? { text } : {}) });
-  toast(d.action === 'approve' ? `Finalizaste la revisión del PR #${d.pr}. ronin marca las fichas, abre sus issues y lo mergea.` : `Comentaste en el PR #${d.pr}. ronin lo va a aplicar y te responde ahí.`, done.url);
-  if (S.detail[d.item]) S.detail[d.item].at = 0;
-  if (S.expl[d.item]) S.expl[d.item].at = 0;
-  await Promise.all([loadDetail(d.item), loadExploration(d.item)]);
-}
-
-async function sendFichaAction() {
-  const d = S.fdialog;
-  const meta = d && FICHA_ACTIONS[d.action];
-  if (!d || d.sending || (!meta.optional && !d.text.trim())) return;
-  d.sending = true;
-  d.error = null;
-  renderFichaDialog();
-  try {
-    if (meta.pr) await postPrDecision(d);
-    else await postFichaComment(d.item, d.ficha, d.action, d.text.trim(), d.redo);
-    S.fdialog = null;
-    renderFichaDialog();
-  } catch (error) {
-    if (error instanceof Unauthorized && showLogin(error)) return;
-    d.sending = false;
-    d.error = `No se pudo: ${error.message}`;
-    renderFichaDialog();
-  }
-}
-
-async function sendFreeComment() {
-  const area = $('#fcomment');
-  const key = $('#fdetail')?.dataset.current;
-  const text = area?.value.trim();
-  if (!text || !key) return area?.focus();
-  const button = $('#fcomment-send');
-  button.disabled = true;
-  button.textContent = 'Comentando…';
-  try {
-    await postFichaComment(S.sel, key, 'comentar', text, false);
-  } catch (error) {
-    if (error instanceof Unauthorized && showLogin(error)) return;
-    toast(`No se pudo comentar: ${error.message}`);
-    button.disabled = false;
-    button.textContent = 'Comentar';
-  }
-}
-
-function toggleLista() {
-  const item = S.sel && itemById(S.sel);
-  const data = item && S.expl[item.id]?.data;
-  const f = data && currentFicha(item, data);
-  if (!f) return;
-  const status = fichaStatus(f, data.ronin, item.id);
-  if (status === 'esperando') return;
-  setLista(item.id, fichaKey(f), status !== 'lista');
-  if (status === 'decidir') {
-    // On to the next one still to decide.
-    const next = visibleFichas(data, item.id).find((x) => fichaStatus(x, data.ronin, item.id) === 'decidir');
-    if (next) return selectFicha(fichaKey(next));
-  }
-  renderCenter();
-}
-
-async function loadExploration(id) {
-  const entry = (S.expl[id] ??= {});
-  if (entry.loading) return;
-  entry.loading = true;
-  try {
-    entry.data = await api(`/api/items/${encodeURIComponent(id)}/exploration`);
-    entry.error = null;
-  } catch (error) {
-    if (error instanceof Unauthorized && showLogin(error)) return;
-    entry.error = error.message;
-  } finally {
-    entry.loading = false;
-    entry.at = Date.now();
-  }
-  if (S.sel === id) renderCenter();
-  if (S.fdialog?.item === id) renderFichaDialog();
-}
-
-const avatar = (login) => (/^[\w-]+$/.test(login ?? '') ? `<img class="av" src="https://avatars.githubusercontent.com/${login}?s=40" alt="">` : '<span class="av"></span>');
-const when = (iso) => (iso ? new Date(iso).toLocaleString('es', { dateStyle: 'medium', timeStyle: 'short' }) : '');
 
 function closeTab(id) {
   S.open = S.open.filter((x) => x !== id);
@@ -1437,68 +980,6 @@ function wireCenter() {
     $('#shell').dataset.m = 'list';
     scrollTo(0, 0);
   };
-}
-
-// What's drawn in Fichas (drawItemTab).
-function wireItemTab() {
-  for (const button of document.querySelectorAll('[data-ficha]')) button.onclick = () => selectFicha(button.dataset.ficha);
-  for (const button of document.querySelectorAll('[data-fact]')) {
-    button.onclick = (event) => {
-      event.stopPropagation();
-      openFichaAction(button.dataset.fact);
-    };
-  }
-  for (const button of document.querySelectorAll('[data-flista]')) button.onclick = toggleLista;
-  const fmore = $('#fmore');
-  if (fmore) fmore.onclick = (event) => {
-    event.stopPropagation();
-    S.fmenu = !S.fmenu;
-    renderCenter();
-  };
-  const fcomment = $('#fcomment');
-  if (fcomment) {
-    fcomment.oninput = () => { S.fdraft[$('#fdetail').dataset.current] = fcomment.value; };
-    fcomment.onkeydown = (event) => { if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) sendFreeComment(); };
-  }
-  const fsend = $('#fcomment-send');
-  if (fsend) fsend.onclick = sendFreeComment;
-  for (const button of document.querySelectorAll('[data-fmove]')) button.onclick = () => moveFicha(Number(button.dataset.fmove));
-  for (const button of document.querySelectorAll('[data-fback]')) button.onclick = () => { S.fichaOpen[S.sel] = false; renderCenter(); };
-  for (const button of document.querySelectorAll('[data-ffilter]')) {
-    button.onclick = () => {
-      const [key, value] = button.dataset.ffilter.split(':');
-      S.fichaFilter[key] = value;
-      renderCenter();
-    };
-  }
-  for (const button of document.querySelectorAll('[data-antes]')) {
-    button.onclick = () => {
-      S.antes[S.ficha[S.sel] ?? $('#fdetail')?.dataset.current] = Number(button.dataset.antes);
-      renderCenter();
-    };
-  }
-  for (const button of document.querySelectorAll('[data-oldafter]')) {
-    button.onclick = () => {
-      const key = $('#fdetail')?.dataset.current;
-      if (S.oldAfter.has(key)) S.oldAfter.delete(key);
-      else S.oldAfter.add(key);
-      renderCenter();
-    };
-  }
-  for (const button of document.querySelectorAll('[data-zoom]')) {
-    button.onclick = () => {
-      const key = $('#fdetail')?.dataset.current;
-      S.lightbox = { item: S.sel, ficha: key, antes: S.antes[key] ?? 0, only: button.dataset.zoom === 'despues' ? 'despues' : null };
-      renderLightbox();
-    };
-  }
-  for (const link of itemTab?.element.querySelectorAll('a[data-ref]') ?? []) {
-    if (!itemById(link.dataset.ref)) continue;
-    link.onclick = (event) => {
-      event.preventDefault();
-      select(link.dataset.ref);
-    };
-  }
 }
 
 // ---------- today: pages/today in React (#235, stage 7)
@@ -2043,7 +1524,6 @@ async function loadDetail(id) {
     const extra = S.extra[id];
     const doc = extra && (entry.data.ref?.kind === 'pr' ? entry.data.pr : entry.data.issue);
     if (doc) Object.assign(extra, { kind: entry.data.ref.kind, title: doc.title, url: doc.url, status: doc.state === 'OPEN' ? 'open' : 'ok' });
-    if (entry.data.exploration) loadExploration(id);
   } catch (error) {
     if (error instanceof Unauthorized && showLogin(error)) return;
     entry.error = error.message;
@@ -2110,12 +1590,6 @@ async function refresh() {
   renderCenter();
   const detail = S.sel && S.detail[S.sel];
   if (detail && Date.now() - (detail.at ?? 0) > DETAIL_EVERY_MS) loadDetail(S.sel);
-  else {
-    const expl = S.sel && S.expl[S.sel];
-    // While a finding waits on ronin, its answer is looked for more often.
-    const waiting = expl?.data?.fichas.some((f) => fichaStatus(f, expl.data.ronin) === 'esperando');
-    if (expl && Date.now() - (expl.at ?? 0) > (waiting ? WAITING_EVERY_MS : DETAIL_EVERY_MS)) loadExploration(S.sel);
-  }
   for (const key of watched) if (Date.now() - (S.detail[key]?.at ?? 0) > DETAIL_EVERY_MS) loadDetail(key);
   // The apps' findings, more often while their page is open: the sidebar counts them too.
   if (xplRows().length && Date.now() - S.xpl.listAt > (['exploraciones', 'exploracion'].includes(S.page) ? PEDIDO_EVERY_MS : XPL_EVERY_MS)) loadExploraciones();
@@ -2218,49 +1692,18 @@ async function boot() {
 
   // An item's page closes what it opens on a click outside, and has its
   // own keys before these (pages/item): what it takes doesn't get here.
-  document.addEventListener('click', () => {
-    if (!S.fmenu) return;
-    S.fmenu = false;
-    renderCenter();
-  });
   document.addEventListener('keydown', (event) => {
-    if (S.lightbox) {
-      const f = S.expl[S.lightbox.item]?.data?.fichas.find((x) => fichaKey(x) === S.lightbox.ficha);
-      if (event.key === 'Escape') S.lightbox = null;
-      else if (event.key === 'ArrowRight' && f && S.lightbox.antes < f.antes.length - 1) S.lightbox.antes++;
-      else if (event.key === 'ArrowLeft' && S.lightbox.antes > 0) S.lightbox.antes--;
-      else return;
-      renderLightbox();
-      return;
-    }
-    const item = S.sel && itemById(S.sel);
     const typing = event.metaKey || event.ctrlKey || event.altKey || /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName ?? '');
-    const free = !typing && !S.fdialog && !S.newIssue && !S.xnow && item && viewOf(item) === 'ficha' && !itemTab?.bridge.blocks();
-    // On an exploration PR's findings: j/k go through them, a marks one as
-    // looked at, c and r open the dialog.
-    if (free && docOf(item) === 'fichas' && ['j', 'k', 'a', 'c', 'r'].includes(event.key)) {
-      event.preventDefault();
-      if (event.key === 'j' || event.key === 'k') moveFicha(event.key === 'j' ? 1 : -1);
-      else if (event.key === 'a') toggleLista();
-      else if (document.querySelector(`[data-fact="${event.key === 'c' ? 'cambios' : 'rechazar'}"]`)) openFichaAction(event.key === 'c' ? 'cambios' : 'rechazar');
-      return;
-    }
     if (event.key === '?' && !typing && !S.newIssue) {
       event.preventDefault();
       toggleKeysHelp();
       return;
     }
-    if (!typing && !S.fdialog && !S.newIssue && !S.xnow && nextPrKey(event)) return;
+    if (!typing && !S.newIssue && !S.xnow && nextPrKey(event)) return;
     if (event.key !== 'Escape') return;
     if ($('#keys-help')) $('#keys-help').remove();
-    else if ($('#lightbox')) return;
     else if (S.newIssue) closeNewIssue();
     else if (S.xnow) return; // Explorar ahora closes itself, unless it's sending.
-    else if (S.fdialog) closeFichaDialog();
-    else if (S.fmenu) {
-      S.fmenu = false;
-      renderCenter();
-    }
   });
   $('#q').oninput = (event) => {
     S.q = event.target.value;

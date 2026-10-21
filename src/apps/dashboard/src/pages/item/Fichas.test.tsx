@@ -1,0 +1,161 @@
+// @vitest-environment jsdom
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { HostContext, type Host } from '../../host.js';
+import { testHost } from '../../test-host.js';
+import type { FindingCard } from './fichas.js';
+import { Item } from './Item.js';
+import { detail, doc, NOW, view } from './test-view.js';
+
+// An exploration PR's Fichas tab against a shell that hands it a fixed
+// view, and an API with invented findings: what it shows, its keys, and
+// the bodies it sends.
+
+const iso = (minAgo: number) => new Date(NOW - minAgo * 60e3).toISOString();
+const ficha = (id: string, over: Partial<FindingCard> = {}): FindingCard => ({
+  app: 'backoffice', id, tipo: 'hallazgo', titulo: `Ficha ${id}`, funcion: 'buscar', functionName: 'Buscar', senal: 'media', gravedad: 'media', charter: 'buscar', viewport: 'desktop', rol: 'admin', estado: 'propuesto',
+  path: `exploracion/backoffice/findings/${id}.md`, url: `https://github.com/acme/web/blob/x/${id}.md`, comments: [], pasos: [], observado: '', esperado: '', evidencia: [], antes: [], propuesta: 'Una propuesta.', ...over,
+} as FindingCard);
+const fichas = [
+  ficha('F-0001', { titulo: 'El buscador no avisa' }),
+  ficha('F-0002', { titulo: 'El menú tapa el botón', comments: [{ id: 1, author: 'ana-dev', body: 'Esto ya lo vimos.', createdAt: iso(40) }] }),
+  ficha('F-0003', { titulo: 'La fecha sale en otro formato' }),
+  ficha('F-0004', { titulo: 'El logo se ve borroso', estado: 'rechazado', motivo: 'Ya está cubierto.' }),
+];
+
+let posted: Array<[string, unknown]> = [];
+beforeEach(() => {
+  posted = [];
+  localStorage.clear();
+  vi.stubGlobal('matchMedia', () => ({ matches: false }));
+  Element.prototype.scrollIntoView = () => {};
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    if (init?.method === 'POST') {
+      posted.push([String(input), JSON.parse(String(init.body))]);
+      return json({ url: 'https://github.com/acme/web/pull/12#issuecomment-1' });
+    }
+    return json({ ronin: 'ronin-bot', fetchedAt: iso(1), branch: 'exploracion/backoffice', base: 'main', fichas, runs: [] });
+  }));
+});
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
+
+// The exploration PR acme/web#12 on its Fichas tab.
+function show(over: Partial<Host> = {}) {
+  const pr = doc({ number: 12, title: 'Exploración de backoffice', author: 'ronin-bot', url: 'https://github.com/acme/web/pull/12', mergeable: 'MERGEABLE', baseRefName: 'main', headRefName: 'exploracion/backoffice', isDraft: false, reviewDecision: '', decisions: [] });
+  const v = view({ detail: { data: detail({ ref: { kind: 'pr', number: 12 }, exploration: true, issue: undefined, pr }), error: null }, tabs: [['fichas', 'Fichas'], ['pr', 'Descripción'], ['files', 'Archivos']], doc: 'fichas', decidable: false, reviewable: false },
+    { id: 'acme/web#12', repo: 'acme/web', number: 12, kind: 'pr', title: 'Exploración de backoffice', status: 'open', pr: undefined });
+  const host = testHost({ item: () => v, ...over });
+  const page = render(
+    <QueryClientProvider client={new QueryClient()}>
+      <HostContext.Provider value={host}><Item id="acme/web#12" /></HostContext.Provider>
+    </QueryClientProvider>,
+  );
+  return { host, ...page };
+}
+const current = () => document.getElementById('fdetail')!.dataset.current;
+const URL_ACTIONS = '/api/items/acme%2Fweb%2312/exploration/actions';
+
+describe('an exploration PR’s Fichas', () => {
+  it('lists the findings by where they stand, and goes through them with j and k', async () => {
+    const { container, host } = show();
+    await screen.findByText('El buscador no avisa', { selector: '.tl' });
+    expect([...container.querySelectorAll('.fgrp span:first-child')].map((s) => s.textContent)).toEqual(['Por decidir', 'Esperando a ronin', 'Rechazadas']);
+    expect(container.querySelector('.fprog')!.textContent).toBe('Revisadas 2 de 4');
+    expect(container.querySelector('.doctab .c')!.textContent).toBe('4');
+    expect(current()).toBe('backoffice/F-0001');
+    fireEvent.keyDown(document, { key: 'j' });
+    expect(current()).toBe('backoffice/F-0003');
+    expect(host.showFicha).toHaveBeenLastCalledWith('acme/web#12', 'backoffice/F-0003', true);
+    fireEvent.keyDown(document, { key: 'k' });
+    expect(current()).toBe('backoffice/F-0001');
+  });
+
+  it('marks one to approve with a, and goes on to the next one to decide', async () => {
+    const { container } = show();
+    await screen.findByText('El buscador no avisa', { selector: '.tl' });
+    fireEvent.keyDown(document, { key: 'a' });
+    expect(current()).toBe('backoffice/F-0003');
+    expect(JSON.parse(localStorage.getItem('ronin-listas:acme/web#12')!)).toEqual(['backoffice/F-0001']);
+    expect([...container.querySelectorAll('.fgrp span:first-child')].map((s) => s.textContent)).toContain('Listas para aprobar');
+  });
+
+  it('rejects one with r, a quick reason and the button', async () => {
+    const { host } = show();
+    await screen.findByText('El buscador no avisa', { selector: '.tl' });
+    fireEvent.keyDown(document, { key: 'r' });
+    fireEvent.click(screen.getByRole('button', { name: 'Ya está cubierto' }));
+    expect(document.getElementById('fdlg-prev')!.innerHTML).toBe('Rechazo esta ficha: Ya está cubierto');
+    fireEvent.click(document.getElementById('fdlg-yes')!);
+    await waitFor(() => expect(posted).toHaveLength(1));
+    expect(posted[0]).toEqual([URL_ACTIONS, { action: 'rechazar', ficha: 'backoffice/F-0001', text: 'Ya está cubierto' }]);
+    await waitFor(() => expect(document.getElementById('flayer')).toBeNull());
+    expect(host.toast).toHaveBeenCalledWith('Comentaste en F-0001. ronin lo va a aplicar y te responde en el hilo.', 'https://github.com/acme/web/pull/12#issuecomment-1');
+  });
+
+  it('asks for changes with c, redoing the after, with Ctrl+Enter', async () => {
+    show();
+    await screen.findByText('El buscador no avisa', { selector: '.tl' });
+    fireEvent.keyDown(document, { key: 'c' });
+    const text = document.getElementById('fdlg-text')!;
+    fireEvent.change(text, { target: { value: 'Que tenga un ícono' } });
+    fireEvent.click(document.getElementById('fdlg-redo')!);
+    fireEvent.keyDown(text, { key: 'Enter', ctrlKey: true });
+    await waitFor(() => expect(posted).toHaveLength(1));
+    expect(posted[0]).toEqual([URL_ACTIONS, { action: 'cambios', ficha: 'backoffice/F-0001', text: 'Que tenga un ícono', redo: true }]);
+  });
+
+  it('asks for an issue and a question from Más, and Escape closes the dialog', async () => {
+    show();
+    await screen.findByText('El buscador no avisa', { selector: '.tl' });
+    fireEvent.click(screen.getByRole('button', { name: 'Más ▾' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /Preguntarle a ronin/ }));
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(document.getElementById('flayer')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Más ▾' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /Pedir un issue aparte/ }));
+    fireEvent.change(document.getElementById('fdlg-text')!, { target: { value: 'Revisar los filtros' } });
+    expect(document.getElementById('fdlg-prev')!.innerHTML).toBe('Abrí un issue aparte: Revisar los filtros');
+    fireEvent.click(document.getElementById('fdlg-yes')!);
+    await waitFor(() => expect(posted).toHaveLength(1));
+    expect(posted[0]).toEqual([URL_ACTIONS, { action: 'issue', ficha: 'backoffice/F-0001', text: 'Revisar los filtros' }]);
+  });
+
+  it('comments on a finding from the box under its thread', async () => {
+    show();
+    fireEvent.click(await screen.findByText('El menú tapa el botón', { selector: '.tl' }));
+    expect(screen.getByText('Esperando a ronin', { selector: 'b' })).toBeTruthy();
+    const box = document.getElementById('fcomment')!;
+    fireEvent.change(box, { target: { value: 'Gracias.' } });
+    fireEvent.keyDown(box, { key: 'Enter', ctrlKey: true });
+    await waitFor(() => expect(posted).toHaveLength(1));
+    expect(posted[0]).toEqual([URL_ACTIONS, { action: 'comentar', ficha: 'backoffice/F-0002', text: 'Gracias.' }]);
+    await waitFor(() => expect((document.getElementById('fcomment') as HTMLTextAreaElement).value).toBe(''));
+  });
+
+  it('comments on the whole PR and finishes the review from the head', async () => {
+    const { host } = show();
+    await screen.findByText('El buscador no avisa', { selector: '.tl' });
+    fireEvent.click(screen.getByRole('button', { name: 'Comentario general' }));
+    fireEvent.change(document.getElementById('fdlg-text')!, { target: { value: 'Las de búsqueda primero' } });
+    expect(document.getElementById('fdlg-prev')!.innerHTML).toBe('@ronin-agent Las de búsqueda primero');
+    fireEvent.click(document.getElementById('fdlg-yes')!);
+    await waitFor(() => expect(posted).toHaveLength(1));
+    expect(posted[0]).toEqual(['/api/items/acme%2Fweb%2312/exploration/general', { text: 'Las de búsqueda primero' }]);
+    await waitFor(() => expect(document.getElementById('flayer')).toBeNull());
+    expect(host.reread).toHaveBeenCalledWith('acme/web#12');
+
+    // F-0002 waits on ronin: finishing waits for it.
+    fireEvent.click(screen.getByRole('button', { name: 'Finalizar…' }));
+    await screen.findByText(/ronin todavía está aplicando comentarios en F-0002/);
+    expect(screen.getByText(/Quedan 2 fichas sin revisar \(F-0001, F-0003\)/)).toBeTruthy();
+    expect((document.getElementById('fdlg-yes') as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.keyDown(document.getElementById('fdlg-text')!, { key: 'Enter', ctrlKey: true });
+    await waitFor(() => expect(posted).toHaveLength(2));
+    expect(posted[1]).toEqual(['/api/items/acme%2Fweb%2312/exploration/approve', {}]);
+  });
+});
