@@ -117,7 +117,7 @@ export async function unpinResources(): Promise<void> {
 // so a repo with a lot assigned never holds another back. `limit` slots
 // overall in the repo (its `concurrency`, see config.ts's concurrencyFor),
 // and caps[kind] of one kind — the same numbers runJobs applies inside one
-// process. Named <repo, URI-encoded>~all-<i>.lock (dashboard-data.ts's
+// process. Named <repo, URI-encoded>~all-<i>.lock (runs/data.ts's
 // slotsInUse reads them).
 function slotKey(name: string): Key {
   const repo = repoName();

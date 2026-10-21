@@ -4,7 +4,7 @@
 // repo and tag. Ends comparing both.
 import { closeDb, getDb } from '../src/db/db.js';
 import { migrateToLatest } from '../src/db/migrate.js';
-import { fileDeploys, listDeploys, putDeploy } from '../src/deploy/store.js';
+import { fileDeploys, listDeploys, putDeploy } from '../src/domains/deploys/store.js';
 import { sameContent } from './db-compare.js';
 
 const db = getDb();

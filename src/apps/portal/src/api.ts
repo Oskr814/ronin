@@ -1,8 +1,8 @@
 import { hc, type ClientResponse, type InferResponseType } from 'hono/client';
 import type { SuccessStatusCode } from 'hono/utils/http-status';
-import type { PortalApi } from '../../../portal/routes.js';
+import type { PortalApi } from '../../../domains/portal/routes.js';
 
-// The portal's API (/api/portal/*), typed from its routes (portal/routes.ts):
+// The portal's API (/api/portal/*), typed from its routes (domains/portal/routes.ts):
 // a change on the server that the page doesn't follow breaks the build, not
 // the page.
 

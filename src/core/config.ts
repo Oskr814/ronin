@@ -118,7 +118,7 @@ export const config = {
   // (sweepPreviews). 0 = only on /preview stop or when the PR merges/closes.
   previewTtlMinutes: Number(process.env.PREVIEW_TTL_MINUTES ?? 60),
   // Shared by every repo and worker on this runner: the reservations of
-  // public ports and per-app slots (preview/reservations.ts).
+  // public ports and per-app slots (domains/previews/reservations.ts).
   previewReservationsDir: process.env.PREVIEW_RESERVATIONS_DIR || '.preview-reservations',
   // Model for the external review's worker subagents (one per criteria
   // dimension). They only gather candidates; the orchestrating session —
@@ -165,10 +165,10 @@ export const config = {
     admins: logins(process.env.DASHBOARD_ADMINS),
     // Optional: only these logins get in at all (admins always do). Empty,
     // anyone who can triage a repo of repos.json on GitHub gets in, and sees
-    // just those repos (server/api/access.ts).
+    // just those repos (domains/access/access.ts).
     allowedUsers: logins(process.env.DASHBOARD_ALLOWED_USERS),
     sessionDays: Number(process.env.DASHBOARD_SESSION_DAYS ?? 7),
-    // How long a repo's GitHub read is reused (server/api/dashboard-github.ts).
+    // How long a repo's GitHub read is reused (domains/items/github.ts).
     githubTtlSeconds: Number(process.env.DASHBOARD_GITHUB_TTL_SECONDS ?? 60),
   },
   // The request portal (#114): people without GitHub ask for small changes,
@@ -210,7 +210,7 @@ export const config = {
     dataDir: resolve(process.env.SETTINGS_DATA_DIR || 'settings-data'),
   },
   // What each app's base seed has (#202), per repo, app and hash of what
-  // defines it — see preview/seed-catalog.ts. Never in the product repo: it
+  // defines it — see domains/previews/seed-catalog.ts. Never in the product repo: it
   // names the seeded clients and users, and ronin regenerates it on its own.
   seedCatalogs: {
     dataDir: resolve(process.env.SEED_CATALOG_DATA_DIR || 'seed-catalog-data'),

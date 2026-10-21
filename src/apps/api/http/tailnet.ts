@@ -1,10 +1,10 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { handleAuth, readSession, type AuthConfig, type GithubOAuth, type Session } from '../../../server/api/auth.js';
-import type { Access } from '../../../server/api/access.js';
-import { teamAccess } from '../../../server/api/team.js';
-import { GithubUserError } from '../../../server/api/github-as-user.js';
+import { handleAuth, readSession, type AuthConfig, type GithubOAuth, type Session } from './auth.js';
+import type { Access } from '../../../domains/access/access.js';
+import { teamAccess } from '../../../domains/access/team.js';
+import { GithubUserError } from '../../../core/github-as-user.js';
 import { loadRepos } from '../../../core/repos.js';
-import { handleDashboard } from '../../../server/api/dashboard.js';
+import { handleDashboard } from './dashboard.js';
 import { handleGithubWebhook } from '../webhooks/github.js';
 import { GITHUB_WEBHOOK_PATHS } from './public.js';
 import { serveStatic, WEB_ROOT } from './static.js';
@@ -24,12 +24,12 @@ const SECURITY_HEADERS = {
 
 type Handler = (req: IncomingMessage, res: ServerResponse) => Promise<void>;
 
-// The repos a session sees (access.ts), from repos.json.
+// The repos a session sees (access/access.ts), from repos.json.
 type AccessOf = (session: Session) => Promise<Access>;
 
 export function createTailnetHandler(auth: AuthConfig, options: { github?: GithubOAuth; webRoot?: string; access?: AccessOf } = {}): Handler {
   const root = options.webRoot ?? WEB_ROOT;
-  // The team in Ajustes (#174, team.ts) on top of GitHub's answer: its admins, hidden repos and permissions.
+  // The team in Ajustes (#174, access/team.ts) on top of GitHub's answer: its admins, hidden repos and permissions.
   const accessOf: AccessOf = options.access ?? (async (session) => teamAccess(session, await loadRepos()));
   // At login, past the lists: an admin, or someone with a repo to see.
   const canEnter = async (login: string, token: string) => {

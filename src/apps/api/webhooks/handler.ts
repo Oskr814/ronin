@@ -10,8 +10,8 @@ import { withActiveRepo } from '../../../core/repo-context.js';
 import { getPrHead } from '../../../core/github.js';
 import { tryLockResource, unlockResource } from '../../../core/locks.js';
 import { log } from '../../../core/logger.js';
-import { issueFromSliceBranch } from '../../../slices/index.js';
-import { launchPreviewUpdates } from '../../../preview/index.js';
+import { issueFromSliceBranch } from '../../../domains/slices/index.js';
+import { launchPreviewUpdates } from '../../../domains/previews/index.js';
 import { runScoped, type Scope } from '../tick/tick.js';
 import { runAsJob } from '../jobs/child.js';
 

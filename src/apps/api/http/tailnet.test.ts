@@ -5,15 +5,15 @@ import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createTailnetHandler } from './tailnet.js';
-import { sealSession, type AuthConfig, type GithubOAuth } from '../../../server/api/auth.js';
+import { sealSession, type AuthConfig, type GithubOAuth } from './auth.js';
 
 vi.mock('../../../core/repos.js', () => ({ loadRepos: async () => [{ productRepo: 'acme/product' }] }));
-vi.mock('../../../server/api/dashboard-github.js', () => ({ repoGithub: async () => undefined }));
+vi.mock('../../../domains/items/github.js', () => ({ repoGithub: async () => undefined }));
 // Opening by number asks GitHub what it is: here, nothing.
 vi.mock('../../../core/github.js', async (importOriginal) => ({ ...(await importOriginal<typeof import('../../../core/github.js')>()), itemKindOf: async () => null }));
 
 const AUTH: AuthConfig = { url: 'https://media.example.ts.net:8443', githubClientId: 'cid', githubClientSecret: 'cs', sessionSecret: 's'.repeat(40), admins: ['oskr814'], allowedUsers: [], sessionDays: 7 };
-// What GitHub would say (access.ts): oskr814 is an admin, valeria can triage acme/product, nobody else sees anything.
+// What GitHub would say (access/access.ts): oskr814 is an admin, valeria can triage acme/product, nobody else sees anything.
 const access = vi.fn(async (s: { login: string }) => (s.login === 'oskr814' ? { admin: true, repos: [{ repo: 'acme/product', permission: 'admin-del-tablero' as const }] } : s.login === 'valeria' ? { admin: false, repos: [{ repo: 'acme/product', permission: 'triage' as const }] } : { admin: false, repos: [] }));
 const github: GithubOAuth = {
   exchangeCode: vi.fn(async () => ({ token: 'gho_token', scopes: ['repo'] })),

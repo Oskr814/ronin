@@ -2,7 +2,7 @@ import { appendFile, mkdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { sql } from 'kysely';
 import { getDb, type Db } from '../db/db.js';
-import { withJson } from '../portal/json-store.js';
+import { withJson } from '../domains/portal/json-store.js';
 import { log } from './logger.js';
 import { timed } from './timing.js';
 import { readSettingsSync, settingsPath, type SettingsFile, type SettingValue } from './settings.js';

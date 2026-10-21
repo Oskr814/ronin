@@ -6,7 +6,7 @@ import type { AccountPlanChoice } from './claude-plans.js';
 // The settings that can be changed from the dashboard (#174) instead of .env.
 // What wins: the dashboard's value, then .env, then the default. The
 // dashboard's values live in <SETTINGS_DATA_DIR>/settings.json, written only
-// by the server (server/api/ajustes.ts); every process applies them over
+// by the server (domains/settings/settings.ts); every process applies them over
 // config when it loads it (config.ts), so the tick, a webhook handler or a
 // worker started after a change already has it, and the server applies them
 // again after each one it saves.

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { HELP_FOOTER_MARKER } from '../commands/help.js';
+import { HELP_FOOTER_MARKER } from '../domains/commands/help.js';
 import { linearIdInPr, linearRefFrom, withLinearLink } from './linear.js';
 
 const LINKBACK = '<!-- linear-linkback -->\n<p><a href="https://linear.app/red-motos/issue/RED-214/extraer-un-componente-de-pie">RED-214</a></p>';

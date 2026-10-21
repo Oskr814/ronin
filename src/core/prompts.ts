@@ -1,4 +1,4 @@
-import { HELP_FOOTER_MARKER } from '../commands/help.js';
+import { HELP_FOOTER_MARKER } from '../domains/commands/help.js';
 import { config } from './config.js';
 import type { Comment, CommentThread } from './github.js';
 import { activeRepo } from './repo-context.js';

@@ -60,7 +60,7 @@ export interface RunResult {
 
 export type RunOutcome = 'ok' | 'error' | 'timeout' | 'usage_limit';
 
-// A run as the dashboard lists it (server/api/dashboard-data.ts reads it
+// A run as the dashboard lists it (domains/runs/data.ts reads it
 // from the file, runs-store.ts from the database).
 export type RunState = 'running' | 'cut' | RunOutcome;
 

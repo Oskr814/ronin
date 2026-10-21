@@ -14,8 +14,8 @@ import { parseArgs } from 'node:util';
 import { join } from 'node:path';
 import { loadRepos } from '../src/core/repos.js';
 import { withActiveRepo } from '../src/core/repo-context.js';
-import { appDown, appUp, appWorktreeDirFor, attachApp, ensureAppWorktree, type AppSession } from '../src/app/index.js';
-import { loginAllUsers, smokeScreenshots } from '../src/app/index.js';
+import { appDown, appUp, appWorktreeDirFor, attachApp, ensureAppWorktree, type AppSession } from '../src/domains/product-app/index.js';
+import { loginAllUsers, smokeScreenshots } from '../src/domains/product-app/index.js';
 
 const { values, positionals } = parseArgs({
   allowPositionals: true,

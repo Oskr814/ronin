@@ -2467,7 +2467,7 @@ const waitingCount = (itemId) => {
 };
 
 // The comment as it will be written — the same words the server writes
-// (dashboard-exploration-actions.ts's fichaComment).
+// (explorations/review-actions.ts's fichaComment).
 function fichaCommentText(action, text, redo) {
   if (action === 'rechazar') return `Rechazo esta ficha: ${text}`;
   if (action === 'cambios') return redo ? `${text}\n\nTambién hay que rehacer la captura del después.` : text;
@@ -2894,7 +2894,7 @@ function attentionHTML(a) {
 }
 
 // The cycle's issues by where they stand: ronin's by what GitHub says of
-// them, the team's by their Linear state (dashboard-linear.ts).
+// them, the team's by their Linear state (items/linear.ts).
 const BUCKETS = [
   ['done', 'hechos', 'var(--ok)'],
   ['ronin', 'ronin trabaja', 'var(--run)'],

@@ -6,10 +6,10 @@ import { rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { config } from '../../../core/config.js';
-import { createUser, issueLink, redeemLink, updateUser } from '../../../portal/accounts.js';
-import { hashPassword } from '../../../portal/password.js';
-import { getRequest, updateRequest } from '../../../portal/requests.js';
-import { resetPortalLimits } from '../../../portal/routes.js';
+import { createUser, issueLink, redeemLink, updateUser } from '../../../domains/portal/accounts.js';
+import { hashPassword } from '../../../domains/portal/password.js';
+import { getRequest, updateRequest } from '../../../domains/portal/requests.js';
+import { resetPortalLimits } from '../../../domains/portal/routes.js';
 import { createPortalHandler } from './portal.js';
 
 vi.mock('../../../core/logger.js', () => ({ log: { info: vi.fn(), error: vi.fn() } }));
