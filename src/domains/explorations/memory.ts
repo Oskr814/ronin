@@ -1,6 +1,6 @@
-import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { parse, stringify } from 'yaml';
+import { host } from '../../platform/host/host.js';
 
 // Exploration's memory, kept in the product repo itself (docs/exploration/
 // <app>/) so it's versioned and reviewed in the weekly PR like anything else
@@ -348,13 +348,13 @@ rechazos del PR semanal.
 `;
 
 export async function loadMemory(dir: string): Promise<ExplorationMemory> {
-  const inventory = await readFile(join(dir, 'inventory.yml'), 'utf8').then(parseInventory, () => ({ funciones: [] }));
-  const knowledge = await readFile(join(dir, 'knowledge.md'), 'utf8').catch(() => '');
+  const inventory = await host().fs.readFile(join(dir, 'inventory.yml'), 'utf8').then(parseInventory, () => ({ funciones: [] }));
+  const knowledge = await host().fs.readFile(join(dir, 'knowledge.md'), 'utf8').catch(() => '');
   const findings: FindingMeta[] = [];
-  const files = await readdir(join(dir, 'findings')).catch(() => [] as string[]);
+  const files = await host().fs.readdir(join(dir, 'findings')).catch(() => [] as string[]);
   for (const file of files.filter((f) => f.endsWith('.md')).sort()) {
     try {
-      const { body: _, ...meta } = parseFinding(await readFile(join(dir, 'findings', file), 'utf8'));
+      const { body: _, ...meta } = parseFinding(await host().fs.readFile(join(dir, 'findings', file), 'utf8'));
       findings.push(meta);
     } catch {
       // A hand-edited file that no longer parses doesn't take the rest down.
@@ -366,23 +366,23 @@ export async function loadMemory(dir: string): Promise<ExplorationMemory> {
 // Creates the directory with its README and an empty knowledge.md the first
 // time; never overwrites them afterwards.
 export async function ensureMemoryDir(dir: string): Promise<void> {
-  await mkdir(join(dir, 'findings'), { recursive: true });
-  await mkdir(join(dir, 'runs'), { recursive: true });
-  await writeFile(join(dir, 'README.md'), README, { flag: 'wx' }).catch(() => {});
-  await writeFile(join(dir, 'knowledge.md'), KNOWLEDGE_TEMPLATE, { flag: 'wx' }).catch(() => {});
+  await host().fs.mkdir(join(dir, 'findings'), { recursive: true });
+  await host().fs.mkdir(join(dir, 'runs'), { recursive: true });
+  await host().fs.writeFile(join(dir, 'README.md'), README, { flag: 'wx' }).catch(() => {});
+  await host().fs.writeFile(join(dir, 'knowledge.md'), KNOWLEDGE_TEMPLATE, { flag: 'wx' }).catch(() => {});
 }
 
 export async function saveInventory(dir: string, inventory: Inventory): Promise<void> {
-  await writeFile(join(dir, 'inventory.yml'), serializeInventory(inventory));
+  await host().fs.writeFile(join(dir, 'inventory.yml'), serializeInventory(inventory));
 }
 
 export async function writeFinding(dir: string, finding: Finding): Promise<string> {
   const path = join(dir, 'findings', findingFileName(finding));
-  await writeFile(path, serializeFinding(finding));
+  await host().fs.writeFile(path, serializeFinding(finding));
   return path;
 }
 
 export async function appendKnowledge(dir: string, line: string): Promise<void> {
-  const current = await readFile(join(dir, 'knowledge.md'), 'utf8').catch(() => KNOWLEDGE_TEMPLATE);
-  await writeFile(join(dir, 'knowledge.md'), `${current.trimEnd()}\n- ${line.trim()}\n`);
+  const current = await host().fs.readFile(join(dir, 'knowledge.md'), 'utf8').catch(() => KNOWLEDGE_TEMPLATE);
+  await host().fs.writeFile(join(dir, 'knowledge.md'), `${current.trimEnd()}\n- ${line.trim()}\n`);
 }

@@ -1,4 +1,3 @@
-import { rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { ensureWorktree, ensureExternalReviewWorktree, removeExternalReviewWorktree, ensureTrustedFixWorktree, removeTrustedFixWorktree } from '../git/worktree.js';
 import { runClaudeHeadless, ClaudeTimeoutError, ClaudeUsageLimitError } from '../claude/claude-runner.js';
@@ -9,6 +8,7 @@ import { activeRepo } from './repo-context.js';
 import { log } from '../logger.js';
 import { recordAgentRun } from './metrics.js';
 import { currentRunGroup } from './run-group.js';
+import { host } from '../host/host.js';
 
 // The mechanics every agent run shares: the checkout it runs in, `claude -p`
 // with its type's model and effort, the run record, metrics and cleanup.
@@ -105,14 +105,14 @@ export async function runAgentTask(task: AgentTask): Promise<string> {
   // bypassPermissions, which needs a new parameter plumbed through
   // runClaudeHeadless (shared by every other task type).
   if (checkout.kind === 'untrusted-pr-head') {
-    await rm(join(worktreeDir, '.claude'), { recursive: true, force: true });
-    await rm(join(worktreeDir, 'CLAUDE.md'), { recursive: true, force: true });
+    await host().fs.rm(join(worktreeDir, '.claude'), { recursive: true, force: true });
+    await host().fs.rm(join(worktreeDir, 'CLAUDE.md'), { recursive: true, force: true });
   }
 
   // A file rather than inline JSON: with every worker's criteria it's tens of
   // KB, too much for one argv entry to be comfortable.
   const agentsFile = agents?.path;
-  if (agents) await writeFile(agents.path, JSON.stringify(agents.definitions));
+  if (agents) await host().fs.writeFile(agents.path, JSON.stringify(agents.definitions));
 
   const issueNumber = task.issueNumber;
   const prNumber = task.prNumber;
@@ -166,7 +166,7 @@ export async function runAgentTask(task: AgentTask): Promise<string> {
     // detached worktree per external PR ever reviewed. Best-effort and
     // fully swallowed: a cleanup failure must never mask the real error nor
     // turn a successful review into a failed task.
-    if (agentsFile) await rm(agentsFile, { force: true }).catch(() => {});
+    if (agentsFile) await host().fs.rm(agentsFile, { force: true }).catch(() => {});
     if (checkout.kind === 'untrusted-pr-head') {
       await removeExternalReviewWorktree(checkout.prNumber).catch((cleanupError) =>
         log.error(`${task.type} cleanup falló para PR #${checkout.prNumber}`, cleanupError),

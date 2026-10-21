@@ -1,9 +1,7 @@
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 import { activeRepo } from '../../platform/agents/repo-context.js';
 import { config } from '../../platform/config/config.js';
+import { host } from '../../platform/host/host.js';
 
-const execFileAsync = promisify(execFile);
 
 // A repos.json entry's own worktreeBaseRef wins over the global default —
 // same override pattern as claudeConfigDir (see repo-context.ts). Needed
@@ -19,7 +17,7 @@ function baseRef(): string {
 // there.
 export async function fetchOriginMain(): Promise<void> {
   const branch = baseRef().replace(/^origin\//, '');
-  await execFileAsync('git', ['fetch', 'origin', branch], { cwd: activeRepo().productRepoPath });
+  await host().exec('git', ['fetch', 'origin', branch], { cwd: activeRepo().productRepoPath });
 }
 
 // Reads a file's content as of the active repo's base branch via `git
@@ -27,7 +25,7 @@ export async function fetchOriginMain(): Promise<void> {
 // dependency on what's currently checked out. Caller must have fetched
 // recently enough.
 export async function readSpecFile(specPath: string): Promise<string> {
-  const { stdout } = await execFileAsync('git', ['show', `${baseRef()}:${specPath}`], { cwd: activeRepo().productRepoPath });
+  const { stdout } = await host().exec('git', ['show', `${baseRef()}:${specPath}`], { cwd: activeRepo().productRepoPath });
   return stdout;
 }
 

@@ -1,7 +1,4 @@
-import { execFile } from 'node:child_process';
-import { mkdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import { promisify } from 'node:util';
 import { APP_MANIFEST_FILE } from '../product-app/manifest.js';
 import { config } from '../../platform/config/config.js';
 import { createRelease, listMergedPrs, listReleases, type Release } from '../../platform/github/github.js';
@@ -10,6 +7,7 @@ import { log } from '../../platform/logger.js';
 import { activeRepo } from '../../platform/agents/repo-context.js';
 import { errorLine, listRequests, noteEvent, type PortalRequest } from '../portal/requests.js';
 import { addDeploy, listDeploys, type DeployRecord } from './store.js';
+import { host } from '../../platform/host/host.js';
 
 // A deploy (#158) is a GitHub release: ronin publishes it on the tag someone
 // wrote, and the repo's own workflow (on the tag, or on the release) does
@@ -21,10 +19,9 @@ import { addDeploy, listDeploys, type DeployRecord } from './store.js';
 // and whoever calls them (the dashboard today, the portal's own deploys
 // later) only says what goes in.
 
-const execFileAsync = promisify(execFile);
 
 async function git(args: string[], cwd = activeRepo().productRepoPath): Promise<string> {
-  const { stdout } = await execFileAsync('git', args, { cwd, maxBuffer: 16 * 1024 * 1024 });
+  const { stdout } = await host().exec('git', args, { cwd, maxBuffer: 16 * 1024 * 1024 });
   return stdout;
 }
 
@@ -213,7 +210,7 @@ const COMMITTER = () => ['-c', `user.name=${config.githubLogin}`, '-c', `user.em
 // worktree goes, for publishRelease to push.
 async function cherryPick(pending: Pending, picked: PendingChange[], tag: string): Promise<{ sha: string } | { conflict: Extract<Problem, { kind: 'conflict' }> }> {
   const dir = join(activeRepo().worktreeBasePath, `.deploy-${tag}-${process.pid}-${Date.now()}`);
-  await mkdir(activeRepo().worktreeBasePath, { recursive: true });
+  await host().fs.mkdir(activeRepo().worktreeBasePath, { recursive: true });
   await git(['worktree', 'add', '--quiet', '--detach', dir, pending.base!.sha]);
   try {
     for (const change of picked) {
@@ -238,7 +235,7 @@ async function cherryPick(pending: Pending, picked: PendingChange[], tag: string
     }
     return { sha: (await git(['rev-parse', 'HEAD'], dir)).trim() };
   } finally {
-    await git(['worktree', 'remove', '--force', dir]).catch(() => rm(dir, { recursive: true, force: true }));
+    await git(['worktree', 'remove', '--force', dir]).catch(() => host().fs.rm(dir, { recursive: true, force: true }));
   }
 }
 

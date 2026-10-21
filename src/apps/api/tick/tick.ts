@@ -72,10 +72,8 @@ import { activeRepo, withActiveRepo } from '../../../platform/agents/repo-contex
 import { loadRepos } from '../../../platform/config/repos.js';
 import { log } from '../../../platform/logger.js';
 import { measure, type Measurement } from '../../../platform/timing.js';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
+import { host } from '../../../platform/host/host.js';
 
-const execFileAsync = promisify(execFile);
 
 // Best-effort — prints "unknown" rather than throwing if this checkout ever
 // runs without a .git dir (e.g. a packaged install). Exists so a stale
@@ -85,7 +83,7 @@ const execFileAsync = promisify(execFile);
 // debugging issue #228 stalling on stale code.
 async function currentCommit(): Promise<string> {
   try {
-    const { stdout } = await execFileAsync('git', ['rev-parse', '--short', 'HEAD']);
+    const { stdout } = await host().exec('git', ['rev-parse', '--short', 'HEAD']);
     return stdout.trim();
   } catch {
     return 'unknown';

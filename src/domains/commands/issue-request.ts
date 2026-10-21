@@ -1,5 +1,4 @@
 import { markProcessed } from '../../platform/state/processed-comments.js';
-import { mkdir, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { runAgentTask } from '../../platform/agents/agent-task.js';
 import { commandTask } from './prompts.js';
@@ -10,6 +9,7 @@ import { activeRepo } from '../../platform/agents/repo-context.js';
 import { requestBranch } from '../slices/index.js';
 import { removeWorktree } from '../../platform/git/worktree.js';
 import { log } from '../../platform/logger.js';
+import { host } from '../../platform/host/host.js';
 
 // A mention with no command on an issue ronin wasn't assigned yet: change
 // the scope, look into something, draw a prototype, or answer — whatever
@@ -81,12 +81,12 @@ export function nextIssueBody(body: string, result: IssueRequestResult, opts: { 
 export async function processIssueRequest(candidate: IssueRequestCandidate): Promise<void> {
   const { issueNumber, trigger } = candidate;
   const outDir = join(activeRepo().worktreeBasePath, 'issue-request-out', `${issueNumber}-${trigger.id}`);
-  await rm(outDir, { recursive: true, force: true });
-  await mkdir(outDir, { recursive: true });
+  await host().fs.rm(outDir, { recursive: true, force: true });
+  await host().fs.mkdir(outDir, { recursive: true });
   try {
     const outputPath = join(outDir, 'result.json');
     await runAgentTask(commandTask({ type: 'issue-request', issueNumber, trigger, outputPath }));
-    const result = parseIssueRequestResult(await readFile(outputPath, 'utf8'));
+    const result = parseIssueRequestResult(await host().fs.readFile(outputPath, 'utf8'));
 
     let reply = result.respuesta;
     if (result.alcance || result.contexto) {
@@ -115,6 +115,6 @@ export async function processIssueRequest(candidate: IssueRequestCandidate): Pro
     // fails is answered, not retried every tick at the cost of another run.
     await markProcessed(trigger).catch(() => {});
     await removeWorktree(requestBranch(issueNumber)).catch(() => {});
-    await rm(outDir, { recursive: true, force: true }).catch(() => {});
+    await host().fs.rm(outDir, { recursive: true, force: true }).catch(() => {});
   }
 }

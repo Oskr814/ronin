@@ -1,5 +1,4 @@
 import { isProcessed, markProcessed } from '../../platform/state/processed-comments.js';
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { activeRepo } from '../../platform/agents/repo-context.js';
 import { launchWorker } from '../../platform/workers/worker-launch.js';
@@ -43,6 +42,7 @@ import { redoAfterImages } from './redo.js';
 import { mentionsHandle } from '../commands/index.js';
 import type { CommitChange } from '../../platform/git/commit-style.js';
 import { worktreeLock } from '../../platform/workers/worktree-lock.js';
+import { host } from '../../platform/host/host.js';
 
 // Exploration's moving parts glued to GitHub — docs/DESIGN.md §11.7:
 // - exploreAndPublish: one run of one app, committed to the open
@@ -294,11 +294,11 @@ async function applyFeedback(pr: PullRequestStatus, batch: string): Promise<Redo
   if (general.length > 0) {
     for (const app of apps) for (const f of (await loadMemory(memoryDirFor(batchDir, app))).findings) cards.push({ app, id: f.id, titulo: f.titulo, estado: f.estado, viewport: f.viewport });
   }
-  await mkdir(explorationOutDir(), { recursive: true });
+  await host().fs.mkdir(explorationOutDir(), { recursive: true });
   const outputPath = join(explorationOutDir(), `feedback-${pr.number}.json`);
-  await rm(outputPath, { force: true });
+  await host().fs.rm(outputPath, { force: true });
   await runAgentTask(explorationTask({ type: 'explore-feedback', prNumber: pr.number, checkoutDir: batchDir, comments, ...(general.length > 0 ? { general: general.map(({ author: _author, ...g }) => g), fichas: cards } : {}), outputPath }));
-  const parsed = JSON.parse(await readFile(outputPath, 'utf8')) as { acciones?: FeedbackAction[] };
+  const parsed = JSON.parse(await host().fs.readFile(outputPath, 'utf8')) as { acciones?: FeedbackAction[] };
 
   const replies: Array<{ commentId: number; kind: 'issue' | 'review'; body: string }> = [];
   const redo: RedoItem[] = [];
@@ -315,20 +315,20 @@ async function applyFeedback(pr: PullRequestStatus, batch: string): Promise<Redo
     if (!meta) return;
     const path = join(memoryDir, 'findings', findingFileName(meta));
     if (action.accion === 'rechazar' && action.motivo) {
-      const finding = parseFinding(await readFile(path, 'utf8'));
+      const finding = parseFinding(await host().fs.readFile(path, 'utf8'));
       const reason = action.motivo.trim().slice(0, 300);
-      await writeFile(path, serializeFinding({ ...finding, estado: 'rechazado', motivo: reason, ...reviewed }));
+      await host().fs.writeFile(path, serializeFinding({ ...finding, estado: 'rechazado', motivo: reason, ...reviewed }));
       await appendKnowledge(memoryDir, `${reason} (${findingId}, rechazada en #${pr.number})`);
       changes.push({ findingId, titulo: finding.titulo, kind: 'rechazada', detail: reason });
       if (finding.issue) toClose.push({ issue: finding.issue, findingId, motivo: reason });
     } else if (action.accion === 'editar') {
-      const finding = parseFinding(await readFile(path, 'utf8'));
+      const finding = parseFinding(await host().fs.readFile(path, 'utf8'));
       const title = action.titulo?.trim() ? clip(action.titulo, LIMITS.titulo) : finding.titulo;
       let body = action.propuesta?.trim() ? replaceProposal(finding.body, action.propuesta.slice(0, 1600)) : finding.body;
       if (title !== finding.titulo) body = body.replace(/^## .*$/m, `## ${title}`);
       // The file name follows the title: a new title moves the file.
-      await rm(path, { force: true });
-      await writeFile(join(memoryDir, 'findings', findingFileName({ id: finding.id, titulo: title })), serializeFinding({ ...finding, titulo: title, body, ...reviewed }));
+      await host().fs.rm(path, { force: true });
+      await host().fs.writeFile(join(memoryDir, 'findings', findingFileName({ id: finding.id, titulo: title })), serializeFinding({ ...finding, titulo: title, body, ...reviewed }));
       if (action.rehacerDespues?.trim()) redo.push({ app, findingId, instruction: action.rehacerDespues.trim().slice(0, 1200), commentId, ...(kind === 'issue' ? { kind } : {}) });
       const what = [title !== finding.titulo ? `new title "${title}"` : '', action.propuesta?.trim() ? `new proposal: ${action.propuesta.trim().slice(0, 300)}` : ''].filter(Boolean).join('; ');
       changes.push({ findingId, titulo: title, kind: 'editada', detail: what || 'proposal adjusted', redo: Boolean(action.rehacerDespues?.trim()) });

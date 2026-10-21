@@ -1,11 +1,9 @@
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 import { listReleases, type Release } from '../../platform/github/github.js';
 import { getLastChangelogRelease, setLastChangelogRelease } from '../../platform/state/local-state.js';
 import { activeRepo } from '../../platform/agents/repo-context.js';
 import { log } from '../../platform/logger.js';
+import { host } from '../../platform/host/host.js';
 
-const execFileAsync = promisify(execFile);
 
 export interface ChangelogCandidate {
   release: Release;
@@ -44,8 +42,8 @@ export async function ensureChangelogRepoUpToDate(): Promise<string> {
   const dir = activeRepo().changelogRepoPath;
   if (!dir) throw new Error('ensureChangelogRepoUpToDate called without changelogRepoPath set — check changelogRepo is configured in repos.json');
 
-  await execFileAsync('git', ['fetch', 'origin', 'main'], { cwd: dir });
-  await execFileAsync('git', ['checkout', 'main'], { cwd: dir });
-  await execFileAsync('git', ['reset', '--hard', 'origin/main'], { cwd: dir });
+  await host().exec('git', ['fetch', 'origin', 'main'], { cwd: dir });
+  await host().exec('git', ['checkout', 'main'], { cwd: dir });
+  await host().exec('git', ['reset', '--hard', 'origin/main'], { cwd: dir });
   return dir;
 }

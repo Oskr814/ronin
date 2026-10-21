@@ -1,16 +1,11 @@
-import { execFile, spawn } from 'node:child_process';
-import { promisify } from 'node:util';
-import { existsSync, openSync, closeSync } from 'node:fs';
-import { appendFile, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { activeRepo } from '../../platform/agents/repo-context.js';
 import { config } from '../../platform/config/config.js';
 import { getFreePort } from '../../platform/git/worktree.js';
 import { log } from '../../platform/logger.js';
 import { loadAppDefinition, namedPortsIn, publicizeTemplate, publicPortsIn, renderTemplate, type AppDefinition, type AppStep, type TemplateContext } from './manifest.js';
-import { pidAlive } from '../../platform/workers/process.js';
+import { host } from '../../platform/host/host.js';
 
-const execFileAsync = promisify(execFile);
 
 // Brings an app of the product repo up in a checkout, from its
 // ronin.app.json — see docs/DESIGN.md §11.2. Everything it starts is
@@ -108,61 +103,18 @@ function stateDirOf(dir: string): string {
 
 async function readState(dir: string): Promise<AppState | null> {
   try {
-    return JSON.parse(await readFile(join(stateDirOf(dir), 'state.json'), 'utf8')) as AppState;
+    return JSON.parse(await host().fs.readFile(join(stateDirOf(dir), 'state.json'), 'utf8')) as AppState;
   } catch {
     return null;
   }
 }
 
 async function writeState(dir: string, state: AppState): Promise<void> {
-  await writeFile(join(stateDirOf(dir), 'state.json'), JSON.stringify(state, null, 2));
+  await host().fs.writeFile(join(stateDirOf(dir), 'state.json'), JSON.stringify(state, null, 2));
 }
 
 function composeArgs(state: Pick<AppState, 'project' | 'composeFile'>): string[] {
   return ['compose', '-p', state.project, ...(state.composeFile ? ['-f', state.composeFile] : [])];
-}
-
-async function tail(file: string, lines = 30): Promise<string> {
-  try {
-    return (await readFile(file, 'utf8')).split('\n').slice(-lines).join('\n');
-  } catch {
-    return '';
-  }
-}
-
-async function runCommand(command: string, cwd: string, env: NodeJS.ProcessEnv, logFile: string, timeoutMs: number): Promise<void> {
-  await appendFile(logFile, `\n$ ${command}\n`);
-  const fd = openSync(logFile, 'a');
-  try {
-    await new Promise<void>((resolve, reject) => {
-      const child = spawn('sh', ['-c', command], { cwd, env, stdio: ['ignore', fd, fd] });
-      const timer = setTimeout(() => child.kill('SIGTERM'), timeoutMs);
-      child.on('error', (error) => { clearTimeout(timer); reject(error); });
-      child.on('close', (code) => {
-        clearTimeout(timer);
-        if (code === 0) resolve();
-        else reject(new Error(`"${command}" salió con código ${code}`));
-      });
-    });
-  } catch (error) {
-    throw new Error(`${(error as Error).message}\n${await tail(logFile)}`);
-  } finally {
-    closeSync(fd);
-  }
-}
-
-// Detached into its own process group, so appDown can stop it together with
-// whatever it spawned (pnpm → vite, for one).
-function startProcess(command: string, cwd: string, env: NodeJS.ProcessEnv, logFile: string): number {
-  const fd = openSync(logFile, 'a');
-  try {
-    const child = spawn('sh', ['-c', command], { cwd, env, stdio: ['ignore', fd, fd], detached: true });
-    child.unref();
-    if (child.pid === undefined) throw new Error(`no se pudo arrancar "${command}"`);
-    return child.pid;
-  } finally {
-    closeSync(fd);
-  }
 }
 
 // Any answer below 500 counts as up: a 404 on "/" still means the server is
@@ -221,12 +173,12 @@ async function runStep(step: AppStep, run: StepRun): Promise<void> {
   const { appName, dir, state, ctx, options, logFile } = run;
   if ('compose' in step) {
     log.info(`app ${appName}: docker compose up (${state.project})`);
-    await runCommand(`docker ${composeArgs(state).join(' ')} up -d --build`, dir, appEnv(), logFile, 20 * 60_000);
+    await host().runLogged(`docker ${composeArgs(state).join(' ')} up -d --build`, { cwd: dir, env: appEnv(), logFile, timeoutMs: 20 * 60_000 });
   } else if ('run' in step) {
     await reservePorts([step.run, ...Object.values(step.env ?? {})], ctx, options);
     const env = Object.fromEntries(Object.entries(step.env ?? {}).map(([k, v]) => [k, renderTemplate(v, ctx)]));
     log.info(`app ${appName}: ${stepLabel(step)}`);
-    await runCommand(renderTemplate(step.run, ctx), join(dir, step.cwd ?? '.'), appEnv(env), logFile, (step.timeoutSeconds ?? 600) * 1000);
+    await host().runLogged(renderTemplate(step.run, ctx), { cwd: join(dir, step.cwd ?? '.'), env: appEnv(env), logFile, timeoutMs: (step.timeoutSeconds ?? 600) * 1000 });
   } else if ('start' in step) {
     // A no-op without a public host: {{public.…}} renders the same
     // loopback URL — see publicizeTemplate.
@@ -236,12 +188,12 @@ async function runStep(step: AppStep, run: StepRun): Promise<void> {
     const running = state.processes.find((p) => p.name === step.name);
     if (running) {
       log.info(`app ${appName}: reiniciando ${step.name}`);
-      await stopProcessGroup(running.pid);
+      await host().stopGroup(running.pid);
       state.processes = state.processes.filter((p) => p !== running);
     } else {
       log.info(`app ${appName}: arrancando ${step.name}`);
     }
-    const pid = startProcess(renderTemplate(step.start, ctx), join(dir, step.cwd ?? '.'), appEnv(env), join(stateDirOf(dir), `${step.name}.log`));
+    const pid = host().startLogged(renderTemplate(step.start, ctx), { cwd: join(dir, step.cwd ?? '.'), env: appEnv(env), logFile: join(stateDirOf(dir), `${step.name}.log`) });
     state.processes.push({ name: step.name, pid });
     await writeState(dir, state);
   } else {
@@ -258,7 +210,7 @@ async function runStep(step: AppStep, run: StepRun): Promise<void> {
 export async function appUp(dir: string, appName: string, options: AppUpOptions = {}): Promise<AppSession> {
   const app = await loadAppDefinition(dir, appName, options.manifest);
   const stateDir = stateDirOf(dir);
-  await mkdir(stateDir, { recursive: true });
+  await host().fs.mkdir(stateDir, { recursive: true });
   // Never committed by accident: a task that runs `git add -A` in this
   // checkout must not pick up the app's logs and state. info/exclude is
   // shared by every worktree of the repo, which is what we want here.
@@ -268,16 +220,16 @@ export async function appUp(dir: string, appName: string, options: AppUpOptions 
   const state: AppState = { appName, project: appProjectName(appName, options.instance), processes: [] };
   const ctx: TemplateContext = { ports: {}, port: {}, compose: '', dir, ...(options.publicHost ? { publicHost: options.publicHost } : {}) };
   const logFile = join(stateDir, 'up.log');
-  await writeFile(logFile, '');
+  await host().fs.writeFile(logFile, '');
   await writeState(dir, state);
 
   try {
     if (app.compose) {
       const args = ['compose', ...app.compose.files.flatMap((f) => ['-f', f]), 'config', '--format', 'json'];
-      const { stdout } = await execFileAsync('docker', args, { cwd: dir, env: appEnv(), maxBuffer: 16 * 1024 * 1024 });
+      const { stdout } = await host().exec('docker', args, { cwd: dir, env: appEnv(), maxBuffer: 16 * 1024 * 1024 });
       const { config: rewritten, ports } = await rewriteComposeConfig(JSON.parse(stdout), getFreePort);
       state.composeFile = join(stateDir, 'compose.json');
-      await writeFile(state.composeFile, JSON.stringify(rewritten, null, 2));
+      await host().fs.writeFile(state.composeFile, JSON.stringify(rewritten, null, 2));
       await writeState(dir, state);
       ctx.ports = ports;
     }
@@ -309,7 +261,7 @@ export async function appRerun(dir: string, app: AppDefinition, steps: AppStep[]
   if (!state?.baseUrl || !state.ctx) throw new Error(`no hay una app arriba en ${dir}`);
   const { ctx, baseUrl } = state;
   const logFile = join(stateDirOf(dir), 'rerun.log');
-  await writeFile(logFile, '');
+  await host().fs.writeFile(logFile, '');
   for (const step of steps) {
     try {
       await runStep(step, { appName: state.appName, dir, state, ctx, options: {}, logFile });
@@ -332,43 +284,29 @@ export async function attachApp(dir: string): Promise<AppSession | null> {
   return { appName: state.appName, app, dir, baseUrl: state.baseUrl, ctx: state.ctx, stateDir: stateDirOf(dir) };
 }
 
-async function stopProcessGroup(pid: number): Promise<void> {
-  try {
-    process.kill(-pid, 'SIGTERM');
-  } catch {
-    return; // already gone
-  }
-  for (let i = 0; i < 20 && pidAlive(pid); i++) await new Promise((r) => setTimeout(r, 250));
-  try {
-    process.kill(-pid, 'SIGKILL');
-  } catch {
-    // exited after SIGTERM
-  }
-}
-
 // Stops every process appUp started and takes the compose stack down with
 // its volumes. Never throws: like removeWorktree, a cleanup failure is
 // logged, not allowed to mask the error that led here.
 export async function appDown(dir: string): Promise<void> {
   const state = await readState(dir);
   if (!state) return;
-  for (const p of state.processes) await stopProcessGroup(p.pid);
-  if (state.composeFile && existsSync(state.composeFile)) {
-    await execFileAsync('docker', [...composeArgs(state), 'down', '--volumes', '--remove-orphans'], { cwd: dir, env: appEnv() })
+  for (const p of state.processes) await host().stopGroup(p.pid);
+  if (state.composeFile && (await host().fs.exists(state.composeFile))) {
+    await host().exec('docker', [...composeArgs(state), 'down', '--volumes', '--remove-orphans'], { cwd: dir, env: appEnv() })
       .catch((error) => log.error(`appDown: 'docker compose down' falló para ${state.project}`, error));
   }
-  await rm(join(stateDirOf(dir), 'state.json'), { force: true });
+  await host().fs.rm(join(stateDirOf(dir), 'state.json'), { force: true });
 }
 
 async function excludeFromGit(dir: string): Promise<void> {
   try {
-    const { stdout } = await execFileAsync('git', ['rev-parse', '--git-common-dir'], { cwd: dir });
+    const { stdout } = await host().exec('git', ['rev-parse', '--git-common-dir'], { cwd: dir });
     const commonDir = stdout.trim();
     const excludeFile = join(commonDir.startsWith('/') ? commonDir : join(dir, commonDir), 'info', 'exclude');
-    const current = await readFile(excludeFile, 'utf8').catch(() => '');
+    const current = await host().fs.readFile(excludeFile, 'utf8').catch(() => '');
     if (!current.split('\n').includes(`${APP_STATE_DIR}/`)) {
-      await mkdir(join(excludeFile, '..'), { recursive: true });
-      await appendFile(excludeFile, `${current.endsWith('\n') || current === '' ? '' : '\n'}${APP_STATE_DIR}/\n`);
+      await host().fs.mkdir(join(excludeFile, '..'), { recursive: true });
+      await host().fs.appendFile(excludeFile, `${current.endsWith('\n') || current === '' ? '' : '\n'}${APP_STATE_DIR}/\n`);
     }
   } catch (error) {
     log.error(`no se pudo excluir ${APP_STATE_DIR}/ de git en ${dir}`, error);
@@ -386,15 +324,15 @@ export function appWorktreeDirFor(appName: string): string {
 export async function ensureAppWorktree(appName: string, ref = activeRepo().worktreeBaseRef ?? config.worktreeBaseRef): Promise<string> {
   const dir = appWorktreeDirFor(appName);
   const repo = activeRepo().productRepoPath;
-  await execFileAsync('git', ['fetch', 'origin'], { cwd: repo });
-  const isLive = existsSync(dir) &&
-    (await execFileAsync('git', ['rev-parse', '--is-inside-work-tree'], { cwd: dir }).then(({ stdout }) => stdout.trim() === 'true', () => false));
+  await host().exec('git', ['fetch', 'origin'], { cwd: repo });
+  const isLive = (await host().fs.exists(dir)) &&
+    (await host().exec('git', ['rev-parse', '--is-inside-work-tree'], { cwd: dir }).then(({ stdout }) => stdout.trim() === 'true', () => false));
   if (isLive) {
     await appDown(dir);
-    await execFileAsync('git', ['checkout', '--detach', '--force', ref], { cwd: dir });
+    await host().exec('git', ['checkout', '--detach', '--force', ref], { cwd: dir });
   } else {
-    await mkdir(activeRepo().worktreeBasePath, { recursive: true });
-    await execFileAsync('git', ['worktree', 'add', '--detach', dir, ref], { cwd: repo });
+    await host().fs.mkdir(activeRepo().worktreeBasePath, { recursive: true });
+    await host().exec('git', ['worktree', 'add', '--detach', dir, ref], { cwd: repo });
   }
   return dir;
 }

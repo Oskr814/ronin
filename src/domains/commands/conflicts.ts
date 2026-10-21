@@ -1,7 +1,3 @@
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
-import { existsSync } from 'node:fs';
-import { mkdir, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { activeRepo } from '../../platform/agents/repo-context.js';
 import { removeWorktreeDir } from '../../platform/git/worktree.js';
@@ -11,8 +7,8 @@ import type { PrHead } from '../../platform/github/github.js';
 import { launchWorker } from '../../platform/workers/worker-launch.js';
 import { log } from '../../platform/logger.js';
 import { worktreeLock } from '../../platform/workers/worktree-lock.js';
+import { host } from '../../platform/host/host.js';
 
-const execFileAsync = promisify(execFile);
 
 // `/resolve-conflicts` on a PR: ronin merges the PR's base into its branch —
 // the same commit GitHub's "Update branch" makes, never a rebase, so nobody's
@@ -86,12 +82,12 @@ export type ConflictsOutcome =
   | { kind: 'branch-moved'; base: string };
 
 async function git(dir: string, args: string[]): Promise<string> {
-  const { stdout } = await execFileAsync('git', args, { cwd: dir, maxBuffer: 16 * 1024 * 1024 });
+  const { stdout } = await host().exec('git', args, { cwd: dir, maxBuffer: 16 * 1024 * 1024 });
   return stdout.trim();
 }
 
 async function gitOk(dir: string, args: string[]): Promise<boolean> {
-  return execFileAsync('git', args, { cwd: dir }).then(() => true, () => false);
+  return host().exec('git', args, { cwd: dir }).then(() => true, () => false);
 }
 
 async function unmergedFiles(dir: string): Promise<string[]> {
@@ -106,8 +102,8 @@ export async function mergeNotReady(dir: string, files: string[]): Promise<strin
   if (left.length > 0) return `quedaron archivos sin resolver: ${left.join(', ')}`;
   const markers = await Promise.all(files.map(async (f) => {
     const path = join(dir, f);
-    if (!existsSync(path)) return null;
-    return /^(<{7}|>{7})( |$)|^={7}$/m.test(await readFile(path, 'utf8')) ? f : null;
+    if (!(await host().fs.exists(path))) return null;
+    return /^(<{7}|>{7})( |$)|^={7}$/m.test(await host().fs.readFile(path, 'utf8')) ? f : null;
   }));
   const withMarkers = markers.filter((f): f is string => f !== null);
   if (withMarkers.length > 0) return `quedaron marcas de conflicto en ${withMarkers.join(', ')}`;
@@ -117,19 +113,19 @@ export async function mergeNotReady(dir: string, files: string[]): Promise<strin
 
 async function prepareCheckout(dir: string, head: string, base: string): Promise<void> {
   const repoPath = activeRepo().productRepoPath;
-  await execFileAsync('git', ['fetch', 'origin', head, base], { cwd: repoPath });
-  if (existsSync(dir)) await removeWorktreeDir(dir, 'resolveConflicts');
-  await mkdir(activeRepo().worktreeBasePath, { recursive: true });
+  await host().exec('git', ['fetch', 'origin', head, base], { cwd: repoPath });
+  if (await host().fs.exists(dir)) await removeWorktreeDir(dir, 'resolveConflicts');
+  await host().fs.mkdir(activeRepo().worktreeBasePath, { recursive: true });
   // Detached, like ensureTrustedFixWorktree: the branch is often checked out
   // in the primary worktree by whoever is working on it.
-  await execFileAsync('git', ['worktree', 'add', '--detach', dir, `origin/${head}`], { cwd: repoPath });
+  await host().exec('git', ['worktree', 'add', '--detach', dir, `origin/${head}`], { cwd: repoPath });
 }
 
 // Plain push, never forced: if someone pushed to the branch while this ran,
 // it's rejected and they're asked to run the command again.
 async function push(dir: string, head: string): Promise<boolean> {
   try {
-    await execFileAsync('git', ['push', 'origin', `HEAD:refs/heads/${head}`], { cwd: dir });
+    await host().exec('git', ['push', 'origin', `HEAD:refs/heads/${head}`], { cwd: dir });
     return true;
   } catch (error) {
     const message = String((error as { stderr?: string }).stderr ?? error);
@@ -159,18 +155,18 @@ export async function resolveConflicts(prNumber: number, pr: PrHead): Promise<Co
     if (files.length === 0) throw new Error(`git merge origin/${base} falló sin dejar conflictos`);
 
     const outDir = join(activeRepo().worktreeBasePath, `.conflicts-pr-${prNumber}-out`);
-    await mkdir(outDir, { recursive: true });
+    await host().fs.mkdir(outDir, { recursive: true });
     const outputPath = join(outDir, 'result.json');
-    await rm(outputPath, { force: true });
+    await host().fs.rm(outputPath, { force: true });
     await runAgentTask(commandTask({ type: 'resolve-conflicts', prNumber, checkoutDir: dir, outputPath, headRefName: head, baseRefName: base, title: pr.title, body: pr.body, conflictedFiles: files }));
 
     let resolution: AgentResolution;
     try {
-      resolution = parseAgentResolution(await readFile(outputPath, 'utf8'));
+      resolution = parseAgentResolution(await host().fs.readFile(outputPath, 'utf8'));
     } catch {
       return { kind: 'unresolved', base, files, reason: 'el agente no dejó su resultado' };
     } finally {
-      await rm(outDir, { recursive: true, force: true });
+      await host().fs.rm(outDir, { recursive: true, force: true });
     }
     if (!resolution.resuelto) return { kind: 'unresolved', base, files, reason: resolution.error ?? 'el agente no pudo resolverlos', resolution };
 

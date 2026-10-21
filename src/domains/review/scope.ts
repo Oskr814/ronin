@@ -1,11 +1,9 @@
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 import { activeRepo } from '../../platform/agents/repo-context.js';
 import type { ReviewFinding } from './output.js';
 import type { BotThread } from '../../platform/github/github.js';
 import { slug } from './render.js';
+import { host } from '../../platform/host/host.js';
 
-const execFileAsync = promisify(execFile);
 
 // Which lines of the PR a review comment can be anchored to, and where each
 // finding ends up (inline vs. the review summary). Stage 2 of
@@ -56,7 +54,7 @@ export function parseCommentableLines(unifiedDiff: string): CommentableLines {
 }
 
 async function git(args: string[]): Promise<string> {
-  const { stdout } = await execFileAsync('git', args, { cwd: activeRepo().productRepoPath, maxBuffer: 64 * 1024 * 1024 });
+  const { stdout } = await host().exec('git', args, { cwd: activeRepo().productRepoPath, maxBuffer: 64 * 1024 * 1024 });
   return stdout;
 }
 

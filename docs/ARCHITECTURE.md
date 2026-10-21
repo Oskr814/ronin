@@ -236,6 +236,22 @@ El claim entre supervisores por label (DESIGN §9) deja de hacer falta con un so
 
 La única implementación es `LocalHost`. El código de dominio no vuelve a llamar a `execFile` ni a `fs` sobre el código del producto: lo hace a través de `Host`. Es lo que permite, más adelante, ejecutar en otra máquina (ver «Proyección») sin tocar los flujos.
 
+**Hecho (4, comandos y procesos):** `platform/host/host.ts`, con `host()` y su única implementación, `localHost`:
+- `exec` y `execBuffer`: un comando hasta el final (git, `docker compose`, `tailscale serve`);
+- `runLogged` y `startLogged`: los pasos de una app de prueba, con su salida al log, y los dev servers en su grupo de procesos, que `stopGroup` detiene;
+- `alive`, `freePort` y `browserMcp`: el MCP de Playwright que recibe `claude -p`.
+
+Los ~70 `execFile` de los dominios y de `platform/git` pasan por ahí. No pasan por `Host` los procesos propios de ronin, que corren siempre en el central: `claude -p`, sus workers y `gh`. `test/structure.test.ts` falla si otro archivo importa `node:child_process`.
+
+**Hecho (4, archivos):** `host().fs`, con lo que los dominios usan de `node:fs/promises` (`readFile`, `writeFile`, `appendFile`, `mkdir`, `rm`, `readdir`), más `exists` y `mkdtemp`; no tiene llamadas síncronas. Pasa por ahí todo lo que está en el checkout del producto o bajo el `worktreeBasePath` del repo activo: crear y barrer worktrees, el `.env` de cada uno, el manifiesto de la app y el estado de una app de prueba, la memoria de exploración y sus fichas, las previews, y lo que una tarea le prepara al agente o le deja escrito (el `mcp.json`, el archivo de agentes de la review, el resultado, las capturas). Son unas 160 llamadas: explorations 50, previews 25, commands 19, product-app 16, `platform/git` 15, portal 13, meetings 8, slices 6, review 4, `platform/agents` 4, deploys 2, items 1.
+
+Siguen en `node:fs` los datos de ronin, que viven en el central: `config.*.dataDir` (portal, reuniones, catálogos de seeds), los logs y los registros de corridas, los ajustes, `.ronin-state.json`, las reservas de puertos de las previews, los criterios de review del propio repo de ronin y la salida de prueba (`dryRun`) de la review. Cuando un archivo cruza, se lee del host y se escribe en el central: las capturas que el portal guarda en el pedido.
+
+Quedan fuera, a propósito:
+- el Playwright que corre dentro del proceso de ronin (el login de los usuarios, las capturas de humo, `renderHtmlToPng`): escribe con su propio `fs`, y moverlo es mover el navegador al host;
+- los candados en archivo bajo el `worktreeBasePath` (`.locks/`, `worktree-lock.ts`): coordinan a ronin, no son código del producto;
+- las capturas de un pedido del portal, que `publishEvidence` le pasa a git en el host y el prompt del portal le pasa al agente: están en los datos del central. Con un solo nodo es la misma máquina; un runner remoto necesita copiarlas antes.
+
 ### API
 
 - **Hono** como router, con `@hono/zod-validator` para validar cada entrada.
@@ -360,6 +376,10 @@ Fuera de #235, que deja todo preparado:
   - Recibe un servidor MCP del runner por stdio sobre SSH (`ssh runner ronin-runner tools --workspace …`), con leer, editar, buscar y ejecutar en el worktree del runner.
   - El MCP del navegador va por el mismo camino.
 - **El trabajo sin agente** (worktrees, previews, tests, evidencias) es un `SshHost` que implementa la misma interfaz `Host`.
+- **Cada trabajo sabe en qué host corre sin que nadie lo cambie a mitad de camino:**
+  - un worker recibe su runner al arrancar, en el entorno, y `host()` lo resuelve una vez para todo el proceso;
+  - el servidor y el tick, que atienden varias cosas a la vez, lo fijan por llamada con un `AsyncLocalStorage`, como `activeRepo()` con el repo;
+  - por eso `host()` es una función y no hay un `setHost` global, que haría que dos peticiones se pisaran.
 - **El planificador reparte** según capacidades (repos, Docker, navegadores), turnos y carga.
 - **El runner local tiene una preferencia configurable:** usarlo como a cualquiera, solo si los demás están ocupados, o nunca.
 - **Antes de construirlo, un spike:**

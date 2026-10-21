@@ -1,6 +1,3 @@
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
-import { access, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { extname, join } from 'node:path';
 import { runAgentTask } from '../../platform/agents/agent-task.js';
 import { explorationTask, type ExistingFindingSummary } from './prompts.js';
@@ -26,8 +23,8 @@ import {
 import { refreshInventory, explorationOutDir } from './inventory.js';
 import { changedFunctions, newSeed, planRun, riskByFunction, type ExplorationPlan, type PlannedFunction } from './plan.js';
 import { capCandidates, parseFunctionResult, parseVerdicts, renderFindingBody, type Candidate, type FindingImage, type TriedTask } from './output.js';
+import { host } from '../../platform/host/host.js';
 
-const execFileAsync = promisify(execFile);
 
 // One exploration run end to end — docs/DESIGN.md §11.3–11.6: refresh the
 // inventory, plan, bring the app up, explore each planned function in its
@@ -82,22 +79,19 @@ interface PendingCandidate extends Candidate {
 
 export function mcpServer(app: AppDefinition, viewport: 'desktop' | 'mobile', storageState: string, outputDir: string, origins: string[]) {
   const vp = app.viewports[viewport];
-  return {
-    command: join(process.cwd(), 'node_modules', '.bin', 'playwright-mcp'),
-    args: [
-      // Playwright's own Chromium (installed with `npx playwright install
-      // chromium`); the server's default is the Google Chrome channel, which
-      // a runner host usually doesn't have.
-      '--browser', 'chromium',
-      '--headless',
-      '--isolated',
-      '--storage-state', storageState,
-      ...(vp.isMobile ? ['--device', 'iPhone 13', '--viewport-size', `${vp.width}x${vp.height}`] : ['--viewport-size', `${vp.width}x${vp.height}`]),
-      '--output-dir', outputDir,
-      // The explorer's browsers only reach the app and its own services.
-      '--allowed-origins', origins.join(';'),
-    ],
-  };
+  return host().browserMcp([
+    // Playwright's own Chromium (installed with `npx playwright install
+    // chromium`); the server's default is the Google Chrome channel, which
+    // a runner host usually doesn't have.
+    '--browser', 'chromium',
+    '--headless',
+    '--isolated',
+    '--storage-state', storageState,
+    ...(vp.isMobile ? ['--device', 'iPhone 13', '--viewport-size', `${vp.width}x${vp.height}`] : ['--viewport-size', `${vp.width}x${vp.height}`]),
+    '--output-dir', outputDir,
+    // The explorer's browsers only reach the app and its own services.
+    '--allowed-origins', origins.join(';'),
+  ]);
 }
 
 export function originsOf(baseUrl: string, ports: Record<string, Record<string, number>>, named: Record<string, number>): string[] {
@@ -110,11 +104,11 @@ export function originsOf(baseUrl: string, ports: Record<string, Record<string, 
 // The explorer edits code to take its "after" screenshots and is told to
 // revert; this makes sure of it, so the next function starts from the base.
 export async function ensureCleanCheckout(dir: string, appPath: string): Promise<void> {
-  const { stdout } = await execFileAsync('git', ['status', '--porcelain'], { cwd: dir });
+  const { stdout } = await host().exec('git', ['status', '--porcelain'], { cwd: dir });
   if (!stdout.trim()) return;
   log.info(`exploración: el explorador dejó cambios en el checkout, revirtiendo:\n${stdout.trim()}`);
-  await execFileAsync('git', ['checkout', '--', '.'], { cwd: dir });
-  await execFileAsync('git', ['clean', '-fd', '--', appPath], { cwd: dir });
+  await host().exec('git', ['checkout', '--', '.'], { cwd: dir });
+  await host().exec('git', ['clean', '-fd', '--', appPath], { cwd: dir });
 }
 
 function summarizeExisting(memory: ExplorationMemory): ExistingFindingSummary[] {
@@ -146,8 +140,8 @@ export async function runExploration(opts: RunOptions): Promise<RunSummary> {
   });
   const runId = `${today}-${seed}`;
   const outRoot = join(explorationOutDir(), runId);
-  await rm(outRoot, { recursive: true, force: true });
-  await mkdir(outRoot, { recursive: true });
+  await host().fs.rm(outRoot, { recursive: true, force: true });
+  await host().fs.mkdir(outRoot, { recursive: true });
   log.info(`exploración ${appName}: corrida ${runId}, ${plan.functions.map((p) => `${p.functionId} (${p.charter})`).join(', ')}`);
 
   const outcomes: FunctionOutcome[] = [];
@@ -166,10 +160,10 @@ export async function runExploration(opts: RunOptions): Promise<RunSummary> {
       }
       const fn = inventory.funciones.find((f) => f.id === planned.functionId)!;
       const fnOut = join(outRoot, fn.id);
-      await mkdir(join(fnOut, 'despues'), { recursive: true });
-      await mkdir(join(fnOut, 'patches'), { recursive: true });
+      await host().fs.mkdir(join(fnOut, 'despues'), { recursive: true });
+      await host().fs.mkdir(join(fnOut, 'patches'), { recursive: true });
       const mcpConfigPath = join(fnOut, 'mcp.json');
-      await writeFile(mcpConfigPath, JSON.stringify({
+      await host().fs.writeFile(mcpConfigPath, JSON.stringify({
         mcpServers: {
           desktop: mcpServer(app, 'desktop', authStates[planned.role], join(fnOut, 'desktop'), origins),
           mobile: mcpServer(app, 'mobile', authStates[planned.role], join(fnOut, 'mobile'), origins),
@@ -196,7 +190,7 @@ export async function runExploration(opts: RunOptions): Promise<RunSummary> {
           existing,
           maxIdeas: config.exploreIdeasPerRun,
         }));
-        const { result, dropped } = parseFunctionResult(await readFile(outputPath, 'utf8'), fn.id, fnOut);
+        const { result, dropped } = parseFunctionResult(await host().fs.readFile(outputPath, 'utf8'), fn.id, fnOut);
         for (const d of dropped) discarded.push({ titulo: d, funcion: fn.id, motivo: 'no cumple el contrato' });
         pending.push(...result.candidatos.map((c) => ({ ...c, functionId: fn.id, functionName: fn.nombre, planned })));
         outcomes.push({ planned, status: 'explorada', tareas: result.tareas });
@@ -227,10 +221,10 @@ export async function runExploration(opts: RunOptions): Promise<RunSummary> {
   if (fresh.length > 0) {
     const candidatesPath = join(outRoot, 'candidates.json');
     const verdictsPath = join(outRoot, 'verdicts.json');
-    await writeFile(candidatesPath, JSON.stringify(fresh.map(({ planned, ...c }, index) => ({ index, funcion: c.functionId, nombreFuncion: c.functionName, charter: planned.charter, rol: planned.role, ...c })), null, 2));
+    await host().fs.writeFile(candidatesPath, JSON.stringify(fresh.map(({ planned, ...c }, index) => ({ index, funcion: c.functionId, nombreFuncion: c.functionName, charter: planned.charter, rol: planned.role, ...c })), null, 2));
     try {
       await runAgentTask(explorationTask({ type: 'explore-evaluate', appName, checkoutDir: codeDir, candidatesPath, outputPath: verdictsPath, knowledge: memory.knowledge, existing }));
-      const verdicts = parseVerdicts(await readFile(verdictsPath, 'utf8'), fresh.length);
+      const verdicts = parseVerdicts(await host().fs.readFile(verdictsPath, 'utf8'), fresh.length);
       for (const v of verdicts) {
         const c = fresh[v.index];
         if (v.veredicto === 'mantener') kept.push({ ...c, ...(v.gravedad && c.tipo === 'hallazgo' ? { gravedad: v.gravedad } : {}), ...(v.entorno ? { entorno: true } : {}) });
@@ -262,7 +256,7 @@ export async function runExploration(opts: RunOptions): Promise<RunSummary> {
   const findings: Finding[] = [];
   for (const [i, c] of kept.entries()) {
     const id = ids[i];
-    const patch = c.parche ? await readFile(c.parche, 'utf8').catch(() => undefined) : undefined;
+    const patch = c.parche ? await host().fs.readFile(c.parche, 'utf8').catch(() => undefined) : undefined;
     const finding: Finding = {
       id,
       tipo: c.tipo,
@@ -297,16 +291,12 @@ export async function runExploration(opts: RunOptions): Promise<RunSummary> {
 
   const runFile = runFileName(memoryDir, runId);
   const summary: RunSummary = { runId, seed, plan, outcomes, findings, discarded, runFile, inventory: { added: refreshed.added, retired: refreshed.retired, refreshed: refreshed.refreshed } };
-  await writeFile(runFile, renderRunFile(appName, summary, inventory));
+  await host().fs.writeFile(runFile, renderRunFile(appName, summary, inventory));
   return summary;
 }
 
 // At most this many "before" screenshots per finding reach the team.
 const MAX_BEFORE = 3;
-
-async function exists(path: string): Promise<boolean> {
-  return access(path).then(() => true, () => false);
-}
 
 // The kept findings' screenshots, pushed to the evidence branch in one
 // commit: the "before" ones the explorer took, and the "after" — rendered to
@@ -330,13 +320,13 @@ async function publishImages(opts: {
     const prefix = `${opts.appName}/${opts.runId}/${id}`;
     const before: Array<{ path: string; nota?: string }> = [];
     for (const shot of c.evidencia.filter((e) => e.tipo === 'screenshot')) {
-      if (before.length >= MAX_BEFORE || !(await exists(shot.detalle))) continue;
+      if (before.length >= MAX_BEFORE || !(await host().fs.exists(shot.detalle))) continue;
       const path = `${prefix}/antes-${before.length + 1}${extname(shot.detalle).toLowerCase()}`;
       files.push({ src: shot.detalle, path });
       before.push({ path, ...(shot.nota ? { nota: shot.nota } : {}) });
     }
     let after: { path: string; nota?: string } | undefined;
-    if (c.despues && (await exists(c.despues.imagen))) {
+    if (c.despues && (await host().fs.exists(c.despues.imagen))) {
       let src = c.despues.imagen;
       if (/\.html?$/i.test(src)) {
         const png = join(opts.outRoot, `${id}-despues.png`);

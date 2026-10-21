@@ -1,7 +1,3 @@
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
-import { existsSync } from 'node:fs';
-import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { join, normalize } from 'node:path';
 import { activeRepo } from '../../platform/agents/repo-context.js';
 import { appDown, appRerun, appUp, APP_STATE_DIR, stepLabel, type AppSession } from '../product-app/index.js';
@@ -18,8 +14,8 @@ import { parsePortRange, PreviewReservations } from './reservations.js';
 import { log } from '../../platform/logger.js';
 import { previewRunGroup, withRunGroup } from '../../platform/agents/run-group.js';
 import { worktreeLock } from '../../platform/workers/worktree-lock.js';
+import { host } from '../../platform/host/host.js';
 
-const execFileAsync = promisify(execFile);
 
 // `/preview [app]` on a PR: ronin brings the app up from the PR's head, with
 // its seeds (and the base's ronin.app.json unless the PR changes it), in a worktree of its own, and publishes it on the tailnet with
@@ -84,7 +80,7 @@ export function releasePreviewLock(prNumber: number): Promise<void> {
 export async function tailnetHost(): Promise<string> {
   let stdout: string;
   try {
-    ({ stdout } = await execFileAsync('tailscale', ['status', '--json']));
+    ({ stdout } = await host().exec('tailscale', ['status', '--json']));
   } catch (error) {
     throw new Error(`no pude leer el estado de tailscale en el runner: ${(error as Error).message.split('\n')[0]}`);
   }
@@ -98,11 +94,11 @@ export async function tailnetHost(): Promise<string> {
 // opens to someone outside, so they reach previews and nothing else on this
 // host. Tailnet only — never `funnel`.
 async function servePort(publicPort: number, localPort: number): Promise<void> {
-  await execFileAsync('tailscale', ['serve', '--bg', `--https=${publicPort}`, `http://127.0.0.1:${localPort}`]);
+  await host().exec('tailscale', ['serve', '--bg', `--https=${publicPort}`, `http://127.0.0.1:${localPort}`]);
 }
 
 async function unservePort(port: number): Promise<void> {
-  await execFileAsync('tailscale', ['serve', `--https=${port}`, 'off'])
+  await host().exec('tailscale', ['serve', `--https=${port}`, 'off'])
     .catch((error) => log.error(`preview: 'tailscale serve --https=${port} off' falló`, error));
 }
 
@@ -149,14 +145,14 @@ function previewStatePath(dir: string): string {
 
 async function readPreviewState(dir: string): Promise<PreviewState | null> {
   try {
-    return JSON.parse(await readFile(previewStatePath(dir), 'utf8')) as PreviewState;
+    return JSON.parse(await host().fs.readFile(previewStatePath(dir), 'utf8')) as PreviewState;
   } catch {
     return null;
   }
 }
 
 async function writePreviewState(dir: string, state: PreviewState): Promise<void> {
-  await writeFile(previewStatePath(dir), JSON.stringify(state, null, 2));
+  await host().fs.writeFile(previewStatePath(dir), JSON.stringify(state, null, 2));
 }
 
 // The ronin.app.json the preview was brought up with, as text: an update
@@ -198,15 +194,15 @@ export function chooseManifest(changedByPr: boolean, base: string | null, head: 
 
 async function previewManifest(dir: string, pr: Pick<PrHead, 'baseRefName' | 'headRefOid'>): Promise<string> {
   const repo = activeRepo().productRepoPath;
-  await execFileAsync('git', ['fetch', 'origin', pr.baseRefName], { cwd: repo });
+  await host().exec('git', ['fetch', 'origin', pr.baseRefName], { cwd: repo });
   const baseRef = `origin/${pr.baseRefName}`;
-  const mergeBase = (await execFileAsync('git', ['merge-base', baseRef, pr.headRefOid], { cwd: dir })).stdout.trim();
+  const mergeBase = (await host().exec('git', ['merge-base', baseRef, pr.headRefOid], { cwd: dir })).stdout.trim();
   // Exit code 1 means there's a difference.
-  const changedByPr = await execFileAsync('git', ['diff', '--quiet', mergeBase, pr.headRefOid, '--', APP_MANIFEST_FILE], { cwd: dir })
+  const changedByPr = await host().exec('git', ['diff', '--quiet', mergeBase, pr.headRefOid, '--', APP_MANIFEST_FILE], { cwd: dir })
     .then(() => false, () => true);
-  const base = await execFileAsync('git', ['show', `${baseRef}:${APP_MANIFEST_FILE}`], { cwd: dir, maxBuffer: 10 * 1024 * 1024 })
+  const base = await host().exec('git', ['show', `${baseRef}:${APP_MANIFEST_FILE}`], { cwd: dir, maxBuffer: 10 * 1024 * 1024 })
     .then(({ stdout }) => stdout, () => null);
-  const head = await readFile(join(dir, APP_MANIFEST_FILE), 'utf8').catch(() => null);
+  const head = await host().fs.readFile(join(dir, APP_MANIFEST_FILE), 'utf8').catch(() => null);
   const chosen = chooseManifest(changedByPr, base, head);
   if (!chosen) throw new Error(`ni este PR ni \`${pr.baseRefName}\` tienen un ${APP_MANIFEST_FILE}: no sé cómo levantar la app`);
   log.info(`preview: ${APP_MANIFEST_FILE} ${chosen.from === 'pr' ? 'del PR' : `de ${pr.baseRefName}`}`);
@@ -218,7 +214,7 @@ async function previewManifest(dir: string, pr: Pick<PrHead, 'baseRefName' | 'he
 // app has to be named.
 async function prFiles(dir: string, pr: Pick<PrHead, 'baseRefName' | 'headRefOid'>): Promise<string[]> {
   try {
-    const mergeBase = (await execFileAsync('git', ['merge-base', `origin/${pr.baseRefName}`, pr.headRefOid], { cwd: dir })).stdout.trim();
+    const mergeBase = (await host().exec('git', ['merge-base', `origin/${pr.baseRefName}`, pr.headRefOid], { cwd: dir })).stdout.trim();
     return await changedFiles(dir, mergeBase, pr.headRefOid);
   } catch {
     return [];
@@ -246,9 +242,9 @@ export function resolvePreviewArgs(args: string | undefined, appNames: string[],
   return text ? { appName: only, instruction: text } : { appName: only };
 }
 
-function isLiveWorktree(dir: string): Promise<boolean> {
-  if (!existsSync(dir)) return Promise.resolve(false);
-  return execFileAsync('git', ['rev-parse', '--is-inside-work-tree'], { cwd: dir })
+async function isLiveWorktree(dir: string): Promise<boolean> {
+  if (!(await host().fs.exists(dir))) return false;
+  return host().exec('git', ['rev-parse', '--is-inside-work-tree'], { cwd: dir })
     .then(({ stdout }) => stdout.trim() === 'true', () => false);
 }
 
@@ -258,13 +254,13 @@ function isLiveWorktree(dir: string): Promise<boolean> {
 async function ensurePreviewWorktree(prNumber: number, sha: string): Promise<string> {
   const dir = previewDirFor(prNumber);
   const repo = activeRepo().productRepoPath;
-  await execFileAsync('git', ['fetch', 'origin', `pull/${prNumber}/head`], { cwd: repo });
+  await host().exec('git', ['fetch', 'origin', `pull/${prNumber}/head`], { cwd: repo });
   if (await isLiveWorktree(dir)) {
-    await execFileAsync('git', ['checkout', '--detach', '--force', sha], { cwd: dir });
+    await host().exec('git', ['checkout', '--detach', '--force', sha], { cwd: dir });
   } else {
-    if (existsSync(dir)) await removeWorktreeDir(dir, 'ensurePreviewWorktree');
-    await mkdir(activeRepo().worktreeBasePath, { recursive: true });
-    await execFileAsync('git', ['worktree', 'add', '--detach', dir, sha], { cwd: repo });
+    if (await host().fs.exists(dir)) await removeWorktreeDir(dir, 'ensurePreviewWorktree');
+    await host().fs.mkdir(activeRepo().worktreeBasePath, { recursive: true });
+    await host().exec('git', ['worktree', 'add', '--detach', dir, sha], { cwd: repo });
   }
   return dir;
 }
@@ -277,8 +273,8 @@ async function takeDownPreviewApp(dir: string): Promise<void> {
   for (const port of published) await unservePort(port);
   await appDown(dir);
   await reservations().releasePorts(dir);
-  await rm(previewStatePath(dir), { force: true });
-  await rm(previewManifestPath(dir), { force: true });
+  await host().fs.rm(previewStatePath(dir), { force: true });
+  await host().fs.rm(previewManifestPath(dir), { force: true });
 }
 
 // What prepare-preview-data left ready, or why it couldn't run — the preview
@@ -339,7 +335,7 @@ async function seedCatalog(prNumber: number, sha: string, session: AppSession): 
       return existing;
     }
     const outputPath = join(session.stateDir, 'seed-catalog.yaml');
-    await rm(outputPath, { force: true });
+    await host().fs.rm(outputPath, { force: true });
     await runAgentTask(previewTask({
       type: 'preview-seed-catalog',
       prNumber,
@@ -352,7 +348,7 @@ async function seedCatalog(prNumber: number, sha: string, session: AppSession): 
       compose: session.ctx.compose,
       users: session.app.users,
     }));
-    const catalog = parseSeedCatalog(await readFile(outputPath, 'utf8'));
+    const catalog = parseSeedCatalog(await host().fs.readFile(outputPath, 'utf8'));
     await saveSeedCatalog(path, catalog, `${activeRepo().productRepo} · ${session.appName}: lo que traen los seeds base.\nLo escribió ronin en la preview del PR #${prNumber} (${sha.slice(0, 7)}), ${new Date().toISOString()}.`);
     log.info(`preview PR #${prNumber}: catálogo de seeds nuevo en ${path}`);
     return catalog;
@@ -384,15 +380,15 @@ async function prepareData(opts: {
   const dir = session.dir;
   const outputPath = join(session.stateDir, since ? 'preview-data-delta.json' : 'preview-data.json');
   try {
-    await rm(outputPath, { force: true });
+    await host().fs.rm(outputPath, { force: true });
     let mergeBase: string;
     if (since) {
       mergeBase = since.from;
     } else {
-      await execFileAsync('git', ['fetch', 'origin', pr.baseRefName], { cwd: activeRepo().productRepoPath });
-      mergeBase = (await execFileAsync('git', ['merge-base', `origin/${pr.baseRefName}`, pr.headRefOid], { cwd: dir })).stdout.trim();
+      await host().exec('git', ['fetch', 'origin', pr.baseRefName], { cwd: activeRepo().productRepoPath });
+      mergeBase = (await host().exec('git', ['merge-base', `origin/${pr.baseRefName}`, pr.headRefOid], { cwd: dir })).stdout.trim();
     }
-    const stat = (await execFileAsync('git', ['diff', '--stat', mergeBase, pr.headRefOid], { cwd: dir })).stdout.trim();
+    const stat = (await host().exec('git', ['diff', '--stat', mergeBase, pr.headRefOid], { cwd: dir })).stdout.trim();
     const about = {
       prNumber,
       checkoutDir: dir,
@@ -422,7 +418,7 @@ async function prepareData(opts: {
       compose: session.ctx.compose,
       users: session.app.users,
     }));
-    return parsePreviewData(await readFile(outputPath, 'utf8'));
+    return parsePreviewData(await host().fs.readFile(outputPath, 'utf8'));
   } catch (error) {
     log.error(`preview PR #${prNumber}: no se pudieron preparar los datos`, error);
     return { error: (error as Error).message.split('\n')[0].slice(0, 300) };
@@ -430,8 +426,8 @@ async function prepareData(opts: {
     // The agent is told never to touch the code, and the dev server is
     // serving it: make sure of it. Ignored files (node_modules, .ronin-app)
     // stay.
-    await execFileAsync('git', ['checkout', '--force', '--detach', pr.headRefOid], { cwd: dir })
-      .then(() => execFileAsync('git', ['clean', '-fd'], { cwd: dir }))
+    await host().exec('git', ['checkout', '--force', '--detach', pr.headRefOid], { cwd: dir })
+      .then(() => host().exec('git', ['clean', '-fd'], { cwd: dir }))
       .catch((error) => log.error(`preview PR #${prNumber}: no se pudo limpiar el checkout`, error));
   }
 }
@@ -440,9 +436,9 @@ async function prepareData(opts: {
 async function triageData(task: Omit<Extract<PreviewTask, { type: 'preview-data-triage' }>, 'type' | 'outputPath'>, stateDir: string): Promise<{ alcanzan: boolean; usar: string[] } | null> {
   const outputPath = join(stateDir, 'preview-triage.json');
   try {
-    await rm(outputPath, { force: true });
+    await host().fs.rm(outputPath, { force: true });
     await runAgentTask(previewTask({ type: 'preview-data-triage', ...task, outputPath }));
-    const triage = parsePreviewTriage(await readFile(outputPath, 'utf8'));
+    const triage = parsePreviewTriage(await host().fs.readFile(outputPath, 'utf8'));
     log.info(`preview PR #${task.prNumber}: ${triage.alcanzan ? 'los seeds base alcanzan' : 'hay que preparar datos'}`);
     return triage;
   } catch (error) {
@@ -454,10 +450,10 @@ async function triageData(task: Omit<Extract<PreviewTask, { type: 'preview-data-
 // `startedAt`: when the preview first came up, for a rebuild that an update
 // fell back to — the TTL keeps counting from there.
 export async function startPreview(prNumber: number, pr: PrHead, args?: string, opts: { startedAt?: string } = {}): Promise<PreviewResult> {
-  const host = await tailnetHost();
+  const publicHost = await tailnetHost();
   const sha = pr.headRefOid;
   const existing = previewDirFor(prNumber);
-  if (existsSync(existing)) await takeDownPreviewApp(existing);
+  if (await host().fs.exists(existing)) await takeDownPreviewApp(existing);
   const dir = await ensurePreviewWorktree(prNumber, sha);
   const manifest = await previewManifest(dir, pr);
   const { apps } = parseAppManifest(manifest);
@@ -481,7 +477,7 @@ export async function startPreview(prNumber: number, pr: PrHead, args?: string, 
   let session: AppSession;
   try {
     // appUp tears down what it started if it fails.
-    session = await appUp(dir, appName, { instance: `pr-${prNumber}`, publicHost: host, publicPort, manifest });
+    session = await appUp(dir, appName, { instance: `pr-${prNumber}`, publicHost, publicPort, manifest });
   } catch (error) {
     await reservations().releasePorts(dir);
     await reservations().releaseSlots(dir);
@@ -508,7 +504,7 @@ export async function startPreview(prNumber: number, pr: PrHead, args?: string, 
       ...(config.previewPrepareData ? { preparing: true } : {}),
     };
     await writePreviewState(dir, state);
-    await writeFile(previewManifestPath(dir), manifest);
+    await host().fs.writeFile(previewManifestPath(dir), manifest);
     for (const p of published) await servePort(p.public, p.local);
     log.info(`preview PR #${prNumber}: ${appName} arriba en ${url}`);
     result = { appName, sha, url, users: session.app.users };
@@ -539,11 +535,11 @@ async function completeData(opts: {
 }): Promise<{ data: PreviewData } | { kept: string } | null> {
   const { prNumber, pr, session, from, instruction } = opts;
   const dataPath = join(session.stateDir, 'preview-data.json');
-  const previous = await readFile(dataPath, 'utf8').then(parsePreviewData, () => null);
+  const previous = await host().fs.readFile(dataPath, 'utf8').then(parsePreviewData, () => null);
   if (!previous) return null;
   let decision: { completar: boolean; motivo: string };
   try {
-    const stat = (await execFileAsync('git', ['diff', '--stat', from, pr.headRefOid], { cwd: session.dir })).stdout.trim();
+    const stat = (await host().exec('git', ['diff', '--stat', from, pr.headRefOid], { cwd: session.dir })).stdout.trim();
     decision = parseDataDecision(await runAgentTask(previewTask({
       type: 'preview-data-delta',
       prNumber,
@@ -566,7 +562,7 @@ async function completeData(opts: {
   // What the next update builds on: everything left ready so far, and what
   // is still missing as of now.
   if (!('error' in data)) {
-    await writeFile(dataPath, JSON.stringify({ preparado: [...previous.preparado, ...data.preparado], noPreparado: data.noPreparado }, null, 2))
+    await host().fs.writeFile(dataPath, JSON.stringify({ preparado: [...previous.preparado, ...data.preparado], noPreparado: data.noPreparado }, null, 2))
       .catch((error) => log.error(`preview PR #${prNumber}: no se pudieron guardar los datos completados`, error));
   }
   await markPrepared(session.dir);
@@ -577,7 +573,7 @@ async function markPrepared(dir: string): Promise<void> {
   const state = await readPreviewState(dir);
   if (!state?.preparing) return;
   delete state.preparing;
-  await writeFile(previewStatePath(dir), JSON.stringify(state, null, 2)).catch((error) => log.error('preview: no se pudo marcar los datos como listos', error));
+  await host().fs.writeFile(previewStatePath(dir), JSON.stringify(state, null, 2)).catch((error) => log.error('preview: no se pudo marcar los datos como listos', error));
 }
 
 // --- moving to a new commit ---
@@ -597,7 +593,7 @@ export type PreviewUpdate =
 // still diffs fine as long as the old commit is still in the repo: it was
 // the preview's own checkout.
 async function changedFiles(dir: string, from: string, to: string): Promise<string[]> {
-  const { stdout } = await execFileAsync('git', ['diff', '--name-only', from, to], { cwd: dir, maxBuffer: 10 * 1024 * 1024 });
+  const { stdout } = await host().exec('git', ['diff', '--name-only', from, to], { cwd: dir, maxBuffer: 10 * 1024 * 1024 });
   return stdout.split('\n').filter(Boolean);
 }
 
@@ -613,16 +609,16 @@ export async function planInPlaceUpdate(
   pr: Pick<PrHead, 'baseRefName' | 'headRefOid'>,
 ): Promise<{ app: AppDefinition; steps: AppStep[] } | { reason: string }> {
   const dir = previewDirFor(prNumber);
-  await execFileAsync('git', ['fetch', 'origin', `pull/${prNumber}/head`], { cwd: activeRepo().productRepoPath });
+  await host().exec('git', ['fetch', 'origin', `pull/${prNumber}/head`], { cwd: activeRepo().productRepoPath });
   let changed: string[];
   try {
     changed = await changedFiles(dir, state.sha, pr.headRefOid);
   } catch {
     return { reason: `no pude comparar \`${state.sha.slice(0, 7)}\` con \`${pr.headRefOid.slice(0, 7)}\`` };
   }
-  await execFileAsync('git', ['checkout', '--detach', '--force', pr.headRefOid], { cwd: dir });
+  await host().exec('git', ['checkout', '--detach', '--force', pr.headRefOid], { cwd: dir });
   const manifest = await previewManifest(dir, pr);
-  const used = await readFile(previewManifestPath(dir), 'utf8').catch(() => null);
+  const used = await host().fs.readFile(previewManifestPath(dir), 'utf8').catch(() => null);
   if (used === null) return { reason: `no sé con qué ${APP_MANIFEST_FILE} se levantó` };
   if (manifest !== used) return { reason: `cambió el ${APP_MANIFEST_FILE}` };
   const app = parseAppManifest(manifest).apps[state.appName];
@@ -677,7 +673,7 @@ export async function updatePreview(prNumber: number, pr: PrHead): Promise<Previ
 // Unpublishes, stops and deletes the PR's preview. False when there was none.
 export async function stopPreview(prNumber: number): Promise<boolean> {
   const dir = previewDirFor(prNumber);
-  if (!existsSync(dir)) return false;
+  if (!(await host().fs.exists(dir))) return false;
   await takeDownPreviewApp(dir);
   await reservations().releaseSlots(dir);
   await removeWorktreeDir(dir, 'stopPreview');
@@ -705,7 +701,7 @@ export async function stopPreview(prNumber: number): Promise<boolean> {
 export async function listPreviewStates(): Promise<PreviewState[]> {
   let entries: string[];
   try {
-    entries = await readdir(activeRepo().worktreeBasePath);
+    entries = await host().fs.readdir(activeRepo().worktreeBasePath);
   } catch {
     return [];
   }
@@ -729,7 +725,7 @@ export async function listPreviewStates(): Promise<PreviewState[]> {
 export async function sweepPreviews(now: Date = new Date()): Promise<void> {
   let entries: string[];
   try {
-    entries = await readdir(activeRepo().worktreeBasePath);
+    entries = await host().fs.readdir(activeRepo().worktreeBasePath);
   } catch {
     return;
   }
@@ -764,7 +760,7 @@ async function expireIfDue(prNumber: number, now: Date): Promise<boolean> {
   if (!state) return false;
   const startedAt = state.startedAt ? Date.parse(state.startedAt) : NaN;
   if (Number.isNaN(startedAt)) {
-    await writeFile(previewStatePath(dir), JSON.stringify({ ...state, startedAt: now.toISOString() }, null, 2));
+    await host().fs.writeFile(previewStatePath(dir), JSON.stringify({ ...state, startedAt: now.toISOString() }, null, 2));
     return false;
   }
   if (now.getTime() - startedAt < ttlMinutes * 60_000) return false;

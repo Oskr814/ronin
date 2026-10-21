@@ -1,16 +1,11 @@
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
-import { existsSync } from 'node:fs';
-import { mkdir, readdir, rm, writeFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
-import { createServer } from 'node:net';
 import { config } from '../config/config.js';
 import { activeRepo } from '../agents/repo-context.js';
 import { log } from '../logger.js';
 import { issueResource, withResourceLock } from '../locks/locks.js';
 import type { PullRequestStatus } from '../github/github.js';
+import { host } from '../host/host.js';
 
-const execFileAsync = promisify(execFile);
 
 // Asks the OS for a free ephemeral port (bind to 0, read back what it
 // assigned, release it) instead of guessing one — same trick most dev
@@ -19,17 +14,7 @@ const execFileAsync = promisify(execFile);
 // agent's own `docker compose up -d`, which can run much later in a long
 // task) where another process could grab the same port first; acceptable
 // given the alternative was a guaranteed collision on a literal :5432.
-export function getFreePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const server = createServer();
-    server.on('error', reject);
-    server.listen(0, () => {
-      const address = server.address();
-      const port = typeof address === 'object' && address !== null ? address.port : null;
-      server.close(() => (port !== null ? resolve(port) : reject(new Error('no port assigned'))));
-    });
-  });
-}
+export const getFreePort = (): Promise<number> => host().freePort();
 
 // Exported so callers that need to find an already-created worktree's files
 // can derive the same path without duplicating the naming scheme.
@@ -38,7 +23,7 @@ export function worktreeDirFor(branch: string): string {
 }
 
 async function branchExists(branch: string): Promise<boolean> {
-  return execFileAsync('git', ['rev-parse', '--verify', branch], { cwd: activeRepo().productRepoPath })
+  return host().exec('git', ['rev-parse', '--verify', branch], { cwd: activeRepo().productRepoPath })
     .then(() => true)
     .catch(() => false);
 }
@@ -50,7 +35,7 @@ async function branchExists(branch: string): Promise<boolean> {
 // domains/slices/prompts.ts can make the same check before using a computed base branch
 // (see final review Fix 3).
 export async function remoteBranchExists(branch: string): Promise<boolean> {
-  return execFileAsync('git', ['ls-remote', '--exit-code', '--heads', 'origin', branch], { cwd: activeRepo().productRepoPath })
+  return host().exec('git', ['ls-remote', '--exit-code', '--heads', 'origin', branch], { cwd: activeRepo().productRepoPath })
     .then(() => true)
     .catch(() => false);
 }
@@ -60,9 +45,9 @@ export async function remoteBranchExists(branch: string): Promise<boolean> {
 // left off instead of starting from a clean tree each time.
 export async function ensureWorktree(branch: string, baseRef = activeRepo().worktreeBaseRef ?? config.worktreeBaseRef): Promise<string> {
   const dir = worktreeDirFor(branch);
-  if (existsSync(dir)) return dir;
+  if (await host().fs.exists(dir)) return dir;
 
-  await mkdir(activeRepo().worktreeBasePath, { recursive: true });
+  await host().fs.mkdir(activeRepo().worktreeBasePath, { recursive: true });
   const local = await branchExists(branch);
   // Only relevant when there's no local ref yet — ls-remote before any fetch
   // so this doesn't depend on local remote-tracking refs being fresh.
@@ -72,7 +57,7 @@ export async function ensureWorktree(branch: string, baseRef = activeRepo().work
     // primary worktree — a plain `git fetch` never touches the working
     // directory or local branch refs. Also materializes origin/<branch>
     // locally so the remote-branch case below can reference it.
-    await execFileAsync('git', ['fetch', 'origin'], { cwd: activeRepo().productRepoPath }).catch(() => {});
+    await host().exec('git', ['fetch', 'origin'], { cwd: activeRepo().productRepoPath }).catch(() => {});
   }
   // Local branch: reuse it as-is. No local ref but it exists on origin
   // (e.g. a different machine/runner created it): check it out tracking the
@@ -85,7 +70,7 @@ export async function ensureWorktree(branch: string, baseRef = activeRepo().work
     : remote
       ? ['worktree', 'add', '-b', branch, dir, `origin/${branch}`]
       : ['worktree', 'add', '-b', branch, dir, baseRef];
-  await execFileAsync('git', args, { cwd: activeRepo().productRepoPath });
+  await host().exec('git', args, { cwd: activeRepo().productRepoPath });
 
   // A repo-root .env, auto-loaded by `docker compose` (see bmedical's own
   // docker-compose.yml, which reads DB_PORT from here) — gives this
@@ -95,7 +80,7 @@ export async function ensureWorktree(branch: string, baseRef = activeRepo().work
   // Postgres actually needs this, but ensureWorktree doesn't know which
   // task type it's building for, and writing an unused .env is harmless.
   const port = await getFreePort();
-  await writeFile(join(dir, '.env'), `DB_PORT=${port}\n`);
+  await host().fs.writeFile(join(dir, '.env'), `DB_PORT=${port}\n`);
 
   return dir;
 }
@@ -123,9 +108,9 @@ export function composeFilesIn(fileNames: string[]): string[] {
 }
 
 async function removeDockerStack(worktreeDir: string): Promise<void> {
-  const files = composeFilesIn(await readdir(worktreeDir).catch(() => []));
+  const files = composeFilesIn(await host().fs.readdir(worktreeDir).catch(() => []));
   for (const file of files) {
-    await execFileAsync('docker', ['compose', '-f', file, 'down', '--volumes', '--remove-orphans'], { cwd: worktreeDir })
+    await host().exec('docker', ['compose', '-f', file, 'down', '--volumes', '--remove-orphans'], { cwd: worktreeDir })
       .catch((error) => log.error(`removeDockerStack: 'docker compose -f ${file} down' falló en ${worktreeDir}, stack puede haber quedado corriendo`, error));
   }
 }
@@ -157,10 +142,10 @@ export async function removeWorktree(branch: string): Promise<void> {
 // for hours). Since git no longer tracks `dir` as a worktree in this case,
 // deleting it directly can't corrupt any git worktree state.
 export async function removeWorktreeDir(dir: string, label: string): Promise<void> {
-  await execFileAsync('git', ['worktree', 'remove', dir, '--force'], { cwd: activeRepo().productRepoPath })
+  await host().exec('git', ['worktree', 'remove', dir, '--force'], { cwd: activeRepo().productRepoPath })
     .catch(async (error) => {
       log.error(`${label}: 'git worktree remove' falló para ${dir}`, error);
-      if (!existsSync(dir)) return;
+      if (!(await host().fs.exists(dir))) return;
       // Two shapes of failure land here, and neither leaves git tracking the
       // directory: it was already unregistered by a prior partial removal
       // ("is not a working tree"), or `git worktree remove` deletes its
@@ -170,7 +155,7 @@ export async function removeWorktreeDir(dir: string, label: string): Promise<voi
       // gated this fallback on the first stderr string only, so the second
       // case looped forever. Confirm git no longer registers `dir` (so a
       // direct delete can't strand worktree metadata), then force it.
-      const stillRegistered = existsSync(join(activeRepo().productRepoPath, '.git', 'worktrees', basename(dir)));
+      const stillRegistered = await host().fs.exists(join(activeRepo().productRepoPath, '.git', 'worktrees', basename(dir)));
       if (stillRegistered) return;
       await forceRemoveOrphanedDir(dir, label);
     });
@@ -186,14 +171,14 @@ export async function removeWorktreeDir(dir: string, label: string): Promise<voi
 // too, so it can remove its own leftovers; nothing else in `dir` needs
 // privilege, so this only reaches for Docker once the plain delete fails.
 async function forceRemoveOrphanedDir(dir: string, label: string): Promise<void> {
-  await rm(dir, { recursive: true, force: true }).catch(async (rmError) => {
+  await host().fs.rm(dir, { recursive: true, force: true }).catch(async (rmError) => {
     const code = (rmError as NodeJS.ErrnoException).code;
     if (code !== 'EACCES' && code !== 'EPERM') {
       log.error(`${label}: no se pudo borrar el directorio huérfano ${dir}`, rmError);
       return;
     }
     const worktreeBasePath = activeRepo().worktreeBasePath;
-    await execFileAsync('docker', ['run', '--rm', '-v', `${worktreeBasePath}:/work`, 'busybox', 'rm', '-rf', `/work/${basename(dir)}`])
+    await host().exec('docker', ['run', '--rm', '-v', `${worktreeBasePath}:/work`, 'busybox', 'rm', '-rf', `/work/${basename(dir)}`])
       .catch((dockerError) => log.error(`${label}: no se pudo borrar el directorio huérfano ${dir} (ni con docker)`, dockerError));
   });
 }
@@ -216,9 +201,9 @@ export async function ensureExternalReviewWorktree(prNumber: number, headSha: st
   // GitHub exposes every PR's head under refs/pull/<n>/head on the BASE
   // repo regardless of which fork it lives on — this is what makes fork
   // PRs reachable at all without adding the fork as a remote.
-  await execFileAsync('git', ['fetch', 'origin', `pull/${prNumber}/head`], { cwd: activeRepo().productRepoPath });
+  await host().exec('git', ['fetch', 'origin', `pull/${prNumber}/head`], { cwd: activeRepo().productRepoPath });
 
-  // `existsSync` alone is not enough: a previous run's cleanup can leave a
+  // The directory existing is not enough: a previous run's cleanup can leave a
   // *non-git* directory behind (it unregisters the worktree and drops the
   // .git link, then fails to delete root-owned Docker build output — see
   // removeWorktreeDir). Checking out into that shell throws "not a git
@@ -226,17 +211,17 @@ export async function ensureExternalReviewWorktree(prNumber: number, headSha: st
   // only reuse the directory when git still sees it as a live worktree;
   // otherwise clear it and add it back from scratch.
   const isLiveWorktree =
-    existsSync(dir) &&
-    (await execFileAsync('git', ['rev-parse', '--is-inside-work-tree'], { cwd: dir })
+    (await host().fs.exists(dir)) &&
+    (await host().exec('git', ['rev-parse', '--is-inside-work-tree'], { cwd: dir })
       .then(({ stdout }) => stdout.trim() === 'true')
       .catch(() => false));
 
   if (isLiveWorktree) {
-    await execFileAsync('git', ['checkout', '--detach', headSha], { cwd: dir });
+    await host().exec('git', ['checkout', '--detach', headSha], { cwd: dir });
   } else {
-    if (existsSync(dir)) await removeExternalReviewWorktree(prNumber);
-    await mkdir(activeRepo().worktreeBasePath, { recursive: true });
-    await execFileAsync('git', ['worktree', 'add', '--detach', dir, headSha], { cwd: activeRepo().productRepoPath });
+    if (await host().fs.exists(dir)) await removeExternalReviewWorktree(prNumber);
+    await host().fs.mkdir(activeRepo().worktreeBasePath, { recursive: true });
+    await host().exec('git', ['worktree', 'add', '--detach', dir, headSha], { cwd: activeRepo().productRepoPath });
   }
   return dir;
 }
@@ -258,7 +243,7 @@ export async function removeExternalReviewWorktree(prNumber: number): Promise<vo
 const REVIEWED_PIN_PREFIX = 'refs/ronin/reviewed/';
 
 function productGit(args: string[]) {
-  return execFileAsync('git', args, { cwd: activeRepo().productRepoPath });
+  return host().exec('git', args, { cwd: activeRepo().productRepoPath });
 }
 
 export async function isCommitAvailable(sha: string): Promise<boolean> {
@@ -306,31 +291,31 @@ export async function pruneReviewedPins(openPrNumbers: number[]): Promise<void> 
 // latest push, never a stale one from an earlier attempt.
 export async function ensureTrustedFixWorktree(branch: string): Promise<string> {
   const dir = worktreeDirFor(branch);
-  await execFileAsync('git', ['fetch', 'origin'], { cwd: activeRepo().productRepoPath });
+  await host().exec('git', ['fetch', 'origin'], { cwd: activeRepo().productRepoPath });
   const ref = `origin/${branch}`;
 
   const isLiveWorktree =
-    existsSync(dir) &&
-    (await execFileAsync('git', ['rev-parse', '--is-inside-work-tree'], { cwd: dir })
+    (await host().fs.exists(dir)) &&
+    (await host().exec('git', ['rev-parse', '--is-inside-work-tree'], { cwd: dir })
       .then(({ stdout }) => stdout.trim() === 'true')
       .catch(() => false));
 
   if (isLiveWorktree) {
-    await execFileAsync('git', ['checkout', '--detach', ref], { cwd: dir });
+    await host().exec('git', ['checkout', '--detach', ref], { cwd: dir });
   } else {
     // Same non-git-leftover recovery as ensureExternalReviewWorktree — a
     // prior run's cleanup can unregister the worktree but fail to delete its
     // directory (removeWorktreeDir), leaving a shell that throws "not a git
     // repository" on every future attempt unless it's cleared first.
-    if (existsSync(dir)) await removeWorktreeDir(dir, 'ensureTrustedFixWorktree');
-    await mkdir(activeRepo().worktreeBasePath, { recursive: true });
-    await execFileAsync('git', ['worktree', 'add', '--detach', dir, ref], { cwd: activeRepo().productRepoPath });
+    if (await host().fs.exists(dir)) await removeWorktreeDir(dir, 'ensureTrustedFixWorktree');
+    await host().fs.mkdir(activeRepo().worktreeBasePath, { recursive: true });
+    await host().exec('git', ['worktree', 'add', '--detach', dir, ref], { cwd: activeRepo().productRepoPath });
   }
 
   // Same isolated Postgres port as ensureWorktree — this task type can run
   // the app's own test/docker tooling, unlike the read-only external-review.
   const port = await getFreePort();
-  await writeFile(join(dir, '.env'), `DB_PORT=${port}\n`);
+  await host().fs.writeFile(join(dir, '.env'), `DB_PORT=${port}\n`);
 
   return dir;
 }
@@ -388,7 +373,7 @@ export function branchesToSweep(dirNames: string[], allPrs: PullRequestStatus[])
 export async function sweepOrphanedWorktrees(allPrs: PullRequestStatus[]): Promise<void> {
   let entries: string[];
   try {
-    entries = await readdir(activeRepo().worktreeBasePath);
+    entries = await host().fs.readdir(activeRepo().worktreeBasePath);
   } catch {
     return; // nothing created yet
   }
