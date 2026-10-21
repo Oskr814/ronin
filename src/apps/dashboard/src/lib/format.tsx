@@ -6,9 +6,10 @@ export const pct = (fraction: number) => `${Math.round(fraction * 100)}%`;
 
 export const isMobile = () => matchMedia('(max-width: 760px)').matches;
 
-// A date and time ("21 oct 2026, 9:05"), and only the time.
+// A moment, and its time of day, as app.js writes them.
 export const when = (iso: string | null | undefined) => (iso ? new Date(iso).toLocaleString('es', { dateStyle: 'medium', timeStyle: 'short' }) : '');
 export const hhmm = (iso: string) => new Date(iso).toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' });
+export const repoShort = (repo: string) => repo.split('/')[1] ?? repo;
 
 // A week of numbers as a line, the last one marked (today, this week).
 export function Sparkline({ values }: { values: Array<number | null> }) {

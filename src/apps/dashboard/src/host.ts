@@ -1,4 +1,7 @@
 import { createContext, useContext } from 'react';
+import type { LinearPlanning } from '../../../platform/linear/linear-api.js';
+
+export type { LinearPlanning };
 
 // What a page asks of the shell around it (app.js), which mounts it.
 export interface Host {
@@ -24,6 +27,7 @@ export interface Host {
   settingsView(): SettingsView;
   // Who's looking, and whether they manage the portal's accounts.
   session(): { me: string; portalAdmin: boolean };
+  // Opens the portal's requests.
   // The theme, only in this browser.
   setTheme(theme: 'dark' | 'light'): void;
   // The repos the session sees, as the snapshot has them.
@@ -39,6 +43,21 @@ export interface Host {
   // draws it into the element, again as GitHub's copy arrives, and wires its
   // buttons. Returns how to stop.
   requestDoc(element: HTMLElement, request: RequestDoc, onShow: (show: 'issue' | 'pr') => void): () => void;
+  // Reuniones (#62): the list, or a meeting's page.
+  openMeetings(): void;
+  openMeeting(n: number): void;
+  // What the session can do in a repo (notas, aprobar, acciones, desplegar).
+  can(repo: string, perm: string): boolean;
+  // The session's GitHub login.
+  me(): string;
+  // What a repo's Linear team offers to plan with, if it has one.
+  planning(repo: string): LinearPlanning | null;
+  // Markdown as clean HTML (app.js's md), its #123 linked to the repo.
+  markdown(text: string, repo: string): string;
+  // Whether the sidebar has an item: a #123 opens it here, not on GitHub.
+  hasItem(key: string): boolean;
+  // Reads the snapshot again (the sidebar's counts).
+  refresh(): void;
 }
 
 export interface RequestDoc {

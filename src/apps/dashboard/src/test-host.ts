@@ -23,6 +23,14 @@ export function testHost(overrides: Partial<Host> = {}): Host {
     portalAdmin: () => false,
     openPortalAccounts: vi.fn(),
     requestDoc: () => () => {},
+    openMeetings: vi.fn(),
+    openMeeting: vi.fn(),
+    can: () => true,
+    me: () => 'ana-dev',
+    planning: () => null,
+    markdown: (text) => text,
+    hasItem: () => false,
+    refresh: vi.fn(),
     ...overrides,
   };
 }

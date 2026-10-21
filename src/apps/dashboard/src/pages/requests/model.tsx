@@ -27,19 +27,11 @@ export const CLOSED = ['done', 'resolved', 'declined', 'cancelled'];
 // A reported error's tries at reproducing it (#137), and how many it gets.
 export const REPRODUCTIONS = 2;
 
-export const ICON: Record<string, ReactNode> = {
-  person: <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4" /><path d="M4 21c1-4 4-6 8-6s7 2 8 6" /></svg>,
-  ronin: <svg viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4z" /></svg>,
-  run: <svg viewBox="0 0 24 24"><path d="M7 4l12 8-12 8z" /></svg>,
-  ok: <svg viewBox="0 0 24 24"><path d="M5 12l5 5 9-10" /></svg>,
-  crit: <svg viewBox="0 0 24 24"><path d="M12 7v6M12 17h.01" /></svg>,
-  mail: <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2" /><path d="M3 7l9 6 9-6" /></svg>,
-  wait: <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" /><path d="M12 8v4l3 2" /></svg>,
-};
+export { ICON } from '../../lib/icons.js';
 
 export const imagePath = (n: number, file: string) => `/api/requests/${n}/img/${encodeURIComponent(file)}`;
 export const firstName = (name: string | null | undefined) => String(name ?? '').split(' ')[0];
-export const repoShort = (repo: string) => repo.split('/')[1] ?? repo;
+export { repoShort } from '../../lib/format.js';
 const safeRepo = (repo: string) => /^[\w.-]+\/[\w.-]+$/.test(repo);
 export const issueUrl = (repo: string, number: number) => (safeRepo(repo) ? `https://github.com/${repo}/issues/${number}` : null);
 export const prUrl = (repo: string, number: number) => (safeRepo(repo) ? `https://github.com/${repo}/pull/${number}` : null);
