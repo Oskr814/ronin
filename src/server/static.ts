@@ -1,16 +1,18 @@
 import type { ServerResponse } from 'node:http';
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, statSync } from 'node:fs';
-import { dirname, extname, join, resolve, sep } from 'node:path';
+import { basename, dirname, extname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 // The static files of the server's two web apps: the dashboard (src/web/,
-// tailnet.ts) and the request portal (src/portal-web/, portal.ts). In
-// development (tsx) they're read from src/, once built from dist/ (`pnpm
-// build` copies both).
+// tailnet.ts) and the request portal (src/portal-web/, portal.ts). The
+// dashboard has no build: in development (tsx) it's read from src/, once
+// built from dist/ (`pnpm build` copies it). The portal is built by Vite
+// (#235, stage 7), so it's always read from dist/: in development, the last
+// `pnpm build` (or `pnpm portal:dev` to work on the page itself).
 const HERE = dirname(fileURLToPath(import.meta.url));
 export const WEB_ROOT = resolve(HERE, '..', 'web');
-export const PORTAL_WEB_ROOT = resolve(HERE, '..', 'portal-web');
+export const PORTAL_WEB_ROOT = basename(resolve(HERE, '..')) === 'src' ? resolve(HERE, '..', '..', 'dist', 'portal-web') : resolve(HERE, '..', 'portal-web');
 
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',

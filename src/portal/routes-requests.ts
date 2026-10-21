@@ -121,7 +121,7 @@ export function requestRoutes(config: PortalConfig, deps: PortalDeps) {
 
     .get('/', async (c) => {
       const apps = c.get('apps');
-      return c.json((await listRequestsOf(c.get('user').id)).map((r) => summaryView(r, appOf(apps, r))));
+      return c.json((await listRequestsOf(c.get('user').id)).map((r) => summaryView(r, appOf(apps, r))), 200);
     })
 
     .post('/', jsonBody(MAX_REQUEST_BODY, 'El pedido no llegó bien (¿imágenes muy pesadas?).'), body(messageSchema.extend({ repo: z.unknown().optional(), app: z.unknown().optional() })), async (c) => {
@@ -134,17 +134,17 @@ export function requestRoutes(config: PortalConfig, deps: PortalDeps) {
       const request = await createRequest({ userId: user.id, repo: app.repo, app: app.app, ...message(given) });
       log.info(`portal: ${user.email} abrió el pedido P-${request.number} en ${app.repo} · ${app.app}`);
       await launch(request.number);
-      return c.json(await fresh(c.get('apps'), request));
+      return c.json(await fresh(c.get('apps'), request), 200);
     })
 
-    .get(N, (c) => c.json(personView(c.get('request'), appOf(c.get('apps'), c.get('request')))))
+    .get(N, (c) => c.json(personView(c.get('request'), appOf(c.get('apps'), c.get('request'))), 200))
 
     .post(`${N}/messages`, jsonBody(MAX_REQUEST_BODY, 'El mensaje no llegó bien (¿imágenes muy pesadas?).'), body(messageSchema), async (c) => {
       const request = c.get('request');
       const { text, images } = message(c.req.valid('json'));
       await addPersonMessage(request.number, text, images);
       await launch(request.number);
-      return c.json(await fresh(c.get('apps'), request));
+      return c.json(await fresh(c.get('apps'), request), 200);
     })
 
     .post(`${N}/decision`, jsonBody(64 * 1024, 'Elige si lo apruebas o no.'), body(z.object({
@@ -153,7 +153,7 @@ export function requestRoutes(config: PortalConfig, deps: PortalDeps) {
     })), async (c) => {
       const request = c.get('request');
       const { decision, text } = c.req.valid('json');
-      return c.json(personView(await decideRequest(request.number, decision, text, launch), appOf(c.get('apps'), request)));
+      return c.json(personView(await decideRequest(request.number, decision, text, launch), appOf(c.get('apps'), request)), 200);
     })
 
     .post(`${N}/interview`, jsonBody(MAX_REQUEST_BODY, 'Las respuestas no llegaron bien (¿imágenes muy pesadas?).'), body(z.object({
@@ -164,13 +164,13 @@ export function requestRoutes(config: PortalConfig, deps: PortalDeps) {
       const request = c.get('request');
       const { answers, note, images } = c.req.valid('json');
       await answerInterview(request.number, { answers, note, images: parseImages(images) }, launch);
-      return c.json(await fresh(c.get('apps'), request));
+      return c.json(await fresh(c.get('apps'), request), 200);
     })
 
     .post(`${N}/skip`, async (c) => {
       const request = c.get('request');
       await skipInterview(request.number, launch);
-      return c.json(await fresh(c.get('apps'), request));
+      return c.json(await fresh(c.get('apps'), request), 200);
     })
 
     .post(`${N}/understood`, jsonBody(MAX_REQUEST_BODY, 'Elige si está bien o qué corregir.'), body(z.object({
@@ -181,12 +181,12 @@ export function requestRoutes(config: PortalConfig, deps: PortalDeps) {
       const request = c.get('request');
       const { ok, text, images } = c.req.valid('json');
       await confirmUnderstood(request.number, ok, text, ok ? [] : parseImages(images), launch);
-      return c.json(await fresh(c.get('apps'), request));
+      return c.json(await fresh(c.get('apps'), request), 200);
     })
 
     .post(`${N}/cancel`, async (c) => {
       const request = c.get('request');
-      return c.json(personView(await cancelRequest(request.number, deps.entries), appOf(c.get('apps'), request)));
+      return c.json(personView(await cancelRequest(request.number, deps.entries), appOf(c.get('apps'), request)), 200);
     })
 
     .get(`${N}/images/:file{[\\w.-]+}`, async (c) => {

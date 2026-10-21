@@ -67,13 +67,13 @@ const tooMany = (c: Context) => c.json({ error: TOO_MANY }, 429);
 const POSTS = ['/login', '/forgot', '/link', '/password'];
 
 export function portalRoutes(config: PortalConfig, deps: PortalDeps) {
-  return new Hono<NodeEnv>()
+  const routes = new Hono<NodeEnv>()
     .onError(onError([RequestError, ImageError]))
     .notFound((c) => c.json({ error: 'no existe' }, 404))
 
     .get('/me', async (c) => {
       const user = await portalUser(c.env.incoming, config);
-      if (user) return c.json(await me(user, config, deps));
+      if (user) return c.json(await me(user, config, deps), 200);
       c.header('Set-Cookie', portalCookie('', 0));
       return c.json({ error: 'sin sesión' }, 401);
     })
@@ -100,7 +100,7 @@ export function portalRoutes(config: PortalConfig, deps: PortalDeps) {
       await recordLogin(user.id);
       log.info(`portal: ${user.email} entró`);
       c.header('Set-Cookie', sessionCookie(user, config));
-      return c.json(await me(user, config, deps));
+      return c.json(await me(user, config, deps), 200);
     })
 
     .post('/forgot', json(), body(z.object({ email: text })), async (c) => {
@@ -124,7 +124,7 @@ export function portalRoutes(config: PortalConfig, deps: PortalDeps) {
         linkByIp.hit(ip);
         return c.json({ error: BAD_LINK }, 404);
       }
-      return c.json({ name: user.name, email: user.email, kind: user.link.kind });
+      return c.json({ name: user.name, email: user.email, kind: user.link.kind }, 200);
     })
 
     .post('/password', json(), body(z.object({ token: text, password: z.unknown().optional() })), async (c) => {
@@ -142,12 +142,14 @@ export function portalRoutes(config: PortalConfig, deps: PortalDeps) {
       await recordLogin(user.id);
       log.info(`portal: ${user.email} puso su contraseña`);
       c.header('Set-Cookie', sessionCookie(user, config));
-      return c.json(await me(user, config, deps));
+      return c.json(await me(user, config, deps), 200);
     })
 
-    .on(['GET', 'PUT', 'PATCH', 'DELETE'], POSTS, (c) => c.json({ error: 'método no permitido' }, 405))
-
     .route('/requests', requestRoutes(config, deps));
+  // Outside the chain above, which is the type the client sees: it only
+  // calls these with POST.
+  routes.on(['GET', 'PUT', 'PATCH', 'DELETE'], POSTS, (c) => c.json({ error: 'método no permitido' }, 405));
+  return routes;
 }
 
 export type PortalApi = ReturnType<typeof portalRoutes>;
