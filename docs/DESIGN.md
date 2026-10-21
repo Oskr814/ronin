@@ -1594,6 +1594,16 @@ Antes de optimizar nada se mide. `platform/timing.ts` abre una medición (`measu
 - **El tick:** `tick_complete` (y `event_complete`) suma `steps` (cuánto tardó cada paso: `assign`, `sweeps`, `auto-merge`, `portal`, `deploys`, `nightly`), `discoveryMs`, `jobsMs`, `githubMs` y `githubCalls`.
 - **`pnpm timings [días]`** (`scripts/timings.ts`, la cuenta en `platform/timing-report.ts`) arma la tabla: por ruta, la cantidad, el promedio, los percentiles por tramo, el máximo y GitHub por request; por repo, los ticks con su p50, p90 y máximo y la mediana de cada paso. Lee también los `tick_complete` de antes de esta medición, que solo traen el total.
 
+### 22. Instalación con Docker Compose (#235, etapa 5)
+
+Una instalación es `compose.yml` con cuatro servicios: `ronin` (la imagen del `Dockerfile`), `postgres`, `tailscale` (el sidecar) y `docker` (un Docker propio, DinD con TLS). El detalle y el porqué, en [`ARCHITECTURE.md`](ARCHITECTURE.md) («Docker»); cómo se usa, en el sitio: [Instalar con Docker](https://oskr814.github.io/ronin/operar/docker/) y [Respaldar y recuperar](https://oskr814.github.io/ronin/operar/respaldos/).
+
+- **Una sola red para tres:** `ronin` y `docker` comparten la red de `tailscale`. El tablero sigue en `127.0.0.1`, los puertos de las previews también, y `tailscale serve` (el CLI en la imagen, el daemon en el sidecar, por su socket) los publica como en una instalación a mano. Nada del código de las previews cambia.
+- **Las apps de prueba nunca tocan el Docker del host:** `DOCKER_HOST` apunta al servicio `docker`, y los worktrees están en un volumen montado en la misma ruta (`/repos`) en los dos.
+- **Las rutas de datos son de `compose.yml`,** en el volumen `ronin-files` (`/data`), y pisan las del `.env`: un `.env` de una instalación a mano sirve tal cual, salvo `repos.json`, cuyas rutas pasan a `/repos/…` y `/claude/…`.
+- **`ronin init`** (`apps/cli/init.ts`) pide lo que le falta al `.env`, genera los secretos, suma repos a `repos.json` y migra la base; se puede volver a correr. **`scripts/backup.sh` y `scripts/restore.sh`** respaldan y restauran la base y `ronin-files`, con 7 diarios y 4 semanales.
+- **Al arrancar,** `docker/entrypoint.sh` configura git y `gh` con el token de ronin, clona los repos que falten y publica el tablero. Recrear el contenedor corta los trabajos que corrían (sin el `KillMode=process` de systemd): quedan `lost` y el tick siguiente concilia.
+
 ## Estado actual
 
 - [x] Definir el esqueleto del supervisor (script + estructura de tick) — ver §3.1 y `src/`

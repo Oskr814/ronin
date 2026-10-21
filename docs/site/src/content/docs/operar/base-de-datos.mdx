@@ -71,7 +71,7 @@ Si la base no responde, ronin no se detiene: cada proceso usa los valores de `.e
 
 ## Respaldo
 
-La base es la única copia de lo que guarda. Hasta que la etapa 5 sume los respaldos automáticos, un `pg_dump` periódico:
+La base es la única copia de lo que guarda. Con [Docker](/ronin/operar/docker/), `scripts/backup.sh` la respalda junto con los archivos: ver [Respaldar y recuperar](/ronin/operar/respaldos/). Con el Postgres de `compose.postgres.yml`, un `pg_dump` periódico:
 
 ```bash
 docker exec ronin-postgres pg_dump -U ronin ronin > ronin-$(date +%F).sql

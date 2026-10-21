@@ -51,7 +51,9 @@ export default defineConfig({
           label: 'Operar un runner',
           collapsed: true,
           items: [
+            'operar/docker',
             'operar/instalacion',
+            'operar/respaldos',
             'operar/servidor',
             'operar/tablero',
             'operar/portal',

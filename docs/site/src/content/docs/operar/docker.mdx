@@ -1,0 +1,186 @@
+---
+title: "Instalar con Docker"
+description: "ronin con Docker Compose: la imagen, Postgres, Tailscale y un Docker propio para las previews, en pocos pasos."
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+Con Docker Compose, ronin se instala y se recupera en pocos pasos: clonar, `scripts/init.sh` (o [restaurar un respaldo](/ronin/operar/respaldos/)) y `docker compose up -d`. Es la etapa 5 de [#235](https://github.com/Oskr814/ronin/issues/235). La [instalación a mano](/ronin/operar/instalacion/) sigue funcionando igual.
+
+## Qué levanta
+
+`compose.yml`, en la raíz de ronin:
+
+| Servicio | Qué es |
+|---|---|
+| `ronin` | El servidor, el planificador y el runner local, con todo lo que usan sus agentes: Node y pnpm, git, `gh`, Claude Code, el cliente de Docker y Chromium para el navegador. |
+| `postgres` | [La base](/ronin/operar/base-de-datos/). Solo se alcanza desde adentro del compose. |
+| `tailscale` | El nodo de ronin en la tailnet. Publica el tablero y las previews con `tailscale serve`. |
+| `docker` | Un Docker propio (Docker-in-Docker) donde corren las previews, los prototipos y las reproducciones. ronin le habla por TCP con TLS; **el socket del host nunca se monta**. |
+
+`ronin` y `docker` comparten la red del servicio `tailscale`: para los tres, `127.0.0.1` es el mismo. Por eso el tablero, que escucha solo en `127.0.0.1`, y los puertos de las previews se publican igual que en una instalación a mano.
+
+Lo que guarda, en volúmenes:
+
+| Volumen | Qué guarda | ¿Se respalda? |
+|---|---|---|
+| `postgres-data` | La base. | Sí, con `pg_dump`. |
+| `ronin-files` | `repos.json`, las imágenes del portal, las notas de reuniones, las transcripciones de las corridas, los logs y el resto de las carpetas de datos. | Sí. |
+| `ronin-repos` | Los clones de los repos y sus worktrees. ronin los clona solo al arrancar. | No. |
+| `ronin-claude` | Una carpeta por cuenta de Claude, con su sesión. Tan sensible como el `.env`. | No: cada instalación hace su `claude login`. |
+| `tailscale-state` | El estado del nodo de Tailscale. | No. |
+| `docker-data` | Las imágenes y volúmenes del Docker propio. | No. |
+
+Las rutas de datos las fija `compose.yml` en esos volúmenes: lo que diga `.env` para ellas no cuenta.
+
+## Lo que hace falta
+
+- Una máquina Linux con Docker Engine y el plugin de compose.
+- La cuenta de ronin en GitHub y su fine-grained PAT, como en la [instalación a mano](/ronin/operar/instalacion/) (pasos 3 y 4).
+- La OAuth App del [tablero](/ronin/operar/tablero/).
+- Una **auth key de Tailscale** (*Settings → Keys*), con el tag al que la política de la tailnet le abre los puertos de las previews.
+- Una cuenta de Gmail con app password para los correos.
+
+## Instalar
+
+<Steps>
+
+1. **Cloná ronin:**
+
+   ```bash
+   git clone https://github.com/Oskr814/ronin.git && cd ronin
+   ```
+
+2. **Corré `scripts/init.sh`.** Construye la imagen y te pide lo que falta en `.env`: la cuenta de ronin y su token, tu usuario (`RUNNER_ID`), el correo, la auth key y el nombre del nodo en la tailnet, la URL y la OAuth App del tablero, el primer administrador y la URL del portal (opcional). Los secretos (`WEBHOOK_SECRET`, las sesiones del tablero y del portal, la contraseña de Postgres) los genera solo. Después te pide los repos (`owner/nombre`), arma `repos.json` y pone la base al día.
+
+   ```bash
+   scripts/init.sh
+   ```
+
+   Se puede volver a correr: solo pregunta lo que falta. Sin preguntas, con flags:
+
+   ```bash
+   scripts/init.sh --yes --repo owner/nombre --set RUNNER_ID=persona --set TS_AUTHKEY=tskey-auth-…
+   ```
+
+3. **Levantalo:**
+
+   ```bash
+   docker compose up -d
+   ```
+
+   Al arrancar, ronin clona los repos de `repos.json` que todavía no estén, pone la base al día y publica el tablero en `https://<TS_HOSTNAME>.<tailnet>.ts.net:8443`.
+
+4. **Iniciá sesión en Claude**, una vez por cuenta. La de por defecto vive en `/claude/default`:
+
+   ```bash
+   docker compose exec ronin claude
+   ```
+
+   Para otra cuenta, una carpeta propia y su ruta en el `claudeConfigDir` del repo en [`repos.json`](/ronin/referencia/repos-json/):
+
+   ```bash
+   docker compose exec -e CLAUDE_CONFIG_DIR=/claude/<cuenta> ronin claude
+   ```
+
+5. **Labels y webhooks**, con un token tuyo que administre los repos (por ejemplo, el de `gh auth token`):
+
+   ```bash
+   docker compose run --rm -e GH_TOKEN="$(gh auth token)" --entrypoint bash init /install/scripts/init-labels.sh
+   docker compose run --rm -e GH_TOKEN="$(gh auth token)" --entrypoint bash init /install/scripts/init-webhooks.sh https://<tu-dominio>/api/webhooks/github
+   ```
+
+6. **Exponé el listener público** (`SERVER_PORT`, 3939 por defecto) con tu proxy o túnel, como en [el servidor](/ronin/operar/servidor/#qué-tiene-que-ser-alcanzable). El compose lo publica en `127.0.0.1` de la máquina; `RONIN_PUBLIC_BIND` lo cambia.
+
+</Steps>
+
+## El día a día
+
+| Para | Comando |
+|---|---|
+| Ver los logs del servidor | `docker compose logs -f ronin` |
+| Los logs de los workers y las corridas | `docker compose exec ronin ls /data/logs` |
+| Una terminal adentro | `docker compose exec ronin bash` |
+| Sumar un repo | `scripts/init.sh --repo owner/nombre` (o Ajustes → Repos) y `docker compose restart ronin`, que lo clona al arrancar |
+| Cambiar `.env` | Editarlo y `docker compose up -d` (recrea `ronin` con los valores nuevos) |
+
+**Al desplegar una versión nueva:**
+
+```bash
+git pull && docker compose build ronin && docker compose up -d
+```
+
+<Aside type="caution" title="Un despliegue corta lo que esté corriendo">
+Con el servicio de systemd, reiniciar el servidor dejaba terminar a los handlers y los agentes que había lanzado. En el contenedor, recrearlo los corta: sus trabajos quedan perdidos y el tick siguiente los retoma. Conviene desplegar cuando la cola está quieta (el tablero la muestra).
+</Aside>
+
+## Previews y prototipos
+
+Corren en el Docker propio (`docker`), nunca en el del host. Lo que cambia y lo que no:
+
+- **Igual que antes:** ronin levanta el `docker compose` del producto con los mismos archivos; los puertos se publican en `127.0.0.1`, que es el mismo para ronin, el navegador de los agentes y Tailscale; `tailscale serve` publica cada preview en `PREVIEW_PORT_RANGE`.
+- **Los worktrees** viven en el volumen `ronin-repos`, montado en `/repos` en los dos servicios: los bind mounts de un compose del producto apuntan a la misma ruta en el Docker propio.
+- **Lo que no llega:** un compose del producto que monte rutas de fuera de su worktree (del home de alguien, por ejemplo) no las encuentra. Las imágenes se bajan y se construyen de nuevo la primera vez, sin la caché del host.
+- **El nodo de Tailscale es otro:** el de `TS_HOSTNAME`, no el de la máquina. La política de la tailnet que abre `PREVIEW_PORT_RANGE` a gente de afuera tiene que aplicarse a su tag, y las URLs del tablero y de las previews cambian de host.
+
+<Aside type="note">
+Los agentes corren las pruebas y los scripts del producto adentro del contenedor `ronin`: la imagen trae Node y pnpm. Un repo que necesite otra herramienta (otro lenguaje, una base local) la tiene que levantar con su compose, en el Docker propio.
+</Aside>
+
+## Pasar una instalación a mano a Docker
+
+Para un runner que ya corre con systemd y [la base de datos](/ronin/operar/base-de-datos/). Se arma un respaldo con el formato de `scripts/backup.sh` a partir de la instalación vieja y se [restaura](/ronin/operar/respaldos/#recuperar) en el compose. Lleva una ventana corta: avisá antes.
+
+<Steps>
+
+1. **Prepará el `.env`** en el checkout donde va a correr el compose: copiá el de la instalación vieja y sumale `TS_AUTHKEY` y `TS_HOSTNAME` (o corré `scripts/init.sh`, que pide solo lo que falta). `RONIN_PG_PASSWORD` puede quedar la misma.
+
+2. **La URL del tablero cambia de host:** pasa a ser la del nodo `TS_HOSTNAME`. Cambiá `DASHBOARD_URL` y la *Authorization callback URL* de la OAuth App, y aplicale al tag del nodo nuevo la política de la tailnet que hoy abre `PREVIEW_PORT_RANGE`.
+
+3. **Construí la imagen** antes de la ventana, para que no la alargue: `docker compose build ronin`.
+
+4. **Esperá a que la cola esté quieta** (el tablero la muestra) y bajá las previews activas con `/preview stop`: corren en el Docker del host y no pasan. Lo que no esté pusheado en un worktree se pierde.
+
+5. **Frená la instalación vieja:**
+
+   ```bash
+   pnpm server:remove      # el servicio y su tailscale serve del tablero
+   pnpm cron:remove        # si quedaba el cron
+   ```
+
+6. **Armá el respaldo** con la base y las carpetas de datos, con la forma de `/data` (las carpetas con su nombre por defecto):
+
+   ```bash
+   mkdir -p /tmp/migracion/datos && cd /tmp/migracion
+   docker exec ronin-postgres pg_dump -U ronin -Fc ronin > ronin.dump
+   cp -a <ronin-viejo>/{portal-data,meetings-data,deploys-data,settings-data,metrics-data,logs} datos/
+   cp -a <ronin-viejo>/.ronin-state.json* datos/ 2>/dev/null || true
+   cp <ronin-viejo>/repos.json datos/
+   cp <checkout-del-compose>/.env env
+   ```
+
+7. **Corregí las rutas de `datos/repos.json`:** `productRepoPath` (y `changelogRepoPath`) a `/repos/<owner>/<nombre>/repo`, y cada `claudeConfigDir` a `/claude/<cuenta>`. Los clones no se copian: ronin los hace al arrancar. Después, empaquetá los datos:
+
+   ```bash
+   tar -czf files.tar.gz -C datos .
+   ```
+
+8. **Restaurá y levantá:**
+
+   ```bash
+   scripts/restore.sh /tmp/migracion --yes
+   docker compose up -d
+   docker compose logs -f ronin
+   ```
+
+9. **Un `claude login` por cuenta** ([Instalar](#instalar), paso 4). Los labels, los webhooks y el proxy del listener público no cambian si `SERVER_PORT` es el mismo.
+
+</Steps>
+
+**Para volver atrás:** `docker compose down` (sin `-v`: los volúmenes quedan) y `pnpm server:setup` en la instalación vieja. Su Postgres (`compose.postgres.yml`) sigue con los datos de antes de la ventana; lo que pasó después queda solo en el compose. Cuando la instalación nueva lleve unos días andando, bajá ese Postgres viejo: `docker compose -p ronin-db -f compose.postgres.yml down`.
+
+## Si algo no anda
+
+- **El tablero no abre:** `docker compose logs ronin | grep tablero` dice si se publicó. `docker compose exec ronin tailscale serve status` muestra lo publicado. La primera vez, el nodo necesita su auth key (`TS_AUTHKEY`) y HTTPS habilitado en la tailnet.
+- **Docker no responde adentro:** `docker compose exec ronin docker info`. Los certificados los genera el servicio `docker` al arrancar; los primeros segundos puede fallar.
+- **Claude no tiene sesión:** el paso 4, en la cuenta que use el repo.
