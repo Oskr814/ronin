@@ -715,9 +715,9 @@ Todo, salvo los webhooks y `/api/auth/*`, pide sesión. Las rutas pasan a Hono d
 | `POST /api/items/<id>/decision` | En un PR abierto de ronin que no es draft: `{ decision: approve \| adjust \| close, text?, closeIssue? }` (15.15) |
 | `GET /api/runs/<runId>` | El transcript de una corrida |
 | `GET /api/runs/<runId>/stream` | Lo que se le agrega, por *server-sent events*, hasta que termina |
-| `GET /api/pedidos` | Los pedidos del portal de los repos que ve la sesión, con a quién espera cada uno (§16.11) |
-| `GET /api/pedidos/<n>` | Uno: la conversación, el veredicto, los prototipos, su actividad y sus corridas |
-| `GET /api/pedidos/<n>/img/<archivo>`, `/prototipo/<ronda>` | Una imagen del pedido, por el nombre que tiene en él, y el diff de un prototipo |
+| `GET /api/requests` | Los pedidos del portal de los repos que ve la sesión, con a quién espera cada uno (§16.11) |
+| `GET /api/requests/<n>` | Uno: la conversación, el veredicto, los prototipos, su actividad y sus corridas |
+| `GET /api/requests/<n>/img/<archivo>`, `/prototipo/<ronda>` | Una imagen del pedido, por el nombre que tiene en él, y el diff de un prototipo |
 | `GET /api/deploys` | Solo admins: cada repo con `deploy`, con lo mergeado sin desplegar (un cambio por PR) y sus últimos releases con el estado de su workflow (§18) |
 | `POST /api/deploys/<owner>/<repo>/plan` | Solo admins: qué llevaría un release, sin publicarlo: `{ tag, prs: 'all' \| [n…], prerelease? }`, con sus problemas en palabras y su `fingerprint` |
 | `POST /api/deploys/<owner>/<repo>/publish` | Solo admins: lo publica: lo mismo, más `{ title?, notes?, fingerprint? }`; 409 con el plan nuevo si algo cambió o no se puede |
@@ -946,7 +946,7 @@ src/domains/portal/    el dominio: cuentas, pedidos, la conversación, el protot
   routes.ts            la API del portal en Hono: la sesión y la cuenta (/api/portal/*)
   routes-requests.ts   los pedidos de la persona (/api/portal/requests/*)
   http.ts              lo que comparten: la configuración y quién pregunta
-  routes-dashboard.ts  el portal desde el tablero, en Hono: los pedidos (/api/pedidos/*) y las cuentas (/api/portal-admin/*)
+  routes-dashboard.ts  el portal desde el tablero, en Hono: los pedidos (/api/requests/*) y las cuentas (/api/portal-admin/*)
   admin.ts             la administración de las cuentas: crear, reenviar el enlace, editar
   board.ts             los pedidos en el tablero: la lista, la ficha y su actividad
 src/apps/api/http/portal.ts  lo que el listener público atiende del portal, y monta su API
@@ -1091,7 +1091,7 @@ Un pedido no tiene issue hasta que ronin lo abre, y algunos no lo tienen nunca. 
 
 - **La lista** (`/pedidos`) dice a quién espera cada pedido (`waitsOn`): la persona (`asking`, `proposed`), ronin (leerlo, el prototipo, abrir su issue, hacer el cambio), el equipo (su issue, o aprobar el PR) o nadie. La barra lateral lista los que siguen abiertos, en *Pedidos en curso*.
   - **Los filtros (#158):** *Pendientes* (los abiertos, el de entrada) | *Esperan a la persona* · *ronin trabajando* · *Esperan al equipo* | *Cerrados* · *Todos*. Los cerrados solo se ven en los dos últimos.
-  - **De 25 en 25,** paginada en el navegador: con pocas decenas de pedidos alcanza, y `/api/pedidos` sigue trayéndolos todos. Cambiar de filtro vuelve a la primera página.
+  - **De 25 en 25,** paginada en el navegador: con pocas decenas de pedidos alcanza, y `/api/requests` sigue trayéndolos todos. Cambiar de filtro vuelve a la primera página.
 - **La ficha** (`/pedidos/<n>`):
   - las siete etapas (Pedido, Conversación, Prototipo, Aprobación, Issue, PR, Listo);
   - una tarjeta *Ahora* con qué falta y quién lo hace, o la corrida en vivo;
@@ -1108,7 +1108,7 @@ Un pedido no tiene issue hasta que ronin lo abre, y algunos no lo tienen nunca. 
   - **las corridas.** El registro de cada corrida lleva `portalRequest` y su runId dice `p<n>`; las de antes se reconocen por su etiqueta, "pedido P-n". Las del issue y el PR del pedido se suman por su número.
 
   Los pedidos de antes de #132 no tienen eventos. Su actividad se arma con el veredicto y la decisión, y su issue va al final, sin hora.
-- **Un reporte de error** (16.12) lo dice en la lista y en la ficha, tiene sus propias etapas (Pedido, Error, Reproducción, Issue, PR, Listo) y una pestaña *Reproducción*: cada intento con su resultado, lo que hizo ronin, la causa o lo que sospecha, las capturas, el test con su salida en rojo y en verde, y el diff (`GET /api/pedidos/<n>/reproduccion/<intento>`).
+- **Un reporte de error** (16.12) lo dice en la lista y en la ficha, tiene sus propias etapas (Pedido, Error, Reproducción, Issue, PR, Listo) y una pestaña *Reproducción*: cada intento con su resultado, lo que hizo ronin, la causa o lo que sospecha, las capturas, el test con su salida en rojo y en verde, y el diff (`GET /api/requests/<n>/reproduction/<intento>`).
 
 #### 16.12 Reportes de error (`reproduce.ts`, #137)
 

@@ -57,11 +57,11 @@ describe('the portal from the dashboard, in Hono', () => {
     const created = await post('/api/portal-admin/users', { email: 'persona@gmail.com', name: 'Ana', grants: [] });
     const { user } = await created.json() as { user: { id: string } };
     const request = await createRequest({ userId: user.id, repo: 'acme/tienda', app: 'backoffice', text: 'Un cambio', images: [] });
-    expect((await (await call('/api/pedidos')).json()).requests.map((r: { number: number }) => r.number)).toEqual([request.number]);
-    expect((await call(`/api/pedidos/${request.number}`)).status).toBe(200);
-    expect((await call(`/api/pedidos/${request.number}`, {}, MEMBER)).status).toBe(404);
-    expect((await (await call('/api/pedidos', {}, MEMBER)).json()).requests).toEqual([]);
-    expect((await call('/api/pedidos/abc')).status).toBe(404);
+    expect((await (await call('/api/requests')).json()).requests.map((r: { number: number }) => r.number)).toEqual([request.number]);
+    expect((await call(`/api/requests/${request.number}`)).status).toBe(200);
+    expect((await call(`/api/requests/${request.number}`, {}, MEMBER)).status).toBe(404);
+    expect((await (await call('/api/requests', {}, MEMBER)).json()).requests).toEqual([]);
+    expect((await call('/api/requests/abc')).status).toBe(404);
     expect((await call('/api/nada')).status).toBe(404);
   });
 });

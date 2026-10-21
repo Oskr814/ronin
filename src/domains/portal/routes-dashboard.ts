@@ -14,14 +14,14 @@ import { getRequest, listRequests } from './requests.js';
 
 // The portal from the dashboard, in Hono (#235, stage 6) — server/
 // apps/api/routes.ts mounts them:
-//   /api/pedidos…        the requests of the repos the session sees (#132)
+//   /api/requests…        the requests of the repos the session sees (#132)
 //   /api/portal-admin…   the portal's accounts, for the dashboard's admins (#114)
 
-// GET /api/pedidos                         the requests, newest first
-// GET /api/pedidos/<n>                     one, with its activity and runs
-// GET /api/pedidos/<n>/img/<file>          an image of its conversation
-// GET /api/pedidos/<n>/prototipo/<round>   a prototype's diff
-// GET /api/pedidos/<n>/reproduccion/<round>  a reproduction's diff
+// GET /api/requests                         the requests, newest first
+// GET /api/requests/<n>                     one, with its activity and runs
+// GET /api/requests/<n>/img/<file>          an image of its conversation
+// GET /api/requests/<n>/prototype/<round>     a prototype's diff
+// GET /api/requests/<n>/reproduction/<round>  a reproduction's diff
 // A request of a repo the session sees, or none: one it doesn't see is one
 // that isn't there.
 async function visibleRequest(access: Access, n: string) {
@@ -29,7 +29,7 @@ async function visibleRequest(access: Access, n: string) {
   return request && sees(access, request.repo) ? request : undefined;
 }
 
-export function pedidosRoutes() {
+export function requestsRoutes() {
   const missing = { error: 'no existe ese pedido' };
   return new Hono<DashboardEnv>()
     .get('/', async (c) => {
@@ -52,10 +52,10 @@ export function pedidosRoutes() {
       if (!image) return c.json({ error: 'no existe esa imagen' }, 404);
       return c.body(new Uint8Array(image.data), 200, { 'Content-Type': image.type, 'Cache-Control': 'private, max-age=86400' });
     })
-    .get('/:n/:of{prototipo|reproduccion}/:round', async (c) => {
+    .get('/:n/:of{prototype|reproduction}/:round', async (c) => {
       const request = await visibleRequest(c.env.access, c.req.param('n'));
       if (!request) return c.json(missing, 404);
-      const prototype = c.req.param('of') === 'prototipo';
+      const prototype = c.req.param('of') === 'prototype';
       const patch = await requestPatch(request, Number(c.req.param('round')), prototype ? 'prototype' : 'reproduction');
       if (patch === null) return c.json({ error: prototype ? 'ese prototipo no dejó diff' : 'esa reproducción no dejó diff' }, 404);
       return c.json({ patch }, 200);

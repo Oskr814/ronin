@@ -187,11 +187,11 @@ export async function detail(access: Access, id: string, login: string): Promise
   // `ronin`: its login, so the page can tell its comments apart. `exploration`:
   // an exploration PR, whose page has its findings to review (#93).
   const pr = ctx.ref.kind === 'pr' ? ctx.gh?.prs.find((p) => p.number === ctx.ref.number) : undefined;
-  return { ref: ctx.ref, ronin: config.githubLogin, ...ctx.detail, exploration: Boolean(pr && isExplorationPr(pr)), actions: await actionsOf(ctx, login), pedido: await pedidoOf(ctx.entry.productRepo, ctx.ref) };
+  return { ref: ctx.ref, ronin: config.githubLogin, ...ctx.detail, exploration: Boolean(pr && isExplorationPr(pr)), actions: await actionsOf(ctx, login), pedido: await requestOf(ctx.entry.productRepo, ctx.ref) };
 }
 
 // The portal request an issue or PR came from (#132), to link its page.
-async function pedidoOf(repo: string, ref: { kind: string; number: number; issue?: number; pr?: number }) {
+async function requestOf(repo: string, ref: { kind: string; number: number; issue?: number; pr?: number }) {
   const issue = ref.kind === 'issue' ? ref.number : ref.issue;
   const pr = ref.kind === 'pr' ? ref.number : ref.pr;
   const request = (await listRequests()).find((r) => r.repo === repo && ((issue !== undefined && r.issue?.number === issue) || (pr !== undefined && r.pr === pr)));

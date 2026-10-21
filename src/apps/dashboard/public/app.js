@@ -3539,7 +3539,7 @@ const PED_ICON = {
   mail: '<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>',
   wait: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg>',
 };
-const pedPath = (n, rest = '') => `/api/pedidos/${n}${rest}`;
+const pedPath = (n, rest = '') => `/api/requests/${n}${rest}`;
 const pedImg = (n, file) => pedPath(n, `/img/${encodeURIComponent(file)}`);
 const firstName = (name) => String(name ?? '').split(' ')[0];
 const issueUrl = (repo, number) => (safeRepo(repo) ? `https://github.com/${repo}/issues/${number}` : null);
@@ -3654,7 +3654,7 @@ function openPedido(n) {
 
 async function loadPedidos() {
   try {
-    const { requests } = await api('/api/pedidos');
+    const { requests } = await api('/api/requests');
     S.ped.list = requests;
     S.ped.error = null;
   } catch (error) {
@@ -4035,8 +4035,8 @@ function pedLightbox() {
 }
 
 // A prototype's diff, or a reproduction's (#137).
-async function loadPatch(n, round, of = 'prototipo') {
-  const key = `${n}:${of === 'prototipo' ? '' : 'r'}${round}`;
+async function loadPatch(n, round, of = 'prototype') {
+  const key = `${n}:${of === 'prototype' ? '' : 'r'}${round}`;
   S.ped.patch[key] = { loading: true };
   renderCenter();
   try {
@@ -4085,7 +4085,7 @@ function wirePedidos() {
   center.querySelector('[data-prunx]')?.addEventListener('click', () => { S.ped.run = null; renderCenter(); });
   for (const b of center.querySelectorAll('[data-plb]')) b.onclick = () => { S.ped.lb = { n: S.ped.n, file: b.dataset.plb }; pedLightbox(); };
   for (const b of center.querySelectorAll('[data-ppatch]')) b.onclick = () => loadPatch(S.ped.n, Number(b.dataset.ppatch));
-  for (const b of center.querySelectorAll('[data-prpatch]')) b.onclick = () => loadPatch(S.ped.n, Number(b.dataset.prpatch), 'reproduccion');
+  for (const b of center.querySelectorAll('[data-prpatch]')) b.onclick = () => loadPatch(S.ped.n, Number(b.dataset.prpatch), 'reproduction');
 }
 
 // ---------- deploys (#158)

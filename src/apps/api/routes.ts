@@ -5,7 +5,7 @@ import { explorationRoutes } from '../../domains/explorations/routes.js';
 import { boardRoutes, itemsRoutes } from '../../domains/items/routes.js';
 import { meetingsRoutes } from '../../domains/meetings/routes.js';
 import { metricsRoutes } from '../../domains/metrics/routes.js';
-import { pedidosRoutes, portalAdminRoutes } from '../../domains/portal/routes-dashboard.js';
+import { requestsRoutes, portalAdminRoutes } from '../../domains/portal/routes-dashboard.js';
 import { evidenceRoutes, runsRoutes } from '../../domains/runs/routes.js';
 import type { DashboardEnv } from '../../domains/access/http.js';
 
@@ -14,7 +14,7 @@ import type { DashboardEnv } from '../../domains/access/http.js';
 // and its access. Each group of routes lives with its domain.
 export const dashboardApp = new Hono<DashboardEnv>()
   .notFound((c) => c.json({ error: 'no existe' }, 404))
-  .route('/api/pedidos', pedidosRoutes())
+  .route('/api/requests', requestsRoutes())
   .route('/api/portal-admin', portalAdminRoutes())
   .route('/api/meetings', meetingsRoutes())
   .route('/api/deploys', deployRoutes())

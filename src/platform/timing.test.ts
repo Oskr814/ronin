@@ -46,7 +46,7 @@ describe('the routes', () => {
     expect(routeOf('/api/portal/requests/26/interview')).toBe('/api/portal/requests/:n/interview');
     expect(routeOf('/api/items/acme%2Fapp%23925/detail')).toBe('/api/items/:id/detail');
     expect(routeOf('/api/runs/20261019T214543-portal-request-p25-7d90')).toBe('/api/runs/:id');
-    expect(routeOf('/api/pedidos/9/img/1-1.png')).toBe('/api/pedidos/:n/img/:id');
+    expect(routeOf('/api/requests/9/img/1-1.png')).toBe('/api/requests/:n/img/:id');
     expect(routeOf('/api/snapshot')).toBe('/api/snapshot');
   });
 
