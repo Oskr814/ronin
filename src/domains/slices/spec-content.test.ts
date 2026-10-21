@@ -42,11 +42,11 @@ describe('fetchOriginMain', () => {
 
 describe('readSpecFile', () => {
   it('reads the file as of the global default branch (origin/main) when the active repo has no override', async () => {
-    await readSpecFile('docs/superpowers/specs/foo.md');
+    await readSpecFile('docs/ronin/specs/foo.md');
 
     expect(execFile).toHaveBeenCalledWith(
       'git',
-      ['show', 'origin/main:docs/superpowers/specs/foo.md'],
+      ['show', 'origin/main:docs/ronin/specs/foo.md'],
       { cwd: '/tmp/repo' },
       expect.any(Function),
     );
@@ -55,11 +55,11 @@ describe('readSpecFile', () => {
   it("reads the file as of the active repo's own worktreeBaseRef override", async () => {
     activeRepo.mockReturnValue({ productRepoPath: '/tmp/repo', worktreeBaseRef: 'origin/odoo-main' });
 
-    await readSpecFile('docs/superpowers/specs/foo.md');
+    await readSpecFile('docs/ronin/specs/foo.md');
 
     expect(execFile).toHaveBeenCalledWith(
       'git',
-      ['show', 'origin/odoo-main:docs/superpowers/specs/foo.md'],
+      ['show', 'origin/odoo-main:docs/ronin/specs/foo.md'],
       { cwd: '/tmp/repo' },
       expect.any(Function),
     );

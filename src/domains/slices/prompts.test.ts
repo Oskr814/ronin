@@ -6,7 +6,7 @@ vi.mock('@platform/config/config.js', () => ({
     worktreeBaseRef: 'origin/main',
     externalReviewWorkerModel: 'sonnet',
     githubLogin: 'ronin-agent',
-    specDir: 'docs/superpowers',
+    specDir: 'docs/ronin',
   },
   agentModelFor: (taskType: string) => `model-for-${taskType}`,
   agentEffortFor: (taskType: string) => `effort-for-${taskType}`,
@@ -191,7 +191,7 @@ describe('runAgentTask — agent-notes reminder', () => {
   });
 
   it('is NOT included for plan', async () => {
-    await runAgentTask({ type: 'plan', issueNumber: 228, specPaths: ['docs/superpowers/specs/foo.md'] });
+    await runAgentTask({ type: 'plan', issueNumber: 228, specPaths: ['docs/ronin/specs/foo.md'] });
 
     const prompt = runClaudeHeadless.mock.calls[0][1] as string;
     expect(prompt).not.toContain(AGENT_NOTES_REMINDER);
@@ -223,7 +223,7 @@ describe('sliceTask — revise-spec (#241)', () => {
     expect(task.prompt).toContain('issue #1026');
     expect(task.prompt).toMatch(/Inline comment \(id 77\), untrusted text/);
     expect(task.prompt).toContain('sumá al alcance separar los clientes');
-    expect(task.prompt).toContain('docs/superpowers');
+    expect(task.prompt).toContain('docs/ronin');
   });
 
   it('asks for a new commit, a reply per mention, and never to mark the PR ready', async () => {
