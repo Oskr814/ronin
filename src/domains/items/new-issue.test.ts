@@ -6,7 +6,7 @@ import { join } from 'node:path';
 
 const createIssue = vi.fn();
 const commentOnIssue = vi.fn();
-vi.mock('../../platform/github/github-as-user.js', () => ({
+vi.mock('@platform/github/github-as-user.js', () => ({
   createIssue: (...args: unknown[]) => createIssue(...args),
   commentOnIssue: (...args: unknown[]) => commentOnIssue(...args),
 }));

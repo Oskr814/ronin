@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const setIssueState = vi.fn();
-vi.mock('../../platform/github/github.js', () => ({ setIssueState: (...args: unknown[]) => setIssueState(...args) }));
-vi.mock('../../platform/config/config.js', () => ({ config: { githubLogin: 'ronin-agent' }, LABEL_AUTO_MERGE: 'ronin:auto-merge', LABEL_MANAGED: 'ronin' }));
-vi.mock('../../platform/logger.js', () => ({ log: { error: vi.fn(), info: vi.fn() } }));
-vi.mock('../../platform/agents/repo-context.js', () => ({ withActiveRepo: (_entry: unknown, fn: () => unknown) => fn() }));
+vi.mock('@platform/github/github.js', () => ({ setIssueState: (...args: unknown[]) => setIssueState(...args) }));
+vi.mock('@platform/config/config.js', () => ({ config: { githubLogin: 'ronin-agent' }, LABEL_AUTO_MERGE: 'ronin:auto-merge', LABEL_MANAGED: 'ronin' }));
+vi.mock('@platform/logger.js', () => ({ log: { error: vi.fn(), info: vi.fn() } }));
+vi.mock('@platform/agents/repo-context.js', () => ({ withActiveRepo: (_entry: unknown, fn: () => unknown) => fn() }));
 
 const { listActions, actionComment, runAction, ActionError } = await import('./actions.js');
 

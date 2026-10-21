@@ -1,13 +1,13 @@
-import { listIssueComments, listReviewComments, replyToComment, type Comment } from '../../platform/github/github.js';
-import { isProcessed, markProcessed, unprocessed } from '../../platform/state/processed-comments.js';
+import { listIssueComments, listReviewComments, replyToComment, type Comment } from '@platform/github/github.js';
+import { isProcessed, markProcessed, unprocessed } from '@platform/state/processed-comments.js';
 import { classifyMetaCommand, renderMetaReply, type CommandContext } from './help.js';
-import { config } from '../../platform/config/config.js';
-import { activeRepo } from '../../platform/agents/repo-context.js';
+import { config } from '@platform/config/config.js';
+import { activeRepo } from '@platform/agents/repo-context.js';
 import { launchPreviewWorker } from '../previews/index.js';
 import { applyAutoMergeCommand, type AutoMergeAction } from './auto-merge.js';
 import { launchConflictsWorker } from './conflicts.js';
-import { log } from '../../platform/logger.js';
-import { tryLockResource, unlockResource } from '../../platform/locks/locks.js';
+import { log } from '@platform/logger.js';
+import { tryLockResource, unlockResource } from '@platform/locks/locks.js';
 
 export function mentionsHandle(body: string, handle: string): boolean {
   // `handle` is not escaped for regex metacharacters on purpose: it comes from

@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import type { RequestDetail, RequestRow } from '../../api.js';
+import type { RequestDetail, RequestRow } from '@apps/dashboard/src/api.js';
 
 // What the list and a request's page share: the states, the steps a request
 // goes through and who it waits on, written as the portal's people and the
@@ -27,11 +27,11 @@ export const CLOSED = ['done', 'resolved', 'declined', 'cancelled'];
 // A reported error's tries at reproducing it (#137), and how many it gets.
 export const REPRODUCTIONS = 2;
 
-export { ICON } from '../../lib/icons.js';
+export { ICON } from '@apps/dashboard/src/lib/icons.js';
 
 export const imagePath = (n: number, file: string) => `/api/requests/${n}/img/${encodeURIComponent(file)}`;
 export const firstName = (name: string | null | undefined) => String(name ?? '').split(' ')[0];
-export { repoShort } from '../../lib/format.js';
+export { repoShort } from '@apps/dashboard/src/lib/format.js';
 const safeRepo = (repo: string) => /^[\w.-]+\/[\w.-]+$/.test(repo);
 export const issueUrl = (repo: string, number: number) => (safeRepo(repo) ? `https://github.com/${repo}/issues/${number}` : null);
 export const prUrl = (repo: string, number: number) => (safeRepo(repo) ? `https://github.com/${repo}/pull/${number}` : null);

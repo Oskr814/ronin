@@ -1,20 +1,20 @@
 import { join, normalize } from 'node:path';
-import { activeRepo } from '../../platform/agents/repo-context.js';
+import { activeRepo } from '@platform/agents/repo-context.js';
 import { appDown, appRerun, appUp, APP_STATE_DIR, stepLabel, type AppSession } from '../product-app/index.js';
 import { APP_MANIFEST_FILE, appsTouched, parseAppManifest, publicizeTemplate, publicPortsIn, publicUrl, stepsToRerun, type AppDefinition, type AppStep, type AppUser, type TemplateContext } from '../product-app/index.js';
-import { removeWorktreeDir } from '../../platform/git/worktree.js';
-import { commentOnSpecPr, listOpenPrHeads, type PrHead } from '../../platform/github/github.js';
-import { runAgentTask } from '../../platform/agents/agent-task.js';
+import { removeWorktreeDir } from '@platform/git/worktree.js';
+import { commentOnSpecPr, listOpenPrHeads, type PrHead } from '@platform/github/github.js';
+import { runAgentTask } from '@platform/agents/agent-task.js';
 import { previewTask, type PreviewTask } from './prompts.js';
 import { parseSeedCatalog, readSeedCatalog, saveSeedCatalog, seedCatalogPath } from './seed-catalog.js';
 import { HELP_FOOTER_MARKER } from '../commands/index.js';
-import { config } from '../../platform/config/config.js';
-import { launchWorker } from '../../platform/workers/worker-launch.js';
+import { config } from '@platform/config/config.js';
+import { launchWorker } from '@platform/workers/worker-launch.js';
 import { parsePortRange, PreviewReservations } from './reservations.js';
-import { log } from '../../platform/logger.js';
-import { previewRunGroup, withRunGroup } from '../../platform/agents/run-group.js';
-import { worktreeLock } from '../../platform/workers/worktree-lock.js';
-import { host } from '../../platform/host/host.js';
+import { log } from '@platform/logger.js';
+import { previewRunGroup, withRunGroup } from '@platform/agents/run-group.js';
+import { worktreeLock } from '@platform/workers/worktree-lock.js';
+import { host } from '@platform/host/host.js';
 
 
 // `/preview [app]` on a PR: ronin brings the app up from the PR's head, with

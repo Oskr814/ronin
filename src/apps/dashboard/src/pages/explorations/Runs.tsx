@@ -1,10 +1,10 @@
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useRef } from 'react';
-import { ApiError, client, ok } from '../../api.js';
-import { useShell } from '../../shell/hooks.js';
-import { when } from '../../lib/format.js';
-import { Dot, duration, money, RunDot, Since, Transcript, typeName } from '../../lib/runs.js';
-import { useViewState } from '../../lib/view-state.js';
+import { ApiError, client, ok } from '@apps/dashboard/src/api.js';
+import { useShell } from '@apps/dashboard/src/shell/hooks.js';
+import { when } from '@apps/dashboard/src/lib/format.js';
+import { Dot, duration, money, RunDot, Since, Transcript, typeName } from '@apps/dashboard/src/lib/runs.js';
+import { useViewState } from '@apps/dashboard/src/lib/view-state.js';
 import { at, RUNS_EVERY_MS } from './model.js';
 
 // An app's exploration runs (#155, 2/4), with the agents of each: one opens

@@ -1,5 +1,5 @@
-import type { Snapshot, Today } from '../../api.js';
-import { DAY_MS } from '../../lib/format.js';
+import type { Snapshot, Today } from '@apps/dashboard/src/api.js';
+import { DAY_MS } from '@apps/dashboard/src/lib/format.js';
 
 export type Cycle = Today['cycles'][number];
 export type Item = Snapshot['items'][number];

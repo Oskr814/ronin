@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
-import { config } from '../../platform/config/config.js';
-import { loadRepos } from '../../platform/config/repos.js';
-import { adminsOnly, anyObject, jsonBody, onError, onlyJson } from '../../platform/http/middleware.js';
+import { config } from '@platform/config/config.js';
+import { loadRepos } from '@platform/config/repos.js';
+import { adminsOnly, anyObject, jsonBody, onError, onlyJson } from '@platform/http/middleware.js';
 import type { DashboardEnv } from '../access/http.js';
 import { sees, type Access } from '../access/access.js';
 import { HISTORY_DAYS } from '../runs/data.js';

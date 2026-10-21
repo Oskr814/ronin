@@ -1,18 +1,18 @@
 import { join } from 'node:path';
-import { runAgentTask } from '../../platform/agents/agent-task.js';
-import { config } from '../../platform/config/config.js';
-import { listOpenIssues } from '../../platform/github/github.js';
-import { linearKey, teamContext } from '../../platform/linear/linear-api.js';
-import { log } from '../../platform/logger.js';
-import { sendMail } from '../../platform/notify/notifier.js';
-import { activeRepo } from '../../platform/agents/repo-context.js';
-import { removeWorktreeDir } from '../../platform/git/worktree.js';
+import { runAgentTask } from '@platform/agents/agent-task.js';
+import { config } from '@platform/config/config.js';
+import { listOpenIssues } from '@platform/github/github.js';
+import { linearKey, teamContext } from '@platform/linear/linear-api.js';
+import { log } from '@platform/logger.js';
+import { sendMail } from '@platform/notify/notifier.js';
+import { activeRepo } from '@platform/agents/repo-context.js';
+import { removeWorktreeDir } from '@platform/git/worktree.js';
 import { teamTo } from '../portal/notify.js';
 import { MEETINGS_FROM_NAME, meetingMail } from './mail.js';
 import { addEvent, errorLine, getMeeting, listMeetings, noteEvent, noteLines, readNotes, updateMeeting, type Meeting } from './meetings.js';
 import { meetingTask } from './prompts.js';
 import { parseProposals, proposalCount } from './proposals.js';
-import { host } from '../../platform/host/host.js';
+import { host } from '@platform/host/host.js';
 
 
 // ronin reads a meeting's notes (#62) against what already exists — the

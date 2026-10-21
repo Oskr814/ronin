@@ -1,10 +1,10 @@
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
-import { ApiError, client, ok, type MeetingRow } from '../../api.js';
-import { useSession, useShell } from '../../shell/hooks.js';
-import { repoShort, when } from '../../lib/format.js';
-import { Dot } from '../../lib/runs.js';
-import { ago, useNow } from '../../../../../ui/time.js';
+import { ApiError, client, ok, type MeetingRow } from '@apps/dashboard/src/api.js';
+import { useSession, useShell } from '@apps/dashboard/src/shell/hooks.js';
+import { repoShort, when } from '@apps/dashboard/src/lib/format.js';
+import { Dot } from '@apps/dashboard/src/lib/runs.js';
+import { ago, useNow } from '@ui/time.js';
 import { plural, source, STATUS } from './model.js';
 import { Upload } from './Upload.js';
 

@@ -1,9 +1,9 @@
 import { Hono } from 'hono';
-import { log } from '../../platform/logger.js';
+import { log } from '@platform/logger.js';
 import { deploysView, parseRelease, planBoardRelease, publishBoardRelease } from './board.js';
 import { can } from '../access/team.js';
 import { refusal, visibleRepos } from '../access/visible.js';
-import { anyObject, jsonBody, onError, onlyJson, repoParam } from '../../platform/http/middleware.js';
+import { anyObject, jsonBody, onError, onlyJson, repoParam } from '@platform/http/middleware.js';
 import type { DashboardEnv } from '../access/http.js';
 
 // Despliegues (#158) from the dashboard, in Hono (#235, stage 6) — server/

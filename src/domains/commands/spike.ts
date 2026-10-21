@@ -1,6 +1,6 @@
-import { listOpenUnmanagedIssues, type Comment } from '../../platform/github/github.js';
+import { listOpenUnmanagedIssues, type Comment } from '@platform/github/github.js';
 import { findTrustedIssueCommands, parseExploreCommand, parsePrototypeCommand, parseSpecCommand, parseSpikeCommand } from './mentions.js';
-import { log } from '../../platform/logger.js';
+import { log } from '@platform/logger.js';
 
 export interface SpikeCandidate {
   issueNumber: number;

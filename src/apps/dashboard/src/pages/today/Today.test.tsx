@@ -3,10 +3,10 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { act, cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Snapshot } from '../../api.js';
-import { setProject } from '../../shell/hooks.js';
-import { queryClient, SNAPSHOT_KEY } from '../../shell/state.js';
-import { resetShell, showPage } from '../../test-shell.js';
+import type { Snapshot } from '@apps/dashboard/src/api.js';
+import { setProject } from '@apps/dashboard/src/shell/hooks.js';
+import { queryClient, SNAPSHOT_KEY } from '@apps/dashboard/src/shell/state.js';
+import { resetShell, showPage } from '@apps/dashboard/src/test-shell.js';
 import { Today } from './Today.js';
 
 // Invented data: two repos, a day of runs, a Linear cycle each.

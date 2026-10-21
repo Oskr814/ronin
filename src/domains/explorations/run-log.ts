@@ -1,8 +1,8 @@
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { logsDir } from '../../platform/agents/run-files.js';
+import { logsDir } from '@platform/agents/run-files.js';
 import type { RunSummary } from './run.js';
-import { writeFileAtomic } from '../../platform/fs/atomic-json.js';
+import { writeFileAtomic } from '@platform/fs/atomic-json.js';
 
 // The runner's record of each exploration run (#155), for the dashboard's
 // Corridas: who started it, what it explored, what it proposed and how it

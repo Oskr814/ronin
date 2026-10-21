@@ -8,7 +8,13 @@
     "skipLibCheck": true,
     "outDir": "dist",
     "rootDir": "src",
-    "noEmitOnError": true
+    "noEmitOnError": true,
+    "paths": {
+      "@apps/*": ["./src/apps/*"],
+      "@domains/*": ["./src/domains/*"],
+      "@platform/*": ["./src/platform/*"],
+      "@ui/*": ["./src/ui/*"]
+    }
   },
   "include": [
     "src"

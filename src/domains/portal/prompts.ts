@@ -1,5 +1,5 @@
-import type { AgentTask, PreparedTask } from '../../platform/agents/agent-task.js';
-import { fence, fenceBlock, REALISTIC_DATA_RULE, repoUrl, UNTRUSTED_APP_WARNING } from '../../platform/agents/prompts.js';
+import type { AgentTask, PreparedTask } from '@platform/agents/agent-task.js';
+import { fence, fenceBlock, REALISTIC_DATA_RULE, repoUrl, UNTRUSTED_APP_WARNING } from '@platform/agents/prompts.js';
 import { prototypeSteps, runningApp, type PrototypeBrowser } from '../commands/prompts.js';
 
 // What the agent is told for each task of a request from the portal (#114);

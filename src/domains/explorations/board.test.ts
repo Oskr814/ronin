@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('../../platform/logger.js', () => ({ log: { error: vi.fn(), info: vi.fn() } }));
-vi.mock('../../platform/config/config.js', () => ({ config: { githubLogin: 'ronin-agent', exploreNightWindow: '01:00-06:00', exploreTimezone: 'America/Tegucigalpa', worktreeBaseRef: 'origin/main', exploreFunctionsPerNight: 3 } }));
+vi.mock('@platform/logger.js', () => ({ log: { error: vi.fn(), info: vi.fn() } }));
+vi.mock('@platform/config/config.js', () => ({ config: { githubLogin: 'ronin-agent', exploreNightWindow: '01:00-06:00', exploreTimezone: 'America/Tegucigalpa', worktreeBaseRef: 'origin/main', exploreFunctionsPerNight: 3 } }));
 const review = vi.fn();
 const branchFile = vi.fn();
 vi.mock('./review.js', () => ({
@@ -10,7 +10,7 @@ vi.mock('./review.js', () => ({
   isExplorationPr: (pr: { headRefName: string }) => pr.headRefName.startsWith('ronin/exploration/'),
 }));
 const nights = vi.fn();
-vi.mock('../../platform/state/local-state.js', () => ({ getNightlyExploration: () => nights(), setNightlyExploration: vi.fn() }));
+vi.mock('@platform/state/local-state.js', () => ({ getNightlyExploration: () => nights(), setNightlyExploration: vi.fn() }));
 
 const { buildExplorationRuns, countFindingCards, explorationList, explorationRows, exploreNow, inventoryViewOf, nextNightly, parseExploreNow, resetExploreNow, runApp, ExploreNowError } = await import('./board.js');
 const { parseNightWindow } = await import('./schedule.js');

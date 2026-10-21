@@ -1,9 +1,9 @@
-import { config } from '../../platform/config/config.js';
-import { withResourceLock } from '../../platform/locks/locks.js';
-import { log } from '../../platform/logger.js';
-import { withActiveRepo, type RepoEntry } from '../../platform/agents/repo-context.js';
+import { config } from '@platform/config/config.js';
+import { withResourceLock } from '@platform/locks/locks.js';
+import { log } from '@platform/logger.js';
+import { withActiveRepo, type RepoEntry } from '@platform/agents/repo-context.js';
 import { DeployError, followDeploys, listDeploys, pendingChanges, planRelease, problemText, publishRelease, readRepo, type DeployRecord, type RepoRead, type Pending, type PendingChange, type Plan, type ReleaseRequest } from './index.js';
-import { DomainError } from '../../platform/errors.js';
+import { DomainError } from '@platform/errors.js';
 
 // The dashboard's deploys (#158): each repo with `deploy` in repos.json,
 // what's merged and not deployed yet, its last releases and how their

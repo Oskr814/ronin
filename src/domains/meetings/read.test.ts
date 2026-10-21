@@ -1,19 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { readFile, rm, writeFile } from 'node:fs/promises';
-import { config } from '../../platform/config/config.js';
-import { withActiveRepo, type RepoEntry } from '../../platform/agents/repo-context.js';
+import { config } from '@platform/config/config.js';
+import { withActiveRepo, type RepoEntry } from '@platform/agents/repo-context.js';
 
 // The agent, GitHub, Linear, git and Gmail are stand-ins: what's checked is
 // what ronin gives the agent and what it makes of its answer.
 const runAgentTask = vi.fn();
-vi.mock('../../platform/agents/agent-task.js', () => ({ runAgentTask: (task: unknown) => runAgentTask(task) }));
+vi.mock('@platform/agents/agent-task.js', () => ({ runAgentTask: (task: unknown) => runAgentTask(task) }));
 const listOpenIssues = vi.fn();
-vi.mock('../../platform/github/github.js', () => ({ listOpenIssues: () => listOpenIssues() }));
+vi.mock('@platform/github/github.js', () => ({ listOpenIssues: () => listOpenIssues() }));
 const teamContext = vi.fn();
-vi.mock('../../platform/linear/linear-api.js', () => ({ linearKey: (e: RepoEntry) => (e.linear ? 'lin_key' : null), teamContext: () => teamContext() }));
+vi.mock('@platform/linear/linear-api.js', () => ({ linearKey: (e: RepoEntry) => (e.linear ? 'lin_key' : null), teamContext: () => teamContext() }));
 const sendMail = vi.fn();
-vi.mock('../../platform/notify/notifier.js', () => ({ sendMail: (...args: unknown[]) => sendMail(...args) }));
-vi.mock('../../platform/git/worktree.js', () => ({ removeWorktreeDir: async () => {} }));
+vi.mock('@platform/notify/notifier.js', () => ({ sendMail: (...args: unknown[]) => sendMail(...args) }));
+vi.mock('@platform/git/worktree.js', () => ({ removeWorktreeDir: async () => {} }));
 const git = vi.fn();
 vi.mock('node:child_process', async (importOriginal) => ({
   ...(await importOriginal<typeof import('node:child_process')>()),

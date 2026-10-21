@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { RouteTimings, timed } from '../../../platform/timing.js';
+import { RouteTimings, timed } from '@platform/timing.js';
 
 const metric = vi.fn();
-vi.mock('../../../platform/logger.js', () => ({ log: { info: vi.fn(), error: vi.fn(), metric: (...a: unknown[]) => metric(...a) } }));
+vi.mock('@platform/logger.js', () => ({ log: { info: vi.fn(), error: vi.fn(), metric: (...a: unknown[]) => metric(...a) } }));
 
 process.env.SLOW_REQUEST_MS = '20';
 const { timedRequests } = await import('./timing.js');

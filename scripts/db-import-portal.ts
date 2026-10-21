@@ -3,10 +3,10 @@
 // 2), with their ids and numbers. Images and prototype diffs stay where they
 // are (the database doesn't keep them), and so do the JSON files, as a
 // backup. Safe to run again. Ends comparing both.
-import { closeDb, getDb } from '../src/platform/db/db.js';
-import { migrateToLatest } from '../src/platform/db/migrate.js';
-import { fileUsers, listUsers, putUsers } from '../src/domains/portal/accounts.js';
-import { fileRequests, listRequests, putRequest } from '../src/domains/portal/requests.js';
+import { closeDb, getDb } from '@platform/db/db.js';
+import { migrateToLatest } from '@platform/db/migrate.js';
+import { fileUsers, listUsers, putUsers } from '@domains/portal/accounts.js';
+import { fileRequests, listRequests, putRequest } from '@domains/portal/requests.js';
 import { sameContent } from './db-compare.js';
 
 const db = getDb();

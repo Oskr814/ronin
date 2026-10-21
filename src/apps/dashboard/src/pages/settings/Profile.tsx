@@ -1,6 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { client, ok } from '../../api.js';
-import { setTheme, useRepoColor, useShell } from '../../shell/hooks.js';
+import { client, ok } from '@apps/dashboard/src/api.js';
+import { setTheme, useRepoColor, useShell } from '@apps/dashboard/src/shell/hooks.js';
 import { onCommit, Row, Sec, SectionLink, Switch, useChange } from './parts.js';
 import { EVENTS, type Notifications as NotificationsData, type Page } from './model.js';
 

@@ -3,11 +3,11 @@
 // database (#235, stage 3.3): its claims, its comments done, its block
 // reasons… The files stay where they are, as a backup. Safe to run again
 // (each repo's rows are replaced by its file). Ends comparing both.
-import { closeDb, getDb } from '../src/platform/db/db.js';
-import { migrateToLatest } from '../src/platform/db/migrate.js';
-import { fromEntries, readStateDb, toEntries, writeStateDb } from '../src/platform/state/local-state-db.js';
-import { readStateFile, statePath } from '../src/platform/state/local-state.js';
-import { loadRepos } from '../src/platform/config/repos.js';
+import { closeDb, getDb } from '@platform/db/db.js';
+import { migrateToLatest } from '@platform/db/migrate.js';
+import { fromEntries, readStateDb, toEntries, writeStateDb } from '@platform/state/local-state-db.js';
+import { readStateFile, statePath } from '@platform/state/local-state.js';
+import { loadRepos } from '@platform/config/repos.js';
 import { sameContent } from './db-compare.js';
 
 const db = getDb();

@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { enough, highest, resetAccessCache, sees, sessionAccess, type Permission } from './access.js';
-import { GithubUserError } from '../../platform/github/github-as-user.js';
+import { GithubUserError } from '@platform/github/github-as-user.js';
 
-vi.mock('../../platform/logger.js', () => ({ log: { error: vi.fn(), info: vi.fn() } }));
+vi.mock('@platform/logger.js', () => ({ log: { error: vi.fn(), info: vi.fn() } }));
 
 const ENTRIES = [{ productRepo: 'redmotos/shoppingcart', productRepoPath: '/a' }, { productRepo: 'Bmedical/bmedical', productRepoPath: '/b' }];
 const VALERIA = { login: 'valeria', token: 'gho_v' };

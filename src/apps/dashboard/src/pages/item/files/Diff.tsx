@@ -1,8 +1,8 @@
 import { Fragment, type ComponentType, type MouseEvent, type ReactNode, type RefObject } from 'react';
-import type { SnapshotItem } from '../../../shell/hooks.js';
-import { when } from '../../../lib/format.js';
-import { Md } from '../../../lib/markdown.js';
-import { useSession } from '../../../shell/hooks.js';
+import type { SnapshotItem } from '@apps/dashboard/src/shell/hooks.js';
+import { when } from '@apps/dashboard/src/lib/format.js';
+import { Md } from '@apps/dashboard/src/lib/markdown.js';
+import { useSession } from '@apps/dashboard/src/shell/hooks.js';
 import { useExpanded } from '../Doc.js';
 import { Avatar } from '../model.js';
 import type { Content } from './Files.js';

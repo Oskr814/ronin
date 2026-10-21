@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import type { Access } from '../../../domains/access/access.js';
-import type { Session } from '../../../domains/access/http.js';
+import type { Access } from '@domains/access/access.js';
+import type { Session } from '@domains/access/http.js';
 import { dashboardApp } from '../routes.js';
 import { answer } from './hono.js';
 

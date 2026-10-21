@@ -1,9 +1,9 @@
-import { config } from '../../platform/config/config.js';
-import { log } from '../../platform/logger.js';
-import type { RepoEntry } from '../../platform/agents/repo-context.js';
-import { accountName, listUsage, type AccountUsage } from '../../platform/claude/claude-usage.js';
-import { accountPlan, PLANS, planOf, PRICE_MAX_USD, validPrice, type AccountPlan } from '../../platform/claude/claude-plans.js';
-import { readSettings, updateSettings } from '../../platform/config/settings-store.js';
+import { config } from '@platform/config/config.js';
+import { log } from '@platform/logger.js';
+import type { RepoEntry } from '@platform/agents/repo-context.js';
+import { accountName, listUsage, type AccountUsage } from '@platform/claude/claude-usage.js';
+import { accountPlan, PLANS, planOf, PRICE_MAX_USD, validPrice, type AccountPlan } from '@platform/claude/claude-plans.js';
+import { readSettings, updateSettings } from '@platform/config/settings-store.js';
 import { SettingsError, record } from './settings.js';
 
 // Ajustes → Cuentas de Claude (#234, stage 1), admins only:

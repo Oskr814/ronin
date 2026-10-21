@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { log } from '../../../platform/logger.js';
-import { measure, routeOf, RouteTimings, serverTiming, spansOf, writeTimings } from '../../../platform/timing.js';
+import { log } from '@platform/logger.js';
+import { measure, routeOf, RouteTimings, serverTiming, spansOf, writeTimings } from '@platform/timing.js';
 
 // Every request of the API, measured (#235, stage 1): a Server-Timing header
 // on its answer, a log line when it's slow, and a summary per route every

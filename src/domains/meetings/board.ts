@@ -1,7 +1,7 @@
-import type { RepoEntry } from '../../platform/agents/repo-context.js';
+import type { RepoEntry } from '@platform/agents/repo-context.js';
 import type { RunSummary } from '../runs/data.js';
 import { ExtractError, extractFile, extractPasted, MAX_FILE_BYTES, ORIGINAL_EXT, readNotes, readOriginal, type Meeting, type NewMeeting } from './index.js';
-import { DomainError } from '../../platform/errors.js';
+import { DomainError } from '@platform/errors.js';
 
 // The meetings on the dashboard (#62): anyone who sees a repo uploads the
 // notes of one of its meetings, and sees the ones uploaded to it. The notes

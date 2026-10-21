@@ -1,17 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { Access } from '../../../src/domains/access/access.js';
+import type { Access } from '@domains/access/access.js';
 
-vi.mock('../../../src/platform/logger.js', () => ({ log: { info: vi.fn(), error: vi.fn() } }));
-vi.mock('../../../src/platform/config/repos.js', () => ({
+vi.mock('@platform/logger.js', () => ({ log: { info: vi.fn(), error: vi.fn() } }));
+vi.mock('@platform/config/repos.js', () => ({
   loadRepos: async () => [{ productRepo: 'acme/tienda', productRepoPath: '/x', explore: ['web'] }, { productRepo: 'acme/otra', productRepoPath: '/y', explore: ['web'] }],
 }));
-vi.mock('../../../src/domains/items/github.js', () => ({ repoGithub: async () => ({ prs: [] }) }));
+vi.mock('@domains/items/github.js', () => ({ repoGithub: async () => ({ prs: [] }) }));
 // A plain function, not vi.fn: its spy left the rejected promise of a
 // failed launch unhandled.
 const explored: unknown[][] = [];
 let exploreNow: (...args: unknown[]) => Promise<unknown> = async () => ({});
-vi.mock('../../../src/domains/explorations/board.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../../src/domains/explorations/board.js')>()),
+vi.mock('@domains/explorations/board.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@domains/explorations/board.js')>()),
   liveRuns: async () => new Map(),
   explorationList: async (entries: Array<{ productRepo: string }>) => entries.map((e) => ({ repo: e.productRepo, app: 'web' })),
   explorationRunsOf: async () => [{ id: 'r1' }],
@@ -22,8 +22,8 @@ vi.mock('../../../src/domains/explorations/board.js', async (importOriginal) => 
   },
 }));
 
-const { dashboardApp } = await import('../../../src/apps/api/routes.js');
-const { ExploreNowError } = await import('../../../src/domains/explorations/board.js');
+const { dashboardApp } = await import('@apps/api/routes.js');
+const { ExploreNowError } = await import('@domains/explorations/board.js');
 
 const PERMS = { notas: true, aprobar: true, acciones: true, desplegar: false };
 const MEMBER: Access = { admin: false, repos: [{ repo: 'acme/tienda', permission: 'push', perms: PERMS }] };

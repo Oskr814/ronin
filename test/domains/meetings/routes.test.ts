@@ -1,17 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { rm } from 'node:fs/promises';
-import type { Access } from '../../../src/domains/access/access.js';
+import type { Access } from '@domains/access/access.js';
 
-vi.mock('../../../src/platform/logger.js', () => ({ log: { info: vi.fn(), error: vi.fn() } }));
+vi.mock('@platform/logger.js', () => ({ log: { info: vi.fn(), error: vi.fn() } }));
 const launched = vi.fn(async (_n: number) => {});
-vi.mock('../../../src/domains/meetings/launch.js', async (importOriginal) => ({ ...(await importOriginal<typeof import('../../../src/domains/meetings/launch.js')>()), launchMeetingWorker: (n: number) => launched(n) }));
-vi.mock('../../../src/platform/config/repos.js', () => ({
+vi.mock('@domains/meetings/launch.js', async (importOriginal) => ({ ...(await importOriginal<typeof import('@domains/meetings/launch.js')>()), launchMeetingWorker: (n: number) => launched(n) }));
+vi.mock('@platform/config/repos.js', () => ({
   loadRepos: async () => [{ productRepo: 'acme/tienda', productRepoPath: '/x' }, { productRepo: 'acme/otra', productRepoPath: '/y' }],
 }));
 
-const { config } = await import('../../../src/platform/config/config.js');
-const { dashboardApp } = await import('../../../src/apps/api/routes.js');
-const { updateMeeting } = await import('../../../src/domains/meetings/meetings.js');
+const { config } = await import('@platform/config/config.js');
+const { dashboardApp } = await import('@apps/api/routes.js');
+const { updateMeeting } = await import('@domains/meetings/meetings.js');
 
 const ALL = { notas: true, aprobar: true, acciones: true, desplegar: false };
 const MEMBER: Access = { admin: false, repos: [{ repo: 'acme/tienda', permission: 'triage', perms: ALL }] };

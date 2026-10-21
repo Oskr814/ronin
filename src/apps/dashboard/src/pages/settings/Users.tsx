@@ -1,9 +1,9 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { ApiError, client, ok } from '../../api.js';
-import { useRepoColor, useSession, useShell } from '../../shell/hooks.js';
-import { useViewState } from '../../lib/view-state.js';
-import { short } from '../../../../../ui/time.js';
+import { ApiError, client, ok } from '@apps/dashboard/src/api.js';
+import { useRepoColor, useSession, useShell } from '@apps/dashboard/src/shell/hooks.js';
+import { useViewState } from '@apps/dashboard/src/lib/view-state.js';
+import { short } from '@ui/time.js';
 import { AddPerson } from './AddPerson.js';
 import { onCommit, Row, Sec, SectionLink, Switch, useChange } from './parts.js';
 import { appLabel, EVENTS, PERMS, portalStatus, repoShort, setName, SETS, type Person, type SetName, type Team, type User as UserData } from './model.js';

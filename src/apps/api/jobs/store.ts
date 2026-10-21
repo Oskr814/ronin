@@ -1,5 +1,5 @@
 import { sql } from 'kysely';
-import type { Db } from '../../../platform/db/db.js';
+import type { Db } from '@platform/db/db.js';
 
 // The job queue (#235, stage 3): what used to be the cron tick and a
 // process per webhook event, as rows in Postgres that the runner

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import type { RepoEntry } from '../../platform/agents/repo-context.js';
+import type { RepoEntry } from '@platform/agents/repo-context.js';
 import { createMeeting, type Meeting } from './index.js';
 import { meetingOriginal, parseUpload } from './board.js';
 

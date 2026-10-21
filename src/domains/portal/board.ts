@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises';
-import type { RepoEntry } from '../../platform/agents/repo-context.js';
+import type { RepoEntry } from '@platform/agents/repo-context.js';
 import type { PortalUser } from './accounts.js';
 import { prototypePatchPath, requestImagePath, type PortalMessage, type PortalRequest, type RequestEvent, type Verdict } from './requests.js';
 import type { RunSummary } from '../runs/data.js';

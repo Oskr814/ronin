@@ -1,10 +1,10 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { handleAuth, readSession, type AuthConfig, type GithubOAuth } from './auth.js';
-import type { Session } from '../../../domains/access/http.js';
-import type { Access } from '../../../domains/access/access.js';
-import { teamAccess } from '../../../domains/access/team.js';
-import { GithubUserError } from '../../../platform/github/github-as-user.js';
-import { loadRepos } from '../../../platform/config/repos.js';
+import type { Session } from '@domains/access/http.js';
+import type { Access } from '@domains/access/access.js';
+import { teamAccess } from '@domains/access/team.js';
+import { GithubUserError } from '@platform/github/github-as-user.js';
+import { loadRepos } from '@platform/config/repos.js';
 import { handleDashboard } from './dashboard.js';
 import { handleGithubWebhook } from '../webhooks/github.js';
 import { GITHUB_WEBHOOK_PATHS } from './public.js';

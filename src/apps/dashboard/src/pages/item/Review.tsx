@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef, useState } from 'react';
-import { ApiError, client, ok } from '../../api.js';
-import { reviewed, showDoc, useSession, useShell } from '../../shell/hooks.js';
+import { ApiError, client, ok } from '@apps/dashboard/src/api.js';
+import { reviewed, showDoc, useSession, useShell } from '@apps/dashboard/src/shell/hooks.js';
 import { goFile } from './files/model.js';
 import { itemParam, sameLogin, type ItemPage } from './model.js';
 

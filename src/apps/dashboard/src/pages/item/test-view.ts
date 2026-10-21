@@ -1,8 +1,8 @@
 import type { QueryKey } from '@tanstack/react-query';
-import type { Snapshot } from '../../api.js';
-import type { ItemDetail, ItemRun, ShownRun, SnapshotItem } from '../../shell/hooks.js';
-import { detailKey, runKey, runsKey, S } from '../../shell/state.js';
-import { testSnapshot } from '../../test-shell.js';
+import type { Snapshot } from '@apps/dashboard/src/api.js';
+import type { ItemDetail, ItemRun, ShownRun, SnapshotItem } from '@apps/dashboard/src/shell/hooks.js';
+import { detailKey, runKey, runsKey, S } from '@apps/dashboard/src/shell/state.js';
+import { testSnapshot } from '@apps/dashboard/src/test-shell.js';
 import type { Doc } from './model.js';
 
 // An item as the shell would have read it for a page's test: an issue of

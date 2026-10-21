@@ -1,7 +1,7 @@
-import { sameLogin } from '../../lib/item.js';
-import { groupName, runKind, runTitle } from '../../lib/runs.js';
-import { type ItemDetail, type ItemRun, type ItemView, type SnapshotItem, useItem } from '../../shell/hooks.js';
-import { GhIcon } from '../../lib/github.js';
+import { sameLogin } from '@apps/dashboard/src/lib/item.js';
+import { groupName, runKind, runTitle } from '@apps/dashboard/src/lib/runs.js';
+import { type ItemDetail, type ItemRun, type ItemView, type SnapshotItem, useItem } from '@apps/dashboard/src/shell/hooks.js';
+import { GhIcon } from '@apps/dashboard/src/lib/github.js';
 import type { FilesView } from './files/model.js';
 
 // What an item's page (#85) shares: the item as the shell has it, how its

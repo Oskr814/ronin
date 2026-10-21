@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { join } from 'node:path';
-import { host } from '../../platform/host/host.js';
+import { host } from '@platform/host/host.js';
 
 // What previews hold that has to be unique across every repo and every
 // worker at once: a public port on the tailnet, and a slot of the per-app

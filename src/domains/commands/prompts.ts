@@ -1,8 +1,8 @@
-import type { AgentTask, PreparedTask } from '../../platform/agents/agent-task.js';
-import { config } from '../../platform/config/config.js';
-import type { Comment } from '../../platform/github/github.js';
-import { describeMention, fence, fenceBlock, REALISTIC_DATA_RULE, repoUrl, UNTRUSTED_APP_WARNING } from '../../platform/agents/prompts.js';
-import { activeRepo } from '../../platform/agents/repo-context.js';
+import type { AgentTask, PreparedTask } from '@platform/agents/agent-task.js';
+import { config } from '@platform/config/config.js';
+import type { Comment } from '@platform/github/github.js';
+import { describeMention, fence, fenceBlock, REALISTIC_DATA_RULE, repoUrl, UNTRUSTED_APP_WARNING } from '@platform/agents/prompts.js';
+import { activeRepo } from '@platform/agents/repo-context.js';
 import { requestBranch, spikeBranch } from '../slices/index.js';
 
 // What the agent is told for each task a command or a mention on an issue or

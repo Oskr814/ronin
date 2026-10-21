@@ -2,7 +2,7 @@ import { Fragment, type ReactNode } from 'react';
 import { LinearIcon } from '../lib/github.js';
 import { dayMonth } from '../lib/format.js';
 import { clock, Dot, duration, money, RunDot, runTitle } from '../lib/runs.js';
-import { short } from '../../../../ui/time.js';
+import { short } from '@ui/time.js';
 import { Live } from './Live.js';
 import { cycleName, SliceMark } from './Sidebar.js';
 import { currentCycleOf, detailOf, type Item, itemById, itemRuns, linearRepos, MINUTE, repoColor, repoShort, S, safeRepo } from './state.js';

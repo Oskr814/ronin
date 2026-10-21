@@ -1,8 +1,8 @@
-import { activeRepo } from '../../platform/agents/repo-context.js';
+import { activeRepo } from '@platform/agents/repo-context.js';
 import type { ReviewFinding } from './output.js';
-import type { BotThread } from '../../platform/github/github.js';
+import type { BotThread } from '@platform/github/github.js';
 import { slug } from './render.js';
-import { host } from '../../platform/host/host.js';
+import { host } from '@platform/host/host.js';
 
 
 // Which lines of the PR a review comment can be anchored to, and where each

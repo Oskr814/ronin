@@ -1,9 +1,9 @@
-import { activeRepo } from '../../platform/agents/repo-context.js';
-import { config } from '../../platform/config/config.js';
-import { log } from '../../platform/logger.js';
-import { getNightlyExploration, setNightlyExploration } from '../../platform/state/local-state.js';
+import { activeRepo } from '@platform/agents/repo-context.js';
+import { config } from '@platform/config/config.js';
+import { log } from '@platform/logger.js';
+import { getNightlyExploration, setNightlyExploration } from '@platform/state/local-state.js';
 import { exploreWorkerBusy, launchExploreWorker } from './flow.js';
-import { addDays, instantAt, wallClock } from '../../platform/config/timezone.js';
+import { addDays, instantAt, wallClock } from '@platform/config/timezone.js';
 
 // Nightly exploration — docs/DESIGN.md §11.8. No cron of its own: every tick
 // asks "is it night, and is there an app of this repo not explored yet

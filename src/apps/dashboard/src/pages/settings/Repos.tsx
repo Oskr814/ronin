@@ -1,6 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { client, ok } from '../../api.js';
-import { useRepoColor, useShell } from '../../shell/hooks.js';
+import { client, ok } from '@apps/dashboard/src/api.js';
+import { useRepoColor, useShell } from '@apps/dashboard/src/shell/hooks.js';
 import { onCommit, Row, Sec, SectionLink, Source, Switch, useChange } from './parts.js';
 import { repoShort, type Repos } from './model.js';
 import type { Data } from './Settings.js';

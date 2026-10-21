@@ -1,9 +1,9 @@
 import { join } from 'node:path';
 import type { Selectable } from 'kysely';
-import { config } from '../../platform/config/config.js';
-import { onStore, requireDb } from '../../platform/store/backend.js';
-import type { DeploysTable } from '../../platform/db/schema.js';
-import { readJson, withJson } from '../../platform/fs/atomic-json.js';
+import { config } from '@platform/config/config.js';
+import { onStore, requireDb } from '@platform/store/backend.js';
+import type { DeploysTable } from '@platform/db/schema.js';
+import { readJson, withJson } from '@platform/fs/atomic-json.js';
 
 // The deploys ronin published (#158): GitHub has the releases, but only this
 // says what each one carried (which PRs, which portal requests), who

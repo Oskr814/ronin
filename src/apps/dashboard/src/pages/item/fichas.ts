@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
-import { ApiError, client, ok, type Exploration } from '../../api.js';
-import { useShell } from '../../shell/hooks.js';
+import { ApiError, client, ok, type Exploration } from '@apps/dashboard/src/api.js';
+import { useShell } from '@apps/dashboard/src/shell/hooks.js';
 import { itemParam } from './model.js';
 
 // An exploration PR's findings (#93), as its Fichas tab reviews them: read

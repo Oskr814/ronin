@@ -1,10 +1,10 @@
 import { join } from 'node:path';
-import { activeRepo } from '../../platform/agents/repo-context.js';
-import { config } from '../../platform/config/config.js';
-import { getFreePort } from '../../platform/git/worktree.js';
-import { log } from '../../platform/logger.js';
+import { activeRepo } from '@platform/agents/repo-context.js';
+import { config } from '@platform/config/config.js';
+import { getFreePort } from '@platform/git/worktree.js';
+import { log } from '@platform/logger.js';
 import { loadAppDefinition, namedPortsIn, publicizeTemplate, publicPortsIn, renderTemplate, type AppDefinition, type AppStep, type TemplateContext } from './manifest.js';
-import { host } from '../../platform/host/host.js';
+import { host } from '@platform/host/host.js';
 
 
 // Brings an app of the product repo up in a checkout, from its

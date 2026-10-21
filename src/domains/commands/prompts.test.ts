@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { AGENT_NOTES_REMINDER, REALISTIC_DATA_RULE } from '../../platform/agents/prompts.js';
+import { AGENT_NOTES_REMINDER, REALISTIC_DATA_RULE } from '@platform/agents/prompts.js';
 
-vi.mock('../../platform/config/config.js', () => ({
+vi.mock('@platform/config/config.js', () => ({
   config: {
     worktreeBaseRef: 'origin/main',
     externalReviewWorkerModel: 'sonnet',
@@ -13,7 +13,7 @@ vi.mock('../../platform/config/config.js', () => ({
 }));
 
 const activeRepo = vi.fn();
-vi.mock('../../platform/agents/repo-context.js', () => ({
+vi.mock('@platform/agents/repo-context.js', () => ({
   activeRepo: (...args: unknown[]) => activeRepo(...args),
 }));
 
@@ -23,7 +23,7 @@ const ensureExternalReviewWorktree = vi.fn();
 const removeExternalReviewWorktree = vi.fn();
 const ensureTrustedFixWorktree = vi.fn();
 const removeTrustedFixWorktree = vi.fn();
-vi.mock('../../platform/git/worktree.js', () => ({
+vi.mock('@platform/git/worktree.js', () => ({
   ensureWorktree: (...args: unknown[]) => ensureWorktree(...args),
   remoteBranchExists: (...args: unknown[]) => remoteBranchExists(...args),
   ensureExternalReviewWorktree: (...args: unknown[]) => ensureExternalReviewWorktree(...args),
@@ -33,13 +33,13 @@ vi.mock('../../platform/git/worktree.js', () => ({
 }));
 
 const runClaudeHeadless = vi.fn();
-vi.mock('../../platform/claude/claude-runner.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../platform/claude/claude-runner.js')>()),
+vi.mock('@platform/claude/claude-runner.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@platform/claude/claude-runner.js')>()),
   runClaudeHeadless: (...args: unknown[]) => runClaudeHeadless(...args),
 }));
 
 const getPullRequestStatus = vi.fn();
-vi.mock('../../platform/github/github.js', () => ({
+vi.mock('@platform/github/github.js', () => ({
   getPullRequestStatus: (...args: unknown[]) => getPullRequestStatus(...args),
 }));
 
@@ -53,7 +53,7 @@ vi.mock('node:fs/promises', () => ({
 const loadReviewCriteria = vi.fn();
 vi.mock('../review/criteria.js', () => ({ loadReviewCriteria: (...args: unknown[]) => loadReviewCriteria(...args) }));
 
-const { runAgentTask: run } = await import('../../platform/agents/agent-task.js');
+const { runAgentTask: run } = await import('@platform/agents/agent-task.js');
 const { commandTask } = await import('./prompts.js');
 // Each task runs through the real runAgentTask, with its checkout and
 // `claude -p` mocked: what a test reads is the prompt it was handed.

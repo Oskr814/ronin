@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { ApiError, client, ok, type MeetingRow } from '../../api.js';
-import { refresh, useShell } from '../../shell/hooks.js';
+import { ApiError, client, ok, type MeetingRow } from '@apps/dashboard/src/api.js';
+import { refresh, useShell } from '@apps/dashboard/src/shell/hooks.js';
 import { MAX_BYTES } from './model.js';
 
 const kb = (bytes: number) => (bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / 1024 / 1024).toFixed(1).replace('.', ',')} MB`);

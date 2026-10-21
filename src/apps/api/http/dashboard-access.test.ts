@@ -9,29 +9,29 @@ import { join } from 'node:path';
 // name, it doesn't exist.
 const SC = 'redmotos/shoppingcart';
 const BM = 'Bmedical/bmedical';
-vi.mock('../../../platform/config/repos.js', () => ({
+vi.mock('@platform/config/repos.js', () => ({
   loadRepos: async () => [
     { productRepo: SC, productRepoPath: '/tmp/sc', claudeConfigDir: '/home/x/.claude-redmotos' },
     { productRepo: BM, productRepoPath: '/tmp/bm', claudeConfigDir: '/home/x/.claude-bmedical' },
   ],
 }));
-vi.mock('../../../domains/items/github.js', () => ({
+vi.mock('@domains/items/github.js', () => ({
   repoGithub: async (entry: { productRepo: string }) => ({ repo: entry.productRepo, fetchedAt: '', issues: [], openIssues: [{ number: 1, title: `issue de ${entry.productRepo}`, url: '', labels: [] }], prs: [{ number: 2, title: 'PR', url: '', author: 'a', isDraft: false, headRefName: 'feat/x', baseRefName: 'main', reviewDecision: '', checks: [] }], prIssue: {}, previews: [], blocks: {} }),
   forgetGithub: vi.fn(),
 }));
-vi.mock('../../../domains/items/linear.js', () => ({ repoLinear: async () => undefined, cycleView: () => null }));
-vi.mock('../../../domains/items/new-issue.js', async (importOriginal) => ({ ...(await importOriginal<typeof import('../../../domains/items/new-issue.js')>()), repoApps: async () => [] }));
-vi.mock('../../../domains/items/files.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../../domains/items/files.js')>()),
+vi.mock('@domains/items/linear.js', () => ({ repoLinear: async () => undefined, cycleView: () => null }));
+vi.mock('@domains/items/new-issue.js', async (importOriginal) => ({ ...(await importOriginal<typeof import('@domains/items/new-issue.js')>()), repoApps: async () => [] }));
+vi.mock('@domains/items/files.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@domains/items/files.js')>()),
   prFiles: async () => ({ fetchedAt: '', prId: 'PR_2', author: 'a', headSha: 'h', baseSha: 'b', files: [{ path: 'a.ts', status: 'modified', additions: 1, deletions: 0 }], threads: [] }),
   fileContent: async () => 'a\n',
 }));
-vi.mock('../../../domains/items/detail.js', async (importOriginal) => ({ ...(await importOriginal<typeof import('../../../domains/items/detail.js')>()), itemDetail: async () => ({ fetchedAt: '' }) }));
+vi.mock('@domains/items/detail.js', async (importOriginal) => ({ ...(await importOriginal<typeof import('@domains/items/detail.js')>()), itemDetail: async () => ({ fetchedAt: '' }) }));
 
 const dir = mkdtempSync(join(tmpdir(), 'ronin-access-'));
 const run = (runId: string, repo: string) => ({ runId, repo, taskType: 'implement-slice', label: 'x', account: 'a', worktree: '/w', startedAt: new Date().toISOString(), state: 'ok' as const, steps: 1, issueNumber: 1 });
-vi.mock('../../../domains/runs/data.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../../domains/runs/data.js')>()),
+vi.mock('@domains/runs/data.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@domains/runs/data.js')>()),
   listRuns: () => [run('r-sc', SC), run('r-bm', BM)],
   readQueue: () => [{ kind: 'issue', label: '#1', repo: SC, since: '' }, { kind: 'issue', label: '#2', repo: BM, since: '' }],
   readTickInfo: () => ({}),
@@ -39,13 +39,13 @@ vi.mock('../../../domains/runs/data.js', async (importOriginal) => ({
   runPath: (runId: string) => join(dir, `${runId}.jsonl`),
 }));
 
-vi.mock('../../../platform/claude/claude-usage.js', async (importOriginal) => ({ ...(await importOriginal<typeof import('../../../platform/claude/claude-usage.js')>()), listUsage: async () => [{ account: 'redmotos' }, { account: 'bmedical' }] }));
+vi.mock('@platform/claude/claude-usage.js', async (importOriginal) => ({ ...(await importOriginal<typeof import('@platform/claude/claude-usage.js')>()), listUsage: async () => [{ account: 'redmotos' }, { account: 'bmedical' }] }));
 
 const launchMeetingWorker = vi.fn(async (_n: number) => {});
-vi.mock('../../../domains/meetings/launch.js', async (importOriginal) => ({ ...(await importOriginal<typeof import('../../../domains/meetings/launch.js')>()), launchMeetingWorker: (n: number) => launchMeetingWorker(n) }));
+vi.mock('@domains/meetings/launch.js', async (importOriginal) => ({ ...(await importOriginal<typeof import('@domains/meetings/launch.js')>()), launchMeetingWorker: (n: number) => launchMeetingWorker(n) }));
 
 const metricsView = vi.fn(async (repos: string[], days: number, repo: string | null) => ({ repos, days, repo }));
-vi.mock('../../../domains/metrics/index.js', async (importOriginal) => ({ ...(await importOriginal<typeof import('../../../domains/metrics/index.js')>()), metricsView: (...args: [string[], number, string | null]) => metricsView(...args) }));
+vi.mock('@domains/metrics/index.js', async (importOriginal) => ({ ...(await importOriginal<typeof import('@domains/metrics/index.js')>()), metricsView: (...args: [string[], number, string | null]) => metricsView(...args) }));
 
 const { handleDashboard } = await import('./dashboard.js');
 const ACCESS = { admin: false, repos: [{ repo: SC, permission: 'triage' as const }] };
@@ -113,7 +113,7 @@ describe('a session that sees only some repos', () => {
   });
 
   it("sees the portal's requests of its repos only (#132)", async () => {
-    const { createRequest } = await import('../../../domains/portal/requests.js');
+    const { createRequest } = await import('@domains/portal/requests.js');
     const sc = await createRequest({ userId: 'u', repo: SC, app: 'web', text: 'Hola', images: [{ ext: 'png', data: Buffer.from('x') }] });
     const bm = await createRequest({ userId: 'u', repo: BM, app: 'web', text: 'Hola', images: [] });
     expect((await call('/api/requests')).body.requests.map((r: { number: number }) => r.number)).toEqual([sc.number]);
@@ -125,7 +125,7 @@ describe('a session that sees only some repos', () => {
     expect((await call(`/api/requests/${sc.number}/prototype/1`)).status).toBe(404);
     expect((await call(`/api/requests/${sc.number}/reproduction/1`)).status).toBe(404);
     // A reported error's reproduction: in its page, and its diff by round (#137).
-    const { prototypePatchPath, updateRequest: update } = await import('../../../domains/portal/requests.js');
+    const { prototypePatchPath, updateRequest: update } = await import('@domains/portal/requests.js');
     const { mkdir, writeFile } = await import('node:fs/promises');
     const { dirname } = await import('node:path');
     await mkdir(dirname(prototypePatchPath(sc.number, 'r1.diff')), { recursive: true });
@@ -136,7 +136,7 @@ describe('a session that sees only some repos', () => {
     expect((await call(`/api/requests/${sc.number}`)).body).toMatchObject({ bug: { steps: 's', reproductions: [{ round: 1 }] } });
     expect((await call('/api/requests')).body.requests[0]).toMatchObject({ bug: true });
     // The issue it became says so on its page.
-    const { updateRequest } = await import('../../../domains/portal/requests.js');
+    const { updateRequest } = await import('@domains/portal/requests.js');
     await updateRequest(sc.number, (r) => { r.issue = { number: 1, url: '' }; });
     expect((await call(`/api/items/${encodeURIComponent(`${SC}#1`)}/detail`)).body.pedido).toEqual({ number: sc.number, title: 'Hola' });
   });
@@ -150,7 +150,7 @@ describe('a session that sees only some repos', () => {
     expect((await call('/api/meetings', 'POST', { repo: BM, text: notes })).body).toEqual({ error: 'Elige un repo de los que ves.' });
     // The same notes again: which meeting has them.
     expect(await call('/api/meetings', 'POST', { repo: SC, text: `  ${notes}\n` })).toEqual({ status: 409, body: { error: `Esas notas ya se subieron: R-${up.body.number}.`, number: up.body.number } });
-    const { createMeeting, extractPasted } = await import('../../../domains/meetings/index.js');
+    const { createMeeting, extractPasted } = await import('@domains/meetings/index.js');
     const bm = await createMeeting({ repo: BM, by: 'otra', notes: extractPasted(`De Bmedical. ${notes}`) });
     expect((await call('/api/meetings')).body.meetings.map((m: { number: number }) => m.number)).toEqual([up.body.number]);
     expect((await call('/api/snapshot')).body.reunionesPorRevisar).toBe(0);
@@ -162,7 +162,7 @@ describe('a session that sees only some repos', () => {
     expect(launchMeetingWorker).toHaveBeenCalledWith(up.body.number);
     // Asking again: only after a failed reading, and only for its repos.
     expect((await call(`/api/meetings/${up.body.number}/retry`, 'POST', {})).status).toBe(409);
-    const { updateMeeting } = await import('../../../domains/meetings/index.js');
+    const { updateMeeting } = await import('@domains/meetings/index.js');
     await updateMeeting(up.body.number, (m) => { m.status = 'failed'; });
     await updateMeeting(bm.number, (m) => { m.status = 'failed'; });
     expect((await call(`/api/meetings/${bm.number}/retry`, 'POST', {})).status).toBe(404);

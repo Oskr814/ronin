@@ -4,9 +4,9 @@
 // Takes the request as a JSON argument, holds the PR's preview lock while it
 // runs, and answers the comment that asked for it — or the PR, for an
 // update nobody asked for.
-import { commentOnSpecPr, getPrHead, replyToComment } from '../../platform/github/github.js';
-import { config } from '../../platform/config/config.js';
-import { log } from '../../platform/logger.js';
+import { commentOnSpecPr, getPrHead, replyToComment } from '@platform/github/github.js';
+import { config } from '@platform/config/config.js';
+import { log } from '@platform/logger.js';
 import {
   acquirePreviewLock,
   releasePreviewLock,
@@ -20,7 +20,7 @@ import {
   updatePreview,
   type PreviewWorkerRequest,
 } from './preview.js';
-import { runWorker, withProductRepo, workerRequest } from '../../platform/workers/run.js';
+import { runWorker, withProductRepo, workerRequest } from '@platform/workers/run.js';
 
 const request = workerRequest<PreviewWorkerRequest>();
 

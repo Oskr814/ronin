@@ -1,10 +1,10 @@
 import { join, relative } from 'node:path';
-import { activeRepo } from '../../platform/agents/repo-context.js';
-import { config } from '../../platform/config/config.js';
-import { log } from '../../platform/logger.js';
-import { queueExplorationProject } from '../../platform/linear/linear-assign.js';
-import { acceptSubject, repoCommitConvention, type CommitChange, type CommitConvention } from '../../platform/git/commit-style.js';
-import { runAgentTask } from '../../platform/agents/agent-task.js';
+import { activeRepo } from '@platform/agents/repo-context.js';
+import { config } from '@platform/config/config.js';
+import { log } from '@platform/logger.js';
+import { queueExplorationProject } from '@platform/linear/linear-assign.js';
+import { acceptSubject, repoCommitConvention, type CommitChange, type CommitConvention } from '@platform/git/commit-style.js';
+import { runAgentTask } from '@platform/agents/agent-task.js';
 import { explorationTask } from './prompts.js';
 import {
   createIssue,
@@ -13,7 +13,7 @@ import {
   listIssuesWithLabel,
   listOpenPrsByHeadPrefix,
   setPullRequestBody,
-} from '../../platform/github/github.js';
+} from '@platform/github/github.js';
 import {
   EXPLORATION_DIR,
   findingFileName,
@@ -24,7 +24,7 @@ import {
   type Finding,
   type FindingMeta,
 } from './memory.js';
-import { host } from '../../platform/host/host.js';
+import { host } from '@platform/host/host.js';
 
 
 // The rolling exploration PR of docs/DESIGN.md §11.7: one open at a time per

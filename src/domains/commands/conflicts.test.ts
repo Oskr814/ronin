@@ -5,11 +5,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const repo = { productRepo: 'acme/product', productRepoPath: '', worktreeBasePath: '' };
-vi.mock('../../platform/agents/repo-context.js', () => ({ activeRepo: () => repo }));
-vi.mock('../../platform/logger.js', () => ({ log: { error: vi.fn(), info: vi.fn() } }));
-vi.mock('../../platform/config/config.js', () => ({ config: { githubLogin: 'ronin' } }));
+vi.mock('@platform/agents/repo-context.js', () => ({ activeRepo: () => repo }));
+vi.mock('@platform/logger.js', () => ({ log: { error: vi.fn(), info: vi.fn() } }));
+vi.mock('@platform/config/config.js', () => ({ config: { githubLogin: 'ronin' } }));
 const runAgentTask = vi.fn();
-vi.mock('../../platform/agents/agent-task.js', () => ({ runAgentTask: (...args: unknown[]) => runAgentTask(...args) }));
+vi.mock('@platform/agents/agent-task.js', () => ({ runAgentTask: (...args: unknown[]) => runAgentTask(...args) }));
 
 const { resolveConflicts, parseAgentResolution, renderConflictsOutcome } = await import('./conflicts.js');
 

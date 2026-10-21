@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { LinearIssue } from '../../platform/linear/linear-api.js';
+import type { LinearIssue } from '@platform/linear/linear-api.js';
 import type { RepoGithub } from './github.js';
 import { cycleView, type RepoLinear } from './linear.js';
 

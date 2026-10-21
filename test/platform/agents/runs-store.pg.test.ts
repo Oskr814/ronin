@@ -2,11 +2,11 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { setDb, type Db } from '../../../src/platform/db/db.js';
-import { TEST_DATABASE_URL, testDb } from '../../../src/platform/db/testing.js';
-import { RunRecord } from '../../../src/platform/agents/run-record.js';
-import { listRunsDb } from '../../../src/platform/agents/runs-store.js';
-import { listRuns } from '../../../src/domains/runs/data.js';
+import { setDb, type Db } from '@platform/db/db.js';
+import { TEST_DATABASE_URL, testDb } from '@platform/db/testing.js';
+import { RunRecord } from '@platform/agents/run-record.js';
+import { listRunsDb } from '@platform/agents/runs-store.js';
+import { listRuns } from '@domains/runs/data.js';
 
 // The index of the runs in Postgres (#235, stage 3.4): what RunRecord
 // writes, and what the dashboard lists from it.

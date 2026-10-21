@@ -1,4 +1,4 @@
-import { localDay } from '../../platform/agents/run-files.js';
+import { localDay } from '@platform/agents/run-files.js';
 import { itemKey, type RunState, type RunSummary } from '../runs/data.js';
 
 // The dashboard's "Hoy" (#65): every run of the last hours, for the

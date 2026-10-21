@@ -1,8 +1,8 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { client, ok } from '../../api.js';
-import { useShell } from '../../shell/hooks.js';
-import { pct } from '../../lib/format.js';
-import { ago } from '../../../../../ui/time.js';
+import { client, ok } from '@apps/dashboard/src/api.js';
+import { useShell } from '@apps/dashboard/src/shell/hooks.js';
+import { pct } from '@apps/dashboard/src/lib/format.js';
+import { ago } from '@ui/time.js';
 import { onCommit, Row, Sec, useChange } from './parts.js';
 import type { Account, Accounts as AccountsData, UsageWindow } from './model.js';
 import type { Data } from './Settings.js';

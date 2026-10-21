@@ -1,8 +1,8 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { join } from 'node:path';
-import { config } from '../../platform/config/config.js';
-import { readJson, withJson } from '../../platform/fs/atomic-json.js';
-import { onStore, takeTurn } from '../../platform/store/backend.js';
+import { config } from '@platform/config/config.js';
+import { readJson, withJson } from '@platform/fs/atomic-json.js';
+import { onStore, takeTurn } from '@platform/store/backend.js';
 
 // The request portal's accounts (#114): people without GitHub, who enter
 // with their email and a password. Kept in <PORTAL_DATA_DIR>/accounts.json,

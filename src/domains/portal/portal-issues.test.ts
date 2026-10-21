@@ -1,13 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
-import { config, LABEL_AUTO_MERGE, LABEL_PORTAL } from '../../platform/config/config.js';
+import { config, LABEL_AUTO_MERGE, LABEL_PORTAL } from '@platform/config/config.js';
 import { createUser } from './accounts.js';
 import { createRequest, getRequest, prototypePatchPath, requestImagePath, updateRequest, type PortalRequest } from './requests.js';
 
-vi.mock('../../platform/logger.js', () => ({ log: { info: vi.fn(), error: vi.fn() } }));
+vi.mock('@platform/logger.js', () => ({ log: { info: vi.fn(), error: vi.fn() } }));
 const sendMail = vi.fn(async () => {});
-vi.mock('../../platform/notify/notifier.js', () => ({ sendMail: (...args: unknown[]) => sendMail(...(args as [])) }));
+vi.mock('@platform/notify/notifier.js', () => ({ sendMail: (...args: unknown[]) => sendMail(...(args as [])) }));
 const gh = {
   addIssueLabel: vi.fn(async () => {}),
   closeIssueNotPlanned: vi.fn(async (_n?: unknown, _c?: unknown) => true),
@@ -17,14 +17,14 @@ const gh = {
   listIssuesWithLabel: vi.fn(async () => [] as Array<{ number: number; body: string; state: string }>),
   listPrClosingIssues: vi.fn(async () => ({}) as Record<number, number[]>),
 };
-vi.mock('../../platform/github/github.js', () => Object.fromEntries(Object.keys(gh).map((k) => [k, (...args: unknown[]) => (gh as Record<string, (...a: unknown[]) => unknown>)[k](...args)])));
+vi.mock('@platform/github/github.js', () => Object.fromEntries(Object.keys(gh).map((k) => [k, (...args: unknown[]) => (gh as Record<string, (...a: unknown[]) => unknown>)[k](...args)])));
 const publishEvidence = vi.fn(async () => 'abc123');
 vi.mock('../product-app/index.js', () => ({
   publishEvidence: (...args: unknown[]) => publishEvidence(...(args as [])),
   evidenceUrl: (sha: string, path: string) => `https://github.com/redmotos/shoppingcart/blob/${sha}/${path}?raw=true`,
 }));
 const team: { notifyTo?: string[] } = {};
-vi.mock('../../platform/agents/repo-context.js', () => ({ activeRepo: () => ({ productRepo: 'redmotos/shoppingcart', productRepoPath: '/repo', portal: { name: 'Red Motos', apps: { backoffice: { name: 'Backoffice' } }, ...team } }) }));
+vi.mock('@platform/agents/repo-context.js', () => ({ activeRepo: () => ({ productRepo: 'redmotos/shoppingcart', productRepoPath: '/repo', portal: { name: 'Red Motos', apps: { backoffice: { name: 'Backoffice' } }, ...team } }) }));
 
 const { portalIssueBody, issueMarker, openPortalIssue } = await import('./issue.js');
 const { closedReply, DECLINED_REPLY, DONE_REPLY, dropCloseNote, FIX_READY_REPLY, FIXED_REPLY, followPortalIssues, noteClosing, PR_READY_REPLY, RESOLVED_REPLY } = await import('./follow.js');

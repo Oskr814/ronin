@@ -1,5 +1,5 @@
 import { join, matchesGlob } from 'node:path';
-import { host } from '../../platform/host/host.js';
+import { host } from '@platform/host/host.js';
 
 // ronin.app.json, at the root of the product repo: how to bring each of its
 // apps up in a worktree so ronin can use it — see docs/DESIGN.md §11.2. It is

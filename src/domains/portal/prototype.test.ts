@@ -3,14 +3,14 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { config } from '../../platform/config/config.js';
+import { config } from '@platform/config/config.js';
 import type { PrototypeDraft, PrototypeTarget } from '../commands/prototype.js';
 import { createUser } from './accounts.js';
 import { createRequest, getRequest, MAX_PROTOTYPES, prototypePatchPath, requestImagePath, updateRequest } from './requests.js';
 
-vi.mock('../../platform/logger.js', () => ({ log: { info: vi.fn(), error: vi.fn() } }));
+vi.mock('@platform/logger.js', () => ({ log: { info: vi.fn(), error: vi.fn() } }));
 const sendMail = vi.fn(async () => {});
-vi.mock('../../platform/notify/notifier.js', () => ({ sendMail: (...args: unknown[]) => sendMail(...(args as [])) }));
+vi.mock('@platform/notify/notifier.js', () => ({ sendMail: (...args: unknown[]) => sendMail(...(args as [])) }));
 const makePrototype = vi.fn();
 vi.mock('../commands/prototype.js', async (original) => ({
   ...(await original<typeof import('../commands/prototype.js')>()),

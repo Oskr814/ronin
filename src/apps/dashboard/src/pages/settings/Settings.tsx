@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { ApiError, client, ok } from '../../api.js';
-import { type SettingsView, useSession, useSettingsView, useShell } from '../../shell/hooks.js';
+import { ApiError, client, ok } from '@apps/dashboard/src/api.js';
+import { type SettingsView, useSession, useSettingsView, useShell } from '@apps/dashboard/src/shell/hooks.js';
 import { Accounts } from './Accounts.js';
 import { Connections, Log } from './Connections.js';
 import { Notifications, Profile } from './Profile.js';
@@ -9,7 +9,7 @@ import { Account } from './PortalAccount.js';
 import { Repo, RepoList } from './Repos.js';
 import { User, Users } from './Users.js';
 import { Agents, Exploration, General, Previews } from './Values.js';
-import { useViewState } from '../../lib/view-state.js';
+import { useViewState } from '@apps/dashboard/src/lib/view-state.js';
 import { ChangeContext, makeChange } from './parts.js';
 import type { Accounts as AccountsData, Connections as ConnectionsData, LogEntry, Page, Portal, Repos, Team, User as UserData } from './model.js';
 

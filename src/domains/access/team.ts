@@ -1,10 +1,10 @@
 import { join } from 'node:path';
-import { config } from '../../platform/config/config.js';
-import { log } from '../../platform/logger.js';
-import type { RepoEntry } from '../../platform/agents/repo-context.js';
-import { readJson, withJson } from '../../platform/fs/atomic-json.js';
+import { config } from '@platform/config/config.js';
+import { log } from '@platform/logger.js';
+import type { RepoEntry } from '@platform/agents/repo-context.js';
+import { readJson, withJson } from '@platform/fs/atomic-json.js';
 import { sessionAccess, type Access } from './access.js';
-import type { NotifyEvent } from '../../platform/notify/notifications.js';
+import type { NotifyEvent } from '@platform/notify/notifications.js';
 
 // The team that enters the dashboard with GitHub (#174, stage 2): who they
 // are (their profile), their role and what they can do in each repo. Kept in

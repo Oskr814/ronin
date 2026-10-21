@@ -7,10 +7,10 @@ import { join } from 'node:path';
 import { createTailnetHandler } from './tailnet.js';
 import { sealSession, type AuthConfig, type GithubOAuth } from './auth.js';
 
-vi.mock('../../../platform/config/repos.js', () => ({ loadRepos: async () => [{ productRepo: 'acme/product' }] }));
-vi.mock('../../../domains/items/github.js', () => ({ repoGithub: async () => undefined }));
+vi.mock('@platform/config/repos.js', () => ({ loadRepos: async () => [{ productRepo: 'acme/product' }] }));
+vi.mock('@domains/items/github.js', () => ({ repoGithub: async () => undefined }));
 // Opening by number asks GitHub what it is: here, nothing.
-vi.mock('../../../platform/github/github.js', async (importOriginal) => ({ ...(await importOriginal<typeof import('../../../platform/github/github.js')>()), itemKindOf: async () => null }));
+vi.mock('@platform/github/github.js', async (importOriginal) => ({ ...(await importOriginal<typeof import('@platform/github/github.js')>()), itemKindOf: async () => null }));
 
 const AUTH: AuthConfig = { url: 'https://media.example.ts.net:8443', githubClientId: 'cid', githubClientSecret: 'cs', sessionSecret: 's'.repeat(40), admins: ['oskr814'], allowedUsers: [], sessionDays: 7 };
 // What GitHub would say (access/access.ts): oskr814 is an admin, valeria can triage acme/product, nobody else sees anything.

@@ -1,19 +1,19 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const listReleases = vi.fn();
-vi.mock('../../platform/github/github.js', () => ({
+vi.mock('@platform/github/github.js', () => ({
   listReleases: (...args: unknown[]) => listReleases(...args),
 }));
 
 const getLastChangelogRelease = vi.fn();
 const setLastChangelogRelease = vi.fn();
-vi.mock('../../platform/state/local-state.js', () => ({
+vi.mock('@platform/state/local-state.js', () => ({
   getLastChangelogRelease: (...args: unknown[]) => getLastChangelogRelease(...args),
   setLastChangelogRelease: (...args: unknown[]) => setLastChangelogRelease(...args),
 }));
 
 const activeRepo = vi.fn();
-vi.mock('../../platform/agents/repo-context.js', () => ({
+vi.mock('@platform/agents/repo-context.js', () => ({
   activeRepo: (...args: unknown[]) => activeRepo(...args),
 }));
 

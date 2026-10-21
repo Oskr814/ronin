@@ -1,18 +1,18 @@
 import { closeSync, existsSync, openSync, readFileSync, readSync, readdirSync, statSync } from 'node:fs';
 import { cpus, freemem, loadavg, totalmem } from 'node:os';
 import { join } from 'node:path';
-import { logsDir, localDay } from '../../platform/agents/run-files.js';
-import { getDb } from '../../platform/db/db.js';
-import { pidAlive } from '../../platform/workers/process.js';
-import { listRunsDb, putRun, thisHost } from '../../platform/agents/runs-store.js';
-import { stepText, type RunLine, type RunOutcome, type RunSummary } from '../../platform/agents/run-record.js';
+import { logsDir, localDay } from '@platform/agents/run-files.js';
+import { getDb } from '@platform/db/db.js';
+import { pidAlive } from '@platform/workers/process.js';
+import { listRunsDb, putRun, thisHost } from '@platform/agents/runs-store.js';
+import { stepText, type RunLine, type RunOutcome, type RunSummary } from '@platform/agents/run-record.js';
 
 // What the dashboard reads from this runner's own files (#65): the per-run
 // records (logs/runs/), each account's usage (logs/usage/), the agent slots
 // and what waits for one (.ronin-slots/), and the tick log's metrics. All of
 // it local: what needs GitHub (titles, slices, labels) comes later.
 
-export type { RunLine, RunState, RunSummary } from '../../platform/agents/run-record.js';
+export type { RunLine, RunState, RunSummary } from '@platform/agents/run-record.js';
 
 // How far back the dashboard looks for an item's runs.
 export const HISTORY_DAYS = 14;

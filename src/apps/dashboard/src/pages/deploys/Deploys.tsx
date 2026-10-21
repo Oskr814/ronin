@@ -1,8 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
-import { ApiError, client, ok } from '../../api.js';
-import { useRepoColor, useShell } from '../../shell/hooks.js';
-import { ago, useNow } from '../../../../../ui/time.js';
+import { ApiError, client, ok } from '@apps/dashboard/src/api.js';
+import { useRepoColor, useShell } from '@apps/dashboard/src/shell/hooks.js';
+import { ago, useNow } from '@ui/time.js';
 import { DeployDialog } from './DeployDialog.js';
 import { subject, type Release, type Repo, type Repos } from './model.js';
 

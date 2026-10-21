@@ -8,15 +8,15 @@
 // for it too and gets reproduced (#137). An approved one, or one the
 // team takes, gets its issue in the product repo (issue.ts). Holds the
 // request's lock throughout, so two workers never work the same request.
-import { concurrencyFor, config } from '../../platform/config/config.js';
-import { tryLockResource, unlockResource, withSlots } from '../../platform/locks/locks.js';
+import { concurrencyFor, config } from '@platform/config/config.js';
+import { tryLockResource, unlockResource, withSlots } from '@platform/locks/locks.js';
 import { releasePrototypeLock, waitForPrototypeLock } from '../commands/prototype.js';
 import { classifyRequest, followUpRequest } from './classify.js';
 import { needsIssue, openPortalIssue } from './issue.js';
 import { prototypeRequest } from './prototype.js';
 import { reproduceRequest } from './reproduce.js';
 import { addEvent, addRoninMessage, errorLine, getRequest, noteEvent, updateRequest } from './requests.js';
-import { runWorker, withProductRepo, workerRequest } from '../../platform/workers/run.js';
+import { runWorker, withProductRepo, workerRequest } from '@platform/workers/run.js';
 
 const { number } = workerRequest<{ number?: number }>();
 

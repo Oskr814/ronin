@@ -3,9 +3,9 @@
 // logs — the baseline of #235. Read only.
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { localDay, logsDir } from '../src/platform/agents/run-files.js';
-import { timingsPath, type RouteWindow } from '../src/platform/timing.js';
-import { ms, summarizeRoutes, summarizeTicks, tickMetricsOf } from '../src/platform/timing-report.js';
+import { localDay, logsDir } from '@platform/agents/run-files.js';
+import { timingsPath, type RouteWindow } from '@platform/timing.js';
+import { ms, summarizeRoutes, summarizeTicks, tickMetricsOf } from '@platform/timing-report.js';
 
 const days = Number(process.argv[2]) || 7;
 const dates = Array.from({ length: days }, (_, i) => localDay(new Date(Date.now() - i * 86_400_000)));

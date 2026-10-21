@@ -4,8 +4,8 @@
 // runs, and answers the /explore comment that asked for it, if any. The
 // same process redoes the after images reviewers asked for, which also need
 // the app up.
-import { replyToComment } from '../../platform/github/github.js';
-import { log } from '../../platform/logger.js';
+import { replyToComment } from '@platform/github/github.js';
+import { log } from '@platform/logger.js';
 import {
   acquireExploreLock,
   exploreAndPublish,
@@ -16,7 +16,7 @@ import {
   type ExploreWorkerRequest,
 } from './flow.js';
 import { finishRunRecord, startRunRecord, type ExplorationRunRecord, type ExplorationTrigger } from './run-log.js';
-import { runWorker, withProductRepo, workerRequest } from '../../platform/workers/run.js';
+import { runWorker, withProductRepo, workerRequest } from '@platform/workers/run.js';
 
 const request = workerRequest<ExploreWorkerRequest>();
 

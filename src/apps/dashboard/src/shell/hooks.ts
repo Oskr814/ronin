@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { createContext, useContext, useEffect, useMemo, useSyncExternalStore } from 'react';
-import type { ExplorationListRow, ExplorationRow } from '../../../../domains/explorations/board.js';
-import type { LinearPlanning } from '../../../../platform/linear/linear-api.js';
+import type { ExplorationListRow, ExplorationRow } from '@domains/explorations/board.js';
+import type { LinearPlanning } from '@platform/linear/linear-api.js';
 import type { ItemDetail, ItemRun, ShownRun, Snapshot } from '../api.js';
 import { decidable, docOf, docTabsOf, reviewable } from '../lib/item.js';
 import { md } from '../lib/md.js';

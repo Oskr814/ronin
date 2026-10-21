@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const listTagRuns = vi.fn();
-vi.mock('../../platform/github/github.js', () => ({ listTagRuns: (...args: unknown[]) => listTagRuns(...args) }));
+vi.mock('@platform/github/github.js', () => ({ listTagRuns: (...args: unknown[]) => listTagRuns(...args) }));
 
 const requests = new Map<number, Record<string, unknown>>();
 vi.mock('../portal/requests.js', async (importOriginal) => ({
@@ -14,9 +14,9 @@ const sendRequestsMail = vi.fn();
 vi.mock('../portal/notify.js', () => ({ sendRequestsMail: (...args: unknown[]) => sendRequestsMail(...args) }));
 
 import { rm } from 'node:fs/promises';
-import { config } from '../../platform/config/config.js';
-import { withActiveRepo } from '../../platform/agents/repo-context.js';
-import type { WorkflowRun } from '../../platform/github/github.js';
+import { config } from '@platform/config/config.js';
+import { withActiveRepo } from '@platform/agents/repo-context.js';
+import type { WorkflowRun } from '@platform/github/github.js';
 import { deployState, followDeploys, NO_RUNS_AFTER_MS, RERUN_WINDOW_MS } from './follow.js';
 import { addDeploy, listDeploys, type DeployRecord } from './store.js';
 

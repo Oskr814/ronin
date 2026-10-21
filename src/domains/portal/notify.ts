@@ -1,9 +1,9 @@
 import { readFile } from 'node:fs/promises';
-import { config } from '../../platform/config/config.js';
-import { log } from '../../platform/logger.js';
-import { activeRepo } from '../../platform/agents/repo-context.js';
-import { recipientsFor, type NotifyEvent } from '../../platform/notify/notifications.js';
-import { sendMail, type Mail } from '../../platform/notify/notifier.js';
+import { config } from '@platform/config/config.js';
+import { log } from '@platform/logger.js';
+import { activeRepo } from '@platform/agents/repo-context.js';
+import { recipientsFor, type NotifyEvent } from '@platform/notify/notifications.js';
+import { sendMail, type Mail } from '@platform/notify/notifier.js';
 import type { PortalUser } from './accounts.js';
 import { bigRequestMail, PORTAL_FROM_NAME, teamRequestMail } from './mail.js';
 import { noteEvent, patchOf, prototypePatchPath, requestDir, type PortalRequest } from './requests.js';

@@ -1,8 +1,8 @@
 import type { ReactNode } from 'react';
-import { useShell } from '../../shell/hooks.js';
-import { hhmm, when } from '../../lib/format.js';
-import { Dot, RunCard, runTitle, typeName } from '../../lib/runs.js';
-import { ago } from '../../../../../ui/time.js';
+import { useShell } from '@apps/dashboard/src/shell/hooks.js';
+import { hhmm, when } from '@apps/dashboard/src/lib/format.js';
+import { Dot, RunCard, runTitle, typeName } from '@apps/dashboard/src/lib/runs.js';
+import { ago } from '@ui/time.js';
 import { useActions, Interview, Thumbs } from './Docs.js';
 import { firstName, ICON, REPRODUCTIONS, STATUS, type Detail, type Entry, type RequestEvent } from './model.js';
 

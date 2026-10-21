@@ -1,11 +1,11 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { readFile, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
-import { config } from '../../platform/config/config.js';
-import { getDb } from '../../platform/db/db.js';
+import { config } from '@platform/config/config.js';
+import { getDb } from '@platform/db/db.js';
 import { adminView, createUser, findUserByEmail, getUser, issueLink, LINK_TTL_MS, listUsers, redeemLink, updateUser, userForLink } from './accounts.js';
 
-vi.mock('../../platform/logger.js', () => ({ log: { info: vi.fn(), error: vi.fn() } }));
+vi.mock('@platform/logger.js', () => ({ log: { info: vi.fn(), error: vi.fn() } }));
 
 const file = () => join(config.portal.dataDir, 'accounts.json');
 // store.pg.test.ts runs these again with the accounts in Postgres. What's

@@ -7,14 +7,14 @@ const dir = mkdtempSync(join(tmpdir(), 'ronin-repos-'));
 const config = vi.hoisted(() => ({ settings: { dataDir: '' }, reposConfigPath: '', worktreeBaseRef: 'origin/main', agentModel: 'opus', agentEffort: 'high' }));
 config.settings.dataDir = join(dir, 'settings');
 config.reposConfigPath = join(dir, 'repos.json');
-vi.mock('../../platform/config/config.js', () => ({ config, taskEnvModel: () => undefined, taskEnvEffort: () => undefined, taskDefaultModel: (t: string) => (t === 'update-changelog' ? 'haiku' : undefined) }));
-vi.mock('../../platform/logger.js', () => ({ log: { info: vi.fn(), error: vi.fn() } }));
-vi.mock('../../platform/linear/linear-api.js', () => ({ linearKey: () => null, teamPlanning: async () => null }));
+vi.mock('@platform/config/config.js', () => ({ config, taskEnvModel: () => undefined, taskEnvEffort: () => undefined, taskDefaultModel: (t: string) => (t === 'update-changelog' ? 'haiku' : undefined) }));
+vi.mock('@platform/logger.js', () => ({ log: { info: vi.fn(), error: vi.fn() } }));
+vi.mock('@platform/linear/linear-api.js', () => ({ linearKey: () => null, teamPlanning: async () => null }));
 vi.mock('../items/new-issue.js', () => ({ repoApps: async () => ['backoffice', 'tienda'] }));
 
 const { readSettingsLog } = await import('./settings.js');
 const { editRepo, reposView } = await import('./repos.js');
-const { loadRepos } = await import('../../platform/config/repos.js');
+const { loadRepos } = await import('@platform/config/repos.js');
 
 const SC = 'redmotos/shoppingcart';
 const file = () => JSON.parse(readFileSync(config.reposConfigPath, 'utf8'));

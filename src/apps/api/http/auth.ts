@@ -1,10 +1,10 @@
 import { createCipheriv, createDecipheriv, hkdfSync, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { log } from '../../../platform/logger.js';
-import { timed } from '../../../platform/timing.js';
-import { parseCookies } from '../../../platform/http/cookies.js';
-import type { Session } from '../../../domains/access/http.js';
-import { githubFetch } from '../../../platform/github/rest.js';
+import { log } from '@platform/logger.js';
+import { timed } from '@platform/timing.js';
+import { parseCookies } from '@platform/http/cookies.js';
+import type { Session } from '@domains/access/http.js';
+import { githubFetch } from '@platform/github/rest.js';
 
 // Login with GitHub for the dashboard (#65). The OAuth App asks for the
 // `repo` scope (#93): what the dashboard does on GitHub — a comment, a

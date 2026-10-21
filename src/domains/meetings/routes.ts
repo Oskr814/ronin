@@ -1,13 +1,13 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { log } from '../../platform/logger.js';
+import { log } from '@platform/logger.js';
 import { sees, type Access } from '../access/access.js';
 import { HISTORY_DAYS } from '../runs/data.js';
 import { forgetGithub } from '../items/github.js';
 import { MAX_UPLOAD_BODY, meetingDetail, meetingOriginal, meetingRow, parseUpload } from './board.js';
 import { approveMeeting, discardMeeting } from './approve.js';
 import { refusal, visibleRepos, visibleRuns } from '../access/visible.js';
-import { body, jsonBody, onError, onlyJson } from '../../platform/http/middleware.js';
+import { body, jsonBody, onError, onlyJson } from '@platform/http/middleware.js';
 import type { DashboardEnv } from '../access/http.js';
 import { launchMeetingWorker, retryMeeting } from './launch.js';
 import { createMeeting, getMeeting, listMeetings } from './meetings.js';

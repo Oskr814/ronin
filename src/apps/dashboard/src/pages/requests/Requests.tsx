@@ -1,11 +1,11 @@
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useRef } from 'react';
-import { ApiError, client, ok } from '../../api.js';
-import { useSession, useShell } from '../../shell/hooks.js';
-import { isMobile } from '../../lib/format.js';
-import { Dot } from '../../lib/runs.js';
-import { useViewState } from '../../lib/view-state.js';
-import { ago, useNow } from '../../../../../ui/time.js';
+import { ApiError, client, ok } from '@apps/dashboard/src/api.js';
+import { useSession, useShell } from '@apps/dashboard/src/shell/hooks.js';
+import { isMobile } from '@apps/dashboard/src/lib/format.js';
+import { Dot } from '@apps/dashboard/src/lib/runs.js';
+import { useViewState } from '@apps/dashboard/src/lib/view-state.js';
+import { ago, useNow } from '@ui/time.js';
 import { BugTag, CLOSED, EVERY_MS, Mini, repoShort, StatusChip, waitsLabel, type Row } from './model.js';
 
 // Pedidos del portal (#132): what people ask through the portal and where

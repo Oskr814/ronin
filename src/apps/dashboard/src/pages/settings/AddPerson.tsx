@@ -1,9 +1,9 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ApiError, client, ok } from '../../api.js';
-import { useSession, useShell } from '../../shell/hooks.js';
-import { useViewState } from '../../lib/view-state.js';
+import { ApiError, client, ok } from '@apps/dashboard/src/api.js';
+import { useSession, useShell } from '@apps/dashboard/src/shell/hooks.js';
+import { useViewState } from '@apps/dashboard/src/lib/view-state.js';
 import { appKey, type Portal, type PortalChange } from './model.js';
 
 // Agregar persona: someone of the team, before they come in; or, where

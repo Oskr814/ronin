@@ -2,13 +2,13 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { config } from '../../platform/config/config.js';
+import { config } from '@platform/config/config.js';
 import { createRequest, getRequest, updateRequest, type PortalRequest } from './requests.js';
 
-vi.mock('../../platform/logger.js', () => ({ log: { info: vi.fn(), error: vi.fn() } }));
+vi.mock('@platform/logger.js', () => ({ log: { info: vi.fn(), error: vi.fn() } }));
 let output: string | Error = '';
 const tasks: Array<Record<string, unknown>> = [];
-vi.mock('../../platform/agents/agent-task.js', () => ({
+vi.mock('@platform/agents/agent-task.js', () => ({
   runAgentTask: vi.fn(async (task: Record<string, unknown>) => {
     tasks.push(task);
     if (output instanceof Error) throw output;
@@ -16,7 +16,7 @@ vi.mock('../../platform/agents/agent-task.js', () => ({
   }),
 }));
 const base = join(tmpdir(), `ronin-followup-${process.pid}`);
-vi.mock('../../platform/agents/repo-context.js', () => ({ activeRepo: () => ({ productRepo: 'acme/tienda', productRepoPath: '/repo', worktreeBasePath: base }) }));
+vi.mock('@platform/agents/repo-context.js', () => ({ activeRepo: () => ({ productRepo: 'acme/tienda', productRepoPath: '/repo', worktreeBasePath: base }) }));
 vi.mock('./accounts.js', () => ({ getUser: async () => ({ id: 'u1', email: 'persona@gmail.com', name: 'Ana Pérez' }) }));
 const sendPortalMails = vi.fn(async () => {});
 vi.mock('./notify.js', () => ({ handOverMail: vi.fn(async () => {}), sendPortalMails: (...a: unknown[]) => sendPortalMails(...(a as [])) }));

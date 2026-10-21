@@ -27,6 +27,7 @@ COPY package.json pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile
 COPY tsconfig.json tsconfig.build.json ./
 COPY src ./src
+COPY scripts/dist-aliases.ts ./scripts/
 RUN pnpm build
 
 # Only the production dependencies, for the final image.

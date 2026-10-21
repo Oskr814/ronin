@@ -2,11 +2,11 @@ import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { parse as parseYaml } from 'yaml';
-import { activeRepo } from '../../platform/agents/repo-context.js';
-import { config } from '../../platform/config/config.js';
+import { activeRepo } from '@platform/agents/repo-context.js';
+import { config } from '@platform/config/config.js';
 import type { AppDefinition, AppStep } from '../product-app/index.js';
-import { writeFileAtomic } from '../../platform/fs/atomic-json.js';
-import { host } from '../../platform/host/host.js';
+import { writeFileAtomic } from '@platform/fs/atomic-json.js';
+import { host } from '@platform/host/host.js';
 
 
 // What an app has right after its base seed (#202): per entity, how many

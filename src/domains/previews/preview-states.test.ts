@@ -4,9 +4,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 let base = '';
-vi.mock('../../platform/agents/repo-context.js', () => ({ activeRepo: () => ({ productRepo: 'acme/product', worktreeBasePath: base }) }));
-vi.mock('../../platform/logger.js', () => ({ log: { error: vi.fn(), info: vi.fn() } }));
-vi.mock('../../platform/config/config.js', () => ({ config: { githubLogin: 'ronin-agent' } }));
+vi.mock('@platform/agents/repo-context.js', () => ({ activeRepo: () => ({ productRepo: 'acme/product', worktreeBasePath: base }) }));
+vi.mock('@platform/logger.js', () => ({ log: { error: vi.fn(), info: vi.fn() } }));
+vi.mock('@platform/config/config.js', () => ({ config: { githubLogin: 'ronin-agent' } }));
 
 const { listPreviewStates } = await import('./preview.js');
 

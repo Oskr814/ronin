@@ -18,12 +18,14 @@ function files(dir: string): string[] {
 }
 
 
-// Each file's relative imports, as the layer they land in (apps/<app> for
-// an app), and whether they bring only types.
+// Each file's imports into src/, relative or by alias (@platform/…, #310), as
+// the layer they land in (apps/<app> for an app), and whether they bring
+// only types.
 function imports(file: string): Array<{ spec: string; to: string; typeOnly: boolean }> {
   const text = readFileSync(file, 'utf8');
-  return [...text.matchAll(/(import type [^;]*?from|from|import\(|vi\.mock\()\s*'(\.{1,2}\/[^']+)'/g)].map(([, how, spec]) => {
-    const to = relative(SRC, resolve(dirname(file), spec)).split('/');
+  return [...text.matchAll(/(import type [^;]*?from|from|import\(|vi\.mock\()\s*'((?:\.{1,2}|@(?:apps|domains|platform|ui))\/[^']+)'/g)].map(([, how, spec]) => {
+    const path = spec.startsWith('@') ? join(SRC, spec.slice(1)) : resolve(dirname(file), spec);
+    const to = relative(SRC, path).split('/');
     return { spec, to: to[0] === 'apps' ? `apps/${to[1]}` : to[0], typeOnly: how.startsWith('import type') };
   });
 }
@@ -64,5 +66,17 @@ describe('the layers of src/', () => {
 
   it('the web apps take only types from the server', () => {
     for (const app of ['dashboard', 'portal']) expect(crossings(`apps/${app}/src`, ['domains', 'platform', 'apps/api'], true)).toEqual([]);
+  });
+
+  // Relative only nearby: './x.js', or one '../' without leaving the root of
+  // src/. Anything farther goes by its alias (#310).
+  it('imports that go far use the alias', () => {
+    const far = files(SRC).flatMap((file) => {
+      const root = relative(SRC, file).split('/')[0];
+      return imports(file)
+        .filter((i) => i.spec.startsWith('../../') || (i.spec.startsWith('../') && !(i.to === root || i.to.startsWith(`${root}/`))))
+        .map((i) => `${relative(SRC, file)} → ${i.spec}`);
+    });
+    expect(far).toEqual([]);
   });
 });

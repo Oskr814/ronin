@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const getDiscussion = vi.fn();
-vi.mock('../../platform/github/github.js', () => ({ getDiscussion: (...args: unknown[]) => getDiscussion(...args) }));
-vi.mock('../../platform/logger.js', () => ({ log: { error: vi.fn(), info: vi.fn() } }));
+vi.mock('@platform/github/github.js', () => ({ getDiscussion: (...args: unknown[]) => getDiscussion(...args) }));
+vi.mock('@platform/logger.js', () => ({ log: { error: vi.fn(), info: vi.fn() } }));
 
 const { itemDetail, resetDetailCache, resolveItem } = await import('./detail.js');
 

@@ -3,11 +3,11 @@
 // the tick when the one before died. Reading waits for a slot of the
 // runner's shared quota like any other agent run, and holds the meeting's
 // lock throughout, so two workers never read the same meeting.
-import { concurrencyFor, config } from '../../platform/config/config.js';
-import { tryLockResource, unlockResource, withSlots } from '../../platform/locks/locks.js';
+import { concurrencyFor, config } from '@platform/config/config.js';
+import { tryLockResource, unlockResource, withSlots } from '@platform/locks/locks.js';
 import { errorLine, getMeeting, noteEvent, updateMeeting } from './meetings.js';
 import { readMeeting } from './read.js';
-import { runWorker, withProductRepo, workerRequest } from '../../platform/workers/run.js';
+import { runWorker, withProductRepo, workerRequest } from '@platform/workers/run.js';
 
 const { number } = workerRequest<{ number?: number }>();
 

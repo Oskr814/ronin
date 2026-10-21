@@ -1,4 +1,4 @@
-import { DAY_MS, pct } from '../../lib/format.js';
+import { DAY_MS, pct } from '@apps/dashboard/src/lib/format.js';
 
 // How Métricas writes its numbers (#222).
 

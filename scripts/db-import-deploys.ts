@@ -2,9 +2,9 @@
 // DATABASE_URL's database (#235, stage 2). The file stays as it is, as a
 // backup. Safe to run again: each deploy is written over the one with its
 // repo and tag. Ends comparing both.
-import { closeDb, getDb } from '../src/platform/db/db.js';
-import { migrateToLatest } from '../src/platform/db/migrate.js';
-import { fileDeploys, listDeploys, putDeploy } from '../src/domains/deploys/store.js';
+import { closeDb, getDb } from '@platform/db/db.js';
+import { migrateToLatest } from '@platform/db/migrate.js';
+import { fileDeploys, listDeploys, putDeploy } from '@domains/deploys/store.js';
 import { sameContent } from './db-compare.js';
 
 const db = getDb();

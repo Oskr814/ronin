@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 import { parse, stringify } from 'yaml';
-import { host } from '../../platform/host/host.js';
+import { host } from '@platform/host/host.js';
 
 // Exploration's memory, kept in the product repo itself (docs/exploration/
 // <app>/) so it's versioned and reviewed in the weekly PR like anything else

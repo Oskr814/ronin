@@ -21,7 +21,7 @@ import { chown, readFile, stat } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import { parseArgs } from 'node:util';
-import { writeFileAtomic } from '../../platform/fs/atomic-json.js';
+import { writeFileAtomic } from '@platform/fs/atomic-json.js';
 import { addRepos, isRepo, mergeEnv, parseEnv, pendingQuestions, withGeneratedSecrets, type Question, type RepoEntry } from './env-file.js';
 
 const { values: args } = parseArgs({
@@ -117,8 +117,8 @@ async function migrateStep(env: Record<string, string>): Promise<void> {
     return;
   }
   process.env.DATABASE_URL = url;
-  const { closeDb, getDb } = await import('../../platform/db/db.js');
-  const { migrateToLatest } = await import('../../platform/db/migrate.js');
+  const { closeDb, getDb } = await import('@platform/db/db.js');
+  const { migrateToLatest } = await import('@platform/db/migrate.js');
   try {
     const ran = await migrateToLatest(getDb()!);
     console.log(ran.length ? `✓ Migraciones aplicadas: ${ran.join(', ')}` : '✓ La base ya estaba al día.');

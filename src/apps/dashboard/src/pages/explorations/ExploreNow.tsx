@@ -1,8 +1,8 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
-import { ApiError, client, ok } from '../../api.js';
-import { explored, useShell } from '../../shell/hooks.js';
-import { hhmm, repoShort } from '../../lib/format.js';
+import { ApiError, client, ok } from '@apps/dashboard/src/api.js';
+import { explored, useShell } from '@apps/dashboard/src/shell/hooks.js';
+import { hhmm, repoShort } from '@apps/dashboard/src/lib/format.js';
 import { at, rowOf, useExplorations } from './model.js';
 
 // Explorar ahora (#155, 3/4). ronin still chooses the functions and the

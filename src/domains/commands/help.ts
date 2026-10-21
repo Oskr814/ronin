@@ -3,7 +3,7 @@
 // handleMetaCommands, which intercepts these before any flow that would
 // spend a `claude -p` run on them. Pure: no I/O, so every rule here is
 // directly unit-testable.
-import { HELP_FOOTER_MARKER } from '../../platform/github/pr-body.js';
+import { HELP_FOOTER_MARKER } from '@platform/github/pr-body.js';
 
 export type CommandContext = 'pr' | 'issue';
 

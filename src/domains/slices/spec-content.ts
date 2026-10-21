@@ -1,6 +1,6 @@
-import { activeRepo } from '../../platform/agents/repo-context.js';
-import { config } from '../../platform/config/config.js';
-import { host } from '../../platform/host/host.js';
+import { activeRepo } from '@platform/agents/repo-context.js';
+import { config } from '@platform/config/config.js';
+import { host } from '@platform/host/host.js';
 
 
 // A repos.json entry's own worktreeBaseRef wins over the global default —

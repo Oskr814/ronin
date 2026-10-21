@@ -1,9 +1,9 @@
 import { createHash } from 'node:crypto';
-import { log } from '../../platform/logger.js';
-import type { RepoEntry } from '../../platform/agents/repo-context.js';
-import { GithubUserError } from '../../platform/github/github-as-user.js';
+import { log } from '@platform/logger.js';
+import type { RepoEntry } from '@platform/agents/repo-context.js';
+import { GithubUserError } from '@platform/github/github-as-user.js';
 import type { Perms } from './team.js';
-import { githubFetch } from '../../platform/github/rest.js';
+import { githubFetch } from '@platform/github/rest.js';
 
 // Which repos of repos.json a dashboard session sees (#106). Administrators
 // (DASHBOARD_ADMINS) see them all. Anyone else sees the ones GitHub says

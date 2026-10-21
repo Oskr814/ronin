@@ -1,16 +1,16 @@
-import { markProcessed } from '../../platform/state/processed-comments.js';
+import { markProcessed } from '@platform/state/processed-comments.js';
 import { join } from 'node:path';
-import { runAgentTask } from '../../platform/agents/agent-task.js';
+import { runAgentTask } from '@platform/agents/agent-task.js';
 import { sliceTask } from './prompts.js';
-import { activeRepo } from '../../platform/agents/repo-context.js';
-import { log } from '../../platform/logger.js';
-import { commentOnIssue, findOpenPrByHead, replyToComment } from '../../platform/github/github.js';
+import { activeRepo } from '@platform/agents/repo-context.js';
+import { log } from '@platform/logger.js';
+import { commentOnIssue, findOpenPrByHead, replyToComment } from '@platform/github/github.js';
 import { renderHtmlToPng } from '../product-app/index.js';
 import { evidenceUrl, publishEvidence } from '../product-app/index.js';
-import { notifyBlocker } from '../../platform/notify/notifier.js';
+import { notifyBlocker } from '@platform/notify/notifier.js';
 import { specBranch } from './stack.js';
 import type { SpecCandidate } from '../commands/index.js';
-import { host } from '../../platform/host/host.js';
+import { host } from '@platform/host/host.js';
 
 // /spec — docs/DESIGN.md §11.10, stage 5: from a raw request (or an
 // exploration proposal) to a draft spec PR assigned to ronin. The human

@@ -3,9 +3,9 @@
 // number. The notes and the uploaded files stay where they are (the database
 // doesn't keep them), and so do meeting.json and counter.json, as a backup.
 // Safe to run again. Ends comparing both.
-import { closeDb, getDb } from '../src/platform/db/db.js';
-import { migrateToLatest } from '../src/platform/db/migrate.js';
-import { fileMeetings, listMeetings, putMeeting } from '../src/domains/meetings/meetings.js';
+import { closeDb, getDb } from '@platform/db/db.js';
+import { migrateToLatest } from '@platform/db/migrate.js';
+import { fileMeetings, listMeetings, putMeeting } from '@domains/meetings/meetings.js';
 import { sameContent } from './db-compare.js';
 
 const db = getDb();

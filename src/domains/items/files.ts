@@ -1,7 +1,7 @@
-import { config } from '../../platform/config/config.js';
-import { getDiffThreads, getFileAt, getPrFiles, type DiffThread, type PrFile } from '../../platform/github/github.js';
-import { log } from '../../platform/logger.js';
-import { withActiveRepo, type RepoEntry } from '../../platform/agents/repo-context.js';
+import { config } from '@platform/config/config.js';
+import { getDiffThreads, getFileAt, getPrFiles, type DiffThread, type PrFile } from '@platform/github/github.js';
+import { log } from '@platform/logger.js';
+import { withActiveRepo, type RepoEntry } from '@platform/agents/repo-context.js';
 
 // A PR's "Files changed" on the dashboard (#111): its files with their
 // patches, and its review threads where the diff puts them. Read with

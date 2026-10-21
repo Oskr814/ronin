@@ -1,9 +1,9 @@
 import { readdir, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { Db } from '../../../platform/db/db.js';
-import { config } from '../../../platform/config/config.js';
-import { log } from '../../../platform/logger.js';
-import { logsDir } from '../../../platform/agents/run-files.js';
+import type { Db } from '@platform/db/db.js';
+import { config } from '@platform/config/config.js';
+import { log } from '@platform/logger.js';
+import { logsDir } from '@platform/agents/run-files.js';
 import { enqueue, lastQueuedOrStarted, pruneFinished } from './store.js';
 
 // The scheduler (#235, stage 3): what cron did, inside the server. The tick

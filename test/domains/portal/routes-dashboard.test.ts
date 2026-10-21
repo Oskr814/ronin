@@ -1,23 +1,23 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { rm } from 'node:fs/promises';
 
-vi.mock('../../../src/platform/logger.js', () => ({ log: { info: vi.fn(), error: vi.fn() } }));
+vi.mock('@platform/logger.js', () => ({ log: { info: vi.fn(), error: vi.fn() } }));
 const sendMail = vi.fn(async () => {});
-vi.mock('../../../src/platform/notify/notifier.js', () => ({ sendMail: (...args: unknown[]) => sendMail(...(args as [])) }));
+vi.mock('@platform/notify/notifier.js', () => ({ sendMail: (...args: unknown[]) => sendMail(...(args as [])) }));
 // The portal configured, as on the server.
-vi.mock('../../../src/platform/config/config.js', async (importOriginal) => {
-  const { config } = await importOriginal<typeof import('../../../src/platform/config/config.js')>();
+vi.mock('@platform/config/config.js', async (importOriginal) => {
+  const { config } = await importOriginal<typeof import('@platform/config/config.js')>();
   return { config: { ...config, portal: { ...config.portal, url: 'https://ronin-agent.example.com', sessionSecret: 's'.repeat(40) } } };
 });
-vi.mock('../../../src/platform/config/repos.js', () => ({
+vi.mock('@platform/config/repos.js', () => ({
   loadRepos: async () => [{ productRepo: 'acme/tienda', productRepoPath: '/x', portal: { name: 'Acme', apps: { backoffice: { name: 'Backoffice' } } } }],
 }));
 
-import type { Access } from '../../../src/domains/access/access.js';
+import type { Access } from '@domains/access/access.js';
 
-const { config } = await import('../../../src/platform/config/config.js');
-const { dashboardApp } = await import('../../../src/apps/api/routes.js');
-const { createRequest } = await import('../../../src/domains/portal/requests.js');
+const { config } = await import('@platform/config/config.js');
+const { dashboardApp } = await import('@apps/api/routes.js');
+const { createRequest } = await import('@domains/portal/requests.js');
 
 const ADMIN: Access = { admin: true, repos: [{ repo: 'acme/tienda', permission: 'admin' }] };
 const MEMBER: Access = { admin: false, repos: [{ repo: 'otra/cosa', permission: 'triage' }] };

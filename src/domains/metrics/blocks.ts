@@ -1,4 +1,4 @@
-export { listBlockEvents, MAX_BLOCK_EVENTS, recordBlockEvent, type BlockEvent } from '../../platform/notify/block-log.js';
+export { listBlockEvents, MAX_BLOCK_EVENTS, recordBlockEvent, type BlockEvent } from '@platform/notify/block-log.js';
 
 // The reasons notifyBlocker gets are sentences (tick.ts, spec-flow.ts), some
 // with an error message inside; Métricas groups them the way

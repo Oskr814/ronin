@@ -1,7 +1,7 @@
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
-import { log } from '../../platform/logger.js';
-import { body, jsonBody, onError, type NodeEnv } from '../../platform/http/middleware.js';
+import { log } from '@platform/logger.js';
+import { body, jsonBody, onError, type NodeEnv } from '@platform/http/middleware.js';
 import { findUserByEmail, normalizeEmail, recordLogin, redeemLink, userForLink, type PortalUser } from './accounts.js';
 import { grantedApps } from './apps.js';
 import { burnPasswordCheck, hashPassword, passwordProblem, verifyPassword } from './password.js';

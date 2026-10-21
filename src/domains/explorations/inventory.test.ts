@@ -4,9 +4,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const runAgentTask = vi.fn();
-vi.mock('../../platform/agents/agent-task.js', () => ({ runAgentTask: (...args: unknown[]) => runAgentTask(...args) }));
+vi.mock('@platform/agents/agent-task.js', () => ({ runAgentTask: (...args: unknown[]) => runAgentTask(...args) }));
 let worktreeBasePath = '';
-vi.mock('../../platform/agents/repo-context.js', () => ({ activeRepo: () => ({ worktreeBasePath }) }));
+vi.mock('@platform/agents/repo-context.js', () => ({ activeRepo: () => ({ worktreeBasePath }) }));
 const lastCommitTouching = vi.fn();
 vi.mock('./plan.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./plan.js')>()),

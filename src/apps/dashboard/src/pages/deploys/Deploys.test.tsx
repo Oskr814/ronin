@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Deploys } from './Deploys.js';
-import { resetShell, showPage, testShell, testSnapshot } from '../../test-shell.js';
+import { resetShell, showPage, testShell, testSnapshot } from '@apps/dashboard/src/test-shell.js';
 
 const change = (sha: string, subject: string, pr: number | null, pedidos: number[] = []) => ({ sha, subject, pr, apps: [], pedidos });
 const REPOS = [{

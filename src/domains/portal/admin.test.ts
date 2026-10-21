@@ -1,11 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { rm } from 'node:fs/promises';
-import { config } from '../../platform/config/config.js';
+import { config } from '@platform/config/config.js';
 import { getUser } from './accounts.js';
 import { createRequest } from './requests.js';
 import { portalAdminView, runPortalAdmin, type PortalAdminContext } from './admin.js';
 
-vi.mock('../../platform/logger.js', () => ({ log: { info: vi.fn(), error: vi.fn() } }));
+vi.mock('@platform/logger.js', () => ({ log: { info: vi.fn(), error: vi.fn() } }));
 
 const send = vi.fn(async () => {});
 const ctx: PortalAdminContext = {

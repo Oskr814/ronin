@@ -1,4 +1,4 @@
-import { trackedWorker } from '../../platform/workers/tracked.js';
+import { trackedWorker } from '@platform/workers/tracked.js';
 import { addEvent, listMeetings, updateMeeting } from './meetings.js';
 
 // The worker that reads a meeting (worker.ts), its pid noted on the meeting
