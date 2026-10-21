@@ -120,7 +120,7 @@ function duration(ms) {
 const money = (usd) => (usd < 0.01 ? 'menos de US$0,01' : `US$${usd.toFixed(2).replace('.', ',')}`);
 const pct = (fraction) => `${Math.round(fraction * 100)}%`;
 
-const S = { snap: null, today: null, sel: null, open: [], runIdx: {}, pendingRun: null, filter: null, q: '', itemRuns: {}, run: null, stream: null, detail: {}, view: {}, doc: {}, menu: false, dialog: null, expanded: new Set(), expl: {}, ficha: {}, fichaOpen: {}, fichaFilter: { tipo: 'todas', vp: 'todos' }, antes: {}, oldAfter: new Set(), lightbox: null, fmenu: false, fdialog: null, fdraft: {}, listas: {}, scope: 'all', project: '', attAll: false, extra: {}, newIssue: null, files: {}, fcur: {}, ffold: {}, fexp: {}, fcontent: {}, fq: {}, ftree: false, fcomp: null, fbusy: new Set(), rpanel: null, revSent: {}, decide: null, decided: {}, kunit: null, page: null, portal: { data: null, error: null }, ped: { n: null, run: null }, reu: { list: null, error: null, listAt: 0, detail: {}, n: null, tab: null, up: null, run: null, open: {}, retrying: false, form: {}, approving: false }, xpl: { list: null, error: null, listAt: 0, repo: null, app: null, cor: {}, inv: {}, tab: 'corridas', run: null, launched: {} }, xnow: null, dep: { list: null }, mt: { tab: 'trabajo' }, aj: { data: null, error: null, sec: 'perfil', registro: null, users: null, user: null, login: null, cuenta: null, f: 'todos', q: '', add: null, link: null, busy: false, repos: null, repo: null, conex: null } };
+const S = { snap: null, today: null, sel: null, open: [], runIdx: {}, pendingRun: null, filter: null, q: '', itemRuns: {}, run: null, stream: null, detail: {}, view: {}, doc: {}, menu: false, dialog: null, expanded: new Set(), expl: {}, ficha: {}, fichaOpen: {}, fichaFilter: { tipo: 'todas', vp: 'todos' }, antes: {}, oldAfter: new Set(), lightbox: null, fmenu: false, fdialog: null, fdraft: {}, listas: {}, scope: 'all', project: '', attAll: false, extra: {}, newIssue: null, files: {}, fcur: {}, ffold: {}, fexp: {}, fcontent: {}, fq: {}, ftree: false, fcomp: null, fbusy: new Set(), rpanel: null, revSent: {}, decide: null, decided: {}, kunit: null, page: null, ped: { n: null, run: null }, reu: { list: null, error: null, listAt: 0, detail: {}, n: null, tab: null, up: null, run: null, open: {}, retrying: false, form: {}, approving: false }, xpl: { list: null, error: null, listAt: 0, repo: null, app: null, cor: {}, inv: {}, tab: 'corridas', run: null, launched: {} }, xnow: null, dep: { list: null }, mt: { tab: 'trabajo' }, aj: { sec: 'perfil', login: null, repo: null, cuenta: null, f: null } };
 // The sidebar's Linear filter (#101), remembered per browser.
 try { Object.assign(S, JSON.parse(localStorage.getItem('ronin-scope') ?? '{}')); } catch { /* sin storage */ }
 function saveScope() {
@@ -581,7 +581,8 @@ function renderCenter() {
   }
   if (!item && S.page === 'ajustes') {
     $('#shell').classList.add('wide');
-    if (setCenter(backBar('Ajustes') + ajustesHTML())) wireAjustes();
+    // Mounted again on each visit: the page reads what to show, and reads it again.
+    showPage('settings', backBar('Ajustes'), {}, `settings-${ajVisits}`);
     return;
   }
   if (!item) {
@@ -635,8 +636,16 @@ const PAGE_HOST = {
   unauthorized: (message) => showLogin(new Unauthorized(message)),
   repoColor,
   openItem: (key) => select(key),
-  openSettings: (section) => openAjustes(section),
+  openSettings: (section, login, f, cuenta) => openAjustes(section, login, f, cuenta),
   openMetrics: (tab) => openMetricas(tab),
+  settingsView: () => ({ section: S.aj.sec, login: S.aj.login, repo: S.aj.repo, account: S.aj.cuenta, filter: S.aj.f }),
+  session: () => ({ me: S.snap.me, portalAdmin: Boolean(S.snap.portalAdmin) }),
+  openPedidos: () => openPedidos(),
+  setTheme(theme) {
+    document.documentElement.dataset.theme = theme;
+    try { localStorage.setItem('ronin-theme', theme); } catch { /* sin storage */ }
+    renderStatus();
+  },
   repos: () => S.snap.repos,
   typeName,
   requestsTotal: () => S.snap.pedidosTotal ?? 0,
@@ -657,14 +666,15 @@ const PAGE_HOST = {
   },
 };
 
-// `props`: what the page is about (a request's number), mounted again when it changes.
-function showPage(name, head, props = {}) {
+// `props`: what the page is about (a request's number), mounted again when it
+// changes; `key`, what else makes it a new page to mount (Ajustes: each visit).
+function showPage(name, head, props = {}, key = '') {
   const center = $('#center');
-  const key = JSON.stringify([name, head, props]);
-  if (reactPage?.key === key && center.contains(reactPage.element)) return;
+  const id = JSON.stringify([name, head, props, key]);
+  if (reactPage?.key === id && center.contains(reactPage.element)) return;
   if (!setCenter(`${head}<div class="react-page" data-page="${esc(name)}"></div>`)) reactPage?.unmount();
   const element = center.querySelector('.react-page');
-  reactPage = { name, key, element, unmount: window.roninPages.mount(name, element, PAGE_HOST, { ...props }) };
+  reactPage = { name, key: id, element, unmount: window.roninPages.mount(name, element, PAGE_HOST, { ...props }) };
 }
 
 function setCenter(html) {
@@ -3491,32 +3501,6 @@ function openExploracion(repo, app, ficha) {
   loadExploraciones();
 }
 
-// ---------- request portal accounts (#114)
-// The people who ask for small changes in the portal, without GitHub: since
-// #174 they're in Ajustes → Usuarios, with the role Usuario. This reads them.
-async function loadPortal() {
-  try {
-    S.portal = { data: await api('/api/portal-admin'), error: null };
-  } catch (error) {
-    if (error instanceof Unauthorized && showLogin(error)) return;
-    S.portal = { ...S.portal, error: error.message };
-  }
-  renderQuick();
-  renderCenter();
-}
-
-const appKey = (a) => `${a.repo}:${a.app}`;
-const appLabel = (grant) => {
-  const app = S.portal.data?.apps.find((a) => appKey(a) === appKey(grant));
-  return app ? `${app.org} · ${app.name}` : `${grant.repo} · ${grant.app} (ya no está en el portal)`;
-};
-
-function portalStatus(u) {
-  if (u.disabled) return ['idle', 'desactivada'];
-  if (!u.hasPassword) return u.link && Date.parse(u.link.expiresAt) > Date.now() ? ['warn', 'invitada'] : ['crit', 'invitación vencida'];
-  return ['ok', 'activa'];
-}
-
 // ---------- the portal's requests (#132)
 // What people ask through the portal and where each request stands. The
 // pages are in React (src/apps/dashboard/src/pages/requests/): this routes
@@ -4449,7 +4433,9 @@ function renderStatus() {
 
 // ---------- ajustes (#174)
 // Its own sidebar (Tu cuenta, and Administración for admins) and one page
-// per section, like Linear's settings. Each field saves when it's left.
+// per section, like Linear's settings. The page is in React
+// (src/apps/dashboard/src/pages/settings/): this routes to its sections and
+// draws the sidebar.
 const AJ_SECTIONS = {
   perfil: { name: 'Perfil', icon: '<circle cx="12" cy="8" r="4"/><path d="M4 20c1.5-4 4.5-6 8-6s6.5 2 8 6"/>' },
   notificaciones: { name: 'Notificaciones', icon: '<path d="M6 16V11a6 6 0 0 1 12 0v5l2 2H4zM10 21h4"/>' },
@@ -4463,43 +4449,13 @@ const AJ_SECTIONS = {
   usuarios: { name: 'Usuarios', icon: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c1-3.5 3.5-5.5 6.5-5.5s5.5 2 6.5 5.5M16 4.5a3.5 3.5 0 0 1 0 7M18 14.5c2 .7 3.2 2.6 3.7 5.5"/>', admin: true },
   registro: { name: 'Registro', icon: '<path d="M4 6h16M4 12h16M4 18h10"/>', admin: true },
 };
-// What each setting is, in words; the server says its value and where it comes from.
-const AJ_SETTINGS = {
-  'dashboard.sessionDays': ['Duración de la sesión', 'Cuánto dura una sesión del tablero antes de volver a entrar con GitHub. Las que ya están abiertas no cambian.', 'días'],
-  'dashboard.githubTtlSeconds': ['Datos de GitHub', 'Cuánto se reusa lo que el tablero leyó de GitHub antes de volver a pedirlo.', 's'],
-  'portal.dailyLimit': ['Pedidos por día', 'Los que puede empezar cada persona del portal por día, salvo que su cuenta tenga otro tope.', 'pedidos'],
-  'portal.sessionDays': ['Duración de la sesión del portal', 'Las sesiones que ya están abiertas no cambian.', 'días'],
-  'agent.model': ['Modelo', 'El de todas las corridas, salvo las que tienen el suyo abajo o en su repo. "(lo que diga Claude)": el de la configuración de la cuenta.', ''],
-  'agent.effort': ['Esfuerzo', '', ''],
-  'agent.reviewWorkerModel': ['Modelo de los revisores', 'Los agentes que juntan candidatos en la review de PRs externos; el orquestador usa el modelo de arriba.', ''],
-  'agent.taskTimeoutMinutes': ['Tope de una corrida', 'Pasado este tiempo, una corrida de claude -p se considera colgada y se corta.', 'min'],
-  'agent.handlerTimeoutMinutes': ['Tope de un webhook', 'Todo lo que hace un evento de GitHub: esperar su turno, un lugar y cada agente que lance.', 'min'],
-  'tick.intervalMinutes': ['Cada cuánto corre el tick', 'La conciliación de todos los repos, contada desde la hora en punto (30: a las :00 y a las :30). Solo con la base de datos: sin ella, la frecuencia la decide el cron.', 'min'],
-  'tick.concurrency': ['Tareas por repo', 'Las que corren juntas en cada repo, de todos los flujos (issues, reviews, /spike, changelog, exploración). Cada repo tiene su propia cola, y puede tener su número en Repos.', 'a la vez'],
-  'tick.externalReviewConcurrency': ['De ellas, reviews externas', 'Cada review es un orquestador con sus revisores: tres juntas agotaron el límite de la cuenta.', 'a la vez'],
-  'retry.e2e': ['La misma falla de CI', 'Veces que se intenta arreglar una misma falla antes de bloquear.', 'veces'],
-  'retry.e2eHard': ['Tope de intentos con CI rojo', 'Aunque cada intento falle distinto.', 'intentos'],
-  'retry.checksPending': ['CI sin terminar', 'Ticks que se espera un CI pendiente antes de bloquear (60 ≈ 5 h).', 'ticks'],
-  'retry.slice': ['Una slice', '', 'intentos'],
-  'retry.retarget': ['Cambiar la base de un PR', '', 'intentos'],
-  'retry.issueError': ['Un issue que da error', '', 'intentos'],
-  'explore.timezone': ['Zona horaria', 'La ventana nocturna, la fecha de cada corrida y la semana de su PR.', ''],
-  'explore.nightWindow': ['Ventana nocturna', 'HH:MM-HH:MM; puede cruzar la medianoche. Pasado el fin no empieza ninguna función nueva.', ''],
-  'explore.functionsPerNight': ['Funciones por noche', 'El presupuesto: usa el límite semanal de Claude de la cuenta, el mismo del trabajo de día.', 'funciones'],
-  'explore.functionsPerRun': ['Funciones por corrida de /explore', '', 'funciones'],
-  'explore.findingsPerRun': ['Hallazgos que se publican', 'Los más graves primero.', 'fichas'],
-  'explore.ideasPerRun': ['Ideas que se publican', 'Nunca en el lugar de un hallazgo.', 'fichas'],
-  'explore.publishEvidence': ['Subir las capturas', 'A la rama ronin/evidence del repo del producto, para verlas en las fichas y el PR.', ''],
-  'preview.prepareData': ['Preparar datos para probar', 'Un agente lee el PR y deja los datos para probarlo, además de los seeds.', ''],
-  'preview.ttlMinutes': ['Cuánto vive una preview', 'Desde que se levanta. 0: hasta /preview stop o que se cierre el PR.', 'min'],
-  'preview.maxPerRepo': ['Previews a la vez', 'Por repo; la siguiente se rechaza.', 'por repo'],
-};
-const ajWord = (value) => (value === true ? 'sí' : value === false ? 'no' : value === '' ? '(lo que diga Claude)' : String(value));
 const ajAllowed = (sec) => AJ_SECTIONS[sec] && (!AJ_SECTIONS[sec].admin || S.snap?.access.admin);
 
 // `login`: one of the team; `cuenta`: one of the portal's accounts (#174,
 // stage 3); `f`: the list's filter (todos, equipo, portal).
+let ajVisits = 0;
 function openAjustes(sec = 'perfil', login = null, f = null, cuenta = null) {
+  ajVisits += 1;
   S.sel = null;
   S.page = 'ajustes';
   S.aj.sec = ajAllowed(sec) ? sec : 'perfil';
@@ -4507,8 +4463,8 @@ function openAjustes(sec = 'perfil', login = null, f = null, cuenta = null) {
   // For Repos, `login` is the repo (owner/name).
   S.aj.repo = S.aj.sec === 'repos' ? login : null;
   S.aj.cuenta = S.aj.sec === 'usuarios' ? cuenta : null;
-  if (f) S.aj.f = f;
-  if (S.aj.login !== S.aj.user?.login) S.aj.user = null;
+  // Asked for once (Pedidos del portal → Usuarios); the page keeps the last one chosen.
+  S.aj.f = f;
   stopStream();
   const path = `/ajustes/${S.aj.sec}${S.aj.cuenta ? `/cuenta/${encodeURIComponent(S.aj.cuenta)}` : S.aj.login ? `/${encodeURIComponent(S.aj.login)}` : S.aj.repo ? `/${S.aj.repo}` : ''}`;
   if (location.pathname !== path) history.pushState(null, '', path);
@@ -4517,26 +4473,6 @@ function openAjustes(sec = 'perfil', login = null, f = null, cuenta = null) {
     $('#shell').dataset.m = 'detail';
     scrollTo(0, 0);
   }
-  loadAjustes();
-}
-
-async function loadAjustes() {
-  try {
-    S.aj.data = await api('/api/settings');
-    if (S.aj.sec === 'registro') S.aj.registro = (await api('/api/settings/log')).registro;
-    if (S.aj.sec === 'repos') S.aj.repos = await api('/api/settings/repos');
-    if (S.aj.sec === 'conexiones') S.aj.conex = await api('/api/settings/connections');
-    if (S.aj.sec === 'cuentas') S.aj.cuentas = await api('/api/settings/accounts');
-    if (S.aj.sec === 'usuarios' && S.aj.login) S.aj.user = await api(`/api/settings/users/${encodeURIComponent(S.aj.login)}`);
-    else if (S.aj.sec === 'usuarios' && !S.aj.cuenta) S.aj.users = await api('/api/settings/users');
-    // The portal's accounts (role Usuario), when the portal is set up.
-    if (S.aj.sec === 'usuarios' && !S.aj.login && S.snap.portalAdmin) S.portal = { data: await api('/api/portal-admin'), error: null };
-    S.aj.error = null;
-  } catch (error) {
-    if (error instanceof Unauthorized && showLogin(error)) return;
-    S.aj.error = error.message;
-  }
-  if (S.page === 'ajustes') renderCenter();
 }
 
 function ajNavHTML() {
@@ -4549,677 +4485,6 @@ function ajNavHTML() {
 function wireAjNav() {
   $('#quick').querySelector('[data-aj-back]').onclick = goHome;
   for (const b of $('#quick').querySelectorAll('[data-aj]')) b.onclick = () => openAjustes(b.dataset.aj, b.dataset.ajrepo ?? null);
-}
-
-const ajSec = (title, body, lead = '') => `<section class="aj-sec"><h2>${title}</h2>${lead ? `<p class="aj-d">${lead}</p>` : ''}<div class="aj-card">${body}</div></section>`;
-const ajRow = (label, desc, ctl, src = '') => `<div class="aj-row"><div class="l"><b>${label}</b>${desc ? `<small>${desc}</small>` : ''}</div><div class="ctl">${ctl}</div>${src ? `<div class="src">${src}</div>` : ''}</div>`;
-// Something only .env (or repos.json) changes: shown, never edited here.
-const ajFixed = (label, value, env) => ajRow(label, '', `<span class="aj-ro">${value}</span>`, `<span class="aj-env">.env</span><code>${esc(env)}</code><span>· se cambia en el servidor</span>`);
-
-function ajSettingRow(s) {
-  const [label, desc, unit] = AJ_SETTINGS[s.key] ?? [s.key, '', ''];
-  const from = (source) => (source === 'env' ? '.env dice' : 'por defecto');
-  const src = s.source === 'tablero'
-    ? `<span class="aj-ov">● Cambiado en el tablero</span><span>${from(s.baseSource)} ${esc(ajWord(s.base))}</span><button data-ajreset="${esc(s.key)}">${s.baseSource === 'env' ? 'Volver al de .env' : 'Volver al de por defecto'}</button>`
-    : `${s.source === 'env' ? '<span class="aj-env">.env</span>' : '<span>Por defecto</span>'}<code>${esc(s.env)}</code>`;
-  const key = esc(s.key);
-  const ctl = s.type === 'bool' ? `<button class="aj-sw" role="switch" aria-checked="${s.value}" data-ajkey="${key}" aria-label="${esc(label)}"></button>`
-    : s.type === 'enum' ? `<select class="aj-in" data-ajkey="${key}" aria-label="${esc(label)}">${[...new Set([...s.options, s.value])].map((o) => `<option value="${esc(o)}" ${o === s.value ? 'selected' : ''}>${esc(ajWord(o))}</option>`).join('')}</select>`
-      : s.type === 'text' ? `<input class="aj-in mono" data-ajkey="${key}" value="${esc(s.value)}" aria-label="${esc(label)}">`
-        : `<input class="aj-num" type="number" min="${s.min}" max="${s.max}" step="1" data-ajkey="${key}" value="${s.value}" aria-label="${esc(label)}"><span class="aj-unit">${esc(unit)}</span>`;
-  return ajRow(esc(label), esc(desc), ctl, src);
-}
-
-// The emails ronin sends the team (#174, stage 4), each person choosing theirs repo by repo.
-const AJ_EVENTS = [
-  ['pedido-equipo', 'Pedido para el equipo', 'Un pedido o un error del portal que pasa al equipo, con su issue.'],
-  ['pedido-revisar', 'Pedido para revisar', 'El PR que ronin abrió para un pedido espera la aprobación de alguien.'],
-  ['reunion', 'Propuestas de una reunión', 'ronin terminó de leer unas notas y hay propuestas para aprobar.'],
-  ['bloqueo', 'Bloqueos', 'Un issue o PR de ronin necesita a alguien (docs/BLOCKING.md).'],
-];
-
-const AJ_PAGES = {
-  notificaciones(d) {
-    const email = d.perfil.email;
-    return `<h1>Notificaciones</h1><p class="lead">Qué te avisa ronin, repo por repo. Lo eliges tú: nadie más lo cambia. ${email ? `Llegan a <b>${esc(email)}</b>.` : ''}</p>
-      ${email ? '' : '<div class="aj-note warn"><b>Sin correo.</b> Agrégalo en <a href="/ajustes/perfil" data-aj-link="perfil">Perfil</a> para recibir algo.</div>'}
-      ${d.notificaciones.map((n) => `<section class="aj-sec"><h2><i class="aj-sq" style="background:${repoColor(n.repo)}"></i>${esc(n.repo)}</h2>${n.chosen ? '' : '<p class="aj-d">Todavía no elegiste: es lo que te llegaba antes (portal.notifyTo de repos.json y NOTIFY_TO).</p>'}<div class="aj-card">
-        ${AJ_EVENTS.map(([id, name, desc]) => ajRow(esc(name), esc(desc), `<button class="aj-sw" role="switch" aria-checked="${n.events.includes(id)}" data-ajev="${esc(n.repo)}" data-e="${id}" ${email ? '' : 'disabled'} aria-label="${esc(name)} de ${esc(n.repo)}"></button>`)).join('')}
-      </div></section>`).join('')}
-      <p class="aj-foot">Si nadie del equipo recibe un aviso de un repo, va a <code>NOTIFY_TO</code>${d.notifyTo ? ` (${esc(d.notifyTo)})` : ''}, para que nunca se pierda.</p>`;
-  },
-  perfil(d) {
-    const p = d.perfil;
-    const dark = document.documentElement.dataset.theme !== 'light';
-    return `<h1>Perfil</h1><p class="lead">Cómo te ve ronin. Tu usuario viene de GitHub.</p>
-      ${ajSec('Tú', ajRow(`<span class="aj-me">${esc(d.me.login)}</span>`, 'GitHub', `<span class="aj-pill${d.me.admin ? ' admin' : ''}">${d.me.admin ? 'Administrador' : 'Miembro'}</span>`)
-        + ajRow('Nombre', 'Con el que apareces en los correos y en lo que ronin propone.', `<input class="aj-in" maxlength="120" data-ajme="name" value="${esc(p.name ?? '')}" placeholder="${esc(d.me.login)}" aria-label="Nombre">`)
-        + ajRow('Correo', 'Adonde te escribe ronin: lo que eliges en Notificaciones. GitHub no se lo da al tablero.', `<input class="aj-in" type="email" maxlength="254" data-ajme="email" value="${esc(p.email ?? '')}" placeholder="persona@gmail.com" aria-label="Correo">`))}
-      ${d.linear.length ? ajSec('Linear', d.linear.map((t) => ajRow(esc(t.workspace ?? t.team), `${esc(t.repo)} · equipo ${esc(t.team)}`, `<select class="aj-in" data-ajlinear="${esc(t.repo)}" aria-label="Tu usuario en ${esc(t.team)}"><option value="">—</option>${t.people.map((x) => `<option value="${esc(x.id)}" ${p.linear?.[t.repo]?.id === x.id ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select>`)).join(''), 'Quién eres en cada equipo, para sugerirte como líder de un proyecto o como asignado.') : ''}
-      ${ajSec('Interfaz', ajRow('Tema', 'Solo en este navegador.', `<div class="aj-seg"><button data-ajtheme="dark" aria-pressed="${dark}">Oscuro</button><button data-ajtheme="light" aria-pressed="${!dark}">Claro</button></div>`))}`;
-  },
-  general(d) {
-    const row = ajSettingOf(d);
-    return `<h1>General</h1><p class="lead">El tablero y el portal de pedidos. Un cambio vale al momento, sin reiniciar, y queda en el <a href="/ajustes/registro" data-aj-link="registro">Registro</a>.</p>
-      ${ajSec('Tablero', ajFixed('Dirección', esc(d.dashboard.url || '—'), 'DASHBOARD_URL') + row('dashboard.sessionDays') + row('dashboard.githubTtlSeconds'))}
-      ${ajSec('Portal de pedidos', ajFixed('Dirección', esc(d.portal.url || '—'), 'PORTAL_URL') + row('portal.dailyLimit') + row('portal.sessionDays'), 'Las cuentas del portal están en <a href="/ajustes/usuarios" data-aj-link="usuarios">Usuarios</a>, con el rol Usuario.')}
-      ${ajSec('Runner', ajFixed('Runner', esc(d.fixed.runnerId), 'RUNNER_ID') + ajFixed('Cuenta de GitHub de ronin', esc(d.fixed.githubLogin), 'RONIN_GITHUB_LOGIN'))}`;
-  },
-  repos() {
-    return S.aj.repo ? ajRepoHTML() : ajReposHTML();
-  },
-  agentes(d) {
-    const row = ajSettingOf(d);
-    const general = (key) => ajWord(d.valores.find((s) => s.key === key).value);
-    const tareas = d.tareas.map((t) => {
-      const fallbackModel = t.envModel ?? t.defaultModel;
-      const fallback = (value, def, kind) => (value !== null ? `${ajWord(value)} (.env)` : def ? `${def} (por defecto)` : `General (${general(kind)})`);
-      return `<tr><td>${esc(typeName(t.task))}<small class="mono">${esc(t.task)}</small></td>
-        <td><select class="aj-in" data-ajtask="${esc(t.task)}" data-f="model" aria-label="Modelo de ${esc(t.task)}"><option value="">${esc(fallback(t.envModel, t.defaultModel, 'agent.model'))}</option>${['opus', 'sonnet', 'haiku'].map((m) => `<option ${t.model === m ? 'selected' : ''}>${m}</option>`).join('')}</select></td>
-        <td><select class="aj-in" data-ajtask="${esc(t.task)}" data-f="effort" aria-label="Esfuerzo de ${esc(t.task)}"><option value="">${esc(fallback(t.envEffort, t.defaultEffort, 'agent.effort'))}</option>${['low', 'medium', 'high', 'xhigh', 'max'].map((m) => `<option ${t.effort === m ? 'selected' : ''}>${m}</option>`).join('')}</select></td></tr>`;
-    }).join('');
-    return `<h1>Agentes</h1><p class="lead">Las corridas headless de <code>claude -p</code>. Cada tick y cada webhook leen estos valores al empezar: un cambio vale desde la próxima corrida, sin reiniciar.</p>
-      ${ajSec('Modelo', row('agent.model') + row('agent.effort') + row('agent.reviewWorkerModel'))}
-      <section class="aj-sec"><h2>Por tipo de tarea</h2><p class="aj-d">Gana sobre el de arriba y sobre <code>AGENT_MODEL_&lt;TIPO&gt;</code> de .env. Un repo puede tener los suyos en <a href="/ajustes/repos" data-aj-link="repos">Repos</a>.</p>
-        <div class="aj-card"><table class="aj-tbl aj-tasks"><thead><tr><th>Tarea</th><th>Modelo</th><th>Esfuerzo</th></tr></thead><tbody>${tareas}</tbody></table></div></section>
-      ${ajSec('Tiempos', row('agent.taskTimeoutMinutes') + row('agent.handlerTimeoutMinutes'))}
-      ${ajSec('Concurrencia', row('tick.intervalMinutes') + row('tick.concurrency') + row('tick.externalReviewConcurrency'))}
-      ${ajSec('Antes de bloquear', row('retry.e2e') + row('retry.e2eHard') + row('retry.checksPending') + row('retry.slice') + row('retry.retarget') + row('retry.issueError'), 'Cuántas veces intenta ronin antes de pedir ayuda (docs/BLOCKING.md).')}`;
-  },
-  // #234: the plan each account pays, for Métricas → Suscripción.
-  cuentas() {
-    const d = S.aj.cuentas;
-    if (!d) return '<h1>Cuentas de Claude</h1><div class="empty">Cargando…</div>';
-    const def = d.plans.find((p) => p.id === 'max5');
-    const usd = (n) => (n === null ? '—' : `$${n}`);
-    const cards = d.cuentas.map((c) => {
-      const a = esc(c.account);
-      const p = c.plan;
-      const list = d.plans.find((x) => x.id === p.plan)?.priceUsd ?? null;
-      const planSrc = p.source === 'tablero'
-        ? `<span class="aj-ov">● Cambiado en el tablero</span><button data-ajplanreset="${a}">Volver al de por defecto (${esc(def.name)})</button>`
-        : `<span>Por defecto: ${esc(def.name)}</span>`;
-      const priceSrc = list === null ? `<span>${esc(p.name)} no tiene precio de lista: pon lo que pagan al mes.</span>`
-        : p.priceUsd === list ? `<span>El de lista de ${esc(p.name)}</span>` : `<span>El de lista de ${esc(p.name)} es ${usd(list)}</span><button data-ajprice="${a}" data-v="">Usar ${usd(list)}</button>`;
-      const u = c.usage;
-      const fresh = (w) => w && Date.parse(w.resetsAt) > Date.now();
-      const now = !u ? '<span class="m">Sin uso registrado</span>'
-        : `${fresh(u.sevenDay) ? `<b>${pct(u.sevenDay.utilization)}</b> de la semana` : 'La semana se reinició'} · ${fresh(u.fiveHour) ? `${pct(u.fiveHour.utilization)} de la ventana de 5 h` : 'ventana de 5 h libre'}`;
-      return `<section class="aj-sec"><h2>${a}</h2><p class="aj-d">${c.repos.length ? c.repos.map(esc).join(', ') : 'Ningún repo la usa ahora; tiene uso registrado.'}</p><div class="aj-card">
-        ${ajRow('Plan', '', `<select class="aj-in" data-ajplan="${a}" aria-label="Plan de ${a}">${d.plans.map((x) => `<option value="${esc(x.id)}" ${x.id === p.plan ? 'selected' : ''}>${esc(x.name)}${x.priceUsd === null ? '' : ` · $${x.priceUsd}`}</option>`).join('')}</select>`, planSrc)}
-        ${ajRow('Precio al mes', 'En dólares. Se completa con el del plan.', `<span class="aj-unit pre">$</span><input class="aj-num" type="number" min="0" step="1" data-ajprice="${a}" value="${p.priceUsd ?? ''}" placeholder="—" aria-label="Precio al mes de ${a}"><span class="aj-unit">al mes</span>`, priceSrc)}
-        ${ajRow('Uso ahora', u ? `Lo que dijo la última corrida de ronin, ${esc(ago(u.measuredAt))}. Cuenta todo lo que usa la cuenta, no solo ronin.` : 'Aparece con la primera corrida de ronin en esta cuenta.', `<span>${now}</span>`)}
-        ${ajRow('Configuración', '', `<span class="aj-ro">${esc(c.claudeConfigDir || '~/.claude (la de Claude Code por defecto)')}</span>`, '<span class="aj-env">repos.json</span><code>claudeConfigDir</code><span>· se cambia en el archivo</span>')}
-      </div></section>`;
-    }).join('');
-    return `<h1>Cuentas de Claude</h1><p class="lead">Las cuentas con las que corre ronin, una por <code>claudeConfigDir</code> de <code>repos.json</code>. El plan sirve para calcular en Métricas cuánto rinde cada una. Una cuenta sin elegir cuenta como ${esc(def.name)} (${usd(def.priceUsd)}).</p>
-      ${cards || '<div class="aj-card"><div class="aj-row"><span class="m">Ningún repo tiene cuenta todavía.</span></div></div>'}`;
-  },
-  exploracion(d) {
-    const row = ajSettingOf(d);
-    return `<h1>Exploración</h1><p class="lead">La exploración nocturna y <code>/explore</code>. Qué apps se exploran se elige en cada repo, en <a href="/ajustes/repos" data-aj-link="repos">Repos</a>.</p>
-      ${ajSec('Noche', row('explore.timezone') + row('explore.nightWindow') + row('explore.functionsPerNight'))}
-      ${ajSec('Cada corrida', row('explore.functionsPerRun') + row('explore.findingsPerRun') + row('explore.ideasPerRun') + row('explore.publishEvidence'))}`;
-  },
-  previews(d) {
-    const row = ajSettingOf(d);
-    return `<h1>Previews</h1><p class="lead"><code>/preview</code> en un PR levanta la app en la tailnet.</p>
-      ${ajSec('Previews', row('preview.prepareData') + row('preview.ttlMinutes') + row('preview.maxPerRepo')
-        + ajRow('Puertos', 'Lo único que la política de Tailscale le abre a alguien de afuera: se cambian juntos, por eso no se tocan aquí.', `<span class="aj-ro">${esc(d.fixed.previewPortRange)}</span>`, '<span class="aj-env">.env</span><code>PREVIEW_PORT_RANGE</code><span>· se cambia en el servidor</span>'))}`;
-  },
-  conexiones() {
-    const c = S.aj.conex;
-    if (!c) return '<h1>Conexiones</h1><div class="empty">Leyendo…</div>';
-    const st = (ok, yes = 'Configurado', no = 'Falta') => (ok ? `<span class="ok-t">● ${esc(yes)}</span>` : `<span class="bad">○ ${esc(no)}</span>`);
-    const env = (name) => `<span class="aj-env">.env</span><code>${esc(name)}</code><span>· se cambia en el servidor</span>`;
-    const days = c.github.expires ? Math.round((Date.parse(c.github.expires) - Date.now()) / 86_400_000) : null;
-    return `<h1>Conexiones</h1><p class="lead">Las credenciales viven en <code>.env</code> del servidor y nunca pasan por el tablero: aquí solo se ve si están y si responden. Linear se configura en cada repo.</p>
-      ${ajSec('GitHub', ajRow('Token de ronin', `PAT fine-grained de la cuenta ${esc(c.github.login ?? 'de ronin')}.`, c.github.ok ? st(true, days !== null ? `Responde · vence en ${days} días` : 'Responde') : st(false, '', c.github.error ?? 'No responde'), env('RONIN_GITHUB_TOKEN'))
-        + ajRow('OAuth App del tablero', 'Con la que se entra al tablero.', st(c.oauth), env('DASHBOARD_GITHUB_CLIENT_ID / _SECRET'))
-        + ajRow('Secreto de los webhooks', '', st(c.webhookSecret), env('WEBHOOK_SECRET')))}
-      ${ajSec('Correo', ajRow('Gmail', 'El remitente de todos los correos de ronin.', `<span class="aj-ro">${esc(c.gmail.user)}</span>`, `${c.gmail.password ? '' : '<span class="bad">○ Falta la contraseña de aplicación</span>'}<span class="aj-env">.env</span><code>GMAIL_USER / GMAIL_APP_PASSWORD</code>`)
-        + ajRow('Probar', 'Te manda un correo de prueba a ti, al de tu Perfil.', `<button class="btn-s" data-ajtestmail ${S.aj.busy ? 'disabled' : ''}>${S.aj.busy ? 'Mandando…' : 'Mandar prueba'}</button>`))}
-      ${ajSec('Sesiones', ajRow('Firma del tablero', 'Cambiarla cierra todas las sesiones.', st(c.sessions.dashboard), env('DASHBOARD_SESSION_SECRET'))
-        + ajRow('Firma del portal', '', st(c.sessions.portal, 'Configurado', 'Falta: el portal está apagado'), env('PORTAL_SESSION_SECRET')))}`;
-  },
-  usuarios() {
-    return S.aj.cuenta ? ajCuentaHTML() : S.aj.login ? ajUserHTML() : ajUsersHTML();
-  },
-  registro() {
-    const list = S.aj.registro;
-    const rows = !list ? '<div class="aj-row"><span class="m">Cargando…</span></div>' : !list.length ? '<div class="aj-row"><span class="m">Todavía nadie cambió nada.</span></div>'
-      : list.map((e) => `<div class="aj-log"><span class="t" title="${esc(new Date(e.at).toLocaleString('es'))}">${esc(new Date(e.at).toLocaleDateString('es', { day: 'numeric', month: 'short' }))} ${esc(hhmm(e.at))}</span><span class="w">${esc(e.login)}</span><div><b>${esc(ajWhat(e.what))}</b><div><span class="from">${esc(e.from)}</span> → <span class="to">${esc(e.to)}</span></div></div></div>`).join('');
-    return `<h1>Registro</h1><p class="lead">Cada cambio en Ajustes: quién, cuándo, qué había y qué quedó. No se borra.</p><div class="aj-card">${rows}</div>`;
-  },
-};
-// "General · portal.dailyLimit" reads as the setting's name.
-const ajWhat = (what) => what.replace(/^(\S+) · ([\w.]+)$/, (m, sec, key) => (AJ_SETTINGS[key] ? `${sec} · ${AJ_SETTINGS[key][0]}` : m));
-const ajSettingOf = (d) => (key) => ajSettingRow(d.valores.find((s) => s.key === key));
-
-// Ajustes → Usuarios (#174, stage 2): the team, their role and what each
-// can do repo by repo, never more than GitHub gives.
-const AJ_SETS = { todo: ['Todo', 'como hoy'], reuniones: ['Reuniones y pedidos', 'sin tocar código'], lectura: ['Solo lectura', 've el repo, no hace nada'] };
-const AJ_PERMS = [['notas', 'Subir notas', 'de reuniones'], ['aprobar', 'Aprobar', 'lo que propone una reunión'], ['acciones', 'Acciones', 'asignar a ronin, /spike, /spec, revisar, auto-merge'], ['desplegar', 'Desplegar', 'publicar un release']];
-const ajSetName = (set, def) => (set === 'custom' ? 'Personalizado' : set ? AJ_SETS[set][0] : `${AJ_SETS[def ?? 'todo'][0]}`);
-const ajSince = (iso) => (iso ? `hace ${short(Date.now() - Date.parse(iso))}` : 'nunca');
-const ajAdminPill = (u) => (u.role === 'admin' ? `<span class="aj-pill admin">Administrador</span>${u.envAdmin ? ' <span class="aj-env" title="DASHBOARD_ADMINS">.env</span>' : ''}` : '<span class="aj-pill">Miembro</span>');
-
-function ajUsersHTML() {
-  const d = S.aj.users;
-  if (!d) return '<h1>Usuarios</h1><div class="empty">Cargando…</div>';
-  const q = S.aj.q.trim().toLowerCase();
-  const people = d.people.filter((u) => !q || `${u.login} ${u.name ?? ''} ${u.email ?? ''}`.toLowerCase().includes(q));
-  const repos = (u) => (u.role === 'admin' ? '<span class="m">Todos</span>' : u.repos.map((r) => {
-    if (!r.github) return '';
-    const label = r.hidden ? 'oculto' : ajSetName(r.set, d.porDefecto) + (r.set ? '' : '*') + (r.desplegar ? ' + desplegar' : '');
-    return `<span class="aj-rp${r.hidden ? ' off' : ''}"><i style="background:${repoColor(r.repo)}"></i>${esc(repoShort(r.repo))} <span class="m">${esc(label)}</span></span>`;
-  }).join('') || '<span class="m">Ninguno en GitHub</span>');
-  const env = d.envAllowed.length ? `.env dice: ${d.envAllowed.join(', ')}` : 'hoy vacío';
-  // The portal's accounts (role Usuario), when the portal is set up.
-  const portal = S.snap.portalAdmin ? (S.portal.data?.users ?? []).filter((u) => !q || `${u.name} ${u.email}`.toLowerCase().includes(q)) : [];
-  const f = S.snap.portalAdmin ? S.aj.f : 'equipo';
-  const teamRows = people.map((u) => `<tr data-ajuser="${esc(u.login)}" tabindex="0"><td><b>${esc(u.name || u.login)}</b><small><span class="mono">@${esc(u.login)}</span>${u.email ? '' : ' · <span class="warn-t">sin correo</span>'}</small></td><td>${ajAdminPill(u)}<small>GitHub</small></td><td class="hide-m">${repos(u)}</td><td class="hide-m m">${esc(ajSince(u.lastSeenAt))}${u.addedBy ? `<small>agregado por @${esc(u.addedBy)}</small>` : ''}</td></tr>`);
-  const portalRows = portal.map((u) => {
-    const [cls, label] = portalStatus(u);
-    return `<tr data-ajcuenta="${esc(u.id)}" tabindex="0" class="${u.disabled ? 'off' : ''}"><td><b>${esc(u.name)}</b><small>${esc(u.email)}</small></td><td><span class="aj-pill user">Usuario</span><small>Portal${cls === 'ok' ? '' : ` · <span class="${cls === 'warn' ? 'warn-t' : 'm'}">${esc(label)}</span>`}</small></td>
-      <td class="hide-m">${u.grants.length ? u.grants.map((g) => `<span class="aj-rp"><i style="background:${repoColor(g.repo)}"></i>${esc(appLabel(g))}</span>`).join('') : '<span class="m">ninguna app</span>'}${u.today && !u.disabled ? `<small>quedan ${Math.max(0, u.today.limit - u.today.used)} de ${u.today.limit} pedidos hoy</small>` : ''}</td>
-      <td class="hide-m m">${u.lastLoginAt ? esc(ajSince(u.lastLoginAt)) : 'nunca'}<small>invitada por @${esc(u.createdBy)}</small></td></tr>`;
-  });
-  const rows = f === 'equipo' ? teamRows : f === 'portal' ? portalRows : [...teamRows, ...portalRows];
-  const counts = { todos: d.people.length + (S.portal.data?.users.length ?? 0), equipo: d.people.length, portal: S.portal.data?.users.length ?? 0 };
-  const filter = S.snap.portalAdmin ? `<div class="aj-seg">${[['todos', 'Todos'], ['equipo', 'Equipo'], ['portal', 'Portal']].map(([k, n]) => `<button data-ajf="${k}" aria-pressed="${f === k}">${n} <span class="m">${counts[k]}</span></button>`).join('')}</div>` : '';
-  return `<h1>Usuarios</h1><p class="lead">Todos los que usan ronin. <b>Administradores</b> y <b>miembros</b> son el equipo y entran al tablero con GitHub: GitHub dice qué repos ve cada uno (permiso <i>triage</i> o más); aquí se le pueden quitar repos y limitar qué hace en ellos, nunca darle más.${S.snap.portalAdmin ? ' <b>Usuarios</b> son quienes piden ajustes en el portal, con correo y contraseña: solo ven las apps que se les habilitan.' : ''}</p>
-    ${f === 'portal' ? '' : ajSec('Quién del equipo puede entrar', ajRow('Entrada', d.entrada === 'github' ? 'Cualquiera con triage en algún repo de ronin. Entra como miembro, con los permisos por defecto.' : 'Solo las personas de la lista de abajo y los administradores.',
-      `<div class="aj-seg"><button data-ajentrada="github" aria-pressed="${d.entrada === 'github'}">Quien tenga acceso en GitHub</button><button data-ajentrada="lista" aria-pressed="${d.entrada === 'lista'}">Solo la lista</button></div>`,
-      `<span>${d.entradaSet ? 'Reemplaza a' : 'Hoy lo dice'}</span><code>DASHBOARD_ALLOWED_USERS</code><span>· ${esc(env)}</span>`)
-      + ajRow('Permisos por defecto', 'Los de un miembro en cada repo, si no se le eligieron otros. Desplegar se da aparte, repo por repo.',
-        `<select class="aj-in" data-ajdef aria-label="Permisos por defecto">${Object.entries(AJ_SETS).map(([id, [name, desc]]) => `<option value="${id}" ${d.porDefecto === id ? 'selected' : ''}>${esc(name)} (${esc(desc)})</option>`).join('')}</select>`))}
-    <div class="aj-bar">${filter}<input class="aj-in" data-ajq placeholder="Buscar por nombre, login o correo" value="${esc(S.aj.q)}" aria-label="Buscar"><button class="btn-s primary" data-ajadd>Agregar persona</button></div>
-    <div class="aj-card"><table class="aj-tbl"><thead><tr><th>Persona</th><th>Rol</th><th class="hide-m">${f === 'portal' ? 'Apps' : 'Repos'}</th><th class="hide-m">Entró</th></tr></thead><tbody>
-      ${rows.join('') || '<tr><td colspan="4" class="m">Nadie con esa búsqueda.</td></tr>'}
-    </tbody></table></div>
-    <p class="aj-foot">Del equipo aparece quien entró alguna vez o agregó un administrador; * = los permisos por defecto.${S.snap.portalAdmin ? ' Las cuentas del portal existen solo si alguien las invita.' : ''}</p>`;
-}
-
-function ajUserHTML() {
-  const u = S.aj.user;
-  const crumbs = `<div class="aj-crumbs"><a href="/ajustes/usuarios" data-aj-link="usuarios">Usuarios</a> › <span>${esc(S.aj.login)}</span></div>`;
-  if (!u) return `${crumbs}<div class="empty">Cargando…</div>`;
-  const admin = u.role === 'admin';
-  const me = u.login === S.snap.me;
-  const roleSeg = `<div class="aj-seg"><button data-ajrole="admin" aria-pressed="${admin}" ${u.envAdmin ? 'disabled' : ''}>Administrador</button><button data-ajrole="member" aria-pressed="${!admin}" ${u.envAdmin || me ? 'disabled' : ''}>Miembro</button></div>`;
-  const repoCard = (r) => {
-    if (r.githubLets === false || r.github === null) return `<div class="aj-card aj-repo off"><div class="aj-row"><div class="l"><b><i style="background:${repoColor(r.repo)}"></i>${esc(r.repo)}</b><small>GitHub no le da acceso (triage o más). Se le da en GitHub, no aquí.</small></div></div></div>`;
-    const custom = r.set === 'custom';
-    return `<div class="aj-card aj-repo${r.hidden ? ' off' : ''}"><div class="aj-row"><div class="l"><b><i style="background:${repoColor(r.repo)}"></i>${esc(r.repo)}</b><small>GitHub: ${esc(r.github ?? 'no se pudo leer')}${r.hidden ? ' · <span class="warn-t">oculto en el tablero</span>' : ''}</small></div>
-      <div class="ctl"><select class="aj-in" data-ajset="${esc(r.repo)}" ${r.hidden ? 'disabled' : ''} aria-label="Permisos en ${esc(r.repo)}"><option value="" ${!r.set ? 'selected' : ''}>Por defecto (${esc(AJ_SETS[u.porDefecto]?.[0] ?? 'Todo')})</option>${Object.entries(AJ_SETS).map(([id, [name]]) => `<option value="${id}" ${r.set === id ? 'selected' : ''}>${esc(name)}</option>`).join('')}${custom ? '<option value="custom" selected>Personalizado</option>' : ''}</select>
-      <button class="aj-sw" role="switch" aria-checked="${!r.hidden}" data-ajhide="${esc(r.repo)}" title="${r.hidden ? 'Mostrarle este repo' : 'Ocultarle este repo'}" aria-label="Ve ${esc(r.repo)} en el tablero"></button></div></div>
-      ${r.hidden ? '' : `<div class="aj-perm">${AJ_PERMS.map(([id, name, hint]) => `<label title="${esc(hint)}"><input type="checkbox" data-ajperm="${esc(r.repo)}" data-p="${id}" ${r.perms[id] ? 'checked' : ''}><span>${esc(name)}<small>${esc(hint)}</small></span></label>`).join('')}</div>`}</div>`;
-  };
-  return `${crumbs}<h1>${esc(u.name || u.login)}</h1><p class="lead"><span class="mono">@${esc(u.login)}</span> · entró ${esc(ajSince(u.lastSeenAt))}${u.addedBy ? ` · agregado por @${esc(u.addedBy)}` : ''}</p>
-    ${ajSec('Cuenta', ajRow('Rol', admin ? 'Ve todos los repos, hace todo y administra los ajustes.' : 'Ve lo que GitHub le da, con los permisos de cada repo.', roleSeg,
-      u.envAdmin ? '<span class="aj-env">.env</span><code>DASHBOARD_ADMINS</code><span>· administrador de respaldo: no se le quita desde aquí, para que nadie quede afuera por un error.</span>' : me && admin ? '<span>No puedes quitarte el rol a ti mismo.</span>' : '')
-      + ajRow('Nombre', 'Lo pone la persona en su perfil; un administrador puede corregirlo.', `<input class="aj-in" maxlength="120" data-ajufield="name" value="${esc(u.name ?? '')}" placeholder="${esc(u.login)}" aria-label="Nombre">`)
-      + ajRow('Correo', '', `<input class="aj-in" type="email" maxlength="254" data-ajufield="email" value="${esc(u.email ?? '')}" placeholder="persona@gmail.com" aria-label="Correo">`))}
-    ${admin ? ajSec('Repos', u.repos.map((r) => ajRow(`<i class="aj-sq" style="background:${repoColor(r.repo)}"></i>${esc(r.repo)}`, 'Todo, como administrador.', `<span class="aj-pill">GitHub: ${esc(r.github ?? '—')}</span>`)).join(''))
-      : `<section class="aj-sec"><h2>Repos y permisos</h2><p class="aj-d">Un conjunto marca los permisos; tocar uno lo deja como <i>Personalizado</i>. Desplegar se da aparte.</p>${u.repos.map(repoCard).join('')}</section>`}
-    ${ajSec('Notificaciones', u.notificaciones.map((n) => ajRow(`<i class="aj-sq" style="background:${repoColor(n.repo)}"></i>${esc(n.repo)}`, n.events.length ? AJ_EVENTS.filter(([id]) => n.events.includes(id)).map(([, name]) => esc(name)).join(' · ') : 'Ninguna', `<span class="m">${n.events.length} de ${AJ_EVENTS.length}${n.chosen ? '' : ', las de antes'}</span>`)).join(''), u.email ? 'Las elige la persona en su perfil; aquí solo se ven.' : '<span class="warn-t">Sin correo: no le llega nada hasta que tenga uno.</span>')}
-    ${u.envAdmin || me ? '' : `<section class="aj-sec"><button class="btn-s danger" data-ajremove>Quitar de la lista</button><p class="aj-foot">${u.entrada === 'lista' ? 'Con la entrada en "solo la lista", deja de poder entrar.' : 'Si vuelve a entrar, tiene lo que le da GitHub y los permisos por defecto.'}</p></section>`}`;
-}
-
-function wireAjUsers(center) {
-  const q = center.querySelector('[data-ajq]');
-  if (q) q.oninput = () => {
-    S.aj.q = q.value;
-    const pos = q.selectionStart;
-    renderCenter();
-    const fresh = $('#center [data-ajq]');
-    fresh?.focus();
-    fresh?.setSelectionRange(pos, pos);
-  };
-  for (const row of center.querySelectorAll('[data-ajuser]')) {
-    row.onclick = () => openAjustes('usuarios', row.dataset.ajuser);
-    row.onkeydown = (event) => { if (event.key === 'Enter') openAjustes('usuarios', row.dataset.ajuser); };
-  }
-  for (const row of center.querySelectorAll('[data-ajcuenta]')) {
-    row.onclick = () => openAjustes('usuarios', null, null, row.dataset.ajcuenta);
-    row.onkeydown = (event) => { if (event.key === 'Enter') openAjustes('usuarios', null, null, row.dataset.ajcuenta); };
-  }
-  for (const b of center.querySelectorAll('[data-ajf]')) b.onclick = () => {
-    S.aj.f = b.dataset.ajf;
-    renderCenter();
-  };
-  wireAjCuenta(center);
-  for (const b of center.querySelectorAll('[data-ajentrada]')) b.onclick = () => ajEquipo({ entrada: b.dataset.ajentrada });
-  center.querySelector('[data-ajdef]')?.addEventListener('change', (event) => ajEquipo({ porDefecto: event.target.value }));
-  center.querySelector('[data-ajadd]')?.addEventListener('click', ajOpenAdd);
-  const login = S.aj.login;
-  for (const b of center.querySelectorAll('[data-ajrole]')) b.onclick = () => {
-    if (S.aj.user.role === b.dataset.ajrole) return;
-    if (b.dataset.ajrole === 'admin' && !confirm(`¿Hacer administrador a ${S.aj.user.name || login}? Va a ver todos los repos, aunque GitHub no se los dé, y a poder cambiar todos los ajustes.`)) return;
-    ajUser({ role: b.dataset.ajrole });
-  };
-  for (const input of center.querySelectorAll('[data-ajufield]')) input.onchange = () => ajUser({ [input.dataset.ajufield]: input.value });
-  for (const select of center.querySelectorAll('[data-ajset]')) select.onchange = () => {
-    if (select.value !== 'custom') ajUser({ repo: { repo: select.dataset.ajset, set: select.value || null } });
-  };
-  for (const b of center.querySelectorAll('[data-ajhide]')) b.onclick = () => ajUser({ repo: { repo: b.dataset.ajhide, hidden: b.getAttribute('aria-checked') === 'true' } });
-  for (const box of center.querySelectorAll('[data-ajperm]')) box.onchange = () => {
-    const repo = box.dataset.ajperm;
-    if (box.dataset.p === 'desplegar') return ajUser({ repo: { repo, desplegar: box.checked } });
-    const perms = S.aj.user.repos.find((r) => r.repo === repo).perms;
-    ajUser({ repo: { repo, custom: { notas: perms.notas, aprobar: perms.aprobar, acciones: perms.acciones, [box.dataset.p]: box.checked } } });
-  };
-  center.querySelector('[data-ajremove]')?.addEventListener('click', async () => {
-    if (!confirm(`¿Quitar a ${S.aj.user.name || login} de la lista?`)) return;
-    try {
-      await api(`/api/settings/users/${encodeURIComponent(login)}/remove`, { method: 'POST', body: '{}' });
-      toast(`Quitaste a @${login} de la lista.`);
-      openAjustes('usuarios');
-    } catch (error) {
-      if (error instanceof Unauthorized && showLogin(error)) return;
-      toast(`No se pudo. ${error.message}`);
-    }
-  });
-}
-
-async function ajUser(patch) {
-  try {
-    S.aj.user = await api(`/api/settings/users/${encodeURIComponent(S.aj.login)}`, { method: 'POST', body: JSON.stringify(patch) });
-    toast('Guardado.');
-  } catch (error) {
-    if (error instanceof Unauthorized && showLogin(error)) return;
-    toast(`No se guardó. ${error.message}`);
-  }
-  $('#center')._html = null;
-  renderCenter();
-}
-
-async function ajEquipo(patch) {
-  try {
-    Object.assign(S.aj.users, await api('/api/settings/team', { method: 'POST', body: JSON.stringify(patch) }), { entradaSet: true });
-    toast('Guardado.');
-  } catch (error) {
-    if (error instanceof Unauthorized && showLogin(error)) return;
-    toast(`No se guardó. ${error.message}`);
-  }
-  $('#center')._html = null;
-  renderCenter();
-}
-
-// Agregar persona: someone of the team, before they come in.
-function ajOpenAdd() {
-  S.aj.add = { kind: S.snap.portalAdmin && S.aj.f === 'portal' ? 'portal' : 'equipo', login: '', role: 'member', name: '', email: '', grants: new Set(), sending: false, error: null };
-  ajRenderAdd();
-}
-
-function ajRenderAdd() {
-  let layer = $('#ajlayer');
-  const a = S.aj.add;
-  if (!a) {
-    layer?.remove();
-    return;
-  }
-  const fresh = !layer;
-  layer ??= Object.assign(document.body.appendChild(document.createElement('div')), { id: 'ajlayer' });
-  const portal = a.kind === 'portal';
-  const ready = () => (portal ? a.name.trim() && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(a.email.trim()) : a.login.trim());
-  const apps = S.portal.data?.apps ?? [];
-  layer.innerHTML = `<div class="scrim"><div class="dlg" role="dialog" aria-modal="true" aria-labelledby="aj-add-t">
-    <h2 id="aj-add-t">Agregar persona</h2>
-    ${S.snap.portalAdmin ? `<div class="aj-seg aj-kind"><button data-ajkind="equipo" aria-pressed="${!portal}">Del equipo · con GitHub</button><button data-ajkind="portal" aria-pressed="${portal}">Usuario del portal · con correo</button></div>` : ''}
-    <p class="help">${portal ? 'Le llega un correo con un enlace para crear su contraseña. Vence en 24 horas.' : 'Para darle un rol o sus permisos antes de que entre. Los repos se los sigue dando GitHub.'}</p>
-    ${portal ? `<label class="field"><span>Nombre</span><input id="aj-add-name" maxlength="120" autocomplete="off" value="${esc(a.name)}"></label>
-      <label class="field"><span>Correo</span><input id="aj-add-email" type="email" autocomplete="off" value="${esc(a.email)}" placeholder="persona@gmail.com"></label>
-      <fieldset class="aj-add-apps"><legend>Puede pedir ajustes en</legend>${apps.map((x) => `<label class="aj-chk"><input type="checkbox" data-ajaddgrant="${esc(appKey(x))}" ${a.grants.has(appKey(x)) ? 'checked' : ''}><span>${esc(x.org)} · ${esc(x.name)}</span></label>`).join('') || '<span class="m">Ningún repo tiene portal.apps en repos.json.</span>'}</fieldset>`
-    : `<label class="field"><span>Login de GitHub</span><input id="aj-add-login" autocomplete="off" value="${esc(a.login)}" placeholder="usuario"></label>
-      <label class="field"><span>Rol</span><select id="aj-add-role"><option value="member" ${a.role === 'member' ? 'selected' : ''}>Miembro</option><option value="admin" ${a.role === 'admin' ? 'selected' : ''}>Administrador</option></select></label>`}
-    <p class="bad" ${a.error ? '' : 'hidden'}>${esc(a.error ?? '')}</p>
-    <div class="foot-d"><button class="btn-s" data-ajaddx>Cancelar</button><button class="btn-s primary" data-ajaddok ${a.sending || !ready() ? 'disabled' : ''}>${a.sending ? 'Agregando…' : portal ? 'Crear e invitar' : 'Agregar'}</button></div>
-  </div></div>`;
-  const ok = layer.querySelector('[data-ajaddok]');
-  for (const b of layer.querySelectorAll('[data-ajkind]')) b.onclick = () => { a.kind = b.dataset.ajkind; a.error = null; ajRenderAdd(); };
-  const bind = (sel, field) => {
-    const el = layer.querySelector(sel);
-    if (!el) return;
-    el.oninput = () => { a[field] = el.value; ok.disabled = !ready(); };
-    el.onkeydown = (event) => { if (event.key === 'Enter' && ready()) ajAdd(); };
-  };
-  bind('#aj-add-login', 'login');
-  bind('#aj-add-name', 'name');
-  bind('#aj-add-email', 'email');
-  for (const box of layer.querySelectorAll('[data-ajaddgrant]')) box.onchange = () => { if (box.checked) a.grants.add(box.dataset.ajaddgrant); else a.grants.delete(box.dataset.ajaddgrant); };
-  layer.querySelector('#aj-add-role')?.addEventListener('change', (event) => { a.role = event.target.value; });
-  const input = layer.querySelector(portal ? '#aj-add-name' : '#aj-add-login');
-  layer.querySelector('[data-ajaddx]').onclick = () => { S.aj.add = null; ajRenderAdd(); };
-  layer.querySelector('[data-ajaddok]').onclick = ajAdd;
-  layer.querySelector('.scrim').onclick = (event) => { if (event.target.classList.contains('scrim')) { S.aj.add = null; ajRenderAdd(); } };
-  if (fresh) input.focus();
-}
-
-async function ajAdd() {
-  const a = S.aj.add;
-  a.sending = true;
-  a.error = null;
-  ajRenderAdd();
-  if (a.kind === 'portal') return ajAddCuenta(a);
-  try {
-    const { login } = await api('/api/settings/users', { method: 'POST', body: JSON.stringify({ login: a.login, role: a.role }) });
-    S.aj.add = null;
-    ajRenderAdd();
-    toast(`Agregaste a @${login}.`);
-    openAjustes('usuarios', login);
-  } catch (error) {
-    if (error instanceof Unauthorized && showLogin(error)) return;
-    a.sending = false;
-    a.error = error.message;
-    ajRenderAdd();
-  }
-}
-
-// One of the portal's accounts (#174, stage 3), as Pedidos del portal →
-// Usuarios had it in a dialog: its name, the apps it can ask in, its daily
-// limit, the link to set its password and turning it off.
-function ajCuentaHTML() {
-  const crumbs = `<div class="aj-crumbs"><a href="/ajustes/usuarios" data-aj-link="usuarios">Usuarios</a> › <span>Portal</span></div>`;
-  const data = S.portal.data;
-  const u = data?.users.find((x) => x.id === S.aj.cuenta);
-  if (!data) return `${crumbs}<div class="empty">${S.portal.error ? esc(S.portal.error) : 'Cargando…'}</div>`;
-  if (!u) return `${crumbs}<p class="bad">No existe esa cuenta.</p>`;
-  const [cls, label] = portalStatus(u);
-  const byRepo = [...new Set(data.apps.map((a) => a.repo))].map((repo) => data.apps.filter((a) => a.repo === repo));
-  const granted = new Set(u.grants.map(appKey));
-  const gone = u.grants.filter((g) => !data.apps.some((a) => appKey(a) === appKey(g)));
-  const link = S.aj.link?.id === u.id ? S.aj.link : null;
-  return `${crumbs}<h1>${esc(u.name)}</h1><p class="lead">${esc(u.email)} · invitada por @${esc(u.createdBy)} · entró ${u.lastLoginAt ? esc(ajSince(u.lastLoginAt)) : 'nunca'}</p>
-    ${cls !== 'ok' ? `<div class="aj-note ${cls === 'warn' || cls === 'crit' ? 'warn' : ''}"><b>${esc(label[0].toUpperCase() + label.slice(1))}.</b> ${u.disabled ? 'No puede entrar al portal; sus pedidos siguen en Pedidos del portal.' : 'Todavía no creó su contraseña.'}</div>` : ''}
-    ${link ? `<div class="aj-note${link.url ? ' warn' : ''}">${esc(link.text)}${link.url ? `<input class="aj-in aj-link" readonly value="${esc(link.url)}" aria-label="Enlace">` : ''}</div>` : ''}
-    ${ajSec('Cuenta', ajRow('Rol', 'Pide ajustes en el portal con su correo y contraseña. No entra al tablero.', '<span class="aj-pill user">Usuario</span>')
-      + ajRow('Nombre', '', `<input class="aj-in" maxlength="120" data-ajcname value="${esc(u.name)}" aria-label="Nombre">`)
-      + ajRow('Correo', 'Es con lo que entra: no se cambia. Si cambió de correo, se invita de nuevo.', `<span class="aj-ro">${esc(u.email)}</span>`))}
-    ${ajSec('Puede pedir ajustes en', byRepo.map((apps) => `<div class="aj-row aj-apps"><div class="l"><b><i class="aj-sq" style="background:${repoColor(apps[0].repo)}"></i>${esc(apps[0].org)} <span class="m mono">${esc(apps[0].repo)}</span></b>
-      ${apps.map((a) => `<label class="aj-chk"><input type="checkbox" data-ajgrant="${esc(appKey(a))}" ${granted.has(appKey(a)) ? 'checked' : ''}><span>${esc(a.name)}${a.description ? `<small>${esc(a.description)}</small>` : ''}</span></label>`).join('')}</div></div>`).join('')
-      + (gone.length ? `<div class="aj-row"><div class="l"><small>${gone.map((g) => esc(appLabel(g))).join(', ')}: ya no está en el portal (portal.apps de repos.json).</small></div></div>` : ''), 'Las apps de <code>portal.apps</code> de cada repo.')}
-    ${ajSec('Pedidos', ajRow('Pedidos por día', `Vacío: el de General (${data.dailyLimit}).`, `<input class="aj-num" type="number" min="0" max="100" data-ajclimit value="${u.dailyLimit ?? ''}" placeholder="${data.dailyLimit}" aria-label="Pedidos por día"><span class="aj-unit">pedidos</span>`,
-      u.today ? `<span>Hoy: ${u.today.used} de ${u.today.limit}${u.today.used >= u.today.limit ? ' · <span class="warn-t">sin pedidos hasta mañana</span>' : ''}</span>` : '')
-      + ajRow('Sus pedidos', '', '<button class="btn-s" data-ajcpedidos>Ver en Pedidos del portal</button>'))}
-    ${ajSec('Acceso', ajRow(u.hasPassword ? 'Nueva contraseña' : 'Volver a mandar la invitación', 'Le llega un enlace que vence en 24 horas. Nadie más ve la contraseña.', `<button class="btn-s" data-ajclink ${u.disabled || S.aj.busy ? 'disabled' : ''}>Mandar enlace</button>`)
-      + ajRow(u.disabled ? 'Reactivar' : 'Desactivar', u.disabled ? 'Vuelve a poder entrar con su contraseña.' : 'Cierra sus sesiones al momento. Sus pedidos no se tocan.', `<button class="btn-s${u.disabled ? '' : ' danger'}" data-ajcoff ${S.aj.busy ? 'disabled' : ''}>${u.disabled ? 'Reactivar' : 'Desactivar'}</button>`))}`;
-}
-
-function wireAjCuenta(center) {
-  const id = S.aj.cuenta;
-  if (!id) return;
-  const u = () => S.portal.data?.users.find((x) => x.id === id);
-  center.querySelector('[data-ajcname]')?.addEventListener('change', (event) => ajCuentaWrite(`/api/portal-admin/users/${id}`, { name: event.target.value }));
-  center.querySelector('[data-ajclimit]')?.addEventListener('change', (event) => {
-    const raw = event.target.value.trim();
-    ajCuentaWrite(`/api/portal-admin/users/${id}`, { dailyLimit: raw === '' ? null : Number(raw) });
-  });
-  for (const box of center.querySelectorAll('[data-ajgrant]')) box.onchange = () => {
-    const keys = new Set([...center.querySelectorAll('[data-ajgrant]:checked')].map((b) => b.dataset.ajgrant));
-    // Apps no longer in the portal stay as they are.
-    const kept = u().grants.filter((g) => !S.portal.data.apps.some((a) => appKey(a) === appKey(g)));
-    ajCuentaWrite(`/api/portal-admin/users/${id}`, { grants: [...kept, ...S.portal.data.apps.filter((a) => keys.has(appKey(a))).map((a) => ({ repo: a.repo, app: a.app }))] });
-  };
-  center.querySelector('[data-ajclink]')?.addEventListener('click', () => ajCuentaWrite(`/api/portal-admin/users/${id}/link`, {}));
-  center.querySelector('[data-ajcoff]')?.addEventListener('click', () => {
-    if (!u().disabled && !confirm(`¿Desactivar la cuenta de ${u().name}? Sus sesiones se cierran al momento.`)) return;
-    ajCuentaWrite(`/api/portal-admin/users/${id}`, { disabled: !u().disabled });
-  });
-  center.querySelector('[data-ajcpedidos]')?.addEventListener('click', () => openPedidos());
-  center.querySelector('.aj-link')?.select();
-}
-
-// A change to an account: the page shows what happened (a link that didn't go out by email, to pass on).
-async function ajCuentaWrite(path, body) {
-  S.aj.busy = true;
-  renderCenter();
-  try {
-    const out = await api(path, { method: 'POST', body: JSON.stringify(body) });
-    S.portal.data.users = [...S.portal.data.users.filter((x) => x.id !== out.user.id), { ...out.user, today: S.portal.data.users.find((x) => x.id === out.user.id)?.today }].sort((a, b) => a.name.localeCompare(b.name, 'es'));
-    if (out.sent === true) S.aj.link = { id: out.user.id, text: `Le mandamos el enlace a ${out.user.email}.` };
-    else if (out.sent === false) S.aj.link = { id: out.user.id, text: 'El correo no salió. Pásale este enlace por otro medio (vence en 24 horas):', url: out.url };
-    else toast(body.disabled === true ? 'Cuenta desactivada.' : body.disabled === false ? 'Cuenta reactivada.' : 'Guardado.');
-    // The limit and today's use come with the list.
-    if (body.dailyLimit !== undefined) S.portal.data = await api('/api/portal-admin');
-  } catch (error) {
-    if (error instanceof Unauthorized && showLogin(error)) return;
-    toast(`No se guardó. ${error.message}`);
-  }
-  S.aj.busy = false;
-  $('#center')._html = null;
-  renderCenter();
-}
-
-async function ajAddCuenta(a) {
-  try {
-    const grants = S.portal.data.apps.filter((x) => a.grants.has(appKey(x))).map((x) => ({ repo: x.repo, app: x.app }));
-    const out = await api('/api/portal-admin/users', { method: 'POST', body: JSON.stringify({ name: a.name, email: a.email, grants }) });
-    S.aj.add = null;
-    ajRenderAdd();
-    S.portal.data = await api('/api/portal-admin');
-    S.aj.link = out.sent ? { id: out.user.id, text: `Le mandamos la invitación a ${out.user.email}.` } : { id: out.user.id, text: 'La cuenta quedó, pero el correo no salió. Pásale este enlace por otro medio (vence en 24 horas):', url: out.url };
-    openAjustes('usuarios', null, null, out.user.id);
-  } catch (error) {
-    if (error instanceof Unauthorized && showLogin(error)) return;
-    a.sending = false;
-    a.error = error.message;
-    ajRenderAdd();
-  }
-}
-
-// Ajustes → Repos (#174, stage 5): what of repos.json can change from here,
-// written into the file. Adding a repo, its paths and its Claude account
-// stay in the file.
-function ajReposHTML() {
-  const d = S.aj.repos;
-  if (!d) return '<h1>Repos</h1><div class="empty">Cargando…</div>';
-  return `<h1>Repos</h1><p class="lead">Los repos que supervisa ronin. Todo sigue en <code>repos.json</code>: lo que se cambia aquí se escribe ahí, con las mismas reglas que lo leen y una copia del anterior. Agregar o quitar un repo, su checkout y su cuenta de Claude se hacen en el archivo.</p>
-    <div class="aj-card"><table class="aj-tbl"><thead><tr><th>Repo</th><th class="hide-m">Portal</th><th class="hide-m">Linear</th><th class="hide-m">Despliegues</th><th class="hide-m">Exploración</th></tr></thead><tbody>
-    ${d.repos.map((r) => `<tr data-ajrepo-row="${esc(r.repo)}" tabindex="0"><td><b><i class="aj-sq" style="background:${repoColor(r.repo)}"></i>${esc(r.repo)}</b><small class="mono">${esc(r.baseRef ?? d.defaults.baseRef)}</small></td>
-      <td class="hide-m">${r.portal ? `${esc(r.portal.name)}<small>${r.apps.filter((a) => a.portal).length} apps</small>` : '<span class="m">—</span>'}</td>
-      <td class="hide-m">${r.linear ? (r.linear.connected ? '<span class="ok-t">● conectado</span>' : '<span class="warn-t">○ sin key en .env</span>') : '<span class="m">—</span>'}</td>
-      <td class="hide-m">${r.deploy ? (r.deploy.prerelease ? 'QA y producción' : 'release') : '<span class="m">—</span>'}</td>
-      <td class="hide-m">${r.apps.filter((a) => a.explore).map((a) => esc(a.id)).join(', ') || '<span class="m">—</span>'}</td></tr>`).join('')}
-    </tbody></table></div><p class="aj-foot">Archivo: <code>${esc(d.path)}</code></p>`;
-}
-
-function ajRepoHTML() {
-  const d = S.aj.repos;
-  const crumbs = `<div class="aj-crumbs"><a href="/ajustes/repos" data-aj-link="repos">Repos</a> › <span>${esc(S.aj.repo)}</span></div>`;
-  const r = d?.repos.find((x) => x.repo === S.aj.repo);
-  if (!d) return `${crumbs}<div class="empty">Cargando…</div>`;
-  if (!r) return `${crumbs}<p class="bad">Ese repo no está en repos.json.</p>`;
-  const file = (field) => `<span class="aj-env">repos.json</span><code>${esc(field)}</code><span>· se cambia en el archivo</span>`;
-  const fixed = (label, value, field) => ajRow(label, '', `<span class="aj-ro">${esc(value)}</span>`, file(field));
-  const sw = (attrs, on, label, disabled = false) => `<button class="aj-sw" role="switch" aria-checked="${on}" ${attrs} ${disabled ? 'disabled' : ''} aria-label="${esc(label)}"></button>`;
-  const opt = (value, current, label = value) => `<option value="${esc(value)}" ${value === current ? 'selected' : ''}>${esc(label)}</option>`;
-  const projects = r.linear?.projects ?? [];
-  return `${crumbs}<h1>${esc(repoShort(r.repo))}</h1><p class="lead">${esc(r.repo)}</p>
-    ${ajSec('General', (r.portal ? ajRow('Nombre en el portal', 'Con el que lo ve quien pide.', `<input class="aj-in" maxlength="80" data-ajr="portalName" value="${esc(r.portal.name)}" aria-label="Nombre en el portal">`) : '')
-      + ajRow('Rama base', 'De donde sale cada rama de ronin. Vacío: la de .env.', `<input class="aj-in mono" data-ajr="baseRef" value="${esc(r.baseRef ?? '')}" placeholder="${esc(d.defaults.baseRef)}" aria-label="Rama base">`)
-      + fixed('Checkout', r.productRepoPath, 'productRepoPath')
-      + (r.claudeConfigDir ? fixed('Cuenta de Claude', r.claudeConfigDir, 'claudeConfigDir') : '')
-      + (r.changelogRepo ? fixed('Changelog', r.changelogRepo, 'changelogRepo') : ''))}
-    <section class="aj-sec"><h2>Apps</h2><p class="aj-d">Las de <code>ronin.app.json</code> del repo, una por tarjeta.</p>
-      ${r.apps.map((a) => {
-        const app = esc(a.id);
-        const lastInPortal = a.portal && r.apps.filter((x) => x.portal).length === 1;
-        return `<div class="aj-card aj-appcard"><div class="aj-apphead"><b class="mono">${app}</b>${a.inManifest ? '' : '<small class="warn-t">ya no está en ronin.app.json</small>'}</div>
-          ${ajRow('En el portal', lastInPortal ? 'Es la única app del portal en este repo: el portal necesita al menos una.' : 'Quien pide ajustes puede elegirla.', sw(`data-ajapp="${app}" data-f="portal"`, a.portal, `${a.id} en el portal`, lastInPortal || (!a.inManifest && !a.portal)))}
-          ${a.portal ? ajRow('Nombre en el portal', 'Con el que la ve quien pide.', `<input class="aj-in" maxlength="80" data-ajapp="${app}" data-f="name" value="${esc(a.name ?? '')}" aria-label="Nombre de ${app} en el portal">`)
-            + ajRow('Descripción', 'Una línea debajo del nombre, para saber cuál elegir.', `<input class="aj-in aj-wide" maxlength="200" data-ajapp="${app}" data-f="description" value="${esc(a.description ?? '')}" placeholder="Opcional" aria-label="Descripción de ${app}">`) : ''}
-          ${ajRow('Exploración nocturna', 'ronin la usa de noche y propone mejoras en el PR de exploración.', sw(`data-ajapp="${app}" data-f="explore"`, a.explore, `Explorar ${a.id} de noche`))}
-          ${r.linear ? ajRow('Proyecto de Linear', 'Donde van los issues que abre su exploración.', `<select class="aj-in" data-ajapp="${app}" data-f="project" aria-label="Proyecto de Linear de ${app}"><option value="">Sin proyecto</option>${[...new Set([...(a.project ? [a.project] : []), ...projects])].map((p) => opt(p, a.project ?? '')).join('')}</select>`) : ''}
-        </div>`;
-      }).join('') || '<div class="aj-card"><div class="aj-row"><span class="m">No se pudo leer ronin.app.json del repo.</span></div></div>'}
-    </section>
-    ${r.portal?.notifyTo.length ? ajSec('Correos de repos.json', r.portal.notifyTo.map((mail) => ajRow(esc(mail), '', `<button class="btn-s" data-ajnotify="${esc(mail)}">Quitar</button>`)).join(''), 'Lo que <code>portal.notifyTo</code> manda todavía a quien no eligió en Notificaciones. Cuando cada uno tenga su correo en el perfil, se puede quitar.') : ''}
-    ${ajSec('Linear', ajRow('API key', 'El nombre de la variable de .env que la tiene. La key nunca pasa por el tablero.', `<select class="aj-in mono" data-ajr="linear" aria-label="API key de Linear"><option value="">Sin Linear</option>${[...new Set([...(r.linear ? [r.linear.apiKeyEnv] : []), ...d.linearKeys])].map((k) => opt(k, r.linear?.apiKeyEnv ?? '')).join('')}</select>`,
-      r.linear ? (r.linear.connected ? '<span class="ok-t">● Conectado</span>' : '<span class="warn-t">○ Esa variable no está en .env</span>') : '<span>Solo se listan las variables LINEAR_API_KEY_* que hay en .env.</span>'))}
-    ${ajSec('Ejecución', ajRow('Tareas en paralelo', `Los agentes de este repo que corren a la vez; el resto espera en su cola, que no comparte con los otros repos. Vacío: el general (${esc(d.defaults.concurrency)}, en Agentes).`, `<input class="aj-num" type="number" min="1" step="1" max="${esc(d.maxConcurrency)}" data-ajconc value="${esc(r.concurrency ?? '')}" placeholder="${esc(d.defaults.concurrency)}" aria-label="Tareas en paralelo"><span class="aj-unit">a la vez</span>`))}
-    ${ajSec('Merge', ajRow('Auto-merge en los PRs de ronin', 'Los PRs que ronin abre para un issue salen con ronin:auto-merge y se mergean apenas un dev los aprueba y CI está en verde. Sacarle el label a uno lo deja para mergear a mano. Apagado: solo los que alguien marque con /auto-merge.', sw('data-ajautomerge', r.autoMerge, 'Auto-merge en los PRs de ronin')))}
-    ${ajSec('Despliegues', ajRow('Desplegar desde el tablero', 'Un release de GitHub con el tag escrito a mano.', sw('data-ajdeploy="on"', Boolean(r.deploy), 'Despliegues'))
-      + (r.deploy ? ajRow('Pre-release primero', 'QA antes de producción.', sw('data-ajdeploy="prerelease"', r.deploy.prerelease, 'Pre-release'))
-        + ajRow('Solo los PRs que se elijan', 'En vez de todo lo mergeado desde el último release.', sw('data-ajdeploy="selective"', r.deploy.selective, 'PRs elegidos')) : ''))}
-    ${ajSec('Agentes en este repo', ajRow('Modelo', 'Para una cuenta de Claude con límites más bajos.', `<select class="aj-in" data-ajagent="model" aria-label="Modelo"><option value="">El general (${esc(d.defaults.model)})</option>${d.models.map((m) => opt(m, r.agent.model)).join('')}</select>`)
-      + ajRow('Esfuerzo', '', `<select class="aj-in" data-ajagent="effort" aria-label="Esfuerzo"><option value="">El general (${esc(d.defaults.effort)})</option>${d.efforts.map((m) => opt(m, r.agent.effort)).join('')}</select>`), 'Gana sobre lo general para todo lo que corre en este repo.')}`;
-}
-
-function wireAjRepo(center) {
-  for (const row of center.querySelectorAll('[data-ajrepo-row]')) {
-    row.onclick = () => openAjustes('repos', row.dataset.ajrepoRow);
-    row.onkeydown = (event) => { if (event.key === 'Enter') openAjustes('repos', row.dataset.ajrepoRow); };
-  }
-  if (!S.aj.repo) return;
-  const r = S.aj.repos?.repos.find((x) => x.repo === S.aj.repo);
-  for (const el of center.querySelectorAll('[data-ajr]')) el.onchange = () => ajRepo({ [el.dataset.ajr]: el.value.trim() || (el.dataset.ajr === 'portalName' ? el.value : null) });
-  for (const el of center.querySelectorAll('[data-ajapp]')) {
-    if (el.classList.contains('aj-sw')) el.onclick = () => ajRepo({ app: { id: el.dataset.ajapp, [el.dataset.f]: el.getAttribute('aria-checked') !== 'true' } });
-    else el.onchange = () => ajRepo({ app: { id: el.dataset.ajapp, [el.dataset.f]: el.value || (el.dataset.f === 'project' ? null : el.value) } });
-  }
-  for (const b of center.querySelectorAll('[data-ajdeploy]')) b.onclick = () => {
-    const on = b.getAttribute('aria-checked') !== 'true';
-    if (b.dataset.ajdeploy === 'on' && !on && !confirm(`¿Dejar de desplegar ${S.aj.repo} desde el tablero?`)) return;
-    ajRepo({ deploy: { [b.dataset.ajdeploy]: on } });
-  };
-  for (const el of center.querySelectorAll('[data-ajconc]')) el.onchange = () => ajRepo({ concurrency: el.value.trim() ? Number(el.value) : null });
-  for (const b of center.querySelectorAll('[data-ajautomerge]')) b.onclick = () => ajRepo({ autoMerge: b.getAttribute('aria-checked') !== 'true' });
-  for (const el of center.querySelectorAll('[data-ajagent]')) el.onchange = () => ajRepo({ agent: { [el.dataset.ajagent]: el.value || null } });
-  for (const b of center.querySelectorAll('[data-ajnotify]')) b.onclick = () => {
-    if (!confirm(`¿Quitar ${b.dataset.ajnotify} de portal.notifyTo? Si es de alguien del equipo, recibe lo que elija en Notificaciones.`)) return;
-    ajRepo({ notifyTo: r.portal.notifyTo.filter((m) => m !== b.dataset.ajnotify) });
-  };
-}
-
-async function ajRepo(change) {
-  try {
-    const { changed } = await api(`/api/settings/repos/${S.aj.repo}`, { method: 'POST', body: JSON.stringify(change) });
-    S.aj.repos = await api('/api/settings/repos');
-    toast(changed ? 'Guardado en repos.json.' : 'Sin cambios.');
-  } catch (error) {
-    if (error instanceof Unauthorized && showLogin(error)) return;
-    toast(`No se guardó. ${error.message}`);
-  }
-  $('#center')._html = null;
-  renderCenter();
-}
-
-function ajustesHTML() {
-  const d = S.aj.data;
-  const body = S.aj.error && !d ? `<p class="bad">${esc(S.aj.error)}</p>` : !d ? '<div class="empty">Cargando…</div>' : AJ_PAGES[S.aj.sec](d);
-  return `<div class="today aj"><div class="aj-col">${body}</div></div>`;
-}
-
-function wireAjustes() {
-  const center = $('#center');
-  for (const el of center.querySelectorAll('[data-ajkey]')) {
-    if (el.classList.contains('aj-sw')) el.onclick = () => ajSetValue(el.dataset.ajkey, el.getAttribute('aria-checked') !== 'true');
-    else if (el.type === 'number') el.onchange = () => {
-      const value = Number(el.value);
-      ajSetValue(el.dataset.ajkey, el.value.trim() === '' || !Number.isFinite(value) ? NaN : value);
-    };
-    else el.onchange = () => ajSetValue(el.dataset.ajkey, el.value);
-  }
-  for (const b of center.querySelectorAll('[data-ajreset]')) b.onclick = () => ajSetValue(b.dataset.ajreset, null);
-  for (const input of center.querySelectorAll('[data-ajme]')) input.onchange = () => ajSaveProfile({ [input.dataset.ajme]: input.value });
-  for (const el of center.querySelectorAll('[data-ajtask]')) el.onchange = async () => {
-    try {
-      S.aj.data.tareas = (await api('/api/settings/tasks', { method: 'POST', body: JSON.stringify({ task: el.dataset.ajtask, [el.dataset.f]: el.value || null }) })).tareas;
-      toast('Guardado. Vale desde la próxima corrida.');
-    } catch (error) {
-      if (error instanceof Unauthorized && showLogin(error)) return;
-      toast(`No se guardó. ${error.message}`);
-    }
-    center._html = null;
-    renderCenter();
-  };
-  center.querySelector('[data-ajtestmail]')?.addEventListener('click', async () => {
-    S.aj.busy = true;
-    renderCenter();
-    try {
-      toast(`Listo: mira tu correo (${(await api('/api/settings/connections/mail', { method: 'POST', body: '{}' })).to}).`);
-    } catch (error) {
-      if (error instanceof Unauthorized && showLogin(error)) return;
-      toast(error.message);
-    }
-    S.aj.busy = false;
-    $('#center')._html = null;
-    renderCenter();
-  });
-  for (const b of center.querySelectorAll('[data-ajev]')) b.onclick = async () => {
-    try {
-      S.aj.data.notificaciones = (await api('/api/settings/notifications', { method: 'POST', body: JSON.stringify({ repo: b.dataset.ajev, event: b.dataset.e, on: b.getAttribute('aria-checked') !== 'true' }) })).notificaciones;
-      toast('Guardado.');
-    } catch (error) {
-      if (error instanceof Unauthorized && showLogin(error)) return;
-      toast(`No se guardó. ${error.message}`);
-    }
-    center._html = null;
-    renderCenter();
-  };
-  for (const select of center.querySelectorAll('[data-ajlinear]')) select.onchange = () => ajSaveProfile({ linear: { repo: select.dataset.ajlinear, id: select.value || null } });
-  for (const b of center.querySelectorAll('[data-ajtheme]')) b.onclick = () => {
-    document.documentElement.dataset.theme = b.dataset.ajtheme;
-    try { localStorage.setItem('ronin-theme', b.dataset.ajtheme); } catch { /* sin storage */ }
-    renderStatus();
-    center._html = null;
-    renderCenter();
-  };
-  for (const a of center.querySelectorAll('[data-aj-link]')) a.onclick = (event) => {
-    event.preventDefault();
-    openAjustes(a.dataset.ajLink);
-  };
-  for (const el of center.querySelectorAll('select[data-ajplan]')) el.onchange = () => ajCuenta(el.dataset.ajplan, { plan: el.value });
-  for (const b of center.querySelectorAll('[data-ajplanreset]')) b.onclick = () => ajCuenta(b.dataset.ajplanreset, { plan: null });
-  for (const el of center.querySelectorAll('input[data-ajprice]')) el.onchange = () => {
-    const value = Number(el.value);
-    ajCuenta(el.dataset.ajprice, { priceUsd: el.value.trim() === '' ? null : Number.isFinite(value) ? value : NaN });
-  };
-  for (const b of center.querySelectorAll('button[data-ajprice]')) b.onclick = () => ajCuenta(b.dataset.ajprice, { priceUsd: null });
-  wireAjUsers(center);
-  wireAjRepo(center);
-}
-
-async function ajCuenta(account, change) {
-  try {
-    if (Number.isNaN(change.priceUsd)) throw new Error('El precio tiene que ser un número.');
-    const { cuenta } = await api(`/api/settings/accounts/${encodeURIComponent(account)}`, { method: 'POST', body: JSON.stringify(change) });
-    S.aj.cuentas.cuentas = S.aj.cuentas.cuentas.map((c) => (c.account === account ? cuenta : c));
-    toast(`Guardado: ${account} en ${cuenta.plan.name}${cuenta.plan.priceUsd === null ? '' : `, $${cuenta.plan.priceUsd} al mes`}.`);
-  } catch (error) {
-    if (error instanceof Unauthorized && showLogin(error)) return;
-    toast(`No se guardó. ${error.message}`);
-  }
-  $('#center')._html = null;
-  renderCenter();
-}
-
-async function ajSetValue(key, value) {
-  try {
-    if (Number.isNaN(value)) throw new Error('Tiene que ser un número entero.');
-    const { setting } = await api('/api/settings/values', { method: 'POST', body: JSON.stringify({ key, value }) });
-    S.aj.data.valores = S.aj.data.valores.map((s) => (s.key === key ? setting : s));
-    toast(value === null ? `${AJ_SETTINGS[key]?.[0] ?? key}: vuelve al de ${setting.source === 'env' ? '.env' : 'por defecto'} (${ajWord(setting.value)}).` : 'Guardado. Vale desde ahora.');
-  } catch (error) {
-    if (error instanceof Unauthorized && showLogin(error)) return;
-    toast(`No se guardó. ${error.message}`);
-  }
-  $('#center')._html = null;
-  renderCenter();
-}
-
-async function ajSaveProfile(patch) {
-  try {
-    S.aj.data.perfil = (await api('/api/settings/profile', { method: 'POST', body: JSON.stringify(patch) })).perfil;
-    toast('Guardado.');
-  } catch (error) {
-    if (error instanceof Unauthorized && showLogin(error)) return;
-    toast(`No se guardó. ${error.message}`);
-  }
-  $('#center')._html = null;
-  renderCenter();
 }
 
 function renderAll() {
@@ -5581,10 +4846,6 @@ async function boot() {
     if (event.key !== 'Escape') return;
     if ($('#keys-help')) $('#keys-help').remove();
     else if ($('#lightbox')) return;
-    else if (S.aj.add) {
-      S.aj.add = null;
-      ajRenderAdd();
-    }
     else if (S.newIssue) closeNewIssue();
     else if (S.xnow) closeExploreNow();
     else if (S.decide && !S.decide.sending) {

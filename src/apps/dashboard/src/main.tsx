@@ -7,6 +7,7 @@ import { Subscription } from './pages/metrics/Subscription.js';
 import { Work } from './pages/metrics/Work.js';
 import { Request } from './pages/requests/Request.js';
 import { Requests } from './pages/requests/Requests.js';
+import { Settings } from './pages/settings/Settings.js';
 
 // The dashboard's pages in React (#235, stage 7): app.js still draws the
 // shell (sidebar, status bar, routes) and mounts one of these where a page
@@ -18,6 +19,7 @@ import { Requests } from './pages/requests/Requests.js';
 const PAGES: Record<string, ComponentType<any>> = {
   deploys: Deploys,
   metrics: Work,
+  settings: Settings,
   subscription: Subscription,
   requests: Requests,
   request: Request,

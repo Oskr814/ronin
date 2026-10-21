@@ -15,9 +15,17 @@ export interface Host {
   read?(name: string, data: unknown): void;
   // Opens an item (an issue or a PR) by its key, repo#number.
   openItem(key: string): void;
-  // Opens a section of Ajustes, or a tab of Métricas.
-  openSettings(section: string): void;
+  // Opens a section of Ajustes (#174): in Usuarios, one of the team (in
+  // Repos, a repo: owner/name), the list's filter, or one of the portal's
+  // accounts. Or a tab of Métricas.
+  openSettings(section: string, login?: string | null, filter?: string | null, account?: string | null): void;
   openMetrics(tab: 'trabajo' | 'suscripcion'): void;
+  // What Ajustes shows, as app.js routed it (/ajustes/<sección>[/…]).
+  settingsView(): SettingsView;
+  // Who's looking, and whether they manage the portal's accounts.
+  session(): { me: string; portalAdmin: boolean };
+  // The theme, only in this browser.
+  setTheme(theme: 'dark' | 'light'): void;
   // The repos the session sees, as the snapshot has them.
   repos(): string[];
   // A task type in words (fix-issue → "Arreglar un issue").
@@ -38,6 +46,15 @@ export interface RequestDoc {
   issue: number;
   pr: number | null;
   show: 'issue' | 'pr';
+}
+
+export interface SettingsView {
+  section: string;
+  login: string | null;
+  repo: string | null;
+  account: string | null;
+  // Usuarios' filter, when one was asked for (todos, equipo, portal).
+  filter: string | null;
 }
 
 export const HostContext = createContext<Host | null>(null);

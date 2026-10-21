@@ -5,7 +5,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { HostContext, type Host } from '../../host.js';
+import { HostContext } from '../../host.js';
+import { testHost } from '../../test-host.js';
 import { Subscription } from './Subscription.js';
 import { Work } from './Work.js';
 
@@ -30,7 +31,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-const host: Host = { toast: vi.fn(), openPedido: vi.fn(), openPedidos: vi.fn(), unauthorized: vi.fn(), repoColor: () => 'red', openItem: vi.fn(), openSettings: vi.fn(), openMetrics: vi.fn(), repos: () => ['acme/tienda', 'acme/web'], typeName: (t) => `tipo ${t}`, requestsTotal: () => 0, portalAdmin: () => false, openPortalAccounts: vi.fn(), requestDoc: () => () => {} };
+const host = testHost({ repos: () => ['acme/tienda', 'acme/web'], typeName: (t) => `tipo ${t}` });
 const show = (page: ReactNode) => render(
   <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
     <HostContext.Provider value={host}>{page}</HostContext.Provider>
