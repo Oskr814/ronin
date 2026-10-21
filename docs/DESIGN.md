@@ -1164,6 +1164,7 @@ src/meetings/            el dominio: las reuniones, sus notas y lo que ronin pro
   read.ts                la lectura: el contexto, el agente, las propuestas y el correo
   mail.ts                el correo al equipo
   worker.ts, launch.ts   el worker por reunión, su relanzamiento y reintentar
+  routes.ts              sus rutas en el tablero, en Hono (/api/reuniones/*)
 src/server/api/dashboard-meetings.ts          la subida, la lista y la ficha
 src/server/api/dashboard-meetings-approve.ts  aprobar (como la persona) y descartar
 ```
