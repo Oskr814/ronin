@@ -133,6 +133,15 @@ export interface LockWaitsTable {
   lease_until: ColumnType<Date, string, string>;
 }
 
+// The local state of each repo (core/local-state.ts), an entry per row.
+export interface RepoStateTable {
+  repo: string;
+  kind: string;
+  key: string;
+  value: Json<unknown>;
+  updated_at: Stamp;
+}
+
 export interface Database {
   settings: SettingsTable;
   task_settings: TaskSettingsTable;
@@ -145,4 +154,5 @@ export interface Database {
   jobs: JobsTable;
   locks: LocksTable;
   lock_waits: LockWaitsTable;
+  repo_state: RepoStateTable;
 }
