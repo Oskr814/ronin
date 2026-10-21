@@ -692,7 +692,7 @@ La caché es la misma idea que la de los repos: `DASHBOARD_GITHUB_TTL_SECONDS`, 
 
 #### 15.9 API
 
-Todo, salvo los webhooks y `/api/auth/*`, pide sesión:
+Todo, salvo los webhooks y `/api/auth/*`, pide sesión. Las rutas pasan a Hono de a un grupo (#235, etapa 6): cada grupo vive con su dominio (`portal/routes-dashboard.ts`, `meetings/routes.ts`, `deploy/routes.ts`, `metrics/routes.ts`, `exploration/routes.ts`) y `server/dashboard-app.ts` los monta; el resto sigue en `server/api/dashboard.ts`. Las rutas y lo que devuelven no cambian:
 
 | Ruta | Qué devuelve |
 |---|---|
@@ -1498,7 +1498,7 @@ Una sección del tablero, solo para admins, para entender cómo se mueve el trab
   - sus intentos de fix, contados como los labels `ronin:attempts-<n>` que recibió;
   - por qué se bloqueó, agrupado como en `docs/BLOCKING.md`.
 
-Todo se calcula en `metrics/compute.ts`, que es puro: los números se prueban ahí, sin GitHub.
+Todo se calcula en `metrics/compute.ts`, que es puro: los números se prueban ahí, sin GitHub. Las rutas (`/api/metricas`, `/api/metricas/suscripcion`, solo administradores) están en `metrics/routes.ts`, en Hono.
 
 #### 20.2 De dónde salen los datos (`metrics/collect.ts`)
 

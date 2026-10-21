@@ -343,6 +343,9 @@ export async function inventarioOf(entry: RepoEntry, app: string, pr: Pick<Explo
 // By default it stands for that night's run of the app, since the weekly
 // Claude limit is the one the day's work uses too.
 
+// Each repo's open PRs, from its GitHub read (dashboard-github.ts), by repo.
+export const prsOf = <P>(entries: Array<{ productRepo: string }>, github: Array<{ prs: P[] } | null | undefined>) => new Map(entries.map((entry, i) => [entry.productRepo, github[i]?.prs ?? []]));
+
 export class ExploreNowError extends Error {
   constructor(message: string, readonly status = 400) {
     super(message);
