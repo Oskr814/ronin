@@ -35,11 +35,14 @@ export interface AppSession {
 
 // The env the app's own commands run with: ronin's, minus its secrets — a dev
 // server has no business seeing the GitHub token or the mail password.
-const SECRET_ENV = ['RONIN_GITHUB_TOKEN', 'GH_TOKEN', 'GMAIL_APP_PASSWORD', 'WEBHOOK_SECRET'];
+// NODE_ENV goes too: it's ronin's own (the image sets it to production), and
+// under it `pnpm install` skips the devDependencies a dev server needs.
+const RONIN_ONLY_ENV = ['RONIN_GITHUB_TOKEN', 'GH_TOKEN', 'GMAIL_APP_PASSWORD', 'WEBHOOK_SECRET', 'NODE_ENV'];
 
 function appEnv(extra: Record<string, string> = {}): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = { ...process.env, ...extra };
-  for (const key of SECRET_ENV) delete env[key];
+  const env: NodeJS.ProcessEnv = { ...process.env };
+  for (const key of RONIN_ONLY_ENV) delete env[key];
+  Object.assign(env, extra);
   return env;
 }
 
