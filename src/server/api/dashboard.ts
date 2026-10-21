@@ -26,7 +26,6 @@ import { FichaActionError, runApprove, runFichaAction, runGeneralComment } from 
 import { GithubUserError, pendingReview, viewedFiles } from './github-as-user.js';
 import type { Session } from './auth.js';
 import { cuentasView, setCuenta } from './cuentas-claude.js';
-import { suscripcionView } from './dashboard-suscripcion.js';
 import { AjustesError, ajustesView, conexionesView, linearTeams, readRegistro, saveNotificacion, saveProfile, setTask, setValue, testMail } from './ajustes.js';
 import { can, touchSeen, type Perm } from './team.js';
 import { addUsuario, removeUsuario, updateEquipo, updateUsuario, usuariosView, usuarioView } from './usuarios.js';
@@ -37,8 +36,7 @@ import { listRequests } from '../../portal/requests.js';
 import { dropCloseNote, noteClosing } from '../../portal/follow.js';
 import { isOpen, requestRow } from './dashboard-portal.js';
 import { listMeetings } from '../../meetings/index.js';
-import { metricsView, parsePeriod } from '../../metrics/index.js';
-import { ExploreNowError, corridasOf, exploracionList, exploracionRows, exploreNow, inventarioOf, liveRuns, parseExploreNow } from './dashboard-exploraciones.js';
+import { exploracionRows, liveRuns, prsOf } from './dashboard-exploraciones.js';
 import { getDb } from '../../db/db.js';
 import { slotsInUseDb, waitingDb } from '../../core/locks-db.js';
 import { timed } from '../../core/timing.js';
@@ -49,7 +47,8 @@ import { answer } from '../hono.js';
 // The dashboard's data (#65), all behind the session (tailnet.ts checks it
 // before any of this runs). The groups already in Hono are in
 // server/dashboard-app.ts (#235, stage 6): /api/pedidos, /api/portal-admin
-// /api/reuniones and /api/despliegues. The rest, still here:
+// /api/reuniones, /api/despliegues, /api/metricas and /api/exploraciones.
+// The rest, still here:
 //   GET /api/snapshot                the sidebar and the status bar
 //   GET /api/today                   the last 12 hours' runs, the day's totals and the week's, and each repo's Linear cycle (#101)
 //   GET /api/items/<id>              one item's runs (14 days)
@@ -68,14 +67,8 @@ import { answer } from '../hono.js';
 //   GET /api/runs/<runId>            one run's transcript
 //   GET /api/runs/<runId>/stream     the rest of it as it happens (SSE)
 //   GET /api/evidence/<owner>/<repo>/<sha>/<path>  a screenshot ronin published (dashboard-evidence.ts)
-//   GET /api/exploraciones           each app a repo explores, with its exploration PR's findings counted and its runs (#155, dashboard-exploraciones.ts)
-//   GET /api/exploraciones/<owner>/<repo>/<app>/corridas    the app's exploration runs, with their agents
-//   GET /api/exploraciones/<owner>/<repo>/<app>/inventario  the app's functions and their coverage (inventory.yml)
-//   POST /api/exploraciones/<owner>/<repo>/<app>/run         explore it now: { maxFunctions, hours, tonight } (Explorar ahora)
 //   GET|POST /api/ajustes[/…]        the person's profile, and for admins the settings and their record (#174, ajustes.ts)
 //                                    and the plan of each Claude account (#234, cuentas-claude.ts)
-//   GET /api/metricas?dias=7|30|90&repo=<owner>/<repo>  how work moves in the repos: what comes in and out, how long it takes, who carries it (#222, metrics/, admins only)
-//   GET /api/metricas/suscripcion?cuenta=<cuenta>  how much of each Claude account's plan gets used, and ronin's share (#234, dashboard-suscripcion.ts, admins only)
 
 // How far back the sidebar and an item's history look. Run records are kept
 // 14 days (scripts/setup-cron.sh).
@@ -187,51 +180,6 @@ export async function snapshot(login: string): Promise<unknown> {
       ...(l.error ? { error: l.error } : {}),
     }] : [])),
   };
-}
-
-const prsOf = (entries: Array<{ productRepo: string }>, github: Array<Awaited<ReturnType<typeof repoGithub>>>) => new Map(entries.map((entry, i) => [entry.productRepo, github[i]?.prs ?? []]));
-
-// GET /api/exploraciones: the apps, with the findings, the last run and the next (#155).
-async function exploraciones(): Promise<unknown> {
-  const entries = await visibleRepos();
-  const runs = await listRuns(HISTORY_DAYS);
-  const github = await Promise.all(entries.map((entry) => repoGithub(entry)));
-  const prs = prsOf(entries, github);
-  return { apps: await exploracionList(entries, exploracionRows(entries, prs, runs, await liveRuns(entries)), runs, prs) };
-}
-
-// GET /api/exploraciones/<owner>/<repo>/<app>/<what>: one app's runs or
-// inventory (#155). Null for an app no repo it sees explores.
-async function exploracion(repo: string, app: string, what: string): Promise<unknown | null> {
-  const entry = (await visibleRepos()).find((e) => e.productRepo === repo);
-  if (!entry || !(entry.explore ?? []).includes(app)) return null;
-  if (what === 'corridas') return { corridas: await corridasOf(entry, app, await listRuns(HISTORY_DAYS)) };
-  const pr = (await repoGithub(entry))?.prs.find(isExplorationPr);
-  return inventarioOf(entry, app, pr);
-}
-
-// POST /api/exploraciones/<owner>/<repo>/<app>/run: explore the app now, as
-// whoever is logged in (#155). Anyone who sees the repo can, as with a new issue.
-async function postExploreNow(req: IncomingMessage, res: ServerResponse, repo: string, app: string, session: Session): Promise<void> {
-  if (!(req.headers['content-type'] ?? '').startsWith('application/json')) {
-    json(res, 415, { error: 'se espera JSON' });
-    return;
-  }
-  const body = await readJson(req);
-  const entry = (await visibleRepos()).find((e) => e.productRepo === repo);
-  if (!entry || !(entry.explore ?? []).includes(app)) {
-    json(res, 404, { error: 'ningún repo de ronin explora esa app' });
-    return;
-  }
-  if (refused(res, repo, 'acciones')) return;
-  try {
-    const launched = await exploreNow(entry, app, session.login, parseExploreNow(body ?? {}));
-    log.info(`tablero: ${session.login} lanzó una exploración de ${app} en ${repo}`);
-    json(res, 200, launched);
-  } catch (error) {
-    if (error instanceof ExploreNowError) json(res, error.status, { error: error.message });
-    else throw error;
-  }
 }
 
 // The portal's requests of the repos it sees, with whoever asked each.
@@ -756,11 +704,6 @@ async function route(req: IncomingMessage, res: ServerResponse, path: string, se
     await postPrDecision(req, res, decodeURIComponent(decisionPost[1]), session);
     return true;
   }
-  const exploreRun = /^\/api\/exploraciones\/([\w.-]+\/[\w.-]+)\/([\w.-]+)\/run$/.exec(path);
-  if (exploreRun && req.method === 'POST') {
-    await postExploreNow(req, res, exploreRun[1], exploreRun[2], session);
-    return true;
-  }
   const newIssue = /^\/api\/repos\/([\w.-]+\/[\w.-]+)\/issues$/.exec(path);
   if (newIssue && req.method === 'POST') {
     await postNewIssue(req, res, newIssue[1], session);
@@ -779,38 +722,6 @@ async function route(req: IncomingMessage, res: ServerResponse, path: string, se
     return true;
   }
 
-  if (path === '/api/metricas') {
-    const params = new URL(req.url ?? '/', 'http://localhost').searchParams;
-    const repos = (await visibleRepos()).map((entry) => entry.productRepo);
-    const days = parsePeriod(params.get('dias'));
-    const repo = params.get('repo') || null;
-    if (!currentAccess().admin) json(res, 403, { error: 'solo los administradores ven las métricas' });
-    else if (!days) json(res, 400, { error: 'dias debe ser 7, 30 o 90' });
-    else if (repo && !repos.includes(repo)) json(res, 404, { error: `no hay un repo ${repo}` });
-    else json(res, 200, await metricsView(repos, days, repo));
-    return true;
-  }
-
-  if (path === '/api/metricas/suscripcion') {
-    const account = new URL(req.url ?? '/', 'http://localhost').searchParams.get('cuenta') || null;
-    const view = currentAccess().admin ? await suscripcionView(await loadRepos(), account) : undefined;
-    if (view === undefined) json(res, 403, { error: 'solo los administradores ven las métricas' });
-    else if (!view) json(res, 404, { error: `no hay una cuenta de Claude ${account}` });
-    else json(res, 200, view);
-    return true;
-  }
-
-  if (path === '/api/exploraciones') {
-    json(res, 200, await exploraciones());
-    return true;
-  }
-  const xpl = /^\/api\/exploraciones\/([\w.-]+\/[\w.-]+)\/([\w.-]+)\/(corridas|inventario)$/.exec(path);
-  if (xpl) {
-    const body = await exploracion(xpl[1], xpl[2], xpl[3]);
-    if (body) json(res, 200, body);
-    else json(res, 404, { error: 'ningún repo de ronin explora esa app' });
-    return true;
-  }
 
   if (path === '/api/today') {
     json(res, 200, await todayWithCycles());
