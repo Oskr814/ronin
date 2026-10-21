@@ -106,9 +106,9 @@ function totals(issues: Issue[], prs: Pr[], a: number, b: number): Totals {
   };
 }
 
-const RESOLUTION_TRAMOS: Array<[number, number, string]> = [[0, 1, '< 1 d'], [1, 3, '1–3 d'], [3, 7, '3–7 d'], [7, 14, '1–2 sem'], [14, 30, '2–4 sem'], [30, Infinity, '> 1 mes']];
-const AGE_TRAMOS: Array<[number, number, string]> = [[0, 7, 'Menos de 1 sem'], [7, 30, '1 a 4 sem'], [30, 90, '1 a 3 meses'], [90, Infinity, 'Más de 3 meses']];
-const tramos = (ms: number[], edges: Array<[number, number, string]>) => edges.map(([lo, hi, label]) => ({ label, count: ms.filter((v) => v / DAY >= lo && v / DAY < hi).length }));
+const RESOLUTION_BUCKETS: Array<[number, number, string]> = [[0, 1, '< 1 d'], [1, 3, '1–3 d'], [3, 7, '3–7 d'], [7, 14, '1–2 sem'], [14, 30, '2–4 sem'], [30, Infinity, '> 1 mes']];
+const AGE_BUCKETS: Array<[number, number, string]> = [[0, 7, 'Menos de 1 sem'], [7, 30, '1 a 4 sem'], [30, 90, '1 a 3 meses'], [90, Infinity, 'Más de 3 meses']];
+const inRanges = (ms: number[], edges: Array<[number, number, string]>) => edges.map(([lo, hi, label]) => ({ label, count: ms.filter((v) => v / DAY >= lo && v / DAY < hi).length }));
 
 // An issue's kind, from its labels; repos label differently, so only the usual names.
 export function issueKind(labels: string[]): 'bug' | 'feature' | 'otro' {
@@ -186,7 +186,7 @@ export function computeMetrics(input: MetricsInput) {
   const mergedNow = prs.filter((p) => within(p.mergedAt, a, now));
   const health = {
     open: open.length,
-    ages: tramos(open.map((i) => now - t(i.createdAt)), AGE_TRAMOS),
+    ages: inRanges(open.map((i) => now - t(i.createdAt)), AGE_BUCKETS),
     unassigned: open.filter((i) => !i.assignees.length).length,
     stale: open.filter((i) => i.assignees.length && now - t(i.updatedAt) > STALE_MS).length,
     reopened: done.filter((i) => i.reopenedAt.length).length,
@@ -246,7 +246,7 @@ export function computeMetrics(input: MetricsInput) {
     current,
     previous,
     series,
-    resolution: { tramos: tramos(done.map(resolution), RESOLUTION_TRAMOS), kinds },
+    resolution: { tramos: inRanges(done.map(resolution), RESOLUTION_BUCKETS), kinds },
     people,
     health,
     deploys,

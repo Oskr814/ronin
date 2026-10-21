@@ -12,12 +12,12 @@ vi.mock('../../platform/claude/claude-usage.js', () => ({ usageHistory: async (a
 const repoDataOf = vi.fn(async (_repos: string[]) => []);
 vi.mock('./index.js', () => ({ repoDataOf: (r: string[]) => repoDataOf(r) }));
 
-const { suscripcionView } = await import('./subscription-view.js');
+const { subscriptionView } = await import('./subscription-view.js');
 const NOW = Date.parse('2026-10-20T12:00:00Z');
 
-describe('suscripcionView', () => {
+describe('subscriptionView', () => {
   it('computes every account with its own history, runs, plan and repos', async () => {
-    const out = (await suscripcionView([], null, NOW))!;
+    const out = (await subscriptionView([], null, NOW))!;
     expect(out.accounts).toEqual(['redmotos', 'bmedical']);
     expect(out.cuentas.map((c) => [c.account, c.value.equivUsd, c.value.ratio])).toEqual([['redmotos', 3, 0.03], ['bmedical', 1, 0.05]]);
     expect(readUsageHistory.mock.calls.map((c) => c[0])).toEqual(['redmotos', 'bmedical']);
@@ -25,7 +25,7 @@ describe('suscripcionView', () => {
   });
 
   it('computes only the one asked for, and nothing for an account that isn\'t there', async () => {
-    expect((await suscripcionView([], 'bmedical', NOW))!.cuentas.map((c) => c.account)).toEqual(['bmedical']);
-    expect(await suscripcionView([], 'otra', NOW)).toBeNull();
+    expect((await subscriptionView([], 'bmedical', NOW))!.cuentas.map((c) => c.account)).toEqual(['bmedical']);
+    expect(await subscriptionView([], 'otra', NOW)).toBeNull();
   });
 });

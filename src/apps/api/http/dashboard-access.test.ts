@@ -85,7 +85,7 @@ describe('a session that sees only some repos', () => {
   });
 
   it('cannot see the metrics without being an admin (#222)', async () => {
-    expect((await call('/api/metricas')).status).toBe(403);
+    expect((await call('/api/metrics')).status).toBe(403);
     expect(metricsView).not.toHaveBeenCalled();
   });
 
@@ -209,12 +209,12 @@ describe('an admin (#222)', () => {
   const ADMIN = { admin: true, repos: [{ repo: SC, permission: 'admin-del-tablero' as const }, { repo: BM, permission: 'admin-del-tablero' as const }] };
 
   it('gets the metrics of every repo, or of the one asked', async () => {
-    expect((await call('/api/metricas', 'GET', undefined, ADMIN as never)).body).toEqual({ repos: [SC, BM], days: 30, repo: null });
-    expect((await call(`/api/metricas?dias=7&repo=${encodeURIComponent(BM)}`, 'GET', undefined, ADMIN as never)).body).toEqual({ repos: [SC, BM], days: 7, repo: BM });
+    expect((await call('/api/metrics', 'GET', undefined, ADMIN as never)).body).toEqual({ repos: [SC, BM], days: 30, repo: null });
+    expect((await call(`/api/metrics?days=7&repo=${encodeURIComponent(BM)}`, 'GET', undefined, ADMIN as never)).body).toEqual({ repos: [SC, BM], days: 7, repo: BM });
   });
 
   it('is told what it asked wrong', async () => {
-    expect((await call('/api/metricas?dias=14', 'GET', undefined, ADMIN as never)).status).toBe(400);
-    expect((await call('/api/metricas?repo=otro%2Frepo', 'GET', undefined, ADMIN as never)).status).toBe(404);
+    expect((await call('/api/metrics?days=14', 'GET', undefined, ADMIN as never)).status).toBe(400);
+    expect((await call('/api/metrics?repo=otro%2Frepo', 'GET', undefined, ADMIN as never)).status).toBe(404);
   });
 });

@@ -3,7 +3,7 @@ import type { Access } from '../../../src/domains/access/access.js';
 
 vi.mock('../../../src/platform/config/repos.js', () => ({ loadRepos: async () => [{ productRepo: 'acme/tienda', productRepoPath: '/x' }] }));
 vi.mock('../../../src/domains/metrics/subscription-view.js', () => ({
-  suscripcionView: async (_entries: unknown, account: string | null) => (account === 'nadie' ? null : { accounts: ['acme'], cuentas: [{ account: account ?? 'acme' }] }),
+  subscriptionView: async (_entries: unknown, account: string | null) => (account === 'nadie' ? null : { accounts: ['acme'], cuentas: [{ account: account ?? 'acme' }] }),
 }));
 
 const { dashboardApp } = await import('../../../src/apps/api/routes.js');
@@ -14,9 +14,9 @@ const call = (path: string, access: Access) => dashboardApp.request(path, {}, { 
 
 describe('the subscription in Métricas, in Hono', () => {
   it('is for admins only, by account', async () => {
-    expect((await call('/api/metricas/suscripcion', MEMBER)).status).toBe(403);
-    expect(await (await call('/api/metricas/suscripcion?cuenta=acme', ADMIN)).json()).toEqual({ accounts: ['acme'], cuentas: [{ account: 'acme' }] });
-    const missing = await call('/api/metricas/suscripcion?cuenta=nadie', ADMIN);
+    expect((await call('/api/metrics/subscription', MEMBER)).status).toBe(403);
+    expect(await (await call('/api/metrics/subscription?account=acme', ADMIN)).json()).toEqual({ accounts: ['acme'], cuentas: [{ account: 'acme' }] });
+    const missing = await call('/api/metrics/subscription?account=nadie', ADMIN);
     expect(missing.status).toBe(404);
     expect((await missing.json()).error).toBe('no hay una cuenta de Claude nadie');
   });
