@@ -8,6 +8,7 @@ import { config } from '../../platform/config/config.js';
 import { getFreePort } from '../../platform/git/worktree.js';
 import { log } from '../../platform/logger.js';
 import { loadAppDefinition, namedPortsIn, publicizeTemplate, publicPortsIn, renderTemplate, type AppDefinition, type AppStep, type TemplateContext } from './manifest.js';
+import { pidAlive } from '../../platform/workers/process.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -331,22 +332,13 @@ export async function attachApp(dir: string): Promise<AppSession | null> {
   return { appName: state.appName, app, dir, baseUrl: state.baseUrl, ctx: state.ctx, stateDir: stateDirOf(dir) };
 }
 
-function processAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 async function stopProcessGroup(pid: number): Promise<void> {
   try {
     process.kill(-pid, 'SIGTERM');
   } catch {
     return; // already gone
   }
-  for (let i = 0; i < 20 && processAlive(pid); i++) await new Promise((r) => setTimeout(r, 250));
+  for (let i = 0; i < 20 && pidAlive(pid); i++) await new Promise((r) => setTimeout(r, 250));
   try {
     process.kill(-pid, 'SIGKILL');
   } catch {

@@ -5,21 +5,17 @@
 // lock throughout, so two workers never read the same meeting.
 import { concurrencyFor, config } from '../../platform/config/config.js';
 import { tryLockResource, unlockResource, withSlots } from '../../platform/locks/locks.js';
-import { log } from '../../platform/logger.js';
-import { withActiveRepo } from '../../platform/agents/repo-context.js';
-import { loadRepos } from '../../platform/config/repos.js';
 import { errorLine, getMeeting, noteEvent, updateMeeting } from './meetings.js';
 import { readMeeting } from './read.js';
+import { runWorker, withProductRepo, workerRequest } from '../../platform/workers/run.js';
 
-const { number } = JSON.parse(process.argv[2] ?? '{}') as { number?: number };
+const { number } = workerRequest<{ number?: number }>();
 
 async function main(): Promise<void> {
   const meeting = number ? await getMeeting(number) : undefined;
   if (!meeting || !(meeting.status === 'pending' || meeting.status === 'reading')) return;
-  const entry = (await loadRepos()).find((r) => r.productRepo === meeting.repo);
-  if (!entry) throw new Error(`${meeting.repo} no está en repos.json`);
   const n = meeting.number;
-  await withActiveRepo(entry, async () => {
+  await withProductRepo(meeting.repo, async () => {
     const resource = `meeting-${n}`;
     if (!(await tryLockResource(resource))) return;
     try {
@@ -33,8 +29,6 @@ async function main(): Promise<void> {
   });
 }
 
-main().catch(async (error) => {
-  log.error(`meeting-worker R-${number} falló`, error);
-  if (number) await noteEvent(number, { kind: 'failed', error: errorLine(error) }).catch(() => {});
-  process.exitCode = 1;
+runWorker(`meeting-worker R-${number}`, main, async (error) => {
+  if (number) await noteEvent(number, { kind: 'failed', error: errorLine(error) });
 });

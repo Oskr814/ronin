@@ -6,14 +6,11 @@
 import { tick } from './tick.js';
 import { log } from '../../../platform/logger.js';
 import { runAsJob } from '../jobs/child.js';
+import { runWorker } from '../../../platform/workers/run.js';
 
 // Started by the job queue's runner (apps/api/jobs/runner.ts), it renews its job's
 // lease and marks how it ended; by cron, it just runs.
-runAsJob(tick)
-  .then(() => {
-    log.info('tick complete');
-  })
-  .catch((error) => {
-    log.error('tick failed', error);
-    process.exitCode = 1;
-  });
+runWorker('tick', async () => {
+  await runAsJob(tick);
+  log.info('tick complete');
+});

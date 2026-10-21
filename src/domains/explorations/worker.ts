@@ -4,8 +4,6 @@
 // runs, and answers the /explore comment that asked for it, if any. The
 // same process redoes the after images reviewers asked for, which also need
 // the app up.
-import { loadRepos } from '../../platform/config/repos.js';
-import { withActiveRepo } from '../../platform/agents/repo-context.js';
 import { replyToComment } from '../../platform/github/github.js';
 import { log } from '../../platform/logger.js';
 import {
@@ -18,8 +16,9 @@ import {
   type ExploreWorkerRequest,
 } from './flow.js';
 import { finishRunRecord, startRunRecord, type ExplorationRunRecord, type ExplorationTrigger } from './run-log.js';
+import { runWorker, withProductRepo, workerRequest } from '../../platform/workers/run.js';
 
-const request = JSON.parse(process.argv[2] ?? '{}') as ExploreWorkerRequest;
+const request = workerRequest<ExploreWorkerRequest>();
 
 // Who asked for it, for the dashboard's record of the run (run-log.ts).
 function triggerOf(r: ExploreWorkerRequest): ExplorationTrigger {
@@ -29,9 +28,7 @@ function triggerOf(r: ExploreWorkerRequest): ExplorationTrigger {
 }
 
 async function main(): Promise<void> {
-  const entry = (await loadRepos()).find((r) => r.productRepo === request.repo);
-  if (!entry) throw new Error(`${request.repo} no está en repos.json`);
-  await withActiveRepo(entry, async () => {
+  await withProductRepo(request.repo, async () => {
     if (!(await acquireExploreLock())) {
       log.info(`exploración ${request.appName}: ya hay otra corrida en este repo, no arranco`);
       return;
@@ -90,7 +87,4 @@ async function main(): Promise<void> {
   });
 }
 
-main().catch((error) => {
-  log.error('explore-worker falló', error);
-  process.exitCode = 1;
-});
+runWorker('explore-worker', main);

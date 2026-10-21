@@ -13,9 +13,10 @@ import { evidenceUrl, publishEvidence } from '../product-app/index.js';
 import { insideDir } from '../explorations/index.js';
 import { mcpServer, originsOf } from '../explorations/index.js';
 import { activeRepo } from '../../platform/agents/repo-context.js';
-import { acquireLock, launchWorker, lockHeld } from '../../platform/workers/worker-launch.js';
+import { launchWorker } from '../../platform/workers/worker-launch.js';
 import { removeWorktreeDir } from '../../platform/git/worktree.js';
 import { log } from '../../platform/logger.js';
+import { worktreeLock } from '../../platform/workers/worktree-lock.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -50,30 +51,21 @@ export function prototypeDir(key: string): string {
 
 // One prototype at a time per repo: each brings a whole app stack up, next
 // to whatever previews and exploration are already running.
-function lockPath(): string {
-  return join(activeRepo().worktreeBasePath, '.prototype.lock');
-}
+const lock = () => worktreeLock('prototype');
 
 export function prototypeWorkerBusy(): Promise<boolean> {
-  return lockHeld(lockPath());
+  return lock().busy();
 }
 
 // Waits its turn instead of giving up: the comment was already marked done,
 // so a worker that left would drop the request for good.
 // `onWait` runs once, when the lock is taken and it starts waiting.
-export async function waitForPrototypeLock(opts: { intervalMs?: number; timeoutMs?: number; onWait?: () => void | Promise<void> } = {}): Promise<boolean> {
-  const intervalMs = opts.intervalMs ?? 30_000;
-  const deadline = Date.now() + (opts.timeoutMs ?? 3 * 60 * 60_000);
-  for (let waited = false; ; waited = true) {
-    if (await acquireLock(lockPath())) return true;
-    if (Date.now() >= deadline) return false;
-    if (!waited) await opts.onWait?.();
-    await new Promise((resolve) => setTimeout(resolve, intervalMs));
-  }
+export function waitForPrototypeLock(opts: { intervalMs?: number; timeoutMs?: number; onWait?: () => void | Promise<void> } = {}): Promise<boolean> {
+  return lock().wait(opts);
 }
 
-export async function releasePrototypeLock(): Promise<void> {
-  await rm(lockPath(), { force: true });
+export function releasePrototypeLock(): Promise<void> {
+  return lock().release();
 }
 
 // "Admin" → "admin", "Bodega Central" → "bodega-central": an MCP server name.
