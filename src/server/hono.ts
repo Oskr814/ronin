@@ -42,6 +42,20 @@ export async function answer<E extends object>(app: Hono<{ Bindings: HttpBinding
   });
   const cookies = response.headers.getSetCookie();
   if (cookies.length) out['set-cookie'] = cookies;
+  // A stream of events (a run as it happens) goes out as it comes, until it
+  // ends or the person leaves; anything else, whole.
+  if (response.body && (response.headers.get('content-type') ?? '').startsWith('text/event-stream')) {
+    res.writeHead(response.status, out);
+    const reader = response.body.getReader();
+    req.on('close', () => void reader.cancel().catch(() => {}));
+    for (;;) {
+      const { done, value } = await reader.read().catch(() => ({ done: true, value: undefined }));
+      if (done) break;
+      res.write(value);
+    }
+    res.end();
+    return;
+  }
   res.writeHead(response.status, out).end(Buffer.from(await response.arrayBuffer()));
 }
 

@@ -1,7 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { RepoEntry } from '../../core/repo-context.js';
-import { existsSync } from 'node:fs';
 import { config } from '../../core/config.js';
 import { log } from '../../core/logger.js';
 import { loadRepos } from '../../core/repos.js';
@@ -9,7 +8,7 @@ import { accountName, listUsage } from '../../core/claude-usage.js';
 import { sees, type Access } from './access.js';
 import { itemKindOf } from '../../core/github.js';
 import { withActiveRepo } from '../../core/repo-context.js';
-import { HISTORY_DAYS, hostLoad, itemKey, listRuns as listAllRuns, readQueue, readRunLines, readTickInfo, runPath, slotsInUse, summarizeRun } from './dashboard-data.js';
+import { HISTORY_DAYS, hostLoad, itemKey, listRuns as listAllRuns, readQueue, readTickInfo, slotsInUse } from './dashboard-data.js';
 import { forgetGithub, repoGithub } from './dashboard-github.js';
 import { createFromDashboard, NewIssueError, parseNewIssue, repoAppPaths, repoApps } from './dashboard-new-issue.js';
 import { cycleView, repoLinear } from './dashboard-linear.js';
@@ -20,7 +19,6 @@ import { FilesActionError, runFilesAction } from './dashboard-files-actions.js';
 import { DecisionError, runDecision } from './dashboard-decision.js';
 import { ActionError, listActions, runAction } from './dashboard-actions.js';
 import { today, WEEK_DAYS } from './dashboard-today.js';
-import { readEvidence } from './dashboard-evidence.js';
 import { explorationReview, forgetExploration, isExplorationPr } from './dashboard-exploration.js';
 import { FichaActionError, runApprove, runFichaAction, runGeneralComment } from './dashboard-exploration-actions.js';
 import { GithubUserError, pendingReview, viewedFiles } from './github-as-user.js';
@@ -44,7 +42,7 @@ import { answer } from '../hono.js';
 // before any of this runs). The groups already in Hono are in
 // server/dashboard-app.ts (#235, stage 6): /api/pedidos, /api/portal-admin
 // /api/reuniones, /api/despliegues, /api/metricas, /api/exploraciones and
-// /api/ajustes. The rest, still here:
+// /api/ajustes, /api/runs and /api/evidence. The rest, still here:
 //   GET /api/snapshot                the sidebar and the status bar
 //   GET /api/today                   the last 12 hours' runs, the day's totals and the week's, and each repo's Linear cycle (#101)
 //   GET /api/items/<id>              one item's runs (14 days)
@@ -60,15 +58,10 @@ import { answer } from '../hono.js';
 //   POST /api/items/<id>/exploration/approve  an approving review, as the person
 //   POST /api/items/<id>/actions     asks for one of those (dashboard-actions.ts)
 //   POST /api/repos/<owner>/<repo>/issues  a new issue, as the person, and what to do with it (#100)
-//   GET /api/runs/<runId>            one run's transcript
-//   GET /api/runs/<runId>/stream     the rest of it as it happens (SSE)
-//   GET /api/evidence/<owner>/<repo>/<sha>/<path>  a screenshot ronin published (dashboard-evidence.ts)
 
 // How far back the sidebar and an item's history look. Run records are kept
 // 14 days (scripts/setup-cron.sh).
 const SIDEBAR_DAYS = 3;
-const STREAM_POLL_MS = 1000;
-const STREAM_HEARTBEAT_MS = 15_000;
 
 // Which repos the request's session sees (#106, access.ts): set by
 // handleDashboard for the whole request, so every read below goes through
@@ -484,58 +477,6 @@ async function postPrDecision(req: IncomingMessage, res: ServerResponse, id: str
   }
 }
 
-function streamRun(req: IncomingMessage, res: ServerResponse, path: string, from: number): void {
-  res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-store', Connection: 'keep-alive' });
-  let sent = from;
-  let lastWrite = Date.now();
-  const finish = () => {
-    clearInterval(timer);
-    res.end();
-  };
-  const timer = setInterval(() => {
-    let lines;
-    try {
-      lines = readRunLines(path);
-    } catch {
-      finish();
-      return;
-    }
-    for (const line of lines.slice(sent)) {
-      res.write(`data: ${JSON.stringify(line)}\n\n`);
-      lastWrite = Date.now();
-    }
-    sent = Math.max(sent, lines.length);
-    const summary = summarizeRun(lines);
-    if (!summary || summary.state !== 'running') {
-      res.write(`event: end\ndata: ${JSON.stringify(summary?.state ?? 'error')}\n\n`);
-      finish();
-    } else if (Date.now() - lastWrite > STREAM_HEARTBEAT_MS) {
-      res.write(': sigue\n\n');
-      lastWrite = Date.now();
-    }
-  }, STREAM_POLL_MS);
-  req.on('close', () => clearInterval(timer));
-}
-
-// Segments arrive one by one URI-encoded, as evidenceUrl writes them.
-async function serveEvidence(res: ServerResponse, raw: string): Promise<void> {
-  let parts: string[];
-  try {
-    parts = raw.split('/').map(decodeURIComponent);
-  } catch {
-    parts = [];
-  }
-  const [owner, name, sha, ...segments] = parts;
-  const entry = (await visibleRepos()).find((repo) => repo.productRepo === `${owner}/${name}`);
-  const image = entry && (await readEvidence(entry, sha ?? '', segments));
-  if (!image) {
-    json(res, 404, { error: 'no existe esa imagen' });
-    return;
-  }
-  // A sha never changes what it points to.
-  res.writeHead(200, { 'Content-Type': image.type, 'Cache-Control': 'private, max-age=31536000, immutable' }).end(image.data);
-}
-
 // One of the PR's files at its head: only a file the PR changes, so the
 // endpoint can't read just anything from the repo.
 async function serveFileContent(req: IncomingMessage, res: ServerResponse, ctx: NonNullable<Awaited<ReturnType<typeof filesContext>>>): Promise<void> {
@@ -652,30 +593,6 @@ async function route(req: IncomingMessage, res: ServerResponse, path: string, se
     }
     const keys = itemRunKeys(id, entry ? await repoGithub(entry) : undefined);
     json(res, 200, { id, runs: (await listRuns(HISTORY_DAYS)).filter((run) => keys.includes(itemKey(run))) });
-    return true;
-  }
-
-  if (path.startsWith('/api/evidence/')) {
-    await serveEvidence(res, path.slice('/api/evidence/'.length));
-    return true;
-  }
-
-  const run = /^\/api\/runs\/([^/]+)(\/stream)?$/.exec(path);
-  if (run) {
-    const file = runPath(run[1]);
-    // A run of a repo the session doesn't see is as good as missing.
-    const summary = file && existsSync(file) ? summarizeRun(readRunLines(file)) : null;
-    if (!file || !summary || !sees(currentAccess(), summary.repo)) {
-      json(res, 404, { error: 'no existe esa corrida' });
-      return true;
-    }
-    if (run[2]) {
-      const from = Number(new URL(req.url ?? '/', 'http://localhost').searchParams.get('from') ?? 0);
-      streamRun(req, res, file, Number.isInteger(from) && from >= 0 ? from : 0);
-    } else {
-      const lines = readRunLines(file);
-      json(res, 200, { summary, lines });
-    }
     return true;
   }
 
