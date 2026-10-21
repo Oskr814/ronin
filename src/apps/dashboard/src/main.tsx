@@ -2,15 +2,15 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { StrictMode, type ComponentType } from 'react';
 import { createRoot } from 'react-dom/client';
 import { HostContext, type Host } from './host.js';
-import { Despliegues } from './pages/despliegues/Despliegues.js';
+import { Deploys } from './pages/deploys/Deploys.js';
 
 // The dashboard's pages in React (#235, stage 7): app.js still draws the
 // shell (sidebar, status bar, routes) and mounts one of these where a page
-// goes — window.roninPages.mount('despliegues', element, host) — and
+// goes — window.roninPages.mount('deploys', element, host) — and
 // unmounts it when the person leaves. A page at a time, until app.js is empty.
 
 const PAGES: Record<string, ComponentType> = {
-  despliegues: Despliegues,
+  deploys: Deploys,
 };
 
 // One cache for every page: going back to one shows what it had.

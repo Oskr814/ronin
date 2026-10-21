@@ -1,9 +1,9 @@
-import { client, ok, type Despliegues } from '../../api.js';
+import { client, ok, type DeployRepos } from '../../api.js';
 
-// What the page and its dialog share: the shapes of what /api/despliegues
+// What the page and its dialog share: the shapes of what /api/deploys
 // answers, and how a change and a repo's routes are written.
 
-export type Repos = Despliegues;
+export type Repos = DeployRepos;
 export type Repo = Repos[number];
 type Readable = Extract<Repo, { pending: unknown }>;
 export type Change = Readable['pending']['changes'][number];
@@ -19,5 +19,5 @@ export const at = (repo: string) => {
 };
 
 export function planOf(repo: string, body: { tag: string; prs: 'all' | number[]; prerelease: boolean }) {
-  return ok(client.api.despliegues[':owner'][':name'].plan.$post({ ...at(repo), json: body }));
+  return ok(client.api.deploys[':owner'][':name'].plan.$post({ ...at(repo), json: body }));
 }

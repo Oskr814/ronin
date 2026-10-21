@@ -13,13 +13,13 @@ const plan = vi.fn();
 const publish = vi.fn();
 vi.mock('../../../src/domains/deploys/board.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../../src/domains/deploys/board.js')>()),
-  despliegues: async (entries: Array<{ productRepo: string; deploy?: unknown }>) => entries.filter((e) => e.deploy).map((e) => ({ repo: e.productRepo })),
-  planDespliegue: (...args: unknown[]) => plan(...args),
-  publishDespliegue: (...args: unknown[]) => publish(...args),
+  deploysView: async (entries: Array<{ productRepo: string; deploy?: unknown }>) => entries.filter((e) => e.deploy).map((e) => ({ repo: e.productRepo })),
+  planBoardRelease: (...args: unknown[]) => plan(...args),
+  publishBoardRelease: (...args: unknown[]) => publish(...args),
 }));
 
 const { dashboardApp } = await import('../../../src/apps/api/routes.js');
-const { DespliegueError } = await import('../../../src/domains/deploys/board.js');
+const { DeployBoardError } = await import('../../../src/domains/deploys/board.js');
 
 const DEPLOYER: Access = { admin: false, repos: [{ repo: 'acme/tienda', permission: 'push', perms: { notas: true, aprobar: true, acciones: true, desplegar: true } }, { repo: 'acme/docs', permission: 'push', perms: { notas: true, aprobar: true, acciones: true, desplegar: true } }] };
 const call = (path: string, init: RequestInit = {}, access = DEPLOYER) =>
@@ -31,27 +31,27 @@ beforeEach(() => {
   publish.mockReset();
 });
 
-describe('Despliegues from the dashboard, in Hono', () => {
+describe('Deploys from the dashboard, in Hono', () => {
   it('lists the repos it can deploy', async () => {
-    expect(await (await call('/api/despliegues')).json()).toEqual({ repos: [{ repo: 'acme/tienda' }] });
+    expect(await (await call('/api/deploys')).json()).toEqual({ repos: [{ repo: 'acme/tienda' }] });
   });
 
   it('plans a release with the body checked, and says why it can not', async () => {
     plan.mockResolvedValue({ tag: 'v1.2.0', prs: [] });
-    const res = await post('/api/despliegues/acme/tienda/plan', { tag: 'v1.2.0', prs: 'all' });
+    const res = await post('/api/deploys/acme/tienda/plan', { tag: 'v1.2.0', prs: 'all' });
     expect(await res.json()).toEqual({ tag: 'v1.2.0', prs: [] });
     expect(plan.mock.calls[0][1]).toMatchObject({ tag: 'v1.2.0', prs: 'all' });
-    expect((await (await post('/api/despliegues/acme/tienda/plan', { prs: 'all' })).json()).error).toBe('falta el tag');
-    expect((await call('/api/despliegues/acme/tienda/plan', { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: 'x' })).status).toBe(415);
-    expect((await post('/api/despliegues/acme/docs/plan', { tag: 'v1', prs: 'all' })).status).toBe(404);
+    expect((await (await post('/api/deploys/acme/tienda/plan', { prs: 'all' })).json()).error).toBe('falta el tag');
+    expect((await call('/api/deploys/acme/tienda/plan', { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: 'x' })).status).toBe(415);
+    expect((await post('/api/deploys/acme/docs/plan', { tag: 'v1', prs: 'all' })).status).toBe(404);
   });
 
   it('publishes it, or answers with the plan as it is now when it changed', async () => {
     publish.mockResolvedValue({ tag: 'v1.2.0', url: 'https://github.com/acme/tienda/releases/tag/v1.2.0' });
-    expect(await (await post('/api/despliegues/acme/tienda/publish', { tag: 'v1.2.0', prs: [12] })).json()).toMatchObject({ tag: 'v1.2.0' });
+    expect(await (await post('/api/deploys/acme/tienda/publish', { tag: 'v1.2.0', prs: [12] })).json()).toMatchObject({ tag: 'v1.2.0' });
     expect(publish.mock.calls[0][2]).toBe('oskr814');
-    publish.mockRejectedValue(new DespliegueError('El plan cambió: revísalo de nuevo.', { status: 409, details: { plan: { tag: 'v1.2.0', prs: [12, 13] } } }));
-    const changed = await post('/api/despliegues/acme/tienda/publish', { tag: 'v1.2.0', prs: [12] });
+    publish.mockRejectedValue(new DeployBoardError('El plan cambió: revísalo de nuevo.', { status: 409, details: { plan: { tag: 'v1.2.0', prs: [12, 13] } } }));
+    const changed = await post('/api/deploys/acme/tienda/publish', { tag: 'v1.2.0', prs: [12] });
     expect(changed.status).toBe(409);
     expect(await changed.json()).toEqual({ error: 'El plan cambió: revísalo de nuevo.', plan: { tag: 'v1.2.0', prs: [12, 13] } });
   });

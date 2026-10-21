@@ -80,10 +80,10 @@ export function DeployDialog({ repos, repo, pr, onClose }: { repos: Repos; repo:
     setSending(true);
     setError(null);
     try {
-      const done = await ok(client.api.despliegues[':owner'][':name'].publish.$post({ ...at(repo), json: { ...body, title: title.trim() || undefined, notes: notes.trim() || undefined, fingerprint: current.fingerprint } }));
+      const done = await ok(client.api.deploys[':owner'][':name'].publish.$post({ ...at(repo), json: { ...body, title: title.trim() || undefined, notes: notes.trim() || undefined, fingerprint: current.fingerprint } }));
       onClose();
       host.toast(`Publicado ${done.tag}: el workflow del repo ya arrancó.${done.pedidos.length ? ` ${done.pedidos.map((n) => `P-${n}`).join(', ')} ${done.pedidos.length === 1 ? 'recibe' : 'reciben'} el aviso cuando termine bien.` : ''}`, done.url || undefined);
-      void queryClient.invalidateQueries({ queryKey: ['despliegues'] });
+      void queryClient.invalidateQueries({ queryKey: ['deploys'] });
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) return host.unauthorized(e.message);
       setSending(false);
