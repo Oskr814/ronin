@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { ApiError, client, ok } from '../../api.js';
 import { useHost } from '../../host.js';
-import { ago, useNow } from '../../lib/time.js';
+import { ago, useNow } from '../../../../../ui/time.js';
 import { DeployDialog } from './DeployDialog.js';
 import { subject, type Release, type Repo, type Repos } from './model.js';
 
