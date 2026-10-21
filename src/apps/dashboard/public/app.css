@@ -1106,6 +1106,8 @@ button.brow:hover { background: var(--hover); }
   .pd-runrow .tm { padding-top: 0; }
   .pd-body { overflow: visible; }
 }
+/* Where app.js mounts a React page: not a box of its own, so the page's
+   .today is the center's column and scrolls inside it, as before. */
 /* .goped: the same link to a request, in a React page (app.js wires [data-goped] itself). */
 button.chip[data-goped], button.chip.goped { cursor: pointer; border: 1px solid color-mix(in srgb, var(--repo-2) 45%, transparent); }
 button.chip[data-goped]:hover, button.chip.goped:hover { color: var(--ink); }

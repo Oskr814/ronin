@@ -3,7 +3,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { HostContext, type Host } from '../../host.js';
+import { HostContext } from '../../host.js';
+import { testHost } from '../../test-host.js';
 import { Request } from './Request.js';
 import { Requests } from './Requests.js';
 
@@ -53,14 +54,10 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-const host: Host = {
-  toast: vi.fn(), openPedido: vi.fn(), openPedidos: vi.fn(), unauthorized: vi.fn(), repoColor: () => 'red', openItem: vi.fn(), openSettings: vi.fn(), openMetrics: vi.fn(),
-  repos: () => ['acme/tienda', 'acme/web'], typeName: (t) => `tipo ${t}`, requestsTotal: () => ROWS.length, portalAdmin: () => true, openPortalAccounts: vi.fn(),
-  requestDoc: vi.fn((element: HTMLElement, doc) => {
+const host = testHost({ repoColor: () => 'red', repos: () => ['acme/tienda', 'acme/web'], typeName: (t) => `tipo ${t}`, requestsTotal: () => ROWS.length, portalAdmin: () => true, requestDoc: vi.fn((element: HTMLElement, doc) => {
     element.textContent = `el ${doc.show} de ${doc.repo}#${doc.issue}`;
     return () => {};
-  }),
-};
+  }) });
 const show = (page: ReactNode) => render(
   <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
     <HostContext.Provider value={host}>{page}</HostContext.Provider>
