@@ -7,7 +7,7 @@ import { loadRepos } from '../core/repos.js';
 import { handleDashboard } from './api/dashboard.js';
 import { handleGithubWebhook } from './api/webhooks/github.js';
 import { GITHUB_WEBHOOK_PATHS } from './public.js';
-import { serveStatic, WEB_ROOT } from './static.js';
+import { ISLANDS_ROOT, serveStatic, WEB_ROOT } from './static.js';
 
 // What the tailnet listener serves (#65): the whole API under /api and the
 // web app (src/web/) everywhere else. Only the tailnet reaches it — it
@@ -89,6 +89,6 @@ export function createTailnetHandler(auth: AuthConfig, options: { github?: Githu
       res.writeHead(405).end();
       return;
     }
-    serveStatic(path, res, root);
+    serveStatic(path, res, path === '/islands.js' && root === WEB_ROOT ? ISLANDS_ROOT : root);
   };
 }

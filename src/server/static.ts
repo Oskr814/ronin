@@ -13,6 +13,9 @@ import { fileURLToPath } from 'node:url';
 const HERE = dirname(fileURLToPath(import.meta.url));
 export const WEB_ROOT = resolve(HERE, '..', 'web');
 export const PORTAL_WEB_ROOT = basename(resolve(HERE, '..')) === 'src' ? resolve(HERE, '..', '..', 'dist', 'portal-web') : resolve(HERE, '..', 'portal-web');
+// The dashboard's sections in React (src/web-islands/) are built too: in
+// development, its islands.js comes from the last `pnpm build`.
+export const ISLANDS_ROOT = basename(resolve(HERE, '..')) === 'src' ? resolve(HERE, '..', '..', 'dist', 'web') : WEB_ROOT;
 
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
