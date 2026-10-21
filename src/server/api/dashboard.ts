@@ -25,11 +25,7 @@ import { explorationReview, forgetExploration, isExplorationPr } from './dashboa
 import { FichaActionError, runApprove, runFichaAction, runGeneralComment } from './dashboard-exploration-actions.js';
 import { GithubUserError, pendingReview, viewedFiles } from './github-as-user.js';
 import type { Session } from './auth.js';
-import { cuentasView, setCuenta } from './cuentas-claude.js';
-import { AjustesError, ajustesView, conexionesView, linearTeams, readRegistro, saveNotificacion, saveProfile, setTask, setValue, testMail } from './ajustes.js';
 import { can, touchSeen, type Perm } from './team.js';
-import { addUsuario, removeUsuario, updateEquipo, updateUsuario, usuariosView, usuarioView } from './usuarios.js';
-import { editRepo, reposView } from './repos-admin.js';
 import { missingPortalConfig } from '../portal.js';
 import { listUsers, type PortalUser } from '../../portal/accounts.js';
 import { listRequests } from '../../portal/requests.js';
@@ -47,8 +43,8 @@ import { answer } from '../hono.js';
 // The dashboard's data (#65), all behind the session (tailnet.ts checks it
 // before any of this runs). The groups already in Hono are in
 // server/dashboard-app.ts (#235, stage 6): /api/pedidos, /api/portal-admin
-// /api/reuniones, /api/despliegues, /api/metricas and /api/exploraciones.
-// The rest, still here:
+// /api/reuniones, /api/despliegues, /api/metricas, /api/exploraciones and
+// /api/ajustes. The rest, still here:
 //   GET /api/snapshot                the sidebar and the status bar
 //   GET /api/today                   the last 12 hours' runs, the day's totals and the week's, and each repo's Linear cycle (#101)
 //   GET /api/items/<id>              one item's runs (14 days)
@@ -67,8 +63,6 @@ import { answer } from '../hono.js';
 //   GET /api/runs/<runId>            one run's transcript
 //   GET /api/runs/<runId>/stream     the rest of it as it happens (SSE)
 //   GET /api/evidence/<owner>/<repo>/<sha>/<path>  a screenshot ronin published (dashboard-evidence.ts)
-//   GET|POST /api/ajustes[/…]        the person's profile, and for admins the settings and their record (#174, ajustes.ts)
-//                                    and the plan of each Claude account (#234, cuentas-claude.ts)
 
 // How far back the sidebar and an item's history look. Run records are kept
 // 14 days (scripts/setup-cron.sh).
@@ -384,118 +378,6 @@ async function postNewIssue(req: IncomingMessage, res: ServerResponse, repo: str
   }
 }
 
-// Ajustes (#174): the profile is everyone's own; the settings and the
-// record, admins only.
-async function ajustes(req: IncomingMessage, res: ServerResponse, path: string, session: Session): Promise<void> {
-  const admin = currentAccess().admin;
-  if (req.method === 'GET' && path === '/api/ajustes') {
-    json(res, 200, await ajustesView(session.login, admin, await visibleRepos()));
-    return;
-  }
-  if (req.method === 'GET' && path === '/api/ajustes/registro') {
-    if (!admin) json(res, 403, { error: 'solo los administradores ven el registro' });
-    else json(res, 200, { registro: await readRegistro() });
-    return;
-  }
-  if (path === '/api/ajustes/conexiones' || path === '/api/ajustes/conexiones/correo') {
-    if (!admin) json(res, 403, { error: 'solo los administradores ven las conexiones' });
-    else if (req.method === 'GET' && path === '/api/ajustes/conexiones') json(res, 200, await conexionesView());
-    else if (req.method === 'POST' && path === '/api/ajustes/conexiones/correo') {
-      try {
-        json(res, 200, await testMail(session.login));
-      } catch (error) {
-        if (error instanceof AjustesError) json(res, error.status, { error: error.message });
-        else throw error;
-      }
-    } else json(res, 405, { error: 'método no permitido' });
-    return;
-  }
-  const repoEdit = /^\/api\/ajustes\/repos(?:\/([\w.-]+\/[\w.-]+))?$/.exec(path);
-  if (repoEdit) {
-    if (!admin) json(res, 403, { error: 'solo los administradores cambian los repos' });
-    else if (req.method === 'GET' && !repoEdit[1]) json(res, 200, await reposView(await loadRepos()));
-    else if (req.method !== 'POST' || !repoEdit[1]) json(res, 405, { error: 'método no permitido' });
-    else if (!(req.headers['content-type'] ?? '').startsWith('application/json')) json(res, 415, { error: 'se espera JSON' });
-    else {
-      try {
-        json(res, 200, await editRepo(session.login, repoEdit[1], (await readJson(req)) ?? {}, await loadRepos()));
-        forgetGithub(repoEdit[1]);
-      } catch (error) {
-        if (error instanceof AjustesError) json(res, error.status, { error: error.message });
-        else throw error;
-      }
-    }
-    return;
-  }
-  const cuenta = /^\/api\/ajustes\/cuentas(?:\/([\w.-]+))?$/.exec(path);
-  if (cuenta) {
-    if (!admin) json(res, 403, { error: 'solo los administradores ven las cuentas de Claude' });
-    else if (req.method === 'GET' && !cuenta[1]) json(res, 200, await cuentasView(await loadRepos()));
-    else if (req.method !== 'POST' || !cuenta[1]) json(res, 405, { error: 'método no permitido' });
-    else if (!(req.headers['content-type'] ?? '').startsWith('application/json')) json(res, 415, { error: 'se espera JSON' });
-    else {
-      try {
-        json(res, 200, await setCuenta(session.login, cuenta[1], (await readJson(req)) ?? {}, await loadRepos()));
-      } catch (error) {
-        if (error instanceof AjustesError) json(res, error.status, { error: error.message });
-        else throw error;
-      }
-    }
-    return;
-  }
-  const usuario = /^\/api\/ajustes\/usuarios(?:\/([a-z\d-]+))?(\/quitar)?$/.exec(path);
-  if (usuario || path === '/api/ajustes/equipo') {
-    if (!admin) {
-      json(res, 403, { error: 'solo los administradores manejan los usuarios' });
-      return;
-    }
-    if (req.method === 'GET' && usuario && !usuario[2]) {
-      const view = usuario[1] ? await usuarioView(usuario[1], await loadRepos()) : await usuariosView(await loadRepos());
-      if (view) json(res, 200, view);
-      else json(res, 404, { error: 'esa persona no está en la lista' });
-      return;
-    }
-    if (req.method !== 'POST') {
-      json(res, 405, { error: 'método no permitido' });
-      return;
-    }
-    if (!(req.headers['content-type'] ?? '').startsWith('application/json')) {
-      json(res, 415, { error: 'se espera JSON' });
-      return;
-    }
-    const body = (await readJson(req)) ?? {};
-    try {
-      if (path === '/api/ajustes/equipo') json(res, 200, await updateEquipo(session.login, body));
-      else if (!usuario![1]) json(res, 200, await addUsuario(session.login, body));
-      else if (usuario![2]) json(res, 200, await removeUsuario(session.login, usuario![1]));
-      else json(res, 200, await updateUsuario(session.login, usuario![1], body, await loadRepos()));
-    } catch (error) {
-      if (error instanceof AjustesError) json(res, error.status, { error: error.message });
-      else throw error;
-    }
-    return;
-  }
-  if (req.method !== 'POST' || !['/api/ajustes/perfil', '/api/ajustes/valores', '/api/ajustes/notificaciones', '/api/ajustes/tareas'].includes(path)) {
-    json(res, 404, { error: 'no existe' });
-    return;
-  }
-  if (!(req.headers['content-type'] ?? '').startsWith('application/json')) {
-    json(res, 415, { error: 'se espera JSON' });
-    return;
-  }
-  const body = (await readJson(req)) ?? {};
-  try {
-    if (path === '/api/ajustes/perfil') json(res, 200, await saveProfile(session.login, body, await linearTeams(await visibleRepos())));
-    else if (path === '/api/ajustes/notificaciones') json(res, 200, await saveNotificacion(session.login, body, await visibleRepos()));
-    else if (!admin) json(res, 403, { error: 'solo los administradores cambian los ajustes' });
-    else if (path === '/api/ajustes/tareas') json(res, 200, await setTask(session.login, body));
-    else json(res, 200, await setValue(session.login, body));
-  } catch (error) {
-    if (error instanceof AjustesError) json(res, error.status, { error: error.message });
-    else throw error;
-  }
-}
-
 // POST /api/items/<id>/exploration/<what>: actions { action, ficha, text,
 // redo? } on a finding, general { text }, approve { text? }.
 async function postExploration(req: IncomingMessage, res: ServerResponse, id: string, what: string, session: Session): Promise<void> {
@@ -683,10 +565,6 @@ async function route(req: IncomingMessage, res: ServerResponse, path: string, se
   // The groups already in Hono (dashboard-app.ts).
   if (ownsPath(path)) {
     await answer(dashboardApp, req, res, { session, access: currentAccess() });
-    return true;
-  }
-  if (path === '/api/ajustes' || path.startsWith('/api/ajustes/')) {
-    await ajustes(req, res, path, session);
     return true;
   }
   const explorationPost = /^\/api\/items\/(.+)\/exploration\/(actions|general|approve)$/.exec(path);
