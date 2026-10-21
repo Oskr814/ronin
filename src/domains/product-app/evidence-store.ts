@@ -3,8 +3,8 @@ import { promisify } from 'node:util';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { log } from '../../core/logger.js';
-import { activeRepo } from '../../core/repo-context.js';
+import { log } from '../../platform/logger.js';
+import { activeRepo } from '../../platform/agents/repo-context.js';
 
 const execFileAsync = promisify(execFile);
 

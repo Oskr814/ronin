@@ -1,10 +1,10 @@
-import type { AgentTask, PreparedTask } from '../../core/agent-task.js';
-import type { Release } from '../../core/github.js';
-import { repoUrl } from '../../core/prompts.js';
-import { activeRepo } from '../../core/repo-context.js';
+import type { AgentTask, PreparedTask } from '../../platform/agents/agent-task.js';
+import type { Release } from '../../platform/github/github.js';
+import { repoUrl } from '../../platform/agents/prompts.js';
+import { activeRepo } from '../../platform/agents/repo-context.js';
 import { ensureChangelogRepoUpToDate } from './changelog.js';
 
-// What the agent is told for each changelog task; core/agent-task.ts runs it.
+// What the agent is told for each changelog task; platform/agents/agent-task.ts runs it.
 
 export type ChangelogTask =
   | { type: 'update-changelog'; release: Release };

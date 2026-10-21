@@ -2,13 +2,13 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { access, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { extname, join } from 'node:path';
-import { runAgentTask } from '../../core/agent-task.js';
+import { runAgentTask } from '../../platform/agents/agent-task.js';
 import { explorationTask, type ExistingFindingSummary } from './prompts.js';
 import { appDown, appUp } from '../product-app/index.js';
 import { loginAllUsers, renderHtmlToPng } from '../product-app/index.js';
 import { loadAppDefinition, type AppDefinition } from '../product-app/index.js';
-import { config } from '../../core/config.js';
-import { log } from '../../core/logger.js';
+import { config } from '../../platform/config/config.js';
+import { log } from '../../platform/logger.js';
 import { evidenceUrl, publishEvidence, type EvidenceFile } from '../product-app/index.js';
 import {
   ensureMemoryDir,

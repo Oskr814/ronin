@@ -2,11 +2,11 @@
 // launchPrototypeWorker), never inside it: bringing an app up and drawing
 // the after takes many minutes. Takes the request as a JSON argument, waits
 // for the per-repo prototype lock, and answers the comment that asked for it.
-import { loadRepos } from '../../core/repos.js';
-import { withActiveRepo } from '../../core/repo-context.js';
-import { replyToComment } from '../../core/github.js';
-import { config } from '../../core/config.js';
-import { log } from '../../core/logger.js';
+import { loadRepos } from '../../platform/config/repos.js';
+import { withActiveRepo } from '../../platform/agents/repo-context.js';
+import { replyToComment } from '../../platform/github/github.js';
+import { config } from '../../platform/config/config.js';
+import { log } from '../../platform/logger.js';
 import {
   releasePrototypeLock,
   renderPrototypeComment,

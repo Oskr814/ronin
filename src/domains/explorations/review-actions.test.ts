@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('../../core/logger.js', () => ({ log: { error: vi.fn(), info: vi.fn() } }));
-vi.mock('../../core/config.js', () => ({ config: { githubLogin: 'ronin-agent' } }));
+vi.mock('../../platform/logger.js', () => ({ log: { error: vi.fn(), info: vi.fn() } }));
+vi.mock('../../platform/config/config.js', () => ({ config: { githubLogin: 'ronin-agent' } }));
 
 const { fichaComment, generalComment, runApprove, runFichaAction, runGeneralComment, waitingOnRonin, FichaActionError } = await import('./review-actions.js');
 

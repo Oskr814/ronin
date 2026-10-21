@@ -1,5 +1,5 @@
 import type { IncomingMessage } from 'node:http';
-import type { RepoEntry } from '../../core/repo-context.js';
+import type { RepoEntry } from '../../platform/agents/repo-context.js';
 import { getUser, type PortalUser } from './accounts.js';
 import type { Send } from './send-link.js';
 import { readPortalSession } from './session.js';

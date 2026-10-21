@@ -1,12 +1,12 @@
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { extname, join } from 'node:path';
 import { existsSync } from 'node:fs';
-import { runAgentTask } from '../../core/agent-task.js';
+import { runAgentTask } from '../../platform/agents/agent-task.js';
 import { explorationTask } from './prompts.js';
 import { appDown, appUp } from '../product-app/index.js';
 import { loginAllUsers, renderHtmlToPng } from '../product-app/index.js';
 import { loadAppDefinition } from '../product-app/index.js';
-import { log } from '../../core/logger.js';
+import { log } from '../../platform/logger.js';
 import { evidenceUrl, publishEvidence } from '../product-app/index.js';
 import { findingFileName, loadMemory, parseFinding, serializeFinding } from './memory.js';
 import { explorationOutDir } from './inventory.js';

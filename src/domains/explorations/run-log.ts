@@ -1,6 +1,6 @@
 import { mkdir, readdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { logsDir } from '../../core/run-files.js';
+import { logsDir } from '../../platform/agents/run-files.js';
 import type { RunSummary } from './run.js';
 
 // The runner's record of each exploration run (#155), for the dashboard's

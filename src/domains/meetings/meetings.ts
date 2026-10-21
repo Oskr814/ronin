@@ -1,10 +1,10 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { config } from '../../core/config.js';
+import { config } from '../../platform/config/config.js';
 import { readJson, withJson, writeJson } from '../portal/json-store.js';
 import { sql } from 'kysely';
-import { timed } from '../../core/timing.js';
-import { getDb, type Db } from '../../db/db.js';
+import { timed } from '../../platform/timing.js';
+import { getDb, type Db } from '../../platform/db/db.js';
 import { notesHash, type Extracted } from './extract.js';
 
 // The meetings whose notes the team uploads to the dashboard (#62). One

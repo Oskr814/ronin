@@ -4,12 +4,12 @@
 // issue or PR it's about, the flows that event can move. The cron tick keeps
 // running everything as the reconciliation pass. See docs/DESIGN.md §14.
 import { createHash } from 'node:crypto';
-import { config } from '../../../core/config.js';
-import { loadRepos } from '../../../core/repos.js';
-import { withActiveRepo } from '../../../core/repo-context.js';
-import { getPrHead } from '../../../core/github.js';
-import { tryLockResource, unlockResource } from '../../../core/locks.js';
-import { log } from '../../../core/logger.js';
+import { config } from '../../../platform/config/config.js';
+import { loadRepos } from '../../../platform/config/repos.js';
+import { withActiveRepo } from '../../../platform/agents/repo-context.js';
+import { getPrHead } from '../../../platform/github/github.js';
+import { tryLockResource, unlockResource } from '../../../platform/locks/locks.js';
+import { log } from '../../../platform/logger.js';
 import { issueFromSliceBranch } from '../../../domains/slices/index.js';
 import { launchPreviewUpdates } from '../../../domains/previews/index.js';
 import { runScoped, type Scope } from '../tick/tick.js';

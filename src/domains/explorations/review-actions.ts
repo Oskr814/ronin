@@ -1,9 +1,9 @@
-import { config } from '../../core/config.js';
-import { log } from '../../core/logger.js';
-import type { RepoEntry } from '../../core/repo-context.js';
+import { config } from '../../platform/config/config.js';
+import { log } from '../../platform/logger.js';
+import type { RepoEntry } from '../../platform/agents/repo-context.js';
 import type { Session } from '../../apps/api/http/auth.js';
 import type { ExplorationPr, ExplorationReview, Ficha } from './review.js';
-import { approvePr, commentOnFile, commentOnIssue, type Posted } from '../../core/github-as-user.js';
+import { approvePr, commentOnFile, commentOnIssue, type Posted } from '../../platform/github/github-as-user.js';
 
 // Deciding on a finding from the dashboard (#93): a comment on its file in
 // the exploration PR, written as whoever is logged in — what they'd write in

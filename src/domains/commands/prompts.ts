@@ -1,12 +1,12 @@
-import type { AgentTask, PreparedTask } from '../../core/agent-task.js';
-import { config } from '../../core/config.js';
-import type { Comment } from '../../core/github.js';
-import { describeMention, fence, fenceBlock, REALISTIC_DATA_RULE, repoUrl, UNTRUSTED_APP_WARNING } from '../../core/prompts.js';
-import { activeRepo } from '../../core/repo-context.js';
+import type { AgentTask, PreparedTask } from '../../platform/agents/agent-task.js';
+import { config } from '../../platform/config/config.js';
+import type { Comment } from '../../platform/github/github.js';
+import { describeMention, fence, fenceBlock, REALISTIC_DATA_RULE, repoUrl, UNTRUSTED_APP_WARNING } from '../../platform/agents/prompts.js';
+import { activeRepo } from '../../platform/agents/repo-context.js';
 import { requestBranch, spikeBranch } from '../slices/index.js';
 
 // What the agent is told for each task a command or a mention on an issue or
-// PR starts; core/agent-task.ts runs it. The prototype's steps are shared
+// PR starts; platform/agents/agent-task.ts runs it. The prototype's steps are shared
 // with the portal's (domains/portal/prompts.ts).
 
 export type CommandTask =

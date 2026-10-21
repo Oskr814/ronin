@@ -1,4 +1,4 @@
-import type { Mail } from '../../core/notifier.js';
+import type { Mail } from '../../platform/notify/notifier.js';
 import type { Meeting } from './meetings.js';
 
 // The email to the repo's team when ronin proposes work out of a meeting

@@ -1,4 +1,4 @@
-import { localDay } from '../../core/run-files.js';
+import { localDay } from '../../platform/agents/run-files.js';
 import { itemKey, type RunState, type RunSummary } from '../runs/data.js';
 
 // The dashboard's "Hoy" (#65): every run of the last hours, for the
@@ -13,7 +13,7 @@ export interface TimelineRun {
   repo: string;
   itemId: string;
   taskType: string;
-  // What it's a step of (core/run-group.ts): "Preview: …" on its bar.
+  // What it's a step of (platform/agents/run-group.ts): "Preview: …" on its bar.
   group?: string;
   startedAt: string;
   endedAt?: string;

@@ -1,5 +1,5 @@
 import { join } from 'node:path';
-import { config } from '../../core/config.js';
+import { config } from '../../platform/config/config.js';
 import { readJson, withJson } from '../portal/json-store.js';
 
 // Every block ronin raised (#222), with its reason: the local state keeps

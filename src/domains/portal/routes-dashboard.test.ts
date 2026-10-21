@@ -1,21 +1,21 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { rm } from 'node:fs/promises';
 
-vi.mock('../../core/logger.js', () => ({ log: { info: vi.fn(), error: vi.fn() } }));
+vi.mock('../../platform/logger.js', () => ({ log: { info: vi.fn(), error: vi.fn() } }));
 const sendMail = vi.fn(async () => {});
-vi.mock('../../core/notifier.js', () => ({ sendMail: (...args: unknown[]) => sendMail(...(args as [])) }));
+vi.mock('../../platform/notify/notifier.js', () => ({ sendMail: (...args: unknown[]) => sendMail(...(args as [])) }));
 // The portal configured, as on the server.
-vi.mock('../../core/config.js', async (importOriginal) => {
-  const { config } = await importOriginal<typeof import('../../core/config.js')>();
+vi.mock('../../platform/config/config.js', async (importOriginal) => {
+  const { config } = await importOriginal<typeof import('../../platform/config/config.js')>();
   return { config: { ...config, portal: { ...config.portal, url: 'https://ronin-agent.example.com', sessionSecret: 's'.repeat(40) } } };
 });
-vi.mock('../../core/repos.js', () => ({
+vi.mock('../../platform/config/repos.js', () => ({
   loadRepos: async () => [{ productRepo: 'acme/tienda', productRepoPath: '/x', portal: { name: 'Acme', apps: { backoffice: { name: 'Backoffice' } } } }],
 }));
 
 import type { Access } from '../access/access.js';
 
-const { config } = await import('../../core/config.js');
+const { config } = await import('../../platform/config/config.js');
 const { dashboardApp } = await import('../../apps/api/routes.js');
 const { createRequest } = await import('./requests.js');
 

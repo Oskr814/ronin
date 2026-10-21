@@ -4,14 +4,14 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-vi.mock('../../core/logger.js', () => ({ log: { error: vi.fn(), info: vi.fn() } }));
+vi.mock('../../platform/logger.js', () => ({ log: { error: vi.fn(), info: vi.fn() } }));
 const config = { githubLogin: 'ronin-agent', previewReservationsDir: '/nonexistent', previewPrepareData: false };
-vi.mock('../../core/config.js', () => ({ config }));
+vi.mock('../../platform/config/config.js', () => ({ config }));
 const runAgentTask = vi.fn();
-vi.mock('../../core/agent-task.js', () => ({ runAgentTask: (...args: unknown[]) => runAgentTask(...args) }));
+vi.mock('../../platform/agents/agent-task.js', () => ({ runAgentTask: (...args: unknown[]) => runAgentTask(...args) }));
 
 let root: string;
-vi.mock('../../core/repo-context.js', () => ({
+vi.mock('../../platform/agents/repo-context.js', () => ({
   activeRepo: () => ({ productRepo: 'acme/product', productRepoPath: join(root, 'repo'), worktreeBasePath: join(root, 'wt') }),
 }));
 const appRerun = vi.fn();

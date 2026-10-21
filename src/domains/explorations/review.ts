@@ -1,9 +1,9 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { config } from '../../core/config.js';
-import { listFileReviewComments } from '../../core/github.js';
-import { log } from '../../core/logger.js';
-import { withActiveRepo, type RepoEntry } from '../../core/repo-context.js';
+import { config } from '../../platform/config/config.js';
+import { listFileReviewComments } from '../../platform/github/github.js';
+import { log } from '../../platform/logger.js';
+import { withActiveRepo, type RepoEntry } from '../../platform/agents/repo-context.js';
 import { EXPLORATION_DIR, parseFinding, type FindingMeta } from './memory.js';
 import { parseFindingBody, type FindingBodyParts, type FindingImage } from './output.js';
 import { EXPLORATION_BRANCH_PREFIX, findingsAddedOverBase } from './pr.js';

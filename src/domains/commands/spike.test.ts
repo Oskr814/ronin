@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const listOpenUnmanagedIssues = vi.fn();
-vi.mock('../../core/github.js', () => ({
+vi.mock('../../platform/github/github.js', () => ({
   listOpenUnmanagedIssues: (...args: unknown[]) => listOpenUnmanagedIssues(...args),
 }));
 

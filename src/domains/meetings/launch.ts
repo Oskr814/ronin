@@ -1,5 +1,5 @@
-import { launchWorker } from '../../core/worker-launch.js';
-import { log } from '../../core/logger.js';
+import { launchWorker } from '../../platform/workers/worker-launch.js';
+import { log } from '../../platform/logger.js';
 import { addEvent, listMeetings, updateMeeting } from './meetings.js';
 
 // Starts the worker that reads a meeting (worker.ts), and notes its pid on

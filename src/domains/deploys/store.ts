@@ -1,9 +1,9 @@
 import { join } from 'node:path';
 import type { Selectable } from 'kysely';
-import { config } from '../../core/config.js';
-import { timed } from '../../core/timing.js';
-import { getDb } from '../../db/db.js';
-import type { DeploysTable } from '../../db/schema.js';
+import { config } from '../../platform/config/config.js';
+import { timed } from '../../platform/timing.js';
+import { getDb } from '../../platform/db/db.js';
+import type { DeploysTable } from '../../platform/db/schema.js';
 import { readJson, withJson } from '../portal/json-store.js';
 
 // The deploys ronin published (#158): GitHub has the releases, but only this

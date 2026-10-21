@@ -4,10 +4,10 @@
 // are, as a backup. Safe to run again: the values are written over, and the
 // record is only copied into an empty table. Ends comparing both.
 import { join, resolve } from 'node:path';
-import { closeDb, getDb, setDb } from '../src/db/db.js';
-import { migrateToLatest } from '../src/db/migrate.js';
-import { readSettingsSync } from '../src/core/settings.js';
-import { appendRegistro, readRegistro, readSettings, updateSettings } from '../src/core/settings-store.js';
+import { closeDb, getDb, setDb } from '../src/platform/db/db.js';
+import { migrateToLatest } from '../src/platform/db/migrate.js';
+import { readSettingsSync } from '../src/platform/config/settings.js';
+import { appendRegistro, readRegistro, readSettings, updateSettings } from '../src/platform/config/settings-store.js';
 import { sameContent } from './db-compare.js';
 
 const dataDir = resolve(process.env.SETTINGS_DATA_DIR || 'settings-data');

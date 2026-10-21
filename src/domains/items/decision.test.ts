@@ -6,7 +6,7 @@ const commentOnIssue = vi.fn();
 const discardReview = vi.fn();
 const closePr = vi.fn();
 const closeIssue = vi.fn();
-vi.mock('../../core/github-as-user.js', () => ({
+vi.mock('../../platform/github/github-as-user.js', () => ({
   pendingReview: (...args: unknown[]) => pendingReview(...args),
   submitReview: (...args: unknown[]) => submitReview(...args),
   commentOnIssue: (...args: unknown[]) => commentOnIssue(...args),
@@ -21,7 +21,7 @@ const ENTRY = { productRepo: 'acme/product', productRepoPath: '/tmp/x' };
 const SESSION = { login: 'oskr814', token: 'gho_user' };
 const SHA = 'b'.repeat(40);
 const FILES = { fetchedAt: '', prId: 'PR_1', author: 'ronin-agent', headSha: SHA, baseSha: 'c'.repeat(40), files: [], threads: [] };
-import type { Discussion } from '../../core/github.js';
+import type { Discussion } from '../../platform/github/github.js';
 
 const PR: Discussion = { number: 918, title: 't', body: '', author: 'ronin-agent', createdAt: '', url: '', state: 'OPEN', isDraft: false, labels: [], comments: [], mergeable: 'MERGEABLE' };
 const target = (pr: Partial<Discussion> = {}) => ({ prNumber: 918, issueNumber: 912, files: FILES, pr: { ...PR, ...pr } });

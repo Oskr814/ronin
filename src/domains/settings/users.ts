@@ -1,9 +1,9 @@
-import { config } from '../../core/config.js';
-import { log } from '../../core/logger.js';
-import type { RepoEntry } from '../../core/repo-context.js';
+import { config } from '../../platform/config/config.js';
+import { log } from '../../platform/logger.js';
+import type { RepoEntry } from '../../platform/agents/repo-context.js';
 import { AjustesError, notificaciones, record } from './settings.js';
 import { applyTeam, entradaOf, envAdmins, isAdmin, isSetName, permsFor, readTeam, SETS, withTeam, type Member, type RepoGrant, type TeamFile } from '../access/team.js';
-import { timed } from '../../core/timing.js';
+import { timed } from '../../platform/timing.js';
 
 // Ajustes → Usuarios (#174, stage 2), admins only:
 //   GET  /api/ajustes/usuarios                 the team, who gets in and the default set

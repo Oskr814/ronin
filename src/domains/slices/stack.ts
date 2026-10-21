@@ -1,4 +1,4 @@
-import type { PullRequestStatus } from '../../core/github.js';
+import type { PullRequestStatus } from '../../platform/github/github.js';
 
 // Placeholder slug — once slice titles are used for the branch name instead
 // of the raw index, this and the regex below need to move to a slugify

@@ -1,13 +1,13 @@
-import { isProcessed, markProcessed } from '../../core/processed-comments.js';
+import { isProcessed, markProcessed } from '../../platform/state/processed-comments.js';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { activeRepo } from '../../core/repo-context.js';
-import { acquireLock, launchWorker, lockHeld } from '../../core/worker-launch.js';
-import { config } from '../../core/config.js';
-import { log } from '../../core/logger.js';
-import { queueExplorationProject } from '../../core/linear-assign.js';
-import { dayIn } from '../../core/timezone.js';
-import { runAgentTask } from '../../core/agent-task.js';
+import { activeRepo } from '../../platform/agents/repo-context.js';
+import { acquireLock, launchWorker, lockHeld } from '../../platform/workers/worker-launch.js';
+import { config } from '../../platform/config/config.js';
+import { log } from '../../platform/logger.js';
+import { queueExplorationProject } from '../../platform/linear/linear-assign.js';
+import { dayIn } from '../../platform/config/timezone.js';
+import { runAgentTask } from '../../platform/agents/agent-task.js';
 import { explorationTask, type FindingFeedback, type FindingSummary, type GeneralFeedback } from './prompts.js';
 import {
   closeIssueNotPlanned,
@@ -20,7 +20,7 @@ import {
   mergePullRequest,
   replyToComment,
   type PullRequestStatus,
-} from '../../core/github.js';
+} from '../../platform/github/github.js';
 import { ensureAppWorktree } from '../product-app/index.js';
 import { appendKnowledge, EXPLORATION_DIR, findingFileName, loadMemory, memoryDirFor, parseFinding, serializeFinding } from './memory.js';
 import { explorationOutDir } from './inventory.js';
@@ -41,7 +41,7 @@ import {
 import { clip, LIMITS, replaceProposal } from './output.js';
 import { redoAfterImages } from './redo.js';
 import { mentionsHandle } from '../commands/index.js';
-import type { CommitChange } from '../../core/commit-style.js';
+import type { CommitChange } from '../../platform/git/commit-style.js';
 
 // Exploration's moving parts glued to GitHub — docs/DESIGN.md §11.7:
 // - exploreAndPublish: one run of one app, committed to the open

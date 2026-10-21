@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const listReleases = vi.fn();
 const createRelease = vi.fn();
 const listMergedPrs = vi.fn();
-vi.mock('../../core/github.js', () => ({
+vi.mock('../../platform/github/github.js', () => ({
   listReleases: (...args: unknown[]) => listReleases(...args),
   createRelease: (...args: unknown[]) => createRelease(...args),
   listMergedPrs: (...args: unknown[]) => listMergedPrs(...args),
@@ -22,7 +22,7 @@ vi.mock('../portal/requests.js', async (importOriginal) => ({
   noteEvent: (...args: unknown[]) => noteEvent(...args),
 }));
 
-import { withActiveRepo, type RepoEntry } from '../../core/repo-context.js';
+import { withActiveRepo, type RepoEntry } from '../../platform/agents/repo-context.js';
 import { appsOf, pendingChanges, planRelease, prOf, publishRelease, validTag } from './deploy.js';
 import { listDeploys } from './store.js';
 

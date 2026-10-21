@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { REALISTIC_DATA_RULE } from '../../core/prompts.js';
+import { REALISTIC_DATA_RULE } from '../../platform/agents/prompts.js';
 
-vi.mock('../../core/config.js', () => ({
+vi.mock('../../platform/config/config.js', () => ({
   config: {
     worktreeBaseRef: 'origin/main',
     externalReviewWorkerModel: 'sonnet',
@@ -13,7 +13,7 @@ vi.mock('../../core/config.js', () => ({
 }));
 
 const activeRepo = vi.fn();
-vi.mock('../../core/repo-context.js', () => ({
+vi.mock('../../platform/agents/repo-context.js', () => ({
   activeRepo: (...args: unknown[]) => activeRepo(...args),
 }));
 
@@ -23,7 +23,7 @@ const ensureExternalReviewWorktree = vi.fn();
 const removeExternalReviewWorktree = vi.fn();
 const ensureTrustedFixWorktree = vi.fn();
 const removeTrustedFixWorktree = vi.fn();
-vi.mock('../../core/worktree.js', () => ({
+vi.mock('../../platform/git/worktree.js', () => ({
   ensureWorktree: (...args: unknown[]) => ensureWorktree(...args),
   remoteBranchExists: (...args: unknown[]) => remoteBranchExists(...args),
   ensureExternalReviewWorktree: (...args: unknown[]) => ensureExternalReviewWorktree(...args),
@@ -33,13 +33,13 @@ vi.mock('../../core/worktree.js', () => ({
 }));
 
 const runClaudeHeadless = vi.fn();
-vi.mock('../../core/claude-runner.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../core/claude-runner.js')>()),
+vi.mock('../../platform/claude/claude-runner.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../platform/claude/claude-runner.js')>()),
   runClaudeHeadless: (...args: unknown[]) => runClaudeHeadless(...args),
 }));
 
 const getPullRequestStatus = vi.fn();
-vi.mock('../../core/github.js', () => ({
+vi.mock('../../platform/github/github.js', () => ({
   getPullRequestStatus: (...args: unknown[]) => getPullRequestStatus(...args),
 }));
 

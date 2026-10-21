@@ -11,10 +11,10 @@ const config = vi.hoisted(() => ({
   portal: { dailyLimit: 5, sessionDays: 30, url: 'https://portal' },
 }));
 config.settings.dataDir = dir;
-vi.mock('../../core/config.js', () => ({ config, taskEnvModel: () => undefined, taskEnvEffort: () => undefined, taskDefaultModel: (t: string) => (t === 'update-changelog' ? 'haiku' : undefined), taskDefaultEffort: (t: string) => (t === 'portal-interview' ? 'low' : undefined) }));
-vi.mock('../../core/logger.js', () => ({ log: { info: vi.fn(), error: vi.fn() } }));
+vi.mock('../../platform/config/config.js', () => ({ config, taskEnvModel: () => undefined, taskEnvEffort: () => undefined, taskDefaultModel: (t: string) => (t === 'update-changelog' ? 'haiku' : undefined), taskDefaultEffort: (t: string) => (t === 'portal-interview' ? 'low' : undefined) }));
+vi.mock('../../platform/logger.js', () => ({ log: { info: vi.fn(), error: vi.fn() } }));
 const teamPeople = vi.fn();
-vi.mock('../../core/linear-api.js', () => ({ linearKey: (entry: { linear?: unknown }) => (entry.linear ? 'lin_key' : null), teamPeople: (...a: unknown[]) => teamPeople(...a) }));
+vi.mock('../../platform/linear/linear-api.js', () => ({ linearKey: (entry: { linear?: unknown }) => (entry.linear ? 'lin_key' : null), teamPeople: (...a: unknown[]) => teamPeople(...a) }));
 
 const { AjustesError, ajustesView, linearTeams, readRegistro, saveNotificacion, saveProfile, setTask, setValue } = await import('./settings.js');
 

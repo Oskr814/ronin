@@ -1,6 +1,6 @@
-import type { GithubState, OpenPr } from '../../core/github.js';
-import type { LinearIssue } from '../../core/linear-api.js';
-import type { BlockRecord } from '../../core/local-state.js';
+import type { GithubState, OpenPr } from '../../platform/github/github.js';
+import type { LinearIssue } from '../../platform/linear/linear-api.js';
+import type { BlockRecord } from '../../platform/state/local-state.js';
 import { itemKey, type RunState, type RunSummary } from '../runs/data.js';
 import type { PreviewView, RepoGithub } from './github.js';
 

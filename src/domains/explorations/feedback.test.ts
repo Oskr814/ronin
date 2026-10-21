@@ -4,8 +4,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 let base = '';
-vi.mock('../../core/repo-context.js', () => ({ activeRepo: () => ({ productRepo: 'redmotos/shoppingcart', worktreeBasePath: base }) }));
-vi.mock('../../core/config.js', () => ({ config: { githubLogin: 'ronin-agent', worktreeBaseRef: 'origin/main', exploreTimezone: 'America/Tegucigalpa' } }));
+vi.mock('../../platform/agents/repo-context.js', () => ({ activeRepo: () => ({ productRepo: 'redmotos/shoppingcart', worktreeBasePath: base }) }));
+vi.mock('../../platform/config/config.js', () => ({ config: { githubLogin: 'ronin-agent', worktreeBaseRef: 'origin/main', exploreTimezone: 'America/Tegucigalpa' } }));
 const gh = vi.hoisted(() => ({
   listFileReviewComments: vi.fn(),
   listIssueComments: vi.fn(),
@@ -19,12 +19,12 @@ const gh = vi.hoisted(() => ({
   listOpenPrsByHeadPrefix: vi.fn(),
   getDiscussion: vi.fn(async () => ({ decisions: [{ author: 'Oskr814', state: 'APPROVED' }, { author: 'ronin-agent', state: 'APPROVED' }, { author: 'otra', state: 'CHANGES_REQUESTED' }] })),
 }));
-vi.mock('../../core/github.js', () => gh);
+vi.mock('../../platform/github/github.js', () => gh);
 const actions = vi.hoisted(() => ({ value: [] as unknown[], tasks: [] as any[] }));
 
 // Done-ness lives in the local state now (processed-comments.ts, tested on
 // its own); here it's still read off the 👀, as these tests set it up.
-vi.mock('../../core/processed-comments.js', () => {
+vi.mock('../../platform/state/processed-comments.js', () => {
   const done = async (c: { id: number; kind: string; reactionsEyes: number }) => c.reactionsEyes > 0 && Boolean(await gh.hasBotReaction(c.id, c.kind, 'ronin'));
   return {
     unprocessed: async <T extends { id: number; kind: string; reactionsEyes: number }>(cs: T[]) => {
@@ -35,7 +35,7 @@ vi.mock('../../core/processed-comments.js', () => {
     markProcessed: (c: { id: number; kind: string }) => gh.addReaction(c.id, c.kind, 'eyes'),
   };
 });
-vi.mock('../../core/agent-task.js', () => ({
+vi.mock('../../platform/agents/agent-task.js', () => ({
   runAgentTask: async (task: { outputPath: string }) => {
     actions.tasks.push(task);
     return writeFile(task.outputPath, JSON.stringify({ acciones: actions.value }));

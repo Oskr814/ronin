@@ -1,8 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { Access } from '../access/access.js';
 
-vi.mock('../../core/logger.js', () => ({ log: { info: vi.fn(), error: vi.fn() } }));
-vi.mock('../../core/repos.js', () => ({ loadRepos: async () => [{ productRepo: 'acme/tienda', productRepoPath: '/x' }] }));
+vi.mock('../../platform/logger.js', () => ({ log: { info: vi.fn(), error: vi.fn() } }));
+vi.mock('../../platform/config/repos.js', () => ({ loadRepos: async () => [{ productRepo: 'acme/tienda', productRepoPath: '/x' }] }));
 const RUN = { runId: 'r1', repo: 'acme/tienda', taskType: 'update-changelog', label: 'v1.2 (notas)', account: 'a', worktree: '/w', startedAt: new Date().toISOString(), state: 'ok', steps: 1 };
 vi.mock('../access/visible.js', async (importOriginal) => ({ ...(await importOriginal<typeof import('../access/visible.js')>()), visibleRuns: async () => [RUN] }));
 vi.mock('./github.js', () => ({ repoGithub: async () => ({ prs: [], issues: [] }), forgetGithub: () => {} }));
@@ -20,8 +20,8 @@ vi.mock('./actions.js', async (importOriginal) => {
   const original = await importOriginal<typeof import('./actions.js')>();
   return { ...original, runAction: async () => { throw new original.ActionError('Ese issue ya está cerrado.'); } };
 });
-vi.mock('../../core/github-as-user.js', async (importOriginal) => {
-  const original = await importOriginal<typeof import('../../core/github-as-user.js')>();
+vi.mock('../../platform/github/github-as-user.js', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../../platform/github/github-as-user.js')>();
   return { ...original, viewedFiles: async () => { throw new original.GithubUserError('Tu sesión de GitHub venció: vuelve a entrar.', true); }, pendingReview: async () => null };
 });
 

@@ -1,13 +1,13 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { config } from '../../core/config.js';
-import { log } from '../../core/logger.js';
-import { dayIn } from '../../core/timezone.js';
+import { config } from '../../platform/config/config.js';
+import { log } from '../../platform/logger.js';
+import { dayIn } from '../../platform/config/timezone.js';
 import type { ImageUpload } from './images.js';
 import { readJson, withJson, writeJson } from './json-store.js';
 import { sql } from 'kysely';
-import { timed } from '../../core/timing.js';
-import { getDb } from '../../db/db.js';
+import { timed } from '../../platform/timing.js';
+import { getDb } from '../../platform/db/db.js';
 
 // The portal's requests (#114): what a person asked, the conversation with
 // ronin, and where it stands. One folder per request under

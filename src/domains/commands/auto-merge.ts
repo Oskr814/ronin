@@ -1,4 +1,4 @@
-import { markProcessed } from '../../core/processed-comments.js';
+import { markProcessed } from '../../platform/state/processed-comments.js';
 import {
   addIssueLabel,
   commentOnSpecPr,
@@ -8,11 +8,11 @@ import {
   replyToComment,
   type AutoMergeCandidate,
   type Comment,
-} from '../../core/github.js';
-import { config, LABEL_AUTO_MERGE } from '../../core/config.js';
-import { getAutoMergeDefaulted, setAutoMergeDefaulted } from '../../core/local-state.js';
-import { log } from '../../core/logger.js';
-import { activeRepo } from '../../core/repo-context.js';
+} from '../../platform/github/github.js';
+import { config, LABEL_AUTO_MERGE } from '../../platform/config/config.js';
+import { getAutoMergeDefaulted, setAutoMergeDefaulted } from '../../platform/state/local-state.js';
+import { log } from '../../platform/logger.js';
+import { activeRepo } from '../../platform/agents/repo-context.js';
 import { issueFromSliceBranch } from '../slices/stack.js';
 
 // `@ronin-agent /auto-merge` on a PR, ronin's take on GitHub's auto-merge

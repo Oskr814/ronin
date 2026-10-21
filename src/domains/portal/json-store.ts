@@ -1,7 +1,7 @@
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { acquireLock } from '../../core/worker-launch.js';
+import { acquireLock } from '../../platform/workers/worker-launch.js';
 
 // The portal's files (#114): accounts and requests are the only copy there
 // is — unlike .ronin-state.json, a cache — so a file that doesn't read is an

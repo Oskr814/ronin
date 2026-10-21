@@ -8,7 +8,7 @@ const runs = [
 ];
 vi.mock('../runs/data.js', () => ({ listRuns: () => runs }));
 const readUsageHistory = vi.fn((_account: string) => []);
-vi.mock('../../core/claude-usage.js', () => ({ usageHistory: async (a: string) => readUsageHistory(a) }));
+vi.mock('../../platform/claude/claude-usage.js', () => ({ usageHistory: async (a: string) => readUsageHistory(a) }));
 const repoDataOf = vi.fn(async (_repos: string[]) => []);
 vi.mock('./index.js', () => ({ repoDataOf: (r: string[]) => repoDataOf(r) }));
 

@@ -1,8 +1,8 @@
-import { config, LABEL_DIRECT_ISSUE, LABEL_STATES } from '../../core/config.js';
-import { listOpenIssues, listOpenManagedIssues, listOpenPrsWithChecks, listPrClosingIssues, listRecentlyClosed, type GithubState, type OpenIssue, type OpenPr } from '../../core/github.js';
-import { getBlocks, type BlockRecord } from '../../core/local-state.js';
-import { log } from '../../core/logger.js';
-import { withActiveRepo, type RepoEntry } from '../../core/repo-context.js';
+import { config, LABEL_DIRECT_ISSUE, LABEL_STATES } from '../../platform/config/config.js';
+import { listOpenIssues, listOpenManagedIssues, listOpenPrsWithChecks, listPrClosingIssues, listRecentlyClosed, type GithubState, type OpenIssue, type OpenPr } from '../../platform/github/github.js';
+import { getBlocks, type BlockRecord } from '../../platform/state/local-state.js';
+import { log } from '../../platform/logger.js';
+import { withActiveRepo, type RepoEntry } from '../../platform/agents/repo-context.js';
 import { listPreviewStates } from '../previews/index.js';
 import { parseSlices, type Slice } from '../slices/checklist.js';
 

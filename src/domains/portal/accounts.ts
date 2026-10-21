@@ -1,10 +1,10 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { join } from 'node:path';
-import { config } from '../../core/config.js';
+import { config } from '../../platform/config/config.js';
 import { readJson, withJson } from './json-store.js';
 import { sql } from 'kysely';
-import { timed } from '../../core/timing.js';
-import { getDb } from '../../db/db.js';
+import { timed } from '../../platform/timing.js';
+import { getDb } from '../../platform/db/db.js';
 
 // The request portal's accounts (#114): people without GitHub, who enter
 // with their email and a password. Kept in <PORTAL_DATA_DIR>/accounts.json,

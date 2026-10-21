@@ -1,11 +1,11 @@
-import type { Discussion } from '../../core/github.js';
-import type { RepoEntry } from '../../core/repo-context.js';
+import type { Discussion } from '../../platform/github/github.js';
+import type { RepoEntry } from '../../platform/agents/repo-context.js';
 import type { Session } from '../../apps/api/http/auth.js';
 import type { PrFiles } from './files.js';
-import { closeIssue, closePr, commentOnIssue, discardReview, pendingReview, submitReview } from '../../core/github-as-user.js';
+import { closeIssue, closePr, commentOnIssue, discardReview, pendingReview, submitReview } from '../../platform/github/github-as-user.js';
 
 // What's decided about a PR ronin opened, from its page (#195), as whoever
-// is logged in (core/github-as-user.ts): merge it, ask ronin for an adjustment, or
+// is logged in (platform/github/github-as-user.ts): merge it, ask ronin for an adjustment, or
 // close it. Each is what the person would do on GitHub — an approval, a
 // comment mentioning ronin, closing the PR — so ronin reacts the way it
 // already does: /auto-merge, the review-request flow, /fix-comments.

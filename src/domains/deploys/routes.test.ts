@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Access } from '../access/access.js';
 
-vi.mock('../../core/logger.js', () => ({ log: { info: vi.fn(), error: vi.fn() } }));
-vi.mock('../../core/repos.js', () => ({
+vi.mock('../../platform/logger.js', () => ({ log: { info: vi.fn(), error: vi.fn() } }));
+vi.mock('../../platform/config/repos.js', () => ({
   loadRepos: async () => [
     { productRepo: 'acme/tienda', productRepoPath: '/x', deploy: { workflow: 'deploy.yml' } },
     { productRepo: 'acme/docs', productRepoPath: '/y' },

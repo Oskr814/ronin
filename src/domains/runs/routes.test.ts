@@ -5,9 +5,9 @@ import type { AddressInfo } from 'node:net';
 import { join } from 'node:path';
 import type { Access } from '../access/access.js';
 
-vi.mock('../../core/repos.js', () => ({ loadRepos: async () => [{ productRepo: 'acme/tienda', productRepoPath: '/x' }] }));
+vi.mock('../../platform/config/repos.js', () => ({ loadRepos: async () => [{ productRepo: 'acme/tienda', productRepoPath: '/x' }] }));
 
-const { logsDir } = await import('../../core/run-files.js');
+const { logsDir } = await import('../../platform/agents/run-files.js');
 const { dashboardApp } = await import('../../apps/api/routes.js');
 const { answer } = await import('../../apps/api/http/hono.js');
 

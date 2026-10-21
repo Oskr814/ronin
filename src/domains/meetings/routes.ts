@@ -1,12 +1,12 @@
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
-import { log } from '../../core/logger.js';
+import { log } from '../../platform/logger.js';
 import { sees, type Access } from '../access/access.js';
 import { HISTORY_DAYS } from '../runs/data.js';
 import { forgetGithub } from '../items/github.js';
 import { MAX_UPLOAD_BODY, MeetingUploadError, meetingDetail, meetingOriginal, meetingRow, parseUpload } from './board.js';
 import { ApproveError, approveMeeting, discardMeeting } from './approve.js';
-import { GithubUserError } from '../../core/github-as-user.js';
+import { GithubUserError } from '../../platform/github/github-as-user.js';
 import { refusal, visibleRepos, visibleRuns } from '../access/visible.js';
 import { body, jsonBody, onError, type DashboardEnv } from '../../apps/api/http/hono.js';
 import { launchMeetingWorker, retryMeeting } from './launch.js';

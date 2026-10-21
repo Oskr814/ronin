@@ -3,20 +3,20 @@ import { promisify } from 'node:util';
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { join, normalize } from 'node:path';
-import { activeRepo } from '../../core/repo-context.js';
+import { activeRepo } from '../../platform/agents/repo-context.js';
 import { appDown, appRerun, appUp, APP_STATE_DIR, stepLabel, type AppSession } from '../product-app/index.js';
 import { APP_MANIFEST_FILE, appsTouched, parseAppManifest, publicizeTemplate, publicPortsIn, publicUrl, stepsToRerun, type AppDefinition, type AppStep, type AppUser, type TemplateContext } from '../product-app/index.js';
-import { removeWorktreeDir } from '../../core/worktree.js';
-import { commentOnSpecPr, listOpenPrHeads, type PrHead } from '../../core/github.js';
-import { runAgentTask } from '../../core/agent-task.js';
+import { removeWorktreeDir } from '../../platform/git/worktree.js';
+import { commentOnSpecPr, listOpenPrHeads, type PrHead } from '../../platform/github/github.js';
+import { runAgentTask } from '../../platform/agents/agent-task.js';
 import { previewTask, type PreviewTask } from './prompts.js';
 import { parseSeedCatalog, readSeedCatalog, saveSeedCatalog, seedCatalogPath } from './seed-catalog.js';
 import { HELP_FOOTER_MARKER } from '../commands/index.js';
-import { config } from '../../core/config.js';
-import { acquireLock, launchWorker, lockHeld } from '../../core/worker-launch.js';
+import { config } from '../../platform/config/config.js';
+import { acquireLock, launchWorker, lockHeld } from '../../platform/workers/worker-launch.js';
 import { parsePortRange, PreviewReservations } from './reservations.js';
-import { log } from '../../core/logger.js';
-import { previewRunGroup, withRunGroup } from '../../core/run-group.js';
+import { log } from '../../platform/logger.js';
+import { previewRunGroup, withRunGroup } from '../../platform/agents/run-group.js';
 
 const execFileAsync = promisify(execFile);
 

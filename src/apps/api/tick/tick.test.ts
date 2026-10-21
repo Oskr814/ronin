@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { TrackingIssue } from '../../../core/github.js';
+import type { TrackingIssue } from '../../../platform/github/github.js';
 import type { StackedPr } from '../../../domains/slices/stack.js';
 import { HELP_FOOTER_MARKER } from '../../../domains/commands/help.js';
 
@@ -13,7 +13,7 @@ vi.mock('node:fs/promises', () => ({
   readFile: (...args: unknown[]) => readFile(...args),
 }));
 
-vi.mock('../../../core/config.js', () => ({
+vi.mock('../../../platform/config/config.js', () => ({
   config: {
     e2eRetryLimit: 2,
     e2eAttemptHardLimit: 5,
@@ -34,7 +34,7 @@ vi.mock('../../../core/config.js', () => ({
   LABEL_STATES: { ready: 'ronin:ready', 'in-progress': 'ronin:in-progress', blocked: 'ronin:blocked', done: 'ronin:done' },
 }));
 
-vi.mock('../../../core/locks.js', () => ({
+vi.mock('../../../platform/locks/locks.js', () => ({
   issueResource: (n: number) => `issue-${n}`,
   prResource: (n: number) => `pr-${n}`,
   tryLockResource: async () => true,
@@ -48,12 +48,12 @@ vi.mock('../../../core/locks.js', () => ({
 const activeRepo = vi.fn();
 const linearKey = vi.fn();
 const currentCycle = vi.fn();
-vi.mock('../../../core/linear-api.js', () => ({
+vi.mock('../../../platform/linear/linear-api.js', () => ({
   linearKey: (...args: unknown[]) => linearKey(...args),
   currentCycle: (...args: unknown[]) => currentCycle(...args),
 }));
 
-vi.mock('../../../core/repo-context.js', () => ({
+vi.mock('../../../platform/agents/repo-context.js', () => ({
   activeRepo: (...args: unknown[]) => activeRepo(...args),
 }));
 
@@ -87,7 +87,7 @@ const resetAttemptCount = vi.fn();
 const isTransientGhError = vi.fn();
 const getFailedChecks = vi.fn();
 const listTrackingIssues = vi.fn();
-vi.mock('../../../core/github.js', () => ({
+vi.mock('../../../platform/github/github.js', () => ({
   listTrackingIssues: (...args: unknown[]) => listTrackingIssues(...args),
   attemptCountFromLabels: (labels: string[]) => Number(labels.map((l) => l.match(/^ronin:attempts-(\d+)$/)?.[1]).find(Boolean) ?? 0),
   resetAttemptCount: (...args: unknown[]) => resetAttemptCount(...args),
@@ -110,7 +110,7 @@ vi.mock('../../../core/github.js', () => ({
 
 // Done-ness lives in the local state now (processed-comments.ts, tested on
 // its own); here it's still read off the 👀, as these tests set it up.
-vi.mock('../../../core/processed-comments.js', () => ({
+vi.mock('../../../platform/state/processed-comments.js', () => ({
   markProcessed: (c: { id: number; kind: string }) => addReaction(c.id, c.kind, 'eyes'),
 }));
 
@@ -119,7 +119,7 @@ const resetChecksPendingCount = vi.fn();
 const setLastReviewedSha = vi.fn();
 const setLastChangelogRelease = vi.fn();
 const recordFailureSignature = vi.fn();
-vi.mock('../../../core/local-state.js', () => ({
+vi.mock('../../../platform/state/local-state.js', () => ({
   incrementChecksPendingCount: (...args: unknown[]) => incrementChecksPendingCount(...args),
   resetChecksPendingCount: (...args: unknown[]) => resetChecksPendingCount(...args),
   setLastReviewedSha: (...args: unknown[]) => setLastReviewedSha(...args),
@@ -130,7 +130,7 @@ vi.mock('../../../core/local-state.js', () => ({
 
 const worktreeDirFor = vi.fn();
 const removeWorktree = vi.fn();
-vi.mock('../../../core/worktree.js', () => ({
+vi.mock('../../../platform/git/worktree.js', () => ({
   worktreeDirFor: (...args: unknown[]) => worktreeDirFor(...args),
   removeWorktree: (...args: unknown[]) => removeWorktree(...args),
 }));
@@ -147,12 +147,12 @@ vi.mock('../../../domains/review/publish.js', () => ({ runExternalReview }));
 
 const changesRequestedOnHead = vi.fn();
 const runAgentTask = vi.fn();
-vi.mock('../../../core/agent-task.js', () => ({
+vi.mock('../../../platform/agents/agent-task.js', () => ({
   runAgentTask: (...args: unknown[]) => runAgentTask(...args),
 }));
 
 const notifyBlocker = vi.fn();
-vi.mock('../../../core/notifier.js', () => ({
+vi.mock('../../../platform/notify/notifier.js', () => ({
   notifyBlocker: (...args: unknown[]) => notifyBlocker(...args),
 }));
 

@@ -1,7 +1,7 @@
-import { config } from '../../core/config.js';
-import { currentCycle, linearIssuesFor, linearKey, teamPlanning, type LinearCycle, type LinearIssue, type LinearPlanning } from '../../core/linear-api.js';
-import { log } from '../../core/logger.js';
-import type { RepoEntry } from '../../core/repo-context.js';
+import { config } from '../../platform/config/config.js';
+import { currentCycle, linearIssuesFor, linearKey, teamPlanning, type LinearCycle, type LinearIssue, type LinearPlanning } from '../../platform/linear/linear-api.js';
+import { log } from '../../platform/logger.js';
+import type { RepoEntry } from '../../platform/agents/repo-context.js';
 import type { RepoGithub } from './github.js';
 
 // What the dashboard reads from Linear (#101), per repo with an API key: the

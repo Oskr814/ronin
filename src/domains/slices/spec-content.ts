@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { activeRepo } from '../../core/repo-context.js';
-import { config } from '../../core/config.js';
+import { activeRepo } from '../../platform/agents/repo-context.js';
+import { config } from '../../platform/config/config.js';
 
 const execFileAsync = promisify(execFile);
 

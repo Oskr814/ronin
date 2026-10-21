@@ -79,8 +79,8 @@ Mientras el PR de un spec que escribió ronin con `/spec` sigue en draft, mencio
 
 - 1 spec → 1 issue de tracking, con checklist de slices (generado por el paso de planning).
 - 1 slice → 1 PR. Por default **secuencial**: la siguiente slice recién arranca cuando no queda ningún PR abierto del issue (la anterior ya mergeó). Con el label `ronin:stack-prs` en el issue de tracking, **apilado**: cada PR se abre con `--base` el branch de la slice anterior, sin esperar a que mergee — ver [`docs/superpowers/specs/2026-07-28-stacked-prs-design.md`](superpowers/specs/2026-07-28-stacked-prs-design.md) para el rationale completo.
-- **Linear (#101):** si el issue de tracking tiene el comentario de Linear (`<!-- linear-linkback -->`, de su bot), el supervisor agrega a la descripción de cada PR de slice `Part of RED-n`, o `Fixes RED-n` en la última slice, sobre la chuleta de comandos (`core/linear.ts`, en `processSlicePr`). Así Linear muestra los PRs en su issue y las automatizaciones del equipo lo mueven de estado. No necesita API key; un issue sin ese comentario no se toca. El tablero muestra `RED-n ↗` junto a *GitHub ↗* en la ficha. Con API key de Linear, además: proyecto y ciclo en el tablero (§15.13) y **prioridad por ciclo**: en el tick (no en los eventos), los issues del ciclo actual del equipo van primero en la cola de jobs (`cycleFirst` en `tick.ts`), así que si no alcanzan los lugares (`TICK_CONCURRENCY`) los toman antes; cada grupo en su orden de siempre. Si Linear falla, el orden queda como estaba.
-- **Proyecto de los issues que abre ronin (#101, `core/linear-assign.ts`).** El issue se crea en GitHub como siempre y la asignación queda pendiente en el estado local (`linearPending`). Cada tick la aplica cuando la sincronización ya creó el issue en Linear, y la descarta si no aparece en un día.
+- **Linear (#101):** si el issue de tracking tiene el comentario de Linear (`<!-- linear-linkback -->`, de su bot), el supervisor agrega a la descripción de cada PR de slice `Part of RED-n`, o `Fixes RED-n` en la última slice, sobre la chuleta de comandos (`platform/linear/linear.ts`, en `processSlicePr`). Así Linear muestra los PRs en su issue y las automatizaciones del equipo lo mueven de estado. No necesita API key; un issue sin ese comentario no se toca. El tablero muestra `RED-n ↗` junto a *GitHub ↗* en la ficha. Con API key de Linear, además: proyecto y ciclo en el tablero (§15.13) y **prioridad por ciclo**: en el tick (no en los eventos), los issues del ciclo actual del equipo van primero en la cola de jobs (`cycleFirst` en `tick.ts`), así que si no alcanzan los lugares (`TICK_CONCURRENCY`) los toman antes; cada grupo en su orden de siempre. Si Linear falla, el orden queda como estaba.
+- **Proyecto de los issues que abre ronin (#101, `platform/linear/linear-assign.ts`).** El issue se crea en GitHub como siempre y la asignación queda pendiente en el estado local (`linearPending`). Cada tick la aplica cuando la sincronización ya creó el issue en Linear, y la descarta si no aparece en un día.
   - **Desde la exploración** (las fichas aprobadas y "Pedir un issue aparte"): al proyecto de la app, que se configura en `repos.json` (`"linear": { …, "explorationProject": { "backoffice": "<nombre o id>" } }`).
   - **El issue de tracking de un spec:** el proyecto del issue del que salió el spec (la rama del PR es `ronin/<issue>/spec`).
   - En los dos casos, solo si el issue todavía no tiene proyecto en Linear. Un error se reintenta hasta 5 veces.
@@ -133,47 +133,40 @@ Convención de branches: `ronin/<issue>/slice-<n>` — así el supervisor encuen
 
 **Setup**: `pnpm cron:setup [minutos] [días_retención]` (default 5 min / 14 días) instala el cron; `pnpm cron:remove` lo saca. El script resuelve el `PATH` real de una shell de login (cron no fuentea `.bashrc`/`.profile`, así que `node`/`pnpm` instalados vía nvm u otro manager no estarían en el `PATH` mínimo de cron) y lo hornea en un wrapper generado (`scripts/run-tick.sh`, no versionado — específico de cada máquina).
 
-**Logs**: `logs/tick-YYYY-MM-DD.log`, un archivo por día — la "rotación" es simplemente escribir a un path nuevo cuando cambia la fecha, sin `logrotate` ni dependencias externas. El wrapper poda archivos más viejos que el retention configurado en cada corrida. Cada línea lleva timestamp ISO (`src/core/logger.ts`, usado en vez de `console.log` suelto) — incluye el output completo de cada invocación de `claude -p` (antes se descartaba entero; era la única pieza de "qué hizo el agente" que no quedaba en ningún lado, ni en logs ni en GitHub).
+**Logs**: `logs/tick-YYYY-MM-DD.log`, un archivo por día — la "rotación" es simplemente escribir a un path nuevo cuando cambia la fecha, sin `logrotate` ni dependencias externas. El wrapper poda archivos más viejos que el retention configurado en cada corrida. Cada línea lleva timestamp ISO (`src/platform/logger.ts`, usado en vez de `console.log` suelto) — incluye el output completo de cada invocación de `claude -p` (antes se descartaba entero; era la única pieza de "qué hizo el agente" que no quedaba en ningún lado, ni en logs ni en GitHub).
 
 ### 3.1 Implementación (`src/`)
 
-Scaffold en TypeScript (`pnpm tick` corre un tick y termina — lo invoca el cron, §3). `src/` está organizado por feature:
+Scaffold en TypeScript. `src/` tiene las apps y tres capas, con las dependencias en una sola dirección (`apps` → `domains` → `platform`); el detalle y las reglas están en `docs/ARCHITECTURE.md`, «Estructura del código»:
 
 | Carpeta | Qué tiene |
 |---|---|
-| `src/` (raíz) | `index.ts` (entrada del cron) y `tick.ts` (el orquestador) |
-| `core/` | lo compartido por todas las features: config, GitHub, worktrees, `claude -p`, estado local, claim, notificaciones, logs, el lanzador de workers, cómo corre una tarea de agente (`agent-task.ts`) y las reglas que comparten los prompts (`prompts.ts`) |
-| `slices/` | issues de tracking → PRs apilados: checklist, stack, specs |
-| `review/` | review de PRs ajenos y su publicación (§4) |
-| `commands/` | comandos por mención (`mentions.ts`, `/help`, `/auto-merge`, `/resolve-conflicts`, `/spike`, `/prototype`, pedidos en issues) |
-| `app/` | levantar y manejar la app del producto, y la rama de evidencia (§11.2, §11.5) |
-| `preview/` | `/preview` (§12) |
-| `exploration/` | exploración y su PR rodante (§11) |
-| `server/` | el servidor de ronin: su API (los webhooks, con el dispatcher de eventos y el handler por evento, §14; el login y los datos del tablero, §15) y los dos listeners |
-| `web/` | la aplicación web del tablero, archivos estáticos sin build (§15) |
-| `apps/dashboard/` | las páginas del tablero ya pasadas a React, que `app.js` monta (§15) |
-| `changelog/` | publicación del changelog en cada release |
+| `apps/api/` | el servidor (`main.ts`): los dos listeners, el login y los estáticos (`http/`), el montaje de las rutas de cada dominio (`routes.ts`), la cola de trabajos (`jobs/`), el tick (`tick/`, el orquestador) y los webhooks (`webhooks/`, con el dispatcher de eventos y el handler por evento, §14) |
+| `apps/dashboard/` | el tablero: el marco (`public/`, sin build) y las páginas ya pasadas a React, que `app.js` monta (§15) |
+| `apps/portal/` | el portal de pedidos, en React (§16) |
+| `domains/` | un dominio por carpeta: `slices` (issues → PRs apilados), `review` (§4), `commands` (comandos por mención: `mentions.ts`, `/help`, `/auto-merge`, `/resolve-conflicts`, `/spike`, `/prototype`, pedidos en issues), `product-app` (levantar la app del producto y la rama de evidencia, §11.2, §11.5), `previews` (§12), `explorations` (§11), `portal`, `meetings`, `deploys`, `metrics`, `changelog`, `items` y `runs` (lo que lee el tablero), `settings`, `access` |
+| `platform/` | lo compartido por todos: `config/`, `github/`, `linear/`, `git/` (worktrees), `claude/` (`claude -p`, cuentas y uso), `agents/` (cómo corre una tarea de agente, `agent-task.ts`, las reglas que comparten los prompts, `prompts.ts`, y el registro de corridas), `state/` (estado local, claim), `locks/`, `workers/` (el lanzador de workers), `notify/`, `db/`, los logs y las mediciones |
 
-**Imports:** dentro de una carpeta se importa el archivo directo (`./flow.js`); entre features, por el barrel de la carpeta (`../review/index.js`), que reexporta todo lo que no es entrada. `core/` no tiene barrel y se importa por archivo (`../core/config.js`): `config.ts` falla al cargar si faltan env vars, y módulos como `apps/api/webhooks/events.ts` tienen que poder cargarse sin ellas. Los workers (`*-worker.ts`, `*/worker.ts`), el handler por evento (`apps/api/webhooks/handler.ts`) y el servidor (`apps/api/main.ts`) son procesos aparte: no van en los barrels y se lanzan por su ruta relativa a `src/` (`launchWorker('preview/worker', …)`). Los tests importan y mockean el archivo concreto, no el barrel.
+**Imports:** dentro de una carpeta se importa el archivo directo (`./flow.js`); entre features, por el barrel de la carpeta (`../review/index.js`), que reexporta todo lo que no es entrada. `platform/` no tiene barrels y se importa por archivo (`../../platform/config/config.js`): `config.ts` falla al cargar si faltan env vars, y módulos como `apps/api/webhooks/events.ts` tienen que poder cargarse sin ellas. Los workers (`*-worker.ts`, `*/worker.ts`), el handler por evento (`apps/api/webhooks/handler.ts`) y el servidor (`apps/api/main.ts`) son procesos aparte: no van en los barrels y se lanzan por su ruta relativa a `src/` (`launchWorker('domains/previews/worker', …)`). Los tests importan y mockean el archivo concreto, no el barrel.
 
-Los módulos del núcleo (en `core/` salvo que se indique otra carpeta); los de cada feature se describen en su sección:
+Los módulos del núcleo (en `platform/` salvo que se indique otra carpeta); los de cada feature se describen en su sección:
 
-- `config.ts` — env vars, labels, límites de reintento
-- `github.ts` — wrappers sobre `gh` CLI (execFile con argv array, nunca shell string) para issues/PRs/labels/merge/body/contador de intentos. El gate de approval está *en código*, no solo documentado: `mergePullRequest` (que usan el PR de exploración y el auto-merge) lanza si `reviewDecision !== 'APPROVED'`
+- `config/config.ts` — env vars, labels, límites de reintento
+- `github/github.ts` — wrappers sobre `gh` CLI (execFile con argv array, nunca shell string) para issues/PRs/labels/merge/body/contador de intentos. El gate de approval está *en código*, no solo documentado: `mergePullRequest` (que usan el PR de exploración y el auto-merge) lanza si `reviewDecision !== 'APPROVED'`
 - `domains/slices/checklist.ts` — parsea y edita el checklist de slices del body del issue (índice de próxima slice, marcar merged, registrar PR); es la fuente de verdad para "qué slice sigue", no un contador aparte
 - `domains/slices/spec-revise.ts` — las menciones en el PR draft de un spec de ronin: responde y edita el spec (§1.1)
 - `domains/slices/spec-content.ts` — lee el contenido de un spec ya mergeado vía `git show origin/main:<path>` (nunca toca el working directory del checkout principal, así que no importa qué branch tenga el humano checked-out ahí)
-- `notifier.ts` — el notificador de bloqueos (nodemailer + Gmail SMTP)
+- `notify/notifier.ts` — el notificador de bloqueos (nodemailer + Gmail SMTP)
 - `logger.ts` — formato `[ISO_TIMESTAMP] LEVEL mensaje`, usado en vez de `console.log` suelto (ver `logs/tick-YYYY-MM-DD.log`, §3)
-- `worktree.ts` — crea/reutiliza un git worktree desechable por branch de tarea, y los borra cuando su PR ya no está abierto (`sweepOrphanedWorktrees`)
-- `claude-runner.ts` — invoca `claude -p` con `--permission-mode bypassPermissions`, reenviando el PAT de la cuenta `ronin` como `GH_TOKEN` al proceso hijo (así los `gh` que el propio Claude headless corra también quedan a nombre de esa cuenta)
-- `agent-task.ts` — corre una tarea de agente ya armada: su checkout (un worktree de su branch, un checkout que ya existe, la cabeza de un PR ajeno por SHA o la branch de un humano, separada), `claude -p` con el modelo y el esfuerzo de su tipo, el registro de la corrida, las métricas y la limpieza. No sabe de ningún tipo de tarea: cada feature arma los suyos en su `prompts.ts` (`slices/`: `plan`, `implement-slice`, `fix-issue`, `fix-e2e`, `write-spec`; `review/`: la review de PRs ajenos, `fix-review` y lo que responde a comentarios; `commands/`, `exploration/`, `portal/`, `preview/` y `changelog/`, los de sus comandos y flujos), en inglés (ver §8)
-- `prompts.ts` — lo que comparten los prompts: el cercado del texto que escribe la gente, las menciones con su hilo, la convención de commits, los datos realistas en las capturas y el recordatorio de las agent-notes, que llevan las tareas que cambian código para que el agente deje constancia de aprendizajes no-obvios en `docs/agent-notes/` del repo destino — ver [`docs/superpowers/specs/2026-08-18-agent-notes-design.md`](superpowers/specs/2026-08-18-agent-notes-design.md)
-- `claim.ts` — lock por label (`ronin:runner-<runner-id>`) + cache local (`.ronin-state.json`) para que dos supervisores no procesen el mismo issue — ver §9
-- `run-record.ts` — el registro de cada corrida de agente en `logs/runs/`, que lee el tablero (§15.5)
-- `claude-usage.ts` — el uso de cada cuenta de Claude, del `rate_limit_event` de cada corrida (§15.6)
-- `claude-plans.ts` — el plan que paga cada cuenta de Claude, Max 5× si nadie lo eligió (§19.11)
-- `tick.ts` (raíz) — el loop de decisión: descubre specs asignados, y por cada issue `in-progress` decide la próxima acción leyendo el checklist y el contador de intentos por PR contra los límites de `docs/BLOCKING.md`
+- `git/worktree.ts` — crea/reutiliza un git worktree desechable por branch de tarea, y los borra cuando su PR ya no está abierto (`sweepOrphanedWorktrees`)
+- `claude/claude-runner.ts` — invoca `claude -p` con `--permission-mode bypassPermissions`, reenviando el PAT de la cuenta `ronin` como `GH_TOKEN` al proceso hijo (así los `gh` que el propio Claude headless corra también quedan a nombre de esa cuenta)
+- `agents/agent-task.ts` — corre una tarea de agente ya armada: su checkout (un worktree de su branch, un checkout que ya existe, la cabeza de un PR ajeno por SHA o la branch de un humano, separada), `claude -p` con el modelo y el esfuerzo de su tipo, el registro de la corrida, las métricas y la limpieza. No sabe de ningún tipo de tarea: cada feature arma los suyos en su `prompts.ts` (`slices/`: `plan`, `implement-slice`, `fix-issue`, `fix-e2e`, `write-spec`; `review/`: la review de PRs ajenos, `fix-review` y lo que responde a comentarios; `commands/`, `exploration/`, `portal/`, `preview/` y `changelog/`, los de sus comandos y flujos), en inglés (ver §8)
+- `agents/prompts.ts` — lo que comparten los prompts: el cercado del texto que escribe la gente, las menciones con su hilo, la convención de commits, los datos realistas en las capturas y el recordatorio de las agent-notes, que llevan las tareas que cambian código para que el agente deje constancia de aprendizajes no-obvios en `docs/agent-notes/` del repo destino — ver [`docs/superpowers/specs/2026-08-18-agent-notes-design.md`](superpowers/specs/2026-08-18-agent-notes-design.md)
+- `state/claim.ts` — lock por label (`ronin:runner-<runner-id>`) + cache local (`.ronin-state.json`) para que dos supervisores no procesen el mismo issue — ver §9
+- `agents/run-record.ts` — el registro de cada corrida de agente en `logs/runs/`, que lee el tablero (§15.5)
+- `claude/claude-usage.ts` — el uso de cada cuenta de Claude, del `rate_limit_event` de cada corrida (§15.6)
+- `claude/claude-plans.ts` — el plan que paga cada cuenta de Claude, Max 5× si nadie lo eligió (§19.11)
+- `apps/api/tick/tick.ts` — el loop de decisión: descubre specs asignados, y por cada issue `in-progress` decide la próxima acción leyendo el checklist y el contador de intentos por PR contra los límites de `docs/BLOCKING.md`
 
 ### 4. Testing y review externo
 
@@ -214,7 +207,7 @@ Se eligió un token de cuenta dedicada (fine-grained PAT) sobre un GitHub App �
 
 `claude -p` corre sin nadie mirando, así que el modo de permisos por defecto (confirmar cada tool call) se cuelga. Se decidió explícitamente `--permission-mode bypassPermissions` — sin ningún gate — en vez de una allowlist curada, priorizando autonomía sobre contención granular.
 
-La única contención real es que **cada tarea corre en su propio git worktree desechable** (`src/core/worktree.ts`), nunca en el checkout principal (`productRepoPath` en `repos.json`) — así un comando destructivo lanzado por error solo puede arruinar ese worktree, que se puede recrear desde cero. Esto es una mitigación, no una garantía: un comando que apunte fuera del worktree (paths absolutos, `cd`, etc.) no está bloqueado por nada. Reconsiderar si en algún momento el blast radius observado no compensa la autonomía ganada.
+La única contención real es que **cada tarea corre en su propio git worktree desechable** (`src/platform/git/worktree.ts`), nunca en el checkout principal (`productRepoPath` en `repos.json`) — así un comando destructivo lanzado por error solo puede arruinar ese worktree, que se puede recrear desde cero. Esto es una mitigación, no una garantía: un comando que apunte fuera del worktree (paths absolutos, `cd`, etc.) no está bloqueado por nada. Reconsiderar si en algún momento el blast radius observado no compensa la autonomía ganada.
 
 Segunda limitación encontrada en el primer dry run: el prompt de una tarea puntual no acota lo que el agente puede decidir hacer con `gh`/`git` más allá de esa tarea — si lee contexto que contiene instrucciones para *otras* situaciones (ej. el propio template del issue), puede actuar sobre ellas aunque no vengan de su prompt. Mitigado parcialmente pasando solo la información mínima necesaria en cada prompt (ver §10) en vez de decirle al agente que lea documentos completos con instrucciones para roles que no son el suyo.
 
@@ -224,11 +217,11 @@ A diferencia de un GitHub App (cuyo bot user no siempre es confiablemente @menci
 
 ### 8. Idioma
 
-Todo lo que el agente headless lee o produce como instrucción — los prompts en el `prompts.ts` de cada feature y de `core/`, el texto y comentarios de `templates/tracking-issue.md` — está en inglés, independientemente del idioma de esta documentación. Lo que es comunicación humana (esta doc, `docs/BLOCKING.md`, el cuerpo de los emails de `src/core/notifier.ts`, los motivos de bloqueo en `tick.ts`) se mantiene en español.
+Todo lo que el agente headless lee o produce como instrucción — los prompts en el `prompts.ts` de cada feature y de `platform/agents/`, el texto y comentarios de `templates/tracking-issue.md` — está en inglés, independientemente del idioma de esta documentación. Lo que es comunicación humana (esta doc, `docs/BLOCKING.md`, el cuerpo de los emails de `src/platform/notify/notifier.ts`, los motivos de bloqueo en `tick.ts`) se mantiene en español.
 
 ### 9. Concurrencia entre múltiples supervisores
 
-Implementado en `src/core/claim.ts`, siguiendo el mismo patrón de "GitHub como estado" que el resto del sistema — sin base de datos ni lock service aparte, y sin jitter ni timestamps: un label de claim por runner más un cache local que evita repreguntarle a GitHub por algo que este runner ya sabe que es suyo.
+Implementado en `src/platform/state/claim.ts`, siguiendo el mismo patrón de "GitHub como estado" que el resto del sistema — sin base de datos ni lock service aparte, y sin jitter ni timestamps: un label de claim por runner más un cache local que evita repreguntarle a GitHub por algo que este runner ya sabe que es suyo.
 
 La identidad del runner es `RUNNER_ID` (el usuario de GitHub de quien lo opera, ej. `oskr814`, requerido — no hay default de hostname porque no significaría nada para un humano leyendo el label) y el lock es el label `ronin:runner-<runner-id>`, que pone el propio `claim.ts` en el issue al procesarlo. Antes también servía para asignarle un spec a un runner; hoy eso se hace con Assignees (§1).
 
@@ -509,14 +502,14 @@ Ahora cada evento tiene su handler:
   - **Tope:** tiene `EVENT_HANDLER_TIMEOUT_MINUTES` (120 por defecto) para todo el evento: esperar su turno y un cupo, y cada agente que lance. Pasado ese tiempo se corta junto con su grupo de procesos, que incluye el `claude -p` que esté corriendo. Los workers que lanzó tienen su propio grupo y siguen. Sus locks llevan su pid, así que el siguiente proceso los toma, y el tablero muestra la corrida como cortada.
 - **Tick** (el planificador del servidor con `DATABASE_URL`, o el cron sin ella): sigue corriendo todos los flujos sobre todo, como conciliación. Levanta lo que ningún handler hizo (un webhook que no llegó, un runner apagado) y el trabajo periódico (exploración nocturna, poda de estado).
 
-**Un solo emoji, "procesado" aparte** (`core/processed-comments.ts`): el 👀 de ronin solo dice "recibido" — lo pone el servidor al llegar el comentario, o el flujo que lo procesa si el webhook nunca llegó. Que un comentario ya está atendido se guarda en el estado local (`processedComments`, por repo), y solo cuando el trabajo salió bien: una falla no se anota y se reintenta, como antes. Un comentario de antes de este cambio cuenta como atendido si el 👀 de ronin es anterior a `ACK_EYES_SINCE` (el deploy en el runner, 2026-10-16T01:03:19Z), que es cuando el 👀 todavía significaba "procesado"; el 👀 de acuse, posterior, no cuenta. Es una fecha fija a propósito: tomarla de la primera lectura del estado dejaba afuera el acuse que el servidor pone segundos antes de esa lectura, y ese comentario se daba por atendido sin responderse. Uno de más de 180 días cuenta como atendido siempre, y por eso las entradas de más de 180 días se podan. Es estado de este runner: con un solo runner por repo (hoy `ronin-agent`) no hace falta compartirlo; varios runners sobre el mismo repo necesitarían volver a guardarlo en GitHub.
+**Un solo emoji, "procesado" aparte** (`platform/state/processed-comments.ts`): el 👀 de ronin solo dice "recibido" — lo pone el servidor al llegar el comentario, o el flujo que lo procesa si el webhook nunca llegó. Que un comentario ya está atendido se guarda en el estado local (`processedComments`, por repo), y solo cuando el trabajo salió bien: una falla no se anota y se reintenta, como antes. Un comentario de antes de este cambio cuenta como atendido si el 👀 de ronin es anterior a `ACK_EYES_SINCE` (el deploy en el runner, 2026-10-16T01:03:19Z), que es cuando el 👀 todavía significaba "procesado"; el 👀 de acuse, posterior, no cuenta. Es una fecha fija a propósito: tomarla de la primera lectura del estado dejaba afuera el acuse que el servidor pone segundos antes de esa lectura, y ese comentario se daba por atendido sin responderse. Uno de más de 180 días cuenta como atendido siempre, y por eso las entradas de más de 180 días se podan. Es estado de este runner: con un solo runner por repo (hoy `ronin-agent`) no hace falta compartirlo; varios runners sobre el mismo repo necesitarían volver a guardarlo en GitHub.
 
-**Quién trabaja en qué** (`core/locks.ts`): cada job declara el recurso que toma (`issue-N` para todo el stack de un issue y sus worktrees `ronin/N/*`, `pr-N` para un PR ajeno o de exploración, `changelog`), y los pasos de todo el repo (`assign`, `sweeps`, `auto-merge`) tienen su propio lock. Son archivos con el pid del proceso en `<worktreeBasePath>/.locks/`, así que uno que dejó un proceso muerto se toma.
+**Quién trabaja en qué** (`platform/locks/locks.ts`): cada job declara el recurso que toma (`issue-N` para todo el stack de un issue y sus worktrees `ronin/N/*`, `pr-N` para un PR ajeno o de exploración, `changelog`), y los pasos de todo el repo (`assign`, `sweeps`, `auto-merge`) tienen su propio lock. Son archivos con el pid del proceso en `<worktreeBasePath>/.locks/`, así que uno que dejó un proceso muerto se toma.
 - El **tick** saltea lo que está tomado: quien lo tiene ya lo está atendiendo.
 - El **handler** toma todos los recursos de su scope antes de leer nada de GitHub, esperando a quien los tenga, en orden (no hay deadlock entre handlers). Lo que lee después es el estado posterior a lo que hizo el otro, nunca el de antes. Un job suyo con un recurso que no estaba en el scope (el issue que acaba de crear una asignación) lo toma sin esperar.
 - `sweepOrphanedWorktrees` solo borra el worktree de un issue que nadie tiene tomado: un handler puede estar implementando una slice que todavía no tiene PR. El `plan` de un spec toma su issue mientras corre por lo mismo.
 
-**Con `DATABASE_URL`** (#235, etapa 3.2; `core/locks-db.ts`), los locks de recursos y los cupos son filas de la tabla `locks` en vez de archivos con pid: cada una la tiene un proceso (`host:pid`) con un lease que renueva cada 30 s. Una cuyo lease venció se toma; una de un proceso de esta máquina que ya no existe, en el momento, como con los archivos. Lo que espera un cupo es una fila de `lock_waits`, y el tablero lee de ahí los cupos ocupados y la cola. Las reglas son las mismas.
+**Con `DATABASE_URL`** (#235, etapa 3.2; `platform/locks/locks-db.ts`), los locks de recursos y los cupos son filas de la tabla `locks` en vez de archivos con pid: cada una la tiene un proceso (`host:pid`) con un lease que renueva cada 30 s. Una cuyo lease venció se toma; una de un proceso de esta máquina que ya no existe, en el momento, como con los archivos. Lo que espera un cupo es una fila de `lock_waits`, y el tablero lee de ahí los cupos ocupados y la cola. Las reglas son las mismas.
 
 **Cupo por repo**: la `concurrency` del repo (o `TICK_CONCURRENCY`) y los topes por tipo (`EXTERNAL_REVIEW_CONCURRENCY`, changelog y exploración de a uno) valen para el runner entero, no por proceso, pero cada repo tiene los suyos: cada job toma un slot de `.ronin-slots/` de su repo (`<repo>~all-<i>.lock`, y el de su tipo) antes de correr, y espera si no hay. Así, con 15 issues asignados en un repo y 5 en otro, los dos avanzan a la vez; antes el cupo era uno solo y el repo con más trabajo lo ocupaba entero. Cada repo suele usar su propia cuenta de Claude (`claudeConfigDir`), que es la cuota que este cupo protege. El tablero muestra los lugares ocupados de cada repo. Los jobs que nunca corren un agente (comandos, lanzar un worker) no toman slot: un `/help` no espera detrás de tres `claude -p`.
 
@@ -561,7 +554,7 @@ Una página para ver qué está haciendo ronin sin recorrer GitHub issue por iss
   - **Pestañas *Fichas*, *Corridas* e *Inventario*,** solo en un PR de exploración, que es la página de su app (15.12). *Fichas* va primera: las propuestas que trae, para revisarlas y decidir. Mientras está abierta, la columna de contexto se oculta para dejarle lugar.
   - **Pestaña *Archivos*,** en un PR y en un issue con un PR que avanza: el diff con sus hilos, para comentar y revisar (15.14). Como *Fichas*, ocupa también la columna de contexto.
   - **Pestañas *Issue* y *PR*.** La descripción del issue y la de su PR (o la del PR y la de su issue de tracking), cada una con su conversación debajo: los comentarios del issue en *Issue*; los comentarios, las reviews y los hilos del PR en *PR*, con los de ronin marcados. Un issue con un PR abierto abre en la pestaña del PR, que dice qué se hizo (y, en *Qué se pidió*, qué se pidió). Es el markdown de GitHub, saneado (15.3). La de un PR de ronin se muestra por secciones, con *Decisiones propias* destacada (15.15). Un `#123` abre ese ítem en el tablero si está en la barra lateral, y si no, en GitHub.
-  - **El transcript de una corrida** se abre desde la actividad, con "← Ficha" para volver: los textos del agente y sus pasos (leyó, buscó, editó, corrió), arriba las corridas del ítem y abajo el estado, el reloj, el modelo y el worktree. Los agentes de una misma preview (catálogo de seeds, *Revisión de los seeds*, datos de preview, datos al actualizarse) son **una corrida, *Preview***: cada uno se guarda con el mismo `group` (`core/run-group.ts`: `preview:<pr>:<cuándo>`, puesto con `withRunGroup` alrededor de la preparación de datos en `preview.ts`), y el tablero los junta. En la actividad y en la lista de corridas va una sola, con su duración y su costo sumados, que está corriendo mientras corra un paso y, si no, termina como su último paso (o como el primero que falló); en el transcript, una fila *Pasos* abre cada uno. *Hoy*, la barra lateral y el contexto dicen "Preview: Revisión de los seeds". Las corridas anteriores a esto no tienen grupo y siguen sueltas. Una corrida en curso se sigue en vivo, y si arranca una nueva sobre el ítem abierto, aparece sola. Lo que no es un issue ni un PR (el changelog) abre directo en el transcript, igual que una corrida elegida en *Hoy*.
+  - **El transcript de una corrida** se abre desde la actividad, con "← Ficha" para volver: los textos del agente y sus pasos (leyó, buscó, editó, corrió), arriba las corridas del ítem y abajo el estado, el reloj, el modelo y el worktree. Los agentes de una misma preview (catálogo de seeds, *Revisión de los seeds*, datos de preview, datos al actualizarse) son **una corrida, *Preview***: cada uno se guarda con el mismo `group` (`platform/agents/run-group.ts`: `preview:<pr>:<cuándo>`, puesto con `withRunGroup` alrededor de la preparación de datos en `preview.ts`), y el tablero los junta. En la actividad y en la lista de corridas va una sola, con su duración y su costo sumados, que está corriendo mientras corra un paso y, si no, termina como su último paso (o como el primero que falló); en el transcript, una fila *Pasos* abre cada uno. *Hoy*, la barra lateral y el contexto dicen "Preview: Revisión de los seeds". Las corridas anteriores a esto no tienen grupo y siguen sueltas. Una corrida en curso se sigue en vivo, y si arranca una nueva sobre el ítem abierto, aparece sola. Lo que no es un issue ni un PR (el changelog) abre directo en el transcript, igual que una corrida elegida en *Hoy*.
 - **Contexto, a la derecha.**
   - El link al issue o PR en GitHub y, si tiene, al issue de Linear con su estado, proyecto y ciclo. Si el issue de Linear no está entre los que lee el tablero, solo su `RED-n` con el link, del comentario de su bot.
   - El motivo de un bloqueo y cómo destrabarlo.
@@ -655,7 +648,7 @@ La tailnet ya limita quién llega. El login suma una segunda barrera, y el token
 | Previews | El `preview.json` de cada worktree de preview |
 | Último tick y último evento | `tick_complete` y `event_complete` en `logs/tick-*.log` |
 
-#### 15.5 Registro por corrida (`core/run-record.ts`)
+#### 15.5 Registro por corrida (`platform/agents/run-record.ts`)
 
 Cada corrida de agente escribe `logs/runs/<día>/<runId>.jsonl`, con una línea JSON por evento:
 
@@ -665,7 +658,7 @@ Cada corrida de agente escribe `logs/runs/<día>/<runId>.jsonl`, con una línea 
 
 Cada campo pasa por `redact()` antes de escribirse. Una corrida sin `run_end` cuyo `pid` ya no vive se muestra como cortada. Si el registro no se puede escribir, la corrida sigue igual. `run-tick.sh` (generado por `scripts/setup-cron.sh`) borra las carpetas de más de 14 días, como los `tick-*.log`. El transcript completo que Claude Code guarda en `<claudeConfigDir>/projects/` no se usa, porque trae los `tool_result` enteros, sin redactar.
 
-#### 15.6 Uso de cada cuenta (`core/claude-usage.ts`)
+#### 15.6 Uso de cada cuenta (`platform/claude/claude-usage.ts`)
 
 Cada corrida de `claude -p` emite en el stream un `rate_limit_event` con el uso de la cuenta en la ventana de 5 horas y en la semanal, y cuándo se reinicia cada una. `runClaudeHeadless` guarda el último en `logs/usage/<cuenta>.json`, con la hora en que se midió. La cuenta se nombra por su `claudeConfigDir` (`.claude-redmotos` → `redmotos`). Cuando una corrida termina por límite de uso, la cuenta queda marcada sin cuota (`limitHitAt`) hasta la próxima medición. Cada medición, y cada vez que se topa el límite (`limitHit`), se agrega además como una línea a `logs/usage/history/<cuenta>.jsonl`: es lo que permite ver cuánto se llenó cada ventana antes de reiniciarse, para el aprovechamiento de la suscripción en Métricas.
 
@@ -674,7 +667,7 @@ Una cuenta sin corridas recientes muestra un dato viejo, con su antigüedad a la
 #### 15.7 Motivo de bloqueo y cola
 
 - **Motivo.** `notifyBlocker`, por donde pasan todos los bloqueos, lo guarda en el estado local del repo antes del email: `blocks[<número>] = { reason, url, prUrl, excerpt, at }`, con el número sacado de la URL del issue o PR. El tablero lo muestra solo mientras el ítem tenga `ronin:blocked`, así que no hace falta borrarlo al destrabar. Las entradas de más de 180 días se podan. Un bloqueo de un release (el changelog) no se guarda, porque no lleva label.
-- **Cola.** Mientras un job espera un cupo, `withSlots` (`core/locks.ts`) deja `.ronin-slots/waiting/<pid>-<n>.json` con el tipo de job, su etiqueta, el repo y desde cuándo. Lo borra apenas consigue el cupo. Una marca de un pid muerto se ignora.
+- **Cola.** Mientras un job espera un cupo, `withSlots` (`platform/locks/locks.ts`) deja `.ronin-slots/waiting/<pid>-<n>.json` con el tipo de job, su etiqueta, el repo y desde cuándo. Lo borra apenas consigue el cupo. Una marca de un pid muerto se ignora.
 
 #### 15.8 Datos de GitHub (`domains/items/github.ts`)
 
@@ -767,7 +760,7 @@ En un issue, las acciones de PR van al PR de su slice que avanza ("Resolver conf
 
 **Con el teclado.** `M` abre y cierra el menú, con el foco en la primera acción. Con el menú abierto, `1`–`9` piden esa acción, `j`/`k` (o `↓`/`↑`) se mueven y `↵` pide la que tiene el foco; `Esc` lo cierra. Cada acción muestra su número, y `?` las lista.
 
-**Cómo corre.** El tablero escribe el comando como la persona, con su token (`core/github-as-user.ts`): `@ronin-agent /resolve-conflicts`, o `@ronin-agent /preview` con lo que hay que preparar en las líneas de abajo, que el parser de `/preview` también lee. Desde ahí es un comentario como cualquiera: llega su webhook, ronin le pone 👀 y lanza el worker, que lo responde. GitHub muestra quién lo pidió. Responder y destrabar comenta la respuesta como la persona, y ronin le pone `ronin:in-progress` al issue; si GitHub rechazó el comentario, el label no se toca.
+**Cómo corre.** El tablero escribe el comando como la persona, con su token (`platform/github/github-as-user.ts`): `@ronin-agent /resolve-conflicts`, o `@ronin-agent /preview` con lo que hay que preparar en las líneas de abajo, que el parser de `/preview` también lee. Desde ahí es un comentario como cualquiera: llega su webhook, ronin le pone 👀 y lanza el worker, que lo responde. GitHub muestra quién lo pidió. Responder y destrabar comenta la respuesta como la persona, y ronin le pone `ronin:in-progress` al issue; si GitHub rechazó el comentario, el label no se toca.
 
 *Asignar a ronin* deja el contexto, si lo hay, como un comentario común de la persona, sin mencionar a ronin (una mención se leería como un pedido aparte). Después le asigna el issue a `@ronin-agent` con el token de la persona. Desde ahí es lo de siempre (`discoverAssignedIssues`): ronin lo toma en el próximo tick y `fix-issue` lee el issue con sus comentarios. Si no queda claro qué hacer, pregunta en el issue y lo bloquea sin tocar código. *Investigar* y *Prototipar* comentan el comando con la app y el texto en una sola línea, como *Nuevo issue* (15.11.1). La preview, con la app en la línea del comando y el texto abajo.
 
@@ -787,12 +780,12 @@ Antes de #93, ronin comentaba *"**<login>** pidió `/x` desde el tablero"* y lan
 
 Cada repo de la barra lateral tiene un botón **+** que abre *Nuevo issue*: título y descripción (markdown, con vista previa) y qué hacer después.
 
-- **Cómo se crea:** en GitHub, a nombre de quien entró y con su token (`createIssue` en `core/github-as-user.ts`, como las acciones de 15.11). No pasa por Linear: con la sincronización bidireccional aparece allá solo, y el botón sigue andando si se deja Linear.
+- **Cómo se crea:** en GitHub, a nombre de quien entró y con su token (`createIssue` en `platform/github/github-as-user.ts`, como las acciones de 15.11). No pasa por Linear: con la sincronización bidireccional aparece allá solo, y el botón sigue andando si se deja Linear.
 - **Después de crearlo**, una de cuatro:
   - **Solo crearlo.**
   - **Asignárselo a ronin:** el issue se crea ya asignado a la cuenta de ronin, que lo toma como cualquier issue asignado (`discoverAssignedIssues`).
   - **Pedir `/spike <app>`** o **`/spec <app>`:** un comentario a nombre de la persona, con una de las apps del `ronin.app.json` del repo (`repoApps`, que el snapshot manda en `apps`) y una instrucción opcional. Le llega a ronin por su webhook, como uno escrito en GitHub.
-- **Con Linear,** dos selectores opcionales: el proyecto (los activos del equipo) y el ciclo (el actual y los que vienen). Salen de `teamPlanning`, que va con la lectura de Linear (15.13). El issue se crea igual en GitHub. La elección queda pendiente (`core/linear-assign.ts`) y el servidor la aplica en cuanto la sincronización crea el issue en Linear: reintenta durante 5 minutos, y lo que quede lo aplica el tick.
+- **Con Linear,** dos selectores opcionales: el proyecto (los activos del equipo) y el ciclo (el actual y los que vienen). Salen de `teamPlanning`, que va con la lectura de Linear (15.13). El issue se crea igual en GitHub. La elección queda pendiente (`platform/linear/linear-assign.ts`) y el servidor la aplica en cuanto la sincronización crea el issue en Linear: reintenta durante 5 minutos, y lo que quede lo aplica el tick.
 - **Al terminar:** la lectura del repo se descarta (`forgetGithub`), así el snapshot siguiente lista el issue, y la página abre su ficha.
 
 `POST /api/repos/<owner>/<repo>/issues` con `{ title, body, after, app?, instruction? }`. Pasa por las mismas defensas que cualquier POST del tablero (origen, sesión, JSON). Un rechazo de GitHub (un 401 con la sesión vencida, o un 403/404 cuando la organización restringe las apps OAuth) se explica igual que en 15.11.
@@ -859,7 +852,7 @@ La página *Exploraciones* junta lo que antes estaba repartido entre el PR fijo 
 
 #### 15.13 Linear en el tablero (#101)
 
-Para un repo con `"linear": { "apiKeyEnv": "…" }` en `repos.json` y esa key en `.env`, el tablero lee de Linear (`domains/items/linear.ts`, sobre `core/linear-api.ts`), con la misma caché y el mismo manejo de errores que la lectura de GitHub (§15.8). Dos consultas GraphQL por repo:
+Para un repo con `"linear": { "apiKeyEnv": "…" }` en `repos.json` y esa key en `.env`, el tablero lee de Linear (`domains/items/linear.ts`, sobre `platform/linear/linear-api.ts`), con la misma caché y el mismo manejo de errores que la lectura de GitHub (§15.8). Dos consultas GraphQL por repo:
 
 - **Los issues de ronin:** el issue de Linear de cada issue abierto que gestiona ronin, buscado por la URL del issue de GitHub (el *attachment* que deja la sincronización). Trae identificador, estado, proyecto, ciclo y asignado. Va en cada ítem del snapshot (`item.linear`).
 - **El ciclo actual del equipo:** el equipo es el de cualquier issue del repo en Linear, así que `repos.json` no lo nombra. Trae fechas, el historial diario de issues en el ciclo y hechos (el mismo que usa el gráfico de Linear) y sus issues. Va en `/api/today` (`cycles`). Cada issue del ciclo cae en un estado (`cycleView`): los de ronin según GitHub (bloqueado, PR abierto = en review, si no ronin trabaja) y los del equipo según su estado en Linear (completed = hecho, started = en curso o en review si el estado se llama así, el resto sin empezar).
@@ -873,7 +866,7 @@ Los colores de los proyectos siguen al proyecto: los conocidos en orden alfabét
 
 #### 15.14 Revisar un PR (#111)
 
-La pestaña *Archivos* de la ficha de un PR (o de un issue, con los archivos de su PR que avanza) es "Files changed" en el tablero, y desde ahí se revisa: comentarios por línea, sugerencias, respuestas y la revisión con Comentar, Aprobar o Pedir cambios. Todo lo que escribe sale a nombre de quien entró, con su token (`core/github-as-user.ts`, 15.3). Llega a ronin como si se hubiera escrito en GitHub.
+La pestaña *Archivos* de la ficha de un PR (o de un issue, con los archivos de su PR que avanza) es "Files changed" en el tablero, y desde ahí se revisa: comentarios por línea, sugerencias, respuestas y la revisión con Comentar, Aprobar o Pedir cambios. Todo lo que escribe sale a nombre de quien entró, con su token (`platform/github/github-as-user.ts`, 15.3). Llega a ronin como si se hubiera escrito en GitHub.
 
 - **Leer** (`domains/items/files.ts`):
   - **Los archivos** de `pulls/<n>/files`, paginado, con su patch. GitHub lista como mucho 3000, y deja sin patch a los binarios y a los muy grandes, que la página muestra con un link a GitHub.
@@ -922,14 +915,14 @@ La pestaña *Archivos* de la ficha de un PR (o de un issue, con los archivos de 
 
 Ante un PR de ronin casi siempre se decide una de tres cosas, y se decide leyendo su descripción: mergearlo, pedirle un ajuste o descartarlo. Por eso su ficha no ofrece la revisión de GitHub (15.14), cuyo "Pedir cambios" ronin no lee, sino esas tres decisiones.
 
-- **La descripción.** `implement-slice` y `fix-issue` escriben el cuerpo del PR siempre con las mismas secciones, en este orden y con estos títulos (`PR_BODY_RULE` y `PR_BODY_SECTIONS` en `core/prompts.ts`): *Qué se pidió*, *Qué cambió* (con las capturas), *Cómo se verificó* (lo que corrió y lo que no probó), *Decisiones propias* (lo que el pedido no definía, con el porqué) y *Fuera de alcance*. `Closes #N` va en la primera línea. La plantilla de PR del repo no se usa. La pestaña *Descripción* (o *PR #N* en un issue) las muestra por separado, con *Decisiones propias* destacada, que es lo que más vale revisar. Un cuerpo sin esas secciones (un PR viejo) se muestra tal cual. Cuando ronin cambia el código del PR después de abrirlo (`fix-review`, un pedido mencionándolo, `/fix-comments`), también pone al día la descripción (`prBodyUpdateRule`): reescribe lo que su cambio dejó viejo, casi siempre *Qué cambió* y *Cómo se verificó*, con las mismas secciones, y no toca lo que va desde el pie de comandos (`<!-- ronin:help -->`). Lo guarda por la API REST, porque `gh pr edit` falla en los repos que alguna vez usaron Projects classic.
+- **La descripción.** `implement-slice` y `fix-issue` escriben el cuerpo del PR siempre con las mismas secciones, en este orden y con estos títulos (`PR_BODY_RULE` y `PR_BODY_SECTIONS` en `platform/agents/prompts.ts`): *Qué se pidió*, *Qué cambió* (con las capturas), *Cómo se verificó* (lo que corrió y lo que no probó), *Decisiones propias* (lo que el pedido no definía, con el porqué) y *Fuera de alcance*. `Closes #N` va en la primera línea. La plantilla de PR del repo no se usa. La pestaña *Descripción* (o *PR #N* en un issue) las muestra por separado, con *Decisiones propias* destacada, que es lo que más vale revisar. Un cuerpo sin esas secciones (un PR viejo) se muestra tal cual. Cuando ronin cambia el código del PR después de abrirlo (`fix-review`, un pedido mencionándolo, `/fix-comments`), también pone al día la descripción (`prBodyUpdateRule`): reescribe lo que su cambio dejó viejo, casi siempre *Qué cambió* y *Cómo se verificó*, con las mismas secciones, y no toca lo que va desde el pie de comandos (`<!-- ronin:help -->`). Lo guarda por la API REST, porque `gh pr edit` falla en los repos que alguna vez usaron Projects classic.
 - **Dónde.** En el encabezado de la ficha, así están en todas las pestañas: *Cerrar*, *Ajustar* y *Aprobar*, con `X`, `P` y `A`. Los botones son cortos: el alcance lo dice su panel. Solo en un PR de ronin abierto que no es draft (`decidable`); en un issue, para su PR que avanza. Cada una abre un panel debajo de los botones que dice qué se va a mandar; se cierra con Escape o con un clic fuera, salvo mientras se manda.
 - **El teclado en el panel.** El texto que se está escribiendo sobrevive a los redibujos del tablero (el refresco, la carga de *Archivos*), como los otros cuadros de texto. Con el foco fuera del texto, `1`–`3` suman una frase rápida al ajuste, `I` marca o desmarca *Cerrar también el issue* y `Ctrl ↵` manda igual; cualquier otra tecla vuelve al texto y se escribe ahí, así nada de lo tecleado abre otra decisión.
 - **Aprobar** (`↵` confirma) aprueba y mergea: la aprobación (`submitPullRequestReview`, con la revisión pendiente si hay: GitHub admite una sola por persona) y `@ronin-agent /auto-merge`, salvo que el PR ya tenga `ronin:auto-merge` o conflictos. El panel dice si los checks pasaron, corren o fallan, y que los comentarios pendientes van con la aprobación sin que ronin los atienda.
 - **Ajustar** (`Ctrl ↵` manda): un texto, con frases rápidas. Sin comentarios pendientes, se comenta `@ronin-agent <texto>`: el flujo `review-request` (§7.2), que aplica lo pedido y responde. Con comentarios pendientes, se manda la revisión como COMMENT y después `@ronin-agent /fix-comments` con el texto, que llega al prompt de `fix-comments` como su comentario disparador. Un texto que empieza con `/` se rechaza: se leería como un comando (para eso está *Acciones*). En *Archivos*, la barra dice cuántos comentarios pendientes hay y que los lleva *Ajustar*.
 - **Cerrar** (`Ctrl ↵` confirma): el motivo, opcional, como comentario; se descarta la revisión pendiente y se cierra el PR (`closePr`). *Cerrar también el issue* viene marcada y lo cierra como no planeado (`closeIssue`); en el PR de un pedido del portal, el motivo también le llega a quien lo pidió (§16). Si queda abierto, `processIssue` lo bloquea y avisa: una slice sin PR abierto ni mergeado.
 - **Después de decidir,** una línea bajo el encabezado dice qué se hizo durante unos minutos, mientras GitHub lo refleja, y se descartan las cachés de archivos, de la ficha y de la lectura del repo.
-- **Servidor:** `POST /api/items/<id>/decision` (`domains/items/decision.ts`), a nombre de quien entró (`core/github-as-user.ts`, 15.3) y con el permiso `acciones`. Rechaza con 400 lo que no es un PR abierto de ronin fuera de draft, una decisión que no existe y un ajuste vacío.
+- **Servidor:** `POST /api/items/<id>/decision` (`domains/items/decision.ts`), a nombre de quien entró (`platform/github/github-as-user.ts`, 15.3) y con el permiso `acciones`. Rechaza con 400 lo que no es un PR abierto de ronin fuera de draft, una decisión que no existe y un ajuste vacío.
 
 ### 16. Portal de pedidos (#114)
 
@@ -1386,14 +1379,14 @@ Las rutas (`/api/ajustes/*`) están en `domains/settings/routes.ts`, en Hono: qu
 
 #### 19.2 Valores: el del tablero, después `.env`, después el de por defecto
 
-`core/settings.ts` lista los ajustes que se cambian desde el tablero, cada uno con su variable de `.env`, su campo en `config`, su tipo (número con su rango, sí/no, una lista de opciones, texto con su chequeo) y su valor por defecto:
+`platform/config/settings.ts` lista los ajustes que se cambian desde el tablero, cada uno con su variable de `.env`, su campo en `config`, su tipo (número con su rango, sí/no, una lista de opciones, texto con su chequeo) y su valor por defecto:
 
 - *General*: `DASHBOARD_SESSION_DAYS`, `DASHBOARD_GITHUB_TTL_SECONDS`, `PORTAL_DAILY_LIMIT`, `PORTAL_SESSION_DAYS`.
 - *Agentes*: `AGENT_MODEL`, `AGENT_EFFORT`, `EXTERNAL_REVIEW_WORKER_MODEL`, `AGENT_TASK_TIMEOUT_MINUTES`, `EVENT_HANDLER_TIMEOUT_MINUTES`, `TICK_INTERVAL_MINUTES`, `TICK_CONCURRENCY`, `EXTERNAL_REVIEW_CONCURRENCY` y los seis límites de reintentos (`docs/BLOCKING.md`). Además, un modelo y un esfuerzo por tipo de tarea: ganan sobre `AGENT_MODEL_<TIPO>` / `AGENT_EFFORT_<TIPO>` y pierden ante el bloque `agent` del repo (`agentModelFor`, `agentEffortFor`).
 - *Exploración*: `EXPLORE_TIMEZONE`, `EXPLORE_NIGHT_WINDOW`, `EXPLORE_FUNCTIONS_PER_NIGHT`, `EXPLORE_FUNCTIONS_PER_RUN`, `EXPLORE_FINDINGS_PER_RUN`, `EXPLORE_IDEAS_PER_RUN`, `EXPLORE_PUBLISH_EVIDENCE`.
 - *Previews*: `PREVIEW_PREPARE_DATA`, `PREVIEW_TTL_MINUTES`, `PREVIEW_MAX_PER_REPO`.
 
-Lo que se cambia lo guarda `core/settings-store.ts`: en Postgres con `DATABASE_URL` (tablas `settings`, `task_settings` y `claude_account_plans`, con quién y cuándo, #235), o si no en `<SETTINGS_DATA_DIR>/settings.json`. Cada fila dice de dónde viene su valor (`.env`, *Por defecto* o *Cambiado en el tablero*) y ofrece *Volver al de .env*.
+Lo que se cambia lo guarda `platform/config/settings-store.ts`: en Postgres con `DATABASE_URL` (tablas `settings`, `task_settings` y `claude_account_plans`, con quién y cuándo, #235), o si no en `<SETTINGS_DATA_DIR>/settings.json`. Cada fila dice de dónde viene su valor (`.env`, *Por defecto* o *Cambiado en el tablero*) y ofrece *Volver al de .env*.
 
 - **Cómo llega a cada proceso:** `config.ts` los lee (con `await`, al cargarse) y los aplica sobre lo que dice `.env`, así el tick, cada handler de webhook y cada worker arrancan con los valores del tablero. El servidor los vuelve a aplicar sobre el mismo `config` después de guardar uno: como `apps/api/http/auth.ts`, el portal y las lecturas de GitHub usan `config.dashboard` y `config.portal`, el cambio vale al momento.
 - **Un archivo editado a mano o una base que no responde:** un `settings.json` que no se lee, una base caída o un valor fuera de rango se ignoran con un aviso en el log y vale el de `.env`. Nunca tumba un proceso.
@@ -1413,7 +1406,7 @@ El equipo entra con GitHub (15.3). GitHub sigue diciendo qué repos ve cada uno 
 
 Las cuentas del portal de pedidos (§16.2) están en la misma lista, con el rol **Usuario**, y un filtro *Todos · Equipo · Portal*. La página de una cuenta tiene lo que antes estaba en *Pedidos del portal → Usuarios*: nombre, apps donde puede pedir, pedidos por día, el enlace de la contraseña y desactivar. *Agregar persona* pregunta si es del equipo o del portal. Usa la API de siempre (`/api/portal-admin`), que anota cada cambio en el Registro. `/portal` lleva a Ajustes.
 
-#### 19.5 Notificaciones (`core/notifications.ts`)
+#### 19.5 Notificaciones (`platform/notify/notifications.ts`)
 
 Cada persona del equipo elige, repo por repo, qué correos de ronin le llegan, al correo de su Perfil. Nadie más los cambia; un admin los ve en la página de la persona. Son los cuatro correos al equipo:
 
@@ -1468,7 +1461,7 @@ Cada cambio en Ajustes, del perfil propio a un repo, queda en el registro: la ta
 
 Nada: sin `SETTINGS_DATA_DIR`, usa `settings-data/` en el checkout del runner (fuera de git). Con `DATABASE_URL`, los valores, las tareas, las cuentas y el registro van a Postgres (`pnpm db:import-ajustes` los copia de los archivos); el equipo y las copias de `repos.json` siguen ahí. Es la única copia de lo que se cambió en el tablero, del equipo y del registro: hay que respaldarlo, como `portal-data/`.
 
-#### 19.11 Cuentas de Claude (#234, `core/claude-plans.ts`, `domains/settings/claude-accounts.ts`)
+#### 19.11 Cuentas de Claude (#234, `platform/claude/claude-plans.ts`, `domains/settings/claude-accounts.ts`)
 
 El plan que paga cada cuenta de Claude, para calcular en Métricas cuánto se aprovecha (#234).
 
@@ -1590,7 +1583,7 @@ Cuánto se aprovecha el plan de cada cuenta de Claude (19.11), contando todo lo 
 
 ### 21. Tiempos (#235, etapa 1)
 
-Antes de optimizar nada se mide. `core/timing.ts` abre una medición (`measure`, un `AsyncLocalStorage`) y cualquier código que corre adentro suma sus tramos con `timed(nombre, fn)` sin que se lo pasen. Hoy el único tramo es `github`: las llamadas con `gh` de `core/github.ts` y las de `fetch` del tablero (como la persona, sus permisos, los usuarios). Los tramos que corren a la vez se suman, así que el de GitHub dice cuánto se gastó ahí, no cuánto se esperó.
+Antes de optimizar nada se mide. `platform/timing.ts` abre una medición (`measure`, un `AsyncLocalStorage`) y cualquier código que corre adentro suma sus tramos con `timed(nombre, fn)` sin que se lo pasen. Hoy el único tramo es `github`: las llamadas con `gh` de `platform/github/github.ts` y las de `fetch` del tablero (como la persona, sus permisos, los usuarios). Los tramos que corren a la vez se suman, así que el de GitHub dice cuánto se gastó ahí, no cuánto se esperó.
 
 - **Cada request de `/api/*`** (`apps/api/http/timing.ts`, en los dos listeners):
   - responde con `Server-Timing`, con el total hasta la cabecera y cada tramo con sus llamadas;
@@ -1599,23 +1592,23 @@ Antes de optimizar nada se mide. `core/timing.ts` abre una medición (`measure`,
   Quedan afuera los archivos de la web y los streams en vivo (`text/event-stream`).
 - **Resumen por ruta:** cada 10 minutos, una línea por ruta en `logs/timings/<día>.jsonl` con la cantidad, los errores 5xx, el total, el máximo, el tiempo en GitHub y cuántos requests cayeron en cada tramo (`≤25, 50, 100, 250, 500 ms, 1, 2.5, 5, 10 s` y más). Se guardan tramos y no percentiles para poder juntar ventanas sin perder exactitud. Un reinicio pierde a lo sumo los últimos 10 minutos.
 - **El tick:** `tick_complete` (y `event_complete`) suma `steps` (cuánto tardó cada paso: `assign`, `sweeps`, `auto-merge`, `portal`, `deploys`, `nightly`), `discoveryMs`, `jobsMs`, `githubMs` y `githubCalls`.
-- **`pnpm timings [días]`** (`scripts/timings.ts`, la cuenta en `core/timing-report.ts`) arma la tabla: por ruta, la cantidad, el promedio, los percentiles por tramo, el máximo y GitHub por request; por repo, los ticks con su p50, p90 y máximo y la mediana de cada paso. Lee también los `tick_complete` de antes de esta medición, que solo traen el total.
+- **`pnpm timings [días]`** (`scripts/timings.ts`, la cuenta en `platform/timing-report.ts`) arma la tabla: por ruta, la cantidad, el promedio, los percentiles por tramo, el máximo y GitHub por request; por repo, los ticks con su p50, p90 y máximo y la mediana de cada paso. Lee también los `tick_complete` de antes de esta medición, que solo traen el total.
 
 ## Estado actual
 
 - [x] Definir el esqueleto del supervisor (script + estructura de tick) — ver §3.1 y `src/`
 - [x] Definir el template del issue de tracking (checklist de slices) — ver [`templates/tracking-issue.md`](../templates/tracking-issue.md) y §2.1
 - [x] Definir el criterio exacto de "bloqueo" que dispara notificación — ver [`docs/BLOCKING.md`](BLOCKING.md)
-- [x] Prototipo de la app de notificación por email — ver `src/core/notifier.ts`
-- [x] `agent-task.ts`: invocación de `claude -p` en un worktree aislado (ciclo de vida básico, prompts por tipo de tarea, en inglés — ver §8) — ver `src/core/worktree.ts`, `src/core/claude-runner.ts`, `src/core/agent-task.ts`, el `prompts.ts` de cada feature y §7.1
-- [x] Estado persistente entre ticks: índice de slice actual (`src/domains/slices/checklist.ts`, parseado del propio checklist del issue) y contador de reintentos por PR (`ronin:attempts-N`, labels en `src/core/github.ts`) — ver §3.1
-- [x] Claim entre múltiples supervisores concurrentes — ver `src/core/claim.ts` y §9
+- [x] Prototipo de la app de notificación por email — ver `src/platform/notify/notifier.ts`
+- [x] `agent-task.ts`: invocación de `claude -p` en un worktree aislado (ciclo de vida básico, prompts por tipo de tarea, en inglés — ver §8) — ver `src/platform/git/worktree.ts`, `src/platform/claude/claude-runner.ts`, `src/platform/agents/agent-task.ts`, el `prompts.ts` de cada feature y §7.1
+- [x] Estado persistente entre ticks: índice de slice actual (`src/domains/slices/checklist.ts`, parseado del propio checklist del issue) y contador de reintentos por PR (`ronin:attempts-N`, labels en `src/platform/github/github.ts`) — ver §3.1
+- [x] Claim entre múltiples supervisores concurrentes — ver `src/platform/state/claim.ts` y §9
 - [x] Descubrimiento por asignación manual vía PR (reemplaza el escaneo de frontmatter local) — ver §1, resuelve de paso el gap de descubrimiento duplicado que tenía la versión anterior de §9
 - [x] Recurrencia vía cron (no tmux) — `scripts/setup-cron.sh`, con `flock` para que un host nunca corra dos ticks solapados
 - [x] Límite de uso de Claude como estado transitorio, no como bloqueo — `ClaudeUsageLimitError` (§3)
 - [x] Limpieza de worktrees cuando su PR ya no está abierto — `sweepOrphanedWorktrees` (§3.1)
-- [x] Reacción por evento: un handler por evento de GitHub, el tick como conciliación — `apps/api/webhooks/handler.ts`, `core/locks.ts` (§14)
-- [x] Tablero web en la tailnet, con login de GitHub, la ficha de cada ítem, acciones y la revisión de PRs (§15.14) — `server/`, `web/`, `core/run-record.ts`, `core/claude-usage.ts` (§15)
+- [x] Reacción por evento: un handler por evento de GitHub, el tick como conciliación — `apps/api/webhooks/handler.ts`, `platform/locks/locks.ts` (§14)
+- [x] Tablero web en la tailnet, con login de GitHub, la ficha de cada ítem, acciones y la revisión de PRs (§15.14) — `server/`, `web/`, `platform/agents/run-record.ts`, `platform/claude/claude-usage.ts` (§15)
 - [x] Despliegues desde el tablero: releases con todo lo mergeado o solo los PRs elegidos (cherry-pick probado), el seguimiento de su workflow y el aviso a los pedidos que llevan — `deploy/`, `domains/deploys/board.ts` (§18)
 - [x] Reuniones: las notas que se suben al tablero, la lectura de ronin y la creación de lo aprobado en GitHub y Linear — `domains/meetings/` (§17)
 - [x] Portal de pedidos en `ronin-agent.redmotoshn.com`: cuentas con email y contraseña, conversación con imágenes, prototipo, PR con `ronin:auto-merge` o issue para el equipo, y correos — `portal/`, `apps/portal/` (§16)

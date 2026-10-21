@@ -1,7 +1,7 @@
 import { hostname } from 'node:os';
-import type { Db } from '../../../db/db.js';
-import { log } from '../../../core/logger.js';
-import { launchScript } from '../../../core/worker-launch.js';
+import type { Db } from '../../../platform/db/db.js';
+import { log } from '../../../platform/logger.js';
+import { launchScript } from '../../../platform/workers/worker-launch.js';
 import { claimNext, finish, reapExpired, type Job, type JobKind } from './store.js';
 
 // The local runner (#235, stage 3): a loop inside the server that takes the

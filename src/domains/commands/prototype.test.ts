@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 
-vi.mock('../../core/config.js', () => ({ config: { githubLogin: 'ronin', worktreeBaseRef: 'origin/main' } }));
-vi.mock('../../core/logger.js', () => ({ log: { error: vi.fn(), info: vi.fn() } }));
+vi.mock('../../platform/config/config.js', () => ({ config: { githubLogin: 'ronin', worktreeBaseRef: 'origin/main' } }));
+vi.mock('../../platform/logger.js', () => ({ log: { error: vi.fn(), info: vi.fn() } }));
 
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync } from 'node:fs';

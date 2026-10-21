@@ -7,14 +7,14 @@ const writeFile = vi.fn();
 vi.mock('node:fs/promises', () => ({ mkdir, readFile, rm, writeFile }));
 
 const runAgentTask = vi.fn();
-vi.mock('../../core/agent-task.js', () => ({ runAgentTask }));
+vi.mock('../../platform/agents/agent-task.js', () => ({ runAgentTask }));
 
 const postReview = vi.fn();
 const resolveReviewThread = vi.fn();
 const replyToComment = vi.fn();
-vi.mock('../../core/github.js', () => ({ postReview, resolveReviewThread, replyToComment }));
+vi.mock('../../platform/github/github.js', () => ({ postReview, resolveReviewThread, replyToComment }));
 
-vi.mock('../../core/repo-context.js', () => ({
+vi.mock('../../platform/agents/repo-context.js', () => ({
   activeRepo: () => ({ productRepo: 'redmotos/shoppingcart', productRepoPath: '/tmp/repo', worktreeBasePath: '/tmp/wt' }),
 }));
 
@@ -32,12 +32,12 @@ vi.mock('./scope.js', async (importOriginal) => ({
 }));
 
 const pinReviewedSha = vi.fn();
-vi.mock('../../core/worktree.js', () => ({ pinReviewedSha }));
+vi.mock('../../platform/git/worktree.js', () => ({ pinReviewedSha }));
 
 const logInfo = vi.fn();
 const logError = vi.fn();
 const logMetric = vi.fn();
-vi.mock('../../core/logger.js', () => ({ log: { info: logInfo, error: logError, metric: logMetric } }));
+vi.mock('../../platform/logger.js', () => ({ log: { info: logInfo, error: logError, metric: logMetric } }));
 
 const { runExternalReview, threadTitle, closingState } = await import('./publish.js');
 

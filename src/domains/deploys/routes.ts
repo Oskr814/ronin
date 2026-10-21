@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { log } from '../../core/logger.js';
+import { log } from '../../platform/logger.js';
 import { DespliegueError, despliegues, parseRelease, planDespliegue, publishDespliegue } from './board.js';
 import { can } from '../access/team.js';
 import { refusal, visibleRepos } from '../access/visible.js';

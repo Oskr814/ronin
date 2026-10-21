@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { getRequestListener } from '@hono/node-server';
 import { Hono } from 'hono';
-import { loadRepos } from '../../../core/repos.js';
+import { loadRepos } from '../../../platform/config/repos.js';
 import type { PortalConfig, PortalDeps } from '../../../domains/portal/http.js';
 import { portalRoutes } from '../../../domains/portal/routes.js';
 import { extname, join } from 'node:path';

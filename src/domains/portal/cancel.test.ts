@@ -1,12 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { rm } from 'node:fs/promises';
-import { config } from '../../core/config.js';
+import { config } from '../../platform/config/config.js';
 import { createRequest, getRequest, updateRequest, type PortalRequest, type RequestStatus } from './requests.js';
 
-vi.mock('../../core/logger.js', () => ({ log: { info: vi.fn(), error: vi.fn() } }));
+vi.mock('../../platform/logger.js', () => ({ log: { info: vi.fn(), error: vi.fn() } }));
 const getIssueAssignees = vi.fn(async (_n: number) => [] as string[]);
 const closeIssueNotPlanned = vi.fn(async (_n: number, _c: string) => true);
-vi.mock('../../core/github.js', () => ({
+vi.mock('../../platform/github/github.js', () => ({
   getIssueAssignees: (n: number) => getIssueAssignees(n),
   closeIssueNotPlanned: (n: number, c: string) => closeIssueNotPlanned(n, c),
 }));

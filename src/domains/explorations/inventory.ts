@@ -1,9 +1,9 @@
 import { mkdir, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import { runAgentTask } from '../../core/agent-task.js';
+import { runAgentTask } from '../../platform/agents/agent-task.js';
 import { explorationTask } from './prompts.js';
-import { activeRepo } from '../../core/repo-context.js';
-import { log } from '../../core/logger.js';
+import { activeRepo } from '../../platform/agents/repo-context.js';
+import { log } from '../../platform/logger.js';
 import { mergeInventory, saveInventory, type ExplorationMemory, type Inventory } from './memory.js';
 import { lastCommitTouching, parseDiscoveredFunctions } from './plan.js';
 import type { AppDefinition } from '../product-app/index.js';

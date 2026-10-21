@@ -1,4 +1,4 @@
-# A Postgres for the tests that need a real one (src/db/testing.ts):
+# A Postgres for the tests that need a real one (src/platform/db/testing.ts):
 #   docker compose -f compose.test.yml up -d
 #   TEST_DATABASE_URL=postgres://ronin:ronin@127.0.0.1:54329/ronin_test pnpm test
 # Throwaway: its data lives in memory and goes with the container.

@@ -1,9 +1,9 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { listReleases, type Release } from '../../core/github.js';
-import { getLastChangelogRelease, setLastChangelogRelease } from '../../core/local-state.js';
-import { activeRepo } from '../../core/repo-context.js';
-import { log } from '../../core/logger.js';
+import { listReleases, type Release } from '../../platform/github/github.js';
+import { getLastChangelogRelease, setLastChangelogRelease } from '../../platform/state/local-state.js';
+import { activeRepo } from '../../platform/agents/repo-context.js';
+import { log } from '../../platform/logger.js';
 
 const execFileAsync = promisify(execFile);
 

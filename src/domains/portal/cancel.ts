@@ -1,6 +1,6 @@
-import { closeIssueNotPlanned, getIssueAssignees } from '../../core/github.js';
-import { log } from '../../core/logger.js';
-import { withActiveRepo, type RepoEntry } from '../../core/repo-context.js';
+import { closeIssueNotPlanned, getIssueAssignees } from '../../platform/github/github.js';
+import { log } from '../../platform/logger.js';
+import { withActiveRepo, type RepoEntry } from '../../platform/agents/repo-context.js';
 import { cancelComment } from './issue.js';
 import { addEvent, addRoninMessage, CANCELLABLE, getRequest, RequestError, updateRequest, type PortalRequest } from './requests.js';
 

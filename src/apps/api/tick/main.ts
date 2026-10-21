@@ -4,7 +4,7 @@
 // between runs beyond what's in GitHub (and the local claim cache, see
 // claim.ts).
 import { tick } from './tick.js';
-import { log } from '../../../core/logger.js';
+import { log } from '../../../platform/logger.js';
 import { runAsJob } from '../jobs/child.js';
 
 // Started by the job queue's runner (apps/api/jobs/runner.ts), it renews its job's

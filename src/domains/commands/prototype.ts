@@ -3,19 +3,19 @@ import { promisify } from 'node:util';
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
-import { runAgentTask, type AgentTask } from '../../core/agent-task.js';
+import { runAgentTask, type AgentTask } from '../../platform/agents/agent-task.js';
 import { commandTask, type CommandTask, type PrototypeBrowser } from './prompts.js';
 import { appDown, appUp } from '../product-app/index.js';
 import { loginAllUsers, renderHtmlToPng } from '../product-app/index.js';
 import { loadAppDefinition, type AppDefinition } from '../product-app/index.js';
-import { config } from '../../core/config.js';
+import { config } from '../../platform/config/config.js';
 import { evidenceUrl, publishEvidence } from '../product-app/index.js';
 import { insideDir } from '../explorations/index.js';
 import { mcpServer, originsOf } from '../explorations/index.js';
-import { activeRepo } from '../../core/repo-context.js';
-import { acquireLock, launchWorker, lockHeld } from '../../core/worker-launch.js';
-import { removeWorktreeDir } from '../../core/worktree.js';
-import { log } from '../../core/logger.js';
+import { activeRepo } from '../../platform/agents/repo-context.js';
+import { acquireLock, launchWorker, lockHeld } from '../../platform/workers/worker-launch.js';
+import { removeWorktreeDir } from '../../platform/git/worktree.js';
+import { log } from '../../platform/logger.js';
 
 const execFileAsync = promisify(execFile);
 
