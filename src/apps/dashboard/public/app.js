@@ -120,7 +120,7 @@ function duration(ms) {
 const money = (usd) => (usd < 0.01 ? 'menos de US$0,01' : `US$${usd.toFixed(2).replace('.', ',')}`);
 const pct = (fraction) => `${Math.round(fraction * 100)}%`;
 
-const S = { snap: null, today: null, sel: null, open: [], runIdx: {}, pendingRun: null, filter: null, q: '', itemRuns: {}, run: null, stream: null, detail: {}, view: {}, doc: {}, menu: false, dialog: null, expanded: new Set(), expl: {}, ficha: {}, fichaOpen: {}, fichaFilter: { tipo: 'todas', vp: 'todos' }, antes: {}, oldAfter: new Set(), lightbox: null, fmenu: false, fdialog: null, fdraft: {}, listas: {}, scope: 'all', project: '', attAll: false, extra: {}, newIssue: null, files: {}, fcur: {}, ffold: {}, fexp: {}, fcontent: {}, fq: {}, ftree: false, fcomp: null, fbusy: new Set(), rpanel: null, revSent: {}, decide: null, decided: {}, kunit: null, page: null, portal: { data: null, error: null }, ped: { list: null, error: null, listAt: 0, detail: {}, n: null, tab: 'act', gh: 'issue', filter: 'pend', page: 1, run: null, lb: null, patch: {} }, reu: { list: null, error: null, listAt: 0, detail: {}, n: null, tab: null, up: null, run: null, open: {}, retrying: false, form: {}, approving: false }, xpl: { list: null, error: null, listAt: 0, repo: null, app: null, cor: {}, inv: {}, tab: 'corridas', run: null, launched: {} }, xnow: null, dep: { list: null }, mt: { data: null, error: null, loading: false, key: null, at: 0, days: 30, repo: '', sort: 'resolved', dir: -1, open: null, tab: 'trabajo', su: { data: null, error: null, loading: false, at: 0, cuenta: '' } }, aj: { data: null, error: null, sec: 'perfil', registro: null, users: null, user: null, login: null, cuenta: null, f: 'todos', q: '', add: null, link: null, busy: false, repos: null, repo: null, conex: null } };
+const S = { snap: null, today: null, sel: null, open: [], runIdx: {}, pendingRun: null, filter: null, q: '', itemRuns: {}, run: null, stream: null, detail: {}, view: {}, doc: {}, menu: false, dialog: null, expanded: new Set(), expl: {}, ficha: {}, fichaOpen: {}, fichaFilter: { tipo: 'todas', vp: 'todos' }, antes: {}, oldAfter: new Set(), lightbox: null, fmenu: false, fdialog: null, fdraft: {}, listas: {}, scope: 'all', project: '', attAll: false, extra: {}, newIssue: null, files: {}, fcur: {}, ffold: {}, fexp: {}, fcontent: {}, fq: {}, ftree: false, fcomp: null, fbusy: new Set(), rpanel: null, revSent: {}, decide: null, decided: {}, kunit: null, page: null, portal: { data: null, error: null }, ped: { list: null, error: null, listAt: 0, detail: {}, n: null, tab: 'act', gh: 'issue', filter: 'pend', page: 1, run: null, lb: null, patch: {} }, reu: { list: null, error: null, listAt: 0, detail: {}, n: null, tab: null, up: null, run: null, open: {}, retrying: false, form: {}, approving: false }, xpl: { list: null, error: null, listAt: 0, repo: null, app: null, cor: {}, inv: {}, tab: 'corridas', run: null, launched: {} }, xnow: null, dep: { list: null }, mt: { tab: 'trabajo' }, aj: { data: null, error: null, sec: 'perfil', registro: null, users: null, user: null, login: null, cuenta: null, f: 'todos', q: '', add: null, link: null, busy: false, repos: null, repo: null, conex: null } };
 // The sidebar's Linear filter (#101), remembered per browser.
 try { Object.assign(S, JSON.parse(localStorage.getItem('ronin-scope') ?? '{}')); } catch { /* sin storage */ }
 function saveScope() {
@@ -576,13 +576,7 @@ function renderCenter() {
   if (!item && S.page === 'metricas') {
     // Its tables and charts take the room of the context column.
     $('#shell').classList.add('wide');
-    const scroller = $('#center .today.mt');
-    const keep = scroller?.scrollTop ?? 0;
-    if (setCenter(backBar('Métricas') + metricasHTML())) {
-      wireMetricas();
-      const fresh = $('#center .today.mt');
-      if (fresh && !isMobile()) fresh.scrollTop = keep;
-    }
+    showPage(S.mt.tab === 'suscripcion' ? 'subscription' : 'metrics', backBar('Métricas'));
     return;
   }
   if (!item && (S.page === 'exploraciones' || S.page === 'exploracion')) {
@@ -643,6 +637,11 @@ const PAGE_HOST = {
   openPedido: (n) => openPedido(n),
   unauthorized: (message) => showLogin(new Unauthorized(message)),
   repoColor,
+  openItem: (key) => select(key),
+  openSettings: (section) => openAjustes(section),
+  openMetrics: (tab) => openMetricas(tab),
+  repos: () => S.snap.repos,
+  typeName,
   // What the sidebar shows of a page: whether a deploy is going.
   read(name, data) {
     if (name !== 'deploys') return;
@@ -4109,14 +4108,9 @@ function openDespliegues() {
 // The sidebar's "en curso", from what the page last read (PAGE_HOST.read).
 const depGoing = () => (S.dep.list ?? []).some((r) => (r.releases ?? []).some((x) => x.deploy?.state === 'running'));
 
-// ---------- metrics (#222)
-// How work moves in the repos: what comes in and goes out, how long it
-// takes, who carries it and where it gets stuck. Admins only. The numbers
-// come computed (metrics/compute.ts); this only draws them. "Resolved" is an
-// issue closed as completed, and times are calendar days.
-const MT_EVERY_MS = 5 * 60_000;
-const MT_KIND = { bug: 'Bugs', feature: 'Features', otro: 'Otros' };
-const MT_AGE_COLOR = ['var(--ok)', 'var(--run)', 'var(--warn)', 'var(--crit)'];
+// ---------- metrics (#222, #234)
+// Admins only. The pages are in React (src/apps/dashboard/src/pages/metrics/):
+// this only routes to their tab.
 
 // `tab`: trabajo (#222) or suscripcion (#234), each at its own address.
 function openMetricas(tab = S.mt.tab) {
@@ -4130,418 +4124,6 @@ function openMetricas(tab = S.mt.tab) {
   if (isMobile()) {
     $('#shell').dataset.m = 'detail';
     scrollTo(0, 0);
-  }
-  if (S.mt.tab === 'suscripcion') loadSuscripcion();
-  else loadMetricas();
-}
-
-async function loadMetricas() {
-  const key = `${S.mt.days}|${S.mt.repo}`;
-  S.mt.key = key;
-  S.mt.loading = true;
-  if (S.page === 'metricas') renderCenter();
-  try {
-    const data = await api(`/api/metrics?days=${S.mt.days}${S.mt.repo ? `&repo=${encodeURIComponent(S.mt.repo)}` : ''}`);
-    if (S.mt.key !== key) return;
-    S.mt.data = data;
-    S.mt.error = null;
-    S.mt.at = Date.now();
-  } catch (error) {
-    if (error instanceof Unauthorized && showLogin(error)) return;
-    if (S.mt.key === key) S.mt.error = error.message;
-  }
-  if (S.mt.key === key) S.mt.loading = false;
-  if (S.page === 'metricas') renderCenter();
-}
-
-// A time, the way a person says it: minutes, hours or days.
-function mtDur(ms) {
-  if (ms === null || ms === undefined) return '—';
-  const h = ms / 3_600_000;
-  if (h < 1) return `${Math.max(1, Math.round(h * 60))} min`;
-  if (h < 36) return `${h < 10 ? h.toFixed(1).replace('.', ',') : Math.round(h)} h`;
-  const d = ms / DAY_MS;
-  return `${d < 10 ? d.toFixed(1).replace('.', ',') : Math.round(d)} d`;
-}
-const mtNum = (n, digits = 1) => (n === null || n === undefined ? '—' : n.toFixed(digits).replace('.', ','));
-const mtPct = (f) => (f === null || f === undefined ? '—' : pct(f));
-
-// The change against the previous period, green when it's for the better.
-function mtDelta(cur, prev, upIsGood, fmt = String) {
-  if (cur === null || prev === null || cur === undefined || prev === undefined || prev === 0) return '<span class="eq">sin comparación</span>';
-  const ch = (cur - prev) / prev;
-  if (Math.abs(ch) < 0.03) return `<span class="eq">igual</span> que antes (${esc(fmt(prev))})`;
-  return `<span class="${ch > 0 === upIsGood ? 'up' : 'down'}">${ch > 0 ? '▲' : '▼'} ${Math.round(Math.abs(ch) * 100)}%</span> vs. ${esc(fmt(prev))}`;
-}
-
-// A bar's label: the day of the week for 7 days, the week's first day otherwise.
-function mtLabel(bk, days) {
-  const d = new Date(Date.parse(bk.from) + 1);
-  return days === 7 ? ['do', 'lu', 'ma', 'mi', 'ju', 'vi', 'sá'][d.getDay()] : `${d.getDate()}/${d.getMonth() + 1}`;
-}
-
-function mtMovement(m) {
-  const rows = m.series;
-  const W = 640, H = 190, pad = { l: 28, r: 34, t: 8, b: 20 };
-  const max = Math.max(...rows.flatMap((r) => [r.opened, r.resolved]), 1);
-  const bl = rows.map((r) => r.backlog);
-  const bmax = Math.max(...bl, 1), bmin = Math.min(...bl) * 0.9;
-  const cw = (W - pad.l - pad.r) / rows.length, bw = Math.min(14, cw / 3);
-  const y = (v) => pad.t + (H - pad.t - pad.b) * (1 - v / max);
-  const yb = (v) => pad.t + (H - pad.t - pad.b) * (1 - (v - bmin) / (bmax - bmin || 1));
-  const cx = (i) => pad.l + cw * i + cw / 2;
-  let g = '';
-  for (let k = 0; k <= 4; k++) {
-    const v = Math.round((max * k) / 4);
-    g += `<line x1="${pad.l}" x2="${W - pad.r}" y1="${y(v)}" y2="${y(v)}" stroke="var(--rule)"${k ? ' stroke-dasharray="2 3"' : ''}/><text x="${pad.l - 6}" y="${y(v) + 3}" text-anchor="end">${v}</text>`;
-  }
-  rows.forEach((r, i) => {
-    g += `<g class="mt-hit" data-tip="${esc(`${mtLabel(r, m.days)}: ${r.opened} nuevos, ${r.resolved} resueltos\nbacklog ${r.backlog}`)}"><rect x="${cx(i) - cw / 2}" y="${pad.t}" width="${cw}" height="${H - pad.t - pad.b}" fill="transparent"/>`
-      + `<rect x="${cx(i) - bw - 1}" y="${y(r.opened)}" width="${bw}" height="${y(0) - y(r.opened)}" rx="2" fill="var(--faint)"/>`
-      + `<rect x="${cx(i) + 1}" y="${y(r.resolved)}" width="${bw}" height="${y(0) - y(r.resolved)}" rx="2" fill="var(--ok)"/></g>`
-      + `<text x="${cx(i)}" y="${H - 5}" text-anchor="middle">${mtLabel(r, m.days)}</text>`;
-  });
-  g += `<polyline points="${rows.map((r, i) => `${cx(i)},${yb(r.backlog)}`).join(' ')}" fill="none" stroke="var(--warn)" stroke-width="2" stroke-linejoin="round"/>`;
-  g += rows.map((r, i) => `<circle cx="${cx(i)}" cy="${yb(r.backlog)}" r="2.6" fill="var(--warn)"/>`).join('');
-  g += `<text x="${W - pad.r + 6}" y="${yb(bl.at(-1)) + 3}" class="mt-bl">${bl.at(-1)}</text>`;
-  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Issues nuevos y resueltos por ${m.days === 7 ? 'día' : 'semana'}">${g}</svg>`;
-}
-
-function mtHistogram(tramos) {
-  const total = tramos.reduce((s, t) => s + t.count, 0);
-  const max = Math.max(...tramos.map((t) => t.count), 1), W = 360, H = 150, pb = 20, cw = W / tramos.length;
-  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Cuánto tardan en resolverse">${tramos.map((t, k) => {
-    const h = ((H - pb - 14) * t.count) / max, x = cw * k + 6;
-    const col = k < 2 ? 'var(--ok)' : k < 4 ? 'var(--run)' : 'var(--warn)';
-    return `<g class="mt-hit" data-tip="${esc(`${t.label}: ${t.count} ${t.count === 1 ? 'issue' : 'issues'}${total ? ` (${Math.round((t.count / total) * 100)}%)` : ''}`)}"><rect x="${x}" y="${H - pb - h}" width="${cw - 12}" height="${Math.max(h, 0.5)}" rx="3" fill="${col}" opacity=".85"/><text x="${x + (cw - 12) / 2}" y="${H - pb - h - 4}" text-anchor="middle" class="mt-v">${t.count}</text></g><text x="${x + (cw - 12) / 2}" y="${H - 5}" text-anchor="middle">${esc(t.label)}</text>`;
-  }).join('')}</svg>`;
-}
-
-function mtBars(vals, color) {
-  const W = 220, H = 46, max = Math.max(...vals, 1), cw = W / vals.length;
-  return `<svg class="mt-mini" viewBox="0 0 ${W} ${H}" aria-hidden="true">${vals.map((v, i) => `<rect x="${i * cw + 2}" y="${H - 2 - ((H - 6) * v) / max}" width="${cw - 4}" height="${Math.max(1, ((H - 6) * v) / max)}" rx="2" fill="${color}" opacity=".85"/>`).join('')}</svg>`;
-}
-
-function mtSparkline(vals) {
-  return vals.length > 1 ? sparkline(vals) : '';
-}
-
-const MT_COLS = [
-  ['login', 'Persona'], ['open', 'Asignados abiertos'], ['resolved', 'Resueltos'], ['resolutionMedian', 'Mediana resolución', 'hide-m'],
-  ['merged', 'PRs mergeados', 'hide-m'], ['reviewRounds', 'Rondas de review', 'hide-m'], ['reviews', 'Reviews hechas', 'hide-m'],
-  ['reviewWaitMedian', 'Tarda en revisar', 'hide-m'], ['waitingOnThem', 'Esperan su review'],
-];
-
-function mtPeopleHTML(m) {
-  const { sort, dir } = S.mt;
-  const people = [...m.people].sort((x, y) => (sort === 'login' ? dir * x.login.localeCompare(y.login) : dir * ((x[sort] ?? -1) - (y[sort] ?? -1))));
-  const maxDone = Math.max(...people.map((p) => p.resolved), 1);
-  const head = MT_COLS.map(([k, label, cls]) => `<th class="${cls ?? ''}"${sort === k ? ` aria-sort="${dir < 0 ? 'descending' : 'ascending'}"` : ''}><button data-mtsort="${k}">${label}</button></th>`).join('');
-  const rows = people.map((p) => {
-    const av = p.agent ? '<span class="seal mt-av">浪人</span>' : (/^[\w-]+$/.test(p.login) ? `<img class="mt-av" src="https://avatars.githubusercontent.com/${p.login}?s=44" alt="">` : '<span class="mt-av"></span>');
-    const open = S.mt.open === p.login;
-    const row = `<tr class="mt-p" data-mtp="${esc(p.login)}" aria-expanded="${open}" tabindex="0">
-      <td><span class="mt-who">${av}${esc(p.login)}${p.agent ? ' <span class="chip plain">agente</span>' : ''}</span></td>
-      <td>${p.open}${p.quiet ? ` <span class="mt-warn" title="sin movimiento hace más de 14 días">· ${p.quiet} ${p.quiet === 1 ? 'quieto' : 'quietos'}</span>` : ''}</td>
-      <td><span class="mt-cell"><i style="width:${Math.round((p.resolved / maxDone) * 46)}px"></i>${p.resolved}</span></td>
-      <td class="hide-m">${mtDur(p.resolutionMedian)}</td>
-      <td class="hide-m">${p.merged}</td>
-      <td class="hide-m">${mtNum(p.reviewRounds)}</td>
-      <td class="hide-m">${p.reviews ?? '—'}</td>
-      <td class="hide-m">${p.agent ? '—' : mtDur(p.reviewWaitMedian)}</td>
-      <td${p.waitingOnThem > 2 ? ' class="mt-warn"' : ''}>${p.waitingOnThem ?? '—'}</td></tr>`;
-    if (!open) return row;
-    const list = p.openList.map((i) => `<li><button class="link" data-mtitem="${esc(`${i.repo}#${i.number}`)}">#${i.number}</button><span class="t">${esc(i.title)}</span><span class="a${Date.now() - Date.parse(i.updatedAt) > 14 * DAY_MS ? ' mt-warn' : ''}">${i.blocked ? 'bloqueado · ' : ''}movido ${esc(ago(i.updatedAt))}</span></li>`).join('');
-    return `${row}<tr class="mt-det"><td colspan="${MT_COLS.length}"><div class="mt-det-g">
-      <div><h4>Resueltos por ${m.days === 7 ? 'día' : 'semana'}</h4>${mtBars(p.perBucket, p.agent ? 'var(--hanko)' : 'var(--run)')}</div>
-      <div><h4>Abiertos, el más quieto primero</h4><ul class="mt-list">${list || '<li class="m">Nada abierto.</li>'}</ul></div>
-    </div></td></tr>`;
-  }).join('');
-  return `<div class="mt-scroll"><table class="mt-ppl"><thead><tr>${head}</tr></thead><tbody>${rows || `<tr><td colspan="${MT_COLS.length}" class="m">Nadie tuvo actividad en este período.</td></tr>`}</tbody></table></div>`;
-}
-
-const mtTabs = () => `<div class="doctabs mt-tabs" role="tablist"><button class="doctab" role="tab" data-mttab="trabajo" aria-selected="${S.mt.tab === 'trabajo'}">Trabajo</button><button class="doctab" role="tab" data-mttab="suscripcion" aria-selected="${S.mt.tab === 'suscripcion'}">Suscripción</button></div>`;
-
-function metricasHTML() {
-  if (S.mt.tab === 'suscripcion') return suHTML();
-  const { data: m, error, loading } = S.mt;
-  const repos = m?.repos ?? S.snap.repos;
-  const filters = `<div class="mt-filters">
-    <div class="mt-seg" role="group" aria-label="Período">${[7, 30, 90].map((d) => `<button data-mtdays="${d}" aria-pressed="${S.mt.days === d}">${d} días</button>`).join('')}</div>
-    <select id="mt-repo" aria-label="Repo"><option value="">Todos los repos</option>${repos.map((r) => `<option value="${esc(r)}"${S.mt.repo === r ? ' selected' : ''}>${esc(r)}</option>`).join('')}</select>
-  </div>`;
-  const where = S.mt.repo ? esc(S.mt.repo) : repos.length === 1 ? esc(repos[0]) : `los ${repos.length} repos`;
-  const head = `<div class="mt-top"><div><h1>Métricas</h1><p class="lead">Cómo se mueve el trabajo en ${where}: cuánto entra y cuánto sale, cuánto tarda, quién lo lleva y dónde se traba.</p></div>${filters}</div>${mtTabs()}`;
-  if (!m || m.days !== S.mt.days || (m.repo ?? '') !== S.mt.repo) {
-    const msg = error ? `<p class="bad">${esc(error)}</p>` : `<div class="empty">${m ? 'Calculando…' : 'Leyendo GitHub… La primera vez trae 6 meses de historia y puede tardar unos segundos por repo.'}</div>`;
-    return `<div class="today mt">${head}${msg}</div>`;
-  }
-  const c = m.current, p = m.previous, s = m.series;
-  const oldest = m.sources.map((x) => x.syncedAt).filter(Boolean).sort()[0];
-  const failed = m.sources.filter((x) => x.error);
-  const asof = `<div class="mt-asof">Últimos ${m.days} días, comparados con los ${m.days} anteriores${oldest ? ` · datos de GitHub de ${esc(ago(oldest))}` : ''}${loading ? ' · actualizando…' : ''}</div>${failed.map((x) => `<p class="bad">No se pudo leer ${esc(x.repo)}: ${esc(x.error)}. Se muestran los datos anteriores.</p>`).join('')}`;
-  const tile = (label, value, unit, delta, series) => `<div class="tile"><div class="l">${label}</div><div class="v">${value}${unit ? `<small>${unit}</small>` : ''}</div><div class="d">${delta}</div>${mtSparkline(series)}</div>`;
-  const tiles = `<div class="tiles mt-tiles">
-    ${tile('Issues resueltos', c.resolved, '', mtDelta(c.resolved, p.resolved, true), s.map((x) => x.resolved))}
-    ${tile('Tiempo de resolución', esc(mtDur(c.resolutionMedian)), 'mediana', mtDelta(c.resolutionMedian, p.resolutionMedian, false, mtDur), s.map((x) => x.resolutionMedian))}
-    ${tile('Issues nuevos', c.opened, '', mtDelta(c.opened, p.opened, true), s.map((x) => x.opened))}
-    ${tile('PRs mergeados', c.merged, '', mtDelta(c.merged, p.merged, true), s.map((x) => x.merged))}
-    ${tile('Hasta la primera review', esc(mtDur(c.firstReviewMedian)), 'mediana', mtDelta(c.firstReviewMedian, p.firstReviewMedian, false, mtDur), s.map((x) => x.firstReviewMedian))}
-    ${tile('Backlog abierto', c.backlog, '', mtDelta(c.backlog, p.backlog, false), s.map((x) => x.backlog))}
-  </div>`;
-  const per = m.days === 7 ? 'día' : 'semana';
-  const resolvedN = m.resolution.tramos.reduce((sum, t) => sum + t.count, 0);
-  const kinds = m.resolution.kinds.filter((k) => k.resolved).map((k) => `<div class="mt-hbar"><span class="t">${MT_KIND[k.kind]}</span><span class="b"><i style="width:${resolvedN ? (k.resolved / resolvedN) * 100 : 0}%;background:var(--run)"></i></span><span class="n">${k.resolved} · ${esc(mtDur(k.median))}</span></div>`).join('');
-  const h = m.health;
-  const ages = h.ages.map((a, i) => ({ ...a, color: MT_AGE_COLOR[i] }));
-  const fact = (label, value, small = '') => `<div class="mt-fact"><div class="l">${label}</div><div class="v">${value}${small ? ` <small>${small}</small>` : ''}</div></div>`;
-  const waiting = h.waitingReview.map((w) => `<li><button class="link" data-mtitem="${esc(`${w.repo}#${w.number}`)}">#${w.number}</button><span class="t">${esc(w.title)}</span><span class="a${Date.now() - Date.parse(w.since) > 5 * DAY_MS ? ' mt-warn' : ''}">${esc(ago(w.since))} · ${w.reviewers.map((r) => `@${esc(r)}`).join(', ')}</span></li>`).join('');
-  const d = m.deploys;
-  const deploys = d
-    ? `<div class="mt-big">${d.count} <small>en ${m.days} días · ${mtNum(d.perWeek)} por semana</small></div><div class="mt-sub">${mtDelta(d.count, d.previous, true)}</div>
-       <div class="mt-facts">${fact('De merge a producción', esc(mtDur(d.leadMedian)), 'mediana')}</div>${mtBars(d.perBucket, 'var(--repo-1)')}`
-    : '<p class="m">Ningún repo publica releases: sin releases no hay cómo saber cuándo algo llegó a producción.</p>';
-  const r = m.ronin;
-  const reasonMax = Math.max(...r.blockReasons.map((x) => x.count), 1);
-  return `<div class="today mt">${head}${asof}${tiles}
-    <h2 class="mt-sect">Movimiento</h2>
-    <div class="mt-g2">
-      <section class="pd-card mt-card"><h3>Entra y sale <span class="m">por ${per}</span></h3>
-        <div class="mt-legend"><span><i style="background:var(--faint)"></i>Issues nuevos</span><span><i style="background:var(--ok)"></i>Resueltos</span><span><i class="ln"></i>Backlog abierto</span></div>
-        <div class="mt-chart">${mtMovement(m)}</div></section>
-      <section class="pd-card mt-card"><h3>Cuánto tarda en resolverse <span class="m">${resolvedN} ${resolvedN === 1 ? 'issue' : 'issues'}</span></h3>
-        <div class="mt-sub">Desde que se abre hasta que se cierra como completado. Mediana <b>${esc(mtDur(c.resolutionMedian))}</b>${c.resolutionP90 !== null ? ` · 9 de cada 10 en menos de <b>${esc(mtDur(c.resolutionP90))}</b>` : ''}.</div>
-        <div class="mt-chart">${mtHistogram(m.resolution.tramos)}</div>${kinds}</section>
-    </div>
-    <h2 class="mt-sect">Por persona</h2>
-    <section class="pd-card mt-card">${mtPeopleHTML(m)}
-      <p class="mt-sub">Cada persona asignada a un issue se lleva el crédito. «Rondas de review»: cuántas veces, en promedio, le pidieron cambios a un PR suyo antes de mergearlo. «Tarda en revisar»: desde que le piden la review hasta que deja la primera. Tocá una fila para ver su semana a semana y lo que tiene abierto.</p></section>
-    <h2 class="mt-sect">Salud del flujo</h2>
-    <div class="mt-g3">
-      <section class="pd-card mt-card"><h3>Antigüedad del backlog <span class="m">${h.open} abiertos</span></h3>
-        <div class="mt-stack">${ages.map((a) => `<i style="width:${h.open ? (a.count / h.open) * 100 : 0}%;background:${a.color}"></i>`).join('')}</div>
-        ${ages.map((a) => `<div class="mt-hbar mt-key"><span class="t"><i style="background:${a.color}"></i>${a.label}</span><span></span><span class="n">${a.count}</span></div>`).join('')}
-        <div class="mt-facts">${fact('Sin asignar', h.unassigned)}${fact('Asignados, quietos hace 30 días', h.stale)}${fact('Reabiertos', h.reopened, `de ${c.resolved}`)}${fact('Cerrados sin hacer', h.notPlanned)}</div></section>
-      <section class="pd-card mt-card"><h3>PRs esperando review <span class="m">hace más de 2 días</span></h3>
-        <ul class="mt-list">${waiting || '<li class="m">Ninguno.</li>'}</ul>${h.waitingReviewTotal > h.waitingReview.length ? `<div class="mt-sub">y ${h.waitingReviewTotal - h.waitingReview.length} más</div>` : ''}
-        <div class="mt-facts">${fact('De PR abierto a merge', esc(mtDur(h.mergeMedian)), 'mediana')}${fact('Mergeados sin pedir cambios', mtPct(h.firstTry))}</div></section>
-      <section class="pd-card mt-card"><h3>Despliegues <span class="m">${d ? esc(d.repos.length === 1 ? d.repos[0] : `${d.repos.length} repos`) : ''}</span></h3>${deploys}</section>
-    </div>
-    <h2 class="mt-sect">ronin</h2>
-    <div class="mt-g3">
-      <section class="pd-card mt-card"><h3>Parte del trabajo</h3>
-        <div class="mt-big">${mtPct(r.share)} <small>de los issues resueltos</small></div>
-        <div class="mt-stack"><i style="width:${(r.share ?? 0) * 100}%;background:var(--hanko)"></i><i style="width:${r.share === null ? 0 : (1 - r.share) * 100}%;background:var(--run);opacity:.6"></i></div>
-        <div class="mt-legend"><span><i style="background:var(--hanko)"></i>ronin · ${r.resolved}</span><span><i style="background:var(--run);opacity:.6"></i>Personas · ${r.peopleResolved}</span></div>
-        <div class="mt-facts">${fact('Resolución, ronin', esc(mtDur(r.resolutionMedian)))}${fact('Resolución, personas', esc(mtDur(r.peopleResolutionMedian)))}</div></section>
-      <section class="pd-card mt-card"><h3>Sin ayuda</h3>
-        <div class="mt-big">${mtPct(r.unblocked)} <small>terminó sin bloquearse</small></div>
-        <div class="mt-facts">${fact('PRs aprobados sin cambios', mtPct(r.firstTry))}${fact('Intentos de fix', mtNum(r.attempts), 'por PR')}</div></section>
-      <section class="pd-card mt-card"><h3>Por qué se bloqueó <span class="m">${r.blocks} ${r.blocks === 1 ? 'vez' : 'veces'}</span></h3>
-        ${r.blockReasons.map((x) => `<div class="mt-hbar"><span class="t" title="${esc(x.reason)}">${esc(x.reason)}</span><span class="b"><i style="width:${(x.count / reasonMax) * 100}%;background:var(--crit)"></i></span><span class="n">${x.count}</span></div>`).join('') || '<p class="m">No se bloqueó en este período.</p>'}</section>
-    </div></div>`;
-}
-
-// ---------- metrics: Suscripción (#234)
-// How much of each Claude account's plan gets used, whoever uses it, and
-// how much of that is ronin (an estimate). Computed by
-// metrics/subscription.ts; this only draws it. ronin is --repo-0, other uses
-// --repo-1 (the pair passes the colorblind and contrast checks in both
-// themes), what's left unused the raised gray.
-async function loadSuscripcion() {
-  const su = S.mt.su;
-  su.loading = true;
-  if (S.page === 'metricas') renderCenter();
-  try {
-    su.data = await api('/api/metrics/subscription');
-    su.error = null;
-    su.at = Date.now();
-  } catch (error) {
-    if (error instanceof Unauthorized && showLogin(error)) return;
-    su.error = error.message;
-  }
-  su.loading = false;
-  if (S.page === 'metricas') renderCenter();
-}
-
-const SU_RONIN = 'var(--repo-0)';
-const SU_OTHERS = 'var(--repo-1)';
-// The whole account, while there's no estimate of ronin's part yet.
-const SU_ALL = 'var(--faint)';
-const suMoney = (usd) => (usd === null || usd === undefined ? '—' : `$${usd >= 20 ? Math.round(usd).toLocaleString('en') : usd.toFixed(2).replace('.', ',')}`);
-const suWhen = (iso) => new Date(iso).toLocaleString('es', { weekday: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-const suDay = (ms) => new Date(ms).toLocaleDateString('es', { weekday: 'short', day: 'numeric' });
-const suLeft = (ms) => (ms > DAY_MS ? `${Math.floor(ms / DAY_MS)} d ${Math.round((ms % DAY_MS) / 3_600_000)} h` : `${Math.max(1, Math.round(ms / 3_600_000))} h`);
-const suTable = (head, rows) => `<details class="su-tbl"><summary>Ver como tabla</summary><div class="mt-scroll"><table class="su-table"><thead><tr>${head.map((h) => `<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.map((r) => `<tr>${r.map((c) => `<td>${c}</td>`).join('')}</tr>`).join('')}</tbody></table></div></details>`;
-
-// The week in course: the cumulative use, ronin's estimated part under the
-// others', the projection to the reset and a mark for the last measurement.
-function suWeekChart(c) {
-  const w = c.week;
-  const narrow = isMobile();
-  const W = narrow ? 360 : 640, H = narrow ? 220 : 210, pad = { l: 34, r: narrow ? 30 : 42, t: 12, b: 26 };
-  const start = Date.parse(w.start), end = Date.parse(w.resetsAt);
-  const x = (ms) => pad.l + ((ms - start) / (end - start)) * (W - pad.l - pad.r);
-  const y = (v) => pad.t + (1 - Math.min(v, 1)) * (H - pad.t - pad.b);
-  const pts = [{ at: w.start, used: 0, ronin: w.ronin === null ? null : 0 }, ...w.series];
-  const line = (key) => pts.map((p) => `${x(Date.parse(p.at))},${y(key(p))}`).join(' L');
-  let g = '';
-  for (const v of narrow ? [0, 0.5] : [0, 0.25, 0.5, 0.75]) g += `<line x1="${pad.l}" x2="${W - pad.r}" y1="${y(v)}" y2="${y(v)}" stroke="var(--rule)"${v ? ' stroke-dasharray="2 3"' : ''}/><text x="${pad.l - 6}" y="${y(v) + 3}" text-anchor="end">${v * 100}%</text>`;
-  g += `<line x1="${pad.l}" x2="${W - pad.r}" y1="${y(1)}" y2="${y(1)}" stroke="var(--muted)"/><text x="${pad.l - 6}" y="${y(1) + 3}" text-anchor="end">100%</text>`;
-  for (let d = 0; d < 7; d += narrow ? 2 : 1) g += `<text x="${x(start + (d + 0.5) * DAY_MS)}" y="${H - 8}" text-anchor="middle">${esc(suDay(start + d * DAY_MS))}</text>`;
-  const last = pts.at(-1);
-  const lx = x(Date.parse(last.at));
-  if (w.ronin === null) g += `<path d="M${x(start)},${y(0)} L${line((p) => p.used)} L${lx},${y(0)} Z" fill="${SU_ALL}" opacity=".55"/>`;
-  else {
-    g += `<path d="M${x(start)},${y(0)} L${line((p) => p.ronin)} L${lx},${y(0)} Z" fill="${SU_RONIN}" opacity=".9"/>`;
-    g += `<path d="M${line((p) => p.used)} L${[...pts].reverse().map((p) => `${x(Date.parse(p.at))},${y(p.ronin)}`).join(' L')} Z" fill="${SU_OTHERS}" opacity=".9"/>`;
-  }
-  const out = w.projection.exhaustsAt && Date.parse(w.projection.exhaustsAt) < end;
-  const px = out ? x(Date.parse(w.projection.exhaustsAt)) : x(end);
-  const pv = out ? 1 : w.projection.close;
-  g += `<path d="M${lx},${y(last.used)} L${px},${y(pv)}" stroke="var(--ink-2)" stroke-width="2" stroke-dasharray="4 4" fill="none"/>`;
-  g += `<text x="${px + 5}" y="${y(pv) + 4}" style="fill:var(--ink-2)">${out ? 'tope' : pct(Math.min(pv, 1))}</text>`;
-  g += `<line x1="${lx}" x2="${lx}" y1="${pad.t}" y2="${H - pad.b}" stroke="var(--hanko)" stroke-width="1.5"/>`;
-  // One hit area per measurement, from halfway to the one before to halfway to the next.
-  const xs = pts.map((p) => x(Date.parse(p.at)));
-  g += w.series.map((p, i) => {
-    const a = (xs[i] + xs[i + 1]) / 2, b = i + 2 < xs.length ? (xs[i + 1] + xs[i + 2]) / 2 : xs[i + 1] + 6;
-    const tip = `${suWhen(p.at)}\nUsado: ${pct(p.used)} de la semana${p.ronin === null ? '' : `\nronin: ${pct(p.ronin)} · otros: ${pct(p.used - p.ronin)}`}`;
-    return `<g class="mt-hit" data-tip="${esc(tip)}"><rect x="${a}" y="${pad.t}" width="${Math.max(b - a, 2)}" height="${H - pad.t - pad.b}" fill="transparent"/></g>`;
-  }).join('');
-  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Uso de la semana de ${esc(c.account)}">${g}</svg>`;
-}
-
-// How each of the last weeks closed, and the one in course at the end.
-function suWeeksChart(c) {
-  const narrow = isMobile();
-  // On the phone, only the day of the month: eight weekdays don't fit.
-  const weeks = c.weeks.map((w) => ({ ...w, label: narrow ? String(new Date(Date.parse(w.resetsAt) - 1).getDate()) : suDay(Date.parse(w.resetsAt) - 1), cur: false }));
-  if (c.week) weeks.push({ close: c.week.used, ronin: c.week.ronin, others: c.week.others, unused: 1 - c.week.used, label: 'esta', cur: true, limitHits: c.week.fiveHour.limitHits });
-  const W = narrow ? 360 : 420, H = 210, pad = { l: 34, r: 8, t: 14, b: 26 };
-  const cw = (W - pad.l - pad.r) / Math.max(weeks.length, 4), bw = Math.min(cw - 10, 36);
-  const y = (v) => pad.t + (1 - Math.min(v, 1)) * (H - pad.t - pad.b);
-  let g = '';
-  for (const v of [0, 0.5, 1]) g += `<line x1="${pad.l}" x2="${W - pad.r}" y1="${y(v)}" y2="${y(v)}" stroke="var(--rule)"${v === 0.5 ? ' stroke-dasharray="2 3"' : ''}/><text x="${pad.l - 6}" y="${y(v) + 3}" text-anchor="end">${v * 100}%</text>`;
-  weeks.forEach((w, i) => {
-    const cx = pad.l + i * cw + (cw - bw) / 2;
-    const op = w.cur ? ' opacity=".65"' : '';
-    const tip = `${w.cur ? 'Semana en curso' : `Semana que cerró el ${suDay(Date.parse(w.resetsAt) - 1)}`}\n${w.cur ? 'Lleva' : 'Cerró en'} ${pct(w.close)}${w.ronin === null ? '' : `: ronin ${pct(w.ronin)} · otros ${pct(w.others)}`}\n${w.cur ? `Proyección: ${pct(Math.min(c.week.projection.close, 1))}` : `Sin usar: ${pct(w.unused)}`}${w.limitHits ? `\nTopó el límite ${w.limitHits} ${w.limitHits === 1 ? 'vez' : 'veces'}` : ''}`;
-    const used = w.ronin === null
-      ? `<rect x="${cx}" y="${y(w.close)}" width="${bw}" height="${y(0) - y(w.close)}" fill="${SU_ALL}"${op}/>`
-      : `<rect x="${cx}" y="${y(w.ronin)}" width="${bw}" height="${y(0) - y(w.ronin)}" fill="${SU_RONIN}"${op}/><rect x="${cx}" y="${y(w.close)}" width="${bw}" height="${Math.max(0, y(w.ronin) - y(w.close) - 2)}" fill="${SU_OTHERS}"${op}/>`;
-    g += `<g class="mt-hit" data-tip="${esc(tip)}"><rect x="${cx - 4}" y="${pad.t}" width="${bw + 8}" height="${H - pad.t - pad.b}" fill="transparent"/>
-      <rect x="${cx}" y="${y(1)}" width="${bw}" height="${y(0) - y(1)}" rx="4" fill="var(--raise)"/>${used}
-      ${i >= weeks.length - 2 ? `<text x="${cx + bw / 2}" y="${y(w.close) - 4}" text-anchor="middle" class="mt-v">${pct(w.close)}</text>` : ''}</g>
-      <text x="${cx + bw / 2}" y="${H - 8}" text-anchor="middle">${esc(w.label)}</text>`;
-  });
-  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Cómo cerró cada semana de ${esc(c.account)}">${g}</svg>`;
-}
-
-function suAccountHTML(c) {
-  const w = c.week;
-  const tile = (label, value, detail, extra = '') => `<div class="tile"><div class="l">${label}</div><div class="v">${value}</div><div class="d">${detail}</div>${extra}</div>`;
-  const split = w && w.ronin !== null
-    ? `<div class="su-split" aria-hidden="true"><i style="width:${w.ronin * 100}%;background:${SU_RONIN}"></i><i style="width:${w.others * 100}%;background:${SU_OTHERS}"></i></div><div class="su-key"><span><i style="background:${SU_RONIN}"></i>ronin ${pct(w.ronin)}</span><span><i style="background:${SU_OTHERS}"></i>otros ${pct(w.others)}</span></div>`
-    : '';
-  const exhausts = w?.projection.exhaustsAt && Date.parse(w.projection.exhaustsAt) < Date.parse(w.resetsAt);
-  const v = c.value;
-  const tiles = `<div class="tiles su-tiles">
-    ${w ? tile('Esta semana', pct(w.used), `se reinicia en <b>${esc(suLeft(Date.parse(w.resetsAt) - Date.now()))}</b>${w.ronin === null ? ' · sin estimado de ronin todavía' : ''}`, split) : tile('Esta semana', '—', 'Sin mediciones esta semana: ronin no corrió con esta cuenta.')}
-    ${!w ? tile('Proyección', '—', '') : exhausts ? tile('Proyección', '<span class="mt-warn">se agota</span>', `el ${esc(suWhen(w.projection.exhaustsAt))}, a este ritmo`) : tile('Proyección', pct(Math.min(w.projection.close, 1)), `al reiniciarse, a este ritmo · <b>${pct(Math.max(0, 1 - w.projection.close))}</b> sin usar`)}
-    ${c.utilization ? tile('Aprovechamiento', pct(c.utilization.average), `de la cuota semanal, promedio de ${c.utilization.weeks === 1 ? 'la última semana' : `las últimas ${c.utilization.weeks} semanas`}`) : tile('Aprovechamiento', '—', w ? `Aparece cuando cierre la primera semana medida, el ${esc(suDay(Date.parse(w.resetsAt)))}.` : 'Aparece cuando cierre la primera semana medida.')}
-    ${w ? tile('Ventanas de 5 h', `${w.fiveHour.over90}<small>de ${w.fiveHour.windows}</small>`, `pasaron del 90 % esta semana · ${w.fiveHour.limitHits ? `<b>${w.fiveHour.limitHits}</b> ${w.fiveHour.limitHits === 1 ? 'tope' : 'topes'}` : 'ningún tope'}`) : tile('Ventanas de 5 h', '—', '')}
-    ${tile('Rinde', v.ratio === null ? '—' : `${mtNum(v.ratio, v.ratio < 1 ? 2 : 1)}×`, v.ratio === null ? 'Falta el precio del plan.' : `${suMoney(v.equivUsd)} en API por ${suMoney(v.priceUsd)} de plan, últimos ${v.days} días (solo ronin)`)}
-  </div>`;
-  const legend = w?.ronin === null || (!w && c.weeks.every((x) => x.ronin === null))
-    ? `<span><i style="background:${SU_ALL}"></i>Toda la cuenta</span>`
-    : `<span><i style="background:${SU_RONIN}"></i>ronin (estimado)</span><span><i style="background:${SU_OTHERS}"></i>Otros usos de la cuenta</span>`;
-  const weekCard = w
-    ? `<section class="pd-card mt-card"><h3>Esta semana <span class="m">uso acumulado de la cuota semanal</span></h3>
-        <div class="mt-legend">${legend}<span><i class="ln" style="background:var(--ink-2)"></i>Proyección</span><span><i style="background:var(--hanko);width:2px"></i>Última medición</span></div>
-        <div class="mt-chart">${suWeekChart(c)}</div>
-        ${suTable(['Medición', 'Usado', 'ronin', 'Otros'], [...w.series].reverse().map((p) => [esc(suWhen(p.at)), pct(p.used), p.ronin === null ? '—' : pct(p.ronin), p.ronin === null ? '—' : pct(p.used - p.ronin)]))}</section>`
-    : '<section class="pd-card mt-card"><h3>Esta semana</h3><p class="m">Sin mediciones esta semana.</p></section>';
-  const weeksCard = `<section class="pd-card mt-card"><h3>Cómo cerró cada semana <span class="m">% de la cuota usado al reiniciarse</span></h3>
-    ${c.weeks.length || w ? `<div class="mt-legend">${legend}<span><i style="background:var(--raise);box-shadow:inset 0 0 0 1px var(--rule)"></i>Sin usar</span></div><div class="mt-chart">${suWeeksChart(c)}</div>
-      ${suTable(['Semana', 'Cierre', 'ronin', 'Otros', 'Sin usar'], [...c.weeks].reverse().map((x) => [esc(suDay(Date.parse(x.resetsAt) - 1)), pct(x.close), x.ronin === null ? '—' : pct(x.ronin), x.others === null ? '—' : pct(x.others), pct(x.unused)]))}` : ''}
-    ${c.weeks.length ? '' : '<p class="mt-sub">Todavía no cerró ninguna semana medida: el historial empezó a guardarse con #233.</p>'}</section>`;
-  const s = c.spend;
-  const total = s.byTask.reduce((sum, x) => sum + x.usd, 0);
-  const max = Math.max(...s.byTask.map((x) => x.usd), 0.01);
-  const shown = s.byTask.slice(0, 7);
-  const rest = s.byTask.slice(7).reduce((sum, x) => sum + x.usd, 0);
-  const bars = [...shown.map((x) => [esc(typeName(x.key)), x.usd]), ...(rest ? [['Otras', rest]] : [])]
-    .map(([name, usd]) => `<div class="mt-hbar"><span class="t">${name}</span><span class="b"><i style="width:${(usd / max) * 100}%;background:${SU_RONIN}"></i></span><span class="n">${suMoney(usd)} · ${Math.round((usd / (total || 1)) * 100)}%</span></div>`).join('');
-  const repos = s.byRepo.length > 1 ? `<div class="mt-sub" style="margin-top:12px">Por repo: ${s.byRepo.map((x) => `${esc(x.key)} <b>${suMoney(x.usd)}</b>`).join(' · ')}</div>` : '';
-  const spendCard = `<section class="pd-card mt-card"><h3>En qué se va lo de ronin <span class="m">equivalente en API, últimos ${s.days} días</span></h3>
-    ${bars || '<p class="m">ronin no corrió con esta cuenta en este tiempo.</p>'}${repos}
-    ${s.byTask.length ? suTable(['Tarea', 'Equivalente en API', 'Corridas', 'Parte'], s.byTask.map((x) => [esc(typeName(x.key)), suMoney(x.usd), x.runs, `${Math.round((x.usd / (total || 1)) * 100)}%`])) : ''}</section>`;
-  const r = c.perResult;
-  const fact = (label, x, unit) => `<div class="mt-fact"><div class="l">${label}</div><div class="v">${suMoney(x.avgUsd)}</div><div class="mt-sub">${x.count ? `${x.count} ${unit}` : 'ninguno con corridas de ronin'}</div></div>`;
-  const resultCard = `<section class="pd-card mt-card"><h3>Cuánto cuesta cada resultado <span class="m">equivalente en API, últimos ${r.days} días</span></h3>
-    <div class="su-facts">${fact('Por issue resuelto', r.issue, r.issue.count === 1 ? 'issue' : 'issues')}${fact('Por PR mergeado', r.pr, r.pr.count === 1 ? 'PR' : 'PRs')}${fact('Por pedido del portal', r.portal, r.portal.count === 1 ? 'pedido' : 'pedidos')}</div>
-    <p class="mt-sub">Suma las corridas del issue, de su PR y de sus reviews, también las que fallaron. Solo cuenta lo que ronin trabajó.</p></section>`;
-  return `<section class="su-acc">
-    <div class="su-h"><h2>${esc(c.account)}</h2><span class="su-plan">Plan <b>${esc(c.plan.name)}</b>${c.plan.source === 'defecto' ? ' (por defecto)' : ''} · ${c.plan.priceUsd === null ? 'sin precio' : `${suMoney(c.plan.priceUsd)} al mes`}${c.repos.length ? ` · ${c.repos.map(esc).join(', ')}` : ''}</span><button class="link" data-su-plan>Cambiar el plan</button></div>
-    ${tiles}
-    <div class="mt-g2 su-g">${weekCard}${weeksCard}</div>
-    <div class="mt-g2 su-g">${spendCard}${resultCard}</div>
-  </section>`;
-}
-
-function suHTML() {
-  const { data, error, loading, cuenta } = S.mt.su;
-  const accounts = data?.accounts ?? [];
-  const filters = `<div class="mt-filters"><select id="su-cuenta" aria-label="Cuenta"><option value="">Todas las cuentas</option>${accounts.map((a) => `<option value="${esc(a)}"${cuenta === a ? ' selected' : ''}>${esc(a)}</option>`).join('')}</select></div>`;
-  const head = `<div class="mt-top"><div><h1>Métricas</h1><p class="lead">Cuánto se aprovecha cada cuenta de Claude: cuánto de la cuota semanal se usa antes de que se reinicie, qué parte es de ronin y en qué se va.</p></div>${filters}</div>${mtTabs()}`;
-  if (!data) return `<div class="today mt">${head}${error ? `<p class="bad">${esc(error)}</p>` : '<div class="empty">Calculando…</div>'}</div>`;
-  const shown = data.cuentas.filter((c) => !cuenta || c.account === cuenta);
-  const last = shown.map((c) => c.lastMeasuredAt).filter(Boolean).sort().at(-1);
-  const asof = `<div class="mt-asof">Medido en cada corrida de ronin${last ? ` · la última ${esc(ago(last))}` : ' · todavía sin mediciones'} · la parte de ronin es un estimado${loading ? ' · actualizando…' : ''}${error ? ` · <span class="bad">${esc(error)}</span>` : ''}</div>`;
-  return `<div class="today mt">${head}${asof}
-    ${shown.map(suAccountHTML).join('') || '<p class="m">No hay cuentas de Claude en repos.json.</p>'}
-    <details class="su-how"><summary>Cómo se calcula</summary>
-      <p><b>El uso de la cuenta</b> es el que informa Anthropic en cada corrida de ronin: el % usado de la ventana semanal y de la de 5 horas. Cuenta todo lo que se hace con la cuenta, no solo ronin. Entre una corrida y otra no hay mediciones: lo que otros usen en ese rato aparece en la siguiente.</p>
-      <p><b>Una semana cerró</b> cuando su ventana se reinició; su cierre es la medición más alta. <b>Aprovechamiento</b> es el promedio de los cierres de las últimas 4. <b>Proyección</b> lleva el ritmo de las últimas 48 horas hasta el reinicio.</p>
-      <p><b>La parte de ronin es un estimado.</b> ronin sabe cuánto habría costado cada corrida suya en la API. Cuando solo ronin usa la cuenta, eso dice cuánta cuota mueve cada dólar; si otros la usan a la vez, la cuota sube de más. Se toma lo que mueve un dólar en los intervalos más bajos de las últimas 4 semanas, y lo que sube por encima se asigna a otros usos. Hacen falta varias mediciones para tenerlo.</p>
-      <p><b>Rinde</b> compara lo que habrían costado las corridas de ronin en la API con el precio del plan. No cuenta lo que usan otros con la misma cuenta. El plan se elige en Ajustes → Cuentas de Claude.</p>
-    </details></div>`;
-}
-
-function wireMetricas() {
-  const center = $('#center');
-  for (const b of center.querySelectorAll('[data-mttab]')) b.onclick = () => openMetricas(b.dataset.mttab);
-  const cuenta = center.querySelector('#su-cuenta');
-  if (cuenta) cuenta.onchange = () => { S.mt.su.cuenta = cuenta.value; renderCenter(); };
-  for (const b of center.querySelectorAll('[data-su-plan]')) b.onclick = () => openAjustes('cuentas');
-  for (const b of center.querySelectorAll('[data-mtdays]')) b.onclick = () => { S.mt.days = Number(b.dataset.mtdays); loadMetricas(); };
-  const repo = center.querySelector('#mt-repo');
-  if (repo) repo.onchange = () => { S.mt.repo = repo.value; loadMetricas(); };
-  for (const b of center.querySelectorAll('[data-mtsort]')) {
-    b.onclick = () => {
-      const k = b.dataset.mtsort;
-      S.mt.dir = S.mt.sort === k ? -S.mt.dir : k === 'login' ? 1 : -1;
-      S.mt.sort = k;
-      renderCenter();
-    };
-  }
-  for (const tr of center.querySelectorAll('tr.mt-p')) {
-    const toggle = () => { S.mt.open = S.mt.open === tr.dataset.mtp ? null : tr.dataset.mtp; renderCenter(); };
-    tr.onclick = (e) => { if (!e.target.closest('button, a')) toggle(); };
-    tr.onkeydown = (e) => { if (e.target === tr && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); toggle(); } };
-  }
-  for (const b of center.querySelectorAll('[data-mtitem]')) b.onclick = (e) => { e.stopPropagation(); select(b.dataset.mtitem); };
-  const tip = tipEl();
-  const hide = () => { tip.style.opacity = '0'; };
-  for (const g of center.querySelectorAll('.mt-hit')) {
-    g.onpointermove = (e) => {
-      tip.textContent = g.dataset.tip;
-      tip.style.opacity = '1';
-      tip.style.left = `${Math.min(e.clientX + 14, innerWidth - 300)}px`;
-      tip.style.top = `${e.clientY + 14}px`;
-    };
-    g.onpointerleave = hide;
   }
 }
 
@@ -6265,8 +5847,6 @@ async function refresh() {
   const ped = S.page === 'pedido' && S.ped.tab === 'gh' ? S.ped.detail[S.ped.n]?.data : null;
   if (ped?.issue && Date.now() - (S.detail[pedGhId(ped)]?.at ?? 0) > DETAIL_EVERY_MS) loadDetail(pedGhId(ped));
   if (S.page === 'pedidos' && Date.now() - S.ped.listAt > PEDIDO_EVERY_MS) loadPedidos();
-  if (S.page === 'metricas' && S.mt.tab === 'trabajo' && !S.mt.loading && Date.now() - S.mt.at > MT_EVERY_MS) loadMetricas();
-  if (S.page === 'metricas' && S.mt.tab === 'suscripcion' && !S.mt.su.loading && Date.now() - S.mt.su.at > MT_EVERY_MS) loadSuscripcion();
   if (S.page === 'reunion' && Date.now() - (S.reu.detail[S.reu.n]?.at ?? 0) > PEDIDO_EVERY_MS) loadReunion(S.reu.n);
   if (S.page === 'reuniones' && Date.now() - S.reu.listAt > PEDIDO_EVERY_MS) loadReuniones();
   // The apps' findings, more often while their page is open: the sidebar counts them too.

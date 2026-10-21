@@ -37,7 +37,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-const host: Host = { toast: vi.fn(), openPedido: vi.fn(), unauthorized: vi.fn(), repoColor: () => 'red', read: vi.fn() };
+const host: Host = { toast: vi.fn(), openPedido: vi.fn(), unauthorized: vi.fn(), repoColor: () => 'red', read: vi.fn(), openItem: vi.fn(), openSettings: vi.fn(), openMetrics: vi.fn(), repos: () => ['acme/tienda'], typeName: (t) => t };
 const show = () => render(
   <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
     <HostContext.Provider value={host}><Deploys /></HostContext.Provider>

@@ -3,6 +3,8 @@ import { StrictMode, type ComponentType } from 'react';
 import { createRoot } from 'react-dom/client';
 import { HostContext, type Host } from './host.js';
 import { Deploys } from './pages/deploys/Deploys.js';
+import { Subscription } from './pages/metrics/Subscription.js';
+import { Work } from './pages/metrics/Work.js';
 
 // The dashboard's pages in React (#235, stage 7): app.js still draws the
 // shell (sidebar, status bar, routes) and mounts one of these where a page
@@ -11,6 +13,8 @@ import { Deploys } from './pages/deploys/Deploys.js';
 
 const PAGES: Record<string, ComponentType> = {
   deploys: Deploys,
+  metrics: Work,
+  subscription: Subscription,
 };
 
 // One cache for every page: going back to one shows what it had.
