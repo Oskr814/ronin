@@ -36,20 +36,21 @@ import { listUsers, type PortalUser } from '../../portal/accounts.js';
 import { listRequests } from '../../portal/requests.js';
 import { dropCloseNote, noteClosing } from '../../portal/follow.js';
 import { isOpen, requestRow } from './dashboard-portal.js';
-import { DuplicateMeeting, createMeeting, getMeeting, launchMeetingWorker, listMeetings, retryMeeting } from '../../meetings/index.js';
-import { MAX_UPLOAD_BODY, MeetingUploadError, meetingDetail, meetingOriginal, meetingRow, parseUpload } from './dashboard-meetings.js';
-import { ApproveError, approveMeeting, discardMeeting } from './dashboard-meetings-approve.js';
+import { listMeetings } from '../../meetings/index.js';
 import { DespliegueError, despliegues, parseRelease, planDespliegue, publishDespliegue } from './dashboard-despliegues.js';
 import { metricsView, parsePeriod } from '../../metrics/index.js';
 import { ExploreNowError, corridasOf, exploracionList, exploracionRows, exploreNow, inventarioOf, liveRuns, parseExploreNow } from './dashboard-exploraciones.js';
 import { getDb } from '../../db/db.js';
 import { slotsInUseDb, waitingDb } from '../../core/locks-db.js';
 import { timed } from '../../core/timing.js';
+import { PERM_REFUSAL } from './visible.js';
 import { dashboardApp, ownsPath } from '../dashboard-app.js';
 import { answer } from '../hono.js';
 
 // The dashboard's data (#65), all behind the session (tailnet.ts checks it
-// before any of this runs):
+// before any of this runs). The groups already in Hono are in
+// server/dashboard-app.ts (#235, stage 6): /api/pedidos, /api/portal-admin
+// and /api/reuniones. The rest, still here:
 //   GET /api/snapshot                the sidebar and the status bar
 //   GET /api/today                   the last 12 hours' runs, the day's totals and the week's, and each repo's Linear cycle (#101)
 //   GET /api/items/<id>              one item's runs (14 days)
@@ -68,12 +69,6 @@ import { answer } from '../hono.js';
 //   GET /api/runs/<runId>            one run's transcript
 //   GET /api/runs/<runId>/stream     the rest of it as it happens (SSE)
 //   GET /api/evidence/<owner>/<repo>/<sha>/<path>  a screenshot ronin published (dashboard-evidence.ts)
-//   GET|POST /api/portal-admin[/…]   the request portal's accounts, for admins only (#114, portal-admin.ts)
-//   GET /api/pedidos                 the request portal's requests, of the repos it sees (#132, dashboard-portal.ts)
-//   GET /api/pedidos/<n>             one of them: its conversation, its activity and its runs
-//   GET /api/pedidos/<n>/img/<file>  one of its images (the person's, or a prototype's)
-//   GET /api/pedidos/<n>/prototipo/<round>  a prototype's draft diff
-//   GET /api/pedidos/<n>/reproduccion/<round>  a reproduction's diff (#137)
 //   GET /api/exploraciones           each app a repo explores, with its exploration PR's findings counted and its runs (#155, dashboard-exploraciones.ts)
 //   GET /api/exploraciones/<owner>/<repo>/<app>/corridas    the app's exploration runs, with their agents
 //   GET /api/exploraciones/<owner>/<repo>/<app>/inventario  the app's functions and their coverage (inventory.yml)
@@ -81,13 +76,6 @@ import { answer } from '../hono.js';
 //   GET /api/despliegues             each repo with deploy in repos.json: what's merged and not deployed, its last releases and their workflow (#158, admins only)
 //   POST /api/despliegues/<owner>/<repo>/plan     what a release would carry: { tag, prs: 'all' | [n…], prerelease? }, with its problems
 //   POST /api/despliegues/<owner>/<repo>/publish  publishes it: the same, and { title?, notes?, fingerprint? }
-//   GET /api/reuniones               the meetings whose notes were uploaded, of the repos it sees (#62, dashboard-meetings.ts)
-//   POST /api/reuniones              uploads one: the notes as a file or pasted
-//   GET /api/reuniones/<n>           one of them, with its notes' text
-//   GET /api/reuniones/<n>/original  the file as it was uploaded, to download
-//   POST /api/reuniones/<n>/reintentar  reads it again, after its reading failed
-//   POST /api/reuniones/<n>/aprobar  creates what the person chose of its proposals, as them (dashboard-meetings-approve.ts)
-//   POST /api/reuniones/<n>/descartar  sets the rest of it aside
 //   GET|POST /api/ajustes[/…]        the person's profile, and for admins the settings and their record (#174, ajustes.ts)
 //                                    and the plan of each Claude account (#234, cuentas-claude.ts)
 //   GET /api/metricas?dias=7|30|90&repo=<owner>/<repo>  how work moves in the repos: what comes in and out, how long it takes, who carries it (#222, metrics/, admins only)
@@ -132,14 +120,7 @@ function json(res: ServerResponse, status: number, body: unknown): void {
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }).end(JSON.stringify(body));
 }
 
-// What a member can do in each repo (#174, team.ts), checked here for every
-// change: the page hides what they can't, but the server is what says no.
-const PERM_REFUSAL: Record<Perm, string> = {
-  notas: 'no tienes permiso para subir notas de reuniones en este repo',
-  aprobar: 'no tienes permiso para aprobar lo que propone una reunión en este repo',
-  acciones: 'no tienes permiso para las acciones del tablero en este repo (asignar a ronin, comandos, revisar, auto-merge)',
-  desplegar: 'no tienes permiso para desplegar este repo',
-};
+// What a member can do in each repo (#174, team.ts): visible.ts says it.
 function refused(res: ServerResponse, repo: string, perm: Perm): boolean {
   if (can(currentAccess(), repo, perm)) return false;
   json(res, 403, { error: PERM_REFUSAL[perm] });
@@ -296,82 +277,6 @@ async function visibleRequests() {
 async function visibleMeetings() {
   const access = currentAccess();
   return (await listMeetings()).filter((m) => sees(access, m.repo));
-}
-
-async function reuniones(res: ServerResponse, path: string): Promise<void> {
-  if (path === '/api/reuniones') {
-    json(res, 200, { meetings: (await visibleMeetings()).map(meetingRow).sort((a, b) => b.number - a.number) });
-    return;
-  }
-  const match = /^\/api\/reuniones\/(\d+)(\/original)?$/.exec(path);
-  const meeting = match ? await getMeeting(Number(match[1])) : undefined;
-  // One of a repo it doesn't see is one that isn't there.
-  if (!match || !meeting || !sees(currentAccess(), meeting.repo)) {
-    json(res, 404, { error: 'no existe esa reunión' });
-    return;
-  }
-  if (!match[2]) {
-    json(res, 200, await meetingDetail(meeting, await listRuns(HISTORY_DAYS)));
-    return;
-  }
-  const original = await meetingOriginal(meeting);
-  if (original) res.writeHead(200, original.headers).end(original.data);
-  else json(res, 404, { error: 'esas notas se pegaron: no hay archivo' });
-}
-
-// POST /api/reuniones { repo, title?, at?, link?, text? | file: { name, data } }.
-async function postReunion(req: IncomingMessage, res: ServerResponse, session: Session): Promise<void> {
-  if (!(req.headers['content-type'] ?? '').startsWith('application/json')) {
-    json(res, 415, { error: 'se espera JSON' });
-    return;
-  }
-  const body = await readJson(req, MAX_UPLOAD_BODY);
-  if (!body) {
-    json(res, 400, { error: 'el pedido no llegó bien, o el archivo pesa más de 10 MB' });
-    return;
-  }
-  // Before reading the notes: a repo it sees but can't upload to.
-  if (typeof body.repo === 'string' && sees(currentAccess(), body.repo) && refused(res, body.repo, 'notas')) return;
-  try {
-    const meeting = await createMeeting(await parseUpload(body, await visibleRepos(), session.login));
-    // ronin reads it right away; if the launch fails, the tick does.
-    await launchMeetingWorker(meeting.number).catch((error) => log.error(`reuniones: no se pudo lanzar el worker de R-${meeting.number}`, error));
-    json(res, 200, meetingRow((await getMeeting(meeting.number)) ?? meeting));
-  } catch (error) {
-    if (error instanceof DuplicateMeeting) json(res, 409, { error: error.message, number: error.number });
-    else if (error instanceof MeetingUploadError) json(res, 400, { error: error.message });
-    else throw error;
-  }
-}
-
-// POST /api/reuniones/<n>/aprobar { items: [{ id, title?, body?, lead?, project?, cycle? }] }, or /descartar.
-async function postDecision(req: IncomingMessage, res: ServerResponse, n: number, what: string, session: Session): Promise<void> {
-  if (!(req.headers['content-type'] ?? '').startsWith('application/json')) {
-    json(res, 415, { error: 'se espera JSON' });
-    return;
-  }
-  const body = await readJson(req, 512 * 1024);
-  const meeting = await getMeeting(n);
-  const entry = meeting && (await visibleRepos()).find((e) => e.productRepo === meeting.repo);
-  if (!meeting || !entry) {
-    json(res, 404, { error: 'no existe esa reunión' });
-    return;
-  }
-  if (refused(res, meeting.repo, 'aprobar')) return;
-  try {
-    if (what === 'descartar') {
-      await discardMeeting(n, session.login);
-      json(res, 200, { status: 'discarded' });
-      return;
-    }
-    const outcome = await approveMeeting(entry, n, session, body?.items);
-    // The next snapshot lists the new issues.
-    forgetGithub(entry.productRepo);
-    json(res, 200, outcome);
-  } catch (error) {
-    if (error instanceof ApproveError) json(res, error.status, { error: error.message });
-    else if (!githubRefusal(res, error)) throw error;
-  }
 }
 
 async function portalSummary(runs: Awaited<ReturnType<typeof listRuns>>) {
@@ -865,31 +770,6 @@ async function route(req: IncomingMessage, res: ServerResponse, path: string, se
   }
   if (path === '/api/ajustes' || path.startsWith('/api/ajustes/')) {
     await ajustes(req, res, path, session);
-    return true;
-  }
-  if (path === '/api/reuniones' && req.method === 'POST') {
-    await postReunion(req, res, session);
-    return true;
-  }
-  const decide = /^\/api\/reuniones\/(\d+)\/(aprobar|descartar)$/.exec(path);
-  if (decide && req.method === 'POST') {
-    await postDecision(req, res, Number(decide[1]), decide[2], session);
-    return true;
-  }
-  const retry = /^\/api\/reuniones\/(\d+)\/reintentar$/.exec(path);
-  if (retry && req.method === 'POST') {
-    const meeting = await getMeeting(Number(retry[1]));
-    if (!meeting || !sees(currentAccess(), meeting.repo)) json(res, 404, { error: 'no existe esa reunión' });
-    else if (refused(res, meeting.repo, 'notas')) return true;
-    else if (await retryMeeting(meeting.number, login)) {
-      await launchMeetingWorker(meeting.number).catch((error) => log.error(`reuniones: no se pudo lanzar el worker de R-${meeting.number}`, error));
-      json(res, 200, { ok: true });
-    }
-    else json(res, 409, { error: 'esa reunión no falló: no hay nada que reintentar' });
-    return true;
-  }
-  if (req.method === 'GET' && (path === '/api/reuniones' || path.startsWith('/api/reuniones/'))) {
-    await reuniones(res, path);
     return true;
   }
   const explorationPost = /^\/api\/items\/(.+)\/exploration\/(actions|general|approve)$/.exec(path);

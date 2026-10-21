@@ -16,6 +16,11 @@ export class GithubUserError extends Error {
   constructor(message: string, readonly relogin = false) {
     super(message);
   }
+
+  // What the dashboard answers: log in again, or GitHub didn't take it.
+  get status(): number {
+    return this.relogin ? 401 : 502;
+  }
 }
 
 const API = 'https://api.github.com';
