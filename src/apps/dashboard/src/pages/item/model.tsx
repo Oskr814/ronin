@@ -1,12 +1,19 @@
 import { useSyncExternalStore } from 'react';
 import { useHost, type ItemDetail, type ItemRun, type ItemView, type SnapshotItem } from '../../host.js';
 import { GhIcon } from '../../lib/github.js';
+import type { FilesView } from './files/model.js';
 
 // What an item's page (#85) shares: the item as the shell has it, how its
 // runs are listed, and how GitHub's state of it is written.
 
 export type Doc = NonNullable<ItemDetail['issue']>;
 export type Action = NonNullable<ItemDetail['actions']>[number];
+
+// The item as the page draws it: as the shell has it, and its Archivos as
+// far as the page shows them outside of their tab (files/model.ts).
+export interface ItemPage extends ItemView {
+  files: FilesView;
+}
 
 // The item, again each time the shell draws.
 export function useItem(key: string): ItemView | null {

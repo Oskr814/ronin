@@ -88,8 +88,8 @@ export interface Host {
   subscribe(onChange: () => void): () => void;
 
   // An item's page (#85, pages/item). The shell keeps what it reads of the
-  // item, because its context column, the sidebar and the Archivos and
-  // Fichas tabs read it too: the detail from GitHub, the runs, the run shown
+  // item, because its context column, the sidebar and the Fichas tab read
+  // it too: the detail from GitHub, the runs, the run shown
   // (live while it goes) and which tab and run are shown. A new view each
   // time the shell draws (`subscribe`); null for an item it doesn't know.
   item(key: string): ItemView | null;
@@ -98,9 +98,9 @@ export interface Host {
   showRun(key: string, index: number, view: 'ficha' | 'tx'): void;
   // Shows a tab of the item's page.
   showDoc(key: string, tab: string): void;
-  // Something was written on GitHub from the page: the item is read again
-  // (with its Archivos, `files`), and so is the snapshot.
-  reread(key: string, files?: boolean): void;
+  // Something was written on GitHub from the page: the item is read again,
+  // and so is the snapshot.
+  reread(key: string): void;
   // A review that approved or asked for changes shows on the PR's chips at
   // once, until the snapshot reads the repo again.
   reviewed(key: string, pr: number, decision: 'APPROVED' | 'CHANGES_REQUESTED'): void;
@@ -109,33 +109,22 @@ export interface Host {
   movePr(step: 1 | -1): void;
   // The keys' help (?), which the whole dashboard has.
   keysHelp(): void;
-  // What the shell has open on top of the page (a dialog, the lightbox, a
-  // comment being written in Archivos): the page leaves the keys to it.
-  shellLayer(): 'dialog' | 'composer' | 'menu' | null;
+  // What the shell has open on top of the page (a dialog, the lightbox,
+  // Fichas' menu): the page leaves the keys to it.
+  shellLayer(): 'dialog' | 'menu' | null;
 
-  // ---- Archivos and Fichas, still drawn by app.js (#235: each goes to React in
-  // its own PR, and what's below goes with it).
+  // ---- Fichas, still drawn by app.js (#235: it goes to React in its own
+  // PR, and what's below goes with it).
   // The page gives the tab's room; the shell draws the tab there, again as
-  // its state changes, wires it and calls `bridge.drawn()`. It keeps the
-  // tab's keys (j/k, v; a, c, r on Fichas) unless `bridge.blocks()`.
-  // Returns how to stop.
-  itemTab(element: HTMLElement, key: string, tab: 'files' | 'fichas', bridge: ItemTabBridge): () => void;
-  // Reads Archivos (the files and the person's pending review), which the
-  // review panel and Ajustar carry; its state is in `ItemView.files`.
-  loadFiles(key: string): void;
-  // Goes to a file in Archivos, and to one of the review's comments in it.
-  goFile(key: string, path: string, comment?: string): void;
+  // its state changes, and wires it. It keeps the tab's keys (j, k, a, c,
+  // r) unless `bridge.blocks()`. Returns how to stop.
+  itemTab(element: HTMLElement, key: string, tab: 'fichas', bridge: ItemTabBridge): () => void;
   // An exploration PR's dialogs on the whole PR (#93), which read its findings.
   explorationDialog(kind: 'general' | 'approve'): void;
 }
 
 // The page's side of a tab the shell draws (Host.itemTab).
 export interface ItemTabBridge {
-  // The tab was drawn again: whatever the page put in it goes back in (the
-  // review panel under the Archivos toolbar, in its `.rpanel-slot`).
-  drawn(): void;
-  // The Archivos toolbar's Revisar (and r): opens or closes the review panel under it.
-  review(): void;
   // Whether the page has something open that takes the keys (a menu, a
   // dialog, deciding a PR).
   blocks(): boolean;
@@ -156,7 +145,7 @@ export interface ItemView {
   runIdx: number;
   view: 'ficha' | 'tx';
   // The page's tabs ([key, label]) and the one shown, once the detail is
-  // read; Archivos and Fichas are drawn by the shell (itemTab).
+  // read; Fichas is drawn by the shell (itemTab).
   tabs: Array<[string, string]>;
   doc: string | null;
   // A PR of ronin's that's decided here (Aprobar, Ajustar, Cerrar), or
@@ -165,29 +154,9 @@ export interface ItemView {
   reviewable: boolean;
   // An exploration PR's app (#155), whose page it is.
   exploration: ExplorationRow | null;
-  // Fichas' and Archivos' state, as far as the page shows it (the tabs'
-  // counters, the review panel, Ajustar): theirs until they're in React.
+  // How many findings Fichas has, for its tab's counter: the shell's until
+  // Fichas is in React.
   fichas: number | null;
-  files: FilesView;
-}
-
-export interface FilesView {
-  // Read, or why it couldn't be; null while it's being read the first time.
-  data: { pr: number; author: string; headSha: string; count: number } | null;
-  error: string | null;
-  // The person's pending review on GitHub, and its comments.
-  review: boolean;
-  pending: PendingComment[];
-}
-
-export interface PendingComment {
-  path: string;
-  subject: string;
-  line: number | null;
-  // A comment that starts a thread, not a reply.
-  isNew: boolean;
-  nodeId: string;
-  body: string;
 }
 
 export interface ExplorationsView {

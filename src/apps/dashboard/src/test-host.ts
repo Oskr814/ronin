@@ -51,8 +51,6 @@ export function testHost(overrides: Partial<Host> = {}): Host {
     keysHelp: vi.fn(),
     shellLayer: () => null,
     itemTab: () => () => {},
-    loadFiles: vi.fn(),
-    goFile: vi.fn(),
     explorationDialog: vi.fn(),
     ...overrides,
   };

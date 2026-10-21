@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { HostContext, type Host, type ItemView } from '../../host.js';
 import { testHost } from '../../test-host.js';
+import { filesKey, type FilesRead } from './files/model.js';
 import { Item } from './Item.js';
 import { detail, view } from './test-view.js';
 
@@ -14,8 +15,12 @@ let posted: Array<[string, unknown]> = [];
 beforeEach(() => {
   posted = [];
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    // Archivos, read again after a review.
+    if (String(input).endsWith('/files/mine')) return json({ viewed: [], review: null });
+    if (String(input).endsWith('/files')) return json({ pr: 42, author: 'beto-dev', headSha: 'abc', files: [], threads: [] });
     posted.push([String(input), JSON.parse(String(init?.body ?? 'null'))]);
-    return new Response(JSON.stringify({ url: 'https://github.com/acme/tienda/pull/42#issuecomment-1' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    return json({ url: 'https://github.com/acme/tienda/pull/42#issuecomment-1' });
   }));
 });
 afterEach(() => {
@@ -23,10 +28,12 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-function show(v: ItemView, over: Partial<Host> = {}) {
+function show(v: ItemView, over: Partial<Host> = {}, files?: FilesRead) {
   const host = testHost({ item: () => v, ...over });
+  const qc = new QueryClient();
+  if (files) qc.setQueryData(filesKey(v.item.id), files);
   const page = render(
-    <QueryClientProvider client={new QueryClient()}>
+    <QueryClientProvider client={qc}>
       <HostContext.Provider value={host}><Item id={v.item.id} /></HostContext.Provider>
     </QueryClientProvider>,
   );
@@ -55,7 +62,7 @@ describe('an item’s page', () => {
     fireEvent.keyDown(document, { key: 'Enter', ctrlKey: true });
     await waitFor(() => expect(posted).toHaveLength(1));
     expect(posted[0]).toEqual(['/api/items/acme%2Ftienda%2341/decision', { decision: 'adjust', text: 'Mové el teléfono\nAgregá un test para este caso.', closeIssue: true }]);
-    await waitFor(() => expect(host.reread).toHaveBeenCalledWith('acme/tienda#41', true));
+    await waitFor(() => expect(host.reread).toHaveBeenCalledWith('acme/tienda#41'));
     expect(screen.getByText(/Le pediste un ajuste a ronin/)).toBeTruthy();
   });
 
@@ -75,8 +82,13 @@ describe('an item’s page', () => {
   });
 
   it('sends a review from the head, approving with its summary', async () => {
-    const v = view({ decidable: false, files: { data: { pr: 42, author: 'beto-dev', headSha: 'abc', count: 2 }, error: null, review: true, pending: [{ path: 'a/b.ts', subject: 'line', line: 3, isNew: true, nodeId: 'N1', body: 'Esto sobra.' }] } });
-    const { host } = show(v);
+    const v = view({ decidable: false });
+    const files: FilesRead = {
+      data: { pr: 42, author: 'beto-dev', headSha: 'abc', files: [], threads: [] },
+      viewed: [],
+      review: { id: 'R1', threads: [{ id: 'PT1', path: 'a/b.ts', subject: 'line', side: 'RIGHT', line: 3, startLine: null, originalLine: 3, isNew: true, comments: [{ nodeId: 'N1', id: 1, body: 'Esto sobra.', createdAt: '2026-10-21T14:00:00Z' }] }] },
+    };
+    const { host } = show(v, {}, files);
     fireEvent.click(screen.getByRole('button', { name: /Terminar revisión/ }));
     fireEvent.click(screen.getByRole('radio', { name: /Aprobar/ }));
     fireEvent.change(document.getElementById('rsum')!, { target: { value: 'Bien.' } });

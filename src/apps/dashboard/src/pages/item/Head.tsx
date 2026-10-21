@@ -1,16 +1,16 @@
 import type { ReactNode } from 'react';
-import { useHost, type ItemView } from '../../host.js';
+import { useHost } from '../../host.js';
 import { XplHead } from '../explorations/model.js';
 import { DecideBar, DecidedNote, type Decide } from './Decide.js';
-import { checksChip, Chips, GhPill, itemRef, useRunNames } from './model.js';
-import { reviewLabel, ReviewPanel, type Review } from './Review.js';
+import { checksChip, Chips, GhPill, itemRef, useRunNames, type ItemPage } from './model.js';
+import { reviewLabel, ReviewPanel, type Review, type ReviewAt } from './Review.js';
 
 // The head of an item's page (#85): what it is, its buttons (deciding a PR
 // of ronin's, reviewing anyone's, the actions), and where it stands. An
 // exploration PR's page is its app's (#155), headed as the app's.
 
 // The project and cycle in Linear (#101), for a repo with a Linear key.
-function LinearChips({ v }: { v: ItemView }) {
+function LinearChips({ v }: { v: ItemPage }) {
   const host = useHost();
   const l = v.item.linear;
   if (!l) return null;
@@ -21,13 +21,13 @@ function LinearChips({ v }: { v: ItemView }) {
 }
 
 // The review button, with the panel under it when it's open there.
-export function ReviewButton({ v, review, at, button }: { v: ItemView; review: Review; at: 'head'; button: ReactNode }) {
+export function ReviewButton({ v, review, at, button }: { v: ItemPage; review: Review; at: ReviewAt; button: ReactNode }) {
   return <div className="actions rwrap">{button}{review.p?.at === at && <ReviewPanel v={v} review={review} />}</div>;
 }
 
 const STATE_CHIP: Record<string, [string, string]> = { running: ['run', 'trabajando'], blocked: ['crit', 'bloqueado'], waiting: ['warn', 'esperando a alguien'] };
 
-export function Head({ v, actions, decide, review }: { v: ItemView; actions: ReactNode; decide: Decide; review: Review }) {
+export function Head({ v, actions, decide, review }: { v: ItemPage; actions: ReactNode; decide: Decide; review: Review }) {
   const host = useHost();
   const names = useRunNames();
   const { item } = v;

@@ -31,7 +31,7 @@ const CLIP_CHARS = 1800;
 // What's opened (a resolved thread, a long review), or closed (an open
 // thread), stays so while the person is elsewhere.
 const expanded = new Set<string>();
-function useExpanded(): [Set<string>, (key: string, on: boolean) => void] {
+export function useExpanded(): [Set<string>, (key: string, on: boolean) => void] {
   const [, redraw] = useReducer((n: number) => n + 1, 0);
   return [expanded, (key, on) => {
     if (on) expanded.add(key);

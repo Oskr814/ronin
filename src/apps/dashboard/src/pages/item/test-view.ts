@@ -40,7 +40,6 @@ export function view(over: Partial<ItemView> = {}, item: Partial<SnapshotItem> =
     reviewable: true,
     exploration: null,
     fichas: null,
-    files: { data: null, error: null, review: false, pending: [] },
     ...over,
   };
 }
