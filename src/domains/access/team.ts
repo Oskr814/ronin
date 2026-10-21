@@ -88,7 +88,7 @@ const envAllowed = () => envLogins(process.env.DASHBOARD_ALLOWED_USERS);
 
 export const isAdmin = (team: TeamFile, login: string) => envAdmins().includes(login) || team.people[login]?.role === 'admin';
 
-export function entradaOf(team: TeamFile): 'github' | 'lista' {
+export function entryModeOf(team: TeamFile): 'github' | 'lista' {
   return team.entrada ?? (envAllowed().length ? 'lista' : 'github');
 }
 
@@ -99,7 +99,7 @@ export function entradaOf(team: TeamFile): 'github' | 'lista' {
 // by switching.
 export function applyTeam(team: TeamFile, target: { admins: string[]; allowedUsers: string[] } = config.dashboard as unknown as { admins: string[]; allowedUsers: string[] }): void {
   const admins = [...new Set([...envAdmins(), ...Object.entries(team.people).filter(([, m]) => m.role === 'admin').map(([login]) => login)])];
-  const allowed = entradaOf(team) === 'github' ? [] : [...new Set([...envAllowed(), ...Object.keys(team.people)])];
+  const allowed = entryModeOf(team) === 'github' ? [] : [...new Set([...envAllowed(), ...Object.keys(team.people)])];
   target.admins.splice(0, target.admins.length, ...admins);
   target.allowedUsers.splice(0, target.allowedUsers.length, ...allowed);
 }

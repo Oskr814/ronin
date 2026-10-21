@@ -192,16 +192,16 @@ describe('a session that sees only some repos', () => {
     expect(await refused('/api/reuniones', { repo: SC, text: 'notas de la reunión' })).toMatch(/subir notas/);
     await refused(`/api/despliegues/${SC}/plan`, { tag: 'v1', prs: 'all' });
     expect((await call('/api/snapshot', 'GET', undefined, readOnly)).body.despliegues).toBe(false);
-    expect((await call('/api/ajustes/usuarios', 'GET', undefined, readOnly)).status).toBe(403);
+    expect((await call('/api/settings/users', 'GET', undefined, readOnly)).status).toBe(403);
   });
 
   it('gives a member only their own profile in Ajustes (#174)', async () => {
-    const view = await call('/api/ajustes');
+    const view = await call('/api/settings');
     expect(view.status).toBe(200);
     expect(view.body.me).toEqual({ login: 'valeria', admin: false });
     expect(view.body.valores).toBeUndefined();
-    expect((await call('/api/ajustes/registro')).status).toBe(403);
-    expect((await call('/api/ajustes/valores', 'POST', { key: 'portal.dailyLimit', value: 50 })).status).toBe(403);
+    expect((await call('/api/settings/log')).status).toBe(403);
+    expect((await call('/api/settings/values', 'POST', { key: 'portal.dailyLimit', value: 50 })).status).toBe(403);
   });
 });
 

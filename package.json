@@ -26,13 +26,13 @@
     "server:setup": "bash scripts/setup-server-service.sh",
     "server:remove": "bash scripts/setup-server-service.sh --remove",
     "db:migrate": "tsx --env-file=.env scripts/db-migrate.ts",
-    "db:import-ajustes": "tsx --env-file=.env scripts/db-import-ajustes.ts",
-    "db:import-despliegues": "tsx --env-file=.env scripts/db-import-despliegues.ts",
-    "db:import-reuniones": "tsx --env-file=.env scripts/db-import-reuniones.ts",
+    "db:import-settings": "tsx --env-file=.env scripts/db-import-settings.ts",
+    "db:import-deploys": "tsx --env-file=.env scripts/db-import-deploys.ts",
+    "db:import-meetings": "tsx --env-file=.env scripts/db-import-meetings.ts",
     "db:import-portal": "tsx --env-file=.env scripts/db-import-portal.ts",
-    "db:import-estado-local": "tsx --env-file=.env scripts/db-import-estado-local.ts",
-    "db:import-corridas": "tsx --env-file=.env scripts/db-import-corridas.ts",
-    "db:import-cuota": "tsx --env-file=.env scripts/db-import-cuota.ts"
+    "db:import-local-state": "tsx --env-file=.env scripts/db-import-local-state.ts",
+    "db:import-runs": "tsx --env-file=.env scripts/db-import-runs.ts",
+    "db:import-usage": "tsx --env-file=.env scripts/db-import-usage.ts"
   },
   "dependencies": {
     "@hono/node-server": "2.1.3",

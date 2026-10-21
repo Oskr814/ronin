@@ -1,4 +1,4 @@
-// `pnpm db:import-despliegues`: copies <DEPLOYS_DATA_DIR>/deploys.json into
+// `pnpm db:import-deploys`: copies <DEPLOYS_DATA_DIR>/deploys.json into
 // DATABASE_URL's database (#235, stage 2). The file stays as it is, as a
 // backup. Safe to run again: each deploy is written over the one with its
 // repo and tag. Ends comparing both.

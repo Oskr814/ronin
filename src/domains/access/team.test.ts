@@ -11,7 +11,7 @@ vi.mock('../../platform/logger.js', () => ({ log: { info: vi.fn(), error: vi.fn(
 const sessionAccess = vi.fn();
 vi.mock('./access.js', () => ({ sessionAccess: (...a: unknown[]) => sessionAccess(...a) }));
 
-const { applyTeam, can, entradaOf, permsFor, teamAccess } = await import('./team.js');
+const { applyTeam, can, entryModeOf, permsFor, teamAccess } = await import('./team.js');
 
 const SC = 'redmotos/shoppingcart';
 const BM = 'Bmedical/bmedical';
@@ -51,7 +51,7 @@ describe('applyTeam', () => {
     const target = { admins: [] as string[], allowedUsers: [] as string[] };
     process.env.DASHBOARD_ALLOWED_USERS = 'ana';
     const team = { people: { luis: { role: 'admin' as const }, marta: {} } };
-    expect(entradaOf(team)).toBe('lista');
+    expect(entryModeOf(team)).toBe('lista');
     applyTeam(team, target);
     expect(target.admins).toEqual(['jefa', 'luis']);
     expect(target.allowedUsers).toEqual(['ana', 'luis', 'marta']);

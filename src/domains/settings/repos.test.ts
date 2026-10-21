@@ -12,7 +12,7 @@ vi.mock('../../platform/logger.js', () => ({ log: { info: vi.fn(), error: vi.fn(
 vi.mock('../../platform/linear/linear-api.js', () => ({ linearKey: () => null, teamPlanning: async () => null }));
 vi.mock('../items/new-issue.js', () => ({ repoApps: async () => ['backoffice', 'tienda'] }));
 
-const { readRegistro } = await import('./settings.js');
+const { readSettingsLog } = await import('./settings.js');
 const { editRepo, reposView } = await import('./repos.js');
 const { loadRepos } = await import('../../platform/config/repos.js');
 
@@ -36,7 +36,7 @@ describe('editRepo', () => {
     const sc = file()[0];
     expect(sc).toMatchObject({ worktreeBaseRef: 'origin/odoo-main', extra: 'se queda', claudeConfigDir: '/c', portal: { name: 'Red Motos HN' } });
     expect(readdirSync(join(config.settings.dataDir, 'repos-json'))).toHaveLength(2);
-    expect((await readRegistro()).map((e) => `${e.what}: ${e.from} → ${e.to}`)).toEqual([
+    expect((await readSettingsLog()).map((e) => `${e.what}: ${e.from} → ${e.to}`)).toEqual([
       `Repos · ${SC} · nombre en el portal: Red Motos → Red Motos HN`,
       `Repos · ${SC} · rama base: la de .env (origin/main) → origin/odoo-main`,
     ]);

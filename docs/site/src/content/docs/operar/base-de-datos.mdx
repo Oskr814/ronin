@@ -9,13 +9,13 @@ ronin pasa de guardar sus datos en archivos a guardarlos en Postgres de a un mó
 
 | Módulo | Qué | Para pasarlo |
 |---|---|---|
-| **Ajustes** | Los valores cambiados desde el tablero, el modelo y el esfuerzo de cada tipo de tarea, el plan de cada cuenta de Claude y el registro de cambios. | `pnpm db:import-ajustes` |
-| **Despliegues** | Cada release que publicó ronin: qué llevó, quién y cómo terminó su workflow. | `pnpm db:import-despliegues` |
-| **Reuniones** | Cada reunión: sus propuestas, lo que se creó y su actividad. Las notas y el archivo subido siguen en `MEETINGS_DATA_DIR`. | `pnpm db:import-reuniones` |
+| **Ajustes** | Los valores cambiados desde el tablero, el modelo y el esfuerzo de cada tipo de tarea, el plan de cada cuenta de Claude y el registro de cambios. | `pnpm db:import-settings` |
+| **Despliegues** | Cada release que publicó ronin: qué llevó, quién y cómo terminó su workflow. | `pnpm db:import-deploys` |
+| **Reuniones** | Cada reunión: sus propuestas, lo que se creó y su actividad. Las notas y el archivo subido siguen en `MEETINGS_DATA_DIR`. | `pnpm db:import-meetings` |
 | **Portal** | Las cuentas y los pedidos, con su conversación y su actividad. Las imágenes y los diffs siguen en `PORTAL_DATA_DIR`. | `pnpm db:import-portal` |
-| **Estado local** | Lo que ronin recuerda de cada repo entre ticks: los issues que tomó, los comentarios que ya atendió, por qué bloqueó cada issue, los checks que espera. | `pnpm db:import-estado-local` |
-| **Corridas** | El índice de las corridas de los agentes: repo, tarea, issue o PR, cuenta, costo y cómo terminó. La transcripción de cada una sigue en `logs/runs/`, que se limpia a los 14 días; el índice se conserva. | `pnpm db:import-corridas` |
-| **Cuota** | El uso de cada cuenta de Claude: su última medición (la barra del tablero) y todas las anteriores (Métricas → Suscripción). | `pnpm db:import-cuota` |
+| **Estado local** | Lo que ronin recuerda de cada repo entre ticks: los issues que tomó, los comentarios que ya atendió, por qué bloqueó cada issue, los checks que espera. | `pnpm db:import-local-state` |
+| **Corridas** | El índice de las corridas de los agentes: repo, tarea, issue o PR, cuenta, costo y cómo terminó. La transcripción de cada una sigue en `logs/runs/`, que se limpia a los 14 días; el índice se conserva. | `pnpm db:import-runs` |
+| **Cuota** | El uso de cada cuenta de Claude: su última medición (la barra del tablero) y todas las anteriores (Métricas → Suscripción). | `pnpm db:import-usage` |
 
 Todo lo demás sigue en sus carpetas.
 
@@ -44,13 +44,13 @@ Con la base, además, **el servidor corre los ticks**: los pone en cola a sus ho
 3. Copiar los datos de los archivos a la base, un módulo por vez. Cada script crea las tablas, compara lo copiado con los archivos y termina con error si algo no coincide. Se puede correr de nuevo sin duplicar nada:
 
    ```bash
-   pnpm db:import-ajustes
-   pnpm db:import-despliegues
-   pnpm db:import-reuniones
+   pnpm db:import-settings
+   pnpm db:import-deploys
+   pnpm db:import-meetings
    pnpm db:import-portal
-   pnpm db:import-estado-local
-   pnpm db:import-corridas
-   pnpm db:import-cuota
+   pnpm db:import-local-state
+   pnpm db:import-runs
+   pnpm db:import-usage
    ```
 
 4. Desplegar y reiniciar el servidor. Al arrancar pone la base al día (`pnpm db:migrate` hace lo mismo a mano); el tick y los workers toman `DATABASE_URL` en su próxima corrida.

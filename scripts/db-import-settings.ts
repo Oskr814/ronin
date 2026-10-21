@@ -1,4 +1,4 @@
-// `pnpm db:import-ajustes`: copies Ajustes from SETTINGS_DATA_DIR's files
+// `pnpm db:import-settings`: copies Ajustes from SETTINGS_DATA_DIR's files
 // into DATABASE_URL's database (#235, stage 2) — settings.json (values, task
 // types, Claude accounts' plans) and registro.jsonl. The files stay as they
 // are, as a backup. Safe to run again: the values are written over, and the
@@ -7,7 +7,7 @@ import { join, resolve } from 'node:path';
 import { closeDb, getDb, setDb } from '../src/platform/db/db.js';
 import { migrateToLatest } from '../src/platform/db/migrate.js';
 import { readSettingsSync } from '../src/platform/config/settings.js';
-import { appendRegistro, readRegistro, readSettings, updateSettings } from '../src/platform/config/settings-store.js';
+import { appendSettingsLog, readSettingsLog, readSettings, updateSettings } from '../src/platform/config/settings-store.js';
 import { sameContent } from './db-compare.js';
 
 const dataDir = resolve(process.env.SETTINGS_DATA_DIR || 'settings-data');
@@ -27,10 +27,10 @@ await updateSettings(dataDir, 'importado', (current) => {
 
 // The record, oldest first, only into an empty table.
 setDb(null);
-const registro = (await readRegistro(dataDir, Number.MAX_SAFE_INTEGER)).reverse();
+const registro = (await readSettingsLog(dataDir, Number.MAX_SAFE_INTEGER)).reverse();
 setDb(db);
 const already = Number((await db.selectFrom('settings_log').select((eb) => eb.fn.countAll().as('n')).executeTakeFirstOrThrow()).n);
-if (already === 0) for (const entry of registro) await appendRegistro(dataDir, entry);
+if (already === 0) for (const entry of registro) await appendSettingsLog(dataDir, entry);
 else console.log(`El registro ya tenía ${already} cambios en la base: no se copió de nuevo.`);
 
 const inDb = await readSettings(dataDir);

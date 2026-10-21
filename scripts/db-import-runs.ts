@@ -1,4 +1,4 @@
-// `pnpm db:import-corridas`: indexes in DATABASE_URL's database (#235,
+// `pnpm db:import-runs`: indexes in DATABASE_URL's database (#235,
 // stage 3.4) every run whose file is under logs/runs/: its repo, task,
 // item, account, cost, outcome… The files stay where they are: they're
 // still each run's transcript. Safe to run again. Ends comparing both.

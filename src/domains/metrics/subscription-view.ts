@@ -2,7 +2,7 @@ import type { RepoEntry } from '../../platform/agents/repo-context.js';
 import { usageHistory } from '../../platform/claude/claude-usage.js';
 import { repoDataOf } from './index.js';
 import { computeSubscription, type Subscription } from './subscription.js';
-import { cuentasView } from '../settings/claude-accounts.js';
+import { accountsView } from '../settings/claude-accounts.js';
 import { listRuns } from '../runs/data.js';
 
 // GET /api/metricas/suscripcion[?cuenta=<cuenta>] (#234, admins only): each
@@ -15,7 +15,7 @@ import { listRuns } from '../runs/data.js';
 const RUN_DAYS = 63;
 
 export async function suscripcionView(entries: RepoEntry[], account: string | null, now = Date.now()): Promise<{ accounts: string[]; cuentas: Subscription[] } | null> {
-  const all = (await cuentasView(entries)).cuentas;
+  const all = (await accountsView(entries)).cuentas;
   const shown = account ? all.filter((c) => c.account === account) : all;
   if (account && !shown.length) return null;
   const runs = await listRuns(RUN_DAYS, new Date(now));
