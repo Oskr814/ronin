@@ -9,6 +9,7 @@ import { useViewState } from '../../lib/view-state.js';
 import { ago, useNow } from '../../../../../ui/time.js';
 import { Activity } from './Activity.js';
 import { ActionsContext, Chat, Repro, Team, useActions, type Actions } from './Docs.js';
+import { GitHub } from './GitHub.js';
 import { BugTag, EVERY_MS, imagePath, issueUrl, prUrl, repoShort, REPRODUCTIONS, StatusChip, Stepper, type Detail } from './model.js';
 
 // A portal request's page (#132): its activity, its conversation, what goes
@@ -70,19 +71,6 @@ function Runs({ d, open, close }: { d: Detail; open: string | null; close: () =>
       {list}
     </>
   );
-}
-
-// The request's issue and its PR (#158), read as on their page: that page is
-// still app.js's, which draws them here (host.requestDoc). Acting on them
-// (comments, review, actions) stays on their page.
-function GitHub({ d, show, setShow }: { d: Detail; show: 'issue' | 'pr'; setShow: (show: 'issue' | 'pr') => void }) {
-  const host = useHost();
-  const ref = useRef<HTMLDivElement>(null);
-  const onShow = useRef(setShow);
-  onShow.current = setShow;
-  const issue = d.issue!.number;
-  useEffect(() => host.requestDoc(ref.current!, { repo: d.repo, issue, pr: d.pr, show }, (s) => onShow.current(s)), [host, d.repo, issue, d.pr, show]);
-  return <div ref={ref} />;
 }
 
 function Lightbox({ n, file, close }: { n: number; file: string; close: () => void }) {

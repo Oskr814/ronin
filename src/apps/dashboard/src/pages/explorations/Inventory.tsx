@@ -7,7 +7,7 @@ import { at, INVENTORY_EVERY_MS } from './model.js';
 
 // An app's functions as ronin found them (inventory.yml, #155 2/4), and
 // which charters explored each. On the app's page, and on its exploration
-// PR's (app.js mounts it in the item's Inventario tab).
+// PR's (pages/item, in its Inventario tab).
 
 type Fn = Awaited<ReturnType<typeof inventoryOf>>['funciones'][number];
 const inventoryOf = (repo: string, app: string) => ok(client.api.explorations[':owner'][':name'][':app'].inventory.$get(at(repo, app)));

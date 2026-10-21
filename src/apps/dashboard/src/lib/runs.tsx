@@ -39,12 +39,12 @@ export const RunDot = ({ state }: { state: string }) => <Dot cls={(RUN_STATE[sta
 
 // How long it's been going: app.js's clock (tickClocks) moves every
 // [data-since] each second; this only writes the first.
-export function Since({ at }: { at: string }) {
+export function Since({ at, className }: { at: string; className?: string }) {
   const ref = useRef<HTMLSpanElement>(null);
   useLayoutEffect(() => {
     if (ref.current) ref.current.textContent = clock(Date.now() - Date.parse(at));
   }, [at]);
-  return <span ref={ref} data-since={at} />;
+  return <span ref={ref} className={className} data-since={at} />;
 }
 
 export interface RunLike {
