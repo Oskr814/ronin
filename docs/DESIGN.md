@@ -718,9 +718,9 @@ Todo, salvo los webhooks y `/api/auth/*`, pide sesión. Las rutas pasan a Hono d
 | `GET /api/pedidos` | Los pedidos del portal de los repos que ve la sesión, con a quién espera cada uno (§16.11) |
 | `GET /api/pedidos/<n>` | Uno: la conversación, el veredicto, los prototipos, su actividad y sus corridas |
 | `GET /api/pedidos/<n>/img/<archivo>`, `/prototipo/<ronda>` | Una imagen del pedido, por el nombre que tiene en él, y el diff de un prototipo |
-| `GET /api/despliegues` | Solo admins: cada repo con `deploy`, con lo mergeado sin desplegar (un cambio por PR) y sus últimos releases con el estado de su workflow (§18) |
-| `POST /api/despliegues/<owner>/<repo>/plan` | Solo admins: qué llevaría un release, sin publicarlo: `{ tag, prs: 'all' \| [n…], prerelease? }`, con sus problemas en palabras y su `fingerprint` |
-| `POST /api/despliegues/<owner>/<repo>/publish` | Solo admins: lo publica: lo mismo, más `{ title?, notes?, fingerprint? }`; 409 con el plan nuevo si algo cambió o no se puede |
+| `GET /api/deploys` | Solo admins: cada repo con `deploy`, con lo mergeado sin desplegar (un cambio por PR) y sus últimos releases con el estado de su workflow (§18) |
+| `POST /api/deploys/<owner>/<repo>/plan` | Solo admins: qué llevaría un release, sin publicarlo: `{ tag, prs: 'all' \| [n…], prerelease? }`, con sus problemas en palabras y su `fingerprint` |
+| `POST /api/deploys/<owner>/<repo>/publish` | Solo admins: lo publica: lo mismo, más `{ title?, notes?, fingerprint? }`; 409 con el plan nuevo si algo cambió o no se puede |
 | `GET /api/reuniones` | Las reuniones de los repos que ve la sesión, con lo que ronin propuso de cada una (§17) |
 | `POST /api/reuniones` | Sube las notas de una reunión: `{ repo, title?, at?, link?, text? \| file: { name, data } }`, el archivo como data URL; ronin la lee en seguida |
 | `GET /api/reuniones/<n>` | Una: el texto de sus notas, sus propuestas, lo creado, su actividad y sus corridas |
@@ -1267,7 +1267,7 @@ src/domains/deploys/  el dominio: deploy.ts no sabe quién lo llama
   deploy.ts          lo pendiente, el plan (con la prueba del cherry-pick) y la publicación
   follow.ts          el seguimiento del workflow y el aviso a los pedidos
   store.ts           el registro: tabla deploys, o deploys-data/deploys.json
-  routes.ts          sus rutas en el tablero, en Hono (/api/despliegues/*)
+  routes.ts          sus rutas en el tablero, en Hono (/api/deploys/*)
   board.ts           la página, el plan y la publicación del tablero
 ```
 

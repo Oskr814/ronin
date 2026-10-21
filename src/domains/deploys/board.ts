@@ -10,7 +10,7 @@ import { DomainError } from '../../platform/errors.js';
 // workflow went, and the dialog's plan and publish — all through deploy/,
 // which knows nothing of the dashboard. Admins only (apps/api/http/dashboard.ts).
 
-export class DespliegueError extends DomainError {}
+export class DeployBoardError extends DomainError {}
 
 // The last releases a repo's card shows.
 const RELEASES_SHOWN = 8;
@@ -62,7 +62,7 @@ function cachedRead(repo: string, now = Date.now()): Promise<RepoRead> {
   return Promise.resolve(entry.data);
 }
 
-export function resetDespliegueReads(): void {
+export function resetDeployReads(): void {
   reads.clear();
 }
 
@@ -100,7 +100,7 @@ async function repoView(entry: RepoEntry) {
   });
 }
 
-export async function despliegues(entries: RepoEntry[]) {
+export async function deploysView(entries: RepoEntry[]) {
   return Promise.all(entries.filter((e) => e.deploy).map((entry) => repoView(entry).catch((error) => {
     log.error(`tablero: no se pudieron leer los despliegues de ${entry.productRepo}`, error);
     return { repo: entry.productRepo, error: (error as Error).message.split('\n')[0] };
@@ -115,13 +115,13 @@ export interface ReleaseBody extends ReleaseRequest {
 
 export function parseRelease(body: Record<string, unknown>): ReleaseBody {
   const { tag, prs, prerelease, title, notes, fingerprint } = body;
-  if (typeof tag !== 'string' || !tag.trim()) throw new DespliegueError('falta el tag');
-  if (prs !== 'all' && !(Array.isArray(prs) && prs.every((n) => Number.isInteger(n) && n > 0))) throw new DespliegueError('prs debe ser "all" o una lista de números de PR');
-  if (prerelease !== undefined && typeof prerelease !== 'boolean') throw new DespliegueError('prerelease debe ser true o false');
+  if (typeof tag !== 'string' || !tag.trim()) throw new DeployBoardError('falta el tag');
+  if (prs !== 'all' && !(Array.isArray(prs) && prs.every((n) => Number.isInteger(n) && n > 0))) throw new DeployBoardError('prs debe ser "all" o una lista de números de PR');
+  if (prerelease !== undefined && typeof prerelease !== 'boolean') throw new DeployBoardError('prerelease debe ser true o false');
   for (const [name, value] of Object.entries({ title, notes, fingerprint })) {
-    if (value !== undefined && typeof value !== 'string') throw new DespliegueError(`${name} debe ser un texto`);
+    if (value !== undefined && typeof value !== 'string') throw new DeployBoardError(`${name} debe ser un texto`);
   }
-  if (typeof notes === 'string' && notes.length > 20_000) throw new DespliegueError('las notas son demasiado largas');
+  if (typeof notes === 'string' && notes.length > 20_000) throw new DeployBoardError('las notas son demasiado largas');
   return {
     tag: tag.trim(),
     prs: prs as ReleaseBody['prs'],
@@ -132,24 +132,24 @@ export function parseRelease(body: Record<string, unknown>): ReleaseBody {
   };
 }
 
-export async function planDespliegue(entry: RepoEntry, body: ReleaseBody) {
+export async function planBoardRelease(entry: RepoEntry, body: ReleaseBody) {
   return withActiveRepo(entry, async () => {
     try {
       return planView(await planRelease(body));
     } catch (error) {
-      if (error instanceof DeployError) throw new DespliegueError(error.message);
+      if (error instanceof DeployError) throw new DeployBoardError(error.message);
       throw error;
     }
   });
 }
 
-export async function publishDespliegue(entry: RepoEntry, body: ReleaseBody, login: string) {
+export async function publishBoardRelease(entry: RepoEntry, body: ReleaseBody, login: string) {
   return withActiveRepo(entry, async () => {
     try {
       const record = await publishRelease({ ...body, by: login }).finally(() => reads.delete(entry.productRepo));
       return { tag: record.tag, url: record.url, pedidos: record.pedidos };
     } catch (error) {
-      if (error instanceof DeployError) throw new DespliegueError(error.message, { status: 409, details: error.plan ? { plan: planView(error.plan) } : {} });
+      if (error instanceof DeployError) throw new DeployBoardError(error.message, { status: 409, details: error.plan ? { plan: planView(error.plan) } : {} });
       throw error;
     }
   });

@@ -18,18 +18,18 @@ const GOING_EVERY_MS = 10_000;
 const STATE: Record<string, [string, string]> = { running: ['live', 'en curso'], deployed: ['ok', 'desplegado'], failed: ['crit', 'falló'], unknown: ['idle', 'sin workflow'] };
 
 const going = (repos: Repos | undefined) => (repos ?? []).some((r) => 'releases' in r && r.releases.some((x) => x.deploy?.state === 'running'));
-export function Despliegues() {
+export function Deploys() {
   const host = useHost();
   const [dialog, setDialog] = useState<{ repo: string; pr?: number } | null>(null);
   const query = useQuery({
-    queryKey: ['despliegues'],
-    queryFn: () => ok(client.api.despliegues.$get()).then((d) => d.repos),
+    queryKey: ['deploys'],
+    queryFn: () => ok(client.api.deploys.$get()).then((d) => d.repos),
     // Not while the dialog is open: it plans on its own.
     refetchInterval: (q) => (dialog ? false : going(q.state.data) ? GOING_EVERY_MS : EVERY_MS),
   });
   const repos = query.data;
   useEffect(() => {
-    if (repos) host.read?.('despliegues', repos);
+    if (repos) host.read?.('deploys', repos);
   }, [repos, host]);
   useEffect(() => {
     if (query.error instanceof ApiError && query.error.status === 401) host.unauthorized(query.error.message);

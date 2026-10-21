@@ -570,7 +570,7 @@ function renderCenter() {
     return;
   }
   if (!item && S.page === 'despliegues') {
-    showPage('despliegues', backBar('Despliegues'));
+    showPage('deploys', backBar('Despliegues'));
     return;
   }
   if (!item && S.page === 'metricas') {
@@ -645,7 +645,7 @@ const PAGE_HOST = {
   repoColor,
   // What the sidebar shows of a page: whether a deploy is going.
   read(name, data) {
-    if (name !== 'despliegues') return;
+    if (name !== 'deploys') return;
     S.dep.list = data;
     renderQuick();
   },
@@ -4093,7 +4093,7 @@ function wirePedidos() {
 // the repo's workflow does the rest. Everything on the branch, or — where
 // the repo allows it (deploy.selective) — only the PRs picked, cherry-picked
 // onto the last release. Admins only. The page itself is in React
-// (src/apps/dashboard/src/pages/despliegues/).
+// (src/apps/dashboard/src/pages/deploys/).
 function openDespliegues() {
   S.sel = null;
   S.page = 'despliegues';

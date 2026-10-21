@@ -79,9 +79,9 @@ describe('a session that sees only some repos', () => {
 
   it('can neither see nor publish deploys without being an admin (#158)', async () => {
     expect((await call('/api/snapshot')).body.despliegues).toBe(false);
-    expect((await call('/api/despliegues')).status).toBe(403);
-    expect((await call(`/api/despliegues/${SC}/plan`, 'POST', { tag: 'v1', prs: 'all' })).status).toBe(403);
-    expect((await call(`/api/despliegues/${SC}/publish`, 'POST', { tag: 'v1', prs: 'all' })).status).toBe(403);
+    expect((await call('/api/deploys')).status).toBe(403);
+    expect((await call(`/api/deploys/${SC}/plan`, 'POST', { tag: 'v1', prs: 'all' })).status).toBe(403);
+    expect((await call(`/api/deploys/${SC}/publish`, 'POST', { tag: 'v1', prs: 'all' })).status).toBe(403);
   });
 
   it('cannot see the metrics without being an admin (#222)', async () => {
@@ -190,7 +190,7 @@ describe('a session that sees only some repos', () => {
     await refused(`/api/repos/${SC}/issues`, { title: 'x', body: 'y', after: 'none' });
     await refused(`/api/items/${encodeURIComponent(`${SC}#2`)}/files/actions`, { action: 'comment', path: 'a.ts', body: 'x' });
     expect(await refused('/api/reuniones', { repo: SC, text: 'notas de la reunión' })).toMatch(/subir notas/);
-    await refused(`/api/despliegues/${SC}/plan`, { tag: 'v1', prs: 'all' });
+    await refused(`/api/deploys/${SC}/plan`, { tag: 'v1', prs: 'all' });
     expect((await call('/api/snapshot', 'GET', undefined, readOnly)).body.despliegues).toBe(false);
     expect((await call('/api/settings/users', 'GET', undefined, readOnly)).status).toBe(403);
   });

@@ -33,4 +33,4 @@ export async function ok<R extends ClientResponse<unknown, number, string>>(pend
   return (await response.json()) as Success<R>;
 }
 
-export type Despliegues = InferResponseType<typeof client.api.despliegues.$get, 200>['repos'];
+export type DeployRepos = InferResponseType<typeof client.api.deploys.$get, 200>['repos'];

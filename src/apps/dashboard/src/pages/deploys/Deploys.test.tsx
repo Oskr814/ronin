@@ -2,7 +2,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { Despliegues } from './Despliegues.js';
+import { Deploys } from './Deploys.js';
 import { HostContext, type Host } from '../../host.js';
 
 const change = (sha: string, subject: string, pr: number | null, pedidos: number[] = []) => ({ sha, subject, pr, apps: [], pedidos });
@@ -26,7 +26,7 @@ beforeEach(() => {
     const body = init?.body ? JSON.parse(String(init.body)) : undefined;
     calls.push({ path, body });
     const json = (b: unknown) => new Response(JSON.stringify(b), { status: 200, headers: { 'Content-Type': 'application/json' } });
-    if (path === '/api/despliegues') return json({ repos: REPOS });
+    if (path === '/api/deploys') return json({ repos: REPOS });
     if (path.endsWith('/plan')) return json(plan(body.prs));
     if (path.endsWith('/publish')) return json({ tag: body.tag, url: '', pedidos: [7] });
     return json({});
@@ -40,11 +40,11 @@ afterEach(() => {
 const host: Host = { toast: vi.fn(), openPedido: vi.fn(), unauthorized: vi.fn(), repoColor: () => 'red', read: vi.fn() };
 const show = () => render(
   <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-    <HostContext.Provider value={host}><Despliegues /></HostContext.Provider>
+    <HostContext.Provider value={host}><Deploys /></HostContext.Provider>
   </QueryClientProvider>,
 );
 
-describe('Despliegues, in React', () => {
+describe('Deploys, in React', () => {
   it('lists what is pending and the releases, and opens the request a change came from', async () => {
     show();
     expect(await screen.findByText('acme/tienda')).toBeTruthy();
@@ -52,7 +52,7 @@ describe('Despliegues, in React', () => {
     expect(screen.getByText('desplegado')).toBeTruthy();
     fireEvent.click(screen.getByText('del pedido P-7'));
     expect(host.openPedido).toHaveBeenCalledWith(7);
-    await waitFor(() => expect(host.read).toHaveBeenCalledWith('despliegues', REPOS));
+    await waitFor(() => expect(host.read).toHaveBeenCalledWith('deploys', REPOS));
   });
 
   it('plans while the tag is written, shows what clashes, and publishes what it showed', async () => {
