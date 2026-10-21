@@ -3,7 +3,7 @@ import { ago } from '../../../../../ui/time.js';
 import { Chip, listRowOf, nextRun, useExplorations } from './model.js';
 
 // Exploraciones (#155): one row per app a repo explores, from the snapshot;
-// the list (/api/explorations, which app.js reads for the sidebar too) adds
+// the list (/api/explorations, which the shell reads for the sidebar too) adds
 // its exploration PR's findings counted, the last run and the next.
 
 export function Explorations() {

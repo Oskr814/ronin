@@ -75,8 +75,6 @@ describe('Hoy, in React', () => {
     expect(container.querySelectorAll('.rcol .burn')).toHaveLength(2);
     expect(container.querySelectorAll('.lane')).toHaveLength(2);
     expect(container.querySelectorAll('.bar.fail')).toHaveLength(3);
-    // The sidebar colors Linear's projects by the cycle's too.
-    expect(host.read).toHaveBeenCalledWith('today', DATA.today);
   });
 
   it('opens an item, a run, all of ronin PRs, and filters by a project', async () => {

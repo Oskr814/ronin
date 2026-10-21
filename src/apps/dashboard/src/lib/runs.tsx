@@ -3,7 +3,7 @@ import { useHost } from '../host.js';
 
 // An agent's run as the pages that list them show it (a portal request's,
 // a meeting's): its card, its transcript and how it ended, written as app.js
-// writes them.
+// wrote them.
 
 const MIN = 60e3;
 
@@ -37,7 +37,7 @@ export function clock(ms: number): string {
 export const Dot = ({ cls }: { cls: string }) => <span className={`dot ${cls}`} aria-hidden="true" />;
 export const RunDot = ({ state }: { state: string }) => <Dot cls={(RUN_STATE[state] ?? RUN_STATE.error)[0]} />;
 
-// How long it's been going: app.js's clock (tickClocks) moves every
+// How long it's been going: the shell's clock (tickClocks) moves every
 // [data-since] each second; this only writes the first.
 export function Since({ at, className }: { at: string; className?: string }) {
   const ref = useRef<HTMLSpanElement>(null);

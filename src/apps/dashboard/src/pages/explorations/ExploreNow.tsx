@@ -7,7 +7,7 @@ import { at, rowOf, useExplorations } from './model.js';
 
 // Explorar ahora (#155, 3/4). ronin still chooses the functions and the
 // charters: the dialog only asks how many, for how long, and whether it
-// stands for tonight's run. app.js mounts it on its own (the app's page and
+// stands for tonight's run. The shell opens it on its own (the app's page and
 // its exploration PR's head open it), and unmounts it on `onClose`.
 
 export function ExploreNow({ repo, app, onClose }: { repo: string; app: string; onClose: () => void }) {

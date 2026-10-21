@@ -40,6 +40,8 @@
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; }
+/* Where React draws the dashboard: out of the layout, the login and the shell straight on the body. */
+#app { display: contents; }
 body { background: var(--bg); color: var(--ink); font: 13.5px/1.45 "Schibsted Grotesk", system-ui, sans-serif; -webkit-font-smoothing: antialiased; overflow: hidden; }
 button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; text-align: left; }
 a { color: inherit; }
@@ -99,10 +101,9 @@ a { color: inherit; }
 
 /* center */
 .center { grid-row: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--bg); }
-/* A page in React (#235, stage 7) lays out as if app.js had drawn it there,
-   and so does what app.js still draws inside one (an item's Archivos and
-   Fichas, the review panel's place in Archivos' toolbar). */
-.react-page, .react-slot, .rpanel-slot { display: contents; }
+/* The page under the shell's tabs, and the review panel's place in
+   Archivos' toolbar: out of the layout, as if their children were there. */
+.react-page, .rpanel-slot { display: contents; }
 .tabs { display: flex; border-bottom: 1px solid var(--rule); background: var(--side); overflow-x: auto; scrollbar-width: none; flex: none; }
 .tab { display: flex; align-items: center; gap: 7px; padding: 8px 10px 8px 12px; border-right: 1px solid var(--rule); white-space: nowrap; max-width: 230px; color: var(--muted); font-size: 13px; }
 .tab .open { display: flex; gap: 7px; align-items: center; min-width: 0; }

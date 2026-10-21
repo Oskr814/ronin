@@ -29,7 +29,7 @@ Tres capas y las apps, con las dependencias en una sola dirección: las apps usa
 | Carpeta | Qué tiene |
 |---|---|
 | `apps/api/` | El servidor: los listeners (público y tailnet), el login, la cola de trabajos, el tick, los webhooks y el montaje de las rutas de cada dominio. |
-| `apps/dashboard/` | El tablero: el marco (`public/app.js`) y las páginas que ya pasaron a React (`src/pages/`). |
+| `apps/dashboard/` | El tablero, en React: el marco (`src/shell/`: la barra lateral, la columna de contexto, la barra de estado y las rutas) y sus páginas (`src/pages/`). |
 | `apps/portal/` | El portal de pedidos, en React. |
 | `platform/` | Lo técnico compartido, por tema: config, GitHub, Linear, worktrees, `claude -p` y las cuentas, cómo corre un agente, el estado local, locks, workers, correos, Postgres, logs. |
 | `domains/` | Un dominio por carpeta, con sus rutas, su lógica y su almacenamiento: `slices` (issues → PRs apilados), `review` (review de PRs de personas), `commands` (comandos por mención), `previews`, `explorations`, `portal`, `meetings`, `deploys`, `metrics`, `changelog`, `product-app` (levantar la app del producto), `items` y `runs` (lo que muestra el tablero), `settings` y `access` (quién ve qué). |

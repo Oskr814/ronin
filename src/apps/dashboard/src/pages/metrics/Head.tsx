@@ -3,7 +3,7 @@ import { useHost } from '../../host.js';
 
 // The head of both tabs of Métricas: the title, what the tab is about, its
 // filters, and the tabs, each at its own address (/metricas,
-// /metricas/suscripcion), which app.js routes.
+// /metricas/suscripcion), which the shell routes.
 export function Head({ tab, lead, filters }: { tab: 'trabajo' | 'suscripcion'; lead: string; filters: ReactNode }) {
   const host = useHost();
   return <>

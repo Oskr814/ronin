@@ -2,10 +2,9 @@ import { fileURLToPath } from 'node:url';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
 
-// The dashboard (#65): public/ is the shell, as is (index.html, app.js,
-// app.css, the fonts), and src/ its pages in React (#235, stage 7), built
-// into one pages.js next to app.js, which index.html loads first and app.js
-// mounts each page with (window.roninPages). All of it into
+// The dashboard (#65): public/ as is (index.html, app.css, theme.js, the
+// fonts), and src/ (the shell and its pages, in React since #235) built
+// into one dashboard.js, which index.html loads. All of it into
 // dist/public/dashboard, which the server serves (apps/api/http/static.ts).
 export default defineConfig({
   root: fileURLToPath(new URL('.', import.meta.url)),
@@ -15,7 +14,7 @@ export default defineConfig({
     emptyOutDir: true,
     rollupOptions: {
       input: fileURLToPath(new URL('./src/main.tsx', import.meta.url)),
-      output: { entryFileNames: 'pages.js', codeSplitting: false },
+      output: { entryFileNames: 'dashboard.js', codeSplitting: false },
     },
   },
 });

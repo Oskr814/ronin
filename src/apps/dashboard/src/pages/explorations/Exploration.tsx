@@ -5,7 +5,7 @@ import { ExplorationRuns } from './Runs.js';
 
 // An app a repo explores, with no exploration PR open (#155): its runs and
 // its inventory until ronin opens one. Then the app's page is its PR's
-// (app.js goes there on its own), headed as the app's.
+// (the shell goes there on its own), headed as the app's.
 
 type Tab = 'corridas' | 'inventario';
 

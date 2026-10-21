@@ -1,67 +1,15 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { StrictMode, type ComponentType } from 'react';
+import { QueryClientProvider } from '@tanstack/react-query';
+import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { HostContext, type Host } from './host.js';
-import { Deploys } from './pages/deploys/Deploys.js';
-import { Exploration } from './pages/explorations/Exploration.js';
-import { Explorations } from './pages/explorations/Explorations.js';
-import { ExploreNow } from './pages/explorations/ExploreNow.js';
-import { Item } from './pages/item/Item.js';
-import { Meeting } from './pages/meetings/Meeting.js';
-import { Meetings } from './pages/meetings/Meetings.js';
-import { Subscription } from './pages/metrics/Subscription.js';
-import { Work } from './pages/metrics/Work.js';
-import { Request } from './pages/requests/Request.js';
-import { Requests } from './pages/requests/Requests.js';
-import { Settings } from './pages/settings/Settings.js';
-import { Today } from './pages/today/Today.js';
+import { Shell } from './shell/Shell.js';
+import { queryClient } from './shell/state.js';
 
-// The dashboard's pages in React (#235, stage 7): app.js still draws the
-// shell (sidebar, status bar, routes) and mounts one of these where a page
-// goes — window.roninPages.mount('deploys', element, host) — and
-// unmounts it when the person leaves. A page at a time, until app.js is empty.
-// What app.js routes to (a request's or a meeting's number, an item's key)
-// comes as the page's props. Explorar ahora is a dialog app.js mounts on its own.
-
-const PAGES: Record<string, ComponentType<any>> = {
-  deploys: Deploys,
-  explorations: Explorations,
-  exploration: Exploration,
-  'explore-now': ExploreNow,
-  item: Item,
-  meetings: Meetings,
-  meeting: Meeting,
-  metrics: Work,
-  settings: Settings,
-  subscription: Subscription,
-  requests: Requests,
-  request: Request,
-  today: Today,
-};
-
-// One cache for every page: going back to one shows what it had.
-const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false } } });
-
-function mount(name: string, element: HTMLElement, host: Host, props: Record<string, unknown> = {}): () => void {
-  const Page = PAGES[name];
-  if (!Page) throw new Error(`no hay una página ${name}`);
-  const root = createRoot(element);
-  root.render(
-    <StrictMode>
-      <QueryClientProvider client={queryClient}>
-        <HostContext.Provider value={host}>
-          <Page {...props} />
-        </HostContext.Provider>
-      </QueryClientProvider>
-    </StrictMode>,
-  );
-  return () => root.unmount();
-}
-
-declare global {
-  interface Window {
-    roninPages: { mount: typeof mount; names: string[] };
-  }
-}
-
-window.roninPages = { mount, names: Object.keys(PAGES) };
+// The dashboard (#65, all of it in React since #235): the shell (shell/)
+// and its pages (pages/), on one cache of what was read from the API.
+createRoot(document.getElementById('app')!).render(
+  <StrictMode>
+    <QueryClientProvider client={queryClient}>
+      <Shell />
+    </QueryClientProvider>
+  </StrictMode>,
+);

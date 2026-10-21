@@ -109,7 +109,7 @@ export function DeployDialog({ repos, repo, pr, onClose }: { repos: Repos; repo:
     setSel(next);
   };
 
-  // On the body, as the page's other dialogs: app.js's showLogin finds it
+  // On the body, as the page's other dialogs: the shell's showLogin finds it
   // there to know something is half written.
   return createPortal(
     <div className="scrim" onClick={(event) => { if (event.target === event.currentTarget) close(); }}>
