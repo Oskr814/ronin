@@ -55,11 +55,19 @@ export const COMMIT_STYLE_RULE =
 // each one by its heading. The repo's own PR template doesn't apply.
 export const PR_BODY_SECTIONS = ['Qué se pidió', 'Qué cambió', 'Cómo se verificó', 'Decisiones propias', 'Fuera de alcance'] as const;
 
+// How to try the PR (#193), collapsed at the end of «Cómo se verificó»: the
+// description stays short for whoever decides, and the preview's agents
+// (domains/previews/prompts.ts) take from it the data to leave ready instead
+// of working it out from the diff.
+export const TEST_STEPS_TITLE = 'Cómo probar';
+
 export const PR_BODY_RULE =
   'Write the PR body in Spanish with exactly these sections, in this order, each as a "## " heading spelled exactly like this — the dashboard finds them by heading, so do not follow this repo\'s pull request template (.github/pull_request_template.md) even if it has one: ' +
   '"## Qué se pidió" (what was asked — the issue, or this slice of the spec — in two or three sentences); ' +
   '"## Qué cambió" (the changes, as a short list someone can follow without reading the diff); ' +
-  '"## Cómo se verificó" (each check you actually ran and its result — tests, a build, the app opened in a preview — and, said plainly, what you did not verify); ' +
+  '"## Cómo se verificó" (each check you actually ran and its result — tests, a build, the app opened in a preview — and, said plainly, what you did not verify; ' +
+  `it ends with how to try the change, collapsed: a line "<details><summary>${TEST_STEPS_TITLE}</summary>", a blank line, "**Datos:**" and a list of what has to exist first — records, their states and how many, e.g. "un cliente con más de 12 catálogos, 3 vencidos" ("Los del seed base." if nothing else) —, "**Pasos:**" and a numbered list where each step says with which role, on which screen or path, what to do and what should be seen, and a last line "</details>"; ` +
+  'if there is nothing to try in the app (a refactor, a script, the CI), only "No hay nada que probar en la app: <why>." inside it; invented data only, the preview prepares exactly these); ' +
   '"## Decisiones propias" (every choice the request did not settle and you made on your own, each with the reason; "Ninguna." if there were none); ' +
   '"## Fuera de alcance" (what you noticed but left alone on purpose, e.g. the same problem somewhere else; "Nada." if nothing). ' +
   'No other sections. A closing reference ("Closes #N") goes on the first line, before the first section; screenshots go under "## Qué cambió".';
@@ -72,7 +80,7 @@ export const PR_BODY_RULE =
 // supervisor's, and it puts it back if it's missing.
 export function prBodyUpdateRule(prNumber: number): string {
   return 'If you changed code, bring the PR description up to date in this same run: it must describe the PR as it is after your change, not as it was when it was opened. ' +
-    `Read it with "gh api repos/{owner}/{repo}/pulls/${prNumber} --jq .body", rewrite what your change made outdated — usually "## Qué cambió" and "## Cómo se verificó", and "## Decisiones propias" if you decided something on your own — keeping the same sections, headings, language and the "Closes #N" first line, and leave everything from the line "${HELP_FOOTER_MARKER}" on exactly as it is. ` +
+    `Read it with "gh api repos/{owner}/{repo}/pulls/${prNumber} --jq .body", rewrite what your change made outdated — usually "## Qué cambió" and "## Cómo se verificó" (its "${TEST_STEPS_TITLE}" block included: a preview prepares its data from it), and "## Decisiones propias" if you decided something on your own — keeping the same sections, headings, language and the "Closes #N" first line, and leave everything from the line "${HELP_FOOTER_MARKER}" on exactly as it is. ` +
     `Save it with "gh api -X PATCH repos/{owner}/{repo}/pulls/${prNumber} -F body=@<file>"; never use "gh pr edit", which fails on this repo. Do not change the title. If nothing in the description became outdated, leave it as it is.`;
 }
 

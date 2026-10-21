@@ -83,7 +83,7 @@ describe('runAgentTask — prepare-preview-data', () => {
     checkoutDir: '/tmp/worktrees/preview-pr-818',
     outputPath: '/tmp/worktrees/preview-pr-818/.ronin-app/preview-data.json',
     title: 'fix: mostrar todos los catálogos',
-    body: '## ¿Cómo probar?\n1. Asignar más de 12 catálogos a un cliente',
+    body: '## Cómo se verificó\nTests.\n\n<details><summary>Cómo probar</summary>\n\n**Datos:**\n- un cliente con más de 12 catálogos\n\n**Pasos:**\n1. Como Admin, en /clientes, abrir el cliente: se ven todos\n</details>',
     instruction: 'que algunos estén vencidos',
     diff: { mergeBase: 'abc123', stat: ' 4 files changed' },
     baseUrl: 'http://127.0.0.1:5173',
@@ -103,13 +103,24 @@ describe('runAgentTask — prepare-preview-data', () => {
     await runAgentTask(task);
 
     const prompt = runClaudeHeadless.mock.calls[0][1] as string;
-    expect(prompt).toContain('<<<PR_START>>>\n# fix: mostrar todos los catálogos\n\n## ¿Cómo probar?');
+    expect(prompt).toContain('<<<PR_START>>>\n# fix: mostrar todos los catálogos\n\n## Cómo se verificó');
     expect(prompt).toContain('<<<REQUEST_START>>>\nque algunos estén vencidos\n<<<REQUEST_END>>>');
     expect(prompt).toContain('git diff abc123..HEAD');
     expect(prompt).toContain('- web:80 → http://127.0.0.1:41234');
     expect(prompt).toContain('docker compose -p p -f f.json exec -T');
     expect(prompt).toContain('Admin: admin@x.com / password');
     expect(prompt).toContain(task.outputPath);
+  });
+
+  // #193: what to prepare comes from the PR's «Cómo probar»; the diff only
+  // says how to create it, or what's needed when the PR has no such block.
+  it('prepares what the PR\'s «Cómo probar» asks for, not what it works out from the diff', async () => {
+    await runAgentTask(task);
+
+    const prompt = runClaudeHeadless.mock.calls[0][1] as string;
+    expect(prompt).toContain('the "Cómo probar" block of the description');
+    expect(prompt).toMatch(/Don't work out on your own what else the change could need/);
+    expect(prompt).toMatch(/Only when the description has no such block, work it out from the diff/);
   });
 
   it('forbids touching code, the stack or GitHub', async () => {
@@ -203,7 +214,7 @@ describe('runAgentTask — preview-data-triage', () => {
     checkoutDir: '/tmp/worktrees/preview-pr-818',
     outputPath: '/tmp/triage.json',
     title: 'fix: mostrar todos los catálogos',
-    body: '## ¿Cómo probar?\n1. Asignar más de 12 catálogos a un cliente',
+    body: '## Cómo se verificó\nTests.\n\n<details><summary>Cómo probar</summary>\n\n**Datos:**\n- un cliente con más de 12 catálogos\n\n**Pasos:**\n1. Como Admin, en /clientes, abrir el cliente: se ven todos\n</details>',
     instruction: 'que algunos estén vencidos',
     diff: { mergeBase: 'abc123', stat: ' 4 files changed' },
     catalog: 'clientes:\n  total: 8',
@@ -218,6 +229,7 @@ describe('runAgentTask — preview-data-triage', () => {
     expect(prompt).toContain('<<<CATALOG_START>>>\nclientes:\n  total: 8\n<<<CATALOG_END>>>');
     expect(prompt).toContain('git diff abc123..HEAD');
     expect(prompt).toMatch(/unsure, it is not enough/);
+    expect(prompt).toContain('every precondition in the "Cómo probar" block of the description');
     expect(prompt).toContain(`JSON object to ${task.outputPath}`);
   });
 });
@@ -229,7 +241,7 @@ describe('runAgentTask — preview-data-delta', () => {
       prNumber: 818,
       checkoutDir: '/tmp/worktrees/preview-pr-818',
       title: 'fix: mostrar todos los catálogos',
-      body: '## ¿Cómo probar?',
+      body: '## Cómo se verificó\nTests.\n\n<details><summary>Cómo probar</summary>\n\n**Datos:**\n- un cliente con más de 12 catálogos\n\n**Pasos:**\n1. Como Admin, en /clientes, abrir el cliente: se ven todos\n</details>',
       diff: { from: 'old123', stat: ' 1 file changed' },
       previous: { preparado: ['Cliente demo con 30 catálogos'], noPreparado: ['un cliente sin email'] },
     }));
@@ -239,6 +251,7 @@ describe('runAgentTask — preview-data-delta', () => {
     expect(prompt).toContain('git diff old123..HEAD');
     expect(prompt).toContain('- un cliente sin email');
     expect(prompt).toContain('{"completar": true | false');
+    expect(prompt).toMatch(/"Cómo probar" block, it is what has to be tried now/);
     expect(prompt).not.toContain('REQUEST_START');
   });
 });
