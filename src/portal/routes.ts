@@ -1,7 +1,7 @@
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import { log } from '../core/logger.js';
-import { body, jsonBody, onError, type NodeEnv } from '../server/hono.js';
+import { body, jsonBody, onError, type NodeEnv } from '../apps/api/http/hono.js';
 import { findUserByEmail, normalizeEmail, recordLogin, redeemLink, userForLink, type PortalUser } from './accounts.js';
 import { grantedApps } from './apps.js';
 import { ImageError } from './images.js';
@@ -14,7 +14,7 @@ import { portalCookie, sealPortalSession } from './session.js';
 import { clientIp, portalUser, type PortalConfig, type PortalDeps } from './http.js';
 
 // The request portal's API (#114), on the public listener, in Hono (#235,
-// stage 6) — server/portal.ts mounts it under /api/portal:
+// stage 6) — apps/api/http/portal.ts mounts it under /api/portal:
 //   POST /login     { email, password }: the session cookie
 //   POST /logout
 //   GET  /me        who's in, and the apps they can ask in

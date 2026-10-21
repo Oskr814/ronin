@@ -7,7 +7,7 @@ import { forgetGithub } from '../server/api/dashboard-github.js';
 import { editRepo, reposView } from '../server/api/repos-admin.js';
 import { addUsuario, removeUsuario, updateEquipo, updateUsuario, usuariosView, usuarioView } from '../server/api/usuarios.js';
 import { visibleRepos } from '../server/api/visible.js';
-import { body, jsonBody, onError, type DashboardEnv } from '../server/hono.js';
+import { body, jsonBody, onError, type DashboardEnv } from '../apps/api/http/hono.js';
 
 // Ajustes (#174) from the dashboard, in Hono (#235, stage 6) — server/
 // dashboard-app.ts mounts them under /api/ajustes. The profile and the

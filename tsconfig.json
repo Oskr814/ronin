@@ -14,7 +14,7 @@
     "src"
   ],
   "exclude": [
-    "src/portal-web",
-    "src/dashboard-web"
+    "src/apps/dashboard",
+    "src/apps/portal"
   ]
 }

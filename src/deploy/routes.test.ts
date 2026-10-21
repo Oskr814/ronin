@@ -18,7 +18,7 @@ vi.mock('../server/api/dashboard-despliegues.js', async (importOriginal) => ({
   publishDespliegue: (...args: unknown[]) => publish(...args),
 }));
 
-const { dashboardApp } = await import('../server/dashboard-app.js');
+const { dashboardApp } = await import('../apps/api/routes.js');
 const { DespliegueError } = await import('../server/api/dashboard-despliegues.js');
 
 const DEPLOYER: Access = { admin: false, repos: [{ repo: 'acme/tienda', permission: 'push', perms: { notas: true, aprobar: true, acciones: true, desplegar: true } }, { repo: 'acme/docs', permission: 'push', perms: { notas: true, aprobar: true, acciones: true, desplegar: true } }] };

@@ -1182,7 +1182,7 @@ export async function botReactedBefore(commentId: number, kind: 'issue' | 'revie
 }
 
 // The "got it" 👀 the webhook server puts on a mention the moment it
-// arrives, before anything is processed (server/api/webhooks/github.ts). Whether it's
+// arrives, before anything is processed (apps/api/webhooks/github.ts). Whether it's
 // done is tracked apart (processed-comments.ts). Takes the repo itself: the
 // server isn't inside withActiveRepo.
 export async function addAckReaction(repo: string, commentId: number, kind: 'issue' | 'review'): Promise<void> {

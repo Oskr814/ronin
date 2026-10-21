@@ -92,7 +92,7 @@ export interface PortalRequestsTable {
   updated_at: ColumnType<Date, string, string>;
 }
 
-// The job queue (jobs/store.ts).
+// The job queue (apps/api/jobs/store.ts).
 type MaybeStamp = ColumnType<Date | null, string | null | undefined, string | null>;
 export interface JobsTable {
   id: Generated<string>;

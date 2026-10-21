@@ -4,11 +4,11 @@ import { z } from 'zod';
 import { loadRepos } from '../core/repos.js';
 import { suscripcionView } from '../server/api/dashboard-suscripcion.js';
 import { visibleRepos } from '../server/api/visible.js';
-import type { DashboardEnv } from '../server/hono.js';
+import type { DashboardEnv } from '../apps/api/http/hono.js';
 import { metricsView, parsePeriod } from './index.js';
 
 // Métricas (#222, #234) from the dashboard, in Hono (#235, stage 6) —
-// server/dashboard-app.ts mounts them under /api/metricas. Admins only:
+// apps/api/routes.ts mounts them under /api/metricas. Admins only:
 //   GET /?dias=7|30|90&repo=<owner>/<repo>   how work moves in the repos: what comes in and out, how long it takes, who carries it
 //   GET /suscripcion?cuenta=<cuenta>         how much of each Claude account's plan gets used, and ronin's share (dashboard-suscripcion.ts)
 

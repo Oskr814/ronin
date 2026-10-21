@@ -25,7 +25,7 @@ import { isOpen, requestRow } from '../server/api/dashboard-portal.js';
 import { today, WEEK_DAYS } from '../server/api/dashboard-today.js';
 import { can } from '../server/api/team.js';
 import { visibleRepos, visibleRuns } from '../server/api/visible.js';
-import { missingPortalConfig } from '../server/portal.js';
+import { missingPortalConfig } from '../apps/api/http/portal.js';
 
 // What the dashboard reads of the repos a session sees (#65): the sidebar
 // and the status bar (snapshot), Hoy, and each item with what GitHub has on

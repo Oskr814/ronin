@@ -6,7 +6,7 @@ vi.mock('../server/api/dashboard-suscripcion.js', () => ({
   suscripcionView: async (_entries: unknown, account: string | null) => (account === 'nadie' ? null : { accounts: ['acme'], cuentas: [{ account: account ?? 'acme' }] }),
 }));
 
-const { dashboardApp } = await import('../server/dashboard-app.js');
+const { dashboardApp } = await import('../apps/api/routes.js');
 
 const ADMIN: Access = { admin: true, repos: [{ repo: 'acme/tienda', permission: 'admin' }] };
 const MEMBER: Access = { admin: false, repos: [{ repo: 'acme/tienda', permission: 'triage' }] };

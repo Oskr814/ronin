@@ -4,7 +4,7 @@ import { log } from '../core/logger.js';
 import { DespliegueError, despliegues, parseRelease, planDespliegue, publishDespliegue } from '../server/api/dashboard-despliegues.js';
 import { can } from '../server/api/team.js';
 import { refusal, visibleRepos } from '../server/api/visible.js';
-import { body, jsonBody, onError, type DashboardEnv } from '../server/hono.js';
+import { body, jsonBody, onError, type DashboardEnv } from '../apps/api/http/hono.js';
 
 // Despliegues (#158) from the dashboard, in Hono (#235, stage 6) — server/
 // dashboard-app.ts mounts them under /api/despliegues. Admins, and whoever

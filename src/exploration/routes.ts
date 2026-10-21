@@ -7,10 +7,10 @@ import { corridasOf, exploracionList, exploracionRows, ExploreNowError, exploreN
 import { repoGithub } from '../server/api/dashboard-github.js';
 import { refusal, visibleRepos, visibleRuns } from '../server/api/visible.js';
 import type { Access } from '../server/api/access.js';
-import { body, jsonBody, onError, type DashboardEnv } from '../server/hono.js';
+import { body, jsonBody, onError, type DashboardEnv } from '../apps/api/http/hono.js';
 
 // Exploraciones (#155) from the dashboard, in Hono (#235, stage 6) —
-// server/dashboard-app.ts mounts them under /api/exploraciones:
+// apps/api/routes.ts mounts them under /api/exploraciones:
 //   GET  /                                 each app a repo explores, with its exploration PR's findings counted and its runs (dashboard-exploraciones.ts)
 //   GET  /<owner>/<repo>/<app>/corridas    the app's exploration runs, with their agents
 //   GET  /<owner>/<repo>/<app>/inventario  the app's functions and their coverage (inventory.yml)

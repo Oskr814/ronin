@@ -2,13 +2,13 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { config } from '../core/config.js';
 import { loadRepos } from '../core/repos.js';
-import { body, jsonBody, onError, type DashboardEnv } from '../server/hono.js';
+import { body, jsonBody, onError, type DashboardEnv } from '../apps/api/http/hono.js';
 import { sees, type Access } from '../server/api/access.js';
 import { HISTORY_DAYS } from '../server/api/dashboard-data.js';
 import { requestDetail, requestImage, requestPatch, requestRow } from '../server/api/dashboard-portal.js';
 import { createAccount, editAccount, PortalAdminError, portalAdminView, sendAccountLink, type PortalAdminContext } from '../server/api/portal-admin.js';
 import { visibleRepos, visibleRuns } from '../server/api/visible.js';
-import { missingPortalConfig } from '../server/portal.js';
+import { missingPortalConfig } from '../apps/api/http/portal.js';
 import { listUsers } from './accounts.js';
 import { getRequest, listRequests } from './requests.js';
 

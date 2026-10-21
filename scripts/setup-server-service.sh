@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Installs (or removes) the ronin server (src/server/index.ts) as a systemd
+# Installs (or removes) the ronin server (src/apps/api/main.ts) as a systemd
 # --user service — unlike tick (a one-shot cron job, see setup-cron.sh), this
 # has to stay up permanently to accept incoming webhook deliveries. Safe to
 # re-run.
@@ -37,8 +37,8 @@ if [[ "${1:-}" == "--remove" ]]; then
   exit 0
 fi
 
-if [ ! -f "$REPO_DIR/dist/server/index.js" ]; then
-  echo "$REPO_DIR/dist/server/index.js no existe — correr 'pnpm build' primero" >&2
+if [ ! -f "$REPO_DIR/dist/apps/api/main.js" ]; then
+  echo "$REPO_DIR/dist/apps/api/main.js no existe — correr 'pnpm build' primero" >&2
   exit 1
 fi
 
@@ -64,7 +64,7 @@ Type=simple
 WorkingDirectory=$REPO_DIR
 Environment=PATH=$FULL_PATH
 EnvironmentFile=$REPO_DIR/.env
-ExecStart=$NODE_BIN $REPO_DIR/dist/server/index.js
+ExecStart=$NODE_BIN $REPO_DIR/dist/apps/api/main.js
 Restart=on-failure
 RestartSec=5
 # A restart (a deploy) stops the server only. The event handlers it started,

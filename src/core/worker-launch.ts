@@ -54,7 +54,7 @@ export function launchWorker(name: string, request: unknown): number | undefined
 }
 
 // The same for any of ronin's entry points, with its arguments and anything
-// added to its environment (the job queue's RONIN_JOB_ID, jobs/runner.ts).
+// added to its environment (the job queue's RONIN_JOB_ID, apps/api/jobs/runner.ts).
 export function launchScript(name: string, args: string[], env: Record<string, string> = {}): number | undefined {
   const here = fileURLToPath(import.meta.url);
   const script = join(dirname(here), '..', `${name}${here.endsWith('.ts') ? '.ts' : '.js'}`);
