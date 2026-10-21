@@ -1,8 +1,9 @@
 import { useLayoutEffect, useRef } from 'react';
 import { useHost } from '../host.js';
 
-// An agent's run as the pages that list them show it (a portal request's):
-// its card, its transcript and how it ended, written as app.js writes them.
+// An agent's run as the pages that list them show it (a portal request's,
+// a meeting's): its card, its transcript and how it ended, written as app.js
+// writes them.
 
 const MIN = 60e3;
 
@@ -113,4 +114,9 @@ export function Ending({ summary }: { summary: { state: string; durationMs?: num
     case 'error': return <div className="end crit"><b>Falló.</b> {summary.error ?? ''}</div>;
     default: return null;
   }
+}
+
+// What the agent did, step by step, and how it ended.
+export function Transcript({ run }: { run: { lines: RunLine[]; summary: { state: string; durationMs?: number; costUsd?: number; error?: string } } }) {
+  return <div className="tx pd-tx"><Steps lines={run.lines} /><Ending summary={run.summary} /></div>;
 }

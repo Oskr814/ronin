@@ -3,6 +3,8 @@ import { StrictMode, type ComponentType } from 'react';
 import { createRoot } from 'react-dom/client';
 import { HostContext, type Host } from './host.js';
 import { Deploys } from './pages/deploys/Deploys.js';
+import { Meeting } from './pages/meetings/Meeting.js';
+import { Meetings } from './pages/meetings/Meetings.js';
 import { Subscription } from './pages/metrics/Subscription.js';
 import { Work } from './pages/metrics/Work.js';
 import { Request } from './pages/requests/Request.js';
@@ -13,11 +15,12 @@ import { Settings } from './pages/settings/Settings.js';
 // shell (sidebar, status bar, routes) and mounts one of these where a page
 // goes — window.roninPages.mount('deploys', element, host) — and
 // unmounts it when the person leaves. A page at a time, until app.js is empty.
-// What app.js routes to (a request's number) comes as the page's props.
+// What app.js routes to (a request's or a meeting's number) comes as the page's props.
 
-// Each page takes its own props.
 const PAGES: Record<string, ComponentType<any>> = {
   deploys: Deploys,
+  meetings: Meetings,
+  meeting: Meeting,
   metrics: Work,
   settings: Settings,
   subscription: Subscription,

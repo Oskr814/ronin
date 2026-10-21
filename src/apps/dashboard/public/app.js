@@ -120,7 +120,7 @@ function duration(ms) {
 const money = (usd) => (usd < 0.01 ? 'menos de US$0,01' : `US$${usd.toFixed(2).replace('.', ',')}`);
 const pct = (fraction) => `${Math.round(fraction * 100)}%`;
 
-const S = { snap: null, today: null, sel: null, open: [], runIdx: {}, pendingRun: null, filter: null, q: '', itemRuns: {}, run: null, stream: null, detail: {}, view: {}, doc: {}, menu: false, dialog: null, expanded: new Set(), expl: {}, ficha: {}, fichaOpen: {}, fichaFilter: { tipo: 'todas', vp: 'todos' }, antes: {}, oldAfter: new Set(), lightbox: null, fmenu: false, fdialog: null, fdraft: {}, listas: {}, scope: 'all', project: '', attAll: false, extra: {}, newIssue: null, files: {}, fcur: {}, ffold: {}, fexp: {}, fcontent: {}, fq: {}, ftree: false, fcomp: null, fbusy: new Set(), rpanel: null, revSent: {}, decide: null, decided: {}, kunit: null, page: null, ped: { n: null, run: null }, reu: { list: null, error: null, listAt: 0, detail: {}, n: null, tab: null, up: null, run: null, open: {}, retrying: false, form: {}, approving: false }, xpl: { list: null, error: null, listAt: 0, repo: null, app: null, cor: {}, inv: {}, tab: 'corridas', run: null, launched: {} }, xnow: null, dep: { list: null }, mt: { tab: 'trabajo' }, aj: { sec: 'perfil', login: null, repo: null, cuenta: null, f: null } };
+const S = { snap: null, today: null, sel: null, open: [], runIdx: {}, pendingRun: null, filter: null, q: '', itemRuns: {}, run: null, stream: null, detail: {}, view: {}, doc: {}, menu: false, dialog: null, expanded: new Set(), expl: {}, ficha: {}, fichaOpen: {}, fichaFilter: { tipo: 'todas', vp: 'todos' }, antes: {}, oldAfter: new Set(), lightbox: null, fmenu: false, fdialog: null, fdraft: {}, listas: {}, scope: 'all', project: '', attAll: false, extra: {}, newIssue: null, files: {}, fcur: {}, ffold: {}, fexp: {}, fcontent: {}, fq: {}, ftree: false, fcomp: null, fbusy: new Set(), rpanel: null, revSent: {}, decide: null, decided: {}, kunit: null, page: null, ped: { n: null, run: null }, reu: { n: null, run: null }, xpl: { list: null, error: null, listAt: 0, repo: null, app: null, cor: {}, inv: {}, tab: 'corridas', run: null, launched: {} }, xnow: null, dep: { list: null }, mt: { tab: 'trabajo' }, aj: { sec: 'perfil', login: null, repo: null, cuenta: null, f: null } };
 // The sidebar's Linear filter (#101), remembered per browser.
 try { Object.assign(S, JSON.parse(localStorage.getItem('ronin-scope') ?? '{}')); } catch { /* sin storage */ }
 function saveScope() {
@@ -556,13 +556,8 @@ function renderCenter() {
   }
   if (!item && (S.page === 'reuniones' || S.page === 'reunion')) {
     $('#shell').classList.toggle('wide', S.page === 'reunion');
-    const scroller = $('#center .pd-body') ?? $('#center .today.pd');
-    const keep = scroller?.scrollTop ?? 0;
-    if (setCenter(backBar(S.page === 'reunion' ? `Reunión R-${S.reu.n}` : 'Reuniones') + (S.page === 'reunion' ? reunionHTML() : reunionesHTML()))) {
-      wireReuniones();
-      const fresh = $('#center .pd-body') ?? $('#center .today.pd');
-      if (fresh && !isMobile()) fresh.scrollTop = keep;
-    }
+    if (S.page === 'reunion') showPage('meeting', backBar(`Reunión R-${S.reu.n}`), { n: S.reu.n, run: S.reu.run });
+    else showPage('meetings', backBar('Reuniones'));
     return;
   }
   if (!item && S.page === 'despliegues') {
@@ -658,6 +653,14 @@ const PAGE_HOST = {
       if (pedDoc?.element === element) pedDoc = null;
     };
   },
+  openMeetings: () => openReuniones(),
+  openMeeting: (n) => openReunion(n),
+  can: canDo,
+  me: () => S.snap?.me ?? '',
+  planning: (repo) => linearRepos().find((l) => l.repo === repo)?.planning ?? null,
+  markdown: md,
+  hasItem: (key) => Boolean(itemById(key)),
+  refresh: () => refresh(),
   // What the sidebar shows of a page: whether a deploy is going.
   read(name, data) {
     if (name !== 'deploys') return;
@@ -3666,32 +3669,9 @@ function openMetricas(tab = S.mt.tab) {
 }
 
 // ---------- meetings (#62)
-// The team uploads a meeting's notes (a PDF, a Word .docx, text, or pasted)
-// and ronin proposes the work that comes out of it. Anyone who sees a repo
-// uploads to it and sees its meetings. The notes stay on the runner.
-const REU_STATUS = {
-  pending: ['run', 'En cola para ronin'], reading: ['run', 'ronin la está leyendo'], review: ['warn', 'Espera revisión'],
-  empty: ['idle', 'Nada accionable'], failed: ['crit', 'Falló la lectura'], done: ['ok', 'Creado'], discarded: ['idle', 'Descartada'],
-};
-const REU_KIND = { pdf: 'PDF', docx: 'Word', text: 'Texto', pasted: 'Pegado' };
-const REU_MAX_BYTES = 10 * 1024 * 1024;
-const REU_CYCLE = { current: 'el ciclo actual', next: 'el próximo ciclo' };
-const reuPath = (n, rest = '') => `/api/meetings/${n}${rest}`;
-const reuChip = (m) => {
-  const [cls, label] = REU_STATUS[m.status] ?? ['idle', m.status];
-  return `<span class="chip ${cls}">${m.status === 'reading' ? dotClass('live') : ''}${esc(label)}</span>`;
-};
-const reuSource = (m) => `${REU_KIND[m.source.kind] ?? m.source.kind}${m.source.pages ? ` · ${m.source.pages} ${m.source.pages === 1 ? 'página' : 'páginas'}` : ''}`;
-const reuChars = (n) => `${n.toLocaleString('es')} caracteres`;
-// The notes' lines with text, numbered from 1: what ronin cites (meetings.ts's noteLines).
-const reuLines = (text) => text.split('\n').map((line) => line.trim()).filter(Boolean);
-const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
-
-function reuCounts(c) {
-  if (!c) return '<span class="m">—</span>';
-  const parts = [c.projects ? plural(c.projects, 'proyecto', 'proyectos') : '', c.issues ? plural(c.issues, 'issue', 'issues') : '', c.comments ? plural(c.comments, 'comentario', 'comentarios') : ''].filter(Boolean);
-  return `<span class="reu-counts">${parts.map((p) => `<span>${esc(p)}</span>`).join('')}<span class="m">${esc(plural(c.discarded, 'descartado', 'descartados'))}</span></span>`;
-}
+// The team uploads a meeting's notes and ronin proposes the work that comes
+// out of it. The pages are in React (src/apps/dashboard/src/pages/meetings/):
+// this only routes to them.
 
 function openReuniones() {
   S.sel = null;
@@ -3703,573 +3683,19 @@ function openReuniones() {
     $('#shell').dataset.m = 'detail';
     scrollTo(0, 0);
   }
-  loadReuniones();
 }
 
-function openReunion(n) {
+// `run`: one of its runs, to open the page on (a run picked elsewhere).
+function openReunion(n, run = null) {
   S.sel = null;
   S.page = 'reunion';
-  if (S.reu.n !== n) {
-    S.reu.tab = null;
-    S.reu.run = null;
-    S.reu.open = {};
-  }
-  S.reu.n = n;
+  S.reu = { n, run };
   stopStream();
   if (location.pathname !== `/reuniones/${n}`) history.pushState(null, '', `/reuniones/${n}`);
   renderAll();
   if (isMobile()) {
     $('#shell').dataset.m = 'detail';
     scrollTo(0, 0);
-  }
-  loadReunion(n);
-}
-
-async function loadReuniones() {
-  try {
-    S.reu.list = (await api('/api/meetings')).meetings;
-    S.reu.error = null;
-  } catch (error) {
-    if (error instanceof Unauthorized && showLogin(error)) return;
-    S.reu.error = error.message;
-  }
-  S.reu.listAt = Date.now();
-  if (S.page === 'reuniones') renderCenter();
-}
-
-async function loadReunion(n) {
-  try {
-    S.reu.detail[n] = { data: await api(reuPath(n)), at: Date.now() };
-  } catch (error) {
-    if (error instanceof Unauthorized && showLogin(error)) return;
-    S.reu.detail[n] = { ...S.reu.detail[n], error: error.message, at: Date.now() };
-  }
-  if (S.page === 'reunion' && S.reu.n === n) {
-    // Not under someone typing in the review: it'd take their cursor away.
-    if (!document.activeElement?.closest?.('[data-reuf]')) renderCenter();
-    const run = S.reu.run;
-    if (run && (!run.summary || run.summary.state === 'running')) loadReunionRun(run.runId);
-  }
-}
-
-async function loadReunionRun(runId) {
-  try {
-    const { summary, lines } = await api(`/api/runs/${encodeURIComponent(runId)}`);
-    if (S.reu.run?.runId !== runId) return;
-    S.reu.run = { runId, summary, lines: lines.filter((line) => line.type !== 'run_start' && line.type !== 'run_end') };
-  } catch (error) {
-    if (error instanceof Unauthorized && showLogin(error)) return;
-    if (S.reu.run?.runId === runId) S.reu.run.error = error.message;
-  }
-  if (S.page === 'reunion') renderCenter();
-}
-
-function reunionesHTML() {
-  const head = `<div class="reu-top"><div><h1>Reuniones</h1><p class="lead">Sube las notas de una reunión (PDF, Word o texto) y ronin propone el trabajo que sale de ella: proyectos de Linear, issues y comentarios en issues que ya existen. Nada se crea hasta que alguien lo apruebe aquí.</p></div>
-    ${notasRepos().length ? '<button class="btn-s primary" data-reunew>+ Subir notas</button>' : ''}</div>`;
-  const list = S.reu.list;
-  if (!list) return `<div class="today pd">${head}${S.reu.error ? `<p class="bad">${esc(S.reu.error)}</p>` : '<div class="empty">Cargando…</div>'}</div>`;
-  const rows = list.map((m) => `<tr data-reu="${m.number}" tabindex="0"><td class="pn">R-${m.number}</td>
-      <td><span class="tt">${esc(m.title)}</span><small>${m.at ? `${esc(when(m.at))} · ` : ''}${esc(repoShort(m.repo))} · ${esc(reuSource(m))}</small></td>
-      <td>${reuChip(m)}</td>
-      <td class="hide-m">${reuCounts(m.counts)}</td>
-      <td class="hide-m m">${esc(m.by)} · <span data-ago="${esc(m.createdAt)}">${esc(ago(m.createdAt))}</span></td></tr>`).join('');
-  return `<div class="today pd">${head}
-    ${rows ? `<table class="padm-t pd-t"><thead><tr><th></th><th>Reunión</th><th>Estado</th><th class="hide-m">Propuestas</th><th class="hide-m">Subida por</th></tr></thead><tbody>${rows}</tbody></table>` : '<p class="note">Todavía nadie subió las notas de una reunión.</p>'}
-  </div>`;
-}
-
-// The lines of the notes a proposal cites, folded until asked for.
-function reuCites(d, key, cites) {
-  if (!cites.length) return '';
-  const lines = reuLines(d.text);
-  const open = S.reu.open[key];
-  return `<button class="reu-x" data-reuopen="${esc(key)}">${open ? '▾' : '▸'} De las notas${cites.length > 1 ? ` (${cites.length})` : ''}</button>
-    ${open ? cites.map((c) => `<blockquote class="reu-q">${esc(lines[c - 1] ?? '')}<button class="reu-src-l" data-reuline="${c}">línea ${c} en las notas</button></blockquote>`).join('') : ''}`;
-}
-
-function reuBody(key, label, body) {
-  const open = S.reu.open[key];
-  return `<button class="reu-x" data-reuopen="${esc(key)}">${open ? '▾' : '▸'} ${esc(label)}</button>${open ? `<div class="md reu-md">${md(body, S.reu.detail[S.reu.n]?.data?.repo ?? '')}</div>` : ''}`;
-}
-
-const reuMeta = (parts) => (parts.filter(Boolean).length ? `<div class="reu-meta">${parts.filter(Boolean).join('')}</div>` : '');
-const reuCycle = (cycle) => (cycle ? `<span>${LIN_ICON} ${esc(REU_CYCLE[cycle] ?? cycle)}</span>` : '');
-
-// The review (#62, entrega 3): what the person marks and changes, by
-// proposal id, kept while the page is open.
-function reuForm(d) {
-  const key = d.number;
-  if (S.reu.form[key]) return S.reu.form[key];
-  const p = d.proposals;
-  const f = { on: {}, title: {}, body: {}, lead: {}, project: {}, cycle: {}, edit: {} };
-  const all = [...p.projects.flatMap((x) => [x, ...x.issues]), ...p.issues, ...p.comments];
-  for (const x of all) f.on[x.id] = !d.results[x.id]?.ok;
-  S.reu.form[key] = f;
-  return f;
-}
-
-const reuEditable = (d) => d.status === 'review';
-// Dimmed: unmarked while reviewing, or left out once it's decided.
-const reuOff = (d, id) => !d.results[id]?.ok && (reuEditable(d) ? !reuForm(d).on[id] : d.status === 'done' || d.status === 'discarded');
-const reuPlanning = (d) => linearRepos().find((l) => l.repo === d.repo)?.planning ?? null;
-
-// The current cycle and the next, by what the page knows of Linear.
-function reuCycleLabels(d) {
-  const cycles = reuPlanning(d)?.cycles ?? [];
-  const current = cycles.find((c) => c.current);
-  const next = cycles.find((c) => !c.current && (!current || c.startsAt >= current.endsAt));
-  return { current: current ? `${cycleName(current)} (el actual)` : 'El ciclo actual', next: next ? `${cycleName(next)} (el próximo)` : 'El próximo ciclo' };
-}
-
-// What became of it, once approved.
-function reuResult(d, id) {
-  const r = d.results[id];
-  if (!r) return '';
-  if (!r.ok) return `<div class="reu-res bad">No se pudo crear: ${esc(r.error)}</div>`;
-  const label = r.projectId ? 'Proyecto creado en Linear' : r.number && d.proposals.comments.some((c) => c.id === id) ? `Comentado en #${r.number}` : `Creado #${r.number}`;
-  const href = typeof r.url === 'string' && /^https:\/\/(github\.com|linear\.app)\//.test(r.url) ? r.url : null;
-  return `<div class="reu-res ok">✓ ${esc(label)}${href ? ` <a href="${esc(href)}" target="_blank" rel="noopener">abrir ↗</a>` : ''}${r.number && !r.projectId ? ` <button class="link" data-reuitem="${esc(`${d.repo}#${r.number}`)}">en el tablero</button>` : ''}<span class="m"> · ${esc(r.by)}</span></div>`;
-}
-
-function reuCheck(d, id, label) {
-  if (!reuEditable(d) || d.results[id]?.ok) return '';
-  const f = reuForm(d);
-  return `<input type="checkbox" class="reu-chk" data-reuchk="${esc(id)}" ${f.on[id] ? 'checked' : ''} aria-label="${esc(label)}">`;
-}
-
-function reuTitle(d, id, value, label) {
-  const f = reuEditable(d) && !d.results[id]?.ok ? reuForm(d) : null;
-  if (!f) return `<b>${esc(value)}</b>`;
-  return `<input class="reu-ti" data-reuf="title" data-reuid="${esc(id)}" maxlength="256" value="${esc(f.title[id] ?? value)}" aria-label="${esc(label)}">`;
-}
-
-function reuSelect(d, field, id, value, options, label) {
-  const f = reuForm(d);
-  const cur = f[field][id] ?? value ?? '';
-  return `<label class="reu-sel">${label} <select data-reuf="${field}" data-reuid="${esc(id)}">${options.map(([v, l]) => `<option value="${esc(v)}" ${v === cur ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></label>`;
-}
-
-function reuCycleField(d, id, value, label = `${LIN_ICON} Ciclo`) {
-  if (!reuPlanning(d)) return '';
-  if (!reuEditable(d) || d.results[id]?.ok) return reuCycle(value);
-  const labels = reuCycleLabels(d);
-  return reuSelect(d, 'cycle', id, value, [['', 'sin ciclo'], ['current', labels.current], ['next', labels.next]], label);
-}
-
-// The description: shown, or a textarea while editing it.
-function reuText(d, key, id, label, body) {
-  const f = reuEditable(d) && !d.results[id]?.ok ? reuForm(d) : null;
-  if (!f) return reuBody(key, label, body);
-  const open = S.reu.open[key];
-  return `<button class="reu-x" data-reuopen="${esc(key)}">${open ? '▾' : '▸'} ${esc(label)}${f.body[id] !== undefined ? ' · editada' : ''}</button>${open ? `<textarea class="reu-ta" data-reuf="body" data-reuid="${esc(id)}" rows="8">${esc(f.body[id] ?? body)}</textarea>` : ''}`;
-}
-
-function reuIssueHTML(d, i, kid = false) {
-  const planning = reuPlanning(d);
-  const projectField = !kid && planning && reuEditable(d) && !d.results[i.id]?.ok
-    ? reuSelect(d, 'project', i.id, i.project ?? '', [['', 'sin proyecto'], ...[...new Set([...(i.project ? [i.project] : []), ...planning.projects.map((x) => x.name)])].map((x) => [x, x])], `${LIN_ICON} Proyecto`)
-    : i.project ? `<span>${LIN_ICON} ${esc(i.project)}</span>` : '';
-  return `<div class="reu-pr ${kid ? 'reu-kid' : ''} ${reuOff(d, i.id) ? 'off' : ''}"><div class="reu-h">${reuCheck(d, i.id, 'Incluir este issue')}<span class="reu-kind iss">issue</span>${reuTitle(d, i.id, i.title, 'Título del issue')}</div>
-    ${i.why ? `<div class="reu-why">${esc(i.why)}</div>` : ''}
-    ${reuMeta([projectField, reuCycleField(d, i.id, i.cycle)])}
-    <div class="reu-xs">${reuCites(d, `q-${i.id}`, i.cites)}${reuText(d, `b-${i.id}`, i.id, 'Descripción', i.body)}</div>${reuResult(d, i.id)}</div>`;
-}
-
-function reuProposalsHTML(d) {
-  const p = d.proposals;
-  if (!p) return '<p class="note">Todavía no hay propuestas: ronin no terminó de leer las notas.</p>';
-  const editable = reuEditable(d);
-  const off = (id) => reuOff(d, id);
-  const sec = (title, n, html, hint = '') => (n ? `<section class="reu-sec"><h2>${title} <span class="c">${n}</span>${hint ? `<span class="hint">${hint}</span>` : ''}</h2>${html}</section>` : '');
-  const planning = reuPlanning(d);
-  const projects = p.projects.map((x) => `<div class="reu-pr proj ${off(x.id) ? 'off' : ''}"><div class="reu-h">${reuCheck(d, x.id, 'Incluir este proyecto')}<span class="reu-kind proj">${LIN_ICON} proyecto nuevo</span>${reuTitle(d, x.id, x.name, 'Nombre del proyecto')}</div>
-      ${x.why ? `<div class="reu-why">${esc(x.why)}</div>` : ''}
-      ${reuMeta(['<span>Linear · estado Backlog</span>', editable && planning && !d.results[x.id]?.ok ? reuSelect(d, 'lead', x.id, x.lead ?? '', [['', 'sin líder'], ...planning.people.map((u) => [u.name, u.name])], 'Líder') : x.lead ? `<span>líder ${esc(x.lead)}</span>` : ''])}
-      <div class="reu-xs">${reuCites(d, `q-${x.id}`, x.cites)}${x.description ? reuText(d, `b-${x.id}`, x.id, 'Descripción', x.description) : ''}</div>${reuResult(d, x.id)}
-      <div class="reu-kids"><div class="reu-kids-h">Sus issues · en GitHub, dentro de este proyecto</div>${x.issues.map((i) => reuIssueHTML(d, i, true)).join('')}</div></div>`).join('');
-  const comments = p.comments.map((c) => `<div class="reu-pr ${off(c.id) ? 'off' : ''}"><div class="reu-h">${reuCheck(d, c.id, 'Incluir este comentario')}<span class="reu-kind com">comentario</span><b>en <button class="link" data-reuitem="${esc(`${d.repo}#${c.issue}`)}">#${c.issue}</button> <span class="reu-it">${esc(c.issueTitle)}</span></b></div>
-      ${c.why ? `<div class="reu-why">${esc(c.why)}</div>` : ''}
-      ${reuMeta([reuCycleField(d, c.id, c.cycle, `${LIN_ICON} Pasarlo a`)])}
-      <div class="reu-xs">${reuCites(d, `q-${c.id}`, c.cites)}${reuText(d, `b-${c.id}`, c.id, 'Comentario', c.body)}</div>${reuResult(d, c.id)}</div>`).join('');
-  const discarded = p.discarded.map((x, i) => `<div class="reu-disc"><b>${esc(x.topic)}</b><span class="reu-why">${esc(x.why)}</span><div class="reu-xs">${reuCites(d, `d-${i}`, x.cites)}</div></div>`).join('');
-  const done = d.status === 'done' ? '<div class="pd-now"><div class="k">' + PED_ICON.ok + ' Creado</div><div class="t">Se creó todo lo aprobado</div><div class="d">Lo que no se marcó quedó fuera. Los issues se crearon sin asignar: el equipo decide quién los toma.</div></div>'
-    : d.status === 'discarded' ? `<div class="pd-now"><div class="k">${PED_ICON.ok} Descartada</div><div class="t">${Object.values(d.results).some((r) => r.ok) ? 'Lo que faltaba quedó fuera' : 'No se creó nada de esta reunión'}</div></div>` : '';
-  return `${done}${p.summary ? `<p class="reu-summary">${esc(p.summary)}</p>` : ''}
-    ${sec('Proyectos', p.projects.length, projects, 'en Linear: GitHub no tiene proyectos')}
-    ${sec('Issues', p.issues.length, p.issues.map((i) => reuIssueHTML(d, i)).join(''))}
-    ${sec('En issues que ya existen', p.comments.length, comments)}
-    ${sec('Descartado', p.discarded.length, `<div class="reu-discs">${discarded}</div>`, 'lo que se habló y no pide trabajo nuevo')}
-    ${editable ? reuApproveBar(d) : ''}`;
-}
-
-// What will be created: the marked ones not created yet.
-function reuChosen(d) {
-  const f = reuForm(d);
-  const p = d.proposals;
-  const pick = (x) => f.on[x.id] && !d.results[x.id]?.ok;
-  const projects = p.projects.filter(pick).length;
-  const issues = [...p.projects.flatMap((x) => x.issues), ...p.issues].filter(pick).length;
-  const comments = p.comments.filter(pick).length;
-  return { projects, issues, comments };
-}
-
-// The repos it can upload a meeting's notes to (#174).
-const notasRepos = () => (S.snap?.repos ?? []).filter((repo) => canDo(repo, 'notas'));
-
-function reuApproveBar(d) {
-  if (!canDo(d.repo, 'aprobar')) return '<div class="reu-approve"><div class="sum">Lo que propone esta reunión lo aprueba alguien con permiso para aprobar en este repo.</div></div>';
-  const { projects, issues, comments } = reuChosen(d);
-  const parts = [projects ? plural(projects, 'proyecto', 'proyectos') : '', issues ? plural(issues, 'issue', 'issues') : '', comments ? plural(comments, 'comentario', 'comentarios') : ''].filter(Boolean);
-  const what = parts.length ? parts.join(', ').replace(/, ([^,]*)$/, ' y $1') : 'nada';
-  const busy = S.reu.approving;
-  return `<div class="reu-approve"><div class="sum">Crear <b>${esc(what)}</b><small>A tu nombre (${esc(S.snap?.me ?? '')}): los issues y los comentarios en GitHub con tu sesión${projects ? '; el proyecto en Linear con la key del repo' : ''}.</small></div>
-    <button class="btn-s" data-reudiscard ${busy ? 'disabled' : ''}>Descartar ${Object.values(d.results).some((r) => r.ok) ? 'el resto' : 'todo'}</button>
-    <button class="btn-s primary" data-reuapprove ${busy || !parts.length ? 'disabled' : ''}>${busy ? 'Creando…' : 'Crear seleccionados'}</button></div>`;
-}
-
-async function approveReunion(n) {
-  const d = S.reu.detail[n]?.data;
-  if (!d || S.reu.approving) return;
-  const f = reuForm(d);
-  const p = d.proposals;
-  const ids = [...p.projects.flatMap((x) => [x.id, ...x.issues.map((i) => i.id)]), ...p.issues.map((i) => i.id), ...p.comments.map((c) => c.id)].filter((id) => f.on[id] && !d.results[id]?.ok);
-  const items = ids.map((id) => ({ id, ...['title', 'body', 'lead', 'project', 'cycle'].reduce((o, k) => (f[k][id] !== undefined ? { ...o, [k]: f[k][id] } : o), {}) }));
-  S.reu.approving = true;
-  renderCenter();
-  try {
-    const out = await api(reuPath(n, '/approve'), { method: 'POST', body: JSON.stringify({ items }) });
-    toast(out.failed ? `Se crearon ${out.created}; ${out.failed} no se pudieron crear: puedes intentarlo de nuevo.` : `Listo: se crearon ${out.created}.`);
-    refresh();
-  } catch (error) {
-    if (error instanceof Unauthorized && showLogin(error)) return;
-    toast(`No se pudo: ${error.message}`);
-  }
-  S.reu.approving = false;
-  delete S.reu.form[n];
-  await loadReunion(n);
-}
-
-async function discardReunion(n) {
-  if (!confirm('¿Descartar lo que queda de esta reunión? No se crea nada más.')) return;
-  try {
-    await api(reuPath(n, '/discard'), { method: 'POST', body: '{}' });
-    toast('Listo: la reunión quedó descartada.');
-    refresh();
-  } catch (error) {
-    if (error instanceof Unauthorized && showLogin(error)) return;
-    toast(`No se pudo: ${error.message}`);
-  }
-  await loadReunion(n);
-}
-
-// What each line of the notes is cited by.
-function reuCitedBy(d) {
-  const by = {};
-  const add = (cites, label) => { for (const c of cites) (by[c] ??= new Set()).add(label); };
-  const p = d.proposals;
-  if (!p) return by;
-  for (const x of p.projects) {
-    add(x.cites, 'proyecto');
-    for (const i of x.issues) add(i.cites, 'proyecto');
-  }
-  for (const i of p.issues) add(i.cites, 'issue');
-  for (const c of p.comments) add(c.cites, `#${c.issue}`);
-  for (const x of p.discarded) add(x.cites, 'descartado');
-  return by;
-}
-
-function reuNotesHTML(d) {
-  const file = d.original
-    ? `<div class="reu-src"><span class="fi">${esc(d.source.kind === 'docx' ? 'DOCX' : d.source.kind === 'pdf' ? 'PDF' : 'TXT')}</span><div><span class="nm">${esc(d.source.name ?? '')}</span><small>${esc(reuSource(d))} · ${esc(reuChars(d.chars))}</small></div><a class="btn-s" href="${esc(reuPath(d.number, '/original'))}" download>Descargar original</a></div>`
-    : `<p class="m pd-note">Pegadas en el tablero · ${esc(reuChars(d.chars))}.</p>`;
-  const by = reuCitedBy(d);
-  const lines = reuLines(d.text).map((line, i) => {
-    const tags = by[i + 1];
-    return `<div class="reu-line ${tags ? 'cited' : ''}" id="reu-l${i + 1}"><span class="n">${i + 1}</span><span class="t">${esc(line)}${tags ? `<span class="tags">${esc([...tags].join(', '))}</span>` : ''}</span></div>`;
-  }).join('');
-  return `${file}<div class="reu-notes">${lines}</div>`;
-}
-
-function reuActivityHTML(d) {
-  const item = (cls, icon, title, at, extra = '') => `<li class="pd-ev ${cls}"><span class="ic">${PED_ICON[icon]}</span><div class="h"><b>${title}</b><span class="tm" title="${esc(when(at))}">${esc(hhmm(at))}</span></div>${extra}</li>`;
-  const events = d.events.map((e) => {
-    switch (e.kind) {
-      case 'uploaded': return { at: e.at, html: item('person', 'person', `${esc(e.by)} subió las notas`, e.at) };
-      case 'retried': return { at: e.at, html: item('person', 'person', `${esc(e.by)} pidió leerla de nuevo`, e.at) };
-      case 'worker': return { at: e.at, html: item('small', 'wait', e.by === 'tick' ? 'El tick la vio sin worker y lanzó otro' : 'Lanzó el worker que la lee', e.at) };
-      case 'read': return { at: e.at, html: item('ok', 'ok', `Propuso ${[e.projects ? plural(e.projects, 'proyecto', 'proyectos') : '', e.issues ? plural(e.issues, 'issue', 'issues') : '', e.comments ? plural(e.comments, 'comentario', 'comentarios') : ''].filter(Boolean).join(', ') || 'nada'}`, e.at, `<div class="m">${esc(plural(e.discarded, 'descartado', 'descartados'))}</div>`) };
-      case 'failed': return { at: e.at, html: item('crit', 'crit', 'La lectura falló', e.at, `<div class="bx err">${esc(e.error)}</div>`) };
-      case 'mail': return { at: e.at, html: item(e.ok ? 'small' : 'crit', 'mail', e.ok ? 'Correo al equipo del repo' : 'No salió el correo al equipo', e.at) };
-      case 'approved': return { at: e.at, html: item(e.failed ? 'warn' : 'ok', e.failed ? 'crit' : 'ok', `${esc(e.by)} aprobó: ${esc(plural(e.created, 'creado', 'creados'))}${e.failed ? `, ${esc(plural(e.failed, 'no se pudo crear', 'no se pudieron crear'))}` : ''}`, e.at) };
-      case 'discarded': return { at: e.at, html: item('small', 'person', `${esc(e.by)} descartó ${d.status === 'discarded' && Object.values(d.results).some((r) => r.ok) ? 'el resto' : 'la reunión'}`, e.at) };
-      default: return null;
-    }
-  }).filter(Boolean);
-  const runs = d.runs.map((run) => ({ at: run.startedAt, html: item('run', 'run', 'ronin leyó las notas', run.startedAt, pedRunCard(run)) }));
-  return `<ol class="pd-tl">${[...events, ...runs].sort((a, b) => Date.parse(a.at) - Date.parse(b.at)).map((x) => x.html).join('')}</ol>`;
-}
-
-function reuRunsHTML(d) {
-  if (!d.runs.length) return '<p class="note">Sin corridas en los últimos 14 días.</p>';
-  const open = S.reu.run;
-  const list = d.runs.map((run) => `<div class="pd-runrow ${open?.runId === run.runId ? 'cur' : ''}"><span class="tm">${esc(when(run.startedAt))}</span>${pedRunCard(run)}</div>`).join('');
-  if (!open) return list;
-  const body = open.summary
-    ? `<div class="tx pd-tx">${open.lines.map(step).join('') || '<div class="empty">El agente todavía no hizo nada.</div>'}${ending(open.summary)}</div>`
-    : `<div class="empty">${open.error ? esc(open.error) : 'Cargando la corrida…'}</div>`;
-  return `<div class="pd-runview"><div class="pd-runbar"><b>${esc(typeName(open.summary?.taskType ?? ''))}</b><span class="m">${open.summary ? esc(when(open.summary.startedAt)) : ''}</span><button class="btn-s" data-prunx>Cerrar</button></div>${body}</div>${list}`;
-}
-
-function reuNowHTML(d) {
-  const running = d.runs.find((run) => run.state === 'running');
-  if (d.status === 'pending' || d.status === 'reading') {
-    return `<div class="pd-now running"><div class="k">${dotClass('live')} Ahora · ${d.status === 'reading' ? 'ronin la está leyendo' : 'en cola para ronin'}</div>
-      <div class="t">${d.status === 'reading' ? 'Lee las notas contra los issues abiertos, Linear y el código' : 'Espera un lugar libre para leerla'}</div>
-      ${running ? `<div class="feed">${running.lastStep ? `▸ ${esc(running.lastStep)}` : 'Arrancando…'}</div><div class="acts"><button class="btn-s" data-prun="${esc(running.runId)}">Ver la corrida</button></div>` : '<div class="d">Suele tardar unos minutos. Al terminar, el equipo del repo recibe un correo si hay algo que revisar.</div>'}</div>`;
-  }
-  if (d.status === 'failed') {
-    const last = d.events.filter((e) => e.kind === 'failed').at(-1);
-    return `<div class="pd-now failed"><div class="k">${PED_ICON.crit} Ahora · falló la lectura</div><div class="t">ronin no pudo leer las notas</div>
-      ${last ? `<div class="err">${esc(last.error)}</div>` : ''}<div class="acts"><button class="btn-s primary" data-reuretry ${S.reu.retrying ? 'disabled' : ''}>${S.reu.retrying ? 'Pidiendo…' : 'Leerla de nuevo'}</button></div></div>`;
-  }
-  if (d.status === 'empty') {
-    return `<div class="pd-now"><div class="k">${PED_ICON.ok} Leída</div><div class="t">No salió trabajo nuevo de esta reunión</div><div class="d">ronin no propuso nada y no mandó correo. Lo que se habló está abajo, con el motivo.</div></div>`;
-  }
-  return '';
-}
-
-function reuSideHTML(d) {
-  return `<div class="pd-side"><div class="pd-card"><h3>Reunión</h3><dl class="kv">
-      ${d.at ? `<dt>Cuándo</dt><dd>${esc(when(d.at))}</dd>` : ''}
-      <dt>Repo</dt><dd>${esc(d.repo)}</dd>
-      <dt>Subida</dt><dd>${esc(d.by)}<small>${esc(when(d.createdAt))}</small></dd>
-      <dt>Notas</dt><dd>${esc(reuSource(d))}<small>${esc(reuChars(d.chars))}</small></dd>
-      ${d.link && /^https?:\/\//.test(d.link) ? `<dt>Link</dt><dd><a href="${esc(d.link)}" target="_blank" rel="noopener noreferrer">${esc(d.link.replace(/^https?:\/\//, '').slice(0, 40))} ↗</a></dd>` : ''}
-    </dl></div>
-    ${d.runs.length ? `<div class="pd-card"><h3>Corridas</h3><div class="pd-costs">${d.runs.slice().reverse().map((run) => `<div><span>${esc(typeName(run.taskType))}</span><span>${run.costUsd !== undefined ? esc(money(run.costUsd)) : run.state === 'running' ? 'en curso' : '—'}</span></div>`).join('')}</div></div>` : ''}</div>`;
-}
-
-function reunionHTML() {
-  const n = S.reu.n;
-  const entry = S.reu.detail[n];
-  const d = entry?.data;
-  if (!d) return `<div class="today pd">${entry?.error ? `<p class="bad">${esc(entry.error)}</p>` : '<div class="empty">Cargando…</div>'}</div>`;
-  const total = d.proposals ? d.proposals.projects.length + d.proposals.issues.length + d.proposals.comments.length : 0;
-  const tabs = [...(d.proposals ? [['props', 'Propuestas', total]] : []), ['notas', 'Notas'], ['act', 'Actividad'], ['runs', 'Corridas', d.runs.length]];
-  const tab = tabs.some(([k]) => k === S.reu.tab) ? S.reu.tab : tabs[0][0];
-  const body = tab === 'props' ? reuProposalsHTML(d) : tab === 'act' ? reuActivityHTML(d) : tab === 'runs' ? reuRunsHTML(d) : reuNotesHTML(d);
-  return `<div class="head pd-head"><div class="crumb"><button class="link" data-reupage>Reuniones</button> / <i style="background:${repoColor(d.repo)}"></i>${esc(repoShort(d.repo))}</div>
-      <div class="row"><h1>${esc(d.title)} <span class="n">R-${d.number}</span></h1></div>
-      <div class="state">${reuChip(d)}${d.at ? `<span>${esc(when(d.at))}</span>` : ''}<span class="m">subida por ${esc(d.by)} ${esc(ago(d.createdAt))}</span></div></div>
-    <div class="doctabs" role="tablist">${tabs.map(([k, label, c]) => `<button class="doctab" role="tab" data-reutab="${k}" aria-selected="${tab === k}">${label}${c ? ` <span class="c">${c}</span>` : ''}</button>`).join('')}</div>
-    <div class="pd-body"><div class="pd-cols"><div class="pd-main">${tab === 'runs' ? '' : reuNowHTML(d)}${body}</div>${reuSideHTML(d)}</div></div>`;
-}
-
-async function retryReunion(n) {
-  S.reu.retrying = true;
-  renderCenter();
-  try {
-    await api(reuPath(n, '/retry'), { method: 'POST', body: '{}' });
-    toast(`Listo: ronin vuelve a leer R-${n}.`);
-  } catch (error) {
-    if (error instanceof Unauthorized && showLogin(error)) return;
-    toast(`No se pudo: ${error.message}`);
-  }
-  S.reu.retrying = false;
-  await loadReunion(n);
-}
-
-function wireReuniones() {
-  const center = $('#center');
-  for (const row of center.querySelectorAll('[data-reu]')) {
-    row.onclick = () => openReunion(Number(row.dataset.reu));
-    row.onkeydown = (event) => { if (event.key === 'Enter') openReunion(Number(row.dataset.reu)); };
-  }
-  center.querySelector('[data-reunew]')?.addEventListener('click', openUpload);
-  center.querySelector('[data-reupage]')?.addEventListener('click', openReuniones);
-  center.querySelector('[data-reuretry]')?.addEventListener('click', () => retryReunion(S.reu.n));
-  for (const b of center.querySelectorAll('[data-reutab]')) b.onclick = () => { S.reu.tab = b.dataset.reutab; renderCenter(); };
-  for (const b of center.querySelectorAll('[data-reuopen]')) b.onclick = () => { S.reu.open[b.dataset.reuopen] = !S.reu.open[b.dataset.reuopen]; renderCenter(); };
-  for (const b of center.querySelectorAll('[data-reuitem]')) b.onclick = () => select(b.dataset.reuitem);
-  for (const b of center.querySelectorAll('[data-reuline]')) {
-    b.onclick = () => {
-      S.reu.tab = 'notas';
-      renderCenter();
-      const line = $(`#reu-l${b.dataset.reuline}`);
-      if (line) {
-        line.scrollIntoView({ block: 'center' });
-        line.classList.add('flash');
-        setTimeout(() => line.classList.remove('flash'), 1600);
-      }
-    };
-  }
-  for (const b of center.querySelectorAll('[data-prun]')) {
-    b.onclick = () => {
-      S.reu.tab = 'runs';
-      S.reu.run = { runId: b.dataset.prun };
-      renderCenter();
-      $('#center .pd-body')?.scrollTo(0, 0);
-      loadReunionRun(b.dataset.prun);
-    };
-  }
-  center.querySelector('[data-prunx]')?.addEventListener('click', () => { S.reu.run = null; renderCenter(); });
-  const d = S.reu.detail[S.reu.n]?.data;
-  if (!d || S.page !== 'reunion') return;
-  for (const b of center.querySelectorAll('[data-reuchk]')) {
-    b.onchange = () => {
-      const f = reuForm(d);
-      f.on[b.dataset.reuchk] = b.checked;
-      // A project's issues go with it.
-      const project = d.proposals.projects.find((x) => x.id === b.dataset.reuchk);
-      if (project) for (const i of project.issues) if (!d.results[i.id]?.ok) f.on[i.id] = b.checked;
-      renderCenter();
-    };
-  }
-  for (const el of center.querySelectorAll('[data-reuf]')) {
-    const save = () => {
-      const f = reuForm(d);
-      f[el.dataset.reuf][el.dataset.reuid] = el.value;
-      // Nothing is redrawn: the rest stays as typed, and a click on the bar
-      // right after leaving a field still lands on its button.
-      const fresh = document.createElement('div');
-      fresh.innerHTML = reuApproveBar(d);
-      const sum = center.querySelector('.reu-approve .sum');
-      if (sum) sum.innerHTML = fresh.querySelector('.sum').innerHTML;
-    };
-    el.oninput = save;
-    el.onchange = save;
-  }
-  center.querySelector('[data-reuapprove]')?.addEventListener('click', () => approveReunion(S.reu.n));
-  center.querySelector('[data-reudiscard]')?.addEventListener('click', () => discardReunion(S.reu.n));
-}
-
-// The upload dialog: a file, or the text pasted.
-function openUpload() {
-  const repos = notasRepos();
-  S.reu.up = { repo: repos[0] ?? '', title: '', at: '', link: '', text: '', file: null, sending: false, error: null };
-  renderUpload();
-}
-
-function closeUpload() {
-  if (S.reu.up?.sending) return;
-  S.reu.up = null;
-  renderUpload();
-}
-
-const kb = (bytes) => (bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / 1024 / 1024).toFixed(1).replace('.', ',')} MB`);
-
-function takeFile(file) {
-  const u = S.reu.up;
-  if (!u || !file) return;
-  u.error = null;
-  if (file.size > REU_MAX_BYTES) {
-    u.error = 'El archivo puede pesar hasta 10 MB.';
-    renderUpload();
-    return;
-  }
-  const reader = new FileReader();
-  reader.onload = () => {
-    u.file = { name: file.name, size: file.size, data: reader.result };
-    renderUpload();
-  };
-  reader.onerror = () => {
-    u.error = 'No se pudo leer el archivo.';
-    renderUpload();
-  };
-  reader.readAsDataURL(file);
-}
-
-function renderUpload() {
-  let layer = $('#rlayer');
-  const u = S.reu.up;
-  if (!u) {
-    layer?.remove();
-    return;
-  }
-  if (!layer) {
-    const repos = notasRepos();
-    layer = Object.assign(document.body.appendChild(document.createElement('div')), { id: 'rlayer' });
-    layer.innerHTML = `<div class="scrim"><div class="dlg dlg-new" role="dialog" aria-modal="true" aria-labelledby="ru-t">
-      <h2 id="ru-t">Subir notas de una reunión</h2>
-      <p class="help">ronin propone; nada se crea hasta que alguien lo apruebe. Las notas quedan en el runner, nunca en GitHub.</p>
-      <div class="reu-row2"><label class="field"><span>Repo</span><select id="ru-repo">${repos.map((r) => `<option>${esc(r)}</option>`).join('')}</select></label>
-        <label class="field"><span>Fecha (opcional)</span><input id="ru-at" type="datetime-local"></label></div>
-      <label class="field"><span>Título (opcional)</span><input id="ru-title" maxlength="120" autocomplete="off" placeholder="Si lo dejas vacío, sale del archivo o de las notas"></label>
-      <div id="ru-file"></div>
-      <input id="ru-input" type="file" accept=".pdf,.docx,.txt,.md,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown" hidden>
-      <div id="ru-paste"><div class="reu-or">o pega el texto</div>
-        <label class="field"><span class="sr">Texto de las notas</span><textarea id="ru-text" rows="6" placeholder="Las notas tal como están…"></textarea></label></div>
-      <label class="field"><span>Link de la reunión o la grabación (opcional)</span><input id="ru-link" maxlength="500" autocomplete="off" placeholder="https://meet.google.com/…"></label>
-      <p class="bad" id="ru-err" hidden></p>
-      <div class="foot-d"><button class="btn-s" id="ru-no">Cancelar</button><button class="btn-s primary" id="ru-yes">Subir</button></div></div></div>`;
-    const bind = (sel, key) => { $(sel).oninput = (e) => { S.reu.up[key] = e.target.value; renderUpload(); }; };
-    bind('#ru-title', 'title');
-    bind('#ru-at', 'at');
-    bind('#ru-link', 'link');
-    bind('#ru-text', 'text');
-    $('#ru-repo').onchange = (e) => { S.reu.up.repo = e.target.value; };
-    $('#ru-input').onchange = (e) => takeFile(e.target.files[0]);
-    $('#ru-no').onclick = closeUpload;
-    $('#ru-yes').onclick = sendUpload;
-    layer.querySelector('.scrim').onclick = (event) => { if (event.target.classList.contains('scrim')) closeUpload(); };
-    $('#ru-repo').focus();
-  }
-  const box = $('#ru-file');
-  const html = u.file
-    ? `<div class="reu-drop has"><span class="fi">${esc((u.file.name.split('.').pop() ?? '').toUpperCase().slice(0, 4))}</span><div><span class="nm">${esc(u.file.name)}</span><small>${esc(kb(u.file.size))}</small></div><button class="btn-s" id="ru-rm">Quitar</button></div>`
-    : `<button class="reu-drop" id="ru-pick"><b>Arrastra el archivo aquí o elígelo</b><span>PDF, Word (.docx), texto o Markdown · hasta 10 MB</span><small>De Google Docs: Archivo → Descargar → PDF o .docx</small></button>`;
-  if (box._html !== html) {
-    box._html = html;
-    box.innerHTML = html;
-    $('#ru-rm')?.addEventListener('click', () => { u.file = null; $('#ru-input').value = ''; renderUpload(); });
-    const pick = $('#ru-pick');
-    if (pick) {
-      pick.onclick = () => $('#ru-input').click();
-      pick.ondragover = (e) => { e.preventDefault(); pick.classList.add('over'); };
-      pick.ondragleave = () => pick.classList.remove('over');
-      pick.ondrop = (e) => { e.preventDefault(); pick.classList.remove('over'); takeFile(e.dataTransfer.files[0]); };
-    }
-  }
-  $('#ru-paste').hidden = Boolean(u.file);
-  const yes = $('#ru-yes');
-  yes.textContent = u.sending ? 'Subiendo…' : 'Subir';
-  yes.disabled = u.sending || !u.repo || (!u.file && !u.text.trim());
-  $('#ru-err').hidden = !u.error;
-  $('#ru-err').innerHTML = u.error ?? '';
-}
-
-async function sendUpload() {
-  const u = S.reu.up;
-  if (!u || u.sending) return;
-  u.sending = true;
-  u.error = null;
-  renderUpload();
-  try {
-    const body = { repo: u.repo, title: u.title, link: u.link, ...(u.at ? { at: new Date(u.at).toISOString() } : {}), ...(u.file ? { file: { name: u.file.name, data: u.file.data } } : { text: u.text }) };
-    const response = await fetch('/api/meetings', { method: 'POST', headers: { Accept: 'application/json', 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-    if (response.status === 401) throw new Unauthorized(await sessionEnded(response));
-    const out = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      u.sending = false;
-      // The same notes again: a way to the meeting that has them.
-      u.error = response.status === 409 && out.number
-        ? `${esc(out.error)} <button class="link" data-reugo="${Number(out.number)}">Abrir R-${Number(out.number)}</button>`
-        : esc(`No se pudo: ${out.error ?? response.status}`);
-      renderUpload();
-      $('#rlayer [data-reugo]')?.addEventListener('click', (e) => { S.reu.up = null; renderUpload(); openReunion(Number(e.target.dataset.reugo)); });
-      return;
-    }
-    S.reu.up = null;
-    renderUpload();
-    toast(`Listo: subiste las notas como R-${out.number}.`);
-    refresh();
-    openReunion(out.number);
-  } catch (error) {
-    if (error instanceof Unauthorized && showLogin(error)) return;
-    u.sending = false;
-    u.error = esc(`No se pudo: ${error.message}`);
-    renderUpload();
   }
 }
 
@@ -4598,12 +4024,7 @@ async function select(id) {
   if (reu) {
     const runId = S.pendingRun;
     S.pendingRun = null;
-    openReunion(Number(reu[1]));
-    if (runId) {
-      S.reu.tab = 'runs';
-      S.reu.run = { runId };
-      loadReunionRun(runId);
-    }
+    openReunion(Number(reu[1]), runId);
     return;
   }
   // A portal request's run (Hoy's timeline) opens the request's page, on that run (#132).
@@ -4659,8 +4080,6 @@ async function refresh() {
     if (expl && Date.now() - (expl.at ?? 0) > (waiting ? WAITING_EVERY_MS : DETAIL_EVERY_MS)) loadExploration(S.sel);
   }
   if (pedDoc?.element.isConnected && Date.now() - (S.detail[pedGhId(pedDoc.doc)]?.at ?? 0) > DETAIL_EVERY_MS) loadDetail(pedGhId(pedDoc.doc));
-  if (S.page === 'reunion' && Date.now() - (S.reu.detail[S.reu.n]?.at ?? 0) > PEDIDO_EVERY_MS) loadReunion(S.reu.n);
-  if (S.page === 'reuniones' && Date.now() - S.reu.listAt > PEDIDO_EVERY_MS) loadReuniones();
   // The apps' findings, more often while their page is open: the sidebar counts them too.
   if (xplRows().length && Date.now() - S.xpl.listAt > (['exploraciones', 'exploracion'].includes(S.page) ? PEDIDO_EVERY_MS : XPL_EVERY_MS)) loadExploraciones();
   // An agent's transcript open on an app's runs, while it goes on.

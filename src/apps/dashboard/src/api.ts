@@ -16,3 +16,5 @@ export type SubscriptionAccount = InferResponseType<typeof client.api.metrics.su
 export type RequestRow = InferResponseType<typeof client.api.requests.$get, 200>['requests'][number];
 export type RequestDetail = InferResponseType<(typeof client.api.requests)[':n']['$get'], 200>;
 export type Run = InferResponseType<(typeof client.api.runs)[':runId']['$get'], 200>;
+export type MeetingRow = InferResponseType<typeof client.api.meetings.$get, 200>['meetings'][number];
+export type MeetingDetail = InferResponseType<(typeof client.api.meetings)[':n']['$get'], 200>;
