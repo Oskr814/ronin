@@ -3,7 +3,7 @@ import { config } from '../config/config.js';
 import { log } from '../logger.js';
 import { recipientsFor } from './notifications.js';
 import { recordBlock } from '../state/local-state.js';
-import { recordBlockEvent } from '../../domains/metrics/blocks.js';
+import { recordBlockEvent } from './block-log.js';
 
 const BLOCK_MAX_AGE_MS = 180 * 24 * 60 * 60 * 1000;
 

@@ -1,31 +1,31 @@
 import { describe, it, expect, vi } from 'vitest';
-import type { Access } from '../access/access.js';
+import type { Access } from '../../../src/domains/access/access.js';
 
-vi.mock('../../platform/logger.js', () => ({ log: { info: vi.fn(), error: vi.fn() } }));
-vi.mock('../../platform/config/repos.js', () => ({ loadRepos: async () => [{ productRepo: 'acme/tienda', productRepoPath: '/x' }] }));
+vi.mock('../../../src/platform/logger.js', () => ({ log: { info: vi.fn(), error: vi.fn() } }));
+vi.mock('../../../src/platform/config/repos.js', () => ({ loadRepos: async () => [{ productRepo: 'acme/tienda', productRepoPath: '/x' }] }));
 const RUN = { runId: 'r1', repo: 'acme/tienda', taskType: 'update-changelog', label: 'v1.2 (notas)', account: 'a', worktree: '/w', startedAt: new Date().toISOString(), state: 'ok', steps: 1 };
-vi.mock('../access/visible.js', async (importOriginal) => ({ ...(await importOriginal<typeof import('../access/visible.js')>()), visibleRuns: async () => [RUN] }));
-vi.mock('./github.js', () => ({ repoGithub: async () => ({ prs: [], issues: [] }), forgetGithub: () => {} }));
+vi.mock('../../../src/domains/access/visible.js', async (importOriginal) => ({ ...(await importOriginal<typeof import('../../../src/domains/access/visible.js')>()), visibleRuns: async () => [RUN] }));
+vi.mock('../../../src/domains/items/github.js', () => ({ repoGithub: async () => ({ prs: [], issues: [] }), forgetGithub: () => {} }));
 // The item and its PR's files, as GitHub would have them.
 const ref = { kind: 'issue', number: 12 };
-vi.mock('./service.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('./service.js')>()),
+vi.mock('../../../src/domains/items/service.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../src/domains/items/service.js')>()),
   itemContext: async () => ({ entry: { productRepo: 'acme/tienda', productRepoPath: '/x' }, ref, gh: null, detail: {} }),
   filesContext: async () => ({ entry: { productRepo: 'acme/tienda', productRepoPath: '/x' }, prNumber: 13, files: { files: [] } }),
 }));
 const dropped = vi.fn(async (_n: number) => {});
-vi.mock('../portal/follow.js', () => ({ noteClosing: async () => 7, dropCloseNote: (n: number) => dropped(n) }));
-vi.mock('./new-issue.js', async (importOriginal) => ({ ...(await importOriginal<typeof import('./new-issue.js')>()), repoApps: async () => [] }));
-vi.mock('./actions.js', async (importOriginal) => {
-  const original = await importOriginal<typeof import('./actions.js')>();
+vi.mock('../../../src/domains/portal/follow.js', () => ({ noteClosing: async () => 7, dropCloseNote: (n: number) => dropped(n) }));
+vi.mock('../../../src/domains/items/new-issue.js', async (importOriginal) => ({ ...(await importOriginal<typeof import('../../../src/domains/items/new-issue.js')>()), repoApps: async () => [] }));
+vi.mock('../../../src/domains/items/actions.js', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../../../src/domains/items/actions.js')>();
   return { ...original, runAction: async () => { throw new original.ActionError('Ese issue ya está cerrado.'); } };
 });
-vi.mock('../../platform/github/github-as-user.js', async (importOriginal) => {
-  const original = await importOriginal<typeof import('../../platform/github/github-as-user.js')>();
+vi.mock('../../../src/platform/github/github-as-user.js', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../../../src/platform/github/github-as-user.js')>();
   return { ...original, viewedFiles: async () => { throw new original.GithubUserError('Tu sesión de GitHub venció: vuelve a entrar.', true); }, pendingReview: async () => null };
 });
 
-const { dashboardApp } = await import('../../apps/api/routes.js');
+const { dashboardApp } = await import('../../../src/apps/api/routes.js');
 
 const ACCESS: Access = { admin: false, repos: [{ repo: 'acme/tienda', permission: 'push', perms: { notas: true, aprobar: true, acciones: true, desplegar: false } }] };
 const call = (path: string, init: RequestInit = {}) => dashboardApp.request(path, init, { session: { login: 'oskr814', token: 't' }, access: ACCESS, incoming: {} as never, outgoing: {} as never });

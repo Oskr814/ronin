@@ -1,4 +1,4 @@
-import { HELP_FOOTER_MARKER } from '../../domains/commands/help.js';
+import { HELP_FOOTER_MARKER } from '../github/pr-body.js';
 
 // Linear, read from GitHub alone (#101, entrega 1): no API key. A repo whose
 // issues sync with Linear gets, on each issue, a comment from Linear's bot

@@ -7,7 +7,7 @@
   "scripts": {
     "tick": "tsx src/apps/api/tick/main.ts",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit && tsc --noEmit -p src/apps/portal && tsc --noEmit -p src/apps/dashboard",
+    "typecheck": "tsc -p tsconfig.test.json && tsc --noEmit -p src/apps/portal && tsc --noEmit -p src/apps/dashboard",
     "build": "rm -rf dist && tsc -p tsconfig.build.json && vite build --config src/apps/dashboard/vite.config.ts --logLevel warn && vite build --config src/apps/portal/vite.config.ts --logLevel warn",
     "portal:dev": "vite --config src/apps/portal/vite.config.ts",
     "start": "node dist/apps/api/main.js",

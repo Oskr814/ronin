@@ -1,12 +1,12 @@
 import { describe, it, expect, vi } from 'vitest';
-import type { Access } from '../access/access.js';
+import type { Access } from '../../../src/domains/access/access.js';
 
-vi.mock('../../platform/config/repos.js', () => ({ loadRepos: async () => [{ productRepo: 'acme/tienda', productRepoPath: '/x' }] }));
-vi.mock('./subscription-view.js', () => ({
+vi.mock('../../../src/platform/config/repos.js', () => ({ loadRepos: async () => [{ productRepo: 'acme/tienda', productRepoPath: '/x' }] }));
+vi.mock('../../../src/domains/metrics/subscription-view.js', () => ({
   suscripcionView: async (_entries: unknown, account: string | null) => (account === 'nadie' ? null : { accounts: ['acme'], cuentas: [{ account: account ?? 'acme' }] }),
 }));
 
-const { dashboardApp } = await import('../../apps/api/routes.js');
+const { dashboardApp } = await import('../../../src/apps/api/routes.js');
 
 const ADMIN: Access = { admin: true, repos: [{ repo: 'acme/tienda', permission: 'admin' }] };
 const MEMBER: Access = { admin: false, repos: [{ repo: 'acme/tienda', permission: 'triage' }] };

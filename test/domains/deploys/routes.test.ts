@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { Access } from '../access/access.js';
+import type { Access } from '../../../src/domains/access/access.js';
 
-vi.mock('../../platform/logger.js', () => ({ log: { info: vi.fn(), error: vi.fn() } }));
-vi.mock('../../platform/config/repos.js', () => ({
+vi.mock('../../../src/platform/logger.js', () => ({ log: { info: vi.fn(), error: vi.fn() } }));
+vi.mock('../../../src/platform/config/repos.js', () => ({
   loadRepos: async () => [
     { productRepo: 'acme/tienda', productRepoPath: '/x', deploy: { workflow: 'deploy.yml' } },
     { productRepo: 'acme/docs', productRepoPath: '/y' },
@@ -11,15 +11,15 @@ vi.mock('../../platform/config/repos.js', () => ({
 // GitHub's side of a release, out of the way.
 const plan = vi.fn();
 const publish = vi.fn();
-vi.mock('./board.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('./board.js')>()),
+vi.mock('../../../src/domains/deploys/board.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../src/domains/deploys/board.js')>()),
   despliegues: async (entries: Array<{ productRepo: string; deploy?: unknown }>) => entries.filter((e) => e.deploy).map((e) => ({ repo: e.productRepo })),
   planDespliegue: (...args: unknown[]) => plan(...args),
   publishDespliegue: (...args: unknown[]) => publish(...args),
 }));
 
-const { dashboardApp } = await import('../../apps/api/routes.js');
-const { DespliegueError } = await import('./board.js');
+const { dashboardApp } = await import('../../../src/apps/api/routes.js');
+const { DespliegueError } = await import('../../../src/domains/deploys/board.js');
 
 const DEPLOYER: Access = { admin: false, repos: [{ repo: 'acme/tienda', permission: 'push', perms: { notas: true, aprobar: true, acciones: true, desplegar: true } }, { repo: 'acme/docs', permission: 'push', perms: { notas: true, aprobar: true, acciones: true, desplegar: true } }] };
 const call = (path: string, init: RequestInit = {}, access = DEPLOYER) =>
