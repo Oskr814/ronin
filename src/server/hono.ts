@@ -76,8 +76,12 @@ export const body = <T extends ZodType>(schema: T) =>
 export function onError(domain: Array<new (...args: never[]) => Error> = []) {
   return (error: Error, c: Context) => {
     if (error instanceof HTTPException) return error.getResponse();
-    // Its own status if it has one (a 404, a 409), or a 400.
-    if (domain.some((type) => error instanceof type)) return c.json({ error: error.message }, ((error as { status?: number }).status ?? 400) as 400);
+    // Its own status if it has one (a 404, a 409), or a 400, and what else
+    // it has to say (`details`: a deploy's plan as it is now).
+    if (domain.some((type) => error instanceof type)) {
+      const { status = 400, details = {} } = error as { status?: number; details?: object };
+      return c.json({ error: error.message, ...details }, status as 400);
+    }
     const id = randomBytes(4).toString('hex');
     log.error(`${c.req.method} ${c.req.path} falló (error ${id})`, error);
     return c.json({ error: `Algo falló de nuestro lado (error ${id}).` }, 500);

@@ -1265,10 +1265,11 @@ Los repos de producto despliegan publicando un release de GitHub: su workflow co
 **ronin no despliega nada por su cuenta:** sube el tag y crea el release. Construir y desplegar es del workflow de cada repo.
 
 ```
-src/deploy/          el dominio, sin saber quién lo llama
+src/deploy/          el dominio: deploy.ts no sabe quién lo llama
   deploy.ts          lo pendiente, el plan (con la prueba del cherry-pick) y la publicación
   follow.ts          el seguimiento del workflow y el aviso a los pedidos
   store.ts           el registro: tabla deploys, o deploys-data/deploys.json
+  routes.ts          sus rutas en el tablero, en Hono (/api/despliegues/*)
 src/server/api/dashboard-despliegues.ts   la página, el plan y la publicación del tablero
 ```
 

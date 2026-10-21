@@ -13,6 +13,12 @@ export class DespliegueError extends Error {
   constructor(message: string, readonly status = 400, readonly plan?: unknown) {
     super(message);
   }
+
+  // With the plan as it is now, when it changed under the person (a
+  // fingerprint that no longer matches).
+  get details() {
+    return this.plan ? { plan: this.plan } : {};
+  }
 }
 
 // The last releases a repo's card shows.

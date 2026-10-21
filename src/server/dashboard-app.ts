@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { deployRoutes } from '../deploy/routes.js';
 import { meetingsRoutes } from '../meetings/routes.js';
 import { pedidosRoutes, portalAdminRoutes } from '../portal/routes-dashboard.js';
 import type { DashboardEnv } from './hono.js';
@@ -11,10 +12,11 @@ export const dashboardApp = new Hono<DashboardEnv>()
   .notFound((c) => c.json({ error: 'no existe' }, 404))
   .route('/api/pedidos', pedidosRoutes())
   .route('/api/portal-admin', portalAdminRoutes())
-  .route('/api/reuniones', meetingsRoutes());
+  .route('/api/reuniones', meetingsRoutes())
+  .route('/api/despliegues', deployRoutes());
 
 export type DashboardApi = typeof dashboardApp;
 
 // The paths it owns.
-const GROUPS = ['/api/pedidos', '/api/portal-admin', '/api/reuniones'];
+const GROUPS = ['/api/pedidos', '/api/portal-admin', '/api/reuniones', '/api/despliegues'];
 export const ownsPath = (path: string) => GROUPS.some((group) => path === group || path.startsWith(`${group}/`));
