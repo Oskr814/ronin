@@ -165,6 +165,9 @@ export function claudeHeadlessArgs(prompt: string, opts: HeadlessRunOptions = {}
 // usage behind, from the rate_limit_event (claude-usage.ts).
 export async function runClaudeHeadless(cwd: string, prompt: string, label: string, opts: HeadlessRunOptions = {}, sink?: RunSink): Promise<string> {
   const env: NodeJS.ProcessEnv = { ...process.env, GH_TOKEN: config.githubToken };
+  // ronin's own NODE_ENV (production in the image) would make the agent's
+  // `pnpm install` in the product repo skip its devDependencies.
+  delete env.NODE_ENV;
   // A repos.json entry's own claudeConfigDir wins over the global default —
   // lets each repo run under its own Claude account (docs/superpowers/specs/
   // 2026-08-19-multi-repo-pat-auth-design.md §2).
