@@ -3,7 +3,7 @@ import { log } from '../../platform/logger.js';
 import type { RepoEntry } from '../../platform/agents/repo-context.js';
 import { AjustesError, notificaciones, record } from './settings.js';
 import { applyTeam, entradaOf, envAdmins, isAdmin, isSetName, permsFor, readTeam, SETS, withTeam, type Member, type RepoGrant, type TeamFile } from '../access/team.js';
-import { timed } from '../../platform/timing.js';
+import { githubFetch } from '../../platform/github/rest.js';
 
 // Ajustes → Usuarios (#174, stage 2), admins only:
 //   GET  /api/ajustes/usuarios                 the team, who gets in and the default set
@@ -21,12 +21,7 @@ const GITHUB_TTL_MS = 10 * 60_000;
 const SET_NAME = { todo: 'Todo', reuniones: 'Reuniones y pedidos', lectura: 'Solo lectura' };
 const PERM_NAME = { notas: 'subir notas', aprobar: 'aprobar', acciones: 'acciones', desplegar: 'desplegar' };
 
-async function githubGet(path: string): Promise<Response> {
-  return timed('github', () => fetch(`https://api.github.com/${path}`, {
-    headers: { Authorization: `Bearer ${config.githubToken}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', 'User-Agent': 'ronin-dashboard' },
-    signal: AbortSignal.timeout(15_000),
-  }));
-}
+const githubGet = (path: string) => githubFetch(`/${path}`, { token: config.githubToken });
 
 // What GitHub gives the login on the repo (admin, maintain, write, triage,
 // read), asked with ronin's token; null without access. Cached a few

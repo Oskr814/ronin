@@ -118,7 +118,7 @@ src/
 | En cada `routes.ts`: solo JSON (415), solo administradores, `z.record(...)`, el tope del cuerpo, `owner/name`, «no lo ves: 404» | `platform/http/middleware.ts`: `onlyJson`, `jsonBody`, `body`, `anyObject`, `adminsOnly`, `repoParam`, `onError`. **Hecho.** El permiso (403) ya era uno solo, `refusal` en `domains/access/visible.ts`; cada «no existe: 404» se queda en su ruta, con el mensaje de su dominio. Los dominios ya no importan nada de `apps/`. |
 | ~15 clases de error de dominio con su status, y la lista de cada `onError` | `platform/errors.ts`: `DomainError(message, { status, details })`; cada clase de un dominio la extiende y `onError` ya no lleva lista. **Hecho.** |
 | `pidAlive` (6 copias), lanzar un worker y relanzar los que murieron, el arranque de cada worker | `platform/workers/`: `pidAlive`, `runWorker` y `withProductRepo`, `trackedWorker`, `worktreeLock`. **Hecho.** |
-| Llamadas a la API de GitHub con sus headers y errores, en 5 archivos; `owner/name` partido a mano | `platform/github/rest.ts`, `parseRepo()` |
+| Llamadas a la API de GitHub con sus headers y errores, en 5 archivos; `owner/name` partido a mano | `platform/github/rest.ts`: `githubFetch` (headers, timeout, medida) y `parseRepo()`. **Hecho.** Qué significa cada respuesta (un 401, un 404) sigue siendo de quien llama. |
 | El cliente de la API, las fechas y los chips de estado en el tablero y el portal | `ui/api-client.ts`, `ui/time.ts`, `ui/components/`; el estado de un pedido, en `domains/portal/status.ts` |
 
 **Cómo se llega**, en PRs que solo mueven o solo unifican, nunca las dos cosas:

@@ -8,6 +8,7 @@ import { activeRepo } from '../agents/repo-context.js';
 import { log } from '../logger.js';
 import type { FailedCheck } from '../agents/failure-signature.js';
 import { timed } from '../timing.js';
+import { parseRepo } from './rest.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -411,7 +412,7 @@ const ISSUES_WITH_LABEL_LIMIT = 200;
 // open for a while after its PR showed closed, and the tick could miss an
 // issue just labeled or take one just closed.
 async function issuesByLabel(label: string, state: 'open' | 'closed'): Promise<Array<TrackingIssue & { body: string }>> {
-  const [owner, repo] = activeRepo().productRepo.split('/');
+  const { owner, name: repo } = parseRepo(activeRepo().productRepo);
   type Raw = { data: { repository: { issues: { nodes: Array<{ number: number; title: string; url: string; body: string | null; labels: { nodes: Array<{ name: string }> } }>; pageInfo: { hasNextPage: boolean; endCursor: string | null } } } } };
   const issues: Array<TrackingIssue & { body: string }> = [];
   let after: string | null = null;
@@ -488,7 +489,7 @@ query($owner: String!, $repo: String!) {
 // The issues each open PR closes ("Closes #N", or linked by hand), by PR
 // number. GraphQL: this gh's `pr list` doesn't know closingIssuesReferences.
 export async function listPrClosingIssues(): Promise<Record<number, number[]>> {
-  const [owner, repo] = activeRepo().productRepo.split('/');
+  const { owner, name: repo } = parseRepo(activeRepo().productRepo);
   type Raw = { data: { repository: { pullRequests: { nodes: Array<{ number: number; closingIssuesReferences: { nodes: Array<{ number: number }> } }> } } } };
   const raw = JSON.parse(await ghApi(['api', 'graphql', '-f', `query=${CLOSING_ISSUES_QUERY}`, '-f', `owner=${owner}`, '-f', `repo=${repo}`])) as Raw;
   return Object.fromEntries(raw.data.repository.pullRequests.nodes.map((pr) => [pr.number, pr.closingIssuesReferences.nodes.map((i) => i.number)]));
@@ -516,7 +517,7 @@ export function closedState(kind: 'issue' | 'pr', state: string, stateReason?: s
 // closed: what the dashboard lists that isn't open anymore is what ronin
 // worked on lately. GraphQL: the runner's gh (2.45) has no stateReason.
 export async function listRecentlyClosed(): Promise<Record<number, GithubState>> {
-  const [owner, repo] = activeRepo().productRepo.split('/');
+  const { owner, name: repo } = parseRepo(activeRepo().productRepo);
   type Raw = { data: { repository: { issues: { nodes: Array<{ number: number; stateReason: string | null }> }; pullRequests: { nodes: Array<{ number: number; state: string }> } } } };
   const raw = JSON.parse(await ghApi(['api', 'graphql', '-f', `query=${RECENTLY_CLOSED_QUERY}`, '-f', `owner=${owner}`, '-f', `repo=${repo}`])) as Raw;
   const { issues, pullRequests } = raw.data.repository;
@@ -613,7 +614,7 @@ query($owner: String!, $repo: String!, $number: Int!) {
 }`;
 
 async function getDiscussionThreads(prNumber: number): Promise<DiscussionThread[]> {
-  const [owner, repo] = activeRepo().productRepo.split('/');
+  const { owner, name: repo } = parseRepo(activeRepo().productRepo);
   type Raw = { data: { repository: { pullRequest: { reviewThreads: { nodes: Array<{ isResolved: boolean; isOutdated: boolean; path: string | null; line: number | null; originalLine: number | null; comments: { nodes: Array<{ author: { login: string } | null; body: string; createdAt: string; url: string }> } }> } } } } };
   const raw = JSON.parse(await ghApi(['api', 'graphql', '-f', `query=${DISCUSSION_THREADS_QUERY}`, '-f', `owner=${owner}`, '-f', `repo=${repo}`, '-F', `number=${prNumber}`])) as Raw;
   return raw.data.repository.pullRequest.reviewThreads.nodes
@@ -720,7 +721,7 @@ query($owner: String!, $repo: String!, $number: Int!, $after: String) {
 }`;
 
 export async function getDiffThreads(prNumber: number): Promise<DiffThread[]> {
-  const [owner, repo] = activeRepo().productRepo.split('/');
+  const { owner, name: repo } = parseRepo(activeRepo().productRepo);
   type Node = { id: string; isResolved: boolean; isOutdated: boolean; path: string; subjectType: 'LINE' | 'FILE'; diffSide: 'LEFT' | 'RIGHT'; line: number | null; startLine: number | null; originalLine: number | null; comments: { nodes: Array<{ databaseId: number; author: { login: string } | null; body: string; createdAt: string; url: string }> } };
   type Raw = { data: { repository: { pullRequest: { reviewThreads: { pageInfo: { hasNextPage: boolean; endCursor: string | null }; nodes: Node[] } } } } };
   const threads: DiffThread[] = [];
@@ -1318,7 +1319,7 @@ function reactionCount(comment: RawThreadComment, content: string): number {
 // no resolved/unresolved field on review comments — see
 // docs/superpowers/specs/2026-08-20-external-pr-review-design.md.
 async function fetchReviewThreads(prNumber: number): Promise<FetchedThread[]> {
-  const [owner, repo] = activeRepo().productRepo.split('/');
+  const { owner, name: repo } = parseRepo(activeRepo().productRepo);
   const stdout = await ghApi([
     'api', 'graphql',
     '-f', `query=${REVIEW_THREADS_QUERY}`,
