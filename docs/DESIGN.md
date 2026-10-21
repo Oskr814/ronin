@@ -700,10 +700,10 @@ Todo, salvo los webhooks y `/api/auth/*`, pide sesión. Las rutas pasan a Hono d
 | `GET /api/items/<id>/detail` | Su ficha: el issue y el PR con los comentarios del ítem, y las acciones que se le pueden pedir, cada una con el comentario que dejaría |
 | `POST /api/items/<id>/actions` | Pide una de esas acciones: `{ action, text?, app? }` (15.11) |
 | `POST /api/repos/<owner>/<repo>/issues` | Crea un issue a nombre de la persona y, si se pide, lo asigna a ronin o le comenta `/spike` o `/spec`: `{ title, body, after, app?, instruction? }` (15.11.1) |
-| `GET /api/exploraciones` | Cada app que se explora, con las fichas de su PR contadas, la última corrida y la próxima de la noche (15.12) |
-| `GET /api/exploraciones/<owner>/<repo>/<app>/corridas` | Sus corridas de los últimos 14 días, cada una con sus agentes |
-| `GET /api/exploraciones/<owner>/<repo>/<app>/inventario` | Sus funciones y qué charters ya se les aplicaron, de `inventory.yml` |
-| `POST /api/exploraciones/<owner>/<repo>/<app>/run` | La explora ahora: `{ maxFunctions, hours, tonight }`; 409 si el repo ya está explorando (15.12) |
+| `GET /api/explorations` | Cada app que se explora, con las fichas de su PR contadas, la última corrida y la próxima de la noche (15.12) |
+| `GET /api/explorations/<owner>/<repo>/<app>/runs` | Sus corridas de los últimos 14 días, cada una con sus agentes |
+| `GET /api/explorations/<owner>/<repo>/<app>/inventory` | Sus funciones y qué charters ya se les aplicaron, de `inventory.yml` |
+| `POST /api/explorations/<owner>/<repo>/<app>/run` | La explora ahora: `{ maxFunctions, hours, tonight }`; 409 si el repo ya está explorando (15.12) |
 | `GET /api/items/<id>/exploration` | Las fichas de un PR de exploración abierto, leídas en partes, con su hilo (15.12) |
 | `POST /api/items/<id>/exploration/actions` | Comenta en una ficha: `{ action, ficha, text, redo? }` (15.12) |
 | `POST /api/items/<id>/exploration/general` | Un comentario general en el PR: `{ text }` (15.12) |

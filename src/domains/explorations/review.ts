@@ -20,7 +20,7 @@ const execFileAsync = promisify(execFile);
 // branch, as runs/evidence.ts reads the screenshots; the threads come
 // from GitHub. Cached like an item's page (items/detail.ts).
 
-export interface FichaComment {
+export interface FindingCardComment {
   id: number;
   replyTo?: number;
   author: string;
@@ -29,7 +29,7 @@ export interface FichaComment {
   url?: string;
 }
 
-export interface Ficha extends FindingBodyParts {
+export interface FindingCard extends FindingBodyParts {
   app: string;
   id: string;
   tipo: FindingMeta['tipo'];
@@ -51,15 +51,15 @@ export interface Ficha extends FindingBodyParts {
   path: string;
   url: string;
   // The after it had before ronin redid it, when it did.
-  despuesAnterior?: FindingImage;
-  comments: FichaComment[];
+  previousAfterImage?: FindingImage;
+  comments: FindingCardComment[];
 }
 
 export interface ExplorationReview {
   fetchedAt: string;
   branch: string;
   base: string;
-  fichas: Ficha[];
+  fichas: FindingCard[];
   runs: Array<{ app: string; id: string; url: string }>;
   error?: string;
 }
@@ -119,7 +119,7 @@ async function previousAfter(dir: string, base: string, head: string, path: stri
   return undefined;
 }
 
-async function readFichas(entry: RepoEntry, pr: ExplorationPr): Promise<Omit<ExplorationReview, 'fetchedAt'>> {
+async function readFindingCards(entry: RepoEntry, pr: ExplorationPr): Promise<Omit<ExplorationReview, 'fetchedAt'>> {
   const dir = entry.productRepoPath;
   await fetchBranches(dir, [pr.headRefName, pr.baseRefName]);
   const head = remoteRef(pr.headRefName);
@@ -128,7 +128,7 @@ async function readFichas(entry: RepoEntry, pr: ExplorationPr): Promise<Omit<Exp
   const apps = [...new Set(changed.map((f) => f.split('/')[2]).filter(Boolean))].sort();
   const blob = (path: string) => `https://github.com/${entry.productRepo}/blob/${pr.headRefName.split('/').map(encodeURIComponent).join('/')}/${path}`;
 
-  const fichas: Array<Omit<Ficha, 'comments'>> = [];
+  const fichas: Array<Omit<FindingCard, 'comments'>> = [];
   for (const app of apps) {
     const findingsDir = `${EXPLORATION_DIR}/${app}/findings`;
     const baseFiles = lines(await git(dir, ['ls-tree', '-r', '--name-only', base, '--', findingsDir]).catch(() => ''));
@@ -140,8 +140,8 @@ async function readFichas(entry: RepoEntry, pr: ExplorationPr): Promise<Omit<Exp
       try {
         const { body, huella: _huella, semilla: _semilla, fecha: _fecha, ...meta } = parseFinding(await git(dir, ['show', `${head}:${path}`]));
         const parts = parseFindingBody(body);
-        const despuesAnterior = await previousAfter(dir, base, head, path, parts.despues?.url);
-        fichas.push({ app, ...meta, ...parts, path, url: blob(path), ...(despuesAnterior ? { despuesAnterior } : {}) });
+        const previousAfterImage = await previousAfter(dir, base, head, path, parts.despues?.url);
+        fichas.push({ app, ...meta, ...parts, path, url: blob(path), ...(previousAfterImage ? { previousAfterImage } : {}) });
       } catch (error) {
         log.error(`tablero: no se pudo leer la ficha ${path} de #${pr.number}`, error);
       }
@@ -153,7 +153,7 @@ async function readFichas(entry: RepoEntry, pr: ExplorationPr): Promise<Omit<Exp
   }).sort((a, b) => a.id.localeCompare(b.id));
 
   // The threads, by app and id rather than path: an edited title renames the file.
-  const byFicha = new Map<string, FichaComment[]>();
+  const byFindingCard = new Map<string, FindingCardComment[]>();
   let error: string | undefined;
   try {
     const all = await withActiveRepo(entry, () => listFileReviewComments(pr.number));
@@ -161,9 +161,9 @@ async function readFichas(entry: RepoEntry, pr: ExplorationPr): Promise<Omit<Exp
       const m = FINDING_PATH_RE.exec(c.path);
       if (!m) continue;
       const key = `${m[1]}/${m[2]}`;
-      const list = byFicha.get(key) ?? [];
+      const list = byFindingCard.get(key) ?? [];
       list.push({ id: c.id, ...(c.inReplyToId ? { replyTo: c.inReplyToId } : {}), author: c.authorLogin, body: c.body, ...(c.createdAt ? { createdAt: c.createdAt } : {}), ...(c.url ? { url: c.url } : {}) });
-      byFicha.set(key, list);
+      byFindingCard.set(key, list);
     }
   } catch (e) {
     error = `no se pudieron leer los comentarios: ${(e as Error).message.split('\n')[0]}`;
@@ -174,7 +174,7 @@ async function readFichas(entry: RepoEntry, pr: ExplorationPr): Promise<Omit<Exp
     base: pr.baseRefName,
     fichas: fichas
       .sort((a, b) => a.app.localeCompare(b.app) || a.id.localeCompare(b.id))
-      .map((f) => ({ ...f, comments: (byFicha.get(`${f.app}/${f.id}`) ?? []).sort((a, b) => a.id - b.id) })),
+      .map((f) => ({ ...f, comments: (byFindingCard.get(`${f.app}/${f.id}`) ?? []).sort((a, b) => a.id - b.id) })),
     runs,
     ...(error ? { error } : {}),
   };
@@ -190,7 +190,7 @@ export async function explorationReview(entry: RepoEntry, pr: ExplorationPr, cha
   cache.set(key, entryCache);
   if (entryCache.data && now - entryCache.readAt < config.dashboard.githubTtlSeconds * 1000 && entryCache.readAt >= changedSince) return entryCache.data;
   if (!entryCache.reading) {
-    entryCache.reading = readFichas(entry, pr)
+    entryCache.reading = readFindingCards(entry, pr)
       .then((data) => ({ fetchedAt: new Date().toISOString(), ...data }))
       .catch((error) => {
         log.error(`tablero: no se pudo leer la exploración de ${key}`, error);

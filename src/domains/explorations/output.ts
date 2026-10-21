@@ -125,9 +125,9 @@ export function parseCandidate(raw: unknown, functionId: string, outDir: string)
     return [{ tipo: kind, detalle, ...(typeof e.nota === 'string' && e.nota.trim() ? { nota: e.nota.trim().slice(0, LIMITS.paso) } : {}) }];
   });
   if (tipo === 'hallazgo' && evidencia.length === 0) throw new Error('un hallazgo necesita evidencia observada usando la app');
-  const despuesPath = isObject(raw.despues) ? insideDir(raw.despues.imagen, outDir) : undefined;
-  const despues = despuesPath && /\.(png|jpe?g|html?)$/i.test(despuesPath)
-    ? { imagen: despuesPath, ...(typeof raw.despues.nota === 'string' && raw.despues.nota.trim() ? { nota: raw.despues.nota.trim().slice(0, LIMITS.paso) } : {}) }
+  const afterPath = isObject(raw.despues) ? insideDir(raw.despues.imagen, outDir) : undefined;
+  const despues = afterPath && /\.(png|jpe?g|html?)$/i.test(afterPath)
+    ? { imagen: afterPath, ...(typeof raw.despues.nota === 'string' && raw.despues.nota.trim() ? { nota: raw.despues.nota.trim().slice(0, LIMITS.paso) } : {}) }
     : undefined;
   if (tipo === 'idea' && !despues) throw new Error('una idea necesita la imagen del después');
   const huellaParts = String(raw.huella ?? '').split('|').map((p) => p.trim()).filter(Boolean);

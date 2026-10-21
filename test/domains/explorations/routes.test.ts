@@ -13,9 +13,9 @@ let exploreNow: (...args: unknown[]) => Promise<unknown> = async () => ({});
 vi.mock('../../../src/domains/explorations/board.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../../src/domains/explorations/board.js')>()),
   liveRuns: async () => new Map(),
-  exploracionList: async (entries: Array<{ productRepo: string }>) => entries.map((e) => ({ repo: e.productRepo, app: 'web' })),
-  corridasOf: async () => [{ id: 'r1' }],
-  inventarioOf: async (_e: unknown, app: string) => ({ app, functions: [] }),
+  explorationList: async (entries: Array<{ productRepo: string }>) => entries.map((e) => ({ repo: e.productRepo, app: 'web' })),
+  explorationRunsOf: async () => [{ id: 'r1' }],
+  inventoryViewOf: async (_e: unknown, app: string) => ({ app, functions: [] }),
   exploreNow: (...args: unknown[]) => {
     explored.push(args);
     return exploreNow(...args);
@@ -38,23 +38,23 @@ beforeEach(() => {
 
 describe('Exploraciones from the dashboard, in Hono', () => {
   it('lists only the apps of the repos it sees, and an app only of a repo that explores it', async () => {
-    expect(await (await call('/api/exploraciones')).json()).toEqual({ apps: [{ repo: 'acme/tienda', app: 'web' }] });
-    expect(await (await call('/api/exploraciones/acme/tienda/web/corridas')).json()).toEqual({ corridas: [{ id: 'r1' }] });
-    expect(await (await call('/api/exploraciones/acme/tienda/web/inventario')).json()).toEqual({ app: 'web', functions: [] });
-    expect((await call('/api/exploraciones/acme/tienda/admin/corridas')).status).toBe(404);
-    expect((await call('/api/exploraciones/acme/otra/web/inventario')).status).toBe(404);
+    expect(await (await call('/api/explorations')).json()).toEqual({ apps: [{ repo: 'acme/tienda', app: 'web' }] });
+    expect(await (await call('/api/explorations/acme/tienda/web/runs')).json()).toEqual({ corridas: [{ id: 'r1' }] });
+    expect(await (await call('/api/explorations/acme/tienda/web/inventory')).json()).toEqual({ app: 'web', functions: [] });
+    expect((await call('/api/explorations/acme/tienda/admin/runs')).status).toBe(404);
+    expect((await call('/api/explorations/acme/otra/web/inventory')).status).toBe(404);
   });
 
   it('explores now as whoever is logged in, with the permission for actions', async () => {
     exploreNow = async () => ({ started: true });
-    expect(await (await run('/api/exploraciones/acme/tienda/web/run', { maxFunctions: 3 })).json()).toEqual({ started: true });
+    expect(await (await run('/api/explorations/acme/tienda/web/run', { maxFunctions: 3 })).json()).toEqual({ started: true });
     expect(explored[0].slice(1, 3)).toEqual(['web', 'oskr814']);
-    expect((await run('/api/exploraciones/acme/tienda/web/run', {}, READER)).status).toBe(403);
-    expect((await call('/api/exploraciones/acme/tienda/web/run', { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: 'x' })).status).toBe(415);
+    expect((await run('/api/explorations/acme/tienda/web/run', {}, READER)).status).toBe(403);
+    expect((await call('/api/explorations/acme/tienda/web/run', { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: 'x' })).status).toBe(415);
     exploreNow = async () => {
       throw new ExploreNowError('Ya hay una exploración de web corriendo.', { status: 409 });
     };
-    const busy = await run('/api/exploraciones/acme/tienda/web/run', {});
+    const busy = await run('/api/explorations/acme/tienda/web/run', {});
     expect(busy.status).toBe(409);
     expect(await busy.json()).toEqual({ error: 'Ya hay una exploración de web corriendo.' });
   });
