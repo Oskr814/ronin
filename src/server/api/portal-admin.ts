@@ -81,36 +81,55 @@ function accountChanges(before: PortalUser, after: PortalUser): Array<{ what: st
 
 const linkResult = (sent: boolean, url: string) => (sent ? { sent } : { sent, url });
 
-export async function runPortalAdmin(ctx: PortalAdminContext, path: string, body: Record<string, unknown>) {
+// Every change needs the portal configured, and an account's own errors
+// (a repeated email, a grant that doesn't exist) are the admin's to fix.
+async function change<T>(ctx: PortalAdminContext, fn: () => Promise<T>): Promise<T> {
   if (!ctx.enabled) throw new PortalAdminError('El portal no está configurado: falta PORTAL_URL o PORTAL_SESSION_SECRET en .env.', 409);
   try {
-    if (path === '/api/portal-admin/users') {
-      if (typeof body.email !== 'string') throw new PortalAdminError('Falta el correo.');
-      const user = await createUser({ ...(fields(body, ctx.entries, true) as UserFields), email: body.email, createdBy: ctx.admin });
-      log.info(`portal: ${ctx.admin} creó la cuenta de ${user.email}`);
-      await record({ login: ctx.admin, what: `Usuarios · ${user.email}`, from: '—', to: 'invitado al portal' });
-      const { sent, url } = await sendPasswordLink(user, 'invite', { portalUrl: ctx.url, entries: ctx.entries, send: ctx.send });
-      return { user: adminView((await getUser(user.id)) ?? user), ...linkResult(sent, url) };
-    }
-    const link = /^\/api\/portal-admin\/users\/([\w-]+)\/link$/.exec(path);
-    if (link) {
-      const user = await getUser(link[1]);
-      if (!user) throw new PortalAdminError('No existe esa cuenta.', 404);
-      const { sent, url } = await sendPasswordLink(user, user.passwordHash ? 'reset' : 'invite', { portalUrl: ctx.url, entries: ctx.entries, send: ctx.send });
-      await record({ login: ctx.admin, what: `Usuarios · ${user.email}`, from: '—', to: user.passwordHash ? 'enlace para nueva contraseña' : 'invitación de nuevo' });
-      return { user: adminView((await getUser(user.id)) ?? user), ...linkResult(sent, url) };
-    }
-    const edit = /^\/api\/portal-admin\/users\/([\w-]+)$/.exec(path);
-    if (edit) {
-      const before = await getUser(edit[1]);
-      const user = await updateUser(edit[1], fields(body, ctx.entries, false));
-      if (before) for (const change of accountChanges(before, user)) await record({ login: ctx.admin, what: `Usuarios · ${user.email} · ${change.what}`, from: change.from, to: change.to });
-      log.info(`portal: ${ctx.admin} cambió la cuenta de ${user.email}${body.disabled === true ? ' (desactivada)' : body.disabled === false ? ' (reactivada)' : ''}`);
-      return { user: adminView(user) };
-    }
+    return await fn();
   } catch (error) {
     if (error instanceof AccountError) throw new PortalAdminError(error.message);
     throw error;
   }
+}
+
+export function createAccount(ctx: PortalAdminContext, body: Record<string, unknown>) {
+  return change(ctx, async () => {
+    if (typeof body.email !== 'string') throw new PortalAdminError('Falta el correo.');
+    const user = await createUser({ ...(fields(body, ctx.entries, true) as UserFields), email: body.email, createdBy: ctx.admin });
+    log.info(`portal: ${ctx.admin} creó la cuenta de ${user.email}`);
+    await record({ login: ctx.admin, what: `Usuarios · ${user.email}`, from: '—', to: 'invitado al portal' });
+    const { sent, url } = await sendPasswordLink(user, 'invite', { portalUrl: ctx.url, entries: ctx.entries, send: ctx.send });
+    return { user: adminView((await getUser(user.id)) ?? user), ...linkResult(sent, url) };
+  });
+}
+
+export function sendAccountLink(ctx: PortalAdminContext, id: string) {
+  return change(ctx, async () => {
+    const user = await getUser(id);
+    if (!user) throw new PortalAdminError('No existe esa cuenta.', 404);
+    const { sent, url } = await sendPasswordLink(user, user.passwordHash ? 'reset' : 'invite', { portalUrl: ctx.url, entries: ctx.entries, send: ctx.send });
+    await record({ login: ctx.admin, what: `Usuarios · ${user.email}`, from: '—', to: user.passwordHash ? 'enlace para nueva contraseña' : 'invitación de nuevo' });
+    return { user: adminView((await getUser(user.id)) ?? user), ...linkResult(sent, url) };
+  });
+}
+
+export function editAccount(ctx: PortalAdminContext, id: string, body: Record<string, unknown>) {
+  return change(ctx, async () => {
+    const before = await getUser(id);
+    const user = await updateUser(id, fields(body, ctx.entries, false));
+    if (before) for (const change of accountChanges(before, user)) await record({ login: ctx.admin, what: `Usuarios · ${user.email} · ${change.what}`, from: change.from, to: change.to });
+    log.info(`portal: ${ctx.admin} cambió la cuenta de ${user.email}${body.disabled === true ? ' (desactivada)' : body.disabled === false ? ' (reactivada)' : ''}`);
+    return { user: adminView(user) };
+  });
+}
+
+// By the path, as the routes are (portal/routes-dashboard.ts).
+export async function runPortalAdmin(ctx: PortalAdminContext, path: string, body: Record<string, unknown>) {
+  if (path === '/api/portal-admin/users') return createAccount(ctx, body);
+  const link = /^\/api\/portal-admin\/users\/([\w-]+)\/link$/.exec(path);
+  if (link) return sendAccountLink(ctx, link[1]);
+  const edit = /^\/api\/portal-admin\/users\/([\w-]+)$/.exec(path);
+  if (edit) return editAccount(ctx, edit[1], body);
   throw new PortalAdminError('No existe.', 404);
 }

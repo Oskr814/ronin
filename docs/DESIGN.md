@@ -948,8 +948,9 @@ src/portal/            el dominio: cuentas, pedidos, la conversación, el protot
   routes.ts            la API del portal en Hono: la sesión y la cuenta (/api/portal/*)
   routes-requests.ts   los pedidos de la persona (/api/portal/requests/*)
   http.ts              lo que comparten: la configuración y quién pregunta
+  routes-dashboard.ts  el portal desde el tablero, en Hono: los pedidos (/api/pedidos/*) y las cuentas (/api/portal-admin/*)
 src/server/portal.ts   lo que el listener público atiende del portal, y monta su API
-src/server/api/portal-admin.ts  la administración del portal desde el tablero
+src/server/api/portal-admin.ts  la administración de las cuentas: crear, reenviar el enlace, editar
 src/server/api/dashboard-portal.ts  los pedidos en el tablero: la lista, la ficha y su actividad
 src/portal-web/        la página, en React con Vite (`pnpm build` la arma en dist/portal-web, `pnpm portal:dev` para trabajarla):
   src/api.ts           el cliente de la API, tipado desde portal/routes.ts, y la versión de la página
