@@ -3,12 +3,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const getPrFiles = vi.fn();
 const getDiffThreads = vi.fn();
 const getFileAt = vi.fn();
-vi.mock('../../core/github.js', () => ({
+vi.mock('../../platform/github/github.js', () => ({
   getPrFiles: (...args: unknown[]) => getPrFiles(...args),
   getDiffThreads: (...args: unknown[]) => getDiffThreads(...args),
   getFileAt: (...args: unknown[]) => getFileAt(...args),
 }));
-vi.mock('../../core/logger.js', () => ({ log: { error: vi.fn(), info: vi.fn() } }));
+vi.mock('../../platform/logger.js', () => ({ log: { error: vi.fn(), info: vi.fn() } }));
 
 const { fileContent, forgetFiles, MAX_CONTENT_BYTES, prFiles, resetFilesCache } = await import('./files.js');
 

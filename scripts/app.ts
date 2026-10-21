@@ -12,8 +12,8 @@
 // running or bringing one up and down for the occasion (--keep leaves it up).
 import { parseArgs } from 'node:util';
 import { join } from 'node:path';
-import { loadRepos } from '../src/core/repos.js';
-import { withActiveRepo } from '../src/core/repo-context.js';
+import { loadRepos } from '../src/platform/config/repos.js';
+import { withActiveRepo } from '../src/platform/agents/repo-context.js';
 import { appDown, appUp, appWorktreeDirFor, attachApp, ensureAppWorktree, type AppSession } from '../src/domains/product-app/index.js';
 import { loginAllUsers, smokeScreenshots } from '../src/domains/product-app/index.js';
 

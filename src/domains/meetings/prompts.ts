@@ -1,8 +1,8 @@
-import type { AgentTask, PreparedTask } from '../../core/agent-task.js';
-import { fence, repoUrl } from '../../core/prompts.js';
+import type { AgentTask, PreparedTask } from '../../platform/agents/agent-task.js';
+import { fence, repoUrl } from '../../platform/agents/prompts.js';
 import { LIMITS } from './proposals.js';
 
-// What the agent is told to read a meeting's notes (#62); core/agent-task.ts
+// What the agent is told to read a meeting's notes (#62); platform/agents/agent-task.ts
 // runs it and read.ts checks what it wrote (proposals.ts).
 
 export interface MeetingTask {

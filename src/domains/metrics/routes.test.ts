@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { Access } from '../access/access.js';
 
-vi.mock('../../core/repos.js', () => ({ loadRepos: async () => [{ productRepo: 'acme/tienda', productRepoPath: '/x' }] }));
+vi.mock('../../platform/config/repos.js', () => ({ loadRepos: async () => [{ productRepo: 'acme/tienda', productRepoPath: '/x' }] }));
 vi.mock('./subscription-view.js', () => ({
   suscripcionView: async (_entries: unknown, account: string | null) => (account === 'nadie' ? null : { accounts: ['acme'], cuentas: [{ account: account ?? 'acme' }] }),
 }));

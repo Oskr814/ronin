@@ -1,13 +1,13 @@
-import type { AgentTask, PreparedTask } from '../../core/agent-task.js';
-import { config } from '../../core/config.js';
-import { getPullRequestStatus, type Comment } from '../../core/github.js';
-import { AGENT_NOTES_REMINDER, COMMIT_STYLE_RULE, describeMention, fence, PR_BODY_RULE, repoUrl } from '../../core/prompts.js';
-import { activeRepo } from '../../core/repo-context.js';
-import { remoteBranchExists } from '../../core/worktree.js';
+import type { AgentTask, PreparedTask } from '../../platform/agents/agent-task.js';
+import { config } from '../../platform/config/config.js';
+import { getPullRequestStatus, type Comment } from '../../platform/github/github.js';
+import { AGENT_NOTES_REMINDER, COMMIT_STYLE_RULE, describeMention, fence, PR_BODY_RULE, repoUrl } from '../../platform/agents/prompts.js';
+import { activeRepo } from '../../platform/agents/repo-context.js';
+import { remoteBranchExists } from '../../platform/git/worktree.js';
 import { baseBranchFor, planBranch, sliceBranch, specBranch } from './stack.js';
 
 // What the agent is told for each task of an issue's own work — planning,
-// slices, its PRs' CI and its spec; core/agent-task.ts runs it.
+// slices, its PRs' CI and its spec; platform/agents/agent-task.ts runs it.
 
 export type SliceTask =
   | { type: 'plan'; issueNumber: number; specPaths: string[] }

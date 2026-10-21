@@ -98,7 +98,8 @@ src/
 ├── domains/           la lógica de ronin, una carpeta por dominio, con sus rutas (routes.ts), su lógica y su almacenamiento
 │                      portal, meetings, deploys, explorations, metrics, settings, items, runs, access,
 │                      slices, review, commands, previews, changelog, product-app
-├── platform/          lo técnico que usan todos: db/, store/, fs/, locks/, workers/, github/, linear/, claude/, errors.ts, config, logger, timing
+├── platform/          lo técnico que usan todos: config/, db/, github/, linear/, git/, claude/, agents/, state/, locks/, workers/, notify/,
+│                      logger, timing; y con las piezas comunes, store/, fs/ y errors.ts
 └── ui/                React compartido por el tablero y el portal: components/, api-client.ts, time.ts
 ```
 
@@ -123,7 +124,7 @@ src/
 **Cómo se llega**, en PRs que solo mueven o solo unifican, nunca las dos cosas:
 1. `apps/`: el servidor, la cola, el tick y las dos apps web. **Hecho.**
 2. `domains/`: lo que estaba en `server/api/` y en las carpetas de dominio, con `access` como dominio propio. **Hecho.**
-3. `platform/`: `core/` y `db/`.
+3. `platform/`: lo que estaba en `core/` y `db/`, por tema (`config/`, `github/`, `agents/`, `state/`…). **Hecho.** Quedan cuatro imports de `platform/` a un dominio, que se van con las piezas comunes: `HELP_FOOTER_MARKER` (`linear/linear.ts`, `agents/prompts.ts`), `recordBlockEvent` (`notify/notifier.ts`) y `withJson` (`config/settings-store.ts`).
 4. Una pieza común por PR, de la tabla de arriba, reemplazando todas sus copias.
 
 ### Datos: Postgres
@@ -155,10 +156,10 @@ La base guarda la ruta y los metadatos.
 
 **Cómo se accede:**
 - **Kysely** sobre `pg`: consultas tipadas sin un ORM que esconda lo que hace.
-- **Migraciones versionadas** en `src/db/migrations/`, que corren al arrancar.
+- **Migraciones versionadas** en `src/platform/db/migrations/`, que corren al arrancar.
 - **Un repositorio por módulo** (`domains/portal/store.ts`, `domains/deploys/store.ts`…) con la misma interfaz que hoy exponen los módulos. Los servicios no cambian de forma.
 
-**Hecho:** la base (`src/db/`: Kysely, migraciones en `src/db/migrations/` que el servidor corre al arrancar, `compose.postgres.yml`, `compose.test.yml` y un Postgres en el CI) y los módulos **Ajustes** (`core/settings-store.ts`) **Despliegues** (`domains/deploys/store.ts`) **Portal** (`domains/portal/accounts.ts`, `domains/portal/requests.ts`: `portal_users` y `portal_requests`, con cada pedido como un documento en vez de `request_messages` y `request_events`) y **Reuniones** (`domains/meetings/meetings.ts`; cada una como un documento `jsonb`, en vez de `meeting_items`, porque se lee y se escribe entera). El **estado local**, el **índice de corridas** y la **cuota** pasan a la etapa 3: los tres viven dentro del tick y de los agentes (locks durante llamadas a GitHub, escrituras síncronas), y la cola rediseña justo los claims, los locks y el registro de trabajos. Mientras dura la etapa, `DATABASE_URL` la activa y sin ella todo sigue en archivos: cada módulo se despliega primero y se pasa después con su `pnpm db:import-<módulo>`. `config.ts` lee Ajustes con `await` al cargar, así que cada proceso abre su pool (chico, que no impide que el proceso termine).
+**Hecho:** la base (`src/platform/db/`: Kysely, migraciones en `src/platform/db/migrations/` que el servidor corre al arrancar, `compose.postgres.yml`, `compose.test.yml` y un Postgres en el CI) y los módulos **Ajustes** (`platform/config/settings-store.ts`) **Despliegues** (`domains/deploys/store.ts`) **Portal** (`domains/portal/accounts.ts`, `domains/portal/requests.ts`: `portal_users` y `portal_requests`, con cada pedido como un documento en vez de `request_messages` y `request_events`) y **Reuniones** (`domains/meetings/meetings.ts`; cada una como un documento `jsonb`, en vez de `meeting_items`, porque se lee y se escribe entera). El **estado local**, el **índice de corridas** y la **cuota** pasan a la etapa 3: los tres viven dentro del tick y de los agentes (locks durante llamadas a GitHub, escrituras síncronas), y la cola rediseña justo los claims, los locks y el registro de trabajos. Mientras dura la etapa, `DATABASE_URL` la activa y sin ella todo sigue en archivos: cada módulo se despliega primero y se pasa después con su `pnpm db:import-<módulo>`. `config.ts` lee Ajustes con `await` al cargar, así que cada proceso abre su pool (chico, que no impide que el proceso termine).
 
 **Migración, un módulo por vez:**
 1. Se crea la tabla.
@@ -213,13 +214,13 @@ Lo que **desaparece**:
 
 **Hecho (3.1):** `apps/api/jobs/store.ts`, `apps/api/jobs/runner.ts`, `apps/api/jobs/scheduler.ts`, `apps/api/jobs/child.ts` (DESIGN §14). Por ahora sin reintentos: un trabajo cuyo lease vence queda `lost` y el próximo tick concilia, como antes.
 
-**Hecho (3.2):** `core/locks-db.ts`: tablas `locks` y `lock_waits`. `locks.ts` conserva su interfaz (`withResourceLock`, `pinResources`, `withSlots`) y elige la base o los archivos según `DATABASE_URL`. Los locks de los workers (preview, portal, reuniones) y el del estado local siguen en archivos: son de esta máquina y el paso 3.3 rediseña el segundo.
+**Hecho (3.2):** `platform/locks/locks-db.ts`: tablas `locks` y `lock_waits`. `locks.ts` conserva su interfaz (`withResourceLock`, `pinResources`, `withSlots`) y elige la base o los archivos según `DATABASE_URL`. Los locks de los workers (preview, portal, reuniones) y el del estado local siguen en archivos: son de esta máquina y el paso 3.3 rediseña el segundo.
 
-**Hecho (3.3):** `core/local-state-db.ts`: tabla `repo_state`, una fila por entrada (repo, tipo, clave y su valor), en vez de una tabla por cosa: son diez listas chicas que se leen juntas y ninguna se consulta por sus columnas. `local-state.ts` conserva su interfaz y una escritura toca solo las entradas que cambiaron. Su lock pasa a la tabla `locks` (uno por repo, con lease) y no a una transacción, porque abarca llamadas a GitHub (el claim de un issue).
+**Hecho (3.3):** `platform/state/local-state-db.ts`: tabla `repo_state`, una fila por entrada (repo, tipo, clave y su valor), en vez de una tabla por cosa: son diez listas chicas que se leen juntas y ninguna se consulta por sus columnas. `local-state.ts` conserva su interfaz y una escritura toca solo las entradas que cambiaron. Su lock pasa a la tabla `locks` (uno por repo, con lease) y no a una transacción, porque abarca llamadas a GitHub (el claim de un issue).
 
-**Hecho (3.4):** `core/runs-store.ts`: tabla `runs`, una fila por corrida que `RunRecord` escribe al empezar y al terminar; la transcripción sigue en su archivo. `listRuns` lee la base y solo abre el archivo de una corrida en curso (sus pasos, y si su proceso sigue vivo; el de otra máquina no se puede saber y cuenta como en curso). Si el archivo dice que terminó y la base no (la base no respondía), la pone al día. Las filas no se podan con los archivos (14 días): la vista de suscripción, que mira 63 días, ve la historia completa.
+**Hecho (3.4):** `platform/agents/runs-store.ts`: tabla `runs`, una fila por corrida que `RunRecord` escribe al empezar y al terminar; la transcripción sigue en su archivo. `listRuns` lee la base y solo abre el archivo de una corrida en curso (sus pasos, y si su proceso sigue vivo; el de otra máquina no se puede saber y cuenta como en curso). Si el archivo dice que terminó y la base no (la base no respondía), la pone al día. Las filas no se podan con los archivos (14 días): la vista de suscripción, que mira 63 días, ve la historia completa.
 
-**Hecho (3.5):** el uso de las cuentas de Claude (`core/claude-usage.ts`): tablas `claude_usage` (la última medición de cada cuenta, como documento) y `claude_usage_history` (todas). Las escribe el proceso de la corrida que recibe el `rate_limit_event`, sin hacerla esperar ni fallar. El límite alcanzado se marca en una sola sentencia sobre la última medición. Con esto la etapa 3 queda completa.
+**Hecho (3.5):** el uso de las cuentas de Claude (`platform/claude/claude-usage.ts`): tablas `claude_usage` (la última medición de cada cuenta, como documento) y `claude_usage_history` (todas). Las escribe el proceso de la corrida que recibe el `rate_limit_event`, sin hacerla esperar ni fallar. El límite alcanzado se marca en una sola sentencia sobre la última medición. Con esto la etapa 3 queda completa.
 
 El claim entre supervisores por label (DESIGN §9) deja de hacer falta con un solo nodo central que reparte el trabajo. Se mantiene mientras haya instalaciones viejas y después se simplifica.
 

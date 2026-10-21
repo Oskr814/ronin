@@ -5,14 +5,14 @@
 // about. The cron tick stays as the reconciliation pass. See
 // docs/DESIGN.md §14. Served by the ronin server (src/apps/api/main.ts).
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { config } from '../../../core/config.js';
-import { loadRepos } from '../../../core/repos.js';
-import { launchWorker } from '../../../core/worker-launch.js';
-import { getDb } from '../../../db/db.js';
+import { config } from '../../../platform/config/config.js';
+import { loadRepos } from '../../../platform/config/repos.js';
+import { launchWorker } from '../../../platform/workers/worker-launch.js';
+import { getDb } from '../../../platform/db/db.js';
 import { enqueue } from '../jobs/store.js';
 import { verifySignature, scopeForEvent, ackTarget, type EventPayload } from './events.js';
-import { addAckReaction } from '../../../core/github.js';
-import { log } from '../../../core/logger.js';
+import { addAckReaction } from '../../../platform/github/github.js';
+import { log } from '../../../platform/logger.js';
 import type { Scope } from '../tick/tick.js';
 import type { EventHandlerRequest } from './handler.js';
 

@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { Hono } from 'hono';
 import { createMiddleware } from 'hono/factory';
 import { z } from 'zod';
-import { log } from '../../core/logger.js';
+import { log } from '../../platform/logger.js';
 import { body, jsonBody, type NodeEnv } from '../../apps/api/http/hono.js';
 import type { PortalUser } from './accounts.js';
 import { grantedApps, type PortalApp } from './apps.js';

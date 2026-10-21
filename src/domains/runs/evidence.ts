@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { extname } from 'node:path';
 import { EVIDENCE_BRANCH } from '../product-app/evidence-store.js';
-import type { RepoEntry } from '../../core/repo-context.js';
+import type { RepoEntry } from '../../platform/agents/repo-context.js';
 
 const execFileAsync = promisify(execFile);
 

@@ -1,16 +1,16 @@
 import { describe, it, expect, vi } from 'vitest';
 
-vi.mock('../../core/config.js', () => ({ config: { worktreeBaseRef: 'origin/main', githubLogin: 'ronin-agent' } }));
-vi.mock('../../core/repo-context.js', () => ({ activeRepo: () => ({ productRepo: 'redmotos/shoppingcart', worktreeBaseRef: 'origin/odoo-main' }) }));
+vi.mock('../../platform/config/config.js', () => ({ config: { worktreeBaseRef: 'origin/main', githubLogin: 'ronin-agent' } }));
+vi.mock('../../platform/agents/repo-context.js', () => ({ activeRepo: () => ({ productRepo: 'redmotos/shoppingcart', worktreeBaseRef: 'origin/odoo-main' }) }));
 const listOpenPrsByHeadPrefix = vi.hoisted(() => vi.fn());
 const listIssuesWithLabel = vi.hoisted(() => vi.fn());
 const createIssue = vi.hoisted(() => vi.fn());
-vi.mock('../../core/github.js', () => ({
+vi.mock('../../platform/github/github.js', () => ({
   listOpenPrsByHeadPrefix: (...a: unknown[]) => listOpenPrsByHeadPrefix(...a),
   listIssuesWithLabel: (...a: unknown[]) => listIssuesWithLabel(...a),
   createIssue: (...a: unknown[]) => createIssue(...a),
 }));
-vi.mock('../../core/linear-assign.js', () => ({ queueExplorationProject: vi.fn() }));
+vi.mock('../../platform/linear/linear-assign.js', () => ({ queueExplorationProject: vi.fn() }));
 
 import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';

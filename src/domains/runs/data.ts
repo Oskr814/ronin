@@ -1,10 +1,10 @@
 import { closeSync, existsSync, openSync, readFileSync, readSync, readdirSync, statSync } from 'node:fs';
 import { cpus, freemem, loadavg, totalmem } from 'node:os';
 import { join } from 'node:path';
-import { logsDir, localDay } from '../../core/run-files.js';
-import { getDb } from '../../db/db.js';
-import { listRunsDb, putRun, thisHost } from '../../core/runs-store.js';
-import { stepText, type RunLine, type RunOutcome, type RunSummary } from '../../core/run-record.js';
+import { logsDir, localDay } from '../../platform/agents/run-files.js';
+import { getDb } from '../../platform/db/db.js';
+import { listRunsDb, putRun, thisHost } from '../../platform/agents/runs-store.js';
+import { stepText, type RunLine, type RunOutcome, type RunSummary } from '../../platform/agents/run-record.js';
 
 // What the dashboard reads from this runner's own files (#65): the per-run
 // records (logs/runs/), each account's usage (logs/usage/), the agent slots
@@ -22,7 +22,7 @@ export function pidAlive(pid: unknown): boolean {
   }
 }
 
-export type { RunLine, RunState, RunSummary } from '../../core/run-record.js';
+export type { RunLine, RunState, RunSummary } from '../../platform/agents/run-record.js';
 
 // How far back the dashboard looks for an item's runs.
 export const HISTORY_DAYS = 14;
@@ -87,7 +87,7 @@ export function summarizeRun(lines: RunLine[]): RunSummary | null {
 // never does, so a snapshot only re-reads the runs still going.
 const cache = new Map<string, { size: number; summary: RunSummary | null }>();
 
-// With DATABASE_URL (#235, stage 3.4), from the index (core/runs-store.ts):
+// With DATABASE_URL (#235, stage 3.4), from the index (platform/agents/runs-store.ts):
 // only a run still going is read from its file, for its steps so far and to
 // see whether its process is still there. One the file says ended — its end
 // never reached the index — is caught up from the file.
@@ -144,7 +144,7 @@ export function itemKey(run: Pick<RunSummary, 'repo' | 'issueNumber' | 'prNumber
   return number !== undefined ? `${run.repo}#${number}` : `${run.repo}:${run.taskType}:${run.label}`;
 }
 
-// The agent slots taken in each repo (core/locks.ts): one lock file per slot,
+// The agent slots taken in each repo (platform/locks/locks.ts): one lock file per slot,
 // holding its process's pid. Repo → how many; '' for a slot taken outside
 // any repo.
 export function slotsInUse(root = process.cwd()): Record<string, number> {

@@ -4,8 +4,8 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
 let base = '';
-vi.mock('../../core/repo-context.js', () => ({ activeRepo: () => ({ productRepo: 'redmotos/shoppingcart', worktreeBasePath: base }) }));
-vi.mock('../../core/config.js', () => ({ config: {} }));
+vi.mock('../../platform/agents/repo-context.js', () => ({ activeRepo: () => ({ productRepo: 'redmotos/shoppingcart', worktreeBasePath: base }) }));
+vi.mock('../../platform/config/config.js', () => ({ config: {} }));
 const app = { path: 'apps/backoffice', homePath: '/pedidos', viewports: { desktop: { width: 1440, height: 900 }, mobile: { width: 390, height: 844, isMobile: true } } };
 vi.mock('../product-app/manifest.js', () => ({ loadAppDefinition: async () => app }));
 const appDown = vi.hoisted(() => vi.fn());
@@ -15,7 +15,7 @@ vi.mock('../product-app/runtime.js', () => ({
 }));
 vi.mock('../product-app/browser.js', () => ({ loginAllUsers: async () => ({ Sales: '/s/Sales.json' }), renderHtmlToPng: vi.fn() }));
 const runAgentTask = vi.hoisted(() => vi.fn());
-vi.mock('../../core/agent-task.js', () => ({ runAgentTask: (...a: unknown[]) => runAgentTask(...a) }));
+vi.mock('../../platform/agents/agent-task.js', () => ({ runAgentTask: (...a: unknown[]) => runAgentTask(...a) }));
 const publishEvidence = vi.hoisted(() => vi.fn());
 vi.mock('../product-app/evidence-store.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../product-app/evidence-store.js')>()),

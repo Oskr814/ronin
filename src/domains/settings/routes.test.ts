@@ -2,13 +2,13 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { rm } from 'node:fs/promises';
 import type { Access } from '../access/access.js';
 
-vi.mock('../../core/logger.js', () => ({ log: { info: vi.fn(), error: vi.fn() } }));
-vi.mock('../../core/repos.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../core/repos.js')>()),
+vi.mock('../../platform/logger.js', () => ({ log: { info: vi.fn(), error: vi.fn() } }));
+vi.mock('../../platform/config/repos.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../platform/config/repos.js')>()),
   loadRepos: async () => [{ productRepo: 'acme/tienda', productRepoPath: '/x' }],
 }));
 
-const { config } = await import('../../core/config.js');
+const { config } = await import('../../platform/config/config.js');
 const { dashboardApp } = await import('../../apps/api/routes.js');
 
 const ADMIN: Access = { admin: true, repos: [{ repo: 'acme/tienda', permission: 'admin' }] };

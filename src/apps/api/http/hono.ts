@@ -6,7 +6,7 @@ import { bodyLimit } from 'hono/body-limit';
 import { HTTPException } from 'hono/http-exception';
 import type { ZodType } from 'zod';
 import { zValidator } from '@hono/zod-validator';
-import { log } from '../../../core/logger.js';
+import { log } from '../../../platform/logger.js';
 import type { Access } from '../../../domains/access/access.js';
 import type { Session } from './auth.js';
 

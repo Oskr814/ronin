@@ -6,10 +6,10 @@ import { join } from 'node:path';
 const dir = mkdtempSync(join(tmpdir(), 'ronin-cuentas-'));
 const config = vi.hoisted(() => ({ settings: { dataDir: '' } }));
 config.settings.dataDir = dir;
-vi.mock('../../core/config.js', () => ({ config, taskEnvModel: () => undefined, taskEnvEffort: () => undefined, taskDefaultModel: () => undefined, taskDefaultEffort: () => undefined }));
-vi.mock('../../core/logger.js', () => ({ log: { info: vi.fn(), error: vi.fn() } }));
+vi.mock('../../platform/config/config.js', () => ({ config, taskEnvModel: () => undefined, taskEnvEffort: () => undefined, taskDefaultModel: () => undefined, taskDefaultEffort: () => undefined }));
+vi.mock('../../platform/logger.js', () => ({ log: { info: vi.fn(), error: vi.fn() } }));
 const usage = vi.hoisted(() => ({ list: [] as unknown[] }));
-vi.mock('../../core/claude-usage.js', async (importOriginal) => ({ ...(await importOriginal<typeof import('../../core/claude-usage.js')>()), listUsage: async () => usage.list }));
+vi.mock('../../platform/claude/claude-usage.js', async (importOriginal) => ({ ...(await importOriginal<typeof import('../../platform/claude/claude-usage.js')>()), listUsage: async () => usage.list }));
 
 const { readRegistro } = await import('./settings.js');
 const { cuentasView, setCuenta } = await import('./claude-accounts.js');

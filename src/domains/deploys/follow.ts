@@ -1,7 +1,7 @@
-import { config } from '../../core/config.js';
-import { listTagRuns, type WorkflowRun } from '../../core/github.js';
-import { log } from '../../core/logger.js';
-import { activeRepo } from '../../core/repo-context.js';
+import { config } from '../../platform/config/config.js';
+import { listTagRuns, type WorkflowRun } from '../../platform/github/github.js';
+import { log } from '../../platform/logger.js';
+import { activeRepo } from '../../platform/agents/repo-context.js';
 import { getUser } from '../portal/accounts.js';
 import { deployedMail } from '../portal/mail.js';
 import { sendRequestsMail } from '../portal/notify.js';

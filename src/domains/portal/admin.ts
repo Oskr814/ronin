@@ -1,5 +1,5 @@
-import type { RepoEntry } from '../../core/repo-context.js';
-import { log } from '../../core/logger.js';
+import type { RepoEntry } from '../../platform/agents/repo-context.js';
+import { log } from '../../platform/logger.js';
 import { AccountError, adminView, createUser, getUser, listUsers, updateUser, type PortalUser, type UserFields } from './accounts.js';
 import { portalApps, validGrants } from './apps.js';
 import { startedTodayByUser } from './requests.js';

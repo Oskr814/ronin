@@ -1,8 +1,8 @@
 // `pnpm db:migrate`: brings DATABASE_URL's database up to the last
-// migration (src/db/migrations). The server does it when it starts; this is
+// migration (src/platform/db/migrations). The server does it when it starts; this is
 // for doing it by hand, before switching a module over.
-import { closeDb, getDb } from '../src/db/db.js';
-import { migrateToLatest } from '../src/db/migrate.js';
+import { closeDb, getDb } from '../src/platform/db/db.js';
+import { migrateToLatest } from '../src/platform/db/migrate.js';
 
 const db = getDb();
 if (!db) {

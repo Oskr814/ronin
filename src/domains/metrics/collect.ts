@@ -1,6 +1,6 @@
 import { join } from 'node:path';
-import { config } from '../../core/config.js';
-import { ghGraphql } from '../../core/github.js';
+import { config } from '../../platform/config/config.js';
+import { ghGraphql } from '../../platform/github/github.js';
 import { readJson, writeJson } from '../portal/json-store.js';
 
 // What Métricas reads from GitHub (#222), per repo: issues and PRs with what

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import type { OpenPr } from '../../core/github.js';
+import type { OpenPr } from '../../platform/github/github.js';
 import type { RunSummary } from '../runs/data.js';
 import type { RepoGithub } from './github.js';
 import { buildItems, itemRunKeys, prNote } from './list.js';

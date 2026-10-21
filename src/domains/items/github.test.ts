@@ -5,14 +5,14 @@ const listOpenPrsWithChecks = vi.fn();
 const listOpenIssues = vi.fn();
 const listPrClosingIssues = vi.fn();
 const listRecentlyClosed = vi.fn();
-vi.mock('../../core/github.js', () => ({
+vi.mock('../../platform/github/github.js', () => ({
   listRecentlyClosed: () => listRecentlyClosed(),
   listOpenManagedIssues: () => listOpenManagedIssues(),
   listOpenPrsWithChecks: () => listOpenPrsWithChecks(),
   listOpenIssues: () => listOpenIssues(),
   listPrClosingIssues: () => listPrClosingIssues(),
 }));
-vi.mock('../../core/local-state.js', () => ({ getBlocks: async () => ({}) }));
+vi.mock('../../platform/state/local-state.js', () => ({ getBlocks: async () => ({}) }));
 const listPreviewStates = vi.fn();
 vi.mock('../previews/index.js', () => ({ listPreviewStates: () => listPreviewStates() }));
 

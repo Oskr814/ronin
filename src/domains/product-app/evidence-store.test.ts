@@ -4,7 +4,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-vi.mock('../../core/repo-context.js', () => ({ activeRepo: () => ({ productRepo: 'redmotos/shoppingcart' }) }));
+vi.mock('../../platform/agents/repo-context.js', () => ({ activeRepo: () => ({ productRepo: 'redmotos/shoppingcart' }) }));
 
 import { EVIDENCE_BRANCH, evidenceUrl, publishEvidence } from './evidence-store.js';
 

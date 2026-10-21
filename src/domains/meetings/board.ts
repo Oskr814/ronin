@@ -1,4 +1,4 @@
-import type { RepoEntry } from '../../core/repo-context.js';
+import type { RepoEntry } from '../../platform/agents/repo-context.js';
 import type { RunSummary } from '../runs/data.js';
 import { ExtractError, extractFile, extractPasted, MAX_FILE_BYTES, ORIGINAL_EXT, readNotes, readOriginal, type Meeting, type NewMeeting } from './index.js';
 

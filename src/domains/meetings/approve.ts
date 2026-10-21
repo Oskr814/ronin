@@ -1,12 +1,12 @@
-import { config } from '../../core/config.js';
-import { applyLinearSoon, queueLinearAssignment } from '../../core/linear-assign.js';
-import { createProject, linearKey, teamContext, type LinearContext } from '../../core/linear-api.js';
-import { log } from '../../core/logger.js';
-import { withActiveRepo, type RepoEntry } from '../../core/repo-context.js';
-import { tryLockResource, unlockResource } from '../../core/locks.js';
+import { config } from '../../platform/config/config.js';
+import { applyLinearSoon, queueLinearAssignment } from '../../platform/linear/linear-assign.js';
+import { createProject, linearKey, teamContext, type LinearContext } from '../../platform/linear/linear-api.js';
+import { log } from '../../platform/logger.js';
+import { withActiveRepo, type RepoEntry } from '../../platform/agents/repo-context.js';
+import { tryLockResource, unlockResource } from '../../platform/locks/locks.js';
 import { addEvent, getMeeting, updateMeeting, type Meeting, type ProposalOutcome, type ProposalResult, type ProposedCycle, type ProposedIssue } from './index.js';
 import type { Session } from '../../apps/api/http/auth.js';
-import { commentOnIssue, createIssue, GithubUserError } from '../../core/github-as-user.js';
+import { commentOnIssue, createIssue, GithubUserError } from '../../platform/github/github-as-user.js';
 
 // Someone approves what they chose of a meeting's proposals (#62), with
 // their edits: the issues and comments go to GitHub as them, with their

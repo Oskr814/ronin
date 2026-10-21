@@ -1,12 +1,12 @@
-import { config } from '../../core/config.js';
-import { accountName, listUsage } from '../../core/claude-usage.js';
-import { itemKindOf } from '../../core/github.js';
-import { slotsInUseDb, waitingDb } from '../../core/locks-db.js';
-import { withActiveRepo, type RepoEntry } from '../../core/repo-context.js';
-import { loadRepos } from '../../core/repos.js';
-import type { RunSummary } from '../../core/run-record.js';
-import { timed } from '../../core/timing.js';
-import { getDb } from '../../db/db.js';
+import { config } from '../../platform/config/config.js';
+import { accountName, listUsage } from '../../platform/claude/claude-usage.js';
+import { itemKindOf } from '../../platform/github/github.js';
+import { slotsInUseDb, waitingDb } from '../../platform/locks/locks-db.js';
+import { withActiveRepo, type RepoEntry } from '../../platform/agents/repo-context.js';
+import { loadRepos } from '../../platform/config/repos.js';
+import type { RunSummary } from '../../platform/agents/run-record.js';
+import { timed } from '../../platform/timing.js';
+import { getDb } from '../../platform/db/db.js';
 import { listMeetings } from '../meetings/index.js';
 import { listUsers, type PortalUser } from '../portal/accounts.js';
 import { listRequests } from '../portal/requests.js';
@@ -43,13 +43,13 @@ export async function warmDashboard(): Promise<void> {
   await Promise.all((await loadRepos()).map(async (entry) => repoLinear(entry, await repoGithub(entry))));
 }
 
-// What waits for a slot: from Postgres with DATABASE_URL (core/locks-db.ts).
+// What waits for a slot: from Postgres with DATABASE_URL (platform/locks/locks-db.ts).
 async function waitingQueue() {
   const db = getDb();
   return db ? timed('db', () => waitingDb(db)) : readQueue();
 }
 
-// Each repo's agent slots, taken and its limit (its own queue, core/locks.ts),
+// Each repo's agent slots, taken and its limit (its own queue, platform/locks/locks.ts),
 // and the sum of them for the status bar.
 async function slotsView(entries: RepoEntry[]) {
   const db = getDb();

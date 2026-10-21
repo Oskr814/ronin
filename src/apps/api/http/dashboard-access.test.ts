@@ -9,7 +9,7 @@ import { join } from 'node:path';
 // name, it doesn't exist.
 const SC = 'redmotos/shoppingcart';
 const BM = 'Bmedical/bmedical';
-vi.mock('../../../core/repos.js', () => ({
+vi.mock('../../../platform/config/repos.js', () => ({
   loadRepos: async () => [
     { productRepo: SC, productRepoPath: '/tmp/sc', claudeConfigDir: '/home/x/.claude-redmotos' },
     { productRepo: BM, productRepoPath: '/tmp/bm', claudeConfigDir: '/home/x/.claude-bmedical' },
@@ -39,7 +39,7 @@ vi.mock('../../../domains/runs/data.js', async (importOriginal) => ({
   runPath: (runId: string) => join(dir, `${runId}.jsonl`),
 }));
 
-vi.mock('../../../core/claude-usage.js', async (importOriginal) => ({ ...(await importOriginal<typeof import('../../../core/claude-usage.js')>()), listUsage: async () => [{ account: 'redmotos' }, { account: 'bmedical' }] }));
+vi.mock('../../../platform/claude/claude-usage.js', async (importOriginal) => ({ ...(await importOriginal<typeof import('../../../platform/claude/claude-usage.js')>()), listUsage: async () => [{ account: 'redmotos' }, { account: 'bmedical' }] }));
 
 const launchMeetingWorker = vi.fn(async (_n: number) => {});
 vi.mock('../../../domains/meetings/launch.js', async (importOriginal) => ({ ...(await importOriginal<typeof import('../../../domains/meetings/launch.js')>()), launchMeetingWorker: (n: number) => launchMeetingWorker(n) }));

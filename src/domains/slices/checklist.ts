@@ -1,4 +1,4 @@
-import { getIssueBody, setIssueBody } from '../../core/github.js';
+import { getIssueBody, setIssueBody } from '../../platform/github/github.js';
 
 // Matches lines rendered from templates/tracking-issue.md, e.g.:
 // "- [ ] Slice 1: Modelo de datos — PR: _pendiente_"

@@ -1,4 +1,4 @@
-import { log } from '../../core/logger.js';
+import { log } from '../../platform/logger.js';
 import { getUser } from './accounts.js';
 import type { ImageUpload } from './images.js';
 import { launchPortalWorker } from './launch.js';

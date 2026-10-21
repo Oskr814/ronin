@@ -1,9 +1,9 @@
-import { config } from '../../core/config.js';
-import { log } from '../../core/logger.js';
-import type { RepoEntry } from '../../core/repo-context.js';
-import { accountName, listUsage, type AccountUsage } from '../../core/claude-usage.js';
-import { accountPlan, PLANS, planOf, PRICE_MAX_USD, validPrice, type AccountPlan } from '../../core/claude-plans.js';
-import { readSettings, updateSettings } from '../../core/settings-store.js';
+import { config } from '../../platform/config/config.js';
+import { log } from '../../platform/logger.js';
+import type { RepoEntry } from '../../platform/agents/repo-context.js';
+import { accountName, listUsage, type AccountUsage } from '../../platform/claude/claude-usage.js';
+import { accountPlan, PLANS, planOf, PRICE_MAX_USD, validPrice, type AccountPlan } from '../../platform/claude/claude-plans.js';
+import { readSettings, updateSettings } from '../../platform/config/settings-store.js';
 import { AjustesError, record } from './settings.js';
 
 // Ajustes → Cuentas de Claude (#234, stage 1), admins only:
@@ -12,7 +12,7 @@ import { AjustesError, record } from './settings.js';
 //
 // The accounts are the claudeConfigDir of each repo in repos.json, plus any
 // with usage on record (an account a repo stopped using still has its
-// history). The plan is saved with the rest of Ajustes (core/settings-store.ts).
+// history). The plan is saved with the rest of Ajustes (platform/config/settings-store.ts).
 
 export interface CuentaView {
   account: string;

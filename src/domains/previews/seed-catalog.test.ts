@@ -3,7 +3,7 @@ import { mkdtempSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-vi.mock('../../core/config.js', () => ({ config: { seedCatalogs: { dataDir: '/data/seed-catalog-data' } } }));
+vi.mock('../../platform/config/config.js', () => ({ config: { seedCatalogs: { dataDir: '/data/seed-catalog-data' } } }));
 
 import { parseSeedCatalog, readSeedCatalog, saveSeedCatalog, seedEntries, seedHash } from './seed-catalog.js';
 import type { AppStep } from '../product-app/manifest.js';

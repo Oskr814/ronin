@@ -4,8 +4,8 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
 let base = '';
-vi.mock('../../core/repo-context.js', () => ({ activeRepo: () => ({ worktreeBasePath: base, productRepo: 'o/r' }) }));
-vi.mock('../../core/config.js', () => ({
+vi.mock('../../platform/agents/repo-context.js', () => ({ activeRepo: () => ({ worktreeBasePath: base, productRepo: 'o/r' }) }));
+vi.mock('../../platform/config/config.js', () => ({
   config: { exploreFunctionsPerRun: 3, exploreFindingsPerRun: 5, exploreIdeasPerRun: 1, explorePublishEvidence: true, claudeCommand: 'claude', claudeConfigDir: '' },
 }));
 const app = {
@@ -49,7 +49,7 @@ vi.mock('./inventory.js', () => ({
 }));
 
 const runAgentTask = vi.fn();
-vi.mock('../../core/agent-task.js', () => ({ runAgentTask: (...args: unknown[]) => runAgentTask(...args) }));
+vi.mock('../../platform/agents/agent-task.js', () => ({ runAgentTask: (...args: unknown[]) => runAgentTask(...args) }));
 
 import { runExploration } from './run.js';
 import { loadMemory, saveInventory, writeFinding, ensureMemoryDir } from './memory.js';

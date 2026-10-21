@@ -4,10 +4,10 @@
 // runs, and answers the /explore comment that asked for it, if any. The
 // same process redoes the after images reviewers asked for, which also need
 // the app up.
-import { loadRepos } from '../../core/repos.js';
-import { withActiveRepo } from '../../core/repo-context.js';
-import { replyToComment } from '../../core/github.js';
-import { log } from '../../core/logger.js';
+import { loadRepos } from '../../platform/config/repos.js';
+import { withActiveRepo } from '../../platform/agents/repo-context.js';
+import { replyToComment } from '../../platform/github/github.js';
+import { log } from '../../platform/logger.js';
 import {
   acquireExploreLock,
   exploreAndPublish,

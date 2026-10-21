@@ -1,6 +1,6 @@
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
-import { log } from '../../core/logger.js';
+import { log } from '../../platform/logger.js';
 import { body, jsonBody, onError, type NodeEnv } from '../../apps/api/http/hono.js';
 import { findUserByEmail, normalizeEmail, recordLogin, redeemLink, userForLink, type PortalUser } from './accounts.js';
 import { grantedApps } from './apps.js';

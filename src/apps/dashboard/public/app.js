@@ -80,7 +80,7 @@ const CHECK_STATE = { passed: ['ok', 'pasó'], pending: ['live', 'corriendo'], f
 const $ = (selector) => document.querySelector(selector);
 const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const typeName = (type) => TYPE[type] ?? type;
-// Runs that are steps of one thing (core/run-group.ts): a preview's seed
+// Runs that are steps of one thing (platform/agents/run-group.ts): a preview's seed
 // catalog, "¿alcanzan los seeds?" and its data are one preview.
 const GROUP_NAME = { preview: 'Preview' };
 const groupName = (run) => (run?.group ? GROUP_NAME[run.group.split(':')[0]] : undefined);
@@ -1123,7 +1123,7 @@ function docHTML(item) {
 const sameLogin = (a, b) => Boolean(a && b) && a.toLowerCase() === b.toLowerCase();
 
 // The sections every PR ronin opens has (#195, PR_BODY_SECTIONS in
-// core/prompts.ts), each under its heading; what it decided on its own
+// platform/agents/prompts.ts), each under its heading; what it decided on its own
 // stands out, it's what most needs a look. A body without them (an older
 // PR) shows as it is.
 const PR_SECTIONS = ['Qué se pidió', 'Qué cambió', 'Cómo se verificó', 'Decisiones propias', 'Fuera de alcance'];

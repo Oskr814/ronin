@@ -17,11 +17,11 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseArgs, promisify } from 'node:util';
-import { config, agentModelFor, agentEffortFor } from '../src/core/config.js';
-import { loadRepos } from '../src/core/repos.js';
-import { withActiveRepo } from '../src/core/repo-context.js';
+import { config, agentModelFor, agentEffortFor } from '../src/platform/config/config.js';
+import { loadRepos } from '../src/platform/config/repos.js';
+import { withActiveRepo } from '../src/platform/agents/repo-context.js';
 import { reviewTask } from '../src/domains/review/index.js';
-import { claudeHeadlessArgs } from '../src/core/claude-runner.js';
+import { claudeHeadlessArgs } from '../src/platform/claude/claude-runner.js';
 
 const execFileAsync = promisify(execFile);
 

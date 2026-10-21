@@ -1,8 +1,8 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { activeRepo } from '../../core/repo-context.js';
+import { activeRepo } from '../../platform/agents/repo-context.js';
 import type { ReviewFinding } from './output.js';
-import type { BotThread } from '../../core/github.js';
+import type { BotThread } from '../../platform/github/github.js';
 import { slug } from './render.js';
 
 const execFileAsync = promisify(execFile);

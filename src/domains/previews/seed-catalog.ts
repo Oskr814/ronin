@@ -4,8 +4,8 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 import { parse as parseYaml } from 'yaml';
-import { activeRepo } from '../../core/repo-context.js';
-import { config } from '../../core/config.js';
+import { activeRepo } from '../../platform/agents/repo-context.js';
+import { config } from '../../platform/config/config.js';
 import type { AppDefinition, AppStep } from '../product-app/index.js';
 
 const execFileAsync = promisify(execFile);

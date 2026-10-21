@@ -3,12 +3,12 @@ import { promisify } from 'node:util';
 import { existsSync } from 'node:fs';
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { join, relative } from 'node:path';
-import { activeRepo } from '../../core/repo-context.js';
-import { config } from '../../core/config.js';
-import { log } from '../../core/logger.js';
-import { queueExplorationProject } from '../../core/linear-assign.js';
-import { acceptSubject, repoCommitConvention, type CommitChange, type CommitConvention } from '../../core/commit-style.js';
-import { runAgentTask } from '../../core/agent-task.js';
+import { activeRepo } from '../../platform/agents/repo-context.js';
+import { config } from '../../platform/config/config.js';
+import { log } from '../../platform/logger.js';
+import { queueExplorationProject } from '../../platform/linear/linear-assign.js';
+import { acceptSubject, repoCommitConvention, type CommitChange, type CommitConvention } from '../../platform/git/commit-style.js';
+import { runAgentTask } from '../../platform/agents/agent-task.js';
 import { explorationTask } from './prompts.js';
 import {
   createIssue,
@@ -17,7 +17,7 @@ import {
   listIssuesWithLabel,
   listOpenPrsByHeadPrefix,
   setPullRequestBody,
-} from '../../core/github.js';
+} from '../../platform/github/github.js';
 import {
   EXPLORATION_DIR,
   findingFileName,

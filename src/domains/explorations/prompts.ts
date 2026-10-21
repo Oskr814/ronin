@@ -1,8 +1,8 @@
-import type { AgentTask, PreparedTask } from '../../core/agent-task.js';
-import { fence, fenceBlock, REALISTIC_DATA_RULE, repoUrl, THREAD_REPLY_MAX, UNTRUSTED_APP_WARNING } from '../../core/prompts.js';
+import type { AgentTask, PreparedTask } from '../../platform/agents/agent-task.js';
+import { fence, fenceBlock, REALISTIC_DATA_RULE, repoUrl, THREAD_REPLY_MAX, UNTRUSTED_APP_WARNING } from '../../platform/agents/prompts.js';
 import { RESULT_JSON_CONTRACT, VERDICTS_JSON_CONTRACT } from './output.js';
 
-// What the agent is told for each task of an exploration; core/agent-task.ts
+// What the agent is told for each task of an exploration; platform/agents/agent-task.ts
 // runs it.
 
 export type ExplorationTask =

@@ -1,8 +1,8 @@
 import { copyFile, mkdir, writeFile } from 'node:fs/promises';
 import { dirname, extname } from 'node:path';
 import { makePrototype, PrototypeDeclined, type PrototypeDraft } from '../commands/prototype.js';
-import { config } from '../../core/config.js';
-import { log } from '../../core/logger.js';
+import { config } from '../../platform/config/config.js';
+import { log } from '../../platform/logger.js';
 import { portalTask } from './prompts.js';
 import { getUser } from './accounts.js';
 import { prototypeMail } from './mail.js';

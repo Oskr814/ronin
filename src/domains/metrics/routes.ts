@@ -1,7 +1,7 @@
 import { zValidator } from '@hono/zod-validator';
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { loadRepos } from '../../core/repos.js';
+import { loadRepos } from '../../platform/config/repos.js';
 import { suscripcionView } from './subscription-view.js';
 import { visibleRepos } from '../access/visible.js';
 import type { DashboardEnv } from '../../apps/api/http/hono.js';

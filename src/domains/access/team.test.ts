@@ -6,8 +6,8 @@ import { join } from 'node:path';
 const dir = mkdtempSync(join(tmpdir(), 'ronin-team-'));
 const config = vi.hoisted(() => ({ settings: { dataDir: '' }, dashboard: { admins: [] as string[], allowedUsers: [] as string[] } }));
 config.settings.dataDir = dir;
-vi.mock('../../core/config.js', () => ({ config, taskEnvModel: () => undefined, taskEnvEffort: () => undefined, taskDefaultModel: (t: string) => (t === 'update-changelog' ? 'haiku' : undefined) }));
-vi.mock('../../core/logger.js', () => ({ log: { info: vi.fn(), error: vi.fn() } }));
+vi.mock('../../platform/config/config.js', () => ({ config, taskEnvModel: () => undefined, taskEnvEffort: () => undefined, taskDefaultModel: (t: string) => (t === 'update-changelog' ? 'haiku' : undefined) }));
+vi.mock('../../platform/logger.js', () => ({ log: { info: vi.fn(), error: vi.fn() } }));
 const sessionAccess = vi.fn();
 vi.mock('./access.js', () => ({ sessionAccess: (...a: unknown[]) => sessionAccess(...a) }));
 

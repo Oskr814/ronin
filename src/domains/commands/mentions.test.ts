@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('../../core/config.js', () => ({
+vi.mock('../../platform/config/config.js', () => ({
   config: { githubLogin: 'ronin' },
 }));
 
@@ -10,7 +10,7 @@ const botReaction = vi.fn();
 const replyToComment = vi.fn();
 const addReaction = vi.fn();
 
-vi.mock('../../core/github.js', () => ({
+vi.mock('../../platform/github/github.js', () => ({
   listIssueComments: (...args: unknown[]) => issueComments(...args),
   listReviewComments: (...args: unknown[]) => reviewComments(...args),
   hasBotReaction: (...args: unknown[]) => botReaction(...args),
@@ -20,7 +20,7 @@ vi.mock('../../core/github.js', () => ({
 
 // Done-ness lives in the local state now (processed-comments.ts, tested on
 // its own); here it's still read off the 👀, as these tests set it up.
-vi.mock('../../core/processed-comments.js', () => {
+vi.mock('../../platform/state/processed-comments.js', () => {
   const done = async (c: { id: number; kind: string; reactionsEyes: number }) => c.reactionsEyes > 0 && Boolean(await botReaction(c.id, c.kind, 'ronin'));
   return {
     unprocessed: async <T extends { id: number; kind: string; reactionsEyes: number }>(cs: T[]) => {
@@ -32,11 +32,11 @@ vi.mock('../../core/processed-comments.js', () => {
   };
 });
 
-vi.mock('../../core/logger.js', () => ({ log: { error: vi.fn(), info: vi.fn() } }));
+vi.mock('../../platform/logger.js', () => ({ log: { error: vi.fn(), info: vi.fn() } }));
 
 // Comments another process is acting on right now (see mentions.ts's claimComment).
 const takenElsewhere = new Set<string>();
-vi.mock('../../core/locks.js', () => ({
+vi.mock('../../platform/locks/locks.js', () => ({
   tryLockResource: async (resource: string) => !takenElsewhere.has(resource),
   unlockResource: async () => {},
 }));
@@ -45,7 +45,7 @@ const launchPreviewWorker = vi.fn();
 vi.mock('../previews/preview.js', () => ({ launchPreviewWorker: (...args: unknown[]) => launchPreviewWorker(...args) }));
 const applyAutoMergeCommand = vi.fn();
 vi.mock('./auto-merge.js', () => ({ applyAutoMergeCommand: (...args: unknown[]) => applyAutoMergeCommand(...args) }));
-vi.mock('../../core/repo-context.js', () => ({ activeRepo: () => ({ productRepo: 'acme/product' }) }));
+vi.mock('../../platform/agents/repo-context.js', () => ({ activeRepo: () => ({ productRepo: 'acme/product' }) }));
 const launchConflictsWorker = vi.fn();
 vi.mock('./conflicts.js', () => ({ launchConflictsWorker: (...args: unknown[]) => launchConflictsWorker(...args) }));
 

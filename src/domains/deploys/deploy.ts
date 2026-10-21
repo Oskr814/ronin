@@ -3,11 +3,11 @@ import { mkdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { APP_MANIFEST_FILE } from '../product-app/manifest.js';
-import { config } from '../../core/config.js';
-import { createRelease, listMergedPrs, listReleases, type Release } from '../../core/github.js';
-import { tryLockResource, unlockResource } from '../../core/locks.js';
-import { log } from '../../core/logger.js';
-import { activeRepo } from '../../core/repo-context.js';
+import { config } from '../../platform/config/config.js';
+import { createRelease, listMergedPrs, listReleases, type Release } from '../../platform/github/github.js';
+import { tryLockResource, unlockResource } from '../../platform/locks/locks.js';
+import { log } from '../../platform/logger.js';
+import { activeRepo } from '../../platform/agents/repo-context.js';
 import { errorLine, listRequests, noteEvent, type PortalRequest } from '../portal/requests.js';
 import { addDeploy, listDeploys, type DeployRecord } from './store.js';
 

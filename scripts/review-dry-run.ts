@@ -13,11 +13,11 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { parseArgs } from 'node:util';
-import { config } from '../src/core/config.js';
-import { loadRepos } from '../src/core/repos.js';
-import { withActiveRepo } from '../src/core/repo-context.js';
+import { config } from '../src/platform/config/config.js';
+import { loadRepos } from '../src/platform/config/repos.js';
+import { withActiveRepo } from '../src/platform/agents/repo-context.js';
 import { runExternalReview } from '../src/domains/review/index.js';
-import { listBotReviewThreads } from '../src/core/github.js';
+import { listBotReviewThreads } from '../src/platform/github/github.js';
 
 const execFileAsync = promisify(execFile);
 

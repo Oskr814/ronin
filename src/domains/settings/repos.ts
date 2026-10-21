@@ -1,10 +1,10 @@
 import { copyFile, mkdir, readdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import { config } from '../../core/config.js';
-import { log } from '../../core/logger.js';
-import type { RepoEntry } from '../../core/repo-context.js';
-import { MAX_REPO_CONCURRENCY, validateRepos } from '../../core/repos.js';
-import { linearKey, teamPlanning } from '../../core/linear-api.js';
+import { config } from '../../platform/config/config.js';
+import { log } from '../../platform/logger.js';
+import type { RepoEntry } from '../../platform/agents/repo-context.js';
+import { MAX_REPO_CONCURRENCY, validateRepos } from '../../platform/config/repos.js';
+import { linearKey, teamPlanning } from '../../platform/linear/linear-api.js';
 import { withJson } from '../portal/json-store.js';
 import { AjustesError, record } from './settings.js';
 import { repoApps } from '../items/new-issue.js';

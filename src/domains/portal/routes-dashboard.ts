@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { config } from '../../core/config.js';
-import { loadRepos } from '../../core/repos.js';
+import { config } from '../../platform/config/config.js';
+import { loadRepos } from '../../platform/config/repos.js';
 import { body, jsonBody, onError, type DashboardEnv } from '../../apps/api/http/hono.js';
 import { sees, type Access } from '../access/access.js';
 import { HISTORY_DAYS } from '../runs/data.js';

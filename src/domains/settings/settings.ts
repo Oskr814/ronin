@@ -1,14 +1,14 @@
-import { config } from '../../core/config.js';
-import { log } from '../../core/logger.js';
-import { timed } from '../../core/timing.js';
-import type { RepoEntry } from '../../core/repo-context.js';
-import { linearKey, teamPeople } from '../../core/linear-api.js';
-import { applySettings, EFFORTS, invalidValue, MODELS, settingDef, settingsView, TASK_TYPES, type SettingsFile, type SettingValue } from '../../core/settings.js';
-import { appendRegistro, readRegistro as readRegistroStore, readSettings, updateSettings, type RegistroEntry } from '../../core/settings-store.js';
-import { taskDefaultEffort, taskDefaultModel, taskEnvEffort, taskEnvModel } from '../../core/config.js';
-import { sendMail } from '../../core/notifier.js';
+import { config } from '../../platform/config/config.js';
+import { log } from '../../platform/logger.js';
+import { timed } from '../../platform/timing.js';
+import type { RepoEntry } from '../../platform/agents/repo-context.js';
+import { linearKey, teamPeople } from '../../platform/linear/linear-api.js';
+import { applySettings, EFFORTS, invalidValue, MODELS, settingDef, settingsView, TASK_TYPES, type SettingsFile, type SettingValue } from '../../platform/config/settings.js';
+import { appendRegistro, readRegistro as readRegistroStore, readSettings, updateSettings, type RegistroEntry } from '../../platform/config/settings-store.js';
+import { taskDefaultEffort, taskDefaultModel, taskEnvEffort, taskEnvModel } from '../../platform/config/config.js';
+import { sendMail } from '../../platform/notify/notifier.js';
 import { readTeam, withTeam, type Member } from '../access/team.js';
-import { EVENTS, eventsOf, isEvent } from '../../core/notifications.js';
+import { EVENTS, eventsOf, isEvent } from '../../platform/notify/notifications.js';
 
 // The dashboard's Ajustes (#174), stage 1:
 //   GET  /api/ajustes           the person's profile, and for an admin the settings of General
@@ -18,7 +18,7 @@ import { EVENTS, eventsOf, isEvent } from '../../core/notifications.js';
 //   POST /api/ajustes/notificaciones  { repo, event, on }: one of their own emails (stage 4)
 //
 // The values, the task types' choices and the record of changes are kept by
-// core/settings-store.ts: Postgres with DATABASE_URL, else SETTINGS_DATA_DIR's
+// platform/config/settings-store.ts: Postgres with DATABASE_URL, else SETTINGS_DATA_DIR's
 // settings.json and registro.jsonl. The team is people.json there (access/team.ts).
 
 export class AjustesError extends Error {
@@ -72,7 +72,7 @@ export async function linearTeams(entries: RepoEntry[], now = Date.now()) {
 }
 
 // Each repo the person sees, with the emails they get from it: what they
-// chose, or the defaults (core/notifications.ts).
+// chose, or the defaults (platform/notify/notifications.ts).
 export function notificaciones(member: Member | undefined, entries: RepoEntry[]) {
   return entries.map((entry) => ({ repo: entry.productRepo, events: eventsOf(member ?? {}, entry.productRepo, entry), chosen: Boolean(member?.notify?.[entry.productRepo]), deploy: Boolean(entry.deploy) }));
 }

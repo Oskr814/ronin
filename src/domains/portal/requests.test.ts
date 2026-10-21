@@ -1,11 +1,11 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { readFile, rm, stat } from 'node:fs/promises';
 import { isAbsolute, join } from 'node:path';
-import { config } from '../../core/config.js';
+import { config } from '../../platform/config/config.js';
 import { addEvent, addPersonMessage, createRequest, MAX_EVENTS, noteEvent, getRequest, listRequestsOf, requestImagePath, startedToday, startedTodayByUser, updateRequest, MAX_PROTOTYPES, updateUnlessCancelled } from './requests.js';
 import { sweepPortalRequests } from './launch.js';
 
-vi.mock('../../core/logger.js', () => ({ log: { info: vi.fn(), error: vi.fn() } }));
+vi.mock('../../platform/logger.js', () => ({ log: { info: vi.fn(), error: vi.fn() } }));
 
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
@@ -124,7 +124,7 @@ describe('the portal data dir', () => {
     vi.resetModules();
     vi.stubEnv('PORTAL_DATA_DIR', 'portal-data');
     try {
-      const { config: fresh } = await import('../../core/config.js');
+      const { config: fresh } = await import('../../platform/config/config.js');
       expect(fresh.portal.dataDir).toBe(join(process.cwd(), 'portal-data'));
       expect(isAbsolute(fresh.portal.dataDir)).toBe(true);
     } finally {

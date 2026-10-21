@@ -4,9 +4,9 @@ const state: Record<string, string> = {};
 let explore: string[] | undefined = ['backoffice', 'tienda'];
 const busy = vi.fn();
 const launch = vi.fn();
-vi.mock('../../core/repo-context.js', () => ({ activeRepo: () => ({ productRepo: 'redmotos/shoppingcart', explore }) }));
-vi.mock('../../core/config.js', () => ({ config: { exploreNightWindow: '23:00-05:00', exploreFunctionsPerNight: 4, exploreTimezone: 'America/Tegucigalpa' } }));
-vi.mock('../../core/local-state.js', () => ({
+vi.mock('../../platform/agents/repo-context.js', () => ({ activeRepo: () => ({ productRepo: 'redmotos/shoppingcart', explore }) }));
+vi.mock('../../platform/config/config.js', () => ({ config: { exploreNightWindow: '23:00-05:00', exploreFunctionsPerNight: 4, exploreTimezone: 'America/Tegucigalpa' } }));
+vi.mock('../../platform/state/local-state.js', () => ({
   getNightlyExploration: async () => ({ ...state }),
   setNightlyExploration: async (app: string, night: string) => { state[app] = night; },
 }));

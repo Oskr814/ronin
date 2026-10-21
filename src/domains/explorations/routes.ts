@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { log } from '../../core/logger.js';
+import { log } from '../../platform/logger.js';
 import { HISTORY_DAYS } from '../runs/data.js';
 import { isExplorationPr } from './review.js';
 import { corridasOf, exploracionList, exploracionRows, ExploreNowError, exploreNow, inventarioOf, liveRuns, parseExploreNow, prsOf } from './board.js';

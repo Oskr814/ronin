@@ -3,26 +3,26 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-vi.mock('../../core/logger.js', () => ({ log: { error: vi.fn(), info: vi.fn() } }));
+vi.mock('../../platform/logger.js', () => ({ log: { error: vi.fn(), info: vi.fn() } }));
 
 let base: string;
 const config = { githubLogin: 'ronin-agent', previewReservationsDir: '/nonexistent', previewTtlMinutes: 60 };
-vi.mock('../../core/config.js', () => ({ config }));
-vi.mock('../../core/repo-context.js', () => ({ activeRepo: () => ({ productRepo: 'acme/product', productRepoPath: '/repo', worktreeBasePath: base }) }));
+vi.mock('../../platform/config/config.js', () => ({ config }));
+vi.mock('../../platform/agents/repo-context.js', () => ({ activeRepo: () => ({ productRepo: 'acme/product', productRepoPath: '/repo', worktreeBasePath: base }) }));
 
 const listOpenPrHeads = vi.fn();
 const commentOnSpecPr = vi.fn();
-vi.mock('../../core/github.js', () => ({
+vi.mock('../../platform/github/github.js', () => ({
   listOpenPrHeads: (...args: unknown[]) => listOpenPrHeads(...args),
   commentOnSpecPr: (...args: unknown[]) => commentOnSpecPr(...args),
 }));
 vi.mock('../product-app/runtime.js', () => ({ appDown: vi.fn(), appUp: vi.fn(), APP_STATE_DIR: '.ronin-app' }));
 const removeWorktreeDir = vi.fn();
-vi.mock('../../core/worktree.js', () => ({ removeWorktreeDir: (...args: unknown[]) => removeWorktreeDir(...args) }));
+vi.mock('../../platform/git/worktree.js', () => ({ removeWorktreeDir: (...args: unknown[]) => removeWorktreeDir(...args) }));
 const lockHeld = vi.fn();
 const launchWorker = vi.fn();
-vi.mock('../../core/worker-launch.js', () => ({ lockHeld: (...args: unknown[]) => lockHeld(...args), acquireLock: vi.fn(), launchWorker: (...args: unknown[]) => launchWorker(...args) }));
-vi.mock('../../core/agent-task.js', () => ({ runAgentTask: vi.fn() }));
+vi.mock('../../platform/workers/worker-launch.js', () => ({ lockHeld: (...args: unknown[]) => lockHeld(...args), acquireLock: vi.fn(), launchWorker: (...args: unknown[]) => launchWorker(...args) }));
+vi.mock('../../platform/agents/agent-task.js', () => ({ runAgentTask: vi.fn() }));
 
 const { launchPreviewUpdates, sweepPreviews } = await import('./preview.js');
 

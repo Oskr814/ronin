@@ -1,4 +1,4 @@
-import type { RepoEntry } from '../../core/repo-context.js';
+import type { RepoEntry } from '../../platform/agents/repo-context.js';
 import type { PortalGrant } from './accounts.js';
 
 // What the portal offers (#114): each app of a repo's `portal.apps` in

@@ -3,13 +3,13 @@ import { promisify } from 'node:util';
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import { activeRepo } from '../../core/repo-context.js';
-import { removeWorktreeDir } from '../../core/worktree.js';
-import { runAgentTask } from '../../core/agent-task.js';
+import { activeRepo } from '../../platform/agents/repo-context.js';
+import { removeWorktreeDir } from '../../platform/git/worktree.js';
+import { runAgentTask } from '../../platform/agents/agent-task.js';
 import { commandTask } from './prompts.js';
-import type { PrHead } from '../../core/github.js';
-import { acquireLock, launchWorker } from '../../core/worker-launch.js';
-import { log } from '../../core/logger.js';
+import type { PrHead } from '../../platform/github/github.js';
+import { acquireLock, launchWorker } from '../../platform/workers/worker-launch.js';
+import { log } from '../../platform/logger.js';
 
 const execFileAsync = promisify(execFile);
 

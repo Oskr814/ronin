@@ -1,14 +1,14 @@
-import type { AgentDefinition, AgentTask, PreparedTask } from '../../core/agent-task.js';
-import { config, reviewWorkerModel } from '../../core/config.js';
-import { getPullRequestStatus, type BotThread, type Comment, type ReviewThread } from '../../core/github.js';
-import { AGENT_NOTES_REMINDER, describeMention, fence, fenceBlock, prBodyUpdateRule, repoUrl, THREAD_REPLY_MAX } from '../../core/prompts.js';
+import type { AgentDefinition, AgentTask, PreparedTask } from '../../platform/agents/agent-task.js';
+import { config, reviewWorkerModel } from '../../platform/config/config.js';
+import { getPullRequestStatus, type BotThread, type Comment, type ReviewThread } from '../../platform/github/github.js';
+import { AGENT_NOTES_REMINDER, describeMention, fence, fenceBlock, prBodyUpdateRule, repoUrl, THREAD_REPLY_MAX } from '../../platform/agents/prompts.js';
 import { loadReviewCriteria, type ReviewCriteria } from './criteria.js';
 import { FINDINGS_JSON_CONTRACT } from './output.js';
 
 // What the agent is told for each task about a PR's review: ronin's own
 // review of someone else's PR, and every fix or reply to a review comment,
 // which reviews its own change with the same criteria before pushing.
-// core/agent-task.ts runs it.
+// platform/agents/agent-task.ts runs it.
 
 export type ReviewTask =
   | { type: 'fix-review'; issueNumber: number; prNumber: number }

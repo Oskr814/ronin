@@ -3,11 +3,11 @@
 // conflicts and running tests takes minutes. Takes the request as a JSON
 // argument, holds the PR's lock while it runs, and answers the comment that
 // asked for it.
-import { loadRepos } from '../../core/repos.js';
-import { withActiveRepo } from '../../core/repo-context.js';
-import { getPrHead, replyToComment } from '../../core/github.js';
-import { config } from '../../core/config.js';
-import { log } from '../../core/logger.js';
+import { loadRepos } from '../../platform/config/repos.js';
+import { withActiveRepo } from '../../platform/agents/repo-context.js';
+import { getPrHead, replyToComment } from '../../platform/github/github.js';
+import { config } from '../../platform/config/config.js';
+import { log } from '../../platform/logger.js';
 import {
   acquireConflictsLock,
   releaseConflictsLock,

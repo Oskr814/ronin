@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { rm } from 'node:fs/promises';
-import { config } from '../../core/config.js';
+import { config } from '../../platform/config/config.js';
 import { extractPasted } from './extract.js';
 import { createMeeting, getMeeting, updateMeeting } from './meetings.js';
 import { retryMeeting, sweepMeetings } from './launch.js';

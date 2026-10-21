@@ -1,5 +1,5 @@
-import type { UsageMeasurement } from '../../core/claude-usage.js';
-import type { AccountPlan } from '../../core/claude-plans.js';
+import type { UsageMeasurement } from '../../platform/claude/claude-usage.js';
+import type { AccountPlan } from '../../platform/claude/claude-plans.js';
 import type { RepoData } from './collect.js';
 import { percentile } from './compute.js';
 

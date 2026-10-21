@@ -1,9 +1,9 @@
 import { readFile } from 'node:fs/promises';
-import { config } from '../../core/config.js';
-import { log } from '../../core/logger.js';
-import { activeRepo } from '../../core/repo-context.js';
-import { recipientsFor, type NotifyEvent } from '../../core/notifications.js';
-import { sendMail, type Mail } from '../../core/notifier.js';
+import { config } from '../../platform/config/config.js';
+import { log } from '../../platform/logger.js';
+import { activeRepo } from '../../platform/agents/repo-context.js';
+import { recipientsFor, type NotifyEvent } from '../../platform/notify/notifications.js';
+import { sendMail, type Mail } from '../../platform/notify/notifier.js';
 import type { PortalUser } from './accounts.js';
 import { bigRequestMail, PORTAL_FROM_NAME, teamRequestMail } from './mail.js';
 import { noteEvent, patchOf, prototypePatchPath, requestDir, type PortalRequest } from './requests.js';
@@ -32,7 +32,7 @@ export async function sendRequestsMail(requests: PortalRequest[], mail: Mail): P
 
 // Inside withActiveRepo: who of the request's repo's team chose that email in
 // Ajustes → Notificaciones (#174), never another repo's; until they choose,
-// its portal.notifyTo in repos.json; NOTIFY_TO when nobody (core/notifications.ts).
+// its portal.notifyTo in repos.json; NOTIFY_TO when nobody (platform/notify/notifications.ts).
 export const teamTo = (event: NotifyEvent) => recipientsFor(activeRepo().productRepo, activeRepo(), event);
 
 // To the dev team, with its issue and the last prototype's diff (or a

@@ -1,10 +1,10 @@
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { runAgentTask } from '../../core/agent-task.js';
+import { runAgentTask } from '../../platform/agents/agent-task.js';
 import { reviewTask } from './prompts.js';
-import { postReview, resolveReviewThread, replyToComment, type ReviewThread } from '../../core/github.js';
-import { activeRepo } from '../../core/repo-context.js';
-import { log } from '../../core/logger.js';
+import { postReview, resolveReviewThread, replyToComment, type ReviewThread } from '../../platform/github/github.js';
+import { activeRepo } from '../../platform/agents/repo-context.js';
+import { log } from '../../platform/logger.js';
 import { loadReviewCriteria } from './criteria.js';
 import { parseReviewOutput, type ReviewFinding } from './output.js';
 import {
@@ -18,7 +18,7 @@ import {
   placeFindings,
   type ReviewMode,
 } from './scope.js';
-import { pinReviewedSha } from '../../core/worktree.js';
+import { pinReviewedSha } from '../../platform/git/worktree.js';
 import {
   neutralizeMentions,
   renderClosing,

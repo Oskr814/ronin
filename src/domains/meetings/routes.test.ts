@@ -2,14 +2,14 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { rm } from 'node:fs/promises';
 import type { Access } from '../access/access.js';
 
-vi.mock('../../core/logger.js', () => ({ log: { info: vi.fn(), error: vi.fn() } }));
+vi.mock('../../platform/logger.js', () => ({ log: { info: vi.fn(), error: vi.fn() } }));
 const launched = vi.fn(async (_n: number) => {});
 vi.mock('./launch.js', async (importOriginal) => ({ ...(await importOriginal<typeof import('./launch.js')>()), launchMeetingWorker: (n: number) => launched(n) }));
-vi.mock('../../core/repos.js', () => ({
+vi.mock('../../platform/config/repos.js', () => ({
   loadRepos: async () => [{ productRepo: 'acme/tienda', productRepoPath: '/x' }, { productRepo: 'acme/otra', productRepoPath: '/y' }],
 }));
 
-const { config } = await import('../../core/config.js');
+const { config } = await import('../../platform/config/config.js');
 const { dashboardApp } = await import('../../apps/api/routes.js');
 const { updateMeeting } = await import('./meetings.js');
 

@@ -3,10 +3,10 @@ import { promisify } from 'node:util';
 import { existsSync, openSync, closeSync } from 'node:fs';
 import { appendFile, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { activeRepo } from '../../core/repo-context.js';
-import { config } from '../../core/config.js';
-import { getFreePort } from '../../core/worktree.js';
-import { log } from '../../core/logger.js';
+import { activeRepo } from '../../platform/agents/repo-context.js';
+import { config } from '../../platform/config/config.js';
+import { getFreePort } from '../../platform/git/worktree.js';
+import { log } from '../../platform/logger.js';
 import { loadAppDefinition, namedPortsIn, publicizeTemplate, publicPortsIn, renderTemplate, type AppDefinition, type AppStep, type TemplateContext } from './manifest.js';
 
 const execFileAsync = promisify(execFile);

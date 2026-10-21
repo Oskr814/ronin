@@ -1,12 +1,12 @@
 import { appsTouched } from '../product-app/manifest.js';
-import { config, LABEL_AUTO_MERGE, LABEL_MANAGED } from '../../core/config.js';
-import { setIssueState } from '../../core/github.js';
-import { log } from '../../core/logger.js';
-import { withActiveRepo, type RepoEntry } from '../../core/repo-context.js';
+import { config, LABEL_AUTO_MERGE, LABEL_MANAGED } from '../../platform/config/config.js';
+import { setIssueState } from '../../platform/github/github.js';
+import { log } from '../../platform/logger.js';
+import { withActiveRepo, type RepoEntry } from '../../platform/agents/repo-context.js';
 import type { Session } from '../../apps/api/http/auth.js';
 import type { ItemDetail, ItemRef } from './detail.js';
 import type { RepoGithub } from './github.js';
-import { assignIssue, closeIssue, commentOnIssue, type Posted } from '../../core/github-as-user.js';
+import { assignIssue, closeIssue, commentOnIssue, type Posted } from '../../platform/github/github-as-user.js';
 
 // What can be asked of ronin from an item's page (#85). Each action is a
 // command that already exists on GitHub, and the dashboard writes it as

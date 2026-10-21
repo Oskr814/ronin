@@ -24,14 +24,14 @@ import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
 
 ## Cómo está organizado `src/`
 
-Tres capas y las apps, con las dependencias en una sola dirección: las apps usan los dominios, y los dominios usan la plataforma. El detalle y las reglas están en [`docs/ARCHITECTURE.md`](https://github.com/Oskr814/ronin/blob/main/docs/ARCHITECTURE.md), en «Estructura del código». La estructura se está aplicando de a un PR: hoy ya están las apps y los dominios; la plataforma sigue en `core/` y `db/`.
+Tres capas y las apps, con las dependencias en una sola dirección: las apps usan los dominios, y los dominios usan la plataforma. El detalle y las reglas están en [`docs/ARCHITECTURE.md`](https://github.com/Oskr814/ronin/blob/main/docs/ARCHITECTURE.md), en «Estructura del código». La estructura se está aplicando de a un PR: hoy ya están las tres; lo que sigue es juntar en `platform/` lo que cada dominio repite.
 
 | Carpeta | Qué tiene |
 |---|---|
 | `apps/api/` | El servidor: los listeners (público y tailnet), el login, la cola de trabajos, el tick, los webhooks y el montaje de las rutas de cada dominio. |
 | `apps/dashboard/` | El tablero: el marco (`public/app.js`) y las páginas que ya pasaron a React (`src/pages/`). |
 | `apps/portal/` | El portal de pedidos, en React. |
-| `core/`, `db/` | Lo técnico compartido: config, GitHub, worktrees, `claude -p`, Postgres, locks, logs. Va a `platform/`. |
+| `platform/` | Lo técnico compartido, por tema: config, GitHub, Linear, worktrees, `claude -p` y las cuentas, cómo corre un agente, el estado local, locks, workers, correos, Postgres, logs. |
 | `domains/` | Un dominio por carpeta, con sus rutas, su lógica y su almacenamiento: `slices` (issues → PRs apilados), `review` (review de PRs de personas), `commands` (comandos por mención), `previews`, `explorations`, `portal`, `meetings`, `deploys`, `metrics`, `changelog`, `product-app` (levantar la app del producto), `items` y `runs` (lo que muestra el tablero), `settings` y `access` (quién ve qué). |
 
 ## El diseño completo

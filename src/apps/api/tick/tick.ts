@@ -1,7 +1,7 @@
-import { markProcessed } from '../../../core/processed-comments.js';
-import { linearIdInPr, linearRefFrom, withLinearLink } from '../../../core/linear.js';
-import { currentCycle, linearKey } from '../../../core/linear-api.js';
-import { processLinearAssignments, queueLinearAssignment } from '../../../core/linear-assign.js';
+import { markProcessed } from '../../../platform/state/processed-comments.js';
+import { linearIdInPr, linearRefFrom, withLinearLink } from '../../../platform/linear/linear.js';
+import { currentCycle, linearKey } from '../../../platform/linear/linear-api.js';
+import { processLinearAssignments, queueLinearAssignment } from '../../../platform/linear/linear-assign.js';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
@@ -31,25 +31,25 @@ import {
   type TrackingIssue,
   type PullRequestStatus,
   type Comment,
-} from '../../../core/github.js';
+} from '../../../platform/github/github.js';
 import { fetchOriginMain, readSpecFile, extractTitle } from '../../../domains/slices/index.js';
 import { nextUnstartedSlice, hasRemainingSlices, recordSlicePr, markSliceMerged, seedSingleSlice, getSlices } from '../../../domains/slices/index.js';
-import { notifyBlocker } from '../../../core/notifier.js';
-import { resetTickMetrics, getTickAgentMetrics } from '../../../core/metrics.js';
-import { runJobs, type Job } from '../../../core/concurrency.js';
-import { issueResource, pinResources, prResource, tryLockResource, unlockResource, unpinResources, withResourceLock, withSlots } from '../../../core/locks.js';
-import { runAgentTask, type AgentTask } from '../../../core/agent-task.js';
+import { notifyBlocker } from '../../../platform/notify/notifier.js';
+import { resetTickMetrics, getTickAgentMetrics } from '../../../platform/agents/metrics.js';
+import { runJobs, type Job } from '../../../platform/workers/concurrency.js';
+import { issueResource, pinResources, prResource, tryLockResource, unlockResource, unpinResources, withResourceLock, withSlots } from '../../../platform/locks/locks.js';
+import { runAgentTask, type AgentTask } from '../../../platform/agents/agent-task.js';
 import { sliceTask } from '../../../domains/slices/index.js';
 import { reviewTask } from '../../../domains/review/index.js';
 import { commandTask } from '../../../domains/commands/index.js';
 import { changelogTask } from '../../../domains/changelog/index.js';
 import { runExternalReview } from '../../../domains/review/index.js';
-import { ClaudeUsageLimitError } from '../../../core/claude-runner.js';
+import { ClaudeUsageLimitError } from '../../../platform/claude/claude-runner.js';
 import { toStackedPrs, pickBottomPr, prsForIssue, planBranch, spikeBranch, issueFromSliceBranch, type StackedPr } from '../../../domains/slices/index.js';
-import { incrementChecksPendingCount, resetChecksPendingCount, setLastReviewedSha, recordFailureSignature, pruneFailureSignatures } from '../../../core/local-state.js';
-import { failureSignature, type FailureSignature } from '../../../core/failure-signature.js';
-import { tryClaim, releaseIfNoLongerInProgress } from '../../../core/claim.js';
-import { removeWorktree, sweepOrphanedWorktrees } from '../../../core/worktree.js';
+import { incrementChecksPendingCount, resetChecksPendingCount, setLastReviewedSha, recordFailureSignature, pruneFailureSignatures } from '../../../platform/state/local-state.js';
+import { failureSignature, type FailureSignature } from '../../../platform/agents/failure-signature.js';
+import { tryClaim, releaseIfNoLongerInProgress } from '../../../platform/state/claim.js';
+import { removeWorktree, sweepOrphanedWorktrees } from '../../../platform/git/worktree.js';
 import { findUnprocessedMentions, isFixCommentsCommand } from '../../../domains/commands/index.js';
 import { withHelpFooter } from '../../../domains/commands/index.js';
 import { findPrsNeedingReview, type ReviewCandidate, type ThreadMentionCandidate, type TrustedFixCandidate } from '../../../domains/review/index.js';
@@ -66,12 +66,12 @@ import { sweepPortalRequests } from '../../../domains/portal/launch.js';
 import { sweepMeetings } from '../../../domains/meetings/launch.js';
 import { sweepAutoMerge } from '../../../domains/commands/index.js';
 import { findReleasesNeedingChangelog, type ChangelogCandidate } from '../../../domains/changelog/index.js';
-import { setLastChangelogRelease } from '../../../core/local-state.js';
-import { concurrencyFor, config, LABEL_DIRECT_ISSUE, LABEL_MANAGED, LABEL_STACK_PRS, LABEL_STATES } from '../../../core/config.js';
-import { activeRepo, withActiveRepo } from '../../../core/repo-context.js';
-import { loadRepos } from '../../../core/repos.js';
-import { log } from '../../../core/logger.js';
-import { measure, type Measurement } from '../../../core/timing.js';
+import { setLastChangelogRelease } from '../../../platform/state/local-state.js';
+import { concurrencyFor, config, LABEL_DIRECT_ISSUE, LABEL_MANAGED, LABEL_STACK_PRS, LABEL_STATES } from '../../../platform/config/config.js';
+import { activeRepo, withActiveRepo } from '../../../platform/agents/repo-context.js';
+import { loadRepos } from '../../../platform/config/repos.js';
+import { log } from '../../../platform/logger.js';
+import { measure, type Measurement } from '../../../platform/timing.js';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
@@ -1197,7 +1197,7 @@ export async function cycleFirst(issues: TrackingIssue[]): Promise<TrackingIssue
   }
 }
 
-// Measured (core/timing.ts): its steps, its discovery, its jobs and how much
+// Measured (platform/timing.ts): its steps, its discovery, its jobs and how much
 // of it went to GitHub go in tick_complete.
 function tickOneRepo(scope?: Scope): Promise<void> {
   return measure((measurement) => tickRepo(scope, measurement));

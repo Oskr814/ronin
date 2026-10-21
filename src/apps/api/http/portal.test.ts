@@ -5,14 +5,14 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { config } from '../../../core/config.js';
+import { config } from '../../../platform/config/config.js';
 import { createUser, issueLink, redeemLink, updateUser } from '../../../domains/portal/accounts.js';
 import { hashPassword } from '../../../domains/portal/password.js';
 import { hc } from 'hono/client';
 import { resetPortalLimits, type PortalApi } from '../../../domains/portal/routes.js';
 import { createPortalHandler, portalVersion } from './portal.js';
 
-vi.mock('../../../core/logger.js', () => ({ log: { info: vi.fn(), error: vi.fn() } }));
+vi.mock('../../../platform/logger.js', () => ({ log: { info: vi.fn(), error: vi.fn() } }));
 
 const PORTAL = { url: 'https://ronin-agent.example.com', sessionSecret: 'p'.repeat(40), sessionDays: 30, dailyLimit: 2 };
 const entries = [

@@ -1,6 +1,6 @@
 import { Hono, type Context, type Next } from 'hono';
 import { z } from 'zod';
-import { loadRepos } from '../../core/repos.js';
+import { loadRepos } from '../../platform/config/repos.js';
 import { AjustesError, ajustesView, conexionesView, linearTeams, readRegistro, saveNotificacion, saveProfile, setTask, setValue, testMail } from './settings.js';
 import { cuentasView, setCuenta } from './claude-accounts.js';
 import { forgetGithub } from '../items/github.js';

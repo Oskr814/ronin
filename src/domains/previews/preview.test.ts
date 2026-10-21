@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 
-vi.mock('../../core/logger.js', () => ({ log: { error: vi.fn(), info: vi.fn() } }));
-vi.mock('../../core/config.js', () => ({ config: { githubLogin: 'ronin-agent' } }));
+vi.mock('../../platform/logger.js', () => ({ log: { error: vi.fn(), info: vi.fn() } }));
+vi.mock('../../platform/config/config.js', () => ({ config: { githubLogin: 'ronin-agent' } }));
 
 import { chooseManifest, describeTtl, parsePreviewData, parsePreviewTriage, previewPorts, previewPrFromDirName, renderPreviewFailed, renderPreviewReady, resolvePreviewArgs } from './preview.js';
 import { appsTouched } from '../product-app/manifest.js';

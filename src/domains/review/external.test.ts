@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('../../core/config.js', () => ({
+vi.mock('../../platform/config/config.js', () => ({
   config: { githubLogin: 'ronin' },
 }));
 
@@ -8,7 +8,7 @@ const listAllOpenExternalPrs = vi.fn();
 const listBotReviewThreads = vi.fn();
 const listAllOpenReviewThreads = vi.fn();
 const getLastReviewedShaFromGitHub = vi.fn();
-vi.mock('../../core/github.js', () => ({
+vi.mock('../../platform/github/github.js', () => ({
   listAllOpenExternalPrs: (...args: unknown[]) => listAllOpenExternalPrs(...args),
   listBotReviewThreads: (...args: unknown[]) => listBotReviewThreads(...args),
   listAllOpenReviewThreads: (...args: unknown[]) => listAllOpenReviewThreads(...args),
@@ -18,17 +18,17 @@ vi.mock('../../core/github.js', () => ({
 const isCommitAvailable = vi.fn();
 const fetchCommit = vi.fn();
 const pruneReviewedPins = vi.fn();
-vi.mock('../../core/worktree.js', () => ({
+vi.mock('../../platform/git/worktree.js', () => ({
   isCommitAvailable: (...args: unknown[]) => isCommitAvailable(...args),
   fetchCommit: (...args: unknown[]) => fetchCommit(...args),
   pruneReviewedPins: (...args: unknown[]) => pruneReviewedPins(...args),
 }));
 
-vi.mock('../../core/logger.js', () => ({ log: { info: vi.fn(), error: vi.fn(), metric: vi.fn() } }));
+vi.mock('../../platform/logger.js', () => ({ log: { info: vi.fn(), error: vi.fn(), metric: vi.fn() } }));
 
 const getLastReviewedSha = vi.fn();
 const pruneLastReviewedSha = vi.fn();
-vi.mock('../../core/local-state.js', () => ({
+vi.mock('../../platform/state/local-state.js', () => ({
   getLastReviewedSha: (...args: unknown[]) => getLastReviewedSha(...args),
   pruneLastReviewedSha: (...args: unknown[]) => pruneLastReviewedSha(...args),
 }));

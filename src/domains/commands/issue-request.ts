@@ -1,15 +1,15 @@
-import { markProcessed } from '../../core/processed-comments.js';
+import { markProcessed } from '../../platform/state/processed-comments.js';
 import { mkdir, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import { runAgentTask } from '../../core/agent-task.js';
+import { runAgentTask } from '../../platform/agents/agent-task.js';
 import { commandTask } from './prompts.js';
-import { getIssueBody, replyToComment, setIssueBody, type Comment } from '../../core/github.js';
+import { getIssueBody, replyToComment, setIssueBody, type Comment } from '../../platform/github/github.js';
 import { applyScopeChange, appendInvestigation } from './issue-sections.js';
 import { launchPrototypeWorker } from './prototype.js';
-import { activeRepo } from '../../core/repo-context.js';
+import { activeRepo } from '../../platform/agents/repo-context.js';
 import { requestBranch } from '../slices/index.js';
-import { removeWorktree } from '../../core/worktree.js';
-import { log } from '../../core/logger.js';
+import { removeWorktree } from '../../platform/git/worktree.js';
+import { log } from '../../platform/logger.js';
 
 // A mention with no command on an issue ronin wasn't assigned yet: change
 // the scope, look into something, draw a prototype, or answer — whatever

@@ -1,10 +1,10 @@
 import { readFile } from 'node:fs/promises';
 import { extname } from 'node:path';
 import { evidenceUrl, publishEvidence } from '../product-app/index.js';
-import { config, LABEL_PORTAL } from '../../core/config.js';
-import { closeIssueNotPlanned, createIssue, listIssuesWithLabel } from '../../core/github.js';
-import { log } from '../../core/logger.js';
-import { activeRepo } from '../../core/repo-context.js';
+import { config, LABEL_PORTAL } from '../../platform/config/config.js';
+import { closeIssueNotPlanned, createIssue, listIssuesWithLabel } from '../../platform/github/github.js';
+import { log } from '../../platform/logger.js';
+import { activeRepo } from '../../platform/agents/repo-context.js';
 import { getUser, type PortalUser } from './accounts.js';
 import { interviewRecord } from './interview.js';
 import { sendPortalMails, teamMail } from './notify.js';

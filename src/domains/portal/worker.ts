@@ -8,11 +8,11 @@
 // for it too and gets reproduced (#137). An approved one, or one the
 // team takes, gets its issue in the product repo (issue.ts). Holds the
 // request's lock throughout, so two workers never work the same request.
-import { concurrencyFor, config } from '../../core/config.js';
-import { tryLockResource, unlockResource, withSlots } from '../../core/locks.js';
-import { log } from '../../core/logger.js';
-import { withActiveRepo } from '../../core/repo-context.js';
-import { loadRepos } from '../../core/repos.js';
+import { concurrencyFor, config } from '../../platform/config/config.js';
+import { tryLockResource, unlockResource, withSlots } from '../../platform/locks/locks.js';
+import { log } from '../../platform/logger.js';
+import { withActiveRepo } from '../../platform/agents/repo-context.js';
+import { loadRepos } from '../../platform/config/repos.js';
 import { releasePrototypeLock, waitForPrototypeLock } from '../commands/prototype.js';
 import { classifyRequest, followUpRequest } from './classify.js';
 import { needsIssue, openPortalIssue } from './issue.js';
