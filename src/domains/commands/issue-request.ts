@@ -47,9 +47,9 @@ function nonEmpty(value: unknown, max: number): string | undefined {
 export function parseIssueRequestResult(raw: string): IssueRequestResult {
   const parsed: unknown = JSON.parse(raw);
   if (!isObject(parsed)) throw new Error('el resultado no es un objeto JSON');
-  const respuesta = nonEmpty(parsed.respuesta, MAX_REPLY);
-  if (!respuesta) throw new Error('el resultado no trae "respuesta"');
-  const result: IssueRequestResult = { respuesta };
+  const reply = nonEmpty(parsed.respuesta, MAX_REPLY);
+  if (!reply) throw new Error('el resultado no trae "respuesta"');
+  const result: IssueRequestResult = { respuesta: reply };
   if (isObject(parsed.alcance)) {
     const texto = nonEmpty(parsed.alcance.texto, MAX_SECTION);
     const cambio = nonEmpty(parsed.alcance.cambio, 300);

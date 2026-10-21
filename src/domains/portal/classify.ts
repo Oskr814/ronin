@@ -84,10 +84,10 @@ export function parsePortalResult(raw: string, questionsAsked: number, prototype
     return { ...result, accion: 'grande', motivo: result.motivo ?? 'No se pudo reproducir con datos de prueba.', mensaje: 'Para encontrar el error hace falta que lo vea el equipo de desarrollo.' };
   }
   if (result.accion === 'entrevistar') {
-    const preguntas = parseQuestions(r.preguntas);
-    if (!preguntas.length) return { ...result, accion: 'grande', motivo: result.motivo ?? 'No quedaron preguntas claras para la persona.' };
+    const questions = parseQuestions(r.preguntas);
+    if (!questions.length) return { ...result, accion: 'grande', motivo: result.motivo ?? 'No quedaron preguntas claras para la persona.' };
     if (interviewRounds >= MAX_ROUNDS) return { ...result, accion: 'grande', mensaje: 'Gracias por tus respuestas: con esto el equipo tiene lo que necesita para empezar.' };
-    result.preguntas = preguntas;
+    result.preguntas = questions;
   }
   if (result.accion === 'grande' && interviewRounds > 0) {
     const entendido = parseUnderstood(r.entendido);

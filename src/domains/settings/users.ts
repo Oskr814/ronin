@@ -1,7 +1,7 @@
 import { config } from '../../platform/config/config.js';
 import { log } from '../../platform/logger.js';
 import type { RepoEntry } from '../../platform/agents/repo-context.js';
-import { SettingsError, notificaciones, record } from './settings.js';
+import { SettingsError, notificationsOf, record } from './settings.js';
 import { applyTeam, entryModeOf, envAdmins, isAdmin, isSetName, permsFor, readTeam, SETS, withTeam, type Member, type RepoGrant, type TeamFile } from '../access/team.js';
 import { githubFetch } from '../../platform/github/rest.js';
 
@@ -91,7 +91,7 @@ export async function userView(login: string, entries: RepoEntry[]): Promise<unk
     porDefecto: team.porDefecto ?? 'todo',
     entrada: entryModeOf(team),
     // Theirs to choose; an admin only sees them.
-    notificaciones: notificaciones(team.people[login], entries),
+    notificaciones: notificationsOf(team.people[login], entries),
     repos: github.map(([repo, role]) => {
       const grant = team.people[login]?.repos?.[repo] ?? {};
       return { repo, github: role ?? null, githubLets: role === undefined ? null : githubLets(role), set: grant.custom ? 'custom' : grant.set ?? null, hidden: grant.hidden === true, perms: permsFor(team, login, repo) };

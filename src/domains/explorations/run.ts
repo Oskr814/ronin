@@ -328,14 +328,14 @@ async function publishImages(opts: {
   const planned: Array<{ id: string; antes: Array<{ path: string; nota?: string }>; despues?: { path: string; nota?: string } }> = [];
   for (const { id, candidate: c } of opts.items) {
     const prefix = `${opts.appName}/${opts.runId}/${id}`;
-    const antes: Array<{ path: string; nota?: string }> = [];
+    const before: Array<{ path: string; nota?: string }> = [];
     for (const shot of c.evidencia.filter((e) => e.tipo === 'screenshot')) {
-      if (antes.length >= MAX_BEFORE || !(await exists(shot.detalle))) continue;
-      const path = `${prefix}/antes-${antes.length + 1}${extname(shot.detalle).toLowerCase()}`;
+      if (before.length >= MAX_BEFORE || !(await exists(shot.detalle))) continue;
+      const path = `${prefix}/antes-${before.length + 1}${extname(shot.detalle).toLowerCase()}`;
       files.push({ src: shot.detalle, path });
-      antes.push({ path, ...(shot.nota ? { nota: shot.nota } : {}) });
+      before.push({ path, ...(shot.nota ? { nota: shot.nota } : {}) });
     }
-    let despues: { path: string; nota?: string } | undefined;
+    let after: { path: string; nota?: string } | undefined;
     if (c.despues && (await exists(c.despues.imagen))) {
       let src = c.despues.imagen;
       if (/\.html?$/i.test(src)) {
@@ -348,10 +348,10 @@ async function publishImages(opts: {
       if (src) {
         const path = `${prefix}/despues${extname(src).toLowerCase()}`;
         files.push({ src, path });
-        despues = { path, ...(c.despues.nota ? { nota: c.despues.nota } : {}) };
+        after = { path, ...(c.despues.nota ? { nota: c.despues.nota } : {}) };
       }
     }
-    planned.push({ id, antes, ...(despues ? { despues } : {}) });
+    planned.push({ id, antes: before, ...(after ? { despues: after } : {}) });
   }
   if (files.length === 0) return result;
   const sha = await publishEvidence(opts.codeDir, files, `exploración ${opts.appName} ${opts.runId}`).catch((error) => {

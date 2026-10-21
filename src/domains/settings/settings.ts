@@ -70,7 +70,7 @@ export async function linearTeams(entries: RepoEntry[], now = Date.now()) {
 
 // Each repo the person sees, with the emails they get from it: what they
 // chose, or the defaults (platform/notify/notifications.ts).
-export function notificaciones(member: Member | undefined, entries: RepoEntry[]) {
+export function notificationsOf(member: Member | undefined, entries: RepoEntry[]) {
   return entries.map((entry) => ({ repo: entry.productRepo, events: eventsOf(member ?? {}, entry.productRepo, entry), chosen: Boolean(member?.notify?.[entry.productRepo]), deploy: Boolean(entry.deploy) }));
 }
 
@@ -79,7 +79,7 @@ export async function settingsPageView(login: string, admin: boolean, entries: R
   return {
     me: { login, admin },
     perfil: profile(member),
-    notificaciones: notificaciones(member, entries),
+    notificaciones: notificationsOf(member, entries),
     // The address itself, only to an admin.
     ...(admin ? { notifyTo: config.notifyTo } : {}),
     linear: await linearTeams(entries),
@@ -205,7 +205,7 @@ export async function saveNotifications(login: string, body: Record<string, unkn
     return before.includes(event) !== on;
   });
   if (changed) await record({ login, what: `Notificaciones · ${entry.productRepo} · ${EVENT_NAME[event]}`, from: on ? 'no' : 'sí', to: on ? 'sí' : 'no' });
-  return { notificaciones: notificaciones((await readTeam()).people[login], entries) };
+  return { notificaciones: notificationsOf((await readTeam()).people[login], entries) };
 }
 
 // POST /api/settings/tasks { task, model?, effort? }: a task type's own model

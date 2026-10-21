@@ -116,11 +116,11 @@ export function parsePrototypeResult(raw: string, outDir: string): PrototypeOutp
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) throw new Error('el resultado no es un objeto JSON');
   const obj = parsed as Record<string, unknown>;
   if (typeof obj.error === 'string' && obj.error.trim()) return { error: obj.error.trim().slice(0, 1_000) };
-  const despues = images(obj.despues, outDir);
-  if (despues.length === 0) throw new Error('el resultado no trae ninguna imagen del después');
-  const resumen = typeof obj.resumen === 'string' && obj.resumen.trim() ? obj.resumen.trim().slice(0, 2_000) : 'Prototipo del cambio que pide el issue.';
+  const after = images(obj.despues, outDir);
+  if (after.length === 0) throw new Error('el resultado no trae ninguna imagen del después');
+  const summary = typeof obj.resumen === 'string' && obj.resumen.trim() ? obj.resumen.trim().slice(0, 2_000) : 'Prototipo del cambio que pide el issue.';
   const mensaje = typeof obj.mensaje === 'string' && obj.mensaje.trim() ? obj.mensaje.trim().slice(0, 2_000) : undefined;
-  return { resumen, ...(mensaje ? { mensaje } : {}), antes: images(obj.antes, outDir), despues };
+  return { resumen: summary, ...(mensaje ? { mensaje } : {}), antes: images(obj.antes, outDir), despues: after };
 }
 
 export interface PublishedImage {
@@ -150,10 +150,10 @@ export function renderPrototypeComment(result: PrototypeResult, login: string): 
   const lines = [`### Prototipo en \`${result.appName}\``, '', result.resumen, ''];
   const pairs = Math.max(result.antes.length, result.despues.length);
   for (let i = 0; i < pairs; i++) {
-    const antes = result.antes[i];
-    const despues = result.despues[i];
-    if (antes) lines.push(`**Antes**${antes.nota ? `: ${antes.nota}` : ''}`, '', imageTag(antes), '');
-    if (despues) lines.push(`**Después**${despues.nota ? `: ${despues.nota}` : ''}`, '', imageTag(despues), '');
+    const before = result.antes[i];
+    const after = result.despues[i];
+    if (before) lines.push(`**Antes**${before.nota ? `: ${before.nota}` : ''}`, '', imageTag(before), '');
+    if (after) lines.push(`**Después**${after.nota ? `: ${after.nota}` : ''}`, '', imageTag(after), '');
   }
   if (result.patch) {
     const patch = result.patch.length > MAX_PATCH ? `${result.patch.slice(0, MAX_PATCH)}\n… (recortado)` : result.patch;

@@ -19,7 +19,7 @@ export async function subscriptionView(entries: RepoEntry[], account: string | n
   const shown = account ? all.filter((c) => c.account === account) : all;
   if (account && !shown.length) return null;
   const runs = await listRuns(RUN_DAYS, new Date(now));
-  const cuentas = await Promise.all(shown.map(async (c) => computeSubscription({
+  const accounts = await Promise.all(shown.map(async (c) => computeSubscription({
     account: c.account,
     plan: c.plan,
     repos: c.repos,
@@ -28,5 +28,5 @@ export async function subscriptionView(entries: RepoEntry[], account: string | n
     repoData: await repoDataOf(c.repos, now),
     now,
   })));
-  return { accounts: all.map((c) => c.account), cuentas };
+  return { accounts: all.map((c) => c.account), cuentas: accounts };
 }
