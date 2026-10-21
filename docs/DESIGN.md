@@ -151,7 +151,7 @@ Scaffold en TypeScript (`pnpm tick` corre un tick y termina — lo invoca el cro
 | `exploration/` | exploración y su PR rodante (§11) |
 | `server/` | el servidor de ronin: su API (los webhooks, con el dispatcher de eventos y el handler por evento, §14; el login y los datos del tablero, §15) y los dos listeners |
 | `web/` | la aplicación web del tablero, archivos estáticos sin build (§15) |
-| `web-islands/` | las secciones del tablero ya pasadas a React, que `app.js` monta (§15) |
+| `dashboard-web/` | las páginas del tablero ya pasadas a React, que `app.js` monta (§15) |
 | `changelog/` | publicación del changelog en cada release |
 
 **Imports:** dentro de una carpeta se importa el archivo directo (`./flow.js`); entre features, por el barrel de la carpeta (`../review/index.js`), que reexporta todo lo que no es entrada. `core/` no tiene barrel y se importa por archivo (`../core/config.js`): `config.ts` falla al cargar si faltan env vars, y módulos como `server/api/webhooks/events.ts` tienen que poder cargarse sin ellas. Los workers (`*-worker.ts`, `*/worker.ts`), el handler por evento (`server/api/webhooks/handler.ts`) y el servidor (`server/index.ts`) son procesos aparte: no van en los barrels y se lanzan por su ruta relativa a `src/` (`launchWorker('preview/worker', …)`). Los tests importan y mockean el archivo concreto, no el barrel.
@@ -595,7 +595,10 @@ src/server/
     dashboard*.ts      los datos del tablero
     portal*.ts         la API del portal y su administración (§16)
 src/web/               la aplicación: HTML, CSS, JS y fuentes, sin build; marked y DOMPurify en vendor/
-src/web-islands/       las secciones ya pasadas a React (Despliegues), que app.js monta donde van: Vite las arma en dist/web/islands.js
+src/dashboard-web/     las páginas ya pasadas a React, que app.js monta donde van: Vite las arma en dist/web/pages.js
+  src/pages/           una por archivo, o una carpeta cuando tiene varios (despliegues/: la página, el diálogo, lo que comparten)
+  src/lib/             lo que no dibuja (las fechas)
+  src/host.ts          lo que una página le pide a app.js
 src/portal-web/        la página del portal de pedidos
 ```
 
@@ -957,9 +960,9 @@ src/server/api/dashboard-portal.ts  los pedidos en el tablero: la lista, la fich
 src/portal-web/        la página, en React con Vite (`pnpm build` la arma en dist/portal-web, `pnpm portal:dev` para trabajarla):
   src/api.ts           el cliente de la API, tipado desde portal/routes.ts, y la versión de la página
   src/App.tsx          las rutas (/, /p/<n>, /contrasena) y la sesión
-  src/Gate.tsx         entrar, la contraseña olvidada y la del enlace
-  src/RequestView.tsx  un pedido: la conversación y lo que se puede hacer ahora
-  src/Interview.tsx    la entrevista: el formulario, el progreso y lo que se envía
+  src/pages/           Gate (entrar, la contraseña olvidada y la del enlace), NewRequest, RequestView (un pedido: la conversación y lo que se puede hacer ahora)
+  src/components/      Side, Composer, Interview (la entrevista: el formulario, el progreso y lo que se envía), Chip, MenuButton
+  src/lib/             busy (si hay algo a medio escribir), images, text
   public/              el CSS, el tema antes de pintar y el ícono, tal cual
 ```
 

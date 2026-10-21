@@ -1,10 +1,10 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
 import { client, isStale, ok, onStale, setUnauthorized, type Me } from './api.js';
-import { Login, Password } from './Gate.js';
-import { NewRequest } from './NewRequest.js';
-import { RequestView } from './RequestView.js';
-import { Side } from './Side.js';
+import { Login, Password } from './pages/Gate.js';
+import { NewRequest } from './pages/NewRequest.js';
+import { RequestView } from './pages/RequestView.js';
+import { Side } from './components/Side.js';
 
 // The page's routes: / (a new request), /p/<n> (one), /contrasena#t=… (the
 // password from an emailed link). The token comes after the #, so it never
@@ -105,7 +105,3 @@ function Shell({ onOut }: { onOut: () => void }) {
     </>
   );
 }
-
-export const MenuButton = ({ onClick }: { onClick: () => void }) => (
-  <button className="menu-btn" aria-label="Mis pedidos" onClick={onClick}><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16" /></svg></button>
-);

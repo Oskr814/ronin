@@ -570,7 +570,7 @@ function renderCenter() {
     return;
   }
   if (!item && S.page === 'despliegues') {
-    showIsland('despliegues', backBar('Despliegues'));
+    showPage('despliegues', backBar('Despliegues'));
     return;
   }
   if (!item && S.page === 'metricas') {
@@ -634,16 +634,16 @@ function renderCenter() {
 
 // Only touches the page when something changed, so a snapshot that changes
 // nothing doesn't reset a selection or a scroll. False when it was the same.
-// A section in React (src/web-islands/, #235 stage 7): mounted once where
+// A page in React (src/dashboard-web/, #235 stage 7): mounted once where
 // it goes, under its head, and unmounted when the center shows anything
 // else (setCenter). It reads, polls and redraws on its own.
-let island = null;
-const ISLAND_HOST = {
+let reactPage = null;
+const PAGE_HOST = {
   toast,
   openPedido: (n) => openPedido(n),
   unauthorized: (message) => showLogin(new Unauthorized(message)),
   repoColor,
-  // What the sidebar shows of a section: whether a deploy is going.
+  // What the sidebar shows of a page: whether a deploy is going.
   read(name, data) {
     if (name !== 'despliegues') return;
     S.dep.list = data;
@@ -651,19 +651,19 @@ const ISLAND_HOST = {
   },
 };
 
-function showIsland(name, head) {
+function showPage(name, head) {
   const center = $('#center');
-  if (island?.name === name && center.contains(island.element)) return;
-  setCenter(`${head}<div class="island" data-island="${esc(name)}"></div>`);
-  const element = center.querySelector('.island');
-  island = { name, element, unmount: window.roninIslands.mount(name, element, ISLAND_HOST) };
+  if (reactPage?.name === name && center.contains(reactPage.element)) return;
+  setCenter(`${head}<div class="react-page" data-page="${esc(name)}"></div>`);
+  const element = center.querySelector('.react-page');
+  reactPage = { name, element, unmount: window.roninPages.mount(name, element, PAGE_HOST) };
 }
 
 function setCenter(html) {
   const center = $('#center');
   if (center._html === html) return false;
-  island?.unmount();
-  island = null;
+  reactPage?.unmount();
+  reactPage = null;
   center._html = html;
   center.innerHTML = html;
   tickClocks();
@@ -4092,8 +4092,8 @@ function wirePedidos() {
 // A deploy is a GitHub release ronin publishes on the tag someone writes;
 // the repo's workflow does the rest. Everything on the branch, or — where
 // the repo allows it (deploy.selective) — only the PRs picked, cherry-picked
-// onto the last release. Admins only. The section itself is an island in
-// React (src/web-islands/src/Despliegues.tsx).
+// onto the last release. Admins only. The page itself is in React
+// (src/dashboard-web/src/pages/despliegues/).
 function openDespliegues() {
   S.sel = null;
   S.page = 'despliegues';
@@ -4106,7 +4106,7 @@ function openDespliegues() {
   }
 }
 
-// The sidebar's "en curso", from what the section last read (ISLAND_HOST.read).
+// The sidebar's "en curso", from what the page last read (PAGE_HOST.read).
 const depGoing = () => (S.dep.list ?? []).some((r) => (r.releases ?? []).some((x) => x.deploy?.state === 'running'));
 
 // ---------- metrics (#222)

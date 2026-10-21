@@ -1,10 +1,10 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { client, ended, ok, type App, type Me } from './api.js';
-import { MenuButton } from './App.js';
-import { useBusy } from './busy.js';
-import { Composer, useDraft } from './Composer.js';
-import { left } from './text.js';
+import { client, ended, ok, type App, type Me } from '../api.js';
+import { MenuButton } from '../components/MenuButton.js';
+import { useBusy } from '../lib/busy.js';
+import { Composer, useDraft } from '../components/Composer.js';
+import { left } from '../lib/text.js';
 
 const key = (a: App) => `${a.repo}:${a.app}`;
 

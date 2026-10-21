@@ -1,5 +1,5 @@
 import { Fragment } from 'react';
-import type { Detail, Message, Question, Understood } from './api.js';
+import type { Detail, Message, Question, Understood } from '../api.js';
 
 // The interview (#225): a big request, with questions in a form before it
 // goes to the team. ronin's last message has them; the person's answers go

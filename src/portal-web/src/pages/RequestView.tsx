@@ -1,12 +1,12 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
-import { client, ended, ok, type Detail, type Me } from './api.js';
-import { MenuButton } from './App.js';
-import { useBusy } from './busy.js';
-import { Composer, ComposerFrame, useDraft } from './Composer.js';
-import { AnswersView, InterviewForm, missing, openQuestions, Paragraphs, payload, progress, UnderstoodView, type Answers } from './Interview.js';
-import { Chip } from './Side.js';
-import { CLOSED, hhmm, initials, left, WORKING } from './text.js';
+import { client, ended, ok, type Detail, type Me } from '../api.js';
+import { MenuButton } from '../components/MenuButton.js';
+import { useBusy } from '../lib/busy.js';
+import { Composer, ComposerFrame, useDraft } from '../components/Composer.js';
+import { AnswersView, InterviewForm, missing, openQuestions, Paragraphs, payload, progress, UnderstoodView, type Answers } from '../components/Interview.js';
+import { Chip } from '../components/Chip.js';
+import { CLOSED, hhmm, initials, left, WORKING } from '../lib/text.js';
 
 const POLL_MS = 2000;
 
