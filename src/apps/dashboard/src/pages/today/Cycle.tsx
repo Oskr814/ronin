@@ -1,7 +1,7 @@
 import { useLayoutEffect, useRef, useState, type PointerEvent } from 'react';
-import { setProject, useProject, useProjectColor } from '../../shell/hooks.js';
-import { DAY_MS, repoShort } from '../../lib/format.js';
-import { LinearIcon } from '../../lib/github.js';
+import { setProject, useProject, useProjectColor } from '@apps/dashboard/src/shell/hooks.js';
+import { DAY_MS, repoShort } from '@apps/dashboard/src/lib/format.js';
+import { LinearIcon } from '@apps/dashboard/src/lib/github.js';
 import { BUCKETS, BURN, burnGeometry, cycleName, dayMonth, endDay, type Cycle } from './model.js';
 
 // A repo's current Linear cycle: its issues by where they stand, and its burn-up.

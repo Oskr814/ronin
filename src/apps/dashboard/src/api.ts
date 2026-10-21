@@ -1,12 +1,12 @@
 import { hc, type InferResponseType } from 'hono/client';
-import { jsonFetch } from '../../../ui/api-client.js';
-import type { DashboardApi } from '../../api/routes.js';
+import { jsonFetch } from '@ui/api-client.js';
+import type { DashboardApi } from '@apps/api/routes.js';
 
 // The dashboard's API, typed from its routes (apps/api/routes.ts): a
 // change on the server that a page doesn't follow breaks the build, not the
 // page.
 
-export { ApiError, ok } from '../../../ui/api-client.js';
+export { ApiError, ok } from '@ui/api-client.js';
 
 export const client = hc<DashboardApi>('/', { fetch: jsonFetch });
 

@@ -1,7 +1,7 @@
-import { config, LABEL_AUTO_MERGE, LABEL_PORTAL } from '../../platform/config/config.js';
-import { addIssueLabel, getIssueState, getPullRequestStatus, listIssuesWithLabel, listPrClosingIssues } from '../../platform/github/github.js';
-import { log } from '../../platform/logger.js';
-import { activeRepo } from '../../platform/agents/repo-context.js';
+import { config, LABEL_AUTO_MERGE, LABEL_PORTAL } from '@platform/config/config.js';
+import { addIssueLabel, getIssueState, getPullRequestStatus, listIssuesWithLabel, listPrClosingIssues } from '@platform/github/github.js';
+import { log } from '@platform/logger.js';
+import { activeRepo } from '@platform/agents/repo-context.js';
 import { getUser } from './accounts.js';
 import { closedMail, doneMail, teamPrMail } from './mail.js';
 import { sendPortalMails, teamTo } from './notify.js';

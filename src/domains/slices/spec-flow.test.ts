@@ -4,14 +4,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 let base = '';
-vi.mock('../../platform/agents/repo-context.js', () => ({ activeRepo: () => ({ productRepo: 'redmotos/shoppingcart', productRepoPath: '/repo', worktreeBasePath: base }) }));
+vi.mock('@platform/agents/repo-context.js', () => ({ activeRepo: () => ({ productRepo: 'redmotos/shoppingcart', productRepoPath: '/repo', worktreeBasePath: base }) }));
 const runAgentTask = vi.fn();
-vi.mock('../../platform/agents/agent-task.js', () => ({ runAgentTask: (...a: unknown[]) => runAgentTask(...a) }));
+vi.mock('@platform/agents/agent-task.js', () => ({ runAgentTask: (...a: unknown[]) => runAgentTask(...a) }));
 const addReaction = vi.fn();
 const commentOnIssue = vi.fn();
 const findOpenPrByHead = vi.fn();
 const replyToComment = vi.fn();
-vi.mock('../../platform/github/github.js', () => ({
+vi.mock('@platform/github/github.js', () => ({
   addReaction: (...a: unknown[]) => addReaction(...a),
   commentOnIssue: (...a: unknown[]) => commentOnIssue(...a),
   findOpenPrByHead: (...a: unknown[]) => findOpenPrByHead(...a),
@@ -25,7 +25,7 @@ vi.mock('../product-app/evidence-store.js', async (importOriginal) => ({
   publishEvidence: (...a: unknown[]) => publishEvidence(...a),
 }));
 const notifyBlocker = vi.fn();
-vi.mock('../../platform/notify/notifier.js', () => ({ notifyBlocker: (...a: unknown[]) => notifyBlocker(...a) }));
+vi.mock('@platform/notify/notifier.js', () => ({ notifyBlocker: (...a: unknown[]) => notifyBlocker(...a) }));
 
 import { processSpecCandidate } from './spec-flow.js';
 

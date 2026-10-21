@@ -1,13 +1,13 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useLayoutEffect, useRef, useState, type MutableRefObject, type ReactElement } from 'react';
 import { createPortal } from 'react-dom';
-import { ApiError, type Exploration } from '../../api.js';
-import { fichaOf, type ItemView, showFicha, useSession, useShell } from '../../shell/hooks.js';
-import { isMobile, when } from '../../lib/format.js';
-import { Md } from '../../lib/markdown.js';
-import { evidenceSrc } from '../../lib/md.js';
-import { useViewState } from '../../lib/view-state.js';
-import { short } from '../../../../../ui/time.js';
+import { ApiError, type Exploration } from '@apps/dashboard/src/api.js';
+import { fichaOf, type ItemView, showFicha, useSession, useShell } from '@apps/dashboard/src/shell/hooks.js';
+import { isMobile, when } from '@apps/dashboard/src/lib/format.js';
+import { Md } from '@apps/dashboard/src/lib/markdown.js';
+import { evidenceSrc } from '@apps/dashboard/src/lib/md.js';
+import { useViewState } from '@apps/dashboard/src/lib/view-state.js';
+import { short } from '@ui/time.js';
 import { FICHA_DOT, FICHA_GROUPS, fichaKey, fichaStatus, postFichaComment, setLista, useExploration, visibleFichas, type FichaActionId, type FichaAsked, type FichaFilter, type FichaStatus, type FindingCard, type FindingImage } from './fichas.js';
 import { Avatar } from './model.js';
 

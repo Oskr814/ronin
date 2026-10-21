@@ -1,12 +1,12 @@
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ApiError, client, ok } from '../../api.js';
-import { useRepoColor, useShell } from '../../shell/hooks.js';
-import { hhmm, when } from '../../lib/format.js';
-import { Ending, money, RunCard, Steps, typeName } from '../../lib/runs.js';
-import { useViewState } from '../../lib/view-state.js';
-import { ago, useNow } from '../../../../../ui/time.js';
+import { ApiError, client, ok } from '@apps/dashboard/src/api.js';
+import { useRepoColor, useShell } from '@apps/dashboard/src/shell/hooks.js';
+import { hhmm, when } from '@apps/dashboard/src/lib/format.js';
+import { Ending, money, RunCard, Steps, typeName } from '@apps/dashboard/src/lib/runs.js';
+import { useViewState } from '@apps/dashboard/src/lib/view-state.js';
+import { ago, useNow } from '@ui/time.js';
 import { Activity } from './Activity.js';
 import { ActionsContext, Chat, Repro, Team, useActions, type Actions } from './Docs.js';
 import { GitHub } from './GitHub.js';

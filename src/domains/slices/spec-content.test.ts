@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('../../platform/config/config.js', () => ({
+vi.mock('@platform/config/config.js', () => ({
   config: { worktreeBaseRef: 'origin/main' },
 }));
 
@@ -10,7 +10,7 @@ vi.mock('node:child_process', () => ({
 }));
 
 const activeRepo = vi.fn();
-vi.mock('../../platform/agents/repo-context.js', () => ({
+vi.mock('@platform/agents/repo-context.js', () => ({
   activeRepo: (...args: unknown[]) => activeRepo(...args),
 }));
 

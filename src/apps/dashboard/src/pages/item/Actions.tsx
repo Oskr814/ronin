@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type MutableRefObject } from 'react';
 import { createPortal } from 'react-dom';
-import { ApiError, client, ok } from '../../api.js';
-import { type ItemView, reread, showDoc, useMarkdown, useSession, useShell } from '../../shell/hooks.js';
+import { ApiError, client, ok } from '@apps/dashboard/src/api.js';
+import { type ItemView, reread, showDoc, useMarkdown, useSession, useShell } from '@apps/dashboard/src/shell/hooks.js';
 import { itemParam, type Action } from './model.js';
 
 // The item's actions (#85): each one a command that exists on GitHub,

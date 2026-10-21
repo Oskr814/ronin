@@ -1,10 +1,10 @@
 import { useQuery } from '@tanstack/react-query';
 import { Fragment, useEffect, type ReactNode } from 'react';
-import { ApiError, client, ok, type Snapshot, type Today as TodayData } from '../../api.js';
-import { useRepoColor, useShell, useSnapshot } from '../../shell/hooks.js';
-import { hhmm, pct, repoShort, Sparkline } from '../../lib/format.js';
-import { duration, money, RUN_STATE, runTitle } from '../../lib/runs.js';
-import { hideTip, tip } from '../../lib/tip.js';
+import { ApiError, client, ok, type Snapshot, type Today as TodayData } from '@apps/dashboard/src/api.js';
+import { useRepoColor, useShell, useSnapshot } from '@apps/dashboard/src/shell/hooks.js';
+import { hhmm, pct, repoShort, Sparkline } from '@apps/dashboard/src/lib/format.js';
+import { duration, money, RUN_STATE, runTitle } from '@apps/dashboard/src/lib/runs.js';
+import { hideTip, tip } from '@apps/dashboard/src/lib/tip.js';
 import { AttentionCard } from './Attention.js';
 import { Breakdown, CycleCard } from './Cycle.js';
 import { attention, EVERY_MS } from './model.js';

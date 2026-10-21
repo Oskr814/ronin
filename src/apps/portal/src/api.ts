@@ -1,12 +1,12 @@
 import { hc, type InferResponseType } from 'hono/client';
-import { ApiError, jsonFetch } from '../../../ui/api-client.js';
-import type { PortalApi } from '../../../domains/portal/routes.js';
+import { ApiError, jsonFetch } from '@ui/api-client.js';
+import type { PortalApi } from '@domains/portal/routes.js';
 
 // The portal's API (/api/portal/*), typed from its routes (domains/portal/routes.ts):
 // a change on the server that the page doesn't follow breaks the build, not
 // the page.
 
-export { ApiError, ok } from '../../../ui/api-client.js';
+export { ApiError, ok } from '@ui/api-client.js';
 
 // A session that ended (a 401, except the login's own) goes back to the
 // login: App sets where.

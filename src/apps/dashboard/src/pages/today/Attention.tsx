@@ -1,11 +1,11 @@
 import type { ReactNode } from 'react';
-import type { Snapshot } from '../../api.js';
-import { useShell } from '../../shell/hooks.js';
-import { repoShort } from '../../lib/format.js';
-import { GhIcon } from '../../lib/github.js';
-import { Dot } from '../../lib/runs.js';
-import { useViewState } from '../../lib/view-state.js';
-import { short } from '../../../../../ui/time.js';
+import type { Snapshot } from '@apps/dashboard/src/api.js';
+import { useShell } from '@apps/dashboard/src/shell/hooks.js';
+import { repoShort } from '@apps/dashboard/src/lib/format.js';
+import { GhIcon } from '@apps/dashboard/src/lib/github.js';
+import { Dot } from '@apps/dashboard/src/lib/runs.js';
+import { useViewState } from '@apps/dashboard/src/lib/view-state.js';
+import { short } from '@ui/time.js';
 import type { Attention, Item } from './model.js';
 
 // What waits on a person, by kind; ronin's PRs, the first four until asked for all.

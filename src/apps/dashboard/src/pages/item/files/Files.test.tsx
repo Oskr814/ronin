@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { resetShell, showPage } from '../../../test-shell.js';
+import { resetShell, showPage } from '@apps/dashboard/src/test-shell.js';
 import { Item } from '../Item.js';
 import { detail, doc, itemRead } from '../test-view.js';
 

@@ -8,7 +8,13 @@
     "strict": true,
     "skipLibCheck": true,
     "noEmit": true,
-    "isolatedModules": true
+    "isolatedModules": true,
+    "paths": {
+      "@apps/*": ["../../apps/*"],
+      "@domains/*": ["../../domains/*"],
+      "@platform/*": ["../../platform/*"],
+      "@ui/*": ["../../ui/*"]
+    }
   },
   "include": ["src", "../../ui", "vite.config.ts"]
 }

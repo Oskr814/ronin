@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 
-vi.mock('../../platform/config/config.js', () => ({ config: { worktreeBaseRef: 'origin/main' } }));
-vi.mock('../../platform/agents/repo-context.js', () => ({
+vi.mock('@platform/config/config.js', () => ({ config: { worktreeBaseRef: 'origin/main' } }));
+vi.mock('@platform/agents/repo-context.js', () => ({
   activeRepo: () => ({ productRepo: 'redmotos/shoppingcart', productRepoPath: '/repo', worktreeBasePath: '/wt' }),
 }));
 

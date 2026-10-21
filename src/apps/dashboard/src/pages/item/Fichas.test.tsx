@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fichaOf } from '../../shell/hooks.js';
-import { resetShell, showPage } from '../../test-shell.js';
+import { fichaOf } from '@apps/dashboard/src/shell/hooks.js';
+import { resetShell, showPage } from '@apps/dashboard/src/test-shell.js';
 import type { FindingCard } from './fichas.js';
 import { Item } from './Item.js';
 import { detail, doc, itemRead, NOW } from './test-view.js';

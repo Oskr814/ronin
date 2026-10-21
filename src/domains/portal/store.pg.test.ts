@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, it } from 'vitest';
-import { setDb, type Db } from '../../platform/db/db.js';
-import { TEST_DATABASE_URL, testDb } from '../../platform/db/testing.js';
+import { setDb, type Db } from '@platform/db/db.js';
+import { TEST_DATABASE_URL, testDb } from '@platform/db/testing.js';
 
 // accounts.test.ts and requests.test.ts again, with the portal's data in
 // Postgres (#235, stage 2): the same behavior, whichever keeps it.

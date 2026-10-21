@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { rm } from 'node:fs/promises';
-import { config } from '../../platform/config/config.js';
+import { config } from '@platform/config/config.js';
 import { createRequest, getRequest, RequestError, updateRequest, type InterviewQuestion, type PortalRequest } from './requests.js';
 
-vi.mock('../../platform/logger.js', () => ({ log: { info: vi.fn(), error: vi.fn() } }));
+vi.mock('@platform/logger.js', () => ({ log: { info: vi.fn(), error: vi.fn() } }));
 const handOverMail = vi.fn(async (_r: PortalRequest, _u: unknown) => {});
 vi.mock('./notify.js', () => ({ handOverMail: (r: PortalRequest, u: unknown) => handOverMail(r, u) }));
 vi.mock('./launch.js', () => ({ launchPortalWorker: vi.fn(async () => {}) }));

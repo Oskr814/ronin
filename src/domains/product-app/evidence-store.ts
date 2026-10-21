@@ -1,7 +1,7 @@
 import { join } from 'node:path';
-import { log } from '../../platform/logger.js';
-import { activeRepo } from '../../platform/agents/repo-context.js';
-import { host } from '../../platform/host/host.js';
+import { log } from '@platform/logger.js';
+import { activeRepo } from '@platform/agents/repo-context.js';
+import { host } from '@platform/host/host.js';
 
 
 // Screenshots for the team — the exploration's before/after, the mockup of a

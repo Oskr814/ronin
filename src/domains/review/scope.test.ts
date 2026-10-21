@@ -3,7 +3,7 @@ import type { ReviewFinding } from './output.js';
 
 const execFile = vi.fn();
 vi.mock('node:child_process', () => ({ execFile }));
-vi.mock('../../platform/agents/repo-context.js', () => ({
+vi.mock('@platform/agents/repo-context.js', () => ({
   activeRepo: () => ({ productRepo: 'o/r', productRepoPath: '/tmp/repo', worktreeBasePath: '/tmp/wt' }),
 }));
 

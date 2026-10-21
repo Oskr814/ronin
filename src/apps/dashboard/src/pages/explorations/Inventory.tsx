@@ -1,8 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
 import { useEffect } from 'react';
-import { ApiError, client, ok } from '../../api.js';
-import { useShell } from '../../shell/hooks.js';
-import { dayMonth } from '../../lib/format.js';
+import { ApiError, client, ok } from '@apps/dashboard/src/api.js';
+import { useShell } from '@apps/dashboard/src/shell/hooks.js';
+import { dayMonth } from '@apps/dashboard/src/lib/format.js';
 import { at, INVENTORY_EVERY_MS } from './model.js';
 
 // An app's functions as ronin found them (inventory.yml, #155 2/4), and

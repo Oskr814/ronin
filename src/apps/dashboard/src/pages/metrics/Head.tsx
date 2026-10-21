@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { useShell } from '../../shell/hooks.js';
+import { useShell } from '@apps/dashboard/src/shell/hooks.js';
 
 // The head of both tabs of Métricas: the title, what the tab is about, its
 // filters, and the tabs, each at its own address (/metricas,

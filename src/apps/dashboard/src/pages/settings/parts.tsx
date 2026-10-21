@@ -1,6 +1,6 @@
 import { createContext, useContext, type ReactNode } from 'react';
-import { ApiError } from '../../api.js';
-import { useShell } from '../../shell/hooks.js';
+import { ApiError } from '@apps/dashboard/src/api.js';
+import { useShell } from '@apps/dashboard/src/shell/hooks.js';
 
 // The pieces every section of Ajustes is made of, as app.js wrote them (the
 // data-aj* attributes too: the CSS and the keyboard find some of them).

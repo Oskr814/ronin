@@ -1,5 +1,5 @@
 import { CHARTERS, VIEWPORTS, type Charter, type DiscoveredFunction, type Inventory, type InventoryFunction } from './memory.js';
-import { host } from '../../platform/host/host.js';
+import { host } from '@platform/host/host.js';
 
 
 // What one exploration run tests: at most N functions, each with a charter

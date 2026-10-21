@@ -1,5 +1,5 @@
-import { config } from '../../platform/config/config.js';
-import { log } from '../../platform/logger.js';
+import { config } from '@platform/config/config.js';
+import { log } from '@platform/logger.js';
 import { listBlockEvents } from './blocks.js';
 import { readRepoData, syncRepo, type RepoData } from './collect.js';
 import { computeMetrics, PERIODS, type Period } from './compute.js';

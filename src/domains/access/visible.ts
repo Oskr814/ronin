@@ -1,5 +1,5 @@
 import type { Context } from 'hono';
-import { loadRepos } from '../../platform/config/repos.js';
+import { loadRepos } from '@platform/config/repos.js';
 import { sees, type Access } from './access.js';
 import { listRuns } from '../runs/data.js';
 import { can, type Perm } from './team.js';

@@ -1,11 +1,11 @@
 import { extname, join } from 'node:path';
-import { runAgentTask } from '../../platform/agents/agent-task.js';
+import { runAgentTask } from '@platform/agents/agent-task.js';
 import { explorationTask, type ExistingFindingSummary } from './prompts.js';
 import { appDown, appUp } from '../product-app/index.js';
 import { loginAllUsers, renderHtmlToPng } from '../product-app/index.js';
 import { loadAppDefinition, type AppDefinition } from '../product-app/index.js';
-import { config } from '../../platform/config/config.js';
-import { log } from '../../platform/logger.js';
+import { config } from '@platform/config/config.js';
+import { log } from '@platform/logger.js';
 import { evidenceUrl, publishEvidence, type EvidenceFile } from '../product-app/index.js';
 import {
   ensureMemoryDir,
@@ -23,7 +23,7 @@ import {
 import { refreshInventory, explorationOutDir } from './inventory.js';
 import { changedFunctions, newSeed, planRun, riskByFunction, type ExplorationPlan, type PlannedFunction } from './plan.js';
 import { capCandidates, parseFunctionResult, parseVerdicts, renderFindingBody, type Candidate, type FindingImage, type TriedTask } from './output.js';
-import { host } from '../../platform/host/host.js';
+import { host } from '@platform/host/host.js';
 
 
 // One exploration run end to end — docs/DESIGN.md §11.3–11.6: refresh the

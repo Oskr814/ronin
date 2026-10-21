@@ -1,6 +1,6 @@
 import { QueryClient } from '@tanstack/react-query';
 import type { ItemDetail, ItemRun, ShownRun, Snapshot } from '../api.js';
-import type { ExplorationListRow, ExplorationRow } from '../../../../domains/explorations/board.js';
+import type { ExplorationListRow, ExplorationRow } from '@domains/explorations/board.js';
 import { isMobile } from '../lib/format.js';
 import { docOf as docShown, docTabsOf, sameLogin } from '../lib/item.js';
 import { md as markdown } from '../lib/md.js';

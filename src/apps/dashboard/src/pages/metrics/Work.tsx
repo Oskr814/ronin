@@ -1,11 +1,11 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { useEffect, type ReactNode } from 'react';
-import { ApiError, client, ok, type Metrics } from '../../api.js';
-import { useSession, useShell } from '../../shell/hooks.js';
-import { DAY_MS, Sparkline } from '../../lib/format.js';
-import { tip } from '../../lib/tip.js';
-import { useViewState } from '../../lib/view-state.js';
-import { ago, useNow } from '../../../../../ui/time.js';
+import { ApiError, client, ok, type Metrics } from '@apps/dashboard/src/api.js';
+import { useSession, useShell } from '@apps/dashboard/src/shell/hooks.js';
+import { DAY_MS, Sparkline } from '@apps/dashboard/src/lib/format.js';
+import { tip } from '@apps/dashboard/src/lib/tip.js';
+import { useViewState } from '@apps/dashboard/src/lib/view-state.js';
+import { ago, useNow } from '@ui/time.js';
 import { bucketLabel, duration, num, percent } from './format.js';
 import { Head } from './Head.js';
 

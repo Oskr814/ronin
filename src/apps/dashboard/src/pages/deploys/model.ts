@@ -1,4 +1,4 @@
-import { client, ok, type DeployRepos } from '../../api.js';
+import { client, ok, type DeployRepos } from '@apps/dashboard/src/api.js';
 
 // What the page and its dialog share: the shapes of what /api/deploys
 // answers, and how a change and a repo's routes are written.

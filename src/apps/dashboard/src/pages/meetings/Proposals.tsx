@@ -1,9 +1,9 @@
 import { useState, type MouseEvent, type ReactNode } from 'react';
-import { ApiError, client, ok } from '../../api.js';
-import type { ApproveOutcome } from '../../../../../domains/meetings/approve.js';
-import { type LinearPlanning, refresh, useMarkdown, useSession, useShell } from '../../shell/hooks.js';
-import { ICON } from '../../lib/icons.js';
-import { useViewState } from '../../lib/view-state.js';
+import { ApiError, client, ok } from '@apps/dashboard/src/api.js';
+import type { ApproveOutcome } from '@domains/meetings/approve.js';
+import { type LinearPlanning, refresh, useMarkdown, useSession, useShell } from '@apps/dashboard/src/shell/hooks.js';
+import { ICON } from '@apps/dashboard/src/lib/icons.js';
+import { useViewState } from '@apps/dashboard/src/lib/view-state.js';
 import { approveItems, chosen, created, CYCLE, editable, newForm, noteLines, plural, type Detail, type Field, type Form, type Issue } from './model.js';
 
 // What ronin proposes out of a meeting, and its review (#62, entrega 3): the

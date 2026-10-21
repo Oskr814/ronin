@@ -1,15 +1,15 @@
-import { config } from '../../platform/config/config.js';
-import { log } from '../../platform/logger.js';
-import type { RepoEntry } from '../../platform/agents/repo-context.js';
-import { linearKey, teamPeople } from '../../platform/linear/linear-api.js';
-import { applySettings, EFFORTS, invalidValue, MODELS, settingDef, settingsView, TASK_TYPES, type SettingsFile, type SettingValue } from '../../platform/config/settings.js';
-import { appendSettingsLog, readSettingsLog as readRegistroStore, readSettings, updateSettings, type SettingsLogEntry } from '../../platform/config/settings-store.js';
-import { taskDefaultEffort, taskDefaultModel, taskEnvEffort, taskEnvModel } from '../../platform/config/config.js';
-import { sendMail } from '../../platform/notify/notifier.js';
+import { config } from '@platform/config/config.js';
+import { log } from '@platform/logger.js';
+import type { RepoEntry } from '@platform/agents/repo-context.js';
+import { linearKey, teamPeople } from '@platform/linear/linear-api.js';
+import { applySettings, EFFORTS, invalidValue, MODELS, settingDef, settingsView, TASK_TYPES, type SettingsFile, type SettingValue } from '@platform/config/settings.js';
+import { appendSettingsLog, readSettingsLog as readRegistroStore, readSettings, updateSettings, type SettingsLogEntry } from '@platform/config/settings-store.js';
+import { taskDefaultEffort, taskDefaultModel, taskEnvEffort, taskEnvModel } from '@platform/config/config.js';
+import { sendMail } from '@platform/notify/notifier.js';
 import { readTeam, withTeam, type Member } from '../access/team.js';
-import { EVENTS, eventsOf, isEvent } from '../../platform/notify/notifications.js';
-import { DomainError } from '../../platform/errors.js';
-import { githubFetch } from '../../platform/github/rest.js';
+import { EVENTS, eventsOf, isEvent } from '@platform/notify/notifications.js';
+import { DomainError } from '@platform/errors.js';
+import { githubFetch } from '@platform/github/rest.js';
 
 // The dashboard's Ajustes (#174), stage 1:
 //   GET  /api/settings           the person's profile, and for an admin the settings of General

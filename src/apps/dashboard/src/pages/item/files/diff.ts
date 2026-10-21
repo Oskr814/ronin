@@ -1,5 +1,5 @@
-import type { PrFile, DiffThread } from '../../../../../../platform/github/github.js';
-import type { PendingReview, PendingThread, PendingComment } from '../../../../../../platform/github/github-as-user.js';
+import type { PrFile, DiffThread } from '@platform/github/github.js';
+import type { PendingReview, PendingThread, PendingComment } from '@platform/github/github-as-user.js';
 
 // A PR's patches read as lines, and its threads as the person sees them
 // (#111): what Archivos draws, without drawing it.

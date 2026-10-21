@@ -1,9 +1,9 @@
-import { config } from '../../platform/config/config.js';
-import { log } from '../../platform/logger.js';
-import type { RepoEntry } from '../../platform/agents/repo-context.js';
+import { config } from '@platform/config/config.js';
+import { log } from '@platform/logger.js';
+import type { RepoEntry } from '@platform/agents/repo-context.js';
 import { SettingsError, notificationsOf, record } from './settings.js';
 import { applyTeam, entryModeOf, envAdmins, isAdmin, isSetName, permsFor, readTeam, SETS, withTeam, type Member, type RepoGrant, type TeamFile } from '../access/team.js';
-import { githubFetch } from '../../platform/github/rest.js';
+import { githubFetch } from '@platform/github/rest.js';
 
 // Ajustes → Usuarios (#174, stage 2), admins only:
 //   GET  /api/settings/users                 the team, who gets in and the default set

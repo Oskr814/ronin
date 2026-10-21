@@ -3,9 +3,9 @@
 // logs/usage/history/<account>.jsonl) into DATABASE_URL's database (#235,
 // stage 3.5). The files stay where they are, as a backup. Safe to run again
 // (an account's history is replaced by its file's). Ends comparing both.
-import { closeDb, getDb, setDb } from '../src/platform/db/db.js';
-import { migrateToLatest } from '../src/platform/db/migrate.js';
-import { addUsageHistory, listUsage, putUsage, readUsageHistory, usageHistory, type AccountUsage } from '../src/platform/claude/claude-usage.js';
+import { closeDb, getDb, setDb } from '@platform/db/db.js';
+import { migrateToLatest } from '@platform/db/migrate.js';
+import { addUsageHistory, listUsage, putUsage, readUsageHistory, usageHistory, type AccountUsage } from '@platform/claude/claude-usage.js';
 import { sameContent } from './db-compare.js';
 
 const db = getDb();

@@ -1,14 +1,14 @@
 import { join } from 'node:path';
-import { runAgentTask } from '../../platform/agents/agent-task.js';
-import { commentOnIssue, setReviewStatus, type Comment, type PullRequestStatus } from '../../platform/github/github.js';
-import { log } from '../../platform/logger.js';
-import { markProcessed } from '../../platform/state/processed-comments.js';
-import { activeRepo } from '../../platform/agents/repo-context.js';
-import { ensureWorktree } from '../../platform/git/worktree.js';
+import { runAgentTask } from '@platform/agents/agent-task.js';
+import { commentOnIssue, setReviewStatus, type Comment, type PullRequestStatus } from '@platform/github/github.js';
+import { log } from '@platform/logger.js';
+import { markProcessed } from '@platform/state/processed-comments.js';
+import { activeRepo } from '@platform/agents/repo-context.js';
+import { ensureWorktree } from '@platform/git/worktree.js';
 import { findUnprocessedMentions } from '../commands/mentions.js';
 import { sliceTask } from './prompts.js';
 import { publishMockup } from './spec-flow.js';
-import { host } from '../../platform/host/host.js';
+import { host } from '@platform/host/host.js';
 
 
 // Talking about a spec on its PR (#241). While the PR of a spec ronin wrote

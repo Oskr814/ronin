@@ -1,4 +1,4 @@
-import type { Mail } from '../../platform/notify/notifier.js';
+import type { Mail } from '@platform/notify/notifier.js';
 import type { LinkKind, PortalUser } from './accounts.js';
 import type { PortalApp } from './apps.js';
 import { interviewRecord } from './interview.js';

@@ -6,8 +6,8 @@ import { join } from 'node:path';
 const dir = mkdtempSync(join(tmpdir(), 'ronin-usuarios-'));
 const config = vi.hoisted(() => ({ settings: { dataDir: '' }, githubToken: 'ronin', dashboard: { admins: [] as string[], allowedUsers: [] as string[] } }));
 config.settings.dataDir = dir;
-vi.mock('../../platform/config/config.js', () => ({ config, taskEnvModel: () => undefined, taskEnvEffort: () => undefined, taskDefaultModel: (t: string) => (t === 'update-changelog' ? 'haiku' : undefined) }));
-vi.mock('../../platform/logger.js', () => ({ log: { info: vi.fn(), error: vi.fn() } }));
+vi.mock('@platform/config/config.js', () => ({ config, taskEnvModel: () => undefined, taskEnvEffort: () => undefined, taskDefaultModel: (t: string) => (t === 'update-changelog' ? 'haiku' : undefined) }));
+vi.mock('@platform/logger.js', () => ({ log: { info: vi.fn(), error: vi.fn() } }));
 
 const { readSettingsLog } = await import('./settings.js');
 const { addUser, removeUser, updateTeamDefaults, updateUser, userView, usersView } = await import('./users.js');

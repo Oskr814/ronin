@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { SettingsView } from '../../shell/hooks.js';
-import { S } from '../../shell/state.js';
-import { resetShell, showPage, testShell, testSnapshot } from '../../test-shell.js';
+import type { SettingsView } from '@apps/dashboard/src/shell/hooks.js';
+import { S } from '@apps/dashboard/src/shell/state.js';
+import { resetShell, showPage, testShell, testSnapshot } from '@apps/dashboard/src/test-shell.js';
 import { Settings } from './Settings.js';
 
 // Invented data: a team at "acme" with two repos.

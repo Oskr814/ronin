@@ -1,6 +1,6 @@
-import { log } from '../../platform/logger.js';
-import { sendMail, type Mail } from '../../platform/notify/notifier.js';
-import type { RepoEntry } from '../../platform/agents/repo-context.js';
+import { log } from '@platform/logger.js';
+import { sendMail, type Mail } from '@platform/notify/notifier.js';
+import type { RepoEntry } from '@platform/agents/repo-context.js';
 import { issueLink, type LinkKind, type PortalUser } from './accounts.js';
 import { grantedApps } from './apps.js';
 import { linkMail, linkUrl, PORTAL_FROM_NAME } from './mail.js';

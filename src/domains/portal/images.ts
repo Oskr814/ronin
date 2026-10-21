@@ -1,4 +1,4 @@
-import { DomainError } from '../../platform/errors.js';
+import { DomainError } from '@platform/errors.js';
 
 // The images a person attaches to a message (#114): sent as data URLs inside
 // the JSON (the portal only takes JSON, which a plain form can't send). What

@@ -1,8 +1,8 @@
 import type { ReactNode } from 'react';
-import { type ExplorationRow, type ExplorationsView, useExplorations, useRepoColor, useSession, useShell } from '../../shell/hooks.js';
-import { hhmm, when } from '../../lib/format.js';
-import { RUN_STATE } from '../../lib/runs.js';
-import { ago } from '../../../../../ui/time.js';
+import { type ExplorationRow, type ExplorationsView, useExplorations, useRepoColor, useSession, useShell } from '@apps/dashboard/src/shell/hooks.js';
+import { hhmm, when } from '@apps/dashboard/src/lib/format.js';
+import { RUN_STATE } from '@apps/dashboard/src/lib/runs.js';
+import { ago } from '@ui/time.js';
 
 // What the Exploraciones pages share (#155): the apps as the shell has them,
 // and how an app's state and head are written, on its page and its PR's.

@@ -5,7 +5,7 @@ const setIssueBody = vi.fn(async (issueNumber: number, body: string) => {
   bodies.set(issueNumber, body);
 });
 
-vi.mock('../../platform/github/github.js', () => ({
+vi.mock('@platform/github/github.js', () => ({
   getIssueBody: vi.fn(async (issueNumber: number) => bodies.get(issueNumber) ?? ''),
   setIssueBody: (...args: [number, string]) => setIssueBody(...args),
 }));

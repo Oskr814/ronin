@@ -3,7 +3,7 @@ import { applyResult, MAX_QUESTIONS, NEXT_STEP, parsePortalResult } from './clas
 import { MAX_ROUNDS } from './interview.js';
 import { MAX_PROTOTYPES, MAX_REPRODUCTIONS, type PortalRequest } from './requests.js';
 
-vi.mock('../../platform/logger.js', () => ({ log: { info: vi.fn(), error: vi.fn() } }));
+vi.mock('@platform/logger.js', () => ({ log: { info: vi.fn(), error: vi.fn() } }));
 
 const request = (): PortalRequest => ({
   number: 7, userId: 'u1', repo: 'redmotos/shoppingcart', app: 'backoffice', title: 'Quiero abrir la ficha del cliente desde el pedido…', status: 'thinking',

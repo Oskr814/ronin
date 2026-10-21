@@ -1,16 +1,16 @@
 import { join } from 'node:path';
-import { runAgentTask } from '../../platform/agents/agent-task.js';
+import { runAgentTask } from '@platform/agents/agent-task.js';
 import { portalTask } from './prompts.js';
-import { config } from '../../platform/config/config.js';
-import { log } from '../../platform/logger.js';
-import { activeRepo } from '../../platform/agents/repo-context.js';
-import { removeWorktreeDir } from '../../platform/git/worktree.js';
+import { config } from '@platform/config/config.js';
+import { log } from '@platform/logger.js';
+import { activeRepo } from '@platform/agents/repo-context.js';
+import { removeWorktreeDir } from '@platform/git/worktree.js';
 import { getUser, type PortalUser } from './accounts.js';
 import { interviewText, MAX_ROUNDS, parseQuestions, parseUnderstood } from './interview.js';
 import { interviewMail, replyMail, understoodMail } from './mail.js';
 import { handOverMail, sendPortalMails } from './notify.js';
 import { addEvent, addRoninMessage, errorLine, getRequest, MAX_PROTOTYPES, MAX_REPRODUCTIONS, requestImagePath, TITLE_MAX, updateUnlessCancelled, type InterviewQuestion, type PortalRequest, type Understood, type Verdict } from './requests.js';
-import { host } from '../../platform/host/host.js';
+import { host } from '@platform/host/host.js';
 
 
 // ronin reads a portal request (#114) and does one of six things: asks the

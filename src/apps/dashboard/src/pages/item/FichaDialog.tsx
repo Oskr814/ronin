@@ -1,8 +1,8 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState, type MutableRefObject } from 'react';
 import { createPortal } from 'react-dom';
-import { ApiError } from '../../api.js';
-import { type ItemView, reread, useMarkdown, useSession, useShell } from '../../shell/hooks.js';
+import { ApiError } from '@apps/dashboard/src/api.js';
+import { type ItemView, reread, useMarkdown, useSession, useShell } from '@apps/dashboard/src/shell/hooks.js';
 import { FICHA_ACTIONS, fichaCommentText, fichaStatus, postFichaComment, postPrDecision, useExploration, waitingCount, type FichaAsked, type FindingCard } from './fichas.js';
 
 // A finding's dialog (#93: rechazar, pedir cambios, un issue aparte, una

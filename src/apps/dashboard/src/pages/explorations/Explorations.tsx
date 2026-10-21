@@ -1,5 +1,5 @@
-import { useShell } from '../../shell/hooks.js';
-import { ago } from '../../../../../ui/time.js';
+import { useShell } from '@apps/dashboard/src/shell/hooks.js';
+import { ago } from '@ui/time.js';
 import { Chip, listRowOf, nextRun, useExplorations } from './model.js';
 
 // Exploraciones (#155): one row per app a repo explores, from the snapshot;

@@ -1,5 +1,5 @@
-import { marked } from '../../vendor/marked.esm.js';
-import DOMPurify from '../../vendor/purify.esm.js';
+import { marked } from '@apps/dashboard/vendor/marked.esm.js';
+import DOMPurify from '@apps/dashboard/vendor/purify.esm.js';
 
 // Markdown from GitHub. Whatever comes from there (a PR from anyone, a
 // comment) is untrusted: it's parsed by marked and then cleaned by DOMPurify

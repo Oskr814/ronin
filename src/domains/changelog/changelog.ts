@@ -1,8 +1,8 @@
-import { listReleases, type Release } from '../../platform/github/github.js';
-import { getLastChangelogRelease, setLastChangelogRelease } from '../../platform/state/local-state.js';
-import { activeRepo } from '../../platform/agents/repo-context.js';
-import { log } from '../../platform/logger.js';
-import { host } from '../../platform/host/host.js';
+import { listReleases, type Release } from '@platform/github/github.js';
+import { getLastChangelogRelease, setLastChangelogRelease } from '@platform/state/local-state.js';
+import { activeRepo } from '@platform/agents/repo-context.js';
+import { log } from '@platform/logger.js';
+import { host } from '@platform/host/host.js';
 
 
 export interface ChangelogCandidate {

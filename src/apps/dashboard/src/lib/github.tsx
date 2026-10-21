@@ -1,4 +1,4 @@
-import { OCTICON } from '../../vendor/octicons.js';
+import { OCTICON } from '@apps/dashboard/vendor/octicons.js';
 
 // How an issue or PR stands on GitHub, with GitHub's own icon and color
 // (#129): [class, short label, what it says in words, octicon], as app.js

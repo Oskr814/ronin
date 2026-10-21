@@ -1,8 +1,8 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, extname } from 'node:path';
 import { draftDiff, runOnApp, type AppRun } from '../commands/prototype.js';
-import { config } from '../../platform/config/config.js';
-import { log } from '../../platform/logger.js';
+import { config } from '@platform/config/config.js';
+import { log } from '@platform/logger.js';
 import { portalTask } from './prompts.js';
 import { insideDir } from '../explorations/index.js';
 import { getUser } from './accounts.js';
@@ -23,7 +23,7 @@ import {
   type Reproduction,
   type ReproductionTest,
 } from './requests.js';
-import { host } from '../../platform/host/host.js';
+import { host } from '@platform/host/host.js';
 
 // A reported error from the portal (#137): on the same app and browsers as
 // a prototype (runOnApp), ronin follows the person's steps, writes a test

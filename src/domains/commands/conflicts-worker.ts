@@ -3,9 +3,9 @@
 // conflicts and running tests takes minutes. Takes the request as a JSON
 // argument, holds the PR's lock while it runs, and answers the comment that
 // asked for it.
-import { getPrHead, replyToComment } from '../../platform/github/github.js';
-import { config } from '../../platform/config/config.js';
-import { log } from '../../platform/logger.js';
+import { getPrHead, replyToComment } from '@platform/github/github.js';
+import { config } from '@platform/config/config.js';
+import { log } from '@platform/logger.js';
 import {
   acquireConflictsLock,
   releaseConflictsLock,
@@ -15,7 +15,7 @@ import {
   resolveConflicts,
   type ConflictsWorkerRequest,
 } from './conflicts.js';
-import { runWorker, withProductRepo, workerRequest } from '../../platform/workers/run.js';
+import { runWorker, withProductRepo, workerRequest } from '@platform/workers/run.js';
 
 const request = workerRequest<ConflictsWorkerRequest>();
 

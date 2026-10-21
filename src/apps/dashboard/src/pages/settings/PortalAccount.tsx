@@ -1,8 +1,8 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
-import { client, ok } from '../../api.js';
-import { useRepoColor, useShell } from '../../shell/hooks.js';
-import { useViewState } from '../../lib/view-state.js';
+import { client, ok } from '@apps/dashboard/src/api.js';
+import { useRepoColor, useShell } from '@apps/dashboard/src/shell/hooks.js';
+import { useViewState } from '@apps/dashboard/src/lib/view-state.js';
 import type { Link } from './AddPerson.js';
 import { onCommit, Row, Sec, SectionLink, useChange } from './parts.js';
 import { appKey, appLabel, portalStatus, type Portal, type PortalChange } from './model.js';

@@ -1,13 +1,13 @@
 import { join } from 'node:path';
-import { activeRepo } from '../../platform/agents/repo-context.js';
-import { removeWorktreeDir } from '../../platform/git/worktree.js';
-import { runAgentTask } from '../../platform/agents/agent-task.js';
+import { activeRepo } from '@platform/agents/repo-context.js';
+import { removeWorktreeDir } from '@platform/git/worktree.js';
+import { runAgentTask } from '@platform/agents/agent-task.js';
 import { commandTask } from './prompts.js';
-import type { PrHead } from '../../platform/github/github.js';
-import { launchWorker } from '../../platform/workers/worker-launch.js';
-import { log } from '../../platform/logger.js';
-import { worktreeLock } from '../../platform/workers/worktree-lock.js';
-import { host } from '../../platform/host/host.js';
+import type { PrHead } from '@platform/github/github.js';
+import { launchWorker } from '@platform/workers/worker-launch.js';
+import { log } from '@platform/logger.js';
+import { worktreeLock } from '@platform/workers/worktree-lock.js';
+import { host } from '@platform/host/host.js';
 
 
 // `/resolve-conflicts` on a PR: ronin merges the PR's base into its branch —

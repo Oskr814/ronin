@@ -1,5 +1,5 @@
-import type { AgentTask, PreparedTask } from '../../platform/agents/agent-task.js';
-import { fenceBlock, REALISTIC_DATA_RULE, repoUrl, UNTRUSTED_APP_WARNING } from '../../platform/agents/prompts.js';
+import type { AgentTask, PreparedTask } from '@platform/agents/agent-task.js';
+import { fenceBlock, REALISTIC_DATA_RULE, repoUrl, UNTRUSTED_APP_WARNING } from '@platform/agents/prompts.js';
 
 // What the agent is told for each preview task; platform/agents/agent-task.ts runs it.
 

@@ -1,9 +1,9 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ApiError, client, ok } from '../../api.js';
-import { useShell } from '../../shell/hooks.js';
-import { ago, useNow } from '../../../../../ui/time.js';
+import { ApiError, client, ok } from '@apps/dashboard/src/api.js';
+import { useShell } from '@apps/dashboard/src/shell/hooks.js';
+import { ago, useNow } from '@ui/time.js';
 import { at, planOf, subject, type Plan, type Repos } from './model.js';
 
 const PLAN_MS = 450;

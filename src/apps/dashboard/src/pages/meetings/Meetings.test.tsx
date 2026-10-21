@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { resetShell, showPage, testShell, testSnapshot } from '../../test-shell.js';
+import { resetShell, showPage, testShell, testSnapshot } from '@apps/dashboard/src/test-shell.js';
 import { Meeting } from './Meeting.js';
 import { Meetings } from './Meetings.js';
 

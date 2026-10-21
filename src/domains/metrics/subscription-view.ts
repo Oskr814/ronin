@@ -1,5 +1,5 @@
-import type { RepoEntry } from '../../platform/agents/repo-context.js';
-import { usageHistory } from '../../platform/claude/claude-usage.js';
+import type { RepoEntry } from '@platform/agents/repo-context.js';
+import { usageHistory } from '@platform/claude/claude-usage.js';
 import { repoDataOf } from './index.js';
 import { computeSubscription, type Subscription } from './subscription.js';
 import { accountsView } from '../settings/claude-accounts.js';

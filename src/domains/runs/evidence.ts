@@ -1,7 +1,7 @@
 import { extname } from 'node:path';
 import { EVIDENCE_BRANCH } from '../product-app/evidence-store.js';
-import type { RepoEntry } from '../../platform/agents/repo-context.js';
-import { host } from '../../platform/host/host.js';
+import type { RepoEntry } from '@platform/agents/repo-context.js';
+import { host } from '@platform/host/host.js';
 
 
 // The screenshots ronin publishes (exploration, prototypes, /spec mockups)

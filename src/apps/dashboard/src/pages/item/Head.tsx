@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { useProjectColor, useRepoColor, useShell } from '../../shell/hooks.js';
+import { useProjectColor, useRepoColor, useShell } from '@apps/dashboard/src/shell/hooks.js';
 import { XplHead } from '../explorations/model.js';
 import { DecideBar, DecidedNote, type Decide } from './Decide.js';
 import { checksChip, Chips, GhPill, itemRef, runNames, type ItemPage } from './model.js';

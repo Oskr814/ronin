@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import type { PullRequestStatus } from '../../platform/github/github.js';
+import type { PullRequestStatus } from '@platform/github/github.js';
 import { sliceBranch, sliceIndexFromBranch, toStackedPrs, pickBottomPr, baseBranchFor, prsForIssue } from './stack.js';
 
 describe('sliceBranch / sliceIndexFromBranch', () => {

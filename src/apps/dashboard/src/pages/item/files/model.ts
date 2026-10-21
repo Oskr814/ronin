@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { useReducer } from 'react';
-import { ApiError, client, ok } from '../../../api.js';
-import { reread, type ShellActions, useShell } from '../../../shell/hooks.js';
+import { ApiError, client, ok } from '@apps/dashboard/src/api.js';
+import { reread, type ShellActions, useShell } from '@apps/dashboard/src/shell/hooks.js';
 import { itemParam } from '../model.js';
 import { pendingOf, type DiffThread, type PendingReview, type PrFile } from './diff.js';
 

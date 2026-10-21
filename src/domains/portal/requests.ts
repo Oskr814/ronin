@@ -1,11 +1,11 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { config } from '../../platform/config/config.js';
-import { log } from '../../platform/logger.js';
-import { dayIn } from '../../platform/config/timezone.js';
+import { config } from '@platform/config/config.js';
+import { log } from '@platform/logger.js';
+import { dayIn } from '@platform/config/timezone.js';
 import type { ImageUpload } from './images.js';
-import { documentStore, type Counter } from '../../platform/store/document-store.js';
-import { DomainError } from '../../platform/errors.js';
+import { documentStore, type Counter } from '@platform/store/document-store.js';
+import { DomainError } from '@platform/errors.js';
 
 // The portal's requests (#114): what a person asked, the conversation with
 // ronin, and where it stands. One folder per request under

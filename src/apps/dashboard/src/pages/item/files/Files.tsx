@@ -1,9 +1,9 @@
 import { useQueryClient, type UseQueryResult } from '@tanstack/react-query';
 import { Fragment, useLayoutEffect, useReducer, useRef, type MutableRefObject } from 'react';
-import { ApiError, client, ok } from '../../../api.js';
-import { useMarkdown, useSession, useShell } from '../../../shell/hooks.js';
-import { isMobile } from '../../../lib/format.js';
-import { useViewState } from '../../../lib/view-state.js';
+import { ApiError, client, ok } from '@apps/dashboard/src/api.js';
+import { useMarkdown, useSession, useShell } from '@apps/dashboard/src/shell/hooks.js';
+import { isMobile } from '@apps/dashboard/src/lib/format.js';
+import { useViewState } from '@apps/dashboard/src/lib/view-state.js';
 import { itemParam, oneOr, type ItemPage } from '../model.js';
 import { ReviewPanel, type Review } from '../Review.js';
 import { BIG_DIFF_LINES, FILE_STATUS, fileAnchor, linesForSuggestion, pendingOf, threadsSeen, type PrFile } from './diff.js';

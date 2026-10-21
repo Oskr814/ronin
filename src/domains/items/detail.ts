@@ -1,8 +1,8 @@
-import { config } from '../../platform/config/config.js';
-import { getDiscussion, type Discussion } from '../../platform/github/github.js';
-import { linearRefFrom, type LinearRef } from '../../platform/linear/linear.js';
-import { log } from '../../platform/logger.js';
-import { withActiveRepo, type RepoEntry } from '../../platform/agents/repo-context.js';
+import { config } from '@platform/config/config.js';
+import { getDiscussion, type Discussion } from '@platform/github/github.js';
+import { linearRefFrom, type LinearRef } from '@platform/linear/linear.js';
+import { log } from '@platform/logger.js';
+import { withActiveRepo, type RepoEntry } from '@platform/agents/repo-context.js';
 import type { RepoGithub } from './github.js';
 
 // An item's page in the dashboard (#85): the issue's and the PR's bodies,

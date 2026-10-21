@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { AutoMergeCandidate } from '../../platform/github/github.js';
+import type { AutoMergeCandidate } from '@platform/github/github.js';
 
-vi.mock('../../platform/config/config.js', () => ({ config: { githubLogin: 'ronin' }, LABEL_AUTO_MERGE: 'ronin:auto-merge' }));
+vi.mock('@platform/config/config.js', () => ({ config: { githubLogin: 'ronin' }, LABEL_AUTO_MERGE: 'ronin:auto-merge' }));
 const repo = vi.hoisted(() => ({ productRepo: 'acme/app', autoMerge: false as boolean | undefined }));
-vi.mock('../../platform/agents/repo-context.js', () => ({ activeRepo: () => repo }));
-vi.mock('../../platform/logger.js', () => ({ log: { error: vi.fn(), info: vi.fn() } }));
+vi.mock('@platform/agents/repo-context.js', () => ({ activeRepo: () => repo }));
+vi.mock('@platform/logger.js', () => ({ log: { error: vi.fn(), info: vi.fn() } }));
 
 const listOpenPrsForAutoMerge = vi.fn();
 const mergePullRequest = vi.fn();
@@ -13,7 +13,7 @@ const addIssueLabel = vi.fn();
 const removeIssueLabel = vi.fn();
 const replyToComment = vi.fn();
 const addReaction = vi.fn();
-vi.mock('../../platform/github/github.js', () => ({
+vi.mock('@platform/github/github.js', () => ({
   listOpenPrsForAutoMerge: (...args: unknown[]) => listOpenPrsForAutoMerge(...args),
   mergePullRequest: (...args: unknown[]) => mergePullRequest(...args),
   commentOnSpecPr: (...args: unknown[]) => commentOnSpecPr(...args),
@@ -27,14 +27,14 @@ let defaulted: number[] | undefined;
 const setAutoMergeDefaulted = vi.fn(async (prs: number[]) => {
   defaulted = prs;
 });
-vi.mock('../../platform/state/local-state.js', () => ({
+vi.mock('@platform/state/local-state.js', () => ({
   getAutoMergeDefaulted: async () => defaulted,
   setAutoMergeDefaulted: (prs: number[]) => setAutoMergeDefaulted(prs),
 }));
 
 // Done-ness lives in the local state now (processed-comments.ts, tested on
 // its own); here it's still read off the 👀, as these tests set it up.
-vi.mock('../../platform/state/processed-comments.js', () => ({
+vi.mock('@platform/state/processed-comments.js', () => ({
   markProcessed: (c: { id: number; kind: string }) => addReaction(c.id, c.kind, 'eyes'),
 }));
 

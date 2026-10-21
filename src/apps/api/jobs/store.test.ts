@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { sql } from 'kysely';
-import { setDb, type Db } from '../../../platform/db/db.js';
-import { TEST_DATABASE_URL, testDb } from '../../../platform/db/testing.js';
+import { setDb, type Db } from '@platform/db/db.js';
+import { TEST_DATABASE_URL, testDb } from '@platform/db/testing.js';
 import { claimNext, enqueue, finish, heartbeat, lastQueuedOrStarted, listJobs, pruneFinished, reapExpired } from './store.js';
 import { runOnce } from './runner.js';
 import { runAsJob } from './child.js';

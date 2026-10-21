@@ -1,13 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const runAgentTask = vi.fn();
-vi.mock('../../platform/agents/agent-task.js', () => ({ runAgentTask: (...args: unknown[]) => runAgentTask(...args) }));
+vi.mock('@platform/agents/agent-task.js', () => ({ runAgentTask: (...args: unknown[]) => runAgentTask(...args) }));
 
 const getIssueBody = vi.fn();
 const setIssueBody = vi.fn();
 const replyToComment = vi.fn();
 const addReaction = vi.fn();
-vi.mock('../../platform/github/github.js', () => ({
+vi.mock('@platform/github/github.js', () => ({
   getIssueBody: (...args: unknown[]) => getIssueBody(...args),
   setIssueBody: (...args: unknown[]) => setIssueBody(...args),
   replyToComment: (...args: unknown[]) => replyToComment(...args),
@@ -16,7 +16,7 @@ vi.mock('../../platform/github/github.js', () => ({
 
 // Done-ness lives in the local state now (processed-comments.ts, tested on
 // its own); here it's still read off the 👀, as these tests set it up.
-vi.mock('../../platform/state/processed-comments.js', () => ({
+vi.mock('@platform/state/processed-comments.js', () => ({
   markProcessed: (c: { id: number; kind: string }) => addReaction(c.id, c.kind, 'eyes'),
 }));
 
@@ -24,15 +24,15 @@ const launchPrototypeWorker = vi.fn();
 vi.mock('./prototype.js', () => ({ launchPrototypeWorker: (...args: unknown[]) => launchPrototypeWorker(...args) }));
 
 const removeWorktree = vi.fn();
-vi.mock('../../platform/git/worktree.js', () => ({ removeWorktree: (...args: unknown[]) => removeWorktree(...args) }));
-vi.mock('../../platform/logger.js', () => ({ log: { error: vi.fn(), info: vi.fn() } }));
+vi.mock('@platform/git/worktree.js', () => ({ removeWorktree: (...args: unknown[]) => removeWorktree(...args) }));
+vi.mock('@platform/logger.js', () => ({ log: { error: vi.fn(), info: vi.fn() } }));
 
 let outputJson = '';
 vi.mock('node:fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs/promises')>();
   return { ...actual, mkdir: vi.fn(async () => undefined), rm: vi.fn(async () => undefined), readFile: vi.fn(async () => outputJson) };
 });
-vi.mock('../../platform/agents/repo-context.js', () => ({ activeRepo: () => ({ productRepo: 'acme/product', worktreeBasePath: '/tmp/ronin-test' }) }));
+vi.mock('@platform/agents/repo-context.js', () => ({ activeRepo: () => ({ productRepo: 'acme/product', worktreeBasePath: '/tmp/ronin-test' }) }));
 
 import { nextIssueBody, parseIssueRequestResult, processIssueRequest } from './issue-request.js';
 

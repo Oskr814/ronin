@@ -4,10 +4,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 let base = '';
-vi.mock('../../platform/agents/repo-context.js', () => ({ activeRepo: () => ({ productRepo: 'redmotos/shoppingcart', worktreeBasePath: base }) }));
-vi.mock('../../platform/config/config.js', () => ({ config: { githubLogin: 'ronin-agent', worktreeBaseRef: 'origin/main', exploreTimezone: 'America/Tegucigalpa' } }));
-vi.mock('../../platform/github/github.js', () => ({}));
-vi.mock('../../platform/agents/agent-task.js', () => ({}));
+vi.mock('@platform/agents/repo-context.js', () => ({ activeRepo: () => ({ productRepo: 'redmotos/shoppingcart', worktreeBasePath: base }) }));
+vi.mock('@platform/config/config.js', () => ({ config: { githubLogin: 'ronin-agent', worktreeBaseRef: 'origin/main', exploreTimezone: 'America/Tegucigalpa' } }));
+vi.mock('@platform/github/github.js', () => ({}));
+vi.mock('@platform/agents/agent-task.js', () => ({}));
 vi.mock('../product-app/runtime.js', () => ({}));
 vi.mock('./run.js', () => ({}));
 vi.mock('./inventory.js', () => ({ explorationOutDir: () => base }));

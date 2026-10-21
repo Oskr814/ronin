@@ -1,4 +1,4 @@
-import type { MeetingDetail, MeetingRow } from '../../api.js';
+import type { MeetingDetail, MeetingRow } from '@apps/dashboard/src/api.js';
 
 // What the meetings' pages know of a meeting, and how they write it (#62).
 

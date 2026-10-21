@@ -1,7 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { client, ok } from '../../api.js';
-import { useShell } from '../../shell/hooks.js';
-import { typeName } from '../../lib/runs.js';
+import { client, ok } from '@apps/dashboard/src/api.js';
+import { useShell } from '@apps/dashboard/src/shell/hooks.js';
+import { typeName } from '@apps/dashboard/src/lib/runs.js';
 import { Fixed, onCommit, Row, Sec, SectionLink, Switch, useChange } from './parts.js';
 import { SETTINGS, word, type Page, type Setting, type Task, type Value } from './model.js';
 

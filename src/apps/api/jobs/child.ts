@@ -1,5 +1,5 @@
-import { getDb } from '../../../platform/db/db.js';
-import { log } from '../../../platform/logger.js';
+import { getDb } from '@platform/db/db.js';
+import { log } from '@platform/logger.js';
 import { finish, heartbeat, HEARTBEAT_MS } from './store.js';
 
 // In a job's own process — a tick (index.ts) or an event's handler — when

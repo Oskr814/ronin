@@ -1,12 +1,12 @@
 import { Hono } from 'hono';
-import { loadRepos } from '../../platform/config/repos.js';
+import { loadRepos } from '@platform/config/repos.js';
 import { settingsPageView, connectionsView, linearTeams, readSettingsLog, saveNotifications, saveProfile, setTask, setValue, testMail } from './settings.js';
 import { accountsView, setAccountPlan } from './claude-accounts.js';
 import { forgetGithub } from '../items/github.js';
 import { editRepo, reposView } from './repos.js';
 import { addUser, removeUser, updateTeamDefaults, updateUser, usersView, userView } from './users.js';
 import { visibleRepos } from '../access/visible.js';
-import { adminsOnly, anyObject, jsonBody, onError, onlyJson, repoParam } from '../../platform/http/middleware.js';
+import { adminsOnly, anyObject, jsonBody, onError, onlyJson, repoParam } from '@platform/http/middleware.js';
 import type { DashboardEnv } from '../access/http.js';
 
 // Ajustes (#174) from the dashboard, in Hono (#235, stage 6) — server/

@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { rmSync } from 'node:fs';
-import { config } from '../../platform/config/config.js';
-import { setDb, type Db } from '../../platform/db/db.js';
-import { TEST_DATABASE_URL, testDb } from '../../platform/db/testing.js';
+import { config } from '@platform/config/config.js';
+import { setDb, type Db } from '@platform/db/db.js';
+import { TEST_DATABASE_URL, testDb } from '@platform/db/testing.js';
 import { addDeploy, listDeploys, putDeploy, updateDeploy, type DeployRecord } from './store.js';
 
 const deploy = (tag: string, at: string, over: Partial<DeployRecord> = {}): DeployRecord => ({

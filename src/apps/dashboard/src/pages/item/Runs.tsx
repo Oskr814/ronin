@@ -1,8 +1,8 @@
 import { useLayoutEffect, useRef } from 'react';
-import { type ItemView, showRun } from '../../shell/hooks.js';
-import { hhmm, isMobile } from '../../lib/format.js';
-import { duration, Ending, money, RUN_STATE, RunDot, Since, Steps, typeName } from '../../lib/runs.js';
-import { short } from '../../../../../ui/time.js';
+import { type ItemView, showRun } from '@apps/dashboard/src/shell/hooks.js';
+import { hhmm, isMobile } from '@apps/dashboard/src/lib/format.js';
+import { duration, Ending, money, RUN_STATE, RunDot, Since, Steps, typeName } from '@apps/dashboard/src/lib/runs.js';
+import { short } from '@ui/time.js';
 import { entryRun, runEntries, runsOf, runNames } from './model.js';
 
 // An item's runs (#85): the activity line under its head, with the run going

@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type MutableRefObject } from 'react';
 import type { UseQueryResult } from '@tanstack/react-query';
-import { shellLayer, showDoc, useSession, useShell } from '../../shell/hooks.js';
-import { short } from '../../../../../ui/time.js';
+import { shellLayer, showDoc, useSession, useShell } from '@apps/dashboard/src/shell/hooks.js';
+import { short } from '@ui/time.js';
 import { ExplorationInventory } from '../explorations/Inventory.js';
 import { ExplorationRuns } from '../explorations/Runs.js';
 import { ActionDialog, ActionsMenu, menuKey, type Asked } from './Actions.js';

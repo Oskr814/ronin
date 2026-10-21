@@ -1,5 +1,5 @@
 import { hhmm, pct } from '../lib/format.js';
-import { short } from '../../../../ui/time.js';
+import { short } from '@ui/time.js';
 import { changed, logout, MINUTE, repoShort, S } from './state.js';
 
 // The status bar: each Claude account's quota, the runner's machine, the

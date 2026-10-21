@@ -1,5 +1,5 @@
-import type { AgentTask, PreparedTask } from '../../platform/agents/agent-task.js';
-import { fence, repoUrl } from '../../platform/agents/prompts.js';
+import type { AgentTask, PreparedTask } from '@platform/agents/agent-task.js';
+import { fence, repoUrl } from '@platform/agents/prompts.js';
 import { LIMITS } from './proposals.js';
 
 // What the agent is told to read a meeting's notes (#62); platform/agents/agent-task.ts

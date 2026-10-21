@@ -2,9 +2,9 @@
 // launchPrototypeWorker), never inside it: bringing an app up and drawing
 // the after takes many minutes. Takes the request as a JSON argument, waits
 // for the per-repo prototype lock, and answers the comment that asked for it.
-import { replyToComment } from '../../platform/github/github.js';
-import { config } from '../../platform/config/config.js';
-import { log } from '../../platform/logger.js';
+import { replyToComment } from '@platform/github/github.js';
+import { config } from '@platform/config/config.js';
+import { log } from '@platform/logger.js';
 import {
   releasePrototypeLock,
   renderPrototypeComment,
@@ -13,7 +13,7 @@ import {
   waitForPrototypeLock,
   type PrototypeWorkerRequest,
 } from './prototype.js';
-import { runWorker, withProductRepo, workerRequest } from '../../platform/workers/run.js';
+import { runWorker, withProductRepo, workerRequest } from '@platform/workers/run.js';
 
 const request = workerRequest<PrototypeWorkerRequest>();
 

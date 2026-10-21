@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { client, ok } from '../../api.js';
-import { useShell } from '../../shell/hooks.js';
+import { client, ok } from '@apps/dashboard/src/api.js';
+import { useShell } from '@apps/dashboard/src/shell/hooks.js';
 import { Row, Sec, Source, useChange } from './parts.js';
 import { hhmm, what } from './model.js';
 import type { Data } from './Settings.js';

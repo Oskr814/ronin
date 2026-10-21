@@ -1,4 +1,4 @@
-import { trackedWorker } from '../../platform/workers/tracked.js';
+import { trackedWorker } from '@platform/workers/tracked.js';
 import { needsIssue } from './issue.js';
 import { addEvent, listRequests, updateRequest } from './requests.js';
 

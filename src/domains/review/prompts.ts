@@ -1,7 +1,7 @@
-import type { AgentDefinition, AgentTask, PreparedTask } from '../../platform/agents/agent-task.js';
-import { config, reviewWorkerModel } from '../../platform/config/config.js';
-import { getPullRequestStatus, type BotThread, type Comment, type ReviewThread } from '../../platform/github/github.js';
-import { AGENT_NOTES_REMINDER, describeMention, fence, fenceBlock, prBodyUpdateRule, repoUrl, THREAD_REPLY_MAX } from '../../platform/agents/prompts.js';
+import type { AgentDefinition, AgentTask, PreparedTask } from '@platform/agents/agent-task.js';
+import { config, reviewWorkerModel } from '@platform/config/config.js';
+import { getPullRequestStatus, type BotThread, type Comment, type ReviewThread } from '@platform/github/github.js';
+import { AGENT_NOTES_REMINDER, describeMention, fence, fenceBlock, prBodyUpdateRule, repoUrl, THREAD_REPLY_MAX } from '@platform/agents/prompts.js';
 import { loadReviewCriteria, type ReviewCriteria } from './criteria.js';
 import { FINDINGS_JSON_CONTRACT } from './output.js';
 

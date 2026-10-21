@@ -10,18 +10,18 @@
 // whole API, behind a GitHub login (tailnet.ts). The second one only starts
 // once the dashboard is configured.
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
-import { config } from '../../platform/config/config.js';
-import { log } from '../../platform/logger.js';
+import { config } from '@platform/config/config.js';
+import { log } from '@platform/logger.js';
 import { missingAuthConfig } from './http/auth.js';
 import { createPortalHandler } from './http/portal.js';
-import { missingPortalConfig } from '../../domains/portal/http.js';
+import { missingPortalConfig } from '@domains/portal/http.js';
 import { createPublicHandler } from './http/public.js';
 import { createTailnetHandler } from './http/tailnet.js';
-import { loadTeam } from '../../domains/access/team.js';
-import { warmDashboard } from '../../domains/items/service.js';
+import { loadTeam } from '@domains/access/team.js';
+import { warmDashboard } from '@domains/items/service.js';
 import { timedRequests } from './http/timing.js';
-import { getDb } from '../../platform/db/db.js';
-import { migrateToLatest } from '../../platform/db/migrate.js';
+import { getDb } from '@platform/db/db.js';
+import { migrateToLatest } from '@platform/db/migrate.js';
 import { startRunner } from './jobs/runner.js';
 import { startScheduler } from './jobs/scheduler.js';
 

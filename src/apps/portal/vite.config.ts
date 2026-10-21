@@ -11,6 +11,8 @@ const root = fileURLToPath(new URL('.', import.meta.url));
 export default defineConfig({
   root,
   plugins: [react()],
+  // The @apps/… @domains/… @platform/… @ui/… aliases, from tsconfig.json (#310).
+  resolve: { tsconfigPaths: true },
   build: {
     outDir: fileURLToPath(new URL('../../../dist/public/portal', import.meta.url)),
     emptyOutDir: true,

@@ -2,9 +2,9 @@
 import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { detailKey } from '../../shell/state.js';
+import { detailKey } from '@apps/dashboard/src/shell/state.js';
 import { detail, doc, item } from '../item/test-view.js';
-import { resetShell, showPage, testShell, testSnapshot } from '../../test-shell.js';
+import { resetShell, showPage, testShell, testSnapshot } from '@apps/dashboard/src/test-shell.js';
 import { Request } from './Request.js';
 import { Requests } from './Requests.js';
 

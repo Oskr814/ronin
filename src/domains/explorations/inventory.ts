@@ -1,12 +1,12 @@
 import { join } from 'node:path';
-import { runAgentTask } from '../../platform/agents/agent-task.js';
+import { runAgentTask } from '@platform/agents/agent-task.js';
 import { explorationTask } from './prompts.js';
-import { activeRepo } from '../../platform/agents/repo-context.js';
-import { log } from '../../platform/logger.js';
+import { activeRepo } from '@platform/agents/repo-context.js';
+import { log } from '@platform/logger.js';
 import { mergeInventory, saveInventory, type ExplorationMemory, type Inventory } from './memory.js';
 import { lastCommitTouching, parseDiscoveredFunctions } from './plan.js';
 import type { AppDefinition } from '../product-app/index.js';
-import { host } from '../../platform/host/host.js';
+import { host } from '@platform/host/host.js';
 
 export function explorationOutDir(): string {
   // Outside every checkout: the agent writes here, the supervisor reads it.

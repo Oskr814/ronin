@@ -1,7 +1,7 @@
 import { Fragment, type ReactNode } from 'react';
 import { GhIcon, LinearIcon } from '../lib/github.js';
 import { clock, Dot, RunDot, runKind } from '../lib/runs.js';
-import { short } from '../../../../ui/time.js';
+import { short } from '@ui/time.js';
 import { Live } from './Live.js';
 import {
   AJ_SECTIONS, canDo, changed, goHome, inScope, type Item, linearRepos, openSettings, openDeploys, openExploration, openExplorations, openMetrics,

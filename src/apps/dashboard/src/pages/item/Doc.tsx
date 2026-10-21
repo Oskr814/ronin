@@ -1,7 +1,7 @@
 import { useReducer } from 'react';
-import type { ItemDetail, SnapshotItem } from '../../shell/hooks.js';
-import { when } from '../../lib/format.js';
-import { Md } from '../../lib/markdown.js';
+import type { ItemDetail, SnapshotItem } from '@apps/dashboard/src/shell/hooks.js';
+import { when } from '@apps/dashboard/src/lib/format.js';
+import { Md } from '@apps/dashboard/src/lib/markdown.js';
 import { Avatar, checksChip, Chips, sameLogin, type Doc } from './model.js';
 
 // An issue or a PR as its tab shows it (#85): its body, where a PR stands,

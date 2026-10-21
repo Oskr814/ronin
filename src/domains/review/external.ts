@@ -6,13 +6,13 @@ import {
   type BotThread,
   type Comment,
   type ReviewThread,
-} from '../../platform/github/github.js';
-import { isCommitAvailable, fetchCommit, pruneReviewedPins } from '../../platform/git/worktree.js';
-import { getLastReviewedSha, pruneLastReviewedSha } from '../../platform/state/local-state.js';
+} from '@platform/github/github.js';
+import { isCommitAvailable, fetchCommit, pruneReviewedPins } from '@platform/git/worktree.js';
+import { getLastReviewedSha, pruneLastReviewedSha } from '@platform/state/local-state.js';
 import { findUnprocessedMentions, trustedFixCommands, trustedThreadMentions } from '../commands/index.js';
-import { runWithConcurrency } from '../../platform/workers/concurrency.js';
-import { config } from '../../platform/config/config.js';
-import { log } from '../../platform/logger.js';
+import { runWithConcurrency } from '@platform/workers/concurrency.js';
+import { config } from '@platform/config/config.js';
+import { log } from '@platform/logger.js';
 
 export interface ReviewCandidate {
   prNumber: number;

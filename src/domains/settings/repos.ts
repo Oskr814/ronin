@@ -1,11 +1,11 @@
 import { copyFile, mkdir, readdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import { config } from '../../platform/config/config.js';
-import { log } from '../../platform/logger.js';
-import type { RepoEntry } from '../../platform/agents/repo-context.js';
-import { MAX_REPO_CONCURRENCY, validateRepos } from '../../platform/config/repos.js';
-import { linearKey, teamPlanning } from '../../platform/linear/linear-api.js';
-import { withJson } from '../../platform/fs/atomic-json.js';
+import { config } from '@platform/config/config.js';
+import { log } from '@platform/logger.js';
+import type { RepoEntry } from '@platform/agents/repo-context.js';
+import { MAX_REPO_CONCURRENCY, validateRepos } from '@platform/config/repos.js';
+import { linearKey, teamPlanning } from '@platform/linear/linear-api.js';
+import { withJson } from '@platform/fs/atomic-json.js';
 import { SettingsError, record } from './settings.js';
 import { repoApps } from '../items/new-issue.js';
 

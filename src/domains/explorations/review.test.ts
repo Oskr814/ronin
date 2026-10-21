@@ -5,9 +5,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const gh = vi.hoisted(() => ({ listFileReviewComments: vi.fn() }));
-vi.mock('../../platform/github/github.js', () => gh);
-vi.mock('../../platform/agents/repo-context.js', () => ({ withActiveRepo: (_entry: unknown, fn: () => unknown) => fn(), activeRepo: () => ({ productRepo: 'acme/product' }) }));
-vi.mock('../../platform/config/config.js', () => ({ config: { dashboard: { githubTtlSeconds: 60 }, githubLogin: 'ronin-agent', worktreeBaseRef: 'origin/main' } }));
+vi.mock('@platform/github/github.js', () => gh);
+vi.mock('@platform/agents/repo-context.js', () => ({ withActiveRepo: (_entry: unknown, fn: () => unknown) => fn(), activeRepo: () => ({ productRepo: 'acme/product' }) }));
+vi.mock('@platform/config/config.js', () => ({ config: { dashboard: { githubTtlSeconds: 60 }, githubLogin: 'ronin-agent', worktreeBaseRef: 'origin/main' } }));
 
 import { explorationReview, isExplorationPr, resetExplorationCache } from './review.js';
 import { serializeFinding, type Finding } from './memory.js';

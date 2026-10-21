@@ -1,4 +1,4 @@
-import { useViewState } from '../../lib/view-state.js';
+import { useViewState } from '@apps/dashboard/src/lib/view-state.js';
 import { ExplorationInventory } from './Inventory.js';
 import { rowOf, useExplorations, XplHead } from './model.js';
 import { ExplorationRuns } from './Runs.js';

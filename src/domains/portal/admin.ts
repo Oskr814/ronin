@@ -1,11 +1,11 @@
-import type { RepoEntry } from '../../platform/agents/repo-context.js';
-import { log } from '../../platform/logger.js';
+import type { RepoEntry } from '@platform/agents/repo-context.js';
+import { log } from '@platform/logger.js';
 import { AccountError, adminView, createUser, getUser, listUsers, updateUser, type PortalUser, type UserFields } from './accounts.js';
 import { portalApps, validGrants } from './apps.js';
 import { startedTodayByUser } from './requests.js';
 import { sendPasswordLink, type Send } from './send-link.js';
 import { record } from '../settings/settings.js';
-import { DomainError } from '../../platform/errors.js';
+import { DomainError } from '@platform/errors.js';
 
 // The request portal's accounts from the dashboard (#114), for its admins
 // only; since #174 they're shown in Ajustes → Usuarios, with the role

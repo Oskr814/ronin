@@ -1,8 +1,8 @@
-import { showDoc, useKnownItem, useShell, useWatchedItem } from '../../shell/hooks.js';
-import { RunDot } from '../../lib/runs.js';
+import { showDoc, useKnownItem, useShell, useWatchedItem } from '@apps/dashboard/src/shell/hooks.js';
+import { RunDot } from '@apps/dashboard/src/lib/runs.js';
 import { Body, Comments, conversation } from '../item/Doc.js';
 import { Avatar, checksChip, Chips, GhPill } from '../item/model.js';
-import { when } from '../../lib/format.js';
+import { when } from '@apps/dashboard/src/lib/format.js';
 import type { Detail } from './model.js';
 
 // The request's issue and its PR (#158), read as on their page, without

@@ -1,11 +1,11 @@
 import { zValidator } from '@hono/zod-validator';
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { loadRepos } from '../../platform/config/repos.js';
+import { loadRepos } from '@platform/config/repos.js';
 import { subscriptionView } from './subscription-view.js';
 import { visibleRepos } from '../access/visible.js';
 import type { DashboardEnv } from '../access/http.js';
-import { adminsOnly } from '../../platform/http/middleware.js';
+import { adminsOnly } from '@platform/http/middleware.js';
 import { metricsView, parsePeriod } from './index.js';
 
 // Métricas (#222, #234) from the dashboard, in Hono (#235, stage 6) —

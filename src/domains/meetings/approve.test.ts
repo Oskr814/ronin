@@ -1,33 +1,33 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { rm } from 'node:fs/promises';
-import { config } from '../../platform/config/config.js';
-import type { RepoEntry } from '../../platform/agents/repo-context.js';
+import { config } from '@platform/config/config.js';
+import type { RepoEntry } from '@platform/agents/repo-context.js';
 
 // GitHub as the person, Linear and its queue are stand-ins: what's checked
 // is what gets created, with what, and that nothing is created twice.
 const createIssue = vi.fn();
 const commentOnIssue = vi.fn();
-vi.mock('../../platform/github/github-as-user.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../platform/github/github-as-user.js')>()),
+vi.mock('@platform/github/github-as-user.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@platform/github/github-as-user.js')>()),
   createIssue: (...args: unknown[]) => createIssue(...args),
   commentOnIssue: (...args: unknown[]) => commentOnIssue(...args),
 }));
 const createProject = vi.fn();
 const teamContext = vi.fn();
-vi.mock('../../platform/linear/linear-api.js', () => ({
+vi.mock('@platform/linear/linear-api.js', () => ({
   linearKey: (e: RepoEntry) => (e.linear ? 'lin_key' : null),
   teamContext: () => teamContext(),
   createProject: (...args: unknown[]) => createProject(...args),
 }));
 const queueLinearAssignment = vi.fn();
 const applyLinearSoon = vi.fn();
-vi.mock('../../platform/linear/linear-assign.js', () => ({
+vi.mock('@platform/linear/linear-assign.js', () => ({
   queueLinearAssignment: (...args: unknown[]) => queueLinearAssignment(...args),
   applyLinearSoon: (...args: unknown[]) => applyLinearSoon(...args),
 }));
 
 const { createMeeting, getMeeting, updateMeeting, extractPasted } = await import('./index.js');
-const { GithubUserError } = await import('../../platform/github/github-as-user.js');
+const { GithubUserError } = await import('@platform/github/github-as-user.js');
 const { approveMeeting, discardMeeting, origin } = await import('./approve.js');
 
 const SC = 'redmotos/shoppingcart';

@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef, useState } from 'react';
-import { ApiError, client, ok } from '../../api.js';
-import { useSession, useShell } from '../../shell/hooks.js';
+import { ApiError, client, ok } from '@apps/dashboard/src/api.js';
+import { useSession, useShell } from '@apps/dashboard/src/shell/hooks.js';
 import { checksChip, itemParam, oneOr, type ItemPage } from './model.js';
 
 // Deciding a PR ronin opened (#195): its page asks what's decided, not how

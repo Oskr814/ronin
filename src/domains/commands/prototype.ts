@@ -1,19 +1,19 @@
 import { basename, join } from 'node:path';
-import { runAgentTask, type AgentTask } from '../../platform/agents/agent-task.js';
+import { runAgentTask, type AgentTask } from '@platform/agents/agent-task.js';
 import { commandTask, type CommandTask, type PrototypeBrowser } from './prompts.js';
 import { appDown, appUp } from '../product-app/index.js';
 import { loginAllUsers, renderHtmlToPng } from '../product-app/index.js';
 import { loadAppDefinition, type AppDefinition } from '../product-app/index.js';
-import { config } from '../../platform/config/config.js';
+import { config } from '@platform/config/config.js';
 import { evidenceUrl, publishEvidence } from '../product-app/index.js';
 import { insideDir } from '../explorations/index.js';
 import { mcpServer, originsOf } from '../explorations/index.js';
-import { activeRepo } from '../../platform/agents/repo-context.js';
-import { launchWorker } from '../../platform/workers/worker-launch.js';
-import { removeWorktreeDir } from '../../platform/git/worktree.js';
-import { log } from '../../platform/logger.js';
-import { worktreeLock } from '../../platform/workers/worktree-lock.js';
-import { host } from '../../platform/host/host.js';
+import { activeRepo } from '@platform/agents/repo-context.js';
+import { launchWorker } from '@platform/workers/worker-launch.js';
+import { removeWorktreeDir } from '@platform/git/worktree.js';
+import { log } from '@platform/logger.js';
+import { worktreeLock } from '@platform/workers/worktree-lock.js';
+import { host } from '@platform/host/host.js';
 
 
 // `/prototype <app> [instrucción]` on an issue, or a plain-words request for

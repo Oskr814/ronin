@@ -4,12 +4,12 @@
 // still each run's transcript. Safe to run again. Ends comparing both.
 import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { closeDb, getDb } from '../src/platform/db/db.js';
-import { migrateToLatest } from '../src/platform/db/migrate.js';
-import { logsDir } from '../src/platform/agents/run-files.js';
-import { listRunsDb, putRun } from '../src/platform/agents/runs-store.js';
-import { readRunLines, summarizeRun } from '../src/domains/runs/data.js';
-import type { RunSummary } from '../src/platform/agents/run-record.js';
+import { closeDb, getDb } from '@platform/db/db.js';
+import { migrateToLatest } from '@platform/db/migrate.js';
+import { logsDir } from '@platform/agents/run-files.js';
+import { listRunsDb, putRun } from '@platform/agents/runs-store.js';
+import { readRunLines, summarizeRun } from '@domains/runs/data.js';
+import type { RunSummary } from '@platform/agents/run-record.js';
 import { sameContent } from './db-compare.js';
 
 const db = getDb();

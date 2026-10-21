@@ -9,6 +9,8 @@ import { defineConfig } from 'vite';
 export default defineConfig({
   root: fileURLToPath(new URL('.', import.meta.url)),
   plugins: [react()],
+  // The @apps/… @domains/… @platform/… @ui/… aliases, from tsconfig.json (#310).
+  resolve: { tsconfigPaths: true },
   build: {
     outDir: fileURLToPath(new URL('../../../dist/public/dashboard', import.meta.url)),
     emptyOutDir: true,

@@ -3,14 +3,14 @@ import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { config } from '../../platform/config/config.js';
+import { config } from '@platform/config/config.js';
 import type { AppRun, PrototypeTarget } from '../commands/prototype.js';
 import { createUser } from './accounts.js';
 import { createRequest, getRequest, MAX_REPRODUCTIONS, prototypePatchPath, requestImagePath, updateRequest } from './requests.js';
 
-vi.mock('../../platform/logger.js', () => ({ log: { info: vi.fn(), error: vi.fn() } }));
+vi.mock('@platform/logger.js', () => ({ log: { info: vi.fn(), error: vi.fn() } }));
 const sendMail = vi.fn(async () => {});
-vi.mock('../../platform/notify/notifier.js', () => ({ sendMail: (...args: unknown[]) => sendMail(...(args as [])) }));
+vi.mock('@platform/notify/notifier.js', () => ({ sendMail: (...args: unknown[]) => sendMail(...(args as [])) }));
 const runOnApp = vi.fn();
 const draftDiff = vi.fn(async () => 'diff --git a/T.cs b/T.cs\n+[Fact]');
 vi.mock('../commands/prototype.js', async (original) => ({

@@ -1,8 +1,8 @@
 import { zValidator } from '@hono/zod-validator';
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { config } from '../../platform/config/config.js';
-import { log } from '../../platform/logger.js';
+import { config } from '@platform/config/config.js';
+import { log } from '@platform/logger.js';
 import { dropCloseNote, noteClosing } from '../portal/follow.js';
 import { runAction } from './actions.js';
 import { HISTORY_DAYS, itemKey } from '../runs/data.js';
@@ -16,10 +16,10 @@ import { forgetGithub, repoGithub } from './github.js';
 import { itemRunKeys } from './list.js';
 import { repoLinear } from './linear.js';
 import { createFromDashboard, parseNewIssue, repoApps } from './new-issue.js';
-import { pendingReview, viewedFiles } from '../../platform/github/github-as-user.js';
+import { pendingReview, viewedFiles } from '@platform/github/github-as-user.js';
 import { touchSeen } from '../access/team.js';
 import { refusal, visibleRepos, visibleRuns } from '../access/visible.js';
-import { anyObject, body, jsonBody, onError, onlyJson, repoParam } from '../../platform/http/middleware.js';
+import { anyObject, body, jsonBody, onError, onlyJson, repoParam } from '@platform/http/middleware.js';
 import type { DashboardEnv } from '../access/http.js';
 import { detail, exploration, explorationContext, filesContext, itemContext, snapshot, todayWithCycles } from './service.js';
 

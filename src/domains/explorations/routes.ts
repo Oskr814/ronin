@@ -1,12 +1,12 @@
 import { Hono } from 'hono';
-import { log } from '../../platform/logger.js';
+import { log } from '@platform/logger.js';
 import { HISTORY_DAYS } from '../runs/data.js';
 import { isExplorationPr } from './review.js';
 import { explorationRunsOf, explorationList, explorationRows, exploreNow, inventoryViewOf, liveRuns, parseExploreNow, prsOf } from './board.js';
 import { repoGithub } from '../items/github.js';
 import { refusal, visibleRepos, visibleRuns } from '../access/visible.js';
 import type { Access } from '../access/access.js';
-import { anyObject, jsonBody, onError, onlyJson } from '../../platform/http/middleware.js';
+import { anyObject, jsonBody, onError, onlyJson } from '@platform/http/middleware.js';
 import type { DashboardEnv } from '../access/http.js';
 
 // Exploraciones (#155) from the dashboard, in Hono (#235, stage 6) —

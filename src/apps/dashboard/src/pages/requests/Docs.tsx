@@ -1,9 +1,9 @@
 import { useQuery } from '@tanstack/react-query';
 import { createContext, useContext, useEffect } from 'react';
-import { ApiError, client, ok } from '../../api.js';
-import { useShell } from '../../shell/hooks.js';
-import { when } from '../../lib/format.js';
-import { useViewState } from '../../lib/view-state.js';
+import { ApiError, client, ok } from '@apps/dashboard/src/api.js';
+import { useShell } from '@apps/dashboard/src/shell/hooks.js';
+import { when } from '@apps/dashboard/src/lib/format.js';
+import { useViewState } from '@apps/dashboard/src/lib/view-state.js';
 import { firstName, imagePath, REPRODUCTIONS, type Detail, type Message, type Reproduction } from './model.js';
 
 // What a request's tabs do on the page around them: show another tab, open

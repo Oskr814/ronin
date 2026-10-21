@@ -1,11 +1,11 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { readFile, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
-import { config } from '../../platform/config/config.js';
+import { config } from '@platform/config/config.js';
 import { extractPasted } from './extract.js';
 import { createMeeting, DuplicateMeeting, getMeeting, listMeetings, meetingDir, meetingTitle, putMeeting, readNotes, readOriginal, updateMeeting } from './meetings.js';
-import { setDb, type Db } from '../../platform/db/db.js';
-import { TEST_DATABASE_URL, testDb } from '../../platform/db/testing.js';
+import { setDb, type Db } from '@platform/db/db.js';
+import { TEST_DATABASE_URL, testDb } from '@platform/db/testing.js';
 
 const SC = 'redmotos/shoppingcart';
 const BM = 'Bmedical/bmedical';
