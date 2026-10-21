@@ -31,6 +31,12 @@ export function testHost(overrides: Partial<Host> = {}): Host {
     markdown: (text) => text,
     hasItem: () => false,
     refresh: vi.fn(),
+    snapshot: () => { throw new Error('sin snapshot'); },
+    subscribe: () => () => {},
+    project: () => '',
+    setProject: vi.fn(),
+    projectColor: () => 'var(--proj-0)',
+    openRun: vi.fn(),
     ...overrides,
   };
 }

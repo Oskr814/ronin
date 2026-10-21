@@ -1,0 +1,943 @@
+{
+ "now": "2026-10-21T15:00:00.000Z",
+ "snapshot": {
+  "me": "persona",
+  "access": {
+   "admin": true,
+   "repos": [
+    {
+     "repo": "acme/tienda",
+     "permission": "admin"
+    },
+    {
+     "repo": "acme/web",
+     "permission": "admin"
+    }
+   ]
+  },
+  "ronin": "ronin-bot",
+  "portalAdmin": false,
+  "pedidos": [],
+  "pedidosTotal": 0,
+  "reunionesPorRevisar": 0,
+  "repos": [
+   "acme/tienda",
+   "acme/web"
+  ],
+  "runner": {
+   "slots": {
+    "used": 1,
+    "limit": 4,
+    "repos": [
+     {
+      "repo": "acme/tienda",
+      "used": 1,
+      "limit": 2
+     },
+     {
+      "repo": "acme/web",
+      "used": 0,
+      "limit": 2
+     }
+    ]
+   },
+   "queue": [],
+   "tick": {},
+   "host": {
+    "cpu": 0.1,
+    "ram": 0.3,
+    "cores": 8,
+    "load": [
+     0.5,
+     0.4,
+     0.3
+    ],
+    "memUsedBytes": 3000000000,
+    "memTotalBytes": 8000000000
+   }
+  },
+  "usage": [],
+  "items": [
+   {
+    "id": "acme/tienda#41",
+    "repo": "acme/tienda",
+    "number": 41,
+    "kind": "issue",
+    "title": "Mostrar el teléfono del cliente en el pedido",
+    "status": "running",
+    "github": "open",
+    "runs": 1,
+    "listed": true,
+    "lastRun": {
+     "runId": "l5",
+     "taskType": "implement-slice",
+     "state": "running",
+     "startedAt": "2026-10-21T14:35:00.000Z",
+     "repo": "acme/tienda"
+    }
+   },
+   {
+    "id": "acme/tienda#42",
+    "repo": "acme/tienda",
+    "number": 42,
+    "kind": "issue",
+    "title": "El pie de página se corta en el teléfono",
+    "status": "blocked",
+    "github": "open",
+    "runs": 1,
+    "listed": true,
+    "block": {
+     "reason": "falta saber qué texto va en el pie",
+     "at": "2026-10-21T12:00:00.000Z"
+    },
+    "linear": {
+     "id": "TIE-12",
+     "url": "https://linear.app/x",
+     "state": "In Progress",
+     "project": {
+      "id": "p1",
+      "name": "Checkout"
+     }
+    }
+   },
+   {
+    "id": "acme/tienda#50",
+    "repo": "acme/tienda",
+    "number": 50,
+    "kind": "issue",
+    "title": "Cambio número 50 que espera una review",
+    "status": "waiting",
+    "github": "open",
+    "runs": 1,
+    "listed": true,
+    "slices": [
+     {
+      "n": 1,
+      "title": "a",
+      "status": "open",
+      "prNumber": 90,
+      "checked": false,
+      "checks": "passed"
+     }
+    ],
+    "pr": {
+     "number": 150,
+     "title": "PR 150",
+     "url": "",
+     "author": "ronin-bot",
+     "isDraft": false,
+     "reviewDecision": null,
+     "checks": [
+      {
+       "name": "ci",
+       "outcome": "passed"
+      }
+     ]
+    },
+    "lastRun": {
+     "runId": "l30",
+     "taskType": "implement-slice",
+     "state": "ok",
+     "startedAt": "2026-10-21T14:10:00.000Z",
+     "endedAt": "2026-10-21T14:30:00.000Z",
+     "repo": "acme/tienda"
+    },
+    "linear": {
+     "id": "TIE-20",
+     "url": "https://linear.app/x",
+     "state": "In Review",
+     "project": {
+      "id": "p2",
+      "name": "Pagos"
+     }
+    }
+   },
+   {
+    "id": "acme/tienda#51",
+    "repo": "acme/tienda",
+    "number": 51,
+    "kind": "issue",
+    "title": "Cambio número 51 que espera una review",
+    "status": "waiting",
+    "github": "open",
+    "runs": 1,
+    "listed": true,
+    "slices": [
+     {
+      "n": 1,
+      "title": "a",
+      "status": "open",
+      "prNumber": 90,
+      "checked": false,
+      "checks": "passed"
+     }
+    ],
+    "pr": {
+     "number": 151,
+     "title": "PR 151",
+     "url": "",
+     "author": "ronin-bot",
+     "isDraft": false,
+     "reviewDecision": "APPROVED",
+     "checks": [
+      {
+       "name": "ci",
+       "outcome": "passed"
+      }
+     ]
+    },
+    "lastRun": {
+     "runId": "l100",
+     "taskType": "implement-slice",
+     "state": "ok",
+     "startedAt": "2026-10-21T13:00:00.000Z",
+     "endedAt": "2026-10-21T13:20:00.000Z",
+     "repo": "acme/tienda"
+    }
+   },
+   {
+    "id": "acme/tienda#52",
+    "repo": "acme/tienda",
+    "number": 52,
+    "kind": "issue",
+    "title": "Cambio número 52 que espera una review",
+    "status": "waiting",
+    "github": "open",
+    "runs": 1,
+    "listed": true,
+    "slices": [
+     {
+      "n": 1,
+      "title": "a",
+      "status": "open",
+      "prNumber": 90,
+      "checked": false,
+      "checks": "passed"
+     }
+    ],
+    "pr": {
+     "number": 152,
+     "title": "PR 152",
+     "url": "",
+     "author": "ronin-bot",
+     "isDraft": false,
+     "reviewDecision": null,
+     "checks": [
+      {
+       "name": "ci",
+       "outcome": "passed"
+      }
+     ]
+    },
+    "lastRun": {
+     "runId": "l170",
+     "taskType": "implement-slice",
+     "state": "ok",
+     "startedAt": "2026-10-21T11:50:00.000Z",
+     "endedAt": "2026-10-21T12:10:00.000Z",
+     "repo": "acme/tienda"
+    }
+   },
+   {
+    "id": "acme/web#53",
+    "repo": "acme/web",
+    "number": 53,
+    "kind": "issue",
+    "title": "Cambio número 53 que espera una review",
+    "status": "waiting",
+    "github": "open",
+    "runs": 1,
+    "listed": true,
+    "slices": [
+     {
+      "n": 1,
+      "title": "a",
+      "status": "open",
+      "prNumber": 90,
+      "checked": false,
+      "checks": "passed"
+     }
+    ],
+    "pr": {
+     "number": 153,
+     "title": "PR 153",
+     "url": "",
+     "author": "ronin-bot",
+     "isDraft": false,
+     "reviewDecision": null,
+     "checks": []
+    },
+    "lastRun": {
+     "runId": "l240",
+     "taskType": "implement-slice",
+     "state": "ok",
+     "startedAt": "2026-10-21T10:40:00.000Z",
+     "endedAt": "2026-10-21T11:00:00.000Z",
+     "repo": "acme/tienda"
+    }
+   },
+   {
+    "id": "acme/web#54",
+    "repo": "acme/web",
+    "number": 54,
+    "kind": "issue",
+    "title": "Cambio número 54 que espera una review",
+    "status": "waiting",
+    "github": "open",
+    "runs": 1,
+    "listed": true,
+    "slices": [
+     {
+      "n": 1,
+      "title": "a",
+      "status": "open",
+      "prNumber": 90,
+      "checked": false,
+      "checks": "passed"
+     }
+    ],
+    "pr": {
+     "number": 154,
+     "title": "PR 154",
+     "url": "",
+     "author": "ronin-bot",
+     "isDraft": false,
+     "reviewDecision": null,
+     "checks": [
+      {
+       "name": "ci",
+       "outcome": "passed"
+      }
+     ]
+    },
+    "lastRun": {
+     "runId": "l310",
+     "taskType": "implement-slice",
+     "state": "ok",
+     "startedAt": "2026-10-21T09:30:00.000Z",
+     "endedAt": "2026-10-21T09:50:00.000Z",
+     "repo": "acme/tienda"
+    }
+   },
+   {
+    "id": "acme/web#77",
+    "repo": "acme/web",
+    "number": 77,
+    "kind": "pr",
+    "title": "Exploración: backoffice",
+    "status": "waiting",
+    "github": "open",
+    "note": "PR de exploración abierto",
+    "runs": 3,
+    "listed": true,
+    "pinned": true,
+    "lastRun": {
+     "runId": "l240",
+     "taskType": "implement-slice",
+     "state": "ok",
+     "startedAt": "2026-10-21T10:40:00.000Z",
+     "endedAt": "2026-10-21T11:00:00.000Z",
+     "repo": "acme/tienda"
+    }
+   },
+   {
+    "id": "acme/web#60",
+    "repo": "acme/web",
+    "number": 60,
+    "kind": "issue",
+    "title": "Ordenar la lista de clientes",
+    "status": "open",
+    "github": "open",
+    "runs": 1,
+    "listed": true
+   }
+  ],
+  "despliegues": false,
+  "exploraciones": [],
+  "previews": [
+   {
+    "repo": "acme/tienda",
+    "prNumber": 150,
+    "appName": "backoffice",
+    "url": "https://x",
+    "startedAt": "2026-10-21T14:10:00.000Z",
+    "expiresAt": "2026-10-21T17:10:00.000Z"
+   },
+   {
+    "repo": "acme/web",
+    "prNumber": 77,
+    "appName": "web",
+    "url": "https://x",
+    "startedAt": "2026-10-21T14:57:00.000Z",
+    "preparing": true
+   }
+  ],
+  "github": [
+   {
+    "repo": "acme/tienda",
+    "fetchedAt": "2026-10-21T14:59:00.000Z"
+   },
+   {
+    "repo": "acme/web",
+    "fetchedAt": "2026-10-21T14:59:00.000Z"
+   }
+  ],
+  "apps": {},
+  "linear": [
+   {
+    "repo": "acme/tienda",
+    "workspace": "acme",
+    "fetchedAt": "2026-10-21T14:58:00.000Z",
+    "cycle": {
+     "team": "TIE",
+     "number": 14,
+     "startsAt": "2026-10-13T06:00:00Z",
+     "endsAt": "2026-10-27T06:00:00Z"
+    }
+   }
+  ]
+ },
+ "today": {
+  "from": "2026-10-21T03:00:00.000Z",
+  "to": "2026-10-21T15:00:00.000Z",
+  "timeline": [
+   {
+    "runId": "r-acme/tienda-41-700",
+    "repo": "acme/tienda",
+    "itemId": "acme/tienda#41",
+    "taskType": "plan",
+    "startedAt": "2026-10-21T03:20:00.000Z",
+    "endedAt": "2026-10-21T03:32:00.000Z",
+    "state": "ok"
+   },
+   {
+    "runId": "r-acme/tienda-50-650",
+    "repo": "acme/tienda",
+    "itemId": "acme/tienda#50",
+    "taskType": "implement-slice",
+    "startedAt": "2026-10-21T04:10:00.000Z",
+    "endedAt": "2026-10-21T04:50:00.000Z",
+    "state": "ok"
+   },
+   {
+    "runId": "r-acme/tienda-51-640",
+    "repo": "acme/tienda",
+    "itemId": "acme/tienda#51",
+    "taskType": "fix-review",
+    "startedAt": "2026-10-21T04:20:00.000Z",
+    "endedAt": "2026-10-21T04:35:00.000Z",
+    "state": "error"
+   },
+   {
+    "runId": "r-acme/tienda-52-500",
+    "repo": "acme/tienda",
+    "itemId": "acme/tienda#52",
+    "taskType": "implement-slice",
+    "startedAt": "2026-10-21T06:40:00.000Z",
+    "endedAt": "2026-10-21T07:40:00.000Z",
+    "state": "timeout"
+   },
+   {
+    "runId": "r-acme/web-53-420",
+    "repo": "acme/web",
+    "itemId": "acme/web#53",
+    "taskType": "fix-issue",
+    "startedAt": "2026-10-21T08:00:00.000Z",
+    "endedAt": "2026-10-21T08:25:00.000Z",
+    "state": "ok"
+   },
+   {
+    "runId": "r-acme/web-54-400",
+    "repo": "acme/web",
+    "itemId": "acme/web#54",
+    "taskType": "implement-slice",
+    "startedAt": "2026-10-21T08:20:00.000Z",
+    "endedAt": "2026-10-21T08:22:00.000Z",
+    "state": "usage_limit"
+   },
+   {
+    "runId": "r-acme/web-77-300",
+    "repo": "acme/web",
+    "itemId": "acme/web#77",
+    "taskType": "explore-function",
+    "startedAt": "2026-10-21T10:00:00.000Z",
+    "endedAt": "2026-10-21T11:30:00.000Z",
+    "state": "ok"
+   },
+   {
+    "runId": "r-acme/web-77-280",
+    "repo": "acme/web",
+    "itemId": "acme/web#77",
+    "taskType": "explore-evaluate",
+    "startedAt": "2026-10-21T10:20:00.000Z",
+    "endedAt": "2026-10-21T10:30:00.000Z",
+    "state": "cut"
+   },
+   {
+    "runId": "r-acme/tienda-42-120",
+    "repo": "acme/tienda",
+    "itemId": "acme/tienda#42",
+    "taskType": "fix-issue",
+    "startedAt": "2026-10-21T13:00:00.000Z",
+    "endedAt": "2026-10-21T13:30:00.000Z",
+    "state": "ok"
+   },
+   {
+    "runId": "r-acme/tienda-41-15",
+    "repo": "acme/tienda",
+    "itemId": "acme/tienda#41",
+    "taskType": "implement-slice",
+    "startedAt": "2026-10-21T14:45:00.000Z",
+    "state": "running"
+   },
+   {
+    "runId": "r-acme/tienda-150-45",
+    "repo": "acme/tienda",
+    "itemId": "acme/tienda#150",
+    "taskType": "prepare-preview-data",
+    "startedAt": "2026-10-21T14:15:00.000Z",
+    "endedAt": "2026-10-21T14:23:00.000Z",
+    "state": "ok",
+    "group": "preview:x"
+   }
+  ],
+  "today": {
+   "runs": 11,
+   "finished": 10,
+   "ok": 8,
+   "failed": 3,
+   "usageLimit": 1,
+   "medianMs": 960000,
+   "p90Ms": 4500000,
+   "costUsd": 4.25
+  },
+  "yesterday": {
+   "runs": 10,
+   "ok": 8,
+   "finished": 10,
+   "costUsd": 3.9
+  },
+  "week": [
+   {
+    "day": "2026-10-15",
+    "runs": 4,
+    "ok": 3,
+    "finished": 4,
+    "medianMs": 540000,
+    "costUsd": 1.2
+   },
+   {
+    "day": "2026-10-16",
+    "runs": 9,
+    "ok": 8,
+    "finished": 9,
+    "medianMs": 840000,
+    "costUsd": 3.4
+   },
+   {
+    "day": "2026-10-17",
+    "runs": 3,
+    "ok": 3,
+    "finished": 3,
+    "medianMs": 360000,
+    "costUsd": 0.8
+   },
+   {
+    "day": "2026-10-18",
+    "runs": 12,
+    "ok": 9,
+    "finished": 11,
+    "medianMs": 1200000,
+    "costUsd": 5.1
+   },
+   {
+    "day": "2026-10-19",
+    "runs": 7,
+    "ok": 6,
+    "finished": 7,
+    "medianMs": 660000,
+    "costUsd": 2.2
+   },
+   {
+    "day": "2026-10-20",
+    "runs": 10,
+    "ok": 8,
+    "finished": 10,
+    "medianMs": 780000,
+    "costUsd": 3.9
+   },
+   {
+    "day": "2026-10-21",
+    "runs": 11,
+    "ok": 8,
+    "finished": 10,
+    "medianMs": 960000,
+    "costUsd": 4.25
+   }
+  ],
+  "cycles": [
+   {
+    "repo": "acme/tienda",
+    "workspace": "acme",
+    "team": "TIE",
+    "number": 14,
+    "startsAt": "2026-10-13T06:00:00Z",
+    "endsAt": "2026-10-27T06:00:00Z",
+    "scopeHistory": [
+     10,
+     11,
+     11,
+     13,
+     14,
+     14,
+     15,
+     16
+    ],
+    "doneHistory": [
+     0,
+     1,
+     2,
+     2,
+     4,
+     5,
+     7,
+     8
+    ],
+    "issues": [
+     {
+      "id": "c1",
+      "title": "Issue 1",
+      "url": "https://linear.app/x",
+      "number": 1,
+      "owner": "ronin",
+      "bucket": "done",
+      "project": {
+       "id": "p1",
+       "name": "Checkout"
+      }
+     },
+     {
+      "id": "c2",
+      "title": "Issue 2",
+      "url": "https://linear.app/x",
+      "number": 2,
+      "owner": "ana",
+      "bucket": "done",
+      "project": {
+       "id": "p1",
+       "name": "Checkout"
+      }
+     },
+     {
+      "id": "c3",
+      "title": "Issue 3",
+      "url": "https://linear.app/x",
+      "number": 3,
+      "owner": "ronin",
+      "bucket": "ronin",
+      "project": {
+       "id": "p1",
+       "name": "Checkout"
+      }
+     },
+     {
+      "id": "c4",
+      "title": "Issue 4",
+      "url": "https://linear.app/x",
+      "number": 4,
+      "owner": "ronin",
+      "bucket": "review",
+      "project": {
+       "id": "p2",
+       "name": "Pagos"
+      }
+     },
+     {
+      "id": "c5",
+      "title": "Issue 5",
+      "url": "https://linear.app/x",
+      "number": 5,
+      "owner": "ronin",
+      "bucket": "blocked",
+      "project": {
+       "id": "p2",
+       "name": "Pagos"
+      }
+     },
+     {
+      "id": "c6",
+      "title": "Issue 6",
+      "url": "https://linear.app/x",
+      "number": 6,
+      "owner": "ana",
+      "bucket": "started",
+      "project": {
+       "id": "p3",
+       "name": "Catálogo"
+      }
+     },
+     {
+      "id": "c7",
+      "title": "Issue 7",
+      "url": "https://linear.app/x",
+      "number": 7,
+      "owner": "",
+      "bucket": "todo"
+     },
+     {
+      "id": "c8",
+      "title": "Issue 8",
+      "url": "https://linear.app/x",
+      "number": 8,
+      "owner": "luis",
+      "bucket": "todo",
+      "project": {
+       "id": "p3",
+       "name": "Catálogo"
+      }
+     },
+     {
+      "id": "c9",
+      "title": "Issue 9",
+      "url": "https://linear.app/x",
+      "number": 9,
+      "owner": "luis",
+      "bucket": "done",
+      "project": {
+       "id": "p2",
+       "name": "Pagos"
+      }
+     },
+     {
+      "id": "c10",
+      "title": "Issue 10",
+      "url": "https://linear.app/x",
+      "number": 10,
+      "owner": "luis",
+      "bucket": "started"
+     }
+    ]
+   },
+   {
+    "repo": "acme/web",
+    "team": "WEB",
+    "number": 3,
+    "name": "Octubre",
+    "startsAt": "2026-10-07T06:00:00Z",
+    "endsAt": "2026-10-22T06:00:00Z",
+    "scopeHistory": [
+     5,
+     5,
+     6,
+     6,
+     6,
+     6,
+     7,
+     7,
+     7,
+     7,
+     8,
+     8,
+     8,
+     8
+    ],
+    "doneHistory": [
+     0,
+     0,
+     1,
+     1,
+     2,
+     3,
+     3,
+     4,
+     5,
+     6,
+     6,
+     7,
+     7,
+     7
+    ],
+    "issues": [
+     {
+      "id": "c21",
+      "title": "Issue 21",
+      "url": "https://linear.app/x",
+      "number": 21,
+      "owner": "ronin",
+      "bucket": "done"
+     },
+     {
+      "id": "c22",
+      "title": "Issue 22",
+      "url": "https://linear.app/x",
+      "number": 22,
+      "owner": "ana",
+      "bucket": "done"
+     },
+     {
+      "id": "c23",
+      "title": "Issue 23",
+      "url": "https://linear.app/x",
+      "number": 23,
+      "owner": "ronin",
+      "bucket": "ronin"
+     }
+    ]
+   }
+  ]
+ },
+ "empty": {
+  "from": "2026-10-21T03:00:00.000Z",
+  "to": "2026-10-21T15:00:00.000Z",
+  "timeline": [],
+  "today": {
+   "runs": 0,
+   "finished": 0,
+   "ok": 0,
+   "failed": 0,
+   "usageLimit": 0,
+   "medianMs": null,
+   "p90Ms": null,
+   "costUsd": 0
+  },
+  "yesterday": {
+   "runs": 10,
+   "ok": 8,
+   "finished": 10,
+   "costUsd": 3.9
+  },
+  "week": [
+   {
+    "day": "2026-10-15",
+    "runs": 4,
+    "ok": 3,
+    "finished": 4,
+    "medianMs": 540000,
+    "costUsd": 1.2
+   },
+   {
+    "day": "2026-10-16",
+    "runs": 9,
+    "ok": 8,
+    "finished": 9,
+    "medianMs": 840000,
+    "costUsd": 3.4
+   },
+   {
+    "day": "2026-10-17",
+    "runs": 3,
+    "ok": 3,
+    "finished": 3,
+    "medianMs": 360000,
+    "costUsd": 0.8
+   },
+   {
+    "day": "2026-10-18",
+    "runs": 12,
+    "ok": 9,
+    "finished": 11,
+    "medianMs": 1200000,
+    "costUsd": 5.1
+   },
+   {
+    "day": "2026-10-19",
+    "runs": 7,
+    "ok": 6,
+    "finished": 7,
+    "medianMs": 660000,
+    "costUsd": 2.2
+   },
+   {
+    "day": "2026-10-20",
+    "runs": 10,
+    "ok": 8,
+    "finished": 10,
+    "medianMs": 780000,
+    "costUsd": 3.9
+   },
+   {
+    "day": "2026-10-21",
+    "runs": 11,
+    "ok": 8,
+    "finished": 10,
+    "medianMs": 960000,
+    "costUsd": 4.25
+   }
+  ],
+  "cycles": []
+ },
+ "emptySnap": {
+  "me": "persona",
+  "access": {
+   "admin": true,
+   "repos": [
+    {
+     "repo": "acme/tienda",
+     "permission": "admin"
+    },
+    {
+     "repo": "acme/web",
+     "permission": "admin"
+    }
+   ]
+  },
+  "ronin": "ronin-bot",
+  "portalAdmin": false,
+  "pedidos": [],
+  "pedidosTotal": 0,
+  "reunionesPorRevisar": 0,
+  "repos": [
+   "acme/tienda",
+   "acme/web"
+  ],
+  "runner": {
+   "slots": {
+    "used": 1,
+    "limit": 4,
+    "repos": [
+     {
+      "repo": "acme/tienda",
+      "used": 1,
+      "limit": 2
+     },
+     {
+      "repo": "acme/web",
+      "used": 0,
+      "limit": 2
+     }
+    ]
+   },
+   "queue": [],
+   "tick": {},
+   "host": {
+    "cpu": 0.1,
+    "ram": 0.3,
+    "cores": 8,
+    "load": [
+     0.5,
+     0.4,
+     0.3
+    ],
+    "memUsedBytes": 3000000000,
+    "memTotalBytes": 8000000000
+   }
+  },
+  "usage": [],
+  "items": [],
+  "despliegues": false,
+  "exploraciones": [],
+  "previews": [],
+  "github": [
+   {
+    "repo": "acme/tienda",
+    "fetchedAt": "2026-10-21T14:59:00.000Z"
+   },
+   {
+    "repo": "acme/web",
+    "fetchedAt": "2026-10-21T14:59:00.000Z"
+   }
+  ],
+  "apps": {},
+  "linear": []
+ }
+}
