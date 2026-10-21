@@ -1,12 +1,13 @@
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { parse as parseYaml } from 'yaml';
 import { activeRepo } from '../../platform/agents/repo-context.js';
 import { config } from '../../platform/config/config.js';
 import type { AppDefinition, AppStep } from '../product-app/index.js';
+import { writeFileAtomic } from '../../platform/fs/atomic-json.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -89,8 +90,5 @@ export function parseSeedCatalog(raw: string): string {
 // Written whole or not at all: two previews with the same hash may write
 // it at once, and a reader never sees half of one.
 export async function saveSeedCatalog(path: string, text: string, header: string): Promise<void> {
-  await mkdir(dirname(path), { recursive: true });
-  const tmp = `${path}.${process.pid}.tmp`;
-  await writeFile(tmp, `${header.split('\n').map((l) => `# ${l}`).join('\n')}\n${text}\n`);
-  await rename(tmp, path);
+  await writeFileAtomic(path, `${header.split('\n').map((l) => `# ${l}`).join('\n')}\n${text}\n`);
 }

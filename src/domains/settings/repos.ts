@@ -5,7 +5,7 @@ import { log } from '../../platform/logger.js';
 import type { RepoEntry } from '../../platform/agents/repo-context.js';
 import { MAX_REPO_CONCURRENCY, validateRepos } from '../../platform/config/repos.js';
 import { linearKey, teamPlanning } from '../../platform/linear/linear-api.js';
-import { withJson } from '../portal/json-store.js';
+import { withJson } from '../../platform/fs/atomic-json.js';
 import { AjustesError, record } from './settings.js';
 import { repoApps } from '../items/new-issue.js';
 

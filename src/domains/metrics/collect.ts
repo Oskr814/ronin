@@ -1,7 +1,7 @@
 import { join } from 'node:path';
 import { config } from '../../platform/config/config.js';
 import { ghGraphql } from '../../platform/github/github.js';
-import { readJson, writeJson } from '../portal/json-store.js';
+import { readJson, writeJson } from '../../platform/fs/atomic-json.js';
 
 // What Métricas reads from GitHub (#222), per repo: issues and PRs with what
 // their times come from (when they closed and how, who they're assigned to,
