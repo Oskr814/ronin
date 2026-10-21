@@ -3,8 +3,8 @@
 // written this way reaches ronin like one written on GitHub — its webhook,
 // then the same handler — so nothing downstream needs to know it came from
 // the dashboard.
-import { timed } from '../timing.js';
 import { DomainError } from '../errors.js';
+import { githubFetch, parseRepo } from './rest.js';
 
 export interface Posted {
   id: number;
@@ -20,20 +20,8 @@ export class GithubUserError extends DomainError {
   }
 }
 
-const API = 'https://api.github.com';
-
 async function call<T>(token: string, method: string, path: string, body?: unknown): Promise<T> {
-  const response = await timed('github', () => fetch(`${API}${path}`, {
-    method,
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Accept: 'application/vnd.github+json',
-      'X-GitHub-Api-Version': '2022-11-28',
-      'User-Agent': 'ronin-dashboard',
-      ...(body ? { 'Content-Type': 'application/json' } : {}),
-    },
-    ...(body ? { body: JSON.stringify(body) } : {}),
-  }));
+  const response = await githubFetch(path, { token, method, body });
   if (response.ok) return (await response.json()) as T;
   // A 422 says what was wrong in `errors` (a line outside the diff), not in `message`.
   const said = await response.json().then((b: { message?: string; errors?: Array<string | { message?: string }> }) => [b?.message, ...(b?.errors ?? []).map((e) => (typeof e === 'string' ? e : e?.message))].filter(Boolean).join(': ') || undefined).catch(() => undefined);
@@ -92,11 +80,7 @@ export async function assignIssue(token: string, repo: string, number: number, a
 // GraphQL, as the person: what REST doesn't have (resolving a thread,
 // marking a file as viewed). GitHub answers 200 with `errors` when it says no.
 async function graphql<T>(token: string, query: string, variables: Record<string, unknown>, repo: string): Promise<T> {
-  const response = await timed('github', () => fetch(`${API}/graphql`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'User-Agent': 'ronin-dashboard' },
-    body: JSON.stringify({ query, variables }),
-  }));
+  const response = await githubFetch('/graphql', { token, method: 'POST', body: { query, variables } });
   if (response.status === 401) throw new GithubUserError('Tu sesión de GitHub venció o se revocó. Volvé a entrar.', true);
   const body = (await response.json().catch(() => ({}))) as { data?: T; errors?: Array<{ message: string; type?: string }> };
   if (body.errors?.length) {
@@ -153,7 +137,7 @@ query($owner: String!, $repo: String!, $number: Int!, $after: String) {
 // The files the person marked as viewed on the PR, as GitHub keeps them:
 // one that changed since goes back to unviewed (DISMISSED).
 export async function viewedFiles(token: string, repo: string, prNumber: number): Promise<string[]> {
-  const [owner, name] = repo.split('/');
+  const { owner, name } = parseRepo(repo);
   type Page = { repository: { pullRequest: { files: { pageInfo: { hasNextPage: boolean; endCursor: string | null }; nodes: Array<{ path: string; viewerViewedState: 'VIEWED' | 'UNVIEWED' | 'DISMISSED' }> } } } };
   const viewed: string[] = [];
   let after: string | null = null;
@@ -219,7 +203,7 @@ query($owner: String!, $repo: String!, $number: Int!, $after: String) {
 }`;
 
 export async function pendingReview(token: string, repo: string, prNumber: number): Promise<PendingReview | null> {
-  const [owner, name] = repo.split('/');
+  const { owner, name } = parseRepo(repo);
   type Node = { id: string; path: string; subjectType: 'LINE' | 'FILE'; diffSide: 'LEFT' | 'RIGHT'; line: number | null; startLine: number | null; originalLine: number | null; comments: { nodes: Array<{ id: string; databaseId: number; body: string; createdAt: string; state: 'PENDING' | 'SUBMITTED' }> } };
   type Page = { repository: { pullRequest: { reviews: { nodes: Array<{ id: string; viewerDidAuthor: boolean }> }; reviewThreads: { pageInfo: { hasNextPage: boolean; endCursor: string | null }; nodes: Node[] } } } };
   let review: string | undefined;

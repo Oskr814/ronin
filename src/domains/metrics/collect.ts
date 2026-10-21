@@ -2,6 +2,7 @@ import { join } from 'node:path';
 import { config } from '../../platform/config/config.js';
 import { ghGraphql } from '../../platform/github/github.js';
 import { readJson, writeJson } from '../../platform/fs/atomic-json.js';
+import { parseRepo } from '../../platform/github/rest.js';
 
 // What Métricas reads from GitHub (#222), per repo: issues and PRs with what
 // their times come from (when they closed and how, who they're assigned to,
@@ -221,7 +222,7 @@ export function readRepoData(repo: string): Promise<RepoData | null> {
 
 // Brings the repo's file up to date with GitHub and returns it.
 export async function syncRepo(repo: string, now = Date.now(), graphql: Graphql = ghGraphql): Promise<RepoData> {
-  const [owner, name] = repo.split('/');
+  const { owner, name } = parseRepo(repo);
   const previous = await readRepoData(repo);
   const since = previous ? Date.parse(previous.syncedAt) - OVERLAP_MS : now - HISTORY_DAYS * DAY;
   const data: RepoData = previous ?? { repo, syncedAt: '', issues: {}, prs: {}, releases: [] };

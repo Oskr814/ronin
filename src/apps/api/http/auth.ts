@@ -4,6 +4,7 @@ import { log } from '../../../platform/logger.js';
 import { timed } from '../../../platform/timing.js';
 import { parseCookies } from '../../../platform/http/cookies.js';
 import type { Session } from '../../../domains/access/http.js';
+import { githubFetch } from '../../../platform/github/rest.js';
 
 // Login with GitHub for the dashboard (#65). The OAuth App asks for the
 // `repo` scope (#93): what the dashboard does on GitHub — a comment, a
@@ -134,7 +135,7 @@ export const githubOAuth: GithubOAuth = {
     return { token: body.access_token, scopes: (body.scope ?? '').split(',').map((s) => s.trim()).filter(Boolean) };
   },
   async userLogin(token) {
-    const response = await timed('github', () => fetch('https://api.github.com/user', { headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'User-Agent': 'ronin-dashboard' } }));
+    const response = await githubFetch('/user', { token });
     if (!response.ok) throw new Error(`GitHub /user respondió ${response.status}`);
     const body = (await response.json()) as { login?: string };
     if (!body.login) throw new Error('GitHub /user no trajo el login');
@@ -142,11 +143,7 @@ export const githubOAuth: GithubOAuth = {
   },
   async revokeToken(token, config) {
     const basic = Buffer.from(`${config.githubClientId}:${config.githubClientSecret}`).toString('base64');
-    const response = await timed('github', () => fetch(`https://api.github.com/applications/${config.githubClientId}/token`, {
-      method: 'DELETE',
-      headers: { Authorization: `Basic ${basic}`, Accept: 'application/vnd.github+json', 'Content-Type': 'application/json', 'User-Agent': 'ronin-dashboard' },
-      body: JSON.stringify({ access_token: token }),
-    }));
+    const response = await githubFetch(`/applications/${config.githubClientId}/token`, { method: 'DELETE', authorization: `Basic ${basic}`, body: { access_token: token } });
     // 404: GitHub no longer knows it (revoked from the account settings).
     if (!response.ok && response.status !== 404) throw new Error(`GitHub respondió ${response.status} al revocar el token`);
   },
