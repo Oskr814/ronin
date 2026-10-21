@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { ajustesRoutes } from '../ajustes/routes.js';
 import { deployRoutes } from '../deploy/routes.js';
 import { explorationRoutes } from '../exploration/routes.js';
 import { meetingsRoutes } from '../meetings/routes.js';
@@ -17,10 +18,11 @@ export const dashboardApp = new Hono<DashboardEnv>()
   .route('/api/reuniones', meetingsRoutes())
   .route('/api/despliegues', deployRoutes())
   .route('/api/metricas', metricsRoutes())
-  .route('/api/exploraciones', explorationRoutes());
+  .route('/api/exploraciones', explorationRoutes())
+  .route('/api/ajustes', ajustesRoutes());
 
 export type DashboardApi = typeof dashboardApp;
 
 // The paths it owns.
-const GROUPS = ['/api/pedidos', '/api/portal-admin', '/api/reuniones', '/api/despliegues', '/api/metricas', '/api/exploraciones'];
+const GROUPS = ['/api/pedidos', '/api/portal-admin', '/api/reuniones', '/api/despliegues', '/api/metricas', '/api/exploraciones', '/api/ajustes'];
 export const ownsPath = (path: string) => GROUPS.some((group) => path === group || path.startsWith(`${group}/`));

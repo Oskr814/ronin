@@ -692,7 +692,7 @@ La caché es la misma idea que la de los repos: `DASHBOARD_GITHUB_TTL_SECONDS`, 
 
 #### 15.9 API
 
-Todo, salvo los webhooks y `/api/auth/*`, pide sesión. Las rutas pasan a Hono de a un grupo (#235, etapa 6): cada grupo vive con su dominio (`portal/routes-dashboard.ts`, `meetings/routes.ts`, `deploy/routes.ts`, `metrics/routes.ts`, `exploration/routes.ts`) y `server/dashboard-app.ts` los monta; el resto sigue en `server/api/dashboard.ts`. Las rutas y lo que devuelven no cambian:
+Todo, salvo los webhooks y `/api/auth/*`, pide sesión. Las rutas pasan a Hono de a un grupo (#235, etapa 6): cada grupo vive con su dominio (`portal/routes-dashboard.ts`, `meetings/routes.ts`, `deploy/routes.ts`, `metrics/routes.ts`, `exploration/routes.ts`, `ajustes/routes.ts`) y `server/dashboard-app.ts` los monta; el resto sigue en `server/api/dashboard.ts`. Las rutas y lo que devuelven no cambian:
 
 | Ruta | Qué devuelve |
 |---|---|
@@ -1376,6 +1376,8 @@ El engranaje junto a *ronin*, arriba de la barra lateral, abre `/ajustes/<secci�
 - **Administración**, solo admins: *General*, *Usuarios* (19.3, 19.4), *Repos* (19.6) con una entrada por repo, *Agentes*, *Cuentas de Claude* (19.11), *Exploración*, *Previews*, *Conexiones* (19.7) y *Registro* (19.8).
 
 Cada campo se guarda al salir de él. Lo que ronin necesita del servidor (secretos, rutas, puertos, `RUNNER_ID`, `PREVIEW_PORT_RANGE`) solo se ve.
+
+Las rutas (`/api/ajustes/*`) están en `ajustes/routes.ts`, en Hono: quién puede qué, el JSON y los errores. Lo que valida y guarda cada sección sigue en `server/api/ajustes.ts`, `usuarios.ts`, `repos-admin.ts` y `cuentas-claude.ts`.
 
 #### 19.2 Valores: el del tablero, después `.env`, después el de por defecto
 
