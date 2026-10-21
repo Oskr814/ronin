@@ -253,8 +253,8 @@ export function renderDigest(opts: { since: string; branch: string; repo: string
       lines.push('| Ficha | Tipo | Gravedad | Propuesta | Función | Estado |', '|---|---|---|---|---|---|');
       for (const f of mine) {
         const file = `https://github.com/${opts.repo}/blob/${opts.branch}/${EXPLORATION_DIR}/${appName}/findings/${findingFileName(f)}`;
-        const estado = f.estado === 'rechazado' ? `rechazada${f.motivo ? `: ${f.motivo}` : ''}` : f.issue ? `issue #${f.issue}` : f.estado;
-        lines.push(`| [${f.id}](${file}) | ${f.tipo} | \`${f.gravedad}\` | ${f.titulo.replace(/\|/g, '/')}${f.entorno ? ' _(entorno de dev)_' : ''} | \`${f.funcion}\` | ${estado.replace(/\|/g, '/')} |`);
+        const state = f.estado === 'rechazado' ? `rechazada${f.motivo ? `: ${f.motivo}` : ''}` : f.issue ? `issue #${f.issue}` : f.estado;
+        lines.push(`| [${f.id}](${file}) | ${f.tipo} | \`${f.gravedad}\` | ${f.titulo.replace(/\|/g, '/')}${f.entorno ? ' _(entorno de dev)_' : ''} | \`${f.funcion}\` | ${state.replace(/\|/g, '/')} |`);
       }
       lines.push('');
     }

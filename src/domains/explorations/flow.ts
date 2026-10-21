@@ -290,14 +290,14 @@ async function applyFeedback(pr: PullRequestStatus, batch: string): Promise<Redo
     const meta = memory.findings.find((f) => f.id === p.findingId);
     comments.push({ commentId: p.commentId, findingId: p.findingId, titulo: meta?.titulo ?? p.findingId, body: p.body, conversacion: p.conversacion });
   }
-  const fichas: FindingSummary[] = [];
+  const cards: FindingSummary[] = [];
   if (general.length > 0) {
-    for (const app of apps) for (const f of (await loadMemory(memoryDirFor(batchDir, app))).findings) fichas.push({ app, id: f.id, titulo: f.titulo, estado: f.estado, viewport: f.viewport });
+    for (const app of apps) for (const f of (await loadMemory(memoryDirFor(batchDir, app))).findings) cards.push({ app, id: f.id, titulo: f.titulo, estado: f.estado, viewport: f.viewport });
   }
   await mkdir(explorationOutDir(), { recursive: true });
   const outputPath = join(explorationOutDir(), `feedback-${pr.number}.json`);
   await rm(outputPath, { force: true });
-  await runAgentTask(explorationTask({ type: 'explore-feedback', prNumber: pr.number, checkoutDir: batchDir, comments, ...(general.length > 0 ? { general: general.map(({ author: _author, ...g }) => g), fichas } : {}), outputPath }));
+  await runAgentTask(explorationTask({ type: 'explore-feedback', prNumber: pr.number, checkoutDir: batchDir, comments, ...(general.length > 0 ? { general: general.map(({ author: _author, ...g }) => g), fichas: cards } : {}), outputPath }));
   const parsed = JSON.parse(await readFile(outputPath, 'utf8')) as { acciones?: FeedbackAction[] };
 
   const replies: Array<{ commentId: number; kind: 'issue' | 'review'; body: string }> = [];
@@ -316,22 +316,22 @@ async function applyFeedback(pr: PullRequestStatus, batch: string): Promise<Redo
     const path = join(memoryDir, 'findings', findingFileName(meta));
     if (action.accion === 'rechazar' && action.motivo) {
       const finding = parseFinding(await readFile(path, 'utf8'));
-      const motivo = action.motivo.trim().slice(0, 300);
-      await writeFile(path, serializeFinding({ ...finding, estado: 'rechazado', motivo, ...reviewed }));
-      await appendKnowledge(memoryDir, `${motivo} (${findingId}, rechazada en #${pr.number})`);
-      changes.push({ findingId, titulo: finding.titulo, kind: 'rechazada', detail: motivo });
-      if (finding.issue) toClose.push({ issue: finding.issue, findingId, motivo });
+      const reason = action.motivo.trim().slice(0, 300);
+      await writeFile(path, serializeFinding({ ...finding, estado: 'rechazado', motivo: reason, ...reviewed }));
+      await appendKnowledge(memoryDir, `${reason} (${findingId}, rechazada en #${pr.number})`);
+      changes.push({ findingId, titulo: finding.titulo, kind: 'rechazada', detail: reason });
+      if (finding.issue) toClose.push({ issue: finding.issue, findingId, motivo: reason });
     } else if (action.accion === 'editar') {
       const finding = parseFinding(await readFile(path, 'utf8'));
-      const titulo = action.titulo?.trim() ? clip(action.titulo, LIMITS.titulo) : finding.titulo;
+      const title = action.titulo?.trim() ? clip(action.titulo, LIMITS.titulo) : finding.titulo;
       let body = action.propuesta?.trim() ? replaceProposal(finding.body, action.propuesta.slice(0, 1600)) : finding.body;
-      if (titulo !== finding.titulo) body = body.replace(/^## .*$/m, `## ${titulo}`);
+      if (title !== finding.titulo) body = body.replace(/^## .*$/m, `## ${title}`);
       // The file name follows the title: a new title moves the file.
       await rm(path, { force: true });
-      await writeFile(join(memoryDir, 'findings', findingFileName({ id: finding.id, titulo })), serializeFinding({ ...finding, titulo, body, ...reviewed }));
+      await writeFile(join(memoryDir, 'findings', findingFileName({ id: finding.id, titulo: title })), serializeFinding({ ...finding, titulo: title, body, ...reviewed }));
       if (action.rehacerDespues?.trim()) redo.push({ app, findingId, instruction: action.rehacerDespues.trim().slice(0, 1200), commentId, ...(kind === 'issue' ? { kind } : {}) });
-      const what = [titulo !== finding.titulo ? `new title "${titulo}"` : '', action.propuesta?.trim() ? `new proposal: ${action.propuesta.trim().slice(0, 300)}` : ''].filter(Boolean).join('; ');
-      changes.push({ findingId, titulo, kind: 'editada', detail: what || 'proposal adjusted', redo: Boolean(action.rehacerDespues?.trim()) });
+      const what = [title !== finding.titulo ? `new title "${title}"` : '', action.propuesta?.trim() ? `new proposal: ${action.propuesta.trim().slice(0, 300)}` : ''].filter(Boolean).join('; ');
+      changes.push({ findingId, titulo: title, kind: 'editada', detail: what || 'proposal adjusted', redo: Boolean(action.rehacerDespues?.trim()) });
     }
   };
 

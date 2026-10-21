@@ -52,15 +52,15 @@ export async function runFindingCardAction(
 ): Promise<Posted & { ficha: string }> {
   const action = ACTIONS.find((a) => a === request.action);
   if (!action) throw new FindingCardActionError('Esa acción no existe.');
-  const ficha: FindingCard | undefined = review.fichas.find((f) => `${f.app}/${f.id}` === request.ficha);
-  if (!ficha) throw new FindingCardActionError('Esa ficha no está en este PR.');
-  if ((ficha.estado === 'rechazado' || ficha.estado === 'aprobado') && !ON_DECIDED.includes(action)) throw new FindingCardActionError(`${ficha.id} ya está ${ficha.estado === 'rechazado' ? 'rechazada' : 'aprobada'}: solo se puede comentar.`);
+  const card: FindingCard | undefined = review.fichas.find((f) => `${f.app}/${f.id}` === request.ficha);
+  if (!card) throw new FindingCardActionError('Esa ficha no está en este PR.');
+  if ((card.estado === 'rechazado' || card.estado === 'aprobado') && !ON_DECIDED.includes(action)) throw new FindingCardActionError(`${card.id} ya está ${card.estado === 'rechazado' ? 'rechazada' : 'aprobada'}: solo se puede comentar.`);
   const text = typeof request.text === 'string' ? request.text.trim().slice(0, MAX_TEXT) : '';
   if (!text) throw new FindingCardActionError('Falta el texto.');
   if (request.redo === true && action !== 'cambios') throw new FindingCardActionError('Rehacer el después va con "Pedir cambios".');
-  const posted = await post(session.token, entry.productRepo, pr.number, ficha.path, findingCardComment(action, text, request.redo === true));
-  log.info(`tablero: ${session.login} comentó ${action} en ${ficha.id} de ${entry.productRepo}#${pr.number} (${posted.url})`);
-  return { ...posted, ficha: `${ficha.app}/${ficha.id}` };
+  const posted = await post(session.token, entry.productRepo, pr.number, card.path, findingCardComment(action, text, request.redo === true));
+  log.info(`tablero: ${session.login} comentó ${action} en ${card.id} de ${entry.productRepo}#${pr.number} (${posted.url})`);
+  return { ...posted, ficha: `${card.app}/${card.id}` };
 }
 
 // A general comment on the PR: about several findings at once ("los de

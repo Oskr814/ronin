@@ -131,9 +131,9 @@ export function parseDiscoveredFunctions(raw: string): { functions: DiscoveredFu
   const strings = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string' && x.length > 0) : []);
   for (const entry of list) {
     const id = typeof entry?.id === 'string' ? entry.id.trim().toLowerCase().replace(/[^a-z0-9._-]+/g, '-') : '';
-    const nombre = typeof entry?.nombre === 'string' ? entry.nombre.trim() : '';
+    const name = typeof entry?.nombre === 'string' ? entry.nombre.trim() : '';
     const rutas = strings(entry?.rutas);
-    if (!id || !nombre || rutas.length === 0) {
+    if (!id || !name || rutas.length === 0) {
       dropped.push(`entrada inválida: ${JSON.stringify(entry).slice(0, 120)}`);
       continue;
     }
@@ -142,7 +142,7 @@ export function parseDiscoveredFunctions(raw: string): { functions: DiscoveredFu
       continue;
     }
     seen.add(id);
-    functions.push({ id, nombre, rutas, roles: strings(entry.roles), archivos: strings(entry.archivos) });
+    functions.push({ id, nombre: name, rutas, roles: strings(entry.roles), archivos: strings(entry.archivos) });
   }
   return { functions, dropped };
 }

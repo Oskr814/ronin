@@ -114,8 +114,8 @@ export function parseCandidate(raw: unknown, functionId: string, outDir: string)
   if (!isObject(raw)) throw new Error('no es un objeto');
   const tipo = oneOf(raw.tipo, ['hallazgo', 'idea'] as const, 'tipo');
   const senal = tipo === 'idea' ? 'idea' : oneOf(raw.senal, SIGNALS, 'senal');
-  const pasos = (Array.isArray(raw.pasos) ? raw.pasos : []).slice(0, LIMITS.pasos).map((p: unknown, i: number) => text(p, `pasos[${i}]`, LIMITS.paso));
-  if (tipo === 'hallazgo' && pasos.length === 0) throw new Error('un hallazgo necesita los pasos para reproducirlo');
+  const steps = (Array.isArray(raw.pasos) ? raw.pasos : []).slice(0, LIMITS.pasos).map((p: unknown, i: number) => text(p, `pasos[${i}]`, LIMITS.paso));
+  if (tipo === 'hallazgo' && steps.length === 0) throw new Error('un hallazgo necesita los pasos para reproducirlo');
   const evidencia: Evidence[] = (Array.isArray(raw.evidencia) ? raw.evidencia : []).slice(0, LIMITS.evidencia).flatMap((e: unknown): Evidence[] => {
     if (!isObject(e)) return [];
     const kind = ['screenshot', 'consola', 'red', 'medicion'].includes(e.tipo) ? (e.tipo as Evidence['tipo']) : undefined;
@@ -126,10 +126,10 @@ export function parseCandidate(raw: unknown, functionId: string, outDir: string)
   });
   if (tipo === 'hallazgo' && evidencia.length === 0) throw new Error('un hallazgo necesita evidencia observada usando la app');
   const afterPath = isObject(raw.despues) ? insideDir(raw.despues.imagen, outDir) : undefined;
-  const despues = afterPath && /\.(png|jpe?g|html?)$/i.test(afterPath)
+  const after = afterPath && /\.(png|jpe?g|html?)$/i.test(afterPath)
     ? { imagen: afterPath, ...(typeof raw.despues.nota === 'string' && raw.despues.nota.trim() ? { nota: raw.despues.nota.trim().slice(0, LIMITS.paso) } : {}) }
     : undefined;
-  if (tipo === 'idea' && !despues) throw new Error('una idea necesita la imagen del después');
+  if (tipo === 'idea' && !after) throw new Error('una idea necesita la imagen del después');
   const huellaParts = String(raw.huella ?? '').split('|').map((p) => p.trim()).filter(Boolean);
   if (huellaParts.length < 2) throw new Error('"huella" necesita al menos "<función>|<qué falla>"');
   if (huellaParts[0] !== functionId) huellaParts.unshift(functionId);
@@ -140,12 +140,12 @@ export function parseCandidate(raw: unknown, functionId: string, outDir: string)
     gravedad: tipo === 'idea' ? 'pulido' : oneOf(raw.gravedad, SEVERITIES, 'gravedad'),
     viewport: oneOf(raw.viewport, VIEWPORTS, 'viewport'),
     huella: huellaParts.join('|'),
-    pasos,
+    pasos: steps,
     observado: tipo === 'idea' ? (typeof raw.observado === 'string' ? raw.observado.trim().slice(0, LIMITS.texto) : '') : text(raw.observado, 'observado', LIMITS.texto),
     esperado: tipo === 'idea' ? (typeof raw.esperado === 'string' ? raw.esperado.trim().slice(0, LIMITS.texto) : '') : text(raw.esperado, 'esperado', LIMITS.texto),
     evidencia,
     propuesta: text(raw.propuesta, 'propuesta', LIMITS.propuesta),
-    ...(despues ? { despues } : {}),
+    ...(after ? { despues: after } : {}),
     ...(insideDir(raw.parche, outDir) ? { parche: insideDir(raw.parche, outDir) } : {}),
   };
 }
@@ -154,7 +154,7 @@ export function parseFunctionResult(raw: string, functionId: string, outDir: str
   const parsed: unknown = JSON.parse(raw);
   if (!isObject(parsed)) throw new Error('result.json no contiene un objeto JSON');
   const dropped: string[] = [];
-  const tareas: TriedTask[] = (Array.isArray(parsed.tareas) ? parsed.tareas : []).flatMap((t: unknown): TriedTask[] => {
+  const tasks: TriedTask[] = (Array.isArray(parsed.tareas) ? parsed.tareas : []).flatMap((t: unknown): TriedTask[] => {
     if (!isObject(t) || !VIEWPORTS.includes(t.viewport) || typeof t.tarea !== 'string') return [];
     return [{
       viewport: t.viewport,
@@ -172,7 +172,7 @@ export function parseFunctionResult(raw: string, functionId: string, outDir: str
       dropped.push(`candidato ${i}: ${(error as Error).message}`);
     }
   });
-  return { result: { tareas, candidatos }, dropped };
+  return { result: { tareas: tasks, candidatos }, dropped };
 }
 
 export interface Verdict {
@@ -315,7 +315,7 @@ export function parseFindingBody(body: string): FindingBodyParts {
   const evidence = section(text, 'Evidencia');
   const proposal = section(text, 'Propuesta');
   const patch = /```diff\n([\s\S]*?)\n```/.exec(proposal)?.[1];
-  const despues = images(proposal, 'Después')[0];
+  const after = images(proposal, 'Después')[0];
   return {
     functionName: header?.[1].trim() ?? '',
     pasos: [...section(text, 'Cómo reproducirlo').matchAll(/^\d+\. (.*)$/gm)].map((m) => m[1].trim()),
@@ -324,7 +324,7 @@ export function parseFindingBody(body: string): FindingBodyParts {
     evidencia: [...evidence.matchAll(/^- ([\w-]+): (.*)$/gm)].filter((m) => m[1] !== 'captura').map((m) => ({ tipo: m[1], detalle: m[2].trim() })),
     antes: images(evidence, 'Antes'),
     propuesta: proposal.split(/\n\*\*Después\*\*|\n<details>/)[0].trim(),
-    ...(despues ? { despues } : {}),
+    ...(after ? { despues: after } : {}),
     ...(patch ? { parche: patch } : {}),
   };
 }

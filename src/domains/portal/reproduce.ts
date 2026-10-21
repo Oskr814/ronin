@@ -131,13 +131,13 @@ export function parseReproduction(raw: string, outDir: string): ReproductionOutp
     shots.push({ imagen: path, kind, ...(caption ? { nota: caption } : {}) });
   }
   const test = parseTest(r.test);
-  const pregunta = r.reproducido ? undefined : text(r.pregunta, 1000);
+  const question = r.reproducido ? undefined : text(r.pregunta, 1000);
   const reason = text(r.motivo, 1000);
   const fix = r.arreglo === 'pequeño' ? 'small' : r.arreglo === 'grande' ? 'big' : undefined;
   return {
     reproduced: r.reproducido,
     mensaje,
-    ...(pregunta ? { pregunta } : {}),
+    ...(question ? { pregunta: question } : {}),
     steps,
     ...(test ? { test } : {}),
     // A fix needs the error reproduced first.

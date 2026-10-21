@@ -27,16 +27,16 @@ await updateSettings(dataDir, 'importado', (current) => {
 
 // The record, oldest first, only into an empty table.
 setDb(null);
-const registro = (await readSettingsLog(dataDir, Number.MAX_SAFE_INTEGER)).reverse();
+const logEntries = (await readSettingsLog(dataDir, Number.MAX_SAFE_INTEGER)).reverse();
 setDb(db);
 const already = Number((await db.selectFrom('settings_log').select((eb) => eb.fn.countAll().as('n')).executeTakeFirstOrThrow()).n);
-if (already === 0) for (const entry of registro) await appendSettingsLog(dataDir, entry);
+if (already === 0) for (const entry of logEntries) await appendSettingsLog(dataDir, entry);
 else console.log(`El registro ya tenía ${already} cambios en la base: no se copió de nuevo.`);
 
 const inDb = await readSettings(dataDir);
 const same = sameContent(inDb, { values: file.values, ...(file.tasks && Object.keys(file.tasks).length ? { tasks: file.tasks } : {}), ...(file.accounts && Object.keys(file.accounts).length ? { accounts: file.accounts } : {}) });
 const logCount = Number((await db.selectFrom('settings_log').select((eb) => eb.fn.countAll().as('n')).executeTakeFirstOrThrow()).n);
 console.log(`Ajustes: ${Object.keys(file.values).length} valores, ${Object.keys(file.tasks ?? {}).length} tareas, ${Object.keys(file.accounts ?? {}).length} cuentas en ${join(dataDir, 'settings.json')}.`);
-console.log(`En la base: ${same ? 'iguales' : 'DISTINTOS, revisar'}. Registro: ${registro.length} en el archivo, ${logCount} en la base.`);
+console.log(`En la base: ${same ? 'iguales' : 'DISTINTOS, revisar'}. Registro: ${logEntries.length} en el archivo, ${logCount} en la base.`);
 await closeDb();
-if (!same || logCount < registro.length) process.exit(1);
+if (!same || logCount < logEntries.length) process.exit(1);

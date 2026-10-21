@@ -128,7 +128,7 @@ async function readFindingCards(entry: RepoEntry, pr: ExplorationPr): Promise<Om
   const apps = [...new Set(changed.map((f) => f.split('/')[2]).filter(Boolean))].sort();
   const blob = (path: string) => `https://github.com/${entry.productRepo}/blob/${pr.headRefName.split('/').map(encodeURIComponent).join('/')}/${path}`;
 
-  const fichas: Array<Omit<FindingCard, 'comments'>> = [];
+  const cards: Array<Omit<FindingCard, 'comments'>> = [];
   for (const app of apps) {
     const findingsDir = `${EXPLORATION_DIR}/${app}/findings`;
     const baseFiles = lines(await git(dir, ['ls-tree', '-r', '--name-only', base, '--', findingsDir]).catch(() => ''));
@@ -141,7 +141,7 @@ async function readFindingCards(entry: RepoEntry, pr: ExplorationPr): Promise<Om
         const { body, huella: _huella, semilla: _semilla, fecha: _fecha, ...meta } = parseFinding(await git(dir, ['show', `${head}:${path}`]));
         const parts = parseFindingBody(body);
         const previousAfterImage = await previousAfter(dir, base, head, path, parts.despues?.url);
-        fichas.push({ app, ...meta, ...parts, path, url: blob(path), ...(previousAfterImage ? { previousAfterImage } : {}) });
+        cards.push({ app, ...meta, ...parts, path, url: blob(path), ...(previousAfterImage ? { previousAfterImage } : {}) });
       } catch (error) {
         log.error(`tablero: no se pudo leer la ficha ${path} de #${pr.number}`, error);
       }
@@ -172,7 +172,7 @@ async function readFindingCards(entry: RepoEntry, pr: ExplorationPr): Promise<Om
   return {
     branch: pr.headRefName,
     base: pr.baseRefName,
-    fichas: fichas
+    fichas: cards
       .sort((a, b) => a.app.localeCompare(b.app) || a.id.localeCompare(b.id))
       .map((f) => ({ ...f, comments: (byFindingCard.get(`${f.app}/${f.id}`) ?? []).sort((a, b) => a.id - b.id) })),
     runs,

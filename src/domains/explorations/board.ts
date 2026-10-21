@@ -151,19 +151,19 @@ export async function explorationList(entries: RepoEntry[], rows: ExplorationRow
   return Promise.all(rows.map(async (row) => {
     const entry = entries.find((e) => e.productRepo === row.repo)!;
     const last = appRuns(runs, row.repo, row.app).sort((a, b) => b.startedAt.localeCompare(a.startedAt))[0];
-    let fichas: FindingCardCounts | null = null;
+    let cardCounts: FindingCardCounts | null = null;
     let error: string | undefined;
     const pr = row.pr && (prsByRepo.get(row.repo) ?? []).find((p) => p.number === row.pr!.number);
     if (pr) {
       const review = await explorationReview(entry, pr);
-      fichas = countFindingCards(review.fichas.filter((f) => f.app === row.app));
+      cardCounts = countFindingCards(review.fichas.filter((f) => f.app === row.app));
       if (review.error) error = review.error;
     }
     return {
       ...row,
       lastRun: last ? { at: last.startedAt, state: last.state } : null,
       next: window ? nextNightly(now, window, config.exploreTimezone, nights.get(row.repo)?.[row.app]) : null,
-      fichas,
+      fichas: cardCounts,
       ...(error ? { error } : {}),
     };
   }));
@@ -222,7 +222,7 @@ const cost = (agents: ExplorationRunAgent[]) => agents.reduce((sum, a) => sum + 
 export function buildExplorationRuns(records: ExplorationRunRecord[], agentRuns: RunSummary[], busy: boolean, now = Date.now()): ExplorationRun[] {
   const runs = [...agentRuns].sort((a, b) => a.startedAt.localeCompare(b.startedAt));
   const used = new Set<string>();
-  const corridas: ExplorationRun[] = records.map((rec) => {
+  const explorationRuns: ExplorationRun[] = records.map((rec) => {
     const from = Date.parse(rec.startedAt);
     const to = rec.endedAt ? Date.parse(rec.endedAt) : now;
     const agents = runs.filter((r) => !used.has(r.runId) && Date.parse(r.startedAt) >= from && Date.parse(r.startedAt) <= to).map((r) => {
@@ -257,7 +257,7 @@ export function buildExplorationRuns(records: ExplorationRunRecord[], agentRuns:
     const failed = group.find((r) => r.state !== 'ok' && r.state !== 'running');
     const fnState = (fn: string) => (group.some((r) => runApp(r)?.fn === fn && r.state === 'ok') ? 'explorada' as const : 'fallo' as const);
     const lastRun = group.at(-1)!;
-    corridas.push({
+    explorationRuns.push({
       id: `legacy-${group[0].runId}`, trigger: { kind: 'desconocido' }, startedAt: group[0].startedAt,
       ...(lastRun.state !== 'running' ? { endedAt: lastRun.endedAt ?? lastRun.startedAt } : {}),
       state: group.some((r) => r.state === 'running') ? 'running' : failed ? 'error' : 'ok',
@@ -268,7 +268,7 @@ export function buildExplorationRuns(records: ExplorationRunRecord[], agentRuns:
       legacy: true,
     });
   }
-  return corridas.sort((a, b) => b.startedAt.localeCompare(a.startedAt));
+  return explorationRuns.sort((a, b) => b.startedAt.localeCompare(a.startedAt));
 }
 
 export async function explorationRunsOf(entry: RepoEntry, app: string, runs: RunSummary[]): Promise<ExplorationRun[]> {
