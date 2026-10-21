@@ -1,15 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { rm } from 'node:fs/promises';
-import type { Access } from '../access/access.js';
+import type { Access } from '../../../src/domains/access/access.js';
 
-vi.mock('../../platform/logger.js', () => ({ log: { info: vi.fn(), error: vi.fn() } }));
-vi.mock('../../platform/config/repos.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../platform/config/repos.js')>()),
+vi.mock('../../../src/platform/logger.js', () => ({ log: { info: vi.fn(), error: vi.fn() } }));
+vi.mock('../../../src/platform/config/repos.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../src/platform/config/repos.js')>()),
   loadRepos: async () => [{ productRepo: 'acme/tienda', productRepoPath: '/x' }],
 }));
 
-const { config } = await import('../../platform/config/config.js');
-const { dashboardApp } = await import('../../apps/api/routes.js');
+const { config } = await import('../../../src/platform/config/config.js');
+const { dashboardApp } = await import('../../../src/apps/api/routes.js');
 
 const ADMIN: Access = { admin: true, repos: [{ repo: 'acme/tienda', permission: 'admin' }] };
 const MEMBER: Access = { admin: false, repos: [{ repo: 'acme/tienda', permission: 'triage' }] };

@@ -106,7 +106,8 @@ src/
 **Reglas:**
 - **Cada cosa en un solo lugar.** Lo que dos dominios necesitan va a `platform/` (si es técnico) o a un dominio propio (si es de ronin: quién ve qué es `domains/access`); lo que dos apps web necesitan, a `ui/`. Nada se copia «como lo hace el otro».
 - **Un dominio no sabe de HTTP salvo en su `routes.ts`**, que usa las piezas comunes de `platform/http/middleware.ts` (solo JSON, el cuerpo con su tope y su esquema, solo administradores, el repo del path, los errores) en vez de declararlas. Quién pregunta en el tablero (`Session`, `DashboardEnv`) es de `domains/access/http.ts`.
-- **Las pruebas van junto a su archivo** (`x.ts` y `x.test.ts`); las que cruzan dominios (el HTTP del tablero, Postgres, los recorridos con Playwright), en `test/`.
+- **Las pruebas van junto a su archivo** (`x.ts` y `x.test.ts`); las que cruzan capas o dominios (el HTTP del tablero a través de la app entera, Postgres con otro dominio, los recorridos con Playwright), en `test/`, con la misma estructura que `src/` (`test/domains/meetings/routes.test.ts`).
+- **La dirección se prueba:** `test/structure.test.ts` falla si `platform/` importa de un dominio o de una app, o si un dominio importa de una app.
 - **Una carpeta que crece se parte en subcarpetas**, no en archivos más largos.
 
 **Lo repetido y su pieza común** (relevado el 2026-10-21):
@@ -124,7 +125,7 @@ src/
 **Cómo se llega**, en PRs que solo mueven o solo unifican, nunca las dos cosas:
 1. `apps/`: el servidor, la cola, el tick y las dos apps web. **Hecho.**
 2. `domains/`: lo que estaba en `server/api/` y en las carpetas de dominio, con `access` como dominio propio. **Hecho.**
-3. `platform/`: lo que estaba en `core/` y `db/`, por tema (`config/`, `github/`, `agents/`, `state/`…). **Hecho.** Quedan tres imports de `platform/` a un dominio, que se van con las piezas comunes: `HELP_FOOTER_MARKER` (`linear/linear.ts`, `agents/prompts.ts`) y `recordBlockEvent` (`notify/notifier.ts`).
+3. `platform/`: lo que estaba en `core/` y `db/`, por tema (`config/`, `github/`, `agents/`, `state/`…). **Hecho.** `platform/` ya no importa de ningún dominio: la marca del pie de ayuda de los PRs pasó a `platform/github/pr-body.ts` y el registro de bloqueos, que escribe el notificador, a `platform/notify/block-log.ts`.
 4. Una pieza común por PR, de la tabla de arriba, reemplazando todas sus copias.
 
 ### Datos: Postgres

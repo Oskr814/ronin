@@ -3,13 +3,13 @@ import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { join } from 'node:path';
-import type { Access } from '../access/access.js';
+import type { Access } from '../../../src/domains/access/access.js';
 
-vi.mock('../../platform/config/repos.js', () => ({ loadRepos: async () => [{ productRepo: 'acme/tienda', productRepoPath: '/x' }] }));
+vi.mock('../../../src/platform/config/repos.js', () => ({ loadRepos: async () => [{ productRepo: 'acme/tienda', productRepoPath: '/x' }] }));
 
-const { logsDir } = await import('../../platform/agents/run-files.js');
-const { dashboardApp } = await import('../../apps/api/routes.js');
-const { answer } = await import('../../apps/api/http/hono.js');
+const { logsDir } = await import('../../../src/platform/agents/run-files.js');
+const { dashboardApp } = await import('../../../src/apps/api/routes.js');
+const { answer } = await import('../../../src/apps/api/http/hono.js');
 
 const ACCESS: Access = { admin: false, repos: [{ repo: 'acme/tienda', permission: 'triage' }] };
 const RUN = '20261021T030000-fix-issue-12-abcd';

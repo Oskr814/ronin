@@ -3,6 +3,7 @@
 // handleMetaCommands, which intercepts these before any flow that would
 // spend a `claude -p` run on them. Pure: no I/O, so every rule here is
 // directly unit-testable.
+import { HELP_FOOTER_MARKER } from '../../platform/github/pr-body.js';
 
 export type CommandContext = 'pr' | 'issue';
 
@@ -191,7 +192,7 @@ export function renderMetaReply(meta: MetaCommand, login: string, context: Comma
   return [intro, '', renderCommandTable(login, context), '', `Más detalle en la [documentación](${COMMANDS_DOCS_URL}).`].join('\n');
 }
 
-export const HELP_FOOTER_MARKER = '<!-- ronin:help -->';
+export { HELP_FOOTER_MARKER };
 
 // Appended by the supervisor (tick.ts's processSlicePr) to every PR ronin
 // opens. Idempotent via the marker, so it's safe to call every tick.
