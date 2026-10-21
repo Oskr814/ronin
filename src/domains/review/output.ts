@@ -72,7 +72,7 @@ export const FINDINGS_JSON_CONTRACT = `{
         "result": "what happens",
         "expected": "what should have happened"
       },
-      "impact": "what breaks and for whom, one line (max 200 chars)",
+      "impact": "the only text shown under the title: what to look at and why it matters, in one or two short plain sentences, with no file paths, identifiers or code (max 200 chars)",
       "evidence": [{ "path": "...", "line": 45, "note": "why this line matters (max 100 chars)" }],   // max 3
       "verification": { "status": "reasoned", "reason": "optional, one line" }
                     | { "status": "verified", "test": { "path": "...", "code": "the test", "output": "the failing assertion and its message" } },   // verified only for a test you ran and saw fail

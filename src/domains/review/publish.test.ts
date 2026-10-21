@@ -163,8 +163,8 @@ describe('runExternalReview — publishing', () => {
     expect(review.comments).toHaveLength(1);
     expect(review.comments[0]).toMatchObject({ path: 'src/a.ts', line: 11 });
     expect(review.comments[0].body).toMatch(/^<!-- ronin:finding v=2 type=bug .* criteria=cafebabe00 -->/);
-    expect(review.body).toContain('## Review de ronin');
-    expect(review.body).toContain('### Fuera del diff');
+    expect(review.body).not.toContain('## Review de ronin');
+    expect(review.body).toContain('así que van aquí y no en la línea');
     expect(review.body).toContain('Fuera');
   });
 
@@ -343,11 +343,43 @@ describe('runExternalReview — incremental mode', () => {
     await runExternalReview(incremental);
 
     const review = postReview.mock.calls[0][1];
-    expect(review.comments).toHaveLength(1);
-    expect(review.comments[0].body).toContain('mode=incremental scope=changed');
+    expect(review.comments).toHaveLength(0);
+    expect(review.body).toContain('<summary>1 observación menor</summary>');
+    expect(review.body).toContain('Nuevo');
+    expect(review.body).not.toContain('Viejo');
     expect(review.body.split('\n')[0]).toContain('mode=incremental');
     expect(logInfo).toHaveBeenCalledWith(expect.stringContaining('descartado por alcance (menor o mejora sobre código ya revisado): Viejo'));
     expect(logMetric).toHaveBeenCalledWith('external_review_published', expect.objectContaining({ mode: 'incremental', findings: 1, droppedByScope: 1 }));
+  });
+
+  // Only what's worth a person's time gets a comment: what was already there
+  // isn't published, and the minor ones go in one collapsed list.
+  it('leaves out what was already there and lists the minor ones collapsed, without comments', async () => {
+    agentWrites({
+      findings: [
+        finding({ title: 'Grave' }),
+        finding({ severity: 'minor', line: 11, title: 'Menor' }),
+        finding({ origin: { kind: 'preexisting', note: 'el PR no lo toca' }, title: 'De antes' }),
+      ],
+    });
+
+    await runExternalReview(candidate);
+
+    const review = postReview.mock.calls[0][1];
+    expect(review.comments.map((c: { body: string }) => c.body.includes('Grave'))).toEqual([true]);
+    expect(review.body).toContain('<summary>1 observación menor</summary>');
+    expect(review.body).not.toContain('De antes');
+    expect(logMetric).toHaveBeenCalledWith('external_review_published', expect.objectContaining({ inline: 1, minor: 1, preexisting: 1 }));
+  });
+
+  it('says LGTM above the minor list when nothing else came up', async () => {
+    agentWrites({ findings: [finding({ severity: 'minor', title: 'Menor' })] });
+
+    await runExternalReview({ ...candidate, threadHistory: [], openThreads: [] });
+
+    const body = bodyAfterMarker(postReview.mock.calls[0][1].body);
+    expect(body.startsWith('LGTM 🚀\n\n<details>')).toBe(true);
+    expect(body).toContain('Menor');
   });
 
   it('closes like a review with nothing new when every finding was dropped', async () => {

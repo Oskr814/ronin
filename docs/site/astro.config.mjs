@@ -64,7 +64,7 @@ export default defineConfig({
             'operar/problemas',
           ],
         },
-        { label: 'Cómo funciona', collapsed: true, items: ['como-funciona/arquitectura', 'como-funciona/tick', 'como-funciona/slices'] },
+        { label: 'Cómo funciona', collapsed: true, items: ['como-funciona/arquitectura', 'como-funciona/tick', 'como-funciona/slices', 'como-funciona/review'] },
         { label: 'Contribuir', collapsed: true, items: ['contribuir/documentacion'] },
       ],
     }),

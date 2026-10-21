@@ -121,9 +121,15 @@ export async function runExternalReview(candidate: ReviewCandidate, opts: RunExt
     const deduped = dedupeAgainstOpenThreads(scoped.kept, candidate.threadHistory);
     for (const d of scoped.dropped) log.info(`external-review PR #${candidate.prNumber}: descartado por alcance (${d.reason}): ${d.finding.title}`);
     for (const d of deduped.dropped) log.info(`external-review PR #${candidate.prNumber}: descartado, repite el thread ${d.threadId}: ${d.finding.title}`);
-    const findings = deduped.kept;
+    // What was already there before the PR isn't its to fix: not published.
+    // The minor ones go in one collapsed list in the review body, without a
+    // comment or a thread of their own.
+    const findings = deduped.kept.filter((f) => f.origin?.kind !== 'preexisting');
+    const preexisting = deduped.kept.length - findings.length;
+    const minor = findings.filter((f) => f.severity === 'minor');
+    const published = findings.filter((f) => f.severity !== 'minor');
 
-    const placed = placeFindings(findings, await commentableLines(candidate.headSha, candidate.baseRefName));
+    const placed = placeFindings(published, await commentableLines(candidate.headSha, candidate.baseRefName));
     const repo = activeRepo().productRepo;
     const ctx: RenderContext = {
       repo,
@@ -135,10 +141,9 @@ export async function runExternalReview(candidate: ReviewCandidate, opts: RunExt
     const resolvedIds = new Set(output.resolveThreads.map((r) => r.threadId));
     const prUrl = `https://github.com/${repo}/pull/${candidate.prNumber}`;
 
-    const body = [
-      reviewMarker(ctx),
-      findings.length > 0 ? renderReviewSummary(placed, ctx) : renderClosing(closingState(candidate.openThreads, resolvedIds, prUrl)),
-    ].join('\n');
+    const summary = renderReviewSummary({ ...placed, minor }, ctx);
+    const closing = published.length > 0 ? '' : renderClosing(closingState(candidate.openThreads, resolvedIds, prUrl));
+    const body = [reviewMarker(ctx), [closing, summary].filter(Boolean).join('\n\n')].join('\n');
     const comments = placed.inline.map((f) => ({
       path: f.path,
       line: f.line,
@@ -153,6 +158,8 @@ export async function runExternalReview(candidate: ReviewCandidate, opts: RunExt
       findings: findings.length,
       inline: placed.inline.length,
       outOfDiff: placed.outOfDiff.length,
+      minor: minor.length,
+      preexisting,
       dropped: dropped.length,
       droppedByScope: scoped.dropped.length,
       droppedAsDuplicate: deduped.dropped.length,
@@ -172,6 +179,7 @@ export async function runExternalReview(candidate: ReviewCandidate, opts: RunExt
         body,
         comments,
         placed,
+        minor,
         resolveThreads: output.resolveThreads,
         replies,
         dropped,
@@ -214,6 +222,7 @@ async function writeDryRun(
     body: string;
     comments: Array<{ path: string; line: number; startLine?: number; body: string }>;
     placed: { inline: ReviewFinding[]; outOfDiff: ReviewFinding[] };
+    minor: ReviewFinding[];
     resolveThreads: Array<{ threadId: string; reason: string }>;
     replies: Array<{ commentId: number; body: string }>;
     dropped: Array<{ index: number; reason: string }>;
@@ -226,7 +235,7 @@ async function writeDryRun(
     data.scope.mode === 'incremental'
       ? `- Modo: incremental desde \`${data.candidate.previousSha?.slice(0, 7)}\` (${[...data.scope.changed.values()].reduce((n, l) => n + l.size, 0)} líneas cambiadas en ${data.scope.changed.size} archivos)`
       : '- Modo: completo',
-    `- Hallazgos: ${data.placed.inline.length + data.placed.outOfDiff.length} (${data.placed.inline.length} inline, ${data.placed.outOfDiff.length} fuera del diff)`,
+    `- Hallazgos: ${data.placed.inline.length + data.placed.outOfDiff.length} (${data.placed.inline.length} inline, ${data.placed.outOfDiff.length} fuera del diff) y ${data.minor.length} menores, en la lista plegada`,
     `- Descartados por validación: ${data.dropped.length}`,
     ...data.dropped.map((d) => `  - ${d.index >= 0 ? `hallazgo ${d.index}` : 'entrada'}: ${d.reason}`),
     `- Descartados por alcance o por repetir un thread: ${data.droppedByScope.length}`,

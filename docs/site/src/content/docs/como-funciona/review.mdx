@@ -1,0 +1,41 @@
+---
+title: "La review de ronin"
+description: "Cómo revisa ronin los PRs de las personas y qué muestra cada hallazgo."
+---
+
+ronin revisa los PRs que abren las personas en los repos que atiende: los que no están en draft y no abrió él. Los revisa cuando llegan y otra vez con cada commit nuevo, solo sobre lo que cambió desde la última vuelta. Mencionarlo en el PR también le pide otra mirada.
+
+## Qué publica
+
+Una sola review de tipo comentario: nunca aprueba ni pide cambios, eso queda para las personas.
+
+- **Un comentario por hallazgo** crítico o importante, en su línea.
+- **Los menores**, sin comentario propio: en el cuerpo de la review, en una lista plegada, una línea cada uno con su enlace.
+- **Lo que el PR no puede anclar en una línea** (un hallazgo en un archivo que no toca), también en el cuerpo de la review.
+- **Cuando no hay nada nuevo**, un *LGTM*, o la lista de lo que sigue abierto. Si confirma que un hallazgo anterior ya se corrigió, resuelve su hilo.
+
+Lo que ya existía antes del PR y el PR no toca no se publica: no le toca a ese PR.
+
+## Qué muestra un hallazgo
+
+A la vista, solo lo que hay que revisar:
+
+- **El título**, con la consecuencia: 🐞 un defecto, 💡 una mejora, o una pregunta cuando es una decisión a confirmar; y la severidad: 🔴 crítico, 🟠 importante, 🟡 menor.
+- **Una o dos frases simples** sobre qué mirar y por qué importa, sin rutas ni código. Si el problema ya existía y el PR lo empeora, lo dicen.
+- **En una decisión**, cómo descartarla: si es intencional, se resuelve el hilo.
+
+Por ejemplo (datos inventados):
+
+> ### 🐞🟠 El total del pedido no descuenta el cupón
+>
+> Revisá que el total de un pedido con cupón muestre el descuento: hoy el cliente paga el precio completo.
+>
+> ▸ Detalle
+
+Plegado en **Detalle** está todo lo demás: el tipo, la severidad y la categoría, de dónde viene (lo introduce el PR o lo empeora), cómo pasa paso a paso, dónde (los archivos y las líneas), la corrección y su sugerencia de código, cómo se verificó (con el test que falla, si lo corrió) y un prompt para pasárselo a un agente.
+
+## Cómo se atiende
+
+- **Corregirlo** en un commit: en la vuelta siguiente, ronin lo confirma y resuelve el hilo.
+- **Una decisión intencional:** resolver el hilo.
+- **Que lo corrija ronin:** [`/fix-comments`](/ronin/referencia/comandos/#fix-comments) en el PR, si lo pide alguien del equipo.
