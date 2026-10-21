@@ -2,11 +2,16 @@ import { readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { acquireLock } from './worker-launch.js';
 import { config } from './config.js';
-import { activeRepo } from './repo-context.js';
+import { activeRepo, currentRepo } from './repo-context.js';
+import { getDb } from '../db/db.js';
+import { release, tryTake } from './locks-db.js';
+import { readStateDb, writeStateDb } from './local-state-db.js';
 
 // Per-machine cache, never the source of truth for anything GitHub already
 // tracks — see claim.ts's tryClaim for why a missing/corrupt file is always
-// safe to treat as empty. Never committed (see .gitignore).
+// safe to treat as empty. Never committed (see .gitignore). With
+// DATABASE_URL (#235, stage 3.3), it's rows of repo_state instead
+// (local-state-db.ts), one per entry.
 export interface LocalState {
   claimedIssues: number[];
   // PR number -> consecutive-tick count of "checks still pending" — kept
@@ -85,11 +90,25 @@ export interface BlockRecord {
 // can both read before either writes, and the second write silently clobbers
 // the first's update. Inside the process a promise queue; across processes a
 // lock file next to the state, held only for that quick span (label
-// reads/writes, never the long `claude -p` run).
+// reads/writes, never the long `claude -p` run). With the database, that
+// lock is a row of the locks table (one per repo, with a lease), not a
+// transaction: the span includes GitHub calls, and a transaction must never
+// stay open across them.
 const STATE_LOCK_POLL_MS = 50;
+const STATE_LOCK = 'local-state';
 let queue: Promise<unknown> = Promise.resolve();
 export function withLocalStateLock<T>(fn: () => Promise<T>): Promise<T> {
   const locked = async () => {
+    const db = getDb();
+    if (db) {
+      const scope = currentRepo()?.productRepo ?? '';
+      while (!(await tryTake(db, scope, STATE_LOCK))) await sleep(STATE_LOCK_POLL_MS);
+      try {
+        return await fn();
+      } finally {
+        await release(db, scope, STATE_LOCK);
+      }
+    }
     const lock = `${config.localStatePath}.lock`;
     while (!(await acquireLock(lock))) await sleep(STATE_LOCK_POLL_MS);
     try {
@@ -109,14 +128,19 @@ export function withLocalStateLock<T>(fn: () => Promise<T>): Promise<T> {
 // Namespaced per active repo so an issue #12 in one repo.json entry never
 // shares claimedIssues/checksPendingCounts with a #12 in another — see
 // docs/superpowers/specs/2026-08-19-multi-repo-pat-auth-design.md §4.
-function statePath(): string {
-  const slug = activeRepo().productRepo.replaceAll('/', '-');
-  return `${config.localStatePath}.${slug}.json`;
+export function statePath(repo = activeRepo().productRepo): string {
+  return `${config.localStatePath}.${repo.replaceAll('/', '-')}.json`;
 }
 
 export async function readLocalState(): Promise<LocalState> {
+  const db = getDb();
+  return db ? readStateDb(db, activeRepo().productRepo) : readStateFile(statePath());
+}
+
+// The file of a repo, whatever the backend: for the import to the database.
+export async function readStateFile(path: string): Promise<LocalState> {
   try {
-    const raw = JSON.parse(await readFile(statePath(), 'utf8')) as Partial<LocalState>;
+    const raw = JSON.parse(await readFile(path, 'utf8')) as Partial<LocalState>;
     return {
       claimedIssues: raw.claimedIssues ?? [],
       checksPendingCounts: raw.checksPendingCounts ?? {},
@@ -138,6 +162,8 @@ export async function readLocalState(): Promise<LocalState> {
 // sees the old file or the new one, never half of one — which readLocalState
 // would take for an empty state, and the next write would persist.
 export async function writeLocalState(state: LocalState): Promise<void> {
+  const db = getDb();
+  if (db) return writeStateDb(db, activeRepo().productRepo, state);
   const tmp = `${statePath()}.${process.pid}.tmp`;
   await writeFile(tmp, JSON.stringify(state, null, 2));
   await rename(tmp, statePath());

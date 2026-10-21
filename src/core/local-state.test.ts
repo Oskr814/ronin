@@ -11,6 +11,9 @@ vi.mock('./config.js', () => ({
 const { incrementChecksPendingCount, resetChecksPendingCount, withLocalStateLock, readLocalState, getLastReviewedSha, setLastReviewedSha, pruneLastReviewedSha, getLastChangelogRelease, setLastChangelogRelease, getProcessedComments, recordProcessedComment, getBlocks, recordBlock } = await import('./local-state.js');
 const { withActiveRepo } = await import('./repo-context.js');
 
+// local-state.pg.test.ts runs these again with the state in Postgres.
+const onFiles = process.env.RONIN_TEST_STORE !== 'pg';
+
 let dir: string;
 
 beforeEach(async () => {
@@ -68,8 +71,12 @@ describe('incrementChecksPendingCount — concurrent calls', () => {
         incrementChecksPendingCount(229),
       ]);
 
-      const raw = await readFile(join(dir, 'state.json.owner-repo-a.json'), 'utf8');
-      expect(() => JSON.parse(raw)).not.toThrow();
+      if (onFiles) {
+        const raw = await readFile(join(dir, 'state.json.owner-repo-a.json'), 'utf8');
+        expect(() => JSON.parse(raw)).not.toThrow();
+      } else {
+        expect((await readLocalState()).checksPendingCounts['229']).toBeGreaterThanOrEqual(1);
+      }
     });
   });
 });

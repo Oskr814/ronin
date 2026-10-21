@@ -98,7 +98,7 @@ Cuando una etapa de #235 se mergea, lo que cambió se pasa a `DESIGN.md` y la se
 | Portal | `portal_users`, `portal_links`, `requests`, `request_messages`, `request_events`; las imágenes, como archivo |
 | Uso de las cuentas de Claude | `claude_accounts`, `usage_measurements` |
 | Corridas | `runs`: el resumen, con repo, tipo, issue, PR, pedido, cuenta, modelo, tokens, costo, duración y resultado; la transcripción completa sigue como archivo |
-| Estado local | `processed_comments`, `failure_signatures`, `checks_pending`, `reviewed_shas`, `blocks`… (una tabla por cosa, no un JSON) |
+| Estado local | `repo_state`: una fila por entrada (claims, comentarios procesados, firmas de fallas, bloqueos…), no un JSON |
 | Locks, cupos, cola, workers | `jobs`, `resource_locks`, `slots` (ver la sección «Cola de trabajos») |
 
 **Qué queda como archivo,** en el volumen `ronin-files`:
@@ -173,6 +173,8 @@ Lo que **desaparece**:
 **Hecho (3.1):** `jobs/store.ts`, `jobs/runner.ts`, `jobs/scheduler.ts`, `jobs/child.ts` (DESIGN §14). Por ahora sin reintentos: un trabajo cuyo lease vence queda `lost` y el próximo tick concilia, como antes.
 
 **Hecho (3.2):** `core/locks-db.ts`: tablas `locks` y `lock_waits`. `locks.ts` conserva su interfaz (`withResourceLock`, `pinResources`, `withSlots`) y elige la base o los archivos según `DATABASE_URL`. Los locks de los workers (preview, portal, reuniones) y el del estado local siguen en archivos: son de esta máquina y el paso 3.3 rediseña el segundo.
+
+**Hecho (3.3):** `core/local-state-db.ts`: tabla `repo_state`, una fila por entrada (repo, tipo, clave y su valor), en vez de una tabla por cosa: son diez listas chicas que se leen juntas y ninguna se consulta por sus columnas. `local-state.ts` conserva su interfaz y una escritura toca solo las entradas que cambiaron. Su lock pasa a la tabla `locks` (uno por repo, con lease) y no a una transacción, porque abarca llamadas a GitHub (el claim de un issue).
 
 El claim entre supervisores por label (DESIGN §9) deja de hacer falta con un solo nodo central que reparte el trabajo. Se mantiene mientras haya instalaciones viejas y después se simplifica.
 
