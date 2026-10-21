@@ -15,7 +15,7 @@ import { listActions } from './actions.js';
 import { HISTORY_DAYS, hostLoad, itemKey, readQueue, readTickInfo, slotsInUse } from '../runs/data.js';
 import { itemDetail, resolveItem } from './detail.js';
 import { explorationReview, isExplorationPr } from '../explorations/review.js';
-import { exploracionRows, liveRuns, prsOf } from '../explorations/board.js';
+import { explorationRows, liveRuns, prsOf } from '../explorations/board.js';
 import { prFiles } from './files.js';
 import { repoGithub } from './github.js';
 import { buildItems, itemRunKeys } from './list.js';
@@ -91,7 +91,7 @@ export async function snapshot(access: Access, login: string): Promise<unknown> 
     // Whether it can deploy (#158): an admin, with a repo that has deploy.
     despliegues: entries.some((entry) => entry.deploy && can(access, entry.productRepo, 'desplegar')),
     // Each app a repo explores, with its exploration PR and whether it runs now (#155).
-    exploraciones: exploracionRows(entries, prsOf(entries, github), runs, await liveRuns(entries)),
+    exploraciones: explorationRows(entries, prsOf(entries, github), runs, await liveRuns(entries)),
     previews: github.flatMap((gh) => (gh ? gh.previews.map((p) => ({ ...p, repo: gh.repo })) : [])),
     github: github.map((gh, i) => ({ repo: repos[i], fetchedAt: gh?.fetchedAt ?? null, ...(gh?.error ? { error: gh.error } : {}) })),
     // Each repo's apps (ronin.app.json), for /spike and /spec on a new issue.

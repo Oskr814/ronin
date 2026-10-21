@@ -12,7 +12,7 @@ vi.mock('./review.js', () => ({
 const nights = vi.fn();
 vi.mock('../../platform/state/local-state.js', () => ({ getNightlyExploration: () => nights(), setNightlyExploration: vi.fn() }));
 
-const { buildCorridas, countFichas, exploracionList, exploracionRows, exploreNow, inventarioOf, nextNightly, parseExploreNow, resetExploreNow, runApp, ExploreNowError } = await import('./board.js');
+const { buildExplorationRuns, countFindingCards, explorationList, explorationRows, exploreNow, inventoryViewOf, nextNightly, parseExploreNow, resetExploreNow, runApp, ExploreNowError } = await import('./board.js');
 const { parseNightWindow } = await import('./schedule.js');
 
 const ENTRY = { productRepo: 'acme/product', productRepoPath: '/tmp/x', explore: ['backoffice'] } as any;
@@ -39,10 +39,10 @@ describe('runApp', () => {
   });
 });
 
-describe('exploracionRows', () => {
+describe('explorationRows', () => {
   it('says an app is being explored from its run’s record, before its first agent starts', () => {
     const live = new Map([['acme/clinic|webapp', '2026-10-18T22:30:00Z']]);
-    const rows = exploracionRows([ENTRY, OTHER], new Map(), [], live);
+    const rows = explorationRows([ENTRY, OTHER], new Map(), [], live);
     expect(rows.map((r) => r.running)).toEqual([null, { since: '2026-10-18T22:30:00Z' }]);
   });
 
@@ -53,16 +53,16 @@ describe('exploracionRows', () => {
       run({ taskType: 'explore-function', label: 'app backoffice → pedidos', startedAt: '2026-10-18T07:00:00Z' }),
       run({ taskType: 'fix-issue', label: 'issue 12', state: 'running' }),
     ];
-    expect(exploracionRows([ENTRY, OTHER, QUIET], prs, runs)).toEqual([
+    expect(explorationRows([ENTRY, OTHER, QUIET], prs, runs)).toEqual([
       { repo: 'acme/product', app: 'backoffice', pr: { number: 840, id: 'acme/product#840', title: 'Exploración: backoffice', url: 'https://github.com/acme/product/pull/840' }, running: { since: '2026-10-18T22:31:00Z', step: 'Abrió /surtir', fn: 'surtir' } },
       { repo: 'acme/clinic', app: 'webapp', pr: null, running: null },
     ]);
   });
 });
 
-describe('countFichas', () => {
+describe('countFindingCards', () => {
   it('counts the ones waiting on someone apart from the ones waiting on ronin', () => {
-    const counts = countFichas([
+    const counts = countFindingCards([
       ficha('propuesto'),
       ficha('propuesto', [{ author: 'oskr814' }, { author: 'ronin-agent', replyTo: 1 }]),
       ficha('propuesto', [{ author: 'oskr814' }]),
@@ -94,44 +94,44 @@ describe('nextNightly', () => {
   });
 });
 
-describe('exploracionList', () => {
+describe('explorationList', () => {
   it('counts only the app’s own findings, with the last run and the next night', async () => {
     review.mockResolvedValue({ fichas: [ficha('propuesto'), { ...ficha('propuesto'), app: 'otra' }, ficha('rechazado')] });
     nights.mockResolvedValue({ backoffice: '2026-10-18' });
     const prs = new Map([['acme/product', [PR]]]);
     const runs = [run({ taskType: 'explore-evaluate', label: 'app backoffice', startedAt: '2026-10-18T07:40:00Z', state: 'error' }), run({ taskType: 'explore-function', label: 'app backoffice → pedidos' })];
-    const rows = exploracionRows([ENTRY], prs, runs);
-    const [row] = await exploracionList([ENTRY], rows, runs, prs, new Date('2026-10-18T22:50:00Z'));
+    const rows = explorationRows([ENTRY], prs, runs);
+    const [row] = await explorationList([ENTRY], rows, runs, prs, new Date('2026-10-18T22:50:00Z'));
     expect(review).toHaveBeenCalledWith(ENTRY, PR);
     expect(row).toMatchObject({ app: 'backoffice', lastRun: { at: '2026-10-18T07:40:00Z', state: 'error' }, next: '2026-10-19T07:00:00.000Z', fichas: { total: 2, decidir: 1, rechazadas: 1 } });
   });
 
   it('has no findings to count without a PR', async () => {
-    const [row] = await exploracionList([OTHER], exploracionRows([OTHER], new Map(), []), [], new Map());
+    const [row] = await explorationList([OTHER], explorationRows([OTHER], new Map(), []), [], new Map());
     expect(row).toMatchObject({ pr: null, fichas: null, lastRun: null });
     expect(review).not.toHaveBeenCalled();
   });
 });
 
-describe('buildCorridas', () => {
+describe('buildExplorationRuns', () => {
   const agent = (runId: string, label: string, startedAt: string, fields: Record<string, unknown> = {}) => run({ runId, taskType: label.includes('→') ? 'explore-function' : 'explore-inventory', label, startedAt, endedAt: startedAt, costUsd: 0.5, ...fields });
   const record = (fields: Record<string, unknown>) => ({ id: '20261019T070000-backoffice', repo: 'acme/product', app: 'backoffice', trigger: { kind: 'noche' }, startedAt: '2026-10-19T07:00:00Z', endedAt: '2026-10-19T07:50:00Z', state: 'ok', ...fields }) as any;
 
   it('gives each recorded run the agents that ran during it, with their cost', () => {
     const agents = [agent('a1', 'app backoffice', '2026-10-19T07:01:00Z'), agent('a2', 'app backoffice → surtir', '2026-10-19T07:10:00Z', { costUsd: 1.25 })];
-    const [corrida] = buildCorridas([record({ seed: 7, runId: 'r1', prNumber: 919, functions: [{ id: 'surtir', charter: 'interrupciones', role: 'Sales', reason: 'nueva', status: 'explorada', viewports: ['mobile'] }], findings: [] })], agents, false);
+    const [corrida] = buildExplorationRuns([record({ seed: 7, runId: 'r1', prNumber: 919, functions: [{ id: 'surtir', charter: 'interrupciones', role: 'Sales', reason: 'nueva', status: 'explorada', viewports: ['mobile'] }], findings: [] })], agents, false);
     expect(corrida).toMatchObject({ id: '20261019T070000-backoffice', trigger: { kind: 'noche' }, state: 'ok', seed: 7, prNumber: 919, costUsd: 1.75 });
     expect(corrida.agents.map((a) => [a.runId, a.fn])).toEqual([['a1', undefined], ['a2', 'surtir']]);
     expect(corrida.legacy).toBeUndefined();
   });
 
   it('calls a run that still says running cut once the lock is free', () => {
-    expect(buildCorridas([record({ state: 'running', endedAt: undefined })], [], false)[0].state).toBe('cut');
-    expect(buildCorridas([record({ state: 'running', endedAt: undefined })], [], true)[0].state).toBe('running');
+    expect(buildExplorationRuns([record({ state: 'running', endedAt: undefined })], [], false)[0].state).toBe('cut');
+    expect(buildExplorationRuns([record({ state: 'running', endedAt: undefined })], [], true)[0].state).toBe('running');
   });
 
   it('puts the runs from before the records together from their agents, newest first', () => {
-    const corridas = buildCorridas([], [
+    const corridas = buildExplorationRuns([], [
       agent('b1', 'app backoffice', '2026-10-17T07:00:00Z'),
       agent('b2', 'app backoffice → pedidos', '2026-10-17T07:10:00Z'),
       agent('b3', 'app backoffice → clientes', '2026-10-17T07:20:00Z', { state: 'error', error: 'se cayó\nstack' }),
@@ -142,7 +142,7 @@ describe('buildCorridas', () => {
   });
 });
 
-describe('inventarioOf', () => {
+describe('inventoryViewOf', () => {
   const yml = `actualizado: { fecha: 2026-10-18, sha: abc123 }
 funciones:
   - id: surtir
@@ -159,7 +159,7 @@ funciones:
 
   it('reads the open PR’s branch, with each charter’s last date and the last time', async () => {
     branchFile.mockResolvedValue(yml);
-    const inv = await inventarioOf(ENTRY, 'backoffice', PR);
+    const inv = await inventoryViewOf(ENTRY, 'backoffice', PR);
     expect(branchFile).toHaveBeenCalledWith(ENTRY, 'ronin/exploration/2026-10-14', 'docs/exploration/backoffice/inventory.yml');
     expect(inv.from).toEqual({ branch: 'ronin/exploration/2026-10-14', pr: 840 });
     expect(inv.actualizado).toEqual({ fecha: '2026-10-18', sha: 'abc123' });
@@ -171,7 +171,7 @@ funciones:
 
   it('reads the base without a PR, and says when there is no inventory', async () => {
     branchFile.mockResolvedValue(null);
-    const inv = await inventarioOf({ ...ENTRY, worktreeBaseRef: 'origin/odoo-main' }, 'backoffice', undefined);
+    const inv = await inventoryViewOf({ ...ENTRY, worktreeBaseRef: 'origin/odoo-main' }, 'backoffice', undefined);
     expect(inv).toMatchObject({ from: { branch: 'odoo-main' }, funciones: [], error: 'no hay inventory.yml de backoffice en odoo-main' });
   });
 });

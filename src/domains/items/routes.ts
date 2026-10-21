@@ -8,7 +8,7 @@ import { HISTORY_DAYS, itemKey } from '../runs/data.js';
 import { runDecision } from './decision.js';
 import { forgetDetails } from './detail.js';
 import { forgetExploration } from '../explorations/review.js';
-import { runApprove, runFichaAction, runGeneralComment } from '../explorations/review-actions.js';
+import { runApprove, runFindingCardAction, runGeneralComment } from '../explorations/review-actions.js';
 import { fileContent, forgetFiles } from './files.js';
 import { runFilesAction } from './files-actions.js';
 import { forgetGithub, repoGithub } from './github.js';
@@ -208,7 +208,7 @@ export function itemsRoutes() {
         ? await runApprove(ctx.entry, ctx.pr, ctx.review, c.env.session, given)
         : what === 'general'
           ? await runGeneralComment(ctx.entry, ctx.pr, c.env.session, given)
-          : await runFichaAction(ctx.entry, ctx.pr, ctx.review, c.env.session, given);
+          : await runFindingCardAction(ctx.entry, ctx.pr, ctx.review, c.env.session, given);
       forgetExploration(ctx.entry.productRepo, ctx.pr.number);
       forgetDetails(ctx.entry.productRepo);
       forgetFiles(ctx.entry.productRepo);

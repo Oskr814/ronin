@@ -3142,7 +3142,7 @@ function goHome() {
 
 // ---------- explorations (#155)
 // One row per app a repo explores, from the snapshot; the list
-// (/api/exploraciones) adds its exploration PR's findings counted, the last
+// (/api/explorations) adds its exploration PR's findings counted, the last
 // run and the next. An app's page is its repo's exploration PR's page (#93),
 // headed as the app's; with no PR open, a page of its own until ronin opens one.
 const XPL_EVERY_MS = 60_000;
@@ -3230,14 +3230,14 @@ function xplAppHTML() {
 // ---------- an app's runs and inventory (#155, 2/4)
 // Read when their tab is shown, and again once old: the runs often (one may
 // be going), the inventory seldom (it changes once per run).
-const XPL_PART = { cor: ['corridas', PEDIDO_EVERY_MS], inv: ['inventario', XPL_EVERY_MS] };
+const XPL_PART = { cor: ['runs', PEDIDO_EVERY_MS], inv: ['inventory', XPL_EVERY_MS] };
 
 async function loadXplPart(bucket, r) {
   const entry = (S.xpl[bucket][xplKey(r)] ??= {});
   if (entry.loading) return;
   entry.loading = true;
   try {
-    entry.data = await api(`/api/exploraciones/${r.repo}/${encodeURIComponent(r.app)}/${XPL_PART[bucket][0]}`);
+    entry.data = await api(`/api/explorations/${r.repo}/${encodeURIComponent(r.app)}/${XPL_PART[bucket][0]}`);
     entry.error = null;
   } catch (error) {
     if (error instanceof Unauthorized && showLogin(error)) return;
@@ -3393,7 +3393,7 @@ async function sendExploreNow() {
   x.error = null;
   renderExploreNow();
   try {
-    const done = await api(`/api/exploraciones/${x.repo}/${encodeURIComponent(x.app)}/run`, { method: 'POST', body: JSON.stringify({ maxFunctions: x.n, hours: x.hours, tonight: x.tonight }) });
+    const done = await api(`/api/explorations/${x.repo}/${encodeURIComponent(x.app)}/run`, { method: 'POST', body: JSON.stringify({ maxFunctions: x.n, hours: x.hours, tonight: x.tonight }) });
     S.xpl.launched[x.repo] = { app: x.app, at: Date.now() };
     S.xnow = null;
     renderExploreNow();
@@ -3433,7 +3433,7 @@ async function loadExploraciones() {
   // Taken before asking, so the snapshots meanwhile don't ask again.
   S.xpl.listAt = Date.now();
   try {
-    S.xpl.list = (await api('/api/exploraciones')).apps;
+    S.xpl.list = (await api('/api/explorations')).apps;
     S.xpl.error = null;
   } catch (error) {
     if (error instanceof Unauthorized && showLogin(error)) return;

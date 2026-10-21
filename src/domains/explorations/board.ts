@@ -7,7 +7,7 @@ import { exploreWorkerBusy, launchExploreWorker, type ExploreWorkerRequest } fro
 import { CHARTERS, EXPLORATION_DIR, VIEWPORTS, parseInventory } from './memory.js';
 import { listRunRecords, type ExplorationRunFunction, type ExplorationRunRecord, type ExplorationTrigger } from './run-log.js';
 import type { RunSummary } from '../runs/data.js';
-import { explorationReview, isExplorationPr, readBranchFile, type ExplorationPr, type Ficha } from './review.js';
+import { explorationReview, isExplorationPr, readBranchFile, type ExplorationPr, type FindingCard } from './review.js';
 import { DomainError } from '../../platform/errors.js';
 
 // The dashboard's Exploraciones page (#155): one row per app a repo explores
@@ -16,22 +16,22 @@ import { DomainError } from '../../platform/errors.js';
 // whether ronin is exploring it right now. The PR's findings are reviewed on
 // the app's page, which is the PR's item page (§15.12).
 
-export interface ExploracionPr {
+export interface ExplorationPrView {
   number: number;
   id: string;
   title: string;
   url?: string;
 }
 
-export interface ExploracionRow {
+export interface ExplorationRow {
   repo: string;
   app: string;
-  pr: ExploracionPr | null;
+  pr: ExplorationPrView | null;
   // A run of this app going on right now: since when, and what it's on.
   running: { since: string; step?: string; fn?: string } | null;
 }
 
-export interface FichaCounts {
+export interface FindingCardCounts {
   total: number;
   // Nobody said anything yet, or ronin answered what was said: someone decides.
   decidir: number;
@@ -41,11 +41,11 @@ export interface FichaCounts {
   rechazadas: number;
 }
 
-export interface ExploracionListRow extends ExploracionRow {
+export interface ExplorationListRow extends ExplorationRow {
   lastRun: { at: string; state: RunSummary['state'] } | null;
   // When the nightly exploration starts this app next.
   next: string | null;
-  fichas: FichaCounts | null;
+  fichas: FindingCardCounts | null;
   error?: string;
 }
 
@@ -73,7 +73,7 @@ interface PrLike extends ExplorationPr {
 // The snapshot's rows: cheap, from what the snapshot already read. `live`:
 // the apps whose worker is up by their record (liveRuns), since when — its
 // first agent only starts once the app is up, minutes later.
-export function exploracionRows(entries: RepoEntry[], prsByRepo: Map<string, PrLike[]>, runs: RunSummary[], live = new Map<string, string>()): ExploracionRow[] {
+export function explorationRows(entries: RepoEntry[], prsByRepo: Map<string, PrLike[]>, runs: RunSummary[], live = new Map<string, string>()): ExplorationRow[] {
   return entries.flatMap((entry) => {
     const repo = entry.productRepo;
     const open = (prsByRepo.get(repo) ?? []).find(isExplorationPr);
@@ -88,8 +88,8 @@ export function exploracionRows(entries: RepoEntry[], prsByRepo: Map<string, PrL
   });
 }
 
-export function countFichas(fichas: Ficha[], ronin = config.githubLogin): FichaCounts {
-  const counts: FichaCounts = { total: fichas.length, decidir: 0, esperando: 0, aprobadas: 0, rechazadas: 0 };
+export function countFindingCards(fichas: FindingCard[], ronin = config.githubLogin): FindingCardCounts {
+  const counts: FindingCardCounts = { total: fichas.length, decidir: 0, esperando: 0, aprobadas: 0, rechazadas: 0 };
   const mention = new RegExp(`@${ronin}\\b`, 'i');
   for (const f of fichas) {
     if (f.estado === 'rechazado') counts.rechazadas++;
@@ -135,9 +135,9 @@ export function nextNightly(now: Date, window: NightWindow, timezone: string, la
   return instantAt(start, window.startMinutes, timezone).toISOString();
 }
 
-// GET /api/exploraciones: the rows with each PR's findings counted, the last
+// GET /api/explorations: the rows with each PR's findings counted, the last
 // run and the next one.
-export async function exploracionList(entries: RepoEntry[], rows: ExploracionRow[], runs: RunSummary[], prsByRepo: Map<string, PrLike[]>, now = new Date()): Promise<ExploracionListRow[]> {
+export async function explorationList(entries: RepoEntry[], rows: ExplorationRow[], runs: RunSummary[], prsByRepo: Map<string, PrLike[]>, now = new Date()): Promise<ExplorationListRow[]> {
   let window: NightWindow | null = null;
   try {
     window = parseNightWindow(config.exploreNightWindow);
@@ -151,12 +151,12 @@ export async function exploracionList(entries: RepoEntry[], rows: ExploracionRow
   return Promise.all(rows.map(async (row) => {
     const entry = entries.find((e) => e.productRepo === row.repo)!;
     const last = appRuns(runs, row.repo, row.app).sort((a, b) => b.startedAt.localeCompare(a.startedAt))[0];
-    let fichas: FichaCounts | null = null;
+    let fichas: FindingCardCounts | null = null;
     let error: string | undefined;
     const pr = row.pr && (prsByRepo.get(row.repo) ?? []).find((p) => p.number === row.pr!.number);
     if (pr) {
       const review = await explorationReview(entry, pr);
-      fichas = countFichas(review.fichas.filter((f) => f.app === row.app));
+      fichas = countFindingCards(review.fichas.filter((f) => f.app === row.app));
       if (review.error) error = review.error;
     }
     return {
@@ -175,7 +175,7 @@ export async function exploracionList(entries: RepoEntry[], rows: ExploracionRow
 // those records existed are put together from the agent runs alone, with
 // less to say: no trigger, seed or findings.
 
-export interface CorridaAgent {
+export interface ExplorationRunAgent {
   runId: string;
   taskType: string;
   fn?: string;
@@ -185,7 +185,7 @@ export interface CorridaAgent {
   costUsd?: number;
 }
 
-export interface Corrida {
+export interface ExplorationRun {
   id: string;
   trigger: ExplorationTrigger | { kind: 'desconocido' };
   startedAt: string;
@@ -199,7 +199,7 @@ export interface Corrida {
   findings?: ExplorationRunRecord['findings'];
   discarded?: number;
   costUsd: number;
-  agents: CorridaAgent[];
+  agents: ExplorationRunAgent[];
   // Put together from the agent runs: no record of its own.
   legacy?: boolean;
 }
@@ -208,21 +208,21 @@ export interface Corrida {
 // agents run one after another, with the app up in between).
 const LEGACY_GAP_MS = 30 * 60_000;
 
-const agentOf = (run: RunSummary): CorridaAgent => {
+const agentOf = (run: RunSummary): ExplorationRunAgent => {
   const fn = runApp(run)?.fn;
   return {
     runId: run.runId, taskType: run.taskType, state: run.state, startedAt: run.startedAt,
     ...(fn ? { fn } : {}), ...(run.durationMs !== undefined ? { durationMs: run.durationMs } : {}), ...(run.costUsd !== undefined ? { costUsd: run.costUsd } : {}),
   };
 };
-const cost = (agents: CorridaAgent[]) => agents.reduce((sum, a) => sum + (a.costUsd ?? 0), 0);
+const cost = (agents: ExplorationRunAgent[]) => agents.reduce((sum, a) => sum + (a.costUsd ?? 0), 0);
 
 // `busy`: whether the repo's exploration lock is held — a record still
 // `running` without it was cut (the worker died before closing it).
-export function buildCorridas(records: ExplorationRunRecord[], agentRuns: RunSummary[], busy: boolean, now = Date.now()): Corrida[] {
+export function buildExplorationRuns(records: ExplorationRunRecord[], agentRuns: RunSummary[], busy: boolean, now = Date.now()): ExplorationRun[] {
   const runs = [...agentRuns].sort((a, b) => a.startedAt.localeCompare(b.startedAt));
   const used = new Set<string>();
-  const corridas: Corrida[] = records.map((rec) => {
+  const corridas: ExplorationRun[] = records.map((rec) => {
     const from = Date.parse(rec.startedAt);
     const to = rec.endedAt ? Date.parse(rec.endedAt) : now;
     const agents = runs.filter((r) => !used.has(r.runId) && Date.parse(r.startedAt) >= from && Date.parse(r.startedAt) <= to).map((r) => {
@@ -271,18 +271,18 @@ export function buildCorridas(records: ExplorationRunRecord[], agentRuns: RunSum
   return corridas.sort((a, b) => b.startedAt.localeCompare(a.startedAt));
 }
 
-export async function corridasOf(entry: RepoEntry, app: string, runs: RunSummary[]): Promise<Corrida[]> {
+export async function explorationRunsOf(entry: RepoEntry, app: string, runs: RunSummary[]): Promise<ExplorationRun[]> {
   const records = await listRunRecords(entry.productRepo, app);
   const busy = await withActiveRepo(entry, () => exploreWorkerBusy()).catch(() => false);
-  return buildCorridas(records, appRuns(runs, entry.productRepo, app), busy);
+  return buildExplorationRuns(records, appRuns(runs, entry.productRepo, app), busy);
 }
 
-// ---------- Inventario (#155, 2/4)
+// ---------- InventoryView (#155, 2/4)
 // The app's functions as ronin found them (inventory.yml, §11.6): at the
 // open exploration PR's branch, which each run updates, or at the base once
 // there's no PR.
 
-export interface InventarioFn {
+export interface InventoryViewFn {
   id: string;
   nombre: string;
   rutas: string[];
@@ -296,15 +296,15 @@ export interface InventarioFn {
   hallazgos: number;
 }
 
-export interface Inventario {
+export interface InventoryView {
   from: { branch: string; pr?: number };
   actualizado?: { fecha: string; sha: string };
   charters: readonly string[];
-  funciones: InventarioFn[];
+  funciones: InventoryViewFn[];
   error?: string;
 }
 
-export function inventarioFrom(raw: string): Pick<Inventario, 'actualizado' | 'funciones'> {
+export function inventoryViewFrom(raw: string): Pick<InventoryView, 'actualizado' | 'funciones'> {
   const inventory = parseInventory(raw);
   return {
     ...(inventory.actualizado ? { actualizado: inventory.actualizado } : {}),
@@ -326,13 +326,13 @@ export function inventarioFrom(raw: string): Pick<Inventario, 'actualizado' | 'f
   };
 }
 
-export async function inventarioOf(entry: RepoEntry, app: string, pr: Pick<ExplorationPr, 'number' | 'headRefName'> | undefined): Promise<Inventario> {
+export async function inventoryViewOf(entry: RepoEntry, app: string, pr: Pick<ExplorationPr, 'number' | 'headRefName'> | undefined): Promise<InventoryView> {
   const branch = pr ? pr.headRefName : (entry.worktreeBaseRef ?? config.worktreeBaseRef).replace(/^origin\//, '');
   const from = { branch, ...(pr ? { pr: pr.number } : {}) };
   const raw = await readBranchFile(entry, branch, `${EXPLORATION_DIR}/${app}/inventory.yml`);
   if (raw === null) return { from, charters: CHARTERS, funciones: [], error: `no hay inventory.yml de ${app} en ${branch}` };
   try {
-    return { from, charters: CHARTERS, ...inventarioFrom(raw) };
+    return { from, charters: CHARTERS, ...inventoryViewFrom(raw) };
   } catch (error) {
     return { from, charters: CHARTERS, funciones: [], error: `no se pudo leer inventory.yml: ${(error as Error).message.split('\n')[0]}` };
   }

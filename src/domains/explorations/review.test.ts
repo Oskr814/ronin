@@ -100,8 +100,8 @@ describe('explorationReview', () => {
 
   it('keeps the after ronin replaced, across the rename of an edited title', async () => {
     const [f, rejected] = (await explorationReview(entry(), pr)).fichas;
-    expect(f.despuesAnterior).toEqual({ url: img('aaa1111', 'despues.png'), nota: 'el aviso' });
-    expect(rejected.despuesAnterior).toBeUndefined();
+    expect(f.previousAfterImage).toEqual({ url: img('aaa1111', 'despues.png'), nota: 'el aviso' });
+    expect(rejected.previousAfterImage).toBeUndefined();
   });
 
   it("puts each finding's thread on it, oldest first, by id even under its old file name", async () => {
