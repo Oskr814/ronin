@@ -143,37 +143,37 @@ describe('a session that sees only some repos', () => {
 
   it('sees and uploads the meetings of its repos only (#62)', async () => {
     const notes = 'Exportar pedidos: bodega pidió bajar a Excel la lista de pedidos con los filtros puestos.';
-    const up = await call('/api/reuniones', 'POST', { repo: SC, text: notes, title: 'Llamada con bodega', at: '2026-10-16T15:00:00.000Z' });
+    const up = await call('/api/meetings', 'POST', { repo: SC, text: notes, title: 'Llamada con bodega', at: '2026-10-16T15:00:00.000Z' });
     expect(up.status).toBe(200);
     expect(up.body).toMatchObject({ repo: SC, title: 'Llamada con bodega', by: 'valeria', status: 'pending', source: { kind: 'pasted' } });
     // Not to a repo it doesn't see.
-    expect((await call('/api/reuniones', 'POST', { repo: BM, text: notes })).body).toEqual({ error: 'Elige un repo de los que ves.' });
+    expect((await call('/api/meetings', 'POST', { repo: BM, text: notes })).body).toEqual({ error: 'Elige un repo de los que ves.' });
     // The same notes again: which meeting has them.
-    expect(await call('/api/reuniones', 'POST', { repo: SC, text: `  ${notes}\n` })).toEqual({ status: 409, body: { error: `Esas notas ya se subieron: R-${up.body.number}.`, number: up.body.number } });
+    expect(await call('/api/meetings', 'POST', { repo: SC, text: `  ${notes}\n` })).toEqual({ status: 409, body: { error: `Esas notas ya se subieron: R-${up.body.number}.`, number: up.body.number } });
     const { createMeeting, extractPasted } = await import('../../../domains/meetings/index.js');
     const bm = await createMeeting({ repo: BM, by: 'otra', notes: extractPasted(`De Bmedical. ${notes}`) });
-    expect((await call('/api/reuniones')).body.meetings.map((m: { number: number }) => m.number)).toEqual([up.body.number]);
+    expect((await call('/api/meetings')).body.meetings.map((m: { number: number }) => m.number)).toEqual([up.body.number]);
     expect((await call('/api/snapshot')).body.reunionesPorRevisar).toBe(0);
-    expect((await call(`/api/reuniones/${up.body.number}`)).body).toMatchObject({ text: notes, original: false, events: [{ kind: 'uploaded', by: 'valeria' }] });
-    expect((await call(`/api/reuniones/${bm.number}`)).status).toBe(404);
-    expect((await call(`/api/reuniones/${bm.number}/original`)).status).toBe(404);
-    expect((await call(`/api/reuniones/${up.body.number}/original`)).status).toBe(404);
+    expect((await call(`/api/meetings/${up.body.number}`)).body).toMatchObject({ text: notes, original: false, events: [{ kind: 'uploaded', by: 'valeria' }] });
+    expect((await call(`/api/meetings/${bm.number}`)).status).toBe(404);
+    expect((await call(`/api/meetings/${bm.number}/original`)).status).toBe(404);
+    expect((await call(`/api/meetings/${up.body.number}/original`)).status).toBe(404);
     // ronin reads it as soon as it's up.
     expect(launchMeetingWorker).toHaveBeenCalledWith(up.body.number);
     // Asking again: only after a failed reading, and only for its repos.
-    expect((await call(`/api/reuniones/${up.body.number}/reintentar`, 'POST', {})).status).toBe(409);
+    expect((await call(`/api/meetings/${up.body.number}/retry`, 'POST', {})).status).toBe(409);
     const { updateMeeting } = await import('../../../domains/meetings/index.js');
     await updateMeeting(up.body.number, (m) => { m.status = 'failed'; });
     await updateMeeting(bm.number, (m) => { m.status = 'failed'; });
-    expect((await call(`/api/reuniones/${bm.number}/reintentar`, 'POST', {})).status).toBe(404);
-    expect((await call(`/api/reuniones/${bm.number}/aprobar`, 'POST', { items: [{ id: 'i1' }] })).status).toBe(404);
-    expect((await call(`/api/reuniones/${bm.number}/descartar`, 'POST', {})).status).toBe(404);
+    expect((await call(`/api/meetings/${bm.number}/retry`, 'POST', {})).status).toBe(404);
+    expect((await call(`/api/meetings/${bm.number}/approve`, 'POST', { items: [{ id: 'i1' }] })).status).toBe(404);
+    expect((await call(`/api/meetings/${bm.number}/discard`, 'POST', {})).status).toBe(404);
     // Nothing to approve yet: it has no proposals.
-    expect((await call(`/api/reuniones/${up.body.number}/aprobar`, 'POST', { items: [{ id: 'i1' }] })).status).toBe(409);
+    expect((await call(`/api/meetings/${up.body.number}/approve`, 'POST', { items: [{ id: 'i1' }] })).status).toBe(409);
     launchMeetingWorker.mockClear();
-    expect((await call(`/api/reuniones/${up.body.number}/reintentar`, 'POST', {})).body).toEqual({ ok: true });
+    expect((await call(`/api/meetings/${up.body.number}/retry`, 'POST', {})).body).toEqual({ ok: true });
     expect(launchMeetingWorker).toHaveBeenCalledWith(up.body.number);
-    expect((await call(`/api/reuniones/${up.body.number}`)).body).toMatchObject({ status: 'pending', events: [{ kind: 'uploaded' }, { kind: 'retried', by: 'valeria' }] });
+    expect((await call(`/api/meetings/${up.body.number}`)).body).toMatchObject({ status: 'pending', events: [{ kind: 'uploaded' }, { kind: 'retried', by: 'valeria' }] });
   });
 
   it("reads only a file the PR changes (#111)", async () => {
@@ -189,7 +189,7 @@ describe('a session that sees only some repos', () => {
     expect(await refused(`/api/items/${encodeURIComponent(`${SC}#1`)}/actions`, { action: 'assign' })).toMatch(/acciones del tablero/);
     await refused(`/api/repos/${SC}/issues`, { title: 'x', body: 'y', after: 'none' });
     await refused(`/api/items/${encodeURIComponent(`${SC}#2`)}/files/actions`, { action: 'comment', path: 'a.ts', body: 'x' });
-    expect(await refused('/api/reuniones', { repo: SC, text: 'notas de la reunión' })).toMatch(/subir notas/);
+    expect(await refused('/api/meetings', { repo: SC, text: 'notas de la reunión' })).toMatch(/subir notas/);
     await refused(`/api/deploys/${SC}/plan`, { tag: 'v1', prs: 'all' });
     expect((await call('/api/snapshot', 'GET', undefined, readOnly)).body.despliegues).toBe(false);
     expect((await call('/api/settings/users', 'GET', undefined, readOnly)).status).toBe(403);

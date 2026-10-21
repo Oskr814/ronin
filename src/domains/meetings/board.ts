@@ -7,7 +7,7 @@ import { DomainError } from '../../platform/errors.js';
 // notes of one of its meetings, and sees the ones uploaded to it. The notes
 // stay on the runner, in MEETINGS_DATA_DIR: never on GitHub.
 
-// The body of POST /api/reuniones: the file goes as a data URL inside the
+// The body of POST /api/meetings: the file goes as a data URL inside the
 // JSON, like the portal's images (only JSON gets past tailnet.ts's checks).
 // Base64 makes it a third bigger.
 export const MAX_UPLOAD_BODY = Math.ceil((MAX_FILE_BYTES * 4) / 3) + 64 * 1024;

@@ -13,14 +13,14 @@ import { launchMeetingWorker, retryMeeting } from './launch.js';
 import { createMeeting, getMeeting, listMeetings } from './meetings.js';
 
 // Reuniones (#62) from the dashboard, in Hono (#235, stage 6) — server/
-// apps/api/routes.ts mounts them under /api/reuniones:
+// apps/api/routes.ts mounts them under /api/meetings:
 //   GET  /                the meetings whose notes were uploaded, of the repos it sees (meetings/board.ts)
 //   POST /                uploads one: the notes as a file or pasted
 //   GET  /<n>             one of them, with its notes' text
 //   GET  /<n>/original    the file as it was uploaded, to download
-//   POST /<n>/reintentar  reads it again, after its reading failed
-//   POST /<n>/aprobar     creates what the person chose of its proposals, as them (meetings/approve.ts)
-//   POST /<n>/descartar   sets the rest of it aside
+//   POST /<n>/retry       reads it again, after its reading failed
+//   POST /<n>/approve     creates what the person chose of its proposals, as them (meetings/approve.ts)
+//   POST /<n>/discard     sets the rest of it aside
 
 const MISSING = { error: 'no existe esa reunión' };
 
@@ -67,7 +67,7 @@ export function meetingsRoutes() {
       if (!original) return c.json({ error: 'esas notas se pegaron: no hay archivo' }, 404);
       return c.body(new Uint8Array(original.data), 200, original.headers);
     })
-    .post('/:n/reintentar', async (c) => {
+    .post('/:n/retry', async (c) => {
       const meeting = await visibleMeeting(c.env.access, c.req.param('n'));
       if (!meeting) return c.json(MISSING, 404);
       const refused = refusal(c, c.env.access, meeting.repo, 'notas');
@@ -76,7 +76,7 @@ export function meetingsRoutes() {
       await launch(meeting.number);
       return c.json({ ok: true }, 200);
     })
-    .post('/:n/descartar', onlyJson, async (c) => {
+    .post('/:n/discard', onlyJson, async (c) => {
       const meeting = await visibleMeeting(c.env.access, c.req.param('n'));
       if (!meeting) return c.json(MISSING, 404);
       const refused = refusal(c, c.env.access, meeting.repo, 'aprobar');
@@ -84,7 +84,7 @@ export function meetingsRoutes() {
       await discardMeeting(meeting.number, c.env.session.login);
       return c.json({ status: 'discarded' }, 200);
     })
-    .post('/:n/aprobar', onlyJson, jsonBody(512 * 1024, 'el pedido no llegó bien'), body(z.object({ items: z.unknown().optional() })), async (c) => {
+    .post('/:n/approve', onlyJson, jsonBody(512 * 1024, 'el pedido no llegó bien'), body(z.object({ items: z.unknown().optional() })), async (c) => {
       const meeting = await visibleMeeting(c.env.access, c.req.param('n'));
       const entry = meeting && (await visibleRepos(c.env.access)).find((e) => e.productRepo === meeting.repo);
       if (!meeting || !entry) return c.json(MISSING, 404);
