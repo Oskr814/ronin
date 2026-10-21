@@ -90,7 +90,7 @@ Las rutas de datos las fija `compose.yml` en esos volúmenes: lo que diga `.env`
    docker compose run --rm -e GH_TOKEN="$(gh auth token)" --entrypoint bash init /install/scripts/init-webhooks.sh https://<tu-dominio>/api/webhooks/github
    ```
 
-6. **Exponé el listener público** (`SERVER_PORT`, 3939 por defecto) con tu proxy o túnel, como en [el servidor](/ronin/operar/servidor/#qué-tiene-que-ser-alcanzable). El compose lo publica en `127.0.0.1` de la máquina; `RONIN_PUBLIC_BIND` lo cambia.
+6. **Exponé el listener público** (`SERVER_PORT`, 3939 por defecto) con tu proxy o túnel, como en [el servidor](/ronin/operar/servidor/#qué-tiene-que-ser-alcanzable). El compose lo publica en `127.0.0.1` de la máquina; `RONIN_PUBLIC_BIND` lo cambia. Si el proxy no corre en la máquina misma, sino en otro contenedor o en otra máquina, llega por la IP de la red y no por `127.0.0.1`: poné `RONIN_PUBLIC_BIND=0.0.0.0` (o esa IP).
 
 </Steps>
 
@@ -103,6 +103,8 @@ Las rutas de datos las fija `compose.yml` en esos volúmenes: lo que diga `.env`
 | Una terminal adentro | `docker compose exec ronin bash` |
 | Sumar un repo | `scripts/init.sh --repo owner/nombre` (o Ajustes → Repos) y `docker compose restart ronin`, que lo clona al arrancar |
 | Cambiar `.env` | Editarlo y `docker compose up -d` (recrea `ronin` con los valores nuevos) |
+
+**Claude Code** no se actualiza solo adentro del contenedor: va con la imagen, en la versión de `CLAUDE_CODE_VERSION` del `Dockerfile`. Para otra, `docker compose build --build-arg CLAUDE_CODE_VERSION=<versión> ronin` y `docker compose up -d`.
 
 **Al desplegar una versión nueva:**
 
@@ -133,7 +135,7 @@ Para un runner que ya corre con systemd y [la base de datos](/ronin/operar/base-
 
 <Steps>
 
-1. **Prepará el `.env`** en el checkout donde va a correr el compose: copiá el de la instalación vieja y sumale `TS_AUTHKEY` y `TS_HOSTNAME` (o corré `scripts/init.sh`, que pide solo lo que falta). `RONIN_PG_PASSWORD` puede quedar la misma.
+1. **Prepará el `.env`** en el checkout donde va a correr el compose: copiá el de la instalación vieja y sumale `TS_AUTHKEY` y `TS_HOSTNAME` (o corré `scripts/init.sh`, que pide solo lo que falta). `RONIN_PG_PASSWORD` puede quedar la misma. Si el proxy del listener público le llegaba a la instalación vieja por la IP de la red (corre en otro contenedor o en otra máquina), sumale también `RONIN_PUBLIC_BIND=0.0.0.0`: con el valor por defecto, los webhooks y el portal dejan de llegar.
 
 2. **La URL del tablero cambia de host:** pasa a ser la del nodo `TS_HOSTNAME`. Cambiá `DASHBOARD_URL` y la *Authorization callback URL* de la OAuth App, y aplicale al tag del nodo nuevo la política de la tailnet que hoy abre `PREVIEW_PORT_RANGE`.
 
@@ -153,7 +155,7 @@ Para un runner que ya corre con systemd y [la base de datos](/ronin/operar/base-
    ```bash
    mkdir -p /tmp/migracion/datos && cd /tmp/migracion
    docker exec ronin-postgres pg_dump -U ronin -Fc ronin > ronin.dump
-   cp -a <ronin-viejo>/{portal-data,meetings-data,deploys-data,settings-data,metrics-data,logs} datos/
+   cp -a <ronin-viejo>/{portal-data,meetings-data,deploys-data,settings-data,metrics-data,seed-catalog-data,logs,.preview-reservations} datos/
    cp -a <ronin-viejo>/.ronin-state.json* datos/ 2>/dev/null || true
    cp <ronin-viejo>/repos.json datos/
    cp <checkout-del-compose>/.env env
@@ -181,6 +183,7 @@ Para un runner que ya corre con systemd y [la base de datos](/ronin/operar/base-
 
 ## Si algo no anda
 
-- **El tablero no abre:** `docker compose logs ronin | grep tablero` dice si se publicó. `docker compose exec ronin tailscale serve status` muestra lo publicado. La primera vez, el nodo necesita su auth key (`TS_AUTHKEY`) y HTTPS habilitado en la tailnet.
+- **El tablero no abre:** `docker compose logs ronin | grep tablero` dice si se publicó. `docker compose exec ronin tailscale serve status` muestra lo publicado. La primera vez, el nodo necesita su auth key (`TS_AUTHKEY`) y HTTPS habilitado en la tailnet. Si la key no tenía tag, el nodo entra como dispositivo de quien la creó: la política de las previews no le aplica y su key vence. Ponéselo en la consola de Tailscale (el nodo → *Edit ACL tags*); después la auth key ya no hace falta y se puede revocar.
 - **Docker no responde adentro:** `docker compose exec ronin docker info`. Los certificados los genera el servicio `docker` al arrancar; los primeros segundos puede fallar.
 - **Claude no tiene sesión:** el paso 4, en la cuenta que use el repo.
+- **Los webhooks o el portal no llegan:** el proxy no alcanza `SERVER_PORT`. Si corre en otro contenedor o en otra máquina, necesita `RONIN_PUBLIC_BIND=0.0.0.0` (ver [Instalar](#instalar), paso 6) y `docker compose up -d`.
