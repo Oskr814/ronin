@@ -37,7 +37,6 @@ import { listRequests } from '../../portal/requests.js';
 import { dropCloseNote, noteClosing } from '../../portal/follow.js';
 import { isOpen, requestRow } from './dashboard-portal.js';
 import { listMeetings } from '../../meetings/index.js';
-import { DespliegueError, despliegues, parseRelease, planDespliegue, publishDespliegue } from './dashboard-despliegues.js';
 import { metricsView, parsePeriod } from '../../metrics/index.js';
 import { ExploreNowError, corridasOf, exploracionList, exploracionRows, exploreNow, inventarioOf, liveRuns, parseExploreNow } from './dashboard-exploraciones.js';
 import { getDb } from '../../db/db.js';
@@ -50,7 +49,7 @@ import { answer } from '../hono.js';
 // The dashboard's data (#65), all behind the session (tailnet.ts checks it
 // before any of this runs). The groups already in Hono are in
 // server/dashboard-app.ts (#235, stage 6): /api/pedidos, /api/portal-admin
-// and /api/reuniones. The rest, still here:
+// /api/reuniones and /api/despliegues. The rest, still here:
 //   GET /api/snapshot                the sidebar and the status bar
 //   GET /api/today                   the last 12 hours' runs, the day's totals and the week's, and each repo's Linear cycle (#101)
 //   GET /api/items/<id>              one item's runs (14 days)
@@ -73,9 +72,6 @@ import { answer } from '../hono.js';
 //   GET /api/exploraciones/<owner>/<repo>/<app>/corridas    the app's exploration runs, with their agents
 //   GET /api/exploraciones/<owner>/<repo>/<app>/inventario  the app's functions and their coverage (inventory.yml)
 //   POST /api/exploraciones/<owner>/<repo>/<app>/run         explore it now: { maxFunctions, hours, tonight } (Explorar ahora)
-//   GET /api/despliegues             each repo with deploy in repos.json: what's merged and not deployed, its last releases and their workflow (#158, admins only)
-//   POST /api/despliegues/<owner>/<repo>/plan     what a release would carry: { tag, prs: 'all' | [n…], prerelease? }, with its problems
-//   POST /api/despliegues/<owner>/<repo>/publish  publishes it: the same, and { title?, notes?, fingerprint? }
 //   GET|POST /api/ajustes[/…]        the person's profile, and for admins the settings and their record (#174, ajustes.ts)
 //                                    and the plan of each Claude account (#234, cuentas-claude.ts)
 //   GET /api/metricas?dias=7|30|90&repo=<owner>/<repo>  how work moves in the repos: what comes in and out, how long it takes, who carries it (#222, metrics/, admins only)
@@ -234,33 +230,6 @@ async function postExploreNow(req: IncomingMessage, res: ServerResponse, repo: s
     json(res, 200, launched);
   } catch (error) {
     if (error instanceof ExploreNowError) json(res, error.status, { error: error.message });
-    else throw error;
-  }
-}
-
-// POST /api/despliegues/<owner>/<repo>/(plan|publish) (#158): admins, and
-// whoever an admin let deploy that repo (#174).
-async function postDespliegue(req: IncomingMessage, res: ServerResponse, repo: string, what: string, session: Session): Promise<void> {
-  if (refused(res, repo, 'desplegar')) return;
-  if (!(req.headers['content-type'] ?? '').startsWith('application/json')) {
-    json(res, 415, { error: 'se espera JSON' });
-    return;
-  }
-  const entry = (await visibleRepos()).find((e) => e.productRepo === repo && e.deploy);
-  if (!entry) {
-    json(res, 404, { error: 'ese repo no se despliega desde ronin (deploy en repos.json)' });
-    return;
-  }
-  try {
-    const body = parseRelease((await readJson(req)) ?? {});
-    if (what === 'plan') json(res, 200, await planDespliegue(entry, body));
-    else {
-      const done = await publishDespliegue(entry, body, session.login);
-      log.info(`tablero: ${session.login} publicó ${done.tag} en ${repo}`);
-      json(res, 200, done);
-    }
-  } catch (error) {
-    if (error instanceof DespliegueError) json(res, error.status, { error: error.message, ...(error.plan ? { plan: error.plan } : {}) });
     else throw error;
   }
 }
@@ -787,11 +756,6 @@ async function route(req: IncomingMessage, res: ServerResponse, path: string, se
     await postPrDecision(req, res, decodeURIComponent(decisionPost[1]), session);
     return true;
   }
-  const deployPost = /^\/api\/despliegues\/([\w.-]+\/[\w.-]+)\/(plan|publish)$/.exec(path);
-  if (deployPost && req.method === 'POST') {
-    await postDespliegue(req, res, deployPost[1], deployPost[2], session);
-    return true;
-  }
   const exploreRun = /^\/api\/exploraciones\/([\w.-]+\/[\w.-]+)\/([\w.-]+)\/run$/.exec(path);
   if (exploreRun && req.method === 'POST') {
     await postExploreNow(req, res, exploreRun[1], exploreRun[2], session);
@@ -812,13 +776,6 @@ async function route(req: IncomingMessage, res: ServerResponse, path: string, se
   if (path === '/api/snapshot') {
     await touchSeen(login);
     json(res, 200, await snapshot(login));
-    return true;
-  }
-
-  if (path === '/api/despliegues') {
-    const mine = (await visibleRepos()).filter((entry) => can(currentAccess(), entry.productRepo, 'desplegar'));
-    if (!mine.length) json(res, 403, { error: 'no tienes permiso para desplegar ningún repo' });
-    else json(res, 200, { repos: await despliegues(mine) });
     return true;
   }
 
