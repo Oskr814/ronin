@@ -9,7 +9,7 @@ import { accountName, listUsage } from '../../core/claude-usage.js';
 import { sees, type Access } from './access.js';
 import { itemKindOf } from '../../core/github.js';
 import { withActiveRepo } from '../../core/repo-context.js';
-import { hostLoad, itemKey, listRuns as listAllRuns, readQueue, readRunLines, readTickInfo, runPath, slotsInUse, summarizeRun } from './dashboard-data.js';
+import { HISTORY_DAYS, hostLoad, itemKey, listRuns as listAllRuns, readQueue, readRunLines, readTickInfo, runPath, slotsInUse, summarizeRun } from './dashboard-data.js';
 import { forgetGithub, repoGithub } from './dashboard-github.js';
 import { createFromDashboard, NewIssueError, parseNewIssue, repoAppPaths, repoApps } from './dashboard-new-issue.js';
 import { cycleView, repoLinear } from './dashboard-linear.js';
@@ -25,7 +25,6 @@ import { explorationReview, forgetExploration, isExplorationPr } from './dashboa
 import { FichaActionError, runApprove, runFichaAction, runGeneralComment } from './dashboard-exploration-actions.js';
 import { GithubUserError, pendingReview, viewedFiles } from './github-as-user.js';
 import type { Session } from './auth.js';
-import { PortalAdminError, portalAdminView, runPortalAdmin, type PortalAdminContext } from './portal-admin.js';
 import { cuentasView, setCuenta } from './cuentas-claude.js';
 import { suscripcionView } from './dashboard-suscripcion.js';
 import { AjustesError, ajustesView, conexionesView, linearTeams, readRegistro, saveNotificacion, saveProfile, setTask, setValue, testMail } from './ajustes.js';
@@ -34,9 +33,9 @@ import { addUsuario, removeUsuario, updateEquipo, updateUsuario, usuariosView, u
 import { editRepo, reposView } from './repos-admin.js';
 import { missingPortalConfig } from '../portal.js';
 import { listUsers, type PortalUser } from '../../portal/accounts.js';
-import { getRequest, listRequests } from '../../portal/requests.js';
+import { listRequests } from '../../portal/requests.js';
 import { dropCloseNote, noteClosing } from '../../portal/follow.js';
-import { isOpen, requestDetail, requestImage, requestPatch, requestRow } from './dashboard-portal.js';
+import { isOpen, requestRow } from './dashboard-portal.js';
 import { DuplicateMeeting, createMeeting, getMeeting, launchMeetingWorker, listMeetings, retryMeeting } from '../../meetings/index.js';
 import { MAX_UPLOAD_BODY, MeetingUploadError, meetingDetail, meetingOriginal, meetingRow, parseUpload } from './dashboard-meetings.js';
 import { ApproveError, approveMeeting, discardMeeting } from './dashboard-meetings-approve.js';
@@ -46,6 +45,8 @@ import { ExploreNowError, corridasOf, exploracionList, exploracionRows, exploreN
 import { getDb } from '../../db/db.js';
 import { slotsInUseDb, waitingDb } from '../../core/locks-db.js';
 import { timed } from '../../core/timing.js';
+import { dashboardApp, ownsPath } from '../dashboard-app.js';
+import { answer } from '../hono.js';
 
 // The dashboard's data (#65), all behind the session (tailnet.ts checks it
 // before any of this runs):
@@ -95,7 +96,6 @@ import { timed } from '../../core/timing.js';
 // How far back the sidebar and an item's history look. Run records are kept
 // 14 days (scripts/setup-cron.sh).
 const SIDEBAR_DAYS = 3;
-const HISTORY_DAYS = 14;
 const STREAM_POLL_MS = 1000;
 const STREAM_HEARTBEAT_MS = 15_000;
 
@@ -383,44 +383,6 @@ async function portalSummary(runs: Awaited<ReturnType<typeof listRuns>>) {
   };
 }
 
-async function pedidos(res: ServerResponse, path: string): Promise<void> {
-  if (path === '/api/pedidos') {
-    const { requests, users } = await visibleRequests();
-    const entries = await visibleRepos();
-    const runs = await listRuns(HISTORY_DAYS);
-    json(res, 200, { requests: requests.map((r) => requestRow(r, users.get(r.userId), entries, runs)).sort((a, b) => b.number - a.number) });
-    return;
-  }
-  const match = /^\/api\/pedidos\/(\d+)(?:\/(img|prototipo|reproduccion)\/([^/]+))?$/.exec(path);
-  const request = match ? await getRequest(Number(match[1])) : undefined;
-  // One of a repo it doesn't see is one that isn't there.
-  if (!match || !request || !sees(currentAccess(), request.repo)) {
-    json(res, 404, { error: 'no existe ese pedido' });
-    return;
-  }
-  if (match[2] === 'img') {
-    let file = '';
-    try {
-      file = decodeURIComponent(match[3]);
-    } catch {
-      // A name that doesn't decode is one the request doesn't have.
-    }
-    const image = await requestImage(request, file);
-    if (image) res.writeHead(200, { 'Content-Type': image.type, 'Cache-Control': 'private, max-age=86400' }).end(image.data);
-    else json(res, 404, { error: 'no existe esa imagen' });
-    return;
-  }
-  if (match[2] === 'prototipo' || match[2] === 'reproduccion') {
-    const prototype = match[2] === 'prototipo';
-    const patch = await requestPatch(request, Number(match[3]), prototype ? 'prototype' : 'reproduction');
-    if (patch === null) json(res, 404, { error: prototype ? 'ese prototipo no dejó diff' : 'esa reproducción no dejó diff' });
-    else json(res, 200, { patch });
-    return;
-  }
-  const users = new Map((await listUsers()).map((u) => [u.id, u]));
-  json(res, 200, requestDetail(request, users.get(request.userId), await visibleRepos(), await listRuns(HISTORY_DAYS)));
-}
-
 // Hoy: the runs, and each repo's current Linear cycle, where ronin's issues
 // stand by what GitHub says of them.
 async function todayWithCycles(): Promise<unknown> {
@@ -597,40 +559,6 @@ async function postNewIssue(req: IncomingMessage, res: ServerResponse, repo: str
   } catch (error) {
     if (error instanceof NewIssueError) json(res, 400, { error: error.message });
     else if (!githubRefusal(res, error)) throw error;
-  }
-}
-
-// The request portal's accounts (#114): only for the dashboard's admins,
-// over every repo of the portal.
-async function portalAdmin(req: IncomingMessage, res: ServerResponse, path: string, session: Session): Promise<void> {
-  if (!currentAccess().admin) {
-    json(res, 403, { error: 'solo los administradores del tablero manejan las cuentas del portal' });
-    return;
-  }
-  const ctx: PortalAdminContext = {
-    url: config.portal.url,
-    enabled: missingPortalConfig(config.portal).length === 0,
-    dailyLimit: config.portal.dailyLimit,
-    entries: await loadRepos(),
-    admin: session.login,
-  };
-  if (req.method === 'GET' && path === '/api/portal-admin') {
-    json(res, 200, await portalAdminView(ctx));
-    return;
-  }
-  if (req.method !== 'POST') {
-    json(res, 405, { error: 'método no permitido' });
-    return;
-  }
-  if (!(req.headers['content-type'] ?? '').startsWith('application/json')) {
-    json(res, 415, { error: 'se espera JSON' });
-    return;
-  }
-  try {
-    json(res, 200, await runPortalAdmin(ctx, path, (await readJson(req)) ?? {}));
-  } catch (error) {
-    if (error instanceof PortalAdminError) json(res, error.status, { error: error.message });
-    else throw error;
   }
 }
 
@@ -930,16 +858,13 @@ export async function handleDashboard(req: IncomingMessage, res: ServerResponse,
 
 async function route(req: IncomingMessage, res: ServerResponse, path: string, session: Session): Promise<boolean> {
   const login = session.login;
-  if (path === '/api/portal-admin' || path.startsWith('/api/portal-admin/')) {
-    await portalAdmin(req, res, path, session);
+  // The groups already in Hono (dashboard-app.ts).
+  if (ownsPath(path)) {
+    await answer(dashboardApp, req, res, { session, access: currentAccess() });
     return true;
   }
   if (path === '/api/ajustes' || path.startsWith('/api/ajustes/')) {
     await ajustes(req, res, path, session);
-    return true;
-  }
-  if (req.method === 'GET' && (path === '/api/pedidos' || path.startsWith('/api/pedidos/'))) {
-    await pedidos(res, path);
     return true;
   }
   if (path === '/api/reuniones' && req.method === 'POST') {

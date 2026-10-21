@@ -1,11 +1,14 @@
 import { randomBytes } from 'node:crypto';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { HttpBindings } from '@hono/node-server';
-import type { Context, MiddlewareHandler } from 'hono';
+import type { Context, Hono, MiddlewareHandler } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import { HTTPException } from 'hono/http-exception';
 import type { ZodType } from 'zod';
 import { zValidator } from '@hono/zod-validator';
 import { log } from '../core/logger.js';
+import type { Access } from './api/access.js';
+import type { Session } from './api/auth.js';
 
 // What every route group in Hono shares (#235, stage 6): the API moves to it
 // a group at a time, mounted inside the current Node handlers, so the old
@@ -13,6 +16,34 @@ import { log } from '../core/logger.js';
 
 // The Node request under each route (c.env.incoming): its cookies, its socket.
 export type NodeEnv = { Bindings: HttpBindings };
+
+// The dashboard's routes (on the tailnet listener): who's asking, and the
+// repos they see (access.ts), already checked by tailnet.ts.
+export type DashboardBindings = HttpBindings & { session: Session; access: Access };
+export type DashboardEnv = { Bindings: DashboardBindings };
+
+// A Hono app answering one Node request, with `extra` next to it in c.env
+// (the dashboard's session and access). Plain writeHead and end, which is
+// all the dashboard's handlers (and their tests' stand-ins) need.
+export async function answer<E extends object>(app: Hono<{ Bindings: HttpBindings & E }>, req: IncomingMessage, res: ServerResponse, extra: E): Promise<void> {
+  const method = req.method ?? 'GET';
+  const chunks: Buffer[] = [];
+  if (method !== 'GET' && method !== 'HEAD') for await (const chunk of req) chunks.push(chunk as Buffer);
+  const headers = new Headers();
+  for (const [name, value] of Object.entries(req.headers)) {
+    if (typeof value === 'string') headers.set(name, value);
+    else if (Array.isArray(value)) for (const v of value) headers.append(name, v);
+  }
+  const request = new Request(`http://localhost${req.url ?? '/'}`, { method, headers, ...(chunks.length ? { body: Buffer.concat(chunks) } : {}) });
+  const response = await app.fetch(request, { incoming: req, outgoing: res, ...extra });
+  const out: Record<string, string | string[]> = {};
+  response.headers.forEach((value, name) => {
+    if (name !== 'set-cookie') out[name] = value;
+  });
+  const cookies = response.headers.getSetCookie();
+  if (cookies.length) out['set-cookie'] = cookies;
+  res.writeHead(response.status, out).end(Buffer.from(await response.arrayBuffer()));
+}
 
 // A JSON body of at most `max` bytes, an object, or a 400 with `bad`: what
 // the page shows when it didn't arrive whole (images too heavy, cut off).
@@ -45,7 +76,8 @@ export const body = <T extends ZodType>(schema: T) =>
 export function onError(domain: Array<new (...args: never[]) => Error> = []) {
   return (error: Error, c: Context) => {
     if (error instanceof HTTPException) return error.getResponse();
-    if (domain.some((type) => error instanceof type)) return c.json({ error: error.message }, 400);
+    // Its own status if it has one (a 404, a 409), or a 400.
+    if (domain.some((type) => error instanceof type)) return c.json({ error: error.message }, ((error as { status?: number }).status ?? 400) as 400);
     const id = randomBytes(4).toString('hex');
     log.error(`${c.req.method} ${c.req.path} falló (error ${id})`, error);
     return c.json({ error: `Algo falló de nuestro lado (error ${id}).` }, 500);

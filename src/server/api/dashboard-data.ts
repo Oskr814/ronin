@@ -24,6 +24,9 @@ export function pidAlive(pid: unknown): boolean {
 
 export type { RunLine, RunState, RunSummary } from '../../core/run-record.js';
 
+// How far back the dashboard looks for an item's runs.
+export const HISTORY_DAYS = 14;
+
 export const RUN_ID_PATTERN = /^(\d{4})(\d{2})(\d{2})T\d{6}-[a-z0-9-]+$/;
 
 export function runPath(runId: string): string | null {
