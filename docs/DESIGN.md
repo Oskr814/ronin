@@ -142,7 +142,7 @@ Scaffold en TypeScript. `src/` tiene las apps y tres capas, con las dependencias
 | Carpeta | Qué tiene |
 |---|---|
 | `apps/api/` | el servidor (`main.ts`): los dos listeners, el login y los estáticos (`http/`), el montaje de las rutas de cada dominio (`routes.ts`), la cola de trabajos (`jobs/`), el tick (`tick/`, el orquestador) y los webhooks (`webhooks/`, con el dispatcher de eventos y el handler por evento, §14) |
-| `apps/dashboard/` | el tablero: el marco (`public/`, sin build) y las páginas ya pasadas a React, que `app.js` monta (§15) |
+| `apps/dashboard/` | el tablero, en React: el marco (`src/shell/`) y sus páginas (`src/pages/`), con `public/` (el HTML, el CSS y las fuentes) tal cual (§15) |
 | `apps/portal/` | el portal de pedidos, en React (§16) |
 | `domains/` | un dominio por carpeta: `slices` (issues → PRs apilados), `review` (§4), `commands` (comandos por mención: `mentions.ts`, `/help`, `/auto-merge`, `/resolve-conflicts`, `/spike`, `/prototype`, pedidos en issues), `product-app` (levantar la app del producto y la rama de evidencia, §11.2, §11.5), `previews` (§12), `explorations` (§11), `portal`, `meetings`, `deploys`, `metrics`, `changelog`, `items` y `runs` (lo que lee el tablero), `settings`, `access` |
 | `platform/` | lo compartido por todos: `config/`, `github/`, `linear/`, `git/` (worktrees), `claude/` (`claude -p`, cuentas y uso), `agents/` (cómo corre una tarea de agente, `agent-task.ts`, las reglas que comparten los prompts, `prompts.ts`, y el registro de corridas), `state/` (estado local, claim), `locks/`, `workers/` (el lanzador de workers), `notify/`, `db/`, los logs y las mediciones |
@@ -587,11 +587,13 @@ src/server/
     apps/api/http/auth.ts            /api/auth/login, /callback, /logout y /me
     dashboard*.ts      los datos del tablero
     portal*.ts         la API del portal y su administración (§16)
-src/apps/dashboard/public/               la aplicación: HTML, CSS, JS y fuentes, sin build; marked y DOMPurify en vendor/
-src/apps/dashboard/     las páginas ya pasadas a React, que app.js monta donde van: Vite las arma en dist/public/dashboard/pages.js
-  src/pages/           una por archivo, o una carpeta cuando tiene varios (despliegues/: la página, el diálogo, lo que comparten)
-  src/lib/             lo que no dibuja (las fechas)
-  src/host.ts          lo que una página le pide a app.js
+src/apps/dashboard/     el tablero, en React: Vite lo arma en dist/public/dashboard/dashboard.js
+  public/              index.html, el CSS, theme.js y las fuentes, tal cual
+  vendor/              marked, DOMPurify y los íconos de GitHub, copiados como vienen
+  src/shell/           el marco: la barra lateral, la columna de contexto, la barra de estado, las rutas y lo que lee para ellas
+  src/pages/           una por archivo, o una carpeta cuando tiene varios (deploys/: la página, el diálogo, lo que comparten)
+  src/lib/             lo que no dibuja (las fechas, el markdown de GitHub)
+  src/host.ts          lo que una página le pide al marco
 src/apps/portal/        la página del portal de pedidos
 ```
 
@@ -602,7 +604,7 @@ src/apps/portal/        la página del portal de pedidos
   - **Quién lo ve:** el 8443 queda fuera de `PREVIEW_PORT_RANGE`, lo único que la política de Tailscale les abre a externos (§12), así que solo lo ve el dueño, que tiene `*` sobre `tag:media`.
   - **HTTPS y LAN:** `tailscale serve` pone el HTTPS que necesita la cookie de sesión. Desde la LAN se entra por la misma URL, con Tailscale en el equipo.
   - **Solo con login configurado:** arranca solo si están las variables del login (15.3); sin ellas, el servidor atiende únicamente los webhooks.
-- **La aplicación** son archivos estáticos sin datos adentro: todo lo pide a la API. Se sirve sin sesión, y cuando la API responde 401 muestra *Entrar con GitHub*, con el motivo si la sesión venció mientras se usaba. Si en ese momento hay algo escrito (un diálogo abierto, un comentario a medias), la página se queda: un aviso arriba abre el login en otra pestaña y el diálogo vuelve a dejar enviar. Una ruta que no es un archivo (`/i/<ítem>`) devuelve la app. `pnpm build` copia `src/apps/dashboard/public/` a `dist/public/dashboard/`.
+- **La aplicación** son archivos estáticos sin datos adentro: todo lo pide a la API. Se sirve sin sesión, y cuando la API responde 401 muestra *Entrar con GitHub*, con el motivo si la sesión venció mientras se usaba. Si en ese momento hay algo escrito (un diálogo abierto, un comentario a medias), la página se queda: un aviso arriba abre el login en otra pestaña y el diálogo vuelve a dejar enviar. Una ruta que no es un archivo (`/i/<ítem>`) devuelve la app. `pnpm build` arma el tablero con Vite en `dist/public/dashboard/` (`dashboard.js`, junto a lo que hay en `src/apps/dashboard/public/`).
 - **Errores aislados.** Un pedido que tira un error responde 500 y se loguea, sin tirar el proceso que recibe los webhooks. Si igual se cae, systemd lo reinicia y el tick levanta lo que llegó mientras tanto.
 - **La ruta de los webhooks.** Pasó de `/webhook` a `/api/webhooks/github`. `scripts/init-webhooks.sh <url>` busca el hook de ronin por la URL nueva o por la vieja del mismo dominio y le cambia la URL, en vez de crear un segundo hook que entregaría todo dos veces. El alias `/webhook` se puede sacar cuando ningún hook apunte ahí.
 

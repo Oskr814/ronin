@@ -53,7 +53,6 @@ describe('Deploys, in React', () => {
     expect(screen.getByText('desplegado')).toBeTruthy();
     fireEvent.click(screen.getByText('del pedido P-7'));
     expect(host.openPedido).toHaveBeenCalledWith(7);
-    await waitFor(() => expect(host.read).toHaveBeenCalledWith('deploys', REPOS));
   });
 
   it('plans while the tag is written, shows what clashes, and publishes what it showed', async () => {

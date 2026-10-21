@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 
 const MIN = 60e3;
 
-// "hace 5m", as the tablero (app.js) writes it.
+// "hace 5m", as the tablero writes it.
 export function short(ms: number): string {
   const m = Math.round(ms / MIN);
   if (m < 1) return 'recién';

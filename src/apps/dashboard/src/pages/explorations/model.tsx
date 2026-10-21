@@ -8,7 +8,7 @@ import { ago } from '../../../../../ui/time.js';
 // and how an app's state and head are written, on its page and its PR's.
 
 const MIN = 60e3;
-// The list read again this often while its page is open (app.js), and an
+// The list read again this often while its page is open (the shell), and an
 // app's runs and inventory: the runs often (one may be going), the
 // inventory seldom (it changes once per run).
 export const RUNS_EVERY_MS = 10_000;

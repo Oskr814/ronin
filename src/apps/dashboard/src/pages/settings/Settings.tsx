@@ -14,7 +14,7 @@ import { ChangeContext, makeChange } from './parts.js';
 import type { Accounts as AccountsData, Connections as ConnectionsData, LogEntry, Page, Portal, Repos, Team, User as UserData } from './model.js';
 
 // Ajustes (#174): one page per section, like Linear's settings; each field
-// saves when it's left. app.js draws its sidebar (Tu cuenta, and
+// saves when it's left. The shell draws its sidebar (Tu cuenta, and
 // Administración for admins), routes /ajustes/<sección>[/…] and mounts the
 // page again on each address, which reads it from host.settingsView(): so,
 // as before, going to a section reads it again.
@@ -30,7 +30,7 @@ export interface Data {
   user?: UserData;
   portal?: Portal;
   portalError?: string;
-  // Usuarios' filter (todos, equipo, portal): the one app.js was asked for
+  // Usuarios' filter (todos, equipo, portal): the one the shell was asked for
   // (Pedidos del portal asks for the portal's), or the last one chosen.
   filter: string;
   chooseFilter(filter: string): void;

@@ -27,10 +27,6 @@ export function Today() {
   useEffect(() => {
     if (query.error instanceof ApiError && query.error.status === 401) host.unauthorized(query.error.message);
   }, [query.error, host]);
-  // The sidebar colors Linear's projects by the cycle's too.
-  useEffect(() => {
-    if (query.data) host.read?.('today', query.data);
-  }, [query.data, host]);
 
   const snap = host.snapshot();
   const now = Date.now();

@@ -10,7 +10,6 @@ export function testHost(overrides: Partial<Host> = {}): Host {
     openPedidos: vi.fn(),
     unauthorized: vi.fn(),
     repoColor: () => 'red',
-    read: vi.fn(),
     openItem: vi.fn(),
     openSettings: vi.fn(),
     openMetrics: vi.fn(),

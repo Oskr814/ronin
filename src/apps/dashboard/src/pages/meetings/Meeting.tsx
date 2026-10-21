@@ -12,7 +12,7 @@ import { chars, citedBy, noteLines, plural, source, type Detail } from './model.
 import { Proposals } from './Proposals.js';
 
 // A meeting's page (#62): what ronin proposes out of it, its notes, what
-// happened to it and its runs. app.js routes to it (/reuniones/<n>), and
+// happened to it and its runs. The shell routes to it (/reuniones/<n>), and
 // opens it on a run when one of its runs is picked elsewhere (`run`).
 
 type Tab = 'props' | 'notas' | 'act' | 'runs';

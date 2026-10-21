@@ -1,6 +1,6 @@
 import type { FocusEvent, PointerEvent } from 'react';
 
-// The tooltip of the charts: the one element app.js also uses (#tip), shown
+// The tooltip of the charts: one element for all of them (#tip), shown
 // next to the pointer with a part's numbers.
 const tipEl = () =>
   document.getElementById('tip') ?? Object.assign(document.body.appendChild(document.createElement('div')), { id: 'tip', className: 'tip', role: 'tooltip' });

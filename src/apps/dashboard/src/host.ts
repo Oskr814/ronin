@@ -5,7 +5,7 @@ import type { ItemDetail, ItemRun, ShownRun, Snapshot } from './api.js';
 
 export type { ExplorationListRow, ExplorationRow, LinearPlanning };
 
-// What a page asks of the shell around it (app.js), which mounts it.
+// What a page asks of the shell around it (shell/), which mounts it.
 export interface Host {
   // A note at the bottom, with a link to GitHub if there's one.
   toast(message: string, url?: string): void;
@@ -16,8 +16,6 @@ export interface Host {
   unauthorized(message: string): void;
   // A repo's color in the sidebar.
   repoColor(repo: string): string;
-  // What the page read, for what the sidebar shows of it.
-  read?(name: string, data: unknown): void;
   // Opens an item (an issue or a PR) by its key, repo#number.
   openItem(key: string): void;
   // Opens a section of Ajustes (#174): in Usuarios, one of the team (in
@@ -25,7 +23,7 @@ export interface Host {
   // accounts. Or a tab of Métricas.
   openSettings(section: string, login?: string | null, filter?: string | null, account?: string | null): void;
   openMetrics(tab: 'trabajo' | 'suscripcion'): void;
-  // What Ajustes shows, as app.js routed it (/ajustes/<sección>[/…]).
+  // What Ajustes shows, as the shell routed it (/ajustes/<sección>[/…]).
   settingsView(): SettingsView;
   // Who's looking, and whether they manage the portal's accounts.
   session(): { me: string; portalAdmin: boolean };
@@ -54,7 +52,7 @@ export interface Host {
   me(): string;
   // What a repo's Linear team offers to plan with, if it has one.
   planning(repo: string): LinearPlanning | null;
-  // Markdown as clean HTML (app.js's md), its #123 linked to the repo.
+  // Markdown as clean HTML (lib/md.ts), its #123 linked to the repo.
   markdown(text: string, repo: string): string;
   // Whether the sidebar has an item: a #123 opens it here, not on GitHub.
   hasItem(key: string): boolean;
@@ -71,16 +69,16 @@ export interface Host {
   // Opens an item on one of its runs.
   openRun(key: string, runId: string): void;
   // Exploraciones (#155): the apps the repos explore, as the snapshot and
-  // the list app.js reads for the sidebar have them. The same object until
+  // the list the shell reads for the sidebar have them. The same object until
   // either changes; `subscribe` says when.
   explorations(): ExplorationsView;
   // Opens the list of the apps, or an app's page (its exploration PR's when
   // it has one).
   openExplorations(): void;
   openExploration(repo: string, app: string): void;
-  // Opens Explorar ahora for an app (the dialog is a page app.js mounts on
-  // its own: the item's head opens it too); `explored`, that it went: the
-  // dialog closes and the app shows as starting.
+  // Opens Explorar ahora for an app (a dialog the shell opens on top: the
+  // item's head opens it too); `explored`, that it went: the dialog closes
+  // and the app shows as starting.
   exploreNow(repo: string, app: string): void;
   explored(repo: string, app: string): void;
   // A call each time the shell draws again (a new snapshot, another project

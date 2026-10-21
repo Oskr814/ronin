@@ -29,9 +29,6 @@ export function Deploys() {
   });
   const repos = query.data;
   useEffect(() => {
-    if (repos) host.read?.('deploys', repos);
-  }, [repos, host]);
-  useEffect(() => {
     if (query.error instanceof ApiError && query.error.status === 401) host.unauthorized(query.error.message);
   }, [query.error, host]);
 
