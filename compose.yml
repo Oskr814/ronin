@@ -1,0 +1,158 @@
+# ronin with Docker Compose (#235, stage 5). Install or recover:
+#   scripts/init.sh        (or restore a backup: scripts/restore.sh <backup>)
+#   docker compose up -d
+# The guide: https://oskr814.github.io/ronin/operar/docker/
+#
+# Four services:
+#   tailscale  the sidecar: ronin's node on the tailnet. ronin and docker
+#              share its network, so `tailscale serve` (run by ronin through
+#              the sidecar's socket) reaches the dashboard and the previews on
+#              127.0.0.1, as on a runner installed by hand.
+#   ronin      the server, the planner and the local runner (Dockerfile).
+#   docker     ronin's own Docker (DinD): previews, prototypes and
+#              reproductions run here, never on the host's. ronin talks to it
+#              over TCP with TLS; the host's socket is never mounted.
+#   postgres   the database, only reachable inside the compose.
+# And `init` (profile tools): `ronin init` and the backups' helper.
+#
+# The values come from .env (scripts/init.sh writes it). The paths are fixed
+# here, on the volumes: whatever .env says for them is ignored.
+name: ronin
+
+x-ronin-env: &ronin-env
+  DATABASE_URL: postgres://ronin:${RONIN_PG_PASSWORD:-}@postgres:5432/ronin
+  RONIN_DATA_DIR: /data
+  RONIN_REPOS_DIR: /repos
+  REPOS_CONFIG_PATH: /data/repos.json
+  RONIN_LOGS_DIR: /data/logs
+  LOCAL_STATE_PATH: /data/.ronin-state.json
+  PORTAL_DATA_DIR: /data/portal-data
+  MEETINGS_DATA_DIR: /data/meetings-data
+  DEPLOYS_DATA_DIR: /data/deploys-data
+  SETTINGS_DATA_DIR: /data/settings-data
+  METRICS_DATA_DIR: /data/metrics-data
+  SEED_CATALOG_DATA_DIR: /data/seed-catalog-data
+  PREVIEW_RESERVATIONS_DIR: /data/.preview-reservations
+  # The default Claude account; each repo can name its own in repos.json
+  # ("claudeConfigDir": "/claude/<cuenta>").
+  CLAUDE_CONFIG_DIR: /claude/default
+  # Its worktrees next to each repo's clone (repo-context.ts), in the volume
+  # that the DinD service also mounts.
+  WORKTREE_BASE_PATH: ""
+  DOCKER_HOST: tcp://localhost:2376
+  DOCKER_TLS_VERIFY: "1"
+  DOCKER_CERT_PATH: /certs/client
+
+x-env-file: &env-file
+  - path: .env
+    required: false
+
+services:
+  tailscale:
+    image: tailscale/tailscale:v1.94.1
+    hostname: ${TS_HOSTNAME:-ronin}
+    restart: unless-stopped
+    environment:
+      TS_AUTHKEY: ${TS_AUTHKEY:-}
+      TS_HOSTNAME: ${TS_HOSTNAME:-ronin}
+      TS_EXTRA_ARGS: ${TS_EXTRA_ARGS:-}
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_SOCKET: /var/run/tailscale/tailscaled.sock
+      # Userspace: no /dev/net/tun nor NET_ADMIN. `tailscale serve` works
+      # the same; what it doesn't give is outgoing traffic to the tailnet,
+      # which ronin doesn't use.
+      TS_USERSPACE: "true"
+      # The key only logs in the first time; then the state volume does.
+      TS_AUTH_ONCE: "true"
+    volumes:
+      - tailscale-state:/var/lib/tailscale
+      - tailscale-socket:/var/run/tailscale
+    # The public listener (webhooks and portal), for the proxy or tunnel that
+    # already reaches it. The network is this service's, shared by ronin.
+    ports:
+      - "${RONIN_PUBLIC_BIND:-127.0.0.1}:${SERVER_PORT:-3939}:${SERVER_PORT:-3939}"
+
+  ronin:
+    build: .
+    image: ronin:${RONIN_IMAGE_TAG:-local}
+    restart: unless-stopped
+    # Reaps the workers and handlers ronin starts and leaves running.
+    init: true
+    network_mode: service:tailscale
+    env_file: *env-file
+    environment: *ronin-env
+    volumes:
+      - ronin-files:/data
+      - ronin-repos:/repos
+      - ronin-claude:/claude
+      - docker-certs-client:/certs/client:ro
+      - tailscale-socket:/var/run/tailscale
+    depends_on:
+      postgres:
+        condition: service_healthy
+      docker:
+        condition: service_started
+      tailscale:
+        condition: service_started
+    stop_grace_period: 30s
+
+  docker:
+    image: docker:29-dind
+    privileged: true
+    restart: unless-stopped
+    network_mode: service:tailscale
+    environment:
+      DOCKER_TLS_CERTDIR: /certs
+    volumes:
+      - docker-data:/var/lib/docker
+      - docker-certs-ca:/certs/ca
+      - docker-certs-client:/certs/client
+      # The same path as in ronin: a preview's bind mounts point into its
+      # worktree, and this daemon resolves them on its own filesystem.
+      - ronin-repos:/repos
+    depends_on:
+      - tailscale
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ronin
+      POSTGRES_PASSWORD: ${RONIN_PG_PASSWORD:-}
+      POSTGRES_DB: ronin
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "ronin"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # `docker compose run --rm init`: ronin init, writing the checkout's .env
+  # (mounted at /install) and repos.json in the data volume. Never started
+  # by `up`. scripts/backup.sh and restore.sh use it too, to reach the
+  # volume.
+  init:
+    image: ronin:${RONIN_IMAGE_TAG:-local}
+    pull_policy: never
+    profiles: [tools]
+    entrypoint: ["ronin-entrypoint", "init"]
+    env_file: *env-file
+    environment:
+      <<: *ronin-env
+      RONIN_ENV_FILE: /install/.env
+      RONIN_ENV_EXAMPLE: /app/.env.example
+    volumes:
+      - .:/install
+      - ronin-files:/data
+
+volumes:
+  postgres-data:
+  ronin-files:
+  ronin-repos:
+  ronin-claude:
+  tailscale-state:
+  tailscale-socket:
+  docker-data:
+  docker-certs-ca:
+  docker-certs-client:
