@@ -4,8 +4,9 @@ import { createContext, useContext } from 'react';
 export interface Host {
   // A note at the bottom, with a link to GitHub if there's one.
   toast(message: string, url?: string): void;
-  // Opens a portal request's page.
+  // Opens a portal request's page, or the list of them.
   openPedido(n: number): void;
+  openPedidos(): void;
   // The session ended: the page logs in again, or says so.
   unauthorized(message: string): void;
   // A repo's color in the sidebar.
@@ -21,6 +22,22 @@ export interface Host {
   repos(): string[];
   // A task type in words (fix-issue → "Arreglar un issue").
   typeName(type: string): string;
+  // The portal's requests the snapshot counts, and whether the session
+  // manages the portal's accounts, which are in Ajustes → Usuarios.
+  requestsTotal(): number;
+  portalAdmin(): boolean;
+  openPortalAccounts(): void;
+  // A request's issue or its PR, read as on its page (still app.js's): it
+  // draws it into the element, again as GitHub's copy arrives, and wires its
+  // buttons. Returns how to stop.
+  requestDoc(element: HTMLElement, request: RequestDoc, onShow: (show: 'issue' | 'pr') => void): () => void;
+}
+
+export interface RequestDoc {
+  repo: string;
+  issue: number;
+  pr: number | null;
+  show: 'issue' | 'pr';
 }
 
 export const HostContext = createContext<Host | null>(null);

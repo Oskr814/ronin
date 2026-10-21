@@ -1,0 +1,117 @@
+// @vitest-environment jsdom
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import type { ReactNode } from 'react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { HostContext, type Host } from '../../host.js';
+import { Request } from './Request.js';
+import { Requests } from './Requests.js';
+
+// Invented requests: a person, an app and two repos that don't exist.
+const at = (min: number) => new Date(Date.now() - min * 60e3).toISOString();
+const row = (number: number, status: string, extra: Record<string, unknown> = {}) => ({
+  number, repo: 'acme/tienda', app: 'web', appName: 'Tienda', title: `Pedido ${number}`, status, waitsOn: status === 'asking' ? 'person' : status === 'thinking' ? 'ronin' : null,
+  running: false, person: 'Ana Pérez', prototypes: 0, questions: 0, bug: false, createdAt: at(600), lastAt: at(5), ...extra,
+});
+// 30 open and 3 closed: two pages of Pendientes.
+const ROWS = [...Array.from({ length: 30 }, (_, i) => row(40 - i, i % 2 ? 'asking' : 'thinking')), row(3, 'done'), row(2, 'declined'), row(1, 'cancelled')];
+const message = (id: number, from: string, text: string, min: number, extra = {}) => ({ id, from, text, images: [], at: at(min), ...extra });
+const DETAIL = {
+  ...row(7, 'fixing', { issue: 107, bug: true, waitsOn: 'ronin' }),
+  email: 'persona@gmail.com',
+  messages: [message(1, 'person', 'El carrito se rompe con cantidad 0.', 300, { images: ['foto.png'] }), message(2, 'ronin', 'Lo encontré.', 100)],
+  verdict: { kind: 'error', summary: 'El descuento divide por la cantidad.', at: at(290) },
+  prototypes: [],
+  bug: { steps: 'Poner cantidad 0.', reproductions: [{ round: 1, reproduced: true, steps: ['Agregué con cantidad 0'], test: { kind: 'direct', name: 'descuento con cantidad 0', red: true, green: true, redOutput: 'FAIL', greenOutput: 'PASS' }, fix: 'small', summary: 'Divide por cero.', patch: 'r1.patch', messageId: 2, at: at(110) }] },
+  decision: null, interview: null, issue: { number: 107, url: 'https://github.com/acme/tienda/issues/107' }, pr: null, deployed: null,
+  activity: { entries: [{ type: 'message', at: at(300), message: message(1, 'person', 'El carrito se rompe con cantidad 0.', 300), first: true }, { type: 'event', at: at(200), event: { kind: 'classified', verdict: 'error', at: at(200) } }], untimed: [] },
+  runs: [{ runId: 'r1', repo: 'acme/tienda', taskType: 'portal-reproduce', label: '', account: 'a', worktree: '', startedAt: at(120), endedAt: at(110), durationMs: 600_000, costUsd: 0.5, state: 'ok', steps: 3, lastStep: 'listo' }],
+  costUsd: 0.5,
+};
+const PATCH = 'diff --git a/src/carrito.ts b/src/carrito.ts\n@@ -1 +1 @@\n-  return d / n;\n+  return n ? d / n : 0;';
+
+// jsdom doesn't scroll.
+HTMLElement.prototype.scrollTo = () => {};
+
+const asked: string[] = [];
+beforeEach(() => {
+  asked.length = 0;
+  vi.stubGlobal('matchMedia', () => ({ matches: false }));
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+    const path = new URL(String(input), 'http://x').pathname;
+    asked.push(path);
+    const json = (b: unknown) => new Response(JSON.stringify(b), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    if (path === '/api/requests') return json({ requests: ROWS });
+    if (path === '/api/requests/7') return json(DETAIL);
+    if (path === '/api/requests/7/reproduction/1') return json({ patch: PATCH });
+    if (path === '/api/runs/r1') return json({ summary: DETAIL.runs[0], lines: [{ type: 'text', text: 'Reproduzco el error.' }] });
+    return json({});
+  }));
+});
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
+
+const host: Host = {
+  toast: vi.fn(), openPedido: vi.fn(), openPedidos: vi.fn(), unauthorized: vi.fn(), repoColor: () => 'red', openItem: vi.fn(), openSettings: vi.fn(), openMetrics: vi.fn(),
+  repos: () => ['acme/tienda', 'acme/web'], typeName: (t) => `tipo ${t}`, requestsTotal: () => ROWS.length, portalAdmin: () => true, openPortalAccounts: vi.fn(),
+  requestDoc: vi.fn((element: HTMLElement, doc) => {
+    element.textContent = `el ${doc.show} de ${doc.repo}#${doc.issue}`;
+    return () => {};
+  }),
+};
+const show = (page: ReactNode) => render(
+  <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+    <HostContext.Provider value={host}>{page}</HostContext.Provider>
+  </QueryClientProvider>,
+);
+
+describe('Pedidos, in React', () => {
+  it('lists the pending ones a page at a time, filters them and opens one', async () => {
+    const { container } = show(<Requests />);
+    await waitFor(() => expect(container.querySelector('.pd-t')).not.toBeNull());
+    const shown = () => [...container.querySelectorAll('.pd-t tbody .pn')].map((e) => e.textContent);
+    expect(shown()).toHaveLength(25);
+    expect(screen.getByText('1–25 de 30')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Siguiente' }));
+    expect(shown()).toEqual(['P-15', 'P-14', 'P-13', 'P-12', 'P-11']);
+    fireEvent.click(screen.getByRole('button', { name: /^Cerrados/ }));
+    expect(shown()).toEqual(['P-3', 'P-2', 'P-1']);
+    expect(container.querySelector('.pd-pager')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /^Esperan a la persona/ }));
+    expect(shown()).toHaveLength(15);
+    fireEvent.click(container.querySelector('.pd-t tbody tr')!);
+    expect(host.openPedido).toHaveBeenCalledWith(39);
+    fireEvent.click(screen.getByRole('tab', { name: 'Usuarios ↗' }));
+    expect(host.openPortalAccounts).toHaveBeenCalled();
+  });
+
+  it('shows a request on its tabs: activity, reproduction with its diff, issue and runs', async () => {
+    const { container } = show(<Request n={7} />);
+    await waitFor(() => expect(container.querySelector('.pd-tl')).not.toBeNull());
+    expect(screen.getByText('Lo leyó como un reporte de error')).toBeTruthy();
+    expect(screen.getByText('ronin va a hacer el arreglo en #107')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('tab', { name: /Reproducción/ }));
+    expect(screen.getByText('✓ Reproducido')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Ver el diff' }));
+    await waitFor(() => expect(container.querySelector('pre.diff')).not.toBeNull());
+    expect([...container.querySelectorAll('pre.diff span')].map((s) => s.className)).toEqual(['f', 'h', 'd', 'a']);
+    expect(screen.getByText('+1 −1 · 1 archivo')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Issue' }));
+    expect(screen.getByText('el issue de acme/tienda#107')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('tab', { name: /Conversación/ }));
+    fireEvent.click(container.querySelector('.pd-thumbs button')!);
+    expect(document.querySelector('#lightbox img')?.getAttribute('src')).toBe('/api/requests/7/img/foto.png');
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(document.querySelector('#lightbox')).toBeNull();
+
+    fireEvent.click(screen.getByRole('tab', { name: /Corridas/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Ver corrida →' }));
+    expect(await screen.findByText('Reproduzco el error.')).toBeTruthy();
+    expect(asked).toContain('/api/runs/r1');
+  });
+});
