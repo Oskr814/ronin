@@ -17,7 +17,7 @@ import { createPortalHandler, missingPortalConfig } from './portal.js';
 import { createPublicHandler } from './public.js';
 import { createTailnetHandler } from './tailnet.js';
 import { loadTeam } from './api/team.js';
-import { warmDashboard } from './api/dashboard.js';
+import { warmDashboard } from '../items/service.js';
 import { timedRequests } from './timing.js';
 import { getDb } from '../db/db.js';
 import { migrateToLatest } from '../db/migrate.js';

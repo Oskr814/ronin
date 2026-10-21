@@ -134,7 +134,10 @@ export function actionComment(action: Pick<ActionView, 'id' | 'command'>, text?:
   return `@${config.githubLogin} ${action.command}${text ? `\n\n${text}` : ''}`;
 }
 
-export class ActionError extends Error {}
+// A 409: the item isn't in a state for it.
+export class ActionError extends Error {
+  readonly status = 409;
+}
 
 export async function runAction(
   entry: RepoEntry,

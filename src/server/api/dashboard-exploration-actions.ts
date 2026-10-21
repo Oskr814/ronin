@@ -18,7 +18,10 @@ const ACTIONS: FichaActionId[] = ['rechazar', 'cambios', 'issue', 'pregunta', 'c
 const ON_DECIDED: FichaActionId[] = ['pregunta', 'comentar'];
 const MAX_TEXT = 4000;
 
-export class FichaActionError extends Error {}
+// A 409: the item isn't in a state for it.
+export class FichaActionError extends Error {
+  readonly status = 409;
+}
 
 export function fichaComment(action: FichaActionId, text: string, redo = false): string {
   switch (action) {
