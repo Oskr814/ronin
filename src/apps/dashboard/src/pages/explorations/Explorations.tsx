@@ -1,4 +1,4 @@
-import { useHost } from '../../host.js';
+import { useShell } from '../../shell/hooks.js';
 import { ago } from '../../../../../ui/time.js';
 import { Chip, listRowOf, nextRun, useExplorations } from './model.js';
 
@@ -7,7 +7,7 @@ import { Chip, listRowOf, nextRun, useExplorations } from './model.js';
 // its exploration PR's findings counted, the last run and the next.
 
 export function Explorations() {
-  const host = useHost();
+  const shell = useShell();
   const view = useExplorations();
   return (
     <div className="today pd">
@@ -17,7 +17,7 @@ export function Explorations() {
         <thead><tr><th>App</th><th>Estado</th><th className="hide-m">PR de exploración</th><th className="hide-m">Última corrida</th></tr></thead>
         <tbody>{view.rows.map((r) => {
           const l = listRowOf(view, r);
-          const go = () => host.openExploration(r.repo, r.app);
+          const go = () => shell.openExploration(r.repo, r.app);
           return (
             <tr key={`${r.repo}|${r.app}`} tabIndex={0} onClick={go} onKeyDown={(event) => { if (event.key === 'Enter') go(); }}>
               <td><span className="tt">{r.app}</span><small>{r.repo}</small></td>

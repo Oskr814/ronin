@@ -1,9 +1,9 @@
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useRef } from 'react';
 import { ApiError, client, ok } from '../../api.js';
-import { useHost } from '../../host.js';
+import { useShell } from '../../shell/hooks.js';
 import { when } from '../../lib/format.js';
-import { Dot, duration, money, RunDot, Since, Transcript } from '../../lib/runs.js';
+import { Dot, duration, money, RunDot, Since, Transcript, typeName } from '../../lib/runs.js';
 import { useViewState } from '../../lib/view-state.js';
 import { at, RUNS_EVERY_MS } from './model.js';
 
@@ -28,7 +28,6 @@ function trigger(t: ExplorationRun['trigger']) {
 }
 
 function RunItem({ c, open, onOpen }: { c: ExplorationRun; open: string | null; onOpen: (runId: string) => void }) {
-  const host = useHost();
   const [tone, said] = STATE[c.state] ?? STATE.error;
   const took = c.state === 'running' ? <Since at={c.startedAt} /> : c.endedAt ? duration(Date.parse(c.endedAt) - Date.parse(c.startedAt)) : '';
   const facts: string[] = [];
@@ -49,7 +48,7 @@ function RunItem({ c, open, onOpen }: { c: ExplorationRun; open: string | null; 
       {facts.length > 0 && <div className="xr-f">{facts.map((f) => <span key={f}>{f}</span>)}</div>}
       {c.agents.length > 0 && <div className="xr-ags">{c.agents.map((a) => (
         <button key={a.runId} className={`xr-ag ${open === a.runId ? 'cur' : ''}`} onClick={() => onOpen(a.runId)}>
-          <RunDot state={a.state} />{host.typeName(a.taskType)}{a.fn ? ` ${a.fn}` : ''}<span className="m">{a.state === 'running' ? 'en curso' : a.durationMs !== undefined ? duration(a.durationMs) : ''}</span>
+          <RunDot state={a.state} />{typeName(a.taskType)}{a.fn ? ` ${a.fn}` : ''}<span className="m">{a.state === 'running' ? 'en curso' : a.durationMs !== undefined ? duration(a.durationMs) : ''}</span>
         </button>
       ))}</div>}
     </div>
@@ -57,7 +56,7 @@ function RunItem({ c, open, onOpen }: { c: ExplorationRun; open: string | null; 
 }
 
 export function ExplorationRuns({ repo, app }: { repo: string; app: string }) {
-  const host = useHost();
+  const shell = useShell();
   const here = useRef<HTMLDivElement>(null);
   const key = `${repo}|${app}`;
   // The agent open, for the app it was opened on: another app's page doesn't show it.
@@ -76,8 +75,8 @@ export function ExplorationRuns({ repo, app }: { repo: string; app: string }) {
     refetchInterval: (q) => (q.state.data?.summary.state === 'running' ? SNAPSHOT_EVERY_MS : false),
   });
   useEffect(() => {
-    for (const e of [query.error, run.error]) if (isUnauthorized(e)) host.unauthorized(e.message);
-  }, [query.error, run.error, host]);
+    for (const e of [query.error, run.error]) if (isUnauthorized(e)) shell.unauthorized(e.message);
+  }, [query.error, run.error, shell]);
 
   if (!query.data) return <div className="empty">{query.error ? `No se pudieron leer las corridas: ${query.error.message}` : 'Leyendo las corridas…'}</div>;
   const list = query.data.corridas;
@@ -91,7 +90,7 @@ export function ExplorationRuns({ repo, app }: { repo: string; app: string }) {
   };
   return <>
     {open && <div className="pd-runview">
-      <div className="pd-runbar"><b>{host.typeName(summary?.taskType ?? '')}</b><span className="m">{summary ? when(summary.startedAt) : ''}</span><button className="btn-s" onClick={() => keep(null)}>Cerrar</button></div>
+      <div className="pd-runbar"><b>{typeName(summary?.taskType ?? '')}</b><span className="m">{summary ? when(summary.startedAt) : ''}</span><button className="btn-s" onClick={() => keep(null)}>Cerrar</button></div>
       {summary ? <Transcript run={run.data!} /> : <div className="empty">{run.error ? run.error.message : 'Cargando la corrida…'}</div>}
     </div>}
     <div className="xr-list" ref={here}>{list.map((c) => <RunItem key={c.id} c={c} open={open} onOpen={onOpen} />)}</div>

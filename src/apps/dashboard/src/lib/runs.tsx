@@ -1,5 +1,4 @@
 import { useLayoutEffect, useRef } from 'react';
-import { useHost } from '../host.js';
 
 // An agent's run as the pages that list them show it (a portal request's,
 // a meeting's): its card, its transcript and how it ended, written as app.js
@@ -20,8 +19,25 @@ export const RUN_STATE: Record<string, [string, string, string]> = {
   open: ['pending', 'idle', 'abierto'],
 };
 const VERB: Record<string, string> = { Bash: 'Corrió', Read: 'Leyó', Edit: 'Editó', MultiEdit: 'Editó', Write: 'Escribió', NotebookEdit: 'Editó', Grep: 'Buscó', Glob: 'Buscó', WebFetch: 'Abrió', WebSearch: 'Buscó en la web', Task: 'Lanzó un agente', Agent: 'Lanzó un agente', TodoWrite: 'Anotó tareas' };
-// Runs that are steps of one thing (platform/agents/run-group.ts).
+// A task type in words (fix-issue → "Resolver issue").
+const TYPE: Record<string, string> = {
+  'plan': 'Planificar', 'implement-slice': 'Implementar slice', 'fix-issue': 'Resolver issue', 'fix-review': 'Responder review',
+  'fix-e2e': 'Arreglar e2e', 'review-request': 'Pedido en review', 'fix-comments': 'Aplicar comentarios',
+  'fix-comments-external': 'Aplicar comentarios', 'resolve-conflicts': 'Resolver conflictos', 'thread-reply-external': 'Responder hilo',
+  'external-review': 'Review externa', 'spike': 'Spike', 'write-spec': 'Escribir spec', 'revise-spec': 'Conversar el spec', 'issue-request': 'Pedido en issue',
+  'prototype': 'Prototipo', 'update-changelog': 'Changelog', 'explore-inventory': 'Inventario de exploración',
+  'explore-function': 'Explorar', 'explore-evaluate': 'Evaluar exploración', 'explore-redo-after': 'Rehacer captura',
+  'explore-feedback': 'Comentarios de exploración', 'commit-subject': 'Mensaje de commit', 'prepare-preview-data': 'Datos de preview', 'preview-seed-catalog': 'Catálogo de seeds', 'preview-data-triage': 'Revisión de los seeds', 'preview-data-delta': 'Datos de preview al actualizarse', 'portal-request': 'Pedido del portal', 'portal-interview': 'Respuestas de la entrevista', 'portal-prototype': 'Prototipo del portal', 'portal-reproduce': 'Reproducción del portal', 'meeting-read': 'Lectura de reunión',
+};
+export const typeName = (type: string) => TYPE[type] ?? type;
+// Runs that are steps of one thing (platform/agents/run-group.ts): a preview's seed
+// catalog, "¿alcanzan los seeds?" and its data are one preview.
 const GROUP_NAME: Record<string, string> = { preview: 'Preview' };
+export const groupName = (run: { group?: string }) => (run.group ? GROUP_NAME[run.group.split(':')[0]] : undefined);
+// What a run is: its group's name, or its own task's.
+export const runKind = (run: { group?: string; taskType: string }) => groupName(run) ?? typeName(run.taskType);
+// A step of a group says which one: "Preview: Revisión de los seeds".
+export const runTitle = (run: { group?: string; taskType: string }) => (groupName(run) ? `${groupName(run)}: ${typeName(run.taskType)}` : typeName(run.taskType));
 
 export function duration(ms: number): string {
   const m = Math.round(ms / MIN);
@@ -60,21 +76,11 @@ export interface RunLike {
   lastStep?: string;
 }
 
-// What a run is, a group's step saying which one: "Preview: Revisión de los seeds".
-export function useRunTitle() {
-  const host = useHost();
-  return (run: RunLike) => {
-    const group = run.group ? GROUP_NAME[run.group.split(':')[0]] : undefined;
-    return group ? `${group}: ${host.typeName(run.taskType)}` : host.typeName(run.taskType);
-  };
-}
-
 export function RunCard({ run, onOpen }: { run: RunLike; onOpen: (runId: string) => void }) {
-  const host = useHost();
   const live = run.state === 'running';
   const facts = [run.durationMs !== undefined ? duration(run.durationMs) : null, run.costUsd !== undefined ? money(run.costUsd) : null, RUN_STATE[run.state]?.[2]].filter(Boolean).join(' · ');
   return (
-    <div className="pd-run"><RunDot state={run.state} /><span className="nm">{host.typeName(run.taskType)}{run.issueNumber ? ` · #${run.issueNumber}` : run.prNumber ? ` · PR #${run.prNumber}` : ''}</span>
+    <div className="pd-run"><RunDot state={run.state} /><span className="nm">{typeName(run.taskType)}{run.issueNumber ? ` · #${run.issueNumber}` : run.prNumber ? ` · PR #${run.prNumber}` : ''}</span>
       <span className="st">{live ? <Since at={run.startedAt} /> : facts}</span>
       <button className="go" onClick={() => onOpen(run.runId)}>{live ? 'Ver en vivo' : 'Ver corrida'} →</button>
       {run.lastStep && <span className="last">{live ? '▸' : 'último:'} {run.lastStep}</span>}</div>

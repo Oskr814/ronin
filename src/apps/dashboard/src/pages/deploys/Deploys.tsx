@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { ApiError, client, ok } from '../../api.js';
-import { useHost } from '../../host.js';
+import { useRepoColor, useShell } from '../../shell/hooks.js';
 import { ago, useNow } from '../../../../../ui/time.js';
 import { DeployDialog } from './DeployDialog.js';
 import { subject, type Release, type Repo, type Repos } from './model.js';
@@ -19,7 +19,7 @@ const STATE: Record<string, [string, string]> = { running: ['live', 'en curso'],
 
 const going = (repos: Repos | undefined) => (repos ?? []).some((r) => 'releases' in r && r.releases.some((x) => x.deploy?.state === 'running'));
 export function Deploys() {
-  const host = useHost();
+  const shell = useShell();
   const [dialog, setDialog] = useState<{ repo: string; pr?: number } | null>(null);
   const query = useQuery({
     queryKey: ['deploys'],
@@ -29,8 +29,8 @@ export function Deploys() {
   });
   const repos = query.data;
   useEffect(() => {
-    if (query.error instanceof ApiError && query.error.status === 401) host.unauthorized(query.error.message);
-  }, [query.error, host]);
+    if (query.error instanceof ApiError && query.error.status === 401) shell.unauthorized(query.error.message);
+  }, [query.error, shell]);
 
   const head = (
     <>
@@ -52,9 +52,10 @@ export function Deploys() {
 }
 
 function Card({ r, onNew }: { r: Repo; onNew: (pr?: number) => void }) {
-  const host = useHost();
+  const shell = useShell();
+  const repoColor = useRepoColor();
   const now = useNow();
-  const header = <i style={{ background: host.repoColor(r.repo) }} />;
+  const header = <i style={{ background: repoColor(r.repo) }} />;
   if (!('pending' in r)) {
     return <section className="pd-card dep-card"><header>{header}<b>{r.repo}</b></header><p className="bad">No se pudo leer: {r.error}</p></section>;
   }
@@ -76,7 +77,7 @@ function Card({ r, onNew }: { r: Repo; onNew: (pr?: number) => void }) {
                   <li key={c.sha}>
                     <span className="pd-gh">{c.pr ? `#${c.pr}` : c.sha.slice(0, 7)}</span><span className="t">{subject(c)}</span>
                     {c.apps.length > 0 && <span className="apps">{c.apps.join(' · ')}</span>}
-                    {c.pedidos.map((n) => <button key={n} className="chip plain goped" onClick={() => host.openPedido(n)}>del pedido P-{n}</button>)}
+                    {c.pedidos.map((n) => <button key={n} className="chip plain goped" onClick={() => shell.openRequest(n)}>del pedido P-{n}</button>)}
                     {r.selective && c.pr && <button className="link" onClick={() => onNew(c.pr!)}>Desplegar solo este</button>}
                   </li>
                 ))}

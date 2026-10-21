@@ -1,11 +1,11 @@
 import { Fragment, type ReactNode } from 'react';
 import { LinearIcon } from '../lib/github.js';
 import { dayMonth } from '../lib/format.js';
-import { clock, Dot, duration, money, RunDot } from '../lib/runs.js';
+import { clock, Dot, duration, money, RunDot, runTitle } from '../lib/runs.js';
 import { short } from '../../../../ui/time.js';
 import { Live } from './Live.js';
 import { cycleName, SliceMark } from './Sidebar.js';
-import { currentCycleOf, type Item, itemById, itemRuns, linearRepos, MINUTE, repoColor, repoShort, runTitle, S, safeRepo } from './state.js';
+import { currentCycleOf, detailOf, type Item, itemById, itemRuns, linearRepos, MINUTE, repoColor, repoShort, S, safeRepo } from './state.js';
 
 // The context column: what's around the item open (GitHub, Linear, why it's
 // blocked, its slices, checks, preview and runs), or, with none, the
@@ -33,7 +33,7 @@ function GithubCtx({ item }: { item: Item }) {
 // Without the synced issue, only the reference ronin left on GitHub.
 function LinearCtx({ item }: { item: Item }) {
   const l = item.linear;
-  const ref = (S.detail[item.id]?.data as { linear?: { id: string; url?: string } } | undefined)?.linear;
+  const ref = (detailOf(item.id) as { linear?: { id: string; url?: string } } | undefined)?.linear;
   if (!l) return ref ? <section><h3><LinearIcon /> Linear</h3><dl className="kv"><dt>Issue</dt><dd>{safeLinear(ref.url) ? <a href={ref.url} target="_blank" rel="noopener">{ref.id} ↗</a> : ref.id}</dd></dl></section> : null;
   const current = l.cycle?.current ? currentCycleOf(item.repo) : null;
   return (

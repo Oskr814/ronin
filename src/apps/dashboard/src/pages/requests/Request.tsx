@@ -2,9 +2,9 @@ import { useQuery } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ApiError, client, ok } from '../../api.js';
-import { useHost } from '../../host.js';
+import { useRepoColor, useShell } from '../../shell/hooks.js';
 import { hhmm, when } from '../../lib/format.js';
-import { Ending, money, RunCard, Steps } from '../../lib/runs.js';
+import { Ending, money, RunCard, Steps, typeName } from '../../lib/runs.js';
 import { useViewState } from '../../lib/view-state.js';
 import { ago, useNow } from '../../../../../ui/time.js';
 import { Activity } from './Activity.js';
@@ -24,9 +24,9 @@ type Tab = 'act' | 'repro' | 'chat' | 'team' | 'gh' | 'runs';
 interface View { n: number; tab: Tab; show: 'issue' | 'pr'; run: string | null }
 
 function Side({ d }: { d: Detail }) {
-  const host = useHost();
+  const shell = useShell();
   const mails = d.activity.entries.flatMap((e) => (e.type === 'event' && e.event.kind === 'mail' ? [{ at: e.at, event: e.event }] : []));
-  const gh = (number: number, url: string, label: string) => <><a href={url} target="_blank" rel="noopener">{label}</a> <button className="link" onClick={() => host.openItem(`${d.repo}#${number}`)}>en el tablero</button></>;
+  const gh = (number: number, url: string, label: string) => <><a href={url} target="_blank" rel="noopener">{label}</a> <button className="link" onClick={() => shell.openItem(`${d.repo}#${number}`)}>en el tablero</button></>;
   return (
     <div className="pd-side">
       <div className="pd-card"><h3>Pedido</h3><dl className="kv">
@@ -39,7 +39,7 @@ function Side({ d }: { d: Detail }) {
         {d.pr && <><dt>PR</dt><dd>{gh(d.pr, prUrl(d.repo, d.pr) ?? '#', `#${d.pr}`)}</dd></>}
       </dl></div>
       <div className="pd-card"><h3>Corridas</h3>{d.runs.length ? (
-        <div className="pd-costs">{d.runs.slice().reverse().map((run) => <div key={run.runId}><span>{host.typeName(run.taskType)}</span><span>{run.costUsd !== undefined ? money(run.costUsd) : run.state === 'running' ? 'en curso' : '—'}</span></div>)}<div className="tot"><span>{d.runs.length} {d.runs.length === 1 ? 'corrida' : 'corridas'}</span><span>{money(d.costUsd)}</span></div></div>
+        <div className="pd-costs">{d.runs.slice().reverse().map((run) => <div key={run.runId}><span>{typeName(run.taskType)}</span><span>{run.costUsd !== undefined ? money(run.costUsd) : run.state === 'running' ? 'en curso' : '—'}</span></div>)}<div className="tot"><span>{d.runs.length} {d.runs.length === 1 ? 'corrida' : 'corridas'}</span><span>{money(d.costUsd)}</span></div></div>
       ) : <p className="m">Ninguna en los últimos 14 días.</p>}</div>
       {mails.length > 0 && <div className="pd-card"><h3>Correos</h3><div className="pd-mails">{mails.map((e, i) => <div key={i} className={e.event.ok ? '' : 'bad'}><span className="tm">{hhmm(e.at)}</span><span>{e.event.ok ? '' : 'no salió · '}a {e.event.to === 'team' ? 'el equipo' : d.person}</span></div>)}</div></div>}
     </div>
@@ -48,7 +48,7 @@ function Side({ d }: { d: Detail }) {
 
 // Its runs, and the one open with its transcript, read again while it goes.
 function Runs({ d, open, close }: { d: Detail; open: string | null; close: () => void }) {
-  const host = useHost();
+  const shell = useShell();
   const actions = useActions();
   const query = useQuery({
     queryKey: ['run', open],
@@ -57,15 +57,15 @@ function Runs({ d, open, close }: { d: Detail; open: string | null; close: () =>
     refetchInterval: (q) => (q.state.data && q.state.data.summary.state !== 'running' ? false : EVERY_MS),
   });
   useEffect(() => {
-    if (query.error instanceof ApiError && query.error.status === 401) host.unauthorized(query.error.message);
-  }, [query.error, host]);
+    if (query.error instanceof ApiError && query.error.status === 401) shell.unauthorized(query.error.message);
+  }, [query.error, shell]);
   if (!d.runs.length) return <p className="note">Sin corridas en los últimos 14 días.</p>;
   const list = d.runs.map((run) => <div key={run.runId} className={`pd-runrow ${open === run.runId ? 'cur' : ''}`}><span className="tm">{when(run.startedAt)}</span><RunCard run={run} onOpen={actions.run} /></div>);
   if (!open) return <>{list}</>;
   const data = query.data;
   return (
     <>
-      <div className="pd-runview"><div className="pd-runbar"><b>{host.typeName(data?.summary.taskType ?? '')}</b><span className="m">{data ? when(data.summary.startedAt) : ''}</span><button className="btn-s" onClick={close}>Cerrar</button></div>
+      <div className="pd-runview"><div className="pd-runbar"><b>{typeName(data?.summary.taskType ?? '')}</b><span className="m">{data ? when(data.summary.startedAt) : ''}</span><button className="btn-s" onClick={close}>Cerrar</button></div>
         {data ? <div className="tx pd-tx"><Steps lines={data.lines} /><Ending summary={data.summary} /></div>
           : <div className="empty">{query.error ? query.error.message : 'Cargando la corrida…'}</div>}</div>
       {list}
@@ -88,7 +88,8 @@ function Lightbox({ n, file, close }: { n: number; file: string; close: () => vo
 }
 
 export function Request({ n, run }: { n: number; run?: string | null }) {
-  const host = useHost();
+  const shell = useShell();
+  const repoColor = useRepoColor();
   const now = useNow();
   const fresh: View = { n, tab: 'act', show: 'issue', run: null };
   const [kept, setView] = useViewState<View>('request', fresh);
@@ -107,8 +108,8 @@ export function Request({ n, run }: { n: number; run?: string | null }) {
     refetchInterval: EVERY_MS,
   });
   useEffect(() => {
-    if (query.error instanceof ApiError && query.error.status === 401) host.unauthorized(query.error.message);
-  }, [query.error, host]);
+    if (query.error instanceof ApiError && query.error.status === 401) shell.unauthorized(query.error.message);
+  }, [query.error, shell]);
 
   const d = query.data;
   if (!d) {
@@ -131,9 +132,9 @@ export function Request({ n, run }: { n: number; run?: string | null }) {
     : tab === 'runs' ? <Runs d={d} open={view.run} close={() => set({ run: null })} /> : tab === 'repro' ? <Repro d={d} /> : <Activity d={d} />;
   return (
     <ActionsContext.Provider value={actions}>
-      <div className="head pd-head"><div className="crumb"><button className="link" onClick={() => host.openPedidos()}>Portal de pedidos</button> / <i style={{ background: host.repoColor(d.repo) }} />{repoShort(d.repo)} · {d.appName}</div>
+      <div className="head pd-head"><div className="crumb"><button className="link" onClick={() => shell.openRequests()}>Portal de pedidos</button> / <i style={{ background: repoColor(d.repo) }} />{repoShort(d.repo)} · {d.appName}</div>
         <div className="row"><h1>{d.title} <span className="n">P-{d.number}</span></h1></div>
-        <div className="state"><StatusChip p={d} /><BugTag p={d} />{d.deployed && <span className="chip ok" title={when(d.deployed.at)}>en la app desde {d.deployed.tag}</span>}<span>{d.person}</span><span className="m">abierto {ago(d.createdAt, now)}</span>{d.issue && <button className="link" onClick={() => host.openItem(`${d.repo}#${d.issue!.number}`)}>#{d.issue.number}</button>}{d.pr && <button className="link" onClick={() => host.openItem(`${d.repo}#${d.pr}`)}>PR #{d.pr}</button>}</div>
+        <div className="state"><StatusChip p={d} /><BugTag p={d} />{d.deployed && <span className="chip ok" title={when(d.deployed.at)}>en la app desde {d.deployed.tag}</span>}<span>{d.person}</span><span className="m">abierto {ago(d.createdAt, now)}</span>{d.issue && <button className="link" onClick={() => shell.openItem(`${d.repo}#${d.issue!.number}`)}>#{d.issue.number}</button>}{d.pr && <button className="link" onClick={() => shell.openItem(`${d.repo}#${d.pr}`)}>PR #{d.pr}</button>}</div>
         <Stepper p={d} /></div>
       <div className="doctabs" role="tablist">{tabs.map(([k, label]) => <button key={k} className="doctab" role="tab" aria-selected={tab === k} onClick={() => set({ tab: k })}>{label}{counts[k] ? <> <span className="c">{counts[k]}</span></> : null}</button>)}</div>
       <div className="pd-body" ref={body}><div className="pd-cols"><div className="pd-main">{main}</div><Side d={d} /></div></div>

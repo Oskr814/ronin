@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { HostContext, type SettingsView } from '../../host.js';
-import { testHost } from '../../test-host.js';
+import type { SettingsView } from '../../shell/hooks.js';
+import { S } from '../../shell/state.js';
+import { resetShell, showPage, testShell, testSnapshot } from '../../test-shell.js';
 import { Settings } from './Settings.js';
 
 // Invented data: a team at "acme" with two repos.
@@ -40,17 +40,14 @@ beforeEach(() => {
 });
 afterEach(() => {
   cleanup();
+  resetShell();
   vi.unstubAllGlobals();
 });
 
 const show = (view: Partial<SettingsView>) => {
-  const host = testHost({ repos: () => ['acme/tienda', 'acme/web'], settingsView: () => ({ section: 'perfil', login: null, repo: null, account: null, filter: null, ...view }), session: () => ({ me: 'ana-dev', portalAdmin: false }) });
-  render(
-    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-      <HostContext.Provider value={host}><Settings /></HostContext.Provider>
-    </QueryClientProvider>,
-  );
-  return host;
+  // Where the shell routed Ajustes.
+  Object.assign(S.aj, { sec: 'perfil', login: null, repo: null, cuenta: null, f: null }, { sec: view.section, login: view.login ?? null, repo: view.repo ?? null, cuenta: view.account ?? null, f: view.filter ?? null });
+  return showPage(<Settings />, { snap: testSnapshot({ repos: ['acme/tienda', 'acme/web'] }) }).shell;
 };
 
 describe('Ajustes, in React', () => {
@@ -67,10 +64,10 @@ describe('Ajustes, in React', () => {
 
   it('saves a value when its field is left, with the same body app.js sent', async () => {
     who = 'admin';
-    const host = show({ section: 'general' });
+    const shell = show({ section: 'general' });
     const input = await screen.findByLabelText('Pedidos por día');
     fireEvent.change(input, { target: { value: '9' } });
-    await waitFor(() => expect(host.toast).toHaveBeenCalledWith('Guardado. Vale desde ahora.'));
+    await waitFor(() => expect(shell.toast).toHaveBeenCalledWith('Guardado. Vale desde ahora.'));
     expect(calls).toEqual([{ path: '/api/settings/values', body: { key: 'portal.dailyLimit', value: 9 } }]);
     fireEvent.click(screen.getByText('Volver al de por defecto'));
     await waitFor(() => expect(calls).toHaveLength(2));
@@ -79,14 +76,14 @@ describe('Ajustes, in React', () => {
 
   it("shows one of the team, changes a permission and takes them off the list", async () => {
     who = 'admin';
-    const host = show({ section: 'usuarios', login: 'beto-qa' });
+    const shell = show({ section: 'usuarios', login: 'beto-qa' });
     expect(await screen.findByRole('heading', { name: 'Beto QA' })).toBeTruthy();
     expect(screen.getByText('@beto-qa')).toBeTruthy();
     fireEvent.click(screen.getByLabelText(/^Aprobar/));
     await waitFor(() => expect(calls).toHaveLength(1));
     expect(calls[0]).toEqual({ path: '/api/settings/users/beto-qa', body: { repo: { repo: 'acme/tienda', custom: { notas: true, aprobar: true, acciones: true } } } });
     fireEvent.click(screen.getByText('Quitar de la lista'));
-    await waitFor(() => expect(host.openSettings).toHaveBeenCalledWith('usuarios'));
+    await waitFor(() => expect(shell.openSettings).toHaveBeenCalledWith('usuarios'));
     expect(calls[1].path).toBe('/api/settings/users/beto-qa/remove');
   });
 });

@@ -1,10 +1,8 @@
 // @vitest-environment jsdom
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Deploys } from './Deploys.js';
-import { HostContext } from '../../host.js';
-import { testHost } from '../../test-host.js';
+import { resetShell, showPage, testShell, testSnapshot } from '../../test-shell.js';
 
 const change = (sha: string, subject: string, pr: number | null, pedidos: number[] = []) => ({ sha, subject, pr, apps: [], pedidos });
 const REPOS = [{
@@ -35,15 +33,12 @@ beforeEach(() => {
 });
 afterEach(() => {
   cleanup();
+  resetShell();
   vi.unstubAllGlobals();
 });
 
-const host = testHost();
-const show = () => render(
-  <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-    <HostContext.Provider value={host}><Deploys /></HostContext.Provider>
-  </QueryClientProvider>,
-);
+const shell = testShell();
+const show = () => showPage(<Deploys />, { shell, snap: testSnapshot() });
 
 describe('Deploys, in React', () => {
   it('lists what is pending and the releases, and opens the request a change came from', async () => {
@@ -52,7 +47,7 @@ describe('Deploys, in React', () => {
     expect(screen.getByText('2 cambios')).toBeTruthy();
     expect(screen.getByText('desplegado')).toBeTruthy();
     fireEvent.click(screen.getByText('del pedido P-7'));
-    expect(host.openPedido).toHaveBeenCalledWith(7);
+    expect(shell.openRequest).toHaveBeenCalledWith(7);
   });
 
   it('plans while the tag is written, shows what clashes, and publishes what it showed', async () => {
@@ -69,7 +64,7 @@ describe('Deploys, in React', () => {
     fireEvent.click(screen.getByRole('checkbox', { name: /#42/ }));
     await screen.findByText(/se aplica limpio/);
     fireEvent.click(screen.getByRole('button', { name: 'Publicar y desplegar' }));
-    await waitFor(() => expect(host.toast).toHaveBeenCalled());
+    await waitFor(() => expect(shell.toast).toHaveBeenCalled());
     expect(calls.find((c) => c.path.endsWith('/publish'))?.body).toMatchObject({ tag: 'v1.5.0', prs: [41], fingerprint: 'fp-41' });
     expect(screen.queryByRole('dialog')).toBeNull();
   });

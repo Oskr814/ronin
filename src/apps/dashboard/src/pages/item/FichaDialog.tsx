@@ -2,7 +2,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState, type MutableRefObject } from 'react';
 import { createPortal } from 'react-dom';
 import { ApiError } from '../../api.js';
-import { useHost, type ItemView } from '../../host.js';
+import { type ItemView, reread, useMarkdown, useSession, useShell } from '../../shell/hooks.js';
 import { FICHA_ACTIONS, fichaCommentText, fichaStatus, postFichaComment, postPrDecision, useExploration, waitingCount, type FichaAsked, type FindingCard } from './fichas.js';
 
 // A finding's dialog (#93: rechazar, pedir cambios, un issue aparte, una
@@ -35,7 +35,9 @@ function ApproveSummary({ id }: { id: string }) {
 
 // `busy`: whether it's sending, for the page's Escape (which closes it otherwise).
 export function FichaDialog({ v, asked, close, busy }: { v: ItemView; asked: FichaAsked; close: () => void; busy: MutableRefObject<boolean> }) {
-  const host = useHost();
+  const shell = useShell();
+  const session = useSession();
+  const markdown = useMarkdown();
   const queryClient = useQueryClient();
   const id = v.item.id;
   const pr = v.item.number;
@@ -60,18 +62,18 @@ export function FichaDialog({ v, asked, close, busy }: { v: ItemView; asked: Fic
       if (meta.pr) {
         const what = asked.action as 'general' | 'approve';
         const done = await postPrDecision(id, what, typed);
-        host.toast(what === 'approve' ? `Finalizaste la revisión del PR #${pr}. ronin marca las fichas, abre sus issues y lo mergea.` : `Comentaste en el PR #${pr}. ronin lo va a aplicar y te responde ahí.`, done.url);
-        host.reread(id);
+        shell.toast(what === 'approve' ? `Finalizaste la revisión del PR #${pr}. ronin marca las fichas, abre sus issues y lo mergea.` : `Comentaste en el PR #${pr}. ronin lo va a aplicar y te responde ahí.`, done.url);
+        reread(id);
       } else {
         const ficha = asked.ficha!;
         const done = await postFichaComment(id, ficha.key, asked.action, typed, redo);
-        host.toast(`Comentaste en ${ficha.key.split('/')[1]}. ronin lo va a aplicar y te responde en el hilo.`, done.url);
+        shell.toast(`Comentaste en ${ficha.key.split('/')[1]}. ronin lo va a aplicar y te responde en el hilo.`, done.url);
       }
       await queryClient.invalidateQueries({ queryKey: ['exploration', id] });
       busy.current = false;
       close();
     } catch (e) {
-      if (e instanceof ApiError && e.status === 401) return host.unauthorized(e.message);
+      if (e instanceof ApiError && e.status === 401) return shell.unauthorized(e.message);
       busy.current = false;
       setSending(false);
       setError(`No se pudo: ${(e as Error).message}`);
@@ -80,7 +82,7 @@ export function FichaDialog({ v, asked, close, busy }: { v: ItemView; asked: Fic
   const cancel = () => {
     if (!busy.current) close();
   };
-  const me = host.me();
+  const me = session.me;
   const preview = asked.action === 'general' ? `@ronin-agent ${typed || '…'}` : fichaCommentText(asked.action, typed || '…', redo);
 
   return createPortal(
@@ -94,7 +96,7 @@ export function FichaDialog({ v, asked, close, busy }: { v: ItemView; asked: Fic
         onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) void send(); }} /></label>
       {meta.quick && <div className="quick-r">{meta.quick.map((q) => <button key={q} className="pill" onClick={() => { setText(q); area.current?.focus(); }}>{q}</button>)}</div>}
       {meta.redo && <label className="check"><input type="checkbox" id="fdlg-redo" checked={redo} onChange={(e) => setRedo(e.target.checked)} /><span>Rehacer la captura del después<small>ronin levanta la app con el cambio borrador corregido y reemplaza la imagen. Tarda unos minutos.</small></span></label>}
-      {asked.action !== 'approve' && <div className="prev"><div className="lbl">{asked.action === 'general' ? `Comentás como ${me} en el PR #${pr}` : `Comentás como ${me} en ${asked.ficha!.id}, en “Files changed” del PR #${pr}`}</div><div className="md" id="fdlg-prev" dangerouslySetInnerHTML={{ __html: host.markdown(preview, v.item.repo) }} /></div>}
+      {asked.action !== 'approve' && <div className="prev"><div className="lbl">{asked.action === 'general' ? `Comentás como ${me} en el PR #${pr}` : `Comentás como ${me} en ${asked.ficha!.id}, en “Files changed” del PR #${pr}`}</div><div className="md" id="fdlg-prev" dangerouslySetInnerHTML={{ __html: markdown.html(preview, v.item.repo) }} /></div>}
       <p className="bad" id="fdlg-err" hidden={!error}>{error ?? ''}</p>
       <div className="foot-d"><span className="kbd-hint"><kbd>Ctrl</kbd> <kbd>Enter</kbd> para enviar</span><button className="btn-s" id="fdlg-no" onClick={cancel}>Cancelar</button><button className={`btn-s ${meta.cls === 'danger' ? 'danger-solid' : 'primary'}`} id="fdlg-yes" disabled={disabled} onClick={() => void send()}>{sending ? (asked.action === 'approve' ? 'Finalizando…' : 'Comentando…') : meta.btn}</button></div></div></div></div>,
     document.body,

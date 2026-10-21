@@ -1,6 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { client, ok } from '../../api.js';
-import { useHost } from '../../host.js';
+import { useShell } from '../../shell/hooks.js';
 import { pct } from '../../lib/format.js';
 import { ago } from '../../../../../ui/time.js';
 import { onCommit, Row, Sec, useChange } from './parts.js';
@@ -23,7 +23,7 @@ export function Accounts({ data }: { data: Data }) {
 }
 
 function Card({ c, d }: { c: Account; d: AccountsData }) {
-  const host = useHost();
+  const shell = useShell();
   const queryClient = useQueryClient();
   const change = useChange();
   const a = c.account;
@@ -34,7 +34,7 @@ function Card({ c, d }: { c: Account; d: AccountsData }) {
     if (Number.isNaN(body.priceUsd)) throw new Error('El precio tiene que ser un número.');
     const { cuenta } = (await ok(client.api.settings.accounts[':account'].$post({ param: { account: a }, json: body }))) as { cuenta: Account };
     queryClient.setQueryData<AccountsData>(['settings', 'accounts'], (x) => x && { ...x, cuentas: x.cuentas.map((y) => (y.account === a ? cuenta : y)) });
-    host.toast(`Guardado: ${a} en ${cuenta.plan.name}${cuenta.plan.priceUsd === null ? '' : `, $${cuenta.plan.priceUsd} al mes`}.`);
+    shell.toast(`Guardado: ${a} en ${cuenta.plan.name}${cuenta.plan.priceUsd === null ? '' : `, $${cuenta.plan.priceUsd} al mes`}.`);
   });
   const planSrc = p.source === 'tablero'
     ? <><span className="aj-ov">● Cambiado en el tablero</span><button data-ajplanreset={a} onClick={() => save({ plan: null })}>Volver al de por defecto ({def.name})</button></>

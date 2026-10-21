@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { ApiError, client, ok } from '../../api.js';
-import { useHost } from '../../host.js';
+import { useShell } from '../../shell/hooks.js';
 import { dayMonth } from '../../lib/format.js';
 import { at, INVENTORY_EVERY_MS } from './model.js';
 
@@ -23,11 +23,11 @@ function Pill({ f }: { f: Fn }) {
 }
 
 export function ExplorationInventory({ repo, app }: { repo: string; app: string }) {
-  const host = useHost();
+  const shell = useShell();
   const query = useQuery({ queryKey: ['exploration-inventory', repo, app], queryFn: () => inventoryOf(repo, app), refetchInterval: INVENTORY_EVERY_MS });
   useEffect(() => {
-    if (query.error instanceof ApiError && query.error.status === 401) host.unauthorized(query.error.message);
-  }, [query.error, host]);
+    if (query.error instanceof ApiError && query.error.status === 401) shell.unauthorized(query.error.message);
+  }, [query.error, shell]);
 
   const inv = query.data;
   if (!inv) return <div className="empty">{query.error ? `No se pudo leer el inventario: ${query.error.message}` : 'Leyendo el inventario…'}</div>;

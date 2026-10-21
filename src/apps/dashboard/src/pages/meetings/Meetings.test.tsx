@@ -1,10 +1,8 @@
 // @vitest-environment jsdom
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { HostContext } from '../../host.js';
-import { testHost } from '../../test-host.js';
+import { resetShell, showPage, testShell, testSnapshot } from '../../test-shell.js';
 import { Meeting } from './Meeting.js';
 import { Meetings } from './Meetings.js';
 
@@ -44,20 +42,18 @@ beforeEach(() => {
     if (path === '/api/meetings/2') return json(MEETING);
     if (path.endsWith('/approve')) return json({ created: 3, failed: 0, status: 'done' });
     if (path.endsWith('/discard')) return json({ status: 'discarded' });
+    if (path === '/api/snapshot') return json(testSnapshot());
     return json({});
   }));
 });
 afterEach(() => {
   cleanup();
+  resetShell();
   vi.unstubAllGlobals();
 });
 
-const host = testHost({ markdown: (t) => `<p>${t}</p>` });
-const show = (page: ReactNode) => render(
-  <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-    <HostContext.Provider value={host}>{page}</HostContext.Provider>
-  </QueryClientProvider>,
-);
+const shell = testShell();
+const show = (page: ReactNode) => showPage(page, { shell, snap: testSnapshot() });
 
 describe('Reuniones, in React', () => {
   it('lists the meetings with their state and opens one', async () => {
@@ -67,7 +63,7 @@ describe('Reuniones, in React', () => {
     expect(screen.getByText('Creado')).toBeTruthy();
     expect(screen.getByText('2 issues')).toBeTruthy();
     fireEvent.click(screen.getByText('R-1'));
-    expect(host.openMeeting).toHaveBeenCalledWith(1);
+    expect(shell.openMeeting).toHaveBeenCalledWith(1);
     fireEvent.click(screen.getByText('+ Subir notas'));
     expect(document.querySelector('#rlayer .dlg')).not.toBeNull();
   });
@@ -91,16 +87,17 @@ describe('Reuniones, in React', () => {
     fireEvent.change(container.querySelectorAll<HTMLInputElement>('input.reu-ti')[2], { target: { value: 'Medir el checkout' } });
     expect(container.querySelector('.reu-approve .sum b')?.textContent).toBe('1 issue');
     fireEvent.click(screen.getByText('Crear seleccionados'));
-    await waitFor(() => expect(host.toast).toHaveBeenCalledWith('Listo: se crearon 3.'));
+    await waitFor(() => expect(shell.toast).toHaveBeenCalledWith('Listo: se crearon 3.'));
     expect(calls.find((c) => c.path === '/api/meetings/2/approve')?.body).toEqual({ items: [{ id: 'I1', title: 'Medir el checkout' }] });
-    expect(host.refresh).toHaveBeenCalled();
+    // The sidebar's count, read again.
+    await waitFor(() => expect(calls.some((c) => c.path === '/api/snapshot')).toBe(true));
   });
 
   it('discards the rest once confirmed', async () => {
     show(<Meeting n={2} />);
     fireEvent.click(await screen.findByRole('tab', { name: /Propuestas/ }));
     fireEvent.click(screen.getByText('Descartar todo'));
-    await waitFor(() => expect(host.toast).toHaveBeenCalledWith('Listo: la reunión quedó descartada.'));
+    await waitFor(() => expect(shell.toast).toHaveBeenCalledWith('Listo: la reunión quedó descartada.'));
     expect(calls.find((c) => c.path === '/api/meetings/2/discard')).toMatchObject({ method: 'POST', body: {} });
   });
 });

@@ -1,8 +1,12 @@
-import type { ItemDetail, ItemView, SnapshotItem } from '../../host.js';
+import type { QueryKey } from '@tanstack/react-query';
+import type { Snapshot } from '../../api.js';
+import type { ItemDetail, ItemRun, ShownRun, SnapshotItem } from '../../shell/hooks.js';
+import { detailKey, runKey, runsKey, S } from '../../shell/state.js';
+import { testSnapshot } from '../../test-shell.js';
 import type { Doc } from './model.js';
 
-// An item as the shell would hand it to a page's test (Host.item): an issue
-// of acme/tienda with ronin's PR moving, invented.
+// An item as the shell would have read it for a page's test: an issue of
+// acme/tienda with ronin's PR moving, invented.
 
 export const NOW = Date.parse('2026-10-21T15:00:00Z');
 const iso = (minAgo: number) => new Date(NOW - minAgo * 60e3).toISOString();
@@ -25,20 +29,27 @@ export function detail(over: Partial<ItemDetail> = {}): ItemDetail {
   } as ItemDetail;
 }
 
-export function view(over: Partial<ItemView> = {}, item: Partial<SnapshotItem> = {}): ItemView {
-  const d = over.detail === undefined ? detail() : over.detail?.data;
-  return {
-    item: { id: 'acme/tienda#41', repo: 'acme/tienda', number: 41, kind: 'issue', title: 'Mostrar el teléfono del cliente', status: 'waiting', runs: 0, listed: true, pr: { number: 42, title: 'Teléfono en la ficha', url: 'https://github.com/acme/tienda/pull/42', author: 'ronin-bot', isDraft: false, reviewDecision: '', checks: [] }, ...item } as SnapshotItem,
-    detail: { data: d ?? null, error: null },
-    runs: [],
-    run: null,
-    runIdx: 0,
-    view: 'ficha',
-    tabs: [['pr', 'PR #42'], ['issue', 'Issue'], ['files', 'Archivos']],
-    doc: 'pr',
-    decidable: true,
-    reviewable: true,
-    exploration: null,
-    ...over,
-  };
+export function item(over: Partial<SnapshotItem> = {}): SnapshotItem {
+  return { id: 'acme/tienda#41', repo: 'acme/tienda', number: 41, kind: 'issue', title: 'Mostrar el teléfono del cliente', status: 'waiting', runs: 0, listed: true, pr: { number: 42, title: 'Teléfono en la ficha', url: 'https://github.com/acme/tienda/pull/42', author: 'ronin-bot', isDraft: false, reviewDecision: '', checks: [] }, ...over } as SnapshotItem;
+}
+
+export interface ItemRead {
+  item?: Partial<SnapshotItem>;
+  // Its detail from GitHub (detail() unless said), its runs and the one shown.
+  detail?: ItemDetail;
+  runs?: ItemRun[];
+  run?: ShownRun;
+  // The tab open on its page.
+  doc?: string;
+  me?: string;
+}
+
+// The item in the snapshot, what was read of it in the cache (showPage's
+// `data`) and the tab the shell has open on its page.
+export function itemRead(read: ItemRead = {}): { id: string; snap: Snapshot; data: Array<[QueryKey, unknown]> } {
+  const it = item(read.item);
+  if (read.doc) S.doc[it.id] = read.doc;
+  const data: Array<[QueryKey, unknown]> = [[detailKey(it.id), read.detail ?? detail()], [runsKey(it.id), read.runs ?? []]];
+  if (read.run) data.push([runKey(read.run.runId), { ...read.run, from: read.run.lines.length }]);
+  return { id: it.id, snap: testSnapshot({ me: read.me ?? 'ana-dev', items: [it] }), data };
 }

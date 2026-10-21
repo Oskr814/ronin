@@ -1,5 +1,6 @@
-import { useSyncExternalStore } from 'react';
-import { useHost, type ItemDetail, type ItemRun, type ItemView, type SnapshotItem } from '../../host.js';
+import { sameLogin } from '../../lib/item.js';
+import { groupName, runKind, runTitle } from '../../lib/runs.js';
+import { type ItemDetail, type ItemRun, type ItemView, type SnapshotItem, useItem } from '../../shell/hooks.js';
 import { GhIcon } from '../../lib/github.js';
 import type { FilesView } from './files/model.js';
 
@@ -16,16 +17,13 @@ export interface ItemPage extends ItemView {
 }
 
 // The item, again each time the shell draws.
-export function useItem(key: string): ItemView | null {
-  const host = useHost();
-  return useSyncExternalStore(host.subscribe, () => host.item(key));
-}
+export { useItem };
 
 // An item's key in its routes' path (/api/items/<key>/…): the client puts
 // it there as it is, and its # would end the path.
 export const itemParam = (key: string) => ({ id: encodeURIComponent(key) });
 
-export const sameLogin = (a: string | null | undefined, b: string | null | undefined) => Boolean(a && b) && a!.toLowerCase() === b!.toLowerCase();
+export { sameLogin };
 export const oneOr = (n: number, one: string, many: string) => (n === 1 ? one : many);
 
 // A PR's checks in one chip: [class, words].
@@ -77,8 +75,6 @@ export interface Entry {
   group?: string;
   idx: number[];
 }
-const GROUP_NAME: Record<string, string> = { preview: 'Preview' };
-export const groupName = (run: { group?: string }) => (run.group ? GROUP_NAME[run.group.split(':')[0]] : undefined);
 
 export function runEntries(runs: ItemRun[]): Entry[] {
   const out: Entry[] = [];
@@ -102,16 +98,15 @@ export function entryRun(runs: ItemRun[], entry: Entry): ItemRun {
 }
 
 // What a run is, and the run's names in the item's lists.
-export function useRunNames() {
-  const host = useHost();
-  const kind = (run: { group?: string; taskType: string }) => groupName(run) ?? host.typeName(run.taskType);
-  const title = (run: { group?: string; taskType: string }) => (groupName(run) ? `${groupName(run)}: ${host.typeName(run.taskType)}` : host.typeName(run.taskType));
+const runName = (item: SnapshotItem, run: ItemRun, of = runTitle) => of(run) + (run.issueNumber == null && run.prNumber != null && run.prNumber !== item.number ? ` en #${run.prNumber}` : '');
+export const runNames = {
+  kind: runKind,
+  title: runTitle,
   // A run's task, and the PR it was on when that's not the item itself: an
   // issue's history carries its slices' PR runs too (/resolve-conflicts on #849).
-  const name = (item: SnapshotItem, run: ItemRun, of = title) => of(run) + (run.issueNumber == null && run.prNumber != null && run.prNumber !== item.number ? ` en #${run.prNumber}` : '');
-  const entryName = (item: SnapshotItem, runs: ItemRun[], entry: Entry) => name(item, runs[entry.idx[0]], entry.idx.length > 1 ? kind : title);
-  return { kind, title, name, entryName };
-}
+  name: runName,
+  entryName: (item: SnapshotItem, runs: ItemRun[], entry: Entry) => runName(item, runs[entry.idx[0]], entry.idx.length > 1 ? runKind : runTitle),
+};
 
 // The item's runs: the ones read, or its last one until they are.
 export const runsOf = (v: ItemView): ItemRun[] => v.runs ?? (v.item.lastRun ? [v.item.lastRun as ItemRun] : []);

@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
-import { useHost } from '../../host.js';
+import { useShell } from '../../shell/hooks.js';
 import { hhmm, when } from '../../lib/format.js';
-import { Dot, RunCard, useRunTitle } from '../../lib/runs.js';
+import { Dot, RunCard, runTitle, typeName } from '../../lib/runs.js';
 import { ago } from '../../../../../ui/time.js';
 import { useActions, Interview, Thumbs } from './Docs.js';
 import { firstName, ICON, REPRODUCTIONS, STATUS, type Detail, type Entry, type RequestEvent } from './model.js';
@@ -14,16 +14,15 @@ const mailTo = (d: Detail, to: string) => (to === 'team' ? 'el equipo' : d.perso
 
 // What it waits on now, and who has to do it.
 function Now({ d }: { d: Detail }) {
-  const host = useHost();
+  const shell = useShell();
   const actions = useActions();
-  const runTitle = useRunTitle();
   const who = firstName(d.person);
   const running = d.runs.find((run) => run.state === 'running');
   const lastEvent = d.activity.entries.flatMap((e) => (e.type === 'event' ? [e.event] : [])).at(-1);
   const card = (cls: string, k: ReactNode, t: string, body: ReactNode = null, acts: ReactNode = null) => (
     <div className={`pd-now ${cls}`}><div className="k">{k}</div><div className="t">{t}</div>{body}{acts && <div className="acts">{acts}</div>}</div>
   );
-  const open = (number: number, label: string) => <button className="btn-s" onClick={() => host.openItem(`${d.repo}#${number}`)}>{label}</button>;
+  const open = (number: number, label: string) => <button className="btn-s" onClick={() => shell.openItem(`${d.repo}#${number}`)}>{label}</button>;
   const desc = (text: string) => <div className="d">{text}</div>;
   if (running) {
     return card('running', <><Dot cls="live" /> Ahora · ronin trabajando</>, `${runTitle(running)}${running.issueNumber ? ` en #${running.issueNumber}` : running.prNumber ? ` en el PR #${running.prNumber}` : ''}`,
@@ -108,9 +107,8 @@ function Item({ tone, icon, title, extra = null, time, small = false, children }
 const RUN_DID: Record<string, string> = { 'portal-prototype': 'Armó el prototipo', 'portal-reproduce': 'Intentó reproducirlo', 'portal-request': 'ronin lo leyó', 'portal-interview': 'ronin leyó sus respuestas' };
 
 function EntryView({ d, e }: { d: Detail; e: Entry }) {
-  const host = useHost();
   const actions = useActions();
-  if (e.type === 'run') return <Item tone="run" icon="run" title={RUN_DID[e.run.taskType] ?? host.typeName(e.run.taskType)} time={e.at}><RunCard run={e.run} onOpen={actions.run} /></Item>;
+  if (e.type === 'run') return <Item tone="run" icon="run" title={RUN_DID[e.run.taskType] ?? typeName(e.run.taskType)} time={e.at}><RunCard run={e.run} onOpen={actions.run} /></Item>;
   if (e.type === 'message') {
     const m = e.message;
     const long = m.text.length > 320;

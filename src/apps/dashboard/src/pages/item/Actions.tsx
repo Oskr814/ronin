@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type MutableRefObject } from 'react';
 import { createPortal } from 'react-dom';
 import { ApiError, client, ok } from '../../api.js';
-import { useHost, type ItemView } from '../../host.js';
+import { type ItemView, reread, showDoc, useMarkdown, useSession, useShell } from '../../shell/hooks.js';
 import { itemParam, type Action } from './model.js';
 
 // The item's actions (#85): each one a command that exists on GitHub,
@@ -61,7 +61,9 @@ export interface Asked {
 
 // `busy`: whether it's sending, for the page's Escape (which closes it otherwise).
 export function ActionDialog({ v, asked, close, busy }: { v: ItemView; asked: Asked; close: () => void; busy: MutableRefObject<boolean> }) {
-  const host = useHost();
+  const shell = useShell();
+  const session = useSession();
+  const markdown = useMarkdown();
   const { action } = asked;
   const [text, setText] = useState('');
   const [app, setApp] = useState(action.app ?? action.apps?.[0] ?? '');
@@ -76,7 +78,7 @@ export function ActionDialog({ v, asked, close, busy }: { v: ItemView; asked: As
   // `{app}`, for the app picked. On one line, as the server writes it.
   const typed = action.apps && action.id !== 'preview' ? text.trim().replace(/\s+/g, ' ') : text.trim();
   const preview = (!action.text ? action.preview : typed ? action.preview.replace('…', typed) : action.text.required ? action.preview : action.preview.replace(/(\n\n| )?…$/, '')).replace('{app}', app);
-  const me = host.me();
+  const me = session.me;
   const bot = v.detail?.data?.ronin ?? 'ronin';
   // Assigning and closing comment only when there's something to say.
   const said = action.id === 'assign' ? (typed ? `Comentás en #${action.target} y se lo asignás a @${bot}, como ${me}` : `Se lo asignás a @${bot} como ${me}, sin comentario`)
@@ -94,13 +96,13 @@ export function ActionDialog({ v, asked, close, busy }: { v: ItemView; asked: As
       // A refusal makes the client's type of the answer {} (Explorar ahora's too): it's written here.
       const { url } = (await ok(client.api.items[':id'].actions.$post({ param: itemParam(asked.item), json: body }, { init: { signal: AbortSignal.timeout(ACTION_TIMEOUT_MS) } }))) as { url?: string };
       close();
-      host.toast(action.id === 'assign' ? `Listo: se lo asignaste a ronin. Lo toma en el próximo tick.` : action.id === 'close-issue' ? `Listo: cerraste #${action.target}.` : `Listo: comentaste en #${action.target}.`, url);
+      shell.toast(action.id === 'assign' ? `Listo: se lo asignaste a ronin. Lo toma en el próximo tick.` : action.id === 'close-issue' ? `Listo: cerraste #${action.target}.` : `Listo: comentaste en #${action.target}.`, url);
       // Its comment is where the answer will come: the tab of what it was on (the issue or its PR).
       const d = v.detail?.data;
-      if (d) host.showDoc(asked.item, d.pr?.number === action.target ? 'pr' : 'issue');
-      host.reread(asked.item);
+      if (d) showDoc(asked.item, d.pr?.number === action.target ? 'pr' : 'issue');
+      reread(asked.item);
     } catch (e) {
-      if (e instanceof ApiError && e.status === 401) return host.unauthorized(e.message);
+      if (e instanceof ApiError && e.status === 401) return shell.unauthorized(e.message);
       setSending(false);
       // No answer, or the connection dropped: the comment may well be out
       // already. The item is read again so its conversation says.
@@ -109,7 +111,7 @@ export function ActionDialog({ v, asked, close, busy }: { v: ItemView; asked: As
       setError(lost
         ? 'No llegó la respuesta del servidor. El comentario puede haberse publicado igual: mira la conversación del ítem antes de volver a intentar.'
         : `No se pudo: ${err.message}`);
-      if (lost) host.reread(asked.item);
+      if (lost) reread(asked.item);
     }
   };
   const cancel = () => {
@@ -130,7 +132,7 @@ export function ActionDialog({ v, asked, close, busy }: { v: ItemView; asked: As
       <p className="help">{action.help}</p>
       {action.apps && <label className="field"><span>App</span><select id="dlg-app" value={app} onChange={(e) => setApp(e.target.value)}>{action.apps.map((a) => <option key={a} value={a}>{a}{a === action.app && action.appNote ? ` · ${action.appNote}` : ''}</option>)}</select></label>}
       {action.text && <label className="field"><span>{action.text.label}</span><textarea id="dlg-text" ref={first} rows={4} maxLength={4000} placeholder={action.text.placeholder} value={text} onChange={(e) => setText(e.target.value)} /></label>}
-      <div className="prev"><div className="lbl" id="dlg-said">{said}</div><div className="md" id="dlg-prev" hidden={!preview} dangerouslySetInnerHTML={{ __html: host.markdown(preview, v.item.repo) }} /></div>
+      <div className="prev"><div className="lbl" id="dlg-said">{said}</div><div className="md" id="dlg-prev" hidden={!preview} dangerouslySetInnerHTML={{ __html: markdown.html(preview, v.item.repo) }} /></div>
       <p className="bad" id="dlg-err" hidden={!error}>{error ?? ''}</p>
       <div className="foot-d"><span className="kbd-hint"><kbd>Ctrl</kbd> <kbd>Enter</kbd> para {action.id === 'assign' ? 'asignar' : action.id === 'close-issue' ? 'cerrar' : 'comentar'}</span><button className="btn-s" id="dlg-no" onClick={cancel}>Cancelar</button>
         <button className={`btn-s ${action.id === 'close-issue' ? 'danger-solid' : 'primary'}`} id="dlg-yes" ref={action.text ? undefined : first} disabled={disabled} onClick={() => void send()}>{action.id === 'assign' ? (sending ? 'Asignando…' : 'Asignar a ronin') : action.id === 'close-issue' ? (sending ? 'Cerrando…' : 'Cerrar el issue') : sending ? 'Comentando…' : action.id === 'unblock' ? 'Comentar y destrabar' : 'Comentar'}</button></div></div></div></div>,

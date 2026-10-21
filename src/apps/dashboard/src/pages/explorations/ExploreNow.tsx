@@ -1,7 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import { ApiError, client, ok } from '../../api.js';
-import { useHost } from '../../host.js';
+import { explored, useShell } from '../../shell/hooks.js';
 import { hhmm, repoShort } from '../../lib/format.js';
 import { at, rowOf, useExplorations } from './model.js';
 
@@ -11,7 +11,7 @@ import { at, rowOf, useExplorations } from './model.js';
 // its exploration PR's head open it), and unmounts it on `onClose`.
 
 export function ExploreNow({ repo, app, onClose }: { repo: string; app: string; onClose: () => void }) {
-  const host = useHost();
+  const shell = useShell();
   const queryClient = useQueryClient();
   const r = rowOf(useExplorations(), repo, app);
   const [n, setN] = useState(3);
@@ -40,13 +40,13 @@ export function ExploreNow({ repo, app, onClose }: { repo: string; app: string; 
     try {
       // Until when it may go, and the night it stands for: Hono's client loses them, all optional.
       const done: { until?: string; night?: string } = await ok(client.api.explorations[':owner'][':name'][':app'].run.$post({ ...at(repo, app), json: { maxFunctions: n, hours, tonight } }));
-      host.toast(`ronin está levantando ${app} para explorarla${done.until ? ` hasta las ${hhmm(done.until)}` : ''}.${done.night ? ' Esta noche no corre otra.' : ''} La corrida se sigue en Corridas.`);
+      shell.toast(`ronin está levantando ${app} para explorarla${done.until ? ` hasta las ${hhmm(done.until)}` : ''}.${done.night ? ' Esta noche no corre otra.' : ''} La corrida se sigue en Corridas.`);
       // Its runs are read again, the new one among them.
       void queryClient.resetQueries({ queryKey: ['exploration-runs'] });
-      host.explored(repo, app);
+      explored(repo, app);
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) {
-        host.unauthorized(e.message);
+        shell.unauthorized(e.message);
         return;
       }
       setSending(false);

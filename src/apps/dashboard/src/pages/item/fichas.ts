@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { ApiError, client, ok, type Exploration } from '../../api.js';
-import { useHost, type Host } from '../../host.js';
+import { useShell } from '../../shell/hooks.js';
 import { itemParam } from './model.js';
 
 // An exploration PR's findings (#93), as its Fichas tab reviews them: read
@@ -24,7 +24,7 @@ const WAITING_EVERY_MS = 10_000;
 
 // The PR's findings, read while its page is open (and only for an exploration PR).
 export function useExploration(id: string, enabled: boolean) {
-  const host = useHost();
+  const shell = useShell();
   return useQuery({
     queryKey: ['exploration', id],
     enabled,
@@ -32,7 +32,7 @@ export function useExploration(id: string, enabled: boolean) {
       try {
         return await ok(client.api.items[':id'].exploration.$get({ param: itemParam(id) }));
       } catch (e) {
-        if (e instanceof ApiError && e.status === 401) host.unauthorized(e.message);
+        if (e instanceof ApiError && e.status === 401) shell.unauthorized(e.message);
         throw e;
       }
     },
@@ -85,14 +85,6 @@ export function visibleFichas(data: Exploration, id: string, filter: FichaFilter
 }
 
 export const waitingCount = (data: Exploration | undefined, id: string) => (data ? data.fichas.filter((f) => fichaStatus(f, data.ronin, id) === 'esperando').length : 0);
-
-// A screenshot ronin published (evidenceUrl in runs/evidence-store.ts) of
-// a repo on the dashboard, as the server serves it from its clone.
-export function evidenceSrc(host: Host, src: string | undefined): string | null {
-  const m = /^https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/blob\/([0-9a-f]{7,40})\/([^?#]+)\?raw=true$/.exec(src ?? '');
-  if (!m || !host.snapshot()?.repos?.includes(m[1])) return null;
-  return `/api/evidence/${m[1]}/${m[2]}/${m[3]}`;
-}
 
 // What a finding's dialog does: on the finding (a comment on its file), or
 // on the whole PR.

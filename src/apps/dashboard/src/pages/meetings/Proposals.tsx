@@ -1,7 +1,7 @@
 import { useState, type MouseEvent, type ReactNode } from 'react';
 import { ApiError, client, ok } from '../../api.js';
 import type { ApproveOutcome } from '../../../../../domains/meetings/approve.js';
-import { useHost, type LinearPlanning } from '../../host.js';
+import { type LinearPlanning, refresh, useMarkdown, useSession, useShell } from '../../shell/hooks.js';
 import { ICON } from '../../lib/icons.js';
 import { useViewState } from '../../lib/view-state.js';
 import { approveItems, chosen, created, CYCLE, editable, newForm, noteLines, plural, type Detail, type Field, type Form, type Issue } from './model.js';
@@ -47,16 +47,17 @@ function FromNotes({ c, k, cites }: { c: Ctx; k: string; cites: number[] }) {
 }
 
 function Markdown({ text, repo }: { text: string; repo: string }) {
-  const host = useHost();
+  const shell = useShell();
+  const markdown = useMarkdown();
   // A #123 the sidebar has opens here.
   const click = (e: MouseEvent) => {
     const ref = (e.target as HTMLElement).closest<HTMLAnchorElement>('a[data-ref]')?.dataset.ref;
-    if (ref && host.hasItem(ref)) {
+    if (ref && markdown.hasItem(ref)) {
       e.preventDefault();
-      host.openItem(ref);
+      shell.openItem(ref);
     }
   };
-  return <div className="md reu-md" onClick={click} dangerouslySetInnerHTML={{ __html: host.markdown(text, repo) }} />;
+  return <div className="md reu-md" onClick={click} dangerouslySetInnerHTML={{ __html: markdown.html(text, repo) }} />;
 }
 
 // The description: shown, or a textarea while editing it.
@@ -104,7 +105,7 @@ function cycleField(c: Ctx, id: string, value: string | undefined, label: ReactN
 
 // What became of it, once approved.
 function Result({ c, id }: { c: Ctx; id: string }) {
-  const host = useHost();
+  const shell = useShell();
   const { d } = c;
   const r = d.results[id];
   if (!r) return null;
@@ -113,7 +114,7 @@ function Result({ c, id }: { c: Ctx; id: string }) {
   const href = typeof r.url === 'string' && /^https:\/\/(github\.com|linear\.app)\//.test(r.url) ? r.url : null;
   return (
     <div className="reu-res ok">✓ {label}{href && <> <a href={href} target="_blank" rel="noopener">abrir ↗</a></>}
-      {r.number && !r.projectId ? <> <button className="link" onClick={() => host.openItem(`${d.repo}#${r.number}`)}>en el tablero</button></> : null}<span className="m"> · {r.by}</span></div>
+      {r.number && !r.projectId ? <> <button className="link" onClick={() => shell.openItem(`${d.repo}#${r.number}`)}>en el tablero</button></> : null}<span className="m"> · {r.by}</span></div>
   );
 }
 
@@ -139,13 +140,14 @@ function Section({ title, n, hint, children }: { title: string; n: number; hint?
 }
 
 export function Proposals({ d, cites, onDone }: { d: Detail; cites: Cites; onDone: () => Promise<unknown> }) {
-  const host = useHost();
+  const shell = useShell();
+  const session = useSession();
   const [form, setForm] = useViewState<Form | null>(`meeting-form:${d.number}`, null);
   const [approving, setApproving] = useState(false);
   const p = d.proposals;
   if (!p) return <p className="note">Todavía no hay propuestas: ronin no terminó de leer las notas.</p>;
   const f = form ?? newForm(d);
-  const planning = host.planning(d.repo);
+  const planning = session.planning(d.repo);
   const c: Ctx = {
     d, f, cites, planning,
     setOn(id, on) {
@@ -168,11 +170,11 @@ export function Proposals({ d, cites, onDone }: { d: Detail; cites: Cites; onDon
     try {
       // onlyJson, an untyped middleware, hides the route's answer from the client.
       const out = (await ok(client.api.meetings[':n'].approve.$post({ param: { n: String(d.number) }, json: { items } }))) as ApproveOutcome;
-      host.toast(out.failed ? `Se crearon ${out.created}; ${out.failed} no se pudieron crear: puedes intentarlo de nuevo.` : `Listo: se crearon ${out.created}.`);
-      host.refresh();
+      shell.toast(out.failed ? `Se crearon ${out.created}; ${out.failed} no se pudieron crear: puedes intentarlo de nuevo.` : `Listo: se crearon ${out.created}.`);
+      refresh();
     } catch (e) {
-      if (e instanceof ApiError && e.status === 401) return host.unauthorized(e.message);
-      host.toast(`No se pudo: ${(e as Error).message}`);
+      if (e instanceof ApiError && e.status === 401) return shell.unauthorized(e.message);
+      shell.toast(`No se pudo: ${(e as Error).message}`);
     }
     setApproving(false);
     setForm(null);
@@ -182,11 +184,11 @@ export function Proposals({ d, cites, onDone }: { d: Detail; cites: Cites; onDon
     if (!confirm('¿Descartar lo que queda de esta reunión? No se crea nada más.')) return;
     try {
       await ok(client.api.meetings[':n'].discard.$post({ param: { n: String(d.number) } }));
-      host.toast('Listo: la reunión quedó descartada.');
-      host.refresh();
+      shell.toast('Listo: la reunión quedó descartada.');
+      refresh();
     } catch (e) {
-      if (e instanceof ApiError && e.status === 401) return host.unauthorized(e.message);
-      host.toast(`No se pudo: ${(e as Error).message}`);
+      if (e instanceof ApiError && e.status === 401) return shell.unauthorized(e.message);
+      shell.toast(`No se pudo: ${(e as Error).message}`);
     }
     await onDone();
   };
@@ -208,7 +210,7 @@ export function Proposals({ d, cites, onDone }: { d: Detail; cites: Cites; onDon
   ));
   const comments = p.comments.map((x) => (
     <div key={x.id} className={`reu-pr ${isOff(c, x.id) ? 'off' : ''}`}>
-      <div className="reu-h"><Check c={c} id={x.id} label="Incluir este comentario" /><span className="reu-kind com">comentario</span><b>en <button className="link" onClick={() => host.openItem(`${d.repo}#${x.issue}`)}>#{x.issue}</button> <span className="reu-it">{x.issueTitle}</span></b></div>
+      <div className="reu-h"><Check c={c} id={x.id} label="Incluir este comentario" /><span className="reu-kind com">comentario</span><b>en <button className="link" onClick={() => shell.openItem(`${d.repo}#${x.issue}`)}>#{x.issue}</button> <span className="reu-it">{x.issueTitle}</span></b></div>
       {x.why && <div className="reu-why">{x.why}</div>}
       <Meta parts={[cycleField(c, x.id, x.cycle, <><LinIcon /> Pasarlo a</>)]} />
       <div className="reu-xs"><FromNotes c={c} k={`q-${x.id}`} cites={x.cites} /><Text c={c} k={`b-${x.id}`} id={x.id} label="Comentario" body={x.body} /></div>
@@ -231,14 +233,14 @@ export function Proposals({ d, cites, onDone }: { d: Detail; cites: Cites; onDon
 }
 
 function ApproveBar({ d, f, busy, anyCreated, onApprove, onDiscard }: { d: Detail; f: Form; busy: boolean; anyCreated: boolean; onApprove: () => void; onDiscard: () => void }) {
-  const host = useHost();
-  if (!host.can(d.repo, 'aprobar')) return <div className="reu-approve"><div className="sum">Lo que propone esta reunión lo aprueba alguien con permiso para aprobar en este repo.</div></div>;
+  const session = useSession();
+  if (!session.can(d.repo, 'aprobar')) return <div className="reu-approve"><div className="sum">Lo que propone esta reunión lo aprueba alguien con permiso para aprobar en este repo.</div></div>;
   const { projects, issues, comments } = chosen(d, f);
   const parts = [projects ? plural(projects, 'proyecto', 'proyectos') : '', issues ? plural(issues, 'issue', 'issues') : '', comments ? plural(comments, 'comentario', 'comentarios') : ''].filter(Boolean);
   const what = parts.length ? parts.join(', ').replace(/, ([^,]*)$/, ' y $1') : 'nada';
   return (
     <div className="reu-approve">
-      <div className="sum">Crear <b>{what}</b><small>A tu nombre ({host.me()}): los issues y los comentarios en GitHub con tu sesión{projects ? '; el proyecto en Linear con la key del repo' : ''}.</small></div>
+      <div className="sum">Crear <b>{what}</b><small>A tu nombre ({session.me}): los issues y los comentarios en GitHub con tu sesión{projects ? '; el proyecto en Linear con la key del repo' : ''}.</small></div>
       <button className="btn-s" disabled={busy} onClick={onDiscard}>Descartar {anyCreated ? 'el resto' : 'todo'}</button>
       <button className="btn-s primary" disabled={busy || !parts.length} onClick={onApprove}>{busy ? 'Creando…' : 'Crear seleccionados'}</button>
     </div>

@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { ApiError, client, ok } from '../../api.js';
-import { useHost, type SettingsView } from '../../host.js';
+import { type SettingsView, useSession, useSettingsView, useShell } from '../../shell/hooks.js';
 import { Accounts } from './Accounts.js';
 import { Connections, Log } from './Connections.js';
 import { Notifications, Profile } from './Profile.js';
@@ -16,7 +16,7 @@ import type { Accounts as AccountsData, Connections as ConnectionsData, LogEntry
 // Ajustes (#174): one page per section, like Linear's settings; each field
 // saves when it's left. The shell draws its sidebar (Tu cuenta, and
 // Administración for admins), routes /ajustes/<sección>[/…] and mounts the
-// page again on each address, which reads it from host.settingsView(): so,
+// page again on each address, which reads it from useSettingsView(): so,
 // as before, going to a section reads it again.
 
 // What a section reads, besides the page's own data.
@@ -37,9 +37,11 @@ export interface Data {
 }
 
 export function Settings() {
-  const host = useHost();
-  const [view] = useState(() => host.settingsView());
-  const portalAdmin = host.session().portalAdmin;
+  const shell = useShell();
+  const session = useSession();
+  const settingsView = useSettingsView();
+  const [view] = useState(() => settingsView);
+  const portalAdmin = session.portalAdmin;
   const { section: sec, login, account } = view;
   // Bumped after each change: the section is drawn again from what's saved.
   const [rev, setRev] = useState(0);
@@ -53,7 +55,7 @@ export function Settings() {
     setChosen(true);
     keep(f);
   };
-  const change = useMemo(() => makeChange(host.unauthorized, host.toast, () => setRev((n) => n + 1)), [host]);
+  const change = useMemo(() => makeChange(shell.unauthorized, shell.toast, () => setRev((n) => n + 1)), [shell]);
 
   const main = useQuery({ queryKey: ['settings'], queryFn: () => ok(client.api.settings.$get()) as Promise<unknown> as Promise<Page> });
   const ready = Boolean(main.data);
@@ -69,8 +71,8 @@ export function Settings() {
   const queries = [main, log, repos, connections, accounts, user, team, portal];
   const error = queries.find((q) => q.error)?.error;
   useEffect(() => {
-    if (error instanceof ApiError && error.status === 401) host.unauthorized(error.message);
-  }, [error, host]);
+    if (error instanceof ApiError && error.status === 401) shell.unauthorized(error.message);
+  }, [error, shell]);
 
   const d = main.data;
   const data: Data = { view, log: log.data, repos: repos.data, connections: connections.data, accounts: accounts.data, team: team.data, user: user.data, portal: portal.data, portalError: portal.error?.message, filter, chooseFilter };

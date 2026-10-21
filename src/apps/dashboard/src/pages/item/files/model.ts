@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { useReducer } from 'react';
 import { ApiError, client, ok } from '../../../api.js';
-import { useHost, type Host } from '../../../host.js';
+import { reread, type ShellActions, useShell } from '../../../shell/hooks.js';
 import { itemParam } from '../model.js';
 import { pendingOf, type DiffThread, type PendingReview, type PrFile } from './diff.js';
 
@@ -58,7 +58,7 @@ export interface PendingComment {
 // The items whose Archivos were asked for: read from then on.
 const asked = new Set<string>();
 
-async function read(qc: QueryClient, host: Host, key: string): Promise<FilesRead> {
+async function read(qc: QueryClient, shell: ShellActions, key: string): Promise<FilesRead> {
   const param = itemParam(key);
   try {
     // What the person marked as viewed and their pending review are theirs, read with their token; without them the diff still shows.
@@ -69,19 +69,19 @@ async function read(qc: QueryClient, host: Host, key: string): Promise<FilesRead
     const before = qc.getQueryData<FilesRead>(filesKey(key));
     return { data, viewed: mine ? mine.viewed : before?.viewed ?? [], review: mine ? (mine.review as PendingReview | null) : before?.review ?? null };
   } catch (e) {
-    if (e instanceof ApiError && e.status === 401) host.unauthorized(e.message);
+    if (e instanceof ApiError && e.status === 401) shell.unauthorized(e.message);
     throw e;
   }
 }
 
 export function useFiles(key: string, shown: boolean) {
-  const host = useHost();
+  const shell = useShell();
   const qc = useQueryClient();
   const [, redraw] = useReducer((n: number) => n + 1, 0);
   if (shown) asked.add(key);
   const q = useQuery({
     queryKey: filesKey(key),
-    queryFn: () => read(qc, host, key),
+    queryFn: () => read(qc, shell, key),
     enabled: asked.has(key),
     staleTime: EVERY_MS,
     gcTime: Infinity,
@@ -98,15 +98,15 @@ export function useFiles(key: string, shown: boolean) {
       asked.add(key);
       redraw();
     },
-    reread: () => rereadFiles(qc, host, key),
+    reread: () => rereadFiles(qc, shell, key),
   };
   return { q, view };
 }
 
 // After writing on GitHub: the files and the item's comments are read again.
-export function rereadFiles(qc: QueryClient, host: Host, key: string) {
+export function rereadFiles(qc: QueryClient, shell: ShellActions, key: string) {
   void qc.invalidateQueries({ queryKey: filesKey(key) });
-  host.reread(key);
+  reread(key);
 }
 
 // A file, and a comment in it, picked in the review panel: shown once

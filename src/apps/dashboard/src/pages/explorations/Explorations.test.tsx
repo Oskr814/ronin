@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { HostContext, type ExplorationsView } from '../../host.js';
-import { testHost } from '../../test-host.js';
+import type { ExplorationsView } from '../../shell/hooks.js';
+import { EXPLORATIONS_KEY } from '../../shell/state.js';
+import { resetShell, showPage, testShell, testSnapshot } from '../../test-shell.js';
 import { Exploration } from './Exploration.js';
 import { Explorations } from './Explorations.js';
 import { ExploreNow } from './ExploreNow.js';
@@ -42,7 +42,7 @@ const calls: Array<{ method: string; path: string; body: unknown }> = [];
 let answer = (_path: string): unknown => ({});
 beforeEach(() => {
   calls.length = 0;
-  answer = (path) => (path.endsWith('/runs') ? RUNS : path.endsWith('/inventory') ? INVENTORY : path === '/api/runs/r1' ? { summary: { runId: 'r1', taskType: 'explore-function', state: 'ok', startedAt: at, durationMs: 600_000 }, lines: [{ type: 'text', text: 'Abrí el carrito.' }] } : path.endsWith('/run') ? { until: '2026-10-15T14:00:00Z' } : {});
+  answer = (path) => (path === '/api/snapshot' ? SNAP : path === '/api/explorations' ? { apps: VIEW.list } : path.endsWith('/runs') ? RUNS : path.endsWith('/inventory') ? INVENTORY : path === '/api/runs/r1' ? { summary: { runId: 'r1', taskType: 'explore-function', state: 'ok', startedAt: at, durationMs: 600_000 }, lines: [{ type: 'text', text: 'Abrí el carrito.' }] } : path.endsWith('/run') ? { until: '2026-10-15T14:00:00Z' } : {});
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const path = decodeURIComponent(new URL(String(input), 'http://x').pathname);
     const method = init?.method ?? 'GET';
@@ -53,27 +53,25 @@ beforeEach(() => {
 });
 afterEach(() => {
   cleanup();
+  resetShell();
   vi.unstubAllGlobals();
 });
 
-const show = (page: ReactNode, host = testHost({ explorations: () => VIEW })) => {
-  render(
-    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-      <HostContext.Provider value={host}>{page}</HostContext.Provider>
-    </QueryClientProvider>,
-  );
-  return host;
+// The apps as the shell has them: the snapshot's rows, and the list it read.
+const SNAP = testSnapshot({ exploraciones: VIEW.rows } as never);
+const show = (page: ReactNode) => {
+  return showPage(page, { snap: SNAP, data: [[EXPLORATIONS_KEY, VIEW.list]] }).shell;
 };
 
 describe('Exploraciones', () => {
   it('lists the apps with their state, and opens one', () => {
-    const host = show(<Explorations />);
+    const shell = show(<Explorations />);
     expect(screen.getByText('2 fichas por decidir')).toBeTruthy();
     expect(screen.getByText('explorando carrito')).toBeTruthy();
     expect(screen.getByText('abriendo el carrito')).toBeTruthy();
     expect(screen.getByText('se abre con la primera ficha')).toBeTruthy();
     fireEvent.click(screen.getByText('web'));
-    expect(host.openExploration).toHaveBeenCalledWith('acme/tienda', 'web');
+    expect(shell.openExploration).toHaveBeenCalledWith('acme/tienda', 'web');
   });
 
   it('shows an app with no PR, its runs and an agent\'s transcript', async () => {
@@ -85,7 +83,7 @@ describe('Exploraciones', () => {
     expect(screen.getByText('semilla 7')).toBeTruthy();
     expect(screen.getByText('login').getAttribute('title')).toBe('fallo · no cargó');
     expect(calls[0].path).toBe('/api/explorations/acme/tienda/web/runs');
-    fireEvent.click(screen.getByText('explore-function carrito'));
+    fireEvent.click(screen.getByText('Explorar carrito'));
     await screen.findByText('Abrí el carrito.');
     fireEvent.click(screen.getByText('Cerrar'));
     expect(screen.queryByText('Abrí el carrito.')).toBeNull();
@@ -110,16 +108,17 @@ describe('Exploraciones', () => {
 describe('Explorar ahora', () => {
   it('sends what was chosen, and says it went', async () => {
     const onClose = vi.fn();
-    const host = show(<ExploreNow repo="acme/tienda" app="backoffice" onClose={onClose} />);
+    const shell = show(<ExploreNow repo="acme/tienda" app="backoffice" onClose={onClose} />);
     expect(screen.getByText(/Lo que encuentre se suma al PR #12/)).toBeTruthy();
     fireEvent.change(document.getElementById('xn-n')!, { target: { value: '5' } });
     fireEvent.change(document.getElementById('xn-h')!, { target: { value: '' } });
     fireEvent.click(document.getElementById('xn-night')!);
     expect(screen.getByText('Esta noche corre otra igual, con otras funciones.')).toBeTruthy();
     fireEvent.click(screen.getByText('Explorar'));
-    await waitFor(() => expect(host.explored).toHaveBeenCalledWith('acme/tienda', 'backoffice'));
-    expect(calls).toEqual([{ method: 'POST', path: '/api/explorations/acme/tienda/backoffice/run', body: { maxFunctions: 5, hours: null, tonight: false } }]);
-    expect(host.toast).toHaveBeenCalledWith(expect.stringMatching(/^ronin está levantando backoffice para explorarla hasta las .*\. La corrida se sigue en Corridas\.$/));
+    // The shell reads the snapshot and the apps again, with this one starting.
+    await waitFor(() => expect(calls.filter((c) => c.path === '/api/snapshot' || c.path === '/api/explorations').map((c) => c.path)).toEqual(['/api/snapshot', '/api/explorations']));
+    expect(calls.filter((c) => c.method === 'POST')).toEqual([{ method: 'POST', path: '/api/explorations/acme/tienda/backoffice/run', body: { maxFunctions: 5, hours: null, tonight: false } }]);
+    expect(shell.toast).toHaveBeenCalledWith(expect.stringMatching(/^ronin está levantando backoffice para explorarla hasta las .*\. La corrida se sigue en Corridas\.$/));
     expect(onClose).not.toHaveBeenCalled();
   });
 

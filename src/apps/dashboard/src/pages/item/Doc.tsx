@@ -1,5 +1,5 @@
 import { useReducer } from 'react';
-import type { ItemDetail, SnapshotItem } from '../../host.js';
+import type { ItemDetail, SnapshotItem } from '../../shell/hooks.js';
 import { when } from '../../lib/format.js';
 import { Md } from '../../lib/markdown.js';
 import { Avatar, checksChip, Chips, sameLogin, type Doc } from './model.js';

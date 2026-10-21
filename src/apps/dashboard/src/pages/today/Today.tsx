@@ -1,9 +1,9 @@
 import { useQuery } from '@tanstack/react-query';
-import { Fragment, useEffect, useReducer, type ReactNode } from 'react';
+import { Fragment, useEffect, type ReactNode } from 'react';
 import { ApiError, client, ok, type Snapshot, type Today as TodayData } from '../../api.js';
-import { useHost } from '../../host.js';
+import { useRepoColor, useShell, useSnapshot } from '../../shell/hooks.js';
 import { hhmm, pct, repoShort, Sparkline } from '../../lib/format.js';
-import { duration, money, RUN_STATE, useRunTitle } from '../../lib/runs.js';
+import { duration, money, RUN_STATE, runTitle } from '../../lib/runs.js';
 import { hideTip, tip } from '../../lib/tip.js';
 import { AttentionCard } from './Attention.js';
 import { Breakdown, CycleCard } from './Cycle.js';
@@ -14,21 +14,19 @@ const MIN = 60e3;
 // Hoy, the dashboard's home: the day's numbers, what waits on a person, each
 // repo's Linear cycle and the last 12 hours of runs. What the sidebar has
 // (the items, the previews, the repos) it reads from the shell's snapshot,
-// and draws again each time the shell does.
+// and draws again with each one.
 export function Today() {
-  const host = useHost();
-  const [, redraw] = useReducer((n: number) => n + 1, 0);
-  useEffect(() => host.subscribe(redraw), [host]);
+  const shell = useShell();
+  const snap = useSnapshot();
   const query = useQuery({
     queryKey: ['today'],
     queryFn: () => ok(client.api.today.$get()),
     refetchInterval: EVERY_MS,
   });
   useEffect(() => {
-    if (query.error instanceof ApiError && query.error.status === 401) host.unauthorized(query.error.message);
-  }, [query.error, host]);
+    if (query.error instanceof ApiError && query.error.status === 401) shell.unauthorized(query.error.message);
+  }, [query.error, shell]);
 
-  const snap = host.snapshot();
   const now = Date.now();
   const t = query.data;
   const running = snap.items.filter((i) => i.status === 'running').length;
@@ -80,8 +78,8 @@ function Tiles({ t }: { t: TodayData }) {
 
 // Each repo's runs of the last 12 hours, in as many rows as they overlap.
 function Timeline({ t, snap, now }: { t: TodayData; snap: Snapshot; now: number }) {
-  const host = useHost();
-  const runTitle = useRunTitle();
+  const shell = useShell();
+  const repoColor = useRepoColor();
   const from = Date.parse(t.from);
   const span = now - from;
   const pos = (ms: number) => Math.max(0, Math.min(100, ((ms - from) / span) * 100));
@@ -99,11 +97,11 @@ function Timeline({ t, snap, now }: { t: TodayData; snap: Snapshot; now: number 
       const text = `${runTitle(run)}${item ? `\n${item.title}` : ''}\n${when}, ${label}`;
       const cls = run.state === 'running' ? 'live' : ['error', 'timeout', 'cut'].includes(run.state) ? 'fail' : run.state === 'usage_limit' ? 'quota' : '';
       return (
-        <button key={run.runId} className={`bar ${cls}`} style={{ left: `${start}%`, width: `max(6px,${end - start}%)`, top: `${6 + row * 15}px`, backgroundColor: host.repoColor(repo) }}
+        <button key={run.runId} className={`bar ${cls}`} style={{ left: `${start}%`, width: `max(6px,${end - start}%)`, top: `${6 + row * 15}px`, backgroundColor: repoColor(repo) }}
           aria-label={text.replace(/\n/g, ', ')} {...tip(text)}
           onClick={() => {
             hideTip();
-            host.openRun(run.itemId, run.runId);
+            shell.openRun(run.itemId, run.runId);
           }} />
       );
     });
@@ -113,7 +111,7 @@ function Timeline({ t, snap, now }: { t: TodayData; snap: Snapshot; now: number 
   const ticks = [0, 2, 4, 6, 8, 10, 12].map((h) => <span key={h} className={h % 4 === 2 ? 'minor' : ''} style={{ left: `${(h / 12) * 100}%` }}>{h === 12 ? 'ahora' : hhmm(new Date(from + h * 60 * MIN).toISOString())}</span>);
   return (
     <div className="day">
-      <h2>Últimas 12 horas<span className="legend">{snap.repos.map((repo) => <span key={repo}><i style={{ background: host.repoColor(repo) }} />{repoShort(repo)}</span>)}<span><i className="lg-fail" />terminó con error</span></span></h2>
+      <h2>Últimas 12 horas<span className="legend">{snap.repos.map((repo) => <span key={repo}><i style={{ background: repoColor(repo) }} />{repoShort(repo)}</span>)}<span><i className="lg-fail" />terminó con error</span></span></h2>
       {t.timeline.length ? null : <p className="note" style={{ margin: '0 0 8px' }}>Ninguna corrida de agentes en las últimas 12 horas.</p>}
       {lanes}
       <div className="axis"><span /><div className="ticks">{ticks}</div></div>

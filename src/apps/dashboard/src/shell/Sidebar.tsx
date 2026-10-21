@@ -1,14 +1,14 @@
 import { Fragment, type ReactNode } from 'react';
 import { GhIcon, LinearIcon } from '../lib/github.js';
-import { clock, Dot, RunDot } from '../lib/runs.js';
+import { clock, Dot, RunDot, runKind } from '../lib/runs.js';
 import { short } from '../../../../ui/time.js';
 import { Live } from './Live.js';
 import {
-  AJ_SECTIONS, canDo, changed, goHome, inScope, type Item, linearRepos, openAjustes, openDespliegues, openExploracion, openExploraciones, openMetricas,
-  openNewIssue, openPedido, openPedidos, openReuniones, projectColor, queryClient, repoColor, repoShort, runKind, S, safeRepo, saveScope, select,
+  AJ_SECTIONS, canDo, changed, goHome, inScope, type Item, linearRepos, openSettings, openDeploys, openExploration, openExplorations, openMetrics,
+  openNewIssue, openRequest, openRequests, openMeetings, projectColor, queryClient, repoColor, repoShort, S, safeRepo, saveScope, select,
   xplCounts, xplRows, xplToDecide,
 } from './state.js';
-import type { ExplorationRow } from '../host.js';
+import type { ExplorationRow } from './hooks.js';
 
 // The sidebar: where to go (Hoy, what runs, the queue, the pages), Linear's
 // filter, and the work, repo by repo. Ajustes has its own.
@@ -95,7 +95,7 @@ function waitsLabel(p: Pedido) {
 function PedRow({ p }: { p: Pedido }) {
   const tone = p.running ? 'live' : p.waitsOn === 'person' || p.waitsOn === 'team' ? 'warn' : p.waitsOn === 'ronin' ? 'run' : 'idle';
   return (
-    <button className="item" data-ped={p.number} aria-current={S.page === 'pedido' && S.ped.n === p.number} onClick={() => openPedido(Number(p.number))}><Dot cls={tone} /><span className="t"><span className="pd-pn">P-{p.number}</span> {p.title}</span><span className="age">{short(Date.now() - Date.parse(p.lastAt))}</span>
+    <button className="item" data-ped={p.number} aria-current={S.page === 'pedido' && S.ped.n === p.number} onClick={() => openRequest(Number(p.number))}><Dot cls={tone} /><span className="t"><span className="pd-pn">P-{p.number}</span> {p.title}</span><span className="age">{short(Date.now() - Date.parse(p.lastAt))}</span>
       <span className="sub">{waitsLabel(p)}</span></button>
   );
 }
@@ -106,7 +106,7 @@ function XplRow({ r }: { r: ExplorationRow }) {
   const tone = r.running ? 'live' : c?.decidir ? 'warn' : c?.esperando ? 'run' : 'idle';
   const sub = r.running ? `explorando${r.running.fn ? ` ${r.running.fn}` : ''}` : !r.pr ? 'sin PR de exploración' : c ? (c.decidir ? `${c.decidir} ${c.decidir === 1 ? 'ficha' : 'fichas'} por decidir` : c.esperando ? 'esperando a ronin' : 'nada por decidir') : `PR #${r.pr.number}`;
   return (
-    <button className="item" data-xpl={`${r.repo}|${r.app}`} aria-current={S.page === 'exploracion' && S.xpl.repo === r.repo && S.xpl.app === r.app} onClick={() => openExploracion(r.repo, r.app)}><Dot cls={tone} /><span className="t">{r.app}</span><span className="age">{r.pr ? `#${r.pr.number}` : ''}</span>
+    <button className="item" data-xpl={`${r.repo}|${r.app}`} aria-current={S.page === 'exploracion' && S.xpl.repo === r.repo && S.xpl.app === r.app} onClick={() => openExploration(r.repo, r.app)}><Dot cls={tone} /><span className="t">{r.app}</span><span className="age">{r.pr ? `#${r.pr.number}` : ''}</span>
       <span className="sub">{repoShort(r.repo)}, {sub}</span></button>
   );
 }
@@ -128,11 +128,11 @@ function Quick() {
       <button data-home aria-pressed={!S.sel && !S.page} onClick={goHome}><svg viewBox="0 0 24 24"><path d="M3 12h4l3-8 4 16 3-8h4" /></svg>Hoy</button>
       <button data-filter="running" aria-pressed={S.filter === 'running'} onClick={filter('running')}><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" /><path d="M12 8v4l3 2" /></svg>Corriendo ahora<span className="c">{running}</span></button>
       <button data-filter="queue" aria-pressed={S.filter === 'queue'} onClick={filter('queue')}><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10" /></svg>En cola<span className="c">{queued}</span></button>
-      {snap.portalAdmin || snap.pedidosTotal ? <button data-portal aria-pressed={['pedidos', 'pedido'].includes(S.page ?? '') && !S.sel} onClick={() => openPedidos()}><svg viewBox="0 0 24 24"><path d="M5 4h14v16H5zM9 9h6M9 13h6M9 17h3" /></svg>Pedidos del portal<span className="c">{snap.pedidos?.length || ''}</span></button> : null}
-      {snap.repos.length ? <button data-reuniones aria-pressed={['reuniones', 'reunion'].includes(S.page ?? '') && !S.sel} onClick={() => openReuniones()}><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h10M4 18h7" /><circle cx="18" cy="16" r="3" /></svg>Reuniones<span className="c">{snap.reunionesPorRevisar || ''}</span></button> : null}
-      {snap.despliegues ? <button data-dep-page aria-pressed={S.page === 'despliegues' && !S.sel} onClick={() => openDespliegues()}><svg viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M5 20h14" /></svg>Despliegues<span className="c">{depGoing() ? 'en curso' : ''}</span></button> : null}
-      {xplRows().length ? <button data-xpl-page aria-pressed={['exploraciones', 'exploracion'].includes(S.page ?? '')} onClick={() => openExploraciones()}><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6" /><path d="m20 20-4.5-4.5M14 8l-2 4-4 2 2-4z" /></svg>Exploraciones<span className="c">{xplToDecide() || ''}</span></button> : null}
-      {snap.access?.admin ? <button data-mt-page aria-pressed={S.page === 'metricas' && !S.sel} onClick={() => openMetricas()}><svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M21 20H3" /></svg>Métricas</button> : null}
+      {snap.portalAdmin || snap.pedidosTotal ? <button data-portal aria-pressed={['pedidos', 'pedido'].includes(S.page ?? '') && !S.sel} onClick={() => openRequests()}><svg viewBox="0 0 24 24"><path d="M5 4h14v16H5zM9 9h6M9 13h6M9 17h3" /></svg>Pedidos del portal<span className="c">{snap.pedidos?.length || ''}</span></button> : null}
+      {snap.repos.length ? <button data-reuniones aria-pressed={['reuniones', 'reunion'].includes(S.page ?? '') && !S.sel} onClick={() => openMeetings()}><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h10M4 18h7" /><circle cx="18" cy="16" r="3" /></svg>Reuniones<span className="c">{snap.reunionesPorRevisar || ''}</span></button> : null}
+      {snap.despliegues ? <button data-dep-page aria-pressed={S.page === 'despliegues' && !S.sel} onClick={() => openDeploys()}><svg viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M5 20h14" /></svg>Despliegues<span className="c">{depGoing() ? 'en curso' : ''}</span></button> : null}
+      {xplRows().length ? <button data-xpl-page aria-pressed={['exploraciones', 'exploracion'].includes(S.page ?? '')} onClick={() => openExplorations()}><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6" /><path d="m20 20-4.5-4.5M14 8l-2 4-4 2 2-4z" /></svg>Exploraciones<span className="c">{xplToDecide() || ''}</span></button> : null}
+      {snap.access?.admin ? <button data-mt-page aria-pressed={S.page === 'metricas' && !S.sel} onClick={() => openMetrics()}><svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M21 20H3" /></svg>Métricas</button> : null}
     </div>
   );
 }
@@ -140,12 +140,12 @@ function Quick() {
 // Ajustes' own: Tu cuenta, and Administración for admins.
 function AjNav() {
   const snap = S.snap!;
-  const button = (sec: string) => <button data-aj={sec} aria-pressed={S.aj.sec === sec && !(sec === 'repos' && S.aj.repo)} onClick={() => openAjustes(sec, null)}><svg viewBox="0 0 24 24" dangerouslySetInnerHTML={{ __html: AJ_SECTIONS[sec].icon }} />{AJ_SECTIONS[sec].name}</button>;
+  const button = (sec: string) => <button data-aj={sec} aria-pressed={S.aj.sec === sec && !(sec === 'repos' && S.aj.repo)} onClick={() => openSettings(sec, null)}><svg viewBox="0 0 24 24" dangerouslySetInnerHTML={{ __html: AJ_SECTIONS[sec].icon }} />{AJ_SECTIONS[sec].name}</button>;
   return (
     <div className="quick" id="quick">
       <button data-aj-back onClick={goHome}><svg viewBox="0 0 24 24"><path d="m15 18-6-6 6-6" /></svg>Volver al tablero</button>
       <div className="aj-grp">Tu cuenta <span>{snap.me}</span></div>{button('perfil')}{button('notificaciones')}
-      {snap.access.admin ? <><div className="aj-grp">Administración</div>{button('general')}{button('usuarios')}{button('repos')}{snap.repos.map((repo) => <button key={repo} className="aj-sub" data-aj="repos" data-ajrepo={repo} aria-pressed={S.aj.sec === 'repos' && S.aj.repo === repo} onClick={() => openAjustes('repos', repo)}><i style={{ background: repoColor(repo) }} />{repoShort(repo)}</button>)}{button('agentes')}{button('cuentas')}{button('exploracion')}{button('previews')}{button('conexiones')}{button('registro')}</> : null}
+      {snap.access.admin ? <><div className="aj-grp">Administración</div>{button('general')}{button('usuarios')}{button('repos')}{snap.repos.map((repo) => <button key={repo} className="aj-sub" data-aj="repos" data-ajrepo={repo} aria-pressed={S.aj.sec === 'repos' && S.aj.repo === repo} onClick={() => openSettings('repos', repo)}><i style={{ background: repoColor(repo) }} />{repoShort(repo)}</button>)}{button('agentes')}{button('cuentas')}{button('exploracion')}{button('previews')}{button('conexiones')}{button('registro')}</> : null}
     </div>
   );
 }
@@ -242,7 +242,7 @@ function Tree() {
 export function Sidebar() {
   return (
     <aside className="side" aria-label="Trabajo de ronin">
-      <div className="brand"><span className="seal" aria-hidden="true">浪人</span><b>ronin</b><button className="gear" id="gear" title="Ajustes" aria-label="Ajustes" onClick={() => openAjustes()}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" /><circle cx="12" cy="12" r="3" /></svg></button></div>
+      <div className="brand"><span className="seal" aria-hidden="true">浪人</span><b>ronin</b><button className="gear" id="gear" title="Ajustes" aria-label="Ajustes" onClick={() => openSettings()}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" /><circle cx="12" cy="12" r="3" /></svg></button></div>
       <label className="search"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg><input id="q" placeholder="Buscar un issue (título, número o PR)" aria-label="Buscar" value={S.q} onChange={(e) => {
         S.q = e.target.value;
         changed();

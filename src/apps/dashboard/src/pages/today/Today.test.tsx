@@ -1,12 +1,12 @@
 // @vitest-environment jsdom
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Snapshot } from '../../api.js';
-import { HostContext, type Host } from '../../host.js';
-import { testHost } from '../../test-host.js';
+import { setProject } from '../../shell/hooks.js';
+import { queryClient, SNAPSHOT_KEY } from '../../shell/state.js';
+import { resetShell, showPage } from '../../test-shell.js';
 import { Today } from './Today.js';
 
 // Invented data: two repos, a day of runs, a Linear cycle each.
@@ -27,42 +27,24 @@ beforeEach(() => {
 });
 afterEach(() => {
   cleanup();
+  resetShell();
   vi.useRealTimers();
   vi.unstubAllGlobals();
 });
 
-function show(overrides: Partial<Host> = {}) {
-  const listeners = new Set<() => void>();
-  let snap: Snapshot = DATA.snapshot;
-  let project = '';
-  const host = testHost({
-    snapshot: () => snap,
-    subscribe: (f) => {
-      listeners.add(f);
-      return () => listeners.delete(f);
-    },
-    project: () => project,
-    ...overrides,
-  });
-  const view = render(
-    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-      <HostContext.Provider value={host}>
-        <Today />
-      </HostContext.Provider>
-    </QueryClientProvider>,
-  );
+function show(snap: Snapshot = DATA.snapshot) {
+  const view = showPage(<Today />, { snap });
   // The shell draws again: another snapshot, another project in the sidebar.
-  const shell = (next: { snap?: Snapshot; project?: string }) => act(() => {
-    snap = next.snap ?? snap;
-    project = next.project ?? project;
-    for (const f of listeners) f();
+  const redraw = (next: { snap?: Snapshot; project?: string }) => act(() => {
+    if (next.snap) queryClient.setQueryData(SNAPSHOT_KEY, next.snap);
+    if (next.project !== undefined) setProject(next.project);
   });
-  return { ...view, host, shell };
+  return { ...view, redraw };
 }
 
 describe('Hoy, in React', () => {
   it('draws the day, what waits on a person, the cycles and the runs', async () => {
-    const { container, host } = show();
+    const { container } = show();
     expect(screen.getByText('Cargando…')).toBeTruthy();
     await waitFor(() => expect(container.querySelector('.tiles')).not.toBeNull());
     expect(asked).toEqual(['/api/today']);
@@ -78,25 +60,26 @@ describe('Hoy, in React', () => {
   });
 
   it('opens an item, a run, all of ronin PRs, and filters by a project', async () => {
-    const { container, host } = show();
+    const { container, shell } = show();
     await waitFor(() => expect(container.querySelector('.tiles')).not.toBeNull());
     fireEvent.click(screen.getByText('El pie de página se corta en el teléfono'));
-    expect(host.openItem).toHaveBeenCalledWith('acme/tienda#42');
+    expect(shell.openItem).toHaveBeenCalledWith('acme/tienda#42');
     fireEvent.click(screen.getByText('Ver los 5 →'));
     expect(container.querySelectorAll('.att .arow')).toHaveLength(1 + 5 + 1 + 2);
     fireEvent.click(container.querySelector('.bar.live')!);
-    expect(host.openRun).toHaveBeenCalledWith('acme/tienda#41', expect.stringMatching(/^r-acme\/tienda-41-/));
+    expect(shell.openRun).toHaveBeenCalledWith('acme/tienda#41', expect.stringMatching(/^r-acme\/tienda-41-/));
     fireEvent.click(screen.getByRole('button', { name: /Checkout/ }));
-    expect(host.setProject).toHaveBeenCalledWith('p1');
+    expect(screen.getByRole('button', { name: /Checkout/ }).getAttribute('aria-pressed')).toBe('true');
   });
 
   it('draws again when the shell does', async () => {
-    const { container, shell } = show();
+    const { container, redraw } = show();
     await waitFor(() => expect(container.querySelector('.tiles')).not.toBeNull());
-    shell({ project: 'p1' });
+    redraw({ project: 'p1' });
     expect(screen.getByRole('button', { name: /Checkout/ }).getAttribute('aria-pressed')).toBe('true');
-    shell({ snap: DATA.emptySnap });
-    expect(container.querySelector('.lead')?.textContent).toContain('ningún agente trabajando.');
+    redraw({ snap: DATA.emptySnap });
+    // TanStack Query tells its observers on the next turn.
+    await waitFor(() => expect(container.querySelector('.lead')?.textContent).toContain('ningún agente trabajando.'));
     expect(container.querySelector('.card h2 .c')?.textContent).toBe('nada');
   });
 
@@ -114,7 +97,7 @@ describe('Hoy, in React', () => {
 
   it('says when there is nothing', async () => {
     today = DATA.empty;
-    const { container } = show({ snapshot: () => DATA.emptySnap });
+    const { container } = show(DATA.emptySnap);
     await waitFor(() => expect(container.querySelector('.tiles')).not.toBeNull());
     expect(container.querySelector('.hgrid.one')).not.toBeNull();
     expect(screen.getByText('Ninguna corrida de agentes en las últimas 12 horas.')).toBeTruthy();
