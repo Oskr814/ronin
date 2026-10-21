@@ -1,0 +1,24 @@
+# What the image doesn't need: the build happens inside it, and nothing of an
+# installation (its .env, data, logs, backups) ever goes in.
+.git
+.claude
+node_modules
+dist
+docs
+test
+**/*.test.ts
+**/*.test.tsx
+.env
+.env.*
+!.env.example
+repos.json
+repos.json.*
+!repos.json.example
+logs
+backups
+.worktrees
+.ronin-state.json*
+.ronin-slots
+.preview-reservations
+.tick.*
+*-data

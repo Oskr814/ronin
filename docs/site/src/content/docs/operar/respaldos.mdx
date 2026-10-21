@@ -1,0 +1,104 @@
+---
+title: "Respaldar y recuperar"
+description: "Respaldos diarios de una instalación con Docker, y cómo levantar ronin de nuevo, en la misma máquina o en otra."
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+Lo único de ronin que no se reconstruye solo es **la base y la carpeta de datos**. Los issues, PRs y labels están en GitHub; los clones y las imágenes de Docker se vuelven a bajar. Esta página es para una [instalación con Docker](/ronin/operar/docker/).
+
+## Qué guarda un respaldo
+
+`scripts/backup.sh` deja una carpeta por día, `backups/AAAA-MM-DD/`, con:
+
+| Archivo | Qué es |
+|---|---|
+| `ronin.dump` | La base entera (`pg_dump`). |
+| `files.tar.gz` | El volumen `ronin-files`: `repos.json`, las imágenes del portal, las notas de reuniones, las transcripciones de las corridas, los logs. |
+| `env` | El `.env`, con sus secretos. |
+| `manifest` | Cuándo se hizo y con qué versión de ronin. |
+
+**No guarda** los clones (`ronin-repos`), el Docker propio (`docker-data`), el estado de Tailscale ni las cuentas de Claude (`ronin-claude`): cada instalación hace su `claude login`.
+
+<Aside type="caution" title="Un respaldo es tan sensible como el .env">
+Lleva el token de GitHub de ronin, los secretos de las sesiones y la contraseña del correo, además de los datos del portal y las reuniones. La carpeta queda solo para tu usuario (`700`); si la copiás a otro lado, que sea un lugar igual de cerrado.
+</Aside>
+
+## Respaldar
+
+<Steps>
+
+1. Un respaldo a mano, con ronin andando:
+
+   ```bash
+   scripts/backup.sh
+   ```
+
+   Por defecto va a `./backups`; `BACKUP_DIR` en `.env`, o una carpeta como argumento, lo cambia. Un segundo respaldo el mismo día reemplaza al primero.
+
+2. Uno por día, desde el cron de la máquina:
+
+   ```bash
+   15 3 * * * cd /ruta/a/ronin && scripts/backup.sh >> backups/backup.log 2>&1
+   ```
+
+3. **Fuera de la máquina.** Si la máquina muere, un respaldo en su disco muere con ella. Copiá la carpeta a otro lado con lo que ya uses (`rsync`, `rclone`, restic), o apuntá `BACKUP_DIR` a un disco montado de otra máquina.
+
+</Steps>
+
+**Retención:** quedan los últimos 7 diarios y, antes de ellos, el más nuevo de cada una de 4 semanas. Lo demás se borra al terminar cada respaldo.
+
+## Recuperar
+
+En la misma máquina o en otra, con Docker y la carpeta del respaldo a mano:
+
+<Steps>
+
+1. Cloná ronin, si es una máquina nueva:
+
+   ```bash
+   git clone https://github.com/Oskr814/ronin.git && cd ronin
+   ```
+
+2. Restaurá. Si no hay `.env`, toma el del respaldo (`--env` lo toma aunque haya uno):
+
+   ```bash
+   scripts/restore.sh /ruta/a/backups/AAAA-MM-DD
+   ```
+
+   Construye la imagen, frena `ronin` si estaba corriendo, reemplaza la base y la carpeta de datos, y te pide confirmación antes (`--yes` no la pide).
+
+3. Levantalo:
+
+   ```bash
+   docker compose up -d
+   ```
+
+   Al arrancar clona los repos de `repos.json` y pone la base al día.
+
+4. Un `claude login` por cuenta, como al [instalar](/ronin/operar/docker/#instalar):
+
+   ```bash
+   docker compose exec ronin claude
+   ```
+
+</Steps>
+
+Lo que estaba corriendo cuando se hizo el respaldo vuelve a la cola cuando vence su lease, y el tick siguiente concilia con GitHub.
+
+**En otra máquina,** además:
+- **Tailscale:** el estado del nodo no viaja. Si el nodo viejo sigue en la tailnet con el mismo nombre, borralo desde la consola de Tailscale antes de levantar, o el nuevo toma otro nombre y cambia la URL del tablero. Hace falta una `TS_AUTHKEY` vigente en `.env`.
+- **El listener público:** el proxy o el túnel que llegaba al viejo tiene que apuntar al nuevo.
+
+<Aside type="tip" title="Probalo antes de necesitarlo">
+Un respaldo que nunca se restauró no está probado. Una vez, restauralo en otra máquina **sin levantar `ronin`** y mirá que estén los datos:
+
+```bash
+scripts/restore.sh /ruta/a/backups/AAAA-MM-DD --yes
+docker compose exec postgres psql -U ronin -c '\dt'
+docker compose run --rm --no-deps --entrypoint ls init /data
+docker compose down -v
+```
+
+Con el mismo `.env`, un `ronin` levantado ahí empezaría a trabajar los mismos repos que el de verdad.
+</Aside>

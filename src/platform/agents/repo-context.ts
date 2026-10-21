@@ -116,6 +116,6 @@ export async function withActiveRepo<T>(entry: RepoEntry, fn: () => Promise<T>):
     // worktrees come and go per task and should never be mistaken for the
     // main checkout. Same convention config.ts used to derive this
     // globally; WORKTREE_BASE_PATH stays a valid override for every repo.
-    worktreeBasePath: process.env.WORKTREE_BASE_PATH ?? join(entry.productRepoPath, '..', 'ronin-worktrees'),
+    worktreeBasePath: process.env.WORKTREE_BASE_PATH || join(entry.productRepoPath, '..', 'ronin-worktrees'),
   }, fn);
 }

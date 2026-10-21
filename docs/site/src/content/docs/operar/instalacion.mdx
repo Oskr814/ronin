@@ -7,6 +7,10 @@ import { Aside, Steps } from '@astrojs/starlight/components';
 
 Un runner es una máquina que corre ronin para unos repos. Corre por cron, sin sesión abierta, y opcionalmente con un [servidor](/ronin/operar/servidor/) que reacciona a los webhooks y sirve el [tablero](/ronin/operar/tablero/).
 
+<Aside type="tip" title="Con Docker es más corto">
+[Instalar con Docker](/ronin/operar/docker/) levanta ronin, Postgres, Tailscale y un Docker propio para las previews con `scripts/init.sh` y `docker compose up -d`, y se [respalda y recupera](/ronin/operar/respaldos/) con un script. Esta página es la instalación a mano, directo en la máquina.
+</Aside>
+
 **Hace falta:** Node.js 24, pnpm, `gh`, `jq`, Docker (para levantar las apps) y Claude Code con una sesión iniciada.
 
 <Steps>

@@ -336,6 +336,21 @@ El compose de una instalación:
 
 Los trabajos que estaban corriendo vuelven a la cola cuando vencen sus leases. La guía queda en el sitio de documentación y se prueba una vez por etapa.
 
+**Hecho (5):** la imagen (`Dockerfile`), el compose (`compose.yml`), `ronin init` y los respaldos. La guía, en el sitio: [Instalar con Docker](https://oskr814.github.io/ronin/operar/docker/) y [Respaldar y recuperar](https://oskr814.github.io/ronin/operar/respaldos/).
+- **La imagen** se construye en tres pasos (el build con pnpm, las dependencias de producción, la final) y corre `node dist/apps/api/main.js` detrás de `docker/entrypoint.sh`, que configura git y `gh` con el token de ronin, clona los repos de `repos.json` que falten y publica el tablero. Trae Node 24 y pnpm, git, `gh`, Claude Code, el cliente de Docker con compose y buildx, el CLI de Tailscale (sin el daemon) y el Chromium de Playwright. Corre como root, con `IS_SANDBOX=1` para que Claude Code acepte `bypassPermissions`: el contenedor es el sandbox.
+- **La red:** `ronin` y `docker` usan la red del servicio `tailscale` (`network_mode: service:tailscale`). Para los tres, `127.0.0.1` es el mismo: el tablero sigue escuchando solo ahí; los puertos que publica el Docker propio para una preview (siempre en `127.0.0.1`, `domains/product-app/runtime.ts`) los alcanzan ronin, el navegador de los agentes y Tailscale; y `tailscale serve`, por el socket del sidecar en un volumen compartido, publica el tablero y las previews como antes. Así el código de las previews no cambia. Tailscale corre en modo userspace: sin `/dev/net/tun` ni `NET_ADMIN`.
+- **El Docker propio** es `docker:dind` con TLS: ronin le habla en `tcp://localhost:2376` con los certificados de cliente que el servicio genera al arrancar, en un volumen de solo lectura para ronin. `ronin-repos` se monta en `/repos` en los dos, y cada repo se clona en `/repos/<owner>/<nombre>/repo`, con sus worktrees al lado: dos repos nunca comparten la carpeta de worktrees.
+- **Volúmenes:** los de la tabla de arriba, más `tailscale-socket` (el socket del sidecar, compartido con ronin) y los certificados del Docker propio. Las rutas de datos las fija `compose.yml` en `/data` (el volumen `ronin-files`) y pisan las del `.env`.
+- **`ronin init`** (`src/apps/cli/init.ts`, con su parte pura en `env-file.ts`) arma el `.env` a partir de `.env.example` y del `.env` que haya, pide lo que falta, genera los secretos, suma los repos a `repos.json` (en el volumen de datos) y migra la base. El primer administrador va en `DASHBOARD_ADMINS`. `scripts/init.sh` lo corre en el servicio `init` del compose (perfil `tools`), que monta el checkout en `/install`. `repos.json` sigue siendo un archivo; pasarlo a la base queda para después.
+- **Respaldos:** `scripts/backup.sh` deja `<destino>/<día>/` con el `pg_dump` (formato custom), un `tar` del volumen de datos, el `.env` y un manifiesto, y aplica la retención (7 diarios y 4 semanales). `scripts/restore.sh` los trae de vuelta. **Sin restic por ahora:** un `tar` y un `pg_dump` se restauran con lo que trae cualquier máquina con Docker, sin otra herramienta ni credenciales de un destino remoto. Copiar los respaldos fuera de la máquina, y programarlos con el cron del host, queda a cargo de quien opera; restic con un destino del `.env` es el paso siguiente si hace falta.
+
+**Lo que falta de la etapa 5:**
+- **Mover la instalación actual a compose.** Lo hace una persona, en una ventana anunciada, con los pasos de [Pasar una instalación a mano a Docker](https://oskr814.github.io/ronin/operar/docker/#pasar-una-instalación-a-mano-a-docker): preparar el `.env` (más `TS_AUTHKEY` y `TS_HOSTNAME`); cambiar la URL del tablero y el callback de la OAuth App al nodo nuevo; aplicarle al tag del nodo la política de `PREVIEW_PORT_RANGE`; esperar la cola quieta y bajar las previews; frenar el servicio de systemd; armar un respaldo con el formato de `backup.sh` (el `pg_dump` del Postgres de `compose.postgres.yml` y las carpetas de datos, con las rutas de `repos.json` pasadas a `/repos/…` y `/claude/…`); restaurarlo; `docker compose up -d`; y un `claude login` por cuenta. Volver atrás es `docker compose down` y `pnpm server:setup`.
+- **Probarlo en real:** la imagen se construye y el compose valida, pero todavía nadie lo levantó con una tailnet, una preview y un agente de verdad.
+- **Un despliegue corta lo que corre.** Con systemd, `KillMode=process` dejaba terminar a los handlers y sus agentes; recrear el contenedor los corta, y sus trabajos quedan `lost` hasta el tick siguiente.
+- **Las herramientas de los productos:** los agentes corren las pruebas de cada repo dentro del contenedor `ronin`, que trae Node y pnpm. Un producto que necesite otra cosa en la máquina (otro lenguaje, un binario) no la tiene.
+- **El destino remoto de los respaldos** y su programación desde el propio compose, en vez del cron del host.
+
 ### Rendimiento
 
 > **Hecho** (etapa 1): ver [`DESIGN.md` §21](DESIGN.md#21-tiempos-235-etapa-1).
@@ -361,7 +376,7 @@ La base de datos resuelve los dos primeros.
 | Router | Hono, con zod | Liviano, sobre Request/Response estándar, rutas tipadas y un cliente con los mismos tipos para el frontend (`hc<typeof app>`), sin generar código. Se evaluó NestJS, que el equipo conoce: da estructura (módulos, guards, pipes) pero suma mucha dependencia y ceremonia para unas 40 rutas, pide decoradores y es incómodo con el ESM de ronin, y su contrato con el frontend pasa por OpenAPI y un generador. Lo que se toma de su enfoque: middlewares para sesión, validación, errores y tiempos, y servicios separados de las rutas. |
 | Frontend | Vite, TypeScript, React, TanStack Query | El equipo ya usa React en los productos; el polling y la caché son el patrón dominante. |
 | Contenedores | Una imagen, Compose, Docker-in-Docker para las apps de prueba | Instalar y recuperar con pocos pasos; aislar las apps de prueba del host. |
-| Respaldos | `pg_dump` diario y restic del volumen de archivos, a un destino del `.env`; 7 diarios y 4 semanales | Lo único que no se reconstruye solo es la base y los archivos. |
+| Respaldos | `pg_dump` diario y un `tar` del volumen de archivos, a una carpeta del `.env`; 7 diarios y 4 semanales. restic más adelante, si hace falta un destino remoto | Lo único que no se reconstruye solo es la base y los archivos. Un `tar` se restaura en cualquier máquina con Docker, sin otra herramienta. |
 
 ## Proyección: runners y ejecución distribuida
 
@@ -408,7 +423,7 @@ Las de [#235](https://github.com/Oskr814/ronin/issues/235). Cada una deja ronin 
 | 6 | API con contratos (Hono) | 2 |
 | 7 | Frontend (Vite, React): portal y después el tablero | 6 |
 
-**Mientras dura la migración:** ronin sigue corriendo en la máquina de siempre con su despliegue actual (`pnpm build` y reinicio). Recién en la etapa 5 pasa a Compose, con una ventana corta y anunciada.
+**Mientras dura la migración:** ronin sigue corriendo en la máquina de siempre con su despliegue actual (`pnpm build` y reinicio). Recién en la etapa 5 pasa a Compose, con una ventana corta y anunciada: la imagen, el compose y los respaldos ya están; falta el paso de la instalación (ver «Docker»).
 
 ## Riesgos
 

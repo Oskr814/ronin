@@ -9,12 +9,15 @@
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# What the environment already says wins over .env: in Docker, compose.yml
+# puts repos.json in the data volume (REPOS_CONFIG_PATH).
+PRESET_REPOS_CONFIG_PATH="${REPOS_CONFIG_PATH:-}"
 set -a
 source "$REPO_DIR/.env"
 set +a
 
 : "${RUNNER_ID:?RUNNER_ID no está seteado en .env}"
-REPOS_CONFIG_PATH="${REPOS_CONFIG_PATH:-$REPO_DIR/repos.json}"
+REPOS_CONFIG_PATH="${PRESET_REPOS_CONFIG_PATH:-${REPOS_CONFIG_PATH:-$REPO_DIR/repos.json}}"
 
 if [[ ! -f "$REPOS_CONFIG_PATH" ]]; then
   echo "No se encontró $REPOS_CONFIG_PATH — ver repos.json.example" >&2

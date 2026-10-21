@@ -106,6 +106,20 @@ Ver [El servidor y los webhooks](/ronin/operar/servidor/) y [El tablero](/ronin/
 | `PREVIEW_RESERVATIONS_DIR` | `.preview-reservations` | Dónde se reservan puertos y cupos. |
 | `SEED_CATALOG_DATA_DIR` | `seed-catalog-data` | El catálogo de seeds. Se regenera solo. |
 
+## Docker Compose
+
+Solo las lee `compose.yml`, en una [instalación con Docker](/ronin/operar/docker/). Ahí las rutas de datos (`PORTAL_DATA_DIR`, `REPOS_CONFIG_PATH`, `CLAUDE_CONFIG_DIR`…) las fija el compose en sus volúmenes, y `DATABASE_URL` la arma con `RONIN_PG_PASSWORD`.
+
+| Variable | Por defecto | Qué es |
+|---|---|---|
+| `TS_AUTHKEY` | — | La auth key del sidecar de Tailscale. Solo hace falta la primera vez. |
+| `TS_HOSTNAME` | `ronin` | El nombre del nodo en la tailnet: el host del tablero y de las previews. |
+| `TS_EXTRA_ARGS` | — | Flags extra para `tailscale up`, por ejemplo `--advertise-tags=tag:<tag>`. |
+| `RONIN_PUBLIC_BIND` | `127.0.0.1` | Dónde publica la máquina el listener público (`SERVER_PORT`). |
+| `RONIN_PG_PASSWORD` | — | La contraseña de Postgres. `scripts/init.sh` la genera. |
+| `BACKUP_DIR` | `./backups` | Dónde deja sus respaldos `scripts/backup.sh`. |
+| `RONIN_IMAGE_TAG` | `local` | El tag de la imagen que construye el compose. |
+
 ## Linear
 
 | Variable | Qué es |
