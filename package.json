@@ -7,8 +7,9 @@
   "scripts": {
     "tick": "tsx src/index.ts",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit",
-    "build": "rm -rf dist && tsc -p tsconfig.build.json && cp -r src/web dist/web && cp -r src/portal-web dist/portal-web",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p src/portal-web",
+    "build": "rm -rf dist && tsc -p tsconfig.build.json && cp -r src/web dist/web && vite build --config src/portal-web/vite.config.ts --logLevel warn",
+    "portal:dev": "vite --config src/portal-web/vite.config.ts",
     "start": "node dist/index.js",
     "smoke-test": "tsx scripts/smoke-test.ts",
     "timings": "tsx scripts/timings.ts",
@@ -37,6 +38,7 @@
     "@hono/node-server": "2.1.3",
     "@hono/zod-validator": "0.9.1",
     "@playwright/mcp": "0.0.83",
+    "@tanstack/react-query": "5.104.1",
     "gray-matter": "^4.0.3",
     "hono": "4.13.13",
     "kysely": "0.29.6",
@@ -44,17 +46,26 @@
     "nodemailer": "^6.9.16",
     "pg": "8.23.1",
     "playwright": "1.64.0",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
     "unpdf": "1.8.1",
     "yaml": "2.9.1",
     "zod": "4.6.5"
   },
   "devDependencies": {
+    "@testing-library/dom": "10.4.2",
+    "@testing-library/react": "16.3.3",
     "@types/node": "^22.10.2",
     "@types/nodemailer": "^6.4.17",
     "@types/pg": "8.23.1",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.1.2",
+    "jsdom": "30.1.2",
     "jszip": "3.10.1",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
+    "vite": "8.3.3",
     "vitest": "^4.1.10"
   }
 }

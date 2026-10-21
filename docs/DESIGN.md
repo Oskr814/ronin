@@ -951,7 +951,13 @@ src/portal/            el dominio: cuentas, pedidos, la conversación, el protot
 src/server/portal.ts   lo que el listener público atiende del portal, y monta su API
 src/server/api/portal-admin.ts  la administración del portal desde el tablero
 src/server/api/dashboard-portal.ts  los pedidos en el tablero: la lista, la ficha y su actividad
-src/portal-web/        la página: HTML, CSS y JS sin build
+src/portal-web/        la página, en React con Vite (`pnpm build` la arma en dist/portal-web, `pnpm portal:dev` para trabajarla):
+  src/api.ts           el cliente de la API, tipado desde portal/routes.ts, y la versión de la página
+  src/App.tsx          las rutas (/, /p/<n>, /contrasena) y la sesión
+  src/Gate.tsx         entrar, la contraseña olvidada y la del enlace
+  src/RequestView.tsx  un pedido: la conversación y lo que se puede hacer ahora
+  src/Interview.tsx    la entrevista: el formulario, el progreso y lo que se envía
+  public/              el CSS, el tema antes de pintar y el ícono, tal cual
 ```
 
 #### 16.1 El recorrido de un pedido
@@ -986,7 +992,7 @@ Cada paso que hace ronin corre en un **worker por pedido** (`portal/worker.ts`, 
 - **Lo demás:** los POST solo aceptan JSON y del mismo origen; CSP, `Referrer-Policy: no-referrer` y HSTS. Cada persona ve solo sus pedidos: uno ajeno responde 404, igual que uno que no existe. Nunca ve el resumen técnico, la instrucción del prototipo ni su diff.
 - **Dónde queda:** con `DATABASE_URL`, las cuentas y los pedidos en Postgres (#235): `portal_users` (una fila por cuenta, su registro como `jsonb` y el correo como columna única; un cambio toma un lock de Postgres y escribe solo las cuentas que cambiaron) y `portal_requests` (un documento por pedido, con persona, repo y estado como columnas; el número nuevo y la fila en una transacción, con las imágenes escritas antes de confirmar). Sin ella, `PORTAL_DATA_DIR` (`portal-data/`, fuera de git), con modo 0600: las escrituras toman un lock entre procesos y reemplazan el archivo de forma atómica (`json-store.ts`). Las imágenes y los diffs de los prototipos son archivos en los dos casos. Es la única copia de las cuentas: hay que respaldarla.
 
-**Una página abierta antes de un despliegue:** cada respuesta de la API del portal lleva `X-Portal-Version`, una huella de `index.html`, `portal.js` y `portal.css` (`portalVersion`). La página guarda la primera que ve. Si cambia, corre código viejo contra un servidor nuevo (por ejemplo, no conoce un estado nuevo y deja de consultar), así que se recarga sola. Si la persona está escribiendo o enviando algo, en cambio, muestra *Hay una versión nueva del portal* con *Recargar*, y recarga en la próxima consulta cuando ya no hay nada a medio escribir. Al volver a la pestaña, consulta enseguida en vez de esperar su turno.
+**Una página abierta antes de un despliegue:** cada respuesta de la API del portal lleva `X-Portal-Version`, una huella de `index.html` (que nombra el JS por su hash) y `portal.css` (`portalVersion`). La página guarda la primera que ve. Si cambia, corre código viejo contra un servidor nuevo (por ejemplo, no conoce un estado nuevo y deja de consultar), así que se recarga sola. Si la persona está escribiendo o enviando algo, en cambio, muestra *Hay una versión nueva del portal* con *Recargar*, y recarga en la próxima consulta cuando ya no hay nada a medio escribir. Al volver a la pestaña, consulta enseguida en vez de esperar su turno (TanStack Query: mientras ronin trabaja en el pedido, cada 2 s y al volver).
 
 #### 16.3 La conversación (`classify.ts`)
 

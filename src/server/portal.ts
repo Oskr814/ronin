@@ -35,10 +35,11 @@ type Handler = (req: IncomingMessage, res: ServerResponse) => Promise<void>;
 
 // A fingerprint of the page's files, sent with every API answer: a page
 // opened before a deploy sees it change and reloads, instead of running its
-// old code against what the new server answers (portal.js).
+// old code against what the new server answers (src/portal-web/src/api.ts).
+// The index.html names the built JS by its hash, so it changes with it.
 export function portalVersion(root: string): string {
   const hash = createHash('sha256');
-  for (const file of ['index.html', 'portal.js', 'portal.css']) {
+  for (const file of ['index.html', 'portal.css']) {
     try {
       hash.update(readFileSync(join(root, file)));
     } catch {

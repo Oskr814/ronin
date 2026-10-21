@@ -79,9 +79,9 @@ describe('request portal', () => {
     expect(version).toMatch(/^[0-9a-f]{12}$/);
     expect((await fetch(`${base}/api/nada`)).headers.get('x-portal-version')).toBe(version);
     const web = mkdtempSync(join(tmpdir(), 'ronin-portal-v-'));
-    writeFileSync(join(web, 'portal.js'), 'console.log(1)');
+    writeFileSync(join(web, 'index.html'), '<script src="/assets/index-a1.js"></script>');
     const before = portalVersion(web);
-    writeFileSync(join(web, 'portal.js'), 'console.log(2)');
+    writeFileSync(join(web, 'index.html'), '<script src="/assets/index-b2.js"></script>');
     expect(portalVersion(web)).not.toBe(before);
   });
 

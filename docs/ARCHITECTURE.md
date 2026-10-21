@@ -212,6 +212,8 @@ La única implementación es `LocalHost`. El código de dominio no vuelve a llam
 - **Después el tablero, sección por sección:** cada sección nueva se monta como una isla de React dentro de la página actual, hasta que `app.js` queda vacío.
 - **El build sale en `dist/web` y `dist/portal-web`,** servido por ronin como hoy, con nombres versionados por hash.
 
+**Hecho (7, portal):** la página del portal en React (`src/portal-web/src/`), con Vite y TanStack Query, sobre el cliente `hc<PortalApi>`: los tipos de cada respuesta salen de las rutas, y `pnpm typecheck` revisa también la página. Se ve y se comporta igual que la de antes: las 16 pantallas (escritorio y teléfono) dieron idénticas píxel a píxel con los mismos datos, y un recorrido de 40 pasos (entrar, pedir, responder, la entrevista, el resumen, el prototipo, cancelar, el historial, el tema, salir) dejó lo mismo en las dos. El CSS, `theme.js` y el ícono quedan en `public/`, tal cual. Pruebas de componentes con jsdom y Testing Library.
+
 ### Docker
 
 **Una sola imagen,** `ronin`, con:
