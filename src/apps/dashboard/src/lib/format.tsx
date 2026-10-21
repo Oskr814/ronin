@@ -8,6 +8,7 @@ export const isMobile = () => matchMedia('(max-width: 760px)').matches;
 
 // A moment, and its time of day, as app.js writes them.
 export const when = (iso: string | null | undefined) => (iso ? new Date(iso).toLocaleString('es', { dateStyle: 'medium', timeStyle: 'short' }) : '');
+export const dayMonth = (iso: string) => new Date(iso).toLocaleDateString('es', { day: 'numeric', month: 'short' }).replace('.', '');
 export const hhmm = (iso: string) => new Date(iso).toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' });
 export const repoShort = (repo: string) => repo.split('/')[1] ?? repo;
 
