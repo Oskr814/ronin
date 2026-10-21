@@ -3,6 +3,7 @@
   "exclude": [
     "src/**/*.test.ts",
     "src/apps/dashboard",
-    "src/apps/portal"
+    "src/apps/portal",
+    "src/ui"
   ]
 }

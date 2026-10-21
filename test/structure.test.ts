@@ -19,14 +19,21 @@ function files(dir: string): string[] {
 
 const layer = (path: string) => relative(SRC, path).split('/')[0];
 
-// Each file's relative imports, as the layer they land in.
-function imports(file: string): Array<{ spec: string; to: string }> {
+// Each file's relative imports, as the layer they land in (apps/<app> for
+// an app), and whether they bring only types.
+function imports(file: string): Array<{ spec: string; to: string; typeOnly: boolean }> {
   const text = readFileSync(file, 'utf8');
-  return [...text.matchAll(/(?:from|import\(|vi\.mock\()\s*'(\.{1,2}\/[^']+)'/g)].map(([, spec]) => ({ spec, to: layer(resolve(dirname(file), spec)) }));
+  return [...text.matchAll(/(import type [^;]*?from|from|import\(|vi\.mock\()\s*'(\.{1,2}\/[^']+)'/g)].map(([, how, spec]) => {
+    const to = relative(SRC, resolve(dirname(file), spec)).split('/');
+    return { spec, to: to[0] === 'apps' ? `apps/${to[1]}` : to[0], typeOnly: how.startsWith('import type') };
+  });
 }
 
-const crossings = (from: string, forbidden: string[]) =>
-  files(join(SRC, from)).flatMap((file) => imports(file).filter((i) => forbidden.includes(i.to)).map((i) => `${relative(SRC, file)} → ${i.spec}`));
+const crossings = (from: string, forbidden: string[], typesAllowed = false) =>
+  files(join(SRC, from)).flatMap((file) =>
+    imports(file)
+      .filter((i) => forbidden.some((f) => i.to === f || i.to.startsWith(`${f}/`)) && !(typesAllowed && i.typeOnly))
+      .map((i) => `${relative(SRC, file)} → ${i.spec}`));
 
 describe('the layers of src/', () => {
   it('platform/ imports no domain and no app', () => {
@@ -35,5 +42,15 @@ describe('the layers of src/', () => {
 
   it('domains/ import no app', () => {
     expect(crossings('domains', ['apps'])).toEqual([]);
+  });
+
+  // The web apps run in the browser: from the server they take only the
+  // types of its routes, and share their React pieces through ui/.
+  it('ui/ imports nothing of the server', () => {
+    expect(crossings('ui', ['apps', 'domains', 'platform'], true)).toEqual([]);
+  });
+
+  it('the web apps take only types from the server', () => {
+    for (const app of ['dashboard', 'portal']) expect(crossings(`apps/${app}/src`, ['domains', 'platform', 'apps/api'], true)).toEqual([]);
   });
 });

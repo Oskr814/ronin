@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ApiError, client, ok } from '../../api.js';
 import { useHost } from '../../host.js';
-import { ago, useNow } from '../../lib/time.js';
+import { ago, useNow } from '../../../../../ui/time.js';
 import { at, planOf, subject, type Plan, type Repos } from './model.js';
 
 const PLAN_MS = 450;

@@ -107,7 +107,7 @@ src/
 - **Cada cosa en un solo lugar.** Lo que dos dominios necesitan va a `platform/` (si es técnico) o a un dominio propio (si es de ronin: quién ve qué es `domains/access`); lo que dos apps web necesitan, a `ui/`. Nada se copia «como lo hace el otro».
 - **Un dominio no sabe de HTTP salvo en su `routes.ts`**, que usa las piezas comunes de `platform/http/middleware.ts` (solo JSON, el cuerpo con su tope y su esquema, solo administradores, el repo del path, los errores) en vez de declararlas. Quién pregunta en el tablero (`Session`, `DashboardEnv`) es de `domains/access/http.ts`.
 - **Las pruebas van junto a su archivo** (`x.ts` y `x.test.ts`); las que cruzan capas o dominios (el HTTP del tablero a través de la app entera, Postgres con otro dominio, los recorridos con Playwright), en `test/`, con la misma estructura que `src/` (`test/domains/meetings/routes.test.ts`).
-- **La dirección se prueba:** `test/structure.test.ts` falla si `platform/` importa de un dominio o de una app, o si un dominio importa de una app.
+- **La dirección se prueba:** `test/structure.test.ts` falla si `platform/` importa de un dominio o de una app, si un dominio importa de una app, si `ui/` importa algo del servidor, o si una app web importa del servidor algo más que tipos.
 - **Una carpeta que crece se parte en subcarpetas**, no en archivos más largos.
 
 **Lo repetido y su pieza común** (relevado el 2026-10-21):
@@ -120,7 +120,7 @@ src/
 | ~15 clases de error de dominio con su status, y la lista de cada `onError` | `platform/errors.ts`: `DomainError(message, { status, details })`; cada clase de un dominio la extiende y `onError` ya no lleva lista. **Hecho.** |
 | `pidAlive` (6 copias), lanzar un worker y relanzar los que murieron, el arranque de cada worker | `platform/workers/`: `pidAlive`, `runWorker` y `withProductRepo`, `trackedWorker`, `worktreeLock`. **Hecho.** |
 | Llamadas a la API de GitHub con sus headers y errores, en 5 archivos; `owner/name` partido a mano | `platform/github/rest.ts`: `githubFetch` (headers, timeout, medida) y `parseRepo()`. **Hecho.** Qué significa cada respuesta (un 401, un 404) sigue siendo de quien llama. |
-| El cliente de la API, las fechas y los chips de estado en el tablero y el portal | `ui/api-client.ts`, `ui/time.ts`, `ui/components/`; el estado de un pedido, en `domains/portal/status.ts` |
+| El cliente de la API, las fechas y los chips de estado en el tablero y el portal | `ui/api-client.ts` (`ApiError`, `jsonFetch`, `ok`), `ui/time.ts` y `ui/components/Chip.tsx`. **Hecho.** Las palabras de cada estado de un pedido no se repiten: el portal le habla a la persona («Espera tu respuesta») y el tablero al equipo («Espera a la persona»); el tipo lo dan las rutas. |
 
 **Cómo se llega**, en PRs que solo mueven o solo unifican, nunca las dos cosas:
 1. `apps/`: el servidor, la cola, el tick y las dos apps web. **Hecho.**
