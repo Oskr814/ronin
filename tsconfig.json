@@ -14,6 +14,7 @@
     "src"
   ],
   "exclude": [
-    "src/portal-web"
+    "src/portal-web",
+    "src/web-islands"
   ]
 }

@@ -120,7 +120,7 @@ function duration(ms) {
 const money = (usd) => (usd < 0.01 ? 'menos de US$0,01' : `US$${usd.toFixed(2).replace('.', ',')}`);
 const pct = (fraction) => `${Math.round(fraction * 100)}%`;
 
-const S = { snap: null, today: null, sel: null, open: [], runIdx: {}, pendingRun: null, filter: null, q: '', itemRuns: {}, run: null, stream: null, detail: {}, view: {}, doc: {}, menu: false, dialog: null, expanded: new Set(), expl: {}, ficha: {}, fichaOpen: {}, fichaFilter: { tipo: 'todas', vp: 'todos' }, antes: {}, oldAfter: new Set(), lightbox: null, fmenu: false, fdialog: null, fdraft: {}, listas: {}, scope: 'all', project: '', attAll: false, extra: {}, newIssue: null, files: {}, fcur: {}, ffold: {}, fexp: {}, fcontent: {}, fq: {}, ftree: false, fcomp: null, fbusy: new Set(), rpanel: null, revSent: {}, decide: null, decided: {}, kunit: null, page: null, portal: { data: null, error: null }, ped: { list: null, error: null, listAt: 0, detail: {}, n: null, tab: 'act', gh: 'issue', filter: 'pend', page: 1, run: null, lb: null, patch: {} }, reu: { list: null, error: null, listAt: 0, detail: {}, n: null, tab: null, up: null, run: null, open: {}, retrying: false, form: {}, approving: false }, xpl: { list: null, error: null, listAt: 0, repo: null, app: null, cor: {}, inv: {}, tab: 'corridas', run: null, launched: {} }, xnow: null, dep: { list: null, error: null, listAt: 0, dlg: null }, mt: { data: null, error: null, loading: false, key: null, at: 0, days: 30, repo: '', sort: 'resolved', dir: -1, open: null, tab: 'trabajo', su: { data: null, error: null, loading: false, at: 0, cuenta: '' } }, aj: { data: null, error: null, sec: 'perfil', registro: null, users: null, user: null, login: null, cuenta: null, f: 'todos', q: '', add: null, link: null, busy: false, repos: null, repo: null, conex: null } };
+const S = { snap: null, today: null, sel: null, open: [], runIdx: {}, pendingRun: null, filter: null, q: '', itemRuns: {}, run: null, stream: null, detail: {}, view: {}, doc: {}, menu: false, dialog: null, expanded: new Set(), expl: {}, ficha: {}, fichaOpen: {}, fichaFilter: { tipo: 'todas', vp: 'todos' }, antes: {}, oldAfter: new Set(), lightbox: null, fmenu: false, fdialog: null, fdraft: {}, listas: {}, scope: 'all', project: '', attAll: false, extra: {}, newIssue: null, files: {}, fcur: {}, ffold: {}, fexp: {}, fcontent: {}, fq: {}, ftree: false, fcomp: null, fbusy: new Set(), rpanel: null, revSent: {}, decide: null, decided: {}, kunit: null, page: null, portal: { data: null, error: null }, ped: { list: null, error: null, listAt: 0, detail: {}, n: null, tab: 'act', gh: 'issue', filter: 'pend', page: 1, run: null, lb: null, patch: {} }, reu: { list: null, error: null, listAt: 0, detail: {}, n: null, tab: null, up: null, run: null, open: {}, retrying: false, form: {}, approving: false }, xpl: { list: null, error: null, listAt: 0, repo: null, app: null, cor: {}, inv: {}, tab: 'corridas', run: null, launched: {} }, xnow: null, dep: { list: null }, mt: { data: null, error: null, loading: false, key: null, at: 0, days: 30, repo: '', sort: 'resolved', dir: -1, open: null, tab: 'trabajo', su: { data: null, error: null, loading: false, at: 0, cuenta: '' } }, aj: { data: null, error: null, sec: 'perfil', registro: null, users: null, user: null, login: null, cuenta: null, f: 'todos', q: '', add: null, link: null, busy: false, repos: null, repo: null, conex: null } };
 // The sidebar's Linear filter (#101), remembered per browser.
 try { Object.assign(S, JSON.parse(localStorage.getItem('ronin-scope') ?? '{}')); } catch { /* sin storage */ }
 function saveScope() {
@@ -570,13 +570,7 @@ function renderCenter() {
     return;
   }
   if (!item && S.page === 'despliegues') {
-    const scroller = $('#center .today.pd');
-    const keep = scroller?.scrollTop ?? 0;
-    if (setCenter(backBar('Despliegues') + despliegueHTML())) {
-      wireDespliegues();
-      const fresh = $('#center .today.pd');
-      if (fresh && !isMobile()) fresh.scrollTop = keep;
-    }
+    showIsland('despliegues', backBar('Despliegues'));
     return;
   }
   if (!item && S.page === 'metricas') {
@@ -640,9 +634,36 @@ function renderCenter() {
 
 // Only touches the page when something changed, so a snapshot that changes
 // nothing doesn't reset a selection or a scroll. False when it was the same.
+// A section in React (src/web-islands/, #235 stage 7): mounted once where
+// it goes, under its head, and unmounted when the center shows anything
+// else (setCenter). It reads, polls and redraws on its own.
+let island = null;
+const ISLAND_HOST = {
+  toast,
+  openPedido: (n) => openPedido(n),
+  unauthorized: (message) => showLogin(new Unauthorized(message)),
+  repoColor,
+  // What the sidebar shows of a section: whether a deploy is going.
+  read(name, data) {
+    if (name !== 'despliegues') return;
+    S.dep.list = data;
+    renderQuick();
+  },
+};
+
+function showIsland(name, head) {
+  const center = $('#center');
+  if (island?.name === name && center.contains(island.element)) return;
+  setCenter(`${head}<div class="island" data-island="${esc(name)}"></div>`);
+  const element = center.querySelector('.island');
+  island = { name, element, unmount: window.roninIslands.mount(name, element, ISLAND_HOST) };
+}
+
 function setCenter(html) {
   const center = $('#center');
   if (center._html === html) return false;
+  island?.unmount();
+  island = null;
   center._html = html;
   center.innerHTML = html;
   tickClocks();
@@ -4071,11 +4092,8 @@ function wirePedidos() {
 // A deploy is a GitHub release ronin publishes on the tag someone writes;
 // the repo's workflow does the rest. Everything on the branch, or — where
 // the repo allows it (deploy.selective) — only the PRs picked, cherry-picked
-// onto the last release. Admins only.
-const DEP_EVERY_MS = 30_000;
-const DEP_PLAN_MS = 450;
-const DEP_STATE = { running: ['live', 'en curso'], deployed: ['ok', 'desplegado'], failed: ['crit', 'falló'], unknown: ['idle', 'sin workflow'] };
-
+// onto the last release. Admins only. The section itself is an island in
+// React (src/web-islands/src/Despliegues.tsx).
 function openDespliegues() {
   S.sel = null;
   S.page = 'despliegues';
@@ -4086,225 +4104,10 @@ function openDespliegues() {
     $('#shell').dataset.m = 'detail';
     scrollTo(0, 0);
   }
-  loadDespliegues();
 }
 
-async function loadDespliegues() {
-  S.dep.listAt = Date.now();
-  try {
-    S.dep.list = (await api('/api/despliegues')).repos;
-    S.dep.error = null;
-  } catch (error) {
-    if (error instanceof Unauthorized && showLogin(error)) return;
-    S.dep.error = error.message;
-  }
-  if (S.page === 'despliegues') renderCenter();
-  if (S.dep.dlg) renderDeploy();
-}
-
-const depRepo = (repo) => S.dep.list?.find((r) => r.repo === repo);
+// The sidebar's "en curso", from what the section last read (ISLAND_HOST.read).
 const depGoing = () => (S.dep.list ?? []).some((r) => (r.releases ?? []).some((x) => x.deploy?.state === 'running'));
-
-function depChangeHTML(r, c) {
-  return `<li><span class="pd-gh">${c.pr ? `#${c.pr}` : esc(c.sha.slice(0, 7))}</span><span class="t">${esc(c.subject.replace(/\s*\(#\d+\)\s*$/, ''))}</span>${c.apps.length ? `<span class="apps">${esc(c.apps.join(' · '))}</span>` : ''}${c.pedidos.map((n) => `<button class="chip plain" data-goped="${n}">del pedido P-${n}</button>`).join('')}${r.selective && c.pr ? `<button class="link" data-dsolo="${esc(`${r.repo}#${c.pr}`)}">Desplegar solo este</button>` : ''}</li>`;
-}
-
-function depReleaseRow(x) {
-  const d = x.deploy;
-  const [cls, label] = d ? DEP_STATE[d.state] ?? DEP_STATE.unknown : [];
-  const tags = `${x.latest ? '<span class="chip ok">Latest</span>' : ''}${x.prerelease ? '<span class="chip warn">Pre-release</span>' : ''}${d?.mode === 'pick' ? '<span class="chip run">Solo elegidos</span>' : ''}`;
-  const wf = d
-    ? `<span class="dep-wf">${dotClass(cls)}${esc(label)}${d.runs.length ? ` · ${d.runs.map((run) => `<a href="${esc(run.url)}" target="_blank" rel="noopener">${esc(run.name)}</a>`).join(', ')}` : ''}</span>${d.releaseError ? `<small class="bad">El release no se creó: ${esc(d.releaseError)}</small>` : ''}${d.pedidos.length ? `<small>${d.pedidos.map((n) => `P-${n}`).join(', ')}</small>` : ''}`
-    : '<span class="m">publicado en GitHub</span>';
-  return `<tr><td><span class="dep-tag">${x.url ? `<a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.tag)}</a>` : esc(x.tag)}</span>${tags}</td><td class="hide-m m" data-ago="${esc(x.at)}">${esc(ago(x.at))}</td><td>${wf}</td><td class="hide-m m">${esc(d?.by ?? '')}</td></tr>`;
-}
-
-function depCardHTML(r) {
-  if (r.error) return `<section class="pd-card dep-card"><header><i style="background:${repoColor(r.repo)}"></i><b>${esc(r.repo)}</b></header><p class="bad">No se pudo leer: ${esc(r.error)}</p></section>`;
-  const p = r.pending;
-  const pend = !p.base
-    ? '<p class="m">El repo no tiene releases todavía: el primero lleva todo lo de la rama.</p>'
-    : p.changes.length
-      ? `<div class="dep-h"><b>${p.changes.length === 1 ? '1 cambio' : `${p.changes.length} cambios`}</b> mergeados desde <span class="pd-gh">${esc(p.base)}</span>, sin desplegar</div><ul class="dep-list">${p.changes.map((c) => depChangeHTML(r, c)).join('')}</ul>`
-      : `<p class="m">Nada mergeado desde ${esc(p.base)}.</p>`;
-  return `<section class="pd-card dep-card"><header><i style="background:${repoColor(r.repo)}"></i><b>${esc(r.repo)}</b><span class="m">desde ${esc(r.branch)}${r.prerelease ? ' · con pre-releases' : ''}${r.selective ? ' · PRs elegidos' : ''}</span><button class="act-btn" data-dnew="${esc(r.repo)}">Nuevo despliegue</button></header>
-    <div class="dep-pend">${pend}</div>
-    ${r.releases.length ? `<table class="padm-t dep-t"><thead><tr><th>Release</th><th class="hide-m">Publicado</th><th>Workflow</th><th class="hide-m">Por</th></tr></thead><tbody>${r.releases.map(depReleaseRow).join('')}</tbody></table>` : ''}</section>`;
-}
-
-function despliegueHTML() {
-  const head = '<h1>Despliegues</h1><p class="lead">Un despliegue es un release de GitHub: ronin lo publica con el tag que escribas y el workflow del repo hace el resto. Lleva todo lo mergeado o, donde el repo lo permite, solo los PRs que elijas. Cuando el workflow termina bien, los pedidos del portal que entraron le avisan a su persona.</p>';
-  if (!S.dep.list) return `<div class="today pd">${head}${S.dep.error ? `<p class="bad">${esc(S.dep.error)}</p>` : '<div class="empty">Cargando…</div>'}</div>`;
-  return `<div class="today pd">${head}${S.dep.error ? `<p class="bad">${esc(S.dep.error)}</p>` : ''}${S.dep.list.map(depCardHTML).join('') || '<p class="note">Ningún repo tiene <code>deploy</code> en repos.json.</p>'}</div>`;
-}
-
-function wireDespliegues() {
-  const center = $('#center');
-  for (const b of center.querySelectorAll('[data-dnew]')) b.onclick = () => openDeploy(b.dataset.dnew);
-  for (const b of center.querySelectorAll('[data-dsolo]')) {
-    b.onclick = () => {
-      const [repo, pr] = b.dataset.dsolo.split('#');
-      openDeploy(repo, Number(pr));
-    };
-  }
-}
-
-// The dialog: like GitHub's "Draft a new release". What goes in is planned
-// on the server as it's typed (the tag checked, the cherry-picks tried), and
-// publishing sends that plan's fingerprint, so what's published is what was
-// shown.
-function openDeploy(repo, pr) {
-  S.dep.dlg = { repo, tag: '', pre: false, mode: pr ? 'pick' : 'all', sel: new Set(pr ? [pr] : []), title: '', notes: '', plan: null, planKey: null, planning: false, sending: false, error: null };
-  renderDeploy();
-  $('#dp-tag')?.focus();
-}
-
-function closeDeploy() {
-  if (S.dep.dlg?.sending) return;
-  S.dep.dlg = null;
-  renderDeploy();
-}
-
-const depPending = (x) => {
-  const r = depRepo(x.repo);
-  return (x.pre ? r?.prePending : r?.pending) ?? { base: null, changes: [] };
-};
-const depKey = (x) => JSON.stringify([x.repo, x.tag.trim(), x.pre, x.mode, x.mode === 'pick' ? [...x.sel].sort((a, b) => a - b) : 'all']);
-const depBody = (x) => ({ tag: x.tag.trim(), prs: x.mode === 'all' ? 'all' : [...x.sel], prerelease: x.pre });
-
-let depTimer = null;
-function planDeploySoon() {
-  clearTimeout(depTimer);
-  const x = S.dep.dlg;
-  if (!x || !x.tag.trim() || (x.mode === 'pick' && !x.sel.size)) return;
-  depTimer = setTimeout(planDeploy, DEP_PLAN_MS);
-}
-
-async function planDeploy() {
-  const x = S.dep.dlg;
-  if (!x) return;
-  const key = depKey(x);
-  x.planning = true;
-  renderDeploy();
-  try {
-    const plan = await api(`/api/despliegues/${x.repo}/plan`, { method: 'POST', body: JSON.stringify(depBody(x)) });
-    if (S.dep.dlg !== x || depKey(x) !== key) return;
-    Object.assign(x, { plan, planKey: key, error: null });
-  } catch (error) {
-    if (error instanceof Unauthorized && showLogin(error)) return;
-    if (S.dep.dlg !== x || depKey(x) !== key) return;
-    Object.assign(x, { plan: null, planKey: null, error: error.message });
-  } finally {
-    if (S.dep.dlg === x && depKey(x) === key) x.planning = false;
-  }
-  renderDeploy();
-}
-
-async function sendDeploy() {
-  const x = S.dep.dlg;
-  if (!x || x.sending || !x.plan || x.planKey !== depKey(x) || x.plan.problems.length) return;
-  x.sending = true;
-  x.error = null;
-  renderDeploy();
-  try {
-    const done = await api(`/api/despliegues/${x.repo}/publish`, { method: 'POST', body: JSON.stringify({ ...depBody(x), title: x.title.trim() || undefined, notes: x.notes.trim() || undefined, fingerprint: x.plan.fingerprint }) });
-    S.dep.dlg = null;
-    renderDeploy();
-    toast(`Publicado ${done.tag}: el workflow del repo ya arrancó.${done.pedidos.length ? ` ${done.pedidos.map((n) => `P-${n}`).join(', ')} ${done.pedidos.length === 1 ? 'recibe' : 'reciben'} el aviso cuando termine bien.` : ''}`, done.url || undefined);
-    loadDespliegues();
-  } catch (error) {
-    if (error instanceof Unauthorized && showLogin(error)) return;
-    x.sending = false;
-    x.error = error.message;
-    // What goes in changed: the new plan, to look at again.
-    if (error.body?.plan) Object.assign(x, { plan: error.body.plan, planKey: depKey(x) });
-    renderDeploy();
-  }
-}
-
-function deployDlgHTML(x) {
-  const r = depRepo(x.repo);
-  const p = depPending(x);
-  const plan = x.planKey === depKey(x) ? x.plan : null;
-  const lastFull = r?.releases.find((rel) => !rel.prerelease && !rel.deploy?.releaseError);
-  const lastPre = r?.releases.find((rel) => rel.prerelease);
-  const tagProblem = plan?.problems.find((pb) => pb.kind === 'tag-invalid' || pb.kind === 'tag-exists');
-  const tagHelp = !x.tag.trim() ? `<small>Se crea al publicar${x.mode === 'all' ? `, sobre la punta de ${esc(r?.branch ?? '')}` : `, sobre ${esc(p.base ?? 'el último release')} y los PRs elegidos`}.</small>`
-    : tagProblem ? `<small class="bad">${esc(plan.messages[plan.problems.indexOf(tagProblem)])}</small>`
-    : plan ? '<small class="ok">✓ Tag nuevo: se crea al publicar.</small>' : '<small>Revisando…</small>';
-  const conflicts = new Map((plan?.problems ?? []).filter((pb) => pb.kind === 'conflict').map((pb) => [pb.pr, pb]));
-  const pick = x.mode === 'pick' ? `<div class="dep-pick">${p.changes.filter((c) => c.pr).map((c) => {
-    const bad = conflicts.get(c.pr);
-    return `<label class="${bad ? 'bad' : ''}"><input type="checkbox" data-dsel="${c.pr}" ${x.sel.has(c.pr) ? 'checked' : ''}><span class="pd-gh">#${c.pr}</span><span class="t">${esc(c.subject.replace(/\s*\(#\d+\)\s*$/, ''))}${bad ? `<small>No se aplica: choca en ${esc(bad.files.join(', ') || 'el commit')}.${bad.needs.length ? ` Elige también ${bad.needs.map((n) => `#${n}`).join(', ')}.` : ''}</small>` : ''}</span>${c.apps.length ? `<span class="apps">${esc(c.apps.join(' · '))}</span>` : ''}${c.pedidos.map((n) => `<span class="chip plain">P-${n}</span>`).join('')}</label>`;
-  }).join('') || '<p class="m">Nada mergeado sin desplegar.</p>'}</div>` : '';
-  const what = r?.selective
-    ? `<div class="seg dep-seg"><button data-dmode="all" aria-pressed="${x.mode === 'all'}">Todo lo de ${esc(r.branch)} <span class="c">${p.changes.length}</span></button><button data-dmode="pick" aria-pressed="${x.mode === 'pick'}">Solo lo que elijas</button></div>${pick}`
-    : `<p class="help">${p.changes.length ? `Todo lo mergeado en ${esc(r?.branch ?? '')}: ${p.changes.map((c) => (c.pr ? `#${c.pr}` : c.sha.slice(0, 7))).join(', ')}.` : 'Nada mergeado sin desplegar.'}</p>`;
-  const others = (plan?.problems ?? []).filter((pb) => !['tag-invalid', 'tag-exists', 'conflict'].includes(pb.kind)).map((pb) => plan.messages[plan.problems.indexOf(pb)]);
-  const probe = x.mode === 'pick' && plan && x.sel.size
-    ? (conflicts.size ? `<p class="dep-probe bad">✕ ronin lo probó: ${[...conflicts.keys()].map((n) => (n ? `#${n}` : 'un commit')).join(', ')} no se aplica limpio sobre ${esc(plan.base ?? '')}.</p>` : plan.target ? `<p class="dep-probe ok">✓ ronin lo probó: ${plan.changes.length === 1 ? 'se aplica' : `los ${plan.changes.length} se aplican`} limpio sobre ${esc(plan.base ?? '')}.</p>` : '')
-    : '';
-  const apps = plan?.apps.length ? `<p class="help">Apps que cambian: <b>${esc(plan.apps.join(', '))}</b>.</p>` : '';
-  const where = r?.prerelease ? `<p class="dep-where ${x.pre ? 'qa' : 'prod'}">${x.pre ? 'Un pre-release: el workflow del repo lo despliega como pre-release (QA). No avisa a los pedidos.' : 'Un release completo: queda como Latest, y el workflow del repo lo despliega a producción.'}</p>` : '';
-  const count = plan ? plan.changes.length : x.mode === 'all' ? p.changes.length : x.sel.size;
-  const peds = [...new Set((plan?.changes ?? []).flatMap((c) => c.pedidos))];
-  const ok = plan && !plan.problems.length && !x.planning && !x.sending;
-  return `<div class="scrim"><div class="dlg dep-dlg" role="dialog" aria-modal="true" aria-labelledby="dp-t">
-    <h2 id="dp-t">Nuevo despliegue · ${esc(x.repo)}</h2>
-    <p class="help">Como “Draft a new release” en GitHub: ronin sube el tag y publica el release; el workflow del repo hace el resto.</p>
-    <label class="field"><span>Tag</span><input id="dp-tag" class="mono" value="${esc(x.tag)}" placeholder="${esc(lastFull?.tag ?? 'v1.0.0')}" autocomplete="off" spellcheck="false">
-      <small>Último: ${lastFull ? `<span class="pd-gh">${esc(lastFull.tag)}</span> ${esc(ago(lastFull.at))}` : 'ninguno'}${r?.prerelease && lastPre ? ` · pre-release: <span class="pd-gh">${esc(lastPre.tag)}</span>` : ''}</small>${tagHelp}</label>
-    ${r?.prerelease ? `<label class="check"><input type="checkbox" id="dp-pre" ${x.pre ? 'checked' : ''}><span>Pre-release<small>Lo compara con el último pre-release${p.base ? ` (${esc(p.base)})` : ''}.</small></span></label>` : ''}
-    <div class="field"><span>Qué entra</span>${what}</div>
-    ${probe}${apps}${others.map((m) => `<p class="bad">${esc(m)}</p>`).join('')}
-    <label class="field"><span>Título</span><input id="dp-title" value="${esc(x.title)}" placeholder="${esc(x.tag.trim() || 'Igual que el tag')}"></label>
-    <label class="field"><span class="dep-nl">Notas<button class="btn-s" id="dp-gen" ${plan?.notes ? '' : 'disabled'}>Generar notas</button></span><textarea id="dp-notes" rows="6" placeholder="Si las dejas vacías, ronin pone la lista de lo que entra.">${esc(x.notes)}</textarea></label>
-    ${where}
-    <p class="bad" ${x.error ? '' : 'hidden'}>${esc(x.error ?? '')}</p>
-    <div class="foot-d"><span class="kbd-hint">${count === 1 ? 'Entra 1 cambio' : `Entran ${count} cambios`}${peds.length ? ` · avisa a ${peds.map((n) => `P-${n}`).join(', ')}` : ''}</span><button class="btn-s" id="dp-no">Cancelar</button><button class="btn-s primary" id="dp-yes" ${ok ? '' : 'disabled'}>${x.sending ? 'Publicando…' : x.planning ? 'Revisando…' : r?.prerelease ? (x.pre ? 'Publicar el pre-release' : 'Publicar y desplegar a producción') : 'Publicar y desplegar'}</button></div></div></div>`;
-}
-
-// Redrawn whole on every change; the box being typed in keeps its focus and caret.
-function renderDeploy() {
-  let layer = $('#dlayer');
-  const x = S.dep.dlg;
-  if (!x) {
-    layer?.remove();
-    return;
-  }
-  const typing = ['dp-tag', 'dp-title', 'dp-notes'].includes(document.activeElement?.id) ? { id: document.activeElement.id, start: document.activeElement.selectionStart, end: document.activeElement.selectionEnd } : null;
-  if (!layer) layer = Object.assign(document.body.appendChild(document.createElement('div')), { id: 'dlayer' });
-  const scroll = layer.querySelector('.dlg')?.scrollTop ?? 0;
-  layer.innerHTML = deployDlgHTML(x);
-  layer.querySelector('.dlg').scrollTop = scroll;
-  const box = typing && document.getElementById(typing.id);
-  if (box) {
-    box.focus();
-    box.setSelectionRange(typing.start, typing.end);
-  }
-  $('#dp-tag').oninput = (e) => { x.tag = e.target.value; renderDeploy(); planDeploySoon(); };
-  $('#dp-title').oninput = (e) => { x.title = e.target.value; };
-  $('#dp-notes').oninput = (e) => { x.notes = e.target.value; };
-  const pre = $('#dp-pre');
-  if (pre) pre.onchange = () => { x.pre = pre.checked; x.sel = new Set([...x.sel].filter((n) => depPending(x).changes.some((c) => c.pr === n))); renderDeploy(); planDeploySoon(); };
-  for (const b of layer.querySelectorAll('[data-dmode]')) b.onclick = () => { x.mode = b.dataset.dmode; renderDeploy(); planDeploySoon(); };
-  for (const box2 of layer.querySelectorAll('[data-dsel]')) {
-    box2.onchange = () => {
-      const n = Number(box2.dataset.dsel);
-      if (box2.checked) x.sel.add(n);
-      else x.sel.delete(n);
-      renderDeploy();
-      planDeploySoon();
-    };
-  }
-  $('#dp-gen').onclick = () => {
-    if (x.plan?.notes) x.notes = x.plan.notes;
-    renderDeploy();
-  };
-  $('#dp-no').onclick = closeDeploy;
-  $('#dp-yes').onclick = sendDeploy;
-  layer.querySelector('.scrim').onclick = (event) => { if (event.target.classList.contains('scrim')) closeDeploy(); };
-}
 
 // ---------- metrics (#222)
 // How work moves in the repos: what comes in and goes out, how long it
@@ -6462,8 +6265,6 @@ async function refresh() {
   const ped = S.page === 'pedido' && S.ped.tab === 'gh' ? S.ped.detail[S.ped.n]?.data : null;
   if (ped?.issue && Date.now() - (S.detail[pedGhId(ped)]?.at ?? 0) > DETAIL_EVERY_MS) loadDetail(pedGhId(ped));
   if (S.page === 'pedidos' && Date.now() - S.ped.listAt > PEDIDO_EVERY_MS) loadPedidos();
-  // Every 10 s while a deploy's workflow goes, and not while the dialog is open (it plans on its own).
-  if (S.page === 'despliegues' && !S.dep.dlg && Date.now() - S.dep.listAt > (depGoing() ? PEDIDO_EVERY_MS : DEP_EVERY_MS)) loadDespliegues();
   if (S.page === 'metricas' && S.mt.tab === 'trabajo' && !S.mt.loading && Date.now() - S.mt.at > MT_EVERY_MS) loadMetricas();
   if (S.page === 'metricas' && S.mt.tab === 'suscripcion' && !S.mt.su.loading && Date.now() - S.mt.su.at > MT_EVERY_MS) loadSuscripcion();
   if (S.page === 'reunion' && Date.now() - (S.reu.detail[S.reu.n]?.at ?? 0) > PEDIDO_EVERY_MS) loadReunion(S.reu.n);
@@ -6661,7 +6462,6 @@ async function boot() {
     }
     else if (S.newIssue) closeNewIssue();
     else if (S.xnow) closeExploreNow();
-    else if (S.dep.dlg) closeDeploy();
     else if (S.decide && !S.decide.sending) {
       S.decide = null;
       renderCenter();

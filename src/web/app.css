@@ -1104,8 +1104,9 @@ button.brow:hover { background: var(--hover); }
   .pd-runrow .tm { padding-top: 0; }
   .pd-body { overflow: visible; }
 }
-button.chip[data-goped] { cursor: pointer; border: 1px solid color-mix(in srgb, var(--repo-2) 45%, transparent); }
-button.chip[data-goped]:hover { color: var(--ink); }
+/* .goped: the same link to a request, in an island (app.js wires [data-goped] itself). */
+button.chip[data-goped], button.chip.goped { cursor: pointer; border: 1px solid color-mix(in srgb, var(--repo-2) 45%, transparent); }
+button.chip[data-goped]:hover, button.chip.goped:hover { color: var(--ink); }
 
 /* meetings (#62) */
 .reu-top { display: flex; gap: 16px; align-items: flex-start; }

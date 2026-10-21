@@ -1,4 +1,8 @@
 {
   "extends": "./tsconfig.json",
-  "exclude": ["src/**/*.test.ts", "src/portal-web"]
+  "exclude": [
+    "src/**/*.test.ts",
+    "src/portal-web",
+    "src/web-islands"
+  ]
 }

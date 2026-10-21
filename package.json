@@ -7,8 +7,8 @@
   "scripts": {
     "tick": "tsx src/index.ts",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit && tsc --noEmit -p src/portal-web",
-    "build": "rm -rf dist && tsc -p tsconfig.build.json && cp -r src/web dist/web && vite build --config src/portal-web/vite.config.ts --logLevel warn",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p src/portal-web && tsc --noEmit -p src/web-islands",
+    "build": "rm -rf dist && tsc -p tsconfig.build.json && cp -r src/web dist/web && vite build --config src/web-islands/vite.config.ts --logLevel warn && vite build --config src/portal-web/vite.config.ts --logLevel warn",
     "portal:dev": "vite --config src/portal-web/vite.config.ts",
     "start": "node dist/index.js",
     "smoke-test": "tsx scripts/smoke-test.ts",

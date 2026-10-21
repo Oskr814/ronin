@@ -39,7 +39,7 @@ import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
 | `deploy/` | Los despliegues desde el tablero. |
 | `changelog/` | La entrada del changelog en cada release. |
 | `server/` | El servidor: los webhooks (un handler por evento), el login y la API del tablero. |
-| `web/` | La aplicación web del tablero, archivos estáticos sin build. |
+| `web/`, `web-islands/` | La aplicación web del tablero: `app.js`, sin build, y las secciones que ya pasaron a React (Despliegues), armadas con Vite. |
 
 ## El diseño completo
 
