@@ -4,6 +4,7 @@
 // then the same handler — so nothing downstream needs to know it came from
 // the dashboard.
 import { timed } from '../timing.js';
+import { DomainError } from '../errors.js';
 
 export interface Posted {
   id: number;
@@ -12,14 +13,10 @@ export interface Posted {
 
 // What GitHub said no to, in words for the page. `relogin`: the token is no
 // longer good (revoked, or the scope taken away), so the page asks to log in.
-export class GithubUserError extends Error {
+// What the dashboard answers: log in again, or GitHub didn't take it.
+export class GithubUserError extends DomainError {
   constructor(message: string, readonly relogin = false) {
-    super(message);
-  }
-
-  // What the dashboard answers: log in again, or GitHub didn't take it.
-  get status(): number {
-    return this.relogin ? 401 : 502;
+    super(message, { status: relogin ? 401 : 502 });
   }
 }
 

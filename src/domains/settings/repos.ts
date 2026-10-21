@@ -247,11 +247,11 @@ function apply(raw: Raw, body: Record<string, unknown>, manifest: string[]): Arr
 
 export async function editRepo(admin: string, repo: string, body: Record<string, unknown>, entries: RepoEntry[]): Promise<unknown> {
   const entry = entries.find((e) => e.productRepo === repo);
-  if (!entry) throw new AjustesError('Ese repo no está en repos.json.', 404);
+  if (!entry) throw new AjustesError('Ese repo no está en repos.json.', { status: 404 });
   const manifest = await repoApps(entry);
-  const changes = await withJson<Raw[], Array<{ what: string; from: string; to: string }>>(config.reposConfigPath, () => { throw new AjustesError(`No existe ${config.reposConfigPath}.`, 500); }, async (list) => {
+  const changes = await withJson<Raw[], Array<{ what: string; from: string; to: string }>>(config.reposConfigPath, () => { throw new AjustesError(`No existe ${config.reposConfigPath}.`, { status: 500 }); }, async (list) => {
     const raw = list.find((e) => e.productRepo === repo);
-    if (!raw) throw new AjustesError('Ese repo no está en repos.json.', 404);
+    if (!raw) throw new AjustesError('Ese repo no está en repos.json.', { status: 404 });
     const found = apply(raw, body, manifest);
     if (!found.length) return found;
     try {

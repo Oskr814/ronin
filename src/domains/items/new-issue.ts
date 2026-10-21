@@ -7,8 +7,9 @@ import { config } from '../../platform/config/config.js';
 import { applyLinearSoon, queueLinearAssignment } from '../../platform/linear/linear-assign.js';
 import type { LinearPlanning } from '../../platform/linear/linear-api.js';
 import { withActiveRepo, type RepoEntry } from '../../platform/agents/repo-context.js';
-import type { Session } from '../../apps/api/http/auth.js';
+import type { Session } from '../access/http.js';
 import { commentOnIssue, createIssue } from '../../platform/github/github-as-user.js';
+import { DomainError } from '../../platform/errors.js';
 
 // The dashboard's "Nuevo issue" (#100): an issue created on GitHub as
 // whoever is logged in (#93), never through Linear — with the two-way sync
@@ -32,7 +33,7 @@ export interface NewIssue {
   cycleId?: string;
 }
 
-export class NewIssueError extends Error {}
+export class NewIssueError extends DomainError {}
 
 const TITLE_MAX = 256;
 const BODY_MAX = 60_000;

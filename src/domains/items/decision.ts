@@ -1,8 +1,9 @@
 import type { Discussion } from '../../platform/github/github.js';
 import type { RepoEntry } from '../../platform/agents/repo-context.js';
-import type { Session } from '../../apps/api/http/auth.js';
+import type { Session } from '../access/http.js';
 import type { PrFiles } from './files.js';
 import { closeIssue, closePr, commentOnIssue, discardReview, pendingReview, submitReview } from '../../platform/github/github-as-user.js';
+import { DomainError } from '../../platform/errors.js';
 
 // What's decided about a PR ronin opened, from its page (#195), as whoever
 // is logged in (platform/github/github-as-user.ts): merge it, ask ronin for an adjustment, or
@@ -12,7 +13,7 @@ import { closeIssue, closePr, commentOnIssue, discardReview, pendingReview, subm
 //
 // A PR by anyone else keeps GitHub's own review (items/files-actions.ts).
 
-export class DecisionError extends Error {}
+export class DecisionError extends DomainError {}
 
 export type Decision = 'approve' | 'adjust' | 'close';
 

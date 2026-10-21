@@ -13,7 +13,8 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { config } from '../../platform/config/config.js';
 import { log } from '../../platform/logger.js';
 import { missingAuthConfig } from './http/auth.js';
-import { createPortalHandler, missingPortalConfig } from './http/portal.js';
+import { createPortalHandler } from './http/portal.js';
+import { missingPortalConfig } from '../../domains/portal/http.js';
 import { createPublicHandler } from './http/public.js';
 import { createTailnetHandler } from './http/tailnet.js';
 import { loadTeam } from '../../domains/access/team.js';

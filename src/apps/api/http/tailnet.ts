@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { handleAuth, readSession, type AuthConfig, type GithubOAuth, type Session } from './auth.js';
+import { handleAuth, readSession, type AuthConfig, type GithubOAuth } from './auth.js';
+import type { Session } from '../../../domains/access/http.js';
 import type { Access } from '../../../domains/access/access.js';
 import { teamAccess } from '../../../domains/access/team.js';
 import { GithubUserError } from '../../../platform/github/github-as-user.js';

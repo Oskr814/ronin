@@ -1,7 +1,8 @@
 import type { RepoEntry } from '../../platform/agents/repo-context.js';
-import type { Session } from '../../apps/api/http/auth.js';
+import type { Session } from '../access/http.js';
 import type { PrFiles } from './files.js';
 import { addReviewReply, addReviewThread, commentOnDiff, commentOnIssue, deleteReviewComment, discardReview, editReviewComment, pendingReview, replyToReviewComment, setFileViewed, setThreadResolved, startReview, submitReview, type DiffSpot, type PendingReview, type Posted, type ReviewEvent } from '../../platform/github/github-as-user.js';
+import { DomainError } from '../../platform/errors.js';
 
 // What can be done on a PR's files from the dashboard (#111), as whoever is
 // logged in (platform/github/github-as-user.ts): comment a line, a range or the whole file,
@@ -13,7 +14,7 @@ import { addReviewReply, addReviewThread, commentOnDiff, commentOnIssue, deleteR
 // file it changes, a thread or comment it has. GitHub decides the rest (a
 // line outside the diff, who may comment).
 
-export class FilesActionError extends Error {}
+export class FilesActionError extends DomainError {}
 
 // GitHub's own limit on a comment's body.
 const MAX_TEXT = 65_536;

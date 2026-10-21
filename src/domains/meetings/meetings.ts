@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { config } from '../../platform/config/config.js';
 import { documentStore } from '../../platform/store/document-store.js';
 import { notesHash, type Extracted } from './extract.js';
+import { DomainError } from '../../platform/errors.js';
 
 // The meetings whose notes the team uploads to the dashboard (#62). One
 // folder per meeting under <MEETINGS_DATA_DIR>/meetings/<n>/: meeting.json,
@@ -149,9 +150,9 @@ interface Counter {
 }
 const emptyCounter = (): Counter => ({ last: 0, hashes: {} });
 
-export class DuplicateMeeting extends Error {
+export class DuplicateMeeting extends DomainError {
   constructor(readonly number: number) {
-    super(`Esas notas ya se subieron: R-${number}.`);
+    super(`Esas notas ya se subieron: R-${number}.`, { status: 409, details: { number } });
   }
 }
 

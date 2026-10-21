@@ -5,7 +5,7 @@ import { sees } from '../access/access.js';
 import { readRunLines, runPath, summarizeRun } from './data.js';
 import { readEvidence } from './evidence.js';
 import { visibleRepos } from '../access/visible.js';
-import type { DashboardEnv } from '../../apps/api/http/hono.js';
+import type { DashboardEnv } from '../access/http.js';
 
 // The runs from the dashboard (#65), in Hono (#235, stage 6) — server/
 // apps/api/routes.ts mounts them:

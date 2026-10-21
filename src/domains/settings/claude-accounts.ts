@@ -53,7 +53,7 @@ export async function cuentasView(entries: RepoEntry[], given?: AccountUsage[]):
 // there was.
 export async function setCuenta(login: string, account: string, body: Record<string, unknown>, entries: RepoEntry[]): Promise<unknown> {
   const before = (await cuentasView(entries)).cuentas.find((c) => c.account === account);
-  if (!before) throw new AjustesError('Esa cuenta de Claude no está en repos.json ni tiene uso registrado.', 404);
+  if (!before) throw new AjustesError('Esa cuenta de Claude no está en repos.json ni tiene uso registrado.', { status: 404 });
   if (body.plan !== undefined && body.plan !== null && !planOf(String(body.plan))) throw new AjustesError(`El plan tiene que ser uno de: ${PLANS.map((p) => p.name).join(', ')}.`);
   if (body.priceUsd !== undefined && body.priceUsd !== null && !validPrice(body.priceUsd)) throw new AjustesError(`El precio tiene que ser un número entre 0 y ${PRICE_MAX_USD}.`);
   if (body.plan === undefined && body.priceUsd === undefined) throw new AjustesError('Falta el plan o el precio.');

@@ -7,7 +7,7 @@ import { meetingsRoutes } from '../../domains/meetings/routes.js';
 import { metricsRoutes } from '../../domains/metrics/routes.js';
 import { pedidosRoutes, portalAdminRoutes } from '../../domains/portal/routes-dashboard.js';
 import { evidenceRoutes, runsRoutes } from '../../domains/runs/routes.js';
-import type { DashboardEnv } from './http/hono.js';
+import type { DashboardEnv } from '../../domains/access/http.js';
 
 // The dashboard's API in Hono (#235, stage 6): handleDashboard (api/
 // apps/api/http/dashboard.ts) hands it every /api path once tailnet.ts checked the session

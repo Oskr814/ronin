@@ -52,7 +52,7 @@ describe('Exploraciones from the dashboard, in Hono', () => {
     expect((await run('/api/exploraciones/acme/tienda/web/run', {}, READER)).status).toBe(403);
     expect((await call('/api/exploraciones/acme/tienda/web/run', { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: 'x' })).status).toBe(415);
     exploreNow = async () => {
-      throw new ExploreNowError('Ya hay una exploración de web corriendo.', 409);
+      throw new ExploreNowError('Ya hay una exploración de web corriendo.', { status: 409 });
     };
     const busy = await run('/api/exploraciones/acme/tienda/web/run', {});
     expect(busy.status).toBe(409);

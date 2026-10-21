@@ -1,24 +1,25 @@
-import { Hono, type Context, type Next } from 'hono';
+import { Hono } from 'hono';
 import { z } from 'zod';
 import { config } from '../../platform/config/config.js';
 import { log } from '../../platform/logger.js';
 import { dropCloseNote, noteClosing } from '../portal/follow.js';
-import { ActionError, runAction } from './actions.js';
+import { runAction } from './actions.js';
 import { HISTORY_DAYS, itemKey } from '../runs/data.js';
-import { DecisionError, runDecision } from './decision.js';
+import { runDecision } from './decision.js';
 import { forgetDetails } from './detail.js';
 import { forgetExploration } from '../explorations/review.js';
-import { FichaActionError, runApprove, runFichaAction, runGeneralComment } from '../explorations/review-actions.js';
+import { runApprove, runFichaAction, runGeneralComment } from '../explorations/review-actions.js';
 import { fileContent, forgetFiles } from './files.js';
-import { FilesActionError, runFilesAction } from './files-actions.js';
+import { runFilesAction } from './files-actions.js';
 import { forgetGithub, repoGithub } from './github.js';
 import { itemRunKeys } from './list.js';
 import { repoLinear } from './linear.js';
-import { createFromDashboard, NewIssueError, parseNewIssue, repoApps } from './new-issue.js';
-import { GithubUserError, pendingReview, viewedFiles } from '../../platform/github/github-as-user.js';
+import { createFromDashboard, parseNewIssue, repoApps } from './new-issue.js';
+import { pendingReview, viewedFiles } from '../../platform/github/github-as-user.js';
 import { touchSeen } from '../access/team.js';
 import { refusal, visibleRepos, visibleRuns } from '../access/visible.js';
-import { body, jsonBody, onError, type DashboardEnv } from '../../apps/api/http/hono.js';
+import { anyObject, body, jsonBody, onError, onlyJson, repoParam } from '../../platform/http/middleware.js';
+import type { DashboardEnv } from '../access/http.js';
 import { detail, exploration, explorationContext, filesContext, itemContext, snapshot, todayWithCycles } from './service.js';
 
 // The dashboard's heart (#65), in Hono (#235, stage 6) — server/
@@ -46,20 +47,17 @@ const MAX_BODY = 16 * 1024;
 
 // A change only as JSON: a form from another site can't send it, on top of
 // tailnet.ts's Origin check.
-const asJson = async (c: Context<DashboardEnv>, next: Next) => ((c.req.header('content-type') ?? '').startsWith('application/json') ? next() : c.json({ error: 'se espera JSON' }, 415));
-const anyBody = () => body(z.record(z.string(), z.unknown()));
-const errors = onError([ActionError, FichaActionError, FilesActionError, DecisionError, NewIssueError, GithubUserError]);
 
 export function boardRoutes() {
   return new Hono<DashboardEnv>()
-    .onError(errors)
+    .onError(onError)
     .get('/snapshot', async (c) => {
       await touchSeen(c.env.session.login);
       return c.json(await snapshot(c.env.access, c.env.session.login), 200);
     })
     .get('/today', async (c) => c.json(await todayWithCycles(c.env.access), 200))
-    .post('/repos/:owner/:name/issues', asJson, jsonBody(MAX_BODY, 'falta el pedido'), anyBody(), async (c) => {
-      const repo = `${c.req.param('owner')}/${c.req.param('name')}`;
+    .post('/repos/:owner/:name/issues', onlyJson, jsonBody(MAX_BODY, 'falta el pedido'), anyObject(), async (c) => {
+      const repo = repoParam(c);
       const entry = (await visibleRepos(c.env.access)).find((r) => r.productRepo === repo);
       if (!entry) return c.json({ error: 'ese repo no está en repos.json' }, 404);
       const refused = refusal(c, c.env.access, repo, 'acciones');
@@ -75,7 +73,7 @@ export function boardRoutes() {
 
 export function itemsRoutes() {
   return new Hono<DashboardEnv>()
-    .onError(errors)
+    .onError(onError)
     // An issue ronin manages can have no runs in that window: an empty list.
     // Its slices' PR runs are its own too (itemRunKeys), as in the sidebar.
     .get('/:id', async (c) => {
@@ -123,7 +121,7 @@ export function itemsRoutes() {
     })
 
     // { action, text?, app? }
-    .post('/:id/actions', asJson, jsonBody(MAX_BODY, 'falta la acción'), body(z.object({ action: z.string({ error: 'falta la acción' }), text: z.unknown().optional(), app: z.unknown().optional() })), async (c) => {
+    .post('/:id/actions', onlyJson, jsonBody(MAX_BODY, 'falta la acción'), body(z.object({ action: z.string({ error: 'falta la acción' }), text: z.unknown().optional(), app: z.unknown().optional() })), async (c) => {
       const { action, text, app } = c.req.valid('json');
       const ctx = await itemContext(c.env.access, c.req.param('id'));
       if (!ctx) return c.json(NO_ITEM, 404);
@@ -150,7 +148,7 @@ export function itemsRoutes() {
     })
 
     // { decision: approve | adjust | close, text?, closeIssue? }
-    .post('/:id/decision', asJson, jsonBody(MAX_BODY, 'falta el pedido'), anyBody(), async (c) => {
+    .post('/:id/decision', onlyJson, jsonBody(MAX_BODY, 'falta el pedido'), anyObject(), async (c) => {
       const given = c.req.valid('json');
       const id = c.req.param('id');
       const [ctx, files] = await Promise.all([itemContext(c.env.access, id), filesContext(c.env.access, id)]);
@@ -178,7 +176,7 @@ export function itemsRoutes() {
     })
 
     // { action: comment | reply | resolve | viewed | pending-… | submit, … }
-    .post('/:id/files/actions', asJson, jsonBody(MAX_BODY, 'falta el pedido'), anyBody(), async (c) => {
+    .post('/:id/files/actions', onlyJson, jsonBody(MAX_BODY, 'falta el pedido'), anyObject(), async (c) => {
       const given = c.req.valid('json');
       const ctx = await filesContext(c.env.access, c.req.param('id'));
       if (!ctx) return c.json(NO_PR, 404);
@@ -199,7 +197,7 @@ export function itemsRoutes() {
     })
 
     // actions { action, ficha, text, redo? } on a finding, general { text }, approve { text? }
-    .post('/:id/exploration/:what{actions|general|approve}', asJson, jsonBody(MAX_BODY, 'falta el pedido'), anyBody(), async (c) => {
+    .post('/:id/exploration/:what{actions|general|approve}', onlyJson, jsonBody(MAX_BODY, 'falta el pedido'), anyObject(), async (c) => {
       const given = c.req.valid('json');
       const ctx = await explorationContext(c.env.access, c.req.param('id'));
       if (!ctx) return c.json(NO_EXPLORATION, 404);

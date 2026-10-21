@@ -2,6 +2,8 @@ import { createCipheriv, createDecipheriv, hkdfSync, randomBytes, timingSafeEqua
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { log } from '../../../platform/logger.js';
 import { timed } from '../../../platform/timing.js';
+import { parseCookies } from '../../../platform/http/cookies.js';
+import type { Session } from '../../../domains/access/http.js';
 
 // Login with GitHub for the dashboard (#65). The OAuth App asks for the
 // `repo` scope (#93): what the dashboard does on GitHub — a comment, a
@@ -46,22 +48,6 @@ export function missingAuthConfig(config: AuthConfig): string[] {
   return missing;
 }
 
-export function parseCookies(header: string | undefined): Record<string, string> {
-  const cookies: Record<string, string> = {};
-  for (const part of (header ?? '').split(';')) {
-    const index = part.indexOf('=');
-    if (index < 0) continue;
-    const name = part.slice(0, index).trim();
-    if (name) cookies[name] = decodeURIComponent(part.slice(index + 1).trim());
-  }
-  return cookies;
-}
-
-export interface Session {
-  login: string;
-  // The GitHub token of whoever logged in, to act on GitHub as them.
-  token: string;
-}
 
 function sessionKey(secret: string): Buffer {
   return Buffer.from(hkdfSync('sha256', secret, '', 'ronin-dashboard-session', 32));

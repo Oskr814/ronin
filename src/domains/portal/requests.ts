@@ -5,6 +5,7 @@ import { log } from '../../platform/logger.js';
 import { dayIn } from '../../platform/config/timezone.js';
 import type { ImageUpload } from './images.js';
 import { documentStore, type Counter } from '../../platform/store/document-store.js';
+import { DomainError } from '../../platform/errors.js';
 
 // The portal's requests (#114): what a person asked, the conversation with
 // ronin, and where it stands. One folder per request under
@@ -280,7 +281,7 @@ export const requestDir = (n: number) => join(requestsDir(), String(n));
 export const requestImagePath = (n: number, file: string) => join(requestsDir(), String(n), 'img', file);
 export const prototypePatchPath = (n: number, file: string) => join(requestsDir(), String(n), 'proto', file);
 
-export class RequestError extends Error {}
+export class RequestError extends DomainError {}
 
 // request.json and counter.json, or the table portal_requests (#235,
 // stage 2): each request one document, as meetings are.

@@ -50,7 +50,7 @@ describe('Despliegues from the dashboard, in Hono', () => {
     publish.mockResolvedValue({ tag: 'v1.2.0', url: 'https://github.com/acme/tienda/releases/tag/v1.2.0' });
     expect(await (await post('/api/despliegues/acme/tienda/publish', { tag: 'v1.2.0', prs: [12] })).json()).toMatchObject({ tag: 'v1.2.0' });
     expect(publish.mock.calls[0][2]).toBe('oskr814');
-    publish.mockRejectedValue(new DespliegueError('El plan cambió: revísalo de nuevo.', 409, { tag: 'v1.2.0', prs: [12, 13] }));
+    publish.mockRejectedValue(new DespliegueError('El plan cambió: revísalo de nuevo.', { status: 409, details: { plan: { tag: 'v1.2.0', prs: [12, 13] } } }));
     const changed = await post('/api/despliegues/acme/tienda/publish', { tag: 'v1.2.0', prs: [12] });
     expect(changed.status).toBe(409);
     expect(await changed.json()).toEqual({ error: 'El plan cambió: revísalo de nuevo.', plan: { tag: 'v1.2.0', prs: [12, 13] } });
