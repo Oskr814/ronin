@@ -27,7 +27,7 @@ Todo se pide desde GitHub, mencionando a [`@ronin-agent`](https://github.com/ron
 | PR o issue | `@ronin-agent /help` | Responde con los comandos que se pueden usar ahí. Si escribís mal un comando, te sugiere el correcto. |
 
 **Asignarle trabajo:**
-- **Spec:** PR draft con el `.md` en `docs/superpowers/specs/`, asignado a `ronin-agent`. Cuando lo marcás *ready for review*, arranca.
+- **Spec:** PR draft con el `.md` en `docs/ronin/specs/`, asignado a `ronin-agent`. Cuando lo marcás *ready for review*, arranca.
 - **Issue:** asignáselo con el picker de Assignees.
 
 Detalle de cada comando: [Comandos](https://oskr814.github.io/ronin/referencia/comandos/).

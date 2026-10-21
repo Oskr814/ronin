@@ -1065,9 +1065,9 @@ describe('processTrustedFixCandidate', () => {
 
 describe('renderTrackingIssueBody', () => {
   it('links spec files against the global default branch when the active repo has no override', async () => {
-    const body = await renderTrackingIssueBody(['docs/superpowers/specs/foo.md']);
+    const body = await renderTrackingIssueBody(['docs/ronin/specs/foo.md']);
 
-    expect(body).toContain('https://github.com/bmedical/bmedical/blob/main/docs/superpowers/specs/foo.md');
+    expect(body).toContain('https://github.com/bmedical/bmedical/blob/main/docs/ronin/specs/foo.md');
   });
 
   it("links spec files against the active repo's own worktreeBaseRef override, not the global default", async () => {
@@ -1078,9 +1078,9 @@ describe('renderTrackingIssueBody', () => {
       worktreeBaseRef: 'origin/odoo-main',
     });
 
-    const body = await renderTrackingIssueBody(['docs/superpowers/specs/foo.md']);
+    const body = await renderTrackingIssueBody(['docs/ronin/specs/foo.md']);
 
-    expect(body).toContain('https://github.com/redmotos/shoppingcart/blob/odoo-main/docs/superpowers/specs/foo.md');
+    expect(body).toContain('https://github.com/redmotos/shoppingcart/blob/odoo-main/docs/ronin/specs/foo.md');
   });
 });
 

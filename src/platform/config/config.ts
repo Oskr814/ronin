@@ -59,7 +59,9 @@ export const config = {
   // esto es lo que se usa cuando esa entrada no trae el suyo. Empty means
   // "use whatever's ambient".
   claudeConfigDir: process.env.CLAUDE_CONFIG_DIR ?? '',
-  specDir: process.env.SPEC_DIR ?? 'docs/superpowers',
+  // Where a spec PR brings its .md files in the product repo (#219), fixed:
+  // write-spec writes under specs/, and a spec PR is read from here.
+  specDir: 'docs/ronin',
   // Required, not optional: per docs/BLOCKING.md, every blocker always
   // includes an email — a missing value here used to fail lazily, mid
   // incident, inside notifier.ts's transport()/notifyBlocker instead of at

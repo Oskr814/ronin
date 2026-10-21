@@ -1021,7 +1021,7 @@ export async function setPrState(prNumber: number, next: SpecStatus): Promise<vo
 export async function getSpecPathsFromPr(prNumber: number): Promise<string[]> {
   const stdout = await gh(['pr', 'diff', String(prNumber), '--name-only']);
   const files = stdout.trim().split('\n').filter(Boolean);
-  const specFiles = files.filter((f) => f.startsWith(config.specDir) && f.endsWith('.md'));
+  const specFiles = files.filter((f) => f.startsWith(`${config.specDir}/`) && f.endsWith('.md'));
   if (specFiles.length === 0) {
     throw new Error(`PR #${prNumber} has no .md file under ${config.specDir} — can't tell which file(s) are the spec`);
   }

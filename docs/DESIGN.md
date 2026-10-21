@@ -23,7 +23,7 @@ Hacia dónde va la arquitectura del sistema (Postgres, cola de trabajos, Docker,
 
 ### 1. Descubrimiento de specs
 
-El spec se escribe como un **PR draft contra el repo del producto** (ej. `bmedical`), con el archivo `.md` en `docs/superpowers/specs/` — sin frontmatter, un doc markdown normal, igual que los specs ya existentes en el repo.
+El spec se escribe como un **PR draft contra el repo del producto** (ej. `bmedical`), con el archivo `.md` en `docs/ronin/specs/` — sin frontmatter, un doc markdown normal, igual que los specs ya existentes en el repo.
 
 Flujo:
 
