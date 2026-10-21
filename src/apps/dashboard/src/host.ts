@@ -1,8 +1,9 @@
 import { createContext, useContext } from 'react';
+import type { ExplorationListRow, ExplorationRow } from '../../../domains/explorations/board.js';
 import type { LinearPlanning } from '../../../platform/linear/linear-api.js';
 import type { Snapshot } from './api.js';
 
-export type { LinearPlanning };
+export type { ExplorationListRow, ExplorationRow, LinearPlanning };
 
 // What a page asks of the shell around it (app.js), which mounts it.
 export interface Host {
@@ -60,10 +61,8 @@ export interface Host {
   // Reads the snapshot again (the sidebar's counts).
   refresh(): void;
   // The snapshot as the shell last read it (the sidebar's items, the
-  // previews, the repos), and a call each time the shell draws again: a new
-  // snapshot, another project in the sidebar. Returns how to stop.
+  // previews, the repos).
   snapshot(): Snapshot;
-  subscribe(onChange: () => void): () => void;
   // The sidebar's Linear project, '' for all of them, and choosing another.
   project(): string;
   setProject(id: string): void;
@@ -71,6 +70,31 @@ export interface Host {
   projectColor(id: string): string;
   // Opens an item on one of its runs.
   openRun(key: string, runId: string): void;
+  // Exploraciones (#155): the apps the repos explore, as the snapshot and
+  // the list app.js reads for the sidebar have them. The same object until
+  // either changes; `subscribe` says when.
+  explorations(): ExplorationsView;
+  // Opens the list of the apps, or an app's page (its exploration PR's when
+  // it has one).
+  openExplorations(): void;
+  openExploration(repo: string, app: string): void;
+  // Opens Explorar ahora for an app (the dialog is a page app.js mounts on
+  // its own: the item's head opens it too); `explored`, that it went: the
+  // dialog closes and the app shows as starting.
+  exploreNow(repo: string, app: string): void;
+  explored(repo: string, app: string): void;
+  // A call each time the shell draws again (a new snapshot, another project
+  // in the sidebar) or the explorations change. Returns how to stop.
+  subscribe(onChange: () => void): () => void;
+}
+
+export interface ExplorationsView {
+  rows: ExplorationRow[];
+  // What /api/explorations adds to each row, once read, or why it couldn't be.
+  list: ExplorationListRow[] | null;
+  error: string | null;
+  // The apps launched from here, by repo, until the snapshot sees them.
+  launched: Record<string, { app: string; at: number }>;
 }
 
 export interface RequestDoc {

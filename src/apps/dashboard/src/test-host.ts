@@ -37,6 +37,11 @@ export function testHost(overrides: Partial<Host> = {}): Host {
     setProject: vi.fn(),
     projectColor: () => 'var(--proj-0)',
     openRun: vi.fn(),
+    explorations: () => ({ rows: [], list: null, error: null, launched: {} }),
+    openExplorations: vi.fn(),
+    openExploration: vi.fn(),
+    exploreNow: vi.fn(),
+    explored: vi.fn(),
     ...overrides,
   };
 }
