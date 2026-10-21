@@ -8,7 +8,8 @@ import { join } from 'node:path';
 import { config } from '../core/config.js';
 import { createUser, issueLink, redeemLink, updateUser } from '../portal/accounts.js';
 import { hashPassword } from '../portal/password.js';
-import { resetPortalLimits } from './api/portal.js';
+import { hc } from 'hono/client';
+import { resetPortalLimits, type PortalApi } from '../portal/routes.js';
 import { createPortalHandler, portalVersion } from './portal.js';
 
 vi.mock('../core/logger.js', () => ({ log: { info: vi.fn(), error: vi.fn() } }));
@@ -169,6 +170,21 @@ describe('request portal', () => {
     const token = /#t=([\w-]+)/.exec(mail.text)![1];
     expect(mail.text).toContain(`${PORTAL.url}/contrasena#t=`);
     expect((await (await post('/api/portal/link', { token })).json()).kind).toBe('reset');
+  });
+
+  it('answers a body that is not JSON, and a method a path does not take, without reaching the account', async () => {
+    const bad = await fetch(`${base}/api/portal/login`, { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: PORTAL.url }, body: '{no' });
+    expect(bad.status).toBe(400);
+    expect((await bad.json()).error).toBe('pedido inválido');
+    expect((await post('/api/portal/login', [])).status).toBe(400);
+    expect((await fetch(`${base}/api/portal/login`)).status).toBe(405);
+    expect((await fetch(`${base}/api/portal/nada`)).status).toBe(404);
+  });
+
+  it('exports its routes typed, for a client that calls them by name', () => {
+    const client = hc<PortalApi>(`${base}/api/portal`);
+    expect(client.me.$url().pathname).toBe('/api/portal/me');
+    expect(typeof client.requests[':n'].decision.$post).toBe('function');
   });
 
   it('logs out by dropping the cookie', async () => {

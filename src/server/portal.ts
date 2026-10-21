@@ -1,14 +1,18 @@
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { getRequestListener } from '@hono/node-server';
+import { Hono } from 'hono';
 import { loadRepos } from '../core/repos.js';
-import { handlePortalApi, type PortalConfig, type PortalDeps } from './api/portal.js';
+import type { PortalConfig, PortalDeps } from '../portal/http.js';
+import { portalRoutes } from '../portal/routes.js';
 import { extname, join } from 'node:path';
 import { PORTAL_WEB_ROOT, serveStatic, WEB_ROOT } from './static.js';
 
 // The request portal (#114) on the public listener: its web app
-// (src/portal-web/) and its API (/api/portal/*), and nothing of the
-// dashboard's. The fonts are the dashboard's own files, served from there.
+// (src/portal-web/) and its API (/api/portal/*, in Hono: portal/routes.ts),
+// and nothing of the dashboard's. The fonts are the dashboard's own files,
+// served from there.
 
 // Inline style attributes are allowed, as in the dashboard; images also from
 // blob: (the ones a person attaches, shown before sending them).
@@ -49,6 +53,9 @@ export function createPortalHandler(config: PortalConfig, options: { webRoot?: s
   const fonts = options.fontsRoot ?? join(WEB_ROOT, 'fonts');
   const deps: PortalDeps = { entries: loadRepos, ...options.deps };
   const version = portalVersion(root);
+  // Without touching the global Request and Response, which the rest of the
+  // server (its fetch to GitHub, to Linear) uses as Node's.
+  const api = getRequestListener(new Hono().route('/api/portal', portalRoutes(config, deps)).fetch, { overrideGlobalObjects: false });
   return async (req, res) => {
     for (const [name, value] of Object.entries(SECURITY_HEADERS)) res.setHeader(name, value);
     const path = new URL(req.url ?? '/', 'http://localhost').pathname;
@@ -66,7 +73,10 @@ export function createPortalHandler(config: PortalConfig, options: { webRoot?: s
 
     if (path.startsWith('/api/')) {
       res.setHeader('X-Portal-Version', version);
-      if (path.startsWith('/api/portal/') && (await handlePortalApi(req, res, path, config, deps))) return;
+      if (path.startsWith('/api/portal/')) {
+        await api(req, res);
+        return;
+      }
       res.writeHead(404, { 'Content-Type': 'application/json; charset=utf-8' }).end(JSON.stringify({ error: 'no existe' }));
       return;
     }

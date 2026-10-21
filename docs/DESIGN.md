@@ -945,8 +945,11 @@ src/portal/            el dominio: cuentas, pedidos, la conversación, el protot
   follow.ts            el tick sigue esos issues y sus PRs
   worker.ts, launch.ts el worker por pedido y su relanzamiento
   mail.ts, notify.ts   los correos
-src/server/portal.ts   lo que el listener público atiende del portal
-src/server/api/portal*.ts  la API del portal y la administración desde el tablero
+  routes.ts            la API del portal en Hono: la sesión y la cuenta (/api/portal/*)
+  routes-requests.ts   los pedidos de la persona (/api/portal/requests/*)
+  http.ts              lo que comparten: la configuración y quién pregunta
+src/server/portal.ts   lo que el listener público atiende del portal, y monta su API
+src/server/api/portal-admin.ts  la administración del portal desde el tablero
 src/server/api/dashboard-portal.ts  los pedidos en el tablero: la lista, la ficha y su actividad
 src/portal-web/        la página: HTML, CSS y JS sin build
 ```
