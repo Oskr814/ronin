@@ -11,3 +11,5 @@ export { ApiError, ok } from '../../../ui/api-client.js';
 export const client = hc<DashboardApi>('/', { fetch: jsonFetch });
 
 export type DeployRepos = InferResponseType<typeof client.api.deploys.$get, 200>['repos'];
+export type Metrics = InferResponseType<typeof client.api.metrics.$get, 200>;
+export type SubscriptionAccount = InferResponseType<typeof client.api.metrics.subscription.$get, 200>['cuentas'][number];

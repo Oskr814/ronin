@@ -278,6 +278,8 @@ Quedan fuera, a propósito:
 
 **Hecho (7, tablero: Despliegues):** el tablero pasa a React por páginas. `src/apps/dashboard/` se arma con Vite en un solo `dist/public/dashboard/pages.js`, que `index.html` carga antes que `app.js`; `app.js` sigue dibujando el marco (la barra lateral, la barra de estado, las rutas) y monta cada página ya pasada donde va (`showPage`, `window.roninPages.mount`), con lo que la página le pide al marco (`Host`: el aviso, abrir un pedido, volver a entrar, el color del repo, lo que la barra lateral muestra de ella). `setCenter` la desmonta cuando el centro muestra otra cosa. Cada página lee la API con `hc<DashboardApi>` y TanStack Query, y se refresca sola. Primera: Despliegues, con su diálogo; se vio igual píxel a píxel que la de antes en escritorio y teléfono, y el mismo recorrido (el plan mientras se escribe el tag, el conflicto, las notas, publicar) mandó el mismo cuerpo. Siguen las demás páginas, de la más aislada a la ficha de un ítem.
 
+**Hecho (7, tablero: Métricas):** las dos pestañas, Trabajo y Suscripción, son las páginas `metrics` y `subscription` (`pages/metrics/`); `app.js` solo decide cuál montar según la dirección (`/metricas`, `/metricas/suscripcion`). Lo que la página le pide al marco va por `Host`: abrir un ítem, abrir Ajustes, cambiar de pestaña, los repos y el nombre de cada tipo de tarea. El filtro, el orden y la fila abierta se guardan mientras la persona está en otra página, como antes en `S.mt`. Comparada con la de antes con los mismos datos inventados (calculados por `domains/metrics`) y el reloj fijo, en escritorio y en el teléfono: idénticas, salvo el suavizado de algunos bordes (8/255 como mucho).
+
 ### Docker
 
 **Una sola imagen,** `ronin`, con:

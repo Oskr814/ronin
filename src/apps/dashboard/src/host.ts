@@ -12,6 +12,15 @@ export interface Host {
   repoColor(repo: string): string;
   // What the page read, for what the sidebar shows of it.
   read?(name: string, data: unknown): void;
+  // Opens an item (an issue or a PR) by its key, repo#number.
+  openItem(key: string): void;
+  // Opens a section of Ajustes, or a tab of Métricas.
+  openSettings(section: string): void;
+  openMetrics(tab: 'trabajo' | 'suscripcion'): void;
+  // The repos the session sees, as the snapshot has them.
+  repos(): string[];
+  // A task type in words (fix-issue → "Arreglar un issue").
+  typeName(type: string): string;
 }
 
 export const HostContext = createContext<Host | null>(null);
