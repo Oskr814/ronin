@@ -10,17 +10,15 @@
 // request's lock throughout, so two workers never work the same request.
 import { concurrencyFor, config } from '../../platform/config/config.js';
 import { tryLockResource, unlockResource, withSlots } from '../../platform/locks/locks.js';
-import { log } from '../../platform/logger.js';
-import { withActiveRepo } from '../../platform/agents/repo-context.js';
-import { loadRepos } from '../../platform/config/repos.js';
 import { releasePrototypeLock, waitForPrototypeLock } from '../commands/prototype.js';
 import { classifyRequest, followUpRequest } from './classify.js';
 import { needsIssue, openPortalIssue } from './issue.js';
 import { prototypeRequest } from './prototype.js';
 import { reproduceRequest } from './reproduce.js';
 import { addEvent, addRoninMessage, errorLine, getRequest, noteEvent, updateRequest } from './requests.js';
+import { runWorker, withProductRepo, workerRequest } from '../../platform/workers/run.js';
 
-const { number } = JSON.parse(process.argv[2] ?? '{}') as { number?: number };
+const { number } = workerRequest<{ number?: number }>();
 
 const claim = (n: number) => updateRequest(n, (r) => {
   r.worker = { pid: process.pid, since: new Date().toISOString() };
@@ -53,10 +51,8 @@ async function onApp(n: number, step: keyof typeof ON_APP): Promise<void> {
 async function main(): Promise<void> {
   const request = number ? await getRequest(number) : undefined;
   if (!request || !(request.status === 'thinking' || request.status === 'minor' || request.status === 'reproducing' || needsIssue(request))) return;
-  const entry = (await loadRepos()).find((r) => r.productRepo === request.repo);
-  if (!entry) throw new Error(`${request.repo} no está en repos.json`);
   const n = request.number;
-  await withActiveRepo(entry, async () => {
+  await withProductRepo(request.repo, async () => {
     const resource = `portal-${n}`;
     if (!(await tryLockResource(resource))) return;
     try {
@@ -81,8 +77,6 @@ async function main(): Promise<void> {
   });
 }
 
-main().catch(async (error) => {
-  log.error(`portal-worker P-${number} falló`, error);
+runWorker(`portal-worker P-${number}`, main, async (error) => {
   if (number) await noteEvent(number, { kind: 'failed', step: 'worker', error: errorLine(error) });
-  process.exitCode = 1;
 });

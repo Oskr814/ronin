@@ -2,7 +2,7 @@ import { isProcessed, markProcessed } from '../../platform/state/processed-comme
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { activeRepo } from '../../platform/agents/repo-context.js';
-import { acquireLock, launchWorker, lockHeld } from '../../platform/workers/worker-launch.js';
+import { launchWorker } from '../../platform/workers/worker-launch.js';
 import { config } from '../../platform/config/config.js';
 import { log } from '../../platform/logger.js';
 import { queueExplorationProject } from '../../platform/linear/linear-assign.js';
@@ -42,6 +42,7 @@ import { clip, LIMITS, replaceProposal } from './output.js';
 import { redoAfterImages } from './redo.js';
 import { mentionsHandle } from '../commands/index.js';
 import type { CommitChange } from '../../platform/git/commit-style.js';
+import { worktreeLock } from '../../platform/workers/worktree-lock.js';
 
 // Exploration's moving parts glued to GitHub — docs/DESIGN.md §11.7:
 // - exploreAndPublish: one run of one app, committed to the open
@@ -482,21 +483,18 @@ export interface ExploreWorkerRequest {
   redo?: { prNumber: number; batch: string; items: RedoItem[] };
 }
 
-function lockPath(): string {
-  const slug = activeRepo().productRepo.replaceAll('/', '-');
-  return join(activeRepo().worktreeBasePath, `.explore-${slug}.lock`);
+const lock = () => worktreeLock(`explore-${activeRepo().productRepo.replaceAll('/', '-')}`);
+
+export function exploreWorkerBusy(): Promise<boolean> {
+  return lock().busy();
 }
 
-export async function exploreWorkerBusy(): Promise<boolean> {
-  return lockHeld(lockPath());
+export function acquireExploreLock(): Promise<boolean> {
+  return lock().acquire();
 }
 
-export async function acquireExploreLock(): Promise<boolean> {
-  return acquireLock(lockPath());
-}
-
-export async function releaseExploreLock(): Promise<void> {
-  await rm(lockPath(), { force: true });
+export function releaseExploreLock(): Promise<void> {
+  return lock().release();
 }
 
 // Starts the worker detached from the tick — see worker-launch.ts.

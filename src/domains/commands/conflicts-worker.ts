@@ -3,8 +3,6 @@
 // conflicts and running tests takes minutes. Takes the request as a JSON
 // argument, holds the PR's lock while it runs, and answers the comment that
 // asked for it.
-import { loadRepos } from '../../platform/config/repos.js';
-import { withActiveRepo } from '../../platform/agents/repo-context.js';
 import { getPrHead, replyToComment } from '../../platform/github/github.js';
 import { config } from '../../platform/config/config.js';
 import { log } from '../../platform/logger.js';
@@ -17,8 +15,9 @@ import {
   resolveConflicts,
   type ConflictsWorkerRequest,
 } from './conflicts.js';
+import { runWorker, withProductRepo, workerRequest } from '../../platform/workers/run.js';
 
-const request = JSON.parse(process.argv[2] ?? '{}') as ConflictsWorkerRequest;
+const request = workerRequest<ConflictsWorkerRequest>();
 
 async function reply(body: string): Promise<void> {
   await replyToComment(request.prNumber, request.comment, body)
@@ -43,9 +42,7 @@ async function run(): Promise<void> {
 }
 
 async function main(): Promise<void> {
-  const entry = (await loadRepos()).find((r) => r.productRepo === request.repo);
-  if (!entry) throw new Error(`${request.repo} no está en repos.json`);
-  await withActiveRepo(entry, async () => {
+  await withProductRepo(request.repo, async () => {
     if (!(await acquireConflictsLock(request.prNumber))) {
       await reply('Ya estoy resolviendo los conflictos de este PR. Esperá a que termine.');
       return;
@@ -61,7 +58,4 @@ async function main(): Promise<void> {
   });
 }
 
-main().catch((error) => {
-  log.error('conflicts-worker falló', error);
-  process.exitCode = 1;
-});
+runWorker('conflicts-worker', main);

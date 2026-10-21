@@ -2,8 +2,6 @@
 // launchPrototypeWorker), never inside it: bringing an app up and drawing
 // the after takes many minutes. Takes the request as a JSON argument, waits
 // for the per-repo prototype lock, and answers the comment that asked for it.
-import { loadRepos } from '../../platform/config/repos.js';
-import { withActiveRepo } from '../../platform/agents/repo-context.js';
 import { replyToComment } from '../../platform/github/github.js';
 import { config } from '../../platform/config/config.js';
 import { log } from '../../platform/logger.js';
@@ -15,8 +13,9 @@ import {
   waitForPrototypeLock,
   type PrototypeWorkerRequest,
 } from './prototype.js';
+import { runWorker, withProductRepo, workerRequest } from '../../platform/workers/run.js';
 
-const request = JSON.parse(process.argv[2] ?? '{}') as PrototypeWorkerRequest;
+const request = workerRequest<PrototypeWorkerRequest>();
 
 async function reply(body: string): Promise<void> {
   await replyToComment(request.issueNumber, { id: request.commentId, kind: 'issue' }, body)
@@ -24,9 +23,7 @@ async function reply(body: string): Promise<void> {
 }
 
 async function main(): Promise<void> {
-  const entry = (await loadRepos()).find((r) => r.productRepo === request.repo);
-  if (!entry) throw new Error(`${request.repo} no está en repos.json`);
-  await withActiveRepo(entry, async () => {
+  await withProductRepo(request.repo, async () => {
     if (!(await waitForPrototypeLock())) {
       await reply(renderPrototypeFailed('llevo horas esperando que termine otro prototipo en este repo. Volvé a pedirlo más tarde.'));
       return;
@@ -44,7 +41,4 @@ async function main(): Promise<void> {
   });
 }
 
-main().catch((error) => {
-  log.error('prototype-worker falló', error);
-  process.exitCode = 1;
-});
+runWorker('prototype-worker', main);

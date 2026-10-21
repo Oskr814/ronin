@@ -4,8 +4,6 @@
 // Takes the request as a JSON argument, holds the PR's preview lock while it
 // runs, and answers the comment that asked for it — or the PR, for an
 // update nobody asked for.
-import { loadRepos } from '../../platform/config/repos.js';
-import { withActiveRepo } from '../../platform/agents/repo-context.js';
 import { commentOnSpecPr, getPrHead, replyToComment } from '../../platform/github/github.js';
 import { config } from '../../platform/config/config.js';
 import { log } from '../../platform/logger.js';
@@ -22,8 +20,9 @@ import {
   updatePreview,
   type PreviewWorkerRequest,
 } from './preview.js';
+import { runWorker, withProductRepo, workerRequest } from '../../platform/workers/run.js';
 
-const request = JSON.parse(process.argv[2] ?? '{}') as PreviewWorkerRequest;
+const request = workerRequest<PreviewWorkerRequest>();
 
 async function reply(body: string): Promise<void> {
   const answer = request.action === 'update'
@@ -78,9 +77,7 @@ async function run(): Promise<void> {
 }
 
 async function main(): Promise<void> {
-  const entry = (await loadRepos()).find((r) => r.productRepo === request.repo);
-  if (!entry) throw new Error(`${request.repo} no está en repos.json`);
-  await withActiveRepo(entry, async () => {
+  await withProductRepo(request.repo, async () => {
     if (!(await acquirePreviewLock(request.prNumber))) {
       // The update that holds the lock reads the PR's head again before it
       // lets go (see update), so this commit isn't lost.
@@ -98,7 +95,4 @@ async function main(): Promise<void> {
   });
 }
 
-main().catch((error) => {
-  log.error('preview-worker falló', error);
-  process.exitCode = 1;
-});
+runWorker('preview-worker', main);

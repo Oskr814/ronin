@@ -13,10 +13,11 @@ import { previewTask, type PreviewTask } from './prompts.js';
 import { parseSeedCatalog, readSeedCatalog, saveSeedCatalog, seedCatalogPath } from './seed-catalog.js';
 import { HELP_FOOTER_MARKER } from '../commands/index.js';
 import { config } from '../../platform/config/config.js';
-import { acquireLock, launchWorker, lockHeld } from '../../platform/workers/worker-launch.js';
+import { launchWorker } from '../../platform/workers/worker-launch.js';
 import { parsePortRange, PreviewReservations } from './reservations.js';
 import { log } from '../../platform/logger.js';
 import { previewRunGroup, withRunGroup } from '../../platform/agents/run-group.js';
+import { worktreeLock } from '../../platform/workers/worktree-lock.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -62,20 +63,18 @@ export function previewPrFromDirName(name: string): number | null {
 
 // One worker per PR at a time: a second /preview while the first is still
 // installing would fight it over the same worktree and stack.
-function lockPath(prNumber: number): string {
-  return join(activeRepo().worktreeBasePath, `.preview-pr-${prNumber}.lock`);
-}
+const lock = (prNumber: number) => worktreeLock(`preview-pr-${prNumber}`);
 
 export function previewWorkerBusy(prNumber: number): Promise<boolean> {
-  return lockHeld(lockPath(prNumber));
+  return lock(prNumber).busy();
 }
 
 export function acquirePreviewLock(prNumber: number): Promise<boolean> {
-  return acquireLock(lockPath(prNumber));
+  return lock(prNumber).acquire();
 }
 
-export async function releasePreviewLock(prNumber: number): Promise<void> {
-  await rm(lockPath(prNumber), { force: true });
+export function releasePreviewLock(prNumber: number): Promise<void> {
+  return lock(prNumber).release();
 }
 
 // --- tailscale ---

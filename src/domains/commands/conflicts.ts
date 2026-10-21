@@ -8,8 +8,9 @@ import { removeWorktreeDir } from '../../platform/git/worktree.js';
 import { runAgentTask } from '../../platform/agents/agent-task.js';
 import { commandTask } from './prompts.js';
 import type { PrHead } from '../../platform/github/github.js';
-import { acquireLock, launchWorker } from '../../platform/workers/worker-launch.js';
+import { launchWorker } from '../../platform/workers/worker-launch.js';
 import { log } from '../../platform/logger.js';
+import { worktreeLock } from '../../platform/workers/worktree-lock.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -40,16 +41,14 @@ export function conflictsDirFor(prNumber: number): string {
 }
 
 // One worker per PR at a time: two would merge and push over each other.
-function lockPath(prNumber: number): string {
-  return join(activeRepo().worktreeBasePath, `.conflicts-pr-${prNumber}.lock`);
-}
+const lock = (prNumber: number) => worktreeLock(`conflicts-pr-${prNumber}`);
 
 export function acquireConflictsLock(prNumber: number): Promise<boolean> {
-  return acquireLock(lockPath(prNumber));
+  return lock(prNumber).acquire();
 }
 
-export async function releaseConflictsLock(prNumber: number): Promise<void> {
-  await rm(lockPath(prNumber), { force: true });
+export function releaseConflictsLock(prNumber: number): Promise<void> {
+  return lock(prNumber).release();
 }
 
 export interface AgentResolution {

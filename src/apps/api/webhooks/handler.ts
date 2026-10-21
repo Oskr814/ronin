@@ -5,8 +5,6 @@
 // running everything as the reconciliation pass. See docs/DESIGN.md §14.
 import { createHash } from 'node:crypto';
 import { config } from '../../../platform/config/config.js';
-import { loadRepos } from '../../../platform/config/repos.js';
-import { withActiveRepo } from '../../../platform/agents/repo-context.js';
 import { getPrHead } from '../../../platform/github/github.js';
 import { tryLockResource, unlockResource } from '../../../platform/locks/locks.js';
 import { log } from '../../../platform/logger.js';
@@ -14,6 +12,7 @@ import { issueFromSliceBranch } from '../../../domains/slices/index.js';
 import { launchPreviewUpdates } from '../../../domains/previews/index.js';
 import { runScoped, type Scope } from '../tick/tick.js';
 import { runAsJob } from '../jobs/child.js';
+import { runWorker, withProductRepo, workerRequest } from '../../../platform/workers/run.js';
 
 export interface EventHandlerRequest {
   repo: string;
@@ -22,7 +21,7 @@ export interface EventHandlerRequest {
   receivedAt: number;
 }
 
-const request = JSON.parse(process.argv[2] ?? '{}') as EventHandlerRequest;
+const request = workerRequest<EventHandlerRequest>();
 
 // A comment on a PR arrives without its branch (see events.ts): a slice PR's
 // issue is added here, so the run takes — and waits for — the issue, which is
@@ -64,9 +63,7 @@ function capRun(timeoutMs: number): void {
 
 async function main(): Promise<void> {
   capRun(config.eventHandlerTimeoutMs);
-  const entry = (await loadRepos()).find((r) => r.productRepo === request.repo);
-  if (!entry) throw new Error(`${request.repo} no está en repos.json`);
-  await withActiveRepo(entry, async () => {
+  await withProductRepo(request.repo, async () => {
     // Before waiting for anything: it only launches workers, which hold
     // their own lock, and the push that sent this event is often ronin's own
     // issue job, which still holds the issue it would wait for.
@@ -102,7 +99,4 @@ async function main(): Promise<void> {
 
 // A job of the queue (#235, stage 3) when the runner started it: its lease
 // is renewed while it runs, and it's marked done or failed.
-runAsJob(main).catch((error) => {
-  log.error('handler de evento falló', error);
-  process.exitCode = 1;
-});
+runWorker('handler de evento', () => runAsJob(main));

@@ -1,6 +1,7 @@
 import { hostname } from 'node:os';
 import { sql } from 'kysely';
 import type { Db } from '../db/db.js';
+import { pidAlive } from '../workers/process.js';
 
 // The locks and slots of locks.ts in Postgres (#235, stage 3.2), with
 // DATABASE_URL: one row per lock (scope = the repo, name = issue-12, all-0…)
@@ -14,15 +15,6 @@ const RENEW_MS = 30_000;
 const HOST = hostname();
 export const holderId = (): string => `${HOST}:${process.pid}`;
 const leaseUntil = () => sql<string>`now() + ${`${LOCK_LEASE_MS} milliseconds`}::interval`;
-
-function pidAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 // Renews every lease this process holds while it holds any.
 let renewing: NodeJS.Timeout | undefined;

@@ -117,7 +117,7 @@ src/
 | Escribir JSON con tmp + rename y el lock de archivo, en `domains/portal/json-store.ts` y copias | `platform/fs/atomic-json.ts`, `platform/locks/` |
 | En cada `routes.ts`: solo JSON (415), solo administradores, `z.record(...)`, el tope del cuerpo, `owner/name`, «no lo ves: 404» | `apps/api/http/middleware.ts` |
 | ~15 clases de error de dominio con su status, y la lista de cada `onError` | `platform/errors.ts`: `DomainError(message, { status, details })` |
-| `pidAlive` (6 copias), lanzar un worker y relanzar los que murieron, el arranque de cada worker | `platform/workers/`: `runWorker`, `trackedWorker`, `worktreeLock` |
+| `pidAlive` (6 copias), lanzar un worker y relanzar los que murieron, el arranque de cada worker | `platform/workers/`: `pidAlive`, `runWorker` y `withProductRepo`, `trackedWorker`, `worktreeLock`. **Hecho.** |
 | Llamadas a la API de GitHub con sus headers y errores, en 5 archivos; `owner/name` partido a mano | `platform/github/rest.ts`, `parseRepo()` |
 | El cliente de la API, las fechas y los chips de estado en el tablero y el portal | `ui/api-client.ts`, `ui/time.ts`, `ui/components/`; el estado de un pedido, en `domains/portal/status.ts` |
 

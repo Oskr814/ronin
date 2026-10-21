@@ -4,21 +4,13 @@ import { randomBytes } from 'node:crypto';
 import { link, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-
-function pidAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
+import { pidAlive } from './process.js';
 
 // A worker's lock is a file holding its pid: held while that process lives.
 export async function lockHeld(path: string): Promise<boolean> {
   try {
     const pid = Number((await readFile(path, 'utf8')).trim());
-    return Number.isInteger(pid) && pid > 0 && pidAlive(pid);
+    return pidAlive(pid);
   } catch {
     return false;
   }
