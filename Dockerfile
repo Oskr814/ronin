@@ -56,6 +56,9 @@ COPY --from=docker-cli /usr/local/libexec/docker/cli-plugins/docker-buildx /usr/
 COPY --from=tailscale /usr/local/bin/tailscale /usr/local/bin/tailscale
 
 RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION} && npm cache clean --force
+# Claude Code goes with the image: updating itself inside the container
+# half-replaces the global install and leaves `claude` out of the PATH.
+ENV DISABLE_AUTOUPDATER=1
 
 # The browsers in the image, not in a volume: they go with ronin's version.
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright

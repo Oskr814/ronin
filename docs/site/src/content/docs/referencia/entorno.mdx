@@ -115,7 +115,7 @@ Solo las lee `compose.yml`, en una [instalación con Docker](/ronin/operar/docke
 | `TS_AUTHKEY` | — | La auth key del sidecar de Tailscale. Solo hace falta la primera vez. |
 | `TS_HOSTNAME` | `ronin` | El nombre del nodo en la tailnet: el host del tablero y de las previews. |
 | `TS_EXTRA_ARGS` | — | Flags extra para `tailscale up`, por ejemplo `--advertise-tags=tag:<tag>`. |
-| `RONIN_PUBLIC_BIND` | `127.0.0.1` | Dónde publica la máquina el listener público (`SERVER_PORT`). |
+| `RONIN_PUBLIC_BIND` | `127.0.0.1` | Dónde publica la máquina el listener público (`SERVER_PORT`). `0.0.0.0` si el proxy llega por la red: corre en otro contenedor o en otra máquina. |
 | `RONIN_PG_PASSWORD` | — | La contraseña de Postgres. `scripts/init.sh` la genera. |
 | `BACKUP_DIR` | `./backups` | Dónde deja sus respaldos `scripts/backup.sh`. |
 | `RONIN_IMAGE_TAG` | `local` | El tag de la imagen que construye el compose. |
