@@ -6,8 +6,8 @@ import { postReview, resolveReviewThread, replyToComment, type ReviewThread } fr
 import { activeRepo } from '@platform/agents/repo-context.js';
 import { log } from '@platform/logger.js';
 import { host } from '@platform/host/host.js';
-import { loadReviewCriteria } from './criteria.js';
-import { parseReviewOutput, type ReviewFinding } from './output.js';
+import { loadReviewCriteria, type ReviewCriteria } from './criteria.js';
+import { parseReviewOutput, type ExternalReviewOutput, type ReviewFinding } from './output.js';
 import {
   applyScopeRules,
   changedLinesSince,
@@ -60,7 +60,24 @@ export function closingState(openThreads: ReviewThread[], resolvedIds: Set<strin
   return resolvedIds.size > 0 ? 'confirmed' : 'lgtm';
 }
 
-export async function runExternalReview(candidate: ReviewCandidate, opts: RunExternalReviewOptions = {}): Promise<void> {
+// What the review found on one PR head, validated and within its scope:
+// the agent run up to here, without publishing anything. Shared by the
+// external review and the internal one of ronin's own PRs (internal.ts).
+export interface ReviewRun {
+  criteria: ReviewCriteria;
+  scope: ReviewMode;
+  output: ExternalReviewOutput;
+  findings: ReviewFinding[];
+  dropped: Array<{ index: number; reason: string }>;
+  droppedByScope: Array<{ finding: ReviewFinding; reason: string }>;
+  droppedAsDuplicate: Array<{ finding: ReviewFinding; threadId: string }>;
+  prepMs: number;
+  agentMs: number;
+  // When the agent started, for the time spent after it.
+  agentStart: number;
+}
+
+export async function reviewPr(candidate: ReviewCandidate): Promise<ReviewRun> {
   const start = Date.now();
   const criteria = await loadReviewCriteria();
   const outputPath = outputPathFor(candidate);
@@ -82,7 +99,7 @@ export async function runExternalReview(candidate: ReviewCandidate, opts: RunExt
 
     const agentStart = Date.now();
     await runAgentTask(reviewTask({
-      type: 'external-review',
+      type: candidate.own ? 'internal-review' : 'external-review',
       prNumber: candidate.prNumber,
       headRefName: candidate.headRefName,
       headSha: candidate.headSha,
@@ -121,97 +138,113 @@ export async function runExternalReview(candidate: ReviewCandidate, opts: RunExt
     const deduped = dedupeAgainstOpenThreads(scoped.kept, candidate.threadHistory);
     for (const d of scoped.dropped) log.info(`external-review PR #${candidate.prNumber}: descartado por alcance (${d.reason}): ${d.finding.title}`);
     for (const d of deduped.dropped) log.info(`external-review PR #${candidate.prNumber}: descartado, repite el thread ${d.threadId}: ${d.finding.title}`);
-    // What was already there before the PR isn't its to fix: not published.
-    // The minor ones go in one collapsed list in the review body, without a
-    // comment or a thread of their own.
-    const findings = deduped.kept.filter((f) => f.origin?.kind !== 'preexisting');
-    const preexisting = deduped.kept.length - findings.length;
-    const minor = findings.filter((f) => f.severity === 'minor');
-    const published = findings.filter((f) => f.severity !== 'minor');
-
-    const placed = placeFindings(published, await commentableLines(candidate.headSha, candidate.baseRefName));
-    const repo = activeRepo().productRepo;
-    const ctx: RenderContext = {
-      repo,
-      headSha: candidate.headSha,
-      criteriaHash: criteria.blobHash,
-      mode: scope.mode,
-      ...(scope.mode === 'incremental' ? { scopeOf: (f: ReviewFinding) => (isOnChangedCode(f, scope.changed) ? 'changed' : 'reviewed') } : {}),
-    };
-    const resolvedIds = new Set(output.resolveThreads.map((r) => r.threadId));
-    const prUrl = `https://github.com/${repo}/pull/${candidate.prNumber}`;
-
-    const summary = renderReviewSummary({ ...placed, minor }, ctx);
-    const closing = published.length > 0 ? '' : renderClosing(closingState(candidate.openThreads, resolvedIds, prUrl));
-    const body = [reviewMarker(ctx), [closing, summary].filter(Boolean).join('\n\n')].join('\n');
-    const comments = placed.inline.map((f) => ({
-      path: f.path,
-      line: f.line,
-      ...(f.startLine != null ? { startLine: f.startLine } : {}),
-      body: renderFindingComment(f, ctx),
-    }));
-    const replies = output.mentionReplies.map((r) => ({ ...r, body: neutralizeMentions(r.body) }));
-
-    log.metric('external_review_published', {
-      prNumber: candidate.prNumber,
-      mode: scope.mode,
-      findings: findings.length,
-      inline: placed.inline.length,
-      outOfDiff: placed.outOfDiff.length,
-      minor: minor.length,
-      preexisting,
-      dropped: dropped.length,
-      droppedByScope: scoped.dropped.length,
-      droppedAsDuplicate: deduped.dropped.length,
-      resolved: resolvedIds.size,
-      dryRun: opts.dryRun != null,
-      // Where the time went: preparing (git, criteria) vs. the agent run vs.
-      // validating and rendering up to here. Publishing is not included.
+    return {
+      criteria,
+      scope,
+      output,
+      findings: deduped.kept,
+      dropped,
+      droppedByScope: scoped.dropped,
+      droppedAsDuplicate: deduped.dropped,
       prepMs: agentStart - start,
       agentMs,
-      postAgentMs: Date.now() - agentStart - agentMs,
-    });
-
-    if (opts.dryRun) {
-      await writeDryRun(opts.dryRun.outFile, {
-        candidate,
-        scope,
-        body,
-        comments,
-        placed,
-        minor,
-        resolveThreads: output.resolveThreads,
-        replies,
-        dropped,
-        droppedByScope: [
-          ...scoped.dropped.map((d) => `${d.finding.title} — ${d.reason}`),
-          ...deduped.dropped.map((d) => `${d.finding.title} — repite el thread ${d.threadId}`),
-        ],
-      });
-      return;
-    }
-
-    // Resolutions first, so the review that follows already reflects them.
-    // One failing mutation is logged and must not stop the review itself.
-    for (const r of output.resolveThreads) {
-      try {
-        await resolveReviewThread(r.threadId);
-      } catch (error) {
-        log.error(`external-review PR #${candidate.prNumber}: no se pudo resolver el thread ${r.threadId}`, error);
-      }
-    }
-    await postReview(candidate.prNumber, { commitId: candidate.headSha, body, comments });
-    for (const reply of replies) {
-      await replyToComment(candidate.prNumber, { id: reply.commentId, kind: reply.kind }, reply.body);
-    }
-    // Keeps the reviewed commit around for the next incremental review; the
-    // review is already published, so a failure here only costs that.
-    await pinReviewedSha(candidate.prNumber, candidate.headSha).catch((error) =>
-      log.error(`external-review PR #${candidate.prNumber}: no se pudo fijar el SHA revisado`, error),
-    );
+      agentStart,
+    };
   } finally {
     await host().fs.rm(outputPath, { force: true }).catch(() => {});
   }
+}
+
+export async function runExternalReview(candidate: ReviewCandidate, opts: RunExternalReviewOptions = {}): Promise<void> {
+  const { criteria, scope, output, findings: kept, dropped, droppedByScope, droppedAsDuplicate, prepMs, agentMs, agentStart } = await reviewPr(candidate);
+  // What was already there before the PR isn't its to fix: not published.
+  // The minor ones go in one collapsed list in the review body, without a
+  // comment or a thread of their own.
+  const findings = kept.filter((f) => f.origin?.kind !== 'preexisting');
+  const preexisting = kept.length - findings.length;
+  const minor = findings.filter((f) => f.severity === 'minor');
+  const published = findings.filter((f) => f.severity !== 'minor');
+
+  const placed = placeFindings(published, await commentableLines(candidate.headSha, candidate.baseRefName));
+  const repo = activeRepo().productRepo;
+  const ctx: RenderContext = {
+    repo,
+    headSha: candidate.headSha,
+    criteriaHash: criteria.blobHash,
+    mode: scope.mode,
+    ...(scope.mode === 'incremental' ? { scopeOf: (f: ReviewFinding) => (isOnChangedCode(f, scope.changed) ? 'changed' : 'reviewed') } : {}),
+  };
+  const resolvedIds = new Set(output.resolveThreads.map((r) => r.threadId));
+  const prUrl = `https://github.com/${repo}/pull/${candidate.prNumber}`;
+
+  const summary = renderReviewSummary({ ...placed, minor }, ctx);
+  const closing = published.length > 0 ? '' : renderClosing(closingState(candidate.openThreads, resolvedIds, prUrl));
+  const body = [reviewMarker(ctx), [closing, summary].filter(Boolean).join('\n\n')].join('\n');
+  const comments = placed.inline.map((f) => ({
+    path: f.path,
+    line: f.line,
+    ...(f.startLine != null ? { startLine: f.startLine } : {}),
+    body: renderFindingComment(f, ctx),
+  }));
+  const replies = output.mentionReplies.map((r) => ({ ...r, body: neutralizeMentions(r.body) }));
+
+  log.metric('external_review_published', {
+    prNumber: candidate.prNumber,
+    mode: scope.mode,
+    findings: findings.length,
+    inline: placed.inline.length,
+    outOfDiff: placed.outOfDiff.length,
+    minor: minor.length,
+    preexisting,
+    dropped: dropped.length,
+    droppedByScope: droppedByScope.length,
+    droppedAsDuplicate: droppedAsDuplicate.length,
+    resolved: resolvedIds.size,
+    dryRun: opts.dryRun != null,
+    // Where the time went: preparing (git, criteria) vs. the agent run vs.
+    // validating and rendering up to here. Publishing is not included.
+    prepMs,
+    agentMs,
+    postAgentMs: Date.now() - agentStart - agentMs,
+  });
+
+  if (opts.dryRun) {
+    await writeDryRun(opts.dryRun.outFile, {
+      candidate,
+      scope,
+      body,
+      comments,
+      placed,
+      minor,
+      resolveThreads: output.resolveThreads,
+      replies,
+      dropped,
+      droppedByScope: [
+        ...droppedByScope.map((d) => `${d.finding.title} — ${d.reason}`),
+        ...droppedAsDuplicate.map((d) => `${d.finding.title} — repite el thread ${d.threadId}`),
+      ],
+    });
+    return;
+  }
+
+  // Resolutions first, so the review that follows already reflects them.
+  // One failing mutation is logged and must not stop the review itself.
+  for (const r of output.resolveThreads) {
+    try {
+      await resolveReviewThread(r.threadId);
+    } catch (error) {
+      log.error(`external-review PR #${candidate.prNumber}: no se pudo resolver el thread ${r.threadId}`, error);
+    }
+  }
+  await postReview(candidate.prNumber, { commitId: candidate.headSha, body, comments });
+  for (const reply of replies) {
+    await replyToComment(candidate.prNumber, { id: reply.commentId, kind: reply.kind }, reply.body);
+  }
+  // Keeps the reviewed commit around for the next incremental review; the
+  // review is already published, so a failure here only costs that.
+  await pinReviewedSha(candidate.prNumber, candidate.headSha).catch((error) =>
+    log.error(`external-review PR #${candidate.prNumber}: no se pudo fijar el SHA revisado`, error),
+  );
 }
 
 async function writeDryRun(

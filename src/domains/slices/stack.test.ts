@@ -22,6 +22,7 @@ function pr(headRefName: string, overrides: Partial<PullRequestStatus> = {}): Pu
     checksPending: false,
     mergeable: true,
     headRefName,
+    headRefOid: 'abc123',
     baseRefName: 'main',
     isDraft: false,
     body: '',

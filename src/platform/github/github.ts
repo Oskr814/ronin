@@ -229,6 +229,9 @@ export interface PullRequestStatus {
   checksPending: boolean;
   mergeable: boolean;
   headRefName: string;
+  // The head commit: the internal review of ronin's own PRs (#194) is per
+  // commit, and auto-merge waits for the one of the head.
+  headRefOid: string;
   // The branch this PR merges into. Needed to notice when the bottom of a
   // stack's base never got auto-retargeted to the root branch (e.g. a human
   // merged the predecessor from the GitHub UI without --delete-branch) — see
@@ -245,7 +248,7 @@ export interface PullRequestStatus {
 // valid fields and includes every one of these. Shared so the two call sites
 // (a single fresh re-read vs. the batched per-tick list) can never drift
 // apart and silently stop returning a field the other relies on.
-const PR_JSON_FIELDS = 'number,state,reviewDecision,statusCheckRollup,mergeable,headRefName,baseRefName,isDraft,body';
+const PR_JSON_FIELDS = 'number,state,reviewDecision,statusCheckRollup,mergeable,headRefName,headRefOid,baseRefName,isDraft,body';
 
 interface RawPr {
   number: number;
@@ -254,6 +257,7 @@ interface RawPr {
   statusCheckRollup: RollupEntry[];
   mergeable: string;
   headRefName: string;
+  headRefOid: string;
   baseRefName: string;
   isDraft: boolean;
   body: string | null;
@@ -317,6 +321,7 @@ function toPullRequestStatus(raw: RawPr): PullRequestStatus {
     ...checksStatus(raw.statusCheckRollup),
     mergeable: raw.mergeable === 'MERGEABLE',
     headRefName: raw.headRefName,
+    headRefOid: raw.headRefOid,
     baseRefName: raw.baseRefName,
     isDraft: raw.isDraft,
     body: raw.body ?? '',

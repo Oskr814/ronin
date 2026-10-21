@@ -32,6 +32,9 @@ export interface ReviewCandidate {
   // write access. A fork's code is never executed.
   canExecute: boolean;
   mentions: Comment[];
+  // One of ronin's own PRs, reviewed internally (#194, internal.ts): the
+  // review prompt says so, and nothing of it is published.
+  own?: boolean;
 }
 
 // The last reviewed SHA as GitHub shows it (ronin's review marker), else the

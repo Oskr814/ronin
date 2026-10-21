@@ -10,7 +10,8 @@ import {
   type Comment,
 } from '@platform/github/github.js';
 import { config, LABEL_AUTO_MERGE } from '@platform/config/config.js';
-import { getAutoMergeDefaulted, setAutoMergeDefaulted } from '@platform/state/local-state.js';
+import { getAutoMergeDefaulted, getInternalReviews, seedInternalReviews, setAutoMergeDefaulted } from '@platform/state/local-state.js';
+import { openQuestions } from '@platform/github/pr-body.js';
 import { log } from '@platform/logger.js';
 import { activeRepo } from '@platform/agents/repo-context.js';
 import { issueFromSliceBranch } from '../slices/stack.js';
@@ -42,8 +43,15 @@ export interface AutoMergeBlockers {
 
 // `openPrsByHead`: every open PR's head branch → its number, to tell a PR
 // stacked on another one (its base is that one's branch) — merging it now
-// would land it in that branch, not in the root.
-export function autoMergeBlockers(candidate: Pick<AutoMergeCandidate, 'status' | 'conflicting'>, openPrsByHead: Map<string, number>): AutoMergeBlockers {
+// would land it in that branch, not in the root. `internalReviewed`: per
+// PR, the head its internal review (#194, domains/review/internal.ts) is
+// done with — a slice PR waits for the one of its head, and for the
+// questions it left in the description to be answered.
+export function autoMergeBlockers(
+  candidate: Pick<AutoMergeCandidate, 'status' | 'conflicting'>,
+  openPrsByHead: Map<string, number>,
+  internalReviewed: Record<string, string> = {},
+): AutoMergeBlockers {
   const pr = candidate.status;
   if (candidate.conflicting) return { disable: `tiene conflictos con \`${pr.baseRefName}\``, waits: [] };
   const waits: string[] = [];
@@ -55,6 +63,10 @@ export function autoMergeBlockers(candidate: Pick<AutoMergeCandidate, 'status' |
   if (pr.checksPending) waits.push('que terminen los checks');
   else if (!pr.checksPassing) waits.push('que pasen los checks que están fallando');
   else if (!pr.mergeable) waits.push('que GitHub lo dé por mergeable');
+  if (issueFromSliceBranch(pr.headRefName) !== null) {
+    if (internalReviewed[pr.number] !== pr.headRefOid) waits.push('la review interna de ronin');
+    if (openQuestions(pr.body)) waits.push('que se respondan las preguntas de la descripción');
+  }
   return { waits };
 }
 
@@ -72,9 +84,17 @@ export async function sweepAutoMerge(): Promise<void> {
   const labeled = candidates.filter((c) => c.labels.includes(LABEL_AUTO_MERGE));
   if (labeled.length === 0) return;
   const heads = headIndex(candidates);
+  // The slice PRs already open when the internal review arrived don't wait
+  // for it (seedInternalReviews): only new work goes through it.
+  let internal = await getInternalReviews();
+  if (!internal.seeded) {
+    await seedInternalReviews(candidates.filter((c) => issueFromSliceBranch(c.status.headRefName) !== null).map((c) => c.status));
+    internal = await getInternalReviews();
+  }
+  const { reviewed } = internal;
   for (const candidate of labeled) {
     const prNumber = candidate.status.number;
-    const blockers = autoMergeBlockers(candidate, heads);
+    const blockers = autoMergeBlockers(candidate, heads, reviewed);
     if (blockers.disable) {
       await turnOff(prNumber, blockers.disable);
       continue;
