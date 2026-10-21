@@ -15,6 +15,7 @@ ronin pasa de guardar sus datos en archivos a guardarlos en Postgres de a un mó
 | **Portal** | Las cuentas y los pedidos, con su conversación y su actividad. Las imágenes y los diffs siguen en `PORTAL_DATA_DIR`. | `pnpm db:import-portal` |
 | **Estado local** | Lo que ronin recuerda de cada repo entre ticks: los issues que tomó, los comentarios que ya atendió, por qué bloqueó cada issue, los checks que espera. | `pnpm db:import-estado-local` |
 | **Corridas** | El índice de las corridas de los agentes: repo, tarea, issue o PR, cuenta, costo y cómo terminó. La transcripción de cada una sigue en `logs/runs/`, que se limpia a los 14 días; el índice se conserva. | `pnpm db:import-corridas` |
+| **Cuota** | El uso de cada cuenta de Claude: su última medición (la barra del tablero) y todas las anteriores (Métricas → Suscripción). | `pnpm db:import-cuota` |
 
 Todo lo demás sigue en sus carpetas.
 
@@ -49,6 +50,7 @@ Con la base, además, **el servidor corre los ticks**: los pone en cola a sus ho
    pnpm db:import-portal
    pnpm db:import-estado-local
    pnpm db:import-corridas
+   pnpm db:import-cuota
    ```
 
 4. Desplegar y reiniciar el servidor. Al arrancar pone la base al día (`pnpm db:migrate` hace lo mismo a mano); el tick y los workers toman `DATABASE_URL` en su próxima corrida.

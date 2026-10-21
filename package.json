@@ -30,7 +30,8 @@
     "db:import-reuniones": "tsx --env-file=.env scripts/db-import-reuniones.ts",
     "db:import-portal": "tsx --env-file=.env scripts/db-import-portal.ts",
     "db:import-estado-local": "tsx --env-file=.env scripts/db-import-estado-local.ts",
-    "db:import-corridas": "tsx --env-file=.env scripts/db-import-corridas.ts"
+    "db:import-corridas": "tsx --env-file=.env scripts/db-import-corridas.ts",
+    "db:import-cuota": "tsx --env-file=.env scripts/db-import-cuota.ts"
   },
   "dependencies": {
     "@playwright/mcp": "0.0.83",

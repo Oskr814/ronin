@@ -9,7 +9,7 @@ config.settings.dataDir = dir;
 vi.mock('../../core/config.js', () => ({ config, taskEnvModel: () => undefined, taskEnvEffort: () => undefined, taskDefaultModel: () => undefined, taskDefaultEffort: () => undefined }));
 vi.mock('../../core/logger.js', () => ({ log: { info: vi.fn(), error: vi.fn() } }));
 const usage = vi.hoisted(() => ({ list: [] as unknown[] }));
-vi.mock('./dashboard-data.js', () => ({ readUsage: () => usage.list }));
+vi.mock('../../core/claude-usage.js', async (importOriginal) => ({ ...(await importOriginal<typeof import('../../core/claude-usage.js')>()), listUsage: async () => usage.list }));
 
 const { readRegistro } = await import('./ajustes.js');
 const { cuentasView, setCuenta } = await import('./cuentas-claude.js');

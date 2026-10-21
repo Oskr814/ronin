@@ -178,6 +178,8 @@ Lo que **desaparece**:
 
 **Hecho (3.4):** `core/runs-store.ts`: tabla `runs`, una fila por corrida que `RunRecord` escribe al empezar y al terminar; la transcripción sigue en su archivo. `listRuns` lee la base y solo abre el archivo de una corrida en curso (sus pasos, y si su proceso sigue vivo; el de otra máquina no se puede saber y cuenta como en curso). Si el archivo dice que terminó y la base no (la base no respondía), la pone al día. Las filas no se podan con los archivos (14 días): la vista de suscripción, que mira 63 días, ve la historia completa.
 
+**Hecho (3.5):** el uso de las cuentas de Claude (`core/claude-usage.ts`): tablas `claude_usage` (la última medición de cada cuenta, como documento) y `claude_usage_history` (todas). Las escribe el proceso de la corrida que recibe el `rate_limit_event`, sin hacerla esperar ni fallar. El límite alcanzado se marca en una sola sentencia sobre la última medición. Con esto la etapa 3 queda completa.
+
 El claim entre supervisores por label (DESIGN §9) deja de hacer falta con un solo nodo central que reparte el trabajo. Se mantiene mientras haya instalaciones viejas y después se simplifica.
 
 ### `Host`: dónde se ejecuta

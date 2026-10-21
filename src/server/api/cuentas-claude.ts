@@ -1,11 +1,10 @@
 import { config } from '../../core/config.js';
 import { log } from '../../core/logger.js';
 import type { RepoEntry } from '../../core/repo-context.js';
-import { accountName, type AccountUsage } from '../../core/claude-usage.js';
+import { accountName, listUsage, type AccountUsage } from '../../core/claude-usage.js';
 import { accountPlan, PLANS, planOf, PRICE_MAX_USD, validPrice, type AccountPlan } from '../../core/claude-plans.js';
 import { readSettings, updateSettings } from '../../core/settings-store.js';
 import { AjustesError, record } from './ajustes.js';
-import { readUsage } from './dashboard-data.js';
 
 // Ajustes → Cuentas de Claude (#234, stage 1), admins only:
 //   GET  /api/ajustes/cuentas            each account, with its repos, its plan and its usage now
@@ -26,7 +25,8 @@ export interface CuentaView {
 
 const money = (usd: number | null) => (usd === null ? 'sin precio' : `$${usd}`);
 
-export async function cuentasView(entries: RepoEntry[], usage: AccountUsage[] = readUsage()): Promise<{ plans: typeof PLANS; cuentas: CuentaView[] }> {
+export async function cuentasView(entries: RepoEntry[], given?: AccountUsage[]): Promise<{ plans: typeof PLANS; cuentas: CuentaView[] }> {
+  const usage = given ?? await listUsage();
   const file = await readSettings(config.settings.dataDir);
   const byAccount = new Map<string, CuentaView>();
   const add = (claudeConfigDir: string) => {

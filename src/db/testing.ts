@@ -14,17 +14,30 @@ export const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL;
 export async function testDb(): Promise<{ db: Db; drop: () => Promise<void> }> {
   if (!TEST_DATABASE_URL) throw new Error('falta TEST_DATABASE_URL');
   const schema = `t_${randomBytes(6).toString('hex')}`;
-  const admin = new pg.Client({ connectionString: TEST_DATABASE_URL });
-  await admin.connect();
-  await admin.query(`CREATE SCHEMA ${schema}`);
-  await admin.end();
   const db = createDb(TEST_DATABASE_URL, { schema });
-  await migrateToLatest(db, schema);
+  await withDdlLock(async (admin) => {
+    await admin.query(`CREATE SCHEMA ${schema}`);
+    await migrateToLatest(db, schema);
+  });
   return {
     db,
     drop: async () => {
-      await sql.raw(`DROP SCHEMA ${schema} CASCADE`).execute(db);
+      await withDdlLock(() => sql.raw(`DROP SCHEMA ${schema} CASCADE`).execute(db));
       await db.destroy();
     },
   };
+}
+
+// One test file's schema created, migrated or dropped at a time: with the
+// files running in parallel, that DDL at once sometimes failed with "schema
+// … does not exist" in the middle of a migration.
+async function withDdlLock<T>(fn: (admin: pg.Client) => Promise<T>): Promise<T> {
+  const admin = new pg.Client({ connectionString: TEST_DATABASE_URL });
+  await admin.connect();
+  try {
+    await admin.query(`SELECT pg_advisory_lock(hashtext('ronin-test-ddl'))`);
+    return await fn(admin);
+  } finally {
+    await admin.end();
+  }
 }
