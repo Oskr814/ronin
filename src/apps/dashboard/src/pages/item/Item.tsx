@@ -9,6 +9,9 @@ import { decideKey, useDecide, type DecideKind } from './Decide.js';
 import { DocPage } from './Doc.js';
 import { Files, type FilesKeys } from './files/Files.js';
 import { useFiles, type FilesRead } from './files/model.js';
+import { FichaDialog } from './FichaDialog.js';
+import { Fichas, type FichaKeys } from './Fichas.js';
+import { useExploration, type FichaAsked } from './fichas.js';
 import { Head } from './Head.js';
 import { KEY_SEQ_MS, markUnit, moveUnit } from './Keys.js';
 import { useItem, type Action, type ItemPage } from './model.js';
@@ -18,26 +21,16 @@ import { Activity, Transcript } from './Runs.js';
 // An item's page (#85): an issue's or a PR's, with its head, its activity
 // and its tabs (the issue, the PR, Archivos; an exploration PR's Fichas,
 // Corridas and Inventario), or a run's transcript. The shell keeps what it
-// reads of the item (Host.item) and draws Fichas, in the room the page
-// leaves it (Host.itemTab); the page draws the rest, and has the keys while
-// it's open.
+// reads of the item (Host.item); the page draws all of it, and has the
+// keys while it's open.
 
 // Where j/k is, per tab of an item: kept while the person is elsewhere.
 let kunit: { key: string; i: number } | null = null;
 
-// The tab the shell draws.
-function ShellTab({ v, tab, blocks }: { v: ItemPage; tab: 'fichas'; blocks: () => boolean }) {
-  const host = useHost();
-  const ref = useRef<HTMLDivElement>(null);
-  const live = useRef(blocks);
-  live.current = blocks;
-  useLayoutEffect(() => host.itemTab(ref.current!, v.item.id, tab, { blocks: () => live.current() }), [host, v.item.id, tab]);
-  return <div className="react-slot" ref={ref} />;
-}
-
 function DocBar({ v }: { v: ItemPage }) {
   const host = useHost();
   const d = v.detail!.data!;
+  const fichas = useExploration(v.item.id, Boolean(d.exploration)).data?.fichas.length ?? null;
   const cur = v.doc;
   const count = (k: string) => {
     const doc = k === 'issue' ? d.issue : k === 'pr' ? d.pr : undefined;
@@ -45,7 +38,7 @@ function DocBar({ v }: { v: ItemPage }) {
   };
   // The conversation's size; how many findings or files, once read.
   const counter = (k: string) => {
-    const n = k === 'issue' || k === 'pr' ? count(k) || null : k === 'fichas' ? v.fichas : k === 'files' ? v.files.data?.count ?? null : null;
+    const n = k === 'issue' || k === 'pr' ? count(k) || null : k === 'fichas' ? fichas : k === 'files' ? v.files.data?.count ?? null : null;
     return n === null ? null : <span className="c">{n}</span>;
   };
   const hint = cur === 'fichas' ? <><kbd>j</kbd> <kbd>k</kbd> otra ficha</>
@@ -57,13 +50,13 @@ function DocBar({ v }: { v: ItemPage }) {
   );
 }
 
-function Tab({ v, files, review, blocks, keys }: { v: ItemPage; files: UseQueryResult<FilesRead>; review: Review; blocks: () => boolean; keys: MutableRefObject<FilesKeys | null> }) {
+function Tab({ v, files, review, keys, ask, fichaKeys }: { v: ItemPage; files: UseQueryResult<FilesRead>; review: Review; keys: MutableRefObject<FilesKeys | null>; ask: (asked: FichaAsked) => void; fichaKeys: FichaKeys }) {
   const d = v.detail?.data;
   if (!d) return <div className="doc" id="doc"><div className="empty">{v.detail?.error ? `No se pudo leer de GitHub: ${v.detail.error}` : 'Cargando de GitHub…'}</div></div>;
   const cur = v.doc!;
   let body;
   if (cur === 'files') body = <Files key={cur} v={v} q={files} review={review} keys={keys} />;
-  else if (cur === 'fichas') body = <ShellTab key={cur} v={v} tab={cur} blocks={blocks} />;
+  else if (cur === 'fichas') body = <Fichas key={cur} v={v} ask={ask} keys={fichaKeys} />;
   else if ((cur === 'corridas' || cur === 'inventario') && v.exploration) {
     const { repo, app } = v.exploration;
     body = <div className="doc" id="doc" key={cur}><div className="xpl-doc">{cur === 'corridas' ? <ExplorationRuns repo={repo} app={app} /> : <ExplorationInventory repo={repo} app={app} />}</div></div>;
@@ -82,6 +75,11 @@ export function Item({ id }: { id: string }) {
   const menuFocus = useRef(false);
   const [asked, setAsked] = useState<Asked | null>(null);
   const dialogBusy = useRef(false);
+  // An exploration PR's dialog (a finding's, or the whole PR's), and the
+  // keys its Fichas tab takes.
+  const [fasked, setFasked] = useState<FichaAsked | null>(null);
+  const fichaBusy = useRef(false);
+  const fichaKeys: FichaKeys = useRef(null);
   const decide = useDecide(v);
   const review = useReview(v);
   const seq = useRef<{ key: string | null; timer: number }>({ key: null, timer: 0 });
@@ -94,7 +92,6 @@ export function Item({ id }: { id: string }) {
     menuFocus.current = true;
     setMenu((open) => !open);
   };
-  const blocks = () => menu || Boolean(asked) || Boolean(decide.p);
 
   // The menu opened from the keyboard starts on its first action; closed, on its button.
   useLayoutEffect(() => {
@@ -105,10 +102,10 @@ export function Item({ id }: { id: string }) {
   // The unit j/k is on, marked again after each draw.
   useLayoutEffect(() => markUnit(v?.doc ?? null, kunit, `${id}:${v?.doc ?? ''}`));
 
-  // The keys, before the shell's (which has those of Archivos, Fichas and
-  // what it opens on top): what the page takes doesn't reach the shell.
-  const live = useRef({ v, menu, asked, decide, review });
-  live.current = { v, menu, asked, decide, review };
+  // The keys, before the shell's (which has what it opens on top): what
+  // the page takes doesn't reach the shell.
+  const live = useRef({ v, menu, asked, decide, review, fasked });
+  live.current = { v, menu, asked, decide, review, fasked };
   useEffect(() => {
     const navigate = (event: KeyboardEvent, v: ItemPage): boolean => {
       const prev = seq.current.key;
@@ -158,11 +155,16 @@ export function Item({ id }: { id: string }) {
       return false;
     };
     const onKey = (event: KeyboardEvent) => {
-      const { v, menu, asked, decide, review } = live.current;
+      const { v, menu, asked, decide, review, fasked } = live.current;
       if (!v || document.getElementById('keys-help')) return;
-      const layer = host.shellLayer();
-      if (layer === 'dialog') return;
+      if (host.shellLayer()) return;
       const taken = () => event.stopPropagation();
+      // A finding's dialog: Escape closes it, unless it's sending; its text has the rest.
+      if (fasked) {
+        if (event.key !== 'Escape') return;
+        if (!fichaBusy.current) setFasked(null);
+        return taken();
+      }
       const typing = event.metaKey || event.ctrlKey || event.altKey || /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName ?? '');
       const page = v.view === 'ficha';
       // An open adjustment or closing first: what's typed is for its text.
@@ -208,8 +210,14 @@ export function Item({ id }: { id: string }) {
         decide.open(kind);
         return taken();
       }
-      // Fichas' j, k, a, c and r are the shell's, and so is ? (the whole dashboard's).
-      if (page && v.doc === 'fichas' && !typing && !asked && ['j', 'k', 'a', 'c', 'r'].includes(event.key)) return;
+      // On an exploration PR's findings: j/k go through them, a marks one as
+      // looked at, c and r open its dialog (#93).
+      if (page && v.doc === 'fichas' && !typing && !asked && !menu && !decide.p && ['j', 'k', 'a', 'c', 'r'].includes(event.key)) {
+        event.preventDefault();
+        fichaKeys.current?.(event.key);
+        return taken();
+      }
+      // ? is the shell's (the whole dashboard's).
       if (event.key === '?') return asked && !typing ? taken() : undefined;
       if (!typing && !asked && !decide.p && !review.p && !composing && navigate(event, v)) return taken();
       if (event.key !== 'Escape') return;
@@ -226,8 +234,6 @@ export function Item({ id }: { id: string }) {
         filesKeys.current?.closeComposer();
         return taken();
       }
-      // Fichas' menu: the shell's.
-      if (layer) return;
       if (asked) {
         if (!dialogBusy.current) setAsked(null);
         return taken();
@@ -266,9 +272,10 @@ export function Item({ id }: { id: string }) {
   const actions = v.detail?.data?.actions;
   const menuEl = actions?.length && host.can(v.item.repo, 'acciones') ? <ActionsMenu actions={actions} open={menu} setOpen={setMenu} pick={pick} /> : null;
   return <>
-    <Head v={v} actions={menuEl} decide={decide} review={review} />
+    <Head v={v} actions={menuEl} decide={decide} review={review} explore={(action) => setFasked({ action })} />
     <Activity v={v} />
-    {v.item.kind !== 'other' && <Tab v={v} files={files.q} review={review} blocks={blocks} keys={filesKeys} />}
+    {v.item.kind !== 'other' && <Tab v={v} files={files.q} review={review} keys={filesKeys} ask={setFasked} fichaKeys={fichaKeys} />}
     {asked && <ActionDialog v={v} asked={asked} busy={dialogBusy} close={() => setAsked(null)} />}
+    {fasked && <FichaDialog key={`${fasked.action}:${fasked.ficha?.key ?? ''}`} v={v} asked={fasked} busy={fichaBusy} close={() => setFasked(null)} />}
   </>;
 }

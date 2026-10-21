@@ -50,8 +50,8 @@ export function testHost(overrides: Partial<Host> = {}): Host {
     movePr: vi.fn(),
     keysHelp: vi.fn(),
     shellLayer: () => null,
-    itemTab: () => () => {},
-    explorationDialog: vi.fn(),
+    ficha: () => ({ ficha: null, open: false }),
+    showFicha: vi.fn(),
     ...overrides,
   };
 }

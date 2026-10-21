@@ -1,0 +1,138 @@
+import { useQuery } from '@tanstack/react-query';
+import { ApiError, client, ok, type Exploration } from '../../api.js';
+import { useHost, type Host } from '../../host.js';
+import { itemParam } from './model.js';
+
+// An exploration PR's findings (#93), as its Fichas tab reviews them: read
+// into their parts, with their threads. Deciding on one is a comment on its
+// file, written as whoever is logged in, and ronin applies it as it does
+// any other.
+
+export type FindingCard = Exploration['fichas'][number];
+export type FindingImage = FindingCard['antes'][number];
+export type FichaStatus = 'decidir' | 'esperando' | 'respondida' | 'lista' | 'aprobada' | 'rechazada';
+
+const RONIN_MENTION = /@ronin-agent\b/i;
+export const fichaKey = (f: FindingCard) => `${f.app}/${f.id}`;
+export const FICHA_GROUPS: Array<[FichaStatus, string]> = [['decidir', 'Por decidir'], ['esperando', 'Esperando a ronin'], ['respondida', 'Respondidas por ronin'], ['lista', 'Listas para aprobar'], ['aprobada', 'Aprobadas'], ['rechazada', 'Rechazadas']];
+export const FICHA_DOT: Record<FichaStatus, string> = { decidir: 'pending', esperando: 'live', respondida: 'run', lista: 'ok', aprobada: 'ok', rechazada: 'crit' };
+
+// How often the findings are read again while the page is open: more often
+// while one waits on ronin, to show its answer.
+const DETAIL_EVERY_MS = 30_000;
+const WAITING_EVERY_MS = 10_000;
+
+// The PR's findings, read while its page is open (and only for an exploration PR).
+export function useExploration(id: string, enabled: boolean) {
+  const host = useHost();
+  return useQuery({
+    queryKey: ['exploration', id],
+    enabled,
+    queryFn: async () => {
+      try {
+        return await ok(client.api.items[':id'].exploration.$get({ param: itemParam(id) }));
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 401) host.unauthorized(e.message);
+        throw e;
+      }
+    },
+    refetchInterval: (q) => (q.state.data?.fichas.some((f) => fichaStatus(f, q.state.data!.ronin, id) === 'esperando') ? WAITING_EVERY_MS : DETAIL_EVERY_MS),
+  });
+}
+
+// "Aprobar" on a finding leaves nothing on GitHub yet: it's this browser's
+// mark of what was looked at and stays, so the review's progress shows. The
+// finding is approved for real when the PR is (approveAndMerge).
+const listasKey = (id: string) => `ronin-listas:${id}`;
+// Without storage, they last while the page is open.
+const unstored = new Map<string, Set<string>>();
+export function listas(id: string): Set<string> {
+  try {
+    return new Set(JSON.parse(localStorage.getItem(listasKey(id)) ?? '[]') as string[]);
+  } catch {
+    return unstored.get(id) ?? new Set();
+  }
+}
+export function setLista(id: string, key: string, on: boolean) {
+  const set = listas(id);
+  if (on) set.add(key);
+  else set.delete(key);
+  unstored.set(id, set);
+  try { localStorage.setItem(listasKey(id), JSON.stringify([...set])); } catch { /* sin storage */ }
+}
+
+// Where a finding stands: decided in its file, or by its thread — ronin
+// answers a first comment, or a reply that mentions it. Once ronin answered
+// (applied the changes asked for), it can be marked to approve again.
+export function fichaStatus(f: FindingCard, ronin: string, id?: string): FichaStatus {
+  if (f.estado === 'rechazado') return 'rechazada';
+  if (f.estado === 'aprobado') return 'aprobada';
+  const marked = Boolean(id) && listas(id!).has(fichaKey(f));
+  const last = f.comments[f.comments.length - 1];
+  if (!last) return marked ? 'lista' : 'decidir';
+  if (last.author !== ronin && (!last.replyTo || RONIN_MENTION.test(last.body))) return 'esperando';
+  return marked ? 'lista' : 'respondida';
+}
+
+export interface FichaFilter {
+  tipo: 'todas' | 'hallazgo' | 'idea';
+  vp: 'todos' | 'desktop' | 'mobile';
+}
+
+export function visibleFichas(data: Exploration, id: string, filter: FichaFilter): FindingCard[] {
+  const shown = data.fichas.filter((f) => (filter.tipo === 'todas' || f.tipo === filter.tipo) && (filter.vp === 'todos' || f.viewport === filter.vp));
+  return FICHA_GROUPS.flatMap(([k]) => shown.filter((f) => fichaStatus(f, data.ronin, id) === k));
+}
+
+export const waitingCount = (data: Exploration | undefined, id: string) => (data ? data.fichas.filter((f) => fichaStatus(f, data.ronin, id) === 'esperando').length : 0);
+
+// A screenshot ronin published (evidenceUrl in runs/evidence-store.ts) of
+// a repo on the dashboard, as the server serves it from its clone.
+export function evidenceSrc(host: Host, src: string | undefined): string | null {
+  const m = /^https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/blob\/([0-9a-f]{7,40})\/([^?#]+)\?raw=true$/.exec(src ?? '');
+  if (!m || !host.snapshot()?.repos?.includes(m[1])) return null;
+  return `/api/evidence/${m[1]}/${m[2]}/${m[3]}`;
+}
+
+// What a finding's dialog does: on the finding (a comment on its file), or
+// on the whole PR.
+export type FichaActionId = 'rechazar' | 'cambios' | 'issue' | 'pregunta' | 'general' | 'approve';
+export const FICHA_ACTIONS: Record<FichaActionId, { title: string; field: string; btn: string; placeholder: string; cls?: 'danger'; quick?: string[]; redo?: boolean; pr?: boolean; optional?: boolean }> = {
+  rechazar: { title: 'Rechazar', field: 'Motivo: queda en knowledge.md para que no se vuelva a proponer', btn: 'Rechazar', cls: 'danger', placeholder: 'Por qué no va', quick: ['Muy poco probable: es una app interna con pocos usuarios', 'Ya está cubierto', 'No es un problema para el equipo', 'Lo resolvemos con otra ficha'] },
+  cambios: { title: 'Pedir cambios', field: 'Qué cambiar en la propuesta', btn: 'Pedir cambios', placeholder: 'Por ejemplo: que el aviso diga “No se encontró el producto o ya fue eliminado por otro usuario”', redo: true },
+  issue: { title: 'Pedir un issue aparte', field: 'Qué tiene que tener el issue', btn: 'Pedir el issue', placeholder: 'Por ejemplo: revisar todos los toasts de error de catálogos' },
+  pregunta: { title: 'Preguntarle a ronin', field: 'Tu pregunta', btn: 'Preguntar', placeholder: '¿Esto pasa también como Sales?' },
+  // On the whole PR, not a finding.
+  general: { pr: true, title: 'Comentario general', field: 'Sobre varias fichas a la vez, o lo que las próximas exploraciones no deben volver a proponer', btn: 'Comentar', placeholder: 'Por ejemplo: F-0017 y F-0018 no aplican, el listado de catálogos lo usa una sola persona' },
+  approve: { pr: true, optional: true, title: 'Finalizar la revisión', field: 'Comentario de la review (opcional)', btn: 'Finalizar', placeholder: 'Por ejemplo: las de catálogos van primero' },
+};
+
+// The comment as it will be written — the same words the server writes
+// (explorations/review-actions.ts's findingCardComment).
+export function fichaCommentText(action: string, text: string, redo: boolean): string {
+  if (action === 'rechazar') return `Rechazo esta ficha: ${text}`;
+  if (action === 'cambios') return redo ? `${text}\n\nTambién hay que rehacer la captura del después.` : text;
+  if (action === 'issue') return `Abrí un issue aparte: ${text}`;
+  return text;
+}
+
+// A dialog asked for: on a finding (its key, id and title) or on the PR.
+export interface FichaAsked {
+  action: FichaActionId;
+  ficha?: { key: string; id: string; titulo: string };
+  redo?: boolean;
+}
+
+// Sends a comment on the finding (from the dialog, or the box under its
+// thread); the findings are read again, so it shows it's waiting on ronin.
+export async function postFichaComment(id: string, ficha: string, action: string, text: string, redo: boolean): Promise<{ url?: string }> {
+  // A refusal makes the client's type of the answer {}: it's written here.
+  const done = (await ok(client.api.items[':id'].exploration[':what{actions|general|approve}'].$post({ param: { ...itemParam(id), what: 'actions' }, json: { action, ficha, text, ...(redo ? { redo: true } : {}) } }))) as { url?: string };
+  setLista(id, ficha, false);
+  return done;
+}
+
+// The general comment and the approval, on the whole PR.
+export async function postPrDecision(id: string, what: 'general' | 'approve', text: string): Promise<{ url?: string }> {
+  return (await ok(client.api.items[':id'].exploration[':what{actions|general|approve}'].$post({ param: { ...itemParam(id), what }, json: text ? { text } : {} }))) as { url?: string };
+}

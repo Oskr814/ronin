@@ -39,7 +39,6 @@ export function view(over: Partial<ItemView> = {}, item: Partial<SnapshotItem> =
     decidable: true,
     reviewable: true,
     exploration: null,
-    fichas: null,
     ...over,
   };
 }
