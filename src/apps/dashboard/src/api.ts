@@ -18,3 +18,5 @@ export type RequestDetail = InferResponseType<(typeof client.api.requests)[':n']
 export type Run = InferResponseType<(typeof client.api.runs)[':runId']['$get'], 200>;
 export type MeetingRow = InferResponseType<typeof client.api.meetings.$get, 200>['meetings'][number];
 export type MeetingDetail = InferResponseType<(typeof client.api.meetings)[':n']['$get'], 200>;
+export type Snapshot = InferResponseType<typeof client.api.snapshot.$get, 200>;
+export type Today = InferResponseType<typeof client.api.today.$get, 200>;

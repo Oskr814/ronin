@@ -1,20 +1,32 @@
-import type { PointerEvent } from 'react';
+import type { FocusEvent, PointerEvent } from 'react';
 
 // The tooltip of the charts: the one element app.js also uses (#tip), shown
 // next to the pointer with a part's numbers.
 const tipEl = () =>
   document.getElementById('tip') ?? Object.assign(document.body.appendChild(document.createElement('div')), { id: 'tip', className: 'tip', role: 'tooltip' });
 
-// What a chart's part (an .mt-hit) gets to show its tip.
+function show(text: string, x: number, y: number) {
+  const el = tipEl();
+  el.textContent = text;
+  el.style.opacity = '1';
+  el.style.left = `${Math.min(x + 14, innerWidth - 300)}px`;
+  el.style.top = `${y + 14}px`;
+}
+
+export const hideTip = () => {
+  tipEl().style.opacity = '0';
+};
+
+// What a chart's part (an .mt-hit, a run's bar) gets to show its tip: by
+// the pointer, or under it when it's reached with the keyboard.
 export const tip = (text: string) => ({
   onPointerMove(e: PointerEvent) {
-    const el = tipEl();
-    el.textContent = text;
-    el.style.opacity = '1';
-    el.style.left = `${Math.min(e.clientX + 14, innerWidth - 300)}px`;
-    el.style.top = `${e.clientY + 14}px`;
+    show(text, e.clientX, e.clientY);
   },
-  onPointerLeave() {
-    tipEl().style.opacity = '0';
+  onPointerLeave: hideTip,
+  onFocus(e: FocusEvent) {
+    const r = e.currentTarget.getBoundingClientRect();
+    show(text, r.left, r.bottom);
   },
+  onBlur: hideTip,
 });

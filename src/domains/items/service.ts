@@ -58,7 +58,7 @@ async function slotsView(entries: RepoEntry[]) {
   return { used: repos.reduce((n, r) => n + r.used, 0), limit: repos.reduce((n, r) => n + r.limit, 0), repos };
 }
 
-export async function snapshot(access: Access, login: string): Promise<unknown> {
+export async function snapshot(access: Access, login: string) {
   const entries = await visibleRepos(access);
   const repos = entries.map((repo) => repo.productRepo);
   const runs = await visibleRuns(access, SIDEBAR_DAYS);
@@ -131,14 +131,14 @@ async function portalSummary(access: Access, runs: RunSummary[]) {
 
 // Hoy: the runs, and each repo's current Linear cycle, where ronin's issues
 // stand by what GitHub says of them.
-export async function todayWithCycles(access: Access): Promise<unknown> {
+export async function todayWithCycles(access: Access) {
   const entries = await visibleRepos(access);
   const cycles = await Promise.all(entries.map(async (entry) => {
     const gh = await repoGithub(entry);
     const linear = await repoLinear(entry, gh);
     return linear ? cycleView(linear, gh) : null;
   }));
-  return { ...today(await visibleRuns(access, WEEK_DAYS)), cycles: cycles.filter(Boolean) };
+  return { ...today(await visibleRuns(access, WEEK_DAYS)), cycles: cycles.filter((c) => c !== null) };
 }
 
 // An issue or PR of a repo in repos.json: what it is, and when one of its

@@ -120,7 +120,7 @@ function duration(ms) {
 const money = (usd) => (usd < 0.01 ? 'menos de US$0,01' : `US$${usd.toFixed(2).replace('.', ',')}`);
 const pct = (fraction) => `${Math.round(fraction * 100)}%`;
 
-const S = { snap: null, today: null, sel: null, open: [], runIdx: {}, pendingRun: null, filter: null, q: '', itemRuns: {}, run: null, stream: null, detail: {}, view: {}, doc: {}, menu: false, dialog: null, expanded: new Set(), expl: {}, ficha: {}, fichaOpen: {}, fichaFilter: { tipo: 'todas', vp: 'todos' }, antes: {}, oldAfter: new Set(), lightbox: null, fmenu: false, fdialog: null, fdraft: {}, listas: {}, scope: 'all', project: '', attAll: false, extra: {}, newIssue: null, files: {}, fcur: {}, ffold: {}, fexp: {}, fcontent: {}, fq: {}, ftree: false, fcomp: null, fbusy: new Set(), rpanel: null, revSent: {}, decide: null, decided: {}, kunit: null, page: null, ped: { n: null, run: null }, reu: { n: null, run: null }, xpl: { list: null, error: null, listAt: 0, repo: null, app: null, cor: {}, inv: {}, tab: 'corridas', run: null, launched: {} }, xnow: null, dep: { list: null }, mt: { tab: 'trabajo' }, aj: { sec: 'perfil', login: null, repo: null, cuenta: null, f: null } };
+const S = { snap: null, today: null, sel: null, open: [], runIdx: {}, pendingRun: null, filter: null, q: '', itemRuns: {}, run: null, stream: null, detail: {}, view: {}, doc: {}, menu: false, dialog: null, expanded: new Set(), expl: {}, ficha: {}, fichaOpen: {}, fichaFilter: { tipo: 'todas', vp: 'todos' }, antes: {}, oldAfter: new Set(), lightbox: null, fmenu: false, fdialog: null, fdraft: {}, listas: {}, scope: 'all', project: '', extra: {}, newIssue: null, files: {}, fcur: {}, ffold: {}, fexp: {}, fcontent: {}, fq: {}, ftree: false, fcomp: null, fbusy: new Set(), rpanel: null, revSent: {}, decide: null, decided: {}, kunit: null, page: null, ped: { n: null, run: null }, reu: { n: null, run: null }, xpl: { list: null, error: null, listAt: 0, repo: null, app: null, cor: {}, inv: {}, tab: 'corridas', run: null, launched: {} }, xnow: null, dep: { list: null }, mt: { tab: 'trabajo' }, aj: { sec: 'perfil', login: null, repo: null, cuenta: null, f: null } };
 // The sidebar's Linear filter (#101), remembered per browser.
 try { Object.assign(S, JSON.parse(localStorage.getItem('ronin-scope') ?? '{}')); } catch { /* sin storage */ }
 function saveScope() {
@@ -183,6 +183,8 @@ const cycleName = (c) => c.name || `Ciclo ${c.number}`;
 const linearRepos = () => S.snap?.linear ?? [];
 const currentCycleOf = (repo) => linearRepos().find((l) => l.repo === repo)?.cycle ?? null;
 const dayMonth = (iso) => new Date(iso).toLocaleDateString('es', { day: 'numeric', month: 'short' }).replace('.', '');
+// A cycle ends at midnight: its last day is the one before.
+const endDay = (iso) => dayMonth(new Date(Date.parse(iso) - 1).toISOString());
 const safeLinear = (url) => typeof url === 'string' && url.startsWith('https://linear.app/');
 // A project's color follows the project, never its rank: the projects known
 // to the page in name order, the first four with a color each, the rest gray.
@@ -536,6 +538,7 @@ const entryName = (item, runs, entry) => runName(item, runs[entry.idx[0]], entry
 const viewOf = (item) => S.view[item.id] ?? (item.kind === 'other' ? 'tx' : 'ficha');
 
 function renderCenter() {
+  for (const onChange of shellListeners) onChange();
   const center = $('#center');
   const tabs = `<div class="tabs" role="tablist">${S.open.map((id) => {
     const item = itemById(id);
@@ -581,8 +584,7 @@ function renderCenter() {
     return;
   }
   if (!item) {
-    setCenter(tabs + backBar('Hoy') + renderToday());
-    wireToday();
+    showPage('today', tabs + backBar('Hoy'));
     return;
   }
   if (viewOf(item) === 'tx') {
@@ -624,6 +626,8 @@ function renderCenter() {
 // it goes, under its head, and unmounted when the center shows anything
 // else (setCenter). It reads, polls and redraws on its own.
 let reactPage = null;
+// The pages that draw from the snapshot (Hoy), told each time the shell draws.
+const shellListeners = new Set();
 const PAGE_HOST = {
   toast,
   openPedido: (n) => openPedido(n),
@@ -661,8 +665,30 @@ const PAGE_HOST = {
   markdown: md,
   hasItem: (key) => Boolean(itemById(key)),
   refresh: () => refresh(),
-  // What the sidebar shows of a page: whether a deploy is going.
+  snapshot: () => S.snap,
+  subscribe(onChange) {
+    shellListeners.add(onChange);
+    return () => shellListeners.delete(onChange);
+  },
+  project: () => S.project,
+  setProject(id) {
+    S.project = id;
+    saveScope();
+    renderAll();
+  },
+  projectColor,
+  openRun(key, runId) {
+    S.pendingRun = runId;
+    select(key);
+  },
+  // What the sidebar shows of a page: whether a deploy is going, the
+  // projects of the cycles (their colors).
   read(name, data) {
+    if (name === 'today') {
+      S.today = data;
+      renderTree();
+      for (const onChange of shellListeners) onChange();
+    }
     if (name !== 'deploys') return;
     S.dep.list = data;
     renderQuick();
@@ -2854,300 +2880,7 @@ function wireCenter() {
   };
 }
 
-// ---------- today
-const tipEl = () => document.getElementById('tip') ?? Object.assign(document.body.appendChild(document.createElement('div')), { id: 'tip', className: 'tip', role: 'tooltip' });
-
-// The day's numbers, each with its week as a sparkline (today last).
-function sparkline(values) {
-  const w = 120, h = 22;
-  const vals = values.map((v) => v ?? 0);
-  const max = Math.max(...vals, 1e-9);
-  const pt = (v, k) => [(k / Math.max(1, vals.length - 1)) * w, h - 2 - (v / max) * (h - 4)];
-  const d = vals.map((v, k) => `${k ? 'L' : 'M'}${pt(v, k).map((n) => n.toFixed(1)).join(',')}`).join('');
-  const [lx, ly] = pt(vals[vals.length - 1], vals.length - 1);
-  return `<svg width="${w}" height="${h}" aria-hidden="true"><path d="${d}" fill="none" stroke="var(--faint)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="${lx.toFixed(1)}" cy="${ly.toFixed(1)}" r="3" fill="var(--run)"/></svg>`;
-}
-
-function tilesHTML(t) {
-  const d = t.today;
-  const week = t.week ?? [];
-  const tile = (label, value, sub, series) => `<div class="tile"><div class="l">${label}</div><div class="v">${value}</div><div class="d">${sub}</div>${series.length > 1 ? sparkline(series) : ''}</div>`;
-  return `<div class="tiles">
-    ${tile('Corridas hoy', d.runs, `ayer <b>${t.yesterday.runs}</b>`, week.map((w) => w.runs))}
-    ${tile('Terminaron bien', d.finished ? pct(d.ok / d.finished) : '—', d.finished ? `<b>${d.ok}</b> de ${d.finished} terminadas` : 'ninguna terminada todavía', week.map((w) => (w.finished ? w.ok / w.finished : null)))}
-    ${tile('Duración mediana', d.medianMs !== null ? esc(duration(d.medianMs)) : '—', d.p90Ms !== null ? `p90 <b>${esc(duration(d.p90Ms))}</b>` : '&nbsp;', week.map((w) => w.medianMs))}
-    ${tile('Costo hoy', d.costUsd ? esc(money(d.costUsd)) : 'US$0', [t.yesterday.costUsd !== undefined ? `ayer <b>${esc(t.yesterday.costUsd ? money(t.yesterday.costUsd) : 'US$0')}</b>` : null, d.failed ? `${d.failed} con error` : null, d.usageLimit ? `${d.usageLimit} sin cuota` : null].filter(Boolean).join(', ') || 'sin errores', week.map((w) => w.costUsd))}
-  </div>`;
-}
-
-// What waits on a person, to act on: blocked issues, ronin's PRs waiting for
-// a review or a merge (the longest waiting first), the exploration PR and
-// the previews that are up.
-function attention() {
-  const items = S.snap.items;
-  const blocked = items.filter((i) => i.status === 'blocked');
-  const waitedSince = (i) => Date.parse(i.lastRun?.endedAt ?? i.lastRun?.startedAt ?? '') || Date.now();
-  const review = items.filter((i) => i.kind === 'issue' && i.slices?.length && i.status === 'waiting' && i.pr && !i.pr.isDraft && i.pr.reviewDecision !== 'CHANGES_REQUESTED'
-    && !i.pr.checks.some((c) => c.outcome !== 'passed')).sort((a, b) => waitedSince(a) - waitedSince(b));
-  const exploration = items.filter((i) => i.kind === 'pr' && i.note === 'PR de exploración abierto');
-  return { blocked, review, exploration, previews: S.snap.previews, waitedSince };
-}
-
-function attentionHTML(a) {
-  const ref = (i) => [`#${i.number}`, i.linear?.id].filter(Boolean).join(' · ');
-  const row = (cls, title, sub, when, id, icon = '') => `<button class="arow" ${id ? `data-att="${esc(id)}"` : ''}>${dotClass(cls)}<span class="t">${esc(title)}</span><span class="w">${esc(when)}</span><span class="s">${icon}${esc(sub)}</span></button>`;
-  const total = a.blocked.length + a.review.length + a.exploration.length + a.previews.length;
-  const shownReview = S.attAll ? a.review : a.review.slice(0, 4);
-  return `<div class="card"><h2>Necesitan tu atención<span class="c">${total || 'nada'}</span></h2><div class="att">
-    <div class="ag">Bloqueados, esperan una respuesta</div>
-    ${a.blocked.length ? a.blocked.map((i) => row('crit', i.title, `${ref(i)} · ${i.block?.reason ?? 'el motivo está en el email del bloqueo'}`, i.block ? `hace ${short(Date.now() - Date.parse(i.block.at))}` : '', i.id, ghIcon('issue', i.github))).join('') : '<div class="none">Ninguno.</div>'}
-    <div class="ag">PRs de ronin que esperan tu review o tu merge, el que más espera primero</div>
-    ${a.review.length ? shownReview.map((i) => row(i.pr.reviewDecision === 'APPROVED' ? 'ok' : 'warn', i.title, `PR #${i.pr.number} · ${[i.linear?.id, i.pr.reviewDecision === 'APPROVED' ? 'aprobado, falta el merge' : i.pr.checks.length ? 'checks en verde' : 'sin checks'].filter(Boolean).join(' · ')}`, `hace ${short(Date.now() - a.waitedSince(i))}`, i.id, ghIcon('pr', 'open'))).join('') : '<div class="none">Ninguno.</div>'}
-    ${a.review.length > 4 ? `<button class="more-l" id="att-more">${S.attAll ? 'Ver menos' : `Ver los ${a.review.length} →`}</button>` : ''}
-    ${a.exploration.length || a.previews.length ? '<div class="ag">Exploración y previews</div>' : ''}
-    ${a.exploration.map((i) => row('run', i.title, `PR #${i.number} · ${repoShort(i.repo)} · fichas para revisar`, i.lastRun ? `hace ${short(Date.now() - Date.parse(i.lastRun.endedAt ?? i.lastRun.startedAt))}` : '', i.id, ghIcon('pr', i.github))).join('')}
-    ${a.previews.map((p) => {
-      const left = p.expiresAt ? Date.parse(p.expiresAt) - Date.now() : null;
-      const item = S.snap.items.find((i) => i.repo === p.repo && (i.number === p.prNumber || i.slices?.some((sl) => sl.prNumber === p.prNumber)));
-      return row(p.preparing || p.updating ? 'live' : 'ok', `Preview de #${p.prNumber} ${p.updating ? 'actualizando' : p.preparing ? 'preparando datos' : 'arriba'}`, `${p.appName} · ${repoShort(p.repo)}${left !== null ? ` · se baja en ${short(left)}` : ''}`, p.startedAt ? short(Date.now() - Date.parse(p.startedAt)) : '', item?.id);
-    }).join('')}
-  </div></div>`;
-}
-
-// The cycle's issues by where they stand: ronin's by what GitHub says of
-// them, the team's by their Linear state (items/linear.ts).
-const BUCKETS = [
-  ['done', 'hechos', 'var(--ok)'],
-  ['ronin', 'ronin trabaja', 'var(--run)'],
-  ['review', 'en review', 'var(--warn)'],
-  ['blocked', 'esperan a alguien', 'var(--crit)'],
-  ['started', 'en curso, del equipo', 'var(--lin)'],
-  ['todo', 'sin empezar', 'var(--faint)'],
-];
-const endDay = (iso) => dayMonth(new Date(Date.parse(iso) - 1).toISOString());
-const DAY_MS = 24 * 60 * MIN;
-
-function niceMax(v) {
-  const step = v <= 10 ? 2 : v <= 50 ? 10 : v <= 100 ? 20 : 50;
-  return Math.max(step, Math.ceil(v / step) * step);
-}
-
-// Issues in the cycle against issues done, day by day (Linear's history),
-// over the whole cycle so what's left to go shows as room.
-const BURN = { W: 400, H: 180, l: 28, r: 96, t: 10, b: 20 };
-function burnGeometry(c) {
-  const total = Math.max(1, Math.round((Date.parse(c.endsAt) - Date.parse(c.startsAt)) / DAY_MS));
-  const max = niceMax(Math.max(...c.scopeHistory, 1));
-  const x = (d) => BURN.l + (d / total) * (BURN.W - BURN.l - BURN.r);
-  const y = (v) => BURN.t + (1 - v / max) * (BURN.H - BURN.t - BURN.b);
-  return { total, max, x, y };
-}
-
-function burnHTML(c, index) {
-  const scope = c.scopeHistory;
-  const done = c.doneHistory;
-  if (!scope.length) return '';
-  const { W, H } = BURN;
-  const { total, max, x, y } = burnGeometry(c);
-  const last = scope.length - 1;
-  const line = (arr) => arr.map((v, d) => `${d ? 'L' : 'M'}${x(d).toFixed(1)},${y(v).toFixed(1)}`).join('');
-  const area = `${line(done)}L${x(last).toFixed(1)},${y(0)}L${x(0)},${y(0)}Z`;
-  const grid = [0, max / 2, max].map((v) => `<line x1="${BURN.l}" x2="${W - BURN.r}" y1="${y(v)}" y2="${y(v)}" stroke="var(--rule)"/><text x="${BURN.l - 6}" y="${y(v) + 3.5}" text-anchor="end">${v}</text>`).join('');
-  // Linear's history can lag a day or two behind: today gets its own mark.
-  const now = Math.max(0, Math.min(total, (Date.now() - Date.parse(c.startsAt)) / DAY_MS));
-  const labels = [[0, dayMonth(c.startsAt), 'start'], [total, endDay(c.endsAt), 'end']];
-  if (x(now) - x(0) > 30 && x(total) - x(now) > 30) labels.push([now, 'hoy', 'middle']);
-  const xlabels = labels.map(([d, text, anchor]) => `<text x="${x(d)}" y="${H - 4}" text-anchor="${anchor}">${esc(text)}</text>`).join('');
-  // End labels, pulled apart when the two values are close.
-  let ys = y(scope[last]) + 4;
-  let yd = y(done[last] ?? 0) + 4;
-  if (yd - ys < 13) {
-    const mid = (ys + yd) / 2;
-    ys = mid - 6.5;
-    yd = mid + 6.5;
-  }
-  return `<div class="burn" data-burn="${index}"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(`${cycleName(c)}: ${scope[last]} issues en el ciclo y ${done[last] ?? 0} hechos`)}">
-      ${grid}${xlabels}
-      <line x1="${x(now)}" x2="${x(now)}" y1="${BURN.t}" y2="${H - BURN.b}" stroke="var(--faint)" stroke-dasharray="3 3"/>
-      <path d="${area}" fill="var(--ok)" opacity=".12"/>
-      <path d="${line(scope)}" fill="none" stroke="var(--muted)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
-      <path d="${line(done)}" fill="none" stroke="var(--ok)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
-      <circle cx="${x(last)}" cy="${y(scope[last])}" r="4" fill="var(--muted)" stroke="var(--panel)" stroke-width="2"/>
-      <circle cx="${x(last)}" cy="${y(done[last] ?? 0)}" r="4" fill="var(--ok)" stroke="var(--panel)" stroke-width="2"/>
-      <text class="end" x="${x(last) + 8}" y="${ys}">${scope[last]} en el ciclo</text>
-      <text class="end" x="${x(last) + 8}" y="${yd}">${done[last] ?? 0} hechos</text>
-      <line class="cross" x1="0" x2="0" y1="${BURN.t}" y2="${H - BURN.b}" stroke="var(--faint)" visibility="hidden"/>
-      <rect class="hit" x="${BURN.l}" y="0" width="${W - BURN.l - BURN.r}" height="${H}" fill="transparent"/>
-    </svg><div class="btip" hidden></div>
-    <div class="lg"><span><i style="background:var(--muted)"></i>issues en el ciclo</span><span><i style="background:var(--ok)"></i>hechos</span></div></div>`;
-}
-
-function cycleHTML(c, index) {
-  const left = Math.ceil((Date.parse(c.endsAt) - Date.now()) / DAY_MS);
-  const counts = BUCKETS.map(([k, label, color]) => [k, label, color, c.issues.filter((i) => i.bucket === k).length]);
-  const total = c.issues.length || 1;
-  const stack = counts.filter(([, , , n]) => n).map(([, label, color, n]) => `<i style="width:${(n / total) * 100}%;background:${color}" title="${n} ${esc(label)}"></i>`).join('');
-  const legend = counts.filter(([, , , n]) => n).map(([, label, color, n]) => `<span><i style="background:${color}"></i><b>${n}</b> ${esc(label)}</span>`).join('');
-  return `<div class="card"><h2>${LIN_ICON} ${esc(cycleName(c))}${S.today.cycles.length > 1 ? ` · ${esc(repoShort(c.repo))}` : ''}<span class="c">${esc(dayMonth(c.startsAt))} – ${esc(endDay(c.endsAt))} · ${left > 1 ? `quedan ${left} días` : left === 1 ? 'termina mañana' : 'termina hoy'}</span></h2>
-    <div class="stack">${stack}</div><div class="legend">${legend}</div>
-    ${burnHTML(c, index)}</div>`;
-}
-
-function breakdownHTML(c) {
-  const brow = (name, swatch, segs, n, attrs = '', tag = 'div') => `<${tag} class="brow" ${attrs}><span class="bn"><i style="background:${swatch}"></i><span>${esc(name)}</span></span><span class="bb">${segs}</span><span class="bc">${n}</span></${tag}>`;
-  const groups = new Map();
-  for (const issue of c.issues) {
-    const key = issue.project?.id ?? '';
-    groups.set(key, [...(groups.get(key) ?? []), issue]);
-  }
-  const maxP = Math.max(...[...groups.values()].map((g) => g.length), 1);
-  const projects = [...groups].sort((a, b) => (a[0] === '') - (b[0] === '') || b[1].length - a[1].length).map(([id, issues]) => {
-    const segs = BUCKETS.map(([k, , color]) => {
-      const n = issues.filter((i) => i.bucket === k).length;
-      return n ? `<i style="width:${(n / maxP) * 100}%;background:${color}"></i>` : '';
-    }).join('');
-    return id
-      ? brow(issues[0].project.name, projectColor(id), segs, issues.length, `data-proj="${esc(id)}" aria-pressed="${S.project === id}" title="Filtrar la lista por este proyecto"`, 'button')
-      : brow('Sin proyecto', 'var(--proj-other)', segs, issues.length);
-  }).join('');
-  const open = c.issues.filter((i) => i.bucket !== 'done');
-  const owners = new Map();
-  for (const issue of open) owners.set(issue.owner, (owners.get(issue.owner) ?? 0) + 1);
-  const people = [...owners].sort((a, b) => (b[0] === 'ronin') - (a[0] === 'ronin') || (a[0] === '') - (b[0] === '') || b[1] - a[1]);
-  const maxO = Math.max(...people.map(([, n]) => n), 1);
-  const who = people.map(([owner, n]) => {
-    const color = owner === 'ronin' ? 'var(--hanko)' : 'var(--faint)';
-    return brow(owner || 'sin asignar', color, `<i style="width:${(n / maxO) * 100}%;background:${color}"></i>`, n);
-  }).join('');
-  const ronin = owners.get('ronin') ?? 0;
-  return `<div class="card">
-    <div class="side-list"><h3>Por proyecto, en el ciclo</h3>${projects || '<p class="note">El ciclo no tiene issues.</p>'}</div>
-    <div class="side-list"><h3>Quién tiene qué, de lo que falta</h3>${who || '<p class="note">Todo el ciclo está hecho.</p>'}${open.length ? `<p class="note">ronin tiene ${ronin} de los ${open.length} issues que faltan del ciclo.</p>` : ''}</div>
-  </div>`;
-}
-
-function renderToday() {
-  const t = S.today;
-  const running = S.snap.items.filter((i) => i.status === 'running').length;
-  const a = attention();
-  const lead = [
-    running ? `${running} ${running === 1 ? 'agente trabajando' : 'agentes trabajando'}` : 'ningún agente trabajando',
-    a.blocked.length ? `${a.blocked.length} ${a.blocked.length === 1 ? 'issue espera' : 'issues esperan'} una respuesta` : null,
-    a.review.length ? `${a.review.length} ${a.review.length === 1 ? 'PR espera' : 'PRs esperan'} tu review o tu merge` : null,
-  ].filter(Boolean).join(', ');
-  const date = new Date().toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long' });
-  const head = `<h1>Hoy</h1><p class="lead">${esc(date[0].toUpperCase() + date.slice(1))} · ${esc(lead)}.</p>`;
-  if (!t) return `<div class="today">${head}<div class="empty">Cargando…</div></div>`;
-
-  const cycles = t.cycles ?? [];
-  const right = cycles.map((c, i) => cycleHTML(c, i) + breakdownHTML(c)).join('');
-  const grid = `<div class="hgrid ${right ? '' : 'one'}">${attentionHTML(a)}${right ? `<div class="rcol">${right}</div>` : ''}</div>`;
-
-  const from = Date.parse(t.from);
-  const to = Date.now();
-  const span = to - from;
-  const pos = (ms) => Math.max(0, Math.min(100, ((ms - from) / span) * 100));
-  const lanes = S.snap.repos.map((repo) => {
-    const rows = [];
-    const bars = t.timeline.filter((run) => run.repo === repo).map((run) => {
-      const start = pos(Date.parse(run.startedAt));
-      const end = run.state === 'running' ? 100 : pos(Date.parse(run.endedAt ?? run.startedAt));
-      let row = rows.findIndex((last) => last < start - 0.4);
-      if (row < 0) row = rows.push(-1) - 1;
-      rows[row] = Math.max(end, start + 0.4);
-      const item = itemById(run.itemId);
-      const [, , label] = STATE[run.state] ?? STATE.error;
-      const when = `${hhmm(run.startedAt)}${run.endedAt ? `–${hhmm(run.endedAt)}` : ', en curso'}`;
-      const tip = `${runTitle(run)}${item ? `\n${item.title}` : ''}\n${when}, ${label}`;
-      const cls = run.state === 'running' ? 'live' : ['error', 'timeout', 'cut'].includes(run.state) ? 'fail' : run.state === 'usage_limit' ? 'quota' : '';
-      return `<button class="bar ${cls}" style="left:${start}%;width:max(6px,${end - start}%);top:${6 + row * 15}px;background-color:${repoColor(repo)}" data-item="${esc(run.itemId)}" data-run="${esc(run.runId)}" data-tip="${esc(tip)}" aria-label="${esc(tip.replace(/\n/g, ', '))}"></button>`;
-    }).join('');
-    const height = Math.max(1, rows.length) * 15 + 10;
-    return `<div class="lane"><span class="nm">${esc(repoShort(repo))}</span><div class="track" style="height:${height}px">${bars}<span class="nowl"></span></div></div>`;
-  }).join('');
-  const ticks = [0, 2, 4, 6, 8, 10, 12].map((h) => `<span class="${h % 4 === 2 ? 'minor' : ''}" style="left:${(h / 12) * 100}%">${h === 12 ? 'ahora' : esc(hhmm(new Date(from + h * 60 * MIN).toISOString()))}</span>`).join('');
-  const legend = S.snap.repos.map((repo) => `<span><i style="background:${repoColor(repo)}"></i>${esc(repoShort(repo))}</span>`).join('') + '<span><i class="lg-fail"></i>terminó con error</span>';
-  const timeline = `<div class="day"><h2>Últimas 12 horas<span class="legend">${legend}</span></h2>
-    ${t.timeline.length ? '' : '<p class="note" style="margin:0 0 8px">Ninguna corrida de agentes en las últimas 12 horas.</p>'}
-    ${lanes}<div class="axis"><span></span><div class="ticks">${ticks}</div></div></div>`;
-  return `<div class="today">${head}${tilesHTML(t)}${grid}${timeline}</div>`;
-}
-
-function wireBurn(el) {
-  const c = S.today?.cycles?.[Number(el.dataset.burn)];
-  if (!c) return;
-  const svg = el.querySelector('svg');
-  const cross = el.querySelector('.cross');
-  const tip = el.querySelector('.btip');
-  const { x } = burnGeometry(c);
-  const last = c.scopeHistory.length - 1;
-  const hide = () => {
-    cross.setAttribute('visibility', 'hidden');
-    tip.hidden = true;
-  };
-  el.querySelector('.hit').onpointermove = (e) => {
-    const rect = svg.getBoundingClientRect();
-    const vx = ((e.clientX - rect.left) / rect.width) * BURN.W;
-    let d = 0;
-    for (let k = 0; k <= last; k++) if (Math.abs(x(k) - vx) < Math.abs(x(d) - vx)) d = k;
-    if (vx > x(last) + 20) return hide();
-    cross.setAttribute('x1', x(d));
-    cross.setAttribute('x2', x(d));
-    cross.setAttribute('visibility', 'visible');
-    const day = document.createElement('b');
-    day.textContent = dayMonth(new Date(Date.parse(c.startsAt) + d * DAY_MS).toISOString());
-    const lineOf = (color, text) => {
-      const div = document.createElement('div');
-      const key = Object.assign(document.createElement('span'), { className: 'k' });
-      key.style.background = color;
-      div.append(key, text);
-      return div;
-    };
-    tip.replaceChildren(day, lineOf('var(--muted)', `${c.scopeHistory[d]} en el ciclo`), lineOf('var(--ok)', `${c.doneHistory[d] ?? 0} hechos`));
-    tip.hidden = false;
-    const px = (x(d) / BURN.W) * rect.width;
-    tip.style.left = `${Math.min(px + 12, rect.width - tip.offsetWidth)}px`;
-    tip.style.top = '8px';
-  };
-  el.querySelector('.hit').onpointerleave = hide;
-}
-
-function wireToday() {
-  const tip = tipEl();
-  const show = (bar, x, y) => {
-    tip.textContent = bar.dataset.tip;
-    tip.style.opacity = '1';
-    tip.style.left = `${Math.min(x + 14, innerWidth - 300)}px`;
-    tip.style.top = `${y + 14}px`;
-  };
-  const hide = () => { tip.style.opacity = '0'; };
-  for (const bar of document.querySelectorAll('.bar[data-run]')) {
-    bar.onpointermove = (e) => show(bar, e.clientX, e.clientY);
-    bar.onpointerleave = hide;
-    bar.onfocus = () => { const r = bar.getBoundingClientRect(); show(bar, r.left, r.bottom); };
-    bar.onblur = hide;
-    bar.onclick = () => {
-      hide();
-      S.pendingRun = bar.dataset.run;
-      select(bar.dataset.item);
-    };
-  }
-  for (const row of document.querySelectorAll('[data-att]')) row.onclick = () => select(row.dataset.att);
-  const more = document.getElementById('att-more');
-  if (more) more.onclick = () => {
-    S.attAll = !S.attAll;
-    renderAll();
-  };
-  for (const row of document.querySelectorAll('[data-proj]')) {
-    row.onclick = () => {
-      S.project = S.project === row.dataset.proj ? '' : row.dataset.proj;
-      saveScope();
-      renderAll();
-    };
-  }
-  for (const el of document.querySelectorAll('[data-burn]')) wireBurn(el);
-}
-
+// ---------- today: pages/today in React (#235, stage 7)
 function goHome() {
   S.sel = null;
   S.page = null;
@@ -4059,7 +3792,7 @@ async function select(id) {
 
 async function refresh() {
   try {
-    [S.snap, S.today] = await Promise.all([api('/api/snapshot'), S.sel ? Promise.resolve(S.today) : api('/api/today')]);
+    S.snap = await api('/api/snapshot');
   } catch (error) {
     if (error instanceof Unauthorized) showLogin(error);
     return;

@@ -1,5 +1,6 @@
 import { createContext, useContext } from 'react';
 import type { LinearPlanning } from '../../../platform/linear/linear-api.js';
+import type { Snapshot } from './api.js';
 
 export type { LinearPlanning };
 
@@ -58,6 +59,18 @@ export interface Host {
   hasItem(key: string): boolean;
   // Reads the snapshot again (the sidebar's counts).
   refresh(): void;
+  // The snapshot as the shell last read it (the sidebar's items, the
+  // previews, the repos), and a call each time the shell draws again: a new
+  // snapshot, another project in the sidebar. Returns how to stop.
+  snapshot(): Snapshot;
+  subscribe(onChange: () => void): () => void;
+  // The sidebar's Linear project, '' for all of them, and choosing another.
+  project(): string;
+  setProject(id: string): void;
+  // A Linear project's color, the same everywhere on the page.
+  projectColor(id: string): string;
+  // Opens an item on one of its runs.
+  openRun(key: string, runId: string): void;
 }
 
 export interface RequestDoc {
