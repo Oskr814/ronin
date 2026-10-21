@@ -1,6 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { client, ok } from '../../api.js';
-import { useHost } from '../../host.js';
+import { useShell } from '../../shell/hooks.js';
+import { typeName } from '../../lib/runs.js';
 import { Fixed, onCommit, Row, Sec, SectionLink, Switch, useChange } from './parts.js';
 import { SETTINGS, word, type Page, type Setting, type Task, type Value } from './model.js';
 
@@ -9,14 +10,14 @@ import { SETTINGS, word, type Page, type Setting, type Task, type Value } from '
 // takes effect right away, without restarting.
 
 function useSetValue() {
-  const host = useHost();
+  const shell = useShell();
   const queryClient = useQueryClient();
   const change = useChange();
   return (key: string, value: Value | null) => change(async () => {
     if (Number.isNaN(value)) throw new Error('Tiene que ser un número entero.');
     const { setting } = (await ok(client.api.settings.values.$post({ json: { key, value } }))) as { setting: Setting };
     queryClient.setQueryData<Page>(['settings'], (d) => d && { ...d, valores: d.valores.map((s) => (s.key === key ? setting : s)) });
-    host.toast(value === null ? `${SETTINGS[key]?.[0] ?? key}: vuelve al de ${setting.source === 'env' ? '.env' : 'por defecto'} (${word(setting.value)}).` : 'Guardado. Vale desde ahora.');
+    shell.toast(value === null ? `${SETTINGS[key]?.[0] ?? key}: vuelve al de ${setting.source === 'env' ? '.env' : 'por defecto'} (${word(setting.value)}).` : 'Guardado. Vale desde ahora.');
   });
 }
 
@@ -54,7 +55,7 @@ export function General({ d }: { d: Page }) {
 }
 
 function TaskRow({ t, d }: { t: Task; d: Page }) {
-  const host = useHost();
+  const shell = useShell();
   const queryClient = useQueryClient();
   const change = useChange();
   const general = (key: string) => word(d.valores.find((s) => s.key === key)!.value);
@@ -62,11 +63,11 @@ function TaskRow({ t, d }: { t: Task; d: Page }) {
   const save = (field: 'model' | 'effort') => onCommit<HTMLSelectElement>((el) => change(async () => {
     const { tareas } = (await ok(client.api.settings.tasks.$post({ json: { task: t.task, [field]: el.value || null } }))) as { tareas: Task[] };
     queryClient.setQueryData<Page>(['settings'], (p) => p && { ...p, tareas });
-    host.toast('Guardado. Vale desde la próxima corrida.');
+    shell.toast('Guardado. Vale desde la próxima corrida.');
   }));
   return (
     <tr>
-      <td>{host.typeName(t.task)}<small className="mono">{t.task}</small></td>
+      <td>{typeName(t.task)}<small className="mono">{t.task}</small></td>
       <td><select className="aj-in" data-ajtask={t.task} data-f="model" aria-label={`Modelo de ${t.task}`} defaultValue={['opus', 'sonnet', 'haiku'].includes(t.model) ? t.model : ''} ref={save('model')}><option value="">{fallback(t.envModel, t.defaultModel, 'agent.model')}</option>{['opus', 'sonnet', 'haiku'].map((m) => <option key={m}>{m}</option>)}</select></td>
       <td><select className="aj-in" data-ajtask={t.task} data-f="effort" aria-label={`Esfuerzo de ${t.task}`} defaultValue={['low', 'medium', 'high', 'xhigh', 'max'].includes(t.effort) ? t.effort : ''} ref={save('effort')}><option value="">{fallback(t.envEffort, t.defaultEffort, 'agent.effort')}</option>{['low', 'medium', 'high', 'xhigh', 'max'].map((m) => <option key={m}>{m}</option>)}</select></td>
     </tr>

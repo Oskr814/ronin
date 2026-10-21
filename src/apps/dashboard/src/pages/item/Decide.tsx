@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import { ApiError, client, ok } from '../../api.js';
-import { useHost } from '../../host.js';
+import { useSession, useShell } from '../../shell/hooks.js';
 import { checksChip, itemParam, oneOr, type ItemPage } from './model.js';
 
 // Deciding a PR ronin opened (#195): its page asks what's decided, not how
@@ -33,7 +33,7 @@ interface Decided {
 const decided = new Map<string, Decided>();
 
 export function useDecide(v: ItemPage | null) {
-  const host = useHost();
+  const shell = useShell();
   const [p, setP] = useState<Deciding | null>(null);
   const [focusText, setFocusText] = useState(0);
   const pending = v?.files.pending.length ?? 0;
@@ -54,10 +54,10 @@ export function useDecide(v: ItemPage | null) {
       const sent = (await ok(client.api.items[':id'].decision.$post({ param: itemParam(id), json: { decision: p.kind, text: p.text, closeIssue: p.closeIssue } }))) as { url: string; autoMergeUrl?: string; issueUrl?: string };
       setP(null);
       decided.set(id, { at: Date.now(), kind: p.kind, url: sent.url, autoMerge: Boolean(sent.autoMergeUrl), issue: Boolean(sent.issueUrl), count: pending });
-      host.toast(p.kind === 'approve' ? 'Aprobaste el PR.' : p.kind === 'adjust' ? 'Se lo mandaste a ronin.' : 'Cerraste el PR.', sent.url);
+      shell.toast(p.kind === 'approve' ? 'Aprobaste el PR.' : p.kind === 'adjust' ? 'Se lo mandaste a ronin.' : 'Cerraste el PR.', sent.url);
       v.files.reread();
     } catch (e) {
-      if (e instanceof ApiError && e.status === 401) return host.unauthorized(e.message);
+      if (e instanceof ApiError && e.status === 401) return shell.unauthorized(e.message);
       setP({ ...p, sending: false, error: `No se pudo: ${(e as Error).message}` });
     }
   };
@@ -95,12 +95,12 @@ export function DecideBar({ v, decide }: { v: ItemPage; decide: Decide }) {
 }
 
 function Drop({ v, decide, p }: { v: ItemPage; decide: Decide; p: Deciding }) {
-  const host = useHost();
+  const session = useSession();
   const text = useRef<HTMLTextAreaElement>(null);
   const d = v.detail!.data!;
   const pr = d.pr!;
   const n = v.files.pending.length;
-  const me = host.me();
+  const me = session.me;
   const bot = d.ronin;
   // The text keeps the focus when it's asked for (opened, a suggestion added), its end selected.
   useLayoutEffect(() => {

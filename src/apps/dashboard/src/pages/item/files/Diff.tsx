@@ -1,8 +1,8 @@
 import { Fragment, type ComponentType, type MouseEvent, type ReactNode, type RefObject } from 'react';
-import type { SnapshotItem } from '../../../host.js';
+import type { SnapshotItem } from '../../../shell/hooks.js';
 import { when } from '../../../lib/format.js';
 import { Md } from '../../../lib/markdown.js';
-import { useHost } from '../../../host.js';
+import { useSession } from '../../../shell/hooks.js';
 import { useExpanded } from '../Doc.js';
 import { Avatar } from '../model.js';
 import type { Content } from './Files.js';
@@ -180,13 +180,13 @@ export function DiffTable({ ctx, file, rows, Composer }: { ctx: FilesCtx; file: 
 // A thread on the diff: GitHub's comments, then what the person's review
 // adds (only they see it until they send it), and how to answer.
 export function FileThread({ ctx, t, Composer }: { ctx: FilesCtx; t: SeenThread; Composer: ComposerT }) {
-  const host = useHost();
+  const session = useSession();
   const [expanded, setExpanded] = useExpanded();
   const key = `t:${t.url}`;
   // Resolved threads start folded, like on GitHub.
   const open = t.isResolved ? expanded.has(key) : !expanded.has(key);
   const where = t.subject === 'file' ? 'Sobre el archivo' : t.isOutdated || t.line === null ? `Línea ${t.originalLine ?? '?'}, en código que ya cambió` : `${t.startLine && t.startLine !== t.line ? `Líneas ${t.startLine}–${t.line}` : `Línea ${t.line}`}${t.side === 'LEFT' ? ', versión anterior' : ''}`;
-  const me = host.me();
+  const me = session.me;
   const c = ctx.comp;
   const replying = Boolean(c && c.reply === t.id);
   const busy = ctx.busy.has(t.id);

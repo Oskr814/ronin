@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { ApiError, client, ok, type MeetingRow } from '../../api.js';
-import { useHost } from '../../host.js';
+import { useSession, useShell } from '../../shell/hooks.js';
 import { repoShort, when } from '../../lib/format.js';
 import { Dot } from '../../lib/runs.js';
 import { ago, useNow } from '../../../../../ui/time.js';
@@ -28,7 +28,8 @@ function Counts({ c }: { c: MeetingRow['counts'] }) {
 }
 
 export function Meetings() {
-  const host = useHost();
+  const shell = useShell();
+  const session = useSession();
   const now = useNow();
   const [uploading, setUploading] = useState(false);
   const query = useQuery({
@@ -37,10 +38,10 @@ export function Meetings() {
     refetchInterval: EVERY_MS,
   });
   useEffect(() => {
-    if (query.error instanceof ApiError && query.error.status === 401) host.unauthorized(query.error.message);
-  }, [query.error, host]);
+    if (query.error instanceof ApiError && query.error.status === 401) shell.unauthorized(query.error.message);
+  }, [query.error, shell]);
   // The repos it can upload a meeting's notes to (#174).
-  const repos = host.repos().filter((repo) => host.can(repo, 'notas'));
+  const repos = session.repos.filter((repo) => session.can(repo, 'notas'));
 
   const head = (
     <div className="reu-top">
@@ -62,7 +63,7 @@ export function Meetings() {
           <thead><tr><th></th><th>Reunión</th><th>Estado</th><th className="hide-m">Propuestas</th><th className="hide-m">Subida por</th></tr></thead>
           <tbody>
             {list.map((m) => (
-              <tr key={m.number} tabIndex={0} onClick={() => host.openMeeting(m.number)} onKeyDown={(e) => e.key === 'Enter' && host.openMeeting(m.number)}>
+              <tr key={m.number} tabIndex={0} onClick={() => shell.openMeeting(m.number)} onKeyDown={(e) => e.key === 'Enter' && shell.openMeeting(m.number)}>
                 <td className="pn">R-{m.number}</td>
                 <td><span className="tt">{m.title}</span><small>{m.at ? `${when(m.at)} · ` : ''}{repoShort(m.repo)} · {source(m)}</small></td>
                 <td><StatusChip m={m} /></td>

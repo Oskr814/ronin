@@ -590,10 +590,10 @@ src/server/
 src/apps/dashboard/     el tablero, en React: Vite lo arma en dist/public/dashboard/dashboard.js
   public/              index.html, el CSS, theme.js y las fuentes, tal cual
   vendor/              marked, DOMPurify y los íconos de GitHub, copiados como vienen
-  src/shell/           el marco: la barra lateral, la columna de contexto, la barra de estado, las rutas y lo que lee para ellas
+  src/shell/           el marco: la barra lateral, la columna de contexto, la barra de estado, las rutas y lo que lee para ellas;
+                       hooks.ts, lo que las páginas leen del marco (hooks) y le piden (useShell)
   src/pages/           una por archivo, o una carpeta cuando tiene varios (deploys/: la página, el diálogo, lo que comparten)
-  src/lib/             lo que no dibuja (las fechas, el markdown de GitHub)
-  src/host.ts          lo que una página le pide al marco
+  src/lib/             lo que no dibuja (las fechas, el markdown de GitHub, las pestañas de un ítem)
 src/apps/portal/        la página del portal de pedidos
 ```
 

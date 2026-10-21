@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import type { Snapshot } from '../../api.js';
-import { useHost } from '../../host.js';
+import { useShell } from '../../shell/hooks.js';
 import { repoShort } from '../../lib/format.js';
 import { GhIcon } from '../../lib/github.js';
 import { Dot } from '../../lib/runs.js';
@@ -10,11 +10,11 @@ import type { Attention, Item } from './model.js';
 
 // What waits on a person, by kind; ronin's PRs, the first four until asked for all.
 export function AttentionCard({ a, snap, now }: { a: Attention; snap: Snapshot; now: number }) {
-  const host = useHost();
+  const shell = useShell();
   const [all, setAll] = useViewState('today.attention', false);
   const ref = (i: Item) => [`#${i.number}`, i.linear?.id].filter(Boolean).join(' · ');
   const row = (key: string, cls: string, title: string, sub: string, when: string, id: string | undefined, icon: ReactNode = null) => (
-    <button key={key} className="arow" onClick={id ? () => host.openItem(id) : undefined}><Dot cls={cls} /><span className="t">{title}</span><span className="w">{when}</span><span className="s">{icon}{sub}</span></button>
+    <button key={key} className="arow" onClick={id ? () => shell.openItem(id) : undefined}><Dot cls={cls} /><span className="t">{title}</span><span className="w">{when}</span><span className="s">{icon}{sub}</span></button>
   );
   const none = <div className="none">Ninguno.</div>;
   const total = a.blocked.length + a.review.length + a.exploration.length + a.previews.length;

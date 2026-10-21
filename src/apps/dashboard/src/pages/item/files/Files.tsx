@@ -1,7 +1,7 @@
 import { useQueryClient, type UseQueryResult } from '@tanstack/react-query';
 import { Fragment, useLayoutEffect, useReducer, useRef, type MutableRefObject } from 'react';
 import { ApiError, client, ok } from '../../../api.js';
-import { useHost } from '../../../host.js';
+import { useMarkdown, useSession, useShell } from '../../../shell/hooks.js';
 import { isMobile } from '../../../lib/format.js';
 import { useViewState } from '../../../lib/view-state.js';
 import { itemParam, oneOr, type ItemPage } from '../model.js';
@@ -35,7 +35,7 @@ const contents = new Map<string, Content>();
 const TALK = <svg width="11" height="11" viewBox="0 0 11 11" aria-hidden="true"><path d="M1 1.5h9v6H4.5L2 9.8V7.5H1z" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" /></svg>;
 
 export function Files({ v, q, review, keys }: { v: ItemPage; q: UseQueryResult<FilesRead>; review: Review; keys: MutableRefObject<FilesKeys | null> }) {
-  const host = useHost();
+  const shell = useShell();
   const qc = useQueryClient();
   const key = v.item.id;
   const [, redraw] = useReducer((n: number) => n + 1, 0);
@@ -89,7 +89,7 @@ export function Files({ v, q, review, keys }: { v: ItemPage; q: UseQueryResult<F
   const action = (body: Record<string, unknown>) => ok(client.api.items[':id'].files.actions.$post({ param: itemParam(key), json: body })) as Promise<{ url?: string }>;
   const failed = (e: unknown) => {
     if (e instanceof ApiError && e.status === 401) {
-      host.unauthorized(e.message);
+      shell.unauthorized(e.message);
       return true;
     }
     return false;
@@ -115,7 +115,7 @@ export function Files({ v, q, review, keys }: { v: ItemPage; q: UseQueryResult<F
     } catch (e) {
       if (failed(e)) return;
       mark(!on);
-      host.toast(`No se pudo marcar como visto: ${(e as Error).message}`);
+      shell.toast(`No se pudo marcar como visto: ${(e as Error).message}`);
     }
   };
 
@@ -143,9 +143,9 @@ export function Files({ v, q, review, keys }: { v: ItemPage; q: UseQueryResult<F
     try {
       const posted = await action(body);
       setComp(null);
-      if (m === 'now') host.toast(c.reply ? 'Respondiste en el hilo.' : 'Comentaste en el PR.', posted?.url);
-      else host.toast(m === 'edit' ? 'Guardado en tu revisión.' : started ? `Empezaste una revisión: nadie la ve hasta que la mandes${v.decidable ? ' con Ajustar' : ''}.` : 'Sumado a tu revisión.');
-      rereadFiles(qc, host, key);
+      if (m === 'now') shell.toast(c.reply ? 'Respondiste en el hilo.' : 'Comentaste en el PR.', posted?.url);
+      else shell.toast(m === 'edit' ? 'Guardado en tu revisión.' : started ? `Empezaste una revisión: nadie la ve hasta que la mandes${v.decidable ? ' con Ajustar' : ''}.` : 'Sumado a tu revisión.');
+      rereadFiles(qc, shell, key);
     } catch (e) {
       if (failed(e)) return;
       setComp({ ...c, sending: false, error: `No se pudo: ${(e as Error).message}` });
@@ -155,19 +155,19 @@ export function Files({ v, q, review, keys }: { v: ItemPage; q: UseQueryResult<F
   const resolve = (threadId: string, resolved: boolean) => withBusy(threadId, async () => {
     try {
       await action({ action: 'resolve', threadId, resolved });
-      host.toast(resolved ? 'Conversación resuelta.' : 'Conversación reabierta.');
-      rereadFiles(qc, host, key);
+      shell.toast(resolved ? 'Conversación resuelta.' : 'Conversación reabierta.');
+      rereadFiles(qc, shell, key);
     } catch (e) {
-      if (!failed(e)) host.toast(`No se pudo: ${(e as Error).message}`);
+      if (!failed(e)) shell.toast(`No se pudo: ${(e as Error).message}`);
     }
   });
   const deletePending = (nodeId: string) => withBusy(nodeId, async () => {
     try {
       await action({ action: 'pending-delete', commentId: nodeId });
-      host.toast('Borrado de tu revisión.');
-      rereadFiles(qc, host, key);
+      shell.toast('Borrado de tu revisión.');
+      rereadFiles(qc, shell, key);
     } catch (e) {
-      if (!failed(e)) host.toast(`No se pudo: ${(e as Error).message}`);
+      if (!failed(e)) shell.toast(`No se pudo: ${(e as Error).message}`);
     }
   });
 
@@ -336,7 +336,8 @@ function FileCard({ ctx, file, folded, seen, explicit, toggle, setViewed }: { ct
 
 // Writing a comment: on a line or a range, on the file, a reply, or editing a pending one.
 function Composer({ ctx, file }: { ctx: FilesCtx; file: PrFile | null }) {
-  const host = useHost();
+  const session = useSession();
+  const markdown = useMarkdown();
   const c = ctx.comp!;
   const where = c.reply || c.edit ? '' : c.subject === 'file' ? 'el archivo entero' : c.startLine ? `líneas ${c.startLine}–${c.line}${c.side === 'LEFT' ? ' (versión anterior)' : ''}` : `línea ${c.line}${c.side === 'LEFT' ? ' (versión anterior)' : ''}`;
   const canSuggest = !c.reply && !c.edit && c.subject === 'line' && c.side === 'RIGHT' && file;
@@ -350,7 +351,7 @@ function Composer({ ctx, file }: { ctx: FilesCtx; file: PrFile | null }) {
   return (
     <div className="dcomp"><div className="dct"><button className="dtb" aria-selected={!c.preview} onClick={() => { ctx.setComp({ ...c, preview: false }); ctx.focus(); }}>Escribir</button><button className="dtb" aria-selected={Boolean(c.preview)} onClick={() => ctx.setComp({ ...c, preview: true })}>Vista previa</button>{canSuggest && <button className="dtool" title="Proponer el código que va en esas líneas" onClick={ctx.suggest}>± Sugerir cambio</button>}<span className="where">{where}</span></div>
       {c.preview
-        ? <div className="dpv md" dangerouslySetInnerHTML={{ __html: c.text.trim() ? host.markdown(c.text, ctx.item.repo) : '<p class="m">Nada para mostrar.</p>' }} />
+        ? <div className="dpv md" dangerouslySetInnerHTML={{ __html: c.text.trim() ? markdown.html(c.text, ctx.item.repo) : '<p class="m">Nada para mostrar.</p>' }} />
         : <textarea id="fcbox" ref={ctx.box} rows={4} placeholder={`${c.reply ? 'Respuesta' : 'Comentario'} (markdown). Ctrl+Enter ${c.edit ? 'lo guarda' : ctx.review ? 'lo suma a tu revisión' : 'empieza una revisión'}.`} value={c.text}
           onChange={(e) => ctx.setComp({ ...c, text: e.target.value })} onKeyDown={(e) => {
             if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) void ctx.send();
@@ -359,6 +360,6 @@ function Composer({ ctx, file }: { ctx: FilesCtx; file: PrFile | null }) {
               ctx.setComp(null);
             }
           }} />}
-      <div className="dfoot">{c.error ? <span className="bad">{c.error}</span> : <span className="m">{c.reply ? '' : c.subject === 'line' ? 'Shift+clic en otro número para elegir varias líneas. ' : ''}Comentás como {host.me()}.</span>}<button className="btn-s" onClick={() => ctx.setComp(null)}>Cancelar</button>{buttons}</div></div>
+      <div className="dfoot">{c.error ? <span className="bad">{c.error}</span> : <span className="m">{c.reply ? '' : c.subject === 'line' ? 'Shift+clic en otro número para elegir varias líneas. ' : ''}Comentás como {session.me}.</span>}<button className="btn-s" onClick={() => ctx.setComp(null)}>Cancelar</button>{buttons}</div></div>
   );
 }

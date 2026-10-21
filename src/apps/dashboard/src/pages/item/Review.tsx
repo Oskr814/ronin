@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import { ApiError, client, ok } from '../../api.js';
-import { useHost } from '../../host.js';
+import { reviewed, showDoc, useSession, useShell } from '../../shell/hooks.js';
 import { goFile } from './files/model.js';
 import { itemParam, sameLogin, type ItemPage } from './model.js';
 
@@ -44,7 +44,8 @@ function autoMergeChoice(event: ReviewEvent, v: ItemPage, withFix: boolean): 'of
 }
 
 export function useReview(v: ItemPage | null) {
-  const host = useHost();
+  const shell = useShell();
+  const session = useSession();
   const [p, setP] = useState<Reviewing | null>(null);
   const open = (at: ReviewAt) => {
     if (!v) return;
@@ -57,7 +58,7 @@ export function useReview(v: ItemPage | null) {
   const shape = (r: Reviewing) => {
     const data = v?.files.data;
     if (!v || !data) return null;
-    const event: ReviewEvent = sameLogin(data.author, host.me()) ? 'COMMENT' : r.event;
+    const event: ReviewEvent = sameLogin(data.author, session.me) ? 'COMMENT' : r.event;
     const d = v.detail?.data;
     const pending = v.files.pending.length;
     const fixable = Boolean(d?.ronin && sameLogin(data.author, d.ronin) && (pending > 0 || event === 'REQUEST_CHANGES'));
@@ -72,11 +73,11 @@ export function useReview(v: ItemPage | null) {
       const sent = (await ok(client.api.items[':id'].files.actions.$post({ param: itemParam(id), json: { action: 'submit', event: s.event, text: p.text, commitId: s.data.headSha, fixComments: Boolean(s.fixable && p.fix), autoMerge: s.autoMerge } }))) as { url?: string; fixUrl?: string; autoMergeUrl?: string };
       setP(null);
       const decision = REVIEW_DECISION[s.event];
-      if (decision) host.reviewed(id, s.data.pr, decision);
-      host.toast(`${REVIEW_SENT[s.event]}${sent.fixUrl ? '; ronin ya tiene el /fix-comments' : ''}${sent.autoMergeUrl ? ' y le pediste el auto-merge' : ''}.`, sent.url);
+      if (decision) reviewed(id, s.data.pr, decision);
+      shell.toast(`${REVIEW_SENT[s.event]}${sent.fixUrl ? '; ronin ya tiene el /fix-comments' : ''}${sent.autoMergeUrl ? ' y le pediste el auto-merge' : ''}.`, sent.url);
       v.files.reread();
     } catch (e) {
-      if (e instanceof ApiError && e.status === 401) return host.unauthorized(e.message);
+      if (e instanceof ApiError && e.status === 401) return shell.unauthorized(e.message);
       setP({ ...p, sending: false, error: `No se pudo: ${(e as Error).message}` });
     }
   };
@@ -89,10 +90,10 @@ export function useReview(v: ItemPage | null) {
     try {
       await ok(client.api.items[':id'].files.actions.$post({ param: itemParam(id), json: { action: 'discard' } }));
       setP(null);
-      host.toast('Descartaste tu revisión.');
+      shell.toast('Descartaste tu revisión.');
       v.files.reread();
     } catch (e) {
-      if (e instanceof ApiError && e.status === 401) return host.unauthorized(e.message);
+      if (e instanceof ApiError && e.status === 401) return shell.unauthorized(e.message);
       setP({ ...p, sending: false, error: `No se pudo: ${(e as Error).message}` });
     }
   };
@@ -101,7 +102,7 @@ export function useReview(v: ItemPage | null) {
 export type Review = ReturnType<typeof useReview>;
 
 export function ReviewPanel({ v, review }: { v: ItemPage; review: Review }) {
-  const host = useHost();
+  const session = useSession();
   const p = review.p!;
   const panel = useRef<HTMLDivElement>(null);
   const sum = useRef<HTMLTextAreaElement>(null);
@@ -119,10 +120,10 @@ export function ReviewPanel({ v, review }: { v: ItemPage; review: Review }) {
     el.style.maxHeight = `${Math.max(240, bottom - el.getBoundingClientRect().top - 12)}px`;
   });
   const { files } = v;
-  const head = <header><h2>Terminar la revisión</h2><span className="m">{files.data ? `de PR #${files.data.pr}, ` : ''}como {host.me()}</span><button className="x" aria-label="Cerrar" onClick={review.close}>×</button></header>;
+  const head = <header><h2>Terminar la revisión</h2><span className="m">{files.data ? `de PR #${files.data.pr}, ` : ''}como {session.me}</span><button className="x" aria-label="Cerrar" onClick={review.close}>×</button></header>;
   if (!files.data) return <div className="rpanel" role="dialog" aria-label="Terminar la revisión" ref={panel}>{head}<div className="rbody"><p className="m">{files.error ? `No se pudo leer el PR: ${files.error}` : 'Leyendo el PR…'}</p></div></div>;
   const s = review.shape(p)!;
-  const own = sameLogin(files.data.author, host.me());
+  const own = sameLogin(files.data.author, session.me);
   const pend = files.pending;
   const d = v.detail?.data;
   const autoMerge = d?.pr?.labels?.includes('ronin:auto-merge');
@@ -148,7 +149,7 @@ export function ReviewPanel({ v, review }: { v: ItemPage; review: Review }) {
         ? pend.map((c) => <button key={c.nodeId} className="ri" onClick={() => {
           review.close();
           goFile(v.item.id, c.path, c.nodeId);
-          host.showDoc(v.item.id, 'files');
+          showDoc(v.item.id, 'files');
         }}><span className="w">{where(c)}{c.isNew ? '' : ' · respuesta'}</span><span className="t">{c.body.replace(/```suggestion[\s\S]*?```/g, '[cambio sugerido]').trim().split('\n')[0]}</span></button>)
         : <p className="m">Ningún comentario todavía: hacé clic en el número de una línea en Archivos.</p>}</div></div>
       <footer>{p.error ? <span className="bad">{p.error}</span> : <span className="m">{pend.length ? 'Hasta mandarla, nadie ve tus comentarios.' : ''}</span>}{files.review && <button className="btn-s danger" disabled={p.sending} onClick={() => void review.discard()}>Descartar</button>}<button className="btn-s primary" disabled={!can} onClick={() => void review.send()}>{p.sending ? 'Enviando…' : 'Mandar revisión'}</button></footer></div>

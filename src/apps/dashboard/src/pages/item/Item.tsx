@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type MutableRefObject } from 'react';
 import type { UseQueryResult } from '@tanstack/react-query';
-import { useHost } from '../../host.js';
+import { shellLayer, showDoc, useSession, useShell } from '../../shell/hooks.js';
 import { short } from '../../../../../ui/time.js';
 import { ExplorationInventory } from '../explorations/Inventory.js';
 import { ExplorationRuns } from '../explorations/Runs.js';
@@ -20,15 +20,15 @@ import { Activity, Transcript } from './Runs.js';
 
 // An item's page (#85): an issue's or a PR's, with its head, its activity
 // and its tabs (the issue, the PR, Archivos; an exploration PR's Fichas,
-// Corridas and Inventario), or a run's transcript. The shell keeps what it
-// reads of the item (Host.item); the page draws all of it, and has the
-// keys while it's open.
+// Corridas and Inventario), or a run's transcript. What's read of the item
+// (useItem) is in the cache the shell reads too; the page draws all of it,
+// and has the keys while it's open.
 
 // Where j/k is, per tab of an item: kept while the person is elsewhere.
 let kunit: { key: string; i: number } | null = null;
 
 function DocBar({ v }: { v: ItemPage }) {
-  const host = useHost();
+  const shell = useShell();
   const d = v.detail!.data!;
   const fichas = useExploration(v.item.id, Boolean(d.exploration)).data?.fichas.length ?? null;
   const cur = v.doc;
@@ -45,8 +45,8 @@ function DocBar({ v }: { v: ItemPage }) {
     : cur === 'files' ? <><kbd>j</kbd> <kbd>k</kbd> otro archivo · <kbd>v</kbd> visto{v.decidable ? '' : <> · <kbd>r</kbd> revisión</>}</>
       : <><kbd>j</kbd> <kbd>k</kbd> sección o comentario</>;
   return (
-    <div className="doctabs" role="tablist">{v.tabs.map(([k, label]) => <button key={k} className="doctab" role="tab" aria-selected={k === cur} onClick={() => host.showDoc(v.item.id, k)}>{label}{counter(k)}</button>)}
-      <span className="keys"><kbd>1</kbd>–<kbd>{v.tabs.length}</kbd> pestaña · {hint} <button className="kh" title="Atajos (?)" aria-label="Atajos" onClick={() => host.keysHelp()}>?</button></span><span className="src">{d.error && <><span className="bad">GitHub no respondió: {d.error}</span>, </>}{d.fetchedAt ? `leído hace ${short(Date.now() - Date.parse(d.fetchedAt))}` : ''}</span></div>
+    <div className="doctabs" role="tablist">{v.tabs.map(([k, label]) => <button key={k} className="doctab" role="tab" aria-selected={k === cur} onClick={() => showDoc(v.item.id, k)}>{label}{counter(k)}</button>)}
+      <span className="keys"><kbd>1</kbd>–<kbd>{v.tabs.length}</kbd> pestaña · {hint} <button className="kh" title="Atajos (?)" aria-label="Atajos" onClick={() => shell.keysHelp()}>?</button></span><span className="src">{d.error && <><span className="bad">GitHub no respondió: {d.error}</span>, </>}{d.fetchedAt ? `leído hace ${short(Date.now() - Date.parse(d.fetchedAt))}` : ''}</span></div>
   );
 }
 
@@ -65,7 +65,8 @@ function Tab({ v, files, review, keys, ask, fichaKeys }: { v: ItemPage; files: U
 }
 
 export function Item({ id }: { id: string }) {
-  const host = useHost();
+  const shell = useShell();
+  const session = useSession();
   const view = useItem(id);
   // Archivos is read when shown, or when the review panel or Ajustar ask.
   const files = useFiles(id, view?.view === 'ficha' && view.doc === 'files');
@@ -113,7 +114,7 @@ export function Item({ id }: { id: string }) {
       clearTimeout(seq.current.timer);
       if ((prev === ']' || prev === '[') && event.key === 'p') {
         event.preventDefault();
-        host.movePr(prev === ']' ? 1 : -1);
+        shell.movePr(prev === ']' ? 1 : -1);
         return true;
       }
       const wait = (key: string) => {
@@ -144,7 +145,7 @@ export function Item({ id }: { id: string }) {
       }
       if (/^[1-9]$/.test(event.key) && v.tabs[Number(event.key) - 1]) {
         event.preventDefault();
-        host.showDoc(v.item.id, v.tabs[Number(event.key) - 1][0]);
+        showDoc(v.item.id, v.tabs[Number(event.key) - 1][0]);
         return true;
       }
       if ((event.key === 'j' || event.key === 'k') && tab !== 'files' && tab !== 'fichas') {
@@ -157,7 +158,7 @@ export function Item({ id }: { id: string }) {
     const onKey = (event: KeyboardEvent) => {
       const { v, menu, asked, decide, review, fasked } = live.current;
       if (!v || document.getElementById('keys-help')) return;
-      if (host.shellLayer()) return;
+      if (shellLayer()) return;
       const taken = () => event.stopPropagation();
       // A finding's dialog: Escape closes it, unless it's sending; its text has the rest.
       if (fasked) {
@@ -265,12 +266,12 @@ export function Item({ id }: { id: string }) {
       document.removeEventListener('keydown', onKey, true);
       document.removeEventListener('click', onClick);
     };
-  }, [host]);
+  }, [shell]);
 
   if (!v) return null;
   if (v.view === 'tx') return <Transcript v={v} />;
   const actions = v.detail?.data?.actions;
-  const menuEl = actions?.length && host.can(v.item.repo, 'acciones') ? <ActionsMenu actions={actions} open={menu} setOpen={setMenu} pick={pick} /> : null;
+  const menuEl = actions?.length && session.can(v.item.repo, 'acciones') ? <ActionsMenu actions={actions} open={menu} setOpen={setMenu} pick={pick} /> : null;
   return <>
     <Head v={v} actions={menuEl} decide={decide} review={review} explore={(action) => setFasked({ action })} />
     <Activity v={v} />

@@ -1,7 +1,7 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { useEffect, type ReactNode } from 'react';
 import { ApiError, client, ok, type Metrics } from '../../api.js';
-import { useHost } from '../../host.js';
+import { useSession, useShell } from '../../shell/hooks.js';
 import { DAY_MS, Sparkline } from '../../lib/format.js';
 import { tip } from '../../lib/tip.js';
 import { useViewState } from '../../lib/view-state.js';
@@ -104,7 +104,7 @@ const Fact = ({ label, value, small }: { label: string; value: ReactNode; small?
 );
 
 function People({ m }: { m: Metrics }) {
-  const host = useHost();
+  const shell = useShell();
   const now = useNow();
   const [sort, setSort] = useViewState<SortKey>('mt.sort', 'resolved');
   const [dir, setDir] = useViewState('mt.dir', -1);
@@ -145,7 +145,7 @@ function People({ m }: { m: Metrics }) {
               <div><h4>Resueltos por {m.days === 7 ? 'día' : 'semana'}</h4><MiniBars values={p.perBucket} color={p.agent ? 'var(--hanko)' : 'var(--run)'} /></div>
               <div><h4>Abiertos, el más quieto primero</h4><ul className="mt-list">
                 {p.openList.length ? p.openList.map((i) => (
-                  <li key={`${i.repo}#${i.number}`}><button className="link" onClick={(e) => { e.stopPropagation(); host.openItem(`${i.repo}#${i.number}`); }}>#{i.number}</button><span className="t">{i.title}</span>
+                  <li key={`${i.repo}#${i.number}`}><button className="link" onClick={(e) => { e.stopPropagation(); shell.openItem(`${i.repo}#${i.number}`); }}>#{i.number}</button><span className="t">{i.title}</span>
                     <span className={`a${now - Date.parse(i.updatedAt) > 14 * DAY_MS ? ' mt-warn' : ''}`}>{i.blocked ? 'bloqueado · ' : ''}movido {ago(i.updatedAt, now)}</span></li>
                 )) : <li className="m">Nada abierto.</li>}
               </ul></div>
@@ -159,7 +159,8 @@ function People({ m }: { m: Metrics }) {
 }
 
 export function Work() {
-  const host = useHost();
+  const shell = useShell();
+  const session = useSession();
   const now = useNow();
   const [days, setDays] = useViewState<7 | 30 | 90>('mt.days', 30);
   const [repo, setRepo] = useViewState('mt.repo', '');
@@ -170,11 +171,11 @@ export function Work() {
     refetchInterval: EVERY_MS,
   });
   useEffect(() => {
-    if (query.error instanceof ApiError && query.error.status === 401) host.unauthorized(query.error.message);
-  }, [query.error, host]);
+    if (query.error instanceof ApiError && query.error.status === 401) shell.unauthorized(query.error.message);
+  }, [query.error, shell]);
 
   const m = query.isPlaceholderData ? undefined : query.data;
-  const repos = query.data?.repos ?? host.repos();
+  const repos = query.data?.repos ?? session.repos;
   const where = repo ? repo : repos.length === 1 ? repos[0] : `los ${repos.length} repos`;
   const filters = (
     <div className="mt-filters">
@@ -202,7 +203,7 @@ export function Work() {
   const r = m.ronin;
   const reasonMax = Math.max(...r.blockReasons.map((x) => x.count), 1);
   const itemButton = (repoName: string, number: number) => (
-    <button className="link" onClick={(e) => { e.stopPropagation(); host.openItem(`${repoName}#${number}`); }}>#{number}</button>
+    <button className="link" onClick={(e) => { e.stopPropagation(); shell.openItem(`${repoName}#${number}`); }}>#{number}</button>
   );
 
   return (

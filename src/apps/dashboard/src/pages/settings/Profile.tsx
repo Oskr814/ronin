@@ -1,13 +1,13 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { client, ok } from '../../api.js';
-import { useHost } from '../../host.js';
+import { setTheme, useRepoColor, useShell } from '../../shell/hooks.js';
 import { onCommit, Row, Sec, SectionLink, Switch, useChange } from './parts.js';
 import { EVENTS, type Notifications as NotificationsData, type Page } from './model.js';
 
 // Tu cuenta: everyone's own, admin or not.
 
 export function Profile({ d }: { d: Page }) {
-  const host = useHost();
+  const shell = useShell();
   const queryClient = useQueryClient();
   const change = useChange();
   const p = d.perfil;
@@ -15,9 +15,9 @@ export function Profile({ d }: { d: Page }) {
   const save = (patch: Record<string, unknown>) => change(async () => {
     const { perfil } = (await ok(client.api.settings.profile.$post({ json: patch }))) as { perfil: Page['perfil'] };
     queryClient.setQueryData<Page>(['settings'], (x) => x && { ...x, perfil });
-    host.toast('Guardado.');
+    shell.toast('Guardado.');
   });
-  const theme = (t: 'dark' | 'light') => change(async () => host.setTheme(t));
+  const theme = (t: 'dark' | 'light') => change(async () => setTheme(t));
   return <>
     <h1>Perfil</h1><p className="lead">Cómo te ve ronin. Tu usuario viene de GitHub.</p>
     <Sec title="Tú">
@@ -44,20 +44,21 @@ export function Profile({ d }: { d: Page }) {
 
 // The emails ronin sends the team (#174, stage 4), each person choosing theirs repo by repo.
 export function Notifications({ d }: { d: Page }) {
-  const host = useHost();
+  const shell = useShell();
+  const repoColor = useRepoColor();
   const queryClient = useQueryClient();
   const change = useChange();
   const email = d.perfil.email;
   const toggle = (repo: string, event: string, on: boolean) => change(async () => {
     const { notificaciones } = (await ok(client.api.settings.notifications.$post({ json: { repo, event, on } }))) as { notificaciones: NotificationsData[] };
     queryClient.setQueryData<Page>(['settings'], (x) => x && { ...x, notificaciones });
-    host.toast('Guardado.');
+    shell.toast('Guardado.');
   });
   return <>
     <h1>Notificaciones</h1><p className="lead">Qué te avisa ronin, repo por repo. Lo eliges tú: nadie más lo cambia. {email ? <>Llegan a <b>{email}</b>.</> : ''}</p>
     {email ? null : <div className="aj-note warn"><b>Sin correo.</b> Agrégalo en <SectionLink to="perfil">Perfil</SectionLink> para recibir algo.</div>}
     {d.notificaciones.map((n) => (
-      <section className="aj-sec" key={n.repo}><h2><i className="aj-sq" style={{ background: host.repoColor(n.repo) }} />{n.repo}</h2>{n.chosen ? null : <p className="aj-d">Todavía no elegiste: es lo que te llegaba antes (portal.notifyTo de repos.json y NOTIFY_TO).</p>}<div className="aj-card">
+      <section className="aj-sec" key={n.repo}><h2><i className="aj-sq" style={{ background: repoColor(n.repo) }} />{n.repo}</h2>{n.chosen ? null : <p className="aj-d">Todavía no elegiste: es lo que te llegaba antes (portal.notifyTo de repos.json y NOTIFY_TO).</p>}<div className="aj-card">
         {EVENTS.map(([id, name, desc]) => <Row key={id} label={name} desc={desc} ctl={<Switch on={n.events.includes(id)} data-ajev={n.repo} data-e={id} disabled={!email} label={`${name} de ${n.repo}`} onToggle={() => toggle(n.repo, id, !n.events.includes(id))} />} />)}
       </div></section>
     ))}

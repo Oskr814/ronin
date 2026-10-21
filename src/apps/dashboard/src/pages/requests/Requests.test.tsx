@@ -1,11 +1,10 @@
 // @vitest-environment jsdom
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { HostContext } from '../../host.js';
-import { detail, doc, view } from '../item/test-view.js';
-import { testHost } from '../../test-host.js';
+import { detailKey } from '../../shell/state.js';
+import { detail, doc, item } from '../item/test-view.js';
+import { resetShell, showPage, testShell, testSnapshot } from '../../test-shell.js';
 import { Request } from './Request.js';
 import { Requests } from './Requests.js';
 
@@ -52,18 +51,18 @@ beforeEach(() => {
 });
 afterEach(() => {
   cleanup();
+  resetShell();
   vi.unstubAllGlobals();
 });
 
-const issue107 = view({ detail: { data: detail({ issue: doc({ number: 107, title: 'El total no suma el envío' }) }), error: null } }, { id: 'acme/tienda#107', number: 107 });
-const host = testHost({ repoColor: () => 'red', repos: () => ['acme/tienda', 'acme/web'], typeName: (t) => `tipo ${t}`, requestsTotal: () => ROWS.length, portalAdmin: () => true, watchItem: vi.fn(() => () => {}),
-  // The request's issue, as the shell reads it: the same view until it changes.
-  item: (key) => (key === 'acme/tienda#107' ? issue107 : null) });
-const show = (page: ReactNode) => render(
-  <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-    <HostContext.Provider value={host}>{page}</HostContext.Provider>
-  </QueryClientProvider>,
-);
+// The request's issue, in the sidebar and read from GitHub.
+const issue107 = item({ id: 'acme/tienda#107', number: 107 });
+const shell = testShell();
+const show = (page: ReactNode) => showPage(page, {
+  shell,
+  snap: testSnapshot({ repos: ['acme/tienda', 'acme/web'], pedidosTotal: ROWS.length, portalAdmin: true, items: [issue107] }),
+  data: [[detailKey('acme/tienda#107'), detail({ issue: doc({ number: 107, title: 'El total no suma el envío' }) })]],
+});
 
 describe('Pedidos, in React', () => {
   it('lists the pending ones a page at a time, filters them and opens one', async () => {
@@ -80,9 +79,9 @@ describe('Pedidos, in React', () => {
     fireEvent.click(screen.getByRole('button', { name: /^Esperan a la persona/ }));
     expect(shown()).toHaveLength(15);
     fireEvent.click(container.querySelector('.pd-t tbody tr')!);
-    expect(host.openPedido).toHaveBeenCalledWith(39);
+    expect(shell.openRequest).toHaveBeenCalledWith(39);
     fireEvent.click(screen.getByRole('tab', { name: 'Usuarios ↗' }));
-    expect(host.openPortalAccounts).toHaveBeenCalled();
+    expect(shell.openPortalAccounts).toHaveBeenCalled();
   });
 
   it('shows a request on its tabs: activity, reproduction with its diff, issue and runs', async () => {
@@ -99,7 +98,6 @@ describe('Pedidos, in React', () => {
     expect(screen.getByText('+1 −1 · 1 archivo')).toBeTruthy();
 
     fireEvent.click(screen.getByRole('tab', { name: 'Issue' }));
-    expect(host.watchItem).toHaveBeenCalledWith('acme/tienda#107', 'issue');
     expect(container.querySelector('.pd-ghhead h2')?.textContent).toBe('El total no suma el envío #107');
 
     fireEvent.click(screen.getByRole('tab', { name: /Conversación/ }));

@@ -1,8 +1,8 @@
 import type { ReactNode } from 'react';
-import { useHost } from '../../host.js';
+import { useProjectColor, useRepoColor, useShell } from '../../shell/hooks.js';
 import { XplHead } from '../explorations/model.js';
 import { DecideBar, DecidedNote, type Decide } from './Decide.js';
-import { checksChip, Chips, GhPill, itemRef, useRunNames, type ItemPage } from './model.js';
+import { checksChip, Chips, GhPill, itemRef, runNames, type ItemPage } from './model.js';
 import { reviewLabel, ReviewPanel, type Review, type ReviewAt } from './Review.js';
 
 // The head of an item's page (#85): what it is, its buttons (deciding a PR
@@ -11,11 +11,11 @@ import { reviewLabel, ReviewPanel, type Review, type ReviewAt } from './Review.j
 
 // The project and cycle in Linear (#101), for a repo with a Linear key.
 function LinearChips({ v }: { v: ItemPage }) {
-  const host = useHost();
+  const projectColor = useProjectColor();
   const l = v.item.linear;
   if (!l) return null;
   return <>
-    {l.project ? <span className="chip plain"><i className="pdot" style={{ background: host.projectColor(l.project.id), margin: 0 }} />{l.project.name}</span> : <span className="chip plain">sin proyecto</span>}
+    {l.project ? <span className="chip plain"><i className="pdot" style={{ background: projectColor(l.project.id), margin: 0 }} />{l.project.name}</span> : <span className="chip plain">sin proyecto</span>}
     {l.cycle ? <span className={`chip ${l.cycle.current ? 'run' : 'plain'}`}>{l.cycle.name || `Ciclo ${l.cycle.number}`}{l.cycle.current ? ', el actual' : ''}</span> : <span className="chip plain">sin ciclo</span>}
   </>;
 }
@@ -28,8 +28,8 @@ export function ReviewButton({ v, review, at, button }: { v: ItemPage; review: R
 const STATE_CHIP: Record<string, [string, string]> = { running: ['run', 'trabajando'], blocked: ['crit', 'bloqueado'], waiting: ['warn', 'esperando a alguien'] };
 
 export function Head({ v, actions, decide, review, explore }: { v: ItemPage; actions: ReactNode; decide: Decide; review: Review; explore: (action: 'general' | 'approve') => void }) {
-  const host = useHost();
-  const names = useRunNames();
+  const shell = useShell();
+  const repoColor = useRepoColor();
   const { item } = v;
   const d = v.detail?.data;
   const general = d?.exploration && <button className="gh" onClick={() => explore('general')}>Comentario general</button>;
@@ -62,8 +62,8 @@ export function Head({ v, actions, decide, review, explore }: { v: ItemPage; act
     : <button className="gh" aria-haspopup="dialog" aria-expanded={open} onClick={(e) => { e.stopPropagation(); review.open('head'); }}>{reviewLabel(v)} ▾</button>} />;
   return (
     <div className="head">
-      <div className="crumb"><i style={{ background: host.repoColor(item.repo) }} />{item.repo} · {item.kind === 'pr' ? 'Pull request' : item.kind === 'issue' ? 'Issue' : 'Tarea'}</div>
-      <div className="row"><h1>{item.title}{item.number !== undefined && <> <span className="n">{itemRef(item, names.kind)}</span></>}</h1>{general}{v.decidable ? <div className="hbtns"><DecideBar v={v} decide={decide} />{actions}</div> : reviewButton}{!v.decidable && actions}{finish}</div>
-      <div className="state"><GhPill item={item} d={d} />{d?.pedido && <button className="chip plain goped" title={d.pedido.title} onClick={() => host.openPedido(d.pedido!.number)}>del pedido P-{d.pedido.number}</button>}<LinearChips v={v} /><Chips chips={chips} />{v.decidable && pending > 0 && <span className="chip run">✎ {pending} en Archivos</span>}{facts.map((f, i) => <span key={i}>{f}</span>)}</div><DecidedNote id={item.id} /></div>
+      <div className="crumb"><i style={{ background: repoColor(item.repo) }} />{item.repo} · {item.kind === 'pr' ? 'Pull request' : item.kind === 'issue' ? 'Issue' : 'Tarea'}</div>
+      <div className="row"><h1>{item.title}{item.number !== undefined && <> <span className="n">{itemRef(item, runNames.kind)}</span></>}</h1>{general}{v.decidable ? <div className="hbtns"><DecideBar v={v} decide={decide} />{actions}</div> : reviewButton}{!v.decidable && actions}{finish}</div>
+      <div className="state"><GhPill item={item} d={d} />{d?.pedido && <button className="chip plain goped" title={d.pedido.title} onClick={() => shell.openRequest(d.pedido!.number)}>del pedido P-{d.pedido.number}</button>}<LinearChips v={v} /><Chips chips={chips} />{v.decidable && pending > 0 && <span className="chip run">✎ {pending} en Archivos</span>}{facts.map((f, i) => <span key={i}>{f}</span>)}</div><DecidedNote id={item.id} /></div>
   );
 }

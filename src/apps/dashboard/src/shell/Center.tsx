@@ -114,7 +114,7 @@ class PageBoundary extends Component<{ children: ReactNode }, { broken: boolean 
   }
 }
 
-// The page, drawn again only by what it reads (its queries, Host.subscribe),
+// The page, drawn again only by what it reads (its queries, the hooks),
 // not each time the shell around it is: `id` says it's the same page.
 const PageView = memo(function PageView({ page, props }: { id: string; page: string; props: Record<string, unknown> }) {
   const Page = PAGES[page];

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { client, ok } from '../../api.js';
-import { useHost } from '../../host.js';
+import { useShell } from '../../shell/hooks.js';
 import { Row, Sec, Source, useChange } from './parts.js';
 import { hhmm, what } from './model.js';
 import type { Data } from './Settings.js';
@@ -8,7 +8,7 @@ import type { Data } from './Settings.js';
 // Conexiones: the credentials live in the server's .env and never go
 // through the dashboard; this only says whether they're there and answer.
 export function Connections({ data }: { data: Data }) {
-  const host = useHost();
+  const shell = useShell();
   const change = useChange();
   const [busy, setBusy] = useState(false);
   const c = data.connections;
@@ -19,7 +19,7 @@ export function Connections({ data }: { data: Data }) {
     setBusy(true);
     await change(async () => {
       const { to } = (await ok(client.api.settings.connections.mail.$post())) as { to: string };
-      host.toast(`Listo: mira tu correo (${to}).`);
+      shell.toast(`Listo: mira tu correo (${to}).`);
     }, (message) => message);
     setBusy(false);
   };

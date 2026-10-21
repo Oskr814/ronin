@@ -1,6 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { client, ok } from '../../api.js';
-import { useHost } from '../../host.js';
+import { useRepoColor, useShell } from '../../shell/hooks.js';
 import { onCommit, Row, Sec, SectionLink, Source, Switch, useChange } from './parts.js';
 import { repoShort, type Repos } from './model.js';
 import type { Data } from './Settings.js';
@@ -10,10 +10,11 @@ import type { Data } from './Settings.js';
 // stay in the file.
 
 export function RepoList({ data }: { data: Data }) {
-  const host = useHost();
+  const shell = useShell();
+  const repoColor = useRepoColor();
   const d = data.repos;
   if (!d) return <><h1>Repos</h1><div className="empty">Cargando…</div></>;
-  const open = (repo: string) => host.openSettings('repos', repo);
+  const open = (repo: string) => shell.openSettings('repos', repo);
   return <>
     <h1>Repos</h1><p className="lead">Los repos que supervisa ronin. Todo sigue en <code>repos.json</code>: lo que se cambia aquí se escribe ahí, con las mismas reglas que lo leen y una copia del anterior. Agregar o quitar un repo, su checkout y su cuenta de Claude se hacen en el archivo.</p>
     <div className="aj-card"><table className="aj-tbl"><thead><tr><th>Repo</th><th className="hide-m">Portal</th><th className="hide-m">Linear</th><th className="hide-m">Despliegues</th><th className="hide-m">Exploración</th></tr></thead><tbody>
@@ -21,7 +22,7 @@ export function RepoList({ data }: { data: Data }) {
         const explored = r.apps.filter((a) => a.explore).map((a) => a.id).join(', ');
         return (
           <tr key={r.repo} data-ajrepo-row={r.repo} tabIndex={0} onClick={() => open(r.repo)} onKeyDown={(event) => { if (event.key === 'Enter') open(r.repo); }}>
-            <td><b><i className="aj-sq" style={{ background: host.repoColor(r.repo) }} />{r.repo}</b><small className="mono">{r.baseRef ?? d.defaults.baseRef}</small></td>
+            <td><b><i className="aj-sq" style={{ background: repoColor(r.repo) }} />{r.repo}</b><small className="mono">{r.baseRef ?? d.defaults.baseRef}</small></td>
             <td className="hide-m">{r.portal ? <>{r.portal.name}<small>{r.apps.filter((a) => a.portal).length} apps</small></> : <span className="m">—</span>}</td>
             <td className="hide-m">{r.linear ? (r.linear.connected ? <span className="ok-t">● conectado</span> : <span className="warn-t">○ sin key en .env</span>) : <span className="m">—</span>}</td>
             <td className="hide-m">{r.deploy ? (r.deploy.prerelease ? 'QA y producción' : 'release') : <span className="m">—</span>}</td>
@@ -36,7 +37,7 @@ export function RepoList({ data }: { data: Data }) {
 const options = (values: string[]) => values.map((v) => <option key={v} value={v}>{v}</option>);
 
 export function Repo({ data, repo }: { data: Data; repo: string }) {
-  const host = useHost();
+  const shell = useShell();
   const queryClient = useQueryClient();
   const change = useChange();
   const d = data.repos;
@@ -48,7 +49,7 @@ export function Repo({ data, repo }: { data: Data; repo: string }) {
   const save = (body: Record<string, unknown>) => change(async () => {
     const { changed } = (await ok(client.api.settings.repos[':owner'][':name'].$post({ param: { owner, name }, json: body }))) as { changed: boolean };
     queryClient.setQueryData(['settings', 'repos'], (await ok(client.api.settings.repos.$get())) as unknown as Repos);
-    host.toast(changed ? 'Guardado en repos.json.' : 'Sin cambios.');
+    shell.toast(changed ? 'Guardado en repos.json.' : 'Sin cambios.');
   });
   // A field of the repo: empty is none, but the portal's name stays as typed.
   const field = (key: string) => onCommit<HTMLInputElement | HTMLSelectElement>((el) => save({ [key]: el.value.trim() || (key === 'portalName' ? el.value : null) }));

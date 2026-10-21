@@ -1,5 +1,5 @@
-import { useSyncExternalStore, type ReactNode } from 'react';
-import { useHost, type ExplorationRow, type ExplorationsView } from '../../host.js';
+import type { ReactNode } from 'react';
+import { type ExplorationRow, type ExplorationsView, useExplorations, useRepoColor, useSession, useShell } from '../../shell/hooks.js';
 import { hhmm, when } from '../../lib/format.js';
 import { RUN_STATE } from '../../lib/runs.js';
 import { ago } from '../../../../../ui/time.js';
@@ -19,10 +19,7 @@ const STARTING_MS = 3 * MIN;
 export type Row = ExplorationRow;
 
 // The apps, again whenever the snapshot or the list change.
-export function useExplorations(): ExplorationsView {
-  const host = useHost();
-  return useSyncExternalStore(host.subscribe, host.explorations);
-}
+export { useExplorations };
 
 export const rowOf = (view: ExplorationsView, repo: string, app: string) => view.rows.find((r) => r.repo === repo && r.app === app) ?? null;
 export const listRowOf = (view: ExplorationsView, r: Row) => view.list?.find((x) => x.repo === r.repo && x.app === r.app) ?? null;
@@ -59,7 +56,9 @@ export function Chip({ view, r }: { view: ExplorationsView; r: Row }) {
 // An app's head: its page's, and its exploration PR's (pages/item), whose
 // page it is, with the PR's buttons and its state on GitHub.
 export function XplHead({ r, buttons, pill }: { r: Row; buttons?: ReactNode; pill?: ReactNode }) {
-  const host = useHost();
+  const shell = useShell();
+  const repoColor = useRepoColor();
+  const session = useSession();
   const view = useExplorations();
   const l = listRowOf(view, r);
   const facts: string[] = [];
@@ -69,8 +68,8 @@ export function XplHead({ r, buttons, pill }: { r: Row; buttons?: ReactNode; pil
   const why = blocked(view, r);
   return (
     <div className="head">
-      <div className="crumb"><button className="crumb-l" onClick={() => host.openExplorations()}>Exploraciones</button><span>/</span><i style={{ background: host.repoColor(r.repo) }} />{r.repo}</div>
-      <div className="row"><h1>{r.app}</h1>{buttons}{host.can(r.repo, 'acciones') && <button className="act-btn" disabled={Boolean(why)} title={why ?? undefined} onClick={() => host.exploreNow(r.repo, r.app)}>Explorar ahora</button>}</div>
+      <div className="crumb"><button className="crumb-l" onClick={() => shell.openExplorations()}>Exploraciones</button><span>/</span><i style={{ background: repoColor(r.repo) }} />{r.repo}</div>
+      <div className="row"><h1>{r.app}</h1>{buttons}{session.can(r.repo, 'acciones') && <button className="act-btn" disabled={Boolean(why)} title={why ?? undefined} onClick={() => shell.exploreNow(r.repo, r.app)}>Explorar ahora</button>}</div>
       <div className="state">{pill}<Chip view={view} r={r} />{facts.map((f) => <span key={f}>{f}</span>)}</div>
     </div>
   );

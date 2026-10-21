@@ -1,14 +1,14 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { ApiError, client, ok, type MeetingRow } from '../../api.js';
-import { useHost } from '../../host.js';
+import { refresh, useShell } from '../../shell/hooks.js';
 import { MAX_BYTES } from './model.js';
 
 const kb = (bytes: number) => (bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / 1024 / 1024).toFixed(1).replace('.', ',')} MB`);
 
 // The upload dialog: a file, or the text pasted.
 export function Upload({ repos, onClose }: { repos: string[]; onClose: () => void }) {
-  const host = useHost();
+  const shell = useShell();
   const [repo, setRepo] = useState(repos[0] ?? '');
   const [title, setTitle] = useState('');
   const [at, setAt] = useState('');
@@ -45,16 +45,16 @@ export function Upload({ repos, onClose }: { repos: string[]; onClose: () => voi
       // onlyJson, an untyped middleware, hides the route's answer from the client.
       const out = (await ok(client.api.meetings.$post({ json: body }))) as MeetingRow;
       onClose();
-      host.toast(`Listo: subiste las notas como R-${out.number}.`);
-      host.refresh();
-      host.openMeeting(out.number);
+      shell.toast(`Listo: subiste las notas como R-${out.number}.`);
+      refresh();
+      shell.openMeeting(out.number);
     } catch (e) {
-      if (e instanceof ApiError && e.status === 401) return host.unauthorized(e.message);
+      if (e instanceof ApiError && e.status === 401) return shell.unauthorized(e.message);
       setSending(false);
       // The same notes again: a way to the meeting that has them.
       const number = e instanceof ApiError && e.status === 409 ? Number(e.body?.number) || 0 : 0;
       setError(number
-        ? <>{e instanceof Error ? e.message : ''} <button className="link" onClick={() => { onClose(); host.openMeeting(number); }}>Abrir R-{number}</button></>
+        ? <>{e instanceof Error ? e.message : ''} <button className="link" onClick={() => { onClose(); shell.openMeeting(number); }}>Abrir R-{number}</button></>
         : `No se pudo: ${(e as Error).message}`);
     }
   };

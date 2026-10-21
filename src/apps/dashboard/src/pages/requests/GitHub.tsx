@@ -1,35 +1,32 @@
-import { useEffect } from 'react';
-import { useHost } from '../../host.js';
+import { showDoc, useKnownItem, useShell, useWatchedItem } from '../../shell/hooks.js';
 import { RunDot } from '../../lib/runs.js';
 import { Body, Comments, conversation } from '../item/Doc.js';
-import { Avatar, checksChip, Chips, GhPill, useItem } from '../item/model.js';
+import { Avatar, checksChip, Chips, GhPill } from '../item/model.js';
 import { when } from '../../lib/format.js';
 import type { Detail } from './model.js';
 
 // The request's issue and its PR (#158), read as on their page, without
-// leaving the request: the shell reads them (Host.watchItem), again as
-// GitHub's copy gets old. Acting on them (comments, review, actions) stays
-// on their page.
+// leaving the request (useWatchedItem), again as GitHub's copy gets old.
+// Acting on them (comments, review, actions) stays on their page.
 export function GitHub({ d, show, setShow }: { d: Detail; show: 'issue' | 'pr'; setShow: (show: 'issue' | 'pr') => void }) {
-  const host = useHost();
+  const shell = useShell();
   const issue = d.issue!.number;
   const isPr = Boolean(show === 'pr' && d.pr);
   const key = `${d.repo}#${isPr ? d.pr : issue}`;
-  useEffect(() => host.watchItem(key, isPr ? 'pr' : 'issue'), [host, key, isPr]);
-  const v = useItem(key);
+  const v = useWatchedItem(key, isPr ? 'pr' : 'issue');
   // The PR's checks and review, from the sidebar's issue or PR when it's there.
-  const issueView = useItem(`${d.repo}#${issue}`);
-  const prView = useItem(d.pr ? `${d.repo}#${d.pr}` : '');
-  const pr = [issueView?.item, prView?.item].map((i) => i?.pr).find((p) => p && p.number === d.pr);
+  const issueItem = useKnownItem(`${d.repo}#${issue}`);
+  const prItem = useKnownItem(d.pr ? `${d.repo}#${d.pr}` : '');
+  const pr = [issueItem, prItem].map((i) => i?.pr).find((p) => p && p.number === d.pr);
   const checks = checksChip(pr?.checks);
   const dd = v?.detail?.data;
   const doc = dd && (isPr ? dd.pr : dd.issue);
   const bar = (
     <div className="pd-ghbar"><div className="seg"><button aria-pressed={!isPr} onClick={() => setShow('issue')}>Issue #{issue}</button>{d.pr ? <button aria-pressed={isPr} onClick={() => setShow('pr')}>PR #{d.pr}{checks?.[0] === 'crit' && <RunDot state="error" />}</button> : <button disabled>Sin PR todavía</button>}</div>
       <span className="sp">{isPr && doc?.state === 'OPEN' && <button className="act-btn" onClick={() => {
-        host.showDoc(key, 'files');
-        host.openItem(key);
-      }}>Revisar el PR</button>}<button className="gh" onClick={() => host.openItem(key)}>Abrir la ficha</button>{doc && <a className="gh" href={doc.url} target="_blank" rel="noopener">GitHub ↗</a>}</span></div>
+        showDoc(key, 'files');
+        shell.openItem(key);
+      }}>Revisar el PR</button>}<button className="gh" onClick={() => shell.openItem(key)}>Abrir la ficha</button>{doc && <a className="gh" href={doc.url} target="_blank" rel="noopener">GitHub ↗</a>}</span></div>
   );
   if (!v || !dd || !doc) {
     const error = v?.detail?.error ?? dd?.error;

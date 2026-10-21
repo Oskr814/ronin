@@ -1,12 +1,10 @@
 // @vitest-environment jsdom
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { HostContext } from '../../host.js';
-import { testHost } from '../../test-host.js';
+import { resetShell, showPage, testShell, testSnapshot } from '../../test-shell.js';
 import { Subscription } from './Subscription.js';
 import { Work } from './Work.js';
 
@@ -28,15 +26,12 @@ beforeEach(() => {
 });
 afterEach(() => {
   cleanup();
+  resetShell();
   vi.unstubAllGlobals();
 });
 
-const host = testHost({ repos: () => ['acme/tienda', 'acme/web'], typeName: (t) => `tipo ${t}` });
-const show = (page: ReactNode) => render(
-  <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-    <HostContext.Provider value={host}>{page}</HostContext.Provider>
-  </QueryClientProvider>,
-);
+const shell = testShell();
+const show = (page: ReactNode) => showPage(page, { shell, snap: testSnapshot({ repos: ['acme/tienda', 'acme/web'] }) });
 
 describe('Métricas → Trabajo, in React', () => {
   it('draws the period it read, and reads another when asked', async () => {
@@ -60,7 +55,7 @@ describe('Métricas → Trabajo, in React', () => {
     const item = container.querySelector<HTMLButtonElement>('tr.mt-det button.link');
     if (item) {
       fireEvent.click(item);
-      expect(host.openItem).toHaveBeenCalledWith(expect.stringMatching(/^acme\/\w+#\d+$/));
+      expect(shell.openItem).toHaveBeenCalledWith(expect.stringMatching(/^acme\/\w+#\d+$/));
     }
   });
 });
@@ -71,10 +66,11 @@ describe('Métricas → Suscripción, in React', () => {
     await waitFor(() => expect(container.querySelectorAll('.su-acc')).toHaveLength(2));
     fireEvent.change(container.querySelector('#su-cuenta')!, { target: { value: 'personal' } });
     expect(container.querySelectorAll('.su-acc')).toHaveLength(1);
-    expect(screen.getAllByText(/^tipo /).length).toBeGreaterThan(0);
+    // The tasks in words: fix-issue is "Resolver issue".
+    expect(screen.getAllByText('Resolver issue').length).toBeGreaterThan(0);
     fireEvent.click(screen.getByText('Cambiar el plan'));
-    expect(host.openSettings).toHaveBeenCalledWith('cuentas');
+    expect(shell.openSettings).toHaveBeenCalledWith('cuentas');
     fireEvent.click(screen.getByRole('tab', { name: 'Trabajo' }));
-    expect(host.openMetrics).toHaveBeenCalledWith('trabajo');
+    expect(shell.openMetrics).toHaveBeenCalledWith('trabajo');
   });
 });

@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useRef } from 'react';
 import { ApiError, client, ok } from '../../api.js';
-import { useHost } from '../../host.js';
+import { useSession, useShell } from '../../shell/hooks.js';
 import { isMobile } from '../../lib/format.js';
 import { Dot } from '../../lib/runs.js';
 import { useViewState } from '../../lib/view-state.js';
@@ -20,9 +20,10 @@ const PAGE = 25;
 
 // The Pedidos | Usuarios tabs atop the portal's page; Usuarios, only for admins.
 function PortalTabs() {
-  const host = useHost();
+  const shell = useShell();
+  const session = useSession();
   return (
-    <div className="doctabs pd-ptabs" role="tablist"><button className="doctab" role="tab" aria-selected="true" onClick={() => host.openPedidos()}>Pedidos <span className="c">{host.requestsTotal()}</span></button>{host.portalAdmin() && <button className="doctab" role="tab" title="Las cuentas del portal están en Ajustes → Usuarios" onClick={() => host.openPortalAccounts()}>Usuarios ↗</button>}</div>
+    <div className="doctabs pd-ptabs" role="tablist"><button className="doctab" role="tab" aria-selected="true" onClick={() => shell.openRequests()}>Pedidos <span className="c">{session.requestsTotal}</span></button>{session.portalAdmin && <button className="doctab" role="tab" title="Las cuentas del portal están en Ajustes → Usuarios" onClick={() => shell.openPortalAccounts()}>Usuarios ↗</button>}</div>
   );
 }
 
@@ -40,7 +41,8 @@ function Pager({ total, pages, page, go }: { total: number; pages: number; page:
 }
 
 export function Requests() {
-  const host = useHost();
+  const shell = useShell();
+  const session = useSession();
   const now = useNow();
   const [filter, setFilter] = useViewState<Filter>('requests.filter', 'pend');
   const [page, setPage] = useViewState('requests.page', 1);
@@ -51,8 +53,8 @@ export function Requests() {
     refetchInterval: EVERY_MS,
   });
   useEffect(() => {
-    if (query.error instanceof ApiError && query.error.status === 401) host.unauthorized(query.error.message);
-  }, [query.error, host]);
+    if (query.error instanceof ApiError && query.error.status === 401) shell.unauthorized(query.error.message);
+  }, [query.error, shell]);
 
   const head = (
     <>
@@ -77,7 +79,7 @@ export function Requests() {
   const pages = Math.max(1, Math.ceil(all.length / PAGE));
   const cur = Math.min(Math.max(1, page), pages);
   const shown = all.slice((cur - 1) * PAGE, cur * PAGE);
-  const many = host.repos().length > 1;
+  const many = session.repos.length > 1;
   const pick = (f: Filter) => {
     setFilter(f);
     setPage(1);
@@ -92,7 +94,7 @@ export function Requests() {
       <div className="pd-filters">{FILTERS.map((f, i) => (f ? <button key={f[0]} aria-pressed={filter === f[0]} onClick={() => pick(f[0])}>{f[1]}<span className="c">{groups[f[0]].length}</span></button> : <span key={i} className="sep" />))}</div>
       {shown.length ? (
         <table className="padm-t pd-t"><thead><tr><th></th><th>Pedido</th><th>Estado</th><th className="hide-m">Espera a</th><th className="hide-m">GitHub</th><th className="hide-m">Último movimiento</th></tr></thead><tbody>{shown.map((p) => (
-          <tr key={p.number} tabIndex={0} onClick={() => host.openPedido(p.number)} onKeyDown={(event) => { if (event.key === 'Enter') host.openPedido(p.number); }}><td className="pn">P-{p.number}</td>
+          <tr key={p.number} tabIndex={0} onClick={() => shell.openRequest(p.number)} onKeyDown={(event) => { if (event.key === 'Enter') shell.openRequest(p.number); }}><td className="pn">P-{p.number}</td>
             <td><span className="tt">{p.title}</span><BugTag p={p} /><small>{p.person} · {p.appName}{many ? ` · ${repoShort(p.repo)}` : ''}</small><Mini p={p} /></td>
             <td><StatusChip p={p} /></td>
             <td className="hide-m"><span className="pd-waits">{p.running && <Dot cls="live" />}{waitsLabel(p)}</span></td>

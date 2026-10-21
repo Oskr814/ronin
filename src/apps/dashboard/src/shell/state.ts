@@ -1,24 +1,27 @@
 import { QueryClient } from '@tanstack/react-query';
 import type { ItemDetail, ItemRun, ShownRun, Snapshot } from '../api.js';
-import type { ExplorationListRow, ExplorationRow, ExplorationsView, ItemView, SnapshotItem } from '../host.js';
+import type { ExplorationListRow, ExplorationRow } from '../../../../domains/explorations/board.js';
 import { isMobile } from '../lib/format.js';
+import { docOf as docShown, docTabsOf, sameLogin } from '../lib/item.js';
 import { md as markdown } from '../lib/md.js';
 
-// The dashboard's shell (#65): what it has open and what it read, the
-// routes, and what reads the API for the sidebar, the context column and an
-// item's page. Plain state with a version: the shell's components redraw
-// each time it changes (useShell), and so do the pages that read it through
-// Host (subscribe).
+// The dashboard's shell (#65): what it has open, the routes, and what reads
+// the API for the sidebar, the context column and an item's page. What it
+// has open is plain state with a version: the shell's components redraw each
+// time it changes (useShellVersion), and so do the pages that read it
+// (hooks.ts). What it reads goes to TanStack Query's cache, which the pages
+// read too: the snapshot, an item's detail and runs, the run shown, the
+// explorations' list.
 
 export const SNAPSHOT_EVERY_MS = 5000;
-// A portal request's page (#132), read again this often while it's open.
-const PEDIDO_EVERY_MS = 10_000;
-const DETAIL_EVERY_MS = 30_000;
-const XPL_EVERY_MS = 60_000;
+// An item's detail, read again this often while it's shown.
+export const DETAIL_EVERY_MS = 30_000;
+// The explorations' list: more often while their pages are open.
+export const XPL_PAGE_EVERY_MS = 10_000;
+export const XPL_EVERY_MS = 60_000;
 const MIN = 60e3;
 
-export type Item = SnapshotItem;
-type Detail = { data?: ItemDetail; error?: string | null; loading?: boolean; at?: number };
+export type Item = Snapshot['items'][number];
 export type Page = null | 'pedidos' | 'pedido' | 'reuniones' | 'reunion' | 'despliegues' | 'metricas' | 'exploraciones' | 'exploracion' | 'ajustes';
 export interface NewIssue {
   repo: string;
@@ -38,9 +41,20 @@ export interface NewIssue {
 // snapshot is in it too (SNAPSHOT_KEY).
 export const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false } } });
 export const SNAPSHOT_KEY = ['snapshot'];
+// An item's issue and PR from GitHub, its runs, a run with its lines (as
+// they come while it goes), and what /api/explorations adds to the apps.
+export const detailKey = (id: string) => ['item', id, 'detail'];
+export const runsKey = (id: string) => ['item', id, 'runs'];
+export const runKey = (runId: string) => ['run', runId];
+export const EXPLORATIONS_KEY = ['explorations'];
+// `from`: how many lines the run had when it was read, where its stream starts.
+export type ReadRun = ShownRun & { from: number };
 
 export const S = {
-  snap: null as Snapshot | null,
+  // The snapshot, as the shell's query last read it.
+  get snap(): Snapshot | null {
+    return queryClient.getQueryData<Snapshot>(SNAPSHOT_KEY) ?? null;
+  },
   booted: false,
   // The login, with why the session ended; the notice to log in again in
   // another tab while something written is on screen.
@@ -52,10 +66,6 @@ export const S = {
   pendingRun: null as string | null,
   filter: null as 'running' | 'queue' | null,
   q: '',
-  itemRuns: {} as Record<string, ItemRun[]>,
-  run: null as ShownRun | null,
-  stream: null as EventSource | null,
-  detail: {} as Record<string, Detail>,
   view: {} as Record<string, 'ficha' | 'tx'>,
   doc: {} as Record<string, string>,
   ficha: {} as Record<string, string>,
@@ -68,13 +78,14 @@ export const S = {
   newIssue: null as NewIssue | null,
   keysHelp: false,
   toast: null as { message: string; url?: string; id: number } | null,
-  revSent: {} as Record<string, { repo: string; pr: number; decision: string; readAt: string | null; at: number }>,
+  revSent: {} as Record<string, { repo: string; pr: number; decision: 'APPROVED' | 'CHANGES_REQUESTED'; readAt: string | null; at: number }>,
   page: null as Page,
   // A phone shows the sidebar (list) or the page (detail).
   m: 'list' as 'list' | 'detail',
   ped: { n: null as number | null, run: null as string | null },
   reu: { n: null as number | null, run: null as string | null },
-  xpl: { list: null as ExplorationListRow[] | null, error: null as string | null, listAt: 0, repo: null as string | null, app: null as string | null, launched: {} as Record<string, { app: string; at: number }> },
+  // The app open, and the apps launched from here, by repo, until the snapshot sees them.
+  xpl: { repo: null as string | null, app: null as string | null, launched: {} as Record<string, { app: string; at: number }> },
   xnow: null as { repo: string; app: string } | null,
   mt: { tab: 'trabajo' as 'trabajo' | 'suscripcion' },
   aj: { sec: 'perfil', login: null as string | null, repo: null as string | null, cuenta: null as string | null, f: null as string | null, visits: 0 },
@@ -95,11 +106,8 @@ export const subscribe = (listener: () => void) => {
   };
 };
 export const getVersion = () => version;
-// The item views of a version (Host.item): the same object until it changes.
-const itemViews = new Map<string, ItemView | null>();
 export function changed() {
   version += 1;
-  itemViews.clear();
   for (const listener of listeners) listener();
 }
 
@@ -147,38 +155,26 @@ export function showLogin(error?: Error): boolean {
 }
 
 // ---------- items
-const TYPE: Record<string, string> = {
-  'plan': 'Planificar', 'implement-slice': 'Implementar slice', 'fix-issue': 'Resolver issue', 'fix-review': 'Responder review',
-  'fix-e2e': 'Arreglar e2e', 'review-request': 'Pedido en review', 'fix-comments': 'Aplicar comentarios',
-  'fix-comments-external': 'Aplicar comentarios', 'resolve-conflicts': 'Resolver conflictos', 'thread-reply-external': 'Responder hilo',
-  'external-review': 'Review externa', 'spike': 'Spike', 'write-spec': 'Escribir spec', 'revise-spec': 'Conversar el spec', 'issue-request': 'Pedido en issue',
-  'prototype': 'Prototipo', 'update-changelog': 'Changelog', 'explore-inventory': 'Inventario de exploración',
-  'explore-function': 'Explorar', 'explore-evaluate': 'Evaluar exploración', 'explore-redo-after': 'Rehacer captura',
-  'explore-feedback': 'Comentarios de exploración', 'commit-subject': 'Mensaje de commit', 'prepare-preview-data': 'Datos de preview', 'preview-seed-catalog': 'Catálogo de seeds', 'preview-data-triage': 'Revisión de los seeds', 'preview-data-delta': 'Datos de preview al actualizarse', 'portal-request': 'Pedido del portal', 'portal-interview': 'Respuestas de la entrevista', 'portal-prototype': 'Prototipo del portal', 'portal-reproduce': 'Reproducción del portal', 'meeting-read': 'Lectura de reunión',
-};
-export const typeName = (type: string) => TYPE[type] ?? type;
-// Runs that are steps of one thing (platform/agents/run-group.ts): a preview's seed
-// catalog, "¿alcanzan los seeds?" and its data are one preview.
-const GROUP_NAME: Record<string, string> = { preview: 'Preview' };
-const groupName = (run: { group?: string } | null | undefined) => (run?.group ? GROUP_NAME[run.group.split(':')[0]] : undefined);
-// What a run is: its group's name, or its own task's.
-export const runKind = (run: { group?: string; taskType: string }) => groupName(run) ?? typeName(run.taskType);
-// A step of a group says which one: "Preview: Revisión de los seeds".
-export const runTitle = (run: { group?: string; taskType: string }) => (groupName(run) ? `${groupName(run)}: ${typeName(run.taskType)}` : typeName(run.taskType));
 
 // What the session can do in a repo (#174): the server says it per repo; an
 // admin does everything. The server refuses anyway, this only hides it.
-export function canDo(repo: string, perm: string): boolean {
-  if (S.snap?.access.admin) return true;
-  const entry = S.snap?.access.repos.find((r) => r.repo === repo) as { perms?: Record<string, boolean> } | undefined;
+export function canDo(repo: string, perm: string, snap = S.snap): boolean {
+  if (snap?.access.admin) return true;
+  const entry = snap?.access.repos.find((r) => r.repo === repo) as { perms?: Record<string, boolean> } | undefined;
   if (!entry) return false;
   return entry.perms ? entry.perms[perm] : perm !== 'desplegar';
 }
 
-const repoIndex = (repo: string) => Math.max(0, (S.snap?.repos ?? []).indexOf(repo));
-export const repoColor = (repo: string) => `var(--repo-${repoIndex(repo) % 4})`;
+export const repoColor = (repo: string, repos = S.snap?.repos ?? []) => `var(--repo-${Math.max(0, repos.indexOf(repo)) % 4})`;
 export const repoShort = (repo: string) => repo.split('/')[1] ?? repo;
-export const itemById = (id: string | null): Item | undefined => (id ? S.snap?.items.find((item) => item.id === id) ?? S.extra[id] : undefined);
+// An item of the snapshot's, or one opened by its number (S.extra).
+export const itemOf = (snap: Snapshot | null | undefined, id: string | null): Item | undefined => (id ? snap?.items.find((item) => item.id === id) ?? S.extra[id] : undefined);
+export const itemById = (id: string | null): Item | undefined => itemOf(S.snap, id);
+// Not in the sidebar (a team issue nobody took, a closed one): known by its number.
+export function knowItem(id: string, kind: 'issue' | 'pr') {
+  const n = /^(.+)#(\d+)$/.exec(id);
+  if (!itemById(id) && n) S.extra[id] = { id, repo: n[1], number: Number(n[2]), kind, title: `#${n[2]}`, status: 'open', runs: 0, listed: false } as unknown as Item;
+}
 export const safeRepo = (repo: string) => /^[\w.-]+\/[\w.-]+$/.test(repo);
 export const md = (text: string, repo: string) => markdown(text, repo, S.snap?.repos ?? []);
 
@@ -187,10 +183,10 @@ export const linearRepos = () => S.snap?.linear ?? [];
 export const currentCycleOf = (repo: string) => linearRepos().find((l) => l.repo === repo)?.cycle ?? null;
 // A project's color follows the project, never its rank: the projects known
 // to the page in name order, the first four with a color each, the rest gray.
-export function projectColor(id: string): string {
+export function projectColor(id: string, snap = S.snap, qc = queryClient): string {
   const names = new Map<string, string>();
-  for (const item of S.snap?.items ?? []) if (item.linear?.project) names.set(item.linear.project.id, item.linear.project.name);
-  const today = queryClient.getQueryData<{ cycles: Array<{ issues: Array<{ project?: { id: string; name: string } | null }> }> }>(['today']);
+  for (const item of snap?.items ?? []) if (item.linear?.project) names.set(item.linear.project.id, item.linear.project.name);
+  const today = qc.getQueryData<{ cycles: Array<{ issues: Array<{ project?: { id: string; name: string } | null }> }> }>(['today']);
   for (const c of today?.cycles ?? []) for (const i of c.issues) if (i.project) names.set(i.project.id, i.project.name);
   const order = [...names].sort((a, b) => a[1].localeCompare(b[1], 'es')).map(([pid]) => pid);
   const k = order.indexOf(id);
@@ -199,71 +195,17 @@ export function projectColor(id: string): string {
 export const inScope = (item: Item) => (S.scope !== 'cycle' || item.linear?.cycle?.current) && (!S.project || item.linear?.project?.id === S.project);
 
 // ---------- an item's page (#85)
+// What was read of an item, from the cache.
+export const detailOf = (id: string) => queryClient.getQueryData<ItemDetail>(detailKey(id));
+const runsRead = (id: string) => queryClient.getQueryData<ItemRun[]>(runsKey(id));
 // The item's runs: the ones read, or its last one until they are.
-export const itemRuns = (item: Item): ItemRun[] => S.itemRuns[item.id] ?? (item.lastRun ? [item.lastRun as ItemRun] : []);
+export const itemRuns = (item: Item): ItemRun[] => runsRead(item.id) ?? (item.lastRun ? [item.lastRun as ItemRun] : []);
 // The item's page by default; the transcript for what has no page (a changelog entry).
 export const viewOf = (item: Item) => S.view[item.id] ?? (item.kind === 'other' ? 'tx' : 'ficha');
-
-function docTabsOf(item: Item, d: ItemDetail | undefined): Array<[string, string]> {
-  // Archivos: the PR's "Files changed" (#111), an issue's moving PR's.
-  // An issue with a PR opens on the PR, what was done (its "Qué se pidió" says what was asked).
-  if (item.kind === 'issue') return d?.pr ? [['pr', `PR #${d.pr.number}`], ['issue', 'Issue'], ['files', 'Archivos']] : [['issue', 'Issue']];
-  // An exploration PR opens on its findings, to review them (#93); as its app's page, with the app's runs and inventory (#155).
-  const xpl: Array<[string, string]> = d?.exploration && xplOfItem(item.id) ? [['corridas', 'Corridas'], ['inventario', 'Inventario']] : [];
-  return [...(d?.exploration ? [['fichas', 'Fichas'] as [string, string]] : []), ...xpl, ['pr', 'Descripción'], ...(d?.issue ? [['issue', `Issue #${d.issue.number}`] as [string, string]] : []), ['files', 'Archivos']];
-}
-export const docOf = (item: Item): string | null => {
-  const d = S.detail[item.id]?.data;
-  if (!d) return null;
-  const tabs = docTabsOf(item, d);
-  return tabs.some(([k]) => k === S.doc[item.id]) ? S.doc[item.id] : tabs[0][0];
-};
-export const sameLogin = (a: string | null | undefined, b: string | null | undefined) => Boolean(a && b) && a!.toLowerCase() === b!.toLowerCase();
-// A PR's page offers the review, and so does an issue's, for its moving PR
-// (the one in its Archivos tab); an exploration PR has its own approval (#93).
-const reviewable = (item: Item, d: ItemDetail) => (item.kind === 'pr' || item.kind === 'issue') && !d?.exploration && d?.pr?.state === 'OPEN';
-// A PR ronin opened, decided in the item's page (pages/item/Decide.tsx, #195).
-const decidable = (item: Item, d: ItemDetail) => reviewable(item, d) && Boolean(d.ronin) && (d.pr!.author ?? '').toLowerCase() === d.ronin!.toLowerCase() && !d.pr!.isDraft;
-
-// The item as its page sees it (Host.item): what the shell read of it.
-export function itemView(key: string): ItemView | null {
-  if (itemViews.has(key)) return itemViews.get(key)!;
-  const item = itemById(key);
-  let view: ItemView | null = null;
-  if (item) {
-    const entry = S.detail[key];
-    const d = entry?.data;
-    view = {
-      item,
-      detail: entry ? { data: d ?? null, error: entry.error ?? null } : null,
-      runs: S.itemRuns[key] ?? null,
-      run: S.run,
-      runIdx: S.runIdx[key] ?? 0,
-      view: viewOf(item),
-      tabs: d ? docTabsOf(item, d) : [],
-      doc: docOf(item),
-      decidable: Boolean(d) && decidable(item, d!),
-      reviewable: Boolean(d) && reviewable(item, d!),
-      exploration: xplOfItem(key),
-    };
-  }
-  itemViews.set(key, view);
-  return view;
-}
-
-// The items a request's page shows (Host.watchItem), read again once old.
-const watched = new Set<string>();
-export function watchItem(key: string, kind: 'issue' | 'pr') {
-  // Not in the sidebar (a team issue nobody took): known by its number, as select() does.
-  const n = Number(key.split('#')[1]);
-  if (!itemById(key)) S.extra[key] = { id: key, repo: key.split('#')[0], number: n, kind, title: `#${n}`, status: 'open', runs: 0, listed: false } as unknown as Item;
-  watched.add(key);
-  changed();
-  const entry = S.detail[key];
-  if (!entry?.data && !entry?.loading && !entry?.error) void loadDetail(key);
-  return () => {
-    watched.delete(key);
-  };
+// The tab its page shows, once its detail is read.
+export function docOf(item: Item): string | null {
+  const d = detailOf(item.id);
+  return d ? docShown(docTabsOf(item, d, Boolean(xplOfItem(item.id))), S.doc[item.id]) : null;
 }
 
 // ---------- deciding, reviewing (#195, #111)
@@ -293,25 +235,28 @@ export function movePr(step: 1 | -1) {
 // it was sent (the server reads it again right after); a couple of minutes
 // at most, if that read never comes.
 const REVIEW_SHOWN_MS = 120_000;
-const repoReadAt = (repo: string) => S.snap?.github?.find((g) => g.repo === repo)?.fetchedAt ?? null;
+const repoReadAt = (repo: string, snap = S.snap) => snap?.github?.find((g) => g.repo === repo)?.fetchedAt ?? null;
 
-function showSentReviews() {
+// The snapshot with the reviews sent on its PRs' chips (a new one, for the
+// pages that read it), and on the items opened by their number.
+function withSentReviews(snap: Snapshot): Snapshot {
   for (const [key, sent] of Object.entries(S.revSent)) {
-    if (repoReadAt(sent.repo) !== sent.readAt || Date.now() - sent.at > REVIEW_SHOWN_MS) {
-      delete S.revSent[key];
-      continue;
-    }
-    for (const item of [...(S.snap?.items ?? []), ...Object.values(S.extra)]) {
-      if (item.repo === sent.repo && item.pr?.number === sent.pr) (item.pr as { reviewDecision?: string }).reviewDecision = sent.decision;
-    }
+    if (repoReadAt(sent.repo, snap) !== sent.readAt || Date.now() - sent.at > REVIEW_SHOWN_MS) delete S.revSent[key];
   }
+  const sentOn = (item: Item) => Object.values(S.revSent).find((sent) => item.repo === sent.repo && item.pr?.number === sent.pr);
+  for (const item of Object.values(S.extra)) {
+    const sent = sentOn(item);
+    if (sent) (item.pr as { reviewDecision?: string }).reviewDecision = sent.decision;
+  }
+  if (!snap.items.some(sentOn)) return snap;
+  return { ...snap, items: snap.items.map((item) => (sentOn(item) ? { ...item, pr: { ...item.pr!, reviewDecision: sentOn(item)!.decision } } : item)) };
 }
 
-export function reviewed(key: string, pr: number, decision: string) {
+export function reviewed(key: string, pr: number, decision: 'APPROVED' | 'CHANGES_REQUESTED') {
   const item = itemById(key);
   if (!item) return;
   S.revSent[`${item.repo}#${pr}`] = { repo: item.repo, pr, decision, readAt: repoReadAt(item.repo), at: Date.now() };
-  showSentReviews();
+  if (S.snap) queryClient.setQueryData(SNAPSHOT_KEY, withSentReviews(S.snap));
   changed();
 }
 
@@ -386,50 +331,46 @@ export function closeExploreNow() {
 // (/api/explorations) adds its exploration PR's findings counted, the last
 // run and the next. An app's page is its repo's exploration PR's page (#93),
 // headed as the app's; with no PR open, a page of its own until ronin opens one.
-export const xplRows = (): ExplorationRow[] => (S.snap?.exploraciones ?? []) as ExplorationRow[];
+export const xplRows = (snap: Snapshot | null = S.snap): ExplorationRow[] => (snap?.exploraciones ?? []) as ExplorationRow[];
 const xplRow0 = (repo: string | null, app: string | null) => xplRows().find((r) => r.repo === repo && r.app === app) ?? null;
-const xplListRow = (r: ExplorationRow) => S.xpl.list?.find((x) => x.repo === r.repo && x.app === r.app) ?? null;
+export const xplList = () => queryClient.getQueryData<ExplorationListRow[]>(EXPLORATIONS_KEY) ?? null;
+const xplListRow = (r: ExplorationRow) => xplList()?.find((x) => x.repo === r.repo && x.app === r.app) ?? null;
 export const xplCounts = (r: ExplorationRow) => xplListRow(r)?.fichas ?? null;
 export const xplToDecide = () => xplRows().reduce((n, r) => n + (xplCounts(r)?.decidir ?? 0), 0);
 const xplPath = (repo: string, app: string) => `/exploraciones/${repo}/${encodeURIComponent(app)}`;
 // The app whose page an item is: its repo's exploration PR, the app open
 // now when the repo explores more than one.
-export function xplOfItem(id: string): ExplorationRow | null {
-  const rows = xplRows().filter((r) => r.pr?.id === id);
-  return rows.find((r) => r.repo === S.xpl.repo && r.app === S.xpl.app) ?? rows[0] ?? null;
+export function xplOfItem(id: string, rows = xplRows()): ExplorationRow | null {
+  const mine = rows.filter((r) => r.pr?.id === id);
+  return mine.find((r) => r.repo === S.xpl.repo && r.app === S.xpl.app) ?? mine[0] ?? null;
 }
 export function itemPath(id: string) {
   const xr = xplOfItem(id);
   return xr ? xplPath(xr.repo, xr.app) : `/i/${encodeURIComponent(id)}`;
 }
 
-// The apps as the pages see them (Host.explorations), made again when the
-// snapshot or the list change.
-let xplView: ExplorationsView | null = null;
-export const explorationsView = () => (xplView ??= { rows: xplRows(), list: S.xpl.list, error: S.xpl.error, launched: { ...S.xpl.launched } });
-function xplChanged() {
-  xplView = null;
-  changed();
-}
-
-export async function loadExploraciones() {
-  // Taken before asking, so the snapshots meanwhile don't ask again.
-  S.xpl.listAt = Date.now();
+// The list (the shell's query, which the sidebar counts too), and read again now.
+export async function readExplorations(): Promise<ExplorationListRow[]> {
   try {
-    S.xpl.list = (await api<{ apps: ExplorationListRow[] }>('/api/explorations')).apps;
-    S.xpl.error = null;
+    return (await api<{ apps: ExplorationListRow[] }>('/api/explorations')).apps;
   } catch (error) {
-    if (error instanceof Unauthorized && showLogin(error)) return;
-    S.xpl.error = (error as Error).message;
+    if (error instanceof Unauthorized) showLogin(error);
+    throw error;
   }
-  xplChanged();
+}
+export async function loadExplorations() {
+  try {
+    await queryClient.fetchQuery({ queryKey: EXPLORATIONS_KEY, queryFn: readExplorations, staleTime: 0 });
+  } catch {
+    // The page says it (the query's error).
+  }
 }
 
 export function explored(repo: string, app: string) {
-  S.xpl.launched[repo] = { app, at: Date.now() };
+  S.xpl.launched = { ...S.xpl.launched, [repo]: { app, at: Date.now() } };
   closeExploreNow();
-  xplChanged();
-  void refresh().then(loadExploraciones);
+  changed();
+  void refresh().then(loadExplorations);
 }
 
 // ---------- going places
@@ -447,7 +388,6 @@ function go(path: string) {
 function toPage(page: Page) {
   S.sel = null;
   S.page = page;
-  stopStream();
 }
 
 export function goHome() {
@@ -464,16 +404,16 @@ export function back() {
   scrollTo(0, 0);
 }
 
-export function openExploraciones() {
+export function openExplorations() {
   toPage('exploraciones');
   go('/exploraciones');
   changed();
   shown();
-  void loadExploraciones();
+  void loadExplorations();
 }
 
 // `ficha`: the finding to open, from the URL (?f=).
-export function openExploracion(repo: string, app: string, ficha?: string | null) {
+export function openExploration(repo: string, app: string, ficha?: string | null) {
   Object.assign(S.xpl, { repo, app });
   const r = xplRow0(repo, app);
   if (r?.pr) {
@@ -488,10 +428,10 @@ export function openExploracion(repo: string, app: string, ficha?: string | null
   go(xplPath(repo, app));
   changed();
   shown();
-  void loadExploraciones();
+  void loadExplorations();
 }
 
-export function openPedidos() {
+export function openRequests() {
   toPage('pedidos');
   go('/pedidos');
   changed();
@@ -499,7 +439,7 @@ export function openPedidos() {
 }
 
 // `run`: one of its runs to show on its Corridas tab (Hoy's timeline).
-export function openPedido(n: number, run: string | null = null) {
+export function openRequest(n: number, run: string | null = null) {
   toPage('pedido');
   S.ped = { n, run };
   go(`/pedidos/${n}`);
@@ -508,7 +448,7 @@ export function openPedido(n: number, run: string | null = null) {
 }
 
 // Despliegues (#158): admins only.
-export function openDespliegues() {
+export function openDeploys() {
   toPage('despliegues');
   go('/despliegues');
   changed();
@@ -516,7 +456,7 @@ export function openDespliegues() {
 }
 
 // `tab`: trabajo (#222) or suscripcion (#234), each at its own address. Admins only.
-export function openMetricas(tab: string = S.mt.tab) {
+export function openMetrics(tab: string = S.mt.tab) {
   toPage('metricas');
   S.mt.tab = tab === 'suscripcion' ? 'suscripcion' : 'trabajo';
   go(S.mt.tab === 'suscripcion' ? '/metricas/suscripcion' : '/metricas');
@@ -524,7 +464,7 @@ export function openMetricas(tab: string = S.mt.tab) {
   shown();
 }
 
-export function openReuniones() {
+export function openMeetings() {
   toPage('reuniones');
   go('/reuniones');
   changed();
@@ -532,7 +472,7 @@ export function openReuniones() {
 }
 
 // `run`: one of its runs, to open the page on (a run picked elsewhere).
-export function openReunion(n: number, run: string | null = null) {
+export function openMeeting(n: number, run: string | null = null) {
   toPage('reunion');
   S.reu = { n, run };
   go(`/reuniones/${n}`);
@@ -561,7 +501,7 @@ const ajAllowed = (sec: string) => AJ_SECTIONS[sec] && (!AJ_SECTIONS[sec].admin 
 // of the portal's accounts (#174, stage 3); `f`: the list's filter (todos,
 // equipo, portal). The page is mounted again on each visit: it reads what to
 // show, and reads it again.
-export function openAjustes(sec = 'perfil', login: string | null = null, f: string | null = null, cuenta: string | null = null) {
+export function openSettings(sec = 'perfil', login: string | null = null, f: string | null = null, cuenta: string | null = null) {
   S.aj.visits += 1;
   toPage('ajustes');
   S.aj.sec = ajAllowed(sec) ? sec : 'perfil';
@@ -582,7 +522,6 @@ export function closeTab(id: string) {
     else {
       S.sel = null;
       S.page = null;
-      stopStream();
       history.pushState(null, '', '/');
       changed();
     }
@@ -595,7 +534,7 @@ export async function select(id: string) {
   if (reu) {
     const runId = S.pendingRun;
     S.pendingRun = null;
-    openReunion(Number(reu[1]), runId);
+    openMeeting(Number(reu[1]), runId);
     return;
   }
   // A portal request's run (Hoy's timeline) opens the request's page, on that run (#132).
@@ -603,11 +542,10 @@ export async function select(id: string) {
   if (ped) {
     const runId = S.pendingRun;
     S.pendingRun = null;
-    openPedido(Number(ped[1]), runId);
+    openRequest(Number(ped[1]), runId);
     return;
   }
-  const n = /^(.+)#(\d+)$/.exec(id);
-  if (!itemById(id) && n) S.extra[id] = { id, repo: n[1], number: Number(n[2]), kind: 'issue', title: `#${n[2]}`, status: 'open', runs: 0, listed: false } as unknown as Item;
+  knowItem(id, 'issue');
   // An exploration PR is its app's page (#155).
   const xr = xplOfItem(id);
   if (xr) Object.assign(S.xpl, { repo: xr.repo, app: xr.app });
@@ -621,105 +559,103 @@ export async function select(id: string) {
   changed();
   shown();
   void loadDetail(id);
-  await loadItem(id);
+  await loadRuns(id);
 }
 
 // ---------- reading
-export function stopStream() {
-  if (S.stream) S.stream.close();
-  S.stream = null;
-}
-
-export async function loadShownRun() {
-  const item = itemById(S.sel);
-  if (!item) return;
-  const runs = S.itemRuns[item.id] ?? (item.lastRun ? [item.lastRun as ItemRun] : []);
-  stopStream();
-  if (runs.length === 0) {
-    S.run = null;
-    changed();
-    return;
-  }
-  const shown = runs[Math.min(S.runIdx[item.id] ?? 0, runs.length - 1)];
-  S.run = null;
-  changed();
-  try {
-    const { summary, lines } = await api<{ summary: ShownRun['summary']; lines: ShownRun['lines'] }>(`/api/runs/${encodeURIComponent(shown.runId)}`);
-    const steps = lines.filter((line) => line.type !== 'run_start' && line.type !== 'run_end');
-    S.run = { runId: shown.runId, summary, lines: steps };
-    changed();
-    if (summary.state === 'running') follow(shown.runId, lines.length);
-  } catch (error) {
-    if (error instanceof Unauthorized) showLogin(error);
-  }
-}
-
-// The run still going: its new lines as they're written.
-function follow(runId: string, from: number) {
-  const stream = new EventSource(`/api/runs/${encodeURIComponent(runId)}/stream?from=${from}`);
-  S.stream = stream;
-  stream.onmessage = (event) => {
-    if (!S.run || S.run.runId !== runId) return;
-    const line = JSON.parse(event.data as string) as ShownRun['lines'][number];
-    if (line.type === 'run_end') return;
-    S.run = { ...S.run, lines: [...S.run.lines, line] };
-    changed();
-  };
-  stream.addEventListener('end', () => {
-    stopStream();
-    void refresh().then(() => loadItem(S.sel));
-  });
-  stream.onerror = () => stopStream();
-}
-
-async function loadItem(id: string | null) {
-  if (!id) return;
-  try {
-    const { runs } = await api<{ runs: ItemRun[] }>(`/api/items/${encodeURIComponent(id)}`);
-    S.itemRuns[id] = runs;
-    if (S.pendingRun) {
-      const index = runs.findIndex((run) => run.runId === S.pendingRun);
-      // A run picked on Hoy's timeline opens as its transcript.
-      if (index >= 0) {
-        S.runIdx[id] = index;
-        S.view[id] = 'tx';
-      }
-      S.pendingRun = null;
-    }
-  } catch (error) {
-    if (error instanceof Unauthorized && showLogin(error)) return;
-  }
-  if (S.sel === id) await loadShownRun();
-}
+// What an item's page reads (hooks.ts), as queries: the page's own, the
+// shell's when it opens the item, the sidebar's and the context column's
+// share them.
 
 // The item's issue and PR from GitHub. The server caches them, so asking
 // again only costs a call to GitHub once its copy is old.
+async function readDetail(id: string): Promise<ItemDetail> {
+  let d: ItemDetail;
+  try {
+    d = await api<ItemDetail>(`/api/items/${encodeURIComponent(id)}/detail`);
+  } catch (error) {
+    if (error instanceof Unauthorized) showLogin(error);
+    throw error;
+  }
+  // One opened by its number takes its kind and title from GitHub.
+  const extra = S.extra[id] as (Item & { url?: string }) | undefined;
+  const ref = (d as { ref?: { kind: 'issue' | 'pr' } }).ref;
+  const doc = extra && (ref?.kind === 'pr' ? d.pr : d.issue);
+  if (extra && doc) Object.assign(extra, { kind: ref!.kind, title: doc.title, url: doc.url, status: doc.state === 'OPEN' ? 'open' : 'ok' });
+  return d;
+}
+export const detailQuery = (id: string) => ({ queryKey: detailKey(id), queryFn: () => readDetail(id), staleTime: DETAIL_EVERY_MS });
+
+// Its runs of the last 14 days, newest first: read when it's opened and when
+// a new one starts. Whoever was looking at an older run stays on it.
+async function readRuns(id: string): Promise<ItemRun[]> {
+  const before = runsRead(id);
+  let runs: ItemRun[];
+  try {
+    ({ runs } = await api<{ runs: ItemRun[] }>(`/api/items/${encodeURIComponent(id)}`));
+  } catch (error) {
+    if (error instanceof Unauthorized) showLogin(error);
+    throw error;
+  }
+  const index = S.runIdx[id] ?? 0;
+  if (before && index > 0) S.runIdx[id] = Math.max(0, runs.findIndex((run) => run.runId === before[index]?.runId));
+  if (S.pendingRun) {
+    const at = runs.findIndex((run) => run.runId === S.pendingRun);
+    // A run picked on Hoy's timeline opens as its transcript.
+    if (at >= 0) {
+      S.runIdx[id] = at;
+      S.view[id] = 'tx';
+    }
+    S.pendingRun = null;
+  }
+  return runs;
+}
+export const runsQuery = (id: string) => ({ queryKey: runsKey(id), queryFn: () => readRuns(id), staleTime: Infinity });
+
+// A run, its steps without its start and its end.
+async function readRun(runId: string): Promise<ReadRun> {
+  try {
+    const { summary, lines } = await api<{ summary: ShownRun['summary']; lines: ShownRun['lines'] }>(`/api/runs/${encodeURIComponent(runId)}`);
+    return { runId, summary, lines: lines.filter((line) => line.type !== 'run_start' && line.type !== 'run_end'), from: lines.length };
+  } catch (error) {
+    if (error instanceof Unauthorized) showLogin(error);
+    throw error;
+  }
+}
+export const runQuery = (runId: string) => ({ queryKey: runKey(runId), queryFn: () => readRun(runId), staleTime: 0 });
+
+// The run still going: its new lines as they're written, until it ends and
+// the item's runs are read again. Returns how to stop.
+export function follow(id: string, runId: string, from: number) {
+  const stream = new EventSource(`/api/runs/${encodeURIComponent(runId)}/stream?from=${from}`);
+  stream.onmessage = (event) => {
+    const line = JSON.parse(event.data as string) as ShownRun['lines'][number];
+    if (line.type === 'run_end') return;
+    queryClient.setQueryData<ReadRun>(runKey(runId), (run) => run && { ...run, lines: [...run.lines, line] });
+  };
+  stream.addEventListener('end', () => {
+    stream.close();
+    void refresh().then(() => loadRuns(id)).then(() => queryClient.invalidateQueries({ queryKey: runKey(runId) }));
+  });
+  stream.onerror = () => stream.close();
+  return () => stream.close();
+}
+
+// Read now, whether or not a page shows them: on opening the item, on a
+// new run, after writing on GitHub.
 export async function loadDetail(id: string) {
   const item = itemById(id);
-  const entry = (S.detail[id] ??= {});
-  if (!item || item.kind === 'other' || entry.loading) return;
-  entry.loading = true;
-  try {
-    entry.data = await api<ItemDetail>(`/api/items/${encodeURIComponent(id)}/detail`);
-    entry.error = null;
-    const extra = S.extra[id] as (Item & { url?: string }) | undefined;
-    const ref = (entry.data as { ref?: { kind: 'issue' | 'pr' } }).ref;
-    const doc = extra && (ref?.kind === 'pr' ? entry.data.pr : entry.data.issue);
-    if (extra && doc) Object.assign(extra, { kind: ref!.kind, title: doc.title, url: doc.url, status: doc.state === 'OPEN' ? 'open' : 'ok' });
-  } catch (error) {
-    if (error instanceof Unauthorized && showLogin(error)) return;
-    entry.error = (error as Error).message;
-  } finally {
-    entry.loading = false;
-    entry.at = Date.now();
-  }
-  changed();
+  if (!item || item.kind === 'other') return;
+  await queryClient.fetchQuery({ ...detailQuery(id), staleTime: 0 }).catch(() => {});
+}
+async function loadRuns(id: string) {
+  await queryClient.fetchQuery({ ...runsQuery(id), staleTime: 0 }).catch(() => {});
 }
 
 export function showRun(key: string, index: number, view: 'ficha' | 'tx') {
   S.view[key] = view;
   S.runIdx[key] = index;
-  void loadShownRun();
+  changed();
 }
 
 export function showDoc(key: string, tab: string) {
@@ -727,8 +663,19 @@ export function showDoc(key: string, tab: string) {
   changed();
 }
 
+// The finding an exploration PR's Fichas shows (pages/item/Fichas.tsx), kept
+// here for the address (?f=).
+export function showFicha(key: string, ficha: string | null, open: boolean) {
+  S.fichaOpen[key] = open;
+  if (ficha === null) return;
+  S.ficha[key] = ficha;
+  const url = `${itemPath(key)}?f=${encodeURIComponent(ficha)}`;
+  if (location.pathname + location.search !== url) history.replaceState(null, '', url);
+}
+
+// Something was written on GitHub from the page: the item is read again,
+// and so is the snapshot.
 export function reread(key: string) {
-  if (S.detail[key]) S.detail[key].at = 0;
   void loadDetail(key);
   void refresh();
 }
@@ -738,21 +685,15 @@ export function reread(key: string) {
 export async function readSnapshot(): Promise<Snapshot> {
   let snap: Snapshot;
   try {
-    snap = await api<Snapshot>('/api/snapshot');
+    snap = withSentReviews(await api<Snapshot>('/api/snapshot'));
   } catch (error) {
     if (error instanceof Unauthorized) showLogin(error);
     throw error;
   }
-  S.snap = snap;
-  showSentReviews();
-  xplChanged();
+  // In the cache now, for what follows here to read it.
+  queryClient.setQueryData(SNAPSHOT_KEY, snap);
   await followNewRun();
   changed();
-  const detail = S.sel && S.detail[S.sel];
-  if (detail && Date.now() - (detail.at ?? 0) > DETAIL_EVERY_MS) void loadDetail(S.sel!);
-  for (const key of watched) if (Date.now() - (S.detail[key]?.at ?? 0) > DETAIL_EVERY_MS) void loadDetail(key);
-  // The apps' findings, more often while their page is open: the sidebar counts them too.
-  if (xplRows().length && Date.now() - S.xpl.listAt > (S.page === 'exploraciones' || S.page === 'exploracion' ? PEDIDO_EVERY_MS : XPL_EVERY_MS)) void loadExploraciones();
   // An app's page with no PR goes on to it once ronin opens one.
   const xr = S.page === 'exploracion' && !S.sel && xplRow0(S.xpl.repo, S.xpl.app);
   if (xr && xr.pr) void select(xr.pr.id);
@@ -772,26 +713,9 @@ export async function refresh() {
 // whoever was looking at an older one stays on it.
 async function followNewRun() {
   const item = itemById(S.sel);
-  const known = S.sel ? S.itemRuns[S.sel] : undefined;
+  const known = S.sel ? runsRead(S.sel) : undefined;
   if (!item?.lastRun || !known || known.some((run) => run.runId === item.lastRun!.runId)) return;
-  const id = S.sel!;
-  const index = S.runIdx[id] ?? 0;
-  const viewing = known[index]?.runId;
-  let runs: ItemRun[];
-  try {
-    ({ runs } = await api<{ runs: ItemRun[] }>(`/api/items/${encodeURIComponent(id)}`));
-  } catch (error) {
-    if (error instanceof Unauthorized) showLogin(error);
-    return;
-  }
-  if (S.sel !== id) return;
-  S.itemRuns[id] = runs;
-  if (index === 0) {
-    S.runIdx[id] = 0;
-    await loadShownRun();
-  } else {
-    S.runIdx[id] = Math.max(0, runs.findIndex((run) => run.runId === viewing));
-  }
+  await loadRuns(item.id);
 }
 
 // ---------- routes
@@ -805,18 +729,18 @@ export function openPortalPath(): boolean {
   const r = /^\/reuniones\/(\d+)$/.exec(location.pathname)?.[1];
   const x = /^\/exploraciones\/([\w.-]+\/[\w.-]+)\/([^/]+)$/.exec(location.pathname);
   const aj = /^\/ajustes(?:\/(\w+))?(?:\/([\w-]+))?(?:\/([\w-]+))?$/.exec(location.pathname);
-  if (aj && aj[1] === 'usuarios' && aj[2] === 'cuenta' && aj[3]) openAjustes('usuarios', null, null, aj[3]);
-  else if (aj && aj[1] === 'repos' && aj[3]) openAjustes('repos', `${aj[2]}/${aj[3]}`);
-  else if (aj) openAjustes(aj[1] ?? 'perfil', aj[2] ?? null);
-  else if (x) openExploracion(x[1], decodeURIComponent(x[2]), new URLSearchParams(location.search).get('f'));
-  else if (location.pathname === '/exploraciones') openExploraciones();
-  else if (location.pathname === '/despliegues' && S.snap!.despliegues) openDespliegues();
-  else if (/^\/metricas(\/suscripcion)?$/.test(location.pathname) && S.snap!.access?.admin) openMetricas(location.pathname === '/metricas' ? 'trabajo' : 'suscripcion');
-  else if (r) openReunion(Number(r));
-  else if (location.pathname === '/reuniones') openReuniones();
-  else if (n) openPedido(Number(n));
-  else if (location.pathname === '/pedidos') openPedidos();
-  else if (location.pathname === '/portal' && S.snap!.portalAdmin) openAjustes('usuarios', null, 'portal');
+  if (aj && aj[1] === 'usuarios' && aj[2] === 'cuenta' && aj[3]) openSettings('usuarios', null, null, aj[3]);
+  else if (aj && aj[1] === 'repos' && aj[3]) openSettings('repos', `${aj[2]}/${aj[3]}`);
+  else if (aj) openSettings(aj[1] ?? 'perfil', aj[2] ?? null);
+  else if (x) openExploration(x[1], decodeURIComponent(x[2]), new URLSearchParams(location.search).get('f'));
+  else if (location.pathname === '/exploraciones') openExplorations();
+  else if (location.pathname === '/despliegues' && S.snap!.despliegues) openDeploys();
+  else if (/^\/metricas(\/suscripcion)?$/.test(location.pathname) && S.snap!.access?.admin) openMetrics(location.pathname === '/metricas' ? 'trabajo' : 'suscripcion');
+  else if (r) openMeeting(Number(r));
+  else if (location.pathname === '/reuniones') openMeetings();
+  else if (n) openRequest(Number(n));
+  else if (location.pathname === '/pedidos') openRequests();
+  else if (location.pathname === '/portal' && S.snap!.portalAdmin) openSettings('usuarios', null, 'portal');
   else return false;
   return true;
 }
@@ -834,7 +758,6 @@ export function followPath() {
   else {
     S.page = null;
     S.sel = null;
-    stopStream();
     changed();
   }
 }

@@ -1,14 +1,11 @@
 // @vitest-environment jsdom
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { HostContext, type ItemView } from '../../../host.js';
-import { testHost } from '../../../test-host.js';
+import { resetShell, showPage } from '../../../test-shell.js';
 import { Item } from '../Item.js';
-import { view } from '../test-view.js';
+import { detail, doc, itemRead } from '../test-view.js';
 
-// Archivos of a person's PR, against a shell that hands the page a fixed
-// view and a server that answers with invented files: what's sent when
+// Archivos of a person's PR, on what the shell read of it, and a server that answers with invented files: what's sent when
 // commenting, replying, resolving, marking as viewed and finishing the review.
 
 const at = '2026-10-21T14:00:00Z';
@@ -22,8 +19,10 @@ const files = {
 };
 let mine: { viewed: string[]; review: unknown } = { viewed: [], review: null };
 let posted: Array<[string, unknown]> = [];
+let asked: string[] = [];
 beforeEach(() => {
   posted = [];
+  asked = [];
   mine = { viewed: [], review: null };
   // A desk's window: diffs can go side by side.
   vi.stubGlobal('matchMedia', () => ({ matches: false }));
@@ -33,20 +32,27 @@ beforeEach(() => {
     const url = String(input);
     if (url.endsWith('/files/mine')) return json(mine);
     if (url.endsWith('/files')) return json(files);
+    if (!init?.method || init.method === 'GET') {
+      asked.push(url);
+      return json(url.endsWith('/detail') ? PR : url === '/api/snapshot' ? shown.snap : {});
+    }
     posted.push([url, JSON.parse(String(init?.body ?? 'null'))]);
     return json({ url: 'https://github.com/acme/tienda/pull/50#discussion_r2' });
   }));
 });
 afterEach(() => {
   cleanup();
+  resetShell();
   vi.unstubAllGlobals();
 });
 
-const person = () => view({ doc: 'files', decidable: false, reviewable: true, tabs: [['pr', 'Descripción'], ['files', 'Archivos']] }, { id: 'acme/tienda#50', number: 50, kind: 'pr' });
-function show(v: ItemView) {
-  const host = testHost({ item: () => v, me: () => 'carla-dev' });
-  render(<QueryClientProvider client={new QueryClient()}><HostContext.Provider value={host}><Item id={v.item.id} /></HostContext.Provider></QueryClientProvider>);
-  return host;
+// A person's PR, without an issue, on its Archivos tab; carla-dev looks.
+const PR = detail({ ref: { kind: 'pr', number: 50 }, issue: undefined, pr: doc({ number: 50, title: 'Ordenar la lista', author: 'beto-dev', url: 'https://github.com/acme/tienda/pull/50', mergeable: 'MERGEABLE', baseRefName: 'main', headRefName: 'orden', isDraft: false, reviewDecision: '', decisions: [] }) });
+const person = () => itemRead({ item: { id: 'acme/tienda#50', number: 50, kind: 'pr' }, detail: PR, doc: 'files', me: 'carla-dev' });
+let shown: ReturnType<typeof person>;
+function show(read: ReturnType<typeof person>) {
+  shown = read;
+  return showPage(<Item id={read.id} />, { snap: read.snap, data: read.data }).shell;
 }
 const FILES = '/api/items/acme%2Ftienda%2350/files/actions';
 
@@ -69,7 +75,7 @@ describe('Archivos', () => {
   });
 
   it('starts a review on the whole file with Ctrl+Enter', async () => {
-    const host = show(person());
+    const shell = show(person());
     await screen.findByText('0 de 2 vistos');
     fireEvent.click(screen.getAllByRole('button', { name: 'Comentar archivo' })[1]);
     const box = document.getElementById('fcbox') as HTMLTextAreaElement;
@@ -77,8 +83,9 @@ describe('Archivos', () => {
     fireEvent.keyDown(box, { key: 'Enter', ctrlKey: true });
     await waitFor(() => expect(posted).toHaveLength(1));
     expect(posted[0]).toEqual([FILES, { action: 'comment', path: 'web/src/orden.ts', commitId: 'def5678', subject: 'file', text: 'Va en lib/.', review: true }]);
-    await waitFor(() => expect(host.toast).toHaveBeenCalledWith('Empezaste una revisión: nadie la ve hasta que la mandes.'));
-    expect(host.reread).toHaveBeenCalledWith('acme/tienda#50');
+    await waitFor(() => expect(shell.toast).toHaveBeenCalledWith('Empezaste una revisión: nadie la ve hasta que la mandes.'));
+    // The PR, read again.
+    await waitFor(() => expect(asked).toContain('/api/items/acme%2Ftienda%2350/detail'));
   });
 
   it('replies on a thread and resolves it', async () => {

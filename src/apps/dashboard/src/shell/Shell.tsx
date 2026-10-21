@@ -1,20 +1,21 @@
 import { useQuery } from '@tanstack/react-query';
-import { useEffect, useSyncExternalStore } from 'react';
-import { HostContext } from '../host.js';
+import { useEffect } from 'react';
+import { shellActions } from './actions.js';
 import { Center, route } from './Center.js';
 import { Context } from './Context.js';
 import { tickClocks } from './Live.js';
 import { ExploreNowLayer, KeysHelp, NewIssue, Relogin, Toast } from './Overlays.js';
-import { pageHost } from './page-host.js';
+import { ShellContext, useShellVersion } from './hooks.js';
 import { Sidebar } from './Sidebar.js';
 import { StatusBar } from './StatusBar.js';
-import { boot, changed, closeNewIssue, followPath, movePr, queryClient, readSnapshot, S, SNAPSHOT_EVERY_MS, SNAPSHOT_KEY, subscribe, getVersion, toggleKeysHelp } from './state.js';
+import {
+  boot, changed, closeNewIssue, EXPLORATIONS_KEY, followPath, movePr, queryClient, readExplorations, readSnapshot, S, SNAPSHOT_EVERY_MS, SNAPSHOT_KEY, toggleKeysHelp,
+  XPL_EVERY_MS, XPL_PAGE_EVERY_MS, xplRows,
+} from './state.js';
 
 // The dashboard (#65): the login, or the shell (the sidebar, the page, the
 // context column and the status bar) with what opens on top of it. All of
 // it from the API, behind the GitHub login.
-
-export const useShell = () => useSyncExternalStore(subscribe, getVersion);
 
 // ]p and [p, the next or the previous PR that waits on a decision, from
 // anywhere: the second key of a sequence is waited for a moment. True when
@@ -76,20 +77,29 @@ function Login() {
   );
 }
 
+// The queries whose answers the shell shows.
+const SHOWN = new Set(['deploys', 'today', 'explorations', 'item']);
+
 export function Shell() {
-  useShell();
+  useShellVersion();
+  const live = S.booted && !S.login;
   // The snapshot, again every SNAPSHOT_EVERY_MS while the page is seen.
-  useQuery({ queryKey: SNAPSHOT_KEY, queryFn: readSnapshot, refetchInterval: SNAPSHOT_EVERY_MS, refetchOnMount: false, enabled: S.booted && !S.login });
+  useQuery({ queryKey: SNAPSHOT_KEY, queryFn: readSnapshot, refetchInterval: SNAPSHOT_EVERY_MS, refetchOnMount: false, enabled: live });
+  // The apps' findings, more often while their pages are open: the sidebar counts them too.
+  const xplPage = S.page === 'exploraciones' || S.page === 'exploracion';
+  useQuery({ queryKey: EXPLORATIONS_KEY, queryFn: readExplorations, refetchInterval: xplPage ? XPL_PAGE_EVERY_MS : XPL_EVERY_MS, staleTime: xplPage ? XPL_PAGE_EVERY_MS : XPL_EVERY_MS, enabled: live && xplRows().length > 0 });
   useEffect(() => {
     void boot();
     document.addEventListener('error', onError, true);
     document.addEventListener('keydown', onKey);
     addEventListener('popstate', followPath);
     const clocks = setInterval(tickClocks, 1000);
-    // What the pages read that the sidebar shows: a deploy going, the projects of the cycles.
+    // What the pages read that the shell shows: a deploy going, the projects
+    // of the cycles (the sidebar), the apps' findings, an item's tabs (the
+    // center's width) and its runs (the context column).
     const stop = queryClient.getQueryCache().subscribe((event) => {
-      const key = event.query.queryKey[0];
-      if (event.type === 'updated' && event.action.type === 'success' && (key === 'deploys' || key === 'today')) changed();
+      const key = event.query.queryKey[0] as string;
+      if (event.type === 'updated' && event.action.type === 'success' && SHOWN.has(key)) changed();
     });
     return () => {
       document.removeEventListener('error', onError, true);
@@ -101,7 +111,7 @@ export function Shell() {
   }, []);
   const at = S.booted && S.snap ? route() : null;
   return (
-    <HostContext.Provider value={pageHost}>
+    <ShellContext.Provider value={shellActions}>
       <Login />
       <div className={`shell${at?.wide ? ' wide' : ''}${S.page === 'ajustes' ? ' aj' : ''}`} id="shell" data-m={S.m} hidden={!at || Boolean(S.login)}>
         {at ? <><Sidebar /><Center at={at} /><Context /><StatusBar /></> : null}
@@ -109,6 +119,6 @@ export function Shell() {
       {at ? <><NewIssue /><KeysHelp /><ExploreNowLayer /></> : null}
       <Toast />
       <Relogin />
-    </HostContext.Provider>
+    </ShellContext.Provider>
   );
 }

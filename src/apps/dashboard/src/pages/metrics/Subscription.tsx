@@ -1,7 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, type ReactNode } from 'react';
 import { ApiError, client, ok, type SubscriptionAccount } from '../../api.js';
-import { useHost } from '../../host.js';
+import { useShell } from '../../shell/hooks.js';
+import { typeName } from '../../lib/runs.js';
 import { DAY_MS, isMobile, pct } from '../../lib/format.js';
 import { tip } from '../../lib/tip.js';
 import { useViewState } from '../../lib/view-state.js';
@@ -112,7 +113,7 @@ function WeeksChart({ c }: { c: SubscriptionAccount }) {
 }
 
 function Account({ c, now }: { c: SubscriptionAccount; now: number }) {
-  const host = useHost();
+  const shell = useShell();
   const w = c.week;
   const tile = (label: string, value: ReactNode, detail: ReactNode, extra: ReactNode = null) => (
     <div className="tile"><div className="l">{label}</div><div className="v">{value}</div><div className="d">{detail}</div>{extra}</div>
@@ -129,14 +130,14 @@ function Account({ c, now }: { c: SubscriptionAccount; now: number }) {
   const total = s.byTask.reduce((sum, x) => sum + x.usd, 0);
   const max = Math.max(...s.byTask.map((x) => x.usd), 0.01);
   const rest = s.byTask.slice(7).reduce((sum, x) => sum + x.usd, 0);
-  const bars: Array<[string, number]> = [...s.byTask.slice(0, 7).map((x): [string, number] => [host.typeName(x.key), x.usd]), ...(rest ? [['Otras', rest] as [string, number]] : [])];
+  const bars: Array<[string, number]> = [...s.byTask.slice(0, 7).map((x): [string, number] => [typeName(x.key), x.usd]), ...(rest ? [['Otras', rest] as [string, number]] : [])];
   const r = c.perResult;
   const fact = (label: string, x: { avgUsd: number | null; count: number }, unit: string) => (
     <div className="mt-fact"><div className="l">{label}</div><div className="v">{money(x.avgUsd)}</div><div className="mt-sub">{x.count ? `${x.count} ${unit}` : 'ninguno con corridas de ronin'}</div></div>
   );
   return (
     <section className="su-acc">
-      <div className="su-h"><h2>{c.account}</h2><span className="su-plan">Plan <b>{c.plan.name}</b>{c.plan.source === 'defecto' ? ' (por defecto)' : ''} · {c.plan.priceUsd === null ? 'sin precio' : `${money(c.plan.priceUsd)} al mes`}{c.repos.length ? ` · ${c.repos.join(', ')}` : ''}</span><button className="link" onClick={() => host.openSettings('cuentas')}>Cambiar el plan</button></div>
+      <div className="su-h"><h2>{c.account}</h2><span className="su-plan">Plan <b>{c.plan.name}</b>{c.plan.source === 'defecto' ? ' (por defecto)' : ''} · {c.plan.priceUsd === null ? 'sin precio' : `${money(c.plan.priceUsd)} al mes`}{c.repos.length ? ` · ${c.repos.join(', ')}` : ''}</span><button className="link" onClick={() => shell.openSettings('cuentas')}>Cambiar el plan</button></div>
       <div className="tiles su-tiles">
         {w ? tile('Esta semana', pct(w.used), <>se reinicia en <b>{left(Date.parse(w.resetsAt) - now)}</b>{w.ronin === null ? ' · sin estimado de ronin todavía' : ''}</>, split) : tile('Esta semana', '—', 'Sin mediciones esta semana: ronin no corrió con esta cuenta.')}
         {!w ? tile('Proyección', '—', '') : exhausts ? tile('Proyección', <span className="mt-warn">se agota</span>, `el ${when(w.projection.exhaustsAt!)}, a este ritmo`) : tile('Proyección', pct(Math.min(w.projection.close, 1)), <>al reiniciarse, a este ritmo · <b>{pct(Math.max(0, 1 - w.projection.close))}</b> sin usar</>)}
@@ -164,7 +165,7 @@ function Account({ c, now }: { c: SubscriptionAccount; now: number }) {
             <div key={name} className="mt-hbar"><span className="t">{name}</span><span className="b"><i style={{ width: `${(usd / max) * 100}%`, background: RONIN }} /></span><span className="n">{money(usd)} · {Math.round((usd / (total || 1)) * 100)}%</span></div>
           )) : <p className="m">ronin no corrió con esta cuenta en este tiempo.</p>}
           {s.byRepo.length > 1 ? <div className="mt-sub" style={{ marginTop: '12px' }}>Por repo: {s.byRepo.map((x, i) => <span key={x.key}>{i ? ' · ' : ''}{x.key} <b>{money(x.usd)}</b></span>)}</div> : null}
-          {s.byTask.length ? <Table head={['Tarea', 'Equivalente en API', 'Corridas', 'Parte']} rows={s.byTask.map((x) => [host.typeName(x.key), money(x.usd), x.runs, `${Math.round((x.usd / (total || 1)) * 100)}%`])} /> : null}</section>
+          {s.byTask.length ? <Table head={['Tarea', 'Equivalente en API', 'Corridas', 'Parte']} rows={s.byTask.map((x) => [typeName(x.key), money(x.usd), x.runs, `${Math.round((x.usd / (total || 1)) * 100)}%`])} /> : null}</section>
         <section className="pd-card mt-card"><h3>Cuánto cuesta cada resultado <span className="m">equivalente en API, últimos {r.days} días</span></h3>
           <div className="su-facts">{fact('Por issue resuelto', r.issue, r.issue.count === 1 ? 'issue' : 'issues')}{fact('Por PR mergeado', r.pr, r.pr.count === 1 ? 'PR' : 'PRs')}{fact('Por pedido del portal', r.portal, r.portal.count === 1 ? 'pedido' : 'pedidos')}</div>
           <p className="mt-sub">Suma las corridas del issue, de su PR y de sus reviews, también las que fallaron. Solo cuenta lo que ronin trabajó.</p></section>
@@ -174,13 +175,13 @@ function Account({ c, now }: { c: SubscriptionAccount; now: number }) {
 }
 
 export function Subscription() {
-  const host = useHost();
+  const shell = useShell();
   const now = useNow();
   const [account, setAccount] = useViewState('su.account', '');
   const query = useQuery({ queryKey: ['subscription'], queryFn: () => ok(client.api.metrics.subscription.$get({ query: {} })), refetchInterval: EVERY_MS });
   useEffect(() => {
-    if (query.error instanceof ApiError && query.error.status === 401) host.unauthorized(query.error.message);
-  }, [query.error, host]);
+    if (query.error instanceof ApiError && query.error.status === 401) shell.unauthorized(query.error.message);
+  }, [query.error, shell]);
   const data = query.data;
   const error = query.error && !(query.error instanceof ApiError && query.error.status === 401) ? (query.error as Error).message : null;
   const filters = (

@@ -2,16 +2,17 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ApiError, client, ok } from '../../api.js';
-import { useHost } from '../../host.js';
+import { useSession, useShell } from '../../shell/hooks.js';
 import { useViewState } from '../../lib/view-state.js';
 import { appKey, type Portal, type PortalChange } from './model.js';
 
 // Agregar persona: someone of the team, before they come in; or, where
 // the portal is set up, one of its accounts, invited by email.
 export function AddPerson({ portal: portalData, portalFirst, onClose }: { portal: Portal | undefined; portalFirst: boolean; onClose: () => void }) {
-  const host = useHost();
+  const shell = useShell();
+  const session = useSession();
   const queryClient = useQueryClient();
-  const { portalAdmin } = host.session();
+  const { portalAdmin } = session;
   const [, setLink] = useViewState<Link | null>('settings.link', null);
   const [kind, setKind] = useState<'equipo' | 'portal'>(portalFirst ? 'portal' : 'equipo');
   const [login, setLogin] = useState('');
@@ -41,8 +42,8 @@ export function AddPerson({ portal: portalData, portalFirst, onClose }: { portal
       if (!portal) {
         const out = (await ok(client.api.settings.users.$post({ json: { login, role } }))) as { login: string };
         onClose();
-        host.toast(`Agregaste a @${out.login}.`);
-        host.openSettings('usuarios', out.login);
+        shell.toast(`Agregaste a @${out.login}.`);
+        shell.openSettings('usuarios', out.login);
         return;
       }
       const chosen = apps.filter((x) => grants.has(appKey(x))).map((x) => ({ repo: x.repo, app: x.app }));
@@ -50,9 +51,9 @@ export function AddPerson({ portal: portalData, portalFirst, onClose }: { portal
       onClose();
       queryClient.setQueryData(['portal-admin'], await ok(client.api['portal-admin'].$get()));
       setLink(out.sent ? { id: out.user.id, text: `Le mandamos la invitación a ${out.user.email}.` } : { id: out.user.id, text: 'La cuenta quedó, pero el correo no salió. Pásale este enlace por otro medio (vence en 24 horas):', url: out.url });
-      host.openSettings('usuarios', null, null, out.user.id);
+      shell.openSettings('usuarios', null, null, out.user.id);
     } catch (e) {
-      if (e instanceof ApiError && e.status === 401) return host.unauthorized(e.message);
+      if (e instanceof ApiError && e.status === 401) return shell.unauthorized(e.message);
       setSending(false);
       setError((e as Error).message);
     }

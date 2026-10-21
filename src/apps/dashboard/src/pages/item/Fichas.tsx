@@ -2,12 +2,13 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useLayoutEffect, useRef, useState, type MutableRefObject, type ReactElement } from 'react';
 import { createPortal } from 'react-dom';
 import { ApiError, type Exploration } from '../../api.js';
-import { useHost, type ItemView } from '../../host.js';
+import { fichaOf, type ItemView, showFicha, useSession, useShell } from '../../shell/hooks.js';
 import { isMobile, when } from '../../lib/format.js';
 import { Md } from '../../lib/markdown.js';
+import { evidenceSrc } from '../../lib/md.js';
 import { useViewState } from '../../lib/view-state.js';
 import { short } from '../../../../../ui/time.js';
-import { evidenceSrc, FICHA_DOT, FICHA_GROUPS, fichaKey, fichaStatus, postFichaComment, setLista, useExploration, visibleFichas, type FichaActionId, type FichaAsked, type FichaFilter, type FichaStatus, type FindingCard, type FindingImage } from './fichas.js';
+import { FICHA_DOT, FICHA_GROUPS, fichaKey, fichaStatus, postFichaComment, setLista, useExploration, visibleFichas, type FichaActionId, type FichaAsked, type FichaFilter, type FichaStatus, type FindingCard, type FindingImage } from './fichas.js';
 import { Avatar } from './model.js';
 
 // An exploration PR's Fichas tab (#93): the findings the PR brings, a list
@@ -34,12 +35,11 @@ type Shots = { antes: Record<string, number>; oldAfter: string[] };
 export type FichaKeys = MutableRefObject<((key: string) => void) | null>;
 
 export function Fichas({ v, ask, keys }: { v: ItemView; ask: (asked: FichaAsked) => void; keys: FichaKeys }) {
-  const host = useHost();
   const id = v.item.id;
   const { data, error } = useExploration(id, true);
   const [filter, setFilter] = useViewState<FichaFilter>('fichas:filter', { tipo: 'todas', vp: 'todos' });
   const [shots, setShots] = useViewState<Shots>('fichas:shots', { antes: {}, oldAfter: [] });
-  const [sel, setSel] = useState(() => host.ficha(id));
+  const [sel, setSel] = useState(() => fichaOf(id));
   const [menu, setMenu] = useState(false);
   const [lightbox, setLightbox] = useState<{ ficha: string; antes: number; only: 'despues' | null } | null>(null);
   // A finding marked to approve (or not) changes its group: drawn again.
@@ -58,7 +58,7 @@ export function Fichas({ v, ask, keys }: { v: ItemView; ask: (asked: FichaAsked)
   };
   const select = (key: string) => {
     letGo();
-    host.showFicha(id, key, true);
+    showFicha(id, key, true);
     setSel({ ficha: key, open: true });
     picked.current = true;
   };
@@ -148,7 +148,7 @@ export function Fichas({ v, ask, keys }: { v: ItemView; ask: (asked: FichaAsked)
         {data.runs.length > 0 && <div className="fruns">Corridas: {data.runs.map((run, i) => <span key={run.id}>{i > 0 && ', '}<a href={run.url} target="_blank" rel="noopener">{run.id}</a></span>)}</div>}</div>
       <div className="fdetail" id="fdetail" ref={detailRef} data-current={f ? fichaKey(f) : ''}>{f && (
         <Ficha v={v} data={data} f={f} shown={shown} menu={menu} setMenu={setMenu} act={act} toggleLista={toggleLista} move={move}
-          back={() => { letGo(); host.showFicha(id, null, false); setSel({ ...sel, open: false }); }}
+          back={() => { letGo(); showFicha(id, null, false); setSel({ ...sel, open: false }); }}
           antes={shotsOf.antes(fichaKey(f))} old={shotsOf.old(fichaKey(f))}
           setAntes={(k) => letGo() ?? setShots({ ...shots, antes: { ...shots.antes, [fichaKey(f)]: k } })}
           toggleOld={() => letGo() ?? setShots({ ...shots, oldAfter: shots.oldAfter.includes(fichaKey(f)) ? shots.oldAfter.filter((x) => x !== fichaKey(f)) : [...shots.oldAfter, fichaKey(f)] })}
@@ -215,8 +215,8 @@ function Decisions({ status, menu, setMenu, act, toggleLista }: { status: FichaS
 // A screenshot ronin published, served from its clone; one that doesn't
 // load leaves its label.
 function Shot({ img, label, which, extra, zoom }: { img: FindingImage; label: string; which: 'antes' | 'despues'; extra?: React.ReactNode; zoom: () => void }) {
-  const host = useHost();
-  const local = evidenceSrc(host, img.url);
+  const session = useSession();
+  const local = evidenceSrc(session.repos, img.url);
   const text = `[imagen${img.nota ? `: ${img.nota}` : ''}]`;
   const [failed, setFailed] = useState(false);
   return (
@@ -228,8 +228,8 @@ function Shot({ img, label, which, extra, zoom }: { img: FindingImage; label: st
 }
 
 function Thumb({ img, k, pressed, pick }: { img: FindingImage; k: number; pressed: boolean; pick: () => void }) {
-  const host = useHost();
-  const local = evidenceSrc(host, img.url);
+  const session = useSession();
+  const local = evidenceSrc(session.repos, img.url);
   const [failed, setFailed] = useState(false);
   return <button className="thumb" aria-pressed={pressed} title={img.nota ?? `Antes ${k + 1}`} onClick={pick}>{local && !failed ? <img src={local} alt="" onError={() => setFailed(true)} /> : k + 1}</button>;
 }
@@ -262,7 +262,8 @@ function diffStat(patch: string) {
 // The finding's thread, and a box to comment on it, as on its file in
 // "Files changed".
 function Thread({ v, data, f }: { v: ItemView; data: Exploration; f: FindingCard }) {
-  const host = useHost();
+  const shell = useShell();
+  const session = useSession();
   const { item } = v;
   const key = fichaKey(f);
   const [text, setText] = useState(drafts.get(key) ?? '');
@@ -291,11 +292,11 @@ function Thread({ v, data, f }: { v: ItemView; data: Exploration; f: FindingCard
       const done = await postFichaComment(item.id, key, 'comentar', said, false);
       drafts.delete(key);
       setText('');
-      host.toast(`Comentaste en ${key.split('/')[1]}. ronin lo va a aplicar y te responde en el hilo.`, done.url);
+      shell.toast(`Comentaste en ${key.split('/')[1]}. ronin lo va a aplicar y te responde en el hilo.`, done.url);
       await queryClient.invalidateQueries({ queryKey: ['exploration', item.id] });
     } catch (e) {
-      if (e instanceof ApiError && e.status === 401) return host.unauthorized(e.message);
-      host.toast(`No se pudo comentar: ${(e as Error).message}`);
+      if (e instanceof ApiError && e.status === 401) return shell.unauthorized(e.message);
+      shell.toast(`No se pudo comentar: ${(e as Error).message}`);
     }
     setSending(false);
   };
@@ -307,14 +308,14 @@ function Thread({ v, data, f }: { v: ItemView; data: Exploration; f: FindingCard
       <div className="composer"><textarea id="fcomment" ref={area} rows={3} maxLength={4000} placeholder="Comentar en la ficha… ronin lo lee como en GitHub: puede rechazarla, corregirla, abrir un issue o responder." value={text}
         onChange={(e) => { setText(e.target.value); drafts.set(key, e.target.value); }}
         onKeyDown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) void send(); }} />
-        <div className="cf"><span>Comentás como {host.me()} sobre el archivo de la ficha{files && <>, en <a href={`${files}/files`} target="_blank" rel="noopener">“Files changed”</a></>}.</span><button className="btn-s" id="fcomment-send" disabled={sending} onClick={() => void send()}>{sending ? 'Comentando…' : 'Comentar'}</button></div></div></div>
+        <div className="cf"><span>Comentás como {session.me} sobre el archivo de la ficha{files && <>, en <a href={`${files}/files`} target="_blank" rel="noopener">“Files changed”</a></>}.</span><button className="btn-s" id="fcomment-send" disabled={sending} onClick={() => void send()}>{sending ? 'Comentando…' : 'Comentar'}</button></div></div></div>
   );
 }
 
 // The finding's screenshots in large: the before shown next to the after;
 // ←/→ go through the befores. It has the keys while it's open.
 function Lightbox({ data, lb, set, old }: { data: Exploration; lb: { ficha: string; antes: number; only: 'despues' | null }; set: (lb: { ficha: string; antes: number; only: 'despues' | null } | null) => void; old: boolean }) {
-  const host = useHost();
+  const session = useSession();
   const f = data.fichas.find((x) => fichaKey(x) === lb.ficha);
   const live = useRef({ lb, f });
   live.current = { lb, f };
@@ -335,7 +336,7 @@ function Lightbox({ data, lb, set, old }: { data: Exploration; lb: { ficha: stri
   const shown: Array<[string, FindingImage | undefined]> = lb.only === 'despues' || !before ? [['Después', after]] : [[`Antes${f.antes.length > 1 ? ` ${lb.antes + 1} de ${f.antes.length}` : ''}`, before], ...(after ? [['Después', after] as [string, FindingImage]] : [])];
   return createPortal(
     <div id="lightbox" className="lightbox"><div className="lt"><b>{f.id}</b><span className="m">{f.titulo}</span>{f.antes.length > 1 && <span className="m keys"><kbd>←</kbd> <kbd>→</kbd> otra captura del antes</span>}<button id="lb-x" onClick={() => set(null)}>Cerrar ✕</button></div>
-      <div className="lb">{shown.filter(([, img]) => img && evidenceSrc(host, img.url)).map(([label, img]) => <figure key={label}><div><img src={evidenceSrc(host, img!.url)!} alt={img!.nota ?? label} /></div><figcaption><b>{label}</b>{img!.nota ? ` · ${img!.nota}` : ''}</figcaption></figure>)}</div></div>,
+      <div className="lb">{shown.filter(([, img]) => img && evidenceSrc(session.repos, img.url)).map(([label, img]) => <figure key={label}><div><img src={evidenceSrc(session.repos, img!.url)!} alt={img!.nota ?? label} /></div><figcaption><b>{label}</b>{img!.nota ? ` · ${img!.nota}` : ''}</figcaption></figure>)}</div></div>,
     document.body,
   );
 }

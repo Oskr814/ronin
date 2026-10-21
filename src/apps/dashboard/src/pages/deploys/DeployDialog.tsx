@@ -2,7 +2,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ApiError, client, ok } from '../../api.js';
-import { useHost } from '../../host.js';
+import { useShell } from '../../shell/hooks.js';
 import { ago, useNow } from '../../../../../ui/time.js';
 import { at, planOf, subject, type Plan, type Repos } from './model.js';
 
@@ -13,7 +13,7 @@ const PLAN_MS = 450;
 // publishing sends that plan's fingerprint, so what's published is what was
 // shown.
 export function DeployDialog({ repos, repo, pr, onClose }: { repos: Repos; repo: string; pr?: number; onClose: () => void }) {
-  const host = useHost();
+  const shell = useShell();
   const queryClient = useQueryClient();
   const now = useNow();
   const r = repos.find((x) => x.repo === repo);
@@ -60,7 +60,7 @@ export function DeployDialog({ repos, repo, pr, onClose }: { repos: Repos; repo:
           setError(null);
         }
       } catch (e) {
-        if (e instanceof ApiError && e.status === 401) return host.unauthorized(e.message);
+        if (e instanceof ApiError && e.status === 401) return shell.unauthorized(e.message);
         if (!stale) {
           setPlan(null);
           setError((e as Error).message);
@@ -82,10 +82,10 @@ export function DeployDialog({ repos, repo, pr, onClose }: { repos: Repos; repo:
     try {
       const done = await ok(client.api.deploys[':owner'][':name'].publish.$post({ ...at(repo), json: { ...body, title: title.trim() || undefined, notes: notes.trim() || undefined, fingerprint: current.fingerprint } }));
       onClose();
-      host.toast(`Publicado ${done.tag}: el workflow del repo ya arrancó.${done.pedidos.length ? ` ${done.pedidos.map((n) => `P-${n}`).join(', ')} ${done.pedidos.length === 1 ? 'recibe' : 'reciben'} el aviso cuando termine bien.` : ''}`, done.url || undefined);
+      shell.toast(`Publicado ${done.tag}: el workflow del repo ya arrancó.${done.pedidos.length ? ` ${done.pedidos.map((n) => `P-${n}`).join(', ')} ${done.pedidos.length === 1 ? 'recibe' : 'reciben'} el aviso cuando termine bien.` : ''}`, done.url || undefined);
       void queryClient.invalidateQueries({ queryKey: ['deploys'] });
     } catch (e) {
-      if (e instanceof ApiError && e.status === 401) return host.unauthorized(e.message);
+      if (e instanceof ApiError && e.status === 401) return shell.unauthorized(e.message);
       setSending(false);
       setError((e as Error).message);
       // What goes in changed: the new plan, to look at again.

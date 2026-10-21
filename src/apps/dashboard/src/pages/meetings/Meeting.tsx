@@ -1,10 +1,10 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { ApiError, client, ok, type Run } from '../../api.js';
-import { useHost } from '../../host.js';
+import { useRepoColor, useShell } from '../../shell/hooks.js';
 import { hhmm, repoShort, when } from '../../lib/format.js';
 import { ICON } from '../../lib/icons.js';
-import { Dot, money, RunCard, Transcript } from '../../lib/runs.js';
+import { Dot, money, RunCard, Transcript, typeName } from '../../lib/runs.js';
 import { useViewState } from '../../lib/view-state.js';
 import { ago, useNow } from '../../../../../ui/time.js';
 import { EVERY_MS, StatusChip } from './Meetings.js';
@@ -22,7 +22,7 @@ interface View { n: number; tab: Tab | null; run: string | null; open: Record<st
 const isUnauthorized = (e: unknown): e is ApiError => e instanceof ApiError && e.status === 401;
 
 export function Meeting({ n, run }: { n: number; run?: string | null }) {
-  const host = useHost();
+  const shell = useShell();
   const queryClient = useQueryClient();
   const [kept, keep] = useViewState<View | null>('meeting', null);
   const [shown, setShown] = useState<View>(() => {
@@ -49,8 +49,8 @@ export function Meeting({ n, run }: { n: number; run?: string | null }) {
     refetchInterval: (q) => (!q.state.data || q.state.data.summary.state === 'running' ? EVERY_MS : false),
   });
   useEffect(() => {
-    for (const e of [query.error, runQuery.error]) if (isUnauthorized(e)) host.unauthorized(e.message);
-  }, [query.error, runQuery.error, host]);
+    for (const e of [query.error, runQuery.error]) if (isUnauthorized(e)) shell.unauthorized(e.message);
+  }, [query.error, runQuery.error, shell]);
 
   // A line the person asked to see in the notes, outlined for a moment.
   useEffect(() => {
@@ -79,10 +79,10 @@ export function Meeting({ n, run }: { n: number; run?: string | null }) {
     setRetrying(true);
     try {
       await ok(client.api.meetings[':n'].retry.$post({ param: { n: String(n) } }));
-      host.toast(`Listo: ronin vuelve a leer R-${n}.`);
+      shell.toast(`Listo: ronin vuelve a leer R-${n}.`);
     } catch (e) {
-      if (isUnauthorized(e)) return host.unauthorized(e.message);
-      host.toast(`No se pudo: ${(e as Error).message}`);
+      if (isUnauthorized(e)) return shell.unauthorized(e.message);
+      shell.toast(`No se pudo: ${(e as Error).message}`);
     }
     setRetrying(false);
     await reload();
@@ -115,11 +115,12 @@ export function Meeting({ n, run }: { n: number; run?: string | null }) {
 }
 
 function Head({ d }: { d: Detail }) {
-  const host = useHost();
+  const shell = useShell();
+  const repoColor = useRepoColor();
   const now = useNow();
   return (
     <div className="head pd-head">
-      <div className="crumb"><button className="link" onClick={() => host.openMeetings()}>Reuniones</button> / <i style={{ background: host.repoColor(d.repo) }} />{repoShort(d.repo)}</div>
+      <div className="crumb"><button className="link" onClick={() => shell.openMeetings()}>Reuniones</button> / <i style={{ background: repoColor(d.repo) }} />{repoShort(d.repo)}</div>
       <div className="row"><h1>{d.title} <span className="n">R-{d.number}</span></h1></div>
       <div className="state"><StatusChip m={d} />{d.at && <span>{when(d.at)}</span>}<span className="m">subida por {d.by} {ago(d.createdAt, now)}</span></div>
     </div>
@@ -197,14 +198,13 @@ function Activity({ d, onRun }: { d: Detail; onRun: (runId: string) => void }) {
 }
 
 function Runs({ d, open, view, error, onRun, onClose }: { d: Detail; open: string | null; view: Run | undefined; error: string | null; onRun: (runId: string) => void; onClose: () => void }) {
-  const host = useHost();
   if (!d.runs.length) return <p className="note">Sin corridas en los últimos 14 días.</p>;
   const list = d.runs.map((run) => <div key={run.runId} className={`pd-runrow ${open === run.runId ? 'cur' : ''}`}><span className="tm">{when(run.startedAt)}</span><RunCard run={run} onOpen={onRun} /></div>);
   if (!open) return <>{list}</>;
   const summary = view?.summary.runId === open ? view.summary : null;
   return <>
     <div className="pd-runview">
-      <div className="pd-runbar"><b>{host.typeName(summary?.taskType ?? '')}</b><span className="m">{summary ? when(summary.startedAt) : ''}</span><button className="btn-s" onClick={onClose}>Cerrar</button></div>
+      <div className="pd-runbar"><b>{typeName(summary?.taskType ?? '')}</b><span className="m">{summary ? when(summary.startedAt) : ''}</span><button className="btn-s" onClick={onClose}>Cerrar</button></div>
       {summary ? <Transcript run={view!} /> : <div className="empty">{error ?? 'Cargando la corrida…'}</div>}
     </div>
     {list}
@@ -212,7 +212,6 @@ function Runs({ d, open, view, error, onRun, onClose }: { d: Detail; open: strin
 }
 
 function Side({ d }: { d: Detail }) {
-  const host = useHost();
   return (
     <div className="pd-side">
       <div className="pd-card"><h3>Reunión</h3><dl className="kv">
@@ -222,7 +221,7 @@ function Side({ d }: { d: Detail }) {
         <dt>Notas</dt><dd>{source(d)}<small>{chars(d.chars)}</small></dd>
         {d.link && /^https?:\/\//.test(d.link) && <><dt>Link</dt><dd><a href={d.link} target="_blank" rel="noopener noreferrer">{`${d.link.replace(/^https?:\/\//, '').slice(0, 40)} ↗`}</a></dd></>}
       </dl></div>
-      {d.runs.length > 0 && <div className="pd-card"><h3>Corridas</h3><div className="pd-costs">{d.runs.slice().reverse().map((run) => <div key={run.runId}><span>{host.typeName(run.taskType)}</span><span>{run.costUsd !== undefined ? money(run.costUsd) : run.state === 'running' ? 'en curso' : '—'}</span></div>)}</div></div>}
+      {d.runs.length > 0 && <div className="pd-card"><h3>Corridas</h3><div className="pd-costs">{d.runs.slice().reverse().map((run) => <div key={run.runId}><span>{typeName(run.taskType)}</span><span>{run.costUsd !== undefined ? money(run.costUsd) : run.state === 'running' ? 'en curso' : '—'}</span></div>)}</div></div>}
     </div>
   );
 }

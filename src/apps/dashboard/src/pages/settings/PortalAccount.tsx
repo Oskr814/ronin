@@ -1,7 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import { client, ok } from '../../api.js';
-import { useHost } from '../../host.js';
+import { useRepoColor, useShell } from '../../shell/hooks.js';
 import { useViewState } from '../../lib/view-state.js';
 import type { Link } from './AddPerson.js';
 import { onCommit, Row, Sec, SectionLink, useChange } from './parts.js';
@@ -13,7 +13,8 @@ import type { Data } from './Settings.js';
 // Usuarios had it in a dialog: its name, the apps it can ask in, its daily
 // limit, the link to set its password and turning it off.
 export function Account({ data, id }: { data: Data; id: string }) {
-  const host = useHost();
+  const shell = useShell();
+  const repoColor = useRepoColor();
   const queryClient = useQueryClient();
   const change = useChange();
   const [busy, setBusy] = useState(false);
@@ -36,7 +37,7 @@ export function Account({ data, id }: { data: Data; id: string }) {
       queryClient.setQueryData<Portal>(['portal-admin'], (p) => p && { ...p, users: [...p.users.filter((x) => x.id !== out.user.id), { ...out.user, today: p.users.find((x) => x.id === out.user.id)?.today }].sort((a, b) => a.name.localeCompare(b.name, 'es')) });
       if (out.sent === true) setLink({ id: out.user.id, text: `Le mandamos el enlace a ${out.user.email}.` });
       else if (out.sent === false) setLink({ id: out.user.id, text: 'El correo no salió. Pásale este enlace por otro medio (vence en 24 horas):', url: out.url });
-      else host.toast(body.disabled === true ? 'Cuenta desactivada.' : body.disabled === false ? 'Cuenta reactivada.' : 'Guardado.');
+      else shell.toast(body.disabled === true ? 'Cuenta desactivada.' : body.disabled === false ? 'Cuenta reactivada.' : 'Guardado.');
       // The limit and today's use come with the list.
       if (body.dailyLimit !== undefined) queryClient.setQueryData(['portal-admin'], await ok(client.api['portal-admin'].$get()));
     });
@@ -66,7 +67,7 @@ export function Account({ data, id }: { data: Data; id: string }) {
     </Sec>
     <Sec title="Puede pedir ajustes en" lead={<>Las apps de <code>portal.apps</code> de cada repo.</>}>
       {byRepo.map((apps) => (
-        <div key={apps[0].repo} className="aj-row aj-apps"><div className="l"><b><i className="aj-sq" style={{ background: host.repoColor(apps[0].repo) }} />{apps[0].org} <span className="m mono">{apps[0].repo}</span></b>
+        <div key={apps[0].repo} className="aj-row aj-apps"><div className="l"><b><i className="aj-sq" style={{ background: repoColor(apps[0].repo) }} />{apps[0].org} <span className="m mono">{apps[0].repo}</span></b>
           {apps.map((a) => <label key={a.app} className="aj-chk"><input type="checkbox" data-ajgrant={appKey(a)} defaultChecked={granted.has(appKey(a))} onChange={(event) => grant(appKey(a), event.target.checked)} /><span>{a.name}{a.description ? <small>{a.description}</small> : null}</span></label>)}</div></div>
       ))}
       {gone.length ? <div className="aj-row"><div className="l"><small>{gone.map((g) => appLabel(portal.apps, g)).join(', ')}: ya no está en el portal (portal.apps de repos.json).</small></div></div> : null}
@@ -77,7 +78,7 @@ export function Account({ data, id }: { data: Data; id: string }) {
         write({ dailyLimit: raw === '' ? null : Number(raw) });
       })} /><span className="aj-unit">pedidos</span></>}
         src={u.today ? <span>Hoy: {u.today.used} de {u.today.limit}{u.today.used >= u.today.limit ? <> · <span className="warn-t">sin pedidos hasta mañana</span></> : null}</span> : null} />
-      <Row label="Sus pedidos" ctl={<button className="btn-s" data-ajcpedidos onClick={() => host.openPedidos()}>Ver en Pedidos del portal</button>} />
+      <Row label="Sus pedidos" ctl={<button className="btn-s" data-ajcpedidos onClick={() => shell.openRequests()}>Ver en Pedidos del portal</button>} />
     </Sec>
     <Sec title="Acceso">
       <Row label={u.hasPassword ? 'Nueva contraseña' : 'Volver a mandar la invitación'} desc="Le llega un enlace que vence en 24 horas. Nadie más ve la contraseña." ctl={<button className="btn-s" data-ajclink disabled={u.disabled || busy} onClick={() => write({}, true)}>Mandar enlace</button>} />

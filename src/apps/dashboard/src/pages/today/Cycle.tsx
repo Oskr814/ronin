@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, useState, type PointerEvent } from 'react';
-import { useHost } from '../../host.js';
+import { setProject, useProject, useProjectColor } from '../../shell/hooks.js';
 import { DAY_MS, repoShort } from '../../lib/format.js';
 import { LinearIcon } from '../../lib/github.js';
 import { BUCKETS, BURN, burnGeometry, cycleName, dayMonth, endDay, type Cycle } from './model.js';
@@ -81,8 +81,8 @@ function Burn({ c, now }: { c: Cycle; now: number }) {
 // The cycle by project (a project's row filters the sidebar by it) and by
 // who has what's left.
 export function Breakdown({ c }: { c: Cycle }) {
-  const host = useHost();
-  const project = host.project();
+  const projectColor = useProjectColor();
+  const project = useProject();
   const swatch = (color: string) => <i style={{ background: color }} />;
   const groups = new Map<string, Cycle['issues']>();
   for (const issue of c.issues) {
@@ -97,7 +97,7 @@ export function Breakdown({ c }: { c: Cycle }) {
     });
     const parts = (name: string, color: string) => <><span className="bn">{swatch(color)}<span>{name}</span></span><span className="bb">{segs}</span><span className="bc">{issues.length}</span></>;
     return id
-      ? <button key={id} className="brow" aria-pressed={project === id} title="Filtrar la lista por este proyecto" onClick={() => host.setProject(project === id ? '' : id)}>{parts(issues[0].project!.name, host.projectColor(id))}</button>
+      ? <button key={id} className="brow" aria-pressed={project === id} title="Filtrar la lista por este proyecto" onClick={() => setProject(project === id ? '' : id)}>{parts(issues[0].project!.name, projectColor(id))}</button>
       : <div key="" className="brow">{parts('Sin proyecto', 'var(--proj-other)')}</div>;
   });
   const open = c.issues.filter((i) => i.bucket !== 'done');

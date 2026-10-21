@@ -1,6 +1,6 @@
 import { createContext, useContext, type ReactNode } from 'react';
 import { ApiError } from '../../api.js';
-import { useHost } from '../../host.js';
+import { useShell } from '../../shell/hooks.js';
 
 // The pieces every section of Ajustes is made of, as app.js wrote them (the
 // data-aj* attributes too: the CSS and the keyboard find some of them).
@@ -35,8 +35,8 @@ export function Switch({ on, label, onToggle, disabled, ...data }: { on: boolean
 
 // Another section, at its address.
 export function SectionLink({ to, children }: { to: string; children: ReactNode }) {
-  const host = useHost();
-  return <a href={`/ajustes/${to}`} data-aj-link={to} onClick={(event) => { event.preventDefault(); host.openSettings(to); }}>{children}</a>;
+  const shell = useShell();
+  return <a href={`/ajustes/${to}`} data-aj-link={to} onClick={(event) => { event.preventDefault(); shell.openSettings(to); }}>{children}</a>;
 }
 
 // A field saves when it's left, as app.js did: the element's own change

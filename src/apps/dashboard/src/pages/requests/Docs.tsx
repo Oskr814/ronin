@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { createContext, useContext, useEffect } from 'react';
 import { ApiError, client, ok } from '../../api.js';
-import { useHost } from '../../host.js';
+import { useShell } from '../../shell/hooks.js';
 import { when } from '../../lib/format.js';
 import { useViewState } from '../../lib/view-state.js';
 import { firstName, imagePath, REPRODUCTIONS, type Detail, type Message, type Reproduction } from './model.js';
@@ -70,7 +70,7 @@ export function diffStat(patch: string): string {
 
 // A prototype's diff, or a reproduction's (#137): read when asked, and kept.
 function Patch({ n, of, round }: { n: number; of: 'prototype' | 'reproduction'; round: number }) {
-  const host = useHost();
+  const shell = useShell();
   const [asked, setAsked] = useViewState(`request.patch:${n}:${of}:${round}`, false);
   const query = useQuery({
     queryKey: ['request-patch', n, of, round],
@@ -79,8 +79,8 @@ function Patch({ n, of, round }: { n: number; of: 'prototype' | 'reproduction'; 
     staleTime: Infinity,
   });
   useEffect(() => {
-    if (query.error instanceof ApiError && query.error.status === 401) host.unauthorized(query.error.message);
-  }, [query.error, host]);
+    if (query.error instanceof ApiError && query.error.status === 401) shell.unauthorized(query.error.message);
+  }, [query.error, shell]);
   if (query.data !== undefined) return <><div className="m">{diffStat(query.data)}</div><Diff patch={query.data} /></>;
   const ask = () => (asked ? void query.refetch() : setAsked(true));
   return <button className="btn-s" onClick={ask}>{query.isFetching ? 'Cargando…' : query.error ? 'No se pudo leer: reintentar' : 'Ver el diff'}</button>;
