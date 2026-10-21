@@ -2,14 +2,13 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { host, localHost, setHost, type Host } from './host.js';
+import { host, localHost } from './host.js';
 
 let dir: string;
 beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), 'ronin-host-'));
 });
 afterEach(async () => {
-  setHost(null);
   await rm(dir, { recursive: true, force: true });
 });
 
@@ -91,12 +90,7 @@ describe('localHost.fs', () => {
 });
 
 describe('host()', () => {
-  it('is this machine unless another one is set', () => {
-    expect(host()).toBe(localHost);
-    const other = { ...localHost, name: 'otra' } as Host;
-    setHost(other);
-    expect(host().name).toBe('otra');
-    setHost(null);
+  it('is this machine', () => {
     expect(host()).toBe(localHost);
   });
 });

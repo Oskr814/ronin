@@ -184,12 +184,8 @@ export const localHost: Host = {
   },
 };
 
-let current: Host = localHost;
-
-// The host jobs run on.
-export const host = (): Host => current;
-
-// For tests: another host, or back to this machine's.
-export function setHost(next: Host | null): void {
-  current = next ?? localHost;
-}
+// The host jobs run on: this machine's, the only one today. The day there
+// is another (ARCHITECTURE.md's «Proyección»), a worker gets its host when it
+// starts and a request to the server gets it through an AsyncLocalStorage, as
+// activeRepo() gets its repo: that is why it is a function.
+export const host = (): Host => localHost;

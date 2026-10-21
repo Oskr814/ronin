@@ -376,6 +376,10 @@ Fuera de #235, que deja todo preparado:
   - Recibe un servidor MCP del runner por stdio sobre SSH (`ssh runner ronin-runner tools --workspace …`), con leer, editar, buscar y ejecutar en el worktree del runner.
   - El MCP del navegador va por el mismo camino.
 - **El trabajo sin agente** (worktrees, previews, tests, evidencias) es un `SshHost` que implementa la misma interfaz `Host`.
+- **Cada trabajo sabe en qué host corre sin que nadie lo cambie a mitad de camino:**
+  - un worker recibe su runner al arrancar, en el entorno, y `host()` lo resuelve una vez para todo el proceso;
+  - el servidor y el tick, que atienden varias cosas a la vez, lo fijan por llamada con un `AsyncLocalStorage`, como `activeRepo()` con el repo;
+  - por eso `host()` es una función y no hay un `setHost` global, que haría que dos peticiones se pisaran.
 - **El planificador reparte** según capacidades (repos, Docker, navegadores), turnos y carga.
 - **El runner local tiene una preferencia configurable:** usarlo como a cualquiera, solo si los demás están ocupados, o nunca.
 - **Antes de construirlo, un spike:**
