@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 
 vi.mock('../config/config.js', () => ({ config: { githubLogin: 'ronin-agent' } }));
 
-const { describeMention, neutralizeFenceMarkers } = await import('./prompts.js');
+const { describeMention, neutralizeFenceMarkers, PR_BODY_RULE, prBodyUpdateRule } = await import('./prompts.js');
 
 describe('neutralizeFenceMarkers', () => {
   it('turns any marker-shaped sequence into one that no longer closes or opens a fence', () => {
@@ -37,5 +37,22 @@ describe('describeMention', () => {
     expect(text).toContain('+l5\n');
     expect(text).toContain('You (id 10): <<<REPLY_START>>>antes<<<REPLY_END>>>');
     expect(text).not.toContain('después');
+  });
+});
+
+// #193: how to try the PR, collapsed at the end of «Cómo se verificó», where
+// the preview takes the data to prepare from.
+describe('the PR body', () => {
+  it('ends «Cómo se verificó» with a collapsed «Cómo probar»: the data, then the steps', () => {
+    expect(PR_BODY_RULE).toContain('"<details><summary>Cómo probar</summary>"');
+    expect(PR_BODY_RULE).toContain('"**Datos:**"');
+    expect(PR_BODY_RULE).toContain('"**Pasos:**"');
+    expect(PR_BODY_RULE).toContain('"</details>"');
+    expect(PR_BODY_RULE.indexOf('Cómo probar')).toBeGreaterThan(PR_BODY_RULE.indexOf('## Cómo se verificó'));
+    expect(PR_BODY_RULE.indexOf('Cómo probar')).toBeLessThan(PR_BODY_RULE.indexOf('## Decisiones propias'));
+  });
+
+  it('keeps «Cómo probar» up to date when the PR changes', () => {
+    expect(prBodyUpdateRule(42)).toContain('its "Cómo probar" block included');
   });
 });
