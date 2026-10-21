@@ -206,7 +206,7 @@ export async function runClaudeHeadless(cwd: string, prompt: string, label: stri
         finalResult = String(event.result ?? '');
         sink?.result(resultStats(event));
       } else if (event.type === 'rate_limit_event') {
-        recordRateLimit(claudeConfigDir ?? '', event.rate_limit_info);
+        void recordRateLimit(claudeConfigDir ?? '', event.rate_limit_info);
       } else {
         for (const step of streamSteps(event)) {
           logStep(label, step);
@@ -229,7 +229,7 @@ export async function runClaudeHeadless(cwd: string, prompt: string, label: stri
       if (code === 0) resolve(finalResult);
       else if (timedOut) reject(new ClaudeTimeoutError(`${config.claudeCommand} timed out after ${config.agentTaskTimeoutMs}ms`));
       else if (usageLimitHit) {
-        recordUsageLimitHit(claudeConfigDir ?? '');
+        void recordUsageLimitHit(claudeConfigDir ?? '');
         reject(new ClaudeUsageLimitError(`${config.claudeCommand} hit its usage/spend limit`));
       }
       else reject(new Error(`${config.claudeCommand} exited with code ${code}: ${stderr.slice(-2000)}`));

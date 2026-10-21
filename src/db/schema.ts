@@ -174,6 +174,21 @@ export interface RunsTable {
   updated_at: Stamp;
 }
 
+// Each Claude account's last usage measurement (core/claude-usage.ts)…
+export interface ClaudeUsageTable {
+  account: string;
+  data: Json<unknown>;
+  updated_at: Stamp;
+}
+
+// …and every one before.
+export interface ClaudeUsageHistoryTable {
+  id: Generated<string>;
+  account: string;
+  at: ColumnType<Date, string, string>;
+  data: Json<unknown>;
+}
+
 export interface Database {
   settings: SettingsTable;
   task_settings: TaskSettingsTable;
@@ -188,4 +203,6 @@ export interface Database {
   lock_waits: LockWaitsTable;
   repo_state: RepoStateTable;
   runs: RunsTable;
+  claude_usage: ClaudeUsageTable;
+  claude_usage_history: ClaudeUsageHistoryTable;
 }

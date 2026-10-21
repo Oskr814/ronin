@@ -1,5 +1,5 @@
 import type { RepoEntry } from '../../core/repo-context.js';
-import { readUsageHistory } from '../../core/claude-usage.js';
+import { usageHistory } from '../../core/claude-usage.js';
 import { repoDataOf } from '../../metrics/index.js';
 import { computeSubscription, type Subscription } from '../../metrics/subscription.js';
 import { cuentasView } from './cuentas-claude.js';
@@ -23,7 +23,7 @@ export async function suscripcionView(entries: RepoEntry[], account: string | nu
     account: c.account,
     plan: c.plan,
     repos: c.repos,
-    history: readUsageHistory(c.account),
+    history: await usageHistory(c.account),
     runs: runs.filter((r) => r.account === c.account),
     repoData: await repoDataOf(c.repos, now),
     now,

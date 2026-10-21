@@ -4,7 +4,6 @@ import { join } from 'node:path';
 import { logsDir, localDay } from '../../core/run-files.js';
 import { getDb } from '../../db/db.js';
 import { listRunsDb, putRun, thisHost } from '../../core/runs-store.js';
-import type { AccountUsage } from '../../core/claude-usage.js';
 import { stepText, type RunLine, type RunOutcome, type RunSummary } from '../../core/run-record.js';
 
 // What the dashboard reads from this runner's own files (#65): the per-run
@@ -140,21 +139,6 @@ function listRunFiles(wanted: Set<string>): RunSummary[] {
 export function itemKey(run: Pick<RunSummary, 'repo' | 'issueNumber' | 'prNumber' | 'taskType' | 'label'>): string {
   const number = run.issueNumber ?? run.prNumber;
   return number !== undefined ? `${run.repo}#${number}` : `${run.repo}:${run.taskType}:${run.label}`;
-}
-
-export function readUsage(): AccountUsage[] {
-  const dir = join(logsDir(), 'usage');
-  if (!existsSync(dir)) return [];
-  const usage: AccountUsage[] = [];
-  for (const file of readdirSync(dir)) {
-    if (!file.endsWith('.json')) continue;
-    try {
-      usage.push(JSON.parse(readFileSync(join(dir, file), 'utf8')) as AccountUsage);
-    } catch {
-      // Being replaced right now; the next read has it.
-    }
-  }
-  return usage.sort((a, b) => a.account.localeCompare(b.account));
 }
 
 // The agent slots taken in each repo (core/locks.ts): one lock file per slot,

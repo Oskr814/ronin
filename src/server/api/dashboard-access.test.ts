@@ -34,11 +34,12 @@ vi.mock('./dashboard-data.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./dashboard-data.js')>()),
   listRuns: () => [run('r-sc', SC), run('r-bm', BM)],
   readQueue: () => [{ kind: 'issue', label: '#1', repo: SC, since: '' }, { kind: 'issue', label: '#2', repo: BM, since: '' }],
-  readUsage: () => [{ account: 'redmotos' }, { account: 'bmedical' }],
   readTickInfo: () => ({}),
   slotsInUse: () => ({}),
   runPath: (runId: string) => join(dir, `${runId}.jsonl`),
 }));
+
+vi.mock('../../core/claude-usage.js', async (importOriginal) => ({ ...(await importOriginal<typeof import('../../core/claude-usage.js')>()), listUsage: async () => [{ account: 'redmotos' }, { account: 'bmedical' }] }));
 
 const launchMeetingWorker = vi.fn(async (_n: number) => {});
 vi.mock('../../meetings/launch.js', async (importOriginal) => ({ ...(await importOriginal<typeof import('../../meetings/launch.js')>()), launchMeetingWorker: (n: number) => launchMeetingWorker(n) }));
