@@ -1,9 +1,11 @@
-import { useSyncExternalStore } from 'react';
+import { useSyncExternalStore, type ReactNode } from 'react';
 import { useHost, type ExplorationRow, type ExplorationsView } from '../../host.js';
-import { when } from '../../lib/format.js';
+import { hhmm, when } from '../../lib/format.js';
+import { RUN_STATE } from '../../lib/runs.js';
+import { ago } from '../../../../../ui/time.js';
 
 // What the Exploraciones pages share (#155): the apps as the shell has them,
-// and how an app's state is written, as app.js writes it for the item's head.
+// and how an app's state and head are written, on its page and its PR's.
 
 const MIN = 60e3;
 // The list read again this often while its page is open (app.js), and an
@@ -52,4 +54,24 @@ export function Chip({ view, r }: { view: ExplorationsView; r: Row }) {
   if (c.decidir) return <span className="chip warn">{c.decidir} {c.decidir === 1 ? 'ficha' : 'fichas'} por decidir</span>;
   if (c.esperando) return <span className="chip run">esperando a ronin</span>;
   return <span className="chip ok">nada por decidir</span>;
+}
+
+// An app's head: its page's, and its exploration PR's (pages/item), whose
+// page it is, with the PR's buttons and its state on GitHub.
+export function XplHead({ r, buttons, pill }: { r: Row; buttons?: ReactNode; pill?: ReactNode }) {
+  const host = useHost();
+  const view = useExplorations();
+  const l = listRowOf(view, r);
+  const facts: string[] = [];
+  if (r.running) facts.push(`desde las ${hhmm(r.running.since)}`);
+  else if (l?.lastRun) facts.push(`última corrida ${ago(l.lastRun.at)}${l.lastRun.state === 'ok' ? '' : `, ${RUN_STATE[l.lastRun.state]?.[2] ?? l.lastRun.state}`}`);
+  if (l?.next) facts.push(`próxima: ${nextRun(l.next)}`);
+  const why = blocked(view, r);
+  return (
+    <div className="head">
+      <div className="crumb"><button className="crumb-l" onClick={() => host.openExplorations()}>Exploraciones</button><span>/</span><i style={{ background: host.repoColor(r.repo) }} />{r.repo}</div>
+      <div className="row"><h1>{r.app}</h1>{buttons}{host.can(r.repo, 'acciones') && <button className="act-btn" disabled={Boolean(why)} title={why ?? undefined} onClick={() => host.exploreNow(r.repo, r.app)}>Explorar ahora</button>}</div>
+      <div className="state">{pill}<Chip view={view} r={r} />{facts.map((f) => <span key={f}>{f}</span>)}</div>
+    </div>
+  );
 }

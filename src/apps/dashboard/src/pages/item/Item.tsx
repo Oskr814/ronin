@@ -1,0 +1,262 @@
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { useHost, type ItemView } from '../../host.js';
+import { short } from '../../../../../ui/time.js';
+import { ExplorationInventory } from '../explorations/Inventory.js';
+import { ExplorationRuns } from '../explorations/Runs.js';
+import { ActionDialog, ActionsMenu, menuKey, type Asked } from './Actions.js';
+import { decideKey, useDecide, type DecideKind } from './Decide.js';
+import { DocPage } from './Doc.js';
+import { Head } from './Head.js';
+import { KEY_SEQ_MS, markUnit, moveUnit } from './Keys.js';
+import { useItem, type Action } from './model.js';
+import { ReviewPanel, useReview, type Review } from './Review.js';
+import { Activity, Transcript } from './Runs.js';
+
+// An item's page (#85): an issue's or a PR's, with its head, its activity
+// and its tabs (the issue, the PR, Archivos; an exploration PR's Fichas,
+// Corridas and Inventario), or a run's transcript. The shell keeps what it
+// reads of the item (Host.item) and draws Archivos and Fichas, in the room
+// the page leaves them (Host.itemTab); the page draws the rest, and has the
+// keys while it's open.
+
+// Where j/k is, per tab of an item: kept while the person is elsewhere.
+let kunit: { key: string; i: number } | null = null;
+
+// The tab the shell draws, and the review panel under its toolbar.
+function ShellTab({ v, tab, review, blocks }: { v: ItemView; tab: 'files' | 'fichas'; review: Review; blocks: () => boolean }) {
+  const host = useHost();
+  const ref = useRef<HTMLDivElement>(null);
+  const [slot, setSlot] = useState<Element | null>(null);
+  const live = useRef({ review, blocks });
+  live.current = { review, blocks };
+  useLayoutEffect(() => host.itemTab(ref.current!, v.item.id, tab, {
+    drawn: () => setSlot(ref.current?.querySelector('.rpanel-slot') ?? null),
+    review: () => live.current.review.open('files'),
+    blocks: () => live.current.blocks(),
+  }), [host, v.item.id, tab]);
+  const open = review.p?.at === 'files';
+  useLayoutEffect(() => {
+    slot?.parentElement?.querySelector('button')?.setAttribute('aria-expanded', String(open));
+  });
+  return <div className="react-slot" ref={ref}>{slot && open && createPortal(<ReviewPanel v={v} review={review} />, slot)}</div>;
+}
+
+function DocBar({ v }: { v: ItemView }) {
+  const host = useHost();
+  const d = v.detail!.data!;
+  const cur = v.doc;
+  const count = (k: string) => {
+    const doc = k === 'issue' ? d.issue : k === 'pr' ? d.pr : undefined;
+    return doc ? doc.comments.length + (doc.reviews?.length ?? 0) + (doc.threads?.length ?? 0) : 0;
+  };
+  // The conversation's size; how many findings or files, once read.
+  const counter = (k: string) => {
+    const n = k === 'issue' || k === 'pr' ? count(k) || null : k === 'fichas' ? v.fichas : k === 'files' ? v.files.data?.count ?? null : null;
+    return n === null ? null : <span className="c">{n}</span>;
+  };
+  const hint = cur === 'fichas' ? <><kbd>j</kbd> <kbd>k</kbd> otra ficha</>
+    : cur === 'files' ? <><kbd>j</kbd> <kbd>k</kbd> otro archivo · <kbd>v</kbd> visto{v.decidable ? '' : <> · <kbd>r</kbd> revisión</>}</>
+      : <><kbd>j</kbd> <kbd>k</kbd> sección o comentario</>;
+  return (
+    <div className="doctabs" role="tablist">{v.tabs.map(([k, label]) => <button key={k} className="doctab" role="tab" aria-selected={k === cur} onClick={() => host.showDoc(v.item.id, k)}>{label}{counter(k)}</button>)}
+      <span className="keys"><kbd>1</kbd>–<kbd>{v.tabs.length}</kbd> pestaña · {hint} <button className="kh" title="Atajos (?)" aria-label="Atajos" onClick={() => host.keysHelp()}>?</button></span><span className="src">{d.error && <><span className="bad">GitHub no respondió: {d.error}</span>, </>}{d.fetchedAt ? `leído hace ${short(Date.now() - Date.parse(d.fetchedAt))}` : ''}</span></div>
+  );
+}
+
+function Tab({ v, review, blocks }: { v: ItemView; review: Review; blocks: () => boolean }) {
+  const d = v.detail?.data;
+  if (!d) return <div className="doc" id="doc"><div className="empty">{v.detail?.error ? `No se pudo leer de GitHub: ${v.detail.error}` : 'Cargando de GitHub…'}</div></div>;
+  const cur = v.doc!;
+  let body;
+  if (cur === 'files' || cur === 'fichas') body = <ShellTab key={cur} v={v} tab={cur} review={review} blocks={blocks} />;
+  else if ((cur === 'corridas' || cur === 'inventario') && v.exploration) {
+    const { repo, app } = v.exploration;
+    body = <div className="doc" id="doc" key={cur}><div className="xpl-doc">{cur === 'corridas' ? <ExplorationRuns repo={repo} app={app} /> : <ExplorationInventory repo={repo} app={app} />}</div></div>;
+  } else body = <div className="doc" id="doc" key={cur}><DocPage item={v.item} d={d} tab={cur === 'issue' ? 'issue' : 'pr'} /></div>;
+  return <><DocBar v={v} />{body}</>;
+}
+
+export function Item({ id }: { id: string }) {
+  const host = useHost();
+  const v = useItem(id);
+  const [menu, setMenu] = useState(false);
+  const menuFocus = useRef(false);
+  const [asked, setAsked] = useState<Asked | null>(null);
+  const dialogBusy = useRef(false);
+  const decide = useDecide(v);
+  const review = useReview(v);
+  const seq = useRef<{ key: string | null; timer: number }>({ key: null, timer: 0 });
+
+  const pick = (action: Action) => {
+    setMenu(false);
+    setAsked({ item: id, action });
+  };
+  const toggleMenu = () => {
+    menuFocus.current = true;
+    setMenu((open) => !open);
+  };
+  const blocks = () => menu || Boolean(asked) || Boolean(decide.p);
+
+  // The menu opened from the keyboard starts on its first action; closed, on its button.
+  useLayoutEffect(() => {
+    if (!menuFocus.current) return;
+    menuFocus.current = false;
+    (menu ? document.querySelector<HTMLElement>('.menu [data-action]') : document.getElementById('act'))?.focus();
+  }, [menu]);
+  // The unit j/k is on, marked again after each draw.
+  useLayoutEffect(() => markUnit(v?.doc ?? null, kunit, `${id}:${v?.doc ?? ''}`));
+
+  // The keys, before the shell's (which has those of Archivos, Fichas and
+  // what it opens on top): what the page takes doesn't reach the shell.
+  const live = useRef({ v, menu, asked, decide, review });
+  live.current = { v, menu, asked, decide, review };
+  useEffect(() => {
+    const navigate = (event: KeyboardEvent, v: ItemView): boolean => {
+      const prev = seq.current.key;
+      seq.current.key = null;
+      clearTimeout(seq.current.timer);
+      if ((prev === ']' || prev === '[') && event.key === 'p') {
+        event.preventDefault();
+        host.movePr(prev === ']' ? 1 : -1);
+        return true;
+      }
+      const wait = (key: string) => {
+        seq.current.key = key;
+        seq.current.timer = window.setTimeout(() => { seq.current.key = null; }, KEY_SEQ_MS);
+        return true;
+      };
+      if (event.key === ']' || event.key === '[') return wait(event.key);
+      const d = v.detail?.data;
+      if (!d || v.item.kind === 'other' || v.view !== 'ficha') return false;
+      const tab = v.doc ?? '';
+      const scroller = document.getElementById(tab === 'files' ? 'fdiffs' : 'doc');
+      if (prev === 'g' && event.key === 'g') {
+        event.preventDefault();
+        scroller?.scrollTo({ top: 0 });
+        return true;
+      }
+      if (event.key === 'g') return wait('g');
+      if (event.key === 'G') {
+        event.preventDefault();
+        scroller?.scrollTo({ top: scroller.scrollHeight });
+        return true;
+      }
+      if (event.key === 'd' || event.key === 'u') {
+        event.preventDefault();
+        scroller?.scrollBy({ top: ((event.key === 'd' ? 1 : -1) * scroller.clientHeight) / 2 });
+        return true;
+      }
+      if (/^[1-9]$/.test(event.key) && v.tabs[Number(event.key) - 1]) {
+        event.preventDefault();
+        host.showDoc(v.item.id, v.tabs[Number(event.key) - 1][0]);
+        return true;
+      }
+      if ((event.key === 'j' || event.key === 'k') && tab !== 'files' && tab !== 'fichas') {
+        event.preventDefault();
+        kunit = moveUnit(tab, `${v.item.id}:${tab}`, kunit, event.key === 'j' ? 1 : -1);
+        return true;
+      }
+      return false;
+    };
+    const onKey = (event: KeyboardEvent) => {
+      const { v, menu, asked, decide, review } = live.current;
+      if (!v || document.getElementById('keys-help')) return;
+      const layer = host.shellLayer();
+      if (layer === 'dialog') return;
+      const taken = () => event.stopPropagation();
+      const typing = event.metaKey || event.ctrlKey || event.altKey || /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName ?? '');
+      const page = v.view === 'ficha';
+      // An open adjustment or closing first: what's typed is for its text.
+      if (!asked && decideKey(event, decide)) return taken();
+      // The Actions menu: M opens it, and while it's open its keys come first.
+      const free = !typing && !asked && !decide.p && !review.p;
+      if (free && menu && menuKey(event, (action) => {
+        const found = v.detail?.data?.actions?.find((a) => a.id === action);
+        if (found) pick(found);
+      }, toggleMenu)) return taken();
+      if (free && !menu && event.key.toLowerCase() === 'm' && document.getElementById('act')) {
+        event.preventDefault();
+        toggleMenu();
+        return taken();
+      }
+      // Archivos' r opens the review under its toolbar (#111); its j, k and v are the shell's.
+      if (!typing && !asked && page && v.doc === 'files' && !v.decidable && event.key === 'r') {
+        event.preventDefault();
+        review.open('files');
+        return taken();
+      }
+      // On a PR ronin opened: A, P and X decide (#195); Enter confirms an approval.
+      const deciding = !typing && !asked && !review.p && v.decidable;
+      if (deciding && event.key === 'Enter' && decide.p?.kind === 'approve') {
+        event.preventDefault();
+        void decide.send();
+        return taken();
+      }
+      const kind = ({ a: 'approve', p: 'adjust', x: 'close' } as Record<string, DecideKind>)[event.key.toLowerCase()];
+      if (deciding && kind && !seq.current.key && !decide.p?.sending) {
+        event.preventDefault();
+        setMenu(false);
+        review.close();
+        decide.open(kind);
+        return taken();
+      }
+      // Fichas' j, k, a, c and r are the shell's, and so is ? (the whole dashboard's).
+      if (page && v.doc === 'fichas' && !typing && !asked && ['j', 'k', 'a', 'c', 'r'].includes(event.key)) return;
+      if (event.key === '?') return asked && !typing ? taken() : undefined;
+      if (!typing && !asked && !decide.p && !review.p && layer !== 'composer' && navigate(event, v)) return taken();
+      if (event.key !== 'Escape') return;
+      if (decide.p && !decide.p.sending) {
+        decide.close();
+        return taken();
+      }
+      if (review.p && !review.p.sending) {
+        review.close();
+        return taken();
+      }
+      // A comment being written in Archivos, or Fichas' menu: the shell's.
+      if (layer) return;
+      if (asked) {
+        if (!dialogBusy.current) setAsked(null);
+        return taken();
+      }
+      if (menu) {
+        menuFocus.current = true;
+        setMenu(false);
+        return taken();
+      }
+    };
+    // A click outside the review panel, the decision's dropdown or the menu closes it.
+    const onClick = (event: MouseEvent) => {
+      const { menu, decide, review } = live.current;
+      const target = event.target as Element;
+      if (review.p && !review.p.sending && target.isConnected && !target.closest('.rpanel')) {
+        review.close();
+        setMenu(false);
+        return;
+      }
+      if (decide.p && !decide.p.sending && target.isConnected && !target.closest('.drop')) {
+        decide.close();
+        return;
+      }
+      if (menu) setMenu(false);
+    };
+    document.addEventListener('keydown', onKey, true);
+    document.addEventListener('click', onClick);
+    return () => {
+      document.removeEventListener('keydown', onKey, true);
+      document.removeEventListener('click', onClick);
+    };
+  }, [host]);
+
+  if (!v) return null;
+  if (v.view === 'tx') return <Transcript v={v} />;
+  const actions = v.detail?.data?.actions;
+  const menuEl = actions?.length && host.can(v.item.repo, 'acciones') ? <ActionsMenu actions={actions} open={menu} setOpen={setMenu} pick={pick} /> : null;
+  return <>
+    <Head v={v} actions={menuEl} decide={decide} review={review} />
+    <Activity v={v} />
+    {v.item.kind !== 'other' && <Tab v={v} review={review} blocks={blocks} />}
+    {asked && <ActionDialog v={v} asked={asked} busy={dialogBusy} close={() => setAsked(null)} />}
+  </>;
+}

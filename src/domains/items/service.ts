@@ -181,7 +181,7 @@ export async function actionsOf(ctx: NonNullable<Awaited<ReturnType<typeof itemC
   return listActions(ctx.ref, ctx.gh, ctx.detail, login, Object.keys(paths), paths);
 }
 
-export async function detail(access: Access, id: string, login: string): Promise<unknown | null> {
+export async function detail(access: Access, id: string, login: string) {
   const ctx = await itemContext(access, id);
   if (!ctx) return null;
   // `ronin`: its login, so the page can tell its comments apart. `exploration`:

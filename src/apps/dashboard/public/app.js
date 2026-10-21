@@ -20,7 +20,6 @@ const TYPE = {
   'explore-function': 'Explorar', 'explore-evaluate': 'Evaluar exploración', 'explore-redo-after': 'Rehacer captura',
   'explore-feedback': 'Comentarios de exploración', 'commit-subject': 'Mensaje de commit', 'prepare-preview-data': 'Datos de preview', 'preview-seed-catalog': 'Catálogo de seeds', 'preview-data-triage': 'Revisión de los seeds', 'preview-data-delta': 'Datos de preview al actualizarse', 'portal-request': 'Pedido del portal', 'portal-interview': 'Respuestas de la entrevista', 'portal-prototype': 'Prototipo del portal', 'portal-reproduce': 'Reproducción del portal', 'meeting-read': 'Lectura de reunión',
 };
-const VERB = { Bash: 'Corrió', Read: 'Leyó', Edit: 'Editó', MultiEdit: 'Editó', Write: 'Escribió', NotebookEdit: 'Editó', Grep: 'Buscó', Glob: 'Buscó', WebFetch: 'Abrió', WebSearch: 'Buscó en la web', Task: 'Lanzó un agente', Agent: 'Lanzó un agente', TodoWrite: 'Anotó tareas' };
 const STATE = {
   running: ['live', 'run', 'trabajando'],
   ok: ['ok', 'ok', 'terminó bien'],
@@ -55,24 +54,6 @@ const ghIcon = (kind, state) => {
   if (!info) return '';
   return `<svg class="ghi ${info[0]}" viewBox="0 0 16 16" role="img" aria-label="${info[2]}"><title>${info[2]}</title>${OCTICON[info[3]].map((d) => `<path d="${d}"/>`).join('')}</svg>`;
 };
-// An item's state: from the sidebar's read, else from its page (an old
-// closed one opened with "Abrir #N").
-function ghStateOf(item, d) {
-  if (item.github) return item.github;
-  const doc = item.kind === 'pr' ? d?.pr : item.kind === 'issue' ? d?.issue : undefined;
-  if (!doc?.state) return undefined;
-  if (doc.state === 'MERGED') return 'merged';
-  if (doc.state === 'OPEN') return doc.isDraft ? 'draft' : 'open';
-  if (item.kind === 'pr') return 'closed';
-  return doc.stateReason === 'NOT_PLANNED' ? 'not_planned' : 'completed';
-}
-// The item's state as GitHub's pill at the head of its page: "Abierto",
-// "Cerrado", "Mergeado"…
-function ghPill(item, d) {
-  const state = ghStateOf(item, d);
-  const info = ghInfo(item.kind, state);
-  return info ? `<span class="ghs ${info[0]}" title="${info[2]}">${ghIcon(item.kind, state)}${info[1]}</span>` : '';
-}
 // A slice: its PR's icon, or the pending dot while it has none.
 const sliceMark = (slice) => (slice.status === 'pending' ? dotClass(SLICE_STATE.pending[0]) : ghIcon('pr', slice.status === 'open' ? (slice.draft ? 'draft' : 'open') : slice.status));
 const CHECK_STATE = { passed: ['ok', 'pasó'], pending: ['live', 'corriendo'], failed: ['crit', 'falló'] };
@@ -120,7 +101,7 @@ function duration(ms) {
 const money = (usd) => (usd < 0.01 ? 'menos de US$0,01' : `US$${usd.toFixed(2).replace('.', ',')}`);
 const pct = (fraction) => `${Math.round(fraction * 100)}%`;
 
-const S = { snap: null, today: null, sel: null, open: [], runIdx: {}, pendingRun: null, filter: null, q: '', itemRuns: {}, run: null, stream: null, detail: {}, view: {}, doc: {}, menu: false, dialog: null, expanded: new Set(), expl: {}, ficha: {}, fichaOpen: {}, fichaFilter: { tipo: 'todas', vp: 'todos' }, antes: {}, oldAfter: new Set(), lightbox: null, fmenu: false, fdialog: null, fdraft: {}, listas: {}, scope: 'all', project: '', extra: {}, newIssue: null, files: {}, fcur: {}, ffold: {}, fexp: {}, fcontent: {}, fq: {}, ftree: false, fcomp: null, fbusy: new Set(), rpanel: null, revSent: {}, decide: null, decided: {}, kunit: null, page: null, ped: { n: null, run: null }, reu: { n: null, run: null }, xpl: { list: null, error: null, listAt: 0, repo: null, app: null, launched: {} }, xnow: null, dep: { list: null }, mt: { tab: 'trabajo' }, aj: { sec: 'perfil', login: null, repo: null, cuenta: null, f: null } };
+const S = { snap: null, today: null, sel: null, open: [], runIdx: {}, pendingRun: null, filter: null, q: '', itemRuns: {}, run: null, stream: null, detail: {}, view: {}, doc: {}, expanded: new Set(), expl: {}, ficha: {}, fichaOpen: {}, fichaFilter: { tipo: 'todas', vp: 'todos' }, antes: {}, oldAfter: new Set(), lightbox: null, fmenu: false, fdialog: null, fdraft: {}, listas: {}, scope: 'all', project: '', extra: {}, newIssue: null, files: {}, fcur: {}, ffold: {}, fexp: {}, fcontent: {}, fq: {}, ftree: false, fcomp: null, fbusy: new Set(), revSent: {}, fjump: null, page: null, ped: { n: null, run: null }, reu: { n: null, run: null }, xpl: { list: null, error: null, listAt: 0, repo: null, app: null, launched: {} }, xnow: null, dep: { list: null }, mt: { tab: 'trabajo' }, aj: { sec: 'perfil', login: null, repo: null, cuenta: null, f: null } };
 // The sidebar's Linear filter (#101), remembered per browser.
 try { Object.assign(S, JSON.parse(localStorage.getItem('ronin-scope') ?? '{}')); } catch { /* sin storage */ }
 function saveScope() {
@@ -481,65 +462,18 @@ function linkRefs(root, repo) {
 }
 
 // ---------- center
-function step(line) {
-  if (line.type === 'text') return `<div class="say">${esc(line.text)}</div>`;
-  if (line.type === 'tool_error') return `<div class="out">${esc(line.text)}</div>`;
-  if (line.type === 'tool') {
-    const summary = String(line.summary ?? '').replace(/^\$ /, '');
-    return `<div class="step"><b>${esc(VERB[line.name] ?? line.name)}</b> <span class="arg">${esc(summary)}</span></div>`;
-  }
-  return '';
-}
-
-function ending(summary) {
-  const extra = [summary.durationMs !== undefined ? duration(summary.durationMs) : null, summary.costUsd !== undefined ? money(summary.costUsd) : null].filter(Boolean).join(', ');
-  switch (summary.state) {
-    case 'ok': return `<div class="end ok"><b>Terminó bien.</b> ${esc(extra)}</div>`;
-    case 'timeout': return `<div class="end crit"><b>Se pasó del tiempo límite</b> y se cortó. ${esc(extra)}</div>`;
-    case 'usage_limit': return `<div class="end warn"><b>Se quedó sin cuota de Claude.</b> Se reintenta cuando la cuenta se reinicie.</div>`;
-    case 'cut': return `<div class="end crit"><b>Se cortó:</b> el proceso de ronin terminó sin cerrar la corrida.</div>`;
-    case 'error': return `<div class="end crit"><b>Falló.</b> ${esc(summary.error ?? '')}</div>`;
-    default: return '';
-  }
-}
-
 function backBar(title) {
   return `<button class="back" id="back"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg><span>${esc(title)}</span></button>`;
 }
 
-// A run's task, and the PR it was on when that's not the item itself: an
-// issue's history carries its slices' PR runs too (/resolve-conflicts on #849).
-const runName = (item, run, title = runTitle) => title(run) + (run.issueNumber == null && run.prNumber != null && run.prNumber !== item.number ? ` en #${run.prNumber}` : '');
+// The item's runs: the ones read, or its last one until they are.
 const itemRuns = (item) => S.itemRuns[item.id] ?? (item.lastRun ? [item.lastRun] : []);
-// The item's runs as they're listed (newest first, as itemRuns): one entry
-// per run, but a group's steps together as one, its newest first. `idx`:
-// their places in itemRuns.
-function runEntries(runs) {
-  const out = [];
-  runs.forEach((run, i) => {
-    const last = out.at(-1);
-    if (groupName(run) && last?.group === run.group) last.idx.push(i);
-    else out.push({ group: groupName(run) ? run.group : undefined, idx: [i] });
-  });
-  return out;
-}
-// A group as one run: running while a step runs, else how its last step
-// ended (or the first one that failed); from its first step to its last.
-function entryRun(runs, entry) {
-  const steps = entry.idx.map((i) => runs[i]);
-  if (steps.length === 1) return steps[0];
-  const failed = steps.find((run) => ['error', 'timeout', 'cut', 'usage_limit'].includes(run.state));
-  const state = steps.some((run) => run.state === 'running') ? 'running' : failed?.state ?? steps[0].state;
-  const sum = (key) => (steps.some((run) => run[key] !== undefined) ? steps.reduce((total, run) => total + (run[key] ?? 0), 0) : undefined);
-  return { ...steps[0], state, startedAt: steps.at(-1).startedAt, durationMs: sum('durationMs'), costUsd: sum('costUsd'), ...(failed?.error ? { error: failed.error } : {}) };
-}
-const entryName = (item, runs, entry) => runName(item, runs[entry.idx[0]], entry.idx.length > 1 ? runKind : runTitle);
 // The item's page by default; the transcript for what has no page (a changelog entry).
 const viewOf = (item) => S.view[item.id] ?? (item.kind === 'other' ? 'tx' : 'ficha');
 
 function renderCenter() {
+  itemViews.clear();
   for (const onChange of shellListeners) onChange();
-  const center = $('#center');
   const tabs = `<div class="tabs" role="tablist">${S.open.map((id) => {
     const item = itemById(id);
     const label = item ? item.title : id;
@@ -553,8 +487,6 @@ function renderCenter() {
     $('#shell').classList.toggle('wide', S.page === 'pedido');
     if (S.page === 'pedido') showPage('request', backBar(`Pedido P-${S.ped.n}`), S.ped);
     else showPage('requests', backBar('Portal de pedidos'));
-    // Its issue and PR follow the snapshot (their checks, their review).
-    drawPedDoc();
     return;
   }
   if (!item && (S.page === 'reuniones' || S.page === 'reunion')) {
@@ -588,47 +520,19 @@ function renderCenter() {
     showPage('today', tabs + backBar('Hoy'));
     return;
   }
-  if (viewOf(item) === 'tx') {
-    renderTranscript(item, tabs);
-    return;
-  }
-  // Redrawn on every snapshot: whoever was reading further down stays there.
-  const doc = $('#doc');
-  const keep = doc && doc.dataset.key === docKeyOf(item) ? doc.scrollTop : 0;
-  const rows = $('#frows')?.scrollTop ?? 0;
-  const fd = $('#fdetail');
-  const fdKeep = fd ? { ficha: fd.dataset.current, top: fd.scrollTop } : null;
-  const fdiffs = $('#fdiffs')?.scrollTop;
-  const ftrows = $('#ftrows')?.scrollTop;
-  // Reviewing findings or a diff takes the room of the context column.
-  $('#shell').classList.toggle('wide', ['fichas', 'files'].includes(docOf(item)));
-  // A box being written in survives the redraw (a finding's comment, a comment on the diff).
-  const typing = ['fcomment', 'fcbox', 'rsum', 'dtext'].includes(document.activeElement?.id) ? { id: document.activeElement.id, start: document.activeElement.selectionStart, end: document.activeElement.selectionEnd } : null;
-  const menuAt = document.activeElement?.closest?.('.menu [data-action]')?.dataset.action;
-  if (!setCenter(tabs + backBar(item.title) + headHTML(item) + activityHTML(item) + docHTML(item) + `<div class="ctx-inline">${ctxHTML(item)}</div>`)) return;
-  const fresh = $('#doc');
-  if (fresh && !isMobile()) fresh.scrollTop = keep;
-  if ($('#frows')) $('#frows').scrollTop = rows;
-  if ($('#fdiffs') && fdiffs !== undefined) $('#fdiffs').scrollTop = fdiffs;
-  if ($('#ftrows') && ftrows !== undefined) $('#ftrows').scrollTop = ftrows;
-  const fdFresh = $('#fdetail');
-  if (fdFresh && fdKeep && fdFresh.dataset.current === fdKeep.ficha) fdFresh.scrollTop = fdKeep.top;
-  const box = typing && document.getElementById(typing.id);
-  if (box) {
-    box.focus();
-    box.setSelectionRange(typing.start, typing.end);
-  }
-  if (menuAt) [...document.querySelectorAll('.menu [data-action]')].find((b) => b.dataset.action === menuAt)?.focus();
+  // The item's page (pages/item), with the context column under it on a
+  // phone. Reviewing findings or a diff takes the room of the context column.
+  $('#shell').classList.toggle('wide', viewOf(item) !== 'tx' && ['fichas', 'files'].includes(docOf(item)));
+  showPage('item', tabs + backBar(item.title), { id: item.id }, '', `<div class="ctx-inline">${ctxHTML(item)}</div>`);
+  drawItemTab();
 }
 
-// Only touches the page when something changed, so a snapshot that changes
-// nothing doesn't reset a selection or a scroll. False when it was the same.
 // A page in React (src/apps/dashboard/, #235 stage 7): mounted once where
 // it goes, under its head, and unmounted when the center shows anything
 // else (setCenter). It reads, polls and redraws on its own.
 let reactPage = null;
-// The pages that draw from the snapshot (Hoy) or the explorations, told each
-// time the shell draws or those change.
+// The pages that draw from the snapshot (Hoy, an item's) or the
+// explorations, told each time the shell draws or those change.
 const shellListeners = new Set();
 const PAGE_HOST = {
   toast,
@@ -652,12 +556,16 @@ const PAGE_HOST = {
   requestsTotal: () => S.snap.pedidosTotal ?? 0,
   portalAdmin: () => Boolean(S.snap.portalAdmin),
   openPortalAccounts: () => openAjustes('usuarios', null, 'portal'),
-  requestDoc(element, doc, onShow) {
-    pedDoc = { element, doc, onShow };
-    drawPedDoc();
-    return () => {
-      if (pedDoc?.element === element) pedDoc = null;
-    };
+  watchItem(key, kind) {
+    // Not in the sidebar (a team issue nobody took): known by its number, as select() does.
+    const n = Number(key.split('#')[1]);
+    if (!itemById(key)) S.extra[key] = { id: key, repo: key.split('#')[0], number: n, kind, title: `#${n}`, status: 'open', runs: 0, listed: false };
+    watched.add(key);
+    itemViews.clear();
+    for (const onChange of shellListeners) onChange();
+    const entry = S.detail[key];
+    if (!entry?.data && !entry?.loading && !entry?.error) loadDetail(key);
+    return () => watched.delete(key);
   },
   openMeetings: () => openReuniones(),
   openMeeting: (n) => openReunion(n),
@@ -693,6 +601,57 @@ const PAGE_HOST = {
     xplChanged();
     refresh().then(loadExploraciones);
   },
+  item: (key) => {
+    if (!itemViews.has(key)) itemViews.set(key, itemView(key));
+    return itemViews.get(key);
+  },
+  showRun(key, index, view) {
+    S.view[key] = view;
+    S.runIdx[key] = index;
+    loadShownRun();
+  },
+  showDoc(key, tab) {
+    S.doc[key] = tab;
+    renderCenter();
+  },
+  reread(key, files = false) {
+    if (files) afterFilesWrite(key);
+    else {
+      if (S.detail[key]) S.detail[key].at = 0;
+      loadDetail(key);
+    }
+    refresh();
+  },
+  reviewed(key, pr, decision) {
+    const item = itemById(key);
+    if (!item) return;
+    S.revSent[`${item.repo}#${pr}`] = { repo: item.repo, pr, decision, readAt: repoReadAt(item.repo), at: Date.now() };
+    showSentReviews();
+    renderTree();
+    renderCenter();
+  },
+  movePr,
+  keysHelp: () => toggleKeysHelp(),
+  shellLayer: () => (S.newIssue || S.xnow || S.fdialog || S.lightbox ? 'dialog' : S.fcomp ? 'composer' : S.fmenu ? 'menu' : null),
+  itemTab(element, key, tab, bridge) {
+    itemTab = { element, key, tab, bridge };
+    drawItemTab();
+    return () => {
+      if (itemTab?.element === element) itemTab = null;
+    };
+  },
+  loadFiles: (key) => loadFiles(key),
+  goFile(key, path, comment) {
+    S.doc[key] = 'files';
+    S.ftree = false;
+    S.fcur[key] = path;
+    const file = S.files[key]?.data?.files.find((f) => f.path === path);
+    if (file && isFolded(key, file) && !viewedOf(key).has(path)) foldOf(key)[path] = false;
+    // Once the page gives the tab its room and it's drawn (drawItemTab).
+    S.fjump = { key, path, comment };
+    renderCenter();
+  },
+  explorationDialog: (kind) => openPrDialog(kind),
   // What the sidebar shows of a page: whether a deploy is going, the
   // projects of the cycles (their colors).
   read(name, data) {
@@ -709,280 +668,127 @@ const PAGE_HOST = {
 
 // `props`: what the page is about (a request's number), mounted again when it
 // changes; `key`, what else makes it a new page to mount (Ajustes: each visit).
-function showPage(name, head, props = {}, key = '') {
+// `head` and `tail`, what the shell draws around it (the tabs of the open
+// items, a phone's context column), drawn again without touching the page.
+function showPage(name, head, props = {}, key = '', tail = '') {
   const center = $('#center');
-  const id = JSON.stringify([name, head, props, key]);
-  if (reactPage?.key === id && center.contains(reactPage.element)) return;
-  if (!setCenter(`${head}<div class="react-page" data-page="${esc(name)}"></div>`)) reactPage?.unmount();
+  const id = JSON.stringify([name, props, key]);
+  if (reactPage?.key === id && center.contains(reactPage.element)) {
+    if (reactPage.head === head && reactPage.tail === tail) return;
+    for (const el of [...center.children]) if (el !== reactPage.element) el.remove();
+    reactPage.element.insertAdjacentHTML('beforebegin', head);
+    reactPage.element.insertAdjacentHTML('afterend', tail);
+    Object.assign(reactPage, { head, tail });
+    center._html = null;
+    tickClocks();
+    wireCenter();
+    return;
+  }
+  if (!setCenter(`${head}<div class="react-page" data-page="${esc(name)}"></div>${tail}`)) reactPage?.unmount();
   const element = center.querySelector('.react-page');
-  reactPage = { name, key: id, element, unmount: window.roninPages.mount(name, element, PAGE_HOST, { ...props }) };
+  reactPage = { name, key: id, head, tail, element, unmount: window.roninPages.mount(name, element, PAGE_HOST, { ...props }) };
 }
 
-// A part of a page app.js still draws, in React (an exploration PR's runs):
-// mounted where it goes each time the center is drawn again, at once, so
-// the page has its height when its scroll is put back.
-let reactParts = [];
-const partHTML = (name, props) => `<div class="react-page" data-part="${esc(name)}" data-props="${esc(JSON.stringify(props))}"></div>`;
-
+// Only touches the page when something changed, so a snapshot that changes
+// nothing doesn't reset a selection or a scroll. False when it was the same.
 function setCenter(html) {
   const center = $('#center');
   if (center._html === html) return false;
   reactPage?.unmount();
   reactPage = null;
-  for (const unmount of reactParts) unmount();
   center._html = html;
   center.innerHTML = html;
-  reactParts = [...center.querySelectorAll('[data-part]')].map((el) => window.roninPages.mount(el.dataset.part, el, PAGE_HOST, JSON.parse(el.dataset.props), true));
   tickClocks();
   wireCenter();
   return true;
 }
 
-function renderTranscript(item, tabs) {
-  const runs = itemRuns(item);
-  const back = item.kind !== 'other' ? '<button class="pill back-ficha" data-view="ficha">← Ficha</button>' : '';
-  if (runs.length === 0) {
-    const loading = !(item.id in S.itemRuns);
-    setCenter(tabs + backBar(item.title) + (back ? `<div class="runs">${back}</div>` : '') + `<div class="tx"><div class="empty">${loading ? 'Cargando…' : '<b>Sin corridas de agentes en los últimos 14 días</b>'}</div></div><div class="ctx-inline">${ctxHTML(item)}</div>`);
-    return;
-  }
-  const index = Math.min(S.runIdx[item.id] ?? 0, runs.length - 1);
-  const pill = (run, i, label, pressed) => `<button class="pill" data-run="${i}" aria-pressed="${pressed}">${dot(run.state)}${esc(label)}<span class="m">${run.state === 'running' ? 'en curso' : `${hhmm(run.startedAt)}${run.durationMs !== undefined ? `, ${duration(run.durationMs)}` : ''}`}</span></button>`;
-  const entries = runEntries(runs);
-  const open = entries.find((entry) => entry.idx.includes(index));
-  // A group's steps, oldest first, under its pill.
-  const steps = open.idx.length > 1
-    ? `<div class="runs steps"><span class="lbl">Pasos</span>${[...open.idx].reverse().map((i) => pill(runs[i], i, typeName(runs[i].taskType), i === index)).join('')}</div>`
-    : '';
-  const pills = `<div class="runs">${back}<span class="lbl">Corridas</span>${entries.map((entry) => pill(entryRun(runs, entry), entry.idx[0], entryName(item, runs, entry), entry === open)).join('')}</div>${steps}`;
-
-  const shown = runs[index];
-  const loaded = S.run && S.run.runId === shown.runId ? S.run : null;
-  let body;
-  if (!loaded) {
-    body = `<div class="tx"><div class="empty">Cargando la corrida…</div></div>`;
-  } else {
-    const steps = loaded.lines.map(step).join('');
-    body = `<div class="tx" id="tx">${steps || '<div class="empty">El agente todavía no hizo nada.</div>'}${ending(loaded.summary)}</div>
-      <div class="foot">${loaded.summary.state === 'running'
-        ? `<span class="w">● Trabajando</span><span data-since="${esc(loaded.summary.startedAt)}"></span>`
-        : `<span>${esc(STATE[loaded.summary.state]?.[2] ?? loaded.summary.state)}</span>`}<span>${esc(runTitle(loaded.summary))}</span><span class="r">${esc([loaded.summary.model, loaded.summary.worktree].filter(Boolean).join('  '))}</span></div>`;
-  }
-  // Whoever was reading further up stays there, whoever was at the bottom
-  // of a run still going follows it.
-  const tx = $('#tx');
-  const sameRun = tx && tx.dataset.run === loaded?.runId;
-  const atBottom = !sameRun || tx.scrollTop + tx.clientHeight >= tx.scrollHeight - 30;
-  const scrollTop = sameRun ? tx.scrollTop : 0;
-  if (!setCenter(tabs + backBar(item.title) + pills + body + `<div class="ctx-inline">${ctxHTML(item)}</div>`)) return;
-  const fresh = $('#tx');
-  if (!fresh) return;
-  if (loaded) fresh.dataset.run = loaded.runId;
-  if (isMobile()) return;
-  fresh.scrollTop = atBottom ? fresh.scrollHeight : scrollTop;
-}
-
 // ---------- the item's page (#85)
-function checksChip(checks) {
-  if (!checks?.length) return null;
-  const failed = checks.filter((c) => c.outcome === 'failed').length;
-  if (failed) return ['crit', `${failed} ${failed === 1 ? 'check falla' : 'checks fallan'}`];
-  if (checks.some((c) => c.outcome === 'pending')) return ['run', 'checks corriendo'];
-  return ['ok', `checks ${checks.length}/${checks.length}`];
+// In React (src/apps/dashboard/src/pages/item/). The shell keeps what it
+// reads of the item, which its context column, the sidebar and the Archivos
+// and Fichas tabs read too, and gives the page a view of it (PAGE_HOST.item),
+// made again each time the center is drawn.
+const itemViews = new Map();
+// The items a request's page shows (PAGE_HOST.watchItem), read again once old.
+const watched = new Set();
+
+function itemView(key) {
+  const item = itemById(key);
+  if (!item) return null;
+  const entry = S.detail[key];
+  const d = entry?.data;
+  const files = S.files[key];
+  return {
+    item,
+    detail: entry ? { data: d ?? null, error: entry.error ?? null } : null,
+    runs: S.itemRuns[key] ?? null,
+    run: S.run,
+    runIdx: S.runIdx[key] ?? 0,
+    view: viewOf(item),
+    tabs: d ? docTabsOf(item, d) : [],
+    doc: docOf(item),
+    decidable: Boolean(d) && decidable(item, d),
+    reviewable: Boolean(d) && reviewable(item, d),
+    exploration: xplOfItem(key),
+    fichas: S.expl[key]?.data?.fichas.length ?? null,
+    files: {
+      data: files?.data ? { pr: files.data.pr, author: files.data.author, headSha: files.data.headSha, count: files.data.files.length } : null,
+      error: files?.error ?? null,
+      review: Boolean(reviewOf(key)),
+      pending: pendingOf(key).map(({ t, c }) => ({ path: t.path, subject: t.subject, line: t.line, isNew: Boolean(t.isNew), nodeId: c.nodeId, body: c.body })),
+    },
+  };
 }
 
-function headHTML(item) {
-  const xr = xplOfItem(item.id);
-  if (xr) return xplHeadHTML(item, xr);
-  const [, chip, label] = STATE[item.status] ?? STATE.error;
-  const d = S.detail[item.id]?.data;
-  const pr = item.pr;
-  const prDoc = d?.pr;
-  // For an issue, what's said about its PR is said with the PR's number.
-  const of = item.kind === 'issue' && pr ? `#${pr.number}: ` : '';
-  // A run's outcome is in the activity line, not here: "terminó bien" next to "conflictos" would read as the PR's.
-  const chips = ['running', 'blocked', 'waiting'].includes(item.status) ? [[chip, label]] : [];
-  if (prDoc?.mergeable === 'CONFLICTING') chips.push(['crit', `${of}conflictos con ${prDoc.baseRefName}`]);
-  const checks = checksChip(pr?.checks);
-  if (checks) chips.push([checks[0], of + checks[1]]);
-  if (pr?.reviewDecision === 'APPROVED') chips.push(['ok', `${of}aprobado`]);
-  else if (pr?.reviewDecision === 'CHANGES_REQUESTED') chips.push(['warn', `${of}cambios pedidos`]);
-  if (pr?.isDraft) chips.push(['idle', `${of}draft`]);
-  const facts = [];
-  if (item.slices?.length) facts.push(`${item.slices.filter((s) => s.status === 'merged').length} de ${item.slices.length} slices mergeadas`);
-  if (item.note && item.status !== 'running') facts.push(item.note);
-  if (item.kind === 'pr' && prDoc?.headRefName) facts.push(`${prDoc.headRefName} → ${prDoc.baseRefName}`);
-  if (item.kind === 'pr' && pr?.author) facts.push(`de ${pr.author}`);
-  return `<div class="head">
-    <div class="crumb"><i style="background:${repoColor(item.repo)}"></i>${esc(item.repo)} · ${item.kind === 'pr' ? 'Pull request' : item.kind === 'issue' ? 'Issue' : 'Tarea'}</div>
-    <div class="row"><h1>${esc(item.title)}${item.number !== undefined ? ` <span class="n">${esc(itemRef(item))}</span>` : ''}</h1>${d?.exploration ? '<button class="gh" data-xpr="general">Comentario general</button>' : ''}${decidable(item, d) ? `<div class="hbtns">${decideHTML(item, d)}${actionsHTML(d)}</div>` : reviewable(item, d) ? reviewButton(item, 'head', pendingOf(item.id).length ? `<button class="act-btn" data-frev="head" aria-haspopup="dialog" aria-expanded="${revOpen(item, 'head')}">Terminar revisión <span class="rn">${pendingOf(item.id).length}</span> ▾</button>` : `<button class="gh" data-frev="head" aria-haspopup="dialog" aria-expanded="${revOpen(item, 'head')}">${esc(reviewLabel(item, d))} ▾</button>`) : ''}${decidable(item, d) ? '' : actionsHTML(d)}${d?.exploration ? '<button class="act-btn" data-xpr="approve" title="Termina la revisión: aprueba las fichas que quedan y mergea el PR">Finalizar…</button>' : ''}</div>
-    <div class="state">${ghPill(item, d)}${d?.pedido ? `<button class="chip plain" data-goped="${d.pedido.number}" title="${esc(d.pedido.title)}">del pedido P-${d.pedido.number}</button>` : ''}${linearChips(item)}${chips.map(([cls, text]) => `<span class="chip ${cls}">${esc(text)}</span>`).join('')}${decidable(item, d) && pendingOf(item.id).length ? `<span class="chip run">✎ ${pendingOf(item.id).length} en Archivos</span>` : ''}${facts.map((f) => `<span>${esc(f)}</span>`).join('')}</div>${decidedHTML(item)}</div>`;
-}
-
-// ---------- actions (#85)
-// Each one is a command that exists on GitHub, commented as whoever is
-// logged in (#93): the same comment they'd write there.
-// Its project and cycle in Linear (#101), for a repo with a Linear key.
-function linearChips(item) {
-  const l = item.linear;
-  if (!l) return '';
-  const project = l.project ? `<span class="chip plain"><i class="pdot" style="background:${projectColor(l.project.id)};margin:0"></i>${esc(l.project.name)}</span>` : '<span class="chip plain">sin proyecto</span>';
-  const cycle = l.cycle ? `<span class="chip ${l.cycle.current ? 'run' : 'plain'}">${esc(cycleName(l.cycle))}${l.cycle.current ? ', el actual' : ''}</span>` : '<span class="chip plain">sin ciclo</span>';
-  return project + cycle;
-}
-
-function actionsHTML(d) {
-  const item = S.sel && itemById(S.sel);
-  if (!d?.actions?.length || (item && !canDo(item.repo, 'acciones'))) return '';
-  const menu = S.menu ? `<div class="menu" role="menu">${d.actions.map((a, i) => `<button role="menuitem" data-action="${esc(a.id)}" class="${a.primary ? 'primary' : ''}"><b>${i < 9 ? `<kbd>${i + 1}</kbd> ` : ''}${esc(a.label)}</b><span class="k">${esc(a.command)}</span><small>${esc(a.help)}</small></button>`).join('')}</div>` : '';
-  return `<div class="actions"><button class="act-btn" id="act" aria-haspopup="menu" aria-expanded="${S.menu}" title="Acciones (M)">Acciones <kbd>M</kbd> ▾</button>${menu}</div>`;
-}
-
-function openAction(id) {
-  const action = S.detail[S.sel]?.data?.actions?.find((a) => a.id === id);
-  if (!action) return;
-  S.menu = false;
-  S.dialog = { item: S.sel, action, text: '', app: action.app ?? action.apps?.[0] ?? '', sending: false, error: null };
-  renderCenter();
-  renderDialog();
-}
-
-// The Actions menu from the keyboard: M opens it on its first action, and
-// in it a digit picks one, j/k or the arrows move, Enter asks for it.
-function toggleActions() {
-  S.menu = !S.menu;
-  S.fmenu = false;
-  renderCenter();
-  if (S.menu) document.querySelector('.menu [data-action]')?.focus();
-  else $('#act')?.focus();
-}
-
-// True when the key was the menu's.
-function actionsKey(event) {
-  if (!S.menu || event.ctrlKey || event.metaKey || event.altKey) return false;
-  const all = [...document.querySelectorAll('.menu [data-action]')];
-  if (!all.length) return false;
-  if (/^[1-9]$/.test(event.key) && all[Number(event.key) - 1]) {
-    event.preventDefault();
-    openAction(all[Number(event.key) - 1].dataset.action);
-    return true;
-  }
-  const step = { j: 1, ArrowDown: 1, k: -1, ArrowUp: -1 }[event.key];
-  if (step) {
-    event.preventDefault();
-    const at = all.indexOf(document.activeElement);
-    all[at < 0 ? (step > 0 ? 0 : all.length - 1) : (at + step + all.length) % all.length].focus();
-    return true;
-  }
-  if (event.key.toLowerCase() === 'm') {
-    event.preventDefault();
-    toggleActions();
-    return true;
-  }
-  return false;
-}
-
-function renderDialog() {
-  let layer = $('#layer');
-  if (!S.dialog) {
-    layer?.remove();
-    return;
-  }
-  if (!layer) layer = Object.assign(document.body.appendChild(document.createElement('div')), { id: 'layer' });
-  const { action, text, app, sending, error } = S.dialog;
-  // `…` stands for the text: filled as it's typed, left out when the text is optional and empty.
-  // `{app}`, for the app picked. On one line, as the server writes it.
-  const typed = action.apps && action.id !== 'preview' ? text.trim().replace(/\s+/g, ' ') : text.trim();
-  const preview = (!action.text ? action.preview : typed ? action.preview.replace('…', typed) : action.text.required ? action.preview : action.preview.replace(/(\n\n| )?…$/, '')).replace('{app}', app);
-  const me = esc(S.snap?.me ?? '');
-  const bot = esc(S.detail[S.dialog.item]?.data?.ronin ?? 'ronin');
-  // Assigning and closing comment only when there's something to say.
-  const said = action.id === 'assign' ? (typed ? `Comentás en #${esc(action.target)} y se lo asignás a @${bot}, como ${me}` : `Se lo asignás a @${bot} como ${me}, sin comentario`)
-    : action.id === 'close-issue' ? (typed ? `Comentás en #${esc(action.target)} y lo cerrás como no planeado, como ${me}` : `Lo cerrás como no planeado, como ${me}, sin comentario`)
-    : `Comentás en #${esc(action.target)} como ${me}`;
-  const fresh = !layer.firstChild;
-  if (fresh) {
-    layer.innerHTML = `<div class="scrim"><div class="dlg" role="dialog" aria-modal="true" aria-labelledby="dlg-t">
-      <h2 id="dlg-t">${esc(action.label)}</h2>
-      <p class="help">${esc(action.help)}</p>
-      ${action.apps ? `<label class="field"><span>App</span><select id="dlg-app">${action.apps.map((a) => `<option value="${esc(a)}"${a === app ? ' selected' : ''}>${esc(a)}${a === action.app && action.appNote ? ` · ${esc(action.appNote)}` : ''}</option>`).join('')}</select></label>` : ''}
-      ${action.text ? `<label class="field"><span>${esc(action.text.label)}</span><textarea id="dlg-text" rows="4" maxlength="4000" placeholder="${esc(action.text.placeholder)}"></textarea></label>` : ''}
-      <div class="prev"><div class="lbl" id="dlg-said"></div><div class="md" id="dlg-prev"></div></div>
-      <p class="bad" id="dlg-err" hidden></p>
-      <div class="foot-d"><span class="kbd-hint"><kbd>Ctrl</kbd> <kbd>Enter</kbd> para ${action.id === 'assign' ? 'asignar' : action.id === 'close-issue' ? 'cerrar' : 'comentar'}</span><button class="btn-s" id="dlg-no">Cancelar</button><button class="btn-s primary" id="dlg-yes"></button></div></div></div>`;
-    const area = $('#dlg-text');
-    if (area) area.oninput = () => { S.dialog.text = area.value; renderDialog(); };
-    const pick = $('#dlg-app');
-    if (pick) pick.onchange = () => { S.dialog.app = pick.value; renderDialog(); };
-    $('#dlg-no').onclick = closeDialog;
-    layer.querySelector('.scrim').onclick = (event) => { if (event.target.classList.contains('scrim')) closeDialog(); };
-    $('#dlg-yes').onclick = sendAction;
-    // Anywhere in the dialog, as long as the button could be pressed.
-    layer.querySelector('.dlg').onkeydown = (event) => {
-      if (event.key === 'Enter' && (event.ctrlKey || event.metaKey) && !$('#dlg-yes').disabled) {
-        event.preventDefault();
-        sendAction();
-      }
-    };
-    (area ?? $('#dlg-yes')).focus();
-  }
-  $('#dlg-said').innerHTML = said;
-  $('#dlg-prev').innerHTML = md(preview, itemById(S.dialog.item)?.repo ?? '');
-  $('#dlg-prev').hidden = !preview;
-  const yes = $('#dlg-yes');
-  yes.textContent = action.id === 'assign' ? (sending ? 'Asignando…' : 'Asignar a ronin') : action.id === 'close-issue' ? (sending ? 'Cerrando…' : 'Cerrar el issue') : sending ? 'Comentando…' : action.id === 'unblock' ? 'Comentar y destrabar' : 'Comentar';
-  yes.classList.toggle('danger-solid', action.id === 'close-issue');
-  yes.classList.toggle('primary', action.id !== 'close-issue');
-  yes.disabled = sending || Boolean(action.text?.required && !text.trim());
-  $('#dlg-err').hidden = !error;
-  $('#dlg-err').textContent = error ?? '';
-}
-
-function closeDialog() {
-  if (S.dialog?.sending) return;
-  S.dialog = null;
-  renderDialog();
-}
-
-// How long an action waits for the server's answer. The comment is usually
-// out within a few seconds; past this, the answer was lost on the way (a
-// phone whose connection to the tailnet dropped), and waiting longer would
-// leave the dialog on "Comentando…" for good.
-const ACTION_TIMEOUT_MS = 30_000;
-
-async function sendAction() {
-  const dialog = S.dialog;
-  if (!dialog || dialog.sending) return;
-  dialog.sending = true;
-  dialog.error = null;
-  renderDialog();
-  try {
-    const { url } = await api(`/api/items/${encodeURIComponent(dialog.item)}/actions`, { method: 'POST', body: JSON.stringify({ action: dialog.action.id, ...(dialog.text.trim() ? { text: dialog.text.trim() } : {}), ...(dialog.action.apps ? { app: dialog.app } : {}) }), signal: AbortSignal.timeout(ACTION_TIMEOUT_MS) });
-    S.dialog = null;
-    renderDialog();
-    toast(dialog.action.id === 'assign' ? `Listo: se lo asignaste a ronin. Lo toma en el próximo tick.` : dialog.action.id === 'close-issue' ? `Listo: cerraste #${dialog.action.target}.` : `Listo: comentaste en #${dialog.action.target}.`, url);
-    const item = itemById(dialog.item);
-    // Its comment is where the answer will come: the tab of what it was on (the issue or its PR).
-    const d = S.detail[dialog.item]?.data;
-    if (item && d) S.doc[dialog.item] = d.pr?.number === dialog.action.target ? 'pr' : 'issue';
-    if (S.detail[dialog.item]) S.detail[dialog.item].at = 0;
-    await loadDetail(dialog.item);
-    refresh();
-  } catch (error) {
-    if (error instanceof Unauthorized && showLogin(error)) return;
-    dialog.sending = false;
-    // No answer, or the connection dropped: the comment may well be out
-    // already. The item is read again so its conversation says.
-    const lost = error.name === 'TimeoutError' || error.name === 'AbortError' || error instanceof TypeError;
-    dialog.error = lost
-      ? 'No llegó la respuesta del servidor. El comentario puede haberse publicado igual: mira la conversación del ítem antes de volver a intentar.'
-      : `No se pudo: ${error.message}`;
-    renderDialog();
-    if (lost) {
-      if (S.detail[dialog.item]) S.detail[dialog.item].at = 0;
-      loadDetail(dialog.item).catch(() => {});
+// The Archivos and Fichas tabs, still drawn here (#235: each goes to React
+// in its own PR), in the room the item's page gives them (PAGE_HOST.itemTab).
+// Drawn again as their state changes (each renderCenter), keeping where
+// the person was reading and what they were writing.
+let itemTab = null;
+function drawItemTab() {
+  if (!itemTab?.element.isConnected) return;
+  const { element, key, tab, bridge } = itemTab;
+  const item = itemById(key);
+  if (!item) return;
+  // Read when the tab is first shown, and again once old (refresh).
+  if (tab === 'files' && !S.files[key]) queueMicrotask(() => loadFiles(key));
+  const html = tab === 'files' ? filesHTML(item) : fichasHTML(item);
+  if (element._html !== html) {
+    const doc = $('#doc');
+    const keep = doc && element._key === `${key}:${tab}` ? doc.scrollTop : 0;
+    const rows = $('#frows')?.scrollTop ?? 0;
+    const fd = $('#fdetail');
+    const fdKeep = fd ? { ficha: fd.dataset.current, top: fd.scrollTop } : null;
+    const fdiffs = $('#fdiffs')?.scrollTop;
+    const ftrows = $('#ftrows')?.scrollTop;
+    // A box being written in survives (a finding's comment, a comment on the diff).
+    const typing = ['fcomment', 'fcbox'].includes(document.activeElement?.id) ? { id: document.activeElement.id, start: document.activeElement.selectionStart, end: document.activeElement.selectionEnd } : null;
+    element._html = html;
+    element._key = `${key}:${tab}`;
+    element.innerHTML = html;
+    const fresh = $('#doc');
+    if (fresh && !isMobile()) fresh.scrollTop = keep;
+    if ($('#frows')) $('#frows').scrollTop = rows;
+    if ($('#fdiffs') && fdiffs !== undefined) $('#fdiffs').scrollTop = fdiffs;
+    if ($('#ftrows') && ftrows !== undefined) $('#ftrows').scrollTop = ftrows;
+    const fdFresh = $('#fdetail');
+    if (fdFresh && fdKeep && fdFresh.dataset.current === fdKeep.ficha) fdFresh.scrollTop = fdKeep.top;
+    const box = typing && document.getElementById(typing.id);
+    if (box) {
+      box.focus();
+      box.setSelectionRange(typing.start, typing.end);
     }
+    tickClocks();
+    wireItemTab();
   }
+  // A file, and a comment in it, picked in the review panel (PAGE_HOST.goFile).
+  const jump = S.fjump;
+  if (jump?.key === key && tab === 'files') {
+    S.fjump = null;
+    document.getElementById(fileAnchor(jump.path))?.scrollIntoView({ block: 'start' });
+    if (jump.comment) document.getElementById(`p-${jump.comment}`)?.scrollIntoView({ block: 'center' });
+  }
+  bridge.drawn();
 }
 
 // ---------- new issue (#100)
@@ -1103,34 +909,6 @@ function toast(message, url) {
   setTimeout(() => el.remove(), 5000);
 }
 
-function activityHTML(item) {
-  const runs = itemRuns(item);
-  const loading = !(item.id in S.itemRuns);
-  if (runs.length === 0) return `<div class="activity"><div class="act-line"><span class="lbl">Actividad</span><span class="m">${loading ? 'Cargando…' : 'Sin corridas de agentes en los últimos 14 días.'}</span></div></div>`;
-  const entries = runEntries(runs);
-  // The latest run (a group of steps as one) is the line itself, or the card below it; the older ones, pills that open their transcript.
-  const latest = entryRun(runs, entries[0]);
-  const older = entries.slice(1).map((entry) => {
-    const run = entryRun(runs, entry);
-    return `<button class="pill" data-runview="${entry.idx[0]}">${dot(run.state)}${esc(entryName(item, runs, entry))}<span class="m">${esc(short(Date.now() - Date.parse(run.endedAt ?? run.startedAt)))}</span></button>`;
-  }).join('');
-  let summary = '';
-  if (latest.state !== 'running') {
-    const [, , label] = STATE[latest.state] ?? STATE.error;
-    const facts = [label, `hace ${short(Date.now() - Date.parse(latest.endedAt ?? latest.startedAt))}`, latest.durationMs !== undefined ? duration(latest.durationMs) : null, latest.costUsd !== undefined ? money(latest.costUsd) : null].filter(Boolean).join(' · ');
-    summary = `<span class="latest">${dot(latest.state)}<b>${esc(entryName(item, runs, entries[0]))}</b><span class="m">${esc(facts)}</span></span>`;
-  }
-  const line = `<div class="act-line"><span class="lbl">Actividad</span>${summary}${older ? `<span class="pills">${older}</span>` : ''}<span class="sp"><button class="link" data-runview="0">transcript →</button></span></div>`;
-  if (latest.state !== 'running') return `<div class="activity">${line}${latest.state === 'error' && latest.error ? `<div class="last-err">${esc(latest.error)}</div>` : ''}</div>`;
-  // The run going on: what the agent last said and its last few steps.
-  const lines = S.run?.runId === latest.runId ? S.run.lines : [];
-  const said = [...lines].reverse().find((l) => l.type === 'text');
-  const steps = lines.filter((l) => l.type === 'tool').slice(-4);
-  return `<div class="activity">${line}<div class="livecard"><div class="top">${dot('running')}<b>${esc(runName(item, latest))}${latest.sliceIndex !== undefined ? `, slice ${latest.sliceIndex + 1}` : ''}</b><span class="clk" data-since="${esc(latest.startedAt)}"></span>${latest.model ? `<span class="m">${esc(latest.model)}</span>` : ''}</div>
-    ${said ? `<div class="say">${esc(said.text)}</div>` : ''}
-    ${steps.length ? `<ol>${steps.map((l) => `<li><b>${esc(VERB[l.name] ?? l.name)}</b> <span class="arg">${esc(String(l.summary ?? '').replace(/^\$ /, ''))}</span></li>`).join('')}</ol>` : `<div class="m">${S.run?.runId === latest.runId ? 'Arrancando…' : 'Cargando…'}</div>`}</div></div>`;
-}
-
 function docTabsOf(item, d) {
   // Archivos: the PR's "Files changed" (#111), an issue's moving PR's.
   // An issue with a PR opens on the PR, what was done (its "Qué se pidió" says what was asked).
@@ -1145,86 +923,7 @@ const docOf = (item) => {
   const tabs = docTabsOf(item, d);
   return tabs.some(([k]) => k === S.doc[item.id]) ? S.doc[item.id] : tabs[0][0];
 };
-// The tab shown, the same docHTML marks #doc with: on the default tab
-// S.doc is still empty, and comparing against it lost the scroll on every
-// redraw.
-const docKeyOf = (item) => `${item.id}:${docOf(item) ?? ''}`;
-
-function docHTML(item) {
-  if (item.kind === 'other') return '';
-  const entry = S.detail[item.id];
-  const d = entry?.data;
-  if (!d) return `<div class="doc" id="doc"><div class="empty">${entry?.error ? `No se pudo leer de GitHub: ${esc(entry.error)}` : 'Cargando de GitHub…'}</div></div>`;
-  const tabs = docTabsOf(item, d);
-  const cur = tabs.some(([k]) => k === S.doc[item.id]) ? S.doc[item.id] : tabs[0][0];
-  // Each tab's own conversation: the issue's comments, the PR's comments and reviews.
-  const convOf = (k) => (k === 'issue' ? d.issue : k === 'pr' ? d.pr : undefined);
-  const count = (k) => (convOf(k) ? conversation(convOf(k)).length : 0);
-  const fichas = S.expl[item.id]?.data?.fichas;
-  const files = S.files[item.id];
-  const counter = (k) => ((k === 'issue' || k === 'pr') && count(k) ? `<span class="c">${count(k)}</span>` : k === 'fichas' && fichas ? `<span class="c">${fichas.length}</span>` : k === 'files' && files?.data ? `<span class="c">${files.data.files.length}</span>` : '');
-  const bar = `<div class="doctabs" role="tablist">${tabs.map(([k, label]) => `<button class="doctab" role="tab" data-doc="${k}" aria-selected="${k === cur}">${esc(label)}${counter(k)}</button>`).join('')}
-    <span class="keys"><kbd>1</kbd>–<kbd>${tabs.length}</kbd> pestaña · ${cur === 'fichas' ? '<kbd>j</kbd> <kbd>k</kbd> otra ficha' : cur === 'files' ? `<kbd>j</kbd> <kbd>k</kbd> otro archivo · <kbd>v</kbd> visto${decidable(item, d) ? '' : ' · <kbd>r</kbd> revisión'}` : '<kbd>j</kbd> <kbd>k</kbd> sección o comentario'} <button class="kh" data-keys title="Atajos (?)" aria-label="Atajos">?</button></span><span class="src">${d.error ? `<span class="bad">GitHub no respondió: ${esc(d.error)}</span>, ` : ''}${d.fetchedAt ? `leído hace ${esc(short(Date.now() - Date.parse(d.fetchedAt)))}` : ''}</span></div>`;
-  if (cur === 'fichas') return bar + fichasHTML(item);
-  if (cur === 'corridas' || cur === 'inventario') {
-    const xr = xplOfItem(item.id);
-    return bar + `<div class="doc" id="doc" data-key="${esc(`${item.id}:${cur}`)}"><div class="xpl-doc">${partHTML(cur === 'corridas' ? 'exploration-runs' : 'exploration-inventory', { repo: xr.repo, app: xr.app })}</div></div>`;
-  }
-  if (cur === 'files') {
-    // Read when the tab is first shown, and again once old (refresh).
-    if (!files) queueMicrotask(() => loadFiles(item.id));
-    return bar + filesHTML(item);
-  }
-  const doc = cur === 'issue' ? d.issue : d.pr;
-  const other = (cur === 'issue') !== (item.kind === 'issue');
-  const entries = conversation(doc);
-  const conv = `<section class="conv"><h3>Comentarios ${cur === 'pr' ? 'del PR' : 'del issue'}${entries.length ? ` <span class="c">${entries.length}</span>` : ''}</h3>${entries.length
-    ? `<div class="comments">${entries.map((e) => entryHTML(e, d, doc, item.repo)).join('')}</div>`
-    : '<p class="m">Nadie comentó todavía.</p>'}</section>`;
-  const body = `<div class="page">${other ? `<a class="other" href="${esc(doc.url)}" target="_blank" rel="noopener">${esc(doc.title)} <span class="m">${cur === 'pr' ? 'PR' : 'Issue'} #${esc(doc.number)} ↗</span></a>` : ''}
-      <div class="meta">${avatar(doc.author)}<b>${esc(doc.author)}</b><span>${esc(when(doc.createdAt))}</span></div>${cur === 'pr' ? prStateHTML(item, doc) : ''}
-      ${cur === 'pr' && sameLogin(doc.author, d.ronin) ? prBodyHTML(doc.body, item.repo) : `<div class="md">${doc.body.trim() ? md(doc.body, item.repo) : '<p class="m">Sin descripción.</p>'}</div>`}</div>${conv}`;
-  return bar + `<div class="doc" id="doc" data-key="${esc(`${item.id}:${cur}`)}">${body}</div>`;
-}
-
 const sameLogin = (a, b) => Boolean(a && b) && a.toLowerCase() === b.toLowerCase();
-
-// The sections every PR ronin opens has (#195, PR_BODY_SECTIONS in
-// platform/agents/prompts.ts), each under its heading; what it decided on its own
-// stands out, it's what most needs a look. A body without them (an older
-// PR) shows as it is.
-const PR_SECTIONS = ['Qué se pidió', 'Qué cambió', 'Cómo se verificó', 'Decisiones propias', 'Fuera de alcance'];
-function prBodyHTML(body, repo) {
-  const parts = body.split(/^##[ \t]+(.+?)[ \t]*$/m);
-  if (!parts.some((part, i) => i % 2 === 1 && PR_SECTIONS.includes(part))) return `<div class="md">${body.trim() ? md(body, repo) : '<p class="m">Sin descripción.</p>'}</div>`;
-  const sections = [];
-  for (let i = 1; i < parts.length; i += 2) sections.push(`<section class="psec${parts[i] === 'Decisiones propias' ? ' decis' : ''}"><h3>${esc(parts[i])}</h3><div class="md">${md(parts[i + 1].trim(), repo)}</div></section>`);
-  return `${parts[0].trim() ? `<div class="md pre">${md(parts[0].trim(), repo)}</div>` : ''}${sections.join('')}`;
-}
-
-// Where a PR stands, on its tab (an issue's PR included): open or how it
-// ended, its review and who approved it or asked for changes, auto-merge,
-// checks and conflicts — what was only on GitHub.
-function prStateHTML(item, doc) {
-  if (doc.state === 'MERGED') return '<div class="prstate"><span class="chip ok">mergeado</span></div>';
-  if (doc.state === 'CLOSED') return '<div class="prstate"><span class="chip idle">cerrado sin mergear</span></div>';
-  // The sidebar's read of the PR: its checks, and a review just sent (showSentReviews).
-  const live = item.pr?.number === doc.number ? item.pr : null;
-  const decision = live?.reviewDecision || doc.reviewDecision;
-  const by = (state) => (doc.decisions ?? []).filter((x) => x.state === state).map((x) => x.author);
-  const approved = by('APPROVED');
-  const changes = by('CHANGES_REQUESTED');
-  const chips = [doc.isDraft ? ['idle', 'draft'] : ['run', 'abierto']];
-  if (decision === 'CHANGES_REQUESTED') chips.push(['warn', changes.length ? `cambios pedidos por ${changes.join(', ')}` : 'cambios pedidos']);
-  else if (decision === 'APPROVED') chips.push(['ok', approved.length ? `aprobado por ${approved.join(', ')}` : 'aprobado']);
-  else if (approved.length) chips.push(['warn', `aprobado por ${approved.join(', ')}${decision === 'REVIEW_REQUIRED' ? ', faltan aprobaciones' : ''}`]);
-  else chips.push(['plain', decision === 'REVIEW_REQUIRED' ? 'falta la aprobación' : 'sin aprobar']);
-  chips.push(doc.labels.includes('ronin:auto-merge') ? ['ok', 'auto-merge activo'] : ['plain', 'sin auto-merge']);
-  const checks = checksChip(live?.checks);
-  if (checks) chips.push(checks);
-  if (doc.mergeable === 'CONFLICTING') chips.push(['crit', `conflictos con ${doc.baseRefName}`]);
-  return `<div class="prstate">${chips.map(([cls, text]) => `<span class="chip ${cls}">${esc(text)}</span>`).join('')}</div>`;
-}
 
 // ---------- a PR's files (#111)
 // "Files changed": the files on the left, their diffs on the right, each
@@ -1318,7 +1017,7 @@ function filesHTML(item) {
   const tree = `<div class="ftree"><div class="ftop"><input type="search" id="fq" placeholder="Filtrar archivos" value="${esc(S.fq[item.id] ?? '')}" aria-label="Filtrar archivos"><button class="btn-s ftreex" data-ftree>Cerrar</button></div>${progress}<div class="frows" id="ftrows">${rows || '<p class="none">Ningún archivo coincide.</p>'}</div></div>`;
   const tool = `<div class="ftool"><button class="btn-s ftreebtn" data-ftree>Archivos ▾</button><span class="seg">${mode('unified', 'Unificado')}${mode('split', 'Lado a lado')}</span>
     <span>${data.files.length} ${data.files.length === 1 ? 'archivo' : 'archivos'} · <span class="addel"><span class="a">+${add}</span> <span class="d">−${del}</span></span></span>${data.error ? `<span class="bad">GitHub no respondió: ${esc(data.error)}</span>` : ''}
-    <span class="m hint-c">Clic en un número de línea para comentarla</span>${decidable(item, S.detail[item.id]?.data) ? (pendingOf(item.id).length ? `<span class="m dcarry">${oneOr(pendingOf(item.id).length, 'Un comentario', `${pendingOf(item.id).length} comentarios`)} para ronin: los lleva <b>Ajustar</b> <kbd>P</kbd></span>` : '') : reviewOf(item.id) ? reviewButton(item, 'files', `<button class="btn-s primary frevb" data-frev="files" aria-haspopup="dialog" aria-expanded="${revOpen(item, 'files')}">Terminar revisión <span class="rn">${pendingOf(item.id).length}</span> ▾</button>`) : reviewable(item, S.detail[item.id]?.data) ? reviewButton(item, 'files', `<button class="btn-s frevb" data-frev="files" aria-haspopup="dialog" aria-expanded="${revOpen(item, 'files')}">Revisar ▾</button>`) : ''}${url ? `<a class="gh" href="${esc(url)}/files" target="_blank" rel="noopener">En GitHub ↗</a>` : ''}</div>`;
+    <span class="m hint-c">Clic en un número de línea para comentarla</span>${decidable(item, S.detail[item.id]?.data) ? (pendingOf(item.id).length ? `<span class="m dcarry">${oneOr(pendingOf(item.id).length, 'Un comentario', `${pendingOf(item.id).length} comentarios`)} para ronin: los lleva <b>Ajustar</b> <kbd>P</kbd></span>` : '') : reviewOf(item.id) ? reviewButton(`<button class="btn-s primary frevb" data-frev aria-haspopup="dialog" aria-expanded="false">Terminar revisión <span class="rn">${pendingOf(item.id).length}</span> ▾</button>`) : reviewable(item, S.detail[item.id]?.data) ? reviewButton('<button class="btn-s frevb" data-frev aria-haspopup="dialog" aria-expanded="false">Revisar ▾</button>') : ''}${url ? `<a class="gh" href="${esc(url)}/files" target="_blank" rel="noopener">En GitHub ↗</a>` : ''}</div>`;
   return `<div class="doc files${S.ftree ? ' tree' : ''}" id="doc" data-key="${esc(`${item.id}:files`)}">${tree}<div class="fdiffs" id="fdiffs">${tool}<div class="fcards">${data.files.map((f) => fileHTML(item, data, f)).join('')}</div></div></div>`;
 }
 
@@ -1601,174 +1300,17 @@ async function deletePending(nodeId) {
 }
 
 // ---------- deciding a PR ronin opened (#195)
-// Its page asks what's decided, not how to review it: merge it, ask ronin
-// for an adjustment, or close it. Always in the header, so on every tab,
-// and a key away (A, P, X). A PR by anyone else keeps the review panel below.
+// Merge it, ask ronin for an adjustment, or close it: in the item's page
+// (pages/item/Decide.tsx). Archivos says which PRs are decided so.
 const decidable = (item, d) => reviewable(item, d) && Boolean(d.ronin) && (d.pr.author ?? '').toLowerCase() === d.ronin.toLowerCase() && !d.pr.isDraft;
-const DECIDE_QUICK = ['Agregá un test para este caso', 'Revertí una de las decisiones propias', 'Separá esto en otro PR'];
 const oneOr = (n, one, many) => (n === 1 ? one : many);
 
-function decideHTML(item, d) {
-  const open = (kind) => S.decide?.item === item.id && S.decide.kind === kind;
-  return `<div class="actions dwrap"><button class="gh dbtn danger" data-decide="close" aria-haspopup="dialog" aria-expanded="${open('close')}" title="Cerrar el PR (X)">Cerrar <kbd>X</kbd></button><button class="gh dbtn run" data-decide="adjust" aria-haspopup="dialog" aria-expanded="${open('adjust')}" title="Pedirle un ajuste a ronin (P)">Ajustar <kbd>P</kbd></button><button class="act-btn dbtn ok" data-decide="approve" aria-haspopup="dialog" aria-expanded="${open('approve')}" title="Aprobar y mergear (A)">Aprobar <kbd>A</kbd></button>${dropHTML(item, d)}</div>`;
-}
-
-// What was just decided here, for a few minutes: GitHub takes a moment to show it.
-const DECIDED_SHOWN_MS = 10 * 60_000;
-function decidedHTML(item) {
-  const done = S.decided[item.id];
-  if (!done || Date.now() - done.at > DECIDED_SHOWN_MS) return '';
-  const what = done.kind === 'approve'
-    ? `Aprobaste el PR${done.autoMerge ? ' y le pediste el auto-merge a ronin' : ''}.`
-    : done.kind === 'adjust'
-      ? `Le pediste un ajuste a ronin${done.count ? ` con ${oneOr(done.count, 'un comentario', `${done.count} comentarios`)} de Archivos` : ''}. Lo toma en el próximo tick.`
-      : `Cerraste el PR${done.issue ? ' y su issue' : ''}.`;
-  return `<div class="decided">${what}${done.url ? ` <a href="${esc(done.url)}" target="_blank" rel="noopener">Ver ↗</a>` : ''}</div>`;
-}
-
-function dropHTML(item, d) {
-  const p = S.decide;
-  if (!p || p.item !== item.id) return '';
-  const n = pendingOf(item.id).length;
-  const me = esc(S.snap?.me ?? '');
-  const bot = esc(d.ronin);
-  const err = p.error ? `<p class="bad">${esc(p.error)}</p>` : '';
-  const busy = p.sending ? ' disabled' : '';
-  if (p.kind === 'approve') {
-    const checks = checksChip(item.pr?.checks);
-    const autoMerge = !d.pr.labels?.includes('ronin:auto-merge') && d.pr.mergeable !== 'CONFLICTING';
-    const when = d.pr.mergeable === 'CONFLICTING' ? `Tiene conflictos con ${esc(d.pr.baseRefName ?? 'la base')}: no se va a mergear hasta que se resuelvan.`
-      : checks?.[0] === 'crit' ? '<span class="crit">Un check falla: no se va a mergear hasta que pase.</span> Quizá conviene <b>Ajustar</b>.'
-        : checks?.[0] === 'run' ? 'ronin lo mergea apenas pasen los checks.' : 'ronin lo mergea en el próximo tick.';
-    return `<div class="drop ok" role="dialog" aria-label="Aprobar y mergear"><div class="dt">Lo aprobás como <b>${me}</b>${autoMerge ? ` y comentás <code>@${bot} /auto-merge</code> a tu nombre` : ''}. ${when}
-      ${n ? `<p class="warnbox">${oneOr(n, 'Tu comentario', `Tus ${n} comentarios`)} de Archivos ${n === 1 ? 'va' : 'van'} con la aprobación, pero ronin no ${n === 1 ? 'lo atiende' : 'los atiende'}: para eso, <b>Ajustar</b>.</p>` : ''}</div>${err}
-      <footer><span class="m"><kbd>↵</kbd> confirma · <kbd>Esc</kbd></span><button class="btn-s" data-dcancel>Cancelar</button><button class="btn-s ok-solid" data-dsend${busy}>Aprobar y mergear</button></footer></div>`;
-  }
-  if (p.kind === 'close') {
-    const issue = item.kind === 'issue' ? item.number : d.issue?.number;
-    return `<div class="drop crit" role="dialog" aria-label="Cerrar el PR"><textarea id="dtext" rows="3" placeholder="Por qué lo cerrás (opcional). Queda como comentario en el PR.">${esc(p.text)}</textarea>
-      ${d.pedido && issue !== undefined ? `<p class="help">Es el pedido P-${esc(d.pedido.number)} del portal: si cerrás también el issue, este motivo le llega a quien lo pidió, en el portal y por correo. Sin motivo, recibe el aviso de siempre.</p>` : ''}
-      ${issue !== undefined ? `<label class="dchk"><input type="checkbox" id="dissue"${p.closeIssue ? ' checked' : ''}><span>Cerrar también el issue #${esc(issue)} <kbd>I</kbd><small>Si queda abierto, ronin lo bloquea y avisa: se queda sin PR para seguir.</small></span></label>` : ''}${err}
-      <footer><span class="m"><kbd>Ctrl ↵</kbd> cierra · <kbd>Esc</kbd></span><button class="btn-s" data-dcancel>Cancelar</button><button class="btn-s danger-solid" data-dsend${busy}>Cerrar el PR</button></footer></div>`;
-  }
-  const how = n
-    ? `Se manda una revisión con ${oneOr(n, 'tu comentario', `tus ${n} comentarios`)} y después <code>@${bot} /fix-comments</code> con este texto, a tu nombre.`
-    : `Se comenta <code>@${bot}</code> y este texto en el PR, a tu nombre.`;
-  return `<div class="drop" role="dialog" aria-label="Pedir un ajuste"><textarea id="dtext" rows="4" placeholder="¿Qué debería cambiar ronin?">${esc(p.text)}</textarea>
-    <div class="quick">${DECIDE_QUICK.map((q, i) => `<button data-dquick="${i}"><kbd>${i + 1}</kbd> ${esc(q)}</button>`).join('')}</div>
-    ${n ? `<div class="carry">✎ Incluye ${oneOr(n, 'tu comentario', `tus ${n} comentarios`)} de Archivos</div>` : ''}<p class="how">${how}</p>${err}
-    <footer><span class="m"><kbd>Ctrl ↵</kbd> manda · <kbd>Esc</kbd></span><button class="btn-s" data-dcancel>Cancelar</button><button class="btn-s primary" data-dsend${busy || (!p.text.trim() && !n) ? ' disabled' : ''}>Mandar a ronin</button></footer></div>`;
-}
-
-function openDecide(kind) {
-  const id = S.sel;
-  if (!id) return;
-  S.rpanel = null;
-  S.menu = false;
-  S.decide = S.decide?.item === id && S.decide.kind === kind ? null : { item: id, kind, text: '', closeIssue: true, sending: false, error: null };
-  // The pending comments it carries.
-  if (S.decide && !S.files[id]?.data) loadFiles(id);
-  renderCenter();
-  $('#dtext')?.focus();
-}
-
-async function sendDecision() {
-  const p = S.decide;
-  if (!p || p.sending) return;
-  const n = pendingOf(p.item).length;
-  if (p.kind === 'adjust' && !p.text.trim() && !n) return;
-  p.sending = true;
-  p.error = null;
-  renderCenter();
-  try {
-    const sent = await api(`/api/items/${encodeURIComponent(p.item)}/decision`, { method: 'POST', body: JSON.stringify({ decision: p.kind, text: p.text, closeIssue: p.closeIssue }) });
-    S.decide = null;
-    S.decided[p.item] = { at: Date.now(), kind: p.kind, url: sent.url, autoMerge: Boolean(sent.autoMergeUrl), issue: Boolean(sent.issueUrl), count: n };
-    toast(p.kind === 'approve' ? 'Aprobaste el PR.' : p.kind === 'adjust' ? 'Se lo mandaste a ronin.' : 'Cerraste el PR.', sent.url);
-    afterFilesWrite(p.item);
-    refresh();
-  } catch (error) {
-    if (error instanceof Unauthorized && showLogin(error)) return;
-    p.sending = false;
-    p.error = `No se pudo: ${error.message}`;
-    renderCenter();
-  }
-}
-
-function wireDecide() {
-  for (const button of document.querySelectorAll('[data-decide]')) button.onclick = (event) => {
-    event.stopPropagation();
-    openDecide(button.dataset.decide);
-  };
-  const p = S.decide;
-  if (!p) return;
-  for (const button of document.querySelectorAll('[data-dcancel]')) button.onclick = () => { S.decide = null; renderCenter(); };
-  for (const button of document.querySelectorAll('[data-dsend]')) button.onclick = sendDecision;
-  const text = $('#dtext');
-  if (text) {
-    text.oninput = () => {
-      p.text = text.value;
-      const send = $('[data-dsend]');
-      if (send && p.kind === 'adjust' && !p.sending) send.disabled = !p.text.trim() && !pendingOf(p.item).length;
-    };
-  }
-  const issue = $('#dissue');
-  if (issue) issue.onchange = () => { p.closeIssue = issue.checked; };
-  for (const button of document.querySelectorAll('[data-dquick]')) button.onclick = () => addDecideQuick(Number(button.dataset.dquick));
-}
-
-function addDecideQuick(i) {
-  const p = S.decide;
-  p.text = `${p.text.trim() ? `${p.text.replace(/\s+$/, '')}\n` : ''}${DECIDE_QUICK[i]}.`;
-  renderCenter();
-  focusDecideText();
-}
-
-function focusDecideText() {
-  const text = $('#dtext');
-  text?.focus();
-  text?.setSelectionRange(text.value.length, text.value.length);
-}
-
-// The keys of an open adjustment or closing, with the focus off its text: 1–3
-// a suggestion, I the issue's box, Ctrl ↵ sends. Any other key goes back to
-// the text and is typed there, so nothing typed lands somewhere else.
-function decideKey(event) {
-  const p = S.decide;
-  const text = $('#dtext');
-  if (!p || p.kind === 'approve' || p.sending || !text || p.item !== S.sel) return false;
-  if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
-    event.preventDefault();
-    sendDecision();
-    return true;
-  }
-  const at = document.activeElement;
-  if (at === text || event.ctrlKey || event.metaKey || event.altKey || event.key.length !== 1) return false;
-  // A button or the box of the dropdown keep their space.
-  if (event.key === ' ' && at?.closest?.('.drop')) return false;
-  if (p.kind === 'adjust' && DECIDE_QUICK[Number(event.key) - 1]) {
-    event.preventDefault();
-    addDecideQuick(Number(event.key) - 1);
-    return true;
-  }
-  if (p.kind === 'close' && event.key.toLowerCase() === 'i' && $('#dissue')) {
-    event.preventDefault();
-    p.closeIssue = !p.closeIssue;
-    $('#dissue').checked = p.closeIssue;
-    return true;
-  }
-  focusDecideText();
-  return true;
-}
-
-// ---------- moving around an item's page with the keyboard (#195)
-// As in vim where it fits: j/k the next unit of the tab (a section, a
-// comment; a file and a finding have their own), d/u half a page, gg/G the
-// top and the bottom. The digits go to a tab, and ]p/[p to the next PR that
-// waits on a decision. Two-key sequences wait a moment for their second key.
+// ---------- moving around with the keyboard (#195)
+// An item's page has its own keys (pages/item); ]p and [p, the next or the
+// previous PR that waits on a decision, work from anywhere. The second key
+// of a sequence is waited for a moment.
 const KEY_SEQ_MS = 900;
 const seq = { key: null, timer: 0 };
-const UNITS = { pr: '.page .psec, .page .md > :is(h1, h2, h3), .conv .comments > article', issue: '.page .md > :is(h1, h2, h3), .conv .comments > article' };
 
 // A PR of ronin's that's ready for someone to decide: open, not a draft,
 // nobody approved it yet and no agent is on it.
@@ -1791,31 +1333,8 @@ function movePr(step) {
   toast('Ningún otro PR de ronin espera una decisión.');
 }
 
-function moveUnit(item, tab, step) {
-  const all = UNITS[tab] ? [...document.querySelectorAll(`#doc :is(${UNITS[tab]})`)] : [];
-  const scroller = $('#doc');
-  if (!all.length) return scroller?.scrollBy({ top: step * 80 });
-  const key = docKeyOf(item);
-  const at = S.kunit?.key === key ? Math.min(S.kunit.i, all.length - 1) : -1;
-  const i = Math.max(0, Math.min(all.length - 1, at < 0 ? (step > 0 ? 0 : all.length - 1) : at + step));
-  S.kunit = { key, i };
-  const next = all[i];
-  markUnit();
-  next.scrollIntoView({ block: 'start', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
-}
-
-// The unit j/k is on, marked again after the page is redrawn.
-function markUnit() {
-  const item = S.sel && itemById(S.sel);
-  const tab = item && docOf(item);
-  if (!tab || !UNITS[tab]) return;
-  const all = [...document.querySelectorAll(`#doc :is(${UNITS[tab]})`)];
-  const on = S.kunit?.key === docKeyOf(item) ? all[S.kunit.i] : null;
-  for (const el of all) el.classList.toggle('kcur', el === on);
-}
-
-// True when the key was one of these.
-function navigate(event, item) {
+// True when the key was ]p or [p (or its first half).
+function nextPrKey(event) {
   if (event.ctrlKey || event.metaKey || event.altKey) return false;
   const prev = seq.key;
   seq.key = null;
@@ -1828,42 +1347,6 @@ function navigate(event, item) {
   if (event.key === ']' || event.key === '[') {
     seq.key = event.key;
     seq.timer = setTimeout(() => { seq.key = null; }, KEY_SEQ_MS);
-    return true;
-  }
-  const d = item && S.detail[item.id]?.data;
-  if (!item || !d || item.kind === 'other' || viewOf(item) !== 'ficha') return false;
-  const tab = docOf(item);
-  const scroller = tab === 'files' ? $('#fdiffs') : $('#doc');
-  if (prev === 'g' && event.key === 'g') {
-    event.preventDefault();
-    scroller?.scrollTo({ top: 0 });
-    return true;
-  }
-  if (event.key === 'g') {
-    seq.key = 'g';
-    seq.timer = setTimeout(() => { seq.key = null; }, KEY_SEQ_MS);
-    return true;
-  }
-  if (event.key === 'G') {
-    event.preventDefault();
-    scroller?.scrollTo({ top: scroller.scrollHeight });
-    return true;
-  }
-  if (event.key === 'd' || event.key === 'u') {
-    event.preventDefault();
-    scroller?.scrollBy({ top: (event.key === 'd' ? 1 : -1) * scroller.clientHeight / 2 });
-    return true;
-  }
-  const tabs = docTabsOf(item, d);
-  if (/^[1-9]$/.test(event.key) && tabs[Number(event.key) - 1]) {
-    event.preventDefault();
-    S.doc[item.id] = tabs[Number(event.key) - 1][0];
-    renderCenter();
-    return true;
-  }
-  if ((event.key === 'j' || event.key === 'k') && tab !== 'files' && tab !== 'fichas') {
-    event.preventDefault();
-    moveUnit(item, tab, event.key === 'j' ? 1 : -1);
     return true;
   }
   return false;
@@ -1885,125 +1368,18 @@ function toggleKeysHelp() {
 }
 
 // ---------- the review panel (#111)
-// Finishing the review as in GitHub's "Review changes": a summary, Comment,
-// Approve or Request changes, and the pending comments it carries.
-const REVIEW_EVENTS = [
-  ['COMMENT', 'Comentar', '', 'Sin aprobar ni bloquear: solo deja los comentarios.'],
-  ['APPROVE', 'Aprobar', 'ok', 'El PR queda aprobado.'],
-  ['REQUEST_CHANGES', 'Pedir cambios', 'crit', 'El PR no se puede mergear hasta que lo apruebes o se descarte tu revisión.'],
-];
-const isMine = (login) => (login ?? '').toLowerCase() === (S.snap?.me ?? '').toLowerCase();
+// Finishing the review as in GitHub's "Review changes", in the item's page
+// (pages/item/Review.tsx). It drops from the button that opened it: the
+// page's head, or the Archivos toolbar, into the slot that leaves.
 // A PR's page offers the review, and so does an issue's, for its moving PR
 // (the one in its Archivos tab); an exploration PR has its own approval (#93).
 const reviewable = (item, d) => (item.kind === 'pr' || item.kind === 'issue') && !d?.exploration && d?.pr?.state === 'OPEN';
-// On an issue, the button says which PR it reviews.
-const reviewLabel = (item, d) => (item.kind === 'issue' ? `Revisar PR #${d.pr.number}` : 'Revisar');
-
-// The panel drops from the button that opened it: the page's head or the
-// Archivos toolbar.
-const revOpen = (item, at) => S.rpanel?.item === item.id && S.rpanel.at === at;
-const reviewButton = (item, at, button) => `<div class="actions rwrap">${button}${reviewPanelHTML(item, at)}</div>`;
-
-function openReviewPanel(at) {
-  const id = S.sel;
-  if (!id) return;
-  S.rpanel = S.rpanel?.item === id && S.rpanel.at === at ? null : { item: id, at, event: 'COMMENT', text: '', fix: true, autoMerge: true, sending: false, error: null };
-  if (S.rpanel && !S.files[id]?.data) loadFiles(id);
-  renderCenter();
-  if (S.rpanel) $('#rsum')?.focus();
-}
-
-function reviewPanelHTML(item, at) {
-  const p = S.rpanel;
-  if (!p || p.item !== item.id || p.at !== at) return '';
-  const entry = S.files[item.id];
-  const data = entry?.data;
-  const d = S.detail[item.id]?.data;
-  const head = `<header><h2>Terminar la revisión</h2><span class="m">${data ? `de PR #${esc(data.pr)}, ` : ''}como ${esc(S.snap?.me ?? '')}</span><button class="x" data-rclose aria-label="Cerrar">×</button></header>`;
-  if (!data) return `<div class="rpanel" role="dialog" aria-label="Terminar la revisión">${head}<div class="rbody"><p class="m">${entry?.error ? `No se pudo leer el PR: ${esc(entry.error)}` : 'Leyendo el PR…'}</p></div></div>`;
-  const own = isMine(data.author);
-  const event = own ? 'COMMENT' : p.event;
-  const pend = pendingOf(item.id);
-  const ronins = d?.ronin && data.author.toLowerCase() === d.ronin.toLowerCase();
-  const autoMerge = d?.pr?.labels?.includes('ronin:auto-merge');
-  const options = REVIEW_EVENTS.map(([value, label, cls, help]) => {
-    const off = own && value !== 'COMMENT';
-    const why = value === 'APPROVE' && autoMerge ? 'El PR tiene ronin:auto-merge: se mergea cuando pasen los checks.' : help;
-    return `<label class="${off ? 'off' : ''}"${off ? ' title="GitHub no deja aprobar ni pedir cambios en tu propio PR"' : ''}><input type="radio" name="rev" value="${value}"${event === value ? ' checked' : ''}${off ? ' disabled' : ''}><b class="${cls}">${label}</b><small>${esc(off ? 'No se puede en tu propio PR.' : why)}</small></label>`;
-  }).join('');
-  // ronin reads a review's comments, not its summary, and acts on them only when asked.
-  const fixable = ronins && (pend.length > 0 || event === 'REQUEST_CHANGES');
-  const fix = fixable ? `<label class="rfix"><input type="checkbox" id="rfix"${p.fix ? ' checked' : ''}><span><b>Que ronin los atienda ahora</b><small>Después de la revisión comenta <code>@${esc(d.ronin)} /fix-comments</code> a tu nombre.</small></span></label>` : '';
-  const merge = autoMergeChoice(event, d, fixable && p.fix);
-  const am = merge === 'offer' || merge === 'with-fix'
-    ? `<label class="rfix${merge === 'with-fix' ? ' off' : ''}"><input type="checkbox" id="ram"${merge === 'offer' && p.autoMerge ? ' checked' : ''}${merge === 'with-fix' ? ' disabled' : ''}><span><b>Mergear apenas pasen los checks</b><small>${merge === 'with-fix'
-      ? 'No junto con /fix-comments: se mergearía antes de que ronin los atienda. Pedí el auto-merge cuando estén.'
-      : `Después de aprobar comenta <code>@${esc(d.ronin)} /auto-merge</code> a tu nombre (el label <code>ronin:auto-merge</code>).`}</small></span></label>`
-    : '';
-  const where = (t) => `${t.path.split('/').pop()}${t.subject === 'file' ? '' : t.line ? ` · línea ${t.line}` : ''}`;
-  const list = pend.length
-    ? pend.map(({ t, c }) => `<button class="ri" data-rjump="${esc(t.path)}|${esc(c.nodeId)}"><span class="w">${esc(where(t))}${t.isNew ? '' : ' · respuesta'}</span><span class="t">${esc(c.body.replace(/```suggestion[\s\S]*?```/g, '[cambio sugerido]').trim().split('\n')[0])}</span></button>`).join('')
-    : '<p class="m">Ningún comentario todavía: hacé clic en el número de una línea en Archivos.</p>';
-  const can = !p.sending && (event !== 'COMMENT' || pend.length > 0 || p.text.trim());
-  return `<div class="rpanel" role="dialog" aria-label="Terminar la revisión">${head}<div class="rbody">
-    <textarea id="rsum" rows="3" placeholder="Resumen (opcional). Va arriba de la revisión, como en GitHub.">${esc(p.text)}</textarea>
-    <div class="rev">${options}</div>${fix}${am}
-    <div class="rlist"><div class="rh">En tu revisión<span>${pend.length ? `${pend.length} comentario${pend.length === 1 ? '' : 's'}` : ''}</span></div>${list}</div></div>
-    <footer>${p.error ? `<span class="bad">${esc(p.error)}</span>` : `<span class="m">${pend.length ? 'Hasta mandarla, nadie ve tus comentarios.' : ''}</span>`}${reviewOf(item.id) ? `<button class="btn-s danger" data-rdiscard${p.sending ? ' disabled' : ''}>Descartar</button>` : ''}<button class="btn-s primary" data-rsend${can ? '' : ' disabled'}>${p.sending ? 'Enviando…' : 'Mandar revisión'}</button></footer></div>`;
-}
-
-// Whether approving offers the auto-merge: only to approve, on a PR that
-// doesn't have it yet, isn't a draft (ronin doesn't read commands on a
-// human's draft) and doesn't conflict (the command would refuse it), and
-// never along with /fix-comments.
-function autoMergeChoice(event, d, withFix) {
-  if (event !== 'APPROVE' || !d?.ronin || !d.pr || d.pr.isDraft || d.pr.mergeable === 'CONFLICTING' || d.pr.labels?.includes('ronin:auto-merge')) return null;
-  return withFix ? 'with-fix' : 'offer';
-}
-
-function wireReviewPanel() {
-  const p = S.rpanel;
-  if (!p) return;
-  // Under the Archivos toolbar it lives inside the diffs' scroller: it ends
-  // where that ends, not past it.
-  const panel = $('.rpanel');
-  if (panel && getComputedStyle(panel).position === 'absolute') {
-    const bottom = panel.closest('.fdiffs')?.getBoundingClientRect().bottom ?? window.innerHeight;
-    panel.style.maxHeight = `${Math.max(240, bottom - panel.getBoundingClientRect().top - 12)}px`;
-  }
-  for (const button of document.querySelectorAll('[data-rclose]')) button.onclick = () => { S.rpanel = null; renderCenter(); };
-  const sum = $('#rsum');
-  if (sum) {
-    sum.oninput = () => {
-      p.text = sum.value;
-      const send = $('[data-rsend]');
-      if (send && !p.sending) send.disabled = !((p.event !== 'COMMENT' && !isMine(S.files[p.item]?.data?.author)) || pendingOf(p.item).length > 0 || p.text.trim());
-    };
-    sum.onkeydown = (event) => { if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) sendReview(); };
-  }
-  for (const radio of document.querySelectorAll('input[name="rev"]')) radio.onchange = () => { p.event = radio.value; renderCenter(); };
-  const fix = $('#rfix');
-  if (fix) fix.onchange = () => { p.fix = fix.checked; renderCenter(); };
-  const am = $('#ram');
-  if (am) am.onchange = () => { p.autoMerge = am.checked; };
-  for (const button of document.querySelectorAll('[data-rsend]')) button.onclick = sendReview;
-  for (const button of document.querySelectorAll('[data-rdiscard]')) button.onclick = discardPendingReview;
-  for (const button of document.querySelectorAll('[data-rjump]')) {
-    button.onclick = () => {
-      const [path, nodeId] = button.dataset.rjump.split('|');
-      S.rpanel = null;
-      S.doc[S.sel] = 'files';
-      goFile(path);
-      document.getElementById(`p-${nodeId}`)?.scrollIntoView({ block: 'center' });
-    };
-  }
-}
+const reviewButton = (button) => `<div class="actions rwrap">${button}<div class="rpanel-slot"></div></div>`;
 
 // An approval or a request for changes shows on the PR's chips at once,
 // until a snapshot brings a read of the repo newer than the one at hand when
 // it was sent (the server reads it again right after); a couple of minutes
 // at most, if that read never comes.
-const REVIEW_DECISION = { APPROVE: 'APPROVED', REQUEST_CHANGES: 'CHANGES_REQUESTED' };
 const REVIEW_SHOWN_MS = 120_000;
 const repoReadAt = (repo) => S.snap?.github?.find((g) => g.repo === repo)?.fetchedAt ?? null;
 
@@ -2016,58 +1392,6 @@ function showSentReviews() {
     for (const item of [...(S.snap?.items ?? []), ...Object.values(S.extra)]) {
       if (item.repo === sent.repo && item.pr?.number === sent.pr) item.pr.reviewDecision = sent.decision;
     }
-  }
-}
-
-const REVIEW_SENT = { COMMENT: 'Mandaste tu revisión', APPROVE: 'Aprobaste el PR', REQUEST_CHANGES: 'Pediste cambios' };
-async function sendReview() {
-  const p = S.rpanel;
-  const data = p && S.files[p.item]?.data;
-  if (!p || !data || p.sending) return;
-  const event = isMine(data.author) ? 'COMMENT' : p.event;
-  const d = S.detail[p.item]?.data;
-  const fixable = d?.ronin && data.author.toLowerCase() === d.ronin.toLowerCase() && (pendingOf(p.item).length > 0 || event === 'REQUEST_CHANGES');
-  const autoMerge = autoMergeChoice(event, d, fixable && p.fix) === 'offer' && p.autoMerge;
-  p.sending = true;
-  p.error = null;
-  renderCenter();
-  try {
-    const sent = await filesAction(p.item, { action: 'submit', event, text: p.text, commitId: data.headSha, fixComments: Boolean(fixable && p.fix), autoMerge });
-    S.rpanel = null;
-    const item = itemById(p.item);
-    if (item && REVIEW_DECISION[event]) {
-      S.revSent[`${item.repo}#${data.pr}`] = { repo: item.repo, pr: data.pr, decision: REVIEW_DECISION[event], readAt: repoReadAt(item.repo), at: Date.now() };
-      showSentReviews();
-      renderTree();
-      renderCenter();
-    }
-    toast(`${REVIEW_SENT[event]}${sent.fixUrl ? '; ronin ya tiene el /fix-comments' : ''}${sent.autoMergeUrl ? ' y le pediste el auto-merge' : ''}.`, sent.url);
-    afterFilesWrite(p.item);
-    refresh();
-  } catch (error) {
-    if (error instanceof Unauthorized && showLogin(error)) return;
-    p.sending = false;
-    p.error = `No se pudo: ${error.message}`;
-    renderCenter();
-  }
-}
-
-async function discardPendingReview() {
-  const p = S.rpanel;
-  const n = pendingOf(p.item).length;
-  if (!confirm(`¿Descartar tu revisión${n ? ` con ${n} comentario${n === 1 ? '' : 's'}` : ''}? No se puede deshacer.`)) return;
-  p.sending = true;
-  renderCenter();
-  try {
-    await filesAction(p.item, { action: 'discard' });
-    S.rpanel = null;
-    toast('Descartaste tu revisión.');
-    afterFilesWrite(p.item);
-  } catch (error) {
-    if (error instanceof Unauthorized && showLogin(error)) return;
-    p.sending = false;
-    p.error = `No se pudo: ${error.message}`;
-    renderCenter();
   }
 }
 
@@ -2251,14 +1575,11 @@ function wireFiles() {
     };
   }
   for (const button of document.querySelectorAll('[data-fpdel]')) button.onclick = () => deletePending(button.dataset.fpdel);
+  // The review panel is the page's: it opens under the toolbar's button.
   for (const button of document.querySelectorAll('[data-frev]')) button.onclick = (event) => {
     event.stopPropagation();
-    openReviewPanel(button.dataset.frev);
+    itemTab?.bridge.review();
   };
-  wireReviewPanel();
-  wireDecide();
-  for (const button of document.querySelectorAll('[data-keys]')) button.onclick = toggleKeysHelp;
-  markUnit();
   const q = $('#fq');
   if (q) q.oninput = () => {
     S.fq[S.sel] = q.value;
@@ -2504,7 +1825,6 @@ const FICHA_ACTIONS = {
 function openPrDialog(kind) {
   const item = S.sel && itemById(S.sel);
   if (!item || !FICHA_ACTIONS[kind]) return;
-  S.menu = false;
   S.fmenu = false;
   S.fdialog = { item: item.id, pr: item.number, action: kind, text: '', redo: false, sending: false, error: null };
   renderFichaDialog();
@@ -2698,49 +2018,6 @@ async function loadExploration(id) {
   if (S.fdialog?.item === id) renderFichaDialog();
 }
 
-// The item's conversation as GitHub shows it, oldest first: general
-// comments, a PR's reviews (those that say something) and its review threads,
-// each thread where its first comment falls.
-function conversation(doc) {
-  return [
-    ...doc.comments.map((c) => ({ kind: 'comment', at: c.createdAt, c })),
-    ...(doc.reviews ?? []).map((r) => ({ kind: 'review', at: r.submittedAt, r })),
-    ...(doc.threads ?? []).map((t) => ({ kind: 'thread', at: t.comments[0].createdAt, t })),
-  ].sort((a, b) => a.at.localeCompare(b.at));
-}
-
-const REVIEW_STATE = { APPROVED: ['ok', 'aprobó'], CHANGES_REQUESTED: ['crit', 'pidió cambios'], DISMISSED: ['idle', 'review descartada'], COMMENTED: ['idle', 'review'] };
-// Past this, a body is shown cut, with "Ver todo" (ronin's external review summary runs long).
-const CLIP_CHARS = 1800;
-
-// What's opened (a resolved thread, a long review) stays open across redraws.
-function clipped(key, html, long) {
-  if (!long) return `<div class="md">${html}</div>`;
-  const open = S.expanded.has(key);
-  return `<div class="md${open ? '' : ' clip'}">${html}</div><button class="link more" data-expand="${esc(key)}">${open ? 'Ver menos' : 'Ver todo'}</button>`;
-}
-
-function entryHTML(e, d, own, repo) {
-  const head = (author, url, at, extra = '') => `<header>${avatar(author)}<b>${esc(author || 'alguien')}</b>${extra}<a href="${esc(url)}" target="_blank" rel="noopener">${esc(when(at))}</a></header>`;
-  const bot = (author) => (author === d.ronin ? ' bot' : '');
-  if (e.kind === 'comment') return `<article class="cm${bot(e.c.author)}">${head(e.c.author, e.c.url, e.c.createdAt)}${clipped(`c:${e.c.url}`, md(e.c.body, repo), e.c.body.length > CLIP_CHARS)}</article>`;
-  if (e.kind === 'review') {
-    const [cls, label] = REVIEW_STATE[e.r.state] ?? REVIEW_STATE.COMMENTED;
-    const key = `r:${e.r.author}:${e.r.submittedAt}`;
-    return `<article class="cm${bot(e.r.author)}">${head(e.r.author, own.url, e.r.submittedAt, `<span class="chip ${cls}">${label}</span>`)}${e.r.body.trim() ? clipped(key, md(e.r.body, repo), e.r.body.length > CLIP_CHARS) : ''}</article>`;
-  }
-  const t = e.t;
-  // The end of the path is what tells files apart: the last two parts, the whole one on hover.
-  const parts = (t.path ?? 'archivo').split('/');
-  const where = `${parts.length > 2 ? '…/' : ''}${parts.slice(-2).join('/')}${t.line ? `:${t.line}` : ''}`;
-  const chips = (t.isResolved ? '<span class="chip ok">resuelto</span>' : '') + (t.isOutdated ? '<span class="chip idle">desactualizado</span>' : '');
-  const key = `t:${t.url}`;
-  // Resolved threads start folded, like on GitHub.
-  const open = t.isResolved ? S.expanded.has(key) : !S.expanded.has(key);
-  const replies = t.comments.map((c, i) => `<div class="tc${i ? ' reply' : ''}">${head(c.author, c.url, c.createdAt)}<div class="md">${md(c.body, repo)}</div></div>`).join('');
-  return `<details class="cm thread${bot(t.comments[0].author)}" data-thread="${esc(key)}"${open ? ' open' : ''}><summary><span class="path" title="${esc(t.path ?? '')}">${esc(where)}</span>${chips}<span class="n">${t.comments.length} ${t.comments.length === 1 ? 'comentario' : 'comentarios'}</span><span class="who">${esc(t.comments[0].author)}</span></summary>${replies}</details>`;
-}
-
 const avatar = (login) => (/^[\w-]+$/.test(login ?? '') ? `<img class="av" src="https://avatars.githubusercontent.com/${login}?s=40" alt="">` : '<span class="av"></span>');
 const when = (iso) => (iso ? new Date(iso).toLocaleString('es', { dateStyle: 'medium', timeStyle: 'short' }) : '');
 
@@ -2760,9 +2037,6 @@ function closeTab(id) {
 
 function wireCenter() {
   for (const button of document.querySelectorAll('[data-tab]')) button.onclick = () => select(button.dataset.tab);
-  for (const button of document.querySelectorAll('[data-goped]')) button.onclick = () => openPedido(Number(button.dataset.goped));
-  for (const button of document.querySelectorAll('#center [data-xpl-page]')) button.onclick = () => openExploraciones();
-  wireXpl();
   for (const button of document.querySelectorAll('[data-close]')) button.onclick = () => closeTab(button.dataset.close);
   // The wheel's click closes a tab, as in a browser; holding it down there
   // doesn't start the browser's autoscroll.
@@ -2775,45 +2049,15 @@ function wireCenter() {
       closeTab(id);
     };
   }
-  for (const button of document.querySelectorAll('[data-run]')) {
-    button.onclick = () => {
-      S.runIdx[S.sel] = Number(button.dataset.run);
-      loadShownRun();
-    };
-  }
-  for (const button of document.querySelectorAll('[data-runview]')) {
-    button.onclick = () => {
-      S.view[S.sel] = 'tx';
-      S.runIdx[S.sel] = Number(button.dataset.runview);
-      loadShownRun();
-    };
-  }
-  for (const button of document.querySelectorAll('[data-view]')) {
-    button.onclick = () => {
-      S.view[S.sel] = button.dataset.view;
-      // The page follows the latest run, live if it's going.
-      S.runIdx[S.sel] = 0;
-      loadShownRun();
-    };
-  }
-  for (const button of document.querySelectorAll('[data-doc]')) {
-    button.onclick = () => {
-      S.doc[S.sel] = button.dataset.doc;
-      renderCenter();
-    };
-  }
-  const act = $('#act');
-  if (act) act.onclick = (event) => {
-    event.stopPropagation();
-    S.menu = !S.menu;
-    renderCenter();
+  const back = $('#back');
+  if (back) back.onclick = () => {
+    $('#shell').dataset.m = 'list';
+    scrollTo(0, 0);
   };
-  for (const button of document.querySelectorAll('[data-action]')) {
-    button.onclick = (event) => {
-      event.stopPropagation();
-      openAction(button.dataset.action);
-    };
-  }
+}
+
+// What's drawn in Archivos and Fichas (drawItemTab).
+function wireItemTab() {
   for (const button of document.querySelectorAll('[data-ficha]')) button.onclick = () => selectFicha(button.dataset.ficha);
   wireFiles();
   for (const button of document.querySelectorAll('[data-fact]')) {
@@ -2823,7 +2067,6 @@ function wireCenter() {
     };
   }
   for (const button of document.querySelectorAll('[data-flista]')) button.onclick = toggleLista;
-  for (const button of document.querySelectorAll('[data-xpr]')) button.onclick = () => openPrDialog(button.dataset.xpr);
   const fmore = $('#fmore');
   if (fmore) fmore.onclick = (event) => {
     event.stopPropagation();
@@ -2867,14 +2110,6 @@ function wireCenter() {
       renderLightbox();
     };
   }
-  for (const button of document.querySelectorAll('[data-expand]')) {
-    button.onclick = () => {
-      const key = button.dataset.expand;
-      if (S.expanded.has(key)) S.expanded.delete(key);
-      else S.expanded.add(key);
-      renderCenter();
-    };
-  }
   for (const thread of document.querySelectorAll('details[data-thread]')) {
     // A thread's default is open unless resolved; what's kept is the change from it.
     thread.ontoggle = () => {
@@ -2882,22 +2117,16 @@ function wireCenter() {
       const resolved = Boolean(thread.querySelector('.chip.ok'));
       if (thread.open === resolved) S.expanded.add(key);
       else S.expanded.delete(key);
-      const center = $('#center');
-      center._html = null;
+      if (itemTab) itemTab.element._html = null;
     };
   }
-  for (const link of document.querySelectorAll('a[data-ref]')) {
+  for (const link of itemTab?.element.querySelectorAll('a[data-ref]') ?? []) {
     if (!itemById(link.dataset.ref)) continue;
     link.onclick = (event) => {
       event.preventDefault();
       select(link.dataset.ref);
     };
   }
-  const back = $('#back');
-  if (back) back.onclick = () => {
-    $('#shell').dataset.m = 'list';
-    scrollTo(0, 0);
-  };
 }
 
 // ---------- today: pages/today in React (#235, stage 7)
@@ -2920,8 +2149,7 @@ function goHome() {
 // run and the next. An app's page is its repo's exploration PR's page (#93),
 // headed as the app's; with no PR open, a page of its own until ronin opens one.
 // The list and that page are in React (src/apps/dashboard/src/pages/explorations/),
-// and so are the PR's Corridas and Inventario tabs; what stays here is what
-// the sidebar and the PR's head show, as pages/explorations/model.tsx writes it.
+// and so is the PR's page (pages/item); what stays here is what the sidebar shows.
 const XPL_EVERY_MS = 60_000;
 const xplRows = () => S.snap?.exploraciones ?? [];
 const xplKey = (r) => `${r.repo}|${r.app}`;
@@ -2942,60 +2170,7 @@ function itemPath(id) {
   return xr ? xplPath(xr.repo, xr.app) : `/i/${encodeURIComponent(id)}`;
 }
 
-// The nightly run: right now while the window is open and the app didn't start yet.
-const xplNext = (iso) => (!iso ? '' : Date.parse(iso) <= Date.now() + MIN ? 'esta noche, en cuanto haya lugar' : when(iso));
-
-function xplChip(r) {
-  if (r.running) return `<span class="chip run">explorando${r.running.fn ? ` ${esc(r.running.fn)}` : ''}</span>`;
-  if (xplStarting(r)) return '<span class="chip run">arrancando…</span>';
-  if (!r.pr) return '<span class="chip idle">sin PR de exploración</span>';
-  const c = xplCounts(r);
-  if (!c) return '<span class="chip idle">PR abierto</span>';
-  if (c.decidir) return `<span class="chip warn">${c.decidir} ${c.decidir === 1 ? 'ficha' : 'fichas'} por decidir</span>`;
-  if (c.esperando) return '<span class="chip run">esperando a ronin</span>';
-  return '<span class="chip ok">nada por decidir</span>';
-}
-
-function xplFacts(r) {
-  const l = xplListRow(r);
-  const facts = [];
-  if (r.running) facts.push(`desde las ${hhmm(r.running.since)}`);
-  else if (l?.lastRun) facts.push(`última corrida ${ago(l.lastRun.at)}${l.lastRun.state === 'ok' ? '' : `, ${STATE[l.lastRun.state]?.[2] ?? l.lastRun.state}`}`);
-  if (l?.next) facts.push(`próxima: ${xplNext(l.next)}`);
-  return facts;
-}
-
-function xplHead(r, buttons, pill) {
-  return `<div class="head">
-    <div class="crumb"><button class="crumb-l" data-xpl-page>Exploraciones</button><span>/</span><i style="background:${repoColor(r.repo)}"></i>${esc(r.repo)}</div>
-    <div class="row"><h1>${esc(r.app)}</h1>${buttons}${xplNowButton(r)}</div>
-    <div class="state">${pill}${xplChip(r)}${xplFacts(r).map((f) => `<span>${esc(f)}</span>`).join('')}</div></div>`;
-}
-
-// The head of the exploration PR's page, as its app's (#155).
-function xplHeadHTML(item, r) {
-  const d = S.detail[item.id]?.data;
-  const url = githubUrl(item);
-  const buttons = `${url ? `<a class="gh" href="${esc(url)}" target="_blank" rel="noopener">PR #${item.number} ↗</a>` : ''}${d?.exploration ? '<button class="gh" data-xpr="general">Comentario general</button>' : ''}${actionsHTML(d)}${d?.exploration ? '<button class="act-btn" data-xpr="approve" title="Termina la revisión: aprueba las fichas que quedan y mergea el PR">Finalizar…</button>' : ''}`;
-  return xplHead(r, buttons, ghPill(item, d));
-}
-
 // ---------- Explorar ahora (#155, 3/4)
-// Launched, the app says "arrancando…" until the snapshot sees its worker.
-const XPL_STARTING_MS = 3 * MIN;
-const xplStarting = (r) => !r.running && S.xpl.launched[r.repo]?.app === r.app && Date.now() - S.xpl.launched[r.repo].at < XPL_STARTING_MS;
-// Why it can't start now, or null: one run per repo at a time.
-function xplBlocked(r) {
-  const other = xplRows().find((x) => x.repo === r.repo && x.running);
-  if (other) return other.app === r.app ? `ronin ya está explorando ${r.app}` : `ronin está explorando ${other.app}, del mismo repo: una por repo a la vez`;
-  return Date.now() - (S.xpl.launched[r.repo]?.at ?? 0) < XPL_STARTING_MS ? 'la exploración que pediste está arrancando' : null;
-}
-const xplNowButton = (r) => {
-  if (!canDo(r.repo, 'acciones')) return '';
-  const blocked = xplBlocked(r);
-  return `<button class="act-btn" data-xnow="${esc(xplKey(r))}" ${blocked ? `disabled title="${esc(blocked)}"` : ''}>Explorar ahora</button>`;
-};
-
 // Explorar ahora (src/apps/dashboard/src/pages/explorations/ExploreNow.tsx),
 // mounted on its own: the app's page and its exploration PR's head open it.
 function openExploreNow(repo, app) {
@@ -3010,10 +2185,6 @@ function closeExploreNow() {
   S.xnow = null;
   unmount();
   layer.remove();
-}
-
-function wireXpl() {
-  for (const b of $('#center').querySelectorAll('[data-xnow]')) b.onclick = () => openExploreNow(...splitXplKey(b.dataset.xnow));
 }
 
 // The apps as the pages see them (PAGE_HOST.explorations), made again when
@@ -3081,21 +2252,10 @@ function openExploracion(repo, app, ficha) {
 // ---------- the portal's requests (#132)
 // What people ask through the portal and where each request stands. The
 // pages are in React (src/apps/dashboard/src/pages/requests/): this routes
-// to them, keeps what the sidebar shows of a request, and draws a request's
-// issue and PR as their page does (PAGE_HOST.requestDoc).
+// to them, keeps what the sidebar shows of a request, and reads a request's
+// issue and PR while its page shows them (PAGE_HOST.watchItem).
 const PED_CLOSED = ['done', 'resolved', 'declined', 'cancelled'];
-// The timeline's icons, which a meeting's page shares.
-const PED_ICON = {
-  person: '<svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c1-4 4-6 8-6s7 2 8 6"/></svg>',
-  ronin: '<svg viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4z"/></svg>',
-  run: '<svg viewBox="0 0 24 24"><path d="M7 4l12 8-12 8z"/></svg>',
-  ok: '<svg viewBox="0 0 24 24"><path d="M5 12l5 5 9-10"/></svg>',
-  crit: '<svg viewBox="0 0 24 24"><path d="M12 7v6M12 17h.01"/></svg>',
-  mail: '<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>',
-  wait: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg>',
-};
 const firstName = (name) => String(name ?? '').split(' ')[0];
-const ago = (iso) => (iso ? `hace ${short(Date.now() - Date.parse(iso))}` : '');
 
 // Who a request waits on, in the sidebar's row.
 function waitsLabel(p) {
@@ -3106,15 +2266,6 @@ function waitsLabel(p) {
     case 'team': return p.pr ? `Un dev: aprobar el PR #${p.pr}` : `El equipo: #${p.issue}`;
     default: return PED_CLOSED.includes(p.status) ? 'Cerrado' : 'Nadie';
   }
-}
-
-// A run's card, which a meeting's page shares.
-function pedRunCard(run) {
-  const live = run.state === 'running';
-  return `<div class="pd-run">${dot(run.state)}<span class="nm">${esc(typeName(run.taskType))}${run.issueNumber ? ` · #${run.issueNumber}` : run.prNumber ? ` · PR #${run.prNumber}` : ''}</span>
-    <span class="st">${live ? '<span data-since="' + esc(run.startedAt) + '"></span>' : [run.durationMs !== undefined ? duration(run.durationMs) : null, run.costUsd !== undefined ? money(run.costUsd) : null, STATE[run.state]?.[2]].filter(Boolean).map(esc).join(' · ')}</span>
-    <button class="go" data-prun="${esc(run.runId)}">${live ? 'Ver en vivo' : 'Ver corrida'} →</button>
-    ${run.lastStep ? `<span class="last">${live ? '▸' : 'último:'} ${esc(run.lastStep)}</span>` : ''}</div>`;
 }
 
 function openPedidos() {
@@ -3141,65 +2292,6 @@ function openPedido(n, run = null) {
     $('#shell').dataset.m = 'detail';
     scrollTo(0, 0);
   }
-}
-
-// The request's issue and its PR (#158), read as on their page, from
-// /api/items/<id>/detail, without leaving the request. Acting on them
-// (comments, review, actions) stays on their page. The request's page gives
-// the element (PAGE_HOST.requestDoc); this draws in it, again as the
-// snapshot and GitHub's copy change.
-let pedDoc = null;
-const pedGhId = (d) => `${d.repo}#${d.show === 'pr' && d.pr ? d.pr : d.issue}`;
-
-function pedGhHTML(d) {
-  const isPr = Boolean(d.show === 'pr' && d.pr);
-  const id = pedGhId(d);
-  const prId = d.pr ? `${d.repo}#${d.pr}` : null;
-  // Not in the sidebar (a team issue nobody took): known by its number, as select() does.
-  if (!itemById(id)) S.extra[id] = { id, repo: d.repo, number: isPr ? d.pr : d.issue, kind: isPr ? 'pr' : 'issue', title: `#${isPr ? d.pr : d.issue}`, status: 'open', runs: 0, listed: false };
-  const entry = S.detail[id];
-  if (!entry?.data && !entry?.loading && !entry?.error) queueMicrotask(() => loadDetail(id));
-  // The PR's checks and review, from the sidebar's issue or PR when it's there.
-  const pr = [itemById(`${d.repo}#${d.issue}`), prId && itemById(prId)].map((i) => i?.pr).find((p) => p && p.number === d.pr);
-  const checks = checksChip(pr?.checks);
-  const seg = `<div class="seg"><button data-pgh="issue" aria-pressed="${!isPr}">Issue #${d.issue}</button>${d.pr ? `<button data-pgh="pr" aria-pressed="${isPr}">PR #${d.pr}${checks?.[0] === 'crit' ? dotClass('crit') : ''}</button>` : '<button disabled>Sin PR todavía</button>'}</div>`;
-  const dd = entry?.data;
-  const doc = dd && (isPr ? dd.pr : dd.issue);
-  const buttons = `${isPr && doc?.state === 'OPEN' ? '<button class="act-btn" data-pgfiles>Revisar el PR</button>' : ''}<button class="gh" data-pitem="${esc(id)}">Abrir la ficha</button>${doc ? `<a class="gh" href="${esc(doc.url)}" target="_blank" rel="noopener">GitHub ↗</a>` : ''}`;
-  const bar = `<div class="pd-ghbar">${seg}<span class="sp">${buttons}</span></div>`;
-  if (!doc) return bar + `<div class="empty">${entry?.error || dd?.error ? `No se pudo leer de GitHub: ${esc(entry?.error ?? dd.error)}` : 'Cargando de GitHub…'}</div>`;
-  const item = itemById(id);
-  const chips = [];
-  if (isPr && checks) chips.push(checks);
-  if (isPr && doc.mergeable === 'CONFLICTING') chips.push(['crit', `conflictos con ${doc.baseRefName}`]);
-  if (isPr && pr?.reviewDecision === 'APPROVED') chips.push(['ok', 'aprobado']);
-  else if (isPr && pr?.reviewDecision === 'CHANGES_REQUESTED') chips.push(['warn', 'cambios pedidos']);
-  const facts = [];
-  if (!isPr && item?.slices?.length) facts.push(`${item.slices.filter((sl) => sl.status === 'merged').length} de ${item.slices.length} slices mergeadas`);
-  if (isPr && doc.headRefName) facts.push(`${doc.headRefName} → ${doc.baseRefName}`);
-  const entries = conversation(doc);
-  return bar + `<div class="pd-ghhead"><h2>${esc(doc.title)} <span class="n">#${doc.number}</span></h2>
-      <div class="state">${ghPill(item, dd)}${chips.map(([cls, text]) => `<span class="chip ${cls}">${esc(text)}</span>`).join('')}${doc.labels.map((l) => `<span class="chip plain">${esc(l)}</span>`).join('')}${facts.map((f) => `<span>${esc(f)}</span>`).join('')}</div></div>
-    <div class="page pd-ghpage"><div class="meta">${avatar(doc.author)}<b>${esc(doc.author)}</b><span>${esc(when(doc.createdAt))}</span></div>
-      <div class="md">${doc.body.trim() ? md(doc.body, d.repo) : '<p class="m">Sin descripción.</p>'}</div></div>
-    ${entries.length ? `<div class="comments">${entries.map((e) => entryHTML(e, dd, doc, d.repo)).join('')}</div>` : '<p class="m pd-note">Nadie comentó todavía.</p>'}`;
-}
-
-function drawPedDoc() {
-  if (!pedDoc?.element.isConnected) return;
-  const { element, doc, onShow } = pedDoc;
-  const html = pedGhHTML(doc);
-  if (element._html === html) return;
-  element._html = html;
-  element.innerHTML = html;
-  wireCenter();
-  for (const b of element.querySelectorAll('[data-pitem]')) b.onclick = () => select(b.dataset.pitem);
-  for (const b of element.querySelectorAll('[data-pgh]')) b.onclick = () => onShow(b.dataset.pgh);
-  element.querySelector('[data-pgfiles]')?.addEventListener('click', () => {
-    const id = pedGhId(doc);
-    S.doc[id] = 'files';
-    select(id);
-  });
 }
 
 // ---------- deploys (#158)
@@ -3587,8 +2679,7 @@ async function loadDetail(id) {
     entry.loading = false;
     entry.at = Date.now();
   }
-  if (S.sel === id) renderCenter();
-  drawPedDoc();
+  if (S.sel === id || watched.has(id)) renderCenter();
   if (S.sel === id) renderCtx();
 }
 
@@ -3618,7 +2709,6 @@ async function select(id) {
   S.page = xr ? 'exploracion' : null;
   S.runIdx[id] = 0;
   delete S.view[id];
-  S.menu = false;
   if (!S.open.includes(id)) S.open.push(id);
   const path = itemPath(id);
   if (location.pathname !== path) history.pushState(null, '', S.ficha[id] ? `${path}?f=${encodeURIComponent(S.ficha[id])}` : path);
@@ -3654,7 +2744,7 @@ async function refresh() {
     const waiting = expl?.data?.fichas.some((f) => fichaStatus(f, expl.data.ronin) === 'esperando');
     if (expl && Date.now() - (expl.at ?? 0) > (waiting ? WAITING_EVERY_MS : DETAIL_EVERY_MS)) loadExploration(S.sel);
   }
-  if (pedDoc?.element.isConnected && Date.now() - (S.detail[pedGhId(pedDoc.doc)]?.at ?? 0) > DETAIL_EVERY_MS) loadDetail(pedGhId(pedDoc.doc));
+  for (const key of watched) if (Date.now() - (S.detail[key]?.at ?? 0) > DETAIL_EVERY_MS) loadDetail(key);
   // The apps' findings, more often while their page is open: the sidebar counts them too.
   if (xplRows().length && Date.now() - S.xpl.listAt > (['exploraciones', 'exploracion'].includes(S.page) ? PEDIDO_EVERY_MS : XPL_EVERY_MS)) loadExploraciones();
   // An app's page with no PR goes on to it once ronin opens one.
@@ -3757,23 +2847,10 @@ async function boot() {
   else if (!openPortalPath()) renderAll();
   $('#gear').onclick = () => openAjustes();
 
-  document.addEventListener('click', (event) => {
-    // A click outside the review panel closes it, as Escape does; one that
-    // re-rendered the panel (a radio, say) leaves its target detached.
-    if (S.rpanel && !S.rpanel.sending && event.target.isConnected && !event.target.closest('.rpanel')) {
-      S.rpanel = null;
-      S.menu = false;
-      S.fmenu = false;
-      renderCenter();
-      return;
-    }
-    if (S.decide && !S.decide.sending && event.target.isConnected && !event.target.closest('.drop')) {
-      S.decide = null;
-      renderCenter();
-      return;
-    }
-    if (!S.menu && !S.fmenu) return;
-    S.menu = false;
+  // An item's page closes what it opens on a click outside, and has its
+  // own keys before these (pages/item): what it takes doesn't get here.
+  document.addEventListener('click', () => {
+    if (!S.fmenu) return;
     S.fmenu = false;
     renderCenter();
   });
@@ -3787,66 +2864,37 @@ async function boot() {
       renderLightbox();
       return;
     }
-    // An open adjustment or closing first: what's typed is for its text.
-    if (!S.dialog && !S.fdialog && !S.newIssue && !S.xnow && decideKey(event)) return;
-    // On an exploration PR's findings, as long as nothing is being typed:
-    // j/k go through them, a marks one as looked at, c and r open the dialog.
     const item = S.sel && itemById(S.sel);
-    const reviewing = !S.dialog && !S.fdialog && !S.newIssue && !S.xnow && !event.metaKey && !event.ctrlKey && !event.altKey && item && viewOf(item) === 'ficha' && docOf(item) === 'fichas' && !/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName ?? '');
     const typing = event.metaKey || event.ctrlKey || event.altKey || /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName ?? '');
-    // The Actions menu: M opens it, and while it's open its keys come first.
-    if (!typing && !S.dialog && !S.fdialog && !S.newIssue && !S.xnow && !S.decide && !S.rpanel && actionsKey(event)) return;
-    if (!typing && !S.dialog && !S.fdialog && !S.newIssue && !S.xnow && !S.decide && !S.rpanel && !S.menu && event.key.toLowerCase() === 'm' && $('#act')) {
-      event.preventDefault();
-      toggleActions();
-      return;
-    }
-    // On a PR's files, j/k go from one file to the next (#111).
-    if (!typing && !S.dialog && !S.fdialog && !S.newIssue && !S.xnow && item && viewOf(item) === 'ficha' && docOf(item) === 'files' && ['j', 'k', 'v', ...(decidable(item, S.detail[item.id]?.data) ? [] : ['r'])].includes(event.key)) {
-      event.preventDefault();
-      if (event.key === 'r') openReviewPanel('files');
-      else if (event.key === 'v') toggleViewedCurrent();
-      else moveFile(event.key === 'j' ? 1 : -1);
-      return;
-    }
-    // On a PR ronin opened: A, P and X decide (#195); Enter confirms an approval.
-    const decidingHere = !typing && !S.dialog && !S.fdialog && !S.newIssue && !S.xnow && !S.rpanel && item && decidable(item, S.detail[item.id]?.data);
-    if (decidingHere && event.key === 'Enter' && S.decide?.item === item.id && S.decide.kind === 'approve') {
-      event.preventDefault();
-      sendDecision();
-      return;
-    }
-    const kind = { a: 'approve', p: 'adjust', x: 'close' }[event.key.toLowerCase()];
-    if (decidingHere && kind && !seq.key && !S.decide?.sending) {
-      event.preventDefault();
-      openDecide(kind);
-      return;
-    }
-    if (reviewing && ['j', 'k', 'a', 'c', 'r'].includes(event.key)) {
+    const free = !typing && !S.fdialog && !S.newIssue && !S.xnow && item && viewOf(item) === 'ficha' && !itemTab?.bridge.blocks();
+    // On an exploration PR's findings: j/k go through them, a marks one as
+    // looked at, c and r open the dialog.
+    if (free && docOf(item) === 'fichas' && ['j', 'k', 'a', 'c', 'r'].includes(event.key)) {
       event.preventDefault();
       if (event.key === 'j' || event.key === 'k') moveFicha(event.key === 'j' ? 1 : -1);
       else if (event.key === 'a') toggleLista();
       else if (document.querySelector(`[data-fact="${event.key === 'c' ? 'cambios' : 'rechazar'}"]`)) openFichaAction(event.key === 'c' ? 'cambios' : 'rechazar');
       return;
     }
-    if (event.key === '?' && !typing && !S.dialog && !S.newIssue) {
+    // On a PR's files, j/k go from one file to the next (#111), v marks it as viewed.
+    if (free && docOf(item) === 'files' && ['j', 'k', 'v'].includes(event.key)) {
+      event.preventDefault();
+      if (event.key === 'v') toggleViewedCurrent();
+      else moveFile(event.key === 'j' ? 1 : -1);
+      return;
+    }
+    if (event.key === '?' && !typing && !S.newIssue) {
       event.preventDefault();
       toggleKeysHelp();
       return;
     }
-    if (!typing && !S.dialog && !S.fdialog && !S.newIssue && !S.xnow && !S.decide && !S.rpanel && !S.fcomp && navigate(event, item)) return;
+    if (!typing && !S.fdialog && !S.newIssue && !S.xnow && nextPrKey(event)) return;
     if (event.key !== 'Escape') return;
     if ($('#keys-help')) $('#keys-help').remove();
     else if ($('#lightbox')) return;
     else if (S.newIssue) closeNewIssue();
     else if (S.xnow) return; // Explorar ahora closes itself, unless it's sending.
-    else if (S.decide && !S.decide.sending) {
-      S.decide = null;
-      renderCenter();
-    } else if (S.rpanel && !S.rpanel.sending) {
-      S.rpanel = null;
-      renderCenter();
-    } else if (S.fcomp && !S.fcomp.sending) {
+    else if (S.fcomp && !S.fcomp.sending) {
       S.fcomp = null;
       renderCenter();
     }
@@ -3854,11 +2902,6 @@ async function boot() {
     else if (S.fmenu) {
       S.fmenu = false;
       renderCenter();
-    } else if (S.dialog) closeDialog();
-    else if (S.menu) {
-      S.menu = false;
-      renderCenter();
-      $('#act')?.focus();
     }
   });
   $('#q').oninput = (event) => {

@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { HostContext } from '../../host.js';
+import { detail, doc, view } from '../item/test-view.js';
 import { testHost } from '../../test-host.js';
 import { Request } from './Request.js';
 import { Requests } from './Requests.js';
@@ -54,10 +55,10 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-const host = testHost({ repoColor: () => 'red', repos: () => ['acme/tienda', 'acme/web'], typeName: (t) => `tipo ${t}`, requestsTotal: () => ROWS.length, portalAdmin: () => true, requestDoc: vi.fn((element: HTMLElement, doc) => {
-    element.textContent = `el ${doc.show} de ${doc.repo}#${doc.issue}`;
-    return () => {};
-  }) });
+const issue107 = view({ detail: { data: detail({ issue: doc({ number: 107, title: 'El total no suma el envío' }) }), error: null } }, { id: 'acme/tienda#107', number: 107 });
+const host = testHost({ repoColor: () => 'red', repos: () => ['acme/tienda', 'acme/web'], typeName: (t) => `tipo ${t}`, requestsTotal: () => ROWS.length, portalAdmin: () => true, watchItem: vi.fn(() => () => {}),
+  // The request's issue, as the shell reads it: the same view until it changes.
+  item: (key) => (key === 'acme/tienda#107' ? issue107 : null) });
 const show = (page: ReactNode) => render(
   <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
     <HostContext.Provider value={host}>{page}</HostContext.Provider>
@@ -98,7 +99,8 @@ describe('Pedidos, in React', () => {
     expect(screen.getByText('+1 −1 · 1 archivo')).toBeTruthy();
 
     fireEvent.click(screen.getByRole('tab', { name: 'Issue' }));
-    expect(screen.getByText('el issue de acme/tienda#107')).toBeTruthy();
+    expect(host.watchItem).toHaveBeenCalledWith('acme/tienda#107', 'issue');
+    expect(container.querySelector('.pd-ghhead h2')?.textContent).toBe('El total no suma el envío #107');
 
     fireEvent.click(screen.getByRole('tab', { name: /Conversación/ }));
     fireEvent.click(container.querySelector('.pd-thumbs button')!);

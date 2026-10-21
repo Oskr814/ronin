@@ -9,7 +9,7 @@ import { at, RUNS_EVERY_MS } from './model.js';
 
 // An app's exploration runs (#155, 2/4), with the agents of each: one opens
 // its transcript above the list. On the app's page, and on its exploration
-// PR's (app.js mounts it in the item's Corridas tab).
+// PR's (pages/item, in its Corridas tab).
 
 const SNAPSHOT_EVERY_MS = 5000;
 const TRIGGER: Record<string, string> = { noche: 'de noche', manual: 'a pedido', desconocido: 'sin registro' };
