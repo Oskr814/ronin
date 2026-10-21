@@ -954,7 +954,7 @@ export interface BugIssue {
 // above. See docs/superpowers/specs/2026-07-28-bug-issue-intake-design.md
 // (original design, since generalized from bug-only intake to any assigned
 // issue — clarity is now judged per-issue by the agent itself, see
-// slices/prompts.ts's 'fix-issue' prompt).
+// domains/slices/prompts.ts's 'fix-issue' prompt).
 export async function listAssignedIssues(): Promise<BugIssue[]> {
   const stdout = await gh([
     'issue', 'list',
@@ -1587,7 +1587,7 @@ export async function listTagRuns(tag: string): Promise<WorkflowRun[]> {
   return JSON.parse(stdout) as WorkflowRun[];
 }
 
-// Exploration's weekly PR (exploration/pr.ts) — see docs/DESIGN.md §11.7.
+// Exploration's weekly PR (domains/explorations/pr.ts) — see docs/DESIGN.md §11.7.
 
 export async function findOpenPrByHead(headBranch: string): Promise<PullRequestStatus | null> {
   const stdout = await gh(['pr', 'list', '--state', 'open', '--head', headBranch, '--json', PR_JSON_FIELDS]);

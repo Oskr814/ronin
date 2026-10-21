@@ -5,8 +5,8 @@
 // backup. Safe to run again. Ends comparing both.
 import { closeDb, getDb } from '../src/db/db.js';
 import { migrateToLatest } from '../src/db/migrate.js';
-import { fileUsers, listUsers, putUsers } from '../src/portal/accounts.js';
-import { fileRequests, listRequests, putRequest } from '../src/portal/requests.js';
+import { fileUsers, listUsers, putUsers } from '../src/domains/portal/accounts.js';
+import { fileRequests, listRequests, putRequest } from '../src/domains/portal/requests.js';
 import { sameContent } from './db-compare.js';
 
 const db = getDb();

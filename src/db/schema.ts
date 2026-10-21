@@ -43,7 +43,7 @@ export interface SettingsLogTable {
   to_value: string;
 }
 
-// Despliegues (deploy/store.ts): each release ronin published.
+// Despliegues (domains/deploys/store.ts): each release ronin published.
 export interface DeploysTable {
   repo: string;
   tag: string;
@@ -62,7 +62,7 @@ export interface DeploysTable {
   release_error: string | null;
 }
 
-// Reuniones (meetings/meetings.ts): each meeting, its record as a document.
+// Reuniones (domains/meetings/meetings.ts): each meeting, its record as a document.
 export interface MeetingsTable {
   number: number;
   repo: string;
@@ -73,7 +73,7 @@ export interface MeetingsTable {
   updated_at: Stamp;
 }
 
-// The portal's accounts (portal/accounts.ts), each its record as a document.
+// The portal's accounts (domains/portal/accounts.ts), each its record as a document.
 export interface PortalUsersTable {
   id: string;
   email: string;
@@ -81,7 +81,7 @@ export interface PortalUsersTable {
   updated_at: Stamp;
 }
 
-// The portal's requests (portal/requests.ts), each its record as a document.
+// The portal's requests (domains/portal/requests.ts), each its record as a document.
 export interface PortalRequestsTable {
   number: number;
   user_id: string;

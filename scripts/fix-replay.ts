@@ -20,7 +20,7 @@ import { parseArgs, promisify } from 'node:util';
 import { config, agentModelFor, agentEffortFor } from '../src/core/config.js';
 import { loadRepos } from '../src/core/repos.js';
 import { withActiveRepo } from '../src/core/repo-context.js';
-import { reviewTask } from '../src/review/index.js';
+import { reviewTask } from '../src/domains/review/index.js';
 import { claudeHeadlessArgs } from '../src/core/claude-runner.js';
 
 const execFileAsync = promisify(execFile);

@@ -39,7 +39,7 @@ export interface LocalState {
   lastChangelogRelease?: { tag: string; publishedAt: string };
   // App → the night (local date) its nightly exploration was last started.
   // One start per app per night, success or not: a run that fails must not
-  // be relaunched every tick until morning — see exploration/schedule.ts.
+  // be relaunched every tick until morning — see domains/explorations/schedule.ts.
   nightlyExploration: Record<string, string>;
   // Comments ronin is done with ("issue-<id>"/"review-<id>" -> when) —
   // tracked here rather than by ronin's 👀 on them, which only says "got

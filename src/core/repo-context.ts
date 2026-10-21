@@ -22,7 +22,7 @@ export interface RepoEntry {
   // (see changelog.ts's ensureChangelogRepoUpToDate).
   changelogRepoPath?: string;
   // Apps of this repo's ronin.app.json that get explored every night — see
-  // exploration/schedule.ts. Absent: no nightly exploration (/explore still
+  // domains/explorations/schedule.ts. Absent: no nightly exploration (/explore still
   // works on demand).
   explore?: string[];
   // Model/effort defaults for the Claude account this entry runs under
@@ -44,7 +44,7 @@ export interface RepoEntry {
   // Absent: the repo can't be deployed from ronin.
   deploy?: DeployConfig;
   // false: ronin's slice PRs open without ronin:auto-merge, and wait for
-  // someone to merge them (commands/auto-merge.ts's labelNewSlicePrs).
+  // someone to merge them (domains/commands/auto-merge.ts's labelNewSlicePrs).
   // Absent or true: they merge as soon as a dev approves them and CI is green.
   autoMerge?: boolean;
   // How many agent tasks of this repo run at once (core/locks.ts's slots):

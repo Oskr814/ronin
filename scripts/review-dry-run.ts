@@ -16,7 +16,7 @@ import { parseArgs } from 'node:util';
 import { config } from '../src/core/config.js';
 import { loadRepos } from '../src/core/repos.js';
 import { withActiveRepo } from '../src/core/repo-context.js';
-import { runExternalReview } from '../src/review/index.js';
+import { runExternalReview } from '../src/domains/review/index.js';
 import { listBotReviewThreads } from '../src/core/github.js';
 
 const execFileAsync = promisify(execFile);

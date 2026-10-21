@@ -6,7 +6,7 @@ import { setDb, type Db } from '../db/db.js';
 import { TEST_DATABASE_URL, testDb } from '../db/testing.js';
 import { RunRecord } from './run-record.js';
 import { listRunsDb } from './runs-store.js';
-import { listRuns } from '../server/api/dashboard-data.js';
+import { listRuns } from '../domains/runs/data.js';
 
 // The index of the runs in Postgres (#235, stage 3.4): what RunRecord
 // writes, and what the dashboard lists from it.

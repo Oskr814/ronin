@@ -4,13 +4,13 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { getRequestListener } from '@hono/node-server';
 import { Hono } from 'hono';
 import { loadRepos } from '../../../core/repos.js';
-import type { PortalConfig, PortalDeps } from '../../../portal/http.js';
-import { portalRoutes } from '../../../portal/routes.js';
+import type { PortalConfig, PortalDeps } from '../../../domains/portal/http.js';
+import { portalRoutes } from '../../../domains/portal/routes.js';
 import { extname, join } from 'node:path';
 import { PORTAL_WEB_ROOT, serveStatic, WEB_ROOT } from './static.js';
 
 // The request portal (#114) on the public listener: its web app
-// (src/apps/portal/) and its API (/api/portal/*, in Hono: portal/routes.ts),
+// (src/apps/portal/) and its API (/api/portal/*, in Hono: domains/portal/routes.ts),
 // and nothing of the dashboard's. The fonts are the dashboard's own files,
 // served from there.
 

@@ -12,12 +12,12 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { config } from '../../core/config.js';
 import { log } from '../../core/logger.js';
-import { missingAuthConfig } from '../../server/api/auth.js';
+import { missingAuthConfig } from './http/auth.js';
 import { createPortalHandler, missingPortalConfig } from './http/portal.js';
 import { createPublicHandler } from './http/public.js';
 import { createTailnetHandler } from './http/tailnet.js';
-import { loadTeam } from '../../server/api/team.js';
-import { warmDashboard } from '../../items/service.js';
+import { loadTeam } from '../../domains/access/team.js';
+import { warmDashboard } from '../../domains/items/service.js';
 import { timedRequests } from './http/timing.js';
 import { getDb } from '../../db/db.js';
 import { migrateToLatest } from '../../db/migrate.js';

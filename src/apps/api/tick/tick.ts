@@ -32,40 +32,40 @@ import {
   type PullRequestStatus,
   type Comment,
 } from '../../../core/github.js';
-import { fetchOriginMain, readSpecFile, extractTitle } from '../../../slices/index.js';
-import { nextUnstartedSlice, hasRemainingSlices, recordSlicePr, markSliceMerged, seedSingleSlice, getSlices } from '../../../slices/index.js';
+import { fetchOriginMain, readSpecFile, extractTitle } from '../../../domains/slices/index.js';
+import { nextUnstartedSlice, hasRemainingSlices, recordSlicePr, markSliceMerged, seedSingleSlice, getSlices } from '../../../domains/slices/index.js';
 import { notifyBlocker } from '../../../core/notifier.js';
 import { resetTickMetrics, getTickAgentMetrics } from '../../../core/metrics.js';
 import { runJobs, type Job } from '../../../core/concurrency.js';
 import { issueResource, pinResources, prResource, tryLockResource, unlockResource, unpinResources, withResourceLock, withSlots } from '../../../core/locks.js';
 import { runAgentTask, type AgentTask } from '../../../core/agent-task.js';
-import { sliceTask } from '../../../slices/index.js';
-import { reviewTask } from '../../../review/index.js';
-import { commandTask } from '../../../commands/index.js';
-import { changelogTask } from '../../../changelog/index.js';
-import { runExternalReview } from '../../../review/index.js';
+import { sliceTask } from '../../../domains/slices/index.js';
+import { reviewTask } from '../../../domains/review/index.js';
+import { commandTask } from '../../../domains/commands/index.js';
+import { changelogTask } from '../../../domains/changelog/index.js';
+import { runExternalReview } from '../../../domains/review/index.js';
 import { ClaudeUsageLimitError } from '../../../core/claude-runner.js';
-import { toStackedPrs, pickBottomPr, prsForIssue, planBranch, spikeBranch, issueFromSliceBranch, type StackedPr } from '../../../slices/index.js';
+import { toStackedPrs, pickBottomPr, prsForIssue, planBranch, spikeBranch, issueFromSliceBranch, type StackedPr } from '../../../domains/slices/index.js';
 import { incrementChecksPendingCount, resetChecksPendingCount, setLastReviewedSha, recordFailureSignature, pruneFailureSignatures } from '../../../core/local-state.js';
 import { failureSignature, type FailureSignature } from '../../../core/failure-signature.js';
 import { tryClaim, releaseIfNoLongerInProgress } from '../../../core/claim.js';
 import { removeWorktree, sweepOrphanedWorktrees } from '../../../core/worktree.js';
-import { findUnprocessedMentions, isFixCommentsCommand } from '../../../commands/index.js';
-import { withHelpFooter } from '../../../commands/index.js';
-import { findPrsNeedingReview, type ReviewCandidate, type ThreadMentionCandidate, type TrustedFixCandidate } from '../../../review/index.js';
-import { findIssueCommands, type ExploreCandidate, type PrototypeCandidate, type RequestCandidate, type SpecCandidate, type SpikeCandidate } from '../../../commands/index.js';
-import { processIssueRequest } from '../../../commands/index.js';
-import { launchPrototypeWorker } from '../../../commands/index.js';
-import { processSpecCandidate, findSpecRevisionCandidates, processSpecRevision } from '../../../slices/index.js';
-import { explorationPrs, exploreWorkerBusy, launchExploreWorker, processExplorationPr } from '../../../exploration/index.js';
-import { maybeLaunchNightlyExploration } from '../../../exploration/index.js';
-import { sweepPreviews } from '../../../preview/index.js';
-import { followPortalIssues } from '../../../portal/follow.js';
-import { followDeploys } from '../../../deploy/follow.js';
-import { sweepPortalRequests } from '../../../portal/launch.js';
-import { sweepMeetings } from '../../../meetings/launch.js';
-import { sweepAutoMerge } from '../../../commands/index.js';
-import { findReleasesNeedingChangelog, type ChangelogCandidate } from '../../../changelog/index.js';
+import { findUnprocessedMentions, isFixCommentsCommand } from '../../../domains/commands/index.js';
+import { withHelpFooter } from '../../../domains/commands/index.js';
+import { findPrsNeedingReview, type ReviewCandidate, type ThreadMentionCandidate, type TrustedFixCandidate } from '../../../domains/review/index.js';
+import { findIssueCommands, type ExploreCandidate, type PrototypeCandidate, type RequestCandidate, type SpecCandidate, type SpikeCandidate } from '../../../domains/commands/index.js';
+import { processIssueRequest } from '../../../domains/commands/index.js';
+import { launchPrototypeWorker } from '../../../domains/commands/index.js';
+import { processSpecCandidate, findSpecRevisionCandidates, processSpecRevision } from '../../../domains/slices/index.js';
+import { explorationPrs, exploreWorkerBusy, launchExploreWorker, processExplorationPr } from '../../../domains/explorations/index.js';
+import { maybeLaunchNightlyExploration } from '../../../domains/explorations/index.js';
+import { sweepPreviews } from '../../../domains/previews/index.js';
+import { followPortalIssues } from '../../../domains/portal/follow.js';
+import { followDeploys } from '../../../domains/deploys/follow.js';
+import { sweepPortalRequests } from '../../../domains/portal/launch.js';
+import { sweepMeetings } from '../../../domains/meetings/launch.js';
+import { sweepAutoMerge } from '../../../domains/commands/index.js';
+import { findReleasesNeedingChangelog, type ChangelogCandidate } from '../../../domains/changelog/index.js';
 import { setLastChangelogRelease } from '../../../core/local-state.js';
 import { concurrencyFor, config, LABEL_DIRECT_ISSUE, LABEL_MANAGED, LABEL_STACK_PRS, LABEL_STATES } from '../../../core/config.js';
 import { activeRepo, withActiveRepo } from '../../../core/repo-context.js';
@@ -132,7 +132,7 @@ export function agentTaskFor(issue: TrackingIssue, sliceIndex: number, sliceTitl
 }
 
 // Reads the RONIN_STATUS marker a 'fix-issue' run ends its response with
-// (see its prompt in slices/prompts.ts) to tell "abstained, needs a human answer"
+// (see its prompt in domains/slices/prompts.ts) to tell "abstained, needs a human answer"
 // apart from "opened a PR normally" — the only way the supervisor finds out,
 // since runAgentTask's result is otherwise opaque. Exported for direct unit
 // testing.
@@ -232,7 +232,7 @@ function issueUrl(issueNumber: number): string {
 // single-slice checklist so the rest of the pipeline (merge gate,
 // fix-review/fix-e2e cycles) treats it exactly like a spec's tracking issue.
 // Whether there's enough context to act on it is judged per-issue by the
-// agent itself (see slices/prompts.ts's 'fix-issue' prompt and its
+// agent itself (see domains/slices/prompts.ts's 'fix-issue' prompt and its
 // RONIN_STATUS marker, read back in tickOneRepo below) rather than gated
 // here by a label. See
 // docs/superpowers/specs/2026-07-28-bug-issue-intake-design.md (original
@@ -716,7 +716,7 @@ export async function processExternalReviewCandidate(candidate: ReviewCandidate)
   try {
     await setReviewStatus(candidate.prNumber, 'pending', 'ronin está revisando el PR…', { sha: candidate.headSha });
     // The agent only writes findings.json; validating and publishing it
-    // happens in review/publish.ts. See
+    // happens in domains/review/publish.ts. See
     // docs/superpowers/specs/2026-10-10-exhaustive-external-review-design.md.
     await runExternalReview(candidate);
     await setReviewStatus(candidate.prNumber, 'success', 'Review posteada', { sha: candidate.headSha });
@@ -801,7 +801,7 @@ export async function externalReviewJobs(only?: number[]): Promise<TickJob[]> {
   ];
 }
 
-// Mentions on the draft PR of a spec ronin wrote (#241, slices/spec-revise.ts).
+// Mentions on the draft PR of a spec ronin wrote (#241, domains/slices/spec-revise.ts).
 // Uses the run's list of ronin's PRs when it has one. Same isolation as the
 // other flows: a failed discovery only leaves its own jobs out.
 export async function specRevisionJobs(allPrs: PullRequestStatus[] | null, only?: number[]): Promise<TickJob[]> {
@@ -839,7 +839,7 @@ export async function processSpikeCandidate(candidate: SpikeCandidate): Promise<
   } catch (error) {
     log.error(`spike falló para issue #${candidate.issueNumber}`, error);
   } finally {
-    // 'spike' never opens a PR (see commands/prompts.ts) so it never goes through
+    // 'spike' never opens a PR (see domains/commands/prompts.ts) so it never goes through
     // the merge-time worktree cleanup below — same reasoning as
     // discoverAssignedSpecs's own cleanup of planBranch.
     await removeWorktree(spikeBranch(candidate.issueNumber)).catch(() => {});
@@ -899,7 +899,7 @@ export async function launchPrototypeCandidate(candidate: PrototypeCandidate): P
 
 // An /explore never runs inside the tick: it can take an hour, and the tick
 // is single-flight. It starts a separate worker process (see
-// exploration/flow.ts) — one per repo at a time; while one runs, the next
+// domains/explorations/flow.ts) — one per repo at a time; while one runs, the next
 // command waits for a later tick (not marked done, so it's picked up again).
 export async function launchExploreCandidate(candidate: ExploreCandidate): Promise<void> {
   if (await exploreWorkerBusy()) {
@@ -916,7 +916,7 @@ export async function launchExploreCandidate(candidate: ExploreCandidate): Promi
 
 // The open exploration PR: reviewers' comments on findings applied (and
 // after images redone by the worker), merged into issues once approved — see
-// exploration/flow.ts's processExplorationPr. Each PR isolated like every
+// domains/explorations/flow.ts's processExplorationPr. Each PR isolated like every
 // other flow here.
 export async function explorationPrJobs(): Promise<TickJob[]> {
   let prs;
@@ -1056,7 +1056,7 @@ function issueJobs(inProgress: TrackingIssue[], allPrs: PullRequestStatus[]): Ti
         const task = agentTaskFor(next.issue, next.index, next.title);
         const result = await runAgentTask(task);
         // fix-issue is the only task type that may legitimately abstain
-        // (issue lacks enough context — see its prompt in slices/prompts.ts) and
+        // (issue lacks enough context — see its prompt in domains/slices/prompts.ts) and
         // end without opening a PR. Without this, the issue would stay
         // labeled ronin:in-progress forever and get retried, unattended,
         // every single tick — see the discoverAssignedIssues design note.
@@ -1277,7 +1277,7 @@ async function tickRepo(scope: Scope | undefined, measurement: Measurement): Pro
         log.info(`listAllOpenRoninPrs falló, reintentando en la próxima corrida: ${(error as Error).message}`);
       }
     }
-    // Only starts a separate process (see exploration/schedule.ts), so it
+    // Only starts a separate process (see domains/explorations/schedule.ts), so it
     // never holds this tick up; a failure here is logged, never escalated.
     await repoStep(scope, 'nightly', () => maybeLaunchNightlyExploration().catch((error) => log.error('exploración nocturna: no se pudo lanzar', error)), steps);
 

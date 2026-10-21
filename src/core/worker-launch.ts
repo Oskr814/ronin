@@ -44,7 +44,7 @@ export async function acquireLock(path: string): Promise<boolean> {
   }
 }
 
-// Starts one of ronin's workers (src/<name>.ts, e.g. 'preview/worker') detached from the tick: same
+// Starts one of ronin's workers (src/<name>.ts, e.g. 'domains/previews/worker') detached from the tick: same
 // runtime (node on dist/, or tsx in development), same environment, the
 // request as its one JSON argument. Its output goes to the same daily log the
 // cron wrapper writes the tick to (scripts/setup-cron.sh), so its lines sit

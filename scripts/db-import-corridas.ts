@@ -8,7 +8,7 @@ import { closeDb, getDb } from '../src/db/db.js';
 import { migrateToLatest } from '../src/db/migrate.js';
 import { logsDir } from '../src/core/run-files.js';
 import { listRunsDb, putRun } from '../src/core/runs-store.js';
-import { readRunLines, summarizeRun } from '../src/server/api/dashboard-data.js';
+import { readRunLines, summarizeRun } from '../src/domains/runs/data.js';
 import type { RunSummary } from '../src/core/run-record.js';
 import { sameContent } from './db-compare.js';
 

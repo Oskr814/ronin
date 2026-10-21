@@ -12,7 +12,7 @@ export class ApiError extends Error {
   }
 }
 
-// A change goes as JSON, as the server takes no other (items/routes.ts).
+// A change goes as JSON, as the server takes no other (domains/items/routes.ts).
 const jsonFetch: typeof fetch = (input, init) => {
   const headers = new Headers(init?.headers);
   headers.set('Accept', 'application/json');

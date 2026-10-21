@@ -7,7 +7,7 @@ import type { RepoEntry } from './repo-context.js';
 // Who of the team gets each email ronin sends them (#174, stage 4). Each
 // person chooses, repo by repo, in Ajustes → Notificaciones; their choice
 // and their email live in their entry of <SETTINGS_DATA_DIR>/people.json
-// (server/api/team.ts writes it, this only reads it, from any process).
+// (domains/access/team.ts writes it, this only reads it, from any process).
 //
 // Until someone chooses, it works as before:
 // - the request portal's emails go to the repo's portal.notifyTo (repos.json):

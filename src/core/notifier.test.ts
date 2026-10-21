@@ -17,7 +17,7 @@ vi.mock('nodemailer', () => ({
 const recordBlock = vi.fn();
 vi.mock('./local-state.js', () => ({ recordBlock: (...args: unknown[]) => recordBlock(...args) }));
 const recordBlockEvent = vi.fn();
-vi.mock('../metrics/blocks.js', () => ({ recordBlockEvent: (...args: unknown[]) => recordBlockEvent(...args) }));
+vi.mock('../domains/metrics/blocks.js', () => ({ recordBlockEvent: (...args: unknown[]) => recordBlockEvent(...args) }));
 
 const { notifyBlocker, blockedItemNumber } = await import('./notifier.js');
 

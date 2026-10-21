@@ -47,7 +47,7 @@ async function branchExists(branch: string): Promise<boolean> {
 // `git fetch` having updated local remote-tracking refs) — used to tell
 // "branch exists only on origin (e.g. created by a different machine/runner)"
 // apart from "branch genuinely doesn't exist anywhere yet". Exported so
-// slices/prompts.ts can make the same check before using a computed base branch
+// domains/slices/prompts.ts can make the same check before using a computed base branch
 // (see final review Fix 3).
 export async function remoteBranchExists(branch: string): Promise<boolean> {
   return execFileAsync('git', ['ls-remote', '--exit-code', '--heads', 'origin', branch], { cwd: activeRepo().productRepoPath })
@@ -361,7 +361,7 @@ export function branchFromWorktreeDirName(name: string): string | null {
 // testable without real git/Docker: which branches, out of a list of
 // worktree directory names, no longer earn their place on disk. Two cases —
 // a 'plan' worktree (never opens a PR, so it never earns removal any other
-// way — see slices/prompts.ts) always goes; a slice worktree goes once its
+// way — see domains/slices/prompts.ts) always goes; a slice worktree goes once its
 // branch no longer has an open PR (covers a merge-time removeWorktree call
 // that failed, and — deliberately — PRs closed without merging or issues
 // that got blocked: nothing is lost by deleting a local worktree, the

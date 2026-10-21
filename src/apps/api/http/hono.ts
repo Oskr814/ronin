@@ -7,8 +7,8 @@ import { HTTPException } from 'hono/http-exception';
 import type { ZodType } from 'zod';
 import { zValidator } from '@hono/zod-validator';
 import { log } from '../../../core/logger.js';
-import type { Access } from '../../../server/api/access.js';
-import type { Session } from '../../../server/api/auth.js';
+import type { Access } from '../../../domains/access/access.js';
+import type { Session } from './auth.js';
 
 // What every route group in Hono shares (#235, stage 6): the API moves to it
 // a group at a time, mounted inside the current Node handlers, so the old
@@ -18,7 +18,7 @@ import type { Session } from '../../../server/api/auth.js';
 export type NodeEnv = { Bindings: HttpBindings };
 
 // The dashboard's routes (on the tailnet listener): who's asking, and the
-// repos they see (access.ts), already checked by tailnet.ts.
+// repos they see (access/access.ts), already checked by tailnet.ts.
 export type DashboardBindings = HttpBindings & { session: Session; access: Access };
 export type DashboardEnv = { Bindings: DashboardBindings };
 

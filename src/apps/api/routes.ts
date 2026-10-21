@@ -1,16 +1,16 @@
 import { Hono } from 'hono';
-import { ajustesRoutes } from '../../ajustes/routes.js';
-import { deployRoutes } from '../../deploy/routes.js';
-import { explorationRoutes } from '../../exploration/routes.js';
-import { boardRoutes, itemsRoutes } from '../../items/routes.js';
-import { meetingsRoutes } from '../../meetings/routes.js';
-import { metricsRoutes } from '../../metrics/routes.js';
-import { pedidosRoutes, portalAdminRoutes } from '../../portal/routes-dashboard.js';
-import { evidenceRoutes, runsRoutes } from '../../runs/routes.js';
+import { ajustesRoutes } from '../../domains/settings/routes.js';
+import { deployRoutes } from '../../domains/deploys/routes.js';
+import { explorationRoutes } from '../../domains/explorations/routes.js';
+import { boardRoutes, itemsRoutes } from '../../domains/items/routes.js';
+import { meetingsRoutes } from '../../domains/meetings/routes.js';
+import { metricsRoutes } from '../../domains/metrics/routes.js';
+import { pedidosRoutes, portalAdminRoutes } from '../../domains/portal/routes-dashboard.js';
+import { evidenceRoutes, runsRoutes } from '../../domains/runs/routes.js';
 import type { DashboardEnv } from './http/hono.js';
 
 // The dashboard's API in Hono (#235, stage 6): handleDashboard (api/
-// dashboard.ts) hands it every /api path once tailnet.ts checked the session
+// apps/api/http/dashboard.ts) hands it every /api path once tailnet.ts checked the session
 // and its access. Each group of routes lives with its domain.
 export const dashboardApp = new Hono<DashboardEnv>()
   .notFound((c) => c.json({ error: 'no existe' }, 404))
