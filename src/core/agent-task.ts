@@ -149,14 +149,14 @@ export async function runAgentTask(task: AgentTask): Promise<string> {
     const durationMs = Date.now() - start;
     recordAgentRun(durationMs);
     log.metric('agent_run', { taskType: task.type, issueNumber, prNumber, durationMs, success: true });
-    record.end('ok');
+    await record.end('ok');
     log.info(`finished ${task.type} for ${label}`);
     return result;
   } catch (error) {
     const durationMs = Date.now() - start;
     recordAgentRun(durationMs);
     log.metric('agent_run', { taskType: task.type, issueNumber, prNumber, durationMs, success: false });
-    record.end(runOutcome(error), error);
+    await record.end(runOutcome(error), error);
     log.error(`${task.type} for ${label} failed`, error);
     throw error;
   } finally {

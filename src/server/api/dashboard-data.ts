@@ -2,8 +2,10 @@ import { closeSync, existsSync, openSync, readFileSync, readSync, readdirSync, s
 import { cpus, freemem, loadavg, totalmem } from 'node:os';
 import { join } from 'node:path';
 import { logsDir, localDay } from '../../core/run-files.js';
+import { getDb } from '../../db/db.js';
+import { listRunsDb, putRun, thisHost } from '../../core/runs-store.js';
 import type { AccountUsage } from '../../core/claude-usage.js';
-import type { RunOutcome } from '../../core/run-record.js';
+import { stepText, type RunLine, type RunOutcome, type RunSummary } from '../../core/run-record.js';
 
 // What the dashboard reads from this runner's own files (#65): the per-run
 // records (logs/runs/), each account's usage (logs/usage/), the agent slots
@@ -21,39 +23,7 @@ export function pidAlive(pid: unknown): boolean {
   }
 }
 
-export type RunState = 'running' | 'cut' | RunOutcome;
-
-export interface RunLine {
-  type: string;
-  [key: string]: unknown;
-}
-
-export interface RunSummary {
-  runId: string;
-  repo: string;
-  taskType: string;
-  label: string;
-  issueNumber?: number;
-  prNumber?: number;
-  portalRequest?: number;
-  meeting?: number;
-  sliceIndex?: number;
-  sliceTitle?: string;
-  // What it's a step of (core/run-group.ts): the dashboard shows a group as one run.
-  group?: string;
-  model?: string;
-  effort?: string;
-  account: string;
-  worktree: string;
-  startedAt: string;
-  endedAt?: string;
-  durationMs?: number;
-  costUsd?: number;
-  error?: string;
-  state: RunState;
-  steps: number;
-  lastStep?: string;
-}
+export type { RunLine, RunState, RunSummary } from '../../core/run-record.js';
 
 export const RUN_ID_PATTERN = /^(\d{4})(\d{2})(\d{2})T\d{6}-[a-z0-9-]+$/;
 
@@ -74,12 +44,6 @@ export function readRunLines(path: string): RunLine[] {
     }
   }
   return lines;
-}
-
-function stepText(line: RunLine): string {
-  // A command reads as itself ("$ pnpm test"); anything else, with its tool.
-  if (line.type === 'tool') return line.name === 'Bash' ? String(line.summary) : `${line.name}: ${line.summary}`;
-  return String(line.text ?? '');
 }
 
 export function summarizeRun(lines: RunLine[]): RunSummary | null {
@@ -121,10 +85,31 @@ export function summarizeRun(lines: RunLine[]): RunSummary | null {
 // never does, so a snapshot only re-reads the runs still going.
 const cache = new Map<string, { size: number; summary: RunSummary | null }>();
 
-export function listRuns(days: number, now = new Date()): RunSummary[] {
+// With DATABASE_URL (#235, stage 3.4), from the index (core/runs-store.ts):
+// only a run still going is read from its file, for its steps so far and to
+// see whether its process is still there. One the file says ended — its end
+// never reached the index — is caught up from the file.
+export async function listRuns(days: number, now = new Date()): Promise<RunSummary[]> {
+  const wanted = new Set(Array.from({ length: days }, (_, i) => localDay(new Date(now.getTime() - i * 24 * 60 * 60 * 1000))));
+  const db = getDb();
+  if (!db) return listRunFiles(wanted);
+  return Promise.all((await listRunsDb(db, [...wanted])).map(async ({ summary, pid, host }) => {
+    if (summary.endedAt) return summary;
+    const path = runPath(summary.runId);
+    const live = path && existsSync(path) ? summarizeRun(readRunLines(path)) : null;
+    if (live?.endedAt) {
+      await putRun(db, live).catch(() => {});
+      return live;
+    }
+    // Only this host can tell whether the process is gone.
+    const state = host !== null && host !== thisHost() ? 'running' : live?.state ?? (pidAlive(pid) ? 'running' : 'cut');
+    return { ...summary, ...(live ? { steps: live.steps, ...(live.lastStep ? { lastStep: live.lastStep } : {}) } : {}), state };
+  }));
+}
+
+function listRunFiles(wanted: Set<string>): RunSummary[] {
   const root = join(logsDir(), 'runs');
   if (!existsSync(root)) return [];
-  const wanted = new Set(Array.from({ length: days }, (_, i) => localDay(new Date(now.getTime() - i * 24 * 60 * 60 * 1000))));
   const runs: RunSummary[] = [];
   for (const day of readdirSync(root)) {
     if (!wanted.has(day)) continue;

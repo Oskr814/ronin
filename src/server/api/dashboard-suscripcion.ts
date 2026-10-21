@@ -18,7 +18,7 @@ export async function suscripcionView(entries: RepoEntry[], account: string | nu
   const all = (await cuentasView(entries)).cuentas;
   const shown = account ? all.filter((c) => c.account === account) : all;
   if (account && !shown.length) return null;
-  const runs = listRuns(RUN_DAYS, new Date(now));
+  const runs = await listRuns(RUN_DAYS, new Date(now));
   const cuentas = await Promise.all(shown.map(async (c) => computeSubscription({
     account: c.account,
     plan: c.plan,

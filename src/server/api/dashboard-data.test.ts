@@ -56,14 +56,14 @@ describe('summarizeRun', () => {
 });
 
 describe('listRuns', () => {
-  it('lists the last days only, newest first', () => {
+  it('lists the last days only, newest first', async () => {
     const now = new Date(2026, 9, 16, 12);
     writeRun('2026-10-16', [start('20261016T100000-implement-slice-879-aaaa'), { type: 'run_end', outcome: 'ok', endedAt: '2026-10-16T10:05:00.000Z', durationMs: 1 }]);
     writeRun('2026-10-16', [start('20261016T110000-fix-comments-879-bbbb', { taskType: 'fix-comments', startedAt: '2026-10-16T11:00:00.000Z' })]);
     writeRun('2026-10-15', [start('20261015T090000-external-review-412-cccc', { taskType: 'external-review', issueNumber: undefined, prNumber: 412, startedAt: '2026-10-15T09:00:00.000Z' }), { type: 'run_end', outcome: 'error', endedAt: 'x', durationMs: 1 }]);
     writeRun('2026-10-01', [start('20261001T090000-plan-1-dddd', { startedAt: '2026-10-01T09:00:00.000Z' })]);
 
-    const runs = listRuns(3, now);
+    const runs = await listRuns(3, now);
     expect(runs.map((r) => r.runId)).toEqual(['20261016T110000-fix-comments-879-bbbb', '20261016T100000-implement-slice-879-aaaa', '20261015T090000-external-review-412-cccc']);
 
   });
