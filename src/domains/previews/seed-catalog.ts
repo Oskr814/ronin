@@ -1,15 +1,13 @@
-import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { promisify } from 'node:util';
 import { parse as parseYaml } from 'yaml';
 import { activeRepo } from '../../platform/agents/repo-context.js';
 import { config } from '../../platform/config/config.js';
 import type { AppDefinition, AppStep } from '../product-app/index.js';
 import { writeFileAtomic } from '../../platform/fs/atomic-json.js';
+import { host } from '../../platform/host/host.js';
 
-const execFileAsync = promisify(execFile);
 
 // What an app has right after its base seed (#202): per entity, how many
 // records, the cases they cover and how to find them in the app. An agent
@@ -61,7 +59,7 @@ function repoSlug(): string {
 
 // Where the catalog of `app` at commit `sha` of the active repo lives.
 export async function seedCatalogPath(dir: string, sha: string, appName: string, app: Pick<AppDefinition, 'steps' | 'seedPaths'>): Promise<string> {
-  const { stdout } = await execFileAsync('git', ['ls-tree', '-r', '--full-tree', sha], { cwd: dir, maxBuffer: 64 * 1024 * 1024 });
+  const { stdout } = await host().exec('git', ['ls-tree', '-r', '--full-tree', sha], { cwd: dir, maxBuffer: 64 * 1024 * 1024 });
   const hash = seedHash(seedEntries(stdout, app.seedPaths), app.steps);
   return join(config.seedCatalogs.dataDir, repoSlug(), appName, `${hash}.yaml`);
 }

@@ -1,7 +1,4 @@
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
-
-const execFileAsync = promisify(execFile);
+import { host } from '../host/host.js';
 
 // Commits and PR titles ronin writes itself (exploration memory, its PR)
 // follow the product repo's own convention, read off its base branch — a
@@ -48,7 +45,7 @@ export function languageOf(subjects: string[]): CommitLanguage {
 }
 
 export async function repoCommitConvention(dir: string, ref: string): Promise<CommitConvention> {
-  const { stdout } = await execFileAsync('git', ['log', '--format=%s', `-${HISTORY_SIZE}`, ref], { cwd: dir }).catch(() => ({ stdout: '' }));
+  const { stdout } = await host().exec('git', ['log', '--format=%s', `-${HISTORY_SIZE}`, ref], { cwd: dir }).catch(() => ({ stdout: '' }));
   const subjects = stdout.split('\n').filter((s) => s.trim());
   return { style: styleOf(subjects), language: languageOf(subjects), examples: subjects.slice(0, 15) };
 }

@@ -236,6 +236,15 @@ El claim entre supervisores por label (DESIGN §9) deja de hacer falta con un so
 
 La única implementación es `LocalHost`. El código de dominio no vuelve a llamar a `execFile` ni a `fs` sobre el código del producto: lo hace a través de `Host`. Es lo que permite, más adelante, ejecutar en otra máquina (ver «Proyección») sin tocar los flujos.
 
+**Hecho (4, comandos y procesos):** `platform/host/host.ts`, con `host()` y su única implementación, `localHost`:
+- `exec` y `execBuffer`: un comando hasta el final (git, `docker compose`, `tailscale serve`);
+- `runLogged` y `startLogged`: los pasos de una app de prueba, con su salida al log, y los dev servers en su grupo de procesos, que `stopGroup` detiene;
+- `alive`, `freePort` y `browserMcp`: el MCP de Playwright que recibe `claude -p`.
+
+Los ~70 `execFile` de los dominios y de `platform/git` pasan por ahí. No pasan por `Host` los procesos propios de ronin, que corren siempre en el central: `claude -p`, sus workers y `gh`. `test/structure.test.ts` falla si otro archivo importa `node:child_process`.
+
+**Falta (4, archivos):** lo que los dominios leen y escriben dentro de un worktree, como el manifiesto de la app, las fichas o las capturas. Hoy usa `node:fs` directo, y pasa a `host().fs`.
+
 ### API
 
 - **Hono** como router, con `@hono/zod-validator` para validar cada entrada.

@@ -17,7 +17,6 @@ function files(dir: string): string[] {
   });
 }
 
-const layer = (path: string) => relative(SRC, path).split('/')[0];
 
 // Each file's relative imports, as the layer they land in (apps/<app> for
 // an app), and whether they bring only types.
@@ -42,6 +41,19 @@ describe('the layers of src/', () => {
 
   it('domains/ import no app', () => {
     expect(crossings('domains', ['apps'])).toEqual([]);
+  });
+
+  // What runs on the code (git, docker, the dev servers) goes through
+  // platform/host (#235, stage 4): only ronin's own processes start there
+  // directly — `claude -p`, its workers, and `gh`, which talks to GitHub
+  // from the central node.
+  it('only platform/host and ronin\'s own launchers start processes', () => {
+    const allowed = ['platform/host/host.ts', 'platform/claude/claude-runner.ts', 'platform/workers/worker-launch.ts', 'platform/github/github.ts'];
+    const starting = files(SRC)
+      .filter((file) => !/\.test\.tsx?$/.test(file) && /from 'node:child_process'/.test(readFileSync(file, 'utf8')))
+      .map((file) => relative(SRC, file))
+      .filter((file) => !allowed.includes(file));
+    expect(starting).toEqual([]);
   });
 
   // The web apps run in the browser: from the server they take only the

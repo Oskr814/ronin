@@ -1,5 +1,3 @@
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 import { existsSync } from 'node:fs';
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { join, relative } from 'node:path';
@@ -28,8 +26,8 @@ import {
   type Finding,
   type FindingMeta,
 } from './memory.js';
+import { host } from '../../platform/host/host.js';
 
-const execFileAsync = promisify(execFile);
 
 // The rolling exploration PR of docs/DESIGN.md §11.7: one open at a time per
 // repo, ready for review as soon as a run lands. Each run commits its memory
@@ -63,7 +61,7 @@ function baseBranchName(): string {
 }
 
 async function git(dir: string, args: string[]): Promise<string> {
-  const { stdout } = await execFileAsync('git', args, { cwd: dir, maxBuffer: 16 * 1024 * 1024 });
+  const { stdout } = await host().exec('git', args, { cwd: dir, maxBuffer: 16 * 1024 * 1024 });
   return stdout.trim();
 }
 

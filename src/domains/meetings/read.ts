@@ -1,8 +1,6 @@
-import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { promisify } from 'node:util';
 import { runAgentTask } from '../../platform/agents/agent-task.js';
 import { config } from '../../platform/config/config.js';
 import { listOpenIssues } from '../../platform/github/github.js';
@@ -16,8 +14,8 @@ import { MEETINGS_FROM_NAME, meetingMail } from './mail.js';
 import { addEvent, errorLine, getMeeting, listMeetings, noteEvent, noteLines, readNotes, updateMeeting, type Meeting } from './meetings.js';
 import { meetingTask } from './prompts.js';
 import { parseProposals, proposalCount } from './proposals.js';
+import { host } from '../../platform/host/host.js';
 
-const execFileAsync = promisify(execFile);
 
 // ronin reads a meeting's notes (#62) against what already exists — the
 // repo's open issues and code, its Linear projects and cycles, what other
@@ -32,8 +30,8 @@ async function checkout(n: number): Promise<string> {
   const dir = join(repo.worktreeBasePath, `meeting-R-${n}`);
   if (existsSync(dir)) await removeWorktreeDir(dir, 'meeting');
   await mkdir(repo.worktreeBasePath, { recursive: true });
-  await execFileAsync('git', ['fetch', 'origin'], { cwd: repo.productRepoPath }).catch(() => {});
-  await execFileAsync('git', ['worktree', 'add', '--detach', dir, repo.worktreeBaseRef ?? config.worktreeBaseRef], { cwd: repo.productRepoPath });
+  await host().exec('git', ['fetch', 'origin'], { cwd: repo.productRepoPath }).catch(() => {});
+  await host().exec('git', ['worktree', 'add', '--detach', dir, repo.worktreeBaseRef ?? config.worktreeBaseRef], { cwd: repo.productRepoPath });
   return dir;
 }
 

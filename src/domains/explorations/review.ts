@@ -1,5 +1,3 @@
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 import { config } from '../../platform/config/config.js';
 import { listFileReviewComments } from '../../platform/github/github.js';
 import { log } from '../../platform/logger.js';
@@ -7,8 +5,8 @@ import { withActiveRepo, type RepoEntry } from '../../platform/agents/repo-conte
 import { EXPLORATION_DIR, parseFinding, type FindingMeta } from './memory.js';
 import { parseFindingBody, type FindingBodyParts, type FindingImage } from './output.js';
 import { EXPLORATION_BRANCH_PREFIX, findingsAddedOverBase } from './pr.js';
+import { host } from '../../platform/host/host.js';
 
-const execFileAsync = promisify(execFile);
 
 // The review of an exploration PR on the dashboard (#93): the findings the
 // PR brings, each read into its parts (what happens, before and after, the
@@ -81,7 +79,7 @@ const FETCH_EVERY_MS = 60_000;
 const lastFetch = new Map<string, number>();
 
 async function git(dir: string, args: string[]): Promise<string> {
-  const { stdout } = await execFileAsync('git', args, { cwd: dir, maxBuffer: 16 * 1024 * 1024 });
+  const { stdout } = await host().exec('git', args, { cwd: dir, maxBuffer: 16 * 1024 * 1024 });
   return stdout;
 }
 const lines = (out: string) => out.split('\n').map((l) => l.trim()).filter(Boolean);

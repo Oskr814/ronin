@@ -1,5 +1,3 @@
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
@@ -17,8 +15,8 @@ import { launchWorker } from '../../platform/workers/worker-launch.js';
 import { removeWorktreeDir } from '../../platform/git/worktree.js';
 import { log } from '../../platform/logger.js';
 import { worktreeLock } from '../../platform/workers/worktree-lock.js';
+import { host } from '../../platform/host/host.js';
 
-const execFileAsync = promisify(execFile);
 
 // `/prototype <app> [instrucción]` on an issue, or a plain-words request for
 // one (issue-request.ts): ronin brings the app up from the base branch in a
@@ -224,16 +222,16 @@ async function freshWorktree(key: string): Promise<string> {
     await appDown(dir);
     await removeWorktreeDir(dir, 'prototype');
   }
-  await execFileAsync('git', ['fetch', 'origin'], { cwd: repo });
+  await host().exec('git', ['fetch', 'origin'], { cwd: repo });
   await mkdir(activeRepo().worktreeBasePath, { recursive: true });
-  await execFileAsync('git', ['worktree', 'add', '--detach', dir, activeRepo().worktreeBaseRef ?? config.worktreeBaseRef], { cwd: repo });
+  await host().exec('git', ['worktree', 'add', '--detach', dir, activeRepo().worktreeBaseRef ?? config.worktreeBaseRef], { cwd: repo });
   return dir;
 }
 
 // Files that differ from the base right after the app came up: what its
 // build generates (e.g. a .NET API's documentation XML), not the draft.
 export async function changedFiles(dir: string): Promise<string[]> {
-  const { stdout } = await execFileAsync('git', ['status', '--porcelain', '-z', '--untracked-files=all'], { cwd: dir, maxBuffer: 16 * 1024 * 1024 });
+  const { stdout } = await host().exec('git', ['status', '--porcelain', '-z', '--untracked-files=all'], { cwd: dir, maxBuffer: 16 * 1024 * 1024 });
   const entries = stdout.split('\0');
   const files: string[] = [];
   for (let i = 0; i < entries.length; i++) {
@@ -248,9 +246,9 @@ export async function changedFiles(dir: string): Promise<string[]> {
 // The draft change the agent left in the checkout, new files included, and
 // leaving out what the app's own startup had already changed.
 export async function draftDiff(dir: string, generated: string[] = []): Promise<string> {
-  await execFileAsync('git', ['add', '-A', '-N'], { cwd: dir }).catch(() => {});
+  await host().exec('git', ['add', '-A', '-N'], { cwd: dir }).catch(() => {});
   const exclude = generated.map((file) => `:(exclude,literal)${file}`);
-  const { stdout } = await execFileAsync('git', ['diff', '--', '.', ...exclude], { cwd: dir, maxBuffer: 16 * 1024 * 1024 });
+  const { stdout } = await host().exec('git', ['diff', '--', '.', ...exclude], { cwd: dir, maxBuffer: 16 * 1024 * 1024 });
   return stdout.trim();
 }
 

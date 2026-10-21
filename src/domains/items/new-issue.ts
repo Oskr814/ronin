@@ -1,7 +1,5 @@
-import { execFile } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { promisify } from 'node:util';
 import { APP_MANIFEST_FILE, parseAppManifest } from '../product-app/manifest.js';
 import { config } from '../../platform/config/config.js';
 import { applyLinearSoon, queueLinearAssignment } from '../../platform/linear/linear-assign.js';
@@ -10,6 +8,7 @@ import { withActiveRepo, type RepoEntry } from '../../platform/agents/repo-conte
 import type { Session } from '../access/http.js';
 import { commentOnIssue, createIssue } from '../../platform/github/github-as-user.js';
 import { DomainError } from '../../platform/errors.js';
+import { host } from '../../platform/host/host.js';
 
 // The dashboard's "Nuevo issue" (#100): an issue created on GitHub as
 // whoever is logged in (#93), never through Linear — with the two-way sync
@@ -38,14 +37,13 @@ export class NewIssueError extends DomainError {}
 const TITLE_MAX = 256;
 const BODY_MAX = 60_000;
 
-const execFileAsync = promisify(execFile);
 
 // The apps of the repo's ronin.app.json, each with its folder: the one on
 // the base branch ronin works from (the checkout can be on any branch), or
 // the checkout's if git can't say. None if there's no manifest.
 export async function repoAppPaths(entry: RepoEntry): Promise<Record<string, string>> {
   const base = entry.worktreeBaseRef ?? config.worktreeBaseRef;
-  const raw = await execFileAsync('git', ['show', `${base}:${APP_MANIFEST_FILE}`], { cwd: entry.productRepoPath, maxBuffer: 10 * 1024 * 1024 })
+  const raw = await host().exec('git', ['show', `${base}:${APP_MANIFEST_FILE}`], { cwd: entry.productRepoPath, maxBuffer: 10 * 1024 * 1024 })
     .then(({ stdout }) => stdout, () => readFile(join(entry.productRepoPath, APP_MANIFEST_FILE), 'utf8'))
     .catch(() => null);
   if (raw === null) return {};

@@ -1,8 +1,6 @@
-import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { mkdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import { promisify } from 'node:util';
 import { runAgentTask } from '../../platform/agents/agent-task.js';
 import { commentOnIssue, setReviewStatus, type Comment, type PullRequestStatus } from '../../platform/github/github.js';
 import { log } from '../../platform/logger.js';
@@ -12,8 +10,8 @@ import { ensureWorktree } from '../../platform/git/worktree.js';
 import { findUnprocessedMentions } from '../commands/mentions.js';
 import { sliceTask } from './prompts.js';
 import { publishMockup } from './spec-flow.js';
+import { host } from '../../platform/host/host.js';
 
-const execFileAsync = promisify(execFile);
 
 // Talking about a spec on its PR (#241). While the PR of a spec ronin wrote
 // (/spec, spec-flow.ts) is still a draft, a mention there gets an answer,
@@ -66,8 +64,8 @@ export async function findSpecRevisionCandidates(prs: PullRequestStatus[], only?
 async function specCheckout(issueNumber: number): Promise<string> {
   const branch = `ronin/${issueNumber}/spec`;
   const dir = await ensureWorktree(branch);
-  await execFileAsync('git', ['fetch', 'origin', branch], { cwd: dir });
-  await execFileAsync('git', ['reset', '--hard', `origin/${branch}`], { cwd: dir });
+  await host().exec('git', ['fetch', 'origin', branch], { cwd: dir });
+  await host().exec('git', ['reset', '--hard', `origin/${branch}`], { cwd: dir });
   return dir;
 }
 

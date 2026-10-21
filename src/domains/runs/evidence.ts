@@ -1,10 +1,8 @@
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 import { extname } from 'node:path';
 import { EVIDENCE_BRANCH } from '../product-app/evidence-store.js';
 import type { RepoEntry } from '../../platform/agents/repo-context.js';
+import { host } from '../../platform/host/host.js';
 
-const execFileAsync = promisify(execFile);
 
 // The screenshots ronin publishes (exploration, prototypes, /spec mockups)
 // as the dashboard shows them. Their GitHub links only load with a GitHub
@@ -34,7 +32,7 @@ export interface EvidenceImage {
 
 async function onEvidenceBranch(dir: string, sha: string): Promise<boolean> {
   try {
-    await execFileAsync('git', ['merge-base', '--is-ancestor', sha, REMOTE_REF], { cwd: dir });
+    await host().exec('git', ['merge-base', '--is-ancestor', sha, REMOTE_REF], { cwd: dir });
     return true;
   } catch {
     return false;
@@ -44,7 +42,7 @@ async function onEvidenceBranch(dir: string, sha: string): Promise<boolean> {
 async function fetchEvidence(dir: string): Promise<void> {
   if (Date.now() - (lastFetch.get(dir) ?? 0) < FETCH_EVERY_MS) return;
   lastFetch.set(dir, Date.now());
-  await execFileAsync('git', ['fetch', '-q', 'origin', `+refs/heads/${EVIDENCE_BRANCH}:${REMOTE_REF}`], { cwd: dir }).catch(() => {});
+  await host().exec('git', ['fetch', '-q', 'origin', `+refs/heads/${EVIDENCE_BRANCH}:${REMOTE_REF}`], { cwd: dir }).catch(() => {});
 }
 
 // Null for anything that isn't an image of the evidence branch.
@@ -60,7 +58,7 @@ export async function readEvidence(entry: RepoEntry, sha: string, segments: stri
     if (!(await onEvidenceBranch(dir, sha))) return null;
   }
   try {
-    const { stdout } = await execFileAsync('git', ['cat-file', 'blob', `${sha}:${path}`], { cwd: dir, encoding: 'buffer', maxBuffer: 32 * 1024 * 1024 });
+    const { stdout } = await host().execBuffer('git', ['cat-file', 'blob', `${sha}:${path}`], { cwd: dir, maxBuffer: 32 * 1024 * 1024 });
     return { type, data: stdout };
   } catch {
     return null;

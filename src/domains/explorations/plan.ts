@@ -1,8 +1,6 @@
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 import { CHARTERS, VIEWPORTS, type Charter, type DiscoveredFunction, type Inventory, type InventoryFunction } from './memory.js';
+import { host } from '../../platform/host/host.js';
 
-const execFileAsync = promisify(execFile);
 
 // What one exploration run tests: at most N functions, each with a charter
 // drawn for it and both viewports — see docs/DESIGN.md §11.4. Pure apart from
@@ -148,7 +146,7 @@ export function parseDiscoveredFunctions(raw: string): { functions: DiscoveredFu
 }
 
 async function git(dir: string, args: string[]): Promise<string> {
-  const { stdout } = await execFileAsync('git', args, { cwd: dir, maxBuffer: 16 * 1024 * 1024 });
+  const { stdout } = await host().exec('git', args, { cwd: dir, maxBuffer: 16 * 1024 * 1024 });
   return stdout.trim();
 }
 

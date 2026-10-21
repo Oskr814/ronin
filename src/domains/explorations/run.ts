@@ -1,5 +1,3 @@
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 import { access, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { extname, join } from 'node:path';
 import { runAgentTask } from '../../platform/agents/agent-task.js';
@@ -26,8 +24,8 @@ import {
 import { refreshInventory, explorationOutDir } from './inventory.js';
 import { changedFunctions, newSeed, planRun, riskByFunction, type ExplorationPlan, type PlannedFunction } from './plan.js';
 import { capCandidates, parseFunctionResult, parseVerdicts, renderFindingBody, type Candidate, type FindingImage, type TriedTask } from './output.js';
+import { host } from '../../platform/host/host.js';
 
-const execFileAsync = promisify(execFile);
 
 // One exploration run end to end — docs/DESIGN.md §11.3–11.6: refresh the
 // inventory, plan, bring the app up, explore each planned function in its
@@ -82,22 +80,19 @@ interface PendingCandidate extends Candidate {
 
 export function mcpServer(app: AppDefinition, viewport: 'desktop' | 'mobile', storageState: string, outputDir: string, origins: string[]) {
   const vp = app.viewports[viewport];
-  return {
-    command: join(process.cwd(), 'node_modules', '.bin', 'playwright-mcp'),
-    args: [
-      // Playwright's own Chromium (installed with `npx playwright install
-      // chromium`); the server's default is the Google Chrome channel, which
-      // a runner host usually doesn't have.
-      '--browser', 'chromium',
-      '--headless',
-      '--isolated',
-      '--storage-state', storageState,
-      ...(vp.isMobile ? ['--device', 'iPhone 13', '--viewport-size', `${vp.width}x${vp.height}`] : ['--viewport-size', `${vp.width}x${vp.height}`]),
-      '--output-dir', outputDir,
-      // The explorer's browsers only reach the app and its own services.
-      '--allowed-origins', origins.join(';'),
-    ],
-  };
+  return host().browserMcp([
+    // Playwright's own Chromium (installed with `npx playwright install
+    // chromium`); the server's default is the Google Chrome channel, which
+    // a runner host usually doesn't have.
+    '--browser', 'chromium',
+    '--headless',
+    '--isolated',
+    '--storage-state', storageState,
+    ...(vp.isMobile ? ['--device', 'iPhone 13', '--viewport-size', `${vp.width}x${vp.height}`] : ['--viewport-size', `${vp.width}x${vp.height}`]),
+    '--output-dir', outputDir,
+    // The explorer's browsers only reach the app and its own services.
+    '--allowed-origins', origins.join(';'),
+  ]);
 }
 
 export function originsOf(baseUrl: string, ports: Record<string, Record<string, number>>, named: Record<string, number>): string[] {
@@ -110,11 +105,11 @@ export function originsOf(baseUrl: string, ports: Record<string, Record<string, 
 // The explorer edits code to take its "after" screenshots and is told to
 // revert; this makes sure of it, so the next function starts from the base.
 export async function ensureCleanCheckout(dir: string, appPath: string): Promise<void> {
-  const { stdout } = await execFileAsync('git', ['status', '--porcelain'], { cwd: dir });
+  const { stdout } = await host().exec('git', ['status', '--porcelain'], { cwd: dir });
   if (!stdout.trim()) return;
   log.info(`exploración: el explorador dejó cambios en el checkout, revirtiendo:\n${stdout.trim()}`);
-  await execFileAsync('git', ['checkout', '--', '.'], { cwd: dir });
-  await execFileAsync('git', ['clean', '-fd', '--', appPath], { cwd: dir });
+  await host().exec('git', ['checkout', '--', '.'], { cwd: dir });
+  await host().exec('git', ['clean', '-fd', '--', appPath], { cwd: dir });
 }
 
 function summarizeExisting(memory: ExplorationMemory): ExistingFindingSummary[] {

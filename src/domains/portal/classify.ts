@@ -1,8 +1,6 @@
-import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import { promisify } from 'node:util';
 import { runAgentTask } from '../../platform/agents/agent-task.js';
 import { portalTask } from './prompts.js';
 import { config } from '../../platform/config/config.js';
@@ -14,8 +12,8 @@ import { interviewText, MAX_ROUNDS, parseQuestions, parseUnderstood } from './in
 import { interviewMail, replyMail, understoodMail } from './mail.js';
 import { handOverMail, sendPortalMails } from './notify.js';
 import { addEvent, addRoninMessage, errorLine, getRequest, MAX_PROTOTYPES, MAX_REPRODUCTIONS, requestImagePath, TITLE_MAX, updateUnlessCancelled, type InterviewQuestion, type PortalRequest, type Understood, type Verdict } from './requests.js';
+import { host } from '../../platform/host/host.js';
 
-const execFileAsync = promisify(execFile);
 
 // ronin reads a portal request (#114) and does one of six things: asks the
 // person something, answers them, or decides it's a small change (the
@@ -173,8 +171,8 @@ async function checkout(n: number): Promise<string> {
   const dir = join(repo.worktreeBasePath, `portal-P-${n}`);
   if (existsSync(dir)) await removeWorktreeDir(dir, 'portal');
   await mkdir(repo.worktreeBasePath, { recursive: true });
-  await execFileAsync('git', ['fetch', 'origin'], { cwd: repo.productRepoPath }).catch(() => {});
-  await execFileAsync('git', ['worktree', 'add', '--detach', dir, repo.worktreeBaseRef ?? config.worktreeBaseRef], { cwd: repo.productRepoPath });
+  await host().exec('git', ['fetch', 'origin'], { cwd: repo.productRepoPath }).catch(() => {});
+  await host().exec('git', ['worktree', 'add', '--detach', dir, repo.worktreeBaseRef ?? config.worktreeBaseRef], { cwd: repo.productRepoPath });
   return dir;
 }
 

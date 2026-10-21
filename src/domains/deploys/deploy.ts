@@ -1,7 +1,5 @@
-import { execFile } from 'node:child_process';
 import { mkdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import { promisify } from 'node:util';
 import { APP_MANIFEST_FILE } from '../product-app/manifest.js';
 import { config } from '../../platform/config/config.js';
 import { createRelease, listMergedPrs, listReleases, type Release } from '../../platform/github/github.js';
@@ -10,6 +8,7 @@ import { log } from '../../platform/logger.js';
 import { activeRepo } from '../../platform/agents/repo-context.js';
 import { errorLine, listRequests, noteEvent, type PortalRequest } from '../portal/requests.js';
 import { addDeploy, listDeploys, type DeployRecord } from './store.js';
+import { host } from '../../platform/host/host.js';
 
 // A deploy (#158) is a GitHub release: ronin publishes it on the tag someone
 // wrote, and the repo's own workflow (on the tag, or on the release) does
@@ -21,10 +20,9 @@ import { addDeploy, listDeploys, type DeployRecord } from './store.js';
 // and whoever calls them (the dashboard today, the portal's own deploys
 // later) only says what goes in.
 
-const execFileAsync = promisify(execFile);
 
 async function git(args: string[], cwd = activeRepo().productRepoPath): Promise<string> {
-  const { stdout } = await execFileAsync('git', args, { cwd, maxBuffer: 16 * 1024 * 1024 });
+  const { stdout } = await host().exec('git', args, { cwd, maxBuffer: 16 * 1024 * 1024 });
   return stdout;
 }
 

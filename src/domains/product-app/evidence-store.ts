@@ -1,12 +1,10 @@
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { log } from '../../platform/logger.js';
 import { activeRepo } from '../../platform/agents/repo-context.js';
+import { host } from '../../platform/host/host.js';
 
-const execFileAsync = promisify(execFile);
 
 // Screenshots for the team — the exploration's before/after, the mockup of a
 // /spec — live in an orphan branch of the product repo, never merged: only
@@ -29,7 +27,7 @@ export interface EvidenceFile {
 }
 
 async function git(cwd: string, args: string[], env: NodeJS.ProcessEnv = process.env): Promise<string> {
-  const { stdout } = await execFileAsync('git', args, { cwd, env, maxBuffer: 16 * 1024 * 1024 });
+  const { stdout } = await host().exec('git', args, { cwd, env, maxBuffer: 16 * 1024 * 1024 });
   return stdout.trim();
 }
 
