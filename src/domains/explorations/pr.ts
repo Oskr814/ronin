@@ -1,5 +1,3 @@
-import { existsSync } from 'node:fs';
-import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 import { activeRepo } from '../../platform/agents/repo-context.js';
 import { config } from '../../platform/config/config.js';
@@ -92,11 +90,11 @@ export async function ensureBatchWorktree(batch: string): Promise<string> {
   await git(repo, ['fetch', 'origin']);
   const remote = await remoteBranchExists(branch);
   const start = remote ? `origin/${branch}` : baseRef();
-  const live = existsSync(dir) && (await git(dir, ['rev-parse', '--is-inside-work-tree']).then((o) => o === 'true', () => false));
+  const live = (await host().fs.exists(dir)) && (await git(dir, ['rev-parse', '--is-inside-work-tree']).then((o) => o === 'true', () => false));
   if (live) {
     await git(dir, ['checkout', '-B', branch, start]);
   } else {
-    await mkdir(activeRepo().worktreeBasePath, { recursive: true });
+    await host().fs.mkdir(activeRepo().worktreeBasePath, { recursive: true });
     await git(repo, ['worktree', 'add', '-B', branch, dir, start]);
   }
   return dir;
@@ -175,7 +173,7 @@ export async function openFindingIssues(
   for (const meta of candidates) {
     const key = findingIssueKey(appName, meta.id);
     const path = findingPath(memoryDir, meta);
-    const finding = parseFinding(await readFile(path, 'utf8'));
+    const finding = parseFinding(await host().fs.readFile(path, 'utf8'));
     let number = existing.find((i) => i.body.includes(key))?.number;
     if (!number) {
       const fileUrl = `https://github.com/${activeRepo().productRepo}/blob/${branchForLinks}/${relative(checkoutDir, path)}`;
@@ -184,7 +182,7 @@ export async function openFindingIssues(
       log.info(`exploración ${appName}: issue #${number} para ${meta.id}`);
       await queueExplorationProject(appName, number);
     }
-    await writeFile(path, serializeFinding({ ...finding, issue: number }));
+    await host().fs.writeFile(path, serializeFinding({ ...finding, issue: number }));
     opened.push({ id: meta.id, issue: number });
   }
   return opened;
@@ -198,7 +196,7 @@ export async function approveFindings(memoryDir: string, select: (f: FindingMeta
   for (const meta of memory.findings.filter((f) => f.estado === 'propuesto')) {
     if (!(await select(meta))) continue;
     const path = findingPath(memoryDir, meta);
-    await writeFile(path, serializeFinding({ ...parseFinding(await readFile(path, 'utf8')), estado: 'aprobado', ...(revisor ? { revisor, revisado: new Date().toISOString() } : {}) }));
+    await host().fs.writeFile(path, serializeFinding({ ...parseFinding(await host().fs.readFile(path, 'utf8')), estado: 'aprobado', ...(revisor ? { revisor, revisado: new Date().toISOString() } : {}) }));
     changed.push(meta.id);
   }
   return changed;
@@ -289,7 +287,7 @@ async function addedByBranch(dir: string, appName: string): Promise<{ findingIds
 }
 
 export async function appsWithMemory(checkoutDir: string): Promise<string[]> {
-  const entries = await readdir(join(checkoutDir, EXPLORATION_DIR), { withFileTypes: true }).catch(() => []);
+  const entries = await host().fs.readdir(join(checkoutDir, EXPLORATION_DIR), { withFileTypes: true }).catch(() => []);
   return entries.filter((e) => e.isDirectory()).map((e) => e.name).sort();
 }
 

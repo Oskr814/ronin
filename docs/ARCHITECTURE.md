@@ -243,7 +243,14 @@ La única implementación es `LocalHost`. El código de dominio no vuelve a llam
 
 Los ~70 `execFile` de los dominios y de `platform/git` pasan por ahí. No pasan por `Host` los procesos propios de ronin, que corren siempre en el central: `claude -p`, sus workers y `gh`. `test/structure.test.ts` falla si otro archivo importa `node:child_process`.
 
-**Falta (4, archivos):** lo que los dominios leen y escriben dentro de un worktree, como el manifiesto de la app, las fichas o las capturas. Hoy usa `node:fs` directo, y pasa a `host().fs`.
+**Hecho (4, archivos):** `host().fs`, con lo que los dominios usan de `node:fs/promises` (`readFile`, `writeFile`, `appendFile`, `mkdir`, `rm`, `readdir`), más `exists` y `mkdtemp`; no tiene llamadas síncronas. Pasa por ahí todo lo que está en el checkout del producto o bajo el `worktreeBasePath` del repo activo: crear y barrer worktrees, el `.env` de cada uno, el manifiesto de la app y el estado de una app de prueba, la memoria de exploración y sus fichas, las previews, y lo que una tarea le prepara al agente o le deja escrito (el `mcp.json`, el archivo de agentes de la review, el resultado, las capturas). Son unas 160 llamadas: explorations 50, previews 25, commands 19, product-app 16, `platform/git` 15, portal 13, meetings 8, slices 6, review 4, `platform/agents` 4, deploys 2, items 1.
+
+Siguen en `node:fs` los datos de ronin, que viven en el central: `config.*.dataDir` (portal, reuniones, catálogos de seeds), los logs y los registros de corridas, los ajustes, `.ronin-state.json`, las reservas de puertos de las previews, los criterios de review del propio repo de ronin y la salida de prueba (`dryRun`) de la review. Cuando un archivo cruza, se lee del host y se escribe en el central: las capturas que el portal guarda en el pedido.
+
+Quedan fuera, a propósito:
+- el Playwright que corre dentro del proceso de ronin (el login de los usuarios, las capturas de humo, `renderHtmlToPng`): escribe con su propio `fs`, y moverlo es mover el navegador al host;
+- los candados en archivo bajo el `worktreeBasePath` (`.locks/`, `worktree-lock.ts`): coordinan a ronin, no son código del producto;
+- las capturas de un pedido del portal, que `publishEvidence` le pasa a git en el host y el prompt del portal le pasa al agente: están en los datos del central. Con un solo nodo es la misma máquina; un runner remoto necesita copiarlas antes.
 
 ### API
 

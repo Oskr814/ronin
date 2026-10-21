@@ -1,5 +1,3 @@
-import { existsSync } from 'node:fs';
-import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { join, normalize } from 'node:path';
 import { activeRepo } from '../../platform/agents/repo-context.js';
 import { appDown, appRerun, appUp, APP_STATE_DIR, stepLabel, type AppSession } from '../product-app/index.js';
@@ -147,14 +145,14 @@ function previewStatePath(dir: string): string {
 
 async function readPreviewState(dir: string): Promise<PreviewState | null> {
   try {
-    return JSON.parse(await readFile(previewStatePath(dir), 'utf8')) as PreviewState;
+    return JSON.parse(await host().fs.readFile(previewStatePath(dir), 'utf8')) as PreviewState;
   } catch {
     return null;
   }
 }
 
 async function writePreviewState(dir: string, state: PreviewState): Promise<void> {
-  await writeFile(previewStatePath(dir), JSON.stringify(state, null, 2));
+  await host().fs.writeFile(previewStatePath(dir), JSON.stringify(state, null, 2));
 }
 
 // The ronin.app.json the preview was brought up with, as text: an update
@@ -204,7 +202,7 @@ async function previewManifest(dir: string, pr: Pick<PrHead, 'baseRefName' | 'he
     .then(() => false, () => true);
   const base = await host().exec('git', ['show', `${baseRef}:${APP_MANIFEST_FILE}`], { cwd: dir, maxBuffer: 10 * 1024 * 1024 })
     .then(({ stdout }) => stdout, () => null);
-  const head = await readFile(join(dir, APP_MANIFEST_FILE), 'utf8').catch(() => null);
+  const head = await host().fs.readFile(join(dir, APP_MANIFEST_FILE), 'utf8').catch(() => null);
   const chosen = chooseManifest(changedByPr, base, head);
   if (!chosen) throw new Error(`ni este PR ni \`${pr.baseRefName}\` tienen un ${APP_MANIFEST_FILE}: no sé cómo levantar la app`);
   log.info(`preview: ${APP_MANIFEST_FILE} ${chosen.from === 'pr' ? 'del PR' : `de ${pr.baseRefName}`}`);
@@ -244,8 +242,8 @@ export function resolvePreviewArgs(args: string | undefined, appNames: string[],
   return text ? { appName: only, instruction: text } : { appName: only };
 }
 
-function isLiveWorktree(dir: string): Promise<boolean> {
-  if (!existsSync(dir)) return Promise.resolve(false);
+async function isLiveWorktree(dir: string): Promise<boolean> {
+  if (!(await host().fs.exists(dir))) return false;
   return host().exec('git', ['rev-parse', '--is-inside-work-tree'], { cwd: dir })
     .then(({ stdout }) => stdout.trim() === 'true', () => false);
 }
@@ -260,8 +258,8 @@ async function ensurePreviewWorktree(prNumber: number, sha: string): Promise<str
   if (await isLiveWorktree(dir)) {
     await host().exec('git', ['checkout', '--detach', '--force', sha], { cwd: dir });
   } else {
-    if (existsSync(dir)) await removeWorktreeDir(dir, 'ensurePreviewWorktree');
-    await mkdir(activeRepo().worktreeBasePath, { recursive: true });
+    if (await host().fs.exists(dir)) await removeWorktreeDir(dir, 'ensurePreviewWorktree');
+    await host().fs.mkdir(activeRepo().worktreeBasePath, { recursive: true });
     await host().exec('git', ['worktree', 'add', '--detach', dir, sha], { cwd: repo });
   }
   return dir;
@@ -275,8 +273,8 @@ async function takeDownPreviewApp(dir: string): Promise<void> {
   for (const port of published) await unservePort(port);
   await appDown(dir);
   await reservations().releasePorts(dir);
-  await rm(previewStatePath(dir), { force: true });
-  await rm(previewManifestPath(dir), { force: true });
+  await host().fs.rm(previewStatePath(dir), { force: true });
+  await host().fs.rm(previewManifestPath(dir), { force: true });
 }
 
 // What prepare-preview-data left ready, or why it couldn't run — the preview
@@ -337,7 +335,7 @@ async function seedCatalog(prNumber: number, sha: string, session: AppSession): 
       return existing;
     }
     const outputPath = join(session.stateDir, 'seed-catalog.yaml');
-    await rm(outputPath, { force: true });
+    await host().fs.rm(outputPath, { force: true });
     await runAgentTask(previewTask({
       type: 'preview-seed-catalog',
       prNumber,
@@ -350,7 +348,7 @@ async function seedCatalog(prNumber: number, sha: string, session: AppSession): 
       compose: session.ctx.compose,
       users: session.app.users,
     }));
-    const catalog = parseSeedCatalog(await readFile(outputPath, 'utf8'));
+    const catalog = parseSeedCatalog(await host().fs.readFile(outputPath, 'utf8'));
     await saveSeedCatalog(path, catalog, `${activeRepo().productRepo} · ${session.appName}: lo que traen los seeds base.\nLo escribió ronin en la preview del PR #${prNumber} (${sha.slice(0, 7)}), ${new Date().toISOString()}.`);
     log.info(`preview PR #${prNumber}: catálogo de seeds nuevo en ${path}`);
     return catalog;
@@ -382,7 +380,7 @@ async function prepareData(opts: {
   const dir = session.dir;
   const outputPath = join(session.stateDir, since ? 'preview-data-delta.json' : 'preview-data.json');
   try {
-    await rm(outputPath, { force: true });
+    await host().fs.rm(outputPath, { force: true });
     let mergeBase: string;
     if (since) {
       mergeBase = since.from;
@@ -420,7 +418,7 @@ async function prepareData(opts: {
       compose: session.ctx.compose,
       users: session.app.users,
     }));
-    return parsePreviewData(await readFile(outputPath, 'utf8'));
+    return parsePreviewData(await host().fs.readFile(outputPath, 'utf8'));
   } catch (error) {
     log.error(`preview PR #${prNumber}: no se pudieron preparar los datos`, error);
     return { error: (error as Error).message.split('\n')[0].slice(0, 300) };
@@ -438,9 +436,9 @@ async function prepareData(opts: {
 async function triageData(task: Omit<Extract<PreviewTask, { type: 'preview-data-triage' }>, 'type' | 'outputPath'>, stateDir: string): Promise<{ alcanzan: boolean; usar: string[] } | null> {
   const outputPath = join(stateDir, 'preview-triage.json');
   try {
-    await rm(outputPath, { force: true });
+    await host().fs.rm(outputPath, { force: true });
     await runAgentTask(previewTask({ type: 'preview-data-triage', ...task, outputPath }));
-    const triage = parsePreviewTriage(await readFile(outputPath, 'utf8'));
+    const triage = parsePreviewTriage(await host().fs.readFile(outputPath, 'utf8'));
     log.info(`preview PR #${task.prNumber}: ${triage.alcanzan ? 'los seeds base alcanzan' : 'hay que preparar datos'}`);
     return triage;
   } catch (error) {
@@ -452,10 +450,10 @@ async function triageData(task: Omit<Extract<PreviewTask, { type: 'preview-data-
 // `startedAt`: when the preview first came up, for a rebuild that an update
 // fell back to — the TTL keeps counting from there.
 export async function startPreview(prNumber: number, pr: PrHead, args?: string, opts: { startedAt?: string } = {}): Promise<PreviewResult> {
-  const host = await tailnetHost();
+  const publicHost = await tailnetHost();
   const sha = pr.headRefOid;
   const existing = previewDirFor(prNumber);
-  if (existsSync(existing)) await takeDownPreviewApp(existing);
+  if (await host().fs.exists(existing)) await takeDownPreviewApp(existing);
   const dir = await ensurePreviewWorktree(prNumber, sha);
   const manifest = await previewManifest(dir, pr);
   const { apps } = parseAppManifest(manifest);
@@ -479,7 +477,7 @@ export async function startPreview(prNumber: number, pr: PrHead, args?: string, 
   let session: AppSession;
   try {
     // appUp tears down what it started if it fails.
-    session = await appUp(dir, appName, { instance: `pr-${prNumber}`, publicHost: host, publicPort, manifest });
+    session = await appUp(dir, appName, { instance: `pr-${prNumber}`, publicHost, publicPort, manifest });
   } catch (error) {
     await reservations().releasePorts(dir);
     await reservations().releaseSlots(dir);
@@ -506,7 +504,7 @@ export async function startPreview(prNumber: number, pr: PrHead, args?: string, 
       ...(config.previewPrepareData ? { preparing: true } : {}),
     };
     await writePreviewState(dir, state);
-    await writeFile(previewManifestPath(dir), manifest);
+    await host().fs.writeFile(previewManifestPath(dir), manifest);
     for (const p of published) await servePort(p.public, p.local);
     log.info(`preview PR #${prNumber}: ${appName} arriba en ${url}`);
     result = { appName, sha, url, users: session.app.users };
@@ -537,7 +535,7 @@ async function completeData(opts: {
 }): Promise<{ data: PreviewData } | { kept: string } | null> {
   const { prNumber, pr, session, from, instruction } = opts;
   const dataPath = join(session.stateDir, 'preview-data.json');
-  const previous = await readFile(dataPath, 'utf8').then(parsePreviewData, () => null);
+  const previous = await host().fs.readFile(dataPath, 'utf8').then(parsePreviewData, () => null);
   if (!previous) return null;
   let decision: { completar: boolean; motivo: string };
   try {
@@ -564,7 +562,7 @@ async function completeData(opts: {
   // What the next update builds on: everything left ready so far, and what
   // is still missing as of now.
   if (!('error' in data)) {
-    await writeFile(dataPath, JSON.stringify({ preparado: [...previous.preparado, ...data.preparado], noPreparado: data.noPreparado }, null, 2))
+    await host().fs.writeFile(dataPath, JSON.stringify({ preparado: [...previous.preparado, ...data.preparado], noPreparado: data.noPreparado }, null, 2))
       .catch((error) => log.error(`preview PR #${prNumber}: no se pudieron guardar los datos completados`, error));
   }
   await markPrepared(session.dir);
@@ -575,7 +573,7 @@ async function markPrepared(dir: string): Promise<void> {
   const state = await readPreviewState(dir);
   if (!state?.preparing) return;
   delete state.preparing;
-  await writeFile(previewStatePath(dir), JSON.stringify(state, null, 2)).catch((error) => log.error('preview: no se pudo marcar los datos como listos', error));
+  await host().fs.writeFile(previewStatePath(dir), JSON.stringify(state, null, 2)).catch((error) => log.error('preview: no se pudo marcar los datos como listos', error));
 }
 
 // --- moving to a new commit ---
@@ -620,7 +618,7 @@ export async function planInPlaceUpdate(
   }
   await host().exec('git', ['checkout', '--detach', '--force', pr.headRefOid], { cwd: dir });
   const manifest = await previewManifest(dir, pr);
-  const used = await readFile(previewManifestPath(dir), 'utf8').catch(() => null);
+  const used = await host().fs.readFile(previewManifestPath(dir), 'utf8').catch(() => null);
   if (used === null) return { reason: `no sé con qué ${APP_MANIFEST_FILE} se levantó` };
   if (manifest !== used) return { reason: `cambió el ${APP_MANIFEST_FILE}` };
   const app = parseAppManifest(manifest).apps[state.appName];
@@ -675,7 +673,7 @@ export async function updatePreview(prNumber: number, pr: PrHead): Promise<Previ
 // Unpublishes, stops and deletes the PR's preview. False when there was none.
 export async function stopPreview(prNumber: number): Promise<boolean> {
   const dir = previewDirFor(prNumber);
-  if (!existsSync(dir)) return false;
+  if (!(await host().fs.exists(dir))) return false;
   await takeDownPreviewApp(dir);
   await reservations().releaseSlots(dir);
   await removeWorktreeDir(dir, 'stopPreview');
@@ -703,7 +701,7 @@ export async function stopPreview(prNumber: number): Promise<boolean> {
 export async function listPreviewStates(): Promise<PreviewState[]> {
   let entries: string[];
   try {
-    entries = await readdir(activeRepo().worktreeBasePath);
+    entries = await host().fs.readdir(activeRepo().worktreeBasePath);
   } catch {
     return [];
   }
@@ -727,7 +725,7 @@ export async function listPreviewStates(): Promise<PreviewState[]> {
 export async function sweepPreviews(now: Date = new Date()): Promise<void> {
   let entries: string[];
   try {
-    entries = await readdir(activeRepo().worktreeBasePath);
+    entries = await host().fs.readdir(activeRepo().worktreeBasePath);
   } catch {
     return;
   }
@@ -762,7 +760,7 @@ async function expireIfDue(prNumber: number, now: Date): Promise<boolean> {
   if (!state) return false;
   const startedAt = state.startedAt ? Date.parse(state.startedAt) : NaN;
   if (Number.isNaN(startedAt)) {
-    await writeFile(previewStatePath(dir), JSON.stringify({ ...state, startedAt: now.toISOString() }, null, 2));
+    await host().fs.writeFile(previewStatePath(dir), JSON.stringify({ ...state, startedAt: now.toISOString() }, null, 2));
     return false;
   }
   if (now.getTime() - startedAt < ttlMinutes * 60_000) return false;

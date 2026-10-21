@@ -1,4 +1,3 @@
-import { mkdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { APP_MANIFEST_FILE } from '../product-app/manifest.js';
 import { config } from '../../platform/config/config.js';
@@ -211,7 +210,7 @@ const COMMITTER = () => ['-c', `user.name=${config.githubLogin}`, '-c', `user.em
 // worktree goes, for publishRelease to push.
 async function cherryPick(pending: Pending, picked: PendingChange[], tag: string): Promise<{ sha: string } | { conflict: Extract<Problem, { kind: 'conflict' }> }> {
   const dir = join(activeRepo().worktreeBasePath, `.deploy-${tag}-${process.pid}-${Date.now()}`);
-  await mkdir(activeRepo().worktreeBasePath, { recursive: true });
+  await host().fs.mkdir(activeRepo().worktreeBasePath, { recursive: true });
   await git(['worktree', 'add', '--quiet', '--detach', dir, pending.base!.sha]);
   try {
     for (const change of picked) {
@@ -236,7 +235,7 @@ async function cherryPick(pending: Pending, picked: PendingChange[], tag: string
     }
     return { sha: (await git(['rev-parse', 'HEAD'], dir)).trim() };
   } finally {
-    await git(['worktree', 'remove', '--force', dir]).catch(() => rm(dir, { recursive: true, force: true }));
+    await git(['worktree', 'remove', '--force', dir]).catch(() => host().fs.rm(dir, { recursive: true, force: true }));
   }
 }
 

@@ -1,5 +1,3 @@
-import { existsSync } from 'node:fs';
-import { mkdir, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { activeRepo } from '../../platform/agents/repo-context.js';
 import { removeWorktreeDir } from '../../platform/git/worktree.js';
@@ -104,8 +102,8 @@ export async function mergeNotReady(dir: string, files: string[]): Promise<strin
   if (left.length > 0) return `quedaron archivos sin resolver: ${left.join(', ')}`;
   const markers = await Promise.all(files.map(async (f) => {
     const path = join(dir, f);
-    if (!existsSync(path)) return null;
-    return /^(<{7}|>{7})( |$)|^={7}$/m.test(await readFile(path, 'utf8')) ? f : null;
+    if (!(await host().fs.exists(path))) return null;
+    return /^(<{7}|>{7})( |$)|^={7}$/m.test(await host().fs.readFile(path, 'utf8')) ? f : null;
   }));
   const withMarkers = markers.filter((f): f is string => f !== null);
   if (withMarkers.length > 0) return `quedaron marcas de conflicto en ${withMarkers.join(', ')}`;
@@ -116,8 +114,8 @@ export async function mergeNotReady(dir: string, files: string[]): Promise<strin
 async function prepareCheckout(dir: string, head: string, base: string): Promise<void> {
   const repoPath = activeRepo().productRepoPath;
   await host().exec('git', ['fetch', 'origin', head, base], { cwd: repoPath });
-  if (existsSync(dir)) await removeWorktreeDir(dir, 'resolveConflicts');
-  await mkdir(activeRepo().worktreeBasePath, { recursive: true });
+  if (await host().fs.exists(dir)) await removeWorktreeDir(dir, 'resolveConflicts');
+  await host().fs.mkdir(activeRepo().worktreeBasePath, { recursive: true });
   // Detached, like ensureTrustedFixWorktree: the branch is often checked out
   // in the primary worktree by whoever is working on it.
   await host().exec('git', ['worktree', 'add', '--detach', dir, `origin/${head}`], { cwd: repoPath });
@@ -157,18 +155,18 @@ export async function resolveConflicts(prNumber: number, pr: PrHead): Promise<Co
     if (files.length === 0) throw new Error(`git merge origin/${base} falló sin dejar conflictos`);
 
     const outDir = join(activeRepo().worktreeBasePath, `.conflicts-pr-${prNumber}-out`);
-    await mkdir(outDir, { recursive: true });
+    await host().fs.mkdir(outDir, { recursive: true });
     const outputPath = join(outDir, 'result.json');
-    await rm(outputPath, { force: true });
+    await host().fs.rm(outputPath, { force: true });
     await runAgentTask(commandTask({ type: 'resolve-conflicts', prNumber, checkoutDir: dir, outputPath, headRefName: head, baseRefName: base, title: pr.title, body: pr.body, conflictedFiles: files }));
 
     let resolution: AgentResolution;
     try {
-      resolution = parseAgentResolution(await readFile(outputPath, 'utf8'));
+      resolution = parseAgentResolution(await host().fs.readFile(outputPath, 'utf8'));
     } catch {
       return { kind: 'unresolved', base, files, reason: 'el agente no dejó su resultado' };
     } finally {
-      await rm(outDir, { recursive: true, force: true });
+      await host().fs.rm(outDir, { recursive: true, force: true });
     }
     if (!resolution.resuelto) return { kind: 'unresolved', base, files, reason: resolution.error ?? 'el agente no pudo resolverlos', resolution };
 

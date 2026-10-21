@@ -1,5 +1,3 @@
-import { existsSync } from 'node:fs';
-import { appendFile, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { activeRepo } from '../../platform/agents/repo-context.js';
 import { config } from '../../platform/config/config.js';
@@ -105,14 +103,14 @@ function stateDirOf(dir: string): string {
 
 async function readState(dir: string): Promise<AppState | null> {
   try {
-    return JSON.parse(await readFile(join(stateDirOf(dir), 'state.json'), 'utf8')) as AppState;
+    return JSON.parse(await host().fs.readFile(join(stateDirOf(dir), 'state.json'), 'utf8')) as AppState;
   } catch {
     return null;
   }
 }
 
 async function writeState(dir: string, state: AppState): Promise<void> {
-  await writeFile(join(stateDirOf(dir), 'state.json'), JSON.stringify(state, null, 2));
+  await host().fs.writeFile(join(stateDirOf(dir), 'state.json'), JSON.stringify(state, null, 2));
 }
 
 function composeArgs(state: Pick<AppState, 'project' | 'composeFile'>): string[] {
@@ -212,7 +210,7 @@ async function runStep(step: AppStep, run: StepRun): Promise<void> {
 export async function appUp(dir: string, appName: string, options: AppUpOptions = {}): Promise<AppSession> {
   const app = await loadAppDefinition(dir, appName, options.manifest);
   const stateDir = stateDirOf(dir);
-  await mkdir(stateDir, { recursive: true });
+  await host().fs.mkdir(stateDir, { recursive: true });
   // Never committed by accident: a task that runs `git add -A` in this
   // checkout must not pick up the app's logs and state. info/exclude is
   // shared by every worktree of the repo, which is what we want here.
@@ -222,7 +220,7 @@ export async function appUp(dir: string, appName: string, options: AppUpOptions 
   const state: AppState = { appName, project: appProjectName(appName, options.instance), processes: [] };
   const ctx: TemplateContext = { ports: {}, port: {}, compose: '', dir, ...(options.publicHost ? { publicHost: options.publicHost } : {}) };
   const logFile = join(stateDir, 'up.log');
-  await writeFile(logFile, '');
+  await host().fs.writeFile(logFile, '');
   await writeState(dir, state);
 
   try {
@@ -231,7 +229,7 @@ export async function appUp(dir: string, appName: string, options: AppUpOptions 
       const { stdout } = await host().exec('docker', args, { cwd: dir, env: appEnv(), maxBuffer: 16 * 1024 * 1024 });
       const { config: rewritten, ports } = await rewriteComposeConfig(JSON.parse(stdout), getFreePort);
       state.composeFile = join(stateDir, 'compose.json');
-      await writeFile(state.composeFile, JSON.stringify(rewritten, null, 2));
+      await host().fs.writeFile(state.composeFile, JSON.stringify(rewritten, null, 2));
       await writeState(dir, state);
       ctx.ports = ports;
     }
@@ -263,7 +261,7 @@ export async function appRerun(dir: string, app: AppDefinition, steps: AppStep[]
   if (!state?.baseUrl || !state.ctx) throw new Error(`no hay una app arriba en ${dir}`);
   const { ctx, baseUrl } = state;
   const logFile = join(stateDirOf(dir), 'rerun.log');
-  await writeFile(logFile, '');
+  await host().fs.writeFile(logFile, '');
   for (const step of steps) {
     try {
       await runStep(step, { appName: state.appName, dir, state, ctx, options: {}, logFile });
@@ -293,11 +291,11 @@ export async function appDown(dir: string): Promise<void> {
   const state = await readState(dir);
   if (!state) return;
   for (const p of state.processes) await host().stopGroup(p.pid);
-  if (state.composeFile && existsSync(state.composeFile)) {
+  if (state.composeFile && (await host().fs.exists(state.composeFile))) {
     await host().exec('docker', [...composeArgs(state), 'down', '--volumes', '--remove-orphans'], { cwd: dir, env: appEnv() })
       .catch((error) => log.error(`appDown: 'docker compose down' falló para ${state.project}`, error));
   }
-  await rm(join(stateDirOf(dir), 'state.json'), { force: true });
+  await host().fs.rm(join(stateDirOf(dir), 'state.json'), { force: true });
 }
 
 async function excludeFromGit(dir: string): Promise<void> {
@@ -305,10 +303,10 @@ async function excludeFromGit(dir: string): Promise<void> {
     const { stdout } = await host().exec('git', ['rev-parse', '--git-common-dir'], { cwd: dir });
     const commonDir = stdout.trim();
     const excludeFile = join(commonDir.startsWith('/') ? commonDir : join(dir, commonDir), 'info', 'exclude');
-    const current = await readFile(excludeFile, 'utf8').catch(() => '');
+    const current = await host().fs.readFile(excludeFile, 'utf8').catch(() => '');
     if (!current.split('\n').includes(`${APP_STATE_DIR}/`)) {
-      await mkdir(join(excludeFile, '..'), { recursive: true });
-      await appendFile(excludeFile, `${current.endsWith('\n') || current === '' ? '' : '\n'}${APP_STATE_DIR}/\n`);
+      await host().fs.mkdir(join(excludeFile, '..'), { recursive: true });
+      await host().fs.appendFile(excludeFile, `${current.endsWith('\n') || current === '' ? '' : '\n'}${APP_STATE_DIR}/\n`);
     }
   } catch (error) {
     log.error(`no se pudo excluir ${APP_STATE_DIR}/ de git en ${dir}`, error);
@@ -327,13 +325,13 @@ export async function ensureAppWorktree(appName: string, ref = activeRepo().work
   const dir = appWorktreeDirFor(appName);
   const repo = activeRepo().productRepoPath;
   await host().exec('git', ['fetch', 'origin'], { cwd: repo });
-  const isLive = existsSync(dir) &&
+  const isLive = (await host().fs.exists(dir)) &&
     (await host().exec('git', ['rev-parse', '--is-inside-work-tree'], { cwd: dir }).then(({ stdout }) => stdout.trim() === 'true', () => false));
   if (isLive) {
     await appDown(dir);
     await host().exec('git', ['checkout', '--detach', '--force', ref], { cwd: dir });
   } else {
-    await mkdir(activeRepo().worktreeBasePath, { recursive: true });
+    await host().fs.mkdir(activeRepo().worktreeBasePath, { recursive: true });
     await host().exec('git', ['worktree', 'add', '--detach', dir, ref], { cwd: repo });
   }
   return dir;

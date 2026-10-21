@@ -1,5 +1,5 @@
-import { readFile } from 'node:fs/promises';
 import { join, matchesGlob } from 'node:path';
+import { host } from '../../platform/host/host.js';
 
 // ronin.app.json, at the root of the product repo: how to bring each of its
 // apps up in a worktree so ronin can use it — see docs/DESIGN.md §11.2. It is
@@ -262,7 +262,7 @@ export function stepsToRerun(app: Pick<AppDefinition, 'steps'>, changedFiles: st
 export async function loadAppDefinition(checkoutDir: string, appName: string, manifest?: string): Promise<AppDefinition> {
   let raw: string;
   try {
-    raw = manifest ?? await readFile(join(checkoutDir, APP_MANIFEST_FILE), 'utf8');
+    raw = manifest ?? await host().fs.readFile(join(checkoutDir, APP_MANIFEST_FILE), 'utf8');
   } catch {
     throw new Error(`no hay ${APP_MANIFEST_FILE} en ${checkoutDir} — ver docs/DESIGN.md §11.2`);
   }

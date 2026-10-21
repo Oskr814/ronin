@@ -1,7 +1,8 @@
 import { execFile, spawn } from 'node:child_process';
-import { appendFile, readFile } from 'node:fs/promises';
+import * as fsp from 'node:fs/promises';
 import { closeSync, openSync } from 'node:fs';
 import { createServer } from 'node:net';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { pidAlive } from '../workers/process.js';
@@ -28,8 +29,34 @@ export interface LoggedOptions {
   logFile: string;
 }
 
+export interface HostDirent {
+  name: string;
+  isDirectory(): boolean;
+  isFile(): boolean;
+}
+
+// The files on the host: the product's checkout and the worktrees under the
+// active repo's worktreeBasePath, with what the agent's runs leave there.
+// ronin's own data (config.dataDir, the logs, the settings) is the central
+// node's and stays on node:fs. The calls mirror node:fs/promises.
+export interface HostFs {
+  readFile(path: string): Promise<Buffer>;
+  readFile(path: string, encoding: 'utf8'): Promise<string>;
+  writeFile(path: string, data: string | Uint8Array, opts?: { flag?: string; mode?: number }): Promise<void>;
+  appendFile(path: string, data: string): Promise<void>;
+  mkdir(path: string, opts?: { recursive?: boolean; mode?: number }): Promise<void>;
+  rm(path: string, opts?: { recursive?: boolean; force?: boolean }): Promise<void>;
+  readdir(path: string): Promise<string[]>;
+  readdir(path: string, opts: { withFileTypes: true }): Promise<HostDirent[]>;
+  exists(path: string): Promise<boolean>;
+  // A new empty directory in the host's own temp dir, its name starting
+  // with prefix: its path.
+  mkdtemp(prefix: string): Promise<string>;
+}
+
 export interface Host {
   readonly name: string;
+  readonly fs: HostFs;
   // A command to its end: what it wrote. A command that fails rejects with
   // execFile's error, which carries its stdout, stderr and code.
   exec(file: string, args: readonly string[], opts?: ExecOptions): Promise<{ stdout: string; stderr: string }>;
@@ -55,14 +82,28 @@ const execFileAsync = promisify(execFile);
 
 async function tail(file: string, lines = 30): Promise<string> {
   try {
-    return (await readFile(file, 'utf8')).split('\n').slice(-lines).join('\n');
+    return (await fsp.readFile(file, 'utf8')).split('\n').slice(-lines).join('\n');
   } catch {
     return '';
   }
 }
 
+// Looked up on fsp at each call, so a test that mocks node:fs/promises
+// still reaches the files through here.
+const localFs: HostFs = {
+  readFile: ((path: string, encoding?: 'utf8') => (encoding ? fsp.readFile(path, encoding) : fsp.readFile(path))) as HostFs['readFile'],
+  writeFile: (path, data, opts) => fsp.writeFile(path, data, opts),
+  appendFile: (path, data) => fsp.appendFile(path, data),
+  mkdir: async (path, opts) => { await fsp.mkdir(path, opts); },
+  rm: (path, opts) => fsp.rm(path, opts),
+  readdir: ((path: string, opts?: { withFileTypes: true }) => (opts ? fsp.readdir(path, opts) : fsp.readdir(path))) as HostFs['readdir'],
+  exists: (path) => fsp.access(path).then(() => true, () => false),
+  mkdtemp: (prefix) => fsp.mkdtemp(join(tmpdir(), prefix)),
+};
+
 export const localHost: Host = {
   name: 'local',
+  fs: localFs,
 
   async exec(file, args, opts = {}) {
     // The options as given: utf8 is execFile's own default.
@@ -76,7 +117,7 @@ export const localHost: Host = {
   },
 
   async runLogged(command, { cwd, env, logFile, timeoutMs }) {
-    await appendFile(logFile, `\n$ ${command}\n`);
+    await fsp.appendFile(logFile, `\n$ ${command}\n`);
     const fd = openSync(logFile, 'a');
     try {
       await new Promise<void>((resolve, reject) => {
