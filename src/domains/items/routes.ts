@@ -1,3 +1,4 @@
+import { zValidator } from '@hono/zod-validator';
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { config } from '../../platform/config/config.js';
@@ -93,10 +94,11 @@ export function itemsRoutes() {
       return ctx ? c.json({ pr: ctx.prNumber, ...ctx.files }, 200) : c.json(NO_PR, 404);
     })
     // Only a file the PR changes, so the endpoint can't read just anything from the repo.
-    .get('/:id/files/content', async (c) => {
+    // The query typed, for the client: the path is checked below.
+    .get('/:id/files/content', zValidator('query', z.object({ path: z.string().optional() })), async (c) => {
       const ctx = await filesContext(c.env.access, c.req.param('id'));
       if (!ctx) return c.json(NO_PR, 404);
-      const path = c.req.query('path') ?? '';
+      const path = c.req.valid('query').path ?? '';
       const file = ctx.files.files.find((f) => f.path === path);
       if (!file || file.status === 'removed' || !ctx.files.headSha) return c.json({ error: 'el PR no cambia ese archivo' }, 404);
       try {

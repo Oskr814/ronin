@@ -1,7 +1,7 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import { ApiError, client, ok } from '../../api.js';
-import { useHost, type ItemView } from '../../host.js';
-import { checksChip, itemParam, oneOr } from './model.js';
+import { useHost } from '../../host.js';
+import { checksChip, itemParam, oneOr, type ItemPage } from './model.js';
 
 // Deciding a PR ronin opened (#195): its page asks what's decided, not how
 // to review it: merge it, ask ronin for an adjustment, or close it. Always
@@ -32,7 +32,7 @@ interface Decided {
 }
 const decided = new Map<string, Decided>();
 
-export function useDecide(v: ItemView | null) {
+export function useDecide(v: ItemPage | null) {
   const host = useHost();
   const [p, setP] = useState<Deciding | null>(null);
   const [focusText, setFocusText] = useState(0);
@@ -42,7 +42,7 @@ export function useDecide(v: ItemView | null) {
     const next = p?.kind === kind ? null : { kind, text: '', closeIssue: true, sending: false, error: null };
     setP(next);
     // The pending comments it carries.
-    if (next && !v.files.data) host.loadFiles(v.item.id);
+    if (next && !v.files.data) v.files.load();
     setFocusText((n) => n + 1);
   };
   const send = async () => {
@@ -55,7 +55,7 @@ export function useDecide(v: ItemView | null) {
       setP(null);
       decided.set(id, { at: Date.now(), kind: p.kind, url: sent.url, autoMerge: Boolean(sent.autoMergeUrl), issue: Boolean(sent.issueUrl), count: pending });
       host.toast(p.kind === 'approve' ? 'Aprobaste el PR.' : p.kind === 'adjust' ? 'Se lo mandaste a ronin.' : 'Cerraste el PR.', sent.url);
-      host.reread(id, true);
+      v.files.reread();
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) return host.unauthorized(e.message);
       setP({ ...p, sending: false, error: `No se pudo: ${(e as Error).message}` });
@@ -81,7 +81,7 @@ export function DecidedNote({ id }: { id: string }) {
   return <div className="decided">{what}{done.url && <> <a href={done.url} target="_blank" rel="noopener">Ver ↗</a></>}</div>;
 }
 
-export function DecideBar({ v, decide }: { v: ItemView; decide: Decide }) {
+export function DecideBar({ v, decide }: { v: ItemPage; decide: Decide }) {
   const { p } = decide;
   const button = (kind: DecideKind, cls: string, label: string, key: string, title: string) => (
     <button className={cls} aria-haspopup="dialog" aria-expanded={p?.kind === kind} title={title} onClick={(e) => {
@@ -94,7 +94,7 @@ export function DecideBar({ v, decide }: { v: ItemView; decide: Decide }) {
   );
 }
 
-function Drop({ v, decide, p }: { v: ItemView; decide: Decide; p: Deciding }) {
+function Drop({ v, decide, p }: { v: ItemPage; decide: Decide; p: Deciding }) {
   const host = useHost();
   const text = useRef<HTMLTextAreaElement>(null);
   const d = v.detail!.data!;

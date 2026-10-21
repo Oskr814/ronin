@@ -1,13 +1,13 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import { ApiError, client, ok } from '../../api.js';
-import { useHost, type ItemView } from '../../host.js';
-import { itemParam, sameLogin } from './model.js';
+import { useHost } from '../../host.js';
+import { goFile } from './files/model.js';
+import { itemParam, sameLogin, type ItemPage } from './model.js';
 
 // The review panel (#111): finishing the review as in GitHub's "Review
 // changes", with a summary, Comment, Approve or Request changes, and the
 // pending comments it carries. It drops from the button that opened it:
-// the page's head, or the Archivos toolbar (which app.js draws, so the
-// panel goes into the slot it leaves there).
+// the page's head, or the Archivos toolbar.
 
 export type ReviewAt = 'head' | 'files';
 type ReviewEvent = 'COMMENT' | 'APPROVE' | 'REQUEST_CHANGES';
@@ -31,26 +31,26 @@ const REVIEW_SENT: Record<ReviewEvent, string> = { COMMENT: 'Mandaste tu revisi�
 const REVIEW_DECISION: Partial<Record<ReviewEvent, 'APPROVED' | 'CHANGES_REQUESTED'>> = { APPROVE: 'APPROVED', REQUEST_CHANGES: 'CHANGES_REQUESTED' };
 
 // On an issue, the button says which PR it reviews.
-export const reviewLabel = (v: ItemView) => (v.item.kind === 'issue' ? `Revisar PR #${v.detail!.data!.pr!.number}` : 'Revisar');
+export const reviewLabel = (v: ItemPage) => (v.item.kind === 'issue' ? `Revisar PR #${v.detail!.data!.pr!.number}` : 'Revisar');
 
 // Whether approving offers the auto-merge: only to approve, on a PR that
 // doesn't have it yet, isn't a draft (ronin doesn't read commands on a
 // human's draft) and doesn't conflict (the command would refuse it), and
 // never along with /fix-comments.
-function autoMergeChoice(event: ReviewEvent, v: ItemView, withFix: boolean): 'offer' | 'with-fix' | null {
+function autoMergeChoice(event: ReviewEvent, v: ItemPage, withFix: boolean): 'offer' | 'with-fix' | null {
   const d = v.detail?.data;
   if (event !== 'APPROVE' || !d?.ronin || !d.pr || d.pr.isDraft || d.pr.mergeable === 'CONFLICTING' || d.pr.labels?.includes('ronin:auto-merge')) return null;
   return withFix ? 'with-fix' : 'offer';
 }
 
-export function useReview(v: ItemView | null) {
+export function useReview(v: ItemPage | null) {
   const host = useHost();
   const [p, setP] = useState<Reviewing | null>(null);
   const open = (at: ReviewAt) => {
     if (!v) return;
     const next = p?.at === at ? null : { at, event: 'COMMENT' as const, text: '', fix: true, autoMerge: true, sending: false, error: null };
     setP(next);
-    if (next && !v.files.data) host.loadFiles(v.item.id);
+    if (next && !v.files.data) v.files.load();
   };
   // What's sent, from the panel's state: the event (only Comment on one's
   // own PR), /fix-comments on ronin's when there's something to fix.
@@ -74,7 +74,7 @@ export function useReview(v: ItemView | null) {
       const decision = REVIEW_DECISION[s.event];
       if (decision) host.reviewed(id, s.data.pr, decision);
       host.toast(`${REVIEW_SENT[s.event]}${sent.fixUrl ? '; ronin ya tiene el /fix-comments' : ''}${sent.autoMergeUrl ? ' y le pediste el auto-merge' : ''}.`, sent.url);
-      host.reread(id, true);
+      v.files.reread();
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) return host.unauthorized(e.message);
       setP({ ...p, sending: false, error: `No se pudo: ${(e as Error).message}` });
@@ -90,7 +90,7 @@ export function useReview(v: ItemView | null) {
       await ok(client.api.items[':id'].files.actions.$post({ param: itemParam(id), json: { action: 'discard' } }));
       setP(null);
       host.toast('Descartaste tu revisión.');
-      host.reread(id, true);
+      v.files.reread();
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) return host.unauthorized(e.message);
       setP({ ...p, sending: false, error: `No se pudo: ${(e as Error).message}` });
@@ -100,7 +100,7 @@ export function useReview(v: ItemView | null) {
 }
 export type Review = ReturnType<typeof useReview>;
 
-export function ReviewPanel({ v, review }: { v: ItemView; review: Review }) {
+export function ReviewPanel({ v, review }: { v: ItemPage; review: Review }) {
   const host = useHost();
   const p = review.p!;
   const panel = useRef<HTMLDivElement>(null);
@@ -147,7 +147,8 @@ export function ReviewPanel({ v, review }: { v: ItemView; review: Review }) {
       <div className="rlist"><div className="rh">En tu revisión<span>{pend.length ? `${pend.length} comentario${pend.length === 1 ? '' : 's'}` : ''}</span></div>{pend.length
         ? pend.map((c) => <button key={c.nodeId} className="ri" onClick={() => {
           review.close();
-          host.goFile(v.item.id, c.path, c.nodeId);
+          goFile(v.item.id, c.path, c.nodeId);
+          host.showDoc(v.item.id, 'files');
         }}><span className="w">{where(c)}{c.isNew ? '' : ' · respuesta'}</span><span className="t">{c.body.replace(/```suggestion[\s\S]*?```/g, '[cambio sugerido]').trim().split('\n')[0]}</span></button>)
         : <p className="m">Ningún comentario todavía: hacé clic en el número de una línea en Archivos.</p>}</div></div>
       <footer>{p.error ? <span className="bad">{p.error}</span> : <span className="m">{pend.length ? 'Hasta mandarla, nadie ve tus comentarios.' : ''}</span>}{files.review && <button className="btn-s danger" disabled={p.sending} onClick={() => void review.discard()}>Descartar</button>}<button className="btn-s primary" disabled={!can} onClick={() => void review.send()}>{p.sending ? 'Enviando…' : 'Mandar revisión'}</button></footer></div>
