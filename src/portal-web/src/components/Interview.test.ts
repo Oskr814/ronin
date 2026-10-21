@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { Question } from './api.js';
+import type { Question } from '../api.js';
 import { answered, missing, payload, progress } from './Interview.js';
 
 const qs = [

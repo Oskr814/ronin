@@ -3,8 +3,8 @@ import type { SuccessStatusCode } from 'hono/utils/http-status';
 import type { DashboardApi } from '../../server/dashboard-app.js';
 
 // The dashboard's API, typed from its routes (server/dashboard-app.ts): a
-// change on the server that an island doesn't follow breaks the build, not
-// the page.
+// change on the server that a page doesn't follow breaks the build, not the
+// page.
 
 export class ApiError extends Error {
   constructor(message: string, readonly status: number, readonly body: Record<string, unknown> | null = null) {

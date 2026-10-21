@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
-import { client, ok, type Me } from './api.js';
+import { client, ok, type Me } from '../api.js';
 
 // Before entering: the login, the forgotten password, and setting the
 // password from an emailed link.

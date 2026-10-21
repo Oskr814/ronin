@@ -1,11 +1,7 @@
 import { useState } from 'react';
-import type { Me, Summary } from './api.js';
-import { initials, STATUS } from './text.js';
-
-export function Chip({ status }: { status: string }) {
-  const [cls, label] = STATUS[status] ?? ['idle', status];
-  return <span className={`chip ${cls}`}>{label}</span>;
-}
+import type { Me, Summary } from '../api.js';
+import { initials } from '../lib/text.js';
+import { Chip } from './Chip.js';
 
 // The theme, on the page's root (theme.js puts it there before the first
 // paint), and remembered in the browser.

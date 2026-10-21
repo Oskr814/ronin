@@ -3,6 +3,6 @@
   "exclude": [
     "src/**/*.test.ts",
     "src/portal-web",
-    "src/web-islands"
+    "src/dashboard-web"
   ]
 }

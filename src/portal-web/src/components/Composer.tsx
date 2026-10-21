@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { useBusy } from './busy.js';
-import { attach } from './images.js';
+import { useBusy } from '../lib/busy.js';
+import { attach } from '../lib/images.js';
 
 // What the person is writing, with its images: kept by the page that shows
 // the composer, so it survives the composer giving way to a confirmation.

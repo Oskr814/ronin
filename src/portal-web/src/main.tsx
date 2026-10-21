@@ -3,7 +3,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { ended, setIdleCheck } from './api.js';
 import { App } from './App.js';
-import { anyBusy } from './busy.js';
+import { anyBusy } from './lib/busy.js';
 
 // The request portal (#114): people without GitHub ask ronin for small
 // changes. A page with no data of its own — everything comes from
