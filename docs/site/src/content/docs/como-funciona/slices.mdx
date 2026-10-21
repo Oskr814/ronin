@@ -42,7 +42,8 @@ En cada vuelta, ronin mira el PR de la slice en curso:
 |---|---|
 | Hay comentarios de review sin resolver | Los atiende y responde en cada hilo. |
 | El CI falla | Lo arregla. Si la misma falla se repite, se bloquea y avisa. |
-| Está aprobado y en verde | Lo mergea el auto-merge, o espera a que lo mergee una persona. |
+| El CI pasa y todavía no revisó ese commit | Revisa su propio código sin publicar nada: corrige lo crítico e importante y deja las decisiones como preguntas en la descripción. Ver [la review de ronin](/ronin/como-funciona/review/#los-prs-de-ronin). |
+| Está aprobado, en verde, revisado y sin preguntas | Lo mergea el auto-merge, o espera a que lo mergee una persona. |
 | Lo mergeó una persona | Marca la slice en el checklist y sigue con la siguiente. |
 
 <Aside type="note">

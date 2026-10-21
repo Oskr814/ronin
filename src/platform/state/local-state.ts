@@ -25,6 +25,18 @@ export interface LocalState {
   // for — see docs/superpowers/specs/2026-08-20-external-pr-review-design.md.
   // A PR with no entry (or a stale one) is due for a fresh review next tick.
   lastReviewedSha: Record<string, string>;
+  // PR number -> last head SHA of one of ronin's own PRs the internal review
+  // (#194, domains/review/internal.ts) is done with, its fixes included:
+  // auto-merge waits until it's the head's.
+  internalReviewedSha: Record<string, string>;
+  // PR number -> head SHA whose internal review failed: not retried every
+  // tick on the same commit (a new one does get its review), and auto-merge
+  // keeps waiting, so a person merges it.
+  internalReviewFailed: Record<string, string>;
+  // Set once the PRs that were already open when the internal review
+  // arrived got recorded as reviewed on their head, so only new work goes
+  // through it (seedInternalReviews). Undefined means "never seeded".
+  internalReviewSeeded?: boolean;
   // PR number -> failure signature (failure-signature.ts) -> how many times
   // its checks were seen failing that way. Never reset on a green run, like
   // fabro's circuit breaker: "fix, pass, break the same way again" is still
@@ -146,6 +158,9 @@ export async function readStateFile(path: string): Promise<LocalState> {
       claimedIssues: raw.claimedIssues ?? [],
       checksPendingCounts: raw.checksPendingCounts ?? {},
       lastReviewedSha: raw.lastReviewedSha ?? {},
+      internalReviewedSha: raw.internalReviewedSha ?? {},
+      internalReviewFailed: raw.internalReviewFailed ?? {},
+      ...(raw.internalReviewSeeded ? { internalReviewSeeded: true } : {}),
       failureSignatures: raw.failureSignatures ?? {},
       lastChangelogRelease: raw.lastChangelogRelease,
       nightlyExploration: raw.nightlyExploration ?? {},
@@ -155,7 +170,7 @@ export async function readStateFile(path: string): Promise<LocalState> {
       ...(raw.autoMergeDefaulted ? { autoMergeDefaulted: raw.autoMergeDefaulted } : {}),
     };
   } catch {
-    return { claimedIssues: [], checksPendingCounts: {}, lastReviewedSha: {}, failureSignatures: {}, nightlyExploration: {}, processedComments: {}, blocks: {}, linearPending: [] };
+    return { claimedIssues: [], checksPendingCounts: {}, lastReviewedSha: {}, internalReviewedSha: {}, internalReviewFailed: {}, failureSignatures: {}, nightlyExploration: {}, processedComments: {}, blocks: {}, linearPending: [] };
   }
 }
 
@@ -236,6 +251,52 @@ export async function setLastReviewedSha(prNumber: number, sha: string): Promise
   return withLocalStateLock(async () => {
     const state = await readLocalState();
     state.lastReviewedSha[prNumber] = sha;
+    await writeLocalState(state);
+  });
+}
+
+// Per PR, the head SHA the internal review is done with, and the one it
+// failed on.
+export async function getInternalReviews(): Promise<{ reviewed: Record<string, string>; failed: Record<string, string>; seeded: boolean }> {
+  const state = await readLocalState();
+  return { reviewed: state.internalReviewedSha, failed: state.internalReviewFailed, seeded: state.internalReviewSeeded === true };
+}
+
+// The first time only: the PRs open then count as reviewed on their head,
+// so the internal review starts with new work instead of going back over
+// (and force-pushing to) PRs people may already be reviewing. A later
+// commit on one of them does get its review.
+export async function seedInternalReviews(open: Array<{ number: number; headRefOid: string }>): Promise<void> {
+  return withLocalStateLock(async () => {
+    const state = await readLocalState();
+    if (state.internalReviewSeeded) return;
+    for (const pr of open) state.internalReviewedSha[pr.number] ??= pr.headRefOid;
+    state.internalReviewSeeded = true;
+    await writeLocalState(state);
+  });
+}
+
+export async function setInternalReview(prNumber: number, outcome: { reviewed: string } | { failed: string }): Promise<void> {
+  return withLocalStateLock(async () => {
+    const state = await readLocalState();
+    if ('reviewed' in outcome) {
+      state.internalReviewedSha[prNumber] = outcome.reviewed;
+      delete state.internalReviewFailed[prNumber];
+    } else {
+      state.internalReviewFailed[prNumber] = outcome.failed;
+    }
+    await writeLocalState(state);
+  });
+}
+
+// Like pruneLastReviewedSha, with the open PRs the tick already listed.
+export async function pruneInternalReviewedSha(openPrNumbers: number[]): Promise<void> {
+  return withLocalStateLock(async () => {
+    const state = await readLocalState();
+    const keep = new Set(openPrNumbers.map(String));
+    for (const record of [state.internalReviewedSha, state.internalReviewFailed]) {
+      for (const key of Object.keys(record)) if (!keep.has(key)) delete record[key];
+    }
     await writeLocalState(state);
   });
 }

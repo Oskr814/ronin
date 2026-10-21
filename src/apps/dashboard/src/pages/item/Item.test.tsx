@@ -61,6 +61,13 @@ describe('an item’s page', () => {
     expect(tab()).toBe('Issue');
   });
 
+  // #194: what ronin's internal review asks a person stands out too.
+  it('shows the questions of ronin’s PR as a section of their own, standing out', () => {
+    const body = '## Qué se pidió\nEl teléfono.\n\n## Preguntas\n1. ¿Va también en el listado?';
+    const { container } = show({ detail: detail({ pr: doc({ number: 42, title: 'Teléfono en la ficha', author: 'ronin-bot', url: 'https://github.com/acme/tienda/pull/42', body, mergeable: 'MERGEABLE', baseRefName: 'main', headRefName: 'ronin/41/slice-1', isDraft: false, reviewDecision: '', decisions: [] }) }) });
+    expect(container.querySelector('.psec.decis h3')?.textContent).toBe('Preguntas');
+  });
+
   it('asks ronin for an adjustment with P, a suggestion and Ctrl+Enter', async () => {
     show();
     fireEvent.keyDown(document, { key: 'p' });

@@ -43,10 +43,10 @@ import { sliceTask } from '@domains/slices/index.js';
 import { reviewTask } from '@domains/review/index.js';
 import { commandTask } from '@domains/commands/index.js';
 import { changelogTask } from '@domains/changelog/index.js';
-import { runExternalReview } from '@domains/review/index.js';
+import { internalReviewDue, runExternalReview, runInternalReview } from '@domains/review/index.js';
 import { ClaudeUsageLimitError } from '@platform/claude/claude-runner.js';
 import { toStackedPrs, pickBottomPr, prsForIssue, planBranch, spikeBranch, issueFromSliceBranch, type StackedPr } from '@domains/slices/index.js';
-import { incrementChecksPendingCount, resetChecksPendingCount, setLastReviewedSha, recordFailureSignature, pruneFailureSignatures } from '@platform/state/local-state.js';
+import { incrementChecksPendingCount, resetChecksPendingCount, setLastReviewedSha, recordFailureSignature, pruneFailureSignatures, pruneInternalReviewedSha } from '@platform/state/local-state.js';
 import { failureSignature, type FailureSignature } from '@platform/agents/failure-signature.js';
 import { tryClaim, releaseIfNoLongerInProgress } from '@platform/state/claim.js';
 import { removeWorktree, sweepOrphanedWorktrees } from '@platform/git/worktree.js';
@@ -468,6 +468,20 @@ export async function processSlicePr(issue: TrackingIssue, pr: StackedPr, isBott
     if (status === 'blocked') return false;
     if (status === 'waiting') {
       logSliceOutcome(issue, pr, isBottom, `base "${pr.baseRefName}" en vez de "${rootBranchName()}", esperando el retarget`);
+      return true;
+    }
+
+    // ronin's internal review (#194), once CI is green on the head: before a
+    // person's approval counts, and before auto-merge, which waits for it.
+    // A failed run is logged and not retried on the same commit; the next
+    // tick goes on from here.
+    if (pr.checksPassing && !pr.checksPending && pr.reviewDecision !== 'CHANGES_REQUESTED' && (await internalReviewDue(pr))) {
+      logSliceOutcome(issue, pr, isBottom, 'checks OK, revisando su propio código');
+      try {
+        await runInternalReview(issue.number, pr);
+      } catch (error) {
+        log.error(`review interna PR #${pr.number}: falló`, error);
+      }
       return true;
     }
 
@@ -1230,6 +1244,7 @@ async function tickRepo(scope: Scope | undefined, measurement: Measurement): Pro
       if (!open) return;
       await sweepOrphanedWorktrees(open);
       await pruneFailureSignatures(open.map((pr) => pr.number));
+      await pruneInternalReviewedSha(open.map((pr) => pr.number));
     } catch (error) {
       log.error('worktrees: no se pudieron barrer los de PRs cerrados', error);
     }

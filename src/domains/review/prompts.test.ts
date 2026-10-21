@@ -381,6 +381,61 @@ describe('runAgentTask — external-review', () => {
   });
 });
 
+// #194: the same review on one of ronin's own PRs, nothing published.
+describe('runAgentTask — internal-review', () => {
+  const task = {
+    type: 'internal-review' as const,
+    prNumber: 40,
+    headRefName: 'ronin/7/slice-1',
+    headSha: 'head1',
+    baseRefName: 'main',
+    threadHistory: [],
+    mentions: [],
+    criteria: { text: '# Criterio', common: '# Común', agents: [{ name: 'review-security', description: 'Seguridad', incrementalOnly: false, body: '# Seguridad' }] },
+    diff: { mergeBase: 'mb1', stat: ' src/a.ts | 2 +-' },
+    outputPath: '/tmp/worktrees/external-review-out/40-head1.json',
+    agentsPath: '/tmp/worktrees/external-review-out/40-head1.agents.json',
+    scope: { mode: 'full' as const },
+    canExecute: true,
+  };
+
+  it('says the PR is ronin\'s own and nothing is published, leaves the minor ones out and lists no threads', async () => {
+    await runAgentTask(task);
+
+    const prompt = runClaudeHeadless.mock.calls[0][1] as string;
+    expect(prompt).toContain('one you opened yourself, so all of its code was written by AI');
+    expect(prompt).toContain('Nothing of this review is published');
+    expect(prompt).toContain('Minor findings are not fixed in this review');
+    expect(prompt).not.toContain('publish everything that survives your check, including minor ones');
+    expect(prompt).not.toContain('review threads you opened on a previous run');
+    expect(prompt).toContain('and you opened it, so running its code is allowed here');
+  });
+});
+
+describe('runAgentTask — fix-internal-review', () => {
+  const finding = (overrides: Record<string, unknown> = {}) => ({
+    path: 'src/a.ts', line: 3, type: 'bug' as const, severity: 'important' as const, category: 'Lógica', title: 'El total no descuenta el cupón',
+    impact: 'Falla.', evidence: [], verification: { status: 'reasoned' as const }, affectedCode: 'x', ...overrides,
+  });
+
+  it('gives the problems to fix and the decisions apart, and asks for the questions in the description', async () => {
+    await runAgentTask({ type: 'fix-internal-review', issueNumber: 7, prNumber: 40, findings: [finding(), finding({ type: 'decision', title: '¿El cupón aplica al envío?' })] });
+
+    const prompt = runClaudeHeadless.mock.calls[0][1] as string;
+    expect(prompt).toMatch(/<<<FINDINGS_START>>>[\s\S]*El total no descuenta el cupón[\s\S]*<<<FINDINGS_END>>>/);
+    expect(prompt).toMatch(/<<<DECISIONS_START>>>[\s\S]*¿El cupón aplica al envío\?[\s\S]*<<<DECISIONS_END>>>/);
+    expect(prompt).toContain('"## Preguntas" section, right before "## Fuera de alcance"');
+    expect(prompt).toContain('git push --force-with-lease');
+    expect(prompt).toMatch(/Never comment on the PR, never post a review/);
+  });
+
+  it('leaves out the fixes block when there are only decisions', async () => {
+    await runAgentTask({ type: 'fix-internal-review', issueNumber: 7, prNumber: 40, findings: [finding({ type: 'decision', title: '¿Sí?' })] });
+
+    expect(runClaudeHeadless.mock.calls[0][1]).not.toContain('FINDINGS_START');
+  });
+});
+
 describe('runAgentTask — external-review with mentions', () => {
   const task = {
     type: 'external-review' as const,

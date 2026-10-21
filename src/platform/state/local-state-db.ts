@@ -16,6 +16,8 @@ interface Entry {
 const RECORDS = {
   checksPendingCounts: 'checks-pending',
   lastReviewedSha: 'reviewed-sha',
+  internalReviewedSha: 'internal-reviewed-sha',
+  internalReviewFailed: 'internal-review-failed',
   failureSignatures: 'failure-signatures',
   nightlyExploration: 'nightly-exploration',
   processedComments: 'processed-comment',
@@ -25,6 +27,7 @@ const CLAIMED = 'claimed-issue';
 const LINEAR = 'linear-pending';
 const CHANGELOG = 'last-changelog-release';
 const AUTO_MERGE = 'auto-merge-defaulted';
+const INTERNAL_REVIEW_SEEDED = 'internal-review-seeded';
 
 export function toEntries(state: LocalState): Entry[] {
   const entries: Entry[] = [];
@@ -35,11 +38,12 @@ export function toEntries(state: LocalState): Entry[] {
   for (const p of state.linearPending) entries.push({ kind: LINEAR, key: String(p.number), value: p });
   if (state.lastChangelogRelease) entries.push({ kind: CHANGELOG, key: '', value: state.lastChangelogRelease });
   if (state.autoMergeDefaulted) entries.push({ kind: AUTO_MERGE, key: '', value: state.autoMergeDefaulted });
+  if (state.internalReviewSeeded) entries.push({ kind: INTERNAL_REVIEW_SEEDED, key: '', value: true });
   return entries;
 }
 
 export function fromEntries(entries: Entry[]): LocalState {
-  const state: LocalState = { claimedIssues: [], checksPendingCounts: {}, lastReviewedSha: {}, failureSignatures: {}, nightlyExploration: {}, processedComments: {}, blocks: {}, linearPending: [] };
+  const state: LocalState = { claimedIssues: [], checksPendingCounts: {}, lastReviewedSha: {}, internalReviewedSha: {}, internalReviewFailed: {}, failureSignatures: {}, nightlyExploration: {}, processedComments: {}, blocks: {}, linearPending: [] };
   const fieldOf = new Map(Object.entries(RECORDS).map(([field, kind]) => [kind as string, field as keyof typeof RECORDS]));
   for (const { kind, key, value } of entries) {
     const field = fieldOf.get(kind);
@@ -48,6 +52,7 @@ export function fromEntries(entries: Entry[]): LocalState {
     else if (kind === LINEAR) state.linearPending.push(value as LocalState['linearPending'][number]);
     else if (kind === CHANGELOG) state.lastChangelogRelease = value as LocalState['lastChangelogRelease'];
     else if (kind === AUTO_MERGE) state.autoMergeDefaulted = value as number[];
+    else if (kind === INTERNAL_REVIEW_SEEDED) state.internalReviewSeeded = true;
   }
   state.claimedIssues.sort((a, b) => a - b);
   state.linearPending.sort((a, b) => a.since.localeCompare(b.since));

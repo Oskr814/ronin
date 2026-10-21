@@ -126,6 +126,7 @@ vi.mock('@platform/state/local-state.js', () => ({
   setLastChangelogRelease: (...args: unknown[]) => setLastChangelogRelease(...args),
   recordFailureSignature: (...args: unknown[]) => recordFailureSignature(...args),
   pruneFailureSignatures: vi.fn(),
+  pruneInternalReviewedSha: vi.fn(),
 }));
 
 const worktreeDirFor = vi.fn();
@@ -144,6 +145,13 @@ vi.mock('@domains/commands/mentions.js', () => ({
 
 const runExternalReview = vi.fn();
 vi.mock('@domains/review/publish.js', () => ({ runExternalReview }));
+// Done for every head unless a test says otherwise (#194).
+const internalReviewDue = vi.fn(async () => false);
+const runInternalReview = vi.fn();
+vi.mock('@domains/review/internal.js', () => ({
+  internalReviewDue: (...args: unknown[]) => internalReviewDue(...(args as [])),
+  runInternalReview: (...args: unknown[]) => runInternalReview(...args),
+}));
 
 const changesRequestedOnHead = vi.fn();
 const runAgentTask = vi.fn();
@@ -186,6 +194,7 @@ function pr(overrides: Partial<StackedPr> = {}): StackedPr {
     checksPending: false,
     mergeable: true,
     headRefName: 'ronin/228/slice-2',
+    headRefOid: 'head230',
     baseRefName: 'ronin/228/slice-1',
     isDraft: false,
     // Already carries the cheat sheet, so tests about anything else don't
@@ -367,6 +376,37 @@ describe('processSlicePr — changes requested on an older commit', () => {
 describe('processSlicePr — bottom-of-stack PR (unchanged behavior)', () => {
   beforeEach(() => {
     worktreeDirFor.mockReturnValue('/tmp/worktree-bottom');
+  });
+
+  // #194: ronin reviews its own code once CI is green on the bottom PR's
+  // head, before a person's approval or auto-merge count.
+  it('runs the internal review on a green bottom PR whose head is not reviewed yet, approved or not', async () => {
+    internalReviewDue.mockResolvedValue(true);
+    for (const reviewDecision of ['', 'APPROVED'] as const) {
+      runInternalReview.mockClear();
+      const bottomPr = pr({ number: 229, sliceIndex: 0, baseRefName: 'main', headRefName: 'ronin/228/slice-1', checksPassing: true, checksPending: false, reviewDecision });
+
+      expect(await processSlicePr(issue(), bottomPr, true)).toBe(true);
+      expect(runInternalReview).toHaveBeenCalledWith(228, bottomPr);
+    }
+    internalReviewDue.mockResolvedValue(false);
+  });
+
+  it('does not run the internal review while CI is running or failing', async () => {
+    internalReviewDue.mockResolvedValue(true);
+    await processSlicePr(issue(), pr({ number: 229, sliceIndex: 0, baseRefName: 'main', headRefName: 'ronin/228/slice-1', checksPassing: false, checksPending: true }), true);
+    expect(runInternalReview).not.toHaveBeenCalled();
+    internalReviewDue.mockResolvedValue(false);
+  });
+
+  it('goes on when the internal review fails, without blocking the issue', async () => {
+    internalReviewDue.mockResolvedValue(true);
+    runInternalReview.mockRejectedValueOnce(new Error('timeout'));
+    const bottomPr = pr({ number: 229, sliceIndex: 0, baseRefName: 'main', headRefName: 'ronin/228/slice-1', checksPassing: true, checksPending: false });
+
+    expect(await processSlicePr(issue(), bottomPr, true)).toBe(true);
+    expect(setIssueState).not.toHaveBeenCalled();
+    internalReviewDue.mockResolvedValue(false);
   });
 
   it('never merges an approved, green PR: waits for a human to merge it', async () => {

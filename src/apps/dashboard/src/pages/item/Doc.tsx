@@ -84,15 +84,17 @@ export function Comments({ doc, ronin, repo }: { doc: Doc; ronin: string; repo: 
 }
 
 // The sections every PR ronin opens has (#195, PR_BODY_SECTIONS in
-// platform/agents/prompts.ts), each under its heading; what it decided on its own
-// stands out, it's what most needs a look. A body without them (an older
-// PR) shows as it is.
-const PR_SECTIONS = ['Qué se pidió', 'Qué cambió', 'Cómo se verificó', 'Decisiones propias', 'Fuera de alcance'];
+// platform/agents/prompts.ts), each under its heading, plus the questions its
+// internal review left for a person (#194); what it decided on its own and
+// what it asks stand out, they're what most needs a look. A body without
+// them (an older PR) shows as it is.
+const PR_SECTIONS = ['Qué se pidió', 'Qué cambió', 'Cómo se verificó', 'Decisiones propias', 'Preguntas', 'Fuera de alcance'];
+const STANDS_OUT = new Set(['Decisiones propias', 'Preguntas']);
 function PrBody({ body, repo }: { body: string; repo: string }) {
   const parts = body.split(/^##[ \t]+(.+?)[ \t]*$/m);
   if (!parts.some((part, i) => i % 2 === 1 && PR_SECTIONS.includes(part))) return <Body body={body} repo={repo} />;
   const sections = [];
-  for (let i = 1; i < parts.length; i += 2) sections.push(<section key={i} className={`psec${parts[i] === 'Decisiones propias' ? ' decis' : ''}`}><h3>{parts[i]}</h3><Md text={parts[i + 1].trim()} repo={repo} /></section>);
+  for (let i = 1; i < parts.length; i += 2) sections.push(<section key={i} className={`psec${STANDS_OUT.has(parts[i]) ? ' decis' : ''}`}><h3>{parts[i]}</h3><Md text={parts[i + 1].trim()} repo={repo} /></section>);
   return <>{parts[0].trim() ? <Md text={parts[0].trim()} repo={repo} className="md pre" /> : null}{sections}</>;
 }
 

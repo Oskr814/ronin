@@ -55,4 +55,10 @@ describe('the PR body', () => {
   it('keeps «Cómo probar» up to date when the PR changes', () => {
     expect(prBodyUpdateRule(42)).toContain('its "Cómo probar" block included');
   });
+
+  // #194: what the internal review asked a person, until it's settled.
+  it('takes out of «Preguntas» what got settled, and keeps the rest', () => {
+    expect(prBodyUpdateRule(42)).toContain('"## Preguntas" section');
+    expect(prBodyUpdateRule(42)).toMatch(/remove each question that a person's answer or your change settled, and the whole section once it is empty/);
+  });
 });

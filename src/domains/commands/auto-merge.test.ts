@@ -27,7 +27,15 @@ let defaulted: number[] | undefined;
 const setAutoMergeDefaulted = vi.fn(async (prs: number[]) => {
   defaulted = prs;
 });
+let internalReviewed: Record<string, string> = {};
+let internalSeeded = true;
+const seedInternalReviews = vi.fn(async (open: Array<{ number: number; headRefOid: string }>) => {
+  for (const pr of open) internalReviewed[pr.number] ??= pr.headRefOid;
+  internalSeeded = true;
+});
 vi.mock('@platform/state/local-state.js', () => ({
+  getInternalReviews: async () => ({ reviewed: internalReviewed, failed: {}, seeded: internalSeeded }),
+  seedInternalReviews: (open: Array<{ number: number; headRefOid: string }>) => seedInternalReviews(open),
   getAutoMergeDefaulted: async () => defaulted,
   setAutoMergeDefaulted: (prs: number[]) => setAutoMergeDefaulted(prs),
 }));
@@ -40,7 +48,7 @@ vi.mock('@platform/state/processed-comments.js', () => ({
 
 const { applyAutoMergeCommand, autoMergeBlockers, labelNewSlicePrs, sweepAutoMerge } = await import('./auto-merge.js');
 
-type Overrides = Partial<{ number: number; isDraft: boolean; reviewDecision: string; checksPassing: boolean; checksPending: boolean; mergeable: boolean; headRefName: string; baseRefName: string }>;
+type Overrides = Partial<{ number: number; isDraft: boolean; reviewDecision: string; checksPassing: boolean; checksPending: boolean; mergeable: boolean; headRefName: string; headRefOid: string; baseRefName: string; body: string }>;
 
 function candidate(overrides: Overrides = {}, extra: { conflicting?: boolean; labels?: string[] } = {}) {
   const number = overrides.number ?? 10;
@@ -53,6 +61,7 @@ function candidate(overrides: Overrides = {}, extra: { conflicting?: boolean; la
       checksPending: false,
       mergeable: true,
       headRefName: `feat/${number}`,
+      headRefOid: `head${number}`,
       baseRefName: 'main',
       isDraft: false,
       body: '',
@@ -65,6 +74,8 @@ function candidate(overrides: Overrides = {}, extra: { conflicting?: boolean; la
 
 beforeEach(() => {
   vi.clearAllMocks();
+  internalReviewed = {};
+  internalSeeded = true;
   mergePullRequest.mockResolvedValue(undefined);
   commentOnSpecPr.mockResolvedValue(undefined);
   addIssueLabel.mockResolvedValue(undefined);
@@ -96,6 +107,22 @@ describe('autoMergeBlockers', () => {
   it('turns off on a conflict', () => {
     expect(autoMergeBlockers(candidate({}, { conflicting: true }), none).disable).toBe('tiene conflictos con `main`');
   });
+
+  // #194: a slice PR of ronin's waits for its internal review on the head,
+  // and for the questions it left in the description.
+  it('waits for the internal review of a slice PR\'s head', () => {
+    const slice = candidate({ number: 20, headRefName: 'ronin/5/slice-1', headRefOid: 'h2' });
+    expect(autoMergeBlockers(slice, none).waits).toEqual(['la review interna de ronin']);
+    expect(autoMergeBlockers(slice, none, { 20: 'h1' }).waits).toEqual(['la review interna de ronin']);
+    expect(autoMergeBlockers(slice, none, { 20: 'h2' }).waits).toEqual([]);
+    expect(autoMergeBlockers(candidate({ number: 21 }), none, {}).waits).toEqual([]);
+  });
+
+  it('waits while the description has questions for a person', () => {
+    const body = '## Qué cambió\nAlgo.\n\n## Preguntas\n1. ¿El descuento aplica también a los envíos?\n\n## Fuera de alcance\nNada.';
+    const slice = candidate({ number: 20, headRefName: 'ronin/5/slice-1', headRefOid: 'h2', body });
+    expect(autoMergeBlockers(slice, none, { 20: 'h2' }).waits).toEqual(['que se respondan las preguntas de la descripción']);
+  });
 });
 
 describe('sweepAutoMerge', () => {
@@ -107,6 +134,27 @@ describe('sweepAutoMerge', () => {
     expect(mergePullRequest).toHaveBeenCalledTimes(1);
     expect(mergePullRequest).toHaveBeenCalledWith(10);
     expect(commentOnSpecPr).toHaveBeenCalledWith(10, expect.stringContaining('Mergeado por auto-merge'));
+  });
+
+  it('merges a slice PR once its internal review is done for the head', async () => {
+    listOpenPrsForAutoMerge.mockResolvedValue([candidate({ number: 30, headRefName: 'ronin/5/slice-1', headRefOid: 'h30' })]);
+
+    await sweepAutoMerge();
+    expect(mergePullRequest).not.toHaveBeenCalled();
+
+    internalReviewed = { 30: 'h30' };
+    await sweepAutoMerge();
+    expect(mergePullRequest).toHaveBeenCalledWith(30);
+  });
+
+  it('the first time, merges the slice PRs that were already open without their internal review', async () => {
+    internalSeeded = false;
+    listOpenPrsForAutoMerge.mockResolvedValue([candidate({ number: 31, headRefName: 'ronin/6/slice-1', headRefOid: 'h31' }), candidate({ number: 32 })]);
+
+    await sweepAutoMerge();
+
+    expect(seedInternalReviews).toHaveBeenCalledWith([expect.objectContaining({ number: 31, headRefOid: 'h31' })]);
+    expect(mergePullRequest).toHaveBeenCalledWith(31);
   });
 
   it('only waits, silently, while something is missing', async () => {
