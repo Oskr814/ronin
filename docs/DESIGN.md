@@ -151,10 +151,10 @@ Scaffold en TypeScript (`pnpm tick` corre un tick y termina — lo invoca el cro
 | `exploration/` | exploración y su PR rodante (§11) |
 | `server/` | el servidor de ronin: su API (los webhooks, con el dispatcher de eventos y el handler por evento, §14; el login y los datos del tablero, §15) y los dos listeners |
 | `web/` | la aplicación web del tablero, archivos estáticos sin build (§15) |
-| `dashboard-web/` | las páginas del tablero ya pasadas a React, que `app.js` monta (§15) |
+| `apps/dashboard/` | las páginas del tablero ya pasadas a React, que `app.js` monta (§15) |
 | `changelog/` | publicación del changelog en cada release |
 
-**Imports:** dentro de una carpeta se importa el archivo directo (`./flow.js`); entre features, por el barrel de la carpeta (`../review/index.js`), que reexporta todo lo que no es entrada. `core/` no tiene barrel y se importa por archivo (`../core/config.js`): `config.ts` falla al cargar si faltan env vars, y módulos como `server/api/webhooks/events.ts` tienen que poder cargarse sin ellas. Los workers (`*-worker.ts`, `*/worker.ts`), el handler por evento (`server/api/webhooks/handler.ts`) y el servidor (`server/index.ts`) son procesos aparte: no van en los barrels y se lanzan por su ruta relativa a `src/` (`launchWorker('preview/worker', …)`). Los tests importan y mockean el archivo concreto, no el barrel.
+**Imports:** dentro de una carpeta se importa el archivo directo (`./flow.js`); entre features, por el barrel de la carpeta (`../review/index.js`), que reexporta todo lo que no es entrada. `core/` no tiene barrel y se importa por archivo (`../core/config.js`): `config.ts` falla al cargar si faltan env vars, y módulos como `apps/api/webhooks/events.ts` tienen que poder cargarse sin ellas. Los workers (`*-worker.ts`, `*/worker.ts`), el handler por evento (`apps/api/webhooks/handler.ts`) y el servidor (`apps/api/main.ts`) son procesos aparte: no van en los barrels y se lanzan por su ruta relativa a `src/` (`launchWorker('preview/worker', …)`). Los tests importan y mockean el archivo concreto, no el barrel.
 
 Los módulos del núcleo (en `core/` salvo que se indique otra carpeta); los de cada feature se describen en su sección:
 
@@ -500,11 +500,11 @@ Antes, cada evento de GitHub que importaba despertaba un tick completo (todos lo
 
 Ahora cada evento tiene su handler:
 
-- **Dispatcher** (`server/api/webhooks/events.ts`, `scopeForEvent`): traduce el evento a un *scope*: los flujos que ese evento puede mover y los recursos que toca. Por ejemplo, un comentario en un PR mueve `issues`, `idle-commands`, `review` y `exploration` sobre `pr-N`; el CI que termina mueve `auto-merge` e `issues` sobre cada PR de la suite; un PR en una rama `ronin/<issue>/…` suma `issue-<issue>`. Un evento que nada mueve se ignora.
+- **Dispatcher** (`apps/api/webhooks/events.ts`, `scopeForEvent`): traduce el evento a un *scope*: los flujos que ese evento puede mover y los recursos que toca. Por ejemplo, un comentario en un PR mueve `issues`, `idle-commands`, `review` y `exploration` sobre `pr-N`; el CI que termina mueve `auto-merge` e `issues` sobre cada PR de la suite; un PR en una rama `ronin/<issue>/…` suma `issue-<issue>`. Un evento que nada mueve se ignora.
 - **Comandos directos**: un comando en un PR (`/help` y comandos mal escritos, `/preview`, `/resolve-conflicts`, `/auto-merge`) va solo al flujo `pr-commands`, que corre `findUnprocessedMentions` de ese PR y nada más: no lista issues ni PRs ni corre el pipeline. `/fix-comments` sí sigue por su flujo, porque lo atiende el pipeline del issue o la review. Como ese handler no toma el issue, el tick puede estar leyendo el mismo comando: cada comentario se toma con un lock propio y, una vez tomado, se vuelve a mirar si ya está procesado (`claimComment` en `mentions.ts`), así nunca se responde dos veces.
 - **Lo propio no cuenta**: los comentarios y reviews de la cuenta de ronin no lanzan nada; sus PRs sí (uno recién abierto es parte del stack de un issue).
-- **Servidor** (`server/api/webhooks/github.ts`, en el servidor de ronin, §15.2): recibe los eventos en `POST /api/webhooks/github`, pone 👀 en un comentario que menciona a ronin apenas llega (`addAckReaction`), antes de procesarlo. Junta los eventos sobre lo mismo durante `WEBHOOK_DEBOUNCE_MS` (1 s: lo que llega después lo junta el handler que espera) y lanza un handler. Distintos PRs o issues tienen handlers propios, a la vez.
-- **Handler** (`server/api/webhooks/handler.ts`): un proceso por evento, como los workers. Corre los mismos flujos que el tick (`runScoped` en `tick.ts`), pero solo los del scope y solo los jobs que tocan sus recursos, con un discovery acotado (`findPrsNeedingReview([N])`, `findIssueCommands([N])`). A un comentario en un PR, que llega sin rama, le busca el issue del PR. Si ya hay otro handler esperando para el mismo scope, no hace falta otro: el que espera va a leer todo cuando le toque.
+- **Servidor** (`apps/api/webhooks/github.ts`, en el servidor de ronin, §15.2): recibe los eventos en `POST /api/webhooks/github`, pone 👀 en un comentario que menciona a ronin apenas llega (`addAckReaction`), antes de procesarlo. Junta los eventos sobre lo mismo durante `WEBHOOK_DEBOUNCE_MS` (1 s: lo que llega después lo junta el handler que espera) y lanza un handler. Distintos PRs o issues tienen handlers propios, a la vez.
+- **Handler** (`apps/api/webhooks/handler.ts`): un proceso por evento, como los workers. Corre los mismos flujos que el tick (`runScoped` en `tick.ts`), pero solo los del scope y solo los jobs que tocan sus recursos, con un discovery acotado (`findPrsNeedingReview([N])`, `findIssueCommands([N])`). A un comentario en un PR, que llega sin rama, le busca el issue del PR. Si ya hay otro handler esperando para el mismo scope, no hace falta otro: el que espera va a leer todo cuando le toque.
   - **Reiniciar el servidor no lo corta:** el servicio tiene `KillMode=process`, así que un deploy detiene solo el servidor, y cada handler termina su evento y sale solo.
   - **Tope:** tiene `EVENT_HANDLER_TIMEOUT_MINUTES` (120 por defecto) para todo el evento: esperar su turno y un cupo, y cada agente que lance. Pasado ese tiempo se corta junto con su grupo de procesos, que incluye el `claude -p` que esté corriendo. Los workers que lanzó tienen su propio grupo y siguen. Sus locks llevan su pid, así que el siguiente proceso los toma, y el tablero muestra la corrida como cortada.
 - **Tick** (el planificador del servidor con `DATABASE_URL`, o el cron sin ella): sigue corriendo todos los flujos sobre todo, como conciliación. Levanta lo que ningún handler hizo (un webhook que no llegó, un runner apagado) y el trabajo periódico (exploración nocturna, poda de estado).
@@ -523,10 +523,10 @@ Ahora cada evento tiene su handler:
 **Estado local entre procesos**: `.ronin-state.json` se escribe con un lock de archivo además de la cola en memoria, y atómicamente (se escribe aparte y se renombra), así nadie lee un archivo a medio escribir y lo toma por vacío.
 
 **La cola de trabajos** (#235, etapa 3; `jobs/`, solo con `DATABASE_URL`). El tick y cada handler son trabajos en la tabla `jobs`, en vez de lanzarlos el cron y el servidor:
-- **El planificador** (`jobs/scheduler.ts`), dentro del servidor, pone en cola el tick a sus horas: cada `TICK_INTERVAL_MINUTES` (30, editable en Ajustes) contados desde la hora en punto, así que :00 y :30. Uno ya en cola no se vuelve a encolar: un tick que sigue corriendo cuando llega la hora tiene exactamente uno detrás, como hacía `.tick.pending`. Cada 6 horas borra los logs y las corridas de más de 14 días y los trabajos terminados, lo que hacía el script del cron.
+- **El planificador** (`apps/api/jobs/scheduler.ts`), dentro del servidor, pone en cola el tick a sus horas: cada `TICK_INTERVAL_MINUTES` (30, editable en Ajustes) contados desde la hora en punto, así que :00 y :30. Uno ya en cola no se vuelve a encolar: un tick que sigue corriendo cuando llega la hora tiene exactamente uno detrás, como hacía `.tick.pending`. Cada 6 horas borra los logs y las corridas de más de 14 días y los trabajos terminados, lo que hacía el script del cron.
 - **El webhook** encola su handler (tipo `event`) después de juntar la ráfaga; uno idéntico ya en cola no se duplica.
-- **El runner local** (`jobs/runner.ts`) toma los trabajos cada 2 s, con `FOR UPDATE SKIP LOCKED` y un tope por tipo (un tick, 20 handlers), y arranca cada uno en su proceso, como `launchWorker`, con `RONIN_JOB_ID`.
-- **El proceso del trabajo** (`jobs/child.ts`, `runAsJob`) renueva su lease cada 30 s y marca cómo terminó (`done`, `failed`, o cortado por una señal). Por eso un reinicio del servidor no lo corta ni lo duplica. Uno que deja de renovar el lease (su proceso murió) queda `lost`: no se reintenta, el próximo tick concilia.
+- **El runner local** (`apps/api/jobs/runner.ts`) toma los trabajos cada 2 s, con `FOR UPDATE SKIP LOCKED` y un tope por tipo (un tick, 20 handlers), y arranca cada uno en su proceso, como `launchWorker`, con `RONIN_JOB_ID`.
+- **El proceso del trabajo** (`apps/api/jobs/child.ts`, `runAsJob`) renueva su lease cada 30 s y marca cómo terminó (`done`, `failed`, o cortado por una señal). Por eso un reinicio del servidor no lo corta ni lo duplica. Uno que deja de renovar el lease (su proceso murió) queda `lost`: no se reintenta, el próximo tick concilia.
 - **El cron sobra:** `pnpm cron:remove`. El script que instala sale sin hacer nada si encuentra `DATABASE_URL`, por si quedó.
 
 **Métricas**: el handler loguea `event_start` con `delayMs` (desde que llegó el evento hasta que tiene sus recursos) y `event_complete` al terminar, junto al `tick_complete` del tick.
@@ -594,12 +594,12 @@ src/server/
     auth.ts            /api/auth/login, /callback, /logout y /me
     dashboard*.ts      los datos del tablero
     portal*.ts         la API del portal y su administración (§16)
-src/web/               la aplicación: HTML, CSS, JS y fuentes, sin build; marked y DOMPurify en vendor/
-src/dashboard-web/     las páginas ya pasadas a React, que app.js monta donde van: Vite las arma en dist/web/pages.js
+src/apps/dashboard/public/               la aplicación: HTML, CSS, JS y fuentes, sin build; marked y DOMPurify en vendor/
+src/apps/dashboard/     las páginas ya pasadas a React, que app.js monta donde van: Vite las arma en dist/public/dashboard/pages.js
   src/pages/           una por archivo, o una carpeta cuando tiene varios (despliegues/: la página, el diálogo, lo que comparten)
   src/lib/             lo que no dibuja (las fechas)
   src/host.ts          lo que una página le pide a app.js
-src/portal-web/        la página del portal de pedidos
+src/apps/portal/        la página del portal de pedidos
 ```
 
 - **Listener público** (`SERVER_PORT`, 3939; `WEBHOOK_PORT` se sigue leyendo si no está). Es al que llega `https://ronin-agent.redmotoshn.com`, por el túnel de Cloudflare y nginx-proxy-manager. Atiende `POST /api/webhooks/github`, más el alias `/webhook` de la ruta anterior, y, con el portal configurado, el portal de pedidos (§16): su página y `/api/portal/*`. Cualquier otra ruta responde 404: el tablero y su API nunca se sirven ahí. La restricción está en el código, así que no depende de cómo esté configurado el proxy.
@@ -609,7 +609,7 @@ src/portal-web/        la página del portal de pedidos
   - **Quién lo ve:** el 8443 queda fuera de `PREVIEW_PORT_RANGE`, lo único que la política de Tailscale les abre a externos (§12), así que solo lo ve el dueño, que tiene `*` sobre `tag:media`.
   - **HTTPS y LAN:** `tailscale serve` pone el HTTPS que necesita la cookie de sesión. Desde la LAN se entra por la misma URL, con Tailscale en el equipo.
   - **Solo con login configurado:** arranca solo si están las variables del login (15.3); sin ellas, el servidor atiende únicamente los webhooks.
-- **La aplicación** son archivos estáticos sin datos adentro: todo lo pide a la API. Se sirve sin sesión, y cuando la API responde 401 muestra *Entrar con GitHub*, con el motivo si la sesión venció mientras se usaba. Si en ese momento hay algo escrito (un diálogo abierto, un comentario a medias), la página se queda: un aviso arriba abre el login en otra pestaña y el diálogo vuelve a dejar enviar. Una ruta que no es un archivo (`/i/<ítem>`) devuelve la app. `pnpm build` copia `src/web/` a `dist/web/`.
+- **La aplicación** son archivos estáticos sin datos adentro: todo lo pide a la API. Se sirve sin sesión, y cuando la API responde 401 muestra *Entrar con GitHub*, con el motivo si la sesión venció mientras se usaba. Si en ese momento hay algo escrito (un diálogo abierto, un comentario a medias), la página se queda: un aviso arriba abre el login en otra pestaña y el diálogo vuelve a dejar enviar. Una ruta que no es un archivo (`/i/<ítem>`) devuelve la app. `pnpm build` copia `src/apps/dashboard/public/` a `dist/public/dashboard/`.
 - **Errores aislados.** Un pedido que tira un error responde 500 y se loguea, sin tirar el proceso que recibe los webhooks. Si igual se cae, systemd lo reinicia y el tick levanta lo que llegó mientras tanto.
 - **La ruta de los webhooks.** Pasó de `/webhook` a `/api/webhooks/github`. `scripts/init-webhooks.sh <url>` busca el hook de ronin por la URL nueva o por la vieja del mismo dominio y le cambia la URL, en vez de crear un segundo hook que entregaría todo dos veces. El alias `/webhook` se puede sacar cuando ningún hook apunte ahí.
 
@@ -626,9 +626,9 @@ La tailnet ya limita quién llega. El login suma una segunda barrera, y el token
 - **Organizaciones.** Si una organización restringe las OAuth Apps de terceros, un admin tiene que aprobar el tablero para que el token vea sus repos. Hasta entonces, GitHub responde 403 o 404 al comentar, y la página lo explica.
 - **Lo demás:**
   - Un pedido que no es `GET` y trae un `Origin` de otro sitio recibe 403. Las acciones además solo aceptan JSON, que un formulario de otro sitio no puede mandar.
-  - La app se sirve con una CSP que solo permite scripts propios (`script-src 'self'`, `frame-ancestors 'none'`). Por eso las fuentes van en `src/web/fonts/` y no se cargan de Google Fonts.
+  - La app se sirve con una CSP que solo permite scripts propios (`script-src 'self'`, `frame-ancestors 'none'`). Por eso las fuentes van en `src/apps/dashboard/public/fonts/` y no se cargan de Google Fonts.
   - Todo lo que viene de los agentes se escapa antes de insertarse en la página, y además ya pasó por `redact()` al escribirse.
-  - El markdown de GitHub (la descripción de un PR de cualquiera, un comentario) no es confiable: lo interpreta `marked` y lo limpia `DOMPurify`, copiados en `src/web/vendor/` porque la CSP no deja cargar scripts de afuera. Se descartan estilos, formularios e iframes, y cualquier link que no sea `http(s)`, `mailto` o `#`. Las imágenes pasan a ser links, porque la CSP tampoco las cargaría.
+  - El markdown de GitHub (la descripción de un PR de cualquiera, un comentario) no es confiable: lo interpreta `marked` y lo limpia `DOMPurify`, copiados en `src/apps/dashboard/public/vendor/` porque la CSP no deja cargar scripts de afuera. Se descartan estilos, formularios e iframes, y cualquier link que no sea `http(s)`, `mailto` o `#`. Las imágenes pasan a ser links, porque la CSP tampoco las cargaría.
 
 **Qué repos ve cada sesión (#106, `server/api/access.ts`).**
 - **Administradores:** los de `DASHBOARD_ADMINS` y los que se hagan administradores en Ajustes (§19.3) ven todos los repos. Sin definir, no hay ninguno: estar en `DASHBOARD_ALLOWED_USERS` deja entrar, pero no hace administrador. El arranque dice en el log quiénes son.
@@ -697,7 +697,7 @@ La caché es la misma idea que la de los repos: `DASHBOARD_GITHUB_TTL_SECONDS`, 
 
 #### 15.9 API
 
-Todo, salvo los webhooks y `/api/auth/*`, pide sesión. Las rutas pasan a Hono de a un grupo (#235, etapa 6): cada grupo vive con su dominio (`portal/routes-dashboard.ts`, `meetings/routes.ts`, `deploy/routes.ts`, `metrics/routes.ts`, `exploration/routes.ts`, `ajustes/routes.ts`, `runs/routes.ts` e `items/routes.ts`, con lo que leen en `items/service.ts`) y `server/dashboard-app.ts` los monta; `server/api/dashboard.ts` solo le entrega cada pedido. Las rutas y lo que devuelven no cambian:
+Todo, salvo los webhooks y `/api/auth/*`, pide sesión. Las rutas pasan a Hono de a un grupo (#235, etapa 6): cada grupo vive con su dominio (`portal/routes-dashboard.ts`, `meetings/routes.ts`, `deploy/routes.ts`, `metrics/routes.ts`, `exploration/routes.ts`, `ajustes/routes.ts`, `runs/routes.ts` e `items/routes.ts`, con lo que leen en `items/service.ts`) y `apps/api/routes.ts` los monta; `server/api/dashboard.ts` solo le entrega cada pedido. Las rutas y lo que devuelven no cambian:
 
 | Ruta | Qué devuelve |
 |---|---|
@@ -954,10 +954,10 @@ src/portal/            el dominio: cuentas, pedidos, la conversación, el protot
   routes-requests.ts   los pedidos de la persona (/api/portal/requests/*)
   http.ts              lo que comparten: la configuración y quién pregunta
   routes-dashboard.ts  el portal desde el tablero, en Hono: los pedidos (/api/pedidos/*) y las cuentas (/api/portal-admin/*)
-src/server/portal.ts   lo que el listener público atiende del portal, y monta su API
+src/apps/api/http/portal.ts   lo que el listener público atiende del portal, y monta su API
 src/server/api/portal-admin.ts  la administración de las cuentas: crear, reenviar el enlace, editar
 src/server/api/dashboard-portal.ts  los pedidos en el tablero: la lista, la ficha y su actividad
-src/portal-web/        la página, en React con Vite (`pnpm build` la arma en dist/portal-web, `pnpm portal:dev` para trabajarla):
+src/apps/portal/        la página, en React con Vite (`pnpm build` la arma en dist/public/portal, `pnpm portal:dev` para trabajarla):
   src/api.ts           el cliente de la API, tipado desde portal/routes.ts, y la versión de la página
   src/App.tsx          las rutas (/, /p/<n>, /contrasena) y la sesión
   src/pages/           Gate (entrar, la contraseña olvidada y la del enlace), NewRequest, RequestView (un pedido: la conversación y lo que se puede hacer ahora)
@@ -1592,7 +1592,7 @@ Cuánto se aprovecha el plan de cada cuenta de Claude (19.11), contando todo lo 
 
 Antes de optimizar nada se mide. `core/timing.ts` abre una medición (`measure`, un `AsyncLocalStorage`) y cualquier código que corre adentro suma sus tramos con `timed(nombre, fn)` sin que se lo pasen. Hoy el único tramo es `github`: las llamadas con `gh` de `core/github.ts` y las de `fetch` del tablero (como la persona, sus permisos, los usuarios). Los tramos que corren a la vez se suman, así que el de GitHub dice cuánto se gastó ahí, no cuánto se esperó.
 
-- **Cada request de `/api/*`** (`server/timing.ts`, en los dos listeners):
+- **Cada request de `/api/*`** (`apps/api/http/timing.ts`, en los dos listeners):
   - responde con `Server-Timing`, con el total hasta la cabecera y cada tramo con sus llamadas;
   - si pasa de `SLOW_REQUEST_MS` (500), deja una línea `slow_request` con la ruta (sin números ni ids: `/api/portal/requests/:n/interview`), el estado y los tramos.
 
@@ -1614,11 +1614,11 @@ Antes de optimizar nada se mide. `core/timing.ts` abre una medición (`measure`,
 - [x] Recurrencia vía cron (no tmux) — `scripts/setup-cron.sh`, con `flock` para que un host nunca corra dos ticks solapados
 - [x] Límite de uso de Claude como estado transitorio, no como bloqueo — `ClaudeUsageLimitError` (§3)
 - [x] Limpieza de worktrees cuando su PR ya no está abierto — `sweepOrphanedWorktrees` (§3.1)
-- [x] Reacción por evento: un handler por evento de GitHub, el tick como conciliación — `server/api/webhooks/handler.ts`, `core/locks.ts` (§14)
+- [x] Reacción por evento: un handler por evento de GitHub, el tick como conciliación — `apps/api/webhooks/handler.ts`, `core/locks.ts` (§14)
 - [x] Tablero web en la tailnet, con login de GitHub, la ficha de cada ítem, acciones y la revisión de PRs (§15.14) — `server/`, `web/`, `core/run-record.ts`, `core/claude-usage.ts` (§15)
 - [x] Despliegues desde el tablero: releases con todo lo mergeado o solo los PRs elegidos (cherry-pick probado), el seguimiento de su workflow y el aviso a los pedidos que llevan — `deploy/`, `server/api/dashboard-despliegues.ts` (§18)
 - [x] Reuniones: las notas que se suben al tablero, la lectura de ronin y la creación de lo aprobado en GitHub y Linear — `meetings/`, `server/api/dashboard-meetings*.ts` (§17)
-- [x] Portal de pedidos en `ronin-agent.redmotoshn.com`: cuentas con email y contraseña, conversación con imágenes, prototipo, PR con `ronin:auto-merge` o issue para el equipo, y correos — `portal/`, `portal-web/` (§16)
+- [x] Portal de pedidos en `ronin-agent.redmotoshn.com`: cuentas con email y contraseña, conversación con imágenes, prototipo, PR con `ronin:auto-merge` o issue para el equipo, y correos — `portal/`, `apps/portal/` (§16)
 - [x] ~~Evidencia visual de e2e en el PR~~ — eliminado (el `src/evidence.ts` de entonces; el `evidence-store.ts` actual es el de la exploración, §11.5); no reemplazaba la supervisión humana y la calidad no era suficiente — ver [issue #4](https://github.com/Oskr814/ronin/issues/4)
 
 **Pendiente, fuera de este scaffold:**

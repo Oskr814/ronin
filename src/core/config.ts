@@ -36,7 +36,7 @@ export const config = {
   // see docs/DESIGN.md §7.1. Containment relies on every task running
   // inside its own disposable git worktree, never the main checkout.
   agentTaskTimeoutMs: Number(process.env.AGENT_TASK_TIMEOUT_MINUTES ?? 30) * 60_000,
-  // The whole run of one webhook event's handler (server/api/webhooks/
+  // The whole run of one webhook event's handler (apps/api/webhooks/
   // handler.ts): waiting for its turn and a slot, and every agent its flows
   // start. Past it, the handler ends itself and the agent it's running.
   // Restarting the server no longer stops handlers (KillMode=process), so
@@ -80,7 +80,7 @@ export const config = {
   // global-across-repos. Every flow shares one job pool (tick.ts's runJobs),
   // so this bounds issues, external reviews, /spikes and changelog entries
   // together.
-  // How often the scheduler queues the tick (jobs/scheduler.ts), counted
+  // How often the scheduler queues the tick (apps/api/jobs/scheduler.ts), counted
   // from the hour. Only with DATABASE_URL: without it, cron decides.
   tickIntervalMinutes: Number(process.env.TICK_INTERVAL_MINUTES ?? 30),
   tickConcurrency: Number(process.env.TICK_CONCURRENCY ?? 3),
@@ -144,7 +144,7 @@ export const config = {
   serverPort: Number(process.env.SERVER_PORT ?? process.env.WEBHOOK_PORT ?? 3939),
   // How long to coalesce a burst of webhook deliveries about the same issue
   // or PR (e.g. a review's several inline comments) into a single event
-  // handler — see server/api/webhooks/github.ts's scheduleHandler. Short: whatever
+  // handler — see apps/api/webhooks/github.ts's scheduleHandler. Short: whatever
   // lands after the window is coalesced anyway, by handler.ts keeping at
   // most one handler waiting per scope.
   webhookDebounceMs: Number(process.env.WEBHOOK_DEBOUNCE_MS ?? 1000),

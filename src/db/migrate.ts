@@ -3,7 +3,7 @@ import type { Db } from './db.js';
 import { migrations } from './migrations/index.js';
 
 // Brings the database up to the last migration. The server runs it when it
-// starts (server/index.ts), and `pnpm db:migrate` by hand. Kysely keeps
+// starts (apps/api/main.ts), and `pnpm db:migrate` by hand. Kysely keeps
 // which ones ran in kysely_migration, and a lock makes two processes
 // starting at once take turns. `schema`: where those two tables go (the
 // tests' own schema; by default, public).

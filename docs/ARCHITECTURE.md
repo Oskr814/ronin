@@ -44,7 +44,7 @@ Cuando una etapa de #235 se mergea, lo que cambió se pasa a `DESIGN.md` y la se
 
 **Código:** unas 36 mil líneas de TypeScript y JS, con 130 archivos de tests y casi sin dependencias.
 - **Servidor:** `node:http`, con las rutas resueltas en cada archivo de `src/server/api/`.
-- **Tablero:** un solo `src/web/app.js` de unas 6.400 líneas, JS plano sin build, con estado global y HTML armado como texto. El portal (`src/portal-web/`) sigue el mismo patrón.
+- **Tablero:** un solo `src/apps/dashboard/public/app.js` de unas 6.400 líneas, JS plano sin build, con estado global y HTML armado como texto. El portal (`src/apps/portal/`) sigue el mismo patrón.
 
 **Instalación:** a mano. Node y pnpm, `.env`, `repos.json`, el cron (`scripts/setup-cron.sh`), la unidad de systemd (`pnpm server:setup`), `tailscale serve`, un `claude login` por cuenta y `gh`. Recuperar ronin en otra máquina es repetir todo eso.
 
@@ -84,6 +84,47 @@ Cuando una etapa de #235 se mergea, lo que cambió se pasa a `DESIGN.md` y la se
 - **Toda ejecución sobre el código pasa por `Host`,** y la única implementación por ahora es la local.
 - **La API tiene contratos tipados,** y el frontend se construye con Vite.
 - **Todo eso se instala con Docker Compose.**
+
+### Estructura del código
+
+`src/` tiene tres capas y las apps, y las dependencias van en una sola dirección: **`apps` → `domains` → `platform`**. Un dominio nunca importa de `apps/`; `platform/` no importa de ningún dominio; las apps web solo usan los *tipos* de las rutas de los dominios.
+
+```
+src/
+├── apps/              lo que se ejecuta o se sirve; arma, no decide
+│   ├── api/           el servidor: main.ts, http/ (listeners, login, estáticos, Hono), routes.ts (monta los dominios), jobs/ (cola), tick/, webhooks/
+│   ├── dashboard/     el tablero: public/ (el marco: app.js, app.css, fuentes) y src/pages/<dominio>/ en React
+│   └── portal/        el portal de pedidos: src/pages/, src/components/
+├── domains/           la lógica de ronin, una carpeta por dominio, con sus rutas (routes.ts), su lógica y su almacenamiento
+│                      portal, meetings, deploys, explorations, metrics, settings, items, runs, access,
+│                      slices, review, commands, previews, changelog, product-app
+├── platform/          lo técnico que usan todos: db/, store/, fs/, locks/, workers/, github/, linear/, claude/, errors.ts, config, logger, timing
+└── ui/                React compartido por el tablero y el portal: components/, api-client.ts, time.ts
+```
+
+**Reglas:**
+- **Cada cosa en un solo lugar.** Lo que dos dominios necesitan va a `platform/` (si es técnico) o a un dominio propio (si es de ronin: quién ve qué es `domains/access`); lo que dos apps web necesitan, a `ui/`. Nada se copia «como lo hace el otro».
+- **Un dominio no sabe de HTTP salvo en su `routes.ts`**, que usa las piezas comunes de `apps/api/http/` (validar JSON, solo administradores, lo que la sesión no ve es un 404) en vez de declararlas.
+- **Las pruebas van junto a su archivo** (`x.ts` y `x.test.ts`); las que cruzan dominios (el HTTP del tablero, Postgres, los recorridos con Playwright), en `test/`.
+- **Una carpeta que crece se parte en subcarpetas**, no en archivos más largos.
+
+**Lo repetido y su pieza común** (relevado el 2026-10-21):
+
+| Hoy, repetido | Pieza común |
+|---|---|
+| El almacén con dos backends (Postgres o archivos) escrito por cada módulo — reuniones, pedidos, cuentas, ajustes, despliegues —, con locks de números mágicos | `platform/store/`: `documentStore` (por número), `collectionStore` (lista entera), un registro de locks |
+| Escribir JSON con tmp + rename y el lock de archivo, en `portal/json-store.ts` y copias | `platform/fs/atomic-json.ts`, `platform/locks/` |
+| En cada `routes.ts`: solo JSON (415), solo administradores, `z.record(...)`, el tope del cuerpo, `owner/name`, «no lo ves: 404» | `apps/api/http/middleware.ts` |
+| ~15 clases de error de dominio con su status, y la lista de cada `onError` | `platform/errors.ts`: `DomainError(message, { status, details })` |
+| `pidAlive` (6 copias), lanzar un worker y relanzar los que murieron, el arranque de cada worker | `platform/workers/`: `runWorker`, `trackedWorker`, `worktreeLock` |
+| Llamadas a la API de GitHub con sus headers y errores, en 5 archivos; `owner/name` partido a mano | `platform/github/rest.ts`, `parseRepo()` |
+| El cliente de la API, las fechas y los chips de estado en el tablero y el portal | `ui/api-client.ts`, `ui/time.ts`, `ui/components/`; el estado de un pedido, en `domains/portal/status.ts` |
+
+**Cómo se llega**, en PRs que solo mueven o solo unifican, nunca las dos cosas:
+1. `apps/`: el servidor, la cola, el tick y las dos apps web. **Hecho.**
+2. `domains/`: lo que hoy está en `server/api/` y en las carpetas de dominio, con `access` como dominio propio.
+3. `platform/`: `core/` y `db/`.
+4. Una pieza común por PR, de la tabla de arriba, reemplazando todas sus copias.
 
 ### Datos: Postgres
 
@@ -170,7 +211,7 @@ Lo que **desaparece**:
 | 3.4 | Índice de corridas | recorrer `logs/runs/` |
 | 3.5 | Cuota de las cuentas de Claude | `logs/usage/` |
 
-**Hecho (3.1):** `jobs/store.ts`, `jobs/runner.ts`, `jobs/scheduler.ts`, `jobs/child.ts` (DESIGN §14). Por ahora sin reintentos: un trabajo cuyo lease vence queda `lost` y el próximo tick concilia, como antes.
+**Hecho (3.1):** `apps/api/jobs/store.ts`, `apps/api/jobs/runner.ts`, `apps/api/jobs/scheduler.ts`, `apps/api/jobs/child.ts` (DESIGN §14). Por ahora sin reintentos: un trabajo cuyo lease vence queda `lost` y el próximo tick concilia, como antes.
 
 **Hecho (3.2):** `core/locks-db.ts`: tablas `locks` y `lock_waits`. `locks.ts` conserva su interfaz (`withResourceLock`, `pinResources`, `withSlots`) y elige la base o los archivos según `DATABASE_URL`. Los locks de los workers (preview, portal, reuniones) y el del estado local siguen en archivos: son de esta máquina y el paso 3.3 rediseña el segundo.
 
@@ -201,23 +242,23 @@ La única implementación es `LocalHost`. El código de dominio no vuelve a llam
 - **Contratos:** los tipos de cada endpoint se exportan desde el servidor y el frontend los importa (el cliente de Hono, o tipos compartidos). Un cambio en la API rompe el build del frontend, no la página.
 - **No cambia:** los dos listeners (público y tailnet), la autenticación del tablero con GitHub, la sesión del portal, las cabeceras de seguridad y `X-Portal-Version`.
 - **Migración:** por grupo de rutas (portal, pedidos, despliegues, métricas, ajustes, ítems). Hono se monta en el servidor actual, y las rutas viejas siguen respondiendo hasta que cada grupo pasa.
-- **Carpetas por dominio:** las rutas de un dominio viven con él, junto a su servicio y su repositorio: `portal/routes.ts`, `deploy/routes.ts`… Lo que comparten todas (el cuerpo JSON con su tope, la validación con zod, los errores) está en `server/hono.ts`. Al terminar la migración, `server/app.ts` monta cada dominio y `server/api/` queda vacío.
+- **Carpetas por dominio:** las rutas de un dominio viven con él, junto a su servicio y su repositorio: `portal/routes.ts`, `deploy/routes.ts`… Lo que comparten todas (el cuerpo JSON con su tope, la validación con zod, los errores) está en `apps/api/http/hono.ts`. Al terminar la migración, `server/app.ts` monta cada dominio y `server/api/` queda vacío.
 
-**Hecho (6, portal):** la API del portal (`/api/portal/*`) en Hono: `portal/routes.ts` y `portal/routes-requests.ts`, montadas por `server/portal.ts` con `@hono/node-server` sin tocar los `Request`/`Response` globales. Respondía y sigue respondiendo lo mismo: las pruebas HTTP de antes pasan sin cambios. `PortalApi` es el tipo que va a usar el cliente de la etapa 7.
+**Hecho (6, portal):** la API del portal (`/api/portal/*`) en Hono: `portal/routes.ts` y `portal/routes-requests.ts`, montadas por `apps/api/http/portal.ts` con `@hono/node-server` sin tocar los `Request`/`Response` globales. Respondía y sigue respondiendo lo mismo: las pruebas HTTP de antes pasan sin cambios. `PortalApi` es el tipo que va a usar el cliente de la etapa 7.
 
-**Hecho (6, tablero: el portal):** el tablero pasa a Hono de a un grupo. `server/dashboard-app.ts` monta los que ya pasaron y `handleDashboard` le entrega sus paths, con la sesión y el acceso que ya revisó `tailnet.ts` en `c.env`. Lo responde `answer()` (`server/hono.ts`), que escribe con `writeHead` y `end` como el resto del tablero. Primer grupo: el portal visto desde el tablero, `/api/pedidos/*` y `/api/portal-admin/*`, en `portal/routes-dashboard.ts`. Lo que ve cada sesión sale de `server/api/visible.ts`. Segundo grupo: las reuniones (`/api/reuniones/*`, `meetings/routes.ts`); el permiso de cada cambio (`refusal`) también sale de `visible.ts`. Tercero: los despliegues (`/api/despliegues/*`, `deploy/routes.ts`); un error de dominio puede sumar datos a su respuesta (`details`: el plan nuevo de un release). Cuarto: las métricas (`/api/metricas/*`, `metrics/routes.ts`), con la consulta validada con zod. Quinto: las exploraciones (`/api/exploraciones/*`, `exploration/routes.ts`). Sexto: Ajustes (`/api/ajustes/*`, `ajustes/routes.ts`), cada sección con su permiso. Séptimo: las corridas y sus capturas (`/api/runs/*`, `/api/evidence/*`, `runs/routes.ts`); la transcripción en vivo es un `streamSSE` de Hono, y `answer()` escribe una respuesta `text/event-stream` a medida que llega y la corta cuando la persona se va. Octavo y último: el snapshot, Hoy y los ítems (`/api/snapshot`, `/api/today`, `/api/items/*`, `/api/repos/*/issues`), en `items/routes.ts`. Lo que leen pasa a `items/service.ts` y recibe el acceso de la sesión como argumento, en vez del `AsyncLocalStorage` de antes. Con esto **todo el tablero responde desde Hono**: `server/api/dashboard.ts` solo le entrega cada pedido a `server/dashboard-app.ts`. Los servicios de cada grupo siguen en `server/api/` (`dashboard-*.ts`, `ajustes.ts`…): moverlos a su dominio es un cambio aparte, sin apuro. `DashboardApi` es el tipo para el cliente del tablero en la etapa 7.
+**Hecho (6, tablero: el portal):** el tablero pasa a Hono de a un grupo. `apps/api/routes.ts` monta los que ya pasaron y `handleDashboard` le entrega sus paths, con la sesión y el acceso que ya revisó `tailnet.ts` en `c.env`. Lo responde `answer()` (`apps/api/http/hono.ts`), que escribe con `writeHead` y `end` como el resto del tablero. Primer grupo: el portal visto desde el tablero, `/api/pedidos/*` y `/api/portal-admin/*`, en `portal/routes-dashboard.ts`. Lo que ve cada sesión sale de `server/api/visible.ts`. Segundo grupo: las reuniones (`/api/reuniones/*`, `meetings/routes.ts`); el permiso de cada cambio (`refusal`) también sale de `visible.ts`. Tercero: los despliegues (`/api/despliegues/*`, `deploy/routes.ts`); un error de dominio puede sumar datos a su respuesta (`details`: el plan nuevo de un release). Cuarto: las métricas (`/api/metricas/*`, `metrics/routes.ts`), con la consulta validada con zod. Quinto: las exploraciones (`/api/exploraciones/*`, `exploration/routes.ts`). Sexto: Ajustes (`/api/ajustes/*`, `ajustes/routes.ts`), cada sección con su permiso. Séptimo: las corridas y sus capturas (`/api/runs/*`, `/api/evidence/*`, `runs/routes.ts`); la transcripción en vivo es un `streamSSE` de Hono, y `answer()` escribe una respuesta `text/event-stream` a medida que llega y la corta cuando la persona se va. Octavo y último: el snapshot, Hoy y los ítems (`/api/snapshot`, `/api/today`, `/api/items/*`, `/api/repos/*/issues`), en `items/routes.ts`. Lo que leen pasa a `items/service.ts` y recibe el acceso de la sesión como argumento, en vez del `AsyncLocalStorage` de antes. Con esto **todo el tablero responde desde Hono**: `server/api/dashboard.ts` solo le entrega cada pedido a `apps/api/routes.ts`. Los servicios de cada grupo siguen en `server/api/` (`dashboard-*.ts`, `ajustes.ts`…): moverlos a su dominio es un cambio aparte, sin apuro. `DashboardApi` es el tipo para el cliente del tablero en la etapa 7.
 
 ### Frontend
 
 - **Vite, TypeScript y React,** con TanStack Query para la caché y el polling, que el tablero y el portal usan en todos lados.
 - **Primero el portal,** que es chico y aislado: sirve de piloto del build, del despliegue y de los tests de componentes.
 - **Después el tablero, página por página:** cada página nueva en React se monta dentro del marco que dibuja `app.js`, hasta que `app.js` queda vacío.
-- **Las carpetas de cada app web** (`src/portal-web/`, `src/dashboard-web/`): `src/pages/` (una página por archivo, o una carpeta cuando tiene varios: `pages/despliegues/`), `src/components/` (lo que usan varias páginas), `src/lib/` (lo que no dibuja: textos, fechas, imágenes) y, en la raíz de `src/`, la entrada, el cliente de la API y lo que la app comparte (`main.tsx`, `api.ts`).
-- **El build sale en `dist/web` y `dist/portal-web`,** servido por ronin como hoy, con nombres versionados por hash.
+- **Las carpetas de cada app web** (`src/apps/portal/`, `src/apps/dashboard/`): `src/pages/` (una página por archivo, o una carpeta cuando tiene varios: `pages/despliegues/`), `src/components/` (lo que usan varias páginas), `src/lib/` (lo que no dibuja: textos, fechas, imágenes) y, en la raíz de `src/`, la entrada, el cliente de la API y lo que la app comparte (`main.tsx`, `api.ts`).
+- **El build sale en `dist/public/dashboard` y `dist/public/portal`,** servido por ronin como hoy, con nombres versionados por hash.
 
-**Hecho (7, portal):** la página del portal en React (`src/portal-web/src/`), con Vite y TanStack Query, sobre el cliente `hc<PortalApi>`: los tipos de cada respuesta salen de las rutas, y `pnpm typecheck` revisa también la página. Se ve y se comporta igual que la de antes: las 16 pantallas (escritorio y teléfono) dieron idénticas píxel a píxel con los mismos datos, y un recorrido de 40 pasos (entrar, pedir, responder, la entrevista, el resumen, el prototipo, cancelar, el historial, el tema, salir) dejó lo mismo en las dos. El CSS, `theme.js` y el ícono quedan en `public/`, tal cual. Pruebas de componentes con jsdom y Testing Library.
+**Hecho (7, portal):** la página del portal en React (`src/apps/portal/src/`), con Vite y TanStack Query, sobre el cliente `hc<PortalApi>`: los tipos de cada respuesta salen de las rutas, y `pnpm typecheck` revisa también la página. Se ve y se comporta igual que la de antes: las 16 pantallas (escritorio y teléfono) dieron idénticas píxel a píxel con los mismos datos, y un recorrido de 40 pasos (entrar, pedir, responder, la entrevista, el resumen, el prototipo, cancelar, el historial, el tema, salir) dejó lo mismo en las dos. El CSS, `theme.js` y el ícono quedan en `public/`, tal cual. Pruebas de componentes con jsdom y Testing Library.
 
-**Hecho (7, tablero: Despliegues):** el tablero pasa a React por páginas. `src/dashboard-web/` se arma con Vite en un solo `dist/web/pages.js`, que `index.html` carga antes que `app.js`; `app.js` sigue dibujando el marco (la barra lateral, la barra de estado, las rutas) y monta cada página ya pasada donde va (`showPage`, `window.roninPages.mount`), con lo que la página le pide al marco (`Host`: el aviso, abrir un pedido, volver a entrar, el color del repo, lo que la barra lateral muestra de ella). `setCenter` la desmonta cuando el centro muestra otra cosa. Cada página lee la API con `hc<DashboardApi>` y TanStack Query, y se refresca sola. Primera: Despliegues, con su diálogo; se vio igual píxel a píxel que la de antes en escritorio y teléfono, y el mismo recorrido (el plan mientras se escribe el tag, el conflicto, las notas, publicar) mandó el mismo cuerpo. Siguen las demás páginas, de la más aislada a la ficha de un ítem.
+**Hecho (7, tablero: Despliegues):** el tablero pasa a React por páginas. `src/apps/dashboard/` se arma con Vite en un solo `dist/public/dashboard/pages.js`, que `index.html` carga antes que `app.js`; `app.js` sigue dibujando el marco (la barra lateral, la barra de estado, las rutas) y monta cada página ya pasada donde va (`showPage`, `window.roninPages.mount`), con lo que la página le pide al marco (`Host`: el aviso, abrir un pedido, volver a entrar, el color del repo, lo que la barra lateral muestra de ella). `setCenter` la desmonta cuando el centro muestra otra cosa. Cada página lee la API con `hc<DashboardApi>` y TanStack Query, y se refresca sola. Primera: Despliegues, con su diálogo; se vio igual píxel a píxel que la de antes en escritorio y teléfono, y el mismo recorrido (el plan mientras se escribe el tag, el conflicto, las notas, publicar) mandó el mismo cuerpo. Siguen las demás páginas, de la más aislada a la ficha de un ítem.
 
 ### Docker
 

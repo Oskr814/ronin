@@ -8,7 +8,7 @@ import { MAX_UPLOAD_BODY, MeetingUploadError, meetingDetail, meetingOriginal, me
 import { ApproveError, approveMeeting, discardMeeting } from '../server/api/dashboard-meetings-approve.js';
 import { GithubUserError } from '../server/api/github-as-user.js';
 import { refusal, visibleRepos, visibleRuns } from '../server/api/visible.js';
-import { body, jsonBody, onError, type DashboardEnv } from '../server/hono.js';
+import { body, jsonBody, onError, type DashboardEnv } from '../apps/api/http/hono.js';
 import { launchMeetingWorker, retryMeeting } from './launch.js';
 import { createMeeting, DuplicateMeeting, getMeeting, listMeetings } from './meetings.js';
 

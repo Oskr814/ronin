@@ -84,7 +84,7 @@ export interface BlockRecord {
 
 // Serializes the read-modify-write span around this file: tick() runs
 // several issues' pipelines concurrently (see concurrency.ts), and the event
-// handlers (server/api/webhooks/handler.ts) are other processes writing it alongside the
+// handlers (apps/api/webhooks/handler.ts) are other processes writing it alongside the
 // tick. This file's own read-then-write functions below, plus claim.ts's
 // tryClaim/releaseIfNoLongerInProgress, would otherwise race — two callers
 // can both read before either writes, and the second write silently clobbers

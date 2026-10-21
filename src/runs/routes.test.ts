@@ -8,8 +8,8 @@ import type { Access } from '../server/api/access.js';
 vi.mock('../core/repos.js', () => ({ loadRepos: async () => [{ productRepo: 'acme/tienda', productRepoPath: '/x' }] }));
 
 const { logsDir } = await import('../core/run-files.js');
-const { dashboardApp } = await import('../server/dashboard-app.js');
-const { answer } = await import('../server/hono.js');
+const { dashboardApp } = await import('../apps/api/routes.js');
+const { answer } = await import('../apps/api/http/hono.js');
 
 const ACCESS: Access = { admin: false, repos: [{ repo: 'acme/tienda', permission: 'triage' }] };
 const RUN = '20261021T030000-fix-issue-12-abcd';

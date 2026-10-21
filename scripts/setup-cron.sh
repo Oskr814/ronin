@@ -78,11 +78,11 @@ if [ -n "\${DATABASE_URL:-}" ]; then
   exit 0
 fi
 
-if [ ! -f dist/index.js ]; then
-  echo "\$(date -Is) [cron] dist/index.js no existe — correr pnpm build" >&2
+if [ ! -f dist/apps/api/tick/main.js ]; then
+  echo "\$(date -Is) [cron] dist/apps/api/tick/main.js no existe — correr pnpm build" >&2
   exit 1
 fi
-if [ -n "\$(find src -newer dist/index.js)" ]; then
+if [ -n "\$(find src -newer dist/apps/api/tick/main.js)" ]; then
   echo "\$(date -Is) [cron] WARN: src/ tiene cambios más nuevos que dist/ — considerar pnpm build"
 fi
 status=0

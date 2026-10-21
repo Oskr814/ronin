@@ -2,7 +2,7 @@
   "extends": "./tsconfig.json",
   "exclude": [
     "src/**/*.test.ts",
-    "src/portal-web",
-    "src/dashboard-web"
+    "src/apps/dashboard",
+    "src/apps/portal"
   ]
 }

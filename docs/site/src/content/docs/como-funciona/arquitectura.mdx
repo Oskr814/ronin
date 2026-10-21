@@ -24,22 +24,16 @@ import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
 
 ## Cómo está organizado `src/`
 
+Tres capas y las apps, con las dependencias en una sola dirección: las apps usan los dominios, y los dominios usan la plataforma. El detalle y las reglas están en [`docs/ARCHITECTURE.md`](https://github.com/Oskr814/ronin/blob/main/docs/ARCHITECTURE.md), en «Estructura del código». La estructura se está aplicando de a un PR: hoy ya están las apps; los dominios y la plataforma siguen en sus carpetas de antes.
+
 | Carpeta | Qué tiene |
 |---|---|
-| `src/` (raíz) | `index.ts`, la entrada del cron, y `tick.ts`, el orquestador. |
-| `core/` | Lo compartido: config, GitHub, worktrees, `claude -p`, estado local, claim entre runners, locks, notificaciones, logs y cómo corre una tarea de agente. |
-| `slices/` | Issues de tracking → PRs apilados: checklist, stack, specs. |
-| `review/` | La review de PRs de personas y su publicación. |
-| `commands/` | Los comandos por mención: `/help`, `/auto-merge`, `/resolve-conflicts`, `/spike`, `/prototype` y los pedidos en issues. |
-| `app/` | Levantar la app del producto desde `ronin.app.json`, entrar con cada rol y la rama de evidencia. |
-| `preview/` | `/preview` y el catálogo de seeds. |
-| `exploration/` | La exploración y su PR rodante. |
-| `portal/`, `portal-web/` | El portal de pedidos: el dominio, su API en Hono (`portal/routes.ts`) y la web en React con Vite. |
-| `meetings/` | Las reuniones: leer las notas y proponer trabajo. |
-| `deploy/` | Los despliegues desde el tablero. |
-| `changelog/` | La entrada del changelog en cada release. |
-| `server/` | El servidor: los webhooks (un handler por evento), el login y la API del tablero. |
-| `web/`, `dashboard-web/` | La aplicación web del tablero: `app.js`, sin build, y las páginas que ya pasaron a React (Despliegues), armadas con Vite. |
+| `apps/api/` | El servidor: los listeners (público y tailnet), el login, la cola de trabajos, el tick, los webhooks y el montaje de las rutas de cada dominio. |
+| `apps/dashboard/` | El tablero: el marco (`public/app.js`) y las páginas que ya pasaron a React (`src/pages/`). |
+| `apps/portal/` | El portal de pedidos, en React. |
+| `core/`, `db/` | Lo técnico compartido: config, GitHub, worktrees, `claude -p`, Postgres, locks, logs. Va a `platform/`. |
+| `server/api/` | La lógica del tablero, todavía junta. Va a cada dominio. |
+| `slices/`, `review/`, `commands/`, `preview/`, `exploration/`, `portal/`, `meetings/`, `deploy/`, `metrics/`, `changelog/`, `app/`… | Un dominio cada uno: issues → PRs apilados, review de PRs de personas, comandos por mención, previews, exploraciones, el portal, reuniones, despliegues, métricas, el changelog, levantar la app del producto. Van a `domains/`. |
 
 ## El diseño completo
 

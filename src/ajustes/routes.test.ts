@@ -9,7 +9,7 @@ vi.mock('../core/repos.js', async (importOriginal) => ({
 }));
 
 const { config } = await import('../core/config.js');
-const { dashboardApp } = await import('../server/dashboard-app.js');
+const { dashboardApp } = await import('../apps/api/routes.js');
 
 const ADMIN: Access = { admin: true, repos: [{ repo: 'acme/tienda', permission: 'admin' }] };
 const MEMBER: Access = { admin: false, repos: [{ repo: 'acme/tienda', permission: 'triage' }] };

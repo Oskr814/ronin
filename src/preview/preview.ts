@@ -689,7 +689,7 @@ export async function stopPreview(prNumber: number): Promise<boolean> {
 // A preview lives as long as its PR: once it's merged or closed, its app,
 // its tailnet ports and its worktree go. Runs every tick, and a merge starts
 // an event handler that runs it (pull_request closed — see
-// server/api/webhooks/events.ts), so it goes right after.
+// apps/api/webhooks/events.ts), so it goes right after.
 // Costs nothing when there are no previews: the PR list is only read if
 // there's a preview worktree on disk. A preview whose worker is still running
 // waits for the next tick.
@@ -785,7 +785,7 @@ function launchUpdate(prNumber: number): void {
 }
 
 // New commits on `prs` (pull_request.synchronize — see
-// server/api/webhooks/handler.ts): each one with a preview up gets its
+// apps/api/webhooks/handler.ts): each one with a preview up gets its
 // update. The worker compares the SHA itself, so this reads nothing from
 // GitHub. One whose worker is busy is skipped: an update reads the PR's
 // head again before it ends, and a /preview still coming up is left to the

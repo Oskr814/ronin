@@ -1,8 +1,8 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Access } from './access.js';
 import type { Session } from './auth.js';
-import { dashboardApp } from '../dashboard-app.js';
-import { answer } from '../hono.js';
+import { dashboardApp } from '../../apps/api/routes.js';
+import { answer } from '../../apps/api/http/hono.js';
 
 // The dashboard's API (#65), all behind the session: tailnet.ts checks it,
 // and the repos it sees (#106), before any of this runs. Every route is in

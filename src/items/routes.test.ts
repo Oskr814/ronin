@@ -25,7 +25,7 @@ vi.mock('../server/api/github-as-user.js', async (importOriginal) => {
   return { ...original, viewedFiles: async () => { throw new original.GithubUserError('Tu sesión de GitHub venció: vuelve a entrar.', true); }, pendingReview: async () => null };
 });
 
-const { dashboardApp } = await import('../server/dashboard-app.js');
+const { dashboardApp } = await import('../apps/api/routes.js');
 
 const ACCESS: Access = { admin: false, repos: [{ repo: 'acme/tienda', permission: 'push', perms: { notas: true, aprobar: true, acciones: true, desplegar: false } }] };
 const call = (path: string, init: RequestInit = {}) => dashboardApp.request(path, init, { session: { login: 'oskr814', token: 't' }, access: ACCESS, incoming: {} as never, outgoing: {} as never });

@@ -22,7 +22,7 @@ vi.mock('../server/api/dashboard-exploraciones.js', async (importOriginal) => ({
   },
 }));
 
-const { dashboardApp } = await import('../server/dashboard-app.js');
+const { dashboardApp } = await import('../apps/api/routes.js');
 const { ExploreNowError } = await import('../server/api/dashboard-exploraciones.js');
 
 const PERMS = { notas: true, aprobar: true, acciones: true, desplegar: false };

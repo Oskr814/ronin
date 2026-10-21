@@ -16,7 +16,7 @@ vi.mock('../core/repos.js', () => ({
 import type { Access } from '../server/api/access.js';
 
 const { config } = await import('../core/config.js');
-const { dashboardApp } = await import('../server/dashboard-app.js');
+const { dashboardApp } = await import('../apps/api/routes.js');
 const { createRequest } = await import('./requests.js');
 
 const ADMIN: Access = { admin: true, repos: [{ repo: 'acme/tienda', permission: 'admin' }] };

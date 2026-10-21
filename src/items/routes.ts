@@ -18,7 +18,7 @@ import { createFromDashboard, NewIssueError, parseNewIssue, repoApps } from '../
 import { GithubUserError, pendingReview, viewedFiles } from '../server/api/github-as-user.js';
 import { touchSeen } from '../server/api/team.js';
 import { refusal, visibleRepos, visibleRuns } from '../server/api/visible.js';
-import { body, jsonBody, onError, type DashboardEnv } from '../server/hono.js';
+import { body, jsonBody, onError, type DashboardEnv } from '../apps/api/http/hono.js';
 import { detail, exploration, explorationContext, filesContext, itemContext, snapshot, todayWithCycles } from './service.js';
 
 // The dashboard's heart (#65), in Hono (#235, stage 6) — server/

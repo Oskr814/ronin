@@ -10,7 +10,7 @@ vi.mock('../core/repos.js', () => ({
 }));
 
 const { config } = await import('../core/config.js');
-const { dashboardApp } = await import('../server/dashboard-app.js');
+const { dashboardApp } = await import('../apps/api/routes.js');
 const { updateMeeting } = await import('./meetings.js');
 
 const ALL = { notas: true, aprobar: true, acciones: true, desplegar: false };
