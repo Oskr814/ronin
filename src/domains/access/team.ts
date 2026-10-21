@@ -2,7 +2,7 @@ import { join } from 'node:path';
 import { config } from '../../platform/config/config.js';
 import { log } from '../../platform/logger.js';
 import type { RepoEntry } from '../../platform/agents/repo-context.js';
-import { readJson, withJson } from '../portal/json-store.js';
+import { readJson, withJson } from '../../platform/fs/atomic-json.js';
 import { sessionAccess, type Access } from './access.js';
 import type { NotifyEvent } from '../../platform/notify/notifications.js';
 

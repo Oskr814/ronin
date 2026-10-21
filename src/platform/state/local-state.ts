@@ -1,4 +1,4 @@
-import { readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { readFile, rm } from 'node:fs/promises';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { acquireLock } from '../workers/worker-launch.js';
 import { config } from '../config/config.js';
@@ -6,6 +6,7 @@ import { activeRepo, currentRepo } from '../agents/repo-context.js';
 import { getDb } from '../db/db.js';
 import { release, tryTake } from '../locks/locks-db.js';
 import { readStateDb, writeStateDb } from './local-state-db.js';
+import { writeFileAtomic } from '../fs/atomic-json.js';
 
 // Per-machine cache, never the source of truth for anything GitHub already
 // tracks — see claim.ts's tryClaim for why a missing/corrupt file is always
@@ -164,9 +165,7 @@ export async function readStateFile(path: string): Promise<LocalState> {
 export async function writeLocalState(state: LocalState): Promise<void> {
   const db = getDb();
   if (db) return writeStateDb(db, activeRepo().productRepo, state);
-  const tmp = `${statePath()}.${process.pid}.tmp`;
-  await writeFile(tmp, JSON.stringify(state, null, 2));
-  await rename(tmp, statePath());
+  await writeFileAtomic(statePath(), JSON.stringify(state, null, 2));
 }
 
 export async function incrementChecksPendingCount(prNumber: number): Promise<number> {

@@ -4,10 +4,7 @@ import { config } from '../../platform/config/config.js';
 import { log } from '../../platform/logger.js';
 import { dayIn } from '../../platform/config/timezone.js';
 import type { ImageUpload } from './images.js';
-import { readJson, withJson, writeJson } from './json-store.js';
-import { sql } from 'kysely';
-import { timed } from '../../platform/timing.js';
-import { getDb } from '../../platform/db/db.js';
+import { documentStore, type Counter } from '../../platform/store/document-store.js';
 
 // The portal's requests (#114): what a person asked, the conversation with
 // ronin, and where it stands. One folder per request under
@@ -279,51 +276,28 @@ export interface PortalRequest {
 export const patchOf = (r: PortalRequest) => (r.bug ? r.bug.reproductions.at(-1)?.patch : r.prototypes?.at(-1)?.patch);
 
 const requestsDir = () => join(config.portal.dataDir, 'requests');
-const requestPath = (n: number) => join(requestsDir(), String(n), 'request.json');
 export const requestDir = (n: number) => join(requestsDir(), String(n));
 export const requestImagePath = (n: number, file: string) => join(requestsDir(), String(n), 'img', file);
 export const prototypePatchPath = (n: number, file: string) => join(requestsDir(), String(n), 'proto', file);
-const counterPath = () => join(requestsDir(), 'counter.json');
 
 export class RequestError extends Error {}
 
-const missing = (): PortalRequest => {
-  throw new RequestError('No existe ese pedido.');
-};
+// request.json and counter.json, or the table portal_requests (#235,
+// stage 2): each request one document, as meetings are.
+const store = documentStore<PortalRequest, Counter>({
+  table: 'portal_requests',
+  lock: 'portalRequests',
+  columns: (r) => ({ user_id: r.userId, repo: r.repo, status: r.status }),
+  dir: requestsDir,
+  file: 'request.json',
+  emptyCounter: () => ({ last: 0 }),
+  missing: () => {
+    throw new RequestError('No existe ese pedido.');
+  },
+});
 
-// With DATABASE_URL (#235, stage 2), request.json and counter.json are the
-// table portal_requests: each request one document, as meetings are. A new
-// number takes turns on this advisory lock.
-const REQUESTS_LOCK = 114_002;
-const rowOf = (r: PortalRequest) => ({ number: r.number, user_id: r.userId, repo: r.repo, status: r.status, data: JSON.stringify(r), created_at: r.createdAt, updated_at: r.updatedAt });
-
-export async function getRequest(n: number): Promise<PortalRequest | undefined> {
-  if (!Number.isInteger(n) || n < 1) return undefined;
-  const db = getDb();
-  if (db) return (await timed('db', () => db.selectFrom('portal_requests').select('data').where('number', '=', n).executeTakeFirst()))?.data as PortalRequest | undefined;
-  return readJson<PortalRequest | undefined>(requestPath(n), () => undefined);
-}
-
-export function updateRequest<R>(n: number, fn: (request: PortalRequest) => R | Promise<R>): Promise<R> {
-  const db = getDb();
-  if (db) {
-    return timed('db', () => db.transaction().execute(async (trx) => {
-      const row = await trx.selectFrom('portal_requests').select('data').where('number', '=', n).forUpdate().executeTakeFirst();
-      if (!row) missing();
-      const request = row!.data as PortalRequest;
-      const result = await fn(request);
-      request.updatedAt = new Date().toISOString();
-      const { number: _n, created_at: _c, ...rest } = rowOf(request);
-      await trx.updateTable('portal_requests').set(rest).where('number', '=', n).execute();
-      return result;
-    }));
-  }
-  return withJson(requestPath(n), missing, async (request) => {
-    const result = await fn(request);
-    request.updatedAt = new Date().toISOString();
-    return result;
-  });
-}
+export const getRequest = store.get;
+export const updateRequest = store.update;
 
 // What a worker writes when it finishes, unless the person cancelled the
 // request meanwhile: then it's left as it is, and this returns undefined.
@@ -335,32 +309,16 @@ export async function updateUnlessCancelled(n: number, fn: (request: PortalReque
   });
 }
 
-export async function listRequests(): Promise<PortalRequest[]> {
-  const db = getDb();
-  if (db) return (await timed('db', () => db.selectFrom('portal_requests').select('data').orderBy('number').execute())).map((r) => r.data as PortalRequest);
-  return fileRequests();
-}
+export const listRequests = store.list;
 
-// The requests in the folder, as request.json has them (also for the import).
-export async function fileRequests(): Promise<PortalRequest[]> {
-  const { last } = await readJson(counterPath(), () => ({ last: 0 }));
-  const all = await Promise.all(Array.from({ length: last }, (_, i) => readJson<PortalRequest | undefined>(requestPath(i + 1), () => undefined)));
-  return all.filter((r): r is PortalRequest => Boolean(r));
-}
+// The requests in the folder, as request.json has them, and writing one as
+// it is with its number (the import).
+export const fileRequests = store.files;
+export const putRequest = store.put;
 
-// The import: writes one as it is, with its number.
-export async function putRequest(request: PortalRequest): Promise<void> {
-  const db = getDb();
-  if (!db) throw new Error('falta DATABASE_URL');
-  const row = rowOf(request);
-  const { number: _n, ...rest } = row;
-  await db.insertInto('portal_requests').values(row).onConflict((oc) => oc.column('number').doUpdateSet(rest)).execute();
-}
-
+// Newest first.
 export async function listRequestsOf(userId: string): Promise<PortalRequest[]> {
-  const db = getDb();
-  if (db) return (await timed('db', () => db.selectFrom('portal_requests').select('data').where('user_id', '=', userId).orderBy('number', 'desc').execute())).map((r) => r.data as PortalRequest);
-  return (await listRequests()).filter((r) => r.userId === userId).sort((a, b) => b.number - a.number);
+  return (await store.listWhere('user_id', userId, (r) => r.userId === userId)).reverse();
 }
 
 // Requests the person started today, by the team's clock (the same as
@@ -397,23 +355,10 @@ const firstLine = (text: string) => {
   return line.length > TITLE_MAX ? `${line.slice(0, TITLE_MAX - 1)}…` : line;
 };
 
-export async function createRequest(input: { userId: string; repo: string; app: string; text: string; images: ImageUpload[] }, now = new Date()): Promise<PortalRequest> {
-  const db = getDb();
-  if (db) {
-    // The number and the row in one transaction, the images written before
-    // it commits: no request is left without its images.
-    return timed('db', () => db.transaction().execute(async (trx) => {
-      await sql`select pg_advisory_xact_lock(${REQUESTS_LOCK})`.execute(trx);
-      const { last } = await trx.selectFrom('portal_requests').select((eb) => eb.fn.coalesce(eb.fn.max('number'), sql<number>`0`).as('last')).executeTakeFirstOrThrow();
-      const request = await newRequest(Number(last) + 1, input, now);
-      await trx.insertInto('portal_requests').values(rowOf(request)).execute();
-      return request;
-    }));
-  }
-  const number = await withJson(counterPath(), () => ({ last: 0 }), (counter) => ++counter.last);
-  const request = await newRequest(number, input, now);
-  await writeJson(requestPath(number), request);
-  return request;
+// The images are written before the request is saved: none is left
+// without them.
+export function createRequest(input: { userId: string; repo: string; app: string; text: string; images: ImageUpload[] }, now = new Date()): Promise<PortalRequest> {
+  return store.create((number) => newRequest(number, input, now));
 }
 
 async function newRequest(number: number, input: { userId: string; repo: string; app: string; text: string; images: ImageUpload[] }, now: Date): Promise<PortalRequest> {

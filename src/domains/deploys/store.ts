@@ -1,10 +1,9 @@
 import { join } from 'node:path';
 import type { Selectable } from 'kysely';
 import { config } from '../../platform/config/config.js';
-import { timed } from '../../platform/timing.js';
-import { getDb } from '../../platform/db/db.js';
+import { onStore, requireDb } from '../../platform/store/backend.js';
 import type { DeploysTable } from '../../platform/db/schema.js';
-import { readJson, withJson } from '../portal/json-store.js';
+import { readJson, withJson } from '../../platform/fs/atomic-json.js';
 
 // The deploys ronin published (#158): GitHub has the releases, but only this
 // says what each one carried (which PRs, which portal requests), who
@@ -85,35 +84,37 @@ const toRow = (d: DeployRecord) => ({
 });
 
 // Newest first.
-export async function listDeploys(repo?: string): Promise<DeployRecord[]> {
-  const db = getDb();
-  if (db) {
-    let query = db.selectFrom('deploys').selectAll().orderBy('at', 'desc');
-    if (repo) query = query.where('repo', '=', repo);
-    return (await timed('db', () => query.execute())).map(fromRow);
-  }
-  const { deploys } = await readJson(path(), empty);
-  return deploys.filter((d) => !repo || d.repo === repo).sort((a, b) => b.at.localeCompare(a.at));
+export function listDeploys(repo?: string): Promise<DeployRecord[]> {
+  return onStore({
+    db: async (db) => {
+      let query = db.selectFrom('deploys').selectAll().orderBy('at', 'desc');
+      if (repo) query = query.where('repo', '=', repo);
+      return (await query.execute()).map(fromRow);
+    },
+    files: async () => {
+      const { deploys } = await readJson(path(), empty);
+      return deploys.filter((d) => !repo || d.repo === repo).sort((a, b) => b.at.localeCompare(a.at));
+    },
+  });
 }
 
-export async function addDeploy(record: DeployRecord): Promise<void> {
-  const db = getDb();
-  if (db) {
-    await timed('db', () => db.insertInto('deploys').values(toRow(record)).execute());
-    return;
-  }
-  return withJson(path(), empty, (file) => {
-    file.deploys.push(record);
-    if (file.deploys.length > MAX_DEPLOYS) file.deploys.splice(0, file.deploys.length - MAX_DEPLOYS);
+export function addDeploy(record: DeployRecord): Promise<void> {
+  return onStore({
+    db: async (db) => {
+      await db.insertInto('deploys').values(toRow(record)).execute();
+    },
+    files: () => withJson(path(), empty, (file) => {
+      file.deploys.push(record);
+      if (file.deploys.length > MAX_DEPLOYS) file.deploys.splice(0, file.deploys.length - MAX_DEPLOYS);
+    }),
   });
 }
 
 // Changes one through `fn`, taking turns with anyone else changing it (the
 // tick and the dashboard both follow a running deploy).
-export async function updateDeploy(repo: string, tag: string, fn: (record: DeployRecord) => void): Promise<DeployRecord | undefined> {
-  const db = getDb();
-  if (db) {
-    return timed('db', () => db.transaction().execute(async (trx) => {
+export function updateDeploy(repo: string, tag: string, fn: (record: DeployRecord) => void): Promise<DeployRecord | undefined> {
+  return onStore({
+    db: (db) => db.transaction().execute(async (trx) => {
       const row = await trx.selectFrom('deploys').selectAll().where('repo', '=', repo).where('tag', '=', tag).forUpdate().executeTakeFirst();
       if (!row) return undefined;
       const record = fromRow(row);
@@ -121,12 +122,12 @@ export async function updateDeploy(repo: string, tag: string, fn: (record: Deplo
       const { repo: _r, tag: _t, ...rest } = toRow(record);
       await trx.updateTable('deploys').set(rest).where('repo', '=', repo).where('tag', '=', tag).execute();
       return record;
-    }));
-  }
-  return withJson(path(), empty, (file) => {
-    const record = file.deploys.find((d) => d.repo === repo && d.tag === tag);
-    if (record) fn(record);
-    return record;
+    }),
+    files: () => withJson(path(), empty, (file) => {
+      const record = file.deploys.find((d) => d.repo === repo && d.tag === tag);
+      if (record) fn(record);
+      return record;
+    }),
   });
 }
 
@@ -137,10 +138,8 @@ export async function fileDeploys(dataDir = config.deploys.dataDir): Promise<Dep
 
 // Writes one as it is, over the one with its repo and tag (the import).
 export async function putDeploy(record: DeployRecord): Promise<void> {
-  const db = getDb();
-  if (!db) throw new Error('falta DATABASE_URL');
   const row = toRow(record);
   const { repo: _r, tag: _t, ...rest } = row;
-  await db.insertInto('deploys').values(row).onConflict((oc) => oc.columns(['repo', 'tag']).doUpdateSet(rest)).execute();
+  await requireDb().insertInto('deploys').values(row).onConflict((oc) => oc.columns(['repo', 'tag']).doUpdateSet(rest)).execute();
 }
 

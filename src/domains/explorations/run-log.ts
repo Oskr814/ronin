@@ -1,7 +1,8 @@
-import { mkdir, readdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { logsDir } from '../../platform/agents/run-files.js';
 import type { RunSummary } from './run.js';
+import { writeFileAtomic } from '../../platform/fs/atomic-json.js';
 
 // The runner's record of each exploration run (#155), for the dashboard's
 // Corridas: who started it, what it explored, what it proposed and how it
@@ -50,12 +51,8 @@ const dirOf = (repo: string) => join(logsDir(), 'exploration', repo.replaceAll('
 const stamp = (date: Date) => date.toISOString().replace(/[-:]/g, '').slice(0, 15);
 
 async function save(record: ExplorationRunRecord): Promise<void> {
-  const dir = dirOf(record.repo);
-  await mkdir(dir, { recursive: true });
   // Whole or not at all: the dashboard may read it halfway through.
-  const file = join(dir, `${record.id}.json`);
-  await writeFile(`${file}.${process.pid}.tmp`, `${JSON.stringify(record, null, 1)}\n`);
-  await rename(`${file}.${process.pid}.tmp`, file);
+  await writeFileAtomic(join(dirOf(record.repo), `${record.id}.json`), `${JSON.stringify(record, null, 1)}\n`);
 }
 
 export async function startRunRecord(fields: Pick<ExplorationRunRecord, 'repo' | 'app' | 'trigger' | 'maxFunctions' | 'until'>, now = new Date()): Promise<ExplorationRunRecord> {

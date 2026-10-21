@@ -113,8 +113,8 @@ src/
 
 | Hoy, repetido | Pieza común |
 |---|---|
-| El almacén con dos backends (Postgres o archivos) escrito por cada módulo — reuniones, pedidos, cuentas, ajustes, despliegues —, con locks de números mágicos | `platform/store/`: `documentStore` (por número), `collectionStore` (lista entera), un registro de locks |
-| Escribir JSON con tmp + rename y el lock de archivo, en `domains/portal/json-store.ts` y copias | `platform/fs/atomic-json.ts`, `platform/locks/` |
+| El almacén con dos backends (Postgres o archivos) escrito por cada módulo — reuniones, pedidos, cuentas, ajustes, despliegues —, con locks de números mágicos | `platform/store/`: `documentStore` (reuniones y pedidos: el documento numerado), `onStore` (Postgres o archivos, medido), `requireDb` y `STORE_LOCKS` (cada lock de Postgres con su nombre). **Hecho.** Cuentas, Ajustes y despliegues guardan cada uno una forma distinta (una lista, tres tablas, filas por repo y tag): usan `onStore` y su lock, sin una abstracción para un solo usuario. |
+| Escribir JSON con tmp + rename y el lock de archivo, en `domains/portal/json-store.ts` y copias | `platform/fs/atomic-json.ts`: `readJson`, `withJson`, `writeJson` y `writeFileAtomic`, que reemplaza las cuatro copias (corridas de exploración, catálogo de seeds, uso de Claude, estado local). **Hecho.** |
 | En cada `routes.ts`: solo JSON (415), solo administradores, `z.record(...)`, el tope del cuerpo, `owner/name`, «no lo ves: 404» | `apps/api/http/middleware.ts` |
 | ~15 clases de error de dominio con su status, y la lista de cada `onError` | `platform/errors.ts`: `DomainError(message, { status, details })` |
 | `pidAlive` (6 copias), lanzar un worker y relanzar los que murieron, el arranque de cada worker | `platform/workers/`: `pidAlive`, `runWorker` y `withProductRepo`, `trackedWorker`, `worktreeLock`. **Hecho.** |
@@ -124,7 +124,7 @@ src/
 **Cómo se llega**, en PRs que solo mueven o solo unifican, nunca las dos cosas:
 1. `apps/`: el servidor, la cola, el tick y las dos apps web. **Hecho.**
 2. `domains/`: lo que estaba en `server/api/` y en las carpetas de dominio, con `access` como dominio propio. **Hecho.**
-3. `platform/`: lo que estaba en `core/` y `db/`, por tema (`config/`, `github/`, `agents/`, `state/`…). **Hecho.** Quedan cuatro imports de `platform/` a un dominio, que se van con las piezas comunes: `HELP_FOOTER_MARKER` (`linear/linear.ts`, `agents/prompts.ts`), `recordBlockEvent` (`notify/notifier.ts`) y `withJson` (`config/settings-store.ts`).
+3. `platform/`: lo que estaba en `core/` y `db/`, por tema (`config/`, `github/`, `agents/`, `state/`…). **Hecho.** Quedan tres imports de `platform/` a un dominio, que se van con las piezas comunes: `HELP_FOOTER_MARKER` (`linear/linear.ts`, `agents/prompts.ts`) y `recordBlockEvent` (`notify/notifier.ts`).
 4. Una pieza común por PR, de la tabla de arriba, reemplazando todas sus copias.
 
 ### Datos: Postgres

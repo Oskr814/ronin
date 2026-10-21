@@ -1,9 +1,10 @@
-import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { sql } from 'kysely';
 import { log } from '../logger.js';
 import { logsDir } from '../agents/run-files.js';
 import { getDb, type Db } from '../db/db.js';
+import { writeFileAtomicSync } from '../fs/atomic-json.js';
 
 // Each Claude account's last known usage, for the dashboard's status bar
 // (#65). The source is the rate_limit_event every
@@ -130,11 +131,7 @@ function toWindow(raw: any): UsageWindow | undefined {
 
 // Written whole and renamed into place: the dashboard never reads half a file.
 function write(usage: AccountUsage): void {
-  const path = usagePath(usage.account);
-  mkdirSync(join(logsDir(), 'usage'), { recursive: true });
-  const tmp = `${path}.${process.pid}.tmp`;
-  writeFileSync(tmp, `${JSON.stringify(usage, null, 2)}\n`);
-  renameSync(tmp, path);
+  writeFileAtomicSync(usagePath(usage.account), `${JSON.stringify(usage, null, 2)}\n`);
 }
 
 export function readAccountUsage(account: string): AccountUsage | null {

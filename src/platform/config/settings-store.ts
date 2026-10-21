@@ -1,8 +1,8 @@
 import { appendFile, mkdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { sql } from 'kysely';
 import { getDb, type Db } from '../db/db.js';
-import { withJson } from '../../domains/portal/json-store.js';
+import { onStore, takeTurn } from '../store/backend.js';
+import { withJson } from '../fs/atomic-json.js';
 import { log } from '../logger.js';
 import { timed } from '../timing.js';
 import { readSettingsSync, settingsPath, type SettingsFile, type SettingValue } from './settings.js';
@@ -30,12 +30,6 @@ export const REGISTRO_MAX = 300;
 
 const registroPath = (dataDir: string) => join(dataDir, 'registro.jsonl');
 const emptySettings = (): SettingsFile => ({ values: {} });
-// One key for Postgres's advisory lock: changes to Ajustes take turns, as the
-// file's lock made them.
-const SETTINGS_LOCK = 174_001;
-
-const db = (): Db | null => getDb();
-const timedDb = <T>(fn: () => Promise<T>) => timed('db', fn);
 
 async function readFromDb(conn: Pick<Db, 'selectFrom'>): Promise<SettingsFile> {
   const [values, tasks, accounts] = await Promise.all([
@@ -54,10 +48,10 @@ async function readFromDb(conn: Pick<Db, 'selectFrom'>): Promise<SettingsFile> {
 // doesn't read, is "nothing changed" with an error in the log: .env still
 // applies, and no process stops for it.
 export async function readSettings(dataDir: string): Promise<SettingsFile> {
-  const conn = db();
+  const conn = getDb();
   if (!conn) return readSettingsSync(dataDir);
   try {
-    return await timedDb(() => readFromDb(conn));
+    return await timed('db', () => readFromDb(conn));
   } catch (error) {
     log.error(`ajustes: no se pudieron leer de la base, uso los de .env: ${(error as Error).message}`);
     return emptySettings();
@@ -69,11 +63,9 @@ const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
 // Changes them through `fn`, which gets the current ones and edits them in
 // place (throwing leaves everything as it was). One change at a time, across
 // processes. In the database, only what `fn` changed is written, with who.
-export async function updateSettings<R>(dataDir: string, by: string, fn: (file: SettingsFile) => R | Promise<R>): Promise<R> {
-  const conn = db();
-  if (!conn) return withJson(settingsPath(dataDir), emptySettings, fn);
-  return timedDb(() => conn.transaction().execute(async (trx) => {
-    await sql`select pg_advisory_xact_lock(${SETTINGS_LOCK})`.execute(trx);
+export function updateSettings<R>(dataDir: string, by: string, fn: (file: SettingsFile) => R | Promise<R>): Promise<R> {
+  return onStore({ files: () => withJson(settingsPath(dataDir), emptySettings, fn), db: (conn) => conn.transaction().execute(async (trx) => {
+    await takeTurn(trx, 'settings');
     const file = await readFromDb(trx);
     const before = structuredClone(file);
     const result = await fn(file);
@@ -100,28 +92,35 @@ export async function updateSettings<R>(dataDir: string, by: string, fn: (file: 
     const goneAccounts = Object.keys(before.accounts ?? {}).filter((account) => !(account in (file.accounts ?? {})));
     if (goneAccounts.length) await trx.deleteFrom('claude_account_plans').where('account', 'in', goneAccounts).execute();
     return result;
-  }));
+  }) });
 }
 
 // One more line in the record of changes; the record is never rewritten.
-export async function appendRegistro(dataDir: string, entry: RegistroEntry): Promise<void> {
-  const conn = db();
-  if (!conn) {
-    await mkdir(dataDir, { recursive: true, mode: 0o700 });
-    await appendFile(registroPath(dataDir), `${JSON.stringify(entry)}\n`, { mode: 0o600 });
-    return;
-  }
-  await timedDb(() => conn.insertInto('settings_log').values({ at: entry.at, login: entry.login, what: entry.what, from_value: entry.from, to_value: entry.to }).execute());
+export function appendRegistro(dataDir: string, entry: RegistroEntry): Promise<void> {
+  return onStore({
+    db: async (conn) => {
+      await conn.insertInto('settings_log').values({ at: entry.at, login: entry.login, what: entry.what, from_value: entry.from, to_value: entry.to }).execute();
+    },
+    files: async () => {
+      await mkdir(dataDir, { recursive: true, mode: 0o700 });
+      await appendFile(registroPath(dataDir), `${JSON.stringify(entry)}\n`, { mode: 0o600 });
+    },
+  });
 }
 
 // The last REGISTRO_MAX, newest first.
-export async function readRegistro(dataDir: string, limit = REGISTRO_MAX): Promise<RegistroEntry[]> {
-  const conn = db();
-  if (conn) {
-    const rows = await timedDb(() => conn.selectFrom('settings_log').select(['at', 'login', 'what', 'from_value', 'to_value'])
-      .orderBy('at', 'desc').orderBy('id', 'desc').limit(limit).execute());
-    return rows.map((r) => ({ at: r.at.toISOString(), login: r.login, what: r.what, from: r.from_value, to: r.to_value }));
-  }
+export function readRegistro(dataDir: string, limit = REGISTRO_MAX): Promise<RegistroEntry[]> {
+  return onStore({
+    db: async (conn) => {
+      const rows = await conn.selectFrom('settings_log').select(['at', 'login', 'what', 'from_value', 'to_value'])
+        .orderBy('at', 'desc').orderBy('id', 'desc').limit(limit).execute();
+      return rows.map((r) => ({ at: r.at.toISOString(), login: r.login, what: r.what, from: r.from_value, to: r.to_value }));
+    },
+    files: () => readRegistroFile(dataDir, limit),
+  });
+}
+
+async function readRegistroFile(dataDir: string, limit: number): Promise<RegistroEntry[]> {
   let raw: string;
   try {
     raw = await readFile(registroPath(dataDir), 'utf8');

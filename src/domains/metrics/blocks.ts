@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 import { config } from '../../platform/config/config.js';
-import { readJson, withJson } from '../portal/json-store.js';
+import { readJson, withJson } from '../../platform/fs/atomic-json.js';
 
 // Every block ronin raised (#222), with its reason: the local state keeps
 // only each item's latest, and only while it's recent (BLOCK_MAX_AGE_MS), so

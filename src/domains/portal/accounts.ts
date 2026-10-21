@@ -1,10 +1,8 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { join } from 'node:path';
 import { config } from '../../platform/config/config.js';
-import { readJson, withJson } from './json-store.js';
-import { sql } from 'kysely';
-import { timed } from '../../platform/timing.js';
-import { getDb } from '../../platform/db/db.js';
+import { readJson, withJson } from '../../platform/fs/atomic-json.js';
+import { onStore, takeTurn } from '../../platform/store/backend.js';
 
 // The request portal's accounts (#114): people without GitHub, who enter
 // with their email and a password. Kept in <PORTAL_DATA_DIR>/accounts.json,
@@ -65,23 +63,22 @@ const empty = (): AccountsFile => ({ users: [] });
 // With DATABASE_URL (#235, stage 2), the table portal_users instead of
 // accounts.json: the same list, read and changed as a whole, one change at a
 // time (an advisory lock), writing only the accounts that changed.
-const ACCOUNTS_LOCK = 114_001;
-
-async function readAccounts(): Promise<AccountsFile> {
-  const db = getDb();
-  if (db) return { users: (await timed('db', () => db.selectFrom('portal_users').select('data').execute())).map((r) => r.data as PortalUser) };
-  const data = await readJson(accountsPath(), empty);
-  if (!Array.isArray(data.users)) throw new Error(`${accountsPath()} no tiene la lista de usuarios`);
-  return data;
+function readAccounts(): Promise<AccountsFile> {
+  return onStore({
+    db: async (db) => ({ users: (await db.selectFrom('portal_users').select('data').execute()).map((r) => r.data as PortalUser) }),
+    files: async () => {
+      const data = await readJson(accountsPath(), empty);
+      if (!Array.isArray(data.users)) throw new Error(`${accountsPath()} no tiene la lista de usuarios`);
+      return data;
+    },
+  });
 }
 
 // Read, change and write under a lock: the server writes them, and the
 // portal's workers and the tick read them for the requests' emails.
 function withAccounts<T>(fn: (data: AccountsFile) => T | Promise<T>): Promise<T> {
-  const db = getDb();
-  if (!db) return withJson(accountsPath(), empty, fn);
-  return timed('db', () => db.transaction().execute(async (trx) => {
-    await sql`select pg_advisory_xact_lock(${ACCOUNTS_LOCK})`.execute(trx);
+  return onStore({ db: (db) => db.transaction().execute(async (trx) => {
+    await takeTurn(trx, 'portalAccounts');
     const users = (await trx.selectFrom('portal_users').select('data').execute()).map((r) => r.data as PortalUser);
     const before = new Map(users.map((u) => [u.id, JSON.stringify(u)]));
     const data = { users };
@@ -94,7 +91,7 @@ function withAccounts<T>(fn: (data: AccountsFile) => T | Promise<T>): Promise<T>
     const gone = [...before.keys()].filter((id) => !data.users.some((u) => u.id === id));
     if (gone.length) await trx.deleteFrom('portal_users').where('id', 'in', gone).execute();
     return result;
-  }));
+  }), files: () => withJson(accountsPath(), empty, fn) });
 }
 
 // The import (scripts/db-import-portal.ts): the accounts in accounts.json,

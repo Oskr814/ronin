@@ -1,10 +1,7 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { config } from '../../platform/config/config.js';
-import { readJson, withJson, writeJson } from '../portal/json-store.js';
-import { sql } from 'kysely';
-import { timed } from '../../platform/timing.js';
-import { getDb, type Db } from '../../platform/db/db.js';
+import { documentStore } from '../../platform/store/document-store.js';
 import { notesHash, type Extracted } from './extract.js';
 
 // The meetings whose notes the team uploads to the dashboard (#62). One
@@ -143,9 +140,7 @@ export interface Meeting {
 
 const meetingsDir = () => join(config.meetings.dataDir, 'meetings');
 export const meetingDir = (n: number) => join(meetingsDir(), String(n));
-const meetingPath = (n: number) => join(meetingDir(n), 'meeting.json');
 export const notesPath = (n: number) => join(meetingDir(n), 'notes.txt');
-const counterPath = () => join(meetingsDir(), 'counter.json');
 
 // The last number, and each repo's notes by their hash.
 interface Counter {
@@ -160,60 +155,31 @@ export class DuplicateMeeting extends Error {
   }
 }
 
-// Changes to the meetings take turns on this key (Postgres's advisory lock),
-// as the counter's lock made them: a new number and its check for repeated
-// notes, under one.
-const MEETINGS_LOCK = 62_001;
-const rowOf = (m: Meeting) => ({ number: m.number, repo: m.repo, hash: m.hash, status: m.status, data: JSON.stringify(m), created_at: m.createdAt, updated_at: m.updatedAt });
+class MissingMeeting extends Error {}
 
-export async function getMeeting(n: number): Promise<Meeting | undefined> {
-  if (!Number.isInteger(n) || n < 1) return undefined;
-  const db = getDb();
-  if (db) {
-    const row = await timed('db', () => db.selectFrom('meetings').select('data').where('number', '=', n).executeTakeFirst());
-    return row?.data as Meeting | undefined;
-  }
-  return readJson<Meeting | undefined>(meetingPath(n), () => undefined);
-}
+// meeting.json and counter.json, or the table meetings (#235, stage 2). A
+// new number and its check for repeated notes take turns under one lock.
+const store = documentStore<Meeting, Counter>({
+  table: 'meetings',
+  lock: 'meetings',
+  columns: (m) => ({ repo: m.repo, hash: m.hash, status: m.status }),
+  dir: meetingsDir,
+  file: 'meeting.json',
+  emptyCounter,
+  missing: () => {
+    throw new MissingMeeting('No existe esa reunión.');
+  },
+});
 
-export async function listMeetings(): Promise<Meeting[]> {
-  const db = getDb();
-  if (db) return (await timed('db', () => db.selectFrom('meetings').select('data').orderBy('number').execute())).map((r) => r.data as Meeting);
-  const { last } = await readJson(counterPath(), emptyCounter);
-  const all = await Promise.all(Array.from({ length: last }, (_, i) => getMeeting(i + 1)));
-  return all.filter((m): m is Meeting => Boolean(m));
-}
+export const getMeeting = store.get;
+export const listMeetings = store.list;
 
 export const readNotes = (n: number) => readFile(notesPath(n), 'utf8');
 
 // The notes' lines with text, numbered from 1: what ronin cites them by.
 export const noteLines = (text: string) => text.split('\n').map((line) => line.trim()).filter(Boolean);
 
-class MissingMeeting extends Error {}
-const missing = (): Meeting => {
-  throw new MissingMeeting('No existe esa reunión.');
-};
-
-export function updateMeeting<R>(n: number, fn: (meeting: Meeting) => R | Promise<R>): Promise<R> {
-  const db = getDb();
-  if (db) {
-    return timed('db', () => db.transaction().execute(async (trx) => {
-      const row = await trx.selectFrom('meetings').select('data').where('number', '=', n).forUpdate().executeTakeFirst();
-      if (!row) missing();
-      const meeting = row!.data as Meeting;
-      const result = await fn(meeting);
-      meeting.updatedAt = new Date().toISOString();
-      const { number: _n, created_at: _c, ...rest } = rowOf(meeting);
-      await trx.updateTable('meetings').set(rest).where('number', '=', n).execute();
-      return result;
-    }));
-  }
-  return withJson(meetingPath(n), missing, async (meeting) => {
-    const result = await fn(meeting);
-    meeting.updatedAt = new Date().toISOString();
-    return result;
-  });
-}
+export const updateMeeting = store.update;
 
 // Distributive, so each event kind keeps its own fields.
 type NewEvent = MeetingEvent extends infer E ? (E extends MeetingEvent ? Omit<E, 'at'> : never) : never;
@@ -250,56 +216,30 @@ export interface NewMeeting {
   file?: { name: string; data: Buffer };
 }
 
-export async function createMeeting(input: NewMeeting, now = new Date()): Promise<Meeting> {
-  const db = getDb();
-  if (db) return createInDb(db, input, now);
+// Numbered and checked for a repeat under the same lock: the same notes
+// uploaded twice at once get one number. The notes are written to their
+// folder before the meeting is saved: if the disk fails, no meeting is left
+// without its notes.
+export function createMeeting(input: NewMeeting, now = new Date()): Promise<Meeting> {
   const hash = notesHash(input.notes.text);
-  // Numbered and checked for a repeat under the same lock: the same notes
-  // uploaded twice at once get one number.
-  const number = await withJson(counterPath(), emptyCounter, async (counter) => {
-    const seen = counter.hashes[input.repo]?.[hash];
-    // One whose files never got written (the disk failed halfway) doesn't count.
-    if (seen && (await getMeeting(seen))) throw new DuplicateMeeting(seen);
-    counter.last += 1;
-    (counter.hashes[input.repo] ??= {})[hash] = counter.last;
-    return counter.last;
+  return store.create((number) => writeMeetingFiles(number, hash, input, now), {
+    db: async (trx) => {
+      const seen = await trx.selectFrom('meetings').select('number').where('repo', '=', input.repo).where('hash', '=', hash).executeTakeFirst();
+      if (seen) throw new DuplicateMeeting(seen.number);
+    },
+    files: async (counter, next) => {
+      const seen = counter.hashes[input.repo]?.[hash];
+      // One whose files never got written (the disk failed halfway) doesn't count.
+      if (seen && (await getMeeting(seen))) throw new DuplicateMeeting(seen);
+      (counter.hashes[input.repo] ??= {})[hash] = next;
+    },
   });
-  const meeting = await writeMeetingFiles(number, hash, input, now);
-  await writeJson(meetingPath(number), meeting);
-  return meeting;
 }
 
-// In the database: the number, the check for repeated notes and the row in
-// one transaction, with the notes written to their folder before it commits —
-// if the disk fails, no meeting is left without its notes.
-async function createInDb(db: Db, input: NewMeeting, now: Date): Promise<Meeting> {
-  const hash = notesHash(input.notes.text);
-  return timed('db', () => db.transaction().execute(async (trx) => {
-    await sql`select pg_advisory_xact_lock(${MEETINGS_LOCK})`.execute(trx);
-    const seen = await trx.selectFrom('meetings').select('number').where('repo', '=', input.repo).where('hash', '=', hash).executeTakeFirst();
-    if (seen) throw new DuplicateMeeting(seen.number);
-    const { last } = await trx.selectFrom('meetings').select((eb) => eb.fn.coalesce(eb.fn.max('number'), sql<number>`0`).as('last')).executeTakeFirstOrThrow();
-    const meeting = await writeMeetingFiles(Number(last) + 1, hash, input, now);
-    await trx.insertInto('meetings').values(rowOf(meeting)).execute();
-    return meeting;
-  }));
-}
-
-// For the import (scripts/db-import-reuniones.ts): writes one as it is.
-export async function putMeeting(meeting: Meeting): Promise<void> {
-  const db = getDb();
-  if (!db) throw new Error('falta DATABASE_URL');
-  const row = rowOf(meeting);
-  const { number: _n, ...rest } = row;
-  await db.insertInto('meetings').values(row).onConflict((oc) => oc.column('number').doUpdateSet(rest)).execute();
-}
-
-// The meetings in the folder, as meeting.json has them (the import).
-export async function fileMeetings(): Promise<Meeting[]> {
-  const { last } = await readJson(counterPath(), emptyCounter);
-  const all = await Promise.all(Array.from({ length: last }, (_, i) => readJson<Meeting | undefined>(meetingPath(i + 1), () => undefined)));
-  return all.filter((m): m is Meeting => Boolean(m));
-}
+// For the import (scripts/db-import-reuniones.ts): writes one as it is, and
+// the meetings in the folder as meeting.json has them.
+export const putMeeting = store.put;
+export const fileMeetings = store.files;
 
 // Its folder, with the notes and the file, and the record that goes with them.
 async function writeMeetingFiles(number: number, hash: string, input: NewMeeting, now: Date): Promise<Meeting> {
