@@ -1,5 +1,3 @@
-import { existsSync } from 'node:fs';
-import { mkdir, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { runAgentTask } from '../../platform/agents/agent-task.js';
 import { portalTask } from './prompts.js';
@@ -169,8 +167,8 @@ export const FAILED_REPLY = 'Tuve un problema al revisar tu pedido. Escríbeme d
 async function checkout(n: number): Promise<string> {
   const repo = activeRepo();
   const dir = join(repo.worktreeBasePath, `portal-P-${n}`);
-  if (existsSync(dir)) await removeWorktreeDir(dir, 'portal');
-  await mkdir(repo.worktreeBasePath, { recursive: true });
+  if (await host().fs.exists(dir)) await removeWorktreeDir(dir, 'portal');
+  await host().fs.mkdir(repo.worktreeBasePath, { recursive: true });
   await host().exec('git', ['fetch', 'origin'], { cwd: repo.productRepoPath }).catch(() => {});
   await host().exec('git', ['worktree', 'add', '--detach', dir, repo.worktreeBaseRef ?? config.worktreeBaseRef], { cwd: repo.productRepoPath });
   return dir;
@@ -217,8 +215,8 @@ export async function followUpRequest(n: number): Promise<boolean> {
   if (!request || !isInterviewFollowUp(request)) return false;
   const dir = join(activeRepo().worktreeBasePath, 'portal-request-out', `P-${n}-respuestas`);
   try {
-    await rm(dir, { recursive: true, force: true });
-    await mkdir(dir, { recursive: true });
+    await host().fs.rm(dir, { recursive: true, force: true });
+    await host().fs.mkdir(dir, { recursive: true });
     const outputPath = join(dir, 'result.json');
     await runAgentTask(portalTask({
       type: 'portal-interview',
@@ -231,7 +229,7 @@ export async function followUpRequest(n: number): Promise<boolean> {
       dir,
       outputPath,
     }));
-    const raw = await readFile(outputPath, 'utf8');
+    const raw = await host().fs.readFile(outputPath, 'utf8');
     const result = (JSON.parse(raw) as { accion?: unknown }).accion === 'revisar' ? undefined : parsePortalResult(raw, request.questions, 0, 0, request.interview?.rounds ?? 0);
     if (result?.accion !== 'grande' && result?.accion !== 'entrevistar') {
       log.info(`portal: con las respuestas, el pedido P-${n} necesita leer el código de nuevo`);
@@ -243,7 +241,7 @@ export async function followUpRequest(n: number): Promise<boolean> {
     log.error(`portal: no se pudieron leer rápido las respuestas del pedido P-${n}; sigue la lectura completa`, error);
     return false;
   } finally {
-    await rm(dir, { recursive: true, force: true }).catch(() => {});
+    await host().fs.rm(dir, { recursive: true, force: true }).catch(() => {});
   }
 }
 
@@ -255,8 +253,8 @@ export async function classifyRequest(n: number): Promise<void> {
   const outDir = join(activeRepo().worktreeBasePath, 'portal-request-out', `P-${n}`);
   let dir: string | undefined;
   try {
-    await rm(outDir, { recursive: true, force: true });
-    await mkdir(outDir, { recursive: true });
+    await host().fs.rm(outDir, { recursive: true, force: true });
+    await host().fs.mkdir(outDir, { recursive: true });
     dir = await checkout(n);
     const outputPath = join(outDir, 'result.json');
     await runAgentTask(portalTask({
@@ -275,7 +273,7 @@ export async function classifyRequest(n: number): Promise<void> {
       checkoutDir: dir,
       outputPath,
     }));
-    await settle(n, parsePortalResult(await readFile(outputPath, 'utf8'), request.questions, request.prototypes?.length ?? 0, request.bug?.reproductions.length ?? 0, request.interview?.rounds ?? 0));
+    await settle(n, parsePortalResult(await host().fs.readFile(outputPath, 'utf8'), request.questions, request.prototypes?.length ?? 0, request.bug?.reproductions.length ?? 0, request.interview?.rounds ?? 0));
   } catch (error) {
     log.error(`portal: no se pudo revisar el pedido P-${n}`, error);
     try {
@@ -292,6 +290,6 @@ export async function classifyRequest(n: number): Promise<void> {
     }
   } finally {
     if (dir) await removeWorktreeDir(dir, 'portal').catch(() => {});
-    await rm(outDir, { recursive: true, force: true }).catch(() => {});
+    await host().fs.rm(outDir, { recursive: true, force: true }).catch(() => {});
   }
 }

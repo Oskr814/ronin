@@ -1,4 +1,4 @@
-import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, extname } from 'node:path';
 import { draftDiff, runOnApp, type AppRun } from '../commands/prototype.js';
 import { config } from '../../platform/config/config.js';
@@ -23,6 +23,7 @@ import {
   type Reproduction,
   type ReproductionTest,
 } from './requests.js';
+import { host } from '../../platform/host/host.js';
 
 // A reported error from the portal (#137): on the same app and browsers as
 // a prototype (runOnApp), ronin follows the person's steps, writes a test
@@ -176,7 +177,8 @@ async function deliver(n: number, round: number, output: ReproductionOutput, run
     const image = await run.shot(shot.imagen, name);
     const file = `${name}${extname(image.path).toLowerCase()}`;
     await mkdir(dirname(requestImagePath(n, file)), { recursive: true, mode: 0o700 });
-    await copyFile(image.path, requestImagePath(n, file));
+    // From the host, where the run left it, to the request's own data.
+    await writeFile(requestImagePath(n, file), await host().fs.readFile(image.path));
     images.push(file);
     captions.push(shot.nota ?? (shot.kind === 'error' ? 'El error' : 'Con el arreglo de prueba'));
   }
@@ -241,7 +243,7 @@ function reproduce(request: PortalRequest, round: number): Promise<PortalRequest
       }),
     },
     async (run) => {
-      const output = parseReproduction(await readFile(run.outputPath, 'utf8'), run.outDir);
+      const output = parseReproduction(await host().fs.readFile(run.outputPath, 'utf8'), run.outDir);
       if ('error' in output) throw new ReproductionDeclined(output.error);
       return deliver(n, round, output, run);
     },

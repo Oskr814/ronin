@@ -1,5 +1,3 @@
-import { existsSync } from 'node:fs';
-import { mkdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { runAgentTask } from '../../platform/agents/agent-task.js';
 import { commentOnIssue, setReviewStatus, type Comment, type PullRequestStatus } from '../../platform/github/github.js';
@@ -75,12 +73,12 @@ export async function processSpecRevision(candidate: SpecRevisionCandidate): Pro
   const { prNumber, issueNumber } = candidate;
   const outDir = join(activeRepo().worktreeBasePath, 'spec-out', `${issueNumber}-revise`);
   try {
-    await rm(outDir, { recursive: true, force: true });
-    await mkdir(outDir, { recursive: true });
+    await host().fs.rm(outDir, { recursive: true, force: true });
+    await host().fs.mkdir(outDir, { recursive: true });
     await setReviewStatus(prNumber, 'pending', 'ronin está leyendo los comentarios del spec…', { context: SPEC_STATUS_CONTEXT });
     await runAgentTask(sliceTask({ type: 'revise-spec', issueNumber, prNumber, mentions: candidate.mentions, dir: () => specCheckout(issueNumber), outDir }));
     const mockup = join(outDir, 'mockup.html');
-    if (existsSync(mockup)) {
+    if (await host().fs.exists(mockup)) {
       const url = await publishMockup(issueNumber, mockup, outDir).catch((error: unknown) => {
         log.error(`spec PR #${prNumber}: no se pudo publicar el mockup`, error);
         return undefined;

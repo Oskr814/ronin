@@ -2,13 +2,15 @@ import { existsSync } from 'node:fs';
 import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { join } from 'node:path';
+import { host } from '../../platform/host/host.js';
 
 // What previews hold that has to be unique across every repo and every
 // worker at once: a public port on the tailnet, and a slot of the per-app
 // limit. Each is a file created with O_EXCL (`wx`), so two workers can never
 // both get the same one, and its content names the preview worktree that
 // owns it — a reservation whose worktree no longer exists is stale and gets
-// taken over. See docs/DESIGN.md §12.
+// taken over. See docs/DESIGN.md §12. The reservations are ronin's own data;
+// the worktree that owns one is on the host.
 
 interface Owner {
   dir: string;
@@ -26,7 +28,7 @@ async function readOwner(path: string): Promise<Owner | null> {
 // Exclusive create; a reservation whose owner is gone is taken over.
 async function claim(path: string, owner: Owner): Promise<boolean> {
   const current = existsSync(path) ? await readOwner(path) : null;
-  if (current && !existsSync(current.dir)) await rm(path, { force: true });
+  if (current && !(await host().fs.exists(current.dir))) await rm(path, { force: true });
   try {
     await writeFile(path, JSON.stringify(owner), { flag: 'wx' });
     return true;

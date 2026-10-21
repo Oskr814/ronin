@@ -1,5 +1,3 @@
-import { existsSync } from 'node:fs';
-import { mkdir, readdir, rm, writeFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { config } from '../config/config.js';
 import { activeRepo } from '../agents/repo-context.js';
@@ -47,9 +45,9 @@ export async function remoteBranchExists(branch: string): Promise<boolean> {
 // left off instead of starting from a clean tree each time.
 export async function ensureWorktree(branch: string, baseRef = activeRepo().worktreeBaseRef ?? config.worktreeBaseRef): Promise<string> {
   const dir = worktreeDirFor(branch);
-  if (existsSync(dir)) return dir;
+  if (await host().fs.exists(dir)) return dir;
 
-  await mkdir(activeRepo().worktreeBasePath, { recursive: true });
+  await host().fs.mkdir(activeRepo().worktreeBasePath, { recursive: true });
   const local = await branchExists(branch);
   // Only relevant when there's no local ref yet — ls-remote before any fetch
   // so this doesn't depend on local remote-tracking refs being fresh.
@@ -82,7 +80,7 @@ export async function ensureWorktree(branch: string, baseRef = activeRepo().work
   // Postgres actually needs this, but ensureWorktree doesn't know which
   // task type it's building for, and writing an unused .env is harmless.
   const port = await getFreePort();
-  await writeFile(join(dir, '.env'), `DB_PORT=${port}\n`);
+  await host().fs.writeFile(join(dir, '.env'), `DB_PORT=${port}\n`);
 
   return dir;
 }
@@ -110,7 +108,7 @@ export function composeFilesIn(fileNames: string[]): string[] {
 }
 
 async function removeDockerStack(worktreeDir: string): Promise<void> {
-  const files = composeFilesIn(await readdir(worktreeDir).catch(() => []));
+  const files = composeFilesIn(await host().fs.readdir(worktreeDir).catch(() => []));
   for (const file of files) {
     await host().exec('docker', ['compose', '-f', file, 'down', '--volumes', '--remove-orphans'], { cwd: worktreeDir })
       .catch((error) => log.error(`removeDockerStack: 'docker compose -f ${file} down' falló en ${worktreeDir}, stack puede haber quedado corriendo`, error));
@@ -147,7 +145,7 @@ export async function removeWorktreeDir(dir: string, label: string): Promise<voi
   await host().exec('git', ['worktree', 'remove', dir, '--force'], { cwd: activeRepo().productRepoPath })
     .catch(async (error) => {
       log.error(`${label}: 'git worktree remove' falló para ${dir}`, error);
-      if (!existsSync(dir)) return;
+      if (!(await host().fs.exists(dir))) return;
       // Two shapes of failure land here, and neither leaves git tracking the
       // directory: it was already unregistered by a prior partial removal
       // ("is not a working tree"), or `git worktree remove` deletes its
@@ -157,7 +155,7 @@ export async function removeWorktreeDir(dir: string, label: string): Promise<voi
       // gated this fallback on the first stderr string only, so the second
       // case looped forever. Confirm git no longer registers `dir` (so a
       // direct delete can't strand worktree metadata), then force it.
-      const stillRegistered = existsSync(join(activeRepo().productRepoPath, '.git', 'worktrees', basename(dir)));
+      const stillRegistered = await host().fs.exists(join(activeRepo().productRepoPath, '.git', 'worktrees', basename(dir)));
       if (stillRegistered) return;
       await forceRemoveOrphanedDir(dir, label);
     });
@@ -173,7 +171,7 @@ export async function removeWorktreeDir(dir: string, label: string): Promise<voi
 // too, so it can remove its own leftovers; nothing else in `dir` needs
 // privilege, so this only reaches for Docker once the plain delete fails.
 async function forceRemoveOrphanedDir(dir: string, label: string): Promise<void> {
-  await rm(dir, { recursive: true, force: true }).catch(async (rmError) => {
+  await host().fs.rm(dir, { recursive: true, force: true }).catch(async (rmError) => {
     const code = (rmError as NodeJS.ErrnoException).code;
     if (code !== 'EACCES' && code !== 'EPERM') {
       log.error(`${label}: no se pudo borrar el directorio huérfano ${dir}`, rmError);
@@ -205,7 +203,7 @@ export async function ensureExternalReviewWorktree(prNumber: number, headSha: st
   // PRs reachable at all without adding the fork as a remote.
   await host().exec('git', ['fetch', 'origin', `pull/${prNumber}/head`], { cwd: activeRepo().productRepoPath });
 
-  // `existsSync` alone is not enough: a previous run's cleanup can leave a
+  // The directory existing is not enough: a previous run's cleanup can leave a
   // *non-git* directory behind (it unregisters the worktree and drops the
   // .git link, then fails to delete root-owned Docker build output — see
   // removeWorktreeDir). Checking out into that shell throws "not a git
@@ -213,7 +211,7 @@ export async function ensureExternalReviewWorktree(prNumber: number, headSha: st
   // only reuse the directory when git still sees it as a live worktree;
   // otherwise clear it and add it back from scratch.
   const isLiveWorktree =
-    existsSync(dir) &&
+    (await host().fs.exists(dir)) &&
     (await host().exec('git', ['rev-parse', '--is-inside-work-tree'], { cwd: dir })
       .then(({ stdout }) => stdout.trim() === 'true')
       .catch(() => false));
@@ -221,8 +219,8 @@ export async function ensureExternalReviewWorktree(prNumber: number, headSha: st
   if (isLiveWorktree) {
     await host().exec('git', ['checkout', '--detach', headSha], { cwd: dir });
   } else {
-    if (existsSync(dir)) await removeExternalReviewWorktree(prNumber);
-    await mkdir(activeRepo().worktreeBasePath, { recursive: true });
+    if (await host().fs.exists(dir)) await removeExternalReviewWorktree(prNumber);
+    await host().fs.mkdir(activeRepo().worktreeBasePath, { recursive: true });
     await host().exec('git', ['worktree', 'add', '--detach', dir, headSha], { cwd: activeRepo().productRepoPath });
   }
   return dir;
@@ -297,7 +295,7 @@ export async function ensureTrustedFixWorktree(branch: string): Promise<string> 
   const ref = `origin/${branch}`;
 
   const isLiveWorktree =
-    existsSync(dir) &&
+    (await host().fs.exists(dir)) &&
     (await host().exec('git', ['rev-parse', '--is-inside-work-tree'], { cwd: dir })
       .then(({ stdout }) => stdout.trim() === 'true')
       .catch(() => false));
@@ -309,15 +307,15 @@ export async function ensureTrustedFixWorktree(branch: string): Promise<string> 
     // prior run's cleanup can unregister the worktree but fail to delete its
     // directory (removeWorktreeDir), leaving a shell that throws "not a git
     // repository" on every future attempt unless it's cleared first.
-    if (existsSync(dir)) await removeWorktreeDir(dir, 'ensureTrustedFixWorktree');
-    await mkdir(activeRepo().worktreeBasePath, { recursive: true });
+    if (await host().fs.exists(dir)) await removeWorktreeDir(dir, 'ensureTrustedFixWorktree');
+    await host().fs.mkdir(activeRepo().worktreeBasePath, { recursive: true });
     await host().exec('git', ['worktree', 'add', '--detach', dir, ref], { cwd: activeRepo().productRepoPath });
   }
 
   // Same isolated Postgres port as ensureWorktree — this task type can run
   // the app's own test/docker tooling, unlike the read-only external-review.
   const port = await getFreePort();
-  await writeFile(join(dir, '.env'), `DB_PORT=${port}\n`);
+  await host().fs.writeFile(join(dir, '.env'), `DB_PORT=${port}\n`);
 
   return dir;
 }
@@ -375,7 +373,7 @@ export function branchesToSweep(dirNames: string[], allPrs: PullRequestStatus[])
 export async function sweepOrphanedWorktrees(allPrs: PullRequestStatus[]): Promise<void> {
   let entries: string[];
   try {
-    entries = await readdir(activeRepo().worktreeBasePath);
+    entries = await host().fs.readdir(activeRepo().worktreeBasePath);
   } catch {
     return; // nothing created yet
   }

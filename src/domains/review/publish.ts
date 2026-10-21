@@ -1,10 +1,11 @@
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { runAgentTask } from '../../platform/agents/agent-task.js';
 import { reviewTask } from './prompts.js';
 import { postReview, resolveReviewThread, replyToComment, type ReviewThread } from '../../platform/github/github.js';
 import { activeRepo } from '../../platform/agents/repo-context.js';
 import { log } from '../../platform/logger.js';
+import { host } from '../../platform/host/host.js';
 import { loadReviewCriteria } from './criteria.js';
 import { parseReviewOutput, type ReviewFinding } from './output.js';
 import {
@@ -64,10 +65,10 @@ export async function runExternalReview(candidate: ReviewCandidate, opts: RunExt
   const criteria = await loadReviewCriteria();
   const outputPath = outputPathFor(candidate);
   const agentsPath = outputPath.replace(/\.json$/, '.agents.json');
-  await mkdir(dirname(outputPath), { recursive: true });
+  await host().fs.mkdir(dirname(outputPath), { recursive: true });
   // A leftover from an earlier failed run must never be mistaken for this
   // run's output.
-  await rm(outputPath, { force: true });
+  await host().fs.rm(outputPath, { force: true });
 
   try {
     // Incremental against the last reviewed SHA when there is one: the
@@ -103,7 +104,7 @@ export async function runExternalReview(candidate: ReviewCandidate, opts: RunExt
 
     let raw: string;
     try {
-      raw = await readFile(outputPath, 'utf8');
+      raw = await host().fs.readFile(outputPath, 'utf8');
     } catch {
       throw new Error(`external-review no escribió ${outputPath}`);
     }
@@ -201,7 +202,7 @@ export async function runExternalReview(candidate: ReviewCandidate, opts: RunExt
       log.error(`external-review PR #${candidate.prNumber}: no se pudo fijar el SHA revisado`, error),
     );
   } finally {
-    await rm(outputPath, { force: true }).catch(() => {});
+    await host().fs.rm(outputPath, { force: true }).catch(() => {});
   }
 }
 

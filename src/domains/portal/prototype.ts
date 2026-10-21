@@ -1,8 +1,9 @@
-import { copyFile, mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, extname } from 'node:path';
 import { makePrototype, PrototypeDeclined, type PrototypeDraft } from '../commands/prototype.js';
 import { config } from '../../platform/config/config.js';
 import { log } from '../../platform/logger.js';
+import { host } from '../../platform/host/host.js';
 import { portalTask } from './prompts.js';
 import { getUser } from './accounts.js';
 import { prototypeMail } from './mail.js';
@@ -66,7 +67,8 @@ async function deliver(n: number, round: number, draft: PrototypeDraft): Promise
   for (const shot of pairs(draft)) {
     const file = `p${round}-${shot.kind}-${shot.i + 1}${extname(shot.path).toLowerCase()}`;
     await mkdir(dirname(requestImagePath(n, file)), { recursive: true, mode: 0o700 });
-    await copyFile(shot.path, requestImagePath(n, file));
+    // From the host, where the run left it, to the request's own data.
+    await writeFile(requestImagePath(n, file), await host().fs.readFile(shot.path));
     images.push(file);
     captions.push(shot.caption);
   }

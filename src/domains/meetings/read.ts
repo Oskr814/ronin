@@ -1,5 +1,3 @@
-import { existsSync } from 'node:fs';
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { runAgentTask } from '../../platform/agents/agent-task.js';
 import { config } from '../../platform/config/config.js';
@@ -28,8 +26,8 @@ import { host } from '../../platform/host/host.js';
 async function checkout(n: number): Promise<string> {
   const repo = activeRepo();
   const dir = join(repo.worktreeBasePath, `meeting-R-${n}`);
-  if (existsSync(dir)) await removeWorktreeDir(dir, 'meeting');
-  await mkdir(repo.worktreeBasePath, { recursive: true });
+  if (await host().fs.exists(dir)) await removeWorktreeDir(dir, 'meeting');
+  await host().fs.mkdir(repo.worktreeBasePath, { recursive: true });
   await host().exec('git', ['fetch', 'origin'], { cwd: repo.productRepoPath }).catch(() => {});
   await host().exec('git', ['worktree', 'add', '--detach', dir, repo.worktreeBaseRef ?? config.worktreeBaseRef], { cwd: repo.productRepoPath });
   return dir;
@@ -79,14 +77,14 @@ export async function readMeeting(n: number): Promise<void> {
     await updateMeeting(n, (m) => {
       m.status = 'reading';
     });
-    await rm(outDir, { recursive: true, force: true });
-    await mkdir(outDir, { recursive: true, mode: 0o700 });
+    await host().fs.rm(outDir, { recursive: true, force: true });
+    await host().fs.mkdir(outDir, { recursive: true, mode: 0o700 });
     const lines = noteLines(await readNotes(n));
     const notesPath = join(outDir, 'notes.txt');
-    await writeFile(notesPath, lines.map((line, i) => `[${i + 1}] ${line}`).join('\n'), { mode: 0o600 });
+    await host().fs.writeFile(notesPath, lines.map((line, i) => `[${i + 1}] ${line}`).join('\n'), { mode: 0o600 });
     const ctx = await context(meeting);
     const contextPath = join(outDir, 'context.json');
-    await writeFile(contextPath, JSON.stringify({
+    await host().fs.writeFile(contextPath, JSON.stringify({
       openIssues: ctx.openIssues.map((i) => ({ number: i.number, title: i.title, labels: i.labels })),
       ...(ctx.linear ? { linear: { projects: ctx.linear.projects.map(({ id: _id, ...p }) => p), cycles: ctx.linear.cycles.map(({ id: _id, ...c }) => c), people: ctx.linear.people.map((p) => p.name) } } : {}),
       pending: ctx.pending,
@@ -94,7 +92,7 @@ export async function readMeeting(n: number): Promise<void> {
     dir = await checkout(n);
     const outputPath = join(outDir, 'result.json');
     await runAgentTask(meetingTask({ type: 'meeting-read', meetingNumber: n, title: meeting.title, checkoutDir: dir, notesPath, contextPath, outputPath, linear: Boolean(ctx.linear) }));
-    const parsed = parseProposals(await readFile(outputPath, 'utf8'), {
+    const parsed = parseProposals(await host().fs.readFile(outputPath, 'utf8'), {
       lines: lines.length,
       openIssues: new Map(ctx.openIssues.map((i) => [i.number, i.title])),
       linear: ctx.linear ? { projects: ctx.linear.projects.map((p) => p.name), people: ctx.linear.people.map((p) => p.name) } : null,
@@ -120,6 +118,6 @@ export async function readMeeting(n: number): Promise<void> {
     }).catch((e) => log.error(`reuniones: no se pudo guardar la falla de R-${n}`, e));
   } finally {
     if (dir) await removeWorktreeDir(dir, 'meeting').catch(() => {});
-    await rm(outDir, { recursive: true, force: true }).catch(() => {});
+    await host().fs.rm(outDir, { recursive: true, force: true }).catch(() => {});
   }
 }

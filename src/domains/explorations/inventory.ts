@@ -1,4 +1,3 @@
-import { mkdir, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { runAgentTask } from '../../platform/agents/agent-task.js';
 import { explorationTask } from './prompts.js';
@@ -7,6 +6,7 @@ import { log } from '../../platform/logger.js';
 import { mergeInventory, saveInventory, type ExplorationMemory, type Inventory } from './memory.js';
 import { lastCommitTouching, parseDiscoveredFunctions } from './plan.js';
 import type { AppDefinition } from '../product-app/index.js';
+import { host } from '../../platform/host/host.js';
 
 export function explorationOutDir(): string {
   // Outside every checkout: the agent writes here, the supervisor reads it.
@@ -33,9 +33,9 @@ export async function refreshInventory(opts: {
     return { inventory: memory.inventory, added: [], retired: [], refreshed: false };
   }
 
-  await mkdir(explorationOutDir(), { recursive: true });
+  await host().fs.mkdir(explorationOutDir(), { recursive: true });
   const outputPath = join(explorationOutDir(), `${appName}-functions.json`);
-  await rm(outputPath, { force: true });
+  await host().fs.rm(outputPath, { force: true });
   await runAgentTask(explorationTask({
     type: 'explore-inventory',
     appName,
@@ -48,7 +48,7 @@ export async function refreshInventory(opts: {
 
   let raw: string;
   try {
-    raw = await readFile(outputPath, 'utf8');
+    raw = await host().fs.readFile(outputPath, 'utf8');
   } catch {
     throw new Error(`explore-inventory no escribió ${outputPath}`);
   }

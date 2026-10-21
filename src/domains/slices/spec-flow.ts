@@ -1,6 +1,4 @@
 import { markProcessed } from '../../platform/state/processed-comments.js';
-import { existsSync } from 'node:fs';
-import { mkdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { runAgentTask } from '../../platform/agents/agent-task.js';
 import { sliceTask } from './prompts.js';
@@ -12,6 +10,7 @@ import { evidenceUrl, publishEvidence } from '../product-app/index.js';
 import { notifyBlocker } from '../../platform/notify/notifier.js';
 import { specBranch } from './stack.js';
 import type { SpecCandidate } from '../commands/index.js';
+import { host } from '../../platform/host/host.js';
 
 // /spec — docs/DESIGN.md §11.10, stage 5: from a raw request (or an
 // exploration proposal) to a draft spec PR assigned to ronin. The human
@@ -36,8 +35,8 @@ export async function publishMockup(issueNumber: number, htmlPath: string, outDi
 
 export async function processSpecCandidate(candidate: SpecCandidate): Promise<void> {
   const outDir = join(activeRepo().worktreeBasePath, 'spec-out', String(candidate.issueNumber));
-  await rm(outDir, { recursive: true, force: true });
-  await mkdir(outDir, { recursive: true });
+  await host().fs.rm(outDir, { recursive: true, force: true });
+  await host().fs.mkdir(outDir, { recursive: true });
   try {
     const result = await runAgentTask(sliceTask({
       type: 'write-spec',
@@ -54,7 +53,7 @@ export async function processSpecCandidate(candidate: SpecCandidate): Promise<vo
     }
     const mockup = join(outDir, 'mockup.html');
     const pr = await findOpenPrByHead(specBranch(candidate.issueNumber));
-    if (pr && existsSync(mockup)) {
+    if (pr && (await host().fs.exists(mockup))) {
       const url = await publishMockup(candidate.issueNumber, mockup, outDir).catch((error: unknown) => {
         log.error(`spec #${candidate.issueNumber}: no se pudo publicar el mockup`, error);
         return undefined;

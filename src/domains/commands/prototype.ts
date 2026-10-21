@@ -1,5 +1,3 @@
-import { existsSync } from 'node:fs';
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { runAgentTask, type AgentTask } from '../../platform/agents/agent-task.js';
 import { commandTask, type CommandTask, type PrototypeBrowser } from './prompts.js';
@@ -218,12 +216,12 @@ export interface AppRun {
 async function freshWorktree(key: string): Promise<string> {
   const dir = prototypeDir(key);
   const repo = activeRepo().productRepoPath;
-  if (existsSync(dir)) {
+  if (await host().fs.exists(dir)) {
     await appDown(dir);
     await removeWorktreeDir(dir, 'prototype');
   }
   await host().exec('git', ['fetch', 'origin'], { cwd: repo });
-  await mkdir(activeRepo().worktreeBasePath, { recursive: true });
+  await host().fs.mkdir(activeRepo().worktreeBasePath, { recursive: true });
   await host().exec('git', ['worktree', 'add', '--detach', dir, activeRepo().worktreeBaseRef ?? config.worktreeBaseRef], { cwd: repo });
   return dir;
 }
@@ -266,14 +264,14 @@ export async function runOnApp<T>(target: PrototypeTarget, collect: (run: AppRun
     const generated = await changedFiles(dir).catch(() => []);
     const origins = originsOf(session.baseUrl, session.ctx.ports, session.ctx.port);
     const browsers = prototypeBrowsers(app);
-    await mkdir(outDir, { recursive: true });
+    await host().fs.mkdir(outDir, { recursive: true });
     const servers: Record<string, unknown> = {};
     for (const b of browsers) {
-      await mkdir(join(outDir, b.server), { recursive: true });
+      await host().fs.mkdir(join(outDir, b.server), { recursive: true });
       servers[b.server] = mcpServer(app, b.viewport, authStates[b.role], join(outDir, b.server), origins);
     }
     const mcpConfigPath = join(outDir, 'mcp.json');
-    await writeFile(mcpConfigPath, JSON.stringify({ mcpServers: servers }, null, 2));
+    await host().fs.writeFile(mcpConfigPath, JSON.stringify({ mcpServers: servers }, null, 2));
     const outputPath = join(outDir, 'result.json');
     await runAgentTask(target.task({
       appName,
@@ -300,7 +298,7 @@ export async function runOnApp<T>(target: PrototypeTarget, collect: (run: AppRun
   } finally {
     await appDown(dir);
     await removeWorktreeDir(dir, 'prototype');
-    await rm(outDir, { recursive: true, force: true }).catch(() => {});
+    await host().fs.rm(outDir, { recursive: true, force: true }).catch(() => {});
   }
 }
 
@@ -308,7 +306,7 @@ export async function runOnApp<T>(target: PrototypeTarget, collect: (run: AppRun
 // after, and `deliver` gets them while the images still exist.
 export function makePrototype<T>(target: PrototypeTarget, deliver: (draft: PrototypeDraft) => Promise<T>): Promise<T> {
   return runOnApp(target, async (run) => {
-    const output = parsePrototypeResult(await readFile(run.outputPath, 'utf8'), run.outDir);
+    const output = parsePrototypeResult(await host().fs.readFile(run.outputPath, 'utf8'), run.outDir);
     if ('error' in output) throw new PrototypeDeclined(output.error);
     const shots = { antes: [] as PrototypeShot[], despues: [] as PrototypeShot[] };
     for (const kind of ['antes', 'despues'] as const) {

@@ -1,5 +1,3 @@
-import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { log } from '../../platform/logger.js';
 import { activeRepo } from '../../platform/agents/repo-context.js';
@@ -42,7 +40,7 @@ async function commitOnTop(repoDir: string, files: EvidenceFile[], message: stri
     // First publish: the branch doesn't exist yet.
   });
   const parent = await git(repoDir, ['rev-parse', '--verify', '-q', `${REMOTE_REF}^{commit}`]).catch(() => undefined);
-  const indexDir = await mkdtemp(join(tmpdir(), 'ronin-evidence-'));
+  const indexDir = await host().fs.mkdtemp('ronin-evidence-');
   try {
     const env = { ...process.env, GIT_INDEX_FILE: join(indexDir, 'index') };
     await git(repoDir, parent ? ['read-tree', parent] : ['read-tree', '--empty'], env);
@@ -53,7 +51,7 @@ async function commitOnTop(repoDir: string, files: EvidenceFile[], message: stri
     const tree = await git(repoDir, ['write-tree'], env);
     return await git(repoDir, ['commit-tree', tree, ...(parent ? ['-p', parent] : []), '-m', message]);
   } finally {
-    await rm(indexDir, { recursive: true, force: true });
+    await host().fs.rm(indexDir, { recursive: true, force: true });
   }
 }
 

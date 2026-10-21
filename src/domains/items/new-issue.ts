@@ -1,4 +1,3 @@
-import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { APP_MANIFEST_FILE, parseAppManifest } from '../product-app/manifest.js';
 import { config } from '../../platform/config/config.js';
@@ -44,7 +43,7 @@ const BODY_MAX = 60_000;
 export async function repoAppPaths(entry: RepoEntry): Promise<Record<string, string>> {
   const base = entry.worktreeBaseRef ?? config.worktreeBaseRef;
   const raw = await host().exec('git', ['show', `${base}:${APP_MANIFEST_FILE}`], { cwd: entry.productRepoPath, maxBuffer: 10 * 1024 * 1024 })
-    .then(({ stdout }) => stdout, () => readFile(join(entry.productRepoPath, APP_MANIFEST_FILE), 'utf8'))
+    .then(({ stdout }) => stdout, () => host().fs.readFile(join(entry.productRepoPath, APP_MANIFEST_FILE), 'utf8'))
     .catch(() => null);
   if (raw === null) return {};
   try {
