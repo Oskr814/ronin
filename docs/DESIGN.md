@@ -721,13 +721,13 @@ Todo, salvo los webhooks y `/api/auth/*`, pide sesión. Las rutas pasan a Hono d
 | `GET /api/deploys` | Solo admins: cada repo con `deploy`, con lo mergeado sin desplegar (un cambio por PR) y sus últimos releases con el estado de su workflow (§18) |
 | `POST /api/deploys/<owner>/<repo>/plan` | Solo admins: qué llevaría un release, sin publicarlo: `{ tag, prs: 'all' \| [n…], prerelease? }`, con sus problemas en palabras y su `fingerprint` |
 | `POST /api/deploys/<owner>/<repo>/publish` | Solo admins: lo publica: lo mismo, más `{ title?, notes?, fingerprint? }`; 409 con el plan nuevo si algo cambió o no se puede |
-| `GET /api/reuniones` | Las reuniones de los repos que ve la sesión, con lo que ronin propuso de cada una (§17) |
-| `POST /api/reuniones` | Sube las notas de una reunión: `{ repo, title?, at?, link?, text? \| file: { name, data } }`, el archivo como data URL; ronin la lee en seguida |
-| `GET /api/reuniones/<n>` | Una: el texto de sus notas, sus propuestas, lo creado, su actividad y sus corridas |
-| `GET /api/reuniones/<n>/original` | El archivo tal como se subió, siempre como descarga |
-| `POST /api/reuniones/<n>/reintentar` | La lee de nuevo, después de una lectura que falló |
-| `POST /api/reuniones/<n>/aprobar` | Crea lo que la persona eligió, con sus cambios: `{ items: [{ id, title?, body?, lead?, project?, cycle? }] }` (§17.4) |
-| `POST /api/reuniones/<n>/descartar` | Descarta lo que queda de ella |
+| `GET /api/meetings` | Las reuniones de los repos que ve la sesión, con lo que ronin propuso de cada una (§17) |
+| `POST /api/meetings` | Sube las notas de una reunión: `{ repo, title?, at?, link?, text? \| file: { name, data } }`, el archivo como data URL; ronin la lee en seguida |
+| `GET /api/meetings/<n>` | Una: el texto de sus notas, sus propuestas, lo creado, su actividad y sus corridas |
+| `GET /api/meetings/<n>/original` | El archivo tal como se subió, siempre como descarga |
+| `POST /api/meetings/<n>/retry` | La lee de nuevo, después de una lectura que falló |
+| `POST /api/meetings/<n>/approve` | Crea lo que la persona eligió, con sus cambios: `{ items: [{ id, title?, body?, lead?, project?, cycle? }] }` (§17.4) |
+| `POST /api/meetings/<n>/discard` | Descarta lo que queda de ella |
 | `GET /api/portal-admin` | Solo admins: las cuentas del portal de pedidos y las aplicaciones que se pueden dar (§16.2) |
 | `POST /api/portal-admin/users`, `/users/<id>`, `/users/<id>/link` | Solo admins: crea una cuenta y manda la invitación, la cambia o manda otro enlace para la contraseña |
 | `GET /api/evidence/<owner>/<repo>/<sha>/<ruta>` | Una captura que publicó ronin (§11.5), leída del clon del repo de producto |
@@ -1162,7 +1162,7 @@ src/domains/meetings/    el dominio: las reuniones, sus notas y lo que ronin pro
   read.ts                la lectura: el contexto, el agente, las propuestas y el correo
   mail.ts                el correo al equipo
   worker.ts, launch.ts   el worker por reunión, su relanzamiento y reintentar
-  routes.ts              sus rutas en el tablero, en Hono (/api/reuniones/*)
+  routes.ts              sus rutas en el tablero, en Hono (/api/meetings/*)
   board.ts               la subida, la lista y la ficha
   approve.ts             aprobar (como la persona) y descartar
 ```
@@ -1243,7 +1243,7 @@ Cuando ronin propone algo, le llega un correo a quien eligió *Propuestas de una
 
 #### 17.6 API
 
-Ver la tabla de 15.9: `GET|POST /api/reuniones`, `GET /api/reuniones/<n>`, `GET /api/reuniones/<n>/original` y `POST /api/reuniones/<n>/reintentar | aprobar | descartar`. Todas filtran por los repos que ve la sesión.
+Ver la tabla de 15.9: `GET|POST /api/meetings`, `GET /api/meetings/<n>`, `GET /api/meetings/<n>/original` y `POST /api/meetings/<n>/retry | aprobar | descartar`. Todas filtran por los repos que ve la sesión.
 
 #### 17.7 Activarlo
 

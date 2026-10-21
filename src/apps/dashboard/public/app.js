@@ -4556,7 +4556,7 @@ const REU_STATUS = {
 const REU_KIND = { pdf: 'PDF', docx: 'Word', text: 'Texto', pasted: 'Pegado' };
 const REU_MAX_BYTES = 10 * 1024 * 1024;
 const REU_CYCLE = { current: 'el ciclo actual', next: 'el próximo ciclo' };
-const reuPath = (n, rest = '') => `/api/reuniones/${n}${rest}`;
+const reuPath = (n, rest = '') => `/api/meetings/${n}${rest}`;
 const reuChip = (m) => {
   const [cls, label] = REU_STATUS[m.status] ?? ['idle', m.status];
   return `<span class="chip ${cls}">${m.status === 'reading' ? dotClass('live') : ''}${esc(label)}</span>`;
@@ -4607,7 +4607,7 @@ function openReunion(n) {
 
 async function loadReuniones() {
   try {
-    S.reu.list = (await api('/api/reuniones')).meetings;
+    S.reu.list = (await api('/api/meetings')).meetings;
     S.reu.error = null;
   } catch (error) {
     if (error instanceof Unauthorized && showLogin(error)) return;
@@ -4818,7 +4818,7 @@ async function approveReunion(n) {
   S.reu.approving = true;
   renderCenter();
   try {
-    const out = await api(reuPath(n, '/aprobar'), { method: 'POST', body: JSON.stringify({ items }) });
+    const out = await api(reuPath(n, '/approve'), { method: 'POST', body: JSON.stringify({ items }) });
     toast(out.failed ? `Se crearon ${out.created}; ${out.failed} no se pudieron crear: puedes intentarlo de nuevo.` : `Listo: se crearon ${out.created}.`);
     refresh();
   } catch (error) {
@@ -4833,7 +4833,7 @@ async function approveReunion(n) {
 async function discardReunion(n) {
   if (!confirm('¿Descartar lo que queda de esta reunión? No se crea nada más.')) return;
   try {
-    await api(reuPath(n, '/descartar'), { method: 'POST', body: '{}' });
+    await api(reuPath(n, '/discard'), { method: 'POST', body: '{}' });
     toast('Listo: la reunión quedó descartada.');
     refresh();
   } catch (error) {
@@ -4950,7 +4950,7 @@ async function retryReunion(n) {
   S.reu.retrying = true;
   renderCenter();
   try {
-    await api(reuPath(n, '/reintentar'), { method: 'POST', body: '{}' });
+    await api(reuPath(n, '/retry'), { method: 'POST', body: '{}' });
     toast(`Listo: ronin vuelve a leer R-${n}.`);
   } catch (error) {
     if (error instanceof Unauthorized && showLogin(error)) return;
@@ -5127,7 +5127,7 @@ async function sendUpload() {
   renderUpload();
   try {
     const body = { repo: u.repo, title: u.title, link: u.link, ...(u.at ? { at: new Date(u.at).toISOString() } : {}), ...(u.file ? { file: { name: u.file.name, data: u.file.data } } : { text: u.text }) };
-    const response = await fetch('/api/reuniones', { method: 'POST', headers: { Accept: 'application/json', 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const response = await fetch('/api/meetings', { method: 'POST', headers: { Accept: 'application/json', 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     if (response.status === 401) throw new Unauthorized(await sessionEnded(response));
     const out = await response.json().catch(() => ({}));
     if (!response.ok) {
