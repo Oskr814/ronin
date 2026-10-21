@@ -2326,15 +2326,15 @@ function shotHTML(img, label, which, extra = '') {
 function compareHTML(f) {
   const key = fichaKey(f);
   const i = Math.min(S.antes[key] ?? 0, Math.max(0, f.antes.length - 1));
-  const old = S.oldAfter.has(key) && f.despuesAnterior;
-  const after = f.despues && (old ? f.despuesAnterior : f.despues);
+  const old = S.oldAfter.has(key) && f.previousAfterImage;
+  const after = f.despues && (old ? f.previousAfterImage : f.despues);
   const thumbs = f.antes.length > 1 ? `<span class="thumbs">${f.antes.map((a, k) => {
     const local = evidenceSrc(a.url);
     return `<button class="thumb" data-antes="${k}" aria-pressed="${k === i}" title="${esc(a.nota ?? `Antes ${k + 1}`)}">${local ? `<img class="ev" src="${esc(local)}" alt="" data-label="${k + 1}">` : k + 1}</button>`;
   }).join('')}</span>` : '';
   const before = f.antes[i];
   if (!before && !after) return '';
-  const afterExtra = f.despuesAnterior ? `<button class="link tag" data-oldafter>${old ? 'ver la actual' : 'ver la anterior'}</button>` : '';
+  const afterExtra = f.previousAfterImage ? `<button class="link tag" data-oldafter>${old ? 'ver la actual' : 'ver la anterior'}</button>` : '';
   const cls = [f.viewport === 'desktop' ? 'wide' : '', before && after ? '' : 'one'].filter(Boolean).join(' ');
   return `<div class="compare"><div class="ctop"><h3>Antes y después</h3>${thumbs}</div>
     <div class="pair ${cls}">${before ? shotHTML(before, 'Antes', 'antes', f.antes.length > 1 ? `<span>${i + 1} de ${f.antes.length}</span>` : '') : ''}${after ? shotHTML(after, 'Después', 'despues', `${old ? '<span>versión anterior</span>' : ''}${afterExtra}`) : ''}</div>
@@ -2434,7 +2434,7 @@ function renderLightbox() {
   }
   if (!box) box = Object.assign(document.body.appendChild(document.createElement('div')), { id: 'lightbox', className: 'lightbox' });
   const key = fichaKey(f);
-  const after = f.despues && (S.oldAfter.has(key) && f.despuesAnterior ? f.despuesAnterior : f.despues);
+  const after = f.despues && (S.oldAfter.has(key) && f.previousAfterImage ? f.previousAfterImage : f.despues);
   const before = f.antes[lb.antes];
   const shots = lb.only === 'despues' || !before ? [['Después', after]] : [[`Antes${f.antes.length > 1 ? ` ${lb.antes + 1} de ${f.antes.length}` : ''}`, before], ...(after ? [['Después', after]] : [])];
   box.innerHTML = `<div class="lt"><b>${esc(f.id)}</b><span class="m">${esc(f.titulo)}</span>${f.antes.length > 1 ? '<span class="m keys"><kbd>←</kbd> <kbd>→</kbd> otra captura del antes</span>' : ''}<button id="lb-x">Cerrar ✕</button></div>
