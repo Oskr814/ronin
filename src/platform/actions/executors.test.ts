@@ -9,13 +9,17 @@ import type { RunScope } from './catalog.js';
 const replyToComment = vi.fn();
 const postIssueComment = vi.fn();
 const resolveReviewThread = vi.fn();
+const getPullRequestStatus = vi.fn();
+const setPullRequestBody = vi.fn();
 vi.mock('../github/github.js', () => ({
+  getPullRequestStatus: (...args: unknown[]) => getPullRequestStatus(...args),
+  setPullRequestBody: (...args: unknown[]) => setPullRequestBody(...args),
   replyToComment: (...args: unknown[]) => replyToComment(...args),
   postIssueComment: (...args: unknown[]) => postIssueComment(...args),
   resolveReviewThread: (...args: unknown[]) => resolveReviewThread(...args),
 }));
 
-const { executeAction, rootCheckout } = await import('./executors.js');
+const { executeAction, rootCheckout, bodyKeepsWhatItMust } = await import('./executors.js');
 const { ActionRefused } = await import('./catalog.js');
 
 const run = promisify(execFile);
@@ -90,5 +94,28 @@ describe('executeAction', () => {
 
     await expect(executeAction(scope, checkout, { name: 'git.push', input: {} })).rejects.toThrow('alguien subió otro commit');
     expect(await git(origin, 'rev-parse', 'refs/heads/feat/x')).toBe(theirs);
+  });
+});
+
+describe('pr.update-body', () => {
+  const current = 'Closes #228\n\n## Qué cambió\nAntes.\n\n<!-- ronin:help -->\n<sub>ayuda</sub>\n';
+
+  it('keeps the issue link and the help footer', () => {
+    expect(bodyKeepsWhatItMust(current, 'Closes #228\n\n## Qué cambió\nDespués.\n\n<!-- ronin:help -->\n<sub>ayuda</sub>')).toBeNull();
+    expect(bodyKeepsWhatItMust(current, '## Qué cambió\nDespués.\n\n<!-- ronin:help -->\n<sub>ayuda</sub>')).toContain('Closes #228');
+    expect(bodyKeepsWhatItMust(current, 'Closes #228\n\nDespués.\n\n<!-- ronin:help -->\n<sub>otra</sub>')).toContain('ronin:help');
+    expect(bodyKeepsWhatItMust('Sin issue ni pie', 'Otra cosa')).toBeNull();
+  });
+
+  it('saves it only when it does', async () => {
+    const { scope, checkout } = await setup();
+    getPullRequestStatus.mockResolvedValue({ body: current });
+
+    await expect(executeAction(scope, checkout, { name: 'pr.update-body', input: { body: 'Todo nuevo' } })).rejects.toBeInstanceOf(ActionRefused);
+    expect(setPullRequestBody).not.toHaveBeenCalled();
+
+    const next = 'Closes #228\n\n## Qué cambió\nDespués.\n\n<!-- ronin:help -->\n<sub>ayuda</sub>';
+    await executeAction(scope, checkout, { name: 'pr.update-body', input: { body: next } });
+    expect(setPullRequestBody).toHaveBeenCalledWith(7, next);
   });
 });

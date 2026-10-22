@@ -1395,7 +1395,7 @@ export async function listBotOpenReviewThreads(prNumber: number, botLogin: strin
 // looks at resolved threads at all.
 export async function listExternalOpenReviewThreads(prNumber: number, botLogin: string): Promise<ReviewThread[]> {
   const threads = await fetchOpenReviewThreads(prNumber);
-  return threads.filter((t) => t.authorLogin !== botLogin).map((t) => ({ id: t.id, body: t.body }));
+  return threads.filter((t) => t.authorLogin !== botLogin).map((t) => ({ id: t.id, ...(t.commentId ? { commentId: t.commentId } : {}), body: t.body }));
 }
 
 // Every unresolved thread regardless of who opened it — used by

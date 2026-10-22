@@ -321,7 +321,7 @@ export async function ensureTrustedFixWorktree(branch: string): Promise<string> 
   return dir;
 }
 
-// A run as the agent's user (#257, agent-user.ts) on a human's branch: a
+// A run as the agent's user (#257, agent-user.ts) on a PR's branch: a
 // clone of its own instead of a worktree of the shared repo, owned by that
 // user. A worktree would write its commits into the shared repo's .git,
 // whose config and hooks root then runs with; the clone shares the repo's

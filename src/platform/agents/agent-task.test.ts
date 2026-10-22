@@ -161,7 +161,7 @@ describe('runAgentTask — a human\'s branch', () => {
   // (reproduced live on PR #336) — a plain branch checkout would collide
   // with that, so this uses the detached ensureTrustedFixWorktree instead,
   // same fix class as the untrusted head's SHA-based checkout above.
-  const fix = () => task({ type: 'fix-comments-external', prNumber: 599 }, { branch: 'feat/cambio-cliente-pedido-creado', checkout: { kind: 'human-branch' } });
+  const fix = () => task({ type: 'fix-comments-external', prNumber: 599 }, { branch: 'feat/cambio-cliente-pedido-creado', checkout: { kind: 'pr-branch' } });
 
   it('checks out the detached trusted-fix worktree by branch name, never a plain or external-review one', async () => {
     await runAgentTask(fix());

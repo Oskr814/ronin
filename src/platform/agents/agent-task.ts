@@ -41,12 +41,14 @@ export type TaskCheckout =
   // Fix 1. Its code is untrusted, so the run strips the project config
   // Claude Code would load from it, and the checkout goes once it ends.
   | { kind: 'untrusted-pr-head'; prNumber: number; sha: string }
-  // A trusted human's own same-repo branch, detached: it's routinely
-  // checked out in the primary worktree at the same time (the human who
-  // asked is often the one actively developing it there), and a plain
-  // branch checkout would collide with that, same class of failure as the
-  // fork case above — see ensureTrustedFixWorktree. Removed once it ends.
-  | { kind: 'human-branch' };
+  // The branch of an open, same-repo PR, detached: a person's branch is
+  // routinely checked out in the primary worktree at the same time (the
+  // human who asked is often the one actively developing it there), and a
+  // plain branch checkout would collide with that, same class of failure as
+  // the fork case above — see ensureTrustedFixWorktree. ronin's own PRs use
+  // it too when they work through actions (#257): the run only amends and
+  // pushes what the PR already has. Removed once it ends.
+  | { kind: 'pr-branch' };
 
 // A subagent the run can launch, in `claude --agents` format.
 export interface AgentDefinition {
@@ -99,22 +101,22 @@ function runOutcome(error: unknown): RunOutcome {
   return 'error';
 }
 
-// `as`: the run goes as the agent's user (agent-user.ts), which on a
-// human's branch gets a clone of its own (worktree.ts's ensureAgentClone).
+// `as`: the run goes as the agent's user (agent-user.ts), which on a PR's
+// branch gets a clone of its own (worktree.ts's ensureAgentClone).
 async function checkoutDir(checkout: TaskCheckout, branch: string, as: AgentUser | null): Promise<string> {
   switch (checkout.kind) {
     case 'branch': return ensureWorktree(branch, checkout.baseBranch);
     case 'dir': return typeof checkout.dir === 'string' ? checkout.dir : checkout.dir();
     case 'untrusted-pr-head': return ensureExternalReviewWorktree(checkout.prNumber, checkout.sha);
-    case 'human-branch': return as ? ensureAgentClone(branch, as) : ensureTrustedFixWorktree(branch);
+    case 'pr-branch': return as ? ensureAgentClone(branch, as) : ensureTrustedFixWorktree(branch);
   }
 }
 
-// A run with actions on a human's branch is the only one that goes as the
+// A run with actions on a PR's branch is the only one that goes as the
 // agent's user for now (#257): the other kinds of checkout are still
 // root's worktrees.
 function runsAs(checkout: TaskCheckout, actions: PreparedTask['actions']): AgentUser | null {
-  return actions && checkout.kind === 'human-branch' ? agentUser() : null;
+  return actions && checkout.kind === 'pr-branch' ? agentUser() : null;
 }
 
 export async function runAgentTask(task: AgentTask): Promise<string> {
@@ -231,7 +233,7 @@ export async function runAgentTask(task: AgentTask): Promise<string> {
     // head from scratch), and — unlike ensureWorktree's own ronin/<issue>/…
     // branches — sweepOrphanedWorktrees never recognizes a human branch name
     // as its own, so a leftover here would never get swept.
-    if (checkout.kind === 'human-branch') {
+    if (checkout.kind === 'pr-branch') {
       await (as ? removeAgentClone(branch) : removeTrustedFixWorktree(branch)).catch((cleanupError) =>
         log.error(`${task.type} cleanup falló para PR #${prNumber}`, cleanupError),
       );

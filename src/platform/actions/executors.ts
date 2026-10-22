@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { join } from 'node:path';
-import { postIssueComment, replyToComment, resolveReviewThread } from '../github/github.js';
+import { getPullRequestStatus, postIssueComment, replyToComment, resolveReviewThread, setPullRequestBody } from '../github/github.js';
+import { HELP_FOOTER_MARKER } from '../github/pr-body.js';
 import { host } from '../host/host.js';
 import { asAgent, type AgentUser } from '../agents/agent-user.js';
 import { ActionRefused, type CheckoutState, type RunScope, type ValidAction } from './catalog.js';
@@ -73,6 +74,17 @@ async function takeHead(scope: RunScope, checkout: RunCheckout): Promise<string>
   }
 }
 
+// What a new description must keep of the current one: its "Closes #N"
+// first line, which links the PR to its issue, and ronin's help footer, from
+// its marker on. Null when it keeps them; the reason otherwise.
+export function bodyKeepsWhatItMust(current: string, next: string): string | null {
+  const closes = /^Closes #\d+/i.exec(current.trimStart())?.[0];
+  if (closes && !next.trimStart().startsWith(closes)) return `la descripción tiene que seguir empezando con "${closes}"`;
+  const at = current.indexOf(HELP_FOOTER_MARKER);
+  if (at >= 0 && !next.trimEnd().endsWith(current.slice(at).trimEnd())) return `todo desde la línea "${HELP_FOOTER_MARKER}" tiene que quedar exactamente como está`;
+  return null;
+}
+
 export async function executeAction(scope: RunScope, checkout: RunCheckout, action: ValidAction, services?: RunServices): Promise<ActionResult> {
   switch (action.name) {
     case 'pr.reply':
@@ -83,6 +95,12 @@ export async function executeAction(scope: RunScope, checkout: RunCheckout, acti
     case 'pr.resolve-thread':
       await resolveReviewThread(scope.threads.find((t) => t.commentId === action.input.commentId)!.threadId);
       return {};
+    case 'pr.update-body': {
+      const refused = bodyKeepsWhatItMust((await getPullRequestStatus(scope.prNumber)).body, action.input.body);
+      if (refused) throw new ActionRefused(refused);
+      await setPullRequestBody(scope.prNumber, action.input.body);
+      return {};
+    }
     case 'git.push': {
       const sha = await takeHead(scope, checkout);
       // Leased on the commit the run started from: if someone pushed to the
