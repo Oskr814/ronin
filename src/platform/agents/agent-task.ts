@@ -10,7 +10,7 @@ import { recordAgentRun } from './metrics.js';
 import { currentRunGroup } from './run-group.js';
 import { host } from '../host/host.js';
 import type { RunScope } from '../actions/catalog.js';
-import { agentCheckout, checkoutState, executeAction, rootCheckout, type RunCheckout, type RunServices } from '../actions/executors.js';
+import { agentCheckout, checkoutState, executeAction, rootCheckout, type RunApp, type RunCheckout, type RunServices, type RunTools } from '../actions/executors.js';
 import { asAgent, prepareAgentUser, repoAgentUser, type AgentUser } from './agent-user.js';
 import { startActionsServer, type ActionsServer } from '../actions/server.js';
 import { mintReadToken } from '../github/read-token.js';
@@ -83,6 +83,9 @@ export interface PreparedTask {
   // What the services.* actions run (domains/product-app/services.ts):
   // made once the checkout exists, closed when the run ends.
   services?: (checkoutDir: string, owner: AgentUser | null) => RunServices;
+  // The app the run works on, which the task already brought up: what
+  // app.exec runs in.
+  app?: RunApp;
   // A run that only reads and leaves its result in files (#257): sealed,
   // as the agent's user, with the read token, writing only in outputDir —
   // which it gets for the run, with whatever ronin put there for it to
@@ -165,7 +168,7 @@ export async function reclaimOutput(dir: string): Promise<void> {
 }
 
 export async function runAgentTask(task: AgentTask): Promise<string> {
-  const { branch, prompt, checkout, agents, mcpConfigFile, actions, services: makeServices, sealed, ...prepared } = await task.prepare();
+  const { branch, prompt, checkout, agents, mcpConfigFile, actions, services: makeServices, app, sealed, ...prepared } = await task.prepare();
   const as = await runsAs(checkout, actions, sealed);
   const worktreeDir = await checkoutDir(checkout, branch, as);
 
@@ -231,7 +234,7 @@ export async function runAgentTask(task: AgentTask): Promise<string> {
         ? agentCheckout(worktreeDir, activeRepo().productRepoPath, as)
         : rootCheckout(worktreeDir, activeRepo().productRepoPath);
       services = makeServices?.(worktreeDir, as) ?? null;
-      server = await startRunActions(actions, runCheckout, services, `${task.type} #${tag}`);
+      server = await startRunActions(actions, runCheckout, { ...(services ? { services } : {}), ...(app ? { app } : {}) }, `${task.type} #${tag}`);
     }
     const result = await runClaudeHeadless(worktreeDir, prompt, `${task.type} #${tag}`, {
       model,
@@ -252,7 +255,7 @@ export async function runAgentTask(task: AgentTask): Promise<string> {
     // The status a run reports with result.report goes where the tasks that
     // ask for one already read it: the run's last line (RONIN_STATUS).
     const status = server?.report()?.status;
-    if (server) logActions(server, `${task.type} for ${label}`);
+    if (server) logActions(server, `${task.type} for ${label}`, actions?.allowed ?? []);
     const durationMs = Date.now() - start;
     recordAgentRun(durationMs);
     log.metric('agent_run', { taskType: task.type, issueNumber, prNumber, durationMs, success: true });
@@ -301,7 +304,7 @@ export async function runAgentTask(task: AgentTask): Promise<string> {
 
 // The run's actions server, scoped to it: every action runs as ronin, in
 // the run's repo, whatever async context the request arrives in.
-async function startRunActions(scope: NonNullable<PreparedTask['actions']>, checkout: RunCheckout, services: RunServices | null, label: string): Promise<ActionsServer> {
+async function startRunActions(scope: NonNullable<PreparedTask['actions']>, checkout: RunCheckout, tools: RunTools, label: string): Promise<ActionsServer> {
   const { push, ...rest } = scope;
   const runScope: RunScope = { ...rest, startSha: await checkout.git(['rev-parse', 'HEAD']) };
   if (push?.mode === 'branch') {
@@ -317,16 +320,17 @@ async function startRunActions(scope: NonNullable<PreparedTask['actions']>, chec
     scope: runScope,
     label,
     checkout: () => checkoutState(checkout, runScope),
-    execute: (action) => withActiveRepo(repo, () => executeAction(runScope, checkout, action, services ?? undefined)),
+    execute: (action) => withActiveRepo(repo, () => executeAction(runScope, checkout, action, tools)),
   });
 }
 
 // A run that ends without result.report did its work anyway — the actions
 // it took are already on GitHub — so it isn't failed for it: it's left in
 // the log, with what was refused.
-function logActions(server: ActionsServer, label: string): void {
+function logActions(server: ActionsServer, label: string, allowed: readonly string[]): void {
   const refused = server.calls.filter((c) => c.outcome !== 'ok');
   const report = server.report();
   log.info(`${label}: ${server.calls.length} acción(es), ${refused.length} rechazada(s)${report ? ` — ${report.summary}` : ''}`);
-  if (!report) log.error(`${label} terminó sin result.report`);
+  // Only a run that has result.report is expected to end with it.
+  if (!report && allowed.includes('result.report')) log.error(`${label} terminó sin result.report`);
 }

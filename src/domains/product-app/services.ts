@@ -6,10 +6,10 @@ import { config } from '@platform/config/config.js';
 import { getFreePort } from '@platform/git/worktree.js';
 import { log } from '@platform/logger.js';
 import { ActionRefused } from '@platform/actions/catalog.js';
-import type { RunServices } from '@platform/actions/executors.js';
+import type { RunApp, RunServices } from '@platform/actions/executors.js';
 import type { AgentUser } from '@platform/agents/agent-user.js';
 import { APP_MANIFEST_FILE } from './manifest.js';
-import { appEnv, rewriteComposeConfig } from './runtime.js';
+import { appCompose, appEnv, rewriteComposeConfig } from './runtime.js';
 
 // The services an agent's tests need, for a run that has no Docker of its
 // own (#257, the services.* actions): ronin runs the repo's compose — the
@@ -51,6 +51,47 @@ export function composeFilesOf(manifest: string): string[] {
     .flatMap((app: any) => (Array.isArray(app?.compose?.files) ? app.compose.files : []))
     .filter((f: unknown): f is string => typeof f === 'string');
   return [...new Set(files)];
+}
+
+// A command in a container, `docker <args> sh -c <command>`: its exit code
+// and the end of what it printed.
+async function inContainer(args: string[], command: string, opts: { cwd: string; checkoutDir: string; owner: AgentUser | null }): Promise<{ exitCode: number; output: string }> {
+  let exitCode = 0;
+  let output: string;
+  try {
+    // The command's stderr into its stdout, in order (`exec 2>&1`): what
+    // comes back is what it printed. Compose's own progress goes to
+    // docker's stderr, kept only when the command didn't run.
+    const done = await host().exec('docker', [...args, 'sh', '-c', `exec 2>&1; ${command}`], {
+      cwd: opts.cwd, env: appEnv(), timeout: RUN_TIMEOUT_MS, maxBuffer: 64 * 1024 * 1024,
+    });
+    output = done.stdout;
+  } catch (error) {
+    const e = error as { code?: number | string; killed?: boolean; stdout?: string; stderr?: string };
+    exitCode = typeof e.code === 'number' ? e.code : 1;
+    output = e.stdout || (e.stderr ?? '').slice(-2_000);
+    if (e.killed) output += `\n(cortado a los ${RUN_TIMEOUT_MS / 60_000} minutos)`;
+  } finally {
+    // What the container wrote in the checkout is root's: back to the
+    // agent, or it can't change or delete it.
+    if (opts.owner) await host().exec('chown', ['-R', `${opts.owner.uid}:${opts.owner.gid}`, opts.checkoutDir]).catch(() => {});
+  }
+  return { exitCode, output: output.length > OUTPUT_MAX ? `…${output.slice(-OUTPUT_MAX)}` : output };
+}
+
+// The stack of the app a task brought up for its run (#257, app.exec), as
+// appUp left it in `dir`: a command in the container of one of its
+// services, or in a new one (`oneOff`, `compose run --rm`). `owner`: the
+// agent's user, when `dir` is its checkout.
+export function appStack(dir: string, owner: AgentUser | null): RunApp {
+  return {
+    async exec(service, command, oneOff) {
+      const stack = await appCompose(dir);
+      if (!stack) throw new ActionRefused('la app de esta corrida no tiene un stack de compose');
+      if (!stack.services.includes(service)) throw new ActionRefused(`el compose de la app no tiene ${service}; tiene: ${stack.services.join(', ')}`);
+      return inContainer([...stack.args, ...(oneOff ? ['run', '--rm', '-T'] : ['exec', '-T']), service], command, { cwd: dir, checkoutDir: dir, owner });
+    },
+  };
 }
 
 interface Stack {
@@ -100,27 +141,7 @@ export function runServices(opts: { checkoutDir: string; owner: AgentUser | null
 
     async run(service, command) {
       const s = await ready([service]);
-      let exitCode = 0;
-      let output: string;
-      try {
-        // The command's stderr into its stdout, in order (`exec 2>&1`):
-        // what comes back is what it printed. Compose's own progress goes
-        // to docker's stderr, kept only when the command didn't run.
-        const done = await host().exec('docker', [...compose(s), 'run', '--rm', '-T', service, 'sh', '-c', `exec 2>&1; ${command}`], {
-          cwd: baseDir, env: appEnv(), timeout: RUN_TIMEOUT_MS, maxBuffer: 64 * 1024 * 1024,
-        });
-        output = done.stdout;
-      } catch (error) {
-        const e = error as { code?: number | string; killed?: boolean; stdout?: string; stderr?: string };
-        exitCode = typeof e.code === 'number' ? e.code : 1;
-        output = e.stdout || (e.stderr ?? '').slice(-2_000);
-        if (e.killed) output += `\n(cortado a los ${RUN_TIMEOUT_MS / 60_000} minutos)`;
-      } finally {
-        // What the container wrote in the checkout is root's: back to the
-        // agent, or it can't change or delete it.
-        if (opts.owner) await host().exec('chown', ['-R', `${opts.owner.uid}:${opts.owner.gid}`, opts.checkoutDir]).catch(() => {});
-      }
-      return { exitCode, output: output.length > OUTPUT_MAX ? `…${output.slice(-OUTPUT_MAX)}` : output };
+      return inContainer([...compose(s), 'run', '--rm', '-T', service], command, { cwd: baseDir, checkoutDir: opts.checkoutDir, owner: opts.owner });
     },
 
     async close() {

@@ -57,9 +57,11 @@ function repoSlug(): string {
   return activeRepo().productRepo.toLowerCase().replace(/[^a-z0-9]+/g, '-');
 }
 
-// Where the catalog of `app` at commit `sha` of the active repo lives.
-export async function seedCatalogPath(dir: string, sha: string, appName: string, app: Pick<AppDefinition, 'steps' | 'seedPaths'>): Promise<string> {
-  const { stdout } = await host().exec('git', ['ls-tree', '-r', '--full-tree', sha], { cwd: dir, maxBuffer: 64 * 1024 * 1024 });
+// Where the catalog of `app` at commit `sha` of the active repo lives. Read
+// in the shared repo, which has the commit: never in a checkout of the
+// agent's (#257).
+export async function seedCatalogPath(sha: string, appName: string, app: Pick<AppDefinition, 'steps' | 'seedPaths'>): Promise<string> {
+  const { stdout } = await host().exec('git', ['ls-tree', '-r', '--full-tree', sha], { cwd: activeRepo().productRepoPath, maxBuffer: 64 * 1024 * 1024 });
   const hash = seedHash(seedEntries(stdout, app.seedPaths), app.steps);
   return join(config.seedCatalogs.dataDir, repoSlug(), appName, `${hash}.yaml`);
 }

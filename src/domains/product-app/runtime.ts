@@ -1,7 +1,7 @@
 import { basename, dirname, join } from 'node:path';
 import { activeRepo } from '@platform/agents/repo-context.js';
 import { config } from '@platform/config/config.js';
-import { getFreePort } from '@platform/git/worktree.js';
+import { getFreePort, removeWorktreeDir } from '@platform/git/worktree.js';
 import { log } from '@platform/logger.js';
 import { loadAppDefinition, namedPortsIn, publicizeTemplate, publicPortsIn, renderTemplate, usesCompose, type AppDefinition, type AppStep, type TemplateContext } from './manifest.js';
 import { AGENT_ENV_KEYS } from '@platform/claude/claude-runner.js';
@@ -134,6 +134,12 @@ async function stateDirOf(dir: string): Promise<string> {
   return (await host().fs.exists(outside)) ? outside : join(dir, APP_STATE_DIR);
 }
 
+// Where the app of `dir` keeps its state, for a caller that keeps files of
+// its own next to it (a preview's).
+export function appStateDir(dir: string): Promise<string> {
+  return stateDirOf(dir);
+}
+
 async function readState(dir: string): Promise<AppState | null> {
   try {
     return JSON.parse(await host().fs.readFile(join(await stateDirOf(dir), 'state.json'), 'utf8')) as AppState;
@@ -150,6 +156,23 @@ async function writeState(dir: string, state: AppState): Promise<void> {
 // the checkout still there, the next appDown would read the one inside it.
 export async function removeAppState(dir: string): Promise<void> {
   await host().fs.rm(outsideStateDir(dir), { recursive: true, force: true });
+}
+
+// Whether `dir` is a clone of the agent's user (worktree.ts's agentCloneAt,
+// #257) rather than ronin's worktree: a clone has its .git as a directory.
+export function isAgentCheckout(dir: string): Promise<boolean> {
+  return host().fs.exists(join(dir, '.git', 'HEAD'));
+}
+
+// A checkout an app ran from, gone: the agent's, and then the state kept
+// next to it (removeAppState), or ronin's worktree.
+export async function removeAppCheckout(dir: string, label: string): Promise<void> {
+  if (await isAgentCheckout(dir)) {
+    await host().fs.rm(dir, { recursive: true, force: true });
+    await removeAppState(dir);
+  } else {
+    await removeWorktreeDir(dir, label);
+  }
 }
 
 // How a step runs: as ronin, with appEnv; or, for an agent's checkout, as
@@ -339,6 +362,16 @@ export async function appRerun(dir: string, app: AppDefinition, steps: AppStep[]
   await writeState(dir, state);
   log.info(`app ${state.appName}: actualizada en ${baseUrl} (${steps.length === 0 ? 'sin pasos' : steps.map(stepLabel).join(', ')})`);
   return { appName: state.appName, app, dir, baseUrl, ctx, stateDir: await stateDirOf(dir) };
+}
+
+// The compose stack appUp left running in `dir`, from its state — never
+// from the checkout: the arguments that follow `docker`, and its services.
+// Null when the app has none. What app.exec runs in (services.ts).
+export async function appCompose(dir: string): Promise<{ args: string[]; services: string[] } | null> {
+  const state = await readState(dir);
+  if (!state?.composeFile) return null;
+  const resolved = JSON.parse(await host().fs.readFile(state.composeFile, 'utf8')) as { services?: Record<string, unknown> };
+  return { args: composeArgs(state), services: Object.keys(resolved.services ?? {}) };
 }
 
 // An app another process brought up with appUp and left running (the CLI's
