@@ -64,6 +64,10 @@ export const ACTIONS = {
     summary: 'Resuelve el hilo de un comentario listado. Solo si cambiaste código por ese hilo.',
     input: z.object({ commentId: commentId.describe('El id del primer comentario del hilo') }),
   },
+  'pr.update-body': {
+    summary: 'Reemplaza la descripción del PR. Tiene que conservar igual la primera línea "Closes #N" y todo desde la línea "<!-- ronin:help -->".',
+    input: z.object({ body: z.string().trim().min(1).max(60_000).refine((s) => !hasMention(s), { message: 'no se puede escribir @ seguido de un nombre: menciona a la persona por su rol' }).describe('La descripción completa, en Markdown') }),
+  },
   'git.push': {
     summary: 'Sube el commit del checkout a la rama del PR. Tiene que ser un amend del commit con el que empezaste, sin cambios sin commitear.',
     input: z.object({}),
