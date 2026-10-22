@@ -866,6 +866,7 @@ button.brow:hover { background: var(--hover); }
 .pd-ptabs { padding: 0; margin: 0 0 12px; }
 .pd .m, .pd-body .m { color: var(--muted); }
 .pd-pn { font: 11.5px "JetBrains Mono", ui-monospace, monospace; color: var(--muted); }
+.item .sub .pd-pn { margin-right: 5px; color: var(--ink-2); }
 .pd-filters { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
 .pd-filters button { font-size: 12.5px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--rule); color: var(--ink-2); display: inline-flex; gap: 6px; align-items: center; }
 .pd-filters button:hover { background: var(--hover); }

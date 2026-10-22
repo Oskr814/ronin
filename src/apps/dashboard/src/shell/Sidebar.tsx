@@ -5,7 +5,7 @@ import { short } from '@ui/time.js';
 import { Live } from './Live.js';
 import {
   AJ_SECTIONS, canDo, changed, goHome, inScope, type Item, linearRepos, openSettings, openDeploys, openExploration, openExplorations, openMetrics,
-  openNewIssue, openRequest, openRequests, openMeetings, projectColor, queryClient, repoColor, repoShort, S, safeRepo, saveScope, select,
+  openNewIssue, openRequests, openMeetings, projectColor, queryClient, repoColor, repoShort, S, safeRepo, saveScope, select,
   xplCounts, xplRows, xplToDecide,
 } from './state.js';
 import type { ExplorationRow } from './hooks.js';
@@ -61,42 +61,24 @@ function PreviewTag({ preview }: { preview: Item['preview'] }) {
   return <span className={`pvtag ${ready ? 'ok' : 'prep'}`} title={title}><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="13" rx="2" /><path d="M8 21h8M12 17v4" /></svg>{ready ? 'preview' : 'preview…'}</span>;
 }
 
+// The portal request an issue came from (#132), while it's still going:
+// the request itself is on Pedidos del portal.
+const pedidoOf = (item: Item) => (item.kind === 'issue' ? (S.snap?.pedidos ?? []).find((p) => p.repo === item.repo && p.issue === item.number) : undefined);
+
 // `hit`: the PR number the search found the issue by, whose slice shows highlighted.
 function ItemRow({ item, hit }: { item: Item; hit: number | null }) {
+  const pedido = pedidoOf(item);
   const last = itemLast(item);
   const showSlices = item.slices?.length && (S.sel === item.id || item.status === 'running' || item.status === 'blocked' || hit);
   return (
     <>
       <button className={`item ${item.pinned ? 'pinned' : ''}`} data-id={item.id} aria-current={S.sel === item.id} title={item.pinned ? 'PR de exploración: sus fichas se revisan acá' : undefined} onClick={() => void select(item.id)}>
         {item.pinned ? EXPLORE_ICON : <RunDot state={item.status} />}<span className="t">{item.title}</span><Live className="age" since={item.status === 'running' && item.lastRun ? item.lastRun.startedAt : undefined} text={itemAge(item)} />
-        <span className="sub"><PreviewTag preview={item.preview} /><GhIcon kind={item.kind} state={item.github} />{itemSub(item)}{item.linear && <>, <span className="red">{item.linear.id}</span></>}{item.linear?.project && !S.project && <>, <span className="ptag"><i style={{ background: projectColor(item.linear.project.id) }} />{item.linear.project.name}</span></>}</span>
+        <span className="sub"><PreviewTag preview={item.preview} />{pedido ? <span className="pd-pn" title={`Del pedido P-${pedido.number} del portal`}>P-{pedido.number}</span> : null}<GhIcon kind={item.kind} state={item.github} />{itemSub(item)}{item.linear && <>, <span className="red">{item.linear.id}</span></>}{item.linear?.project && !S.project && <>, <span className="ptag"><i style={{ background: projectColor(item.linear.project.id) }} />{item.linear.project.name}</span></>}</span>
         {last ? <span className="last">{last}</span> : null}
       </button>
       {showSlices ? <div className="kids">{item.slices!.map((slice) => <button key={slice.index} className={`kid ${hit && slice.prNumber === hit ? 'hit' : ''}`} data-id={item.id} onClick={() => void select(item.id)}><SliceMark slice={slice} /><span className="t">{slice.index + 1}. {slice.title}</span><span className="age">{slice.prNumber ? `#${slice.prNumber}` : ''}</span></button>)}</div> : null}
     </>
-  );
-}
-
-type Pedido = NonNullable<NonNullable<typeof S.snap>['pedidos']>[number];
-const PED_CLOSED = ['done', 'resolved', 'declined', 'cancelled'];
-const firstName = (name: string | null | undefined) => String(name ?? '').split(' ')[0];
-
-// Who a request waits on, in the sidebar's row.
-function waitsLabel(p: Pedido) {
-  const who = firstName(p.person);
-  switch (p.waitsOn) {
-    case 'person': return p.status === 'proposed' ? `${who}: aprobar o ajustar` : p.status === 'interviewing' ? `${who}: responder las preguntas` : p.status === 'confirming' ? `${who}: confirmar el resumen` : `${who}: responder`;
-    case 'ronin': return p.running ? 'ronin trabajando' : p.status === 'approved' && p.issue ? `ronin: el cambio en #${p.issue}` : p.status === 'fixing' && p.issue ? `ronin: el arreglo en #${p.issue}` : p.status === 'minor' ? 'ronin: el prototipo' : p.status === 'reproducing' ? 'ronin: reproducirlo' : p.status === 'thinking' ? 'ronin: leerlo' : 'ronin: abrir el issue';
-    case 'team': return p.pr ? `Un dev: aprobar el PR #${p.pr}` : `El equipo: #${p.issue}`;
-    default: return PED_CLOSED.includes(p.status) ? 'Cerrado' : 'Nadie';
-  }
-}
-
-function PedRow({ p }: { p: Pedido }) {
-  const tone = p.running ? 'live' : p.waitsOn === 'person' || p.waitsOn === 'team' ? 'warn' : p.waitsOn === 'ronin' ? 'run' : 'idle';
-  return (
-    <button className="item" data-ped={p.number} aria-current={S.page === 'pedido' && S.ped.n === p.number} onClick={() => openRequest(Number(p.number))}><Dot cls={tone} /><span className="t"><span className="pd-pn">P-{p.number}</span> {p.title}</span><span className="age">{short(Date.now() - Date.parse(p.lastAt))}</span>
-      <span className="sub">{waitsLabel(p)}</span></button>
   );
 }
 
@@ -214,18 +196,14 @@ function Tree() {
   const row = (item: Item) => <ItemRow key={item.id} item={item} hit={prHit(item)} />;
   // Offered only when nothing has that number, as an issue or one of its PRs.
   const found = num && snap.items.some((item) => item.number === Number(num) || prHit(item) !== null);
-  const blocked = snap.items.filter((item) => item.status === 'blocked' && shown(item));
-  // The portal's requests still going (#132): not searched, and only the running ones while filtering by that.
-  const pedidos = (snap.pedidos ?? []).filter((p) => !q && (S.filter !== 'running' || p.running));
   // The apps ronin explores (#155), whose exploration PR is no longer pinned in its repo: searched by the app or the PR's number.
   const xpls = xplRows().filter((r) => (S.filter !== 'running' || r.running) && (!q || r.app.toLowerCase().includes(q) || (num && r.pr?.number === Number(num))));
   return (
     <div className="tree" id="tree">
-      {blocked.length ? <><div className="grp"><span>Necesitan a alguien</span><span className="n alert">{blocked.length}</span></div>{blocked.map(row)}</> : null}
-      {pedidos.length ? <><div className="grp"><span>Pedidos en curso</span><span className="n">{pedidos.length}</span></div>{pedidos.map((p) => <PedRow key={p.number} p={p} />)}</> : null}
       {xpls.length ? <><div className="grp"><span>Exploraciones</span><span className="n">{xpls.length}</span></div>{xpls.map((r) => <XplRow key={`${r.repo}|${r.app}`} r={r} />)}</> : null}
       {snap.repos.map((repo) => {
-        const items = snap.items.filter((item) => item.repo === repo && item.status !== 'blocked' && shown(item));
+        // A blocked one in its place, with its red dot: no group of its own.
+        const items = snap.items.filter((item) => item.repo === repo && shown(item));
         return (
           <Fragment key={repo}>
             <div className="grp"><span className="sq" style={{ background: repoColor(repo) }} /><b>{repoShort(repo)}</b><span className="n">{items.length}</span>{canDo(repo, 'acciones') ? <button className="grp-add" data-new={repo} title={`Nuevo issue en ${repoShort(repo)}`} aria-label={`Nuevo issue en ${repoShort(repo)}`} onClick={() => openNewIssue(repo)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg></button> : null}</div>

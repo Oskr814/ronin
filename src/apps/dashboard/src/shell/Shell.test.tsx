@@ -101,7 +101,10 @@ describe('the shell, in React', () => {
     expect(screen.getByText('Corriendo ahora').querySelector('.c')?.textContent).toBe('1');
     expect(screen.getByText('En cola').querySelector('.c')?.textContent).toBe('2');
     expect(container.querySelectorAll('.tree .item[data-id]')).toHaveLength(3);
-    expect(container.querySelector('.grp .n.alert')?.textContent).toBe('1');
+    // The blocked one in its repo, in its place, with its red dot: no group of its own.
+    expect([...container.querySelectorAll('.tree .grp')].map((g) => g.textContent)).not.toContain('Necesitan a alguien1');
+    expect(container.querySelector('.item[data-id="acme/tienda#2"] .dot')?.className).toContain('crit');
+    expect([...container.querySelectorAll('.tree .item[data-id^="acme/tienda"]')].map((b) => b.getAttribute('data-id'))).toEqual(['acme/tienda#1', 'acme/tienda#2']);
     fireEvent.click(screen.getByText('Corriendo ahora'));
     expect([...container.querySelectorAll('.tree .item[data-id]')].map((b) => b.getAttribute('data-id'))).toEqual(['acme/tienda#1']);
     fireEvent.click(screen.getByText('En cola'));
@@ -115,6 +118,16 @@ describe('the shell, in React', () => {
     fireEvent.click(container.querySelectorAll('.open-n')[1]);
     await waitFor(() => expect(location.pathname).toBe('/i/acme%2Fweb%2377'));
     expect(page()).toBe('item');
+  });
+
+  it("marks an issue that came from a portal request, and lists no request on its own", async () => {
+    const pedido = (number: number, issue?: number) => ({ number, repo: 'acme/tienda', title: `Pedido ${number}`, status: 'fixing', waitsOn: 'ronin', running: false, person: 'Eva Ficticia', lastAt: iso(5), ...(issue ? { issue } : {}) });
+    snap = { ...SNAP, pedidos: [pedido(7, 2), pedido(8)], pedidosTotal: 2 };
+    const { container } = await open('/');
+    expect(container.querySelector('.item[data-id="acme/tienda#2"] .pd-pn')?.textContent).toBe('P-7');
+    expect(container.querySelector('.item[data-id="acme/tienda#1"] .pd-pn')).toBeNull();
+    expect(container.querySelector('.tree [data-ped]')).toBeNull();
+    expect(container.querySelector('.tree')?.textContent).not.toContain('Pedido 8');
   });
 
   it('shows the runner with no item open, and the item around its page', async () => {
