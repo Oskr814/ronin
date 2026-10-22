@@ -125,9 +125,17 @@ export async function renderHtmlToPng(htmlPath: string, pngPath: string, viewpor
     // Not emulating a phone: a drawn page rarely has a viewport meta tag, and
     // a phone would lay it out 980px wide.
     const context = await browser.newContext({ viewport: { width: viewport.width, height: viewport.height }, deviceScaleFactor: viewport.isMobile ? 2 : 1 });
-    await context.route('**/*', (route) => (/^(file|data):/.test(route.request().url()) ? route.continue() : route.abort()));
+    // The page itself and what it carries inline, nothing else: the HTML is
+    // an agent's (a spec's mockup), and this browser runs as ronin — another
+    // file: URL would put a file the agent can't read into the image ronin
+    // publishes (#257).
+    const pageUrl = pathToFileURL(htmlPath).href;
+    await context.route('**/*', (route) => {
+      const url = route.request().url();
+      return url === pageUrl || url.startsWith('data:') ? route.continue() : route.abort();
+    });
     const page = await context.newPage();
-    await page.goto(pathToFileURL(htmlPath).href);
+    await page.goto(pageUrl);
     await page.screenshot({ path: pngPath, fullPage: true });
   } finally {
     await browser.close();
