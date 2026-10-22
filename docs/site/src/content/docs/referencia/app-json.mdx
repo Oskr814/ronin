@@ -64,6 +64,21 @@ Se lee del checkout que se levanta: una rama puede cambiar cómo arranca su prop
 | `{ "start": "…", "name": "…" }` | Un proceso que queda corriendo, como un dev server. Acepta `cwd` y `env`. |
 | `{ "wait": "<url>" }` | Espera a que la URL responda, por ejemplo una API que migra al arrancar. Acepta `timeoutSeconds`. |
 
+### Puertos y URLs
+
+Los comandos, el `env` y las URLs de los pasos aceptan variables:
+
+| Variable | Qué da |
+|---|---|
+| `{{ports.<servicio>.<puerto>}}` | El puerto libre al que ronin remapeó ese puerto publicado del compose. |
+| `{{port.<nombre>}}` | Un puerto libre reservado con ese nombre, por ejemplo para un dev server. |
+| `{{public.ports.…}}`, `{{public.port.…}}` | La URL en la que responde ese puerto para quien mira la app. En una preview, la de la tailnet por HTTPS; si no, `http://127.0.0.1:<puerto>`. |
+| `{{local.ports.…}}`, `{{local.port.…}}` | El mismo puerto que sin `local.`, para una URL que tiene que quedar en `127.0.0.1` (abajo). |
+| `{{publicHost}}` | El host de la tailnet en una preview, para un dev server que valida el header `Host`. |
+| `{{compose}}`, `{{dir}}` | El comando de `docker compose` del stack de la app y la carpeta del checkout. |
+
+En el `env` de un `start`, toda URL `http://127.0.0.1:{{port…}}` o `http://localhost:{{port…}}` se vuelve la URL pública de ese puerto: es la que el proceso le pasa al navegador, como la API que llama una SPA. Si quien la llama es el servidor de la app (una server action de Next.js, un middleware), tiene que quedar local: el runner no alcanza su propia URL de la tailnet desde adentro de su contenedor. Para eso, `http://127.0.0.1:{{local.port.api}}`.
+
 ### rerunOn
 
 Cualquier paso puede llevar `rerunOn`: globs sobre las rutas del repo que dicen cuándo tiene que volver a correr si la app ya está arriba y el checkout pasa a otro commit. Es lo que permite que una preview se [actualice en el lugar](/ronin/guias/probar-con-preview/#se-actualiza-sola) con cada commit nuevo del PR:
