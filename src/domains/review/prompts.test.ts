@@ -428,9 +428,18 @@ describe('runAgentTask — fix-internal-review', () => {
     const prompt = runClaudeHeadless.mock.calls[0][1] as string;
     expect(prompt).toMatch(/<<<FINDINGS_START>>>[\s\S]*El total no descuenta el cupón[\s\S]*<<<FINDINGS_END>>>/);
     expect(prompt).toMatch(/<<<DECISIONS_START>>>[\s\S]*¿El cupón aplica al envío\?[\s\S]*<<<DECISIONS_END>>>/);
-    expect(prompt).toContain('"## Preguntas" section, right before "## Fuera de alcance"');
-    expect(prompt).toContain('git push --force-with-lease');
-    expect(prompt).toMatch(/Never comment on the PR, never post a review/);
+    expect(prompt).toContain('ronin:fix-findings');
+    expect(prompt).not.toContain('git push');
+  });
+
+  it('publishes nothing: only the commit and the description', async () => {
+    getPullRequestStatus.mockResolvedValue({ headRefName: 'ronin/7/slice-1' });
+    await runAgentTask({ type: 'fix-internal-review', issueNumber: 7, prNumber: 40, findings: [finding()] });
+
+    expect(ensureTrustedFixWorktree).toHaveBeenCalledWith('ronin/7/slice-1');
+    expect(startActionsServer).toHaveBeenCalledWith(expect.objectContaining({
+      scope: expect.objectContaining({ threads: [], triggers: [], allowed: ['pr.update-body', 'git.push', 'services.up', 'services.run', 'result.report'] }),
+    }));
   });
 
   it('leaves out the fixes block when there are only decisions', async () => {

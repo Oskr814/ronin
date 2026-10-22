@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 
 vi.mock('../config/config.js', () => ({ config: { githubLogin: 'ronin-agent' } }));
 
-const { describeMention, neutralizeFenceMarkers, PR_BODY_RULE, prBodyUpdateRule } = await import('./prompts.js');
+const { describeMention, neutralizeFenceMarkers, PR_BODY_RULE } = await import('./prompts.js');
 
 describe('neutralizeFenceMarkers', () => {
   it('turns any marker-shaped sequence into one that no longer closes or opens a fence', () => {
@@ -52,13 +52,4 @@ describe('the PR body', () => {
     expect(PR_BODY_RULE.indexOf('Cómo probar')).toBeLessThan(PR_BODY_RULE.indexOf('## Decisiones propias'));
   });
 
-  it('keeps «Cómo probar» up to date when the PR changes', () => {
-    expect(prBodyUpdateRule(42)).toContain('its "Cómo probar" block included');
-  });
-
-  // #194: what the internal review asked a person, until it's settled.
-  it('takes out of «Preguntas» what got settled, and keeps the rest', () => {
-    expect(prBodyUpdateRule(42)).toContain('"## Preguntas" section');
-    expect(prBodyUpdateRule(42)).toMatch(/remove each question that a person's answer or your change settled, together with the hidden "<!-- ronin:opciones … -->" line under it, and the whole section once it is empty/);
-  });
 });
