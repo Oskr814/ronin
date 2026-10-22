@@ -6,6 +6,7 @@ import { loadReviewCriteria, type ReviewCriteria } from './criteria.js';
 import { FINDINGS_JSON_CONTRACT, type ReviewFinding } from './output.js';
 import { renderCombinedAgentPrompt } from './render.js';
 import { OPTIONS_MARKER, QUESTIONS_SECTION } from '@platform/github/pr-body.js';
+import { runServices } from '../product-app/services.js';
 
 // What the agent is told for each task about a PR's review: ronin's own
 // review of someone else's PR, and every fix or reply to a review comment,
@@ -273,8 +274,9 @@ async function buildReviewTask(task: ReviewTask): Promise<PreparedTask> {
           headRef: task.headRefName,
           threads: threads.map((t) => ({ commentId: t.commentId!, threadId: t.id })),
           triggers: task.trigger.map((m) => ({ id: m.id, kind: m.kind })),
-          allowed: ['pr.reply', 'pr.comment', 'pr.resolve-thread', 'git.push', 'result.report'],
+          allowed: ['pr.reply', 'pr.comment', 'pr.resolve-thread', 'git.push', 'services.up', 'services.run', 'result.report'],
         },
+        services: (checkoutDir, owner) => runServices({ checkoutDir, owner }),
         prompt: [
           `Usa la skill ronin:address-comments. Eres ronin, en el PR #${task.prNumber} de ${repoUrl()}, que abrió una persona con acceso de escritura al repo, no tú. Este checkout es la cabeza del PR, en detached HEAD; su rama es "${task.headRefName}".`,
           `El comentario que pidió esto (/fix-comments):\n${triggerList}`,
