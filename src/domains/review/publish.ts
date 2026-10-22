@@ -41,10 +41,12 @@ export interface RunExternalReviewOptions {
   dryRun?: { outFile: string };
 }
 
-function outputPathFor(candidate: ReviewCandidate): string {
-  // Outside the worktree on purpose: runAgentTask deletes the external
-  // review worktree as soon as the agent exits, before this file is read.
-  return join(activeRepo().worktreeBasePath, 'external-review-out', `${candidate.prNumber}-${candidate.headSha}.json`);
+// Outside the worktree on purpose: runAgentTask deletes the external
+// review worktree as soon as the agent exits, before this file is read. A
+// directory of its own per run: the agent's user writes only there (#257,
+// agent-task.ts's sealed runs).
+function outputDirFor(candidate: ReviewCandidate): string {
+  return join(activeRepo().worktreeBasePath, 'external-review-out', `${candidate.prNumber}-${candidate.headSha}`);
 }
 
 // The title of a thread ronin opened, for the closing message: the first
@@ -80,12 +82,14 @@ export interface ReviewRun {
 export async function reviewPr(candidate: ReviewCandidate): Promise<ReviewRun> {
   const start = Date.now();
   const criteria = await loadReviewCriteria();
-  const outputPath = outputPathFor(candidate);
-  const agentsPath = outputPath.replace(/\.json$/, '.agents.json');
-  await host().fs.mkdir(dirname(outputPath), { recursive: true });
+  const outputDir = outputDirFor(candidate);
+  const outputPath = join(outputDir, 'findings.json');
+  // Next to the output, not in it: ronin writes it and the agent only reads it.
+  const agentsPath = `${outputDir}.agents.json`;
   // A leftover from an earlier failed run must never be mistaken for this
   // run's output.
-  await host().fs.rm(outputPath, { force: true });
+  await host().fs.rm(outputDir, { recursive: true, force: true });
+  await host().fs.mkdir(outputDir, { recursive: true });
 
   try {
     // Incremental against the last reviewed SHA when there is one: the
@@ -151,7 +155,7 @@ export async function reviewPr(candidate: ReviewCandidate): Promise<ReviewRun> {
       agentStart,
     };
   } finally {
-    await host().fs.rm(outputPath, { force: true }).catch(() => {});
+    await host().fs.rm(outputDir, { recursive: true, force: true }).catch(() => {});
   }
 }
 

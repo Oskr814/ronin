@@ -41,7 +41,8 @@ vi.mock('@platform/logger.js', () => ({ log: { info: logInfo, error: logError, m
 
 const { runExternalReview, threadTitle, closingState } = await import('./publish.js');
 
-const OUTPUT_PATH = '/tmp/wt/external-review-out/305-abc123def.json';
+const OUTPUT_DIR = '/tmp/wt/external-review-out/305-abc123def';
+const OUTPUT_PATH = `${OUTPUT_DIR}/findings.json`;
 
 const openThreads = [
   { id: 'T1', body: '<!-- marker -->\n### 🟠 **Carrera en X**\n...', url: 'https://github.com/x/pull/305#discussion_r1' },
@@ -111,8 +112,9 @@ describe('runExternalReview — running the agent', () => {
 
     await runExternalReview(candidate);
 
-    expect(mkdir).toHaveBeenCalledWith('/tmp/wt/external-review-out', { recursive: true });
-    expect(rm).toHaveBeenCalledWith(OUTPUT_PATH, { force: true });
+    // A directory of its own: the agent's user writes only there.
+    expect(mkdir).toHaveBeenCalledWith(OUTPUT_DIR, { recursive: true });
+    expect(rm).toHaveBeenCalledWith(OUTPUT_DIR, { recursive: true, force: true });
     expect(rm.mock.invocationCallOrder[0]).toBeLessThan(runAgentTask.mock.invocationCallOrder[0]);
     expect(runAgentTask).toHaveBeenCalledWith(expect.objectContaining({
       type: 'external-review',
@@ -131,7 +133,7 @@ describe('runExternalReview — running the agent', () => {
 
     await expect(runExternalReview(candidate)).rejects.toThrow('no escribió');
     expect(postReview).not.toHaveBeenCalled();
-    expect(rm).toHaveBeenLastCalledWith(OUTPUT_PATH, { force: true });
+    expect(rm).toHaveBeenLastCalledWith(OUTPUT_DIR, { recursive: true, force: true });
   });
 
   it('fails the task when the output is not valid JSON', async () => {
@@ -146,7 +148,7 @@ describe('runExternalReview — running the agent', () => {
 
     await expect(runExternalReview(candidate)).rejects.toThrow('timeout');
     expect(postReview).not.toHaveBeenCalled();
-    expect(rm).toHaveBeenLastCalledWith(OUTPUT_PATH, { force: true });
+    expect(rm).toHaveBeenLastCalledWith(OUTPUT_DIR, { recursive: true, force: true });
   });
 });
 

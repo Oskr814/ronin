@@ -1,4 +1,4 @@
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { runAgentTask } from '@platform/agents/agent-task.js';
 import { portalTask } from './prompts.js';
 import { config } from '@platform/config/config.js';
@@ -207,6 +207,26 @@ export function isInterviewFollowUp(r: PortalRequest): boolean {
 
 const conversationOf = (request: PortalRequest) => request.messages.map((m) => ({ from: m.from, text: interviewText(m), images: m.images.map((file) => requestImagePath(request.number, file)) }));
 
+// The request's images, copied into the run's output directory: they live
+// in ronin's data, which the agent's user can't read (#257). The
+// conversation, pointing at the copies.
+export async function stageImages(conversation: ReturnType<typeof conversationOf>, dir: string): Promise<ReturnType<typeof conversationOf>> {
+  const imagesDir = join(dir, 'images');
+  let n = 0;
+  const staged = [];
+  for (const message of conversation) {
+    const images = [];
+    for (const image of message.images) {
+      if (n === 0) await host().fs.mkdir(imagesDir, { recursive: true });
+      const copy = join(imagesDir, `${++n}-${basename(image)}`);
+      await host().fs.writeFile(copy, await host().fs.readFile(image));
+      images.push(copy);
+    }
+    staged.push({ ...message, images });
+  }
+  return staged;
+}
+
 // Inside withActiveRepo, before the full read: true when it answered the
 // person. False sends it on to classifyRequest — not a follow-up, the
 // answers changed what the request is ("revisar"), or this read failed.
@@ -222,7 +242,7 @@ export async function followUpRequest(n: number): Promise<boolean> {
       type: 'portal-interview',
       requestNumber: n,
       appName: request.app,
-      conversation: conversationOf(request),
+      conversation: await stageImages(conversationOf(request), dir),
       analysis: request.verdict!.summary,
       ...(request.verdict!.reason ? { reason: request.verdict!.reason } : {}),
       roundsLeft: Math.max(0, MAX_ROUNDS - (request.interview?.rounds ?? 0)),
@@ -261,7 +281,7 @@ export async function classifyRequest(n: number): Promise<void> {
       type: 'portal-request',
       requestNumber: n,
       appName: request.app,
-      conversation: conversationOf(request),
+      conversation: await stageImages(conversationOf(request), outDir),
       questionsLeft: Math.max(0, MAX_QUESTIONS - request.questions),
       interviewRoundsLeft: Math.max(0, MAX_ROUNDS - (request.interview?.rounds ?? 0)),
       interviewed: (request.interview?.rounds ?? 0) > 0,

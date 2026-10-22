@@ -333,15 +333,31 @@ export function agentCloneDirFor(branch: string): string {
 }
 
 export async function ensureAgentClone(branch: string, user: AgentUser): Promise<string> {
+  await host().exec('git', ['fetch', 'origin'], { cwd: activeRepo().productRepoPath });
+  return agentCloneAt(agentCloneDirFor(branch), `origin/${branch}`, user);
+}
+
+// The head of someone else's PR, by SHA (see ensureExternalReviewWorktree),
+// in a clone of the agent's user: a review that runs the PR's code runs it
+// as that user, in a checkout of its own.
+export function agentPrCloneDirFor(prNumber: number): string {
+  return join(activeRepo().worktreeBasePath, `agent-external-pr-${prNumber}`);
+}
+
+export async function ensureAgentPrClone(prNumber: number, headSha: string, user: AgentUser): Promise<string> {
+  await host().exec('git', ['fetch', 'origin', `pull/${prNumber}/head`], { cwd: activeRepo().productRepoPath });
+  return agentCloneAt(agentPrCloneDirFor(prNumber), headSha, user);
+}
+
+async function agentCloneAt(dir: string, ref: string, user: AgentUser): Promise<string> {
   const repo = activeRepo().productRepoPath;
-  const dir = agentCloneDirFor(branch);
-  await host().exec('git', ['fetch', 'origin'], { cwd: repo });
   await host().fs.rm(dir, { recursive: true, force: true });
   await host().fs.mkdir(dir, { recursive: true });
   await host().exec('chown', [`${user.uid}:${user.gid}`, dir]);
 
   // The shared repo is root's: the agent's user marks it safe in its own
-  // global config (Dockerfile).
+  // global config (agent-user.ts). --shared reads every object of it, so a
+  // SHA only it has (a PR head, a previous review's) is there too.
   const git = (args: string[]) => host().exec('git', args, asAgent(user, { cwd: dir }));
   await git(['clone', '--quiet', '--shared', '--no-checkout', repo, '.']);
   await git(['fetch', '--quiet', '--no-tags', repo, '+refs/remotes/origin/*:refs/remotes/origin/*']);
@@ -351,12 +367,16 @@ export async function ensureAgentClone(branch: string, user: AgentUser): Promise
     const value = (await host().exec('git', ['config', key], { cwd: repo }).catch(() => ({ stdout: '' }))).stdout.trim();
     if (value) await git(['config', key, value]);
   }
-  await git(['checkout', '--quiet', '--detach', `origin/${branch}`]);
+  await git(['checkout', '--quiet', '--detach', ref]);
   return dir;
 }
 
 export async function removeAgentClone(branch: string): Promise<void> {
   await host().fs.rm(agentCloneDirFor(branch), { recursive: true, force: true });
+}
+
+export async function removeAgentPrClone(prNumber: number): Promise<void> {
+  await host().fs.rm(agentPrCloneDirFor(prNumber), { recursive: true, force: true });
 }
 
 // Counterpart cleanup — mirrors removeExternalReviewWorktree. Not picked up

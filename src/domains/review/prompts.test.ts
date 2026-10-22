@@ -468,6 +468,19 @@ describe('runAgentTask — external-review with mentions', () => {
     agentsPath: '/tmp/out.agents.json',
   };
 
+  it('runs sealed, writing only its findings, and asks for services only when it may run the code', async () => {
+    const readOnly = await buildTask(task);
+    expect(readOnly.sealed).toEqual({ outputDir: '/tmp' });
+    expect(readOnly.actions).toBeUndefined();
+    expect(readOnly.prompt).not.toContain('ronin-act services.up');
+
+    const running = await buildTask({ ...task, canExecute: true });
+    expect(running.actions?.allowed).toEqual(['services.up', 'services.run']);
+    expect(running.services).toBeTypeOf('function');
+    expect(running.prompt).toContain('Docker is not available to you');
+    expect(running.prompt).toContain('ronin-act services.run');
+  });
+
   it('includes the mention body in the prompt, fenced as untrusted', async () => {
     await runAgentTask(task);
 

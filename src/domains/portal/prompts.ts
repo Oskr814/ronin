@@ -1,3 +1,4 @@
+import { dirname } from 'node:path';
 import type { AgentTask, PreparedTask } from '@platform/agents/agent-task.js';
 import { fence, fenceBlock, REALISTIC_DATA_RULE, repoUrl, UNTRUSTED_APP_WARNING } from '@platform/agents/prompts.js';
 
@@ -162,6 +163,9 @@ async function buildPortalTask(task: PortalTask): Promise<PreparedTask> {
       return {
         branch: `portal-request@P-${task.requestNumber}`,
         checkout: { kind: 'dir', dir: task.checkoutDir },
+        // Text from anyone, through the portal (#257): sealed, as the
+        // agent's user, writing only its answer.
+        sealed: { outputDir: dirname(task.outputPath) },
         label: `pedido P-${task.requestNumber}`,
         tag: `P-${task.requestNumber}`,
         prompt: [
@@ -208,6 +212,9 @@ async function buildPortalTask(task: PortalTask): Promise<PreparedTask> {
       return {
         branch: `portal-interview@P-${task.requestNumber}`,
         checkout: { kind: 'dir', dir: task.dir },
+        // Its checkout is its output directory: no code, only the
+        // conversation and the analysis (#257, sealed like portal-request).
+        sealed: { outputDir: task.dir },
         label: `pedido P-${task.requestNumber} (respuestas)`,
         tag: `P-${task.requestNumber}`,
         prompt: [
