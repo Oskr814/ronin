@@ -49,6 +49,7 @@ export interface HostFs {
   appendFile(path: string, data: string): Promise<void>;
   mkdir(path: string, opts?: { recursive?: boolean; mode?: number }): Promise<void>;
   rm(path: string, opts?: { recursive?: boolean; force?: boolean }): Promise<void>;
+  rename(from: string, to: string): Promise<void>;
   readdir(path: string): Promise<string[]>;
   readdir(path: string, opts: { withFileTypes: true }): Promise<HostDirent[]>;
   exists(path: string): Promise<boolean>;
@@ -99,6 +100,7 @@ const localFs: HostFs = {
   appendFile: (path, data) => fsp.appendFile(path, data),
   mkdir: async (path, opts) => { await fsp.mkdir(path, opts); },
   rm: (path, opts) => fsp.rm(path, opts),
+  rename: (from, to) => fsp.rename(from, to),
   readdir: ((path: string, opts?: { withFileTypes: true }) => (opts ? fsp.readdir(path, opts) : fsp.readdir(path))) as HostFs['readdir'],
   exists: (path) => fsp.access(path).then(() => true, () => false),
   mkdtemp: (prefix) => fsp.mkdtemp(join(tmpdir(), prefix)),

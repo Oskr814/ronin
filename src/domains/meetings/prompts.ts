@@ -1,3 +1,4 @@
+import { dirname } from 'node:path';
 import type { AgentTask, PreparedTask } from '@platform/agents/agent-task.js';
 import { fence, repoUrl } from '@platform/agents/prompts.js';
 import { LIMITS } from './proposals.js';
@@ -32,6 +33,10 @@ function buildMeetingTask(task: MeetingTask): PreparedTask {
   return {
     branch: `meeting-read@R-${n}`,
     checkout: { kind: 'dir', dir: task.checkoutDir },
+    // It only reads (the notes, their context and the code) and writes its
+    // proposals (#257): sealed, as the agent's user. The notes and their
+    // context are in its output directory, which it gets for the run.
+    sealed: { outputDir: dirname(task.outputPath) },
     label: `reunión R-${n}`,
     tag: `R-${n}`,
     prompt: [

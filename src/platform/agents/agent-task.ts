@@ -1,5 +1,5 @@
 import { join, resolve } from 'node:path';
-import { ensureWorktree, ensureExternalReviewWorktree, removeExternalReviewWorktree, ensureTrustedFixWorktree, removeTrustedFixWorktree, ensureAgentClone, removeAgentClone } from '../git/worktree.js';
+import { ensureWorktree, ensureExternalReviewWorktree, removeExternalReviewWorktree, ensureTrustedFixWorktree, removeTrustedFixWorktree, ensureAgentClone, removeAgentClone, ensureAgentPrClone, removeAgentPrClone } from '../git/worktree.js';
 import { runClaudeHeadless, ClaudeTimeoutError, ClaudeUsageLimitError } from '../claude/claude-runner.js';
 import { accountName } from '../claude/claude-usage.js';
 import { RunRecord, type RunOutcome } from './run-record.js';
@@ -11,7 +11,7 @@ import { currentRunGroup } from './run-group.js';
 import { host } from '../host/host.js';
 import type { RunScope } from '../actions/catalog.js';
 import { agentCheckout, checkoutState, executeAction, rootCheckout, type RunCheckout, type RunServices } from '../actions/executors.js';
-import { prepareAgentUser, repoAgentUser, type AgentUser } from './agent-user.js';
+import { asAgent, prepareAgentUser, repoAgentUser, type AgentUser } from './agent-user.js';
 import { startActionsServer, type ActionsServer } from '../actions/server.js';
 import { mintReadToken } from '../github/read-token.js';
 
@@ -79,6 +79,11 @@ export interface PreparedTask {
   // What the services.* actions run (domains/product-app/services.ts):
   // made once the checkout exists, closed when the run ends.
   services?: (checkoutDir: string, owner: AgentUser | null) => RunServices;
+  // A run that only reads and leaves its result in files (#257): sealed,
+  // as the agent's user, with the read token, writing only in outputDir —
+  // which it gets for the run, with whatever ronin put there for it to
+  // read, and which ronin takes back before the task reads it (reclaimOutput).
+  sealed?: { outputDir: string };
 }
 
 export interface AgentTask {
@@ -102,28 +107,61 @@ function runOutcome(error: unknown): RunOutcome {
 }
 
 // `as`: the run goes as the agent's user (agent-user.ts), which on a PR's
-// branch gets a clone of its own (worktree.ts's ensureAgentClone).
+// branch or head gets a clone of its own (worktree.ts's ensureAgentClone).
+// A `dir` checkout stays root's: a sealed run only reads it.
 async function checkoutDir(checkout: TaskCheckout, branch: string, as: AgentUser | null): Promise<string> {
   switch (checkout.kind) {
     case 'branch': return ensureWorktree(branch, checkout.baseBranch);
     case 'dir': return typeof checkout.dir === 'string' ? checkout.dir : checkout.dir();
-    case 'untrusted-pr-head': return ensureExternalReviewWorktree(checkout.prNumber, checkout.sha);
+    case 'untrusted-pr-head': return as ? ensureAgentPrClone(checkout.prNumber, checkout.sha, as) : ensureExternalReviewWorktree(checkout.prNumber, checkout.sha);
     case 'pr-branch': return as ? ensureAgentClone(branch, as) : ensureTrustedFixWorktree(branch);
   }
 }
 
-// A run with actions on a PR's branch is the only one that goes as the
-// agent's user for now (#257): the other kinds of checkout are still
-// root's worktrees.
-async function runsAs(checkout: TaskCheckout, actions: PreparedTask['actions']): Promise<AgentUser | null> {
-  const user = actions && checkout.kind === 'pr-branch' ? repoAgentUser() : null;
+// Which runs go as the agent's user (#257): one with actions on a PR's
+// branch, and one sealed that only reads. The rest still run as ronin.
+async function runsAs(checkout: TaskCheckout, actions: PreparedTask['actions'], sealed: PreparedTask['sealed']): Promise<AgentUser | null> {
+  const user = (actions && checkout.kind === 'pr-branch') || sealed ? repoAgentUser() : null;
   if (user) await prepareAgentUser(user);
   return user;
 }
 
+// The run's output directory goes to the agent's user, with what ronin left
+// there for it to read.
+async function handOutput(dir: string, user: AgentUser): Promise<void> {
+  await host().fs.mkdir(dir, { recursive: true });
+  await host().exec('chown', ['-R', `${user.uid}:${user.gid}`, dir]);
+  await host().exec('chmod', ['700', dir]);
+}
+
+// And back to root before the task reads it: the directory, moved aside in
+// one step so nothing of the agent's can still change it, and only its
+// regular files brought back — never a link, which could point root at a
+// file the agent can't read (a review publishes what it finds there).
+export async function reclaimOutput(dir: string): Promise<void> {
+  const aside = `${dir}.agent-${Date.now()}`;
+  await host().fs.rename(dir, aside);
+  await host().fs.mkdir(dir, { recursive: true, mode: 0o700 });
+  const walk = async (from: string, to: string): Promise<void> => {
+    for (const entry of await host().fs.readdir(from, { withFileTypes: true })) {
+      if (entry.isFile()) {
+        await host().fs.rename(join(from, entry.name), join(to, entry.name));
+      } else if (entry.isDirectory()) {
+        await host().fs.mkdir(join(to, entry.name), { recursive: true, mode: 0o700 });
+        await walk(join(from, entry.name), join(to, entry.name));
+      }
+    }
+  };
+  try {
+    await walk(aside, dir);
+  } finally {
+    await host().fs.rm(aside, { recursive: true, force: true });
+  }
+}
+
 export async function runAgentTask(task: AgentTask): Promise<string> {
-  const { branch, prompt, checkout, agents, mcpConfigFile, actions, services: makeServices, ...prepared } = await task.prepare();
-  const as = await runsAs(checkout, actions);
+  const { branch, prompt, checkout, agents, mcpConfigFile, actions, services: makeServices, sealed, ...prepared } = await task.prepare();
+  const as = await runsAs(checkout, actions, sealed);
   const worktreeDir = await checkoutDir(checkout, branch, as);
 
   // An untrusted PR head is the only checkout that points `claude -p
@@ -137,8 +175,13 @@ export async function runAgentTask(task: AgentTask): Promise<string> {
   // bypassPermissions, which needs a new parameter plumbed through
   // runClaudeHeadless (shared by every other task type).
   if (checkout.kind === 'untrusted-pr-head') {
-    await host().fs.rm(join(worktreeDir, '.claude'), { recursive: true, force: true });
-    await host().fs.rm(join(worktreeDir, 'CLAUDE.md'), { recursive: true, force: true });
+    // In the agent's own clone, as its user: root never touches what the
+    // PR's author controls.
+    if (as) await host().exec('rm', ['-rf', '.claude', 'CLAUDE.md'], asAgent(as, { cwd: worktreeDir }));
+    else {
+      await host().fs.rm(join(worktreeDir, '.claude'), { recursive: true, force: true });
+      await host().fs.rm(join(worktreeDir, 'CLAUDE.md'), { recursive: true, force: true });
+    }
   }
 
   // A file rather than inline JSON: with every worker's criteria it's tens of
@@ -176,7 +219,8 @@ export async function runAgentTask(task: AgentTask): Promise<string> {
   try {
     // Read-only and for this repo, when ronin has its App (read-token.ts);
     // without it the agent reads with the write token, as before.
-    const readToken = actions ? await mintReadToken(activeRepo().productRepo) : null;
+    const readToken = actions || sealed ? await mintReadToken(activeRepo().productRepo) : null;
+    if (sealed && as) await handOutput(sealed.outputDir, as);
     if (actions) {
       const runCheckout: RunCheckout = as
         ? agentCheckout(worktreeDir, activeRepo().productRepoPath, as)
@@ -189,19 +233,17 @@ export async function runAgentTask(task: AgentTask): Promise<string> {
       effort,
       ...(agentsFile ? { agentsFile } : {}),
       ...(mcpConfigFile ? { mcpConfigFile } : {}),
-      ...(server ? {
-        pluginDir: PLUGIN_DIR,
+      ...(server || sealed ? {
+        ...(server ? { pluginDir: PLUGIN_DIR, onSpawn: server.bind } : { userSettingsOnly: true }),
         sealedEnv: {
-          PATH: `${ACTIONS_BIN_DIR}:${process.env.PATH ?? ''}`,
-          RONIN_ACTIONS_URL: server.url,
-          RONIN_ACTIONS_TOKEN: server.token,
+          ...(server ? { PATH: `${ACTIONS_BIN_DIR}:${process.env.PATH ?? ''}`, RONIN_ACTIONS_URL: server.url, RONIN_ACTIONS_TOKEN: server.token } : {}),
           ...(readToken ? { GH_TOKEN: readToken } : {}),
           ...(as ? { HOME: as.home } : {}),
         },
         ...(as ? { runAs: as } : {}),
-        onSpawn: server.bind,
       } : {}),
     }, record);
+    if (sealed && as) await reclaimOutput(sealed.outputDir);
     if (server) logActions(server, `${task.type} for ${label}`);
     const durationMs = Date.now() - start;
     recordAgentRun(durationMs);
@@ -227,7 +269,7 @@ export async function runAgentTask(task: AgentTask): Promise<string> {
     await services?.close().catch((cleanupError) => log.error(`${task.type}: no se pudieron bajar los servicios de ${label}`, cleanupError));
     if (agentsFile) await host().fs.rm(agentsFile, { force: true }).catch(() => {});
     if (checkout.kind === 'untrusted-pr-head') {
-      await removeExternalReviewWorktree(checkout.prNumber).catch((cleanupError) =>
+      await (as ? removeAgentPrClone(checkout.prNumber) : removeExternalReviewWorktree(checkout.prNumber)).catch((cleanupError) =>
         log.error(`${task.type} cleanup falló para PR #${checkout.prNumber}`, cleanupError),
       );
     }
