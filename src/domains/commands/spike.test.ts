@@ -8,7 +8,6 @@ vi.mock('@platform/github/github.js', () => ({
 const findTrustedSpikeCommand = vi.fn();
 const findTrustedExploreCommand = vi.fn();
 const findTrustedPrototypeCommand = vi.fn();
-const findRequests = vi.fn();
 const parseSpikeCommand = vi.fn();
 vi.mock('./mentions.js', () => ({
   // One read per issue now returns both commands; the tests drive each half.
@@ -17,7 +16,6 @@ vi.mock('./mentions.js', () => ({
     explore: await findTrustedExploreCommand(...args),
     spec: [],
     prototype: await findTrustedPrototypeCommand(...args),
-    request: await findRequests(...args),
   }),
   parsePrototypeCommand: (body: string) => {
     const match = body.match(/\/prototype\s+(\S+)(?:\s+([\s\S]+))?/);
@@ -46,7 +44,6 @@ beforeEach(() => {
   findTrustedSpikeCommand.mockReset().mockResolvedValue([]);
   findTrustedExploreCommand.mockReset().mockResolvedValue([]);
   findTrustedPrototypeCommand.mockReset().mockResolvedValue([]);
-  findRequests.mockReset().mockResolvedValue([]);
   parseSpikeCommand.mockReset().mockReturnValue({ appName: 'backoffice', instruction: undefined });
 });
 
@@ -132,16 +129,5 @@ describe('findIssueCommands', () => {
     findTrustedPrototypeCommand.mockResolvedValue([comment({ body: '@ronin /prototype' })]);
 
     expect((await findIssueCommands()).prototypes).toEqual([]);
-  });
-
-  it('groups every plain-words mention of an issue into one request candidate, oldest first', async () => {
-    listOpenUnmanagedIssues.mockResolvedValue([issue({ number: 500 }), issue({ number: 501 })]);
-    const first = comment({ id: 1, body: '@ronin esto aplica sobre otras vistas' });
-    const second = comment({ id: 2, body: '@ronin y dejá afuera la exportación' });
-    findRequests.mockResolvedValueOnce([first, second]).mockResolvedValueOnce([]);
-
-    const { requests } = await findIssueCommands();
-
-    expect(requests).toEqual([{ issueNumber: 500, trigger: [first, second] }]);
   });
 });

@@ -554,7 +554,7 @@ describe('parsePrototypeCommand', () => {
 describe('findTrustedIssueCommands', () => {
   const c = (id: number, body: string, authorLogin = 'someone') => ({ id, kind: 'issue' as const, body, reactionsEyes: 0, authorLogin });
 
-  it('puts each mention in exactly one bucket, and a mention with no command in request', async () => {
+  it('puts each command mention in exactly one bucket, and answers a mention with no command', async () => {
     const { findTrustedIssueCommands } = await import('./mentions.js');
     issueComments.mockResolvedValue([
       c(1, '@ronin /spike backoffice'),
@@ -571,13 +571,17 @@ describe('findTrustedIssueCommands', () => {
     expect(commands.explore.map((m) => m.id)).toEqual([2]);
     expect(commands.spec.map((m) => m.id)).toEqual([3]);
     expect(commands.prototype.map((m) => m.id)).toEqual([4]);
-    expect(commands.request.map((m) => m.id)).toEqual([5]);
+    expect(replyToComment).toHaveBeenCalledTimes(1);
+    expect(replyToComment).toHaveBeenCalledWith(500, expect.objectContaining({ id: 5 }), expect.stringContaining('asigname el issue'));
+    expect(addReaction).toHaveBeenCalledWith(5, 'issue', 'eyes');
   });
 
-  it('leaves a request without a real author out, like every other command', async () => {
+  it('leaves a mention without a real author unanswered, like every command', async () => {
     const { findTrustedIssueCommands } = await import('./mentions.js');
     issueComments.mockResolvedValue([c(5, '@ronin cambiá el alcance', '')]);
 
-    expect((await findTrustedIssueCommands(500)).request).toEqual([]);
+    await findTrustedIssueCommands(500);
+
+    expect(replyToComment).not.toHaveBeenCalled();
   });
 });

@@ -30,19 +30,11 @@ export interface PrototypeCandidate {
   trigger: Comment[];
 }
 
-// Every plain-words mention on one issue, oldest first: handled one after
-// the other, since they share the issue's body and request worktree.
-export interface RequestCandidate {
-  issueNumber: number;
-  trigger: Comment[];
-}
-
 export interface IssueCommandCandidates {
   spikes: SpikeCandidate[];
   explores: ExploreCandidate[];
   specs: SpecCandidate[];
   prototypes: PrototypeCandidate[];
-  requests: RequestCandidate[];
 }
 
 // Separate module from tick.ts (orchestrator) and github.ts (low-level `gh`
@@ -51,7 +43,7 @@ export async function findIssuesNeedingSpike(): Promise<SpikeCandidate[]> {
   return (await findIssueCommands()).spikes;
 }
 
-// /spike, /explore, /spec, /prototype and plain-words requests, found in one
+// /spike, /explore, /spec and /prototype, found in one
 // pass over the open unmanaged issues.
 // `only` narrows it to those issues, like findPrsNeedingReview's.
 export async function findIssueCommands(only?: number[]): Promise<IssueCommandCandidates> {
@@ -61,14 +53,13 @@ export async function findIssueCommands(only?: number[]): Promise<IssueCommandCa
   const explores: ExploreCandidate[] = [];
   const specs: SpecCandidate[] = [];
   const prototypes: PrototypeCandidate[] = [];
-  const requests: RequestCandidate[] = [];
   for (const issue of issues) {
     // Per-issue isolation: one flaky comment-listing call or malformed
     // comment must not throw out of the whole loop and zero out /spike for
     // every other candidate this tick — same reasoning as
     // findPrsNeedingReview's own per-PR try/catch.
     try {
-      const { spike, explore, spec, prototype, request } = await findTrustedIssueCommands(issue.number);
+      const { spike, explore, spec, prototype } = await findTrustedIssueCommands(issue.number);
       // Uses the first unprocessed command's params — the common case is
       // exactly one. A malformed command (missing app_name) has nothing
       // actionable to build a candidate from, so it's skipped rather than
@@ -82,10 +73,9 @@ export async function findIssueCommands(only?: number[]): Promise<IssueCommandCa
       if (parsedSpec) specs.push({ issueNumber: issue.number, appName: parsedSpec.appName, instruction: parsedSpec.instruction, trigger: spec });
       const parsedPrototype = prototype.length > 0 ? parsePrototypeCommand(prototype[0].body) : null;
       if (parsedPrototype) prototypes.push({ issueNumber: issue.number, ...parsedPrototype, trigger: prototype });
-      if (request.length > 0) requests.push({ issueNumber: issue.number, trigger: request });
     } catch (error) {
       log.error(`findIssueCommands: issue #${issue.number} falló al evaluar, se salta este tick`, error);
     }
   }
-  return { spikes, explores, specs, prototypes, requests };
+  return { spikes, explores, specs, prototypes };
 }

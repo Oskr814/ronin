@@ -54,10 +54,9 @@ describe('classifyMetaCommand', () => {
     expect(classifyMetaCommand('@ronin /prototype backoffice', 'ronin', 'pr')).toEqual({ kind: 'wrong-context', command: 'prototype' });
   });
 
-  it('lists the plain-words request in both tables, each with its own meaning', () => {
-    expect(renderCommandTable('ronin', 'issue')).toContain('`@ronin <pedido>`');
-    expect(renderCommandTable('ronin', 'issue')).toContain('alcance');
-    expect(renderCommandTable('ronin', 'pr')).not.toContain('alcance');
+  it('lists the plain-words request on a PR only', () => {
+    expect(renderCommandTable('ronin', 'pr')).toContain('`@ronin <pedido>`');
+    expect(renderCommandTable('ronin', 'issue')).not.toContain('<pedido>');
   });
 
   it('flags /spike with no app_name instead of letting it through silently', () => {
