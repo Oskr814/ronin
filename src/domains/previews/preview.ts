@@ -41,7 +41,7 @@ export type PreviewWorkerRequest =
 
 export function launchPreviewWorker(request: PreviewWorkerRequest): void {
   const pid = launchWorker('domains/previews/worker', request);
-  log.info(`preview: worker lanzado para el PR #${request.prNumber} (${request.action}, pid ${pid})`);
+  log.info(`preview: worker lanzado para el PR #${request.prNumber} (${request.action}, ${pid ? `pid ${pid}` : 'en la cola del runner'})`);
 }
 
 // Its own directory name, so neither sweepOrphanedWorktrees (ronin-<n>-…)

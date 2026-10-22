@@ -13,12 +13,14 @@ Con Docker Compose, ronin se instala y se recupera en pocos pasos: clonar, `scri
 
 | Servicio | Qué es |
 |---|---|
-| `ronin` | El servidor, el planificador y el runner local, con todo lo que usan sus agentes: Node y pnpm, git, `gh`, Claude Code, el cliente de Docker y Chromium para el navegador. La imagen pesa unos 2 GB. |
+| `ronin` | El servidor: los webhooks, el portal y el tablero. Solo encola el trabajo, así que se redespliega en segundos sin cortar nada. |
+| `runner` | El planificador y el runner de la cola: los ticks, los handlers de los webhooks, los agentes y los workers. Usa la misma imagen que `ronin`, con todo lo que usan los agentes: Node y pnpm, git, `gh`, Claude Code, el cliente de Docker y Chromium para el navegador. La imagen pesa unos 2 GB. |
+| `procs` | Un contenedor mínimo que no se redespliega. `ronin` y `runner` comparten sus procesos, para que cada uno vea vivos los agentes y los locks del otro. |
 | `postgres` | [La base](/ronin/operar/base-de-datos/). Solo se alcanza desde adentro del compose. |
 | `tailscale` | El nodo de ronin en la tailnet. Publica el tablero y las previews con `tailscale serve`. |
 | `docker` | Un Docker propio (Docker-in-Docker) donde corren las previews, los prototipos y las reproducciones. ronin le habla por TCP con TLS; **el socket del host nunca se monta**. |
 
-`ronin` y `docker` comparten la red del servicio `tailscale`: para los tres, `127.0.0.1` es el mismo. Por eso el tablero, que escucha solo en `127.0.0.1`, y los puertos de las previews se publican igual que en una instalación a mano.
+`ronin`, `runner` y `docker` comparten la red del servicio `tailscale`: para los cuatro, `127.0.0.1` es el mismo. Por eso el tablero, que escucha solo en `127.0.0.1`, y los puertos de las previews se publican igual que en una instalación a mano.
 
 Lo que guarda, en volúmenes:
 
@@ -99,10 +101,11 @@ Las rutas de datos las fija `compose.yml` en esos volúmenes: lo que diga `.env`
 | Para | Comando |
 |---|---|
 | Ver los logs del servidor | `docker compose logs -f ronin` |
-| Los logs de los workers y las corridas | `docker compose exec ronin ls /data/logs` |
+| Ver los logs de la cola | `docker compose logs -f runner` |
+| Los logs de los workers y las corridas | `docker compose exec runner ls /data/logs` |
 | Una terminal adentro | `docker compose exec ronin bash` |
-| Sumar un repo | `scripts/init.sh --repo owner/nombre` (o Ajustes → Repos) y `docker compose restart ronin`, que lo clona al arrancar |
-| Cambiar `.env` | Editarlo y `docker compose up -d` (recrea `ronin` con los valores nuevos) |
+| Sumar un repo | `scripts/init.sh --repo owner/nombre` (o Ajustes → Repos) y `docker compose restart runner`, que lo clona al arrancar (espera a que termine lo que está corriendo) |
+| Cambiar `.env` | Editarlo y `docker compose up -d` (recrea `ronin` y `runner` con los valores nuevos) |
 
 **Claude Code** no se actualiza solo adentro del contenedor: va con la imagen, en la versión de `CLAUDE_CODE_VERSION` del `Dockerfile`. Para otra, `docker compose build --build-arg CLAUDE_CODE_VERSION=<versión> ronin` y `docker compose up -d`.
 
@@ -112,8 +115,12 @@ Las rutas de datos las fija `compose.yml` en esos volúmenes: lo que diga `.env`
 git pull && docker compose build ronin && docker compose up -d
 ```
 
-<Aside type="caution" title="Un despliegue corta lo que esté corriendo">
-Con el servicio de systemd, reiniciar el servidor dejaba terminar a los handlers y los agentes que había lanzado. En el contenedor, recrearlo los corta: sus trabajos quedan perdidos y el tick siguiente los retoma. Conviene desplegar cuando la cola está quieta (el tablero la muestra).
+`ronin` se recrea en segundos. `runner` se toma su tiempo: deja de tomar trabajos y espera a que terminen los que están corriendo, con sus agentes, antes de irse. Mientras tanto, los webhooks y el tablero siguen andando y lo que llega queda en la cola para el runner nuevo. `docker compose logs -f runner` dice a cuántos procesos espera.
+
+Si el cambio es solo del servidor (el tablero, el portal, la API), alcanza con `docker compose up -d ronin`, que no toca la cola.
+
+<Aside type="caution" title="La espera tiene un tope">
+El runner espera hasta 45 minutos (`stop_grace_period` en `compose.yml`). Lo que siga corriendo después se corta: su trabajo queda perdido y el tick siguiente lo retoma.
 </Aside>
 
 ## Previews y prototipos

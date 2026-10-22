@@ -314,7 +314,9 @@ El compose de una instalación:
 
 | Servicio | Qué es |
 |---|---|
-| `ronin` | La app: API, planificador y runner local |
+| `ronin` | La API: los webhooks, el portal y el tablero. Solo encola |
+| `runner` | El planificador y el runner local, con la misma imagen (#325) |
+| `procs` | Un contenedor mínimo cuyo espacio de PIDs comparten `ronin` y `runner` |
 | `postgres` | La base, con su volumen |
 | `tailscale` | Publica el tablero en la tailnet (sidecar, con su estado en un volumen) |
 | `docker` | Un Docker propio (Docker-in-Docker) donde corren las previews, los prototipos y las reproducciones. ronin le habla por TCP con TLS; el socket del host no se monta |
@@ -363,6 +365,11 @@ Los trabajos que estaban corriendo vuelven a la cola cuando vencen sus leases. L
 - **El Docker propio** es `docker:dind` con TLS: ronin le habla en `tcp://localhost:2376` con los certificados de cliente que el servicio genera al arrancar, en un volumen de solo lectura para ronin. `ronin-repos` se monta en `/repos` en los dos, y cada repo se clona en `/repos/<owner>/<nombre>/repo`, con sus worktrees al lado: dos repos nunca comparten la carpeta de worktrees.
 - **Volúmenes:** los de la tabla de arriba, más `tailscale-socket` (el socket del sidecar, compartido con ronin) y los certificados del Docker propio. Las rutas de datos las fija `compose.yml` en `/data` (el volumen `ronin-files`) y pisan las del `.env`.
 - **`ronin init`** (`src/apps/cli/init.ts`, con su parte pura en `env-file.ts`) arma el `.env` a partir de `.env.example` y del `.env` que haya, pide lo que falta, genera los secretos, suma los repos a `repos.json` (en el volumen de datos) y migra la base. El primer administrador va en `DASHBOARD_ADMINS`. `scripts/init.sh` lo corre en el servicio `init` del compose (perfil `tools`), que monta el checkout en `/install`. `repos.json` sigue siendo un archivo; pasarlo a la base queda para después.
+- **La API y el runner, separados (#325):** la imagen arranca como `api` (`apps/api/main.ts` con `RONIN_ROLE=api`: los listeners, sin planificador ni runner) o como `runner` (`apps/api/jobs/main.ts`). `server`, el default, sigue siendo todo en un proceso, para la instalación a mano. La API no lanza procesos: un worker que pida (Explorar ahora) va a la cola como un trabajo `worker`, que el runner arranca y da por terminado enseguida. Así redesplegar la API no corta nada.
+  - **El drain:** con SIGTERM, el runner deja de tomar trabajos y sale cuando no queda ningún otro proceso de su contenedor: los trabajos, los agentes y los workers que lanzaron, cada uno en su propia sesión (`jobs/drain.ts`). Los distingue por el cgroup, que Docker da a cada contenedor. El tope es el `stop_grace_period` del servicio (45 minutos); lo que lo pase se corta y el reaper lo marca perdido.
+  - **Los procesos compartidos:** `pidAlive` decide si una corrida, un lock o un worker sigue vivo, y todos los contenedores tienen el mismo hostname (el de `tailscale`). Por eso `ronin` y `runner` comparten el espacio de PIDs de `procs` (`pid: service:procs`), como comparten la red de `tailscale`: cada uno ve vivos los procesos del otro. El init de `procs` reapea los workers huérfanos de los dos; Docker no le da init propio a un contenedor que comparte PIDs. `procs` no tiene código de ronin y no se redespliega.
+  - **Las migraciones** las corren los dos al arrancar, con el lock de Kysely. Como la API nueva puede migrar con el runner viejo todavía vivo (o al revés), cada migración tiene que servirle a las dos versiones: primero se agrega lo nuevo, y lo viejo se quita en un despliegue posterior.
+  - **Lo que se pierde al redesplegar la API:** los webhooks que espera juntar (`webhookDebounceMs`) antes de encolarlos. Los retoma el tick siguiente, como antes.
 - **Respaldos:** `scripts/backup.sh` deja `<destino>/<día>/` con el `pg_dump` (formato custom), un `tar` del volumen de datos, el `.env` y un manifiesto, y aplica la retención (7 diarios y 4 semanales). `scripts/restore.sh` los trae de vuelta. **Sin restic por ahora:** un `tar` y un `pg_dump` se restauran con lo que trae cualquier máquina con Docker, sin otra herramienta ni credenciales de un destino remoto. Copiar los respaldos fuera de la máquina, y programarlos con el cron del host, queda a cargo de quien opera; restic con un destino del `.env` es el paso siguiente si hace falta.
 
 **Lo que falta de la etapa 5:**

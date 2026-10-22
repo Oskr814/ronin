@@ -72,29 +72,67 @@ services:
     ports:
       - "${RONIN_PUBLIC_BIND:-127.0.0.1}:${SERVER_PORT:-3939}:${SERVER_PORT:-3939}"
 
+  # The PID namespace ronin and runner share (#325), as they share
+  # tailscale's network: each sees the other's processes, so a run, a lock or
+  # a worker started by one is alive for the other. Its init reaps the
+  # workers both leave running (Docker gives the other two no init of their
+  # own once they share it). Never redeployed with ronin: it holds no code
+  # of its own.
+  procs:
+    image: busybox:1.37.0
+    restart: unless-stopped
+    init: true
+    command: ["tail", "-f", "/dev/null"]
+    network_mode: none
+
+  # The API: the webhooks, the portal and the dashboard. It only queues, so
+  # `docker compose up -d ronin` redeploys it in seconds without cutting a
+  # job.
   ronin:
     build: .
     image: ronin:${RONIN_IMAGE_TAG:-local}
     restart: unless-stopped
-    # Reaps the workers and handlers ronin starts and leaves running.
-    init: true
+    command: ["api"]
     network_mode: service:tailscale
+    pid: service:procs
     env_file: *env-file
     environment: *ronin-env
-    volumes:
+    volumes: &ronin-volumes
       - ronin-files:/data
       - ronin-repos:/repos
       - ronin-claude:/claude
       - docker-certs-client:/certs/client:ro
       - tailscale-socket:/var/run/tailscale
-    depends_on:
+    depends_on: &ronin-depends
       postgres:
         condition: service_healthy
       docker:
         condition: service_started
       tailscale:
         condition: service_started
+      procs:
+        condition: service_started
     stop_grace_period: 30s
+
+  # The scheduler and the job queue's runner: the jobs, the agents and the
+  # workers. Stopping it is a drain (apps/api/jobs/main.ts): it takes no new
+  # job and goes once what it started has ended, so `docker compose up -d
+  # runner` waits for that; the queue keeps what arrives meanwhile. What
+  # outlasts the grace period is cut. Its network is tailscale's too: it
+  # reaches the docker daemon on localhost.
+  runner:
+    # ronin's image: `docker compose build ronin` builds it for both.
+    image: ronin:${RONIN_IMAGE_TAG:-local}
+    pull_policy: never
+    restart: unless-stopped
+    command: ["runner"]
+    network_mode: service:tailscale
+    pid: service:procs
+    env_file: *env-file
+    environment: *ronin-env
+    volumes: *ronin-volumes
+    depends_on: *ronin-depends
+    stop_grace_period: 45m
 
   docker:
     image: docker:29-dind
@@ -107,7 +145,7 @@ services:
       - docker-data:/var/lib/docker
       - docker-certs-ca:/certs/ca
       - docker-certs-client:/certs/client
-      # The same path as in ronin: a preview's bind mounts point into its
+      # The same path as in ronin and runner: a preview's bind mounts point into its
       # worktree, and this daemon resolves them on its own filesystem.
       - ronin-repos:/repos
     depends_on:

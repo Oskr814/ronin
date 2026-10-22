@@ -26,7 +26,7 @@ export interface ConflictsWorkerRequest {
 
 export function launchConflictsWorker(request: ConflictsWorkerRequest): void {
   const pid = launchWorker('domains/commands/conflicts-worker', request);
-  log.info(`conflictos: worker lanzado para el PR #${request.prNumber} (pid ${pid})`);
+  log.info(`conflictos: worker lanzado para el PR #${request.prNumber} (${pid ? `pid ${pid}` : 'en la cola del runner'})`);
 }
 
 // Its own directory name, so sweepOrphanedWorktrees (ronin-<n>-…) never
