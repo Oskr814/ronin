@@ -7,7 +7,6 @@ vi.mock('@platform/github/github.js', () => ({
 
 const findTrustedSpikeCommand = vi.fn();
 const findTrustedExploreCommand = vi.fn();
-const findTrustedPrototypeCommand = vi.fn();
 const parseSpikeCommand = vi.fn();
 vi.mock('./mentions.js', () => ({
   // One read per issue now returns both commands; the tests drive each half.
@@ -15,12 +14,7 @@ vi.mock('./mentions.js', () => ({
     spike: await findTrustedSpikeCommand(...args),
     explore: await findTrustedExploreCommand(...args),
     spec: [],
-    prototype: await findTrustedPrototypeCommand(...args),
   }),
-  parsePrototypeCommand: (body: string) => {
-    const match = body.match(/\/prototype\s+(\S+)(?:\s+([\s\S]+))?/);
-    return match ? { appName: match[1], instruction: match[2]?.trim() || undefined } : null;
-  },
   parseSpikeCommand: (...args: unknown[]) => parseSpikeCommand(...args),
   parseSpecCommand: () => null,
   parseExploreCommand: (body: string) => {
@@ -43,7 +37,6 @@ beforeEach(() => {
   listOpenUnmanagedIssues.mockReset().mockResolvedValue([]);
   findTrustedSpikeCommand.mockReset().mockResolvedValue([]);
   findTrustedExploreCommand.mockReset().mockResolvedValue([]);
-  findTrustedPrototypeCommand.mockReset().mockResolvedValue([]);
   parseSpikeCommand.mockReset().mockReturnValue({ appName: 'backoffice', instruction: undefined });
 });
 
@@ -114,20 +107,4 @@ describe('findIssueCommands', () => {
     expect(explores).toEqual([{ issueNumber: 501, appName: 'backoffice', maxFunctions: 2, trigger: [comment({ id: 9, body: '@ronin /explore backoffice 2' })] }]);
   });
 
-  it('finds /prototype with its app and instruction', async () => {
-    listOpenUnmanagedIssues.mockResolvedValue([issue()]);
-    const trigger = comment({ id: 7, body: '@ronin /prototype backoffice el modal con la lista de productos' });
-    findTrustedPrototypeCommand.mockResolvedValue([trigger]);
-
-    const { prototypes } = await findIssueCommands();
-
-    expect(prototypes).toEqual([{ issueNumber: 500, appName: 'backoffice', instruction: 'el modal con la lista de productos', trigger: [trigger] }]);
-  });
-
-  it('skips a /prototype missing its app', async () => {
-    listOpenUnmanagedIssues.mockResolvedValue([issue()]);
-    findTrustedPrototypeCommand.mockResolvedValue([comment({ body: '@ronin /prototype' })]);
-
-    expect((await findIssueCommands()).prototypes).toEqual([]);
-  });
 });

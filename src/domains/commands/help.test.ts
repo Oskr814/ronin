@@ -48,10 +48,8 @@ describe('classifyMetaCommand', () => {
     expect(classifyMetaCommand('@ronin /fix-comments', 'ronin', 'issue')).toEqual({ kind: 'wrong-context', command: 'fix-comments' });
   });
 
-  it('knows /prototype: through on an issue with an app, usage without one, wrong place on a PR', () => {
-    expect(classifyMetaCommand('@ronin /prototype backoffice el modal', 'ronin', 'issue')).toBeNull();
-    expect(classifyMetaCommand('@ronin /prototype', 'ronin', 'issue')).toEqual({ kind: 'bad-usage', command: 'prototype' });
-    expect(classifyMetaCommand('@ronin /prototype backoffice', 'ronin', 'pr')).toEqual({ kind: 'wrong-context', command: 'prototype' });
+  it('no longer knows /prototype', () => {
+    expect(classifyMetaCommand('@ronin /prototype backoffice el modal', 'ronin', 'issue')).toMatchObject({ kind: 'unknown', token: 'prototype' });
   });
 
   it('lists the plain-words request on a PR only', () => {

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { AGENT_NOTES_REMINDER, REALISTIC_DATA_RULE } from '@platform/agents/prompts.js';
+import { AGENT_NOTES_REMINDER } from '@platform/agents/prompts.js';
 
 vi.mock('@platform/config/config.js', () => ({
   config: {
@@ -152,13 +152,5 @@ describe('buildTask — resolve-conflicts', () => {
     expect(prompt).toContain('- src/a.ts\n- src/b.ts');
     expect(prompt).toContain('Do not commit, do not abort the merge, never push');
     expect(prompt).toContain('/tmp/o.json');
-  });
-});
-
-describe('commandTask — data the team sees in screenshots', () => {
-  it('asks the prototype for realistic data', async () => {
-    const app = { appName: 'backoffice', appPath: 'apps/backoffice', checkoutDir: '/tmp/w', outDir: '/tmp/out', outputPath: '/tmp/out/r.json', mcpConfigPath: '/tmp/mcp.json', baseUrl: 'http://127.0.0.1:1', homePath: '/' };
-    const { prompt } = await buildTask({ type: 'prototype', issueNumber: 1, ...app, browsers: [{ server: 'admin-desktop', role: 'Admin', viewport: 'desktop' }] });
-    expect(prompt).toContain(REALISTIC_DATA_RULE);
   });
 });

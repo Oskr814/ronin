@@ -78,13 +78,6 @@ const COMMANDS: CommandSpec[] = [
     validateArgs: (rest) => SPIKE_HAS_APP_NAME_RE.test(rest),
   },
   {
-    name: 'prototype',
-    scopes: ['issue'],
-    usage: '/prototype <app> [instrucción]',
-    summary: 'Levanto la app, aplico un cambio borrador con lo que pide el issue y dejo en el issue las capturas del antes y el después, con el diff. No abro rama ni PR. Solo en issues que todavía no me asignaron.',
-    validateArgs: (rest) => SPIKE_HAS_APP_NAME_RE.test(rest),
-  },
-  {
     name: 'explore',
     scopes: ['issue'],
     usage: '/explore <app> [cantidad de funciones]',

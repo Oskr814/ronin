@@ -1,44 +1,25 @@
 import { basename, join } from 'node:path';
 import { runAgentTask, type AgentTask } from '@platform/agents/agent-task.js';
-import { commandTask, type CommandTask, type PrototypeBrowser } from './prompts.js';
+import type { PrototypeBrowser, RunningApp } from './prompts.js';
 import { appDown, appUp } from '../product-app/index.js';
 import { loginAllUsers, renderHtmlToPng } from '../product-app/index.js';
 import { loadAppDefinition, type AppDefinition } from '../product-app/index.js';
 import { config } from '@platform/config/config.js';
-import { evidenceUrl, publishEvidence } from '../product-app/index.js';
 import { insideDir } from '../explorations/index.js';
 import { mcpServer, originsOf } from '../explorations/index.js';
 import { activeRepo } from '@platform/agents/repo-context.js';
-import { launchWorker } from '@platform/workers/worker-launch.js';
 import { removeWorktreeDir } from '@platform/git/worktree.js';
-import { log } from '@platform/logger.js';
 import { worktreeLock } from '@platform/workers/worktree-lock.js';
 import { host } from '@platform/host/host.js';
 
 
-// `/prototype <app> [instrucción]` on an issue, or a plain-words request for
-// one (issue-request.ts): ronin brings the app up from the base branch in a
-// worktree of its own, an agent takes the before, makes a draft change and
-// takes the after, and the images (evidence branch) and the draft's diff go
-// on the issue as a comment. No branch is pushed and no PR is opened: the
-// worktree is thrown away. Runs in its own process (prototype-worker.ts),
-// one at a time per repo. See docs/DESIGN.md §11.11.
+// A run of an agent on the app, brought up from the base branch in a
+// checkout of its own with one logged-in browser per role and viewport: a
+// portal request's prototype (prototype.ts) or its reproduction
+// (reproduce.ts). Nothing is pushed: the checkout is thrown away once the
+// caller has what the agent left. See docs/DESIGN.md §11.11.
 
-export interface PrototypeWorkerRequest {
-  repo: string;
-  issueNumber: number;
-  appName: string;
-  instruction?: string;
-  // The comment that asked for it, answered with the result.
-  commentId: number;
-}
-
-export function launchPrototypeWorker(request: PrototypeWorkerRequest): void {
-  const pid = launchWorker('domains/commands/prototype-worker', request);
-  log.info(`prototipo: worker lanzado para el issue #${request.issueNumber} (${request.appName}, pid ${pid})`);
-}
-
-// Its own directory name (prototype-issue-<n>, prototype-portal-p-<n>), so
+// Its own directory name (prototype-portal-p-<n>, prototype-portal-r-<n>), so
 // neither sweepOrphanedWorktrees (ronin-<n>-…) nor exploration (app-<name>)
 // nor the preview sweep (preview-pr-<n>) ever touches it.
 export function prototypeDir(key: string): string {
@@ -114,53 +95,9 @@ export function parsePrototypeResult(raw: string, outDir: string): PrototypeOutp
   if (typeof obj.error === 'string' && obj.error.trim()) return { error: obj.error.trim().slice(0, 1_000) };
   const after = images(obj.despues, outDir);
   if (after.length === 0) throw new Error('el resultado no trae ninguna imagen del después');
-  const summary = typeof obj.resumen === 'string' && obj.resumen.trim() ? obj.resumen.trim().slice(0, 2_000) : 'Prototipo del cambio que pide el issue.';
+  const summary = typeof obj.resumen === 'string' && obj.resumen.trim() ? obj.resumen.trim().slice(0, 2_000) : 'Prototipo del cambio pedido.';
   const mensaje = typeof obj.mensaje === 'string' && obj.mensaje.trim() ? obj.mensaje.trim().slice(0, 2_000) : undefined;
   return { resumen: summary, ...(mensaje ? { mensaje } : {}), antes: images(obj.antes, outDir), despues: after };
-}
-
-export interface PublishedImage {
-  url: string;
-  nota?: string;
-  viewport: 'desktop' | 'mobile';
-}
-
-export interface PrototypeResult {
-  appName: string;
-  resumen: string;
-  antes: PublishedImage[];
-  despues: PublishedImage[];
-  patch: string;
-}
-
-// GitHub caps a comment at 65 536 characters; the images and text above the
-// diff take a few thousand at most.
-const MAX_PATCH = 40_000;
-
-function imageTag(img: PublishedImage): string {
-  const alt = (img.nota ?? 'captura').replace(/"/g, "'");
-  return `<img src="${img.url}" alt="${alt}" width="${img.viewport === 'mobile' ? 320 : 720}">`;
-}
-
-export function renderPrototypeComment(result: PrototypeResult, login: string): string {
-  const lines = [`### Prototipo en \`${result.appName}\``, '', result.resumen, ''];
-  const pairs = Math.max(result.antes.length, result.despues.length);
-  for (let i = 0; i < pairs; i++) {
-    const before = result.antes[i];
-    const after = result.despues[i];
-    if (before) lines.push(`**Antes**${before.nota ? `: ${before.nota}` : ''}`, '', imageTag(before), '');
-    if (after) lines.push(`**Después**${after.nota ? `: ${after.nota}` : ''}`, '', imageTag(after), '');
-  }
-  if (result.patch) {
-    const patch = result.patch.length > MAX_PATCH ? `${result.patch.slice(0, MAX_PATCH)}\n… (recortado)` : result.patch;
-    lines.push('<details><summary>Cambio borrador usado para el después</summary>', '', '```diff', patch, '```', '', '</details>', '');
-  }
-  lines.push(`_Es un borrador para discutir: no hay rama ni PR. Para que lo implemente, asigname el issue; para cambiar el prototipo, pedímelo con \`@${login}\` acá mismo._`);
-  return lines.join('\n');
-}
-
-export function renderPrototypeFailed(reason: string): string {
-  return `No pude hacer el prototipo: ${reason.split('\n')[0].slice(0, 300)}`;
 }
 
 // A shot ready to deliver: always an image file (an HTML after is rendered),
@@ -186,11 +123,16 @@ export interface PrototypeDraft {
 // opposed to the run failing: trying again won't change its mind.
 export class PrototypeDeclined extends Error {}
 
-export type PrototypeTaskBase = Omit<Extract<CommandTask, { type: 'prototype' }>, 'type' | 'issueNumber' | 'instruction'>;
+// What every task run on the app gets, from runOnApp.
+export interface PrototypeTaskBase extends RunningApp {
+  checkoutDir: string;
+  outputPath: string;
+  mcpConfigPath: string;
+}
 
 export interface PrototypeTarget {
-  // Names the checkout, the app instance and the output dir: issue-<n>,
-  // portal-p-<n> or portal-r-<n>, never shared between two runs.
+  // Names the checkout, the app instance and the output dir: portal-p-<n>
+  // or portal-r-<n>, never shared between two runs.
   key: string;
   appName: string;
   // `compose`: the docker compose command of the app's stack, for a task
@@ -322,36 +264,4 @@ export function makePrototype<T>(target: PrototypeTarget, deliver: (draft: Proto
       patch: await draftDiff(run.dir, run.generated),
     });
   });
-}
-
-async function publishImages(issueNumber: number, draft: PrototypeDraft): Promise<{ antes: PublishedImage[]; despues: PublishedImage[] }> {
-  const prefix = `issues/${issueNumber}/prototipo-${Date.now()}`;
-  const files: Array<{ src: string; path: string }> = [];
-  const meta: Array<{ kind: 'antes' | 'despues'; nota?: string; viewport: 'desktop' | 'mobile'; path: string }> = [];
-  for (const kind of ['antes', 'despues'] as const) {
-    for (const [i, shot] of draft[kind].entries()) {
-      const ext = shot.path.slice(shot.path.lastIndexOf('.')).toLowerCase();
-      const path = `${prefix}/${kind}-${i + 1}${ext}`;
-      files.push({ src: shot.path, path });
-      meta.push({ kind, viewport: shot.viewport, path, ...(shot.nota ? { nota: shot.nota } : {}) });
-    }
-  }
-  const sha = await publishEvidence(activeRepo().productRepoPath, files, `prototipo del issue #${issueNumber}`);
-  const published = { antes: [] as PublishedImage[], despues: [] as PublishedImage[] };
-  for (const m of meta) published[m.kind].push({ url: evidenceUrl(sha, m.path), viewport: m.viewport, ...(m.nota ? { nota: m.nota } : {}) });
-  return published;
-}
-
-// An issue's prototype: the images go to the evidence branch, for the
-// comment that answers whoever asked.
-export async function runPrototype(request: Pick<PrototypeWorkerRequest, 'issueNumber' | 'appName' | 'instruction'>): Promise<PrototypeResult> {
-  const { issueNumber, appName } = request;
-  return makePrototype(
-    {
-      key: `issue-${issueNumber}`,
-      appName,
-      task: (base) => commandTask({ type: 'prototype', issueNumber, ...base, ...(request.instruction ? { instruction: request.instruction } : {}) }),
-    },
-    async (draft) => ({ appName, resumen: draft.resumen, ...(await publishImages(issueNumber, draft)), patch: draft.patch }),
-  );
 }

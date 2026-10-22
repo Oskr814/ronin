@@ -4,7 +4,7 @@ import { readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { config } from '@platform/config/config.js';
-import type { AppRun, PrototypeTarget } from '../commands/prototype.js';
+import type { AppRun, PrototypeTarget } from './app-run.js';
 import { createUser } from './accounts.js';
 import { createRequest, getRequest, MAX_REPRODUCTIONS, prototypePatchPath, requestImagePath, updateRequest } from './requests.js';
 
@@ -13,8 +13,8 @@ const sendMail = vi.fn(async () => {});
 vi.mock('@platform/notify/notifier.js', () => ({ sendMail: (...args: unknown[]) => sendMail(...(args as [])) }));
 const runOnApp = vi.fn();
 const draftDiff = vi.fn(async () => 'diff --git a/T.cs b/T.cs\n+[Fact]');
-vi.mock('../commands/prototype.js', async (original) => ({
-  ...(await original<typeof import('../commands/prototype.js')>()),
+vi.mock('./app-run.js', async (original) => ({
+  ...(await original<typeof import('./app-run.js')>()),
   runOnApp: (...args: unknown[]) => runOnApp(...args),
   draftDiff: () => draftDiff(),
 }));

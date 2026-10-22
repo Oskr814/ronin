@@ -30,7 +30,7 @@ ronin lo lee entero, con sus comentarios, y:
     ![El diálogo Asignar a ronin, con un contexto y el comentario que va a quedar](../../../assets/capturas/asignar.png)
   </TabItem>
   <TabItem label="Desde GitHub" icon="github">
-    Asigná el issue a `ronin-agent` con el picker de **Assignees**. Si querés dejarle contexto, comentalo en el issue antes, sin mencionarlo: una mención se lee como un pedido aparte.
+    Asigná el issue a `ronin-agent` con el picker de **Assignees**. Si querés dejarle contexto, comentalo en el issue antes, sin mencionarlo: a una mención sin comando te responde con la lista de comandos.
   </TabItem>
 </Tabs>
 
@@ -40,13 +40,11 @@ Un issue nuevo también se puede crear y asignar de una: el botón **+** de cada
 
 ### Darle forma antes de asignarlo
 
-En un issue que ronin todavía no tomó, podés pedirle que investigue o que prototipe, sin que abra un PR:
+En un issue que ronin todavía no tomó, podés pedirle que investigue o que escriba un spec, sin que lo implemente:
 
 | | Qué hace | Desde el tablero | Desde GitHub |
 |---|---|---|---|
 | **Investigar** | Lee el código en solo lectura y agrega al issue una sección de contexto: archivos, hipótesis, preguntas abiertas. | *Acciones* → **Investigar (spike)**, eligiendo la app | `@ronin-agent /spike <app> [qué]` |
-| **Prototipar** | Levanta la app, aplica un cambio borrador y deja en el issue las capturas del antes y el después, con el diff. | *Acciones* → **Prototipar**, eligiendo la app | `@ronin-agent /prototype <app> [qué]` |
-| **Un pedido en palabras** | Ajusta el alcance, investiga o responde una pregunta. | — | `@ronin-agent <pedido>` |
 | **Un spec** | Convierte el pedido en un spec y abre un PR draft con él. | — | `@ronin-agent /spec <app> [qué]` |
 
 ## Un spec

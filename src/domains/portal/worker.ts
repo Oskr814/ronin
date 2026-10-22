@@ -10,7 +10,7 @@
 // request's lock throughout, so two workers never work the same request.
 import { concurrencyFor, config } from '@platform/config/config.js';
 import { tryLockResource, unlockResource, withSlots } from '@platform/locks/locks.js';
-import { releasePrototypeLock, waitForPrototypeLock } from '../commands/prototype.js';
+import { releasePrototypeLock, waitForPrototypeLock } from './app-run.js';
 import { classifyRequest, followUpRequest } from './classify.js';
 import { needsIssue, openPortalIssue } from './issue.js';
 import { prototypeRequest } from './prototype.js';

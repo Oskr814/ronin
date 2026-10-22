@@ -3,5 +3,4 @@ export * from './conflicts.js';
 export * from './help.js';
 export * from './mentions.js';
 export * from './prompts.js';
-export * from './prototype.js';
 export * from './spike.js';
