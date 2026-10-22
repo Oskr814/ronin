@@ -307,6 +307,12 @@ function templateKeys(template: string): string[] {
   return [...template.matchAll(TEMPLATE_RE)].map((m) => m[1]);
 }
 
+// Whether a step uses the app's compose stack (`{{compose}}`): Docker,
+// which only ronin has.
+export function usesCompose(template: string): boolean {
+  return templateKeys(template).includes('compose');
+}
+
 // Names of the `{{port.<name>}}` (and `{{public.port.<name>}}`,
 // `{{local.port.<name>}}`) a template uses, so the caller can reserve those
 // ports before rendering it.

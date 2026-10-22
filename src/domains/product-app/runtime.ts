@@ -1,9 +1,12 @@
-import { join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { activeRepo } from '@platform/agents/repo-context.js';
 import { config } from '@platform/config/config.js';
 import { getFreePort } from '@platform/git/worktree.js';
 import { log } from '@platform/logger.js';
-import { loadAppDefinition, namedPortsIn, publicizeTemplate, publicPortsIn, renderTemplate, type AppDefinition, type AppStep, type TemplateContext } from './manifest.js';
+import { loadAppDefinition, namedPortsIn, publicizeTemplate, publicPortsIn, renderTemplate, usesCompose, type AppDefinition, type AppStep, type TemplateContext } from './manifest.js';
+import { AGENT_ENV_KEYS } from '@platform/claude/claude-runner.js';
+import { confineCompose, stackCommand } from './confine.js';
+import type { AgentUser } from '@platform/agents/agent-user.js';
 import { host } from '@platform/host/host.js';
 import { APP_PROCESS_ENV } from '@platform/workers/process.js';
 
@@ -12,6 +15,11 @@ import { APP_PROCESS_ENV } from '@platform/workers/process.js';
 // ronin.app.json — see docs/DESIGN.md §11.2. Everything it starts is
 // recorded in <checkout>/.ronin-app/state.json, so appDown can stop it even
 // from another process (the CLI's `app down`, or a later tick).
+//
+// An app that runs from a checkout of the agent's, which the agent edits
+// while it runs (#257, AppUpOptions.as), keeps it next to the checkout
+// instead, in a directory of root's: the state says which processes ronin
+// stops and which compose file it runs, and the agent must not write it.
 export const APP_STATE_DIR = '.ronin-app';
 
 interface AppState {
@@ -19,6 +27,8 @@ interface AppState {
   project: string;
   composeFile?: string;
   processes: Array<{ name: string; pid: number }>;
+  // The agent's user its code runs as (AppUpOptions.as).
+  as?: AgentUser;
   // Set once the app is fully up — what attachApp needs to hand a running
   // app to another process.
   baseUrl?: string;
@@ -74,6 +84,10 @@ export interface AppUpOptions {
   publicPort?: (localPort: number) => Promise<number>;
   // The manifest's text, instead of the checkout's ronin.app.json.
   manifest?: string;
+  // The checkout is the agent's (#257): what runs the app's code — its
+  // installs, builds and dev servers — runs as that user, with nothing of
+  // ronin's environment, and the app's state stays out of the checkout.
+  as?: AgentUser;
 }
 
 // Takes `docker compose config --format json` (every path already absolute,
@@ -107,20 +121,56 @@ export async function rewriteComposeConfig(
   return { config: { ...rest, services }, ports };
 }
 
-function stateDirOf(dir: string): string {
-  return join(dir, APP_STATE_DIR);
+// Where an agent's checkout keeps its state: <worktrees>/.ronin-app/<name>,
+// made by appUp before anything else, and gone only with the checkout
+// (removeAppState) — so the agent never gets to plant a state of its own
+// in the checkout for ronin to read instead.
+function outsideStateDir(dir: string): string {
+  return join(dirname(dir), APP_STATE_DIR, basename(dir));
+}
+
+async function stateDirOf(dir: string): Promise<string> {
+  const outside = outsideStateDir(dir);
+  return (await host().fs.exists(outside)) ? outside : join(dir, APP_STATE_DIR);
 }
 
 async function readState(dir: string): Promise<AppState | null> {
   try {
-    return JSON.parse(await host().fs.readFile(join(stateDirOf(dir), 'state.json'), 'utf8')) as AppState;
+    return JSON.parse(await host().fs.readFile(join(await stateDirOf(dir), 'state.json'), 'utf8')) as AppState;
   } catch {
     return null;
   }
 }
 
 async function writeState(dir: string, state: AppState): Promise<void> {
-  await host().fs.writeFile(join(stateDirOf(dir), 'state.json'), JSON.stringify(state, null, 2));
+  await host().fs.writeFile(join(await stateDirOf(dir), 'state.json'), JSON.stringify(state, null, 2));
+}
+
+// Once an agent's checkout is gone, its state goes too — never before: with
+// the checkout still there, the next appDown would read the one inside it.
+export async function removeAppState(dir: string): Promise<void> {
+  await host().fs.rm(outsideStateDir(dir), { recursive: true, force: true });
+}
+
+// How a step runs: as ronin, with appEnv; or, for an agent's checkout, as
+// the agent's user with an environment built from scratch. A step there
+// that uses the stack ({{compose}}) needs ronin's Docker: it goes through
+// stackStep instead.
+function stepProcess(state: AppState, extra: Record<string, string>): { env: NodeJS.ProcessEnv; uid?: number; gid?: number } {
+  if (!state.as) return { env: appEnv(extra) };
+  const env: NodeJS.ProcessEnv = {};
+  for (const key of AGENT_ENV_KEYS) if (process.env[key] !== undefined) env[key] = process.env[key];
+  Object.assign(env, { HOME: state.as.home, USER: state.as.name, LOGNAME: state.as.name, CI: 'true', [APP_PROCESS_ENV]: '1' }, extra);
+  return { env, uid: state.as.uid, gid: state.as.gid };
+}
+
+const quote = (word: string) => `'${word.replace(/'/g, `'\\''`)}'`;
+
+// A step of an agent's checkout that uses the stack, as ronin: only a
+// command in one of its containers (confine.ts's stackCommand), each word
+// quoted, so sh runs nothing but docker.
+function stackStep(state: AppState, template: string, ctx: TemplateContext): string {
+  return ['docker', ...composeArgs(state), ...stackCommand(template, ctx)].map(quote).join(' ');
 }
 
 function composeArgs(state: Pick<AppState, 'project' | 'composeFile'>): string[] {
@@ -188,10 +238,13 @@ async function runStep(step: AppStep, run: StepRun): Promise<void> {
     await reservePorts([step.run, ...Object.values(step.env ?? {})], ctx, options);
     const env = Object.fromEntries(Object.entries(step.env ?? {}).map(([k, v]) => [k, renderTemplate(v, ctx)]));
     log.info(`app ${appName}: ${stepLabel(step)}`);
-    await host().runLogged(renderTemplate(step.run, ctx), { cwd: join(dir, step.cwd ?? '.'), env: appEnv(env), logFile, timeoutMs: (step.timeoutSeconds ?? 600) * 1000 });
+    const timeoutMs = (step.timeoutSeconds ?? 600) * 1000;
+    if (state.as && usesCompose(step.run)) await host().runLogged(stackStep(state, step.run, ctx), { cwd: dir, env: appEnv(env), logFile, timeoutMs });
+    else await host().runLogged(renderTemplate(step.run, ctx), { cwd: join(dir, step.cwd ?? '.'), ...stepProcess(state, env), logFile, timeoutMs });
   } else if ('start' in step) {
     // A no-op without a public host: {{public.…}} renders the same
     // loopback URL — see publicizeTemplate.
+    if (state.as && usesCompose(step.start)) throw new Error(`en un checkout del agente, un proceso que queda corriendo no usa el stack: "${step.start}"`);
     const envTemplates = Object.entries(step.env ?? {}).map(([k, v]) => [k, publicizeTemplate(v)] as const);
     await reservePorts([step.start, ...envTemplates.map(([, v]) => v)], ctx, options);
     const env = Object.fromEntries(envTemplates.map(([k, v]) => [k, renderTemplate(v, ctx)]));
@@ -203,7 +256,7 @@ async function runStep(step: AppStep, run: StepRun): Promise<void> {
     } else {
       log.info(`app ${appName}: arrancando ${step.name}`);
     }
-    const pid = host().startLogged(renderTemplate(step.start, ctx), { cwd: join(dir, step.cwd ?? '.'), env: appEnv(env), logFile: join(stateDirOf(dir), `${step.name}.log`) });
+    const pid = host().startLogged(renderTemplate(step.start, ctx), { cwd: join(dir, step.cwd ?? '.'), ...stepProcess(state, env), logFile: join(await stateDirOf(dir), `${step.name}.log`) });
     state.processes.push({ name: step.name, pid });
     await writeState(dir, state);
   } else {
@@ -219,15 +272,16 @@ async function runStep(step: AppStep, run: StepRun): Promise<void> {
 // tears down whatever it already started before rethrowing.
 export async function appUp(dir: string, appName: string, options: AppUpOptions = {}): Promise<AppSession> {
   const app = await loadAppDefinition(dir, appName, options.manifest);
-  const stateDir = stateDirOf(dir);
-  await host().fs.mkdir(stateDir, { recursive: true });
+  const stateDir = options.as ? outsideStateDir(dir) : join(dir, APP_STATE_DIR);
+  await host().fs.mkdir(stateDir, { recursive: true, ...(options.as ? { mode: 0o700 } : {}) });
   // Never committed by accident: a task that runs `git add -A` in this
   // checkout must not pick up the app's logs and state. info/exclude is
-  // shared by every worktree of the repo, which is what we want here.
-  await excludeFromGit(dir);
+  // shared by every worktree of the repo, which is what we want here. An
+  // agent's checkout has neither (and ronin runs no git in it).
+  if (!options.as) await excludeFromGit(dir);
   if (await readState(dir)) await appDown(dir);
 
-  const state: AppState = { appName, project: appProjectName(appName, options.instance), processes: [] };
+  const state: AppState = { appName, project: appProjectName(appName, options.instance), processes: [], ...(options.as ? { as: options.as } : {}) };
   const ctx: TemplateContext = { ports: {}, port: {}, compose: '', dir, ...(options.publicHost ? { publicHost: options.publicHost } : {}) };
   const logFile = join(stateDir, 'up.log');
   await host().fs.writeFile(logFile, '');
@@ -237,7 +291,9 @@ export async function appUp(dir: string, appName: string, options: AppUpOptions 
     if (app.compose) {
       const args = ['compose', ...app.compose.files.flatMap((f) => ['-f', f]), 'config', '--format', 'json'];
       const { stdout } = await host().exec('docker', args, { cwd: dir, env: appEnv(), maxBuffer: 16 * 1024 * 1024 });
-      const { config: rewritten, ports } = await rewriteComposeConfig(JSON.parse(stdout), getFreePort);
+      const resolved = JSON.parse(stdout);
+      if (options.as) confineCompose(resolved, dir);
+      const { config: rewritten, ports } = await rewriteComposeConfig(resolved, getFreePort);
       state.composeFile = join(stateDir, 'compose.json');
       await host().fs.writeFile(state.composeFile, JSON.stringify(rewritten, null, 2));
       await writeState(dir, state);
@@ -270,7 +326,7 @@ export async function appRerun(dir: string, app: AppDefinition, steps: AppStep[]
   const state = await readState(dir);
   if (!state?.baseUrl || !state.ctx) throw new Error(`no hay una app arriba en ${dir}`);
   const { ctx, baseUrl } = state;
-  const logFile = join(stateDirOf(dir), 'rerun.log');
+  const logFile = join(await stateDirOf(dir), 'rerun.log');
   await host().fs.writeFile(logFile, '');
   for (const step of steps) {
     try {
@@ -282,7 +338,7 @@ export async function appRerun(dir: string, app: AppDefinition, steps: AppStep[]
   await waitForUrl(baseUrl, 120_000);
   await writeState(dir, state);
   log.info(`app ${state.appName}: actualizada en ${baseUrl} (${steps.length === 0 ? 'sin pasos' : steps.map(stepLabel).join(', ')})`);
-  return { appName: state.appName, app, dir, baseUrl, ctx, stateDir: stateDirOf(dir) };
+  return { appName: state.appName, app, dir, baseUrl, ctx, stateDir: await stateDirOf(dir) };
 }
 
 // An app another process brought up with appUp and left running (the CLI's
@@ -291,7 +347,7 @@ export async function attachApp(dir: string): Promise<AppSession | null> {
   const state = await readState(dir);
   if (!state?.baseUrl || !state.ctx) return null;
   const app = await loadAppDefinition(dir, state.appName);
-  return { appName: state.appName, app, dir, baseUrl: state.baseUrl, ctx: state.ctx, stateDir: stateDirOf(dir) };
+  return { appName: state.appName, app, dir, baseUrl: state.baseUrl, ctx: state.ctx, stateDir: await stateDirOf(dir) };
 }
 
 // Stops every process appUp started and takes the compose stack down with
@@ -305,7 +361,7 @@ export async function appDown(dir: string): Promise<void> {
     await host().exec('docker', [...composeArgs(state), 'down', '--volumes', '--remove-orphans'], { cwd: dir, env: appEnv() })
       .catch((error) => log.error(`appDown: 'docker compose down' falló para ${state.project}`, error));
   }
-  await host().fs.rm(join(stateDirOf(dir), 'state.json'), { force: true });
+  await host().fs.rm(join(await stateDirOf(dir), 'state.json'), { force: true });
 }
 
 async function excludeFromGit(dir: string): Promise<void> {

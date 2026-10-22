@@ -30,6 +30,9 @@ export interface LoggedOptions {
   env: NodeJS.ProcessEnv;
   // Where its output goes, appended.
   logFile: string;
+  // As another user, like ExecOptions: the agent's, for an app it edits.
+  uid?: number;
+  gid?: number;
 }
 
 export interface HostDirent {
@@ -121,12 +124,12 @@ export const localHost: Host = {
     return { stdout };
   },
 
-  async runLogged(command, { cwd, env, logFile, timeoutMs }) {
+  async runLogged(command, { cwd, env, logFile, timeoutMs, uid, gid }) {
     await fsp.appendFile(logFile, `\n$ ${command}\n`);
     const fd = openSync(logFile, 'a');
     try {
       await new Promise<void>((resolve, reject) => {
-        const child = spawn('sh', ['-c', command], { cwd, env, stdio: ['ignore', fd, fd] });
+        const child = spawn('sh', ['-c', command], { cwd, env, uid, gid, stdio: ['ignore', fd, fd] });
         const timer = setTimeout(() => child.kill('SIGTERM'), timeoutMs);
         child.on('error', (error) => { clearTimeout(timer); reject(error); });
         child.on('close', (code) => {
@@ -144,10 +147,10 @@ export const localHost: Host = {
 
   // Detached into its own process group, so stopGroup can stop it together
   // with whatever it spawned (pnpm → vite, for one).
-  startLogged(command, { cwd, env, logFile }) {
+  startLogged(command, { cwd, env, logFile, uid, gid }) {
     const fd = openSync(logFile, 'a');
     try {
-      const child = spawn('sh', ['-c', command], { cwd, env, stdio: ['ignore', fd, fd], detached: true });
+      const child = spawn('sh', ['-c', command], { cwd, env, uid, gid, stdio: ['ignore', fd, fd], detached: true });
       child.unref();
       if (child.pid === undefined) throw new Error(`no se pudo arrancar "${command}"`);
       return child.pid;
