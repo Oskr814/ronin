@@ -123,6 +123,16 @@ describe('runAgentTask — prepare-preview-data', () => {
     expect(prompt).toMatch(/Only when the description has no such block, work it out from the diff/);
   });
 
+  // A PR behind a flag whose steps start with it off: the preview turns it
+  // on anyway, and says how to turn it off.
+  it('leaves the change\'s feature flags on for the seeded logins', async () => {
+    await runAgentTask(task);
+
+    const prompt = runClaudeHeadless.mock.calls[0][1] as string;
+    expect(prompt).toMatch(/behind a feature flag .* leave it ON for the tenant and users the seeded logins use, even when the steps start with it off/);
+    expect(prompt).toMatch(/how to turn it off/);
+  });
+
   it('forbids touching code, the stack or GitHub', async () => {
     await runAgentTask(task);
 
@@ -229,6 +239,7 @@ describe('runAgentTask — preview-data-triage', () => {
     expect(prompt).toContain('<<<CATALOG_START>>>\nclientes:\n  total: 8\n<<<CATALOG_END>>>');
     expect(prompt).toContain('git diff abc123..HEAD');
     expect(prompt).toMatch(/unsure, it is not enough/);
+    expect(prompt).toMatch(/behind a feature flag or another switch the catalog doesn't show on is never enough/);
     expect(prompt).toContain('every precondition in the "Cómo probar" block of the description');
     expect(prompt).toContain(`JSON object to ${task.outputPath}`);
   });
