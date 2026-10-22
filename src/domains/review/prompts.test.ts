@@ -114,19 +114,6 @@ describe('runAgentTask — agent-notes reminder', () => {
     expect(prompt.endsWith(AGENT_NOTES_REMINDER)).toBe(true);
   });
 
-  it('is included for review-request', async () => {
-    await runAgentTask({
-      type: 'review-request',
-      issueNumber: 228,
-      prNumber: 229,
-      mentions: [{ id: 1, kind: 'issue' as const, body: 'test', reactionsEyes: 0, authorLogin: 'someone' }],
-    });
-
-    const prompt = runClaudeHeadless.mock.calls[0][1] as string;
-    expect(prompt).toContain(AGENT_NOTES_REMINDER);
-    expect(prompt.endsWith(AGENT_NOTES_REMINDER)).toBe(true);
-  });
-
 });
 
 function botThread(overrides: Partial<BotThread> = {}): BotThread {
@@ -590,13 +577,51 @@ describe('runAgentTask — thread-reply-external', () => {
     expect(prompt).not.toContain('comentario posterior');
   });
 
-  it('replies in the thread, pushes with an explicit refspec and never resolves the thread', async () => {
+  it('answers through the skill: replies to each mention, resolves nothing, leaves the description alone', async () => {
     await runAgentTask(task);
 
+    expect(startActionsServer).toHaveBeenCalledWith(expect.objectContaining({
+      scope: expect.objectContaining({
+        prNumber: 600,
+        headRef: 'feat/z',
+        threads: [],
+        triggers: [{ id: 30, kind: 'review' }],
+        allowed: ['pr.reply', 'pr.comment', 'git.push', 'services.up', 'services.run', 'result.report'],
+      }),
+    }));
     const prompt = runClaudeHeadless.mock.calls[0][1] as string;
-    expect(prompt).toContain('pulls/600/comments/<comment id>/replies');
-    expect(prompt).toContain('git push --force-with-lease origin HEAD:feat/z');
-    expect(prompt).toContain('Never resolve the thread');
+    expect(prompt).toContain('ronin:answer-mentions');
+    expect(prompt).toContain('(id 30, kind "review")');
+    expect(prompt).not.toContain('git push');
+  });
+});
+
+describe('runAgentTask — review-request', () => {
+  const task = {
+    type: 'review-request' as const,
+    issueNumber: 228,
+    prNumber: 229,
+    mentions: [{ id: 1, kind: 'issue' as const, body: '@ronin-agent revisá el manejo de errores', reactionsEyes: 0, authorLogin: 'someone' }],
+  };
+
+  it("answers on its own PR's branch, detached, and may keep the description up to date", async () => {
+    getPullRequestStatus.mockResolvedValue({ headRefName: 'ronin/228/slice-1' });
+    await runAgentTask(task);
+
+    expect(ensureTrustedFixWorktree).toHaveBeenCalledWith('ronin/228/slice-1');
+    expect(ensureWorktree).not.toHaveBeenCalled();
+    expect(startActionsServer).toHaveBeenCalledWith(expect.objectContaining({
+      scope: expect.objectContaining({
+        threads: [],
+        triggers: [{ id: 1, kind: 'issue' }],
+        allowed: ['pr.reply', 'pr.comment', 'pr.update-body', 'git.push', 'services.up', 'services.run', 'result.report'],
+      }),
+    }));
+    const prompt = runClaudeHeadless.mock.calls[0][1] as string;
+    expect(prompt).toContain('ronin:answer-mentions');
+    expect(prompt).toContain('que abriste tú para el issue #228');
+    expect(prompt).toContain('No toques el issue ni las etiquetas');
+    expect(prompt).toContain('<<<CRITERIA_START>>>');
   });
 });
 
@@ -728,8 +753,6 @@ describe('runAgentTask — self-review in fix tasks', () => {
   const trigger = [{ id: 9, kind: 'issue' as const, body: '/fix-comments', reactionsEyes: 0, authorLogin: 'someone' }];
   const fixTasks = {
     'fix-review': { type: 'fix-review' as const, issueNumber: 228, prNumber: 229 },
-    'review-request': { type: 'review-request' as const, issueNumber: 228, prNumber: 229, mentions: trigger },
-    'thread-reply-external': { type: 'thread-reply-external' as const, prNumber: 229, headRefName: 'feat/x', mentions: trigger },
   };
 
   for (const [name, task] of Object.entries(fixTasks)) {
@@ -743,10 +766,6 @@ describe('runAgentTask — self-review in fix tasks', () => {
       expect(prompt).toContain('do not push that part of the change');
     });
   }
-
-  it('only applies to review-request when it changes code', async () => {
-    expect(await prompts(fixTasks['review-request'])).toContain('If you change code: before you edit anything');
-  });
 
   it('says where to report what could not be fixed', async () => {
     expect(await prompts(fixTasks['fix-review'])).toContain('say so in a PR comment ("gh pr comment 229');
@@ -799,7 +818,6 @@ describe('runAgentTask — the PR description kept up to date', () => {
   const mentions = [{ id: 1, kind: 'issue' as const, body: 'test', reactionsEyes: 0, authorLogin: 'someone' }];
   it.each([
     ['fix-review', { type: 'fix-review' as const, issueNumber: 228, prNumber: 229 }],
-    ['review-request', { type: 'review-request' as const, issueNumber: 228, prNumber: 229, mentions }],
   ])('asks %s to update it through the API, keeping the help footer', async (_name, task) => {
     await runAgentTask(task as never);
     const prompt = runClaudeHeadless.mock.calls[0][1] as string;
