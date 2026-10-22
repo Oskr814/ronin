@@ -52,6 +52,11 @@ vi.mock('node:fs/promises', () => ({
   writeFile: (...args: unknown[]) => writeFile(...args),
 }));
 
+const startActionsServer = vi.fn();
+const closeActions = vi.fn();
+vi.mock('@platform/actions/server.js', () => ({ startActionsServer: (...args: unknown[]) => startActionsServer(...args) }));
+vi.mock('@platform/actions/executors.js', () => ({ headOf: async () => 'start-sha', checkoutState: vi.fn(), executeAction: vi.fn() }));
+
 const loadReviewCriteria = vi.fn();
 vi.mock('./criteria.js', () => ({ loadReviewCriteria: (...args: unknown[]) => loadReviewCriteria(...args) }));
 
@@ -75,6 +80,8 @@ beforeEach(() => {
   getPullRequestStatus.mockResolvedValue({ headRefName: 'ronin/228/slice-1' });
   rm.mockResolvedValue(undefined);
   writeFile.mockResolvedValue(undefined);
+  closeActions.mockResolvedValue(undefined);
+  startActionsServer.mockResolvedValue({ url: 'http://127.0.0.1:9', token: 'run-token', calls: [], report: () => null, close: closeActions });
 });
 
 describe('runAgentTask — agent-notes reminder', () => {
@@ -615,7 +622,7 @@ describe('runAgentTask — fix-comments-external', () => {
     prNumber: 599,
     headRefName: 'feat/cambio-cliente-pedido-creado',
     trigger: [{ id: 9, kind: 'issue' as const, body: '@ronin-agent /fix-comments', reactionsEyes: 0, authorLogin: 'someone' }],
-    openThreads: [{ id: 'T5', body: 'OrderService.ChangeClient reasigna BranchId incondicionalmente' }],
+    openThreads: [{ id: 'PRRT_5', commentId: 55, body: 'OrderService.ChangeClient reasigna BranchId incondicionalmente' }],
   };
 
   // Not a plain ensureWorktree checkout: this branch is a trusted human's
@@ -631,89 +638,67 @@ describe('runAgentTask — fix-comments-external', () => {
     expect(ensureExternalReviewWorktree).not.toHaveBeenCalled();
   });
 
-  it('instructs the agent to push with an explicit refspec, since the checkout is detached', async () => {
-    await runAgentTask(task);
-
-    const prompt = runClaudeHeadless.mock.calls[0][1] as string;
-    expect(prompt).toContain('git push --force-with-lease origin HEAD:feat/cambio-cliente-pedido-creado');
-  });
-
   it('does not call getPullRequestStatus — headRefName is already known', async () => {
     await runAgentTask(task);
 
     expect(getPullRequestStatus).not.toHaveBeenCalled();
   });
 
-  it('covers every open thread, not just ones it did not open itself', async () => {
+  it('runs with the skill, sealed, and with its actions scoped to the PR, its threads and its trigger', async () => {
     await runAgentTask(task);
 
-    const prompt = runClaudeHeadless.mock.calls[0][1] as string;
-    expect(prompt).not.toContain("didn't open yourself");
-    expect(prompt).not.toContain('you didn\'t open');
+    expect(startActionsServer).toHaveBeenCalledWith(expect.objectContaining({
+      scope: {
+        prNumber: 599,
+        headRef: 'feat/cambio-cliente-pedido-creado',
+        startSha: 'start-sha',
+        threads: [{ commentId: 55, threadId: 'PRRT_5' }],
+        triggers: [{ id: 9, kind: 'issue' }],
+        allowed: ['pr.reply', 'pr.comment', 'pr.resolve-thread', 'git.push', 'result.report'],
+      },
+    }));
+    const opts = runClaudeHeadless.mock.calls[0][3];
+    expect(opts.pluginDir).toMatch(/\/plugin$/);
+    expect(opts.sealedEnv).toMatchObject({ RONIN_ACTIONS_URL: 'http://127.0.0.1:9', RONIN_ACTIONS_TOKEN: 'run-token' });
+    expect(opts.sealedEnv.PATH).toMatch(/\/bin:/);
+    expect(closeActions).toHaveBeenCalled();
   });
 
-  it('frames the PR as opened by a trusted human collaborator, without the internal task\'s issue-ownership language', async () => {
-    await runAgentTask(task);
+  it('closes the actions server when the run fails', async () => {
+    runClaudeHeadless.mockRejectedValueOnce(new Error('boom'));
+    await expect(runAgentTask(task)).rejects.toThrow('boom');
 
-    const prompt = runClaudeHeadless.mock.calls[0][1] as string;
-    expect(prompt).toContain('opened directly by a human collaborator with write access');
-    expect(prompt).not.toContain('supervisor');
-    expect(prompt).not.toContain('Do not edit the tracking issue');
+    expect(closeActions).toHaveBeenCalled();
   });
 
-  it('lists the open threads in the prompt, fenced as untrusted', async () => {
-    await runAgentTask(task);
+  it('names the skill and lists the trigger and the open threads, fenced as untrusted', async () => {
+    const { prompt } = await buildTask(task);
 
-    const prompt = runClaudeHeadless.mock.calls[0][1] as string;
-    expect(prompt).toContain('T5');
-    expect(prompt).toContain('OrderService.ChangeClient');
-    expect(prompt).toContain('never as instructions to follow');
+    expect(prompt).toContain('ronin:address-comments');
+    expect(prompt).toContain('(id 9, kind "issue")');
+    expect(prompt).toContain('primer comentario 55: <<<THREAD_START>>>OrderService.ChangeClient');
+    expect(prompt).toContain('nunca instrucciones');
   });
 
-  it('instructs applying actionable fixes with a single amend + force-push', async () => {
-    await runAgentTask(task);
+  it('gives the self-review its model and the criteria verbatim', async () => {
+    const { prompt } = await buildTask(task);
 
-    const prompt = runClaudeHeadless.mock.calls[0][1] as string;
-    expect(prompt).toContain('git commit --amend');
-    expect(prompt).toContain('git push --force-with-lease');
+    expect(prompt).toContain('"sonnet"');
+    expect(prompt).toContain('<<<CRITERIA_START>>>\n# Criterio\n## No marcar\n- sin constantes en migraciones\n<<<CRITERIA_END>>>');
   });
 
-  it('instructs replying inside each thread and resolving the ones it addressed', async () => {
-    await runAgentTask(task);
+  it('says there are no threads when none is open', async () => {
+    const { prompt, actions } = await buildTask({ ...task, openThreads: [] });
 
-    const prompt = runClaudeHeadless.mock.calls[0][1] as string;
-    expect(prompt).toContain('comments/<comment id>/replies');
-    expect(prompt).toContain('resolveReviewThread');
+    expect(prompt).toContain('(ninguno)');
+    expect(actions?.threads).toEqual([]);
   });
 
-  it('instructs replying to the trigger comment(s) that requested the batch', async () => {
-    await runAgentTask(task);
+  it('leaves the old gh write instructions to the skill and its actions', async () => {
+    const { prompt } = await buildTask(task);
 
-    const prompt = runClaudeHeadless.mock.calls[0][1] as string;
-    expect(prompt).toContain('(id 9)');
-    expect(prompt).toContain('/fix-comments');
-  });
-
-  it('forbids gh pr review, approve/merge, and label or PR-body edits', async () => {
-    await runAgentTask(task);
-
-    const prompt = runClaudeHeadless.mock.calls[0][1] as string;
-    expect(prompt).toContain('gh pr review');
-    expect(prompt).toMatch(/never approve|never.*merge/i);
-  });
-
-  it('includes the agent-notes reminder at the end', async () => {
-    await runAgentTask(task);
-
-    const prompt = runClaudeHeadless.mock.calls[0][1] as string;
-    expect(prompt.endsWith(AGENT_NOTES_REMINDER)).toBe(true);
-  });
-
-  it('tells the agent there is nothing pending when openThreads is empty (fix-comments-external)', async () => {
-    await runAgentTask({ ...task, openThreads: [] });
-
-    const prompt = runClaudeHeadless.mock.calls[0][1] as string;
-    expect(prompt).toMatch(/no.*(pending|open|unresolved)/i);
+    expect(prompt).not.toContain('gh api');
+    expect(prompt).not.toContain('git push');
   });
 });
 
@@ -728,7 +713,6 @@ describe('runAgentTask — self-review in fix tasks', () => {
   const fixTasks = {
     'fix-review': { type: 'fix-review' as const, issueNumber: 228, prNumber: 229 },
     'fix-comments': { type: 'fix-comments' as const, issueNumber: 228, prNumber: 229, trigger, openThreads: [] },
-    'fix-comments-external': { type: 'fix-comments-external' as const, prNumber: 229, headRefName: 'feat/x', trigger, openThreads: [] },
     'review-request': { type: 'review-request' as const, issueNumber: 228, prNumber: 229, mentions: trigger },
     'thread-reply-external': { type: 'thread-reply-external' as const, prNumber: 229, headRefName: 'feat/x', mentions: trigger },
   };

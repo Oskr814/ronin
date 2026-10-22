@@ -1249,6 +1249,7 @@ query($owner: String!, $repo: String!, $number: Int!) {
           originalLine
           comments(first: ${THREAD_COMMENTS_PAGE_SIZE}) {
             nodes {
+              databaseId
               author { login }
               body
               url
@@ -1262,6 +1263,7 @@ query($owner: String!, $repo: String!, $number: Int!) {
 }`;
 
 interface RawThreadComment {
+  databaseId?: number;
   author: { login: string } | null;
   body: string;
   url?: string;
@@ -1290,6 +1292,9 @@ interface RawReviewThreadsResponse {
 
 export interface ReviewThread {
   id: string;
+  // The REST id of the thread's first comment: what a reply goes to, and
+  // how an agent names the thread to ronin's actions (#257).
+  commentId?: number;
   body: string;
   // Link to the thread's first comment — used by the external review's
   // closing message to list what is still open.
@@ -1348,6 +1353,7 @@ async function fetchReviewThreads(prNumber: number): Promise<FetchedThread[]> {
       const [first, ...rest] = t.comments.nodes;
       return {
         id: t.id,
+        ...(first.databaseId ? { commentId: first.databaseId } : {}),
         body: first.body,
         url: first.url,
         authorLogin: first.author?.login ?? null,
@@ -1399,7 +1405,7 @@ export async function listExternalOpenReviewThreads(prNumber: number, botLogin: 
 // docs/superpowers/specs/2026-08-22-trusted-external-fix-comments-design.md.
 export async function listAllOpenReviewThreads(prNumber: number): Promise<ReviewThread[]> {
   const threads = await fetchOpenReviewThreads(prNumber);
-  return threads.map((t) => ({ id: t.id, body: t.body }));
+  return threads.map((t) => ({ id: t.id, ...(t.commentId ? { commentId: t.commentId } : {}), body: t.body }));
 }
 
 // The SHA the external review last reviewed, as ronin itself recorded it in

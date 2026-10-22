@@ -82,6 +82,9 @@ RUN node_modules/.bin/playwright install --no-shell chromium
 
 COPY --from=build /app/dist ./dist
 COPY prompts ./prompts
+# ronin's skills and the agent's client for its actions (#257).
+COPY plugin ./plugin
+COPY --chmod=755 bin ./bin
 COPY templates ./templates
 COPY .env.example repos.json.example ./
 COPY --chmod=755 docker/entrypoint.sh /usr/local/bin/ronin-entrypoint

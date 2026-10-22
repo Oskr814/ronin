@@ -140,12 +140,34 @@ function makeLineBuffer(onLine: (line: string) => void): (chunk: Buffer) => void
 // `noTools` leaves the run without any tool, MCP servers included: a plain
 // call to the model, like the exploration's commit subject
 // (domains/explorations/pr.ts).
+// `pluginDir` loads ronin's skills (`--plugin-dir`, as `ronin:<skill>`) and
+// leaves out the product repo's .claude/ settings, hooks and skills
+// (`--setting-sources user`); its CLAUDE.md still loads. `sealedEnv` runs
+// the agent with an environment built from scratch — AGENT_ENV_KEYS, its
+// Claude account, GH_TOKEN and these variables — instead of ronin's own,
+// which carries every secret of .env (#257).
 export interface HeadlessRunOptions {
   model?: string;
   effort?: string;
   agentsFile?: string;
   mcpConfigFile?: string;
   noTools?: boolean;
+  pluginDir?: string;
+  sealedEnv?: Record<string, string>;
+}
+
+// What a sealed run keeps of ronin's environment: what the tools an agent
+// runs need (git, gh, pnpm, docker, playwright), none of ronin's secrets.
+export const AGENT_ENV_KEYS = [
+  'PATH', 'HOME', 'USER', 'LOGNAME', 'SHELL', 'LANG', 'LC_ALL', 'TERM', 'TMPDIR', 'TZ',
+  'IS_SANDBOX', 'DISABLE_AUTOUPDATER', 'PLAYWRIGHT_BROWSERS_PATH',
+  'DOCKER_HOST', 'DOCKER_TLS_VERIFY', 'DOCKER_CERT_PATH',
+];
+
+export function sealedAgentEnv(base: NodeJS.ProcessEnv, vars: Record<string, string>): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {};
+  for (const key of AGENT_ENV_KEYS) if (base[key] !== undefined) env[key] = base[key];
+  return { ...env, ...vars };
 }
 
 // The arguments of every headless run; shared with scripts/fix-replay.ts so
@@ -162,6 +184,7 @@ export function claudeHeadlessArgs(prompt: string, opts: HeadlessRunOptions = {}
     ...(opts.agentsFile ? ['--agents', opts.agentsFile] : []),
     ...(opts.mcpConfigFile ? ['--mcp-config', opts.mcpConfigFile, '--strict-mcp-config'] : []),
     ...(opts.noTools ? ['--tools', '', '--strict-mcp-config'] : []),
+    ...(opts.pluginDir ? ['--plugin-dir', opts.pluginDir, '--setting-sources', 'user'] : []),
   ];
 }
 
@@ -169,7 +192,9 @@ export function claudeHeadlessArgs(prompt: string, opts: HeadlessRunOptions = {}
 // (the run's record, run-record.ts). Every run also leaves its account's
 // usage behind, from the rate_limit_event (claude-usage.ts).
 export async function runClaudeHeadless(cwd: string, prompt: string, label: string, opts: HeadlessRunOptions = {}, sink?: RunSink): Promise<string> {
-  const env: NodeJS.ProcessEnv = { ...process.env, GH_TOKEN: config.githubToken };
+  const env: NodeJS.ProcessEnv = opts.sealedEnv
+    ? sealedAgentEnv(process.env, { ...(config.githubToken ? { GH_TOKEN: config.githubToken } : {}), ...opts.sealedEnv })
+    : { ...process.env, GH_TOKEN: config.githubToken };
   // ronin's own NODE_ENV (production in the image) would make the agent's
   // `pnpm install` in the product repo skip its devDependencies.
   delete env.NODE_ENV;

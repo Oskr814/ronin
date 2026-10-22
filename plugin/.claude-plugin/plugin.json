@@ -1,0 +1,5 @@
+{
+  "name": "ronin",
+  "version": "1.0.0",
+  "description": "ronin's skills: what an agent run does, loaded with --plugin-dir (#257)."
+}

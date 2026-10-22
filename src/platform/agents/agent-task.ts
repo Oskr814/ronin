@@ -1,14 +1,22 @@
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { ensureWorktree, ensureExternalReviewWorktree, removeExternalReviewWorktree, ensureTrustedFixWorktree, removeTrustedFixWorktree } from '../git/worktree.js';
 import { runClaudeHeadless, ClaudeTimeoutError, ClaudeUsageLimitError } from '../claude/claude-runner.js';
 import { accountName } from '../claude/claude-usage.js';
 import { RunRecord, type RunOutcome } from './run-record.js';
 import { config, agentModelFor, agentEffortFor } from '../config/config.js';
-import { activeRepo } from './repo-context.js';
+import { activeRepo, withActiveRepo } from './repo-context.js';
 import { log } from '../logger.js';
 import { recordAgentRun } from './metrics.js';
 import { currentRunGroup } from './run-group.js';
 import { host } from '../host/host.js';
+import type { RunScope } from '../actions/catalog.js';
+import { checkoutState, executeAction, headOf } from '../actions/executors.js';
+import { startActionsServer, type ActionsServer } from '../actions/server.js';
+
+// ronin's skills (`claude --plugin-dir`) and the agent's client for its
+// actions, next to ronin's own code: in the image, /app/plugin and /app/bin.
+const PLUGIN_DIR = resolve('plugin');
+const ACTIONS_BIN_DIR = resolve('bin');
 
 // The mechanics every agent run shares: the checkout it runs in, `claude -p`
 // with its type's model and effort, the run record, metrics and cleanup.
@@ -59,6 +67,11 @@ export interface PreparedTask {
   // Written to `path` for `claude --agents`, and removed after the run.
   agents?: { path: string; definitions: Record<string, AgentDefinition> };
   mcpConfigFile?: string;
+  // A run that works through ronin's actions and skills (#257): what it may
+  // do — the commit it starts from is the checkout's HEAD, taken once the
+  // checkout exists. It runs sealed (claude-runner.ts's sealedEnv) and
+  // reaches the actions with `ronin-act`.
+  actions?: Omit<RunScope, 'startSha'>;
 }
 
 export interface AgentTask {
@@ -91,7 +104,7 @@ async function checkoutDir(checkout: TaskCheckout, branch: string): Promise<stri
 }
 
 export async function runAgentTask(task: AgentTask): Promise<string> {
-  const { branch, prompt, checkout, agents, mcpConfigFile, ...prepared } = await task.prepare();
+  const { branch, prompt, checkout, agents, mcpConfigFile, actions, ...prepared } = await task.prepare();
   const worktreeDir = await checkoutDir(checkout, branch);
 
   // An untrusted PR head is the only checkout that points `claude -p
@@ -139,13 +152,20 @@ export async function runAgentTask(task: AgentTask): Promise<string> {
     account: accountName(activeRepo().claudeConfigDir ?? config.claudeConfigDir ?? ''),
     worktree: worktreeDir,
   });
+  let server: ActionsServer | null = null;
   try {
+    if (actions) server = await startRunActions(actions, worktreeDir, `${task.type} #${tag}`);
     const result = await runClaudeHeadless(worktreeDir, prompt, `${task.type} #${tag}`, {
       model,
       effort,
       ...(agentsFile ? { agentsFile } : {}),
       ...(mcpConfigFile ? { mcpConfigFile } : {}),
+      ...(server ? {
+        pluginDir: PLUGIN_DIR,
+        sealedEnv: { PATH: `${ACTIONS_BIN_DIR}:${process.env.PATH ?? ''}`, RONIN_ACTIONS_URL: server.url, RONIN_ACTIONS_TOKEN: server.token },
+      } : {}),
     }, record);
+    if (server) logActions(server, `${task.type} for ${label}`);
     const durationMs = Date.now() - start;
     recordAgentRun(durationMs);
     log.metric('agent_run', { taskType: task.type, issueNumber, prNumber, durationMs, success: true });
@@ -166,6 +186,7 @@ export async function runAgentTask(task: AgentTask): Promise<string> {
     // detached worktree per external PR ever reviewed. Best-effort and
     // fully swallowed: a cleanup failure must never mask the real error nor
     // turn a successful review into a failed task.
+    await server?.close();
     if (agentsFile) await host().fs.rm(agentsFile, { force: true }).catch(() => {});
     if (checkout.kind === 'untrusted-pr-head') {
       await removeExternalReviewWorktree(checkout.prNumber).catch((cleanupError) =>
@@ -183,4 +204,27 @@ export async function runAgentTask(task: AgentTask): Promise<string> {
       );
     }
   }
+}
+
+// The run's actions server, scoped to it: every action runs as ronin, in
+// the run's repo, whatever async context the request arrives in.
+async function startRunActions(scope: Omit<RunScope, 'startSha'>, worktreeDir: string, label: string): Promise<ActionsServer> {
+  const runScope: RunScope = { ...scope, startSha: await headOf(worktreeDir) };
+  const repo = activeRepo();
+  return startActionsServer({
+    scope: runScope,
+    label,
+    checkout: () => checkoutState(worktreeDir, runScope.startSha!),
+    execute: (action) => withActiveRepo(repo, () => executeAction(runScope, worktreeDir, action)),
+  });
+}
+
+// A run that ends without result.report did its work anyway — the actions
+// it took are already on GitHub — so it isn't failed for it: it's left in
+// the log, with what was refused.
+function logActions(server: ActionsServer, label: string): void {
+  const refused = server.calls.filter((c) => c.outcome !== 'ok');
+  const report = server.report();
+  log.info(`${label}: ${server.calls.length} acción(es), ${refused.length} rechazada(s)${report ? ` — ${report.summary}` : ''}`);
+  if (!report) log.error(`${label} terminó sin result.report`);
 }

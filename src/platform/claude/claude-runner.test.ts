@@ -24,7 +24,7 @@ vi.mock('node:child_process', () => ({
   spawn: () => spawn(),
 }));
 
-const { runClaudeHeadless, ClaudeUsageLimitError, claudeHeadlessArgs, streamSteps } = await import('./claude-runner.js');
+const { runClaudeHeadless, ClaudeUsageLimitError, claudeHeadlessArgs, sealedAgentEnv, streamSteps } = await import('./claude-runner.js');
 const { config } = await import('../config/config.js');
 // The mock above is a plain object; the real config is typed read-only.
 const mutableConfig = config as { agentModel: string; agentEffort: string };
@@ -95,6 +95,22 @@ describe('claudeHeadlessArgs', () => {
     const args = claudeHeadlessArgs('do it', { mcpConfigFile: '/tmp/mcp.json' });
     expect(args.join(' ')).toContain('--mcp-config /tmp/mcp.json --strict-mcp-config');
     expect(claudeHeadlessArgs('do it')).not.toContain('--mcp-config');
+  });
+
+  it("loads ronin's skills without the product repo's settings", () => {
+    const args = claudeHeadlessArgs('do it', { pluginDir: '/app/plugin' });
+    expect(args.join(' ')).toContain('--plugin-dir /app/plugin --setting-sources user');
+    expect(claudeHeadlessArgs('do it')).not.toContain('--plugin-dir');
+  });
+});
+
+describe('sealedAgentEnv', () => {
+  it("keeps what the tools need and none of ronin's secrets", () => {
+    const env = sealedAgentEnv(
+      { PATH: '/usr/bin', HOME: '/root', DOCKER_HOST: 'tcp://localhost:2376', DATABASE_URL: 'postgres://x', RONIN_GITHUB_TOKEN: 'secret', GMAIL_APP_PASSWORD: 'secret' },
+      { RONIN_ACTIONS_URL: 'http://127.0.0.1:1', PATH: '/app/bin:/usr/bin' },
+    );
+    expect(env).toEqual({ PATH: '/app/bin:/usr/bin', HOME: '/root', DOCKER_HOST: 'tcp://localhost:2376', RONIN_ACTIONS_URL: 'http://127.0.0.1:1' });
   });
 });
 
