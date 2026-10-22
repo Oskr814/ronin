@@ -528,7 +528,7 @@ Una página para ver qué está haciendo ronin sin recorrer GitHub issue por iss
 
 #### 15.1 Qué muestra
 
-- **Barra lateral: solo issues (#100).** Arriba, *Hoy*, *Corriendo ahora*, *En cola* y las páginas propias, entre ellas *Exploraciones* (15.12), con cuántas fichas esperan una decisión, y *Despliegues* (§18), solo para admins, que dice *en curso* mientras corre el workflow de un release. Después, *Necesitan a alguien* con los issues en `ronin:blocked`; *Exploraciones*, con cada app de `explore` y su estado (explorando, fichas por decidir, esperando a ronin o sin PR), que se busca por el nombre de la app o el número de su PR; y cada repo de `repos.json` con:
+- **Barra lateral: solo issues (#100).** Arriba, *Hoy*, *Corriendo ahora*, *En cola* y las páginas propias, entre ellas *Exploraciones* (15.12), con cuántas fichas esperan una decisión, y *Despliegues* (§18), solo para admins, que dice *en curso* mientras corre el workflow de un release. Después, *Exploraciones*, con cada app de `explore` y su estado (explorando, fichas por decidir, esperando a ronin o sin PR), que se busca por el nombre de la app o el número de su PR; y cada repo de `repos.json` con:
   - **Sin buscar,** el trabajo pendiente: los issues de ronin (label `ronin`), aunque no haya corrido un agente, y los issues sobre los que ronin trabajó en los últimos 3 días (un pedido, una review del PR de una persona) mientras sigan abiertos. Uno cerrado (completado o no planeado, según `listRecentlyClosed`) sale de la lista salvo que sea el que está abierto en la ficha; se encuentra buscándolo por su número.
   - **Buscando** (título, número, `RED-n` o el número de un PR), o filtrando por un ciclo o un proyecto de Linear (15.13), todos los issues abiertos del repo (`listOpenIssues`, en la misma lectura cacheada).
 
@@ -536,7 +536,7 @@ Una página para ver qué está haciendo ronin sin recorrer GitHub issue por iss
 
   **Lo que no tiene issue:** un PR sin issue ni número en la rama, o el changelog, solo aparece mientras corre (*Corriendo ahora*) y en *Hoy*. Un número que no está en la lista ofrece *Abrir #N*: el servidor le pregunta a GitHub si es issue o PR (`itemKindOf`) y abre la ficha aunque esté cerrado.
 
-  **El punto y el ícono (#129).** El punto de color dice lo que hace ronin: corriendo, esperando, bloqueado o un error. El ícono junto al número dice cómo está el ítem en GitHub, con los íconos y colores de GitHub (Octicons, en `web/vendor/octicons.js`, MIT):
+  **El punto y el ícono (#129).** El punto de color dice lo que hace ronin: corriendo, esperando, bloqueado o un error. Un issue bloqueado queda en su lugar de la lista, con el punto rojo: no tiene grupo propio. El ícono junto al número dice cómo está el ítem en GitHub, con los íconos y colores de GitHub (Octicons, en `web/vendor/octicons.js`, MIT):
   - **Issues:** abierto (verde), cerrado como completado (check morado) y cerrado como no planeado (círculo gris tachado).
   - **PRs:** abierto (verde), draft (gris), mergeado (morado) y cerrado sin mergear (rojo).
   - **Dónde aparece:** en la barra lateral, en las slices (la pendiente, que todavía no tiene PR, sigue con su punto) y en *Necesitan tu atención*. En la ficha va además como la pastilla de GitHub ("Abierto", "Cerrado", "Mergeado"…).
@@ -1088,7 +1088,7 @@ La persona puede cancelar un pedido mientras nadie lo tomó, con *Cancelar pedid
 
 Un pedido no tiene issue hasta que ronin lo abre, y algunos no lo tienen nunca. Por eso el tablero les da una página propia, *Pedidos del portal*, que ve cualquiera que vea el repo del pedido (§15, #106). Las cuentas son la otra pestaña de esa página, *Usuarios*, solo para admins.
 
-- **La lista** (`/pedidos`) dice a quién espera cada pedido (`waitsOn`): la persona (`asking`, `proposed`), ronin (leerlo, el prototipo, abrir su issue, hacer el cambio), el equipo (su issue, o aprobar el PR) o nadie. La barra lateral lista los que siguen abiertos, en *Pedidos en curso*.
+- **La lista** (`/pedidos`) dice a quién espera cada pedido (`waitsOn`): la persona (`asking`, `proposed`), ronin (leerlo, el prototipo, abrir su issue, hacer el cambio), el equipo (su issue, o aprobar el PR) o nadie. En la barra lateral no tienen grupo propio: el issue de un pedido abierto lleva su número (`P-n`), y uno sin issue solo está en la lista.
   - **Los filtros (#158):** *Pendientes* (los abiertos, el de entrada) | *Esperan a la persona* · *ronin trabajando* · *Esperan al equipo* | *Cerrados* · *Todos*. Los cerrados solo se ven en los dos últimos.
   - **De 25 en 25,** paginada en el navegador: con pocas decenas de pedidos alcanza, y `/api/requests` sigue trayéndolos todos. Cambiar de filtro vuelve a la primera página.
 - **La ficha** (`/pedidos/<n>`):
