@@ -1,7 +1,9 @@
-import { extname, join } from 'node:path';
+import { dirname, extname, join } from 'node:path';
 import { runAgentTask } from '@platform/agents/agent-task.js';
 import { explorationTask, type ExistingFindingSummary } from './prompts.js';
-import { appDown, appUp } from '../product-app/index.js';
+import { appDown, appUp, checkoutAgent, checkoutGit } from '../product-app/index.js';
+import { activeRepo } from '@platform/agents/repo-context.js';
+import type { AgentUser } from '@platform/agents/agent-user.js';
 import { loginAllUsers, renderHtmlToPng } from '../product-app/index.js';
 import { loadAppDefinition, type AppDefinition } from '../product-app/index.js';
 import { config } from '@platform/config/config.js';
@@ -21,7 +23,7 @@ import {
   type Inventory,
 } from './memory.js';
 import { refreshInventory, explorationOutDir } from './inventory.js';
-import { changedFunctions, newSeed, planRun, riskByFunction, type ExplorationPlan, type PlannedFunction } from './plan.js';
+import { changedFunctions, codeHistory, newSeed, planRun, riskByFunction, type ExplorationPlan, type PlannedFunction } from './plan.js';
 import { capCandidates, parseFunctionResult, parseVerdicts, renderFindingBody, type Candidate, type FindingImage, type TriedTask } from './output.js';
 import { host } from '@platform/host/host.js';
 
@@ -103,12 +105,23 @@ export function originsOf(baseUrl: string, ports: Record<string, Record<string, 
 
 // The explorer edits code to take its "after" screenshots and is told to
 // revert; this makes sure of it, so the next function starts from the base.
+// With the agent's user's git, when the checkout is its clone.
 export async function ensureCleanCheckout(dir: string, appPath: string): Promise<void> {
-  const { stdout } = await host().exec('git', ['status', '--porcelain'], { cwd: dir });
-  if (!stdout.trim()) return;
-  log.info(`exploración: el explorador dejó cambios en el checkout, revirtiendo:\n${stdout.trim()}`);
-  await host().exec('git', ['checkout', '--', '.'], { cwd: dir });
-  await host().exec('git', ['clean', '-fd', '--', appPath], { cwd: dir });
+  const status = await checkoutGit(dir, ['status', '--porcelain']);
+  if (!status.trim()) return;
+  log.info(`exploración: el explorador dejó cambios en el checkout, revirtiendo:\n${status.trim()}`);
+  await checkoutGit(dir, ['checkout', '--', '.']);
+  await checkoutGit(dir, ['clean', '-fd', '--', appPath]);
+}
+
+// The browsers' logins, copied into the run's own output dir: the agent's
+// browsers read them, and the app's state, where appUp left them, isn't
+// theirs.
+export async function loginIn(outDir: string, storageState: string, role: string): Promise<string> {
+  const copy = join(outDir, 'auth', `${role.replace(/[^\w-]+/g, '_')}.json`);
+  await host().fs.mkdir(join(outDir, 'auth'), { recursive: true });
+  await host().fs.writeFile(copy, await host().fs.readFile(storageState));
+  return copy;
 }
 
 function summarizeExisting(memory: ExplorationMemory): ExistingFindingSummary[] {
@@ -130,10 +143,11 @@ export async function runExploration(opts: RunOptions): Promise<RunSummary> {
   memory = { ...memory, inventory };
 
   const seed = opts.seed ?? newSeed();
+  const history = await codeHistory(codeDir);
   const plan = planRun({
     inventory,
-    changed: await changedFunctions(codeDir, inventory),
-    risk: await riskByFunction(codeDir, inventory),
+    changed: await changedFunctions(history.dir, inventory, history.rev),
+    risk: await riskByFunction(history.dir, inventory, history.rev),
     roles: app.users.map((u) => u.role),
     maxFunctions: opts.maxFunctions ?? config.exploreFunctionsPerRun,
     seed,
@@ -149,7 +163,8 @@ export async function runExploration(opts: RunOptions): Promise<RunSummary> {
   const discarded: RunSummary['discarded'] = [];
   const existing = summarizeExisting(memory);
 
-  const session = await appUp(codeDir, appName);
+  const as: AgentUser | null = await checkoutAgent(codeDir);
+  const session = await appUp(codeDir, appName, as ? { as } : {});
   try {
     const authStates = await loginAllUsers(session);
     const origins = originsOf(session.baseUrl, session.ctx.ports, session.ctx.port);
@@ -163,10 +178,11 @@ export async function runExploration(opts: RunOptions): Promise<RunSummary> {
       await host().fs.mkdir(join(fnOut, 'despues'), { recursive: true });
       await host().fs.mkdir(join(fnOut, 'patches'), { recursive: true });
       const mcpConfigPath = join(fnOut, 'mcp.json');
+      const login = await loginIn(fnOut, authStates[planned.role], planned.role);
       await host().fs.writeFile(mcpConfigPath, JSON.stringify({
         mcpServers: {
-          desktop: mcpServer(app, 'desktop', authStates[planned.role], join(fnOut, 'desktop'), origins),
-          mobile: mcpServer(app, 'mobile', authStates[planned.role], join(fnOut, 'mobile'), origins),
+          desktop: mcpServer(app, 'desktop', login, join(fnOut, 'desktop'), origins),
+          mobile: mcpServer(app, 'mobile', login, join(fnOut, 'mobile'), origins),
         },
       }, null, 2));
       const outputPath = join(fnOut, 'result.json');
@@ -220,7 +236,9 @@ export async function runExploration(opts: RunOptions): Promise<RunSummary> {
   let kept: PendingCandidate[] = [];
   if (fresh.length > 0) {
     const candidatesPath = join(outRoot, 'candidates.json');
-    const verdictsPath = join(outRoot, 'verdicts.json');
+    // In a directory of its own: the evaluator writes only there (sealed).
+    const verdictsPath = join(outRoot, 'evaluate', 'verdicts.json');
+    await host().fs.mkdir(dirname(verdictsPath), { recursive: true });
     await host().fs.writeFile(candidatesPath, JSON.stringify(fresh.map(({ planned, ...c }, index) => ({ index, funcion: c.functionId, nombreFuncion: c.functionName, charter: planned.charter, rol: planned.role, ...c })), null, 2));
     try {
       await runAgentTask(explorationTask({ type: 'explore-evaluate', appName, checkoutDir: codeDir, candidatesPath, outputPath: verdictsPath, knowledge: memory.knowledge, existing }));
@@ -344,7 +362,8 @@ async function publishImages(opts: {
     planned.push({ id, antes: before, ...(after ? { despues: after } : {}) });
   }
   if (files.length === 0) return result;
-  const sha = await publishEvidence(opts.codeDir, files, `exploración ${opts.appName} ${opts.runId}`).catch((error) => {
+  // From the shared repo: never ronin's git in the agent's clone.
+  const sha = await publishEvidence(activeRepo().productRepoPath, files, `exploración ${opts.appName} ${opts.runId}`).catch((error) => {
     log.error('exploración: no se pudieron publicar las capturas', error);
     return undefined;
   });
