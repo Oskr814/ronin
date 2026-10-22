@@ -131,6 +131,8 @@ describe('runAgentTask — prepare-preview-data', () => {
     const prompt = runClaudeHeadless.mock.calls[0][1] as string;
     expect(prompt).toMatch(/behind a feature flag .* leave it ON for the tenant and users the seeded logins use, even when the steps start with it off/);
     expect(prompt).toMatch(/how to turn it off/);
+    // The agent can't change the app's environment: it says so instead.
+    expect(prompt).toMatch(/only lives in the environment .* don't touch it, and say in "noPreparado"/);
   });
 
   it('forbids touching code, the stack or GitHub', async () => {

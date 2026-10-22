@@ -102,7 +102,7 @@ const TEST_STEPS = `the "${TEST_STEPS_TITLE}" block of the description (its "Dat
 // tried with the switch off, even when the PR's steps start with it off to
 // show nothing changes: whoever opens the preview wants to see the change.
 // So it goes on for the seeded users, and the reply says how to turn it off.
-const FLAG_RULE = 'If the change is behind a feature flag or any other switch (per tenant, per user, a setting, an env var the app reads at runtime), leave it ON for the tenant and users the seeded logins use, even when the steps start with it off: whoever opens the preview wants to see the change right away. Create the flag if it doesn\'t exist, read it back the way the app does (the endpoint or query the app calls), and in "preparado" say that it is on, for whom, and how to turn it off (the SQL or the screen) for the steps that need it off.';
+const FLAG_RULE = 'If the change is behind a feature flag or any other switch kept in the app\'s data (per tenant, per user, a setting), leave it ON for the tenant and users the seeded logins use, even when the steps start with it off: whoever opens the preview wants to see the change right away. Create the flag if it doesn\'t exist, read it back the way the app does (the endpoint or query the app calls), and in "preparado" say that it is on, for whom, and how to turn it off (the SQL or the screen) for the steps that need it off. A switch that only lives in the environment or the configuration files (an env var, a .env) is not data: don\'t touch it, and say in "noPreparado" that it has to be turned on there.';
 
 export function previewTask(task: PreviewTask): AgentTask & PreviewTask {
   return { ...task, prepare: () => buildPreviewTask(task) };
