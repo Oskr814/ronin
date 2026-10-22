@@ -62,10 +62,22 @@ publish_dashboard() {
   echo "ronin: no se pudo publicar el tablero con tailscale serve (¿está el sidecar de Tailscale?)" >&2
 }
 
+# What the agent's user (#257, src/platform/agents/agent-user.ts) must not
+# reach: ronin's data, the Docker daemon's client certificates (Docker is
+# root on the host) and the Tailscale socket (it publishes the tailnet).
+# ronin, as root, is not bound by any of it.
+lock_down() {
+  chmod o-rwx "$DATA_DIR"
+  [ -d /certs ] && chmod 700 /certs
+  [ -d /var/run/tailscale ] && chmod 700 /var/run/tailscale
+  return 0
+}
+
 case "${1:-server}" in
   server)
     mkdir -p "$DATA_DIR/logs" "$DATA_DIR/.ronin-slots" "${CLAUDE_CONFIG_DIR:-/claude/default}"
     setup_git
+    lock_down
     clone_missing
     publish_dashboard &
     exec node dist/apps/api/main.js
@@ -75,12 +87,14 @@ case "${1:-server}" in
   api)
     mkdir -p "$DATA_DIR/logs" "$DATA_DIR/.ronin-slots" "${CLAUDE_CONFIG_DIR:-/claude/default}"
     setup_git
+    lock_down
     publish_dashboard &
     RONIN_ROLE=api exec node dist/apps/api/main.js
     ;;
   runner)
     mkdir -p "$DATA_DIR/logs" "$DATA_DIR/.ronin-slots" "${CLAUDE_CONFIG_DIR:-/claude/default}"
     setup_git
+    lock_down
     clone_missing
     export RONIN_ROLE=runner
     exec node dist/apps/api/jobs/main.js

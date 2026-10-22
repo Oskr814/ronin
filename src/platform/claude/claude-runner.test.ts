@@ -19,10 +19,13 @@ class FakeChildProcess extends EventEmitter {
 }
 
 let fakeChild: FakeChildProcess;
-const spawn = vi.fn(() => fakeChild);
+const spawn = vi.fn((..._args: unknown[]) => fakeChild);
 vi.mock('node:child_process', () => ({
-  spawn: () => spawn(),
+  spawn: (...args: unknown[]) => spawn(...args),
 }));
+
+const lendClaudeAccount = vi.fn(async (..._args: unknown[]) => {});
+vi.mock('../agents/agent-user.js', () => ({ lendClaudeAccount: (...args: unknown[]) => lendClaudeAccount(...args) }));
 
 const { runClaudeHeadless, ClaudeUsageLimitError, claudeHeadlessArgs, sealedAgentEnv, streamSteps } = await import('./claude-runner.js');
 const { config } = await import('../config/config.js');
@@ -87,7 +90,7 @@ describe('claudeHeadlessArgs', () => {
 
   it('leaves a plain call without any tool or MCP server', () => {
     const args = claudeHeadlessArgs('do it', { noTools: true });
-    expect(args.join(' ')).toContain('--tools  --strict-mcp-config');
+    expect(args).toContain('--strict-mcp-config');
     expect(args[args.indexOf('--tools') + 1]).toBe('');
   });
 
@@ -97,6 +100,11 @@ describe('claudeHeadlessArgs', () => {
     expect(claudeHeadlessArgs('do it')).not.toContain('--mcp-config');
   });
 
+  it("keeps out the account's own MCP servers on every run", () => {
+    expect(claudeHeadlessArgs('do it')).toContain('--strict-mcp-config');
+    expect(claudeHeadlessArgs('do it', { noTools: true }).filter((a) => a === '--strict-mcp-config')).toHaveLength(1);
+  });
+
   it("loads ronin's skills without the product repo's settings", () => {
     const args = claudeHeadlessArgs('do it', { pluginDir: '/app/plugin' });
     expect(args.join(' ')).toContain('--plugin-dir /app/plugin --setting-sources user');
@@ -104,13 +112,33 @@ describe('claudeHeadlessArgs', () => {
   });
 });
 
+describe("runClaudeHeadless as the agent's user", () => {
+  it('lends it the Claude account and spawns claude with its ids', async () => {
+    const { config } = await import('../config/config.js');
+    (config as { claudeConfigDir: string }).claudeConfigDir = '/claude/cuenta';
+    try {
+      fakeChild = new FakeChildProcess();
+      const user = { uid: 1500, gid: 1500, home: '/home/agent' };
+      const running = withActiveRepo({ productRepo: 'acme/tienda', productRepoPath: '/tmp/x' }, () => runClaudeHeadless('/tmp', 'hi', 'test', { runAs: user, sealedEnv: {} }));
+      await vi.waitFor(() => expect(spawn).toHaveBeenCalled());
+      fakeChild.emit('close', 0);
+      await running;
+      expect(lendClaudeAccount).toHaveBeenCalledWith('/claude/cuenta', user);
+      expect(spawn.mock.calls.at(-1)![2]).toMatchObject({ uid: 1500, gid: 1500 });
+    } finally {
+      (config as { claudeConfigDir: string }).claudeConfigDir = '';
+    }
+  });
+});
+
 describe('sealedAgentEnv', () => {
-  it("keeps what the tools need and none of ronin's secrets", () => {
+  it("keeps what the tools need and none of ronin's secrets nor Docker", () => {
     const env = sealedAgentEnv(
       { PATH: '/usr/bin', HOME: '/root', DOCKER_HOST: 'tcp://localhost:2376', DATABASE_URL: 'postgres://x', RONIN_GITHUB_TOKEN: 'secret', GMAIL_APP_PASSWORD: 'secret' },
       { RONIN_ACTIONS_URL: 'http://127.0.0.1:1', PATH: '/app/bin:/usr/bin' },
     );
-    expect(env).toEqual({ PATH: '/app/bin:/usr/bin', HOME: '/root', DOCKER_HOST: 'tcp://localhost:2376', RONIN_ACTIONS_URL: 'http://127.0.0.1:1' });
+    // Not Docker either: the services of its tests go through ronin's actions.
+    expect(env).toEqual({ PATH: '/app/bin:/usr/bin', HOME: '/root', RONIN_ACTIONS_URL: 'http://127.0.0.1:1' });
   });
 });
 

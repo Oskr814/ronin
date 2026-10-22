@@ -20,6 +20,9 @@ export interface ExecOptions {
   env?: NodeJS.ProcessEnv;
   maxBuffer?: number;
   timeout?: number;
+  // As another user: the agent's (#257, platform/agents/agent-user.ts).
+  uid?: number;
+  gid?: number;
 }
 
 export interface LoggedOptions {

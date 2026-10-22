@@ -25,6 +25,11 @@ export const config = {
   // ronin's GitHub App, only for the agents' read-only token (#257,
   // github/read-token.ts): its id and the path of its private key. Both
   // empty means no App, and agents read with githubToken.
+  // The user agents with actions run as (#257, agents/agent-user.ts): set
+  // in the image, where it exists. Unset, they run as ronin's own user.
+  agentUid: process.env.RONIN_AGENT_UID ? Number(process.env.RONIN_AGENT_UID) : null,
+  agentGid: process.env.RONIN_AGENT_GID ? Number(process.env.RONIN_AGENT_GID) : null,
+  agentHome: process.env.RONIN_AGENT_HOME ?? '',
   githubApp: {
     appId: process.env.RONIN_GITHUB_APP_ID ?? '',
     privateKeyPath: process.env.RONIN_GITHUB_APP_KEY_PATH ?? '',
