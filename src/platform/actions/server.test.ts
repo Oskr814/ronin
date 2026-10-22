@@ -27,7 +27,7 @@ async function start(execute = async (action: ValidAction): Promise<Record<strin
   server = await startActionsServer({
     scope,
     label: 'test',
-    checkout: async () => ({ head: 'amended', parentOfHead: 'base', parentOfStart: 'base', dirty: false }),
+    checkout: async () => ({ head: 'amended', parentOfHead: 'base', parentOfStart: 'base', dirty: false, onBase: true, onStart: false }),
     execute,
   });
   // The CLI runs as a child of this process, as ronin-act does of claude.

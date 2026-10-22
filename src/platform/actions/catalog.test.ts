@@ -36,12 +36,38 @@ describe('validateAction', () => {
   });
 
   it('only pushes an amend of the starting commit, with nothing left uncommitted', async () => {
-    const at = (state: Partial<CheckoutState>) => async () => ({ head: 'amended', parentOfHead: 'base', parentOfStart: 'base', dirty: false, ...state });
+    const at = (state: Partial<CheckoutState>) => async () => ({ head: 'amended', parentOfHead: 'base', parentOfStart: 'base', dirty: false, onBase: true, onStart: false, ...state });
     expect(await refusal(validateAction(scope, 'git.push', {}, at({})))).toBe('aceptada');
     expect(await refusal(validateAction(scope, 'git.push', {}, at({ parentOfHead: 'start' })))).toContain('amend');
     expect(await refusal(validateAction(scope, 'git.push', {}, at({ head: 'start' })))).toContain('nada que subir');
     expect(await refusal(validateAction(scope, 'git.push', {}, at({ dirty: true })))).toContain('sin commitear');
     expect(await refusal(validateAction({ ...scope, headRef: undefined }, 'git.push', {}, at({})))).toContain('no tiene rama');
+  });
+});
+
+describe('validateAction — implementing', () => {
+  const at = (state: Partial<CheckoutState>) => async () => ({ head: 'new', parentOfHead: 'x', parentOfStart: 'y', dirty: false, onBase: true, onStart: true, ...state });
+
+  it('pushes its own branch only on its base, and new commits only on top in fast-forward', async () => {
+    const own: RunScope = { ...scope, push: { mode: 'branch', baseSha: 'b', remoteSha: null } };
+    expect(await refusal(validateAction(own, 'git.push', {}, at({})))).toBe('aceptada');
+    expect(await refusal(validateAction(own, 'git.push', {}, at({ onBase: false })))).toContain('base');
+    const ff: RunScope = { ...scope, push: { mode: 'fast-forward' } };
+    expect(await refusal(validateAction(ff, 'git.push', {}, at({})))).toBe('aceptada');
+    expect(await refusal(validateAction(ff, 'git.push', {}, at({ onStart: false })))).toContain('solo commits nuevos');
+  });
+
+  it('opens a PR whose body closes its issue', async () => {
+    const opening: RunScope = { ...scope, prNumber: undefined, pr: { base: 'main', draft: false, closes: 9 }, allowed: ['pr.create'] };
+    expect(await refusal(validateAction(opening, 'pr.create', { title: 'Arreglo', body: 'Closes #9\n\n## Qué cambió' }))).toBe('aceptada');
+    expect(await refusal(validateAction(opening, 'pr.create', { title: 'Arreglo', body: '## Qué cambió\nCloses #9' }))).toContain('Closes #9');
+    expect(await refusal(validateAction({ ...opening, pr: undefined }, 'pr.create', { title: 'x', body: 'y' }))).toContain('no abre un PR');
+  });
+
+  it('edits the issue only as the run allows', async () => {
+    const withIssue: RunScope = { ...scope, issue: { number: 9 }, allowed: ['issue.comment', 'issue.update-body'] };
+    expect(await refusal(validateAction(withIssue, 'issue.comment', { body: 'Necesito saber si…' }))).toBe('aceptada');
+    expect(await refusal(validateAction(withIssue, 'issue.update-body', { body: 'x' }))).toContain('no puede cambiar la descripción');
   });
 });
 

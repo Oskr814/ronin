@@ -1623,6 +1623,11 @@ export async function createPullRequest(opts: { head: string; base: string; titl
   return (JSON.parse(stdout) as { number: number }).number;
 }
 
+// An issue's or a PR's assignees, added (a PR is an issue under the hood).
+export async function addIssueAssignees(number: number, assignees: string[]): Promise<void> {
+  await ghApi(['api', '-X', 'POST', `repos/${activeRepo().productRepo}/issues/${number}/assignees`, ...assignees.flatMap((a) => ['-f', `assignees[]=${a}`])]);
+}
+
 export async function markPullRequestReady(prNumber: number): Promise<void> {
   await gh(['pr', 'ready', String(prNumber)]);
 }

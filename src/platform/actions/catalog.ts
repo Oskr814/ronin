@@ -18,11 +18,27 @@ export interface ScopeThread {
 // What one run may do, set by the supervisor when it starts the run — never
 // by the model.
 export interface RunScope {
-  prNumber: number;
+  // The PR the run works on; none yet for one that opens it (pr.create).
+  prNumber?: number;
   // The branch a push goes to; without it there is no git.push.
   headRef?: string;
-  // The commit the run started from: a push must be an amend of it.
+  // The commit the run started from.
   startSha?: string;
+  // What a push may be (default 'amend'):
+  //   amend         one commit that replaces the one it started from
+  //   branch        the run's own branch: whatever it built on baseSha,
+  //                 leased on what the branch had on origin when it started
+  //                 (remoteSha; null: it didn't exist)
+  //   fast-forward  new commits on top of the one it started from, never
+  //                 rewriting what people already review
+  push?: { mode: 'amend' } | { mode: 'branch'; baseSha: string; remoteSha: string | null } | { mode: 'fast-forward' };
+  // The PR a run may open (pr.create), with what ronin decides about it:
+  // its base, whether it's a draft, who it's assigned to, and the issue its
+  // body has to close.
+  pr?: { base: string; draft: boolean; assignee?: string; closes?: number };
+  // The issue a run may comment on or edit (issue.comment,
+  // issue.update-body): its whole body, or only what it adds at the end.
+  issue?: { number: number; body?: 'replace' | 'append' };
   threads: ScopeThread[];
   // The comments that asked for the run: a review comment is answered in
   // its thread (pr.reply), a general one with pr.comment.
@@ -31,6 +47,12 @@ export interface RunScope {
 }
 
 export class ActionRefused extends Error {}
+
+const prNumberOf = (scope: RunScope): number => {
+  if (scope.prNumber === undefined) throw new ActionRefused('esta corrida no tiene un PR');
+  return scope.prNumber;
+};
+export { prNumberOf };
 
 // "@persona" pings that person on GitHub; an e-mail address ("x@y.z"), an
 // npm scope ("@scope/pkg") and anything inside backticks don't. Same rule
@@ -68,8 +90,23 @@ export const ACTIONS = {
     summary: 'Reemplaza la descripción del PR. Tiene que conservar igual la primera línea "Closes #N" y todo desde la línea "<!-- ronin:help -->".',
     input: z.object({ body: z.string().trim().min(1).max(60_000).refine((s) => !hasMention(s), { message: 'no se puede escribir @ seguido de un nombre: menciona a la persona por su rol' }).describe('La descripción completa, en Markdown') }),
   },
+  'pr.create': {
+    summary: 'Abre el PR de la rama que subiste con git.push. La base, si es borrador y a quién se asigna los decide ronin.',
+    input: z.object({
+      title: z.string().trim().min(1).max(256).refine((s) => !hasMention(s), { message: 'no se puede escribir @ seguido de un nombre' }).describe('El título del PR'),
+      body: z.string().trim().min(1).max(60_000).refine((s) => !hasMention(s), { message: 'no se puede escribir @ seguido de un nombre: menciona a la persona por su rol' }).describe('La descripción, en Markdown'),
+    }),
+  },
+  'issue.comment': {
+    summary: 'Comenta en el issue de esta corrida.',
+    input: z.object({ body: body.describe('El comentario, en Markdown') }),
+  },
+  'issue.update-body': {
+    summary: 'Cambia la descripción del issue de esta corrida: la reemplaza entera o le agrega texto al final, según lo que la corrida permita.',
+    input: z.object({ body: z.string().trim().min(1).max(60_000).refine((s) => !hasMention(s), { message: 'no se puede escribir @ seguido de un nombre: menciona a la persona por su rol' }).describe('La descripción entera, o lo que se agrega al final') }),
+  },
   'git.push': {
-    summary: 'Sube el commit del checkout a la rama del PR. Tiene que ser un amend del commit con el que empezaste, sin cambios sin commitear.',
+    summary: 'Sube el checkout a la rama de la corrida, sin cambios sin commitear. Según la corrida: un amend del commit con el que empezaste, tu propia rama sobre su base, o commits nuevos encima del que empezaste.',
     input: z.object({}),
   },
   'services.up': {
@@ -92,8 +129,10 @@ export const ACTIONS = {
           changed: z.boolean().describe('Si cambiaste código por este hilo'),
           reply: z.string().trim().min(1).max(4_000).describe('Lo que respondiste en el hilo'),
         }))
-        .describe('Uno por hilo listado'),
+        .default([])
+        .describe('Uno por hilo listado, si la corrida atiende hilos'),
       summary: z.string().trim().min(1).max(2_000).describe('Una o dos líneas, en español'),
+      status: z.enum(['done', 'needs-info']).optional().describe('Si la corrida lo pide: done si terminaste, needs-info si te detuviste a preguntar'),
     }),
   },
 } as const;
@@ -116,6 +155,10 @@ export interface CheckoutState {
   parentOfHead: string | null;
   parentOfStart: string | null;
   dirty: boolean;
+  // Whether HEAD has, in its history, the base its branch was built on
+  // (push mode 'branch') and the commit the run started from.
+  onBase: boolean;
+  onStart: boolean;
 }
 
 export type ValidAction = { [A in ActionName]: { name: A; input: ActionInput<A> } }[ActionName];
@@ -147,9 +190,21 @@ export async function validateAction(
   if (action.name === 'git.push') {
     if (!scope.headRef || !scope.startSha || !checkout) throw new ActionRefused('esta corrida no tiene rama a la que subir');
     const state = await checkout();
-    if (state.dirty) throw new ActionRefused('hay cambios sin commitear: haz el amend primero');
+    const mode = scope.push?.mode ?? 'amend';
+    if (state.dirty) throw new ActionRefused(mode === 'amend' ? 'hay cambios sin commitear: haz el amend primero' : 'hay cambios sin commitear: haz el commit primero');
     if (state.head === scope.startSha) throw new ActionRefused('no hay nada que subir: el commit es el mismo con el que empezaste');
-    if (state.parentOfHead !== state.parentOfStart) throw new ActionRefused('el commit tiene que ser un amend del commit con el que empezaste (git commit --amend), no uno nuevo');
+    if (mode === 'amend' && state.parentOfHead !== state.parentOfStart) throw new ActionRefused('el commit tiene que ser un amend del commit con el que empezaste (git commit --amend), no uno nuevo');
+    if (mode === 'branch' && !state.onBase) throw new ActionRefused('la rama tiene que salir de su base: no la rebases sobre otra cosa');
+    if (mode === 'fast-forward' && !state.onStart) throw new ActionRefused('solo commits nuevos encima del que empezaste: nunca amend, rebase ni force-push');
   }
+  if (action.name === 'pr.create') {
+    if (!scope.pr || !scope.headRef) throw new ActionRefused('esta corrida no abre un PR');
+    const closes = scope.pr.closes;
+    if (closes !== undefined && !new RegExp(`^Closes #${closes}\\b`, 'i').test(action.input.body.trimStart())) {
+      throw new ActionRefused(`la descripción tiene que empezar con "Closes #${closes}"`);
+    }
+  }
+  if ((action.name === 'issue.comment' || action.name === 'issue.update-body') && !scope.issue) throw new ActionRefused('esta corrida no tiene un issue');
+  if (action.name === 'issue.update-body' && !scope.issue?.body) throw new ActionRefused('esta corrida no puede cambiar la descripción del issue');
   return action;
 }

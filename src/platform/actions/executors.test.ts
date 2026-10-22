@@ -11,7 +11,15 @@ const postIssueComment = vi.fn();
 const resolveReviewThread = vi.fn();
 const getPullRequestStatus = vi.fn();
 const setPullRequestBody = vi.fn();
+const createPullRequest = vi.fn(async (..._args: unknown[]) => 51);
+const addIssueAssignees = vi.fn();
+const getIssueBody = vi.fn();
+const setIssueBody = vi.fn();
 vi.mock('../github/github.js', () => ({
+  createPullRequest: (...args: unknown[]) => createPullRequest(...args),
+  addIssueAssignees: (...args: unknown[]) => addIssueAssignees(...args),
+  getIssueBody: (...args: unknown[]) => getIssueBody(...args),
+  setIssueBody: (...args: unknown[]) => setIssueBody(...args),
   getPullRequestStatus: (...args: unknown[]) => getPullRequestStatus(...args),
   setPullRequestBody: (...args: unknown[]) => setPullRequestBody(...args),
   replyToComment: (...args: unknown[]) => replyToComment(...args),
@@ -117,5 +125,90 @@ describe('pr.update-body', () => {
     const next = 'Closes #228\n\n## Qué cambió\nDespués.\n\n<!-- ronin:help -->\n<sub>ayuda</sub>';
     await executeAction(scope, checkout, { name: 'pr.update-body', input: { body: next } });
     expect(setPullRequestBody).toHaveBeenCalledWith(7, next);
+  });
+});
+
+describe('git.push on its own branch', () => {
+  // A new branch for a slice: built on origin's main, nothing on origin yet.
+  async function ownBranch() {
+    const t = await setup();
+    const base = await git(t.repo, 'rev-parse', 'origin/main').catch(async () => {
+      await git(t.repo, 'push', '-q', 'origin', 'HEAD~1:refs/heads/main');
+      await git(t.repo, 'fetch', '-q', 'origin');
+      return git(t.repo, 'rev-parse', 'origin/main');
+    });
+    await git(t.clone, 'fetch', '-q', 'origin');
+    await git(t.clone, 'checkout', '-q', '-B', 'ronin/9/slice-1', base);
+    const scope: RunScope = { ...t.scope, headRef: 'ronin/9/slice-1', startSha: base, push: { mode: 'branch', baseSha: base, remoteSha: null }, allowed: ['git.push', 'pr.create'], pr: { base: 'main', draft: false, closes: 9 } };
+    return { ...t, base, scope };
+  }
+
+  it('pushes whatever it built on its base, and only if the branch is still as it found it', async () => {
+    const { origin, clone, scope, checkout } = await ownBranch();
+    await writeFile(join(clone, 'b.txt'), 'uno\n');
+    await git(clone, 'add', '.');
+    await git(clone, 'commit', '-qm', 'slice');
+    const head = await git(clone, 'rev-parse', 'HEAD');
+
+    expect(await executeAction(scope, checkout, { name: 'git.push', input: {} })).toEqual({ sha: head });
+    expect(await git(origin, 'rev-parse', 'refs/heads/ronin/9/slice-1')).toBe(head);
+
+    // The scope still says the branch wasn't there: a second push, with
+    // something on origin it didn't account for, is refused.
+    await writeFile(join(clone, 'b.txt'), 'dos\n');
+    await git(clone, 'commit', '-qam', 'otra');
+    await expect(executeAction(scope, checkout, { name: 'git.push', input: {} })).rejects.toThrow('alguien subió otro commit');
+  });
+
+  it('refuses a branch rebuilt somewhere other than its base', async () => {
+    const { clone, scope, checkout, startSha } = await ownBranch();
+    await git(clone, 'checkout', '-q', '--orphan', 'otra');
+    await writeFile(join(clone, 'c.txt'), 'x\n');
+    await git(clone, 'add', '.');
+    await git(clone, 'commit', '-qm', 'sin base');
+    expect(startSha).toBeTruthy();
+    await expect(executeAction(scope, checkout, { name: 'git.push', input: {} })).rejects.toBeInstanceOf(ActionRefused);
+  });
+
+  it('opens the PR only once the branch is on origin, with the base and assignee ronin chose', async () => {
+    const { clone, scope, checkout } = await ownBranch();
+    const pr = { name: 'pr.create' as const, input: { title: 'Slice 1', body: 'Closes #9\n\nCuerpo' } };
+    await expect(executeAction(scope, checkout, pr)).rejects.toThrow('súbela con git.push');
+
+    await writeFile(join(clone, 'b.txt'), 'uno\n');
+    await git(clone, 'add', '.');
+    await git(clone, 'commit', '-qm', 'slice');
+    await executeAction(scope, checkout, { name: 'git.push', input: {} });
+    expect(await executeAction({ ...scope, pr: { ...scope.pr!, draft: true, assignee: 'ronin-agent' } }, checkout, pr)).toEqual({ number: 51 });
+    expect(createPullRequest).toHaveBeenCalledWith({ head: 'ronin/9/slice-1', base: 'main', title: 'Slice 1', body: 'Closes #9\n\nCuerpo', draft: true });
+    expect(addIssueAssignees).toHaveBeenCalledWith(51, ['ronin-agent']);
+  });
+});
+
+describe('git.push fast-forward', () => {
+  it('pushes new commits on top, and refuses rewriting what was there', async () => {
+    const { origin, clone, scope: base, checkout } = await setup();
+    const scope: RunScope = { ...base, push: { mode: 'fast-forward' } };
+    await writeFile(join(clone, 'a.txt'), 'base\nfeat\nmás\n');
+    await git(clone, 'commit', '-qam', 'cambio del spec');
+    const head = await git(clone, 'rev-parse', 'HEAD');
+    expect(await executeAction(scope, checkout, { name: 'git.push', input: {} })).toEqual({ sha: head });
+    expect(await git(origin, 'rev-parse', 'refs/heads/feat/x')).toBe(head);
+
+    const { clone: clone2, scope: base2, checkout: checkout2 } = await setup();
+    await writeFile(join(clone2, 'a.txt'), 'reescrito\n');
+    await git(clone2, 'commit', '-q', '-a', '--amend', '--no-edit');
+    await expect(executeAction({ ...base2, push: { mode: 'fast-forward' } }, checkout2, { name: 'git.push', input: {} })).rejects.toThrow('solo commits nuevos');
+  });
+});
+
+describe('issue actions', () => {
+  it('comments on the run\'s issue, and replaces or appends to its body as the run allows', async () => {
+    const { checkout, scope } = await setup();
+    getIssueBody.mockResolvedValue('Lo de antes\n');
+    await executeAction({ ...scope, issue: { number: 9, body: 'append' } }, checkout, { name: 'issue.update-body', input: { body: '## Spike\nHallazgos' } });
+    expect(setIssueBody).toHaveBeenLastCalledWith(9, 'Lo de antes\n\n## Spike\nHallazgos');
+    await executeAction({ ...scope, issue: { number: 9, body: 'replace' } }, checkout, { name: 'issue.update-body', input: { body: '- [ ] Slice 1: algo — PR: _pending_' } });
+    expect(setIssueBody).toHaveBeenLastCalledWith(9, '- [ ] Slice 1: algo — PR: _pending_');
   });
 });

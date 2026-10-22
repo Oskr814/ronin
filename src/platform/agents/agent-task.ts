@@ -1,5 +1,5 @@
 import { join, resolve } from 'node:path';
-import { ensureWorktree, ensureExternalReviewWorktree, removeExternalReviewWorktree, ensureTrustedFixWorktree, removeTrustedFixWorktree, ensureAgentClone, removeAgentClone, ensureAgentPrClone, removeAgentPrClone } from '../git/worktree.js';
+import { ensureWorktree, ensureExternalReviewWorktree, removeExternalReviewWorktree, ensureTrustedFixWorktree, removeTrustedFixWorktree, ensureAgentClone, removeAgentClone, ensureAgentPrClone, removeAgentPrClone, ensureAgentBranchClone } from '../git/worktree.js';
 import { runClaudeHeadless, ClaudeTimeoutError, ClaudeUsageLimitError } from '../claude/claude-runner.js';
 import { accountName } from '../claude/claude-usage.js';
 import { RunRecord, type RunOutcome } from './run-record.js';
@@ -58,6 +58,10 @@ export interface AgentDefinition {
   model?: string;
 }
 
+// How a run may push (RunScope's push), as the task says it: the base of
+// its own branch by name, resolved when the run starts.
+export type PushRule = { mode: 'amend' } | { mode: 'fast-forward' } | { mode: 'branch'; baseRef: string };
+
 export interface PreparedTask {
   // The branch the task works on; for a checkout that isn't a ronin
   // worktree of its own, only a label for the log.
@@ -75,7 +79,7 @@ export interface PreparedTask {
   // do — the commit it starts from is the checkout's HEAD, taken once the
   // checkout exists. It runs sealed (claude-runner.ts's sealedEnv) and
   // reaches the actions with `ronin-act`.
-  actions?: Omit<RunScope, 'startSha'>;
+  actions?: Omit<RunScope, 'startSha' | 'push'> & { push?: PushRule };
   // What the services.* actions run (domains/product-app/services.ts):
   // made once the checkout exists, closed when the run ends.
   services?: (checkoutDir: string, owner: AgentUser | null) => RunServices;
@@ -111,17 +115,18 @@ function runOutcome(error: unknown): RunOutcome {
 // A `dir` checkout stays root's: a sealed run only reads it.
 async function checkoutDir(checkout: TaskCheckout, branch: string, as: AgentUser | null): Promise<string> {
   switch (checkout.kind) {
-    case 'branch': return ensureWorktree(branch, checkout.baseBranch);
+    case 'branch': return as ? ensureAgentBranchClone(branch, checkout.baseBranch ?? activeRepo().worktreeBaseRef ?? config.worktreeBaseRef, as) : ensureWorktree(branch, checkout.baseBranch);
     case 'dir': return typeof checkout.dir === 'string' ? checkout.dir : checkout.dir();
     case 'untrusted-pr-head': return as ? ensureAgentPrClone(checkout.prNumber, checkout.sha, as) : ensureExternalReviewWorktree(checkout.prNumber, checkout.sha);
     case 'pr-branch': return as ? ensureAgentClone(branch, as) : ensureTrustedFixWorktree(branch);
   }
 }
 
-// Which runs go as the agent's user (#257): one with actions on a PR's
-// branch, and one sealed that only reads. The rest still run as ronin.
+// Which runs go as the agent's user (#257): one with actions on a branch
+// (a PR's, or its own), and one sealed that only reads. The rest still run
+// as ronin.
 async function runsAs(checkout: TaskCheckout, actions: PreparedTask['actions'], sealed: PreparedTask['sealed']): Promise<AgentUser | null> {
-  const user = (actions && checkout.kind === 'pr-branch') || sealed ? repoAgentUser() : null;
+  const user = (actions && (checkout.kind === 'pr-branch' || checkout.kind === 'branch')) || sealed ? repoAgentUser() : null;
   if (user) await prepareAgentUser(user);
   return user;
 }
@@ -244,13 +249,16 @@ export async function runAgentTask(task: AgentTask): Promise<string> {
       } : {}),
     }, record);
     if (sealed && as) await reclaimOutput(sealed.outputDir);
+    // The status a run reports with result.report goes where the tasks that
+    // ask for one already read it: the run's last line (RONIN_STATUS).
+    const status = server?.report()?.status;
     if (server) logActions(server, `${task.type} for ${label}`);
     const durationMs = Date.now() - start;
     recordAgentRun(durationMs);
     log.metric('agent_run', { taskType: task.type, issueNumber, prNumber, durationMs, success: true });
     await record.end('ok');
     log.info(`finished ${task.type} for ${label}`);
-    return result;
+    return status ? `${result}\nRONIN_STATUS: ${status}` : result;
   } catch (error) {
     const durationMs = Date.now() - start;
     recordAgentRun(durationMs);
@@ -278,6 +286,11 @@ export async function runAgentTask(task: AgentTask): Promise<string> {
     // head from scratch), and — unlike ensureWorktree's own ronin/<issue>/…
     // branches — sweepOrphanedWorktrees never recognizes a human branch name
     // as its own, so a leftover here would never get swept.
+    // The agent's clone of its own branch goes too: what it built is on
+    // origin, and the next run clones it from there.
+    if (checkout.kind === 'branch' && as) {
+      await removeAgentClone(branch).catch((cleanupError) => log.error(`${task.type} cleanup falló para ${label}`, cleanupError));
+    }
     if (checkout.kind === 'pr-branch') {
       await (as ? removeAgentClone(branch) : removeTrustedFixWorktree(branch)).catch((cleanupError) =>
         log.error(`${task.type} cleanup falló para PR #${prNumber}`, cleanupError),
@@ -288,13 +301,22 @@ export async function runAgentTask(task: AgentTask): Promise<string> {
 
 // The run's actions server, scoped to it: every action runs as ronin, in
 // the run's repo, whatever async context the request arrives in.
-async function startRunActions(scope: Omit<RunScope, 'startSha'>, checkout: RunCheckout, services: RunServices | null, label: string): Promise<ActionsServer> {
-  const runScope: RunScope = { ...scope, startSha: await checkout.git(['rev-parse', 'HEAD']) };
+async function startRunActions(scope: NonNullable<PreparedTask['actions']>, checkout: RunCheckout, services: RunServices | null, label: string): Promise<ActionsServer> {
+  const { push, ...rest } = scope;
+  const runScope: RunScope = { ...rest, startSha: await checkout.git(['rev-parse', 'HEAD']) };
+  if (push?.mode === 'branch') {
+    // Its base as a commit, and what its branch had on origin, if anything:
+    // a push may replace only that.
+    const base = push.baseRef.startsWith('origin/') ? push.baseRef : `origin/${push.baseRef}`;
+    const remoteSha = await host().exec('git', ['rev-parse', '--verify', '--quiet', `refs/remotes/origin/${scope.headRef}`], { cwd: checkout.repo })
+      .then(({ stdout }) => stdout.trim(), () => null);
+    runScope.push = { mode: 'branch', baseSha: await checkout.git(['rev-parse', base]), remoteSha };
+  } else if (push) runScope.push = push;
   const repo = activeRepo();
   return startActionsServer({
     scope: runScope,
     label,
-    checkout: () => checkoutState(checkout, runScope.startSha!),
+    checkout: () => checkoutState(checkout, runScope),
     execute: (action) => withActiveRepo(repo, () => executeAction(runScope, checkout, action, services ?? undefined)),
   });
 }

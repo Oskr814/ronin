@@ -76,112 +76,59 @@ beforeEach(() => {
   writeFile.mockResolvedValue(undefined);
 });
 
-describe('sliceTask — per-repo worktreeBaseRef override', () => {
-  it("uses the active repo's own worktreeBaseRef for a slice 0 worktree, not config's", async () => {
-    activeRepo.mockReturnValue({
-      productRepo: 'bmedical/bmedical',
-      productRepoPath: '/tmp/repo',
-      worktreeBasePath: '/tmp/worktrees',
-      worktreeBaseRef: 'origin/odoo-main',
+describe('sliceTask — implementing with the skill (#257)', () => {
+  it("builds slice 0 on the active repo's own worktreeBaseRef, and opens its PR there", async () => {
+    activeRepo.mockReturnValue({ productRepo: 'bmedical/bmedical', productRepoPath: '/tmp/repo', worktreeBasePath: '/tmp/worktrees', worktreeBaseRef: 'origin/odoo-main' });
+    const task = await buildTask({ type: 'implement-slice', issueNumber: 228, sliceIndex: 0, sliceTitle: 'Add foo' });
+
+    expect(task.checkout).toEqual({ kind: 'branch', baseBranch: 'origin/odoo-main' });
+    expect(task.actions).toMatchObject({
+      headRef: 'ronin/228/slice-1',
+      push: { mode: 'branch', baseRef: 'origin/odoo-main' },
+      pr: { base: 'odoo-main', draft: false },
+      allowed: ['git.push', 'pr.create', 'services.up', 'services.run', 'result.report'],
     });
-
-    await runAgentTask({ type: 'implement-slice', issueNumber: 228, sliceIndex: 0, sliceTitle: 'Add foo' });
-
-    expect(ensureWorktree).toHaveBeenCalledWith('ronin/228/slice-1', 'origin/odoo-main');
+    expect(task.actions).not.toHaveProperty('issue');
+    expect(task.prompt).toContain('ronin:implement');
+    expect(task.prompt).toContain('<<<SLICE_START>>>Add foo<<<SLICE_END>>>');
   });
 
-  it("uses the active repo's own worktreeBaseRef as the fix-issue worktree base, not config's", async () => {
-    activeRepo.mockReturnValue({
-      productRepo: 'bmedical/bmedical',
-      productRepoPath: '/tmp/repo',
-      worktreeBasePath: '/tmp/worktrees',
-      worktreeBaseRef: 'origin/odoo-main',
+  it('stacks a later slice on the previous one, while that branch is on origin', async () => {
+    remoteBranchExists.mockResolvedValue(true);
+    const task = await buildTask({ type: 'implement-slice', issueNumber: 228, sliceIndex: 1, sliceTitle: 'Add bar' });
+    expect(task.actions).toMatchObject({ push: { baseRef: 'ronin/228/slice-1' }, pr: { base: 'ronin/228/slice-1' } });
+  });
+
+  it('lets fix-issue ask on its issue, closes it from the PR and asks for a status', async () => {
+    activeRepo.mockReturnValue({ productRepo: 'bmedical/bmedical', productRepoPath: '/tmp/repo', worktreeBasePath: '/tmp/worktrees', worktreeBaseRef: 'origin/odoo-main' });
+    const task = await buildTask({ type: 'fix-issue', issueNumber: 228, sliceIndex: 0, sliceTitle: 'Fix foo' });
+
+    expect(task.actions).toMatchObject({
+      issue: { number: 228 },
+      pr: { base: 'odoo-main', draft: false, closes: 228 },
+      allowed: ['issue.comment', 'git.push', 'pr.create', 'services.up', 'services.run', 'result.report'],
     });
-
-    await runAgentTask({ type: 'fix-issue', issueNumber: 228, sliceIndex: 0, sliceTitle: 'Fix foo' });
-
-    expect(ensureWorktree).toHaveBeenCalledWith('ronin/228/slice-1', 'origin/odoo-main');
-  });
-});
-
-describe('runAgentTask — fix-issue prompt', () => {
-  it('does not claim the issue is labeled bugfix and ends with the RONIN_STATUS marker instruction', async () => {
-    await runAgentTask({ type: 'fix-issue', issueNumber: 228, sliceIndex: 0, sliceTitle: 'Fix foo' });
-
-    const prompt = runClaudeHeadless.mock.calls[0][1] as string;
-    expect(prompt).not.toContain('labeled "bugfix"');
-    expect(prompt).toContain('RONIN_STATUS: needs-info');
-    expect(prompt).toContain('RONIN_STATUS: done');
+    expect(task.prompt).toContain('gh issue view 228 --comments');
+    expect(task.prompt).toContain('"Closes #228"');
+    expect(task.prompt).toContain('status "done"');
+    expect(task.prompt).toContain('"ronin-ficha:"');
+    expect(task.prompt).toContain('/antes-<n>.<ext>');
   });
 
-  it("asks to repeat the issue's images in the PR body instead of pointing to the issue", async () => {
-    await runAgentTask({ type: 'fix-issue', issueNumber: 228, sliceIndex: 0, sliceTitle: 'Fix foo' });
-
-    const prompt = runClaudeHeadless.mock.calls[0][1] as string;
-    expect(prompt).toContain('reusing the same image URLs');
-    expect(prompt).toContain('never just say they are in the issue');
-    expect(prompt).toContain('Leave out the "before" of an exploration finding');
-    expect(prompt).toContain('/antes-<n>.<ext>');
-  });
-
-  it("starts an exploration finding's issue from the finding's diagnosis and draft, instead of from scratch", async () => {
-    await runAgentTask({ type: 'fix-issue', issueNumber: 228, sliceIndex: 0, sliceTitle: 'Fix foo' });
-
-    const prompt = runClaudeHeadless.mock.calls[0][1] as string;
-    expect(prompt).toContain('"ronin-ficha:" key');
-    expect(prompt).toContain('Cambio borrador usado para el después');
-    expect(prompt).toContain('Start from them instead of investigating from scratch');
-    expect(prompt).toContain('without widening its scope');
-  });
-
-  it('returns runClaudeHeadless\'s result so the caller can read the RONIN_STATUS marker', async () => {
-    runClaudeHeadless.mockResolvedValueOnce('Opened PR #42.\nRONIN_STATUS: done');
-
-    const result = await runAgentTask({ type: 'fix-issue', issueNumber: 228, sliceIndex: 0, sliceTitle: 'Fix foo' });
-
-    expect(result).toBe('Opened PR #42.\nRONIN_STATUS: done');
-  });
-});
-
-describe('runAgentTask — PR body sections', () => {
   it.each([
     ['implement-slice', 'Add foo'],
     ['fix-issue', 'Fix foo'],
-  ] as const)('asks %s for the fixed sections instead of the repo\'s PR template', async (type, sliceTitle) => {
-    await runAgentTask({ type, issueNumber: 228, sliceIndex: 0, sliceTitle });
-
-    const prompt = runClaudeHeadless.mock.calls[0][1] as string;
+  ] as const)('gives %s the PR body and commit rules', async (type, sliceTitle) => {
+    const { prompt } = await buildTask({ type, issueNumber: 228, sliceIndex: 0, sliceTitle });
     expect(prompt).toContain(PR_BODY_RULE);
     for (const heading of PR_BODY_SECTIONS) expect(prompt).toContain(`"## ${heading}"`);
-    expect(prompt).toContain('do not follow this repo\'s pull request template');
-  });
-
-  it('keeps "Closes #N" on the first line and the screenshots under "Qué cambió" for fix-issue', async () => {
-    await runAgentTask({ type: 'fix-issue', issueNumber: 228, sliceIndex: 0, sliceTitle: 'Fix foo' });
-
-    const prompt = runClaudeHeadless.mock.calls[0][1] as string;
-    expect(prompt).toContain('with "Closes #228" on the first line of the body');
-    expect(prompt).toContain('put them in the PR body too, under "## Qué cambió"');
+    expect(prompt).toContain(COMMIT_STYLE_RULE);
+    expect(prompt).not.toContain('gh pr create');
+    expect(prompt).not.toContain('RONIN_STATUS');
   });
 });
 
 describe('runAgentTask — agent-notes reminder', () => {
-  it('is included for implement-slice', async () => {
-    await runAgentTask({ type: 'implement-slice', issueNumber: 228, sliceIndex: 0, sliceTitle: 'Add foo' });
-
-    const prompt = runClaudeHeadless.mock.calls[0][1] as string;
-    expect(prompt).toContain(AGENT_NOTES_REMINDER);
-    expect(prompt.endsWith(AGENT_NOTES_REMINDER)).toBe(true);
-  });
-
-  it('is included for fix-issue, before the final RONIN_STATUS marker line', async () => {
-    await runAgentTask({ type: 'fix-issue', issueNumber: 228, sliceIndex: 0, sliceTitle: 'Fix foo' });
-
-    const prompt = runClaudeHeadless.mock.calls[0][1] as string;
-    expect(prompt).toContain(AGENT_NOTES_REMINDER);
-    expect(prompt.endsWith(AGENT_NOTES_REMINDER)).toBe(false);
-  });
-
   it('is included for fix-e2e', async () => {
     await runAgentTask({ type: 'fix-e2e', issueNumber: 228, prNumber: 229 });
 
@@ -195,19 +142,6 @@ describe('runAgentTask — agent-notes reminder', () => {
 
     const prompt = runClaudeHeadless.mock.calls[0][1] as string;
     expect(prompt).not.toContain(AGENT_NOTES_REMINDER);
-  });
-});
-
-describe('runAgentTask — commit style', () => {
-  it('tells every task that opens a PR to follow the repo\'s commit and PR-title convention', async () => {
-    for (const task of [
-      { type: 'fix-issue' as const, issueNumber: 5, sliceIndex: 0, sliceTitle: 'x' },
-      { type: 'implement-slice' as const, issueNumber: 5, sliceIndex: 0, sliceTitle: 'x' },
-    ]) {
-      runClaudeHeadless.mockClear();
-      await runAgentTask(task);
-      expect(runClaudeHeadless.mock.calls[0][1]).toContain(COMMIT_STYLE_RULE);
-    }
   });
 });
 
