@@ -1,4 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { readFileSync } from 'node:fs';
+
+// What the agent does is in its skill (#257); the prompt carries the run.
+const skill = readFileSync('plugin/skills/preview-data/SKILL.md', 'utf8');
 
 vi.mock('@platform/config/config.js', () => ({
   config: {
@@ -103,47 +107,44 @@ describe('runAgentTask — prepare-preview-data', () => {
 
   it('gives the PR, the request and the running stack, fencing what people wrote', async () => {
     const { prompt } = await buildTask(task);
+    expect(prompt).toMatch(/^Usa la skill ronin:preview-data, para preparar los datos\./);
     expect(prompt).toContain('<<<PR_START>>>\n# fix: mostrar todos los catálogos\n\n## Cómo se verificó');
     expect(prompt).toContain('<<<REQUEST_START>>>\nque algunos estén vencidos\n<<<REQUEST_END>>>');
     expect(prompt).toContain('git diff abc123..HEAD');
     expect(prompt).toContain('- web:80 → http://127.0.0.1:41234');
-    expect(prompt).toContain("ronin-act app.exec --service <service> --command '<command>'");
+    expect(prompt).toContain("ronin-act app.exec --service <servicio> --command '<comando>'");
     expect(prompt).toContain('Admin: admin@x.com / password');
     expect(prompt).toContain(task.outputPath);
   });
 
   // #193: what to prepare comes from the PR's «Cómo probar»; the diff only
   // says how to create it, or what's needed when the PR has no such block.
-  it('prepares what the PR\'s «Cómo probar» asks for, not what it works out from the diff', async () => {
-    const { prompt } = await buildTask(task);
-    expect(prompt).toContain('the "Cómo probar" block of the description');
-    expect(prompt).toMatch(/Don't work out on your own what else the change could need/);
-    expect(prompt).toMatch(/Only when the description has no such block, work it out from the diff/);
+  it('prepares what the PR\'s «Cómo probar» asks for, not what it works out from the diff', () => {
+    expect(skill).toMatch(/\*\*Qué dejar listo\*\* está en «Cómo probar»/);
+    expect(skill).toMatch(/No decidas por tu cuenta qué más podría necesitar el cambio/);
+    expect(skill).toMatch(/Solo cuando la descripción no tiene ese bloque, sácalo del diff/);
   });
 
   // A PR behind a flag whose steps start with it off: the preview turns it
   // on anyway, and says how to turn it off.
-  it('leaves the change\'s feature flags on for the seeded logins', async () => {
-    const { prompt } = await buildTask(task);
-
-    expect(prompt).toMatch(/behind a feature flag .* leave it ON for the tenant and users the seeded logins use, even when the steps start with it off/);
-    expect(prompt).toMatch(/how to turn it off/);
+  it('leaves the change\'s feature flags on for the seeded logins', () => {
+    expect(skill).toMatch(/detrás de un feature flag .* déjalo ENCENDIDO para el tenant y los usuarios que usan los logins del seed, aunque los pasos empiecen con él apagado/);
+    expect(skill).toMatch(/cómo apagarlo/);
     // The agent can't change the app's environment: it says so instead.
-    expect(prompt).toMatch(/only lives in the environment .* don't touch it, and say in "noPreparado"/);
+    expect(skill).toMatch(/solo vive en el entorno .* no lo toques, y di en «noPreparado»/);
   });
 
-  it('forbids touching code, the stack or GitHub', async () => {
-    const { prompt } = await buildTask(task);
-    expect(prompt).toMatch(/never edit, commit or push code/i);
-    expect(prompt).toMatch(/do not stop, restart or rebuild the app/i);
-    expect(prompt).toMatch(/never write to github/i);
+  it('forbids touching code, the stack or GitHub', () => {
+    expect(skill).toMatch(/nunca edites, commitees ni subas código/);
+    expect(skill).toMatch(/No pares, reinicies ni reconstruyas la app/);
+    expect(skill).toMatch(/Nunca escribas en GitHub/);
   });
 
   it('on an update, gives only the new commits and what was already there', async () => {
     const { prompt } = await buildTask({ ...task, diff: { mergeBase: 'old123', stat: ' 1 file changed' }, previous: { preparado: ['Cliente demo con 30 catálogos'], noPreparado: [] } });
     expect(prompt).toContain('git diff old123..HEAD');
     expect(prompt).toContain('<<<PREVIOUS_START>>>\nPreparado:\n- Cliente demo con 30 catálogos\nNo preparado:\n- (nada)');
-    expect(prompt).toMatch(/never delete or redo what the earlier run left/);
+    expect(skill).toMatch(/nunca borres ni rehagas lo que dejó la corrida anterior/);
   });
 
   it('leaves out the request block when nothing was asked', async () => {
@@ -175,7 +176,7 @@ describe('runAgentTask — prepare-preview-data with a catalog', () => {
     const { prompt } = await buildTask({ ...task, catalog: 'clientes:\n  total: 8' });
 
     expect(prompt).toContain('<<<CATALOG_START>>>\nclientes:\n  total: 8\n<<<CATALOG_END>>>');
-    expect(prompt).toMatch(/trust it: don't explore the schema/);
+    expect(skill).toMatch(/confía en él:\*\* no explores el esquema/);
   });
 
   it('says nothing about a catalog without one', async () => {
@@ -204,11 +205,10 @@ describe('runAgentTask — preview-seed-catalog', () => {
 
     expect(checkout).toEqual({ kind: 'dir', dir: '/tmp/worktrees/preview-pr-818' });
     expect(actions?.allowed).toEqual(['app.exec']);
-    expect(prompt).toMatch(/don't create, change or delete any data/);
-    expect(prompt).toMatch(/never write to github/i);
-    expect(prompt).toContain("ronin-act app.exec --service <service> --command '<command>'");
+    expect(prompt).toMatch(/^Usa la skill ronin:preview-data, para el catálogo del seed base\./);
+    expect(skill).toMatch(/no crees, cambies ni borres datos/);
     expect(prompt).toContain('Admin: admin@x.com / password');
-    expect(prompt).toContain(`YAML to ${task.outputPath}`);
+    expect(prompt).toContain(`el YAML del catálogo: ${task.outputPath}`);
   });
 });
 
@@ -231,10 +231,11 @@ describe('runAgentTask — preview-data-triage', () => {
     expect(prompt).toContain('<<<REQUEST_START>>>\nque algunos estén vencidos\n<<<REQUEST_END>>>');
     expect(prompt).toContain('<<<CATALOG_START>>>\nclientes:\n  total: 8\n<<<CATALOG_END>>>');
     expect(prompt).toContain('git diff abc123..HEAD');
-    expect(prompt).toMatch(/unsure, it is not enough/);
-    expect(prompt).toMatch(/behind a feature flag or another switch the catalog doesn't show on is never enough/);
-    expect(prompt).toContain('every precondition in the "Cómo probar" block of the description');
-    expect(prompt).toContain(`JSON object to ${task.outputPath}`);
+    expect(prompt).toMatch(/^Usa la skill ronin:preview-data, para decidir si alcanza el seed base\./);
+    expect(skill).toMatch(/Si el catálogo no lo dice, o dudas, no alcanza/);
+    expect(skill).toMatch(/feature flag\*\* u otro interruptor que el catálogo no muestra encendido nunca alcanza/);
+    expect(skill).toMatch(/cada precondición de «Cómo probar»/);
+    expect(prompt).toContain(`el JSON de la skill: ${task.outputPath}`);
   });
 });
 
@@ -255,8 +256,9 @@ describe('runAgentTask — preview-data-delta', () => {
     expect(sealed).toEqual({ outputDir: '/tmp/delta' });
     expect(prompt).toContain('git diff old123..HEAD');
     expect(prompt).toContain('- un cliente sin email');
-    expect(prompt).toContain('{"completar": true | false');
-    expect(prompt).toMatch(/"Cómo probar" block, it is what has to be tried now/);
+    expect(prompt).toMatch(/^Usa la skill ronin:preview-data, para decidir si hay que completar los datos\./);
+    expect(skill).toContain('{"completar": true | false');
+    expect(skill).toMatch(/tiene un bloque «Cómo probar»,\*\* es lo que hay que probar ahora/);
     expect(prompt).not.toContain('REQUEST_START');
   });
 });
