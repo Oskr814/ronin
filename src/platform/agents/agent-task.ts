@@ -10,7 +10,7 @@ import { recordAgentRun } from './metrics.js';
 import { currentRunGroup } from './run-group.js';
 import { host } from '../host/host.js';
 import type { RunScope } from '../actions/catalog.js';
-import { agentCheckout, checkoutState, executeAction, rootCheckout, type RunCheckout } from '../actions/executors.js';
+import { agentCheckout, checkoutState, executeAction, rootCheckout, type RunCheckout, type RunServices } from '../actions/executors.js';
 import { agentUser, type AgentUser } from './agent-user.js';
 import { startActionsServer, type ActionsServer } from '../actions/server.js';
 import { mintReadToken } from '../github/read-token.js';
@@ -74,6 +74,9 @@ export interface PreparedTask {
   // checkout exists. It runs sealed (claude-runner.ts's sealedEnv) and
   // reaches the actions with `ronin-act`.
   actions?: Omit<RunScope, 'startSha'>;
+  // What the services.* actions run (domains/product-app/services.ts):
+  // made once the checkout exists, closed when the run ends.
+  services?: (checkoutDir: string, owner: AgentUser | null) => RunServices;
 }
 
 export interface AgentTask {
@@ -115,7 +118,7 @@ function runsAs(checkout: TaskCheckout, actions: PreparedTask['actions']): Agent
 }
 
 export async function runAgentTask(task: AgentTask): Promise<string> {
-  const { branch, prompt, checkout, agents, mcpConfigFile, actions, ...prepared } = await task.prepare();
+  const { branch, prompt, checkout, agents, mcpConfigFile, actions, services: makeServices, ...prepared } = await task.prepare();
   const as = runsAs(checkout, actions);
   const worktreeDir = await checkoutDir(checkout, branch, as);
 
@@ -165,6 +168,7 @@ export async function runAgentTask(task: AgentTask): Promise<string> {
     worktree: worktreeDir,
   });
   let server: ActionsServer | null = null;
+  let services: RunServices | null = null;
   try {
     // Read-only and for this repo, when ronin has its App (read-token.ts);
     // without it the agent reads with the write token, as before.
@@ -173,7 +177,8 @@ export async function runAgentTask(task: AgentTask): Promise<string> {
       const runCheckout: RunCheckout = as
         ? agentCheckout(worktreeDir, activeRepo().productRepoPath, as)
         : rootCheckout(worktreeDir, activeRepo().productRepoPath);
-      server = await startRunActions(actions, runCheckout, `${task.type} #${tag}`);
+      services = makeServices?.(worktreeDir, as) ?? null;
+      server = await startRunActions(actions, runCheckout, services, `${task.type} #${tag}`);
     }
     const result = await runClaudeHeadless(worktreeDir, prompt, `${task.type} #${tag}`, {
       model,
@@ -214,6 +219,7 @@ export async function runAgentTask(task: AgentTask): Promise<string> {
     // fully swallowed: a cleanup failure must never mask the real error nor
     // turn a successful review into a failed task.
     await server?.close();
+    await services?.close().catch((cleanupError) => log.error(`${task.type}: no se pudieron bajar los servicios de ${label}`, cleanupError));
     if (agentsFile) await host().fs.rm(agentsFile, { force: true }).catch(() => {});
     if (checkout.kind === 'untrusted-pr-head') {
       await removeExternalReviewWorktree(checkout.prNumber).catch((cleanupError) =>
@@ -235,14 +241,14 @@ export async function runAgentTask(task: AgentTask): Promise<string> {
 
 // The run's actions server, scoped to it: every action runs as ronin, in
 // the run's repo, whatever async context the request arrives in.
-async function startRunActions(scope: Omit<RunScope, 'startSha'>, checkout: RunCheckout, label: string): Promise<ActionsServer> {
+async function startRunActions(scope: Omit<RunScope, 'startSha'>, checkout: RunCheckout, services: RunServices | null, label: string): Promise<ActionsServer> {
   const runScope: RunScope = { ...scope, startSha: await checkout.git(['rev-parse', 'HEAD']) };
   const repo = activeRepo();
   return startActionsServer({
     scope: runScope,
     label,
     checkout: () => checkoutState(checkout, runScope.startSha!),
-    execute: (action) => withActiveRepo(repo, () => executeAction(runScope, checkout, action)),
+    execute: (action) => withActiveRepo(repo, () => executeAction(runScope, checkout, action, services ?? undefined)),
   });
 }
 

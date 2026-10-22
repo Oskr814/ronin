@@ -16,13 +16,13 @@ const scope: RunScope = {
   startSha: 'start',
   threads: [{ commentId: 100, threadId: 'PRRT_a' }],
   triggers: [{ id: 300, kind: 'issue' }],
-  allowed: ['pr.reply', 'pr.comment', 'git.push', 'result.report'],
+  allowed: ['pr.reply', 'pr.comment', 'git.push', 'services.run', 'result.report'],
 };
 
 let server: ActionsServer | null = null;
 const executed: ValidAction[] = [];
 
-async function start(execute = async (action: ValidAction) => { executed.push(action); return {}; }): Promise<ActionsServer> {
+async function start(execute = async (action: ValidAction): Promise<Record<string, unknown>> => { executed.push(action); return {}; }): Promise<ActionsServer> {
   executed.length = 0;
   server = await startActionsServer({
     scope,
@@ -80,6 +80,12 @@ describe('actions server + ronin-act', () => {
     const report = { threads: [{ commentId: 100, changed: true, reply: 'Cambiado.' }], summary: 'Un hilo arreglado.' };
     expect((await act(s, ['result.report', '--json', JSON.stringify(report)])).code).toBe(0);
     expect(s.report()).toEqual(report);
+  });
+
+  it("prints a command's output as text, not inside the JSON", async () => {
+    const s = await start(async () => ({ exitCode: 1, output: 'Passed: 3\nFailed: 1' }));
+    const ran = await act(s, ['services.run', '--service', 'web', '--command', 'dotnet test']);
+    expect(ran.stdout).toBe('{"ok":true,"exitCode":1}\nPassed: 3\nFailed: 1\n');
   });
 
   it('turns away a wrong credential', async () => {

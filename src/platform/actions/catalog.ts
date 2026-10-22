@@ -68,6 +68,17 @@ export const ACTIONS = {
     summary: 'Sube el commit del checkout a la rama del PR. Tiene que ser un amend del commit con el que empezaste, sin cambios sin commitear.',
     input: z.object({}),
   },
+  'services.up': {
+    summary: 'Levanta servicios del compose del repo (el de la rama base) para tus tests, como una base de datos: devuelve en qué puerto de localhost quedó cada puerto de cada servicio. Siguen arriba hasta que termina la corrida.',
+    input: z.object({ services: z.array(z.string().min(1)).min(1).describe('Los nombres de los servicios, como en el compose') }),
+  },
+  'services.run': {
+    summary: 'Corre un comando dentro de un servicio del compose del repo (el de la rama base), con tu checkout montado donde el compose monta el repo: para tests que necesitan las herramientas de ese contenedor. Devuelve el código de salida y el final de la salida. Corta a los 9 minutos.',
+    input: z.object({
+      service: z.string().min(1).describe('El servicio, como en el compose'),
+      command: z.string().min(1).max(4_000).describe('El comando, para sh -c'),
+    }),
+  },
   'result.report': {
     summary: 'Reporta el resultado de la corrida. Es lo último que haces.',
     input: z.object({

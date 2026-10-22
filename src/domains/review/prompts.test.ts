@@ -675,7 +675,7 @@ describe('runAgentTask — fix-comments-external', () => {
         startSha: 'start-sha',
         threads: [{ commentId: 55, threadId: 'PRRT_5' }],
         triggers: [{ id: 9, kind: 'issue' }],
-        allowed: ['pr.reply', 'pr.comment', 'pr.resolve-thread', 'git.push', 'result.report'],
+        allowed: ['pr.reply', 'pr.comment', 'pr.resolve-thread', 'git.push', 'services.up', 'services.run', 'result.report'],
       },
     }));
     const opts = runClaudeHeadless.mock.calls[0][3];

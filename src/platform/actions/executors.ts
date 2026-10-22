@@ -41,7 +41,16 @@ export async function checkoutState(checkout: RunCheckout, startSha: string): Pr
 }
 
 // What the agent gets back, besides "ok".
-export type ActionResult = Record<string, string | number | boolean>;
+export type ActionResult = Record<string, unknown>;
+
+// The services a run's tests need, from the repo's compose (#257): given by
+// the task (domains/product-app/services.ts), which knows the compose.
+// Unknown services are refused there, with the ones there are.
+export interface RunServices {
+  up(services: string[]): Promise<Record<string, Record<string, number>>>;
+  run(service: string, command: string): Promise<{ exitCode: number; output: string }>;
+  close(): Promise<void>;
+}
 
 // The checkout's HEAD into the shared repo, through a bundle the agent's
 // user writes: root only ever reads a file, never runs git in the agent's
@@ -64,7 +73,7 @@ async function takeHead(scope: RunScope, checkout: RunCheckout): Promise<string>
   }
 }
 
-export async function executeAction(scope: RunScope, checkout: RunCheckout, action: ValidAction): Promise<ActionResult> {
+export async function executeAction(scope: RunScope, checkout: RunCheckout, action: ValidAction, services?: RunServices): Promise<ActionResult> {
   switch (action.name) {
     case 'pr.reply':
       await replyToComment(scope.prNumber, { id: action.input.commentId, kind: 'review' }, action.input.body);
@@ -87,6 +96,12 @@ export async function executeAction(scope: RunScope, checkout: RunCheckout, acti
       }
       return { sha };
     }
+    case 'services.up':
+      if (!services) throw new ActionRefused('esta corrida no tiene servicios');
+      return { ports: await services.up(action.input.services) };
+    case 'services.run':
+      if (!services) throw new ActionRefused('esta corrida no tiene servicios');
+      return await services.run(action.input.service, action.input.command);
     case 'result.report':
       return {};
   }
