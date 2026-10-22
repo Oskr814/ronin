@@ -284,6 +284,12 @@ export async function loadAppDefinition(checkoutDir: string, appName: string, ma
 // Normally that's http://127.0.0.1:<port>; in a /preview it's the runner's
 // tailnet name over HTTPS, so another machine can use the app (see
 // preview.ts).
+//
+// `{{local.port.<name>}}` and `{{local.ports.<service>.<port>}}` are the same
+// port as without `local.`, but a loopback URL written with them in a
+// `start` step's env stays loopback (publicizeTemplate): for a URL only the
+// app's server calls, like the API a Next.js server action reaches. The
+// runner can't reach its own tailnet name from inside its container.
 export interface TemplateContext {
   ports: Record<string, Record<string, number>>;
   port: Record<string, number>;
@@ -301,11 +307,12 @@ function templateKeys(template: string): string[] {
   return [...template.matchAll(TEMPLATE_RE)].map((m) => m[1]);
 }
 
-// Names of the `{{port.<name>}}` (and `{{public.port.<name>}}`) a template
-// uses, so the caller can reserve those ports before rendering it.
+// Names of the `{{port.<name>}}` (and `{{public.port.<name>}}`,
+// `{{local.port.<name>}}`) a template uses, so the caller can reserve those
+// ports before rendering it.
 export function namedPortsIn(template: string): string[] {
   return templateKeys(template).flatMap((key) => {
-    const bare = key.startsWith('public.') ? key.slice(7) : key;
+    const bare = key.replace(/^(public|local)\./, '');
     return bare.startsWith('port.') ? [bare.slice(5)] : [];
   });
 }
@@ -356,7 +363,8 @@ export function renderTemplate(template: string, ctx: TemplateContext): string {
     else if (head === 'public') {
       const port = portOf(rest, ctx);
       value = port === undefined ? undefined : publicUrl(port, ctx);
-    } else value = portOf([head, ...rest], ctx);
+    } else if (head === 'local') value = portOf(rest, ctx);
+    else value = portOf([head, ...rest], ctx);
     if (value === undefined) throw new Error(`variable de plantilla desconocida: {{${key}}}`);
     return String(value);
   });

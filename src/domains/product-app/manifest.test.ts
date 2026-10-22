@@ -113,6 +113,12 @@ describe('renderTemplate', () => {
       .toBe('http://127.0.0.1:41234 5173 docker compose -p p -f f.json /w');
   });
 
+  it('renders a local port as the port itself, also with a public host', () => {
+    expect(renderTemplate('http://127.0.0.1:{{local.port.backoffice}} {{local.ports.web.80}}', { ...ctx, publicHost: 'h.ts.net' }))
+      .toBe('http://127.0.0.1:5173 41234');
+    expect(() => renderTemplate('{{local.port.api}}', ctx)).toThrow(/local.port.api/);
+  });
+
   it('throws on an unknown variable instead of leaving it in place', () => {
     expect(() => renderTemplate('{{ports.api.80}}', ctx)).toThrow(/ports.api.80/);
     expect(() => renderTemplate('{{secret}}', ctx)).toThrow(/secret/);
@@ -145,6 +151,7 @@ describe('publicizeTemplate', () => {
     expect(publicizeTemplate('postgres://root@127.0.0.1:{{ports.db.5432}}/x')).toBe('postgres://root@127.0.0.1:{{ports.db.5432}}/x');
     expect(publicizeTemplate('http://127.0.0.1:5000')).toBe('http://127.0.0.1:5000');
     expect(publicizeTemplate('{{public.ports.web.80}}')).toBe('{{public.ports.web.80}}');
+    expect(publicizeTemplate('http://127.0.0.1:{{local.port.api}}')).toBe('http://127.0.0.1:{{local.port.api}}');
   });
 });
 
@@ -159,5 +166,6 @@ describe('namedPortsIn', () => {
   it('lists only the named ports a template references', () => {
     expect(namedPortsIn('{{port.web}} {{ports.api.80}} {{port.admin}} {{dir}}')).toEqual(['web', 'admin']);
     expect(namedPortsIn('{{public.port.web}} {{public.ports.api.80}}')).toEqual(['web']);
+    expect(namedPortsIn('{{local.port.api}} {{local.ports.db.5432}}')).toEqual(['api']);
   });
 });
