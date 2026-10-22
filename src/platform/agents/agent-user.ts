@@ -39,7 +39,7 @@ function hash(text: string): number {
 }
 
 export function agentUserFor(claudeConfigDir: string): AgentUser | null {
-  if (config.agentUidBase === null) return null;
+  if (config.agentUidBase == null || !Number.isFinite(config.agentUidBase)) return null;
   const account = (basename(claudeConfigDir) || 'default').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 24) || 'default';
   const name = `agent-${account}`;
   const uid = config.agentUidBase + 1 + (hash(name) % UID_SPAN);

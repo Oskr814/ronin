@@ -212,3 +212,18 @@ describe('issue actions', () => {
     expect(setIssueBody).toHaveBeenLastCalledWith(9, '- [ ] Slice 1: algo — PR: _pending_');
   });
 });
+
+describe('git.push from a worktree', () => {
+  // A runner without agent users works in worktrees, whose .git is a file.
+  it('writes its bundle where git keeps the worktree, and pushes', async () => {
+    const { origin, repo, startSha, scope } = await setup();
+    const wt = join(repo, '..', 'wt');
+    await git(repo, 'worktree', 'add', '-q', '--detach', wt, startSha);
+    await writeFile(join(wt, 'a.txt'), 'base\nfeat desde un worktree\n');
+    await git(wt, 'commit', '-q', '-a', '--amend', '--no-edit');
+    const amended = await git(wt, 'rev-parse', 'HEAD');
+
+    expect(await executeAction(scope, rootCheckout(wt, repo), { name: 'git.push', input: {} })).toEqual({ sha: amended });
+    expect(await git(origin, 'rev-parse', 'refs/heads/feat/x')).toBe(amended);
+  });
+});
