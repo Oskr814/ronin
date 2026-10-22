@@ -5,6 +5,7 @@ import { AGENT_NOTES_REMINDER, COMMIT_STYLE_RULE, describeMention, fence, PR_BOD
 import { activeRepo } from '@platform/agents/repo-context.js';
 import { remoteBranchExists } from '@platform/git/worktree.js';
 import { baseBranchFor, planBranch, sliceBranch, specBranch } from './stack.js';
+import { runServices } from '../product-app/services.js';
 
 // What the agent is told for each task of an issue's own work — planning,
 // slices, its PRs' CI and its spec; platform/agents/agent-task.ts runs it.
@@ -37,6 +38,37 @@ export type SliceTask =
       dir: () => Promise<string>;
       outDir: string;
     };
+
+const stripOrigin = (ref: string) => ref.replace(/^origin\//, '');
+
+// An issue's work implemented in its own branch, through the implement
+// skill and ronin's actions (#257): the agent pushes the branch it built on
+// its base and opens its PR, whose base, draft state and closing issue ronin
+// decides. It may comment on the issue only when it's the one that asks.
+function implementTask(task: { branch: string; base: string; issueNumber: number; allowComment: boolean; closes?: number; prompt: string[] }): PreparedTask {
+  return {
+    branch: task.branch,
+    checkout: { kind: 'branch', baseBranch: task.base },
+    actions: {
+      headRef: task.branch,
+      push: { mode: 'branch', baseRef: task.base },
+      pr: { base: stripOrigin(task.base), draft: false, ...(task.closes !== undefined ? { closes: task.closes } : {}) },
+      ...(task.allowComment ? { issue: { number: task.issueNumber } } : {}),
+      threads: [],
+      triggers: [],
+      allowed: [
+        ...(task.allowComment ? ['issue.comment' as const] : []),
+        'git.push', 'pr.create', 'services.up', 'services.run', 'result.report',
+      ],
+    },
+    services: (checkoutDir, owner) => runServices({ checkoutDir, owner }),
+    prompt: [
+      ...task.prompt,
+      `Reglas de la descripción del PR (confiables, de ronin):\n${PR_BODY_RULE}`,
+      `Reglas de los commits:\n${COMMIT_STYLE_RULE}`,
+    ].join('\n\n'),
+  };
+}
 
 export function sliceTask(task: SliceTask): AgentTask & SliceTask {
   return { ...task, prepare: () => buildSliceTask(task) };
@@ -71,21 +103,17 @@ async function buildSliceTask(task: SliceTask): Promise<PreparedTask> {
       if (worktreeBase !== rootBaseRef && !(await remoteBranchExists(worktreeBase))) {
         worktreeBase = rootBaseRef;
       }
-      const prCommand = worktreeBase === rootBaseRef ? 'gh pr create' : `gh pr create --base ${worktreeBase}`;
-      return {
-        branch: sliceBranch(task.issueNumber, task.sliceIndex),
-        checkout: { kind: 'branch', baseBranch: worktreeBase },
+      const branch = sliceBranch(task.issueNumber, task.sliceIndex);
+      return implementTask({
+        branch,
+        base: worktreeBase,
+        issueNumber: task.issueNumber,
+        allowComment: false,
         prompt: [
-          `You are ronin, an autonomous agent working on tracking issue #${task.issueNumber} in ${repoUrl()}.`,
-          `Implement this single slice: "${task.sliceTitle}".`,
-          "Follow this repo's CLAUDE.md conventions, including its testing requirements.",
-          `When done: run the relevant tests, and make exactly one commit for this slice (squash any work-in-progress commits into one before pushing). Push this branch and open a PR (\`${prCommand}\`).`,
-          PR_BODY_RULE,
-          COMMIT_STYLE_RULE,
-          'Scope: only touch files needed for this slice. Do not edit the tracking issue (body, labels, assignees, or anything else) — that is owned entirely by the supervisor, not by you.',
-          AGENT_NOTES_REMINDER,
-        ].join('\n'),
-      };
+          `Usa la skill ronin:implement. Eres ronin, en el issue #${task.issueNumber} de ${repoUrl()}, cuyo plan está partido en slices. Implementa esta slice, y solo esta: ${fence('SLICE', task.sliceTitle)}`,
+          `Trabajas en la rama "${branch}", sobre "${stripOrigin(worktreeBase)}".`,
+        ],
+      });
     }
 
     // An issue opened from an approved exploration finding carries its key
@@ -96,25 +124,22 @@ async function buildSliceTask(task: SliceTask): Promise<PreparedTask> {
       // one slice (checklist.ts's seedSingleSlice), so unlike implement-slice
       // this never needs baseBranchFor's "stack on the previous slice" logic
       // or its remote-branch-missing fallback.
-      return {
-        branch: sliceBranch(task.issueNumber, task.sliceIndex),
-        checkout: { kind: 'branch', baseBranch: activeRepo().worktreeBaseRef ?? config.worktreeBaseRef },
+      const branch = sliceBranch(task.issueNumber, task.sliceIndex);
+      const base = activeRepo().worktreeBaseRef ?? config.worktreeBaseRef;
+      return implementTask({
+        branch,
+        base,
+        issueNumber: task.issueNumber,
+        allowComment: true,
+        closes: task.issueNumber,
         prompt: [
-          `You are ronin, an autonomous agent working on issue #${task.issueNumber} in ${repoUrl()}.`,
-          `Read the full issue, including comments: "gh issue view ${task.issueNumber} --comments".`,
-          "Figure out what's being asked. If it's a bug report, explore the repository to find the root cause — do not guess or fabricate a fix without evidence. If it's a feature/change request, make sure the scope and approach are clear before writing any code.",
-          `If the issue's body has a "ronin-ficha:" key, it comes from an exploration finding a human already approved: the diagnosis and the proposal are in the issue (and its finding file, linked as "Ficha"), and so may be the draft change used for the "after" screenshot (the "Cambio borrador usado para el después" diff). Start from them instead of investigating from scratch: confirm the diagnosis against the code, then implement the proposal — the draft is where to start, not necessarily the final change — without widening its scope. Investigate further only where the code contradicts the finding.`,
-          'If the issue lacks enough information to act on it (a bug you cannot reproduce, or a request whose scope/approach is ambiguous), comment on the issue asking precisely for what you need ("gh issue comment") and stop without touching any code — that needs a human answer.',
-          "Once you're confident in the fix or approach, implement it following this repo's CLAUDE.md conventions, including its testing requirements.",
-          `When done: run the relevant tests, and make exactly one commit. Push this branch and open a PR ("gh pr create") with "Closes #${task.issueNumber}" on the first line of the body.`,
-          PR_BODY_RULE,
-          'If the issue shows images (e.g. the "after" of an exploration finding), put them in the PR body too, under "## Qué cambió", reusing the same image URLs and captions exactly as the issue has them — never just say they are in the issue. Leave out the "before" of an exploration finding (its image URL ends in "/antes-<n>.<ext>", e.g. "antes-1.png?raw=true", and it shows the problem as it was): the changelog takes every screenshot a PR shows.',
-          COMMIT_STYLE_RULE,
-          'Scope: only touch files needed for this. Do not edit the tracking issue (body, labels, assignees, or anything else) — that is owned entirely by the supervisor, not by you.',
-          AGENT_NOTES_REMINDER,
-          'Finally, end your entire response with exactly one line, and nothing after it: "RONIN_STATUS: needs-info" if you stopped without opening a PR because you needed clarification, or "RONIN_STATUS: done" if you opened the PR.',
-        ].join('\n'),
-      };
+          `Usa la skill ronin:implement. Eres ronin, en el issue #${task.issueNumber} de ${repoUrl()}, que te asignaron directo: implementa lo que pide. Léelo entero, con sus comentarios: \`gh issue view ${task.issueNumber} --comments\`.`,
+          `Trabajas en la rama "${branch}", sobre "${stripOrigin(base)}". La descripción del PR empieza con "Closes #${task.issueNumber}" en su primera línea.`,
+          'Si la descripción del issue tiene una clave "ronin-ficha:", viene de un hallazgo de una exploración que una persona ya aprobó: el diagnóstico y la propuesta están en el issue (y en su archivo de hallazgo, enlazado como "Ficha"), y puede estar también el cambio borrador que se usó para la captura del "después" (el diff "Cambio borrador usado para el después"). Empieza por ahí en lugar de investigar desde cero: confirma el diagnóstico contra el código y luego implementa la propuesta —el borrador es un punto de partida, no necesariamente el cambio final— sin agrandar su alcance. Investiga más solo donde el código contradiga el hallazgo.',
+          'Si el issue muestra imágenes (por ejemplo, el "después" de un hallazgo), ponlas también en la descripción del PR, bajo "## Qué cambió", con las mismas URLs y leyendas que tiene el issue: nunca digas solo que están en el issue. Deja afuera el "antes" de un hallazgo (su URL termina en "/antes-<n>.<ext>", por ejemplo "antes-1.png?raw=true", y muestra el problema como era): el changelog toma todas las capturas que muestra un PR.',
+          'Esta corrida pide estado: termina con result.report con status "done" si abriste el PR, o "needs-info" si te detuviste a preguntar.',
+        ],
+      });
     }
 
     case 'fix-e2e': {

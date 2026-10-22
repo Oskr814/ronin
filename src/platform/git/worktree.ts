@@ -337,6 +337,20 @@ export async function ensureAgentClone(branch: string, user: AgentUser): Promise
   return agentCloneAt(agentCloneDirFor(branch), `origin/${branch}`, user);
 }
 
+// A branch of ronin's own work (a slice, a spec), as ensureWorktree makes
+// it but in a clone of the agent's user: the branch as origin has it when it
+// exists there — never a new one of the same name, which a later push would
+// put over it — and otherwise new, from baseRef.
+export async function ensureAgentBranchClone(branch: string, baseRef: string, user: AgentUser): Promise<string> {
+  const repo = activeRepo().productRepoPath;
+  await host().exec('git', ['fetch', 'origin'], { cwd: repo });
+  const onOrigin = await host().exec('git', ['rev-parse', '--verify', '--quiet', `refs/remotes/origin/${branch}`], { cwd: repo }).then(() => true, () => false);
+  const base = baseRef.startsWith('origin/') ? baseRef : `origin/${baseRef}`;
+  const dir = await agentCloneAt(agentCloneDirFor(branch), onOrigin ? `origin/${branch}` : base, user);
+  await host().exec('git', ['checkout', '--quiet', '-B', branch], asAgent(user, { cwd: dir }));
+  return dir;
+}
+
 // The head of someone else's PR, by SHA (see ensureExternalReviewWorktree),
 // in a clone of the agent's user: a review that runs the PR's code runs it
 // as that user, in a checkout of its own.

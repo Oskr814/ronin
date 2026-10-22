@@ -719,6 +719,12 @@ describe('runAgentTask — fix-comments-external', () => {
     expect(removeTrustedFixWorktree).not.toHaveBeenCalled();
   });
 
+  it('passes on the status a run reports, where its caller reads it', async () => {
+    startActionsServer.mockResolvedValueOnce({ url: 'http://127.0.0.1:9', token: 't', calls: [], report: () => ({ threads: [], summary: 'Pregunté.', status: 'needs-info' }), close: closeActions, bind: () => {} });
+    runClaudeHeadless.mockResolvedValueOnce('Listo.');
+    expect(await runAgentTask(task)).toBe('Listo.\nRONIN_STATUS: needs-info');
+  });
+
   it('closes the actions server when the run fails', async () => {
     runClaudeHeadless.mockRejectedValueOnce(new Error('boom'));
     await expect(runAgentTask(task)).rejects.toThrow('boom');
