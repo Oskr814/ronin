@@ -80,13 +80,18 @@ async function buildSliceTask(task: SliceTask): Promise<PreparedTask> {
       return {
         branch: planBranch(task.issueNumber),
         checkout: { kind: 'branch' },
+        // Plan only (#257): reads the spec and the code, and writes nothing
+        // but the issue's checklist.
+        actions: {
+          issue: { number: task.issueNumber, body: 'replace' },
+          threads: [],
+          triggers: [],
+          allowed: ['issue.update-body', 'result.report'],
+        },
         prompt: [
-          `You are ronin, an autonomous agent working on tracking issue #${task.issueNumber} in ${repoUrl()}.`,
-          `Read all of these spec files (inside this checkout) as context — together they describe the work, not just the first one:\n${task.specPaths.map((p) => `- ${p}`).join('\n')}`,
-          'Design the implementation plan, sliced into small, independently reviewable pieces (use the planning skill if one is available).',
-          `Rewrite the body of issue #${task.issueNumber} (gh issue edit ${task.issueNumber} --body-file <file>), replacing the templates/tracking-issue.md checklist with the real slices, one line per slice in the format "- [ ] Slice N: <title> — PR: _pending_".`,
-          'Do not implement any code yet — this task is plan-only.',
-        ].join('\n'),
+          `Usa la skill ronin:plan-slices. Eres ronin, en el issue de seguimiento #${task.issueNumber} de ${repoUrl()}.`,
+          `Los archivos del spec, dentro de este checkout:\n${task.specPaths.map((p) => `- ${p}`).join('\n')}`,
+        ].join('\n\n'),
       };
 
     case 'implement-slice': {

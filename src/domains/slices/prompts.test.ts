@@ -138,10 +138,18 @@ describe('runAgentTask — agent-notes reminder', () => {
   });
 
   it('is NOT included for plan', async () => {
-    await runAgentTask({ type: 'plan', issueNumber: 228, specPaths: ['docs/ronin/specs/foo.md'] });
-
-    const prompt = runClaudeHeadless.mock.calls[0][1] as string;
+    const { prompt } = await buildTask({ type: 'plan', issueNumber: 228, specPaths: ['docs/ronin/specs/foo.md'] });
     expect(prompt).not.toContain(AGENT_NOTES_REMINDER);
+  });
+});
+
+describe('sliceTask — plan (#257)', () => {
+  it('reads the spec and may only replace the issue body', async () => {
+    const { prompt, actions } = await buildTask({ type: 'plan', issueNumber: 228, specPaths: ['docs/ronin/specs/a.md', 'docs/ronin/specs/b.md'] });
+
+    expect(actions).toMatchObject({ issue: { number: 228, body: 'replace' }, allowed: ['issue.update-body', 'result.report'] });
+    expect(prompt).toContain('ronin:plan-slices');
+    expect(prompt).toContain('- docs/ronin/specs/a.md\n- docs/ronin/specs/b.md');
   });
 });
 
