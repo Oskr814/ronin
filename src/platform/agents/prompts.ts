@@ -1,4 +1,3 @@
-import { HELP_FOOTER_MARKER, OPTIONS_MARKER, QUESTIONS_SECTION } from '../github/pr-body.js';
 import { config } from '../config/config.js';
 import type { Comment, CommentThread } from '../github/github.js';
 import { activeRepo } from './repo-context.js';
@@ -71,19 +70,6 @@ export const PR_BODY_RULE =
   '"## Decisiones propias" (every choice the request did not settle and you made on your own, each with the reason; "Ninguna." if there were none); ' +
   '"## Fuera de alcance" (what you noticed but left alone on purpose, e.g. the same problem somewhere else; "Nada." if nothing). ' +
   'No other sections. A closing reference ("Closes #N") goes on the first line, before the first section; screenshots go under "## Qué cambió".';
-
-// A PR ronin changes after opening it (a review, a requested change, a
-// /fix-comments): its body has to keep describing the PR as it is now, or
-// the reviewer decides from a description that no longer holds. `gh pr edit`
-// fails on repos that ever used Projects classic (github.ts), so it goes
-// through the REST API. The part from the help marker on is the
-// supervisor's, and it puts it back if it's missing.
-export function prBodyUpdateRule(prNumber: number): string {
-  return 'If you changed code, bring the PR description up to date in this same run: it must describe the PR as it is after your change, not as it was when it was opened. ' +
-    `Read it with "gh api repos/{owner}/{repo}/pulls/${prNumber} --jq .body", rewrite what your change made outdated — usually "## Qué cambió" and "## Cómo se verificó" (its "${TEST_STEPS_TITLE}" block included: a preview prepares its data from it), and "## Decisiones propias" if you decided something on your own — keeping the same sections, headings, language and the "Closes #N" first line, and leave everything from the line "${HELP_FOOTER_MARKER}" on exactly as it is. ` +
-    `If it has a "## ${QUESTIONS_SECTION}" section (questions ronin's internal review left for a person; auto-merge waits while it has any), remove each question that a person's answer or your change settled, together with the hidden "<!-- ${OPTIONS_MARKER} … -->" line under it, and the whole section once it is empty; leave the others exactly as they are. ` +
-    `Save it with "gh api -X PATCH repos/{owner}/{repo}/pulls/${prNumber} -F body=@<file>"; never use "gh pr edit", which fails on this repo. Do not change the title. If nothing in the description became outdated, leave it as it is.`;
-}
 
 export const AGENT_NOTES_REMINDER =
   "If you are committing code changes for this task and learned something " +
