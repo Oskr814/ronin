@@ -39,8 +39,13 @@ export interface AppSession {
 // under it `pnpm install` skips the devDependencies a dev server needs.
 const RONIN_ONLY_ENV = ['RONIN_GITHUB_TOKEN', 'GH_TOKEN', 'GMAIL_APP_PASSWORD', 'WEBHOOK_SECRET', 'NODE_ENV'];
 
-function appEnv(extra: Record<string, string> = {}): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = { ...process.env };
+// CI=true, as nobody is there to answer: when a worktree's node_modules was
+// installed another way (without its devDependencies, before NODE_ENV went),
+// `pnpm install` asks before reinstalling it from scratch, and with no
+// terminal it exits 0 having installed nothing — the dev server then isn't
+// found. Under CI it reinstalls without asking.
+export function appEnv(extra: Record<string, string> = {}): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...process.env, CI: 'true' };
   for (const key of RONIN_ONLY_ENV) delete env[key];
   Object.assign(env, extra);
   return env;
