@@ -9,6 +9,7 @@ import {
   canDo, changed, detailQuery, DETAIL_EVERY_MS, EXPLORATIONS_KEY, follow, getVersion, itemOf, projectColor, repoColor, knowItem, readExplorations, runQuery, runsQuery, S,
   saveScope, SNAPSHOT_KEY, readSnapshot, subscribe, viewOf, xplOfItem, xplRows,
 } from './state.js';
+import type { ItemViewMode } from './state.js';
 
 // What the pages (pages/) read of the shell around them, and what they ask of
 // it. They read with hooks: the snapshot and what was read of an item from
@@ -19,6 +20,7 @@ import {
 
 export type { ExplorationListRow, ExplorationRow, LinearPlanning };
 export type SnapshotItem = Snapshot['items'][number];
+export type { ItemViewMode };
 export type { ItemDetail, ItemRun, ShownRun };
 
 // ---------- what the pages ask of the shell
@@ -159,7 +161,7 @@ export interface ItemView {
   // The run shown (runs[runIdx]) once read, with its lines as they come.
   run: ShownRun | null;
   runIdx: number;
-  view: 'ficha' | 'tx';
+  view: ItemViewMode;
   // The page's tabs ([key, label]) and the one shown, once the detail is
   // read.
   tabs: Array<[string, string]>;

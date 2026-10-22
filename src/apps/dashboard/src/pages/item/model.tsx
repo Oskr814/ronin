@@ -86,12 +86,15 @@ export function runEntries(runs: ItemRun[]): Entry[] {
   return out;
 }
 
+// How a run fails.
+export const FAILED = ['error', 'timeout', 'cut', 'usage_limit'];
+
 // A group as one run: running while a step runs, else how its last step
 // ended (or the first one that failed); from its first step to its last.
 export function entryRun(runs: ItemRun[], entry: Entry): ItemRun {
   const steps = entry.idx.map((i) => runs[i]);
   if (steps.length === 1) return steps[0];
-  const failed = steps.find((run) => ['error', 'timeout', 'cut', 'usage_limit'].includes(run.state));
+  const failed = steps.find((run) => FAILED.includes(run.state));
   const state = steps.some((run) => run.state === 'running') ? 'running' : failed?.state ?? steps[0].state;
   const sum = (key: 'durationMs' | 'costUsd') => (steps.some((run) => run[key] !== undefined) ? steps.reduce((total, run) => total + (run[key] ?? 0), 0) : undefined);
   return { ...steps[0], state, startedAt: steps.at(-1)!.startedAt, durationMs: sum('durationMs'), costUsd: sum('costUsd'), ...(failed?.error ? { error: failed.error } : {}) };

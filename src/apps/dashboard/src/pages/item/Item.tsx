@@ -17,7 +17,7 @@ import { KEY_SEQ_MS, markUnit, moveUnit } from './Keys.js';
 import { useItem, type Action, type ItemPage } from './model.js';
 import { Questions } from './Questions.js';
 import { useReview, type Review } from './Review.js';
-import { Activity, Transcript } from './Runs.js';
+import { Activity, History, Transcript } from './Runs.js';
 
 // An item's page (#85): an issue's or a PR's, with its head, its activity
 // and its tabs (the issue, the PR, Archivos; an exploration PR's Fichas,
@@ -270,6 +270,7 @@ export function Item({ id }: { id: string }) {
   }, [shell]);
 
   if (!v) return null;
+  if (v.view === 'history') return <History v={v} />;
   if (v.view === 'tx') return <Transcript v={v} />;
   const actions = v.detail?.data?.actions;
   const menuEl = actions?.length && session.can(v.item.repo, 'acciones') ? <ActionsMenu actions={actions} open={menu} setOpen={setMenu} pick={pick} /> : null;

@@ -77,7 +77,7 @@ export function route(): Route {
   if (!item && S.page === 'ajustes') return { page: 'settings', props: {}, key: `settings-${S.aj.visits}`, title: 'Ajustes', wide: true };
   if (!item) return { page: 'today', props: {}, title: 'Hoy', tabs: true, wide: false };
   // Reviewing findings or a diff takes the room of the context column.
-  return { page: 'item', props: { id: item.id }, title: item.title, tabs: true, wide: viewOf(item) !== 'tx' && ['fichas', 'files'].includes(docOf(item) ?? ''), item };
+  return { page: 'item', props: { id: item.id }, title: item.title, tabs: true, wide: viewOf(item) === 'ficha' && ['fichas', 'files'].includes(docOf(item) ?? ''), item };
 }
 
 function Tabs() {

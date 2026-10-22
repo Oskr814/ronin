@@ -4,7 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resetShell, showPage, testShell } from '@apps/dashboard/src/test-shell.js';
 import { filesKey, type FilesRead } from './files/model.js';
 import { Item } from './Item.js';
-import { detail, doc, itemRead, type ItemRead } from './test-view.js';
+import type { ItemRun } from '@apps/dashboard/src/shell/hooks.js';
+import { detail, doc, itemRead, NOW, type ItemRead } from './test-view.js';
 
 // The item's page on what the shell read of it: what it draws, its keys,
 // and the bodies it sends.
@@ -136,5 +137,32 @@ describe('an item’s page', () => {
     const { container } = show({ item: { status: 'running' }, runs: [live], run: { runId: 'r1', summary: live, lines: [{ type: 'text', text: 'Busco el total.' }, { type: 'tool', name: 'Read', summary: 'total.ts' }, { type: 'tool', name: 'Bash', summary: '$ pnpm test' }] } });
     expect(container.querySelector('.livecard .say')?.textContent).toBe('Busco el total.');
     expect([...container.querySelectorAll('.livecard li')].map((li) => li.textContent)).toEqual(['Leyó total.ts', 'Corrió pnpm test']);
+  });
+
+  // Many runs (#363): the last three on the activity line and the
+  // transcript's row, the rest in the history.
+  const many = () => {
+    const at = (min: number) => new Date(NOW - min * 60e3).toISOString();
+    const run = (i: number, over: Partial<ItemRun> = {}) => ({ runId: `r${i}`, repo: 'acme/tienda', taskType: 'review-pr', label: '', account: 'a', worktree: '/w', startedAt: at(i * 60), endedAt: at(i * 60 - 5), state: 'ok', steps: 4, durationMs: 300_000, costUsd: 0.5, ...over }) as ItemRun;
+    return [run(0), run(1, { taskType: 'fix-comments', state: 'error', error: 'falló' }), run(2), run(3), run(4), run(5, { group: 'preview:41', taskType: 'preview' }), run(6, { group: 'preview:41', taskType: 'preview-data' })];
+  };
+
+  it('shows the last three runs and opens the rest in the history', () => {
+    vi.setSystemTime(NOW);
+    const { container } = show({ runs: many() });
+    expect(container.querySelectorAll('.act-line .pills .pill')).toHaveLength(2);
+    fireEvent.click(screen.getByRole('button', { name: 'Historial (6) →' }));
+    const rows = [...container.querySelectorAll('.hist > section > ol > li')];
+    expect(rows).toHaveLength(6);
+    expect(container.querySelector('.hist .htot')?.textContent).toBe('6 corridas · 1 falló · 35 min · US$3,50');
+    // The group is one row, its steps unfold under it.
+    fireEvent.click(screen.getByRole('button', { name: /2 pasos/ }));
+    expect(rows[5].querySelectorAll(':scope > ol .hrow')).toHaveLength(2);
+    // An old one opens its transcript, shown after the last three.
+    fireEvent.click(rows[4].querySelector('.hrow')!);
+    const pills = [...container.querySelectorAll('.runs .pill:not(.back-ficha)')];
+    expect(pills.map((p) => p.getAttribute('aria-pressed'))).toEqual([null, 'false', 'false', 'false', 'true']);
+    expect(pills[0].textContent).toBe('Historial6');
+    vi.useRealTimers();
   });
 });
