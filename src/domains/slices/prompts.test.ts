@@ -129,17 +129,20 @@ describe('sliceTask — implementing with the skill (#257)', () => {
 });
 
 describe('runAgentTask — agent-notes reminder', () => {
-  it('is included for fix-e2e', async () => {
-    await runAgentTask({ type: 'fix-e2e', issueNumber: 228, prNumber: 229 });
-
-    const prompt = runClaudeHeadless.mock.calls[0][1] as string;
-    expect(prompt).toContain(AGENT_NOTES_REMINDER);
-    expect(prompt.endsWith(AGENT_NOTES_REMINDER)).toBe(true);
-  });
-
   it('is NOT included for plan', async () => {
     const { prompt } = await buildTask({ type: 'plan', issueNumber: 228, specPaths: ['docs/ronin/specs/foo.md'] });
     expect(prompt).not.toContain(AGENT_NOTES_REMINDER);
+  });
+});
+
+describe('sliceTask — fix-e2e (#257)', () => {
+  it("amends its own PR's commit on the PR branch, with the fix-ci skill", async () => {
+    const { checkout, actions, prompt } = await buildTask({ type: 'fix-e2e', issueNumber: 228, prNumber: 229 });
+
+    expect(checkout).toEqual({ kind: 'pr-branch' });
+    expect(actions).toMatchObject({ prNumber: 229, headRef: 'ronin/228/slice-1', push: { mode: 'amend' }, allowed: ['git.push', 'services.up', 'services.run', 'result.report'] });
+    expect(prompt).toContain('ronin:fix-ci');
+    expect(prompt).not.toContain('git push');
   });
 });
 
