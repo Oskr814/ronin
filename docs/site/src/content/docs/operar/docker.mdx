@@ -105,19 +105,23 @@ Las rutas de datos las fija `compose.yml` en esos volúmenes: lo que diga `.env`
 | Los logs de los workers y las corridas | `docker compose exec runner ls /data/logs` |
 | Una terminal adentro | `docker compose exec ronin bash` |
 | Sumar un repo | `scripts/init.sh --repo owner/nombre` (o Ajustes → Repos) y `docker compose restart runner`, que lo clona al arrancar (espera a que termine lo que está corriendo) |
-| Cambiar `.env` | Editarlo y `docker compose up -d` (recrea `ronin` y `runner` con los valores nuevos) |
+| Cambiar `.env` | Editarlo y `scripts/deploy.sh` (recrea `ronin` y `runner` con los valores nuevos) |
 
-**Claude Code** no se actualiza solo adentro del contenedor: va con la imagen, en la versión de `CLAUDE_CODE_VERSION` del `Dockerfile`. Para otra, `docker compose build --build-arg CLAUDE_CODE_VERSION=<versión> ronin` y `docker compose up -d`.
+**Claude Code** no se actualiza solo adentro del contenedor: va con la imagen, en la versión de `CLAUDE_CODE_VERSION` del `Dockerfile`. Para otra, `docker compose build --build-arg CLAUDE_CODE_VERSION=<versión> ronin`, y después `docker compose up -d --no-deps ronin` y `docker compose up -d --no-deps runner`.
 
 **Al desplegar una versión nueva:**
 
 ```bash
-git pull && docker compose build ronin && docker compose up -d
+git pull && scripts/deploy.sh
 ```
 
-`ronin` se recrea en segundos. `runner` se toma su tiempo: deja de tomar trabajos y espera a que terminen los que están corriendo, con sus agentes, antes de irse. Mientras tanto, los webhooks y el tablero siguen andando y lo que llega queda en la cola para el runner nuevo. `docker compose logs -f runner` dice a cuántos procesos espera.
+Recrea primero `ronin`, que vuelve en segundos, y después `runner`. El runner se toma su tiempo: deja de tomar trabajos y espera a que terminen los que están corriendo, con sus agentes, antes de irse. Mientras tanto, los webhooks y el tablero siguen andando y lo que llega queda en la cola para el runner nuevo. `docker compose logs -f runner` dice a cuántos procesos espera.
 
-Si el cambio es solo del servidor (el tablero, el portal, la API), alcanza con `docker compose up -d ronin`, que no toca la cola.
+Si el cambio es solo del servidor (el tablero, el portal, la API), alcanza con `scripts/deploy.sh ronin`, que no toca la cola.
+
+<Aside type="caution" title="No despliegues los dos con un solo docker compose up -d">
+`docker compose up -d` crea todos los contenedores antes de arrancar ninguno: el `ronin` nuevo queda esperando, sin arrancar, a que el runner viejo termine de esperar a sus trabajos, y la API se cae todo ese rato. `scripts/deploy.sh` los recrea por separado (`docker compose up -d --no-deps ronin` y después `runner`).
+</Aside>
 
 <Aside type="caution" title="La espera tiene un tope">
 El runner espera hasta 45 minutos (`stop_grace_period` en `compose.yml`). Lo que siga corriendo después se corta: su trabajo queda perdido y el tick siguiente lo retoma.
