@@ -1,16 +1,20 @@
 import { basename, join } from 'node:path';
 import { runAgentTask, type AgentTask } from '@platform/agents/agent-task.js';
 import type { PrototypeBrowser, RunningApp } from './prompts.js';
-import { appDown, appUp } from '../product-app/index.js';
+import { appDown, appUp, removeAppCheckout } from '../product-app/index.js';
+import { appStack } from '../product-app/services.js';
+import type { RunApp } from '@platform/actions/executors.js';
+import { asAgent, prepareAgentUser, repoAgentUser, type AgentUser } from '@platform/agents/agent-user.js';
 import { loginAllUsers, renderHtmlToPng } from '../product-app/index.js';
 import { loadAppDefinition, type AppDefinition } from '../product-app/index.js';
 import { config } from '@platform/config/config.js';
 import { insideDir } from '../explorations/index.js';
 import { mcpServer, originsOf } from '../explorations/index.js';
 import { activeRepo } from '@platform/agents/repo-context.js';
-import { removeWorktreeDir } from '@platform/git/worktree.js';
+import { agentCloneAt } from '@platform/git/worktree.js';
 import { worktreeLock } from '@platform/workers/worktree-lock.js';
 import { host } from '@platform/host/host.js';
+import { requestImagePath, type PortalRequest } from './requests.js';
 
 
 // A run of an agent on the app, brought up from the base branch in a
@@ -18,6 +22,12 @@ import { host } from '@platform/host/host.js';
 // portal request's prototype (prototype.ts) or its reproduction
 // (reproduce.ts). Nothing is pushed: the checkout is thrown away once the
 // caller has what the agent left. See docs/DESIGN.md §11.11.
+//
+// In the image (#257), the checkout is a clone of the agent's user: the app
+// runs as that user, the agent runs sealed, as it — writing only in its
+// checkout and its output directory, reaching the stack through app.exec —
+// and the git ronin needs there (what changed) runs as that user too.
+// Outside it (no agent users), ronin's worktree, as before.
 
 // Its own directory name (prototype-portal-p-<n>, prototype-portal-r-<n>), so
 // neither sweepOrphanedWorktrees (ronin-<n>-…) nor exploration (app-<name>)
@@ -135,9 +145,23 @@ export interface PrototypeTarget {
   // or portal-r-<n>, never shared between two runs.
   key: string;
   appName: string;
-  // `compose`: the docker compose command of the app's stack, for a task
-  // that runs tests in it (a portal reproduction, #137).
-  task: (base: PrototypeTaskBase, extra: { compose: string }) => AgentTask;
+  // `app`: the app's stack, for a task that runs tests in it (a portal
+  // reproduction, #137, through app.exec). `stage`: copies a file the
+  // agent has to read (a request's image, in ronin's data) into the output
+  // dir, and gives the copy's path.
+  task: (base: PrototypeTaskBase, extra: { app: RunApp; stage: (path: string) => Promise<string> }) => AgentTask | Promise<AgentTask>;
+}
+
+// The request's conversation for the agent, each image staged where it
+// can read it (runOnApp's `stage`): the request's own are in ronin's data.
+export async function stagedConversation(request: Pick<PortalRequest, 'number' | 'messages'>, stage: (path: string) => Promise<string>) {
+  const conversation = [];
+  for (const m of request.messages) {
+    const images = [];
+    for (const file of m.images) images.push(await stage(requestImagePath(request.number, file)));
+    conversation.push({ from: m.from, text: m.text, images });
+  }
+  return conversation;
 }
 
 // What a run on the app left, for whoever reads its result: while it lasts,
@@ -149,29 +173,37 @@ export interface AppRun {
   outputPath: string;
   // What the app's own startup changed, left out of the diff.
   generated: string[];
+  // The draft the agent left in the checkout, as a diff (draftDiff).
+  diff: () => Promise<string>;
   // A screenshot or an HTML file the agent named, as an image file.
   shot: (path: string, name: string) => Promise<{ path: string; viewport: 'desktop' | 'mobile' }>;
 }
 
 // Detached at the base branch, fresh every time: a prototype starts from
 // what's on main today, never from a previous prototype's leftovers.
-async function freshWorktree(key: string): Promise<string> {
+async function freshCheckout(key: string, user: AgentUser | null): Promise<string> {
   const dir = prototypeDir(key);
   const repo = activeRepo().productRepoPath;
+  const base = activeRepo().worktreeBaseRef ?? config.worktreeBaseRef;
   if (await host().fs.exists(dir)) {
     await appDown(dir);
-    await removeWorktreeDir(dir, 'prototype');
+    await removeAppCheckout(dir, 'prototype');
   }
   await host().exec('git', ['fetch', 'origin'], { cwd: repo });
   await host().fs.mkdir(activeRepo().worktreeBasePath, { recursive: true });
-  await host().exec('git', ['worktree', 'add', '--detach', dir, activeRepo().worktreeBaseRef ?? config.worktreeBaseRef], { cwd: repo });
+  if (user) return agentCloneAt(dir, base, user);
+  await host().exec('git', ['worktree', 'add', '--detach', dir, base], { cwd: repo });
   return dir;
 }
 
+// git in the checkout: as the agent's user when it is its clone.
+const gitIn = (dir: string, user: AgentUser | null, args: string[]) =>
+  host().exec('git', args, user ? asAgent(user, { cwd: dir, maxBuffer: 16 * 1024 * 1024 }) : { cwd: dir, maxBuffer: 16 * 1024 * 1024 });
+
 // Files that differ from the base right after the app came up: what its
 // build generates (e.g. a .NET API's documentation XML), not the draft.
-export async function changedFiles(dir: string): Promise<string[]> {
-  const { stdout } = await host().exec('git', ['status', '--porcelain', '-z', '--untracked-files=all'], { cwd: dir, maxBuffer: 16 * 1024 * 1024 });
+export async function changedFiles(dir: string, user: AgentUser | null = null): Promise<string[]> {
+  const { stdout } = await gitIn(dir, user, ['status', '--porcelain', '-z', '--untracked-files=all']);
   const entries = stdout.split('\0');
   const files: string[] = [];
   for (let i = 0; i < entries.length; i++) {
@@ -185,10 +217,10 @@ export async function changedFiles(dir: string): Promise<string[]> {
 
 // The draft change the agent left in the checkout, new files included, and
 // leaving out what the app's own startup had already changed.
-export async function draftDiff(dir: string, generated: string[] = []): Promise<string> {
-  await host().exec('git', ['add', '-A', '-N'], { cwd: dir }).catch(() => {});
+export async function draftDiff(dir: string, generated: string[] = [], user: AgentUser | null = null): Promise<string> {
+  await gitIn(dir, user, ['add', '-A', '-N']).catch(() => {});
   const exclude = generated.map((file) => `:(exclude,literal)${file}`);
-  const { stdout } = await host().exec('git', ['diff', '--', '.', ...exclude], { cwd: dir, maxBuffer: 16 * 1024 * 1024 });
+  const { stdout } = await gitIn(dir, user, ['diff', '--', '.', ...exclude]);
   return stdout.trim();
 }
 
@@ -197,25 +229,39 @@ export async function draftDiff(dir: string, generated: string[] = []): Promise<
 // `collect`: everything is thrown away right after.
 export async function runOnApp<T>(target: PrototypeTarget, collect: (run: AppRun) => Promise<T>): Promise<T> {
   const { key, appName } = target;
-  const dir = await freshWorktree(key);
+  const user = repoAgentUser();
+  if (user) await prepareAgentUser(user);
+  const dir = await freshCheckout(key, user);
   const outDir = join(activeRepo().worktreeBasePath, 'prototype-out', `${key}-${Date.now()}`);
   try {
     const app = await loadAppDefinition(dir, appName);
-    const session = await appUp(dir, appName, { instance: key });
+    const session = await appUp(dir, appName, { instance: key, ...(user ? { as: user } : {}) });
     const authStates = await loginAllUsers(session);
-    const generated = await changedFiles(dir).catch(() => []);
+    const generated = await changedFiles(dir, user).catch(() => []);
     const origins = originsOf(session.baseUrl, session.ctx.ports, session.ctx.port);
     const browsers = prototypeBrowsers(app);
     await host().fs.mkdir(outDir, { recursive: true });
+    // Everything the agent's browsers read goes in its output dir: the
+    // logins, too — the app's state, where appUp left them, isn't its.
+    await host().fs.mkdir(join(outDir, 'auth'), { recursive: true });
     const servers: Record<string, unknown> = {};
     for (const b of browsers) {
       await host().fs.mkdir(join(outDir, b.server), { recursive: true });
-      servers[b.server] = mcpServer(app, b.viewport, authStates[b.role], join(outDir, b.server), origins);
+      const login = join(outDir, 'auth', basename(authStates[b.role]));
+      await host().fs.writeFile(login, await host().fs.readFile(authStates[b.role]));
+      servers[b.server] = mcpServer(app, b.viewport, login, join(outDir, b.server), origins);
     }
     const mcpConfigPath = join(outDir, 'mcp.json');
     await host().fs.writeFile(mcpConfigPath, JSON.stringify({ mcpServers: servers }, null, 2));
     const outputPath = join(outDir, 'result.json');
-    await runAgentTask(target.task({
+    let staged = 0;
+    const stage = async (path: string) => {
+      const copy = join(outDir, 'request', `${++staged}-${basename(path)}`);
+      await host().fs.mkdir(join(outDir, 'request'), { recursive: true });
+      await host().fs.writeFile(copy, await host().fs.readFile(path));
+      return copy;
+    };
+    await runAgentTask(await target.task({
       appName,
       appPath: app.path,
       checkoutDir: dir,
@@ -225,7 +271,7 @@ export async function runOnApp<T>(target: PrototypeTarget, collect: (run: AppRun
       baseUrl: session.baseUrl,
       homePath: app.homePath ?? '/',
       browsers,
-    }, { compose: session.ctx.compose }));
+    }, { app: appStack(dir, user), stage }));
     // A screenshot lands in the folder of the browser that took it; an HTML
     // file sits at the top of outDir and renders at desktop size.
     const shot = async (path: string, name: string) => {
@@ -236,10 +282,10 @@ export async function runOnApp<T>(target: PrototypeTarget, collect: (run: AppRun
       await renderHtmlToPng(path, png, app.viewports[viewport]);
       return { path: png, viewport };
     };
-    return await collect({ appName, dir, outDir, outputPath, generated, shot });
+    return await collect({ appName, dir, outDir, outputPath, generated, diff: () => draftDiff(dir, generated, user), shot });
   } finally {
     await appDown(dir);
-    await removeWorktreeDir(dir, 'prototype');
+    await removeAppCheckout(dir, 'prototype');
     await host().fs.rm(outDir, { recursive: true, force: true }).catch(() => {});
   }
 }
@@ -261,7 +307,7 @@ export function makePrototype<T>(target: PrototypeTarget, deliver: (draft: Proto
       resumen: output.resumen,
       ...(output.mensaje ? { mensaje: output.mensaje } : {}),
       ...shots,
-      patch: await draftDiff(run.dir, run.generated),
+      patch: await run.diff(),
     });
   });
 }

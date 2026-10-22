@@ -25,7 +25,7 @@ const outDir = mkdtempSync(join(tmpdir(), 'ronin-portal-repro-'));
 mkdirSync(join(outDir, 'sales-desktop'));
 for (const name of ['error-1.png', 'arreglo-1.png']) writeFileSync(join(outDir, 'sales-desktop', name), name);
 const run: AppRun = {
-  appName: 'backoffice', dir: '/w', outDir, outputPath: join(outDir, 'result.json'), generated: [],
+  appName: 'backoffice', dir: '/w', outDir, outputPath: join(outDir, 'result.json'), generated: [], diff: () => draftDiff(),
   shot: async (path) => ({ path, viewport: 'desktop' }),
 };
 
@@ -40,10 +40,13 @@ const reproduced = {
 };
 const notReproduced = { reproducido: false, mensaje: 'Intenté que pasara, pero ahí el filtro sí muestra los pedidos del día.', pregunta: '¿Me dices el número de un pedido que no te aparece?', pasos: ['Filtró hasta 16/10: aparecen'], resumen: 'Quizás el pedido viene de Odoo con otra hora.' };
 
+const app = { exec: vi.fn() };
+const extra = { app, stage: async (path: string) => `/out/request/${path.split('/').pop()}` };
+
 // The agent "writes" `result` and the supervisor reads it, as in the real run.
-function agentWrites(result: unknown, check?: (target: PrototypeTarget) => void) {
+function agentWrites(result: unknown, check?: (target: PrototypeTarget) => void | Promise<void>) {
   runOnApp.mockImplementation(async (target: PrototypeTarget, collect: (r: AppRun) => Promise<unknown>) => {
-    check?.(target);
+    await check?.(target);
     writeFileSync(run.outputPath, JSON.stringify(result));
     return collect(run);
   });
@@ -96,9 +99,9 @@ describe('parseReproduction', () => {
 describe('reproduceRequest', () => {
   it('reproduced with a small fix that turned its test green: ronin fixes it, the person approves nothing', async () => {
     const n = await errorRequest();
-    agentWrites(reproduced, (target) => {
+    agentWrites(reproduced, async (target) => {
       expect(target).toMatchObject({ key: `portal-r-${n}`, appName: 'backoffice' });
-      expect(target.task({} as never, { compose: 'docker compose -p x' })).toMatchObject({ type: 'portal-reproduce', requestNumber: n, compose: 'docker compose -p x', steps: 'Sales, Gestionar Pedidos, hasta 16/10', round: 1, canAsk: true });
+      expect(await target.task({} as never, extra)).toMatchObject({ type: 'portal-reproduce', requestNumber: n, app, steps: 'Sales, Gestionar Pedidos, hasta 16/10', round: 1, canAsk: true });
     });
     await reproduceRequest(n);
     const r = (await getRequest(n))!;
@@ -157,7 +160,7 @@ describe('reproduceRequest', () => {
     for (const over of [{ tries: MAX_REPRODUCTIONS - 1 }, { questions: 3 }]) {
       await rm(config.portal.dataDir, { recursive: true, force: true });
       const n = await errorRequest(over);
-      agentWrites(notReproduced, (target) => expect(target.task({} as never, { compose: '' })).toMatchObject({ canAsk: false }));
+      agentWrites(notReproduced, async (target) => expect(await target.task({} as never, extra)).toMatchObject({ canAsk: false }));
       await reproduceRequest(n);
       const r = (await getRequest(n))!;
       expect(r).toMatchObject({ status: 'big', verdict: { reason: 'No se pudo reproducir con datos de prueba.' } });

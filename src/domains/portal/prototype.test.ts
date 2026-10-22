@@ -53,7 +53,7 @@ describe('portal prototype', () => {
     const n = await minorRequest();
     makePrototype.mockImplementation(async (target: PrototypeTarget, deliver: (d: PrototypeDraft) => Promise<unknown>) => {
       expect(target).toMatchObject({ key: `portal-p-${n}`, appName: 'backoffice' });
-      expect(target.task({} as never, { compose: '' })).toMatchObject({ type: 'portal-prototype', requestNumber: n, instruction: 'Pedido N° 2, Admin', round: 1 });
+      expect(await target.task({} as never, { app: { exec: vi.fn() }, stage: async (p: string) => `/out/request/${p.split('/').pop()}` })).toMatchObject({ type: 'portal-prototype', requestNumber: n, instruction: 'Pedido N° 2, Admin', round: 1 });
       return deliver(draft);
     });
     await prototypeRequest(n);

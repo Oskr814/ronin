@@ -457,6 +457,14 @@ En un issue que ronin todavía no está trabajando (sin el label `ronin`), solo 
 
 La app levantada con un navegador por rol y viewport sigue existiendo para el portal (§16.4): `runOnApp` en `domains/portal/app-run.ts` levanta la app desde la rama base en un worktree propio con una instancia de compose propia, corre el agente y le pasa al que llama lo que dejó. Después tira el worktree, así que no queda rama ni PR. `makePrototype` le suma el antes, el cambio borrador y el después. Una app a la vez por repo (`.prototype.lock`), y el worker espera su turno en lugar de descartar el pedido.
 
+En la imagen, el checkout es un clon del usuario del agente (#257). Los pedidos llegan por el portal, de cualquiera, así que:
+
+- **La app** corre como ese usuario (§11.2).
+- **El agente** corre sellado y como él: escribe solo en su clon y en su directorio de salida.
+- **Lo que lee** va en ese mismo directorio: los logins de sus navegadores (copias de los de la app) y las imágenes del pedido.
+- **Los tests** de una reproducción llegan al stack con `app.exec` (`oneOff`, el `compose run --rm` de antes).
+- **El diff** del borrador lo saca ronin con git del usuario del agente, nunca con el suyo.
+
 ### 12. Previews por PR en la tailnet (`/preview`)
 
 Para probar un PR sin entrar al server, armar el worktree y levantar la app a mano. `@ronin-agent /preview [app]` en un PR (no fork) hace eso mismo con el código del head del PR y responde con una URL de la tailnet y los usuarios de seed. La app es opcional cuando el manifiesto define una sola, o cuando el PR cambia archivos en la carpeta (`path`) de una sola de sus apps (`appsTouched`): un cambio en `apps/backoffice` y `packages/ui` es del backoffice. Una app con `path` en la raíz no cuenta, porque las tocaría todas.

@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, extname } from 'node:path';
-import { makePrototype, PrototypeDeclined, type PrototypeDraft } from './app-run.js';
+import { makePrototype, PrototypeDeclined, stagedConversation, type PrototypeDraft } from './app-run.js';
 import { config } from '@platform/config/config.js';
 import { log } from '@platform/logger.js';
 import { host } from '@platform/host/host.js';
@@ -93,11 +93,11 @@ function draw(request: PortalRequest, round: number): Promise<PortalRequest | un
     {
       key: `portal-p-${n}`,
       appName: request.app,
-      task: (base) => portalTask({
+      task: async (base, { stage }) => portalTask({
         type: 'portal-prototype',
         requestNumber: n,
         ...base,
-        conversation: request.messages.map((m) => ({ from: m.from, text: m.text, images: m.images.map((file) => requestImagePath(n, file)) })),
+        conversation: await stagedConversation(request, stage),
         instruction: request.verdict?.instruction ?? '',
         round,
       }),
