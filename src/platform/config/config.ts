@@ -249,8 +249,6 @@ const TASK_MODEL_DEFAULTS: Record<string, string> = {
   'explore-feedback': 'sonnet',
   // One screenshot of a draft change on the running app.
   'explore-redo-after': 'sonnet',
-  // One commit subject line.
-  'commit-subject': 'haiku',
   // Reading a PR and its seeds, then a few API calls or inserts, checked by
   // reading them back.
   'prepare-preview-data': 'sonnet',

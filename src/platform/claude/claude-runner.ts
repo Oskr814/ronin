@@ -137,11 +137,15 @@ function makeLineBuffer(onLine: (line: string) => void): (chunk: Buffer) => void
 // and the MCP servers it gets (`--mcp-config`, exploration's browsers) — only
 // those: --strict-mcp-config keeps out whatever MCP servers the account's
 // Claude config has, which a headless task has no business reaching.
+// `noTools` leaves the run without any tool, MCP servers included: a plain
+// call to the model, like the exploration's commit subject
+// (domains/explorations/pr.ts).
 export interface HeadlessRunOptions {
   model?: string;
   effort?: string;
   agentsFile?: string;
   mcpConfigFile?: string;
+  noTools?: boolean;
 }
 
 // The arguments of every headless run; shared with scripts/fix-replay.ts so
@@ -157,6 +161,7 @@ export function claudeHeadlessArgs(prompt: string, opts: HeadlessRunOptions = {}
     ...(effort ? ['--effort', effort] : []),
     ...(opts.agentsFile ? ['--agents', opts.agentsFile] : []),
     ...(opts.mcpConfigFile ? ['--mcp-config', opts.mcpConfigFile, '--strict-mcp-config'] : []),
+    ...(opts.noTools ? ['--tools', '', '--strict-mcp-config'] : []),
   ];
 }
 
