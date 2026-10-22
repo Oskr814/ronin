@@ -105,17 +105,6 @@ beforeEach(() => {
   startActionsServer.mockResolvedValue({ url: 'http://127.0.0.1:9', token: 'run-token', calls: [], report: () => null, close: closeActions });
 });
 
-describe('runAgentTask — agent-notes reminder', () => {
-  it('is included for fix-review', async () => {
-    await runAgentTask({ type: 'fix-review', issueNumber: 228, prNumber: 229 });
-
-    const prompt = runClaudeHeadless.mock.calls[0][1] as string;
-    expect(prompt).toContain(AGENT_NOTES_REMINDER);
-    expect(prompt.endsWith(AGENT_NOTES_REMINDER)).toBe(true);
-  });
-
-});
-
 function botThread(overrides: Partial<BotThread> = {}): BotThread {
   return {
     id: 'T',
@@ -743,34 +732,31 @@ describe('runAgentTask — fix-comments-external', () => {
   });
 });
 
-describe('runAgentTask — self-review in fix tasks', () => {
-  const prompts = async (task: Parameters<typeof runAgentTask>[0]) => {
-    runClaudeHeadless.mockClear();
+describe('runAgentTask — fix-review', () => {
+  const task = { type: 'fix-review' as const, issueNumber: 228, prNumber: 229, openThreads: [{ id: 'PRRT_7', commentId: 77, body: 'Falta validar el monto' }] };
+
+  it('attends the review with the skill, on the PR branch, and sums it up in one comment', async () => {
     getPullRequestStatus.mockResolvedValue({ headRefName: 'ronin/228/slice-1' });
     await runAgentTask(task);
-    return runClaudeHeadless.mock.calls[0][1] as string;
-  };
-  const trigger = [{ id: 9, kind: 'issue' as const, body: '/fix-comments', reactionsEyes: 0, authorLogin: 'someone' }];
-  const fixTasks = {
-    'fix-review': { type: 'fix-review' as const, issueNumber: 228, prNumber: 229 },
-  };
 
-  for (const [name, task] of Object.entries(fixTasks)) {
-    it(`${name}: records the pre-fix HEAD and has a fresh subagent review the change with the criteria before pushing`, async () => {
-      const prompt = await prompts(task);
-      expect(prompt).toContain('git rev-parse HEAD');
-      expect(prompt).toContain('model "sonnet"');
-      expect(prompt).toContain('"git diff <that SHA> HEAD"');
-      expect(prompt).toContain('repos/{owner}/{repo}/pulls/229/comments');
-      expect(prompt).toContain('<<<CRITERIA_START>>>\n# Criterio\n## No marcar\n- sin constantes en migraciones\n<<<CRITERIA_END>>>');
-      expect(prompt).toContain('do not push that part of the change');
-    });
-  }
-
-  it('says where to report what could not be fixed', async () => {
-    expect(await prompts(fixTasks['fix-review'])).toContain('say so in a PR comment ("gh pr comment 229');
+    expect(ensureTrustedFixWorktree).toHaveBeenCalledWith('ronin/228/slice-1');
+    expect(startActionsServer).toHaveBeenCalledWith(expect.objectContaining({
+      scope: expect.objectContaining({
+        threads: [{ commentId: 77, threadId: 'PRRT_7' }],
+        triggers: [],
+        allowed: ['pr.reply', 'pr.comment', 'pr.resolve-thread', 'pr.update-body', 'git.push', 'services.up', 'services.run', 'result.report'],
+      }),
+    }));
+    const prompt = runClaudeHeadless.mock.calls[0][1] as string;
+    expect(prompt).toContain('ronin:address-comments');
+    expect(prompt).toContain('pidió cambios en su review');
+    expect(prompt).toContain('gh pr view 229 --comments');
+    expect(prompt).toContain('deja un solo pr.comment que resuma la tanda');
+    expect(prompt).toContain('primer comentario 77');
   });
+});
 
+describe('runAgentTask — the self-review', () => {
   it('is not added to tasks that do not answer a review', async () => {
     runClaudeHeadless.mockClear();
     await run(sliceTask({ type: 'fix-e2e', issueNumber: 228, prNumber: 229 }));
@@ -814,15 +800,3 @@ describe('reviewAgentDefinitions', () => {
   });
 });
 
-describe('runAgentTask — the PR description kept up to date', () => {
-  const mentions = [{ id: 1, kind: 'issue' as const, body: 'test', reactionsEyes: 0, authorLogin: 'someone' }];
-  it.each([
-    ['fix-review', { type: 'fix-review' as const, issueNumber: 228, prNumber: 229 }],
-  ])('asks %s to update it through the API, keeping the help footer', async (_name, task) => {
-    await runAgentTask(task as never);
-    const prompt = runClaudeHeadless.mock.calls[0][1] as string;
-    expect(prompt).toContain('bring the PR description up to date');
-    expect(prompt).toContain('gh api -X PATCH repos/{owner}/{repo}/pulls/229 -F body=@<file>');
-    expect(prompt).toContain('<!-- ronin:help -->');
-  });
-});

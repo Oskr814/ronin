@@ -14,7 +14,7 @@ import { runServices } from '../product-app/services.js';
 // platform/agents/agent-task.ts runs it.
 
 export type ReviewTask =
-  | { type: 'fix-review'; issueNumber: number; prNumber: number }
+  | { type: 'fix-review'; issueNumber: number; prNumber: number; openThreads: ReviewThread[] }
   // What ronin's internal review found on one of its own PRs (#194,
   // internal.ts): fix it before a person reviews the PR, and leave what only
   // a person can decide as questions in the description.
@@ -230,20 +230,20 @@ async function buildReviewTask(task: ReviewTask): Promise<PreparedTask> {
   switch (task.type) {
     case 'fix-review': {
       const pr = await getPullRequestStatus(task.prNumber);
-      const criteria = await loadReviewCriteria();
-      return {
-        branch: pr.headRefName,
-        checkout: { kind: 'branch' },
-        prompt: [
-          `You are ronin. PR #${task.prNumber} (tracking issue #${task.issueNumber}) has unresolved review comments.`,
-          `Read them with "gh pr view ${task.prNumber} --comments", apply the necessary changes following this repo's CLAUDE.md conventions, then amend the existing commit (\`git commit --amend\`) — never create a new commit — and force-push (\`git push --force-with-lease\`) to this same branch.`,
-          ...selfReviewBlock(criteria.text, task.prNumber, { reportIn: `in a PR comment ("gh pr comment ${task.prNumber} --body <text>")` }),
-          prBodyUpdateRule(task.prNumber),
-          'The spec is a guide written before implementation started, not a contract that overrides a human catching something during review — if a comment gives a clear, concrete rationale for a change that deviates from what the spec says (e.g. it missed an edge case, or points out a real bug/gap), apply it using your own judgment. Only leave the PR as-is and defer to a human when the request is ambiguous, a matter of opinion, or needs a design decision the spec does not already resolve.',
-          'Do not edit the tracking issue or change any labels, on either the issue or this PR — that is owned entirely by the supervisor, not by you.',
-          AGENT_NOTES_REMINDER,
-        ].join('\n'),
-      };
+      return addressComments({
+        prNumber: task.prNumber,
+        headRefName: pr.headRefName,
+        trigger: [],
+        openThreads: task.openThreads,
+        intro: `Usa la skill ronin:address-comments. Eres ronin, en el PR #${task.prNumber} de ${repoUrl()}, que abriste tú para el issue #${task.issueNumber}. Una persona pidió cambios en su review: léela entera, con su resumen y sus comentarios (\`gh pr view ${task.prNumber} --comments\` y los hilos de abajo). Este checkout es la cabeza del PR, en detached HEAD; su rama es "${pr.headRefName}".`,
+        threadsTitle: 'Los hilos de review sin resolver del PR que no abriste tú',
+        rules: [
+          'No hay un comentario que haya pedido esto: en lugar del paso 7, deja un solo pr.comment que resuma la tanda (qué cambiaste y qué queda para una persona). Lo que la review pidió solo en su resumen, sin un hilo, también lo atiendes, y lo cuentas ahí.',
+          'El spec del issue es una guía de antes de implementar, no un contrato: si la review da un motivo claro y concreto para apartarse de él (un caso borde que faltaba, un bug o un hueco real), aplícalo.',
+          'La descripción del PR es tuya: si cambiaste código, ponla al día con pr.update-body, como dice la skill. No toques el issue ni las etiquetas: son del supervisor.',
+        ],
+        allowUpdateBody: true,
+      });
     }
 
     case 'fix-internal-review': {
