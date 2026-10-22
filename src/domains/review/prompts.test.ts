@@ -25,6 +25,8 @@ const ensureExternalReviewWorktree = vi.fn();
 const removeExternalReviewWorktree = vi.fn();
 const ensureTrustedFixWorktree = vi.fn();
 const removeTrustedFixWorktree = vi.fn();
+const ensureAgentClone = vi.fn();
+const removeAgentClone = vi.fn();
 vi.mock('@platform/git/worktree.js', () => ({
   ensureWorktree: (...args: unknown[]) => ensureWorktree(...args),
   remoteBranchExists: (...args: unknown[]) => remoteBranchExists(...args),
@@ -32,6 +34,8 @@ vi.mock('@platform/git/worktree.js', () => ({
   removeExternalReviewWorktree: (...args: unknown[]) => removeExternalReviewWorktree(...args),
   ensureTrustedFixWorktree: (...args: unknown[]) => ensureTrustedFixWorktree(...args),
   removeTrustedFixWorktree: (...args: unknown[]) => removeTrustedFixWorktree(...args),
+  ensureAgentClone: (...args: unknown[]) => ensureAgentClone(...args),
+  removeAgentClone: (...args: unknown[]) => removeAgentClone(...args),
 }));
 
 const runClaudeHeadless = vi.fn();
@@ -55,7 +59,17 @@ vi.mock('node:fs/promises', () => ({
 const startActionsServer = vi.fn();
 const closeActions = vi.fn();
 vi.mock('@platform/actions/server.js', () => ({ startActionsServer: (...args: unknown[]) => startActionsServer(...args) }));
-vi.mock('@platform/actions/executors.js', () => ({ headOf: async () => 'start-sha', checkoutState: vi.fn(), executeAction: vi.fn() }));
+vi.mock('@platform/actions/executors.js', () => ({
+  rootCheckout: (dir: string, repo: string) => ({ dir, repo, git: async () => 'start-sha' }),
+  agentCheckout: (dir: string, repo: string) => ({ dir, repo, git: async () => 'start-sha' }),
+  checkoutState: vi.fn(),
+  executeAction: vi.fn(),
+}));
+const agentUser = vi.fn();
+vi.mock('@platform/agents/agent-user.js', () => ({
+  agentUser: () => agentUser(),
+  asAgent: (_user: unknown, opts: object) => opts,
+}));
 
 const mintReadToken = vi.fn();
 vi.mock('@platform/github/read-token.js', () => ({ mintReadToken: (...args: unknown[]) => mintReadToken(...args) }));
@@ -79,12 +93,15 @@ beforeEach(() => {
   removeExternalReviewWorktree.mockResolvedValue(undefined);
   ensureTrustedFixWorktree.mockResolvedValue('/tmp/worktree');
   removeTrustedFixWorktree.mockResolvedValue(undefined);
+  ensureAgentClone.mockResolvedValue('/tmp/agent-clone');
+  removeAgentClone.mockResolvedValue(undefined);
   runClaudeHeadless.mockResolvedValue(undefined);
   getPullRequestStatus.mockResolvedValue({ headRefName: 'ronin/228/slice-1' });
   rm.mockResolvedValue(undefined);
   writeFile.mockResolvedValue(undefined);
   closeActions.mockResolvedValue(undefined);
   mintReadToken.mockResolvedValue(null);
+  agentUser.mockReturnValue(null);
   startActionsServer.mockResolvedValue({ url: 'http://127.0.0.1:9', token: 'run-token', calls: [], report: () => null, close: closeActions });
 });
 
@@ -683,6 +700,21 @@ describe('runAgentTask — fix-comments-external', () => {
     mintReadToken.mockRejectedValueOnce(new Error('la GitHub App no está instalada'));
     await expect(runAgentTask(task)).rejects.toThrow('no está instalada');
     expect(runClaudeHeadless).not.toHaveBeenCalled();
+  });
+
+  it("runs as the agent's user, in a clone of its own, when the image has that user", async () => {
+    const user = { uid: 1500, gid: 1500, home: '/home/agent' };
+    agentUser.mockReturnValue(user);
+    await runAgentTask(task);
+
+    expect(ensureAgentClone).toHaveBeenCalledWith('feat/cambio-cliente-pedido-creado', user);
+    expect(ensureTrustedFixWorktree).not.toHaveBeenCalled();
+    expect(runClaudeHeadless.mock.calls[0][0]).toBe('/tmp/agent-clone');
+    const opts = runClaudeHeadless.mock.calls[0][3];
+    expect(opts.runAs).toEqual(user);
+    expect(opts.sealedEnv.HOME).toBe('/home/agent');
+    expect(removeAgentClone).toHaveBeenCalledWith('feat/cambio-cliente-pedido-creado');
+    expect(removeTrustedFixWorktree).not.toHaveBeenCalled();
   });
 
   it('closes the actions server when the run fails', async () => {

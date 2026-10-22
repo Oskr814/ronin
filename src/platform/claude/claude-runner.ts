@@ -4,6 +4,7 @@ import { activeRepo } from '../agents/repo-context.js';
 import { log } from '../logger.js';
 import { recordRateLimit, recordUsageLimitHit } from './claude-usage.js';
 import type { RunResult, RunSink, RunStep } from '../agents/run-record.js';
+import { lendClaudeAccount, type AgentUser } from '../agents/agent-user.js';
 
 const MAX_LOG_LINE = 2000;
 
@@ -135,8 +136,10 @@ function makeLineBuffer(onLine: (line: string) => void): (chunk: Buffer) => void
 // its task type (config.ts's agentModelFor/agentEffortFor), a file with
 // the subagents it may launch (`--agents`, the external review's workers),
 // and the MCP servers it gets (`--mcp-config`, exploration's browsers) — only
-// those: --strict-mcp-config keeps out whatever MCP servers the account's
-// Claude config has, which a headless task has no business reaching.
+// those: --strict-mcp-config, on every run, keeps out whatever MCP servers
+// the account has (its claude.ai connectors among them, whose instructions
+// a review once found in its tool output), which a headless task has no
+// business reaching.
 // `noTools` leaves the run without any tool, MCP servers included: a plain
 // call to the model, like the exploration's commit subject
 // (domains/explorations/pr.ts).
@@ -145,7 +148,8 @@ function makeLineBuffer(onLine: (line: string) => void): (chunk: Buffer) => void
 // (`--setting-sources user`); its CLAUDE.md still loads. `sealedEnv` runs
 // the agent with an environment built from scratch — AGENT_ENV_KEYS, its
 // Claude account, GH_TOKEN and these variables — instead of ronin's own,
-// which carries every secret of .env (#257).
+// which carries every secret of .env (#257). `runAs` runs it as the agent's
+// user (agents/agent-user.ts), with its Claude account lent to that user.
 export interface HeadlessRunOptions {
   model?: string;
   effort?: string;
@@ -154,14 +158,15 @@ export interface HeadlessRunOptions {
   noTools?: boolean;
   pluginDir?: string;
   sealedEnv?: Record<string, string>;
+  runAs?: AgentUser;
 }
 
 // What a sealed run keeps of ronin's environment: what the tools an agent
-// runs need (git, gh, pnpm, docker, playwright), none of ronin's secrets.
+// runs need (git, gh, pnpm, playwright), none of ronin's secrets. Not
+// Docker's: the services its tests need go through ronin's actions.
 export const AGENT_ENV_KEYS = [
   'PATH', 'HOME', 'USER', 'LOGNAME', 'SHELL', 'LANG', 'LC_ALL', 'TERM', 'TMPDIR', 'TZ',
   'IS_SANDBOX', 'DISABLE_AUTOUPDATER', 'PLAYWRIGHT_BROWSERS_PATH',
-  'DOCKER_HOST', 'DOCKER_TLS_VERIFY', 'DOCKER_CERT_PATH',
 ];
 
 export function sealedAgentEnv(base: NodeJS.ProcessEnv, vars: Record<string, string>): NodeJS.ProcessEnv {
@@ -182,8 +187,9 @@ export function claudeHeadlessArgs(prompt: string, opts: HeadlessRunOptions = {}
     ...(model ? ['--model', model] : []),
     ...(effort ? ['--effort', effort] : []),
     ...(opts.agentsFile ? ['--agents', opts.agentsFile] : []),
-    ...(opts.mcpConfigFile ? ['--mcp-config', opts.mcpConfigFile, '--strict-mcp-config'] : []),
-    ...(opts.noTools ? ['--tools', '', '--strict-mcp-config'] : []),
+    ...(opts.mcpConfigFile ? ['--mcp-config', opts.mcpConfigFile] : []),
+    '--strict-mcp-config',
+    ...(opts.noTools ? ['--tools', ''] : []),
     ...(opts.pluginDir ? ['--plugin-dir', opts.pluginDir, '--setting-sources', 'user'] : []),
   ];
 }
@@ -203,6 +209,7 @@ export async function runClaudeHeadless(cwd: string, prompt: string, label: stri
   // 2026-08-19-multi-repo-pat-auth-design.md §2).
   const claudeConfigDir = activeRepo().claudeConfigDir ?? config.claudeConfigDir;
   if (claudeConfigDir) env.CLAUDE_CONFIG_DIR = claudeConfigDir;
+  if (opts.runAs && claudeConfigDir) await lendClaudeAccount(claudeConfigDir, opts.runAs);
 
   return new Promise((resolve, reject) => {
     const child = spawn(
@@ -211,7 +218,7 @@ export async function runClaudeHeadless(cwd: string, prompt: string, label: stri
       // stdin explicitly closed ('ignore'): an unset stdio here defaults to
       // an open, never-written pipe, which makes `claude -p` wait ~3s for
       // input before warning and proceeding without it on every single run.
-      { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] },
+      { cwd, env, stdio: ['ignore', 'pipe', 'pipe'], ...(opts.runAs ? { uid: opts.runAs.uid, gid: opts.runAs.gid } : {}) },
     );
 
     let finalResult = '';

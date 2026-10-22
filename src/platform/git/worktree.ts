@@ -5,6 +5,7 @@ import { log } from '../logger.js';
 import { issueResource, withResourceLock } from '../locks/locks.js';
 import type { PullRequestStatus } from '../github/github.js';
 import { host } from '../host/host.js';
+import { asAgent, type AgentUser } from '../agents/agent-user.js';
 
 
 // Asks the OS for a free ephemeral port (bind to 0, read back what it
@@ -318,6 +319,44 @@ export async function ensureTrustedFixWorktree(branch: string): Promise<string> 
   await host().fs.writeFile(join(dir, '.env'), `DB_PORT=${port}\n`);
 
   return dir;
+}
+
+// A run as the agent's user (#257, agent-user.ts) on a human's branch: a
+// clone of its own instead of a worktree of the shared repo, owned by that
+// user. A worktree would write its commits into the shared repo's .git,
+// whose config and hooks root then runs with; the clone shares the repo's
+// objects read-only (--shared) and keeps its own. From here on ronin never
+// runs git as root inside it: the agent controls its config. Its origin is
+// GitHub, fetched with the agent's read token.
+export function agentCloneDirFor(branch: string): string {
+  return join(activeRepo().worktreeBasePath, `agent-${basename(worktreeDirFor(branch))}`);
+}
+
+export async function ensureAgentClone(branch: string, user: AgentUser): Promise<string> {
+  const repo = activeRepo().productRepoPath;
+  const dir = agentCloneDirFor(branch);
+  await host().exec('git', ['fetch', 'origin'], { cwd: repo });
+  await host().fs.rm(dir, { recursive: true, force: true });
+  await host().fs.mkdir(dir, { recursive: true });
+  await host().exec('chown', [`${user.uid}:${user.gid}`, dir]);
+
+  // The shared repo is root's: the agent's user marks it safe in its own
+  // global config (Dockerfile).
+  const git = (args: string[]) => host().exec('git', args, asAgent(user, { cwd: dir }));
+  await git(['clone', '--quiet', '--shared', '--no-checkout', repo, '.']);
+  await git(['fetch', '--quiet', '--no-tags', repo, '+refs/remotes/origin/*:refs/remotes/origin/*']);
+  await git(['remote', 'set-url', 'origin', `https://github.com/${activeRepo().productRepo}.git`]);
+  await git(['config', 'credential.https://github.com.helper', '!gh auth git-credential']);
+  for (const key of ['user.name', 'user.email']) {
+    const value = (await host().exec('git', ['config', key], { cwd: repo }).catch(() => ({ stdout: '' }))).stdout.trim();
+    if (value) await git(['config', key, value]);
+  }
+  await git(['checkout', '--quiet', '--detach', `origin/${branch}`]);
+  return dir;
+}
+
+export async function removeAgentClone(branch: string): Promise<void> {
+  await host().fs.rm(agentCloneDirFor(branch), { recursive: true, force: true });
 }
 
 // Counterpart cleanup — mirrors removeExternalReviewWorktree. Not picked up

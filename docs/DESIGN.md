@@ -225,7 +225,11 @@ Lo que un agente cambia fuera de su checkout (responder, resolver un hilo, subir
 
 - **Token de lectura** (`github/read-token.ts`): con la GitHub App de ronin configurada (`RONIN_GITHUB_APP_ID`, `RONIN_GITHUB_APP_KEY_PATH`), cada corrida con acciones recibe como `GH_TOKEN` un token de instalación de solo lectura, limitado al repo de la corrida y que vence en una hora; el de escritura queda en ronin. Si la App no lo puede dar, la corrida no arranca: nunca vuelve a leer con el de escritura. Sin App, el agente lee con el de escritura, como antes. La App solo lee: lo que escribe ronin sigue saliendo de su cuenta.
 
-Por ahora solo `fix-comments-external` corre así, con la skill `address-comments`. Mientras el agente corra como root en el mismo contenedor, puede leer el `.env` y el entorno de ronin: correrlo como otro usuario, sin acceso a `.env` ni a Docker, es el paso que sigue en #257.
+- **Usuario del agente** (`agents/agent-user.ts`): en la imagen, una corrida con acciones sobre la rama de una persona corre como el usuario `agent` (uid 1500), no como root. No lee el entorno de ronin (`/proc` de sus procesos), `/data`, los certificados de Docker ni el socket de Tailscale: el entrypoint los cierra (`lock_down`). Sin Docker en su entorno: los servicios de sus tests van por acciones. La cuenta de Claude del repo pasa a ese usuario antes de cada corrida (`lendClaudeAccount`); root la sigue usando como antes. Fuera de la imagen (un runner a mano) el usuario no existe y todo corre como ronin.
+- **Clon del agente** (`git/worktree.ts`, `ensureAgentClone`): esa corrida no usa un worktree del repo compartido, cuyo `.git` (config y hooks) root usa después, sino un clon propio del usuario `agent` (`--shared`: lee los objetos del compartido y guarda los suyos), con `origin` en GitHub. Root nunca corre git dentro de él: el estado del checkout lo lee como el agente, y `git.push` trae el commit por un bundle que escribe el agente, lo vuelve a comprobar en su repo y sube desde ahí.
+- **Sin MCP de la cuenta** (`claude-runner.ts`): toda corrida va con `--strict-mcp-config`, así que los conectores de claude.ai y los MCP de la cuenta de Claude no entran; solo los que la corrida pasa.
+
+Lo que queda: todas las corridas del agente usan el mismo usuario, así que una podría leer el entorno de otra mientras ambas viven (sus credenciales de acciones y tokens de lectura), y un repo puede leer los clones de los otros. Por ahora solo `fix-comments-external` corre así, con la skill `address-comments`.
 
 ### 7.2 Usuario mencionable
 

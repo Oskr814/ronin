@@ -1,5 +1,5 @@
 import { join, resolve } from 'node:path';
-import { ensureWorktree, ensureExternalReviewWorktree, removeExternalReviewWorktree, ensureTrustedFixWorktree, removeTrustedFixWorktree } from '../git/worktree.js';
+import { ensureWorktree, ensureExternalReviewWorktree, removeExternalReviewWorktree, ensureTrustedFixWorktree, removeTrustedFixWorktree, ensureAgentClone, removeAgentClone } from '../git/worktree.js';
 import { runClaudeHeadless, ClaudeTimeoutError, ClaudeUsageLimitError } from '../claude/claude-runner.js';
 import { accountName } from '../claude/claude-usage.js';
 import { RunRecord, type RunOutcome } from './run-record.js';
@@ -10,7 +10,8 @@ import { recordAgentRun } from './metrics.js';
 import { currentRunGroup } from './run-group.js';
 import { host } from '../host/host.js';
 import type { RunScope } from '../actions/catalog.js';
-import { checkoutState, executeAction, headOf } from '../actions/executors.js';
+import { agentCheckout, checkoutState, executeAction, rootCheckout, type RunCheckout } from '../actions/executors.js';
+import { agentUser, type AgentUser } from './agent-user.js';
 import { startActionsServer, type ActionsServer } from '../actions/server.js';
 import { mintReadToken } from '../github/read-token.js';
 
@@ -95,18 +96,28 @@ function runOutcome(error: unknown): RunOutcome {
   return 'error';
 }
 
-async function checkoutDir(checkout: TaskCheckout, branch: string): Promise<string> {
+// `as`: the run goes as the agent's user (agent-user.ts), which on a
+// human's branch gets a clone of its own (worktree.ts's ensureAgentClone).
+async function checkoutDir(checkout: TaskCheckout, branch: string, as: AgentUser | null): Promise<string> {
   switch (checkout.kind) {
     case 'branch': return ensureWorktree(branch, checkout.baseBranch);
     case 'dir': return typeof checkout.dir === 'string' ? checkout.dir : checkout.dir();
     case 'untrusted-pr-head': return ensureExternalReviewWorktree(checkout.prNumber, checkout.sha);
-    case 'human-branch': return ensureTrustedFixWorktree(branch);
+    case 'human-branch': return as ? ensureAgentClone(branch, as) : ensureTrustedFixWorktree(branch);
   }
+}
+
+// A run with actions on a human's branch is the only one that goes as the
+// agent's user for now (#257): the other kinds of checkout are still
+// root's worktrees.
+function runsAs(checkout: TaskCheckout, actions: PreparedTask['actions']): AgentUser | null {
+  return actions && checkout.kind === 'human-branch' ? agentUser() : null;
 }
 
 export async function runAgentTask(task: AgentTask): Promise<string> {
   const { branch, prompt, checkout, agents, mcpConfigFile, actions, ...prepared } = await task.prepare();
-  const worktreeDir = await checkoutDir(checkout, branch);
+  const as = runsAs(checkout, actions);
+  const worktreeDir = await checkoutDir(checkout, branch, as);
 
   // An untrusted PR head is the only checkout that points `claude -p
   // --permission-mode bypassPermissions` at a tree an arbitrary external
@@ -158,7 +169,12 @@ export async function runAgentTask(task: AgentTask): Promise<string> {
     // Read-only and for this repo, when ronin has its App (read-token.ts);
     // without it the agent reads with the write token, as before.
     const readToken = actions ? await mintReadToken(activeRepo().productRepo) : null;
-    if (actions) server = await startRunActions(actions, worktreeDir, `${task.type} #${tag}`);
+    if (actions) {
+      const runCheckout: RunCheckout = as
+        ? agentCheckout(worktreeDir, activeRepo().productRepoPath, as)
+        : rootCheckout(worktreeDir, activeRepo().productRepoPath);
+      server = await startRunActions(actions, runCheckout, `${task.type} #${tag}`);
+    }
     const result = await runClaudeHeadless(worktreeDir, prompt, `${task.type} #${tag}`, {
       model,
       effort,
@@ -171,7 +187,9 @@ export async function runAgentTask(task: AgentTask): Promise<string> {
           RONIN_ACTIONS_URL: server.url,
           RONIN_ACTIONS_TOKEN: server.token,
           ...(readToken ? { GH_TOKEN: readToken } : {}),
+          ...(as ? { HOME: as.home } : {}),
         },
+        ...(as ? { runAs: as } : {}),
       } : {}),
     }, record);
     if (server) logActions(server, `${task.type} for ${label}`);
@@ -208,7 +226,7 @@ export async function runAgentTask(task: AgentTask): Promise<string> {
     // branches — sweepOrphanedWorktrees never recognizes a human branch name
     // as its own, so a leftover here would never get swept.
     if (checkout.kind === 'human-branch') {
-      await removeTrustedFixWorktree(branch).catch((cleanupError) =>
+      await (as ? removeAgentClone(branch) : removeTrustedFixWorktree(branch)).catch((cleanupError) =>
         log.error(`${task.type} cleanup falló para PR #${prNumber}`, cleanupError),
       );
     }
@@ -217,14 +235,14 @@ export async function runAgentTask(task: AgentTask): Promise<string> {
 
 // The run's actions server, scoped to it: every action runs as ronin, in
 // the run's repo, whatever async context the request arrives in.
-async function startRunActions(scope: Omit<RunScope, 'startSha'>, worktreeDir: string, label: string): Promise<ActionsServer> {
-  const runScope: RunScope = { ...scope, startSha: await headOf(worktreeDir) };
+async function startRunActions(scope: Omit<RunScope, 'startSha'>, checkout: RunCheckout, label: string): Promise<ActionsServer> {
+  const runScope: RunScope = { ...scope, startSha: await checkout.git(['rev-parse', 'HEAD']) };
   const repo = activeRepo();
   return startActionsServer({
     scope: runScope,
     label,
-    checkout: () => checkoutState(worktreeDir, runScope.startSha!),
-    execute: (action) => withActiveRepo(repo, () => executeAction(runScope, worktreeDir, action)),
+    checkout: () => checkoutState(checkout, runScope.startSha!),
+    execute: (action) => withActiveRepo(repo, () => executeAction(runScope, checkout, action)),
   });
 }
 

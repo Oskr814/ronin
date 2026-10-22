@@ -93,6 +93,17 @@ COPY --chmod=755 docker/entrypoint.sh /usr/local/bin/ronin-entrypoint
 # the workers' logs and the slot files of an installation without Postgres.
 RUN ln -s /data/logs /app/logs && ln -s /data/.ronin-slots /app/.ronin-slots
 
+# The user agents with actions run as (#257, src/platform/agents/agent-user.ts):
+# not root, so ronin's environment, its data and Docker stay out of reach.
+# It reads the shared clones, which are root's: git refuses another user's
+# repo unless told it's safe. The other way around never happens — ronin
+# never runs git as root inside the agent's own clone.
+RUN useradd --uid 1500 --user-group --create-home --shell /bin/bash agent \
+    && su agent -c "git config --global safe.directory '*'"
+ENV RONIN_AGENT_UID=1500 \
+    RONIN_AGENT_GID=1500 \
+    RONIN_AGENT_HOME=/home/agent
+
 # RONIN_DOCKER: `ronin init` also asks for the Tailscale sidecar's values.
 # IS_SANDBOX: the container runs as root, and Claude Code refuses
 # bypassPermissions as root unless told it's in a sandbox — which a
