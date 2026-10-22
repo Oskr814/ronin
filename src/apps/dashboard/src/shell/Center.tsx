@@ -13,10 +13,11 @@ import { Settings } from '../pages/settings/Settings.js';
 import { Today } from '../pages/today/Today.js';
 import { RunDot } from '../lib/runs.js';
 import { ItemCtx } from './Context.js';
-import { back, closeTab, docOf, type Item as ShellItem, itemById, S, select, viewOf } from './state.js';
+import { back, closeTab, docOf, togglePin, type Item as ShellItem, itemById, S, select, viewOf } from './state.js';
 
 // The center: the page the address says, under the tabs of the items open
-// (on Hoy and an item's page) and the bar that goes back to the list on a
+// (on Hoy and an item's page; an item opens over the tab shown unless it's
+// pinned, with its button or a double click) and the bar that goes back to the list on a
 // phone.
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -83,14 +84,17 @@ function Tabs() {
   return (
     <div className="tabs" role="tablist">{S.open.map((id) => {
       const item = itemById(id);
+      const pinned = S.pinned.includes(id);
       return (
         // The wheel's click closes a tab, as in a browser; holding it down
         // there doesn't start the browser's autoscroll.
-        <div key={id} className="tab" role="tab" aria-selected={S.sel === id} onMouseDown={(e) => { if (e.button === 1) e.preventDefault(); }} onAuxClick={(e) => {
+        <div key={id} className={`tab${pinned ? ' pinned' : ''}`} role="tab" aria-selected={S.sel === id} onMouseDown={(e) => { if (e.button === 1) e.preventDefault(); }} onAuxClick={(e) => {
           if (e.button !== 1) return;
           e.preventDefault();
           closeTab(id);
-        }}><button className="open" data-tab={id} onClick={() => void select(id)}>{item ? <RunDot state={item.status} /> : null}<span className="l">{item ? item.title : id}</span></button><button className="x" data-close={id} aria-label="Cerrar" onClick={() => closeTab(id)}>×</button></div>
+        }}><button className="open" data-tab={id} onClick={() => void select(id)} onDoubleClick={() => togglePin(id)}>{item ? <RunDot state={item.status} /> : null}<span className="l">{item ? item.title : id}</span></button>
+          <button className="pin" aria-pressed={pinned} aria-label={pinned ? 'Soltar la pestaña' : 'Fijar la pestaña'} title={pinned ? 'Fijada: lo que abras no la reemplaza' : 'Fijar: lo que abras no la reemplaza'} onClick={() => togglePin(id)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4h6l-1 6 3 3v2H7v-2l3-3zM12 15v5" /></svg></button>
+          <button className="x" data-close={id} aria-label="Cerrar" onClick={() => closeTab(id)}>×</button></div>
       );
     })}</div>
   );

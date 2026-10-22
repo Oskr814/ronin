@@ -132,6 +132,25 @@ describe('the shell, in React', () => {
     await waitFor(() => expect(location.pathname).toBe('/i/acme%2Ftienda%231'));
   });
 
+  it('opens an item over the tab shown, unless it is pinned', async () => {
+    const { container } = await open('/');
+    const tabs = () => [...container.querySelectorAll('.tab .l')].map((t) => t.textContent);
+    fireEvent.click(container.querySelector('.tab .open')!);
+    await waitFor(() => expect(page()).toBe('item'));
+    fireEvent.click(container.querySelector('.item[data-id="acme/tienda#2"]')!);
+    await waitFor(() => expect(tabs()).toEqual(['Cobrar en cuotas']));
+    fireEvent.click(container.querySelector('.tab .pin')!);
+    expect(container.querySelector('.tab.pinned .pin')?.getAttribute('aria-pressed')).toBe('true');
+    fireEvent.click(container.querySelector('.item[data-id="acme/web#3"]')!);
+    await waitFor(() => expect(tabs()).toEqual(['Cobrar en cuotas', 'El menú no cierra']));
+  });
+
+  it("opens an issue's PR as the issue, on the PR's tab", async () => {
+    const { container } = await open('/i/acme%2Fweb%234');
+    await waitFor(() => expect(location.pathname).toBe('/i/acme%2Fweb%233'));
+    expect([...container.querySelectorAll('.tab .l')].map((t) => t.textContent)).toEqual(['El total no suma el envío', 'El menú no cierra']);
+  });
+
   it('goes to the next PR that waits on a decision with ]p', async () => {
     await open('/');
     fireEvent.keyDown(document, { key: ']' });

@@ -111,6 +111,12 @@ a { color: inherit; }
 .tab[aria-selected="true"] { background: var(--bg); color: var(--ink); box-shadow: inset 0 2px 0 var(--hanko); }
 .tab .x { opacity: .5; padding: 0 3px; border-radius: 3px; }
 .tab .x:hover { opacity: 1; background: var(--hover); }
+.tab .pin { display: flex; padding: 2px; border-radius: 3px; opacity: 0; color: var(--muted); }
+.tab .pin svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linejoin: round; }
+.tab:hover .pin, .tab .pin:focus-visible { opacity: .6; }
+.tab .pin:hover { opacity: 1; background: var(--hover); }
+.tab.pinned .pin { opacity: 1; color: var(--hanko); }
+.tab.pinned .pin svg { fill: currentColor; }
 .tab .dot { margin-top: 0; }
 .back { display: none; }
 .runs { display: flex; gap: 6px; padding: 10px 16px; border-bottom: 1px solid var(--rule); overflow-x: auto; flex: none; align-items: center; }
