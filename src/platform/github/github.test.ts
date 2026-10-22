@@ -10,7 +10,8 @@ import { describe, it, expect, vi } from 'vitest';
 // changesRequestedOn — pure too, and what keeps fix-review from looping on a
 // review ronin already answered, and checksStatus — pure too, and what every
 // CI decision on a slice PR reads, and reviewerDecisions — pure too, and
-// who the dashboard says approved a PR.
+// who the dashboard says approved a PR, and reviewBodyComments — pure too,
+// and which review texts get read for mentions.
 vi.mock('../config/config.js', () => ({
   config: { githubLogin: 'ronin' },
   LABEL_MANAGED: 'ronin',
@@ -22,7 +23,7 @@ vi.mock('../agents/repo-context.js', () => ({
   activeRepo: () => ({ productRepo: 'bmedical/bmedical', productRepoPath: '/tmp/repo', worktreeBasePath: '/tmp/worktrees' }),
 }));
 
-const { attemptCountFromLabels, isTransientGhError, isExternalReviewable, lastMarkedReviewSha, threadOf, changesRequestedOn, checksStatus, reviewerDecisions } = await import('./github.js');
+const { attemptCountFromLabels, isTransientGhError, isExternalReviewable, lastMarkedReviewSha, threadOf, changesRequestedOn, checksStatus, reviewerDecisions, reviewBodyComments } = await import('./github.js');
 
 describe('changesRequestedOn', () => {
   const review = (login: string, state: string, commitId: string) => ({ login, state, commitId });
@@ -201,5 +202,27 @@ describe('reviewerDecisions', () => {
       r('caro', 'APPROVED', '2026-10-18T08:00:00Z'),
       r('caro', 'DISMISSED', '2026-10-18T13:00:00Z'),
     ])).toEqual([{ author: 'beto', state: 'APPROVED' }, { author: 'ana', state: 'APPROVED' }]);
+  });
+});
+
+describe('reviewBodyComments', () => {
+  const review = (id: number, state: string, body: string | null, submittedAt?: string) => ({ id, state, body, user: { login: 'ana' }, submitted_at: submittedAt });
+
+  it('turns a submitted review with text into a review-body comment', () => {
+    expect(reviewBodyComments([review(7, 'COMMENTED', '@ronin ya respondí', '2026-10-23T10:00:00Z')])).toEqual([
+      { id: 7, kind: 'review-body', body: '@ronin ya respondí', reactionsEyes: 0, authorLogin: 'ana', createdAt: '2026-10-23T10:00:00Z' },
+    ]);
+  });
+
+  it('leaves out a pending review and one sent with no text', () => {
+    expect(reviewBodyComments([
+      review(1, 'PENDING', '@ronin todavía no'),
+      review(2, 'APPROVED', '', '2026-10-23T10:00:00Z'),
+      review(3, 'COMMENTED', null, '2026-10-23T10:00:00Z'),
+    ])).toEqual([]);
+  });
+
+  it('leaves out a review sent before review texts were read (#351)', () => {
+    expect(reviewBodyComments([review(4, 'COMMENTED', '@ronin de antes', '2026-10-01T10:00:00Z')])).toEqual([]);
   });
 });

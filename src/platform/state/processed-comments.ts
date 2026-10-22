@@ -1,4 +1,4 @@
-import { addReaction, botReactedBefore } from '../github/github.js';
+import { addReaction, botReactedBefore, type CommentKind } from '../github/github.js';
 import { config } from '../config/config.js';
 import { getProcessedComments, recordProcessedComment } from './local-state.js';
 
@@ -23,7 +23,7 @@ export const ACK_EYES_SINCE = '2026-10-16T01:03:19.475Z';
 
 export interface TrackedComment {
   id: number;
-  kind: 'issue' | 'review';
+  kind: CommentKind;
   // Always there on a comment read from GitHub; one without it counts as
   // done only once recorded.
   createdAt?: string;

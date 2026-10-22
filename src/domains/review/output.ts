@@ -1,3 +1,5 @@
+import type { CommentKind } from '@platform/github/github.js';
+
 // Contract between the external-review agent and the supervisor: the agent
 // writes one JSON object of this shape, the supervisor validates it here and
 // is the only one that publishes anything — see
@@ -51,7 +53,7 @@ export interface ReviewFinding {
 export interface ExternalReviewOutput {
   findings: ReviewFinding[];
   resolveThreads: Array<{ threadId: string; reason: string }>;
-  mentionReplies: Array<{ commentId: number; kind: 'issue' | 'review'; body: string }>;
+  mentionReplies: Array<{ commentId: number; kind: CommentKind; body: string }>;
 }
 
 // The shape above, as the external-review prompt shows it to the agent. Kept
@@ -86,7 +88,7 @@ export const FINDINGS_JSON_CONTRACT = `{
     }
   ],
   "resolveThreads": [{ "threadId": "id of one of your open threads listed above", "reason": "what code change addressed it" }],
-  "mentionReplies": [{ "commentId": 123, "kind": "issue" | "review", "body": "your reply" }]
+  "mentionReplies": [{ "commentId": 123, "kind": "issue" | "review" | "review-body", "body": "your reply" }]
 }`;
 
 export const LIMITS = {
@@ -322,7 +324,7 @@ export function parseReviewOutput(
       isObject(entry) &&
       typeof entry.commentId === 'number' &&
       ctx.mentionIds.has(entry.commentId) &&
-      (entry.kind === 'issue' || entry.kind === 'review') &&
+      (entry.kind === 'issue' || entry.kind === 'review' || entry.kind === 'review-body') &&
       body
     ) {
       mentionReplies.push({ commentId: entry.commentId, kind: entry.kind, body });

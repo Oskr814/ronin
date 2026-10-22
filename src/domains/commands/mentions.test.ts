@@ -328,6 +328,13 @@ describe('findUnprocessedMentions', () => {
     expect(result).toEqual([{ id: 5, kind: 'review', body: '@ronin fijate esta línea', reactionsEyes: 0 }]);
   });
 
+  it("includes a review's own text that mentions the handle (#351)", async () => {
+    reviewComments.mockResolvedValue([{ id: 8, kind: 'review-body', body: '@ronin respondí en los hilos', reactionsEyes: 0 }]);
+
+    const result = await findUnprocessedMentions(42);
+    expect(result).toEqual([{ id: 8, kind: 'review-body', body: '@ronin respondí en los hilos', reactionsEyes: 0 }]);
+  });
+
   it('excludes a mention already reacted to by the bot', async () => {
     issueComments.mockResolvedValue([{ id: 1, kind: 'issue', body: '@ronin revisá esto', reactionsEyes: 1 }]);
     botReaction.mockResolvedValue(true);

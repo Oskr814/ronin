@@ -3,7 +3,7 @@ import { activeRepo } from '@platform/agents/repo-context.js';
 import { removeWorktreeDir } from '@platform/git/worktree.js';
 import { runAgentTask } from '@platform/agents/agent-task.js';
 import { commandTask } from './prompts.js';
-import type { PrHead } from '@platform/github/github.js';
+import type { CommentKind, PrHead } from '@platform/github/github.js';
 import { launchWorker } from '@platform/workers/worker-launch.js';
 import { log } from '@platform/logger.js';
 import { worktreeLock } from '@platform/workers/worktree-lock.js';
@@ -28,7 +28,7 @@ export interface ConflictsWorkerRequest {
   repo: string;
   prNumber: number;
   // The /resolve-conflicts comment, to answer in its own place.
-  comment: { id: number; kind: 'issue' | 'review' };
+  comment: { id: number; kind: CommentKind };
 }
 
 export function launchConflictsWorker(request: ConflictsWorkerRequest): void {

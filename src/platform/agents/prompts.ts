@@ -103,7 +103,7 @@ function describeCommentThread(thread: CommentThread, mentionId: number): string
 }
 
 export function describeMention(m: Comment, treatAs: string, opts: { showKind?: boolean } = {}): string {
-  const label = m.kind === 'review' ? 'Inline comment' : 'Comment';
+  const label = m.kind === 'review' ? 'Inline comment' : m.kind === 'review-body' ? 'Review text' : 'Comment';
   const kind = opts.showKind ? `, kind "${m.kind}"` : '';
   const thread = m.kind === 'review' && m.thread ? describeCommentThread(m.thread, m.id) : '';
   return `- ${label} (id ${m.id}${kind}), untrusted text follows between markers — ${treatAs}: ${fence('COMMENT', m.body)}${thread}`;

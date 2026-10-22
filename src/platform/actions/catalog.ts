@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { CommentKind } from '../github/github.js';
 
 // The actions an agent can ask the supervisor for (#257): everything that
 // changes something outside the agent's own checkout goes through one of
@@ -41,8 +42,9 @@ export interface RunScope {
   issue?: { number: number; body?: 'replace' | 'append' };
   threads: ScopeThread[];
   // The comments that asked for the run: a review comment is answered in
-  // its thread (pr.reply), a general one with pr.comment.
-  triggers: Array<{ id: number; kind: 'issue' | 'review' }>;
+  // its thread (pr.reply), a general one or a review's own text with
+  // pr.comment.
+  triggers: Array<{ id: number; kind: CommentKind }>;
   allowed: ActionName[];
 }
 

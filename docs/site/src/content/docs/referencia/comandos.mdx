@@ -5,7 +5,7 @@ description: "Todo lo que se le puede pedir a ronin mencionándolo en un comenta
 
 import { Aside, Badge } from '@astrojs/starlight/components';
 
-Se le pide algo mencionándolo en un comentario: `@ronin-agent <pedido>` o `@ronin-agent /<comando>`. Lo toma en el próximo tick, cada 5 minutos por cron o casi al instante con [webhooks](/ronin/operar/servidor/). Cuando ya procesó un comentario, le deja una reacción 👀. Si falla, no la deja, y lo reintenta en el tick siguiente.
+Se le pide algo mencionándolo en un comentario: `@ronin-agent <pedido>` o `@ronin-agent /<comando>`. En un PR vale cualquier lugar donde se escribe: un comentario general, uno en una línea o el texto con que enviás un review. Lo toma en el próximo tick, cada 5 minutos por cron o casi al instante con [webhooks](/ronin/operar/servidor/). Cuando ya procesó un comentario, le deja una reacción 👀. Si falla, no la deja, y lo reintenta en el tick siguiente. El texto de un review no lleva la reacción, porque GitHub no deja reaccionar a un review; la respuesta llega como comentario general.
 
 <Aside type="tip">
 Desde el tablero no hace falta escribirlos: el menú **Acciones** de cada ficha los escribe a tu nombre. Ver [Acciones del tablero](/ronin/referencia/acciones/).
