@@ -1,5 +1,6 @@
 import { dirname } from 'node:path';
 import type { AgentTask, PreparedTask } from '@platform/agents/agent-task.js';
+import type { RunApp } from '@platform/actions/executors.js';
 import { fence, fenceBlock, REALISTIC_DATA_RULE, repoUrl, UNTRUSTED_APP_WARNING } from '@platform/agents/prompts.js';
 
 // What the agent is told for each task of a request from the portal (#114);
@@ -125,9 +126,8 @@ export type PortalTask =
       baseUrl: string;
       homePath: string;
       browsers: PrototypeBrowser[];
-      // The docker compose command of the running app's stack, to run tests
-      // in it.
-      compose: string;
+      // The running app's stack, to run tests in it (app.exec).
+      app: RunApp;
       conversation: ConversationMessage[];
       // The steps to reproduce it, as ronin understood them reading it.
       steps: string;
@@ -239,6 +239,9 @@ async function buildPortalTask(task: PortalTask): Promise<PreparedTask> {
         branch: `portal-prototype@P-${task.requestNumber}`,
         checkout: { kind: 'dir', dir: task.checkoutDir },
         mcpConfigFile: task.mcpConfigPath,
+        // Text from anyone, through the portal (#257): sealed, as the
+        // agent's user, in its own clone, writing only there and in outDir.
+        sealed: { outputDir: task.outDir },
         label: `pedido P-${task.requestNumber} (prototipo)`,
         tag: `P-${task.requestNumber}`,
         prompt: [
@@ -257,6 +260,11 @@ async function buildPortalTask(task: PortalTask): Promise<PreparedTask> {
         branch: `portal-reproduce@P-${task.requestNumber}`,
         checkout: { kind: 'dir', dir: task.checkoutDir },
         mcpConfigFile: task.mcpConfigPath,
+        // Sealed like the prototype; its tests reach the stack through
+        // app.exec.
+        sealed: { outputDir: task.outDir },
+        actions: { threads: [], triggers: [], allowed: ['app.exec'] },
+        app: task.app,
         label: `pedido P-${task.requestNumber} (reproducción)`,
         tag: `P-${task.requestNumber}`,
         prompt: [
@@ -268,7 +276,7 @@ async function buildPortalTask(task: PortalTask): Promise<PreparedTask> {
             '1. Reproduce it: follow the steps in the browser (create the data they need through the app if the seed lacks it). When you see the error, check it with browser_snapshot and take the screenshot with browser_take_screenshot giving it a bare file name ("error-1.png", "error-2.png"…). Look at the console and the network requests too: they often show where it fails.',
             '2. Find the cause in the code. If you cannot make it happen, try the variations the report allows (another role, the phone, other data), but do not invent an error the person did not describe.',
             "3. The test, before any fix: write a test that fails because of this error, following this repo's CLAUDE.md conventions for tests. If you know which layer the error is in (for example the API, or one function), write a test directly on that layer only. If you do not, write an e2e test that follows the person's steps, the way the repo writes its e2e tests. Run it and check it fails for the reason the person saw (red), not because of a typo or a setup problem.",
-            `   To run tests, use this repo's own commands (CLAUDE.md). The app's stack is already up: for a command its docs run inside a compose service, use "${task.compose}" in place of "docker compose" (e.g. "${task.compose} run --rm <service> …"), so it runs next to this app instead of starting another stack.`,
+            "   To run tests, use this repo's own commands (CLAUDE.md). You have no Docker: the app's stack is already up, and a command its docs run inside a compose service goes through ronin, from Bash with a timeout of 600000 ms (it stops at 9 minutes): `ronin-act app.exec --service <service> --command '<command>' --one-off true` runs it in a new container of that service (like `docker compose run --rm`), next to this app instead of starting another stack; without `--one-off` it runs in the service's running container. It returns the exit code and the end of the output.",
             '4. The fix, only when the cause is clear and it is small — a developer would finish it in a few hours: no change to the database schema or migration of data, no new dependency, no configuration, infrastructure, permissions or security, nothing in another app. Make it in this checkout, run the test again (it must pass: green) and run the tests around it to check nothing else broke. If the screen can show the fix (the dev server reloads), take the same screen again ("arreglo-1.png"…). If the fix is not small, do not make it: say why in "motivo".',
             '5. If you could not reproduce it, say so plainly — never claim it is fixed or that it is not an error: it may depend on data only the real app has.' + (task.canAsk ? ' If one thing from the person would let you try again (the number of a record that fails, the exact values they typed, the screen), ask it in "pregunta".' : ' You may not ask the person anything else.'),
           ].join('\n'),

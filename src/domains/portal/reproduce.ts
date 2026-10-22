@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, extname } from 'node:path';
-import { draftDiff, runOnApp, type AppRun } from './app-run.js';
+import { runOnApp, stagedConversation, type AppRun } from './app-run.js';
 import { config } from '@platform/config/config.js';
 import { log } from '@platform/logger.js';
 import { portalTask } from './prompts.js';
@@ -182,7 +182,7 @@ async function deliver(n: number, round: number, output: ReproductionOutput, run
     images.push(file);
     captions.push(shot.nota ?? (shot.kind === 'error' ? 'El error' : 'Con el arreglo de prueba'));
   }
-  const diff = await draftDiff(run.dir, run.generated);
+  const diff = await run.diff();
   let patch: string | undefined;
   if (diff) {
     patch = `r${round}.diff`;
@@ -231,12 +231,12 @@ function reproduce(request: PortalRequest, round: number): Promise<PortalRequest
     {
       key: `portal-r-${n}`,
       appName: request.app,
-      task: (base, { compose }) => portalTask({
+      task: async (base, { app, stage }) => portalTask({
         type: 'portal-reproduce',
         requestNumber: n,
         ...base,
-        compose,
-        conversation: request.messages.map((m) => ({ from: m.from, text: m.text, images: m.images.map((file) => requestImagePath(n, file)) })),
+        app,
+        conversation: await stagedConversation(request, stage),
         steps: request.bug?.steps ?? '',
         round,
         canAsk: request.questions < MAX_QUESTIONS && round < MAX_REPRODUCTIONS,
