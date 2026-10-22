@@ -115,7 +115,7 @@ Las rutas de datos las fija `compose.yml` en esos volúmenes: lo que diga `.env`
 git pull && scripts/deploy.sh
 ```
 
-Recrea primero `ronin`, que vuelve en segundos, y después `runner`. El runner se toma su tiempo: deja de tomar trabajos y espera a que terminen los que están corriendo, con sus agentes, antes de irse. Mientras tanto, los webhooks y el tablero siguen andando y lo que llega queda en la cola para el runner nuevo. `docker compose logs -f runner` dice a cuántos procesos espera.
+Recrea primero `ronin`, que vuelve en segundos, y después `runner`. El runner se toma su tiempo: deja de tomar trabajos y espera a que terminen los que están corriendo, con sus agentes, antes de irse. No espera a las previews: las que estén arriba se bajan con el runner viejo, y se vuelven a pedir con `/preview`. Mientras tanto, los webhooks y el tablero siguen andando y lo que llega queda en la cola para el runner nuevo. `docker compose logs -f runner` dice a cuántos procesos espera.
 
 Si el cambio es solo de la API (el tablero, el portal, los webhooks), alcanza con `scripts/deploy.sh api`, que no toca la cola. `scripts/deploy.sh runner` despliega solo el runner. En `compose.yml`, la API es el servicio `ronin`.
 

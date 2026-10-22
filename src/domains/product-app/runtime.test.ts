@@ -56,13 +56,13 @@ describe('appProjectName', () => {
 });
 
 describe('appEnv', () => {
-  it("drops ronin's secrets and NODE_ENV, and runs as CI so pnpm never waits on a question", () => {
+  it("drops ronin's secrets and NODE_ENV, runs as CI so pnpm never waits on a question, and marks its processes as the app's", () => {
     vi.stubEnv('NODE_ENV', 'production');
     vi.stubEnv('RONIN_GITHUB_TOKEN', 'secreto');
     const env = appEnv({ PORT: '4000' });
     expect(env.NODE_ENV).toBeUndefined();
     expect(env.RONIN_GITHUB_TOKEN).toBeUndefined();
-    expect(env).toMatchObject({ CI: 'true', PORT: '4000' });
+    expect(env).toMatchObject({ CI: 'true', RONIN_APP_PROCESS: '1', PORT: '4000' });
     vi.unstubAllEnvs();
   });
 });
