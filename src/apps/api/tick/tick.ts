@@ -504,7 +504,8 @@ export async function processSlicePr(issue: TrackingIssue, pr: StackedPr, isBott
     );
     if (blocked) return false;
     logSliceOutcome(issue, pr, isBottom, 'changes requested, disparando fix-review');
-    await runAgentTask(reviewTask({ type: 'fix-review', issueNumber: issue.number, prNumber: pr.number }));
+    const openThreads = await listExternalOpenReviewThreads(pr.number, config.githubLogin);
+    await runAgentTask(reviewTask({ type: 'fix-review', issueNumber: issue.number, prNumber: pr.number, openThreads }));
     return true;
   }
 
