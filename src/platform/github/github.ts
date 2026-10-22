@@ -1052,9 +1052,14 @@ export async function commentOnSpecPr(prNumber: number, body: string): Promise<v
     await rm(dir, { recursive: true, force: true });
   }
 }
+// Where a comment lives: the PR's or issue's conversation, a thread on the
+// diff, or the text a review was submitted with (#351). Each has its own id
+// space on GitHub.
+export type CommentKind = 'issue' | 'review' | 'review-body';
+
 export interface Comment {
   id: number;
-  kind: 'issue' | 'review';
+  kind: CommentKind;
   body: string;
   reactionsEyes: number;
   authorLogin: string;
@@ -1089,7 +1094,9 @@ export interface RawApiComment {
   html_url?: string;
 }
 
-function reactionsPath(kind: 'issue' | 'review'): string {
+// Null for a review's own text: GitHub has no reactions on a review.
+function reactionsPath(kind: CommentKind): string | null {
+  if (kind === 'review-body') return null;
   return kind === 'issue' ? 'issues/comments' : 'pulls/comments';
 }
 
@@ -1102,9 +1109,12 @@ export async function listIssueComments(prNumber: number): Promise<Comment[]> {
   return raw.map((c) => ({ id: c.id, kind: 'issue' as const, body: c.body, reactionsEyes: c.reactions.eyes, authorLogin: c.user?.login ?? '', createdAt: c.created_at }));
 }
 
-interface RawReview {
+export interface RawReview {
   id: number;
   state: string;
+  body?: string | null;
+  user?: { login: string } | null;
+  submitted_at?: string;
 }
 
 interface RawReviewWithCommit {
@@ -1142,6 +1152,9 @@ export async function changesRequestedOnHead(prNumber: number): Promise<boolean>
 // Excluye comentarios que pertenecen a una review todavía en borrador
 // (PENDING, no enviada) — no son un pedido real hasta que su autor la
 // publica. Ver docs/superpowers/specs/2026-07-28-mention-review-design.md.
+// Trae también el texto con que se envió cada review, como un comentario más
+// de tipo 'review-body' (#351): una mención ahí cuenta igual que en la
+// conversación del PR.
 export async function listReviewComments(prNumber: number): Promise<Comment[]> {
   const [commentsStdout, reviewsStdout] = await Promise.all([
     ghApi(['api', `repos/${activeRepo().productRepo}/pulls/${prNumber}/comments?per_page=100`]),
@@ -1152,7 +1165,7 @@ export async function listReviewComments(prNumber: number): Promise<Comment[]> {
   const pendingReviewIds = new Set(rawReviews.filter((r) => r.state === 'PENDING').map((r) => r.id));
 
   const published = rawComments.filter((c) => !(c.pull_request_review_id != null && pendingReviewIds.has(c.pull_request_review_id)));
-  return published.map((c) => ({
+  const inline = published.map((c) => ({
     id: c.id,
     kind: 'review' as const,
     body: c.body,
@@ -1161,6 +1174,28 @@ export async function listReviewComments(prNumber: number): Promise<Comment[]> {
     createdAt: c.created_at,
     thread: threadOf(c, published),
   }));
+  return [...inline, ...reviewBodyComments(rawReviews)];
+}
+
+// From when a review's own text is read for mentions (#351). Before it, none
+// was, and none was recorded as done: without the cutoff every old review
+// mentioning ronin on an open PR would come back as a fresh request.
+export const REVIEW_BODY_MENTIONS_SINCE = '2026-10-22T18:00:00Z';
+
+// The text each submitted review was sent with, as a comment of its own.
+// A pending review isn't a request until its author submits it, and one sent
+// with no text has nothing to read.
+export function reviewBodyComments(reviews: RawReview[]): Comment[] {
+  return reviews
+    .filter((r) => r.state !== 'PENDING' && r.body && r.submitted_at && r.submitted_at >= REVIEW_BODY_MENTIONS_SINCE)
+    .map((r) => ({
+      id: r.id,
+      kind: 'review-body' as const,
+      body: r.body ?? '',
+      reactionsEyes: 0,
+      authorLogin: r.user?.login ?? '',
+      createdAt: r.submitted_at,
+    }));
 }
 
 // GitHub replies always point at the thread's first comment (in_reply_to_id
@@ -1178,10 +1213,12 @@ export function threadOf(comment: RawApiComment, all: RawApiComment[]): CommentT
 
 // Whether ronin put its 👀 on the comment before `before` (ISO) — back when
 // that 👀 meant "done", not "got it" (see processed-comments.ts).
-export async function botReactedBefore(commentId: number, kind: 'issue' | 'review', botLogin: string, before: string): Promise<boolean> {
+export async function botReactedBefore(commentId: number, kind: CommentKind, botLogin: string, before: string): Promise<boolean> {
+  const path = reactionsPath(kind);
+  if (!path) return false;
   const stdout = await ghApi([
     'api',
-    `repos/${activeRepo().productRepo}/${reactionsPath(kind)}/${commentId}/reactions?content=eyes&per_page=100`,
+    `repos/${activeRepo().productRepo}/${path}/${commentId}/reactions?content=eyes&per_page=100`,
   ]);
   const raw = JSON.parse(stdout) as Array<{ user: { login: string }; created_at: string }>;
   return raw.some((r) => r.user.login === botLogin && r.created_at < before);
@@ -1191,21 +1228,26 @@ export async function botReactedBefore(commentId: number, kind: 'issue' | 'revie
 // arrives, before anything is processed (apps/api/webhooks/github.ts). Whether it's
 // done is tracked apart (processed-comments.ts). Takes the repo itself: the
 // server isn't inside withActiveRepo.
-export async function addAckReaction(repo: string, commentId: number, kind: 'issue' | 'review'): Promise<void> {
-  await ghApi(['api', `repos/${repo}/${reactionsPath(kind)}/${commentId}/reactions`, '-f', 'content=eyes']);
+export async function addAckReaction(repo: string, commentId: number, kind: CommentKind): Promise<void> {
+  const path = reactionsPath(kind);
+  if (!path) return;
+  await ghApi(['api', `repos/${repo}/${path}/${commentId}/reactions`, '-f', 'content=eyes']);
 }
 
-export async function addReaction(commentId: number, kind: 'issue' | 'review', content: 'eyes'): Promise<void> {
+export async function addReaction(commentId: number, kind: CommentKind, content: 'eyes'): Promise<void> {
+  const path = reactionsPath(kind);
+  if (!path) return;
   await ghApi([
     'api',
-    `repos/${activeRepo().productRepo}/${reactionsPath(kind)}/${commentId}/reactions`,
+    `repos/${activeRepo().productRepo}/${path}/${commentId}/reactions`,
     '-f',
     `content=${content}`,
   ]);
 }
 
 // Replies where the comment was left: inside its own thread for an inline
-// review comment, or as a new general comment otherwise. `number` is the PR
+// review comment, or as a new general comment otherwise (a review's own text
+// has no thread to reply in). `number` is the PR
 // or issue the comment belongs to — issues/{n}/comments works for both,
 // since a PR is an issue under the hood.
 export async function replyToComment(number: number, comment: Pick<Comment, 'id' | 'kind'>, body: string): Promise<void> {

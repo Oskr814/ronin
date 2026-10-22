@@ -3,7 +3,7 @@ import { activeRepo } from '@platform/agents/repo-context.js';
 import { appDown, appRerun, appUp, APP_STATE_DIR, stepLabel, type AppSession } from '../product-app/index.js';
 import { APP_MANIFEST_FILE, appsTouched, parseAppManifest, publicizeTemplate, publicPortsIn, publicUrl, stepsToRerun, type AppDefinition, type AppStep, type AppUser, type TemplateContext } from '../product-app/index.js';
 import { removeWorktreeDir } from '@platform/git/worktree.js';
-import { commentOnSpecPr, listOpenPrHeads, type PrHead } from '@platform/github/github.js';
+import { commentOnSpecPr, listOpenPrHeads, type CommentKind, type PrHead } from '@platform/github/github.js';
 import { runAgentTask } from '@platform/agents/agent-task.js';
 import { previewTask, type PreviewTask } from './prompts.js';
 import { parseSeedCatalog, readSeedCatalog, saveSeedCatalog, seedCatalogPath } from './seed-catalog.js';
@@ -35,7 +35,7 @@ export type PreviewWorkerRequest =
       // like — see resolvePreviewArgs.
       args?: string;
       // The /preview comment, to answer in its own place.
-      comment: { id: number; kind: 'issue' | 'review' };
+      comment: { id: number; kind: CommentKind };
     }
   | { repo: string; prNumber: number; action: 'update' };
 

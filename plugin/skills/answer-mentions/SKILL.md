@@ -26,7 +26,7 @@ Lo que cambia algo fuera de este checkout lo haces solo con las acciones de roni
 
    **Pon al día la descripción del PR,** solo si la corrida tiene `pr.update-body` y cambiaste código: tiene que describir el PR como queda después de tu cambio. Léela con `gh api repos/{owner}/{repo}/pulls/<PR> --jq .body` y reescribe lo que tu cambio dejó viejo (casi siempre «## Qué cambió» y «## Cómo se verificó», con su bloque «Cómo probar»: una preview prepara sus datos con él; y «## Decisiones propias» si decidiste algo por tu cuenta), con las mismas secciones, títulos e idioma. Si tiene una sección «## Preguntas», quita cada pregunta que una respuesta o tu cambio resolvió, junto con su línea oculta `<!-- ronin:opciones … -->`, y la sección entera cuando quede vacía; las demás, igual. Guárdala con `ronin-act pr.update-body --body-file <archivo>`: la acción rechaza una descripción que no conserve la primera línea «Closes #N» y todo desde `<!-- ronin:help -->`. Si nada quedó viejo, no la toques.
 
-6. **Responde cada mención,** una respuesta por mención, en unas frases: qué cambiaste, la respuesta, o por qué no cambiaste nada. Un comentario de review se responde en su hilo (`pr.reply` con su id); uno general, con `pr.comment`. No resuelvas ningún hilo: eso queda para quien lo abrió.
+6. **Responde cada mención,** una respuesta por mención, en unas frases: qué cambiaste, la respuesta, o por qué no cambiaste nada. Un comentario en línea se responde en su hilo (`pr.reply` con su id); uno general o el texto de un review (no tiene hilo), con `pr.comment`. No resuelvas ningún hilo: eso queda para quien lo abrió.
 
 7. **Reporta** con `result.report`, al final: `threads` vacío y un resumen de una línea.
 

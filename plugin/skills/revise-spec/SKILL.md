@@ -22,7 +22,7 @@ Lo que cambia algo fuera de este checkout lo haces solo con las acciones de roni
 
 4. **Si editaste el spec:** un solo commit nuevo con solo los archivos del spec, y súbelo con `ronin-act git.push`. Nunca amend, rebase ni force-push: la gente revisa este PR commit por commit, y la acción solo acepta commits nuevos encima.
 
-5. **Responde cada mención,** en español, en unas frases: qué cambiaste en el spec (con el enlace al commit), la respuesta o tu pregunta. Una de review se responde en su hilo (`pr.reply` con su id); una general, con `pr.comment`. Una respuesta por mención.
+5. **Responde cada mención,** en español, en unas frases: qué cambiaste en el spec (con el enlace al commit), la respuesta o tu pregunta. Una en un comentario en línea se responde en su hilo (`pr.reply` con su id); una general o en el texto de un review, con `pr.comment`. Una respuesta por mención.
 
 6. **La descripción del PR,** solo si lista las decisiones que tomaste por tu cuenta y esas cambiaron: `ronin-act pr.update-body --body-file <archivo>`, conservando su última nota tal cual.
 
