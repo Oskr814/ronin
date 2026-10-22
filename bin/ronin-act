@@ -1,0 +1,101 @@
+#!/usr/bin/env node
+// The agent's CLI for ronin's actions (#257, src/platform/actions). No dependencies and no secrets:
+// it only knows the URL and the run's credential (RONIN_ACTIONS_URL,
+// RONIN_ACTIONS_TOKEN) and asks the supervisor, which validates and does it.
+// The list of actions and their arguments comes from the supervisor too, so
+// this file never changes when an action is added.
+//
+//   ronin-act                         lists the actions this run has
+//   ronin-act <action> --help         its arguments
+//   ronin-act pr.reply --comment-id 123 --body-file reply.md
+//   ronin-act result.report --json-file result.json
+import { readFileSync } from 'node:fs';
+
+const url = process.env.RONIN_ACTIONS_URL;
+const token = process.env.RONIN_ACTIONS_TOKEN;
+if (!url || !token) {
+  console.error('ronin-act: esta corrida no tiene acciones de ronin (faltan RONIN_ACTIONS_URL y RONIN_ACTIONS_TOKEN)');
+  process.exit(2);
+}
+
+async function call(method, path, body) {
+  const res = await fetch(`${url}${path}`, {
+    method,
+    headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
+  const payload = await res.json().catch(() => ({ error: `respuesta inválida (${res.status})` }));
+  return { ok: res.ok, payload };
+}
+
+const camel = (flag) => flag.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+const kebab = (key) => key.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`);
+
+function usage(action) {
+  const props = action.inputSchema?.properties ?? {};
+  const required = new Set(action.inputSchema?.required ?? []);
+  const lines = [`${action.name} — ${action.summary}`];
+  for (const [key, schema] of Object.entries(props)) {
+    const simple = ['string', 'integer', 'number', 'boolean'].includes(schema.type);
+    const how = simple ? `--${kebab(key)} <${schema.type}>${schema.type === 'string' ? ` | --${kebab(key)}-file <ruta>` : ''}` : `(dentro de --json o --json-file)`;
+    lines.push(`  ${key}${required.has(key) ? '' : ' (opcional)'}: ${how}${schema.description ? ` — ${schema.description}` : ''}`);
+  }
+  if (Object.values(props).some((s) => !['string', 'integer', 'number', 'boolean'].includes(s.type))) {
+    lines.push(`  Entrada completa: --json '<objeto>' o --json-file <ruta>. Esquema: ${JSON.stringify(action.inputSchema)}`);
+  }
+  return lines.join('\n');
+}
+
+function parseArgs(argv, action) {
+  const props = action.inputSchema?.properties ?? {};
+  let input = {};
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (!arg.startsWith('--')) throw new Error(`argumento inesperado: ${arg}`);
+    const value = argv[i + 1];
+    if (value === undefined) throw new Error(`${arg} necesita un valor`);
+    i++;
+    if (arg === '--json') { input = { ...input, ...JSON.parse(value) }; continue; }
+    if (arg === '--json-file') { input = { ...input, ...JSON.parse(readFileSync(value, 'utf8')) }; continue; }
+    const fromFile = arg.endsWith('-file');
+    const key = camel(arg.slice(2, fromFile ? -5 : undefined));
+    const type = props[key]?.type;
+    const raw = fromFile ? readFileSync(value, 'utf8') : value;
+    input[key] = type === 'integer' || type === 'number' ? Number(raw) : type === 'boolean' ? raw === 'true' : raw;
+  }
+  return input;
+}
+
+const [name, ...rest] = process.argv.slice(2);
+const listed = await call('GET', '/actions');
+if (!listed.ok) {
+  console.error(`ronin-act: ${listed.payload.error}`);
+  process.exit(1);
+}
+const actions = listed.payload.actions;
+if (!name || name === '--help' || name === 'help') {
+  console.log(['Acciones de esta corrida:', ...actions.map((a) => `  ${a.name} — ${a.summary}`), '', 'ronin-act <acción> --help para sus argumentos.'].join('\n'));
+  process.exit(0);
+}
+const action = actions.find((a) => a.name === name);
+if (!action) {
+  console.error(`ronin-act: esta corrida no tiene "${name}". Tiene: ${actions.map((a) => a.name).join(', ')}`);
+  process.exit(1);
+}
+if (rest.includes('--help')) {
+  console.log(usage(action));
+  process.exit(0);
+}
+let input;
+try {
+  input = parseArgs(rest, action);
+} catch (error) {
+  console.error(`ronin-act: ${error.message}\n\n${usage(action)}`);
+  process.exit(1);
+}
+const result = await call('POST', `/actions/${name}`, input);
+if (!result.ok) {
+  console.error(`ronin-act: ${result.payload.error}`);
+  process.exit(1);
+}
+console.log(JSON.stringify(result.payload));
