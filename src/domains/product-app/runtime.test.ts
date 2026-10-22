@@ -5,7 +5,7 @@ vi.mock('@platform/agents/repo-context.js', () => ({
   activeRepo: () => ({ productRepo: 'redmotos/shoppingcart', productRepoPath: '/repo', worktreeBasePath: '/wt' }),
 }));
 
-import { appProjectName, rewriteComposeConfig } from './runtime.js';
+import { appEnv, appProjectName, rewriteComposeConfig } from './runtime.js';
 
 const resolved = {
   name: 'app-probe',
@@ -52,5 +52,17 @@ describe('appProjectName', () => {
   it('is stable per repo and app, and a valid compose project name', () => {
     expect(appProjectName('backoffice')).toBe('ronin-app-redmotos-shoppingcart-backoffice');
     expect(appProjectName('Back Office!')).toBe('ronin-app-redmotos-shoppingcart-back-office-');
+  });
+});
+
+describe('appEnv', () => {
+  it("drops ronin's secrets and NODE_ENV, and runs as CI so pnpm never waits on a question", () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('RONIN_GITHUB_TOKEN', 'secreto');
+    const env = appEnv({ PORT: '4000' });
+    expect(env.NODE_ENV).toBeUndefined();
+    expect(env.RONIN_GITHUB_TOKEN).toBeUndefined();
+    expect(env).toMatchObject({ CI: 'true', PORT: '4000' });
+    vi.unstubAllEnvs();
   });
 });
