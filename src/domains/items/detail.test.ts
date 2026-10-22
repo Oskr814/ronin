@@ -73,6 +73,14 @@ describe('itemDetail', () => {
     expect(await itemDetail(ENTRY, { kind: 'issue', number: 844 })).not.toHaveProperty('linear');
   });
 
+  it("brings the questions of the PR's description, with their options, also on its issue's page", async () => {
+    const body = '## Preguntas\n1. ¿Se cobra el envío?\n   <!-- ronin:opciones ["Sí", "No"] -->\n';
+    getDiscussion.mockImplementation(async (kind: string, number: number) => ({ ...discussion(number), ...(kind === 'pr' ? { body } : {}) }));
+    expect((await itemDetail(ENTRY, { kind: 'issue', number: 844, pr: 849 })).questions).toEqual([{ text: '¿Se cobra el envío?', options: ['Sí', 'No'] }]);
+    resetDetailCache();
+    expect(await itemDetail(ENTRY, { kind: 'issue', number: 844 })).not.toHaveProperty('questions');
+  });
+
   it("keeps a PR's reviews and threads, also on its issue's page", async () => {
     getDiscussion.mockImplementation(async (kind: string, number: number) => ({ ...discussion(number, 1), ...(kind === 'pr' ? { reviews: [{ author: 'a', body: 'ok', state: 'APPROVED', submittedAt: '' }], threads: [{ path: 'a.ts', line: 1, isResolved: false, isOutdated: false, url: '', comments: [] }] } : {}) }));
     const own = await itemDetail(ENTRY, { kind: 'pr', number: 849, issue: 844 });

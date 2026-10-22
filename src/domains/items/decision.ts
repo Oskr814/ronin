@@ -15,7 +15,10 @@ import { DomainError } from '@platform/errors.js';
 
 export class DecisionError extends DomainError {}
 
-export type Decision = 'approve' | 'adjust' | 'close';
+// `answer`: the answers to the questions its internal review left in the
+// description (#194), a mention like an adjustment's, without the pending
+// comments of Archivos.
+export type Decision = 'approve' | 'adjust' | 'close' | 'answer';
 
 // GitHub's own limit on a comment's body.
 const MAX_TEXT = 65_536;
@@ -70,6 +73,11 @@ export async function runDecision(entry: RepoEntry, target: DecisionTarget, sess
         return commentOnIssue(session.token, repo, prNumber, `@${botLogin} /fix-comments${text ? `\n\n${text}` : ''}`);
       }
       if (!text) throw new DecisionError('escribí qué debería cambiar ronin');
+      return commentOnIssue(session.token, repo, prNumber, `@${botLogin} ${text}`);
+    }
+    case 'answer': {
+      const text = textOf(body);
+      if (!text) throw new DecisionError('elegí o escribí al menos una respuesta');
       return commentOnIssue(session.token, repo, prNumber, `@${botLogin} ${text}`);
     }
     case 'close': {

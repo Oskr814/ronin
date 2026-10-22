@@ -88,6 +88,14 @@ describe('runDecision', () => {
     expect(commentOnIssue).not.toHaveBeenCalled();
   });
 
+  it('answers the questions with a mention, leaving the pending comments of Archivos alone', async () => {
+    pendingReview.mockResolvedValue(PENDING);
+    expect(await run({ decision: 'answer', text: 'Respuestas:\n1. ¿Sí?\n   Respuesta: Sí' })).toEqual({ id: 1, url: 'comment' });
+    expect(commentOnIssue).toHaveBeenCalledWith('gho_user', 'acme/product', 918, '@ronin-agent Respuestas:\n1. ¿Sí?\n   Respuesta: Sí');
+    expect(submitReview).not.toHaveBeenCalled();
+    await expect(run({ decision: 'answer', text: ' ' })).rejects.toThrow('al menos una respuesta');
+  });
+
   it('closes the PR with its reason, dropping the pending review, and the issue only when asked', async () => {
     pendingReview.mockResolvedValue(PENDING);
     expect(await run({ decision: 'close', text: 'otro enfoque' })).toEqual({ url: 'pr' });

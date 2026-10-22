@@ -15,6 +15,7 @@ import { useExploration, type FichaAsked } from './fichas.js';
 import { Head } from './Head.js';
 import { KEY_SEQ_MS, markUnit, moveUnit } from './Keys.js';
 import { useItem, type Action, type ItemPage } from './model.js';
+import { Questions } from './Questions.js';
 import { useReview, type Review } from './Review.js';
 import { Activity, Transcript } from './Runs.js';
 
@@ -275,6 +276,7 @@ export function Item({ id }: { id: string }) {
   return <>
     <Head v={v} actions={menuEl} decide={decide} review={review} explore={(action) => setFasked({ action })} />
     <Activity v={v} />
+    <Questions key={id} v={v} />
     {v.item.kind !== 'other' && <Tab v={v} files={files.q} review={review} keys={filesKeys} ask={setFasked} fichaKeys={fichaKeys} />}
     {asked && <ActionDialog v={v} asked={asked} busy={dialogBusy} close={() => setAsked(null)} />}
     {fasked && <FichaDialog key={`${fasked.action}:${fasked.ficha?.key ?? ''}`} v={v} asked={fasked} busy={fichaBusy} close={() => setFasked(null)} />}

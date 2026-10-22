@@ -68,6 +68,22 @@ describe('an item’s page', () => {
     expect(container.querySelector('.psec.decis h3')?.textContent).toBe('Preguntas');
   });
 
+  it('puts the questions under the head, answered with their options or in words, and warns on approving', async () => {
+    const questions = [{ text: '¿Va también en el listado?', options: ['Sí, en las dos', 'No, solo en la ficha'] }, { text: '¿Con código de país?', options: [] }];
+    const { container } = show({ detail: { ...detail(), questions } });
+    expect(container.querySelector('.pqs h3')?.textContent).toContain('2 preguntas para vos');
+    fireEvent.click(screen.getByRole('button', { name: 'No, solo en la ficha' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Responder' }));
+    fireEvent.change(container.querySelector('.pqs textarea')!, { target: { value: 'Sí, +504' } });
+    fireEvent.click(screen.getByRole('button', { name: /^Aprobar/ }));
+    expect(container.querySelector('.drop .dt')?.textContent).toContain('Tiene 2 preguntas sin responder');
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Mandar 2 respuestas' }));
+    await waitFor(() => expect(posted).toHaveLength(1));
+    expect(posted[0]).toEqual(['/api/items/acme%2Ftienda%2341/decision', { decision: 'answer', text: 'Respuestas a las preguntas de la descripción:\n\n1. ¿Va también en el listado?\n   Respuesta: No, solo en la ficha\n2. ¿Con código de país?\n   Respuesta: Sí, +504' }]);
+    await waitFor(() => expect(container.querySelector('.pqs-sent')).not.toBeNull());
+  });
+
   it('asks ronin for an adjustment with P, a suggestion and Ctrl+Enter', async () => {
     show();
     fireEvent.keyDown(document, { key: 'p' });

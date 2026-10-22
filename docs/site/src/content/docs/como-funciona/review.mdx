@@ -48,9 +48,10 @@ Todo el código de un PR de ronin lo escribió la IA, así que antes de que una 
 
 1. Revisa el PR con los mismos criterios.
 2. Corrige en la rama del PR los hallazgos críticos e importantes. Los menores y lo que ya existía antes del PR los deja.
-3. Lo que solo puede decidir una persona lo escribe en la descripción, en una sección **Preguntas**, con palabras simples y las opciones cuando las hay.
+3. Las decisiones que dejó la review las toma ronin y las anota en **Decisiones propias**: un texto, un detalle de la pantalla, un valor por defecto, cuál de dos arreglos razonables.
+4. Solo pregunta lo que es un **bloqueo real**: lo que ni el issue, ni el código, ni sus tests resuelven, y donde equivocarse cuesta caro o le toca decidirlo a una persona (datos que se pierden, quién puede ver o hacer qué, plata, una integración con otro sistema, algo que contradice el issue). Lo escribe en la descripción, en una sección **Preguntas**, con palabras simples. Debajo de cada pregunta deja las respuestas sugeridas en un bloque oculto, que GitHub no muestra y el tablero muestra como botones.
 
-Las preguntas se contestan mencionando a ronin en el PR: aplica la respuesta y saca la pregunta. Mientras quede alguna, el [auto-merge](/ronin/referencia/comandos/#auto-merge) espera. También espera a que termine la review del último commit.
+Las preguntas se contestan [desde el tablero](/ronin/guias/decidir-un-pr/#las-preguntas), o mencionando a ronin en el PR: aplica la respuesta y saca la pregunta. Mientras quede alguna, el [auto-merge](/ronin/referencia/comandos/#auto-merge) espera. También espera a que termine la review del último commit.
 
 Mientras revisa, el PR muestra el check `ronin/review-interna`. Cada commit nuevo (una respuesta, un ajuste pedido) se revisa solo en lo que cambió.
 

@@ -59,6 +59,6 @@ describe('the PR body', () => {
   // #194: what the internal review asked a person, until it's settled.
   it('takes out of «Preguntas» what got settled, and keeps the rest', () => {
     expect(prBodyUpdateRule(42)).toContain('"## Preguntas" section');
-    expect(prBodyUpdateRule(42)).toMatch(/remove each question that a person's answer or your change settled, and the whole section once it is empty/);
+    expect(prBodyUpdateRule(42)).toMatch(/remove each question that a person's answer or your change settled, together with the hidden "<!-- ronin:opciones … -->" line under it, and the whole section once it is empty/);
   });
 });

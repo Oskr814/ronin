@@ -1,5 +1,6 @@
 import { config } from '@platform/config/config.js';
 import { getDiscussion, type Discussion } from '@platform/github/github.js';
+import { prQuestions, type PrQuestion } from '@platform/github/pr-body.js';
 import { linearRefFrom, type LinearRef } from '@platform/linear/linear.js';
 import { log } from '@platform/logger.js';
 import { withActiveRepo, type RepoEntry } from '@platform/agents/repo-context.js';
@@ -28,6 +29,9 @@ export interface ItemDetail {
   pr?: Discussion;
   // The issue's Linear issue, from the Linear bot's comment on it (#101).
   linear?: LinearRef;
+  // The questions ronin's internal review left in its PR's description
+  // (#194), with their suggested answers: the page asks them.
+  questions?: PrQuestion[];
   error?: string;
 }
 
@@ -68,11 +72,13 @@ async function fetchDetail(entry: RepoEntry, ref: ItemRef): Promise<ItemDetail> 
     // comments under the issue, the PR's comments and reviews under the PR.
     const trim = (d: Discussion): Discussion => ({ ...d, comments: d.comments.slice(-MAX_COMMENTS) });
     const linear = issue ? linearRefFrom(issue.comments) : null;
+    const questions = pr ? prQuestions(pr.body) : [];
     return {
       fetchedAt: new Date().toISOString(),
       ...(linear ? { linear } : {}),
       ...(issue ? { issue: trim(issue) } : {}),
       ...(pr ? { pr: trim(pr) } : {}),
+      ...(questions.length ? { questions } : {}),
     };
   });
 }
