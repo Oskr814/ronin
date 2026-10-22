@@ -58,6 +58,19 @@ export interface RunServices {
   close(): Promise<void>;
 }
 
+// The app a run works on, already up (#257, app.exec): its compose stack,
+// for a command in one of its services. Given by the task that brought it
+// up (domains/product-app/services.ts's appStack).
+export interface RunApp {
+  exec(service: string, command: string, oneOff: boolean): Promise<{ exitCode: number; output: string }>;
+}
+
+// What a run's actions reach besides GitHub and its checkout.
+export interface RunTools {
+  services?: RunServices;
+  app?: RunApp;
+}
+
 // The checkout's HEAD into the shared repo, through a bundle the agent's
 // user writes: root only ever reads a file, never runs git in the agent's
 // repo. Checked again here, in root's repo — the agent could have changed
@@ -114,7 +127,7 @@ export function bodyKeepsWhatItMust(current: string, next: string): string | nul
   return null;
 }
 
-export async function executeAction(scope: RunScope, checkout: RunCheckout, action: ValidAction, services?: RunServices): Promise<ActionResult> {
+export async function executeAction(scope: RunScope, checkout: RunCheckout, action: ValidAction, { services, app }: RunTools = {}): Promise<ActionResult> {
   switch (action.name) {
     case 'pr.reply':
       await replyToComment(prNumberOf(scope), { id: action.input.commentId, kind: 'review' }, action.input.body);
@@ -167,6 +180,9 @@ export async function executeAction(scope: RunScope, checkout: RunCheckout, acti
     case 'services.run':
       if (!services) throw new ActionRefused('esta corrida no tiene servicios');
       return await services.run(action.input.service, action.input.command);
+    case 'app.exec':
+      if (!app) throw new ActionRefused('esta corrida no tiene una app levantada');
+      return await app.exec(action.input.service, action.input.command, action.input.oneOff);
     case 'result.report':
       return {};
   }

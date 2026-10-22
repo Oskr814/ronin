@@ -81,6 +81,15 @@ describe('validateAction — implementing', () => {
   });
 });
 
+describe('validateAction — app.exec', () => {
+  it('takes a service and a command, in its running container unless asked for a new one', async () => {
+    const withApp: RunScope = { ...scope, allowed: ['app.exec'] };
+    expect(await validateAction(withApp, 'app.exec', { service: 'db', command: 'psql -c "select 1"' })).toEqual({ name: 'app.exec', input: { service: 'db', command: 'psql -c "select 1"', oneOff: false } });
+    expect(await refusal(validateAction(withApp, 'app.exec', { service: '', command: 'x' }))).toMatch(/service/);
+    expect(await refusal(validateAction(scope, 'app.exec', { service: 'db', command: 'x' }))).toContain('no puede usar');
+  });
+});
+
 describe('hasMention', () => {
   it('finds a handle', () => {
     expect(hasMention('@persona revisalo')).toBe(true);

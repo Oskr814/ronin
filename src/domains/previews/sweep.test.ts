@@ -16,7 +16,7 @@ vi.mock('@platform/github/github.js', () => ({
   listOpenPrHeads: (...args: unknown[]) => listOpenPrHeads(...args),
   commentOnSpecPr: (...args: unknown[]) => commentOnSpecPr(...args),
 }));
-vi.mock('../product-app/runtime.js', () => ({ appDown: vi.fn(), appUp: vi.fn(), APP_STATE_DIR: '.ronin-app' }));
+vi.mock('../product-app/runtime.js', () => ({ appDown: vi.fn(), appUp: vi.fn(), appStateDir: async (dir: string) => join(dir, '.ronin-app'), isAgentCheckout: async () => false, removeAppCheckout: (dir: string, label: string) => removeWorktreeDir(dir, label), APP_STATE_DIR: '.ronin-app' }));
 const removeWorktreeDir = vi.fn();
 vi.mock('@platform/git/worktree.js', () => ({ removeWorktreeDir: (...args: unknown[]) => removeWorktreeDir(...args) }));
 const lockHeld = vi.fn();

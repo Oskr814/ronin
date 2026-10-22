@@ -11,8 +11,10 @@ vi.mock('@platform/agents/repo-context.js', () => ({
 }));
 vi.mock('@platform/config/config.js', () => ({ config: { worktreeBaseRef: 'origin/main' } }));
 vi.mock('@platform/git/worktree.js', () => ({ getFreePort: async () => 41000 }));
+const appCompose = vi.fn();
+vi.mock('./runtime.js', async (importOriginal) => ({ ...(await importOriginal<object>()), appCompose: (...args: unknown[]) => appCompose(...args) }));
 
-const { mountCheckout, runServices } = await import('./services.js');
+const { appStack, mountCheckout, runServices } = await import('./services.js');
 const { ActionRefused } = await import('@platform/actions/catalog.js');
 
 describe('mountCheckout', () => {
@@ -93,5 +95,33 @@ describe('runServices', () => {
     await used.close();
     expect(exec.mock.calls.some(([file, args]) => file === 'docker' && args.includes('down'))).toBe(true);
     expect(exec.mock.calls.some(([file, args]) => file === 'git' && args[0] === 'worktree' && args[1] === 'remove')).toBe(true);
+  });
+});
+
+describe('appStack', () => {
+  const owner = { name: 'agent-acme', uid: 1600, gid: 1600, home: '/home/agent-acme' };
+  beforeEach(() => {
+    exec.mockReset();
+    appCompose.mockResolvedValue({ args: ['compose', '-p', 'ronin-app-x', '-f', '/wt/.ronin-app/agent-x/compose.json'], services: ['db', 'web'] });
+  });
+
+  it("runs the command in the running app's container, or in a new one, and gives the checkout back to the agent", async () => {
+    exec.mockResolvedValue({ stdout: ' count \n 3\n', stderr: '' });
+    const app = appStack('/wt/agent-x', owner);
+
+    expect(await app.exec('db', 'psql -c "select count(*) from orders"', false)).toEqual({ exitCode: 0, output: ' count \n 3\n' });
+    expect(exec).toHaveBeenCalledWith('docker', ['compose', '-p', 'ronin-app-x', '-f', '/wt/.ronin-app/agent-x/compose.json', 'exec', '-T', 'db', 'sh', '-c', 'exec 2>&1; psql -c "select count(*) from orders"'], expect.objectContaining({ cwd: '/wt/agent-x' }));
+    expect(exec).toHaveBeenCalledWith('chown', ['-R', '1600:1600', '/wt/agent-x']);
+
+    await app.exec('web', 'dotnet test', true);
+    expect(exec.mock.calls.find(([, args]) => args.includes('exec 2>&1; dotnet test'))![1]).toEqual(expect.arrayContaining(['run', '--rm', '-T', 'web']));
+  });
+
+  it('refuses a service the stack does not have, or an app without a stack', async () => {
+    const app = appStack('/wt/agent-x', owner);
+    await expect(app.exec('redis', 'redis-cli ping', false)).rejects.toThrow('tiene: db, web');
+    appCompose.mockResolvedValue(null);
+    await expect(app.exec('db', 'psql', false)).rejects.toBeInstanceOf(ActionRefused);
+    expect(exec).not.toHaveBeenCalled();
   });
 });

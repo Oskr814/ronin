@@ -123,6 +123,14 @@ export const ACTIONS = {
       command: z.string().min(1).max(4_000).describe('El comando, para sh -c'),
     }),
   },
+  'app.exec': {
+    summary: 'Corre un comando en un servicio del stack de la app que ronin levantó para esta corrida, como psql en su base de datos: en el contenedor que ya corre, o con oneOff en uno nuevo del servicio (compose run --rm), para tests que necesitan sus herramientas. Devuelve el código de salida y el final de la salida. Corta a los 9 minutos.',
+    input: z.object({
+      service: z.string().min(1).describe('El servicio, como en el compose de la app'),
+      command: z.string().min(1).max(4_000).describe('El comando, para sh -c'),
+      oneOff: z.boolean().default(false).describe('En un contenedor nuevo del servicio en vez del que corre'),
+    }),
+  },
   'result.report': {
     summary: 'Reporta el resultado de la corrida. Es lo último que haces.',
     input: z.object({

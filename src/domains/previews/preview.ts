@@ -1,8 +1,10 @@
 import { join, normalize } from 'node:path';
 import { activeRepo } from '@platform/agents/repo-context.js';
-import { appDown, appRerun, appUp, APP_STATE_DIR, stepLabel, type AppSession } from '../product-app/index.js';
+import { appDown, appRerun, appStateDir, appUp, isAgentCheckout as isAgentClone, removeAppCheckout, stepLabel, type AppSession } from '../product-app/index.js';
+import { appStack } from '../product-app/services.js';
 import { APP_MANIFEST_FILE, appsTouched, parseAppManifest, publicizeTemplate, publicPortsIn, publicUrl, stepsToRerun, type AppDefinition, type AppStep, type AppUser, type TemplateContext } from '../product-app/index.js';
-import { removeWorktreeDir } from '@platform/git/worktree.js';
+import { agentCloneAt } from '@platform/git/worktree.js';
+import { asAgent, prepareAgentUser, repoAgentUser, type AgentUser } from '@platform/agents/agent-user.js';
 import { commentOnSpecPr, listOpenPrHeads, type CommentKind, type PrHead } from '@platform/github/github.js';
 import { runAgentTask } from '@platform/agents/agent-task.js';
 import { previewTask, type PreviewTask } from './prompts.js';
@@ -139,26 +141,28 @@ function slotKey(): string {
   return activeRepo().productRepo.toLowerCase().replace(/[^a-z0-9]+/g, '-');
 }
 
-function previewStatePath(dir: string): string {
-  return join(dir, APP_STATE_DIR, 'preview.json');
+// Next to the app's own state (appStateDir): out of the checkout when it is
+// the agent's.
+async function previewStatePath(dir: string): Promise<string> {
+  return join(await appStateDir(dir), 'preview.json');
 }
 
 async function readPreviewState(dir: string): Promise<PreviewState | null> {
   try {
-    return JSON.parse(await host().fs.readFile(previewStatePath(dir), 'utf8')) as PreviewState;
+    return JSON.parse(await host().fs.readFile(await previewStatePath(dir), 'utf8')) as PreviewState;
   } catch {
     return null;
   }
 }
 
 async function writePreviewState(dir: string, state: PreviewState): Promise<void> {
-  await host().fs.writeFile(previewStatePath(dir), JSON.stringify(state, null, 2));
+  await host().fs.writeFile(await previewStatePath(dir), JSON.stringify(state, null, 2));
 }
 
 // The ronin.app.json the preview was brought up with, as text: an update
 // can only run steps again if the manifest is still the same one.
-function previewManifestPath(dir: string): string {
-  return join(dir, APP_STATE_DIR, 'preview-manifest.json');
+async function previewManifestPath(dir: string): Promise<string> {
+  return join(await appStateDir(dir), 'preview-manifest.json');
 }
 
 // Read the way appUp renders them: a `start` step's env goes through
@@ -192,17 +196,20 @@ export function chooseManifest(changedByPr: boolean, base: string | null, head: 
   return head !== null ? { raw: head, from: 'pr' } : null;
 }
 
-async function previewManifest(dir: string, pr: Pick<PrHead, 'baseRefName' | 'headRefOid'>): Promise<string> {
+// From the shared repo, by commit, like every git ronin runs about the PR:
+// never from the checkout, which the agent can write (#257).
+async function previewManifest(pr: Pick<PrHead, 'baseRefName' | 'headRefOid'>): Promise<string> {
   const repo = activeRepo().productRepoPath;
   await host().exec('git', ['fetch', 'origin', pr.baseRefName], { cwd: repo });
   const baseRef = `origin/${pr.baseRefName}`;
-  const mergeBase = (await host().exec('git', ['merge-base', baseRef, pr.headRefOid], { cwd: dir })).stdout.trim();
+  const mergeBase = (await host().exec('git', ['merge-base', baseRef, pr.headRefOid], { cwd: repo })).stdout.trim();
   // Exit code 1 means there's a difference.
-  const changedByPr = await host().exec('git', ['diff', '--quiet', mergeBase, pr.headRefOid, '--', APP_MANIFEST_FILE], { cwd: dir })
+  const changedByPr = await host().exec('git', ['diff', '--quiet', mergeBase, pr.headRefOid, '--', APP_MANIFEST_FILE], { cwd: repo })
     .then(() => false, () => true);
-  const base = await host().exec('git', ['show', `${baseRef}:${APP_MANIFEST_FILE}`], { cwd: dir, maxBuffer: 10 * 1024 * 1024 })
+  const show = (ref: string) => host().exec('git', ['show', `${ref}:${APP_MANIFEST_FILE}`], { cwd: repo, maxBuffer: 10 * 1024 * 1024 })
     .then(({ stdout }) => stdout, () => null);
-  const head = await host().fs.readFile(join(dir, APP_MANIFEST_FILE), 'utf8').catch(() => null);
+  const base = await show(baseRef);
+  const head = await show(pr.headRefOid);
   const chosen = chooseManifest(changedByPr, base, head);
   if (!chosen) throw new Error(`ni este PR ni \`${pr.baseRefName}\` tienen un ${APP_MANIFEST_FILE}: no sé cómo levantar la app`);
   log.info(`preview: ${APP_MANIFEST_FILE} ${chosen.from === 'pr' ? 'del PR' : `de ${pr.baseRefName}`}`);
@@ -212,10 +219,10 @@ async function previewManifest(dir: string, pr: Pick<PrHead, 'baseRefName' | 'he
 // What the PR changes against its base (previewManifest already fetched it),
 // to tell which app it's about. Nothing when it can't be compared: then the
 // app has to be named.
-async function prFiles(dir: string, pr: Pick<PrHead, 'baseRefName' | 'headRefOid'>): Promise<string[]> {
+async function prFiles(pr: Pick<PrHead, 'baseRefName' | 'headRefOid'>): Promise<string[]> {
   try {
-    const mergeBase = (await host().exec('git', ['merge-base', `origin/${pr.baseRefName}`, pr.headRefOid], { cwd: dir })).stdout.trim();
-    return await changedFiles(dir, mergeBase, pr.headRefOid);
+    const mergeBase = (await host().exec('git', ['merge-base', `origin/${pr.baseRefName}`, pr.headRefOid], { cwd: activeRepo().productRepoPath })).stdout.trim();
+    return await changedFiles(mergeBase, pr.headRefOid);
   } catch {
     return [];
   }
@@ -248,22 +255,49 @@ async function isLiveWorktree(dir: string): Promise<boolean> {
     .then(({ stdout }) => stdout.trim() === 'true', () => false);
 }
 
+// In the image, the preview's checkout is a clone of the agent's user
+// (#257): the app's code runs as that user, and the preview's agents too,
+// sealed. ronin runs no git in it — what it needs about the PR's commits it
+// asks the shared repo — and moving it to another commit is that user's
+// git. Outside the image (no agent users), ronin's own worktree, as before.
+async function previewUser(): Promise<AgentUser | null> {
+  const user = repoAgentUser();
+  if (user) await prepareAgentUser(user);
+  return user;
+}
+
+// The checkout at `sha`, as is: what a run on it changed in the code goes.
+// The ignored files (node_modules) stay.
+async function resetCheckout(dir: string, sha: string, user: AgentUser | null, clean = false): Promise<void> {
+  // What the app's containers wrote in the agent's clone is root's: back to
+  // the agent, or its git can't move or clean it.
+  if (user) await host().exec('chown', ['-R', `${user.uid}:${user.gid}`, dir]);
+  const git = (args: string[]) => host().exec('git', args, user ? asAgent(user, { cwd: dir }) : { cwd: dir });
+  await git(['checkout', '--detach', '--force', sha]);
+  if (clean) await git(['clean', '-fd']);
+}
+
 // Detached at the PR's head SHA, fetched through refs/pull/<n>/head like an
 // external review's worktree. A live one is reused (its node_modules make a
-// second /preview much faster) and moved to the new head.
+// second /preview much faster) and moved to the new head — unless it is
+// ronin's worktree and there are agent users now: it goes, and the clone
+// takes its place.
 async function ensurePreviewWorktree(prNumber: number, sha: string): Promise<string> {
   const dir = previewDirFor(prNumber);
   const repo = activeRepo().productRepoPath;
+  const user = await previewUser();
   await host().exec('git', ['fetch', 'origin', `pull/${prNumber}/head`], { cwd: repo });
-  if (await isLiveWorktree(dir)) {
-    await host().exec('git', ['checkout', '--detach', '--force', sha], { cwd: dir });
-  } else {
-    if (await host().fs.exists(dir)) await removeWorktreeDir(dir, 'ensurePreviewWorktree');
-    await host().fs.mkdir(activeRepo().worktreeBasePath, { recursive: true });
-    await host().exec('git', ['worktree', 'add', '--detach', dir, sha], { cwd: repo });
+  if (user ? await isAgentClone(dir) : await isLiveWorktree(dir)) {
+    await resetCheckout(dir, sha, user);
+    return dir;
   }
+  if (await host().fs.exists(dir)) await removeAppCheckout(dir, 'ensurePreviewWorktree');
+  await host().fs.mkdir(activeRepo().worktreeBasePath, { recursive: true });
+  if (user) return agentCloneAt(dir, sha, user);
+  await host().exec('git', ['worktree', 'add', '--detach', dir, sha], { cwd: repo });
   return dir;
 }
+
 
 // Unpublishes and stops whatever preview `dir` has up, keeping the worktree.
 // Never throws, like appDown.
@@ -273,8 +307,8 @@ async function takeDownPreviewApp(dir: string): Promise<void> {
   for (const port of published) await unservePort(port);
   await appDown(dir);
   await reservations().releasePorts(dir);
-  await host().fs.rm(previewStatePath(dir), { force: true });
-  await host().fs.rm(previewManifestPath(dir), { force: true });
+  await host().fs.rm(await previewStatePath(dir), { force: true });
+  await host().fs.rm(await previewManifestPath(dir), { force: true });
 }
 
 // What prepare-preview-data left ready, or why it couldn't run — the preview
@@ -314,6 +348,25 @@ export function parsePreviewTriage(raw: string): { alcanzan: boolean; usar: stri
   return { alcanzan: parsed.alcanzan === true, usar: stringLines(parsed.usar) };
 }
 
+// A preview agent's own output directory: sealed (#257), it writes only
+// there, and ronin takes what it needs from it — the files it keeps go next
+// to the app's state — before removing it.
+async function withOutputDir<T>(prNumber: number, kind: string, run: (dir: string) => Promise<T>): Promise<T> {
+  const dir = join(activeRepo().worktreeBasePath, 'preview-out', `pr-${prNumber}-${kind}-${Date.now()}`);
+  await host().fs.mkdir(dir, { recursive: true });
+  try {
+    return await run(dir);
+  } finally {
+    await host().fs.rm(dir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+// The app's stack for app.exec. What a container writes in the checkout
+// goes back to the agent's user, when the checkout is its own.
+async function previewStack(dir: string) {
+  return appStack(dir, (await isAgentClone(dir)) ? await previewUser() : null);
+}
+
 function describeServices(ctx: TemplateContext): string {
   const compose = Object.entries(ctx.ports).flatMap(([service, byTarget]) =>
     Object.entries(byTarget).map(([target, port]) => `- ${service}:${target} → http://127.0.0.1:${port}`));
@@ -328,27 +381,29 @@ function describeServices(ctx: TemplateContext): string {
 // the data is prepared as without a catalog.
 async function seedCatalog(prNumber: number, sha: string, session: AppSession): Promise<string | null> {
   try {
-    const path = await seedCatalogPath(session.dir, sha, session.appName, session.app);
+    const path = await seedCatalogPath(sha, session.appName, session.app);
     const existing = await readSeedCatalog(path);
     if (existing) {
       log.info(`preview PR #${prNumber}: catálogo de seeds ${path}`);
       return existing;
     }
-    const outputPath = join(session.stateDir, 'seed-catalog.yaml');
-    await host().fs.rm(outputPath, { force: true });
-    await runAgentTask(previewTask({
-      type: 'preview-seed-catalog',
-      prNumber,
-      appName: session.appName,
-      appPath: session.app.path,
-      checkoutDir: session.dir,
-      outputPath,
-      baseUrl: session.baseUrl,
-      services: describeServices(session.ctx),
-      compose: session.ctx.compose,
-      users: session.app.users,
-    }));
-    const catalog = parseSeedCatalog(await host().fs.readFile(outputPath, 'utf8'));
+    const app = await previewStack(session.dir);
+    const catalog = await withOutputDir(prNumber, 'catalog', async (out) => {
+      const outputPath = join(out, 'seed-catalog.yaml');
+      await runAgentTask(previewTask({
+        type: 'preview-seed-catalog',
+        prNumber,
+        appName: session.appName,
+        appPath: session.app.path,
+        checkoutDir: session.dir,
+        outputPath,
+        baseUrl: session.baseUrl,
+        services: describeServices(session.ctx),
+        app,
+        users: session.app.users,
+      }));
+      return parseSeedCatalog(await host().fs.readFile(outputPath, 'utf8'));
+    });
     await saveSeedCatalog(path, catalog, `${activeRepo().productRepo} · ${session.appName}: lo que traen los seeds base.\nLo escribió ronin en la preview del PR #${prNumber} (${sha.slice(0, 7)}), ${new Date().toISOString()}.`);
     log.info(`preview PR #${prNumber}: catálogo de seeds nuevo en ${path}`);
     return catalog;
@@ -378,17 +433,16 @@ async function prepareData(opts: {
 }): Promise<PreviewData> {
   const { prNumber, pr, session, since } = opts;
   const dir = session.dir;
-  const outputPath = join(session.stateDir, since ? 'preview-data-delta.json' : 'preview-data.json');
+  const repo = activeRepo().productRepoPath;
   try {
-    await host().fs.rm(outputPath, { force: true });
     let mergeBase: string;
     if (since) {
       mergeBase = since.from;
     } else {
-      await host().exec('git', ['fetch', 'origin', pr.baseRefName], { cwd: activeRepo().productRepoPath });
-      mergeBase = (await host().exec('git', ['merge-base', `origin/${pr.baseRefName}`, pr.headRefOid], { cwd: dir })).stdout.trim();
+      await host().exec('git', ['fetch', 'origin', pr.baseRefName], { cwd: repo });
+      mergeBase = (await host().exec('git', ['merge-base', `origin/${pr.baseRefName}`, pr.headRefOid], { cwd: repo })).stdout.trim();
     }
-    const stat = (await host().exec('git', ['diff', '--stat', mergeBase, pr.headRefOid], { cwd: dir })).stdout.trim();
+    const stat = (await host().exec('git', ['diff', '--stat', mergeBase, pr.headRefOid], { cwd: repo })).stdout.trim();
     const about = {
       prNumber,
       checkoutDir: dir,
@@ -402,23 +456,32 @@ async function prepareData(opts: {
     // already decided the data needs completing.
     const catalog = since ? null : await seedCatalog(prNumber, pr.headRefOid, session);
     if (catalog) {
-      const triage = await triageData({ ...about, catalog }, session.stateDir);
+      const triage = await triageData({ ...about, catalog });
       if (triage?.alcanzan) return { preparado: [], noPreparado: [], base: triage.usar };
     }
-    await runAgentTask(previewTask({
-      type: 'prepare-preview-data',
-      ...about,
-      appName: session.appName,
-      appPath: session.app.path,
-      outputPath,
-      ...(catalog ? { catalog } : {}),
-      ...(since ? { previous: since.previous } : {}),
-      baseUrl: session.baseUrl,
-      services: describeServices(session.ctx),
-      compose: session.ctx.compose,
-      users: session.app.users,
-    }));
-    return parsePreviewData(await host().fs.readFile(outputPath, 'utf8'));
+    const app = await previewStack(dir);
+    const raw = await withOutputDir(prNumber, 'data', async (out) => {
+      const outputPath = join(out, 'preview-data.json');
+      await runAgentTask(previewTask({
+        type: 'prepare-preview-data',
+        ...about,
+        appName: session.appName,
+        appPath: session.app.path,
+        outputPath,
+        ...(catalog ? { catalog } : {}),
+        ...(since ? { previous: since.previous } : {}),
+        baseUrl: session.baseUrl,
+        services: describeServices(session.ctx),
+        app,
+        users: session.app.users,
+      }));
+      return host().fs.readFile(outputPath, 'utf8');
+    });
+    const data = parsePreviewData(raw);
+    // What a later update builds on (completeData): the first preparation's
+    // as it came; an update's, merged there.
+    if (!since) await host().fs.writeFile(join(session.stateDir, 'preview-data.json'), JSON.stringify(data, null, 2));
+    return data;
   } catch (error) {
     log.error(`preview PR #${prNumber}: no se pudieron preparar los datos`, error);
     return { error: (error as Error).message.split('\n')[0].slice(0, 300) };
@@ -426,19 +489,19 @@ async function prepareData(opts: {
     // The agent is told never to touch the code, and the dev server is
     // serving it: make sure of it. Ignored files (node_modules, .ronin-app)
     // stay.
-    await host().exec('git', ['checkout', '--force', '--detach', pr.headRefOid], { cwd: dir })
-      .then(() => host().exec('git', ['clean', '-fd'], { cwd: dir }))
+    await resetCheckout(dir, pr.headRefOid, (await isAgentClone(dir)) ? await previewUser() : null, true)
       .catch((error) => log.error(`preview PR #${prNumber}: no se pudo limpiar el checkout`, error));
   }
 }
 
 // Null when it couldn't decide: the data is prepared as if they weren't enough.
-async function triageData(task: Omit<Extract<PreviewTask, { type: 'preview-data-triage' }>, 'type' | 'outputPath'>, stateDir: string): Promise<{ alcanzan: boolean; usar: string[] } | null> {
-  const outputPath = join(stateDir, 'preview-triage.json');
+async function triageData(task: Omit<Extract<PreviewTask, { type: 'preview-data-triage' }>, 'type' | 'outputPath'>): Promise<{ alcanzan: boolean; usar: string[] } | null> {
   try {
-    await host().fs.rm(outputPath, { force: true });
-    await runAgentTask(previewTask({ type: 'preview-data-triage', ...task, outputPath }));
-    const triage = parsePreviewTriage(await host().fs.readFile(outputPath, 'utf8'));
+    const triage = await withOutputDir(task.prNumber, 'triage', async (out) => {
+      const outputPath = join(out, 'preview-triage.json');
+      await runAgentTask(previewTask({ type: 'preview-data-triage', ...task, outputPath }));
+      return parsePreviewTriage(await host().fs.readFile(outputPath, 'utf8'));
+    });
     log.info(`preview PR #${task.prNumber}: ${triage.alcanzan ? 'los seeds base alcanzan' : 'hay que preparar datos'}`);
     return triage;
   } catch (error) {
@@ -455,9 +518,9 @@ export async function startPreview(prNumber: number, pr: PrHead, args?: string, 
   const existing = previewDirFor(prNumber);
   if (await host().fs.exists(existing)) await takeDownPreviewApp(existing);
   const dir = await ensurePreviewWorktree(prNumber, sha);
-  const manifest = await previewManifest(dir, pr);
+  const manifest = await previewManifest(pr);
   const { apps } = parseAppManifest(manifest);
-  const touched = Object.keys(apps).length > 1 ? appsTouched(apps, await prFiles(dir, pr)) : [];
+  const touched = Object.keys(apps).length > 1 ? appsTouched(apps, await prFiles(pr)) : [];
   const { appName, instruction } = resolvePreviewArgs(args, Object.keys(apps), touched);
   // Checked before anything starts: a preview is a whole stack, and this
   // host runs a handful at most. A second /preview on the same PR keeps its
@@ -467,7 +530,7 @@ export async function startPreview(prNumber: number, pr: PrHead, args?: string, 
   if (!slot.ok) {
     // Nothing of this PR is running: don't leave its checkout behind until
     // the PR closes.
-    await removeWorktreeDir(dir, 'startPreview');
+    await removeAppCheckout(dir, 'startPreview');
     const holders = slot.holders.map((n) => `#${n}`).join(', ');
     const max = config.previewMaxPerRepo;
     throw new Error(`ya hay ${max} ${max === 1 ? 'preview activa' : 'previews activas'} en este repo (${holders}). Bajá una con \`/preview stop\` en su PR, o esperá a que se mergee o se cierre`);
@@ -477,7 +540,8 @@ export async function startPreview(prNumber: number, pr: PrHead, args?: string, 
   let session: AppSession;
   try {
     // appUp tears down what it started if it fails.
-    session = await appUp(dir, appName, { instance: `pr-${prNumber}`, publicHost, publicPort, manifest });
+    const as = (await isAgentClone(dir)) ? await previewUser() : null;
+    session = await appUp(dir, appName, { instance: `pr-${prNumber}`, publicHost, publicPort, manifest, ...(as ? { as } : {}) });
   } catch (error) {
     await reservations().releasePorts(dir);
     await reservations().releaseSlots(dir);
@@ -504,7 +568,7 @@ export async function startPreview(prNumber: number, pr: PrHead, args?: string, 
       ...(config.previewPrepareData ? { preparing: true } : {}),
     };
     await writePreviewState(dir, state);
-    await host().fs.writeFile(previewManifestPath(dir), manifest);
+    await host().fs.writeFile(await previewManifestPath(dir), manifest);
     for (const p of published) await servePort(p.public, p.local);
     log.info(`preview PR #${prNumber}: ${appName} arriba en ${url}`);
     result = { appName, sha, url, users: session.app.users };
@@ -539,17 +603,18 @@ async function completeData(opts: {
   if (!previous) return null;
   let decision: { completar: boolean; motivo: string };
   try {
-    const stat = (await host().exec('git', ['diff', '--stat', from, pr.headRefOid], { cwd: session.dir })).stdout.trim();
-    decision = parseDataDecision(await runAgentTask(previewTask({
+    const stat = (await host().exec('git', ['diff', '--stat', from, pr.headRefOid], { cwd: activeRepo().productRepoPath })).stdout.trim();
+    decision = parseDataDecision(await withOutputDir(prNumber, 'delta', (outputDir) => runAgentTask(previewTask({
       type: 'preview-data-delta',
       prNumber,
       checkoutDir: session.dir,
+      outputDir,
       title: pr.title,
       body: pr.body.split(HELP_FOOTER_MARKER)[0],
       ...(instruction ? { instruction } : {}),
       diff: { from, stat },
       previous,
-    })));
+    }))));
   } catch (error) {
     log.error(`preview PR #${prNumber}: no se pudo decidir si los commits nuevos necesitan más datos, quedan los que había`, error);
     return null;
@@ -573,7 +638,7 @@ async function markPrepared(dir: string): Promise<void> {
   const state = await readPreviewState(dir);
   if (!state?.preparing) return;
   delete state.preparing;
-  await host().fs.writeFile(previewStatePath(dir), JSON.stringify(state, null, 2)).catch((error) => log.error('preview: no se pudo marcar los datos como listos', error));
+  await host().fs.writeFile(await previewStatePath(dir), JSON.stringify(state, null, 2)).catch((error) => log.error('preview: no se pudo marcar los datos como listos', error));
 }
 
 // --- moving to a new commit ---
@@ -592,8 +657,8 @@ export type PreviewUpdate =
 // The files that changed between two commits, as repo paths. A force-push
 // still diffs fine as long as the old commit is still in the repo: it was
 // the preview's own checkout.
-async function changedFiles(dir: string, from: string, to: string): Promise<string[]> {
-  const { stdout } = await host().exec('git', ['diff', '--name-only', from, to], { cwd: dir, maxBuffer: 10 * 1024 * 1024 });
+async function changedFiles(from: string, to: string): Promise<string[]> {
+  const { stdout } = await host().exec('git', ['diff', '--name-only', from, to], { cwd: activeRepo().productRepoPath, maxBuffer: 10 * 1024 * 1024 });
   return stdout.split('\n').filter(Boolean);
 }
 
@@ -612,13 +677,13 @@ export async function planInPlaceUpdate(
   await host().exec('git', ['fetch', 'origin', `pull/${prNumber}/head`], { cwd: activeRepo().productRepoPath });
   let changed: string[];
   try {
-    changed = await changedFiles(dir, state.sha, pr.headRefOid);
+    changed = await changedFiles(state.sha, pr.headRefOid);
   } catch {
     return { reason: `no pude comparar \`${state.sha.slice(0, 7)}\` con \`${pr.headRefOid.slice(0, 7)}\`` };
   }
-  await host().exec('git', ['checkout', '--detach', '--force', pr.headRefOid], { cwd: dir });
-  const manifest = await previewManifest(dir, pr);
-  const used = await host().fs.readFile(previewManifestPath(dir), 'utf8').catch(() => null);
+  await resetCheckout(dir, pr.headRefOid, (await isAgentClone(dir)) ? await previewUser() : null);
+  const manifest = await previewManifest(pr);
+  const used = await host().fs.readFile(await previewManifestPath(dir), 'utf8').catch(() => null);
   if (used === null) return { reason: `no sé con qué ${APP_MANIFEST_FILE} se levantó` };
   if (manifest !== used) return { reason: `cambió el ${APP_MANIFEST_FILE}` };
   const app = parseAppManifest(manifest).apps[state.appName];
@@ -676,7 +741,7 @@ export async function stopPreview(prNumber: number): Promise<boolean> {
   if (!(await host().fs.exists(dir))) return false;
   await takeDownPreviewApp(dir);
   await reservations().releaseSlots(dir);
-  await removeWorktreeDir(dir, 'stopPreview');
+  await removeAppCheckout(dir, 'stopPreview');
   log.info(`preview PR #${prNumber}: bajada y worktree borrado`);
   return true;
 }
@@ -760,7 +825,7 @@ async function expireIfDue(prNumber: number, now: Date): Promise<boolean> {
   if (!state) return false;
   const startedAt = state.startedAt ? Date.parse(state.startedAt) : NaN;
   if (Number.isNaN(startedAt)) {
-    await host().fs.writeFile(previewStatePath(dir), JSON.stringify({ ...state, startedAt: now.toISOString() }, null, 2));
+    await host().fs.writeFile(await previewStatePath(dir), JSON.stringify({ ...state, startedAt: now.toISOString() }, null, 2));
     return false;
   }
   if (now.getTime() - startedAt < ttlMinutes * 60_000) return false;

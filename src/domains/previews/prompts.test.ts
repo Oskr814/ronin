@@ -88,26 +88,26 @@ describe('runAgentTask — prepare-preview-data', () => {
     diff: { mergeBase: 'abc123', stat: ' 4 files changed' },
     baseUrl: 'http://127.0.0.1:5173',
     services: '- web:80 → http://127.0.0.1:41234',
-    compose: 'docker compose -p p -f f.json',
+    app: { exec: vi.fn() },
     users: [{ role: 'Admin', username: 'admin@x.com', password: 'password' }],
   };
 
-  it('runs in the preview checkout, never a worktree of its own', async () => {
-    await runAgentTask(task);
+  it('runs in the preview checkout, sealed, reaching the stack only through app.exec', async () => {
+    const prepared = await buildTask(task);
 
-    expect(ensureWorktree).not.toHaveBeenCalled();
-    expect(runClaudeHeadless.mock.calls[0][0]).toBe('/tmp/worktrees/preview-pr-818');
+    expect(prepared.checkout).toEqual({ kind: 'dir', dir: '/tmp/worktrees/preview-pr-818' });
+    expect(prepared.sealed).toEqual({ outputDir: '/tmp/worktrees/preview-pr-818/.ronin-app' });
+    expect(prepared.actions?.allowed).toEqual(['app.exec']);
+    expect(prepared.app).toBe(task.app);
   });
 
   it('gives the PR, the request and the running stack, fencing what people wrote', async () => {
-    await runAgentTask(task);
-
-    const prompt = runClaudeHeadless.mock.calls[0][1] as string;
+    const { prompt } = await buildTask(task);
     expect(prompt).toContain('<<<PR_START>>>\n# fix: mostrar todos los catálogos\n\n## Cómo se verificó');
     expect(prompt).toContain('<<<REQUEST_START>>>\nque algunos estén vencidos\n<<<REQUEST_END>>>');
     expect(prompt).toContain('git diff abc123..HEAD');
     expect(prompt).toContain('- web:80 → http://127.0.0.1:41234');
-    expect(prompt).toContain('docker compose -p p -f f.json exec -T');
+    expect(prompt).toContain("ronin-act app.exec --service <service> --command '<command>'");
     expect(prompt).toContain('Admin: admin@x.com / password');
     expect(prompt).toContain(task.outputPath);
   });
@@ -115,9 +115,7 @@ describe('runAgentTask — prepare-preview-data', () => {
   // #193: what to prepare comes from the PR's «Cómo probar»; the diff only
   // says how to create it, or what's needed when the PR has no such block.
   it('prepares what the PR\'s «Cómo probar» asks for, not what it works out from the diff', async () => {
-    await runAgentTask(task);
-
-    const prompt = runClaudeHeadless.mock.calls[0][1] as string;
+    const { prompt } = await buildTask(task);
     expect(prompt).toContain('the "Cómo probar" block of the description');
     expect(prompt).toMatch(/Don't work out on your own what else the change could need/);
     expect(prompt).toMatch(/Only when the description has no such block, work it out from the diff/);
@@ -126,9 +124,8 @@ describe('runAgentTask — prepare-preview-data', () => {
   // A PR behind a flag whose steps start with it off: the preview turns it
   // on anyway, and says how to turn it off.
   it('leaves the change\'s feature flags on for the seeded logins', async () => {
-    await runAgentTask(task);
+    const { prompt } = await buildTask(task);
 
-    const prompt = runClaudeHeadless.mock.calls[0][1] as string;
     expect(prompt).toMatch(/behind a feature flag .* leave it ON for the tenant and users the seeded logins use, even when the steps start with it off/);
     expect(prompt).toMatch(/how to turn it off/);
     // The agent can't change the app's environment: it says so instead.
@@ -136,18 +133,14 @@ describe('runAgentTask — prepare-preview-data', () => {
   });
 
   it('forbids touching code, the stack or GitHub', async () => {
-    await runAgentTask(task);
-
-    const prompt = runClaudeHeadless.mock.calls[0][1] as string;
+    const { prompt } = await buildTask(task);
     expect(prompt).toMatch(/never edit, commit or push code/i);
     expect(prompt).toMatch(/do not stop, restart or rebuild the app/i);
     expect(prompt).toMatch(/never write to github/i);
   });
 
   it('on an update, gives only the new commits and what was already there', async () => {
-    await runAgentTask({ ...task, diff: { mergeBase: 'old123', stat: ' 1 file changed' }, previous: { preparado: ['Cliente demo con 30 catálogos'], noPreparado: [] } });
-
-    const prompt = runClaudeHeadless.mock.calls[0][1] as string;
+    const { prompt } = await buildTask({ ...task, diff: { mergeBase: 'old123', stat: ' 1 file changed' }, previous: { preparado: ['Cliente demo con 30 catálogos'], noPreparado: [] } });
     expect(prompt).toContain('git diff old123..HEAD');
     expect(prompt).toContain('<<<PREVIOUS_START>>>\nPreparado:\n- Cliente demo con 30 catálogos\nNo preparado:\n- (nada)');
     expect(prompt).toMatch(/never delete or redo what the earlier run left/);
@@ -155,9 +148,9 @@ describe('runAgentTask — prepare-preview-data', () => {
 
   it('leaves out the request block when nothing was asked', async () => {
     const { instruction: _, ...withoutRequest } = task;
-    await runAgentTask(withoutRequest);
+    const { prompt } = await buildTask(withoutRequest);
 
-    expect(runClaudeHeadless.mock.calls[0][1]).not.toContain('REQUEST_START');
+    expect(prompt).not.toContain('REQUEST_START');
   });
 });
 
@@ -174,7 +167,7 @@ describe('runAgentTask — prepare-preview-data with a catalog', () => {
     diff: { mergeBase: 'abc123', stat: '' },
     baseUrl: 'http://127.0.0.1:5173',
     services: '',
-    compose: 'docker compose',
+    app: { exec: vi.fn() },
     users: [],
   };
 
@@ -202,18 +195,18 @@ describe('runAgentTask — preview-seed-catalog', () => {
     outputPath: '/tmp/worktrees/preview-pr-818/.ronin-app/seed-catalog.yaml',
     baseUrl: 'http://127.0.0.1:5173',
     services: '- web:80 → http://127.0.0.1:41234',
-    compose: 'docker compose -p p -f f.json',
+    app: { exec: vi.fn() },
     users: [{ role: 'Admin', username: 'admin@x.com', password: 'password' }],
   };
 
   it('runs in the preview checkout, read only, and writes YAML to its output', async () => {
-    await runAgentTask(task);
+    const { prompt, checkout, actions } = await buildTask(task);
 
-    expect(runClaudeHeadless.mock.calls[0][0]).toBe('/tmp/worktrees/preview-pr-818');
-    const prompt = runClaudeHeadless.mock.calls[0][1] as string;
+    expect(checkout).toEqual({ kind: 'dir', dir: '/tmp/worktrees/preview-pr-818' });
+    expect(actions?.allowed).toEqual(['app.exec']);
     expect(prompt).toMatch(/don't create, change or delete any data/);
     expect(prompt).toMatch(/never write to github/i);
-    expect(prompt).toContain('docker compose -p p -f f.json exec -T');
+    expect(prompt).toContain("ronin-act app.exec --service <service> --command '<command>'");
     expect(prompt).toContain('Admin: admin@x.com / password');
     expect(prompt).toContain(`YAML to ${task.outputPath}`);
   });
@@ -233,9 +226,7 @@ describe('runAgentTask — preview-data-triage', () => {
   };
 
   it('gives the PR, the request and the catalog, fenced, and asks for yes or no', async () => {
-    await runAgentTask(task);
-
-    const prompt = runClaudeHeadless.mock.calls[0][1] as string;
+    const { prompt } = await buildTask(task);
     expect(prompt).toContain('<<<PR_START>>>\n# fix: mostrar todos los catálogos');
     expect(prompt).toContain('<<<REQUEST_START>>>\nque algunos estén vencidos\n<<<REQUEST_END>>>');
     expect(prompt).toContain('<<<CATALOG_START>>>\nclientes:\n  total: 8\n<<<CATALOG_END>>>');
@@ -249,18 +240,19 @@ describe('runAgentTask — preview-data-triage', () => {
 
 describe('runAgentTask — preview-data-delta', () => {
   it('asks for a yes/no on the new commits, with what the data already covers', async () => {
-    await runAgentTask(previewTask({
+    const { prompt, checkout, sealed } = await buildTask({
       type: 'preview-data-delta',
       prNumber: 818,
       checkoutDir: '/tmp/worktrees/preview-pr-818',
+      outputDir: '/tmp/delta',
       title: 'fix: mostrar todos los catálogos',
       body: '## Cómo se verificó\nTests.\n\n<details><summary>Cómo probar</summary>\n\n**Datos:**\n- un cliente con más de 12 catálogos\n\n**Pasos:**\n1. Como Admin, en /clientes, abrir el cliente: se ven todos\n</details>',
       diff: { from: 'old123', stat: ' 1 file changed' },
       previous: { preparado: ['Cliente demo con 30 catálogos'], noPreparado: ['un cliente sin email'] },
-    }));
+    });
 
-    expect(runClaudeHeadless.mock.calls[0][0]).toBe('/tmp/worktrees/preview-pr-818');
-    const prompt = runClaudeHeadless.mock.calls[0][1] as string;
+    expect(checkout).toEqual({ kind: 'dir', dir: '/tmp/worktrees/preview-pr-818' });
+    expect(sealed).toEqual({ outputDir: '/tmp/delta' });
     expect(prompt).toContain('git diff old123..HEAD');
     expect(prompt).toContain('- un cliente sin email');
     expect(prompt).toContain('{"completar": true | false');
