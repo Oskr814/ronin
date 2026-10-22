@@ -223,7 +223,9 @@ Lo que un agente cambia fuera de su checkout (responder, resolver un hilo, subir
 - **Skills** (`plugin/skills/`): lo que la corrida hace, cargado con `--plugin-dir` como `ronin:<skill>`. `--setting-sources user` deja afuera los settings, hooks y skills del `.claude/` del repo del producto; su CLAUDE.md sigue cargando.
 - **Entorno sellado** (`claude-runner.ts`, `sealedEnv`): una corrida con acciones no hereda el entorno de ronin (que trae todo `.env`), sino uno armado desde cero: lo que necesitan las herramientas (`AGENT_ENV_KEYS`), su cuenta de Claude, `GH_TOKEN` y las variables de las acciones.
 
-Por ahora solo `fix-comments-external` corre así, con la skill `address-comments`. El agente todavía recibe el token de escritura para leer con `gh`; el token de lectura y correr al agente como otro usuario, sin acceso a `.env` ni a Docker, son los pasos que siguen en #257.
+- **Token de lectura** (`github/read-token.ts`): con la GitHub App de ronin configurada (`RONIN_GITHUB_APP_ID`, `RONIN_GITHUB_APP_KEY_PATH`), cada corrida con acciones recibe como `GH_TOKEN` un token de instalación de solo lectura, limitado al repo de la corrida y que vence en una hora; el de escritura queda en ronin. Si la App no lo puede dar, la corrida no arranca: nunca vuelve a leer con el de escritura. Sin App, el agente lee con el de escritura, como antes. La App solo lee: lo que escribe ronin sigue saliendo de su cuenta.
+
+Por ahora solo `fix-comments-external` corre así, con la skill `address-comments`. Mientras el agente corra como root en el mismo contenedor, puede leer el `.env` y el entorno de ronin: correrlo como otro usuario, sin acceso a `.env` ni a Docker, es el paso que sigue en #257.
 
 ### 7.2 Usuario mencionable
 

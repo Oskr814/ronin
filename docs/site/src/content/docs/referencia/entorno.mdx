@@ -18,6 +18,7 @@ En [Ajustes](/ronin/operar/ajustes/), el valor del tablero gana sobre el de `.en
 | `RUNNER_ID` | — | Tu usuario de GitHub, no un hostname. Identifica al runner frente a otros. **Obligatoria.** |
 | `RONIN_GITHUB_TOKEN` | — | El fine-grained PAT de la cuenta de ronin. **Obligatoria.** |
 | `RONIN_GITHUB_LOGIN` | — | El usuario de esa cuenta: su mención es la que ronin escucha. **Obligatoria.** |
+| `RONIN_GITHUB_APP_ID`, `RONIN_GITHUB_APP_KEY_PATH` | — | La GitHub App del [token de lectura de los agentes](/ronin/operar/instalacion/#el-token-de-lectura-de-los-agentes) y la ruta de su clave privada. Sin ellas, los agentes leen con `RONIN_GITHUB_TOKEN`. |
 | `REPOS_CONFIG_PATH` | `./repos.json` | Dónde está [`repos.json`](/ronin/referencia/repos-json/). |
 | `WORKTREE_BASE_PATH` | junto a cada repo | Dónde viven los worktrees. Con más de un repo, dejalo vacío. |
 | `WORKTREE_BASE_REF` | `origin/main` | La rama base, si el repo no trae la suya en `repos.json`. |

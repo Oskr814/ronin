@@ -50,7 +50,23 @@ Un runner es una máquina que corre ronin para unos repos. Corre por cron, sin s
 
 - **Reaccionar al instante y el tablero:** el [servidor de ronin](/ronin/operar/servidor/), con [el tablero](/ronin/operar/tablero/) y el [portal](/ronin/operar/portal/).
 - **Previews, prototipos y exploración:** un [`ronin.app.json`](/ronin/referencia/app-json/) en el repo del producto y `pnpm browsers:install` una vez. `/preview` necesita además Tailscale en el runner.
+- **Un token de lectura para los agentes:** una GitHub App de ronin, para que el agente lea GitHub con un token de solo lectura que dura una hora, mientras ronin se queda con el de escritura. Sin ella, el agente lee con el token de ronin. Ver [abajo](#el-token-de-lectura-de-los-agentes).
 - **Memoria entre corridas:** en el repo del producto, un `docs/agent-notes/INDEX.md` vacío y una sección en su `CLAUDE.md` que apunte a él. Ahí dejan los agentes lo que aprenden. Sin esto la convención queda inerte, sin error.
+
+## El token de lectura de los agentes
+
+Cuando un agente trabaja con las acciones de ronin (por ahora, [`/fix-comments`](/ronin/referencia/comandos/#fix-comments) en un PR que no abrió ronin), lo que escribe en GitHub lo escribe ronin con su token. Para leer, ronin le crea en cada corrida un token de una GitHub App: solo lectura, solo para el repo de esa corrida y vence en una hora.
+
+1. **Creá la App** desde la cuenta dueña de las organizaciones o desde una de ellas (*Settings → Developer settings → GitHub Apps → New GitHub App*):
+   - un nombre cualquiera y como *Homepage URL* el repo de ronin;
+   - *Webhook* desactivado;
+   - *Repository permissions* en **Read-only**: *Actions*, *Checks*, *Commit statuses*, *Contents*, *Issues*, *Metadata* y *Pull requests*. Ninguna en escritura;
+   - *Where can this GitHub App be installed?*: *Any account*, si los repos están en más de una organización.
+2. **Generá la clave privada** (*Private keys → Generate a private key*) y guardá el `.pem` en el directorio de datos de ronin, no en el repo. Con Docker, en el volumen de `/data`.
+3. **Instalala** en cada organización, solo para los repos de `repos.json` (*Install App*).
+4. **Completá en `.env`** `RONIN_GITHUB_APP_ID` (el *App ID* de la página de la App) y `RONIN_GITHUB_APP_KEY_PATH` (la ruta del `.pem`), y reiniciá.
+
+Si la App no está instalada en un repo, o le falta un permiso, la corrida no arranca y queda en el log: se reintenta en el tick siguiente.
 
 <Aside type="caution" title="Al desplegar una versión nueva">
 `git pull && pnpm install --frozen-lockfile && pnpm build`, y reiniciar el servidor si lo usás. Mientras `pnpm build` reconstruye `dist/`, un tick o un evento que arranque falla; lo retoma el tick siguiente.
