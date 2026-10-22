@@ -10,7 +10,7 @@ import type { Db } from '@platform/db/db.js';
 // cuts it nor runs it twice. One whose lease runs out (its process died) is
 // marked lost; nothing is retried yet: the next tick reconciles, as before.
 
-export type JobKind = 'tick' | 'event';
+export type JobKind = 'tick' | 'event' | 'worker';
 export type JobStatus = 'queued' | 'running' | 'done' | 'failed' | 'lost';
 
 export interface Job {

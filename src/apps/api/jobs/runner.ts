@@ -12,12 +12,19 @@ import { claimNext, finish, reapExpired, type Job, type JobKind } from './store.
 
 // How many of each run at once: one tick (a second one waits its turn, as
 // .tick.pending made it), and the events' handlers, which mostly wait on
-// their issue's lock.
-export const CAPS: Record<JobKind, number> = { tick: 1, event: 20 };
+// their issue's lock. A worker the API asked for (#325) is only handed over:
+// its job ends as soon as it starts.
+export const CAPS: Record<JobKind, number> = { tick: 1, event: 20, worker: 20 };
+
+export interface WorkerJob {
+  name: string;
+  request: unknown;
+}
 
 const SCRIPTS: Record<JobKind, (job: Job) => [string, string[]]> = {
   tick: () => ['apps/api/tick/main', []],
   event: (job) => ['apps/api/webhooks/handler', [JSON.stringify(job.payload)]],
+  worker: (job) => [(job.payload as WorkerJob).name, [JSON.stringify((job.payload as WorkerJob).request)]],
 };
 
 const POLL_MS = 2000;
@@ -37,6 +44,8 @@ export async function runOnce(db: Db, launch = launchScript): Promise<Job[]> {
         const pid = launch(script, args, { RONIN_JOB_ID: job.id });
         if (!pid) throw new Error('el proceso no arrancó');
         log.info(`cola: ${kind} ${job.id}${job.repo ? ` (${job.repo})` : ''} arrancó, pid ${pid}`);
+        // A worker doesn't renew a lease (runAsJob): it runs on its own, as when the API started it.
+        if (kind === 'worker') await finish(db, job.id);
         started.push(job);
       } catch (error) {
         log.error(`cola: no se pudo arrancar ${kind} ${job.id}`, error);
@@ -47,11 +56,13 @@ export async function runOnce(db: Db, launch = launchScript): Promise<Job[]> {
   return started;
 }
 
-export function startRunner(db: Db): () => void {
+// Returns how to stop it: no job is taken after it resolves.
+export function startRunner(db: Db): () => Promise<void> {
   let passes = 0;
   let busy = false;
+  let stopped = false;
   const timer = setInterval(async () => {
-    if (busy) return;
+    if (busy || stopped) return;
     busy = true;
     try {
       if (passes++ % REAP_EVERY === 0) {
@@ -67,5 +78,9 @@ export function startRunner(db: Db): () => void {
   }, POLL_MS);
   timer.unref();
   log.info(`cola: runner local ${runnerName()} tomando trabajos (tick: ${CAPS.tick}, eventos: ${CAPS.event})`);
-  return () => clearInterval(timer);
+  return async () => {
+    stopped = true;
+    clearInterval(timer);
+    while (busy) await new Promise((resolve) => setTimeout(resolve, 100));
+  };
 }

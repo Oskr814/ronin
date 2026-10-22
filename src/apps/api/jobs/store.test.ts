@@ -67,6 +67,14 @@ describe.skipIf(!TEST_DATABASE_URL)('the job queue', () => {
     expect((await listJobs(db, { status: ['failed'] }))[0].error).toBe('el proceso no arrancó');
   });
 
+  it('starts a worker the API queued and ends its job right away: the worker runs on its own', async () => {
+    await enqueue(db, 'worker', { repo: 'acme/app', payload: { name: 'domains/explorations/worker', request: { repo: 'acme/app', appName: 'web' } } });
+    const launch = vi.fn((_script: string, _args: string[]) => 4321);
+    await runOnce(db, launch);
+    expect(launch.mock.calls.map(([script, args]) => [script, JSON.parse(args[0])])).toEqual([['domains/explorations/worker', { repo: 'acme/app', appName: 'web' }]]);
+    expect((await listJobs(db))[0]).toMatchObject({ kind: 'worker', status: 'done' });
+  });
+
   it("a job's process renews its lease and says how it ended", async () => {
     await enqueue(db, 'tick');
     const job = (await claimNext(db, 'tick', 1, 'r'))!;

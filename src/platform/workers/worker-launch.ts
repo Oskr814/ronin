@@ -42,7 +42,19 @@ export async function acquireLock(path: string): Promise<boolean> {
 // cron wrapper writes the tick to (scripts/setup-cron.sh), so its lines sit
 // next to the tick's. Returns the worker's pid.
 export function launchWorker(name: string, request: unknown): number | undefined {
+  if (handOver) {
+    handOver(name, request);
+    return undefined;
+  }
   return launchScript(name, [JSON.stringify(request)]);
+}
+
+// Where a process that must not start workers itself sends them instead:
+// the API, when the runner is a container of its own (#325), queues them,
+// so redeploying the API doesn't take a worker down with it.
+let handOver: ((name: string, request: unknown) => void) | null = null;
+export function handWorkersTo(fn: ((name: string, request: unknown) => void) | null): void {
+  handOver = fn;
 }
 
 // The same for any of ronin's entry points, with its arguments and anything

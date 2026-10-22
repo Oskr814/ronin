@@ -500,7 +500,7 @@ export function releaseExploreLock(): Promise<void> {
 // Starts the worker detached from the tick — see worker-launch.ts.
 export function launchExploreWorker(request: ExploreWorkerRequest): void {
   const pid = launchWorker('domains/explorations/worker', request);
-  log.info(`exploración: worker lanzado para ${request.appName} (pid ${pid})`);
+  log.info(`exploración: worker lanzado para ${request.appName} (${pid ? `pid ${pid}` : 'en la cola del runner'})`);
 }
 
 export async function reactToTrigger(trigger: ExploreWorkerRequest['trigger']): Promise<void> {

@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # The ronin image's entrypoint (#235, stage 5).
-#   server (the default)  gets the container ready and starts ronin
+#   server (the default)  gets the container ready and starts ronin, all in one process
+#   api                   the same, but only the listeners: the jobs go to the runner (#325)
+#   runner                the scheduler and the job queue's runner, without listeners
 #   init [flags]          `ronin init` (src/apps/cli/init.ts)
 #   migrate               brings DATABASE_URL's database up to date
 #   anything else         runs as is (bash, claude, gh…)
@@ -67,6 +69,21 @@ case "${1:-server}" in
     clone_missing
     publish_dashboard &
     exec node dist/apps/api/main.js
+    ;;
+  # The repos are cloned by the runner, the one that works on them: two
+  # containers cloning the same one at once would step on each other.
+  api)
+    mkdir -p "$DATA_DIR/logs" "$DATA_DIR/.ronin-slots" "${CLAUDE_CONFIG_DIR:-/claude/default}"
+    setup_git
+    publish_dashboard &
+    RONIN_ROLE=api exec node dist/apps/api/main.js
+    ;;
+  runner)
+    mkdir -p "$DATA_DIR/logs" "$DATA_DIR/.ronin-slots" "${CLAUDE_CONFIG_DIR:-/claude/default}"
+    setup_git
+    clone_missing
+    export RONIN_ROLE=runner
+    exec node dist/apps/api/jobs/main.js
     ;;
   init)
     shift

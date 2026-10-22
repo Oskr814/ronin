@@ -22,8 +22,10 @@ import { warmDashboard } from '@domains/items/service.js';
 import { timedRequests } from './http/timing.js';
 import { getDb } from '@platform/db/db.js';
 import { migrateToLatest } from '@platform/db/migrate.js';
-import { startRunner } from './jobs/runner.js';
+import { enqueue } from './jobs/store.js';
+import { startRunner, type WorkerJob } from './jobs/runner.js';
 import { startScheduler } from './jobs/scheduler.js';
+import { handWorkersTo } from '@platform/workers/worker-launch.js';
 
 if (!config.webhookSecret) {
   throw new Error('WEBHOOK_SECRET no está seteado — ver .env.example. El servidor no puede arrancar sin validar las firmas de GitHub.');
@@ -44,8 +46,20 @@ if (db) {
   // The job queue (#235, stage 3): the scheduler queues the tick at its
   // times, and the local runner starts every job — the tick and the
   // webhooks' handlers — in its own process. Cron isn't needed anymore.
-  startScheduler(db);
-  startRunner(db);
+  // Started as `api` (RONIN_ROLE, #325), the runner is a container of its own
+  // (apps/api/jobs/main.ts): this one only queues, workers included, so
+  // redeploying it doesn't cut anything.
+  if (process.env.RONIN_ROLE === 'api') {
+    handWorkersTo((name, request) => {
+      const job: WorkerJob = { name, request };
+      const repo = (request as { repo?: unknown } | null)?.repo;
+      enqueue(db, 'worker', { payload: job, ...(typeof repo === 'string' ? { repo } : {}) }).catch((error) => log.error(`no se pudo encolar el worker ${name}`, error));
+    });
+    log.info('cola: el runner es un proceso aparte, este solo encola');
+  } else {
+    startScheduler(db);
+    startRunner(db);
+  }
 }
 
 // A request that throws answers 500 and is logged: it never takes the
