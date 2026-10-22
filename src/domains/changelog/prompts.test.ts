@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { readFileSync } from 'node:fs';
 
 vi.mock('@platform/config/config.js', () => ({
   config: {
@@ -81,8 +82,12 @@ describe('runAgentTask — update-changelog prompt', () => {
     await runAgentTask({ type: 'update-changelog', release: { tagName: 'v1.2.0', name: 'v1.2.0', url: 'https://example.com/r', publishedAt: '2026-10-13T00:00:00Z', isDraft: false, isPrerelease: false, body: '' } as never });
 
     const prompt = runClaudeHeadless.mock.calls[0][1] as string;
-    expect(prompt).toContain('Include the screenshots each PR shows');
-    expect(prompt).toContain('except the "before" of an exploration finding');
-    expect(prompt).toContain('/antes-<n>.<ext>');
+    expect(prompt).toMatch(/^Usa la skill ronin:update-changelog\./);
+    expect(prompt).toContain('(tag v1.2.0, https://example.com/r)');
+    // What to do is in its skill (#257).
+    const skill = readFileSync('plugin/skills/update-changelog/SKILL.md', 'utf8');
+    expect(skill).toContain('salvo el «antes» de un hallazgo de exploración');
+    expect(skill).toContain('`/antes-<n>.<ext>`');
+    expect(skill).toContain('`RONIN_STATUS: done`');
   });
 });

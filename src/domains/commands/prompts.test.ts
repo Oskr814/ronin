@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { AGENT_NOTES_REMINDER } from '@platform/agents/prompts.js';
 
 vi.mock('@platform/config/config.js', () => ({
@@ -128,8 +129,12 @@ describe('runAgentTask — spike', () => {
 describe('buildTask — resolve-conflicts', () => {
   it('lists the conflicted files and leaves the commit and push to the supervisor', async () => {
     const { prompt } = await buildTask({ type: 'resolve-conflicts', prNumber: 7, checkoutDir: '/tmp/w', outputPath: '/tmp/o.json', headRefName: 'feat/x', baseRefName: 'main', title: 'Feat', body: '', conflictedFiles: ['src/a.ts', 'src/b.ts'] });
+    expect(prompt).toMatch(/^Usa la skill ronin:resolve-conflicts\./);
     expect(prompt).toContain('- src/a.ts\n- src/b.ts');
-    expect(prompt).toContain('Do not commit, do not abort the merge, never push');
-    expect(prompt).toContain('/tmp/o.json');
+    expect(prompt).toContain('el JSON de la skill: /tmp/o.json');
+    // What to do is in its skill (#257).
+    const skill = readFileSync('plugin/skills/resolve-conflicts/SKILL.md', 'utf8');
+    expect(skill).toContain('No commitees, no abortes el merge, nunca hagas push');
+    expect(skill).toContain('para que sobrevivan las dos intenciones');
   });
 });

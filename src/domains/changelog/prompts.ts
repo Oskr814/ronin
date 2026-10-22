@@ -26,13 +26,11 @@ async function buildChangelogTask(task: ChangelogTask): Promise<PreparedTask> {
         label: `release ${task.release.tagName}`,
         tag: task.release.tagName,
         prompt: [
-          `You are ronin. ${repoUrl()} just published release "${task.release.name || task.release.tagName}" (tag ${task.release.tagName}, ${task.release.url}).`,
-          `This checkout is ${changelogRepo}, already up to date with its own main — add this release to it. Follow this repo's own AGENTS.md and README.md exactly as written (they already describe the full flow: fetching the real release/PR data with \`gh release view\`/\`gh pr view --repo ${activeRepo().productRepo}\`, the frontmatter schema, copy tone, image handling, and validating with \`pnpm build\`) — do not invent your own format or deviate from what those files say.`,
-          `Source release data: \`gh release view ${task.release.tagName} --repo ${activeRepo().productRepo} --json body,publishedAt,url\` for the body/timestamp, then \`gh pr view <n> --repo ${activeRepo().productRepo}\` per PR mentioned in it, exactly as AGENTS.md's own workflow section describes.`,
-          `Include the screenshots each PR shows — images uploaded to a PR are valid to use as-is, exactly as AGENTS.md's image-handling section describes — except the "before" of an exploration finding: an image whose URL ends in "/antes-<n>.<ext>" (e.g. "antes-1.png?raw=true") shows the problem as it was, not what the release ships, so leave it out.`,
-          `Once the entry is written and \`pnpm build\` passes, commit and push straight to main (\`git add -A && git commit && git push origin main\`) — this repo's own AGENTS.md documents that as its normal flow, no PR needed.`,
-          'Finally, end your entire response with exactly one line, and nothing after it: "RONIN_STATUS: done".',
-        ].join('\n'),
+          `Usa la skill ronin:update-changelog. Eres ronin: ${repoUrl()} acaba de publicar la release "${task.release.name || task.release.tagName}" (tag ${task.release.tagName}, ${task.release.url}).`,
+          `El repo de producto: ${activeRepo().productRepo}. Este checkout es ${changelogRepo}, al día con su main.`,
+          // The tick reads it from the run's last line.
+          'Termina tu respuesta con exactamente una línea, y nada después: "RONIN_STATUS: done".',
+        ].join('\n\n'),
       };
     }
   }
