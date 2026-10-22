@@ -9,12 +9,47 @@ export const HELP_FOOTER_MARKER = '<!-- ronin:help -->';
 export const QUESTIONS_SECTION = 'Preguntas';
 
 // What the «Preguntas» section of a PR body says, up to the next section or
-// the footer; empty when there is none.
+// the footer, without its hidden options; empty when there is none.
 export function openQuestions(body: string): string {
+  return questionsSection(body).replace(/<!--[\s\S]*?-->/g, '').trim();
+}
+
+function questionsSection(body: string): string {
   const lines = body.split('\n');
   const start = lines.findIndex((l) => new RegExp(`^##[ \\t]+${QUESTIONS_SECTION}[ \\t]*$`).test(l));
   if (start === -1) return '';
   const rest = lines.slice(start + 1);
   const end = rest.findIndex((l) => /^##[ \t]/.test(l) || l.startsWith(HELP_FOOTER_MARKER));
-  return (end === -1 ? rest : rest.slice(0, end)).join('\n').trim();
+  return (end === -1 ? rest : rest.slice(0, end)).join('\n');
+}
+
+// Each question's suggested answers go right under it, hidden from GitHub's
+// view of the description: `<!-- ronin:opciones ["…", "…"] -->`. The
+// dashboard shows them as buttons; removing a question removes them with it.
+export const OPTIONS_MARKER = 'ronin:opciones';
+
+export interface PrQuestion {
+  // What the person reads: the question and why it matters, as markdown.
+  text: string;
+  options: string[];
+}
+
+// The open questions one by one, with their options (none when they have
+// no hidden block, or it can't be read).
+export function prQuestions(body: string): PrQuestion[] {
+  return questionsSection(body).split(/^(?=\d+\.[ \t])/m).flatMap((item) => {
+    if (!/^\d+\.[ \t]/.test(item)) return [];
+    let options: string[] = [];
+    const hidden = new RegExp(`<!--[ \\t]*${OPTIONS_MARKER}([\\s\\S]*?)-->`).exec(item);
+    if (hidden) {
+      try {
+        const parsed: unknown = JSON.parse(hidden[1]);
+        if (Array.isArray(parsed)) options = parsed.filter((o): o is string => typeof o === 'string' && o.trim() !== '').map((o) => o.trim());
+      } catch {
+        // A block that doesn't read leaves the question without options.
+      }
+    }
+    const text = item.replace(/<!--[\s\S]*?-->/g, '').replace(/^\d+\.[ \t]+/, '').replace(/\n[ \t]+/g, '\n').trim();
+    return text ? [{ text, options }] : [];
+  });
 }

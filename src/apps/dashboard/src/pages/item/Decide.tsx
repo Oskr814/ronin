@@ -2,6 +2,7 @@ import { useLayoutEffect, useRef, useState } from 'react';
 import { ApiError, client, ok } from '@apps/dashboard/src/api.js';
 import { useSession, useShell } from '@apps/dashboard/src/shell/hooks.js';
 import { checksChip, itemParam, oneOr, type ItemPage } from './model.js';
+import { questionsOf } from './Questions.js';
 
 // Deciding a PR ronin opened (#195): its page asks what's decided, not how
 // to review it: merge it, ask ronin for an adjustment, or close it. Always
@@ -116,7 +117,9 @@ function Drop({ v, decide, p }: { v: ItemPage; decide: Decide; p: Deciding }) {
   if (p.kind === 'approve') {
     const checks = checksChip(v.item.pr?.checks);
     const autoMerge = !pr.labels?.includes('ronin:auto-merge') && pr.mergeable !== 'CONFLICTING';
-    const when = pr.mergeable === 'CONFLICTING' ? <>Tiene conflictos con {pr.baseRefName ?? 'la base'}: no se va a mergear hasta que se resuelvan.</>
+    const asks = questionsOf(v).length;
+    const when = asks ? <span className="warn">{oneOr(asks, 'Tiene una pregunta sin responder', `Tiene ${asks} preguntas sin responder`)}: no se va a mergear hasta que {oneOr(asks, 'la contestes', 'las contestes')}, arriba en la página.</span>
+      : pr.mergeable === 'CONFLICTING' ? <>Tiene conflictos con {pr.baseRefName ?? 'la base'}: no se va a mergear hasta que se resuelvan.</>
       : checks?.[0] === 'crit' ? <><span className="crit">Un check falla: no se va a mergear hasta que pase.</span> Quizá conviene <b>Ajustar</b>.</>
         : checks?.[0] === 'run' ? 'ronin lo mergea apenas pasen los checks.' : 'ronin lo mergea en el próximo tick.';
     return (

@@ -149,7 +149,7 @@ export function itemsRoutes() {
       }
     })
 
-    // { decision: approve | adjust | close, text?, closeIssue? }
+    // { decision: approve | adjust | close | answer, text?, closeIssue? }
     .post('/:id/decision', onlyJson, jsonBody(MAX_BODY, 'falta el pedido'), anyObject(), async (c) => {
       const given = c.req.valid('json');
       const id = c.req.param('id');

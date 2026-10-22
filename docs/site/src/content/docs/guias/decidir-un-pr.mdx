@@ -13,7 +13,7 @@ Un PR que abrió ronin se decide leyendo su descripción, no recorriendo el diff
 | **Qué cambió** | El cambio, con capturas cuando se ve. |
 | **Cómo se verificó** | Lo que probó y lo que no. Al final, plegado, **Cómo probar**: los datos que hacen falta y los pasos para probarlo, con qué rol, en qué pantalla y qué se debería ver. |
 | **Decisiones propias** | Lo que el pedido no definía y ronin decidió por su cuenta, con el porqué. |
-| **Preguntas** | Solo si su review interna dejó algo que tiene que decidir una persona. Se contesta mencionando a ronin en el PR; mientras quede alguna, el auto-merge espera. |
+| **Preguntas** | Solo si su review interna dejó un bloqueo real, algo que tiene que decidir una persona. El tablero las pone arriba de la ficha (ver [Las preguntas](#las-preguntas)); mientras quede alguna, el auto-merge espera. |
 | **Fuera de alcance** | Lo que vio y dejó para otro PR. |
 
 ![La pestaña del PR en el tablero, con la descripción por secciones y las decisiones propias destacadas](../../../assets/capturas/pr-descripcion.png)
@@ -22,13 +22,19 @@ Un PR que abrió ronin se decide leyendo su descripción, no recorriendo el diff
 Las **decisiones propias** van destacadas. Si una no te convence, es lo primero que conviene ajustar.
 </Aside>
 
+## Las preguntas
+
+Si la descripción tiene preguntas, la ficha las muestra debajo del encabezado, en todas las pestañas, con las respuestas que sugiere ronin como botones. Elegís una, o **Otra respuesta** para escribir la tuya, y **Mandar** las comenta juntas en el PR, a tu nombre, mencionando a ronin. ronin aplica las respuestas, saca las preguntas y, con el commit nuevo, vuelve a pasar la review interna.
+
+No hace falta contestarlas todas a la vez: las que no respondiste quedan. Mientras quede alguna, el PR no se mergea solo, aunque lo apruebes: **Aprobar** te lo avisa.
+
 ## Las tres decisiones
 
 Están en el encabezado de la ficha, en todas las pestañas. Cada una se despliega debajo del botón y te dice qué se va a mandar, a tu nombre, antes de mandarlo.
 
 <CardGrid>
   <Card title="Aprobar · A" icon="approve-check-circle">
-    Aprueba el PR y le pide el auto-merge a ronin, que lo mergea cuando pasen los checks. Si ya tiene auto-merge o tiene conflictos, solo aprueba. `↵` confirma.
+    Aprueba el PR y le pide el auto-merge a ronin, que lo mergea cuando pasen los checks. Si ya tiene auto-merge o tiene conflictos, solo aprueba. Si quedan preguntas, te avisa que no se va a mergear hasta que las contestes. `↵` confirma.
   </Card>
   <Card title="Ajustar · P" icon="pencil">
     Escribís qué debería cambiar y queda como `@ronin-agent <tu texto>`. ronin lo aplica y responde. `Ctrl ↵` manda.
