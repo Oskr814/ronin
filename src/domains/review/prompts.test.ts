@@ -57,6 +57,9 @@ const closeActions = vi.fn();
 vi.mock('@platform/actions/server.js', () => ({ startActionsServer: (...args: unknown[]) => startActionsServer(...args) }));
 vi.mock('@platform/actions/executors.js', () => ({ headOf: async () => 'start-sha', checkoutState: vi.fn(), executeAction: vi.fn() }));
 
+const mintReadToken = vi.fn();
+vi.mock('@platform/github/read-token.js', () => ({ mintReadToken: (...args: unknown[]) => mintReadToken(...args) }));
+
 const loadReviewCriteria = vi.fn();
 vi.mock('./criteria.js', () => ({ loadReviewCriteria: (...args: unknown[]) => loadReviewCriteria(...args) }));
 
@@ -81,6 +84,7 @@ beforeEach(() => {
   rm.mockResolvedValue(undefined);
   writeFile.mockResolvedValue(undefined);
   closeActions.mockResolvedValue(undefined);
+  mintReadToken.mockResolvedValue(null);
   startActionsServer.mockResolvedValue({ url: 'http://127.0.0.1:9', token: 'run-token', calls: [], report: () => null, close: closeActions });
 });
 
@@ -662,6 +666,23 @@ describe('runAgentTask — fix-comments-external', () => {
     expect(opts.sealedEnv).toMatchObject({ RONIN_ACTIONS_URL: 'http://127.0.0.1:9', RONIN_ACTIONS_TOKEN: 'run-token' });
     expect(opts.sealedEnv.PATH).toMatch(/\/bin:/);
     expect(closeActions).toHaveBeenCalled();
+  });
+
+  it("reads GitHub with the App's read-only token when there is one, and with ronin's otherwise", async () => {
+    mintReadToken.mockResolvedValueOnce('ghs_lectura');
+    await runAgentTask(task);
+    expect(mintReadToken).toHaveBeenCalledWith('bmedical/bmedical');
+    expect(runClaudeHeadless.mock.calls[0][3].sealedEnv.GH_TOKEN).toBe('ghs_lectura');
+
+    runClaudeHeadless.mockClear();
+    await runAgentTask(task);
+    expect(runClaudeHeadless.mock.calls[0][3].sealedEnv).not.toHaveProperty('GH_TOKEN');
+  });
+
+  it('does not run when the App cannot give it a read token', async () => {
+    mintReadToken.mockRejectedValueOnce(new Error('la GitHub App no está instalada'));
+    await expect(runAgentTask(task)).rejects.toThrow('no está instalada');
+    expect(runClaudeHeadless).not.toHaveBeenCalled();
   });
 
   it('closes the actions server when the run fails', async () => {

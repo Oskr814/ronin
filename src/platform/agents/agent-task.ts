@@ -12,6 +12,7 @@ import { host } from '../host/host.js';
 import type { RunScope } from '../actions/catalog.js';
 import { checkoutState, executeAction, headOf } from '../actions/executors.js';
 import { startActionsServer, type ActionsServer } from '../actions/server.js';
+import { mintReadToken } from '../github/read-token.js';
 
 // ronin's skills (`claude --plugin-dir`) and the agent's client for its
 // actions, next to ronin's own code: in the image, /app/plugin and /app/bin.
@@ -154,6 +155,9 @@ export async function runAgentTask(task: AgentTask): Promise<string> {
   });
   let server: ActionsServer | null = null;
   try {
+    // Read-only and for this repo, when ronin has its App (read-token.ts);
+    // without it the agent reads with the write token, as before.
+    const readToken = actions ? await mintReadToken(activeRepo().productRepo) : null;
     if (actions) server = await startRunActions(actions, worktreeDir, `${task.type} #${tag}`);
     const result = await runClaudeHeadless(worktreeDir, prompt, `${task.type} #${tag}`, {
       model,
@@ -162,7 +166,12 @@ export async function runAgentTask(task: AgentTask): Promise<string> {
       ...(mcpConfigFile ? { mcpConfigFile } : {}),
       ...(server ? {
         pluginDir: PLUGIN_DIR,
-        sealedEnv: { PATH: `${ACTIONS_BIN_DIR}:${process.env.PATH ?? ''}`, RONIN_ACTIONS_URL: server.url, RONIN_ACTIONS_TOKEN: server.token },
+        sealedEnv: {
+          PATH: `${ACTIONS_BIN_DIR}:${process.env.PATH ?? ''}`,
+          RONIN_ACTIONS_URL: server.url,
+          RONIN_ACTIONS_TOKEN: server.token,
+          ...(readToken ? { GH_TOKEN: readToken } : {}),
+        },
       } : {}),
     }, record);
     if (server) logActions(server, `${task.type} for ${label}`);

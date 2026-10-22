@@ -22,6 +22,13 @@ export const config = {
   // Username real de esa cuenta (sin sufijo "[bot]", no es un App). Usado
   // para detectar @menciones dirigidas al agente (mentions.ts).
   githubLogin: requireEnv('RONIN_GITHUB_LOGIN'),
+  // ronin's GitHub App, only for the agents' read-only token (#257,
+  // github/read-token.ts): its id and the path of its private key. Both
+  // empty means no App, and agents read with githubToken.
+  githubApp: {
+    appId: process.env.RONIN_GITHUB_APP_ID ?? '',
+    privateKeyPath: process.env.RONIN_GITHUB_APP_KEY_PATH ?? '',
+  },
   // Dónde vive la lista de repos a supervisar — ver repos.ts.
   reposConfigPath: process.env.REPOS_CONFIG_PATH || join(process.cwd(), 'repos.json'),
   // Ref every new task branch is created from. Defaults to the
