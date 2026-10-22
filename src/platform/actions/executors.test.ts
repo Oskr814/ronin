@@ -115,6 +115,11 @@ describe('pr.update-body', () => {
     expect(bodyKeepsWhatItMust('Sin issue ni pie', 'Otra cosa')).toBeNull();
   });
 
+  it('closes no issue the current one does not', () => {
+    expect(bodyKeepsWhatItMust('Parte de #9\n\nAntes.', 'Closes #9\n\nDespués.')).toContain('#9');
+    expect(bodyKeepsWhatItMust(current, 'Closes #228\n\nY fixes #3\n\n<!-- ronin:help -->\n<sub>ayuda</sub>')).toContain('#3');
+  });
+
   it('saves it only when it does', async () => {
     const { scope, checkout } = await setup();
     getPullRequestStatus.mockResolvedValue({ body: current });

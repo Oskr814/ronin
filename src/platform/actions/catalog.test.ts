@@ -64,6 +64,16 @@ describe('validateAction — implementing', () => {
     expect(await refusal(validateAction({ ...opening, pr: undefined }, 'pr.create', { title: 'x', body: 'y' }))).toContain('no abre un PR');
   });
 
+  // A slice PR of an issue with several slices: "Closes" would close the
+  // issue when the first one merges (#515 of bmedical).
+  it('opens a PR that closes no other issue than its own', async () => {
+    const slice: RunScope = { ...scope, prNumber: undefined, pr: { base: 'main', draft: false }, allowed: ['pr.create'] };
+    expect(await refusal(validateAction(slice, 'pr.create', { title: 'Slice 1', body: 'Parte de #9\n\n## Qué cambió' }))).toBe('aceptada');
+    expect(await refusal(validateAction(slice, 'pr.create', { title: 'Slice 1', body: 'Closes #9 (slice 1 de 12)\n\n## Qué cambió' }))).toContain('no cierra ningún issue');
+    const opening: RunScope = { ...slice, pr: { base: 'main', draft: false, closes: 9 } };
+    expect(await refusal(validateAction(opening, 'pr.create', { title: 'Arreglo', body: 'Closes #9\n\nTambién fixes #4' }))).toContain('solo cierra #9');
+  });
+
   it('edits the issue only as the run allows', async () => {
     const withIssue: RunScope = { ...scope, issue: { number: 9 }, allowed: ['issue.comment', 'issue.update-body'] };
     expect(await refusal(validateAction(withIssue, 'issue.comment', { body: 'Necesito saber si…' }))).toBe('aceptada');

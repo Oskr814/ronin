@@ -3,6 +3,16 @@
 // description, which ronin rewrites and links to Linear above the footer.
 export const HELP_FOOTER_MARKER = '<!-- ronin:help -->';
 
+// The issues a PR body would close on merge, by GitHub's closing keywords
+// ("Closes #9", "fixes: #9", "Resolved owner/repo#9"), in this repo or
+// another. A slice PR of an issue with several slices must have none: merged,
+// it would close the issue with slices still to do, and ronin would take it
+// for done (#515 of bmedical, after slice 1 of 12).
+export function closingRefs(body: string): string[] {
+  const refs = body.matchAll(/\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\b:?[ \t]+((?:[\w.-]+\/[\w.-]+)?#\d+)\b/gi);
+  return [...new Set([...refs].map((m) => m[1]!.toLowerCase()))];
+}
+
 // The section of a ronin PR's description where its internal review (#194)
 // leaves what only a person can decide. While it has a question, auto-merge
 // waits (domains/commands/auto-merge.ts).

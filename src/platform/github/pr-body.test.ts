@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { HELP_FOOTER_MARKER, openQuestions, prQuestions } from './pr-body.js';
+import { closingRefs, HELP_FOOTER_MARKER, openQuestions, prQuestions } from './pr-body.js';
 
 describe('openQuestions', () => {
   it('reads the «Preguntas» section up to the next one', () => {
@@ -44,5 +44,16 @@ describe('prQuestions', () => {
   it('has no options when the hidden block does not read, and no questions without the section', () => {
     expect(prQuestions('## Preguntas\n1. ¿Sí?\n   <!-- ronin:opciones [roto -->')).toEqual([{ text: '¿Sí?', options: [] }]);
     expect(prQuestions('## Qué cambió\n1. Algo.')).toEqual([]);
+  });
+});
+
+describe('closingRefs', () => {
+  it("finds GitHub's closing keywords, in any form and anywhere", () => {
+    expect(closingRefs('Closes #515 (slice 1 de 12)\n\n## Qué cambió')).toEqual(['#515']);
+    expect(closingRefs('Arregla algo.\nfixes: #3, y Resolved acme/app#7. Closed #3')).toEqual(['#3', 'acme/app#7']);
+  });
+
+  it('ignores a plain mention or a keyword without an issue', () => {
+    expect(closingRefs('Parte de #515. Ver #12; el fix del cierre. Fixes the closing modal.')).toEqual([]);
   });
 });

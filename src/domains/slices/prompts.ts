@@ -115,7 +115,7 @@ async function buildSliceTask(task: SliceTask): Promise<PreparedTask> {
         allowComment: false,
         prompt: [
           `Usa la skill ronin:implement. Eres ronin, en el issue #${task.issueNumber} de ${repoUrl()}, cuyo plan está partido en slices. Implementa esta slice, y solo esta: ${fence('SLICE', task.sliceTitle)}`,
-          `Trabajas en la rama "${branch}", sobre "${stripOrigin(worktreeBase)}".`,
+          `Trabajas en la rama "${branch}", sobre "${stripOrigin(worktreeBase)}". La descripción del PR no cierra el issue: en su primera línea va "Parte de #${task.issueNumber}", nunca "Closes", "Fixes" ni "Resolves". ronin cierra el issue cuando se mergea la última slice.`,
         ],
       });
     }
