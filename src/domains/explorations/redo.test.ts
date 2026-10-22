@@ -12,6 +12,7 @@ const appDown = vi.hoisted(() => vi.fn());
 vi.mock('../product-app/runtime.js', () => ({
   appUp: async () => ({ baseUrl: 'http://127.0.0.1:5173', ctx: { ports: {}, port: { web: 5173 } } }),
   appDown: (...a: unknown[]) => appDown(...a),
+  checkoutAgent: async () => null,
 }));
 vi.mock('../product-app/browser.js', () => ({ loginAllUsers: async () => ({ Sales: '/s/Sales.json' }), renderHtmlToPng: vi.fn() }));
 const runAgentTask = vi.hoisted(() => vi.fn());
@@ -22,7 +23,7 @@ vi.mock('../product-app/evidence-store.js', async (importOriginal) => ({
   publishEvidence: (...a: unknown[]) => publishEvidence(...a),
 }));
 vi.mock('./inventory.js', () => ({ explorationOutDir: () => join(base, 'out') }));
-vi.mock('./run.js', () => ({ ensureCleanCheckout: async () => {}, mcpServer: () => ({ command: 'mcp', args: [] }), originsOf: () => [] }));
+vi.mock('./run.js', () => ({ ensureCleanCheckout: async () => {}, loginIn: async (_dir: string, state: string) => state, mcpServer: () => ({ command: 'mcp', args: [] }), originsOf: () => [] }));
 
 import { redoAfterImages, redoPath } from './redo.js';
 import { ensureMemoryDir, loadMemory, writeFinding } from './memory.js';

@@ -1,7 +1,8 @@
 import { extname, join } from 'node:path';
 import { runAgentTask } from '@platform/agents/agent-task.js';
 import { explorationTask } from './prompts.js';
-import { appDown, appUp } from '../product-app/index.js';
+import { appDown, appUp, checkoutAgent } from '../product-app/index.js';
+import { activeRepo } from '@platform/agents/repo-context.js';
 import { loginAllUsers, renderHtmlToPng } from '../product-app/index.js';
 import { loadAppDefinition } from '../product-app/index.js';
 import { log } from '@platform/logger.js';
@@ -9,7 +10,7 @@ import { evidenceUrl, publishEvidence } from '../product-app/index.js';
 import { findingFileName, loadMemory, parseFinding, serializeFinding } from './memory.js';
 import { explorationOutDir } from './inventory.js';
 import { afterImagePath, parseRedoResult, replaceAfterImage, replaceDraftPatch } from './output.js';
-import { ensureCleanCheckout, mcpServer, originsOf } from './run.js';
+import { ensureCleanCheckout, loginIn, mcpServer, originsOf } from './run.js';
 import { host } from '@platform/host/host.js';
 
 // A reviewer said a finding's "after" image is wrong (domains/explorations/flow.ts's
@@ -37,7 +38,8 @@ export function redoPath(body: string, appName: string, findingId: string, ext: 
 export async function redoAfterImages(opts: { appName: string; codeDir: string; memoryDir: string; requests: RedoRequest[] }): Promise<string[]> {
   const app = await loadAppDefinition(opts.codeDir, opts.appName);
   const done: string[] = [];
-  const session = await appUp(opts.codeDir, opts.appName);
+  const as = await checkoutAgent(opts.codeDir);
+  const session = await appUp(opts.codeDir, opts.appName, as ? { as } : {});
   try {
     const authStates = await loginAllUsers(session);
     const origins = originsOf(session.baseUrl, session.ctx.ports, session.ctx.port);
@@ -51,7 +53,8 @@ export async function redoAfterImages(opts: { appName: string; codeDir: string; 
       const outDir = join(explorationOutDir(), `redo-${opts.appName}-${meta.id}-${Date.now()}`);
       await host().fs.mkdir(join(outDir, meta.viewport), { recursive: true });
       const mcpConfigPath = join(outDir, 'mcp.json');
-      await host().fs.writeFile(mcpConfigPath, JSON.stringify({ mcpServers: { browser: mcpServer(app, meta.viewport, authStates[meta.rol], join(outDir, meta.viewport), origins) } }, null, 2));
+      const login = await loginIn(outDir, authStates[meta.rol], meta.rol);
+      await host().fs.writeFile(mcpConfigPath, JSON.stringify({ mcpServers: { browser: mcpServer(app, meta.viewport, login, join(outDir, meta.viewport), origins) } }, null, 2));
       const outputPath = join(outDir, 'result.json');
       try {
         await runAgentTask(explorationTask({
@@ -78,7 +81,7 @@ export async function redoAfterImages(opts: { appName: string; codeDir: string; 
         }
         const finding = parseFinding(await host().fs.readFile(findingFile, 'utf8'));
         const path = redoPath(finding.body, opts.appName, meta.id, extname(src).toLowerCase());
-        const sha = await publishEvidence(opts.codeDir, [{ src, path }], `después rehecho de ${meta.id}`);
+        const sha = await publishEvidence(activeRepo().productRepoPath, [{ src, path }], `después rehecho de ${meta.id}`);
         let body = replaceAfterImage(finding.body, { url: evidenceUrl(sha, path), ...(result.nota ? { nota: result.nota } : {}) }, meta.viewport);
         const patchFile = join(outDir, 'despues.patch');
         const patch = (await host().fs.exists(patchFile)) ? (await host().fs.readFile(patchFile, 'utf8')).trim() : '';

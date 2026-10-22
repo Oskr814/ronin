@@ -1,5 +1,8 @@
 import { CHARTERS, VIEWPORTS, type Charter, type DiscoveredFunction, type Inventory, type InventoryFunction } from './memory.js';
 import { host } from '@platform/host/host.js';
+import { activeRepo } from '@platform/agents/repo-context.js';
+import { config } from '@platform/config/config.js';
+import { isAgentCheckout } from '../product-app/index.js';
 
 
 // What one exploration run tests: at most N functions, each with a charter
@@ -145,6 +148,15 @@ export function parseDiscoveredFunctions(raw: string): { functions: DiscoveredFu
   return { functions, dropped };
 }
 
+// Where ronin reads the history of the code an exploration runs on: the
+// shared repo at the base branch when the checkout is the agent's clone
+// (#257: ronin runs no git of its own there), the checkout itself otherwise.
+export async function codeHistory(codeDir: string): Promise<{ dir: string; rev: string }> {
+  return (await isAgentCheckout(codeDir))
+    ? { dir: activeRepo().productRepoPath, rev: activeRepo().worktreeBaseRef ?? config.worktreeBaseRef }
+    : { dir: codeDir, rev: 'HEAD' };
+}
+
 async function git(dir: string, args: string[]): Promise<string> {
   const { stdout } = await host().exec('git', args, { cwd: dir, maxBuffer: 16 * 1024 * 1024 });
   return stdout.trim();
@@ -152,16 +164,17 @@ async function git(dir: string, args: string[]): Promise<string> {
 
 // The last commit that touched the app — the inventory is refreshed only
 // when this moves past inventory.actualizado.sha.
-export async function lastCommitTouching(dir: string, path: string): Promise<string> {
-  return git(dir, ['log', '-1', '--format=%H', '--', path]);
+// `rev`: the commit the app's code is at (run.ts's codeHistory).
+export async function lastCommitTouching(dir: string, path: string, rev = 'HEAD'): Promise<string> {
+  return git(dir, ['log', '-1', '--format=%H', rev, '--', path]);
 }
 
-export async function changedFunctions(dir: string, inventory: Inventory): Promise<Set<string>> {
+export async function changedFunctions(dir: string, inventory: Inventory, rev = 'HEAD'): Promise<Set<string>> {
   const changed = new Set<string>();
   for (const f of inventory.funciones) {
     const since = lastExplored(f);
     if (!since || f.archivos.length === 0) continue;
-    const out = await git(dir, ['log', '-1', '--format=%H', `--since=${since}T23:59:59`, '--', ...f.archivos]).catch(() => '');
+    const out = await git(dir, ['log', '-1', '--format=%H', `--since=${since}T23:59:59`, rev, '--', ...f.archivos]).catch(() => '');
     if (out) changed.add(f.id);
   }
   return changed;
@@ -169,11 +182,11 @@ export async function changedFunctions(dir: string, inventory: Inventory): Promi
 
 // Commits whose subject says "fix" on each function's files in the last 90
 // days: a cheap proxy for where bugs keep turning up.
-export async function riskByFunction(dir: string, inventory: Inventory): Promise<Record<string, number>> {
+export async function riskByFunction(dir: string, inventory: Inventory, rev = 'HEAD'): Promise<Record<string, number>> {
   const risk: Record<string, number> = {};
   for (const f of inventory.funciones) {
     if (f.archivos.length === 0) continue;
-    const out = await git(dir, ['log', '--since=90 days ago', '--format=%s', '-i', '--grep=fix', '--', ...f.archivos]).catch(() => '');
+    const out = await git(dir, ['log', '--since=90 days ago', '--format=%s', '-i', '--grep=fix', rev, '--', ...f.archivos]).catch(() => '');
     risk[f.id] = out ? out.split('\n').length : 0;
   }
   return risk;

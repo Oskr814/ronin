@@ -1,12 +1,12 @@
 import { basename, dirname, join } from 'node:path';
 import { activeRepo } from '@platform/agents/repo-context.js';
 import { config } from '@platform/config/config.js';
-import { getFreePort, removeWorktreeDir } from '@platform/git/worktree.js';
+import { agentCloneAt, getFreePort, removeWorktreeDir } from '@platform/git/worktree.js';
 import { log } from '@platform/logger.js';
 import { loadAppDefinition, namedPortsIn, publicizeTemplate, publicPortsIn, renderTemplate, usesCompose, type AppDefinition, type AppStep, type TemplateContext } from './manifest.js';
 import { AGENT_ENV_KEYS } from '@platform/claude/claude-runner.js';
 import { confineCompose, stackCommand } from './confine.js';
-import type { AgentUser } from '@platform/agents/agent-user.js';
+import { asAgent, prepareAgentUser, repoAgentUser, type AgentUser } from '@platform/agents/agent-user.js';
 import { host } from '@platform/host/host.js';
 import { APP_PROCESS_ENV } from '@platform/workers/process.js';
 
@@ -162,6 +162,23 @@ export async function removeAppState(dir: string): Promise<void> {
 // #257) rather than ronin's worktree: a clone has its .git as a directory.
 export function isAgentCheckout(dir: string): Promise<boolean> {
   return host().fs.exists(join(dir, '.git', 'HEAD'));
+}
+
+// The agent's user of `dir`, when it is its clone; null for ronin's
+// worktree.
+export async function checkoutAgent(dir: string): Promise<AgentUser | null> {
+  if (!(await isAgentCheckout(dir))) return null;
+  const user = repoAgentUser();
+  if (user) await prepareAgentUser(user);
+  return user;
+}
+
+// git in `dir`, as whoever it belongs to: the agent's user for its clone —
+// ronin never runs its own git there — or ronin.
+export async function checkoutGit(dir: string, args: string[], opts: { maxBuffer?: number } = {}): Promise<string> {
+  const user = await checkoutAgent(dir);
+  const { stdout } = await host().exec('git', args, user ? asAgent(user, { cwd: dir, ...opts }) : { cwd: dir, ...opts });
+  return stdout;
 }
 
 // A checkout an app ran from, gone: the agent's, and then the state kept
@@ -413,9 +430,12 @@ async function excludeFromGit(dir: string): Promise<void> {
 }
 
 // The checkout an app runs from when nothing else provides one (the CLI,
-// exploration): a detached worktree of the base branch, refreshed each time.
-// Its directory name doesn't match sweepOrphanedWorktrees's ronin-<n>-…
-// pattern, so the sweep never touches it.
+// exploration): detached at the base branch, refreshed each time. Its
+// directory name doesn't match sweepOrphanedWorktrees's ronin-<n>-…
+// pattern, so the sweep never touches it. In the image, a clone of the
+// agent's user (#257), moved by that user's git and kept between runs, like
+// the worktree, for its node_modules: an exploration edits the code with
+// the app running. ronin's worktree, from before, goes the first time.
 export function appWorktreeDirFor(appName: string): string {
   return join(activeRepo().worktreeBasePath, `app-${appName}`);
 }
@@ -424,6 +444,27 @@ export async function ensureAppWorktree(appName: string, ref = activeRepo().work
   const dir = appWorktreeDirFor(appName);
   const repo = activeRepo().productRepoPath;
   await host().exec('git', ['fetch', 'origin'], { cwd: repo });
+  const user = repoAgentUser();
+  if (user) {
+    await prepareAgentUser(user);
+    const sha = (await host().exec('git', ['rev-parse', `${ref}^{commit}`], { cwd: repo })).stdout.trim();
+    if (await isAgentCheckout(dir)) {
+      await appDown(dir);
+      // What the app's containers wrote in it is root's: back to the agent,
+      // or its git can't clean it.
+      await host().exec('chown', ['-R', `${user.uid}:${user.gid}`, dir]);
+      const git = (args: string[]) => host().exec('git', args, asAgent(user, { cwd: dir }));
+      await git(['checkout', '--detach', '--force', sha]);
+      await git(['clean', '-fd']);
+      return dir;
+    }
+    if (await host().fs.exists(dir)) {
+      await appDown(dir);
+      await removeAppCheckout(dir, 'ensureAppWorktree');
+    }
+    await host().fs.mkdir(activeRepo().worktreeBasePath, { recursive: true });
+    return agentCloneAt(dir, sha, user);
+  }
   const isLive = (await host().fs.exists(dir)) &&
     (await host().exec('git', ['rev-parse', '--is-inside-work-tree'], { cwd: dir }).then(({ stdout }) => stdout.trim() === 'true', () => false));
   if (isLive) {

@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
 let base = '';
-vi.mock('@platform/agents/repo-context.js', () => ({ activeRepo: () => ({ worktreeBasePath: base, productRepo: 'o/r' }) }));
+vi.mock('@platform/agents/repo-context.js', () => ({ activeRepo: () => ({ worktreeBasePath: base, productRepo: 'o/r', productRepoPath: '/repo' }) }));
 vi.mock('@platform/config/config.js', () => ({
   config: { exploreFunctionsPerRun: 3, exploreFindingsPerRun: 5, exploreIdeasPerRun: 1, explorePublishEvidence: true, claudeCommand: 'claude', claudeConfigDir: '' },
 }));
@@ -22,10 +22,17 @@ const appDown = vi.fn();
 vi.mock('../product-app/runtime.js', () => ({
   appUp: async (dir: string) => ({ appName: 'backoffice', app, dir, baseUrl: 'http://127.0.0.1:5173', ctx: { ports: { web: { '80': 4000 } }, port: { web: 5173 }, compose: '', dir }, stateDir: '/s' }),
   appDown: (...args: unknown[]) => appDown(...args),
+  checkoutAgent: async () => null,
+  checkoutGit: async () => '',
+  isAgentCheckout: async () => false,
 }));
 const renderHtmlToPng = vi.fn();
 vi.mock('../product-app/browser.js', () => ({
-  loginAllUsers: async () => ({ Sales: '/s/auth/Sales.json' }),
+  loginAllUsers: async () => {
+    await mkdir(join(base, 'state', 'auth'), { recursive: true });
+    await writeFile(join(base, 'state', 'auth', 'Sales.json'), '{}');
+    return { Sales: join(base, 'state', 'auth', 'Sales.json') };
+  },
   renderHtmlToPng: (...args: unknown[]) => renderHtmlToPng(...args),
 }));
 const publishEvidence = vi.fn();
@@ -124,7 +131,8 @@ describe('runExploration', () => {
       expect.arrayContaining([['F-0001', 'hallazgo', 'pedidos.confirmar'], ['F-0002', 'idea', 'pedidos.surtir']]),
     );
     const [repoDir, files] = publishEvidence.mock.calls[0];
-    expect(repoDir).toBe('/code');
+    // From the shared repo, never the checkout.
+    expect(repoDir).toBe('/repo');
     const byId = Object.fromEntries(summary.findings.map((f) => [f.tipo, f.id]));
     expect(files.map((f: { path: string }) => f.path).sort()).toEqual([
       `backoffice/2026-10-12-7/${byId.hallazgo}/antes-1.png`,
@@ -147,7 +155,8 @@ describe('runExploration', () => {
     expect(explore).toMatchObject({ role: 'Sales', roleNotes: 'bodega usa el teléfono', baseUrl: 'http://127.0.0.1:5173', homePath: '/pedidos', seed: 7 });
     const mcp = JSON.parse(await readFile(explore.mcpConfigPath, 'utf8'));
     expect(Object.keys(mcp.mcpServers)).toEqual(['desktop', 'mobile']);
-    expect(mcp.mcpServers.mobile.args).toEqual(expect.arrayContaining(['--device', 'iPhone 13', '--storage-state', '/s/auth/Sales.json']));
+    // The login, copied into the function's own output dir.
+    expect(mcp.mcpServers.mobile.args).toEqual(expect.arrayContaining(['--device', 'iPhone 13', '--storage-state', join(explore.outDir, 'auth', 'Sales.json')]));
     expect(mcp.mcpServers.desktop.args.join(' ')).toContain('http://127.0.0.1:4000');
   });
 

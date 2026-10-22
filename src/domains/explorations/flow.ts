@@ -294,9 +294,11 @@ async function applyFeedback(pr: PullRequestStatus, batch: string): Promise<Redo
   if (general.length > 0) {
     for (const app of apps) for (const f of (await loadMemory(memoryDirFor(batchDir, app))).findings) cards.push({ app, id: f.id, titulo: f.titulo, estado: f.estado, viewport: f.viewport });
   }
-  await host().fs.mkdir(explorationOutDir(), { recursive: true });
-  const outputPath = join(explorationOutDir(), `feedback-${pr.number}.json`);
-  await host().fs.rm(outputPath, { force: true });
+  // A directory of its own: the agent writes only there (sealed, #257).
+  const outDir = join(explorationOutDir(), `feedback-${pr.number}`);
+  await host().fs.rm(outDir, { recursive: true, force: true });
+  await host().fs.mkdir(outDir, { recursive: true });
+  const outputPath = join(outDir, 'feedback.json');
   await runAgentTask(explorationTask({ type: 'explore-feedback', prNumber: pr.number, checkoutDir: batchDir, comments, ...(general.length > 0 ? { general: general.map(({ author: _author, ...g }) => g), fichas: cards } : {}), outputPath }));
   const parsed = JSON.parse(await host().fs.readFile(outputPath, 'utf8')) as { acciones?: FeedbackAction[] };
 

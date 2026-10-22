@@ -4,7 +4,7 @@ import { explorationTask } from './prompts.js';
 import { activeRepo } from '@platform/agents/repo-context.js';
 import { log } from '@platform/logger.js';
 import { mergeInventory, saveInventory, type ExplorationMemory, type Inventory } from './memory.js';
-import { lastCommitTouching, parseDiscoveredFunctions } from './plan.js';
+import { codeHistory, lastCommitTouching, parseDiscoveredFunctions } from './plan.js';
 import type { AppDefinition } from '../product-app/index.js';
 import { host } from '@platform/host/host.js';
 
@@ -27,15 +27,18 @@ export async function refreshInventory(opts: {
   today: string;
 }): Promise<{ inventory: Inventory; added: string[]; retired: string[]; refreshed: boolean }> {
   const { appName, app, codeDir, memory, today } = opts;
-  const sha = await lastCommitTouching(codeDir, app.path);
+  const history = await codeHistory(codeDir);
+  const sha = await lastCommitTouching(history.dir, app.path, history.rev);
   if (memory.inventory.actualizado?.sha === sha && memory.inventory.funciones.length > 0) {
     log.info(`exploración ${appName}: inventario al día con ${sha.slice(0, 7)}, no se refresca`);
     return { inventory: memory.inventory, added: [], retired: [], refreshed: false };
   }
 
-  await host().fs.mkdir(explorationOutDir(), { recursive: true });
-  const outputPath = join(explorationOutDir(), `${appName}-functions.json`);
-  await host().fs.rm(outputPath, { force: true });
+  // A directory of its own: the agent writes only there (sealed, #257).
+  const outDir = join(explorationOutDir(), `inventory-${appName}`);
+  await host().fs.rm(outDir, { recursive: true, force: true });
+  await host().fs.mkdir(outDir, { recursive: true });
+  const outputPath = join(outDir, 'functions.json');
   await runAgentTask(explorationTask({
     type: 'explore-inventory',
     appName,

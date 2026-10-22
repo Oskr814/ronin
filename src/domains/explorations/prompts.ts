@@ -1,3 +1,4 @@
+import { dirname } from 'node:path';
 import type { AgentTask, PreparedTask } from '@platform/agents/agent-task.js';
 import { fence, fenceBlock, REALISTIC_DATA_RULE, repoUrl, THREAD_REPLY_MAX, UNTRUSTED_APP_WARNING } from '@platform/agents/prompts.js';
 import { RESULT_JSON_CONTRACT, VERDICTS_JSON_CONTRACT } from './output.js';
@@ -164,6 +165,9 @@ async function buildExplorationTask(task: ExplorationTask): Promise<PreparedTask
         // Not a branch to check out — runs on the app's checkout as is.
         branch: `explore@${task.appName}`,
         checkout: { kind: 'dir', dir: task.checkoutDir },
+        // Every exploration agent runs sealed, as the agent's user (#257),
+        // writing only in its own output dir.
+        sealed: { outputDir: dirname(task.outputPath) },
         label: `app ${task.appName}`,
         tag: task.appName,
         prompt: [
@@ -183,6 +187,7 @@ async function buildExplorationTask(task: ExplorationTask): Promise<PreparedTask
       return {
         branch: `explore@${task.appName}/${task.fn.id}`,
         checkout: { kind: 'dir', dir: task.checkoutDir },
+        sealed: { outputDir: task.outDir },
         mcpConfigFile: task.mcpConfigPath,
         label: `app ${task.appName} → ${task.fn.id}`,
         tag: task.fn.id,
@@ -211,6 +216,7 @@ async function buildExplorationTask(task: ExplorationTask): Promise<PreparedTask
       return {
         branch: `explore@${task.appName}/evaluate`,
         checkout: { kind: 'dir', dir: task.checkoutDir },
+        sealed: { outputDir: dirname(task.outputPath) },
         label: `app ${task.appName}`,
         tag: task.appName,
         prompt: [
@@ -255,6 +261,7 @@ async function buildExplorationTask(task: ExplorationTask): Promise<PreparedTask
       return {
         branch: `explore@pr-${task.prNumber}/feedback`,
         checkout: { kind: 'dir', dir: task.checkoutDir },
+        sealed: { outputDir: dirname(task.outputPath) },
         prompt: [
           `You are ronin. People reviewed the findings of your exploration PR #${task.prNumber} in ${repoUrl()} and left these comments on finding files:\n${list || '(none)'}`,
           ...generalBlock,
@@ -275,6 +282,7 @@ async function buildExplorationTask(task: ExplorationTask): Promise<PreparedTask
       return {
         branch: `explore@${task.appName}/redo-${task.findingId}`,
         checkout: { kind: 'dir', dir: task.checkoutDir },
+        sealed: { outputDir: task.outDir },
         mcpConfigFile: task.mcpConfigPath,
         label: `app ${task.appName} → ${task.findingId}`,
         tag: task.findingId,

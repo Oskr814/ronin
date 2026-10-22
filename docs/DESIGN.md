@@ -353,6 +353,12 @@ Cada propuesta lleva antes/después. El "antes" son las capturas que el explorad
 
 Las imágenes van a la rama huérfana **`ronin/evidence`** del repo del producto, que no se mergea nunca: un commit por corrida, armado con plumbing de git sobre un índice temporal (sin worktree), en `<app>/<corrida>/<ficha>/antes-N.png|despues.png`. La ficha y el PR las muestran con `<img>` apuntando a `github.com/<repo>/blob/<sha>/…?raw=true`: GitHub no las pasa por su proxy, así que solo las ve quien tiene acceso al repo, y como el link apunta a un commit no se mueve. Si el push falla, la ficha se escribe igual con las capturas descritas en texto.
 
+**Como el agente** (#257). En la imagen, el checkout de la exploración (`app-<app>`, `ensureAppWorktree`) es un clon del usuario del agente, que se conserva entre corridas por su `node_modules`, y la app corre como él (§11.2).
+
+- **Los agentes de la exploración** corren sellados y como ese usuario: el inventario, cada función, el evaluador, el feedback del PR y rehacer un después. Cada uno escribe solo en su directorio de salida, y lo que leen sus navegadores (los logins) va ahí también.
+- **El git de ronin:** lo que necesita de la historia del código (qué cambió, el riesgo, el último commit de la app) lo lee del repo compartido en la rama base. La evidencia también se commitea ahí, porque usa un índice temporal y no necesita checkout.
+- **Revertir el parche borrador** entre funciones es git del usuario del agente.
+
 Primero se probaron Claude Artifacts (desde una sesión `claude --bg`, porque `claude -p` no tiene la herramienta): solo los veía la cuenta del runner, abrían un segundo canal de comentarios que ronin no lee y eran la parte más frágil del flujo. Se descartaron.
 
 #### 11.6 Memoria en el repo del producto
