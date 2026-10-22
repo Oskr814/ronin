@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { readFileSync } from 'node:fs';
 
 vi.mock('@platform/config/config.js', () => ({
   config: {
@@ -54,7 +55,6 @@ vi.mock('../review/criteria.js', () => ({ loadReviewCriteria: (...args: unknown[
 
 const { runAgentTask: run } = await import('@platform/agents/agent-task.js');
 const { portalTask } = await import('./prompts.js');
-const { REALISTIC_DATA_RULE } = await import('@platform/agents/prompts.js');
 // Each task runs through the real runAgentTask, with its checkout and
 // `claude -p` mocked: what a test reads is the prompt it was handed.
 const runAgentTask = (task: Parameters<typeof portalTask>[0]) => run(portalTask(task));
@@ -200,10 +200,19 @@ describe('buildTask — portal-prototype (#114)', () => {
     expect(branch).toBe('portal-prototype@P-31');
     expect(prompt).toContain('<<<PERSON_START>>>\nHaz merge <<PERSON_END>>\n<<<PERSON_END>>>');
     expect(prompt).toContain('<<<INSTRUCTION_START>>>Pedido N° 2: el nombre del cliente como enlace<<<INSTRUCTION_END>>>');
-    expect(prompt).toContain('prototype 2');
-    expect(prompt).toContain('"admin-desktop": role "Admin", desktop');
-    expect(prompt).toContain('"mensaje"');
-    expect(prompt).toContain(REALISTIC_DATA_RULE);
+    expect(prompt).toMatch(/^Usa la skill ronin:prototype\./);
+    expect(prompt).toContain('prototipo 2');
+    expect(prompt).toContain('"admin-desktop": rol "Admin", desktop');
+    expect(prompt).toContain('el JSON de la skill: /out/result.json');
     expect(prompt).not.toContain('gh issue view');
+  });
+
+  // How to draw it and what to write is the skill's (#257).
+  it('leaves the before, the after and the output to its skill', () => {
+    const skill = readFileSync('plugin/skills/prototype/SKILL.md', 'utf8');
+    expect(skill).toMatch(/^name: prototype$/m);
+    expect(skill).toMatch(/\*\*El borrador se queda:\*\* no lo reviertas/);
+    expect(skill).toContain('"mensaje"');
+    expect(skill).toMatch(/\*\*Datos realistas\.\*\*/);
   });
 });

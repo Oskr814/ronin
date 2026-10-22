@@ -157,9 +157,6 @@ export interface HeadlessRunOptions {
   mcpConfigFile?: string;
   noTools?: boolean;
   pluginDir?: string;
-  // Without the product repo's .claude/ settings, hooks and skills, even
-  // without ronin's skills: what pluginDir does on that side.
-  userSettingsOnly?: boolean;
   sealedEnv?: Record<string, string>;
   runAs?: AgentUser;
   // Told the pid of `claude` as soon as it starts: the actions server
@@ -197,7 +194,7 @@ export function claudeHeadlessArgs(prompt: string, opts: HeadlessRunOptions = {}
     '--strict-mcp-config',
     ...(opts.noTools ? ['--tools', ''] : []),
     ...(opts.pluginDir ? ['--plugin-dir', opts.pluginDir] : []),
-    ...(opts.pluginDir || opts.userSettingsOnly ? ['--setting-sources', 'user'] : []),
+    ...(opts.pluginDir ? ['--setting-sources', 'user'] : []),
   ];
 }
 

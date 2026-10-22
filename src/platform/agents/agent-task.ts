@@ -242,7 +242,10 @@ export async function runAgentTask(task: AgentTask): Promise<string> {
       ...(agentsFile ? { agentsFile } : {}),
       ...(mcpConfigFile ? { mcpConfigFile } : {}),
       ...(server || sealed ? {
-        ...(server ? { pluginDir: PLUGIN_DIR, onSpawn: server.bind } : { userSettingsOnly: true }),
+        // ronin's skills, sealed or not: a sealed run with no action loads
+        // its skill too (a prototype, a preview's triage).
+        pluginDir: PLUGIN_DIR,
+        ...(server ? { onSpawn: server.bind } : {}),
         sealedEnv: {
           ...(server ? { PATH: `${ACTIONS_BIN_DIR}:${process.env.PATH ?? ''}`, RONIN_ACTIONS_URL: server.url, RONIN_ACTIONS_TOKEN: server.token } : {}),
           ...(readToken ? { GH_TOKEN: readToken } : {}),
