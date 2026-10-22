@@ -66,8 +66,10 @@ vi.mock('@platform/actions/executors.js', () => ({
   executeAction: vi.fn(),
 }));
 const agentUser = vi.fn();
+const prepareAgentUser = vi.fn(async (..._args: unknown[]) => {});
 vi.mock('@platform/agents/agent-user.js', () => ({
-  agentUser: () => agentUser(),
+  repoAgentUser: () => agentUser(),
+  prepareAgentUser: (...args: unknown[]) => prepareAgentUser(...args),
   asAgent: (_user: unknown, opts: object) => opts,
 }));
 
@@ -689,10 +691,11 @@ describe('runAgentTask — fix-comments-external', () => {
   });
 
   it("runs as the agent's user, in a clone of its own, when the image has that user", async () => {
-    const user = { uid: 1500, gid: 1500, home: '/home/agent' };
+    const user = { name: 'agent-cuenta', uid: 1500, gid: 1500, home: '/home/agent' };
     agentUser.mockReturnValue(user);
     await runAgentTask(task);
 
+    expect(prepareAgentUser).toHaveBeenCalledWith(user);
     expect(ensureAgentClone).toHaveBeenCalledWith('feat/cambio-cliente-pedido-creado', user);
     expect(ensureTrustedFixWorktree).not.toHaveBeenCalled();
     expect(runClaudeHeadless.mock.calls[0][0]).toBe('/tmp/agent-clone');

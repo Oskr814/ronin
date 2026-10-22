@@ -71,7 +71,7 @@ describe('runServices', () => {
   });
 
   it("runs a command in a service, gives back its exit code, and returns what it wrote to the agent", async () => {
-    const services = runServices({ checkoutDir: '/c', owner: { uid: 1500, gid: 1500, home: '/home/agent' } });
+    const services = runServices({ checkoutDir: '/c', owner: { name: 'agent-cuenta', uid: 1500, gid: 1500, home: '/home/agent' } });
     exec.mockImplementation(async (file: string, args: string[]) => {
       if (file === 'docker' && args.includes('config')) return { stdout: JSON.stringify(compose), stderr: '' };
       if (file === 'docker' && args.includes('run')) throw Object.assign(new Error('fail'), { code: 1, stdout: 'Passed: 3\nFailed: 1\n', stderr: ' Container web-run Created\n' });

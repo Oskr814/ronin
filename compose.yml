@@ -128,6 +128,11 @@ services:
     command: ["runner"]
     network_mode: service:tailscale
     pid: service:procs
+    # To tell which process is on the other end of a call to a run's actions
+    # server (#257, src/platform/actions/peer.ts), ronin reads the agent's
+    # /proc/<pid>/fd, which another user's root can't without this. Only
+    # root has it: the agents' users don't.
+    cap_add: [SYS_PTRACE]
     env_file: *env-file
     environment: *ronin-env
     volumes: *ronin-volumes

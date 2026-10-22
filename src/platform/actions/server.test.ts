@@ -30,6 +30,8 @@ async function start(execute = async (action: ValidAction): Promise<Record<strin
     checkout: async () => ({ head: 'amended', parentOfHead: 'base', parentOfStart: 'base', dirty: false }),
     execute,
   });
+  // The CLI runs as a child of this process, as ronin-act does of claude.
+  server.bind(process.pid);
   return server;
 }
 
@@ -86,6 +88,14 @@ describe('actions server + ronin-act', () => {
     const s = await start(async () => ({ exitCode: 1, output: 'Passed: 3\nFailed: 1' }));
     const ran = await act(s, ['services.run', '--service', 'web', '--command', 'dotnet test']);
     expect(ran.stdout).toBe('{"ok":true,"exitCode":1}\nPassed: 3\nFailed: 1\n');
+  });
+
+  it("answers only the run's own processes", async () => {
+    const s = await start();
+    s.bind(1);
+    const stolen = await act(s, ['pr.comment', '--body', 'hola']);
+    expect(stolen.stderr).toContain('no viene de la corrida');
+    expect(executed).toEqual([]);
   });
 
   it('turns away a wrong credential', async () => {

@@ -4,12 +4,14 @@ import type { AddressInfo } from 'node:net';
 import { log } from '../logger.js';
 import { ActionRefused, describeActions, validateAction, type ActionInput, type CheckoutState, type RunScope, type ValidAction } from './catalog.js';
 import type { ActionResult } from './executors.js';
+import { connectionFromRun } from './peer.js';
 
 // The supervisor's side of the actions (#257): a small HTTP server on
 // loopback, one per run, that holds whatever the actions need (the GitHub
 // write token) while the agent only gets its URL and a credential good for
 // this run and this scope. The agent's client (bin/ronin-act) carries no
-// secret of its own.
+// secret of its own. The credential alone is not enough: once the run's
+// `claude` is up (bind), only its own processes are answered (peer.ts).
 
 export interface ActionCall {
   at: string;
@@ -25,6 +27,9 @@ export interface ActionsServer {
   calls: ActionCall[];
   // What result.report said, when the agent got to it.
   report: () => ActionInput<'result.report'> | null;
+  // The run's `claude`: from here on, only it and its descendants are
+  // answered. Before it, nobody is.
+  bind: (pid: number) => void;
   close: () => Promise<void>;
 }
 
@@ -33,6 +38,8 @@ export interface ActionsServerOptions {
   checkout: () => Promise<CheckoutState>;
   execute: (action: ValidAction) => Promise<ActionResult>;
   label: string;
+  // Whether a connection comes from the run: peer.ts's, replaceable in tests.
+  fromRun?: (clientPort: number, serverPort: number, root: number) => boolean;
 }
 
 async function readJson(req: IncomingMessage): Promise<unknown> {
@@ -59,6 +66,8 @@ export async function startActionsServer(opts: ActionsServerOptions): Promise<Ac
   const token = randomBytes(24).toString('hex');
   const calls: ActionCall[] = [];
   let report: ActionInput<'result.report'> | null = null;
+  let root: number | null = null;
+  const fromRun = opts.fromRun ?? connectionFromRun;
   // One action at a time, in the order they arrive: two pushes, or a reply
   // racing the push it talks about, would otherwise interleave.
   let queue: Promise<unknown> = Promise.resolve();
@@ -90,6 +99,11 @@ export async function startActionsServer(opts: ActionsServerOptions): Promise<Ac
       res.end(JSON.stringify(payload));
     };
     if (!sameToken((req.headers.authorization ?? '').replace(/^Bearer /, ''), token)) return send(401, { error: 'credencial inválida' });
+    const { localPort, remotePort } = req.socket;
+    if (root === null || !remotePort || !localPort || !fromRun(remotePort, localPort, root)) {
+      log.error(`[${opts.label}] acciones: una llamada que no viene de la corrida, rechazada`);
+      return send(403, { error: 'esta llamada no viene de la corrida' });
+    }
     const url = new URL(req.url ?? '/', 'http://localhost');
     if (req.method === 'GET' && url.pathname === '/actions') return send(200, { actions: describeActions(opts.scope) });
 
@@ -114,6 +128,7 @@ export async function startActionsServer(opts: ActionsServerOptions): Promise<Ac
     token,
     calls,
     report: () => report,
+    bind: (pid) => { root = pid; },
     close: () => new Promise((resolve) => server.close(() => resolve())),
   };
 }

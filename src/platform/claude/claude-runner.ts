@@ -159,6 +159,9 @@ export interface HeadlessRunOptions {
   pluginDir?: string;
   sealedEnv?: Record<string, string>;
   runAs?: AgentUser;
+  // Told the pid of `claude` as soon as it starts: the actions server
+  // answers only it and its descendants (actions/peer.ts).
+  onSpawn?: (pid: number) => void;
 }
 
 // What a sealed run keeps of ronin's environment: what the tools an agent
@@ -221,6 +224,7 @@ export async function runClaudeHeadless(cwd: string, prompt: string, label: stri
       { cwd, env, stdio: ['ignore', 'pipe', 'pipe'], ...(opts.runAs ? { uid: opts.runAs.uid, gid: opts.runAs.gid } : {}) },
     );
 
+    if (child.pid !== undefined) opts.onSpawn?.(child.pid);
     let finalResult = '';
     let stderr = '';
     let timedOut = false;

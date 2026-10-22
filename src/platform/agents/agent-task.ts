@@ -11,7 +11,7 @@ import { currentRunGroup } from './run-group.js';
 import { host } from '../host/host.js';
 import type { RunScope } from '../actions/catalog.js';
 import { agentCheckout, checkoutState, executeAction, rootCheckout, type RunCheckout, type RunServices } from '../actions/executors.js';
-import { agentUser, type AgentUser } from './agent-user.js';
+import { prepareAgentUser, repoAgentUser, type AgentUser } from './agent-user.js';
 import { startActionsServer, type ActionsServer } from '../actions/server.js';
 import { mintReadToken } from '../github/read-token.js';
 
@@ -115,13 +115,15 @@ async function checkoutDir(checkout: TaskCheckout, branch: string, as: AgentUser
 // A run with actions on a PR's branch is the only one that goes as the
 // agent's user for now (#257): the other kinds of checkout are still
 // root's worktrees.
-function runsAs(checkout: TaskCheckout, actions: PreparedTask['actions']): AgentUser | null {
-  return actions && checkout.kind === 'pr-branch' ? agentUser() : null;
+async function runsAs(checkout: TaskCheckout, actions: PreparedTask['actions']): Promise<AgentUser | null> {
+  const user = actions && checkout.kind === 'pr-branch' ? repoAgentUser() : null;
+  if (user) await prepareAgentUser(user);
+  return user;
 }
 
 export async function runAgentTask(task: AgentTask): Promise<string> {
   const { branch, prompt, checkout, agents, mcpConfigFile, actions, services: makeServices, ...prepared } = await task.prepare();
-  const as = runsAs(checkout, actions);
+  const as = await runsAs(checkout, actions);
   const worktreeDir = await checkoutDir(checkout, branch, as);
 
   // An untrusted PR head is the only checkout that points `claude -p
@@ -197,6 +199,7 @@ export async function runAgentTask(task: AgentTask): Promise<string> {
           ...(as ? { HOME: as.home } : {}),
         },
         ...(as ? { runAs: as } : {}),
+        onSpawn: server.bind,
       } : {}),
     }, record);
     if (server) logActions(server, `${task.type} for ${label}`);
