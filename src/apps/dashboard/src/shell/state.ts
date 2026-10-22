@@ -62,6 +62,8 @@ export const S = {
   relogin: null as string | null,
   sel: null as string | null,
   open: [] as string[],
+  // The tabs pinned: an item opened from elsewhere doesn't take their place.
+  pinned: [] as string[],
   runIdx: {} as Record<string, number>,
   pendingRun: null as string | null,
   filter: null as 'running' | 'queue' | null,
@@ -517,6 +519,7 @@ export function openSettings(sec = 'perfil', login: string | null = null, f: str
 
 export function closeTab(id: string) {
   S.open = S.open.filter((x) => x !== id);
+  S.pinned = S.pinned.filter((x) => x !== id);
   if (S.sel === id) {
     if (S.open[0]) void select(S.open[0]);
     else {
@@ -526,6 +529,20 @@ export function closeTab(id: string) {
       changed();
     }
   } else changed();
+}
+
+// Pinning a tab keeps it open when another item opens over the one shown.
+export function togglePin(id: string) {
+  S.pinned = S.pinned.includes(id) ? S.pinned.filter((x) => x !== id) : [...S.pinned, id];
+  changed();
+}
+
+// The snapshot's issue whose PR this is, when the PR isn't an item itself.
+function issueOfPr(id: string): string | null {
+  const n = /^(.+)#(\d+)$/.exec(id);
+  if (!n || itemById(id)) return null;
+  const host = S.snap?.items.find((item) => item.repo === n[1] && item.kind === 'issue' && item.pr?.number === Number(n[2]));
+  return host?.id ?? null;
 }
 
 export async function select(id: string) {
@@ -545,15 +562,29 @@ export async function select(id: string) {
     openRequest(Number(ped[1]), runId);
     return;
   }
+  // A PR that moves an issue (its open slice's, the one that closes it) is
+  // that issue, on the PR's tab: by its own number it's not an item, and
+  // would open without its checks, its review or its preview.
+  const host = issueOfPr(id);
+  if (host) {
+    S.doc[host] = S.doc[id] ?? 'pr';
+    delete S.doc[id];
+    id = host;
+  }
   knowItem(id, 'issue');
   // An exploration PR is its app's page (#155).
   const xr = xplOfItem(id);
   if (xr) Object.assign(S.xpl, { repo: xr.repo, app: xr.app });
-  S.sel = id;
   S.page = xr ? 'exploracion' : null;
   S.runIdx[id] = 0;
   delete S.view[id];
-  if (!S.open.includes(id)) S.open.push(id);
+  if (!S.open.includes(id)) {
+    // Over the tab shown, unless it's pinned; from Hoy or another page, a new one.
+    const at = S.open.indexOf(S.sel ?? '');
+    if (at >= 0 && !S.pinned.includes(S.sel!)) S.open[at] = id;
+    else S.open.push(id);
+  }
+  S.sel = id;
   const path = itemPath(id);
   if (location.pathname !== path) history.pushState(null, '', S.ficha[id] ? `${path}?f=${encodeURIComponent(S.ficha[id])}` : path);
   changed();
