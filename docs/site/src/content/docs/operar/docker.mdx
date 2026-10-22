@@ -117,7 +117,7 @@ git pull && scripts/deploy.sh
 
 Recrea primero `ronin`, que vuelve en segundos, y después `runner`. El runner se toma su tiempo: deja de tomar trabajos y espera a que terminen los que están corriendo, con sus agentes, antes de irse. Mientras tanto, los webhooks y el tablero siguen andando y lo que llega queda en la cola para el runner nuevo. `docker compose logs -f runner` dice a cuántos procesos espera.
 
-Si el cambio es solo del servidor (el tablero, el portal, la API), alcanza con `scripts/deploy.sh ronin`, que no toca la cola.
+Si el cambio es solo de la API (el tablero, el portal, los webhooks), alcanza con `scripts/deploy.sh api`, que no toca la cola. `scripts/deploy.sh runner` despliega solo el runner. En `compose.yml`, la API es el servicio `ronin`.
 
 <Aside type="caution" title="No despliegues los dos con un solo docker compose up -d">
 `docker compose up -d` crea todos los contenedores antes de arrancar ninguno: el `ronin` nuevo queda esperando, sin arrancar, a que el runner viejo termine de esperar a sus trabajos, y la API se cae todo ese rato. `scripts/deploy.sh` los recrea por separado (`docker compose up -d --no-deps ronin` y después `runner`).
