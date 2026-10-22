@@ -151,13 +151,21 @@ async function buildSliceTask(task: SliceTask): Promise<PreparedTask> {
       const pr = await getPullRequestStatus(task.prNumber);
       return {
         branch: pr.headRefName,
-        checkout: { kind: 'branch' },
+        checkout: { kind: 'pr-branch' },
+        // An amend of the PR's commit, pushed through ronin (#257): nothing
+        // else on GitHub.
+        actions: {
+          prNumber: task.prNumber,
+          headRef: pr.headRefName,
+          push: { mode: 'amend' },
+          threads: [],
+          triggers: [],
+          allowed: ['git.push', 'services.up', 'services.run', 'result.report'],
+        },
+        services: (checkoutDir, owner) => runServices({ checkoutDir, owner }),
         prompt: [
-          `You are ronin. CI checks are failing on PR #${task.prNumber} (tracking issue #${task.issueNumber}).`,
-          'Investigate the cause, fix it, and confirm the affected test(s) pass by re-running them, then amend the existing commit (`git commit --amend`) — never create a new commit — and force-push (`git push --force-with-lease`) to this same branch.',
-          'Do not edit the tracking issue or change any labels, on either the issue or this PR — that is owned entirely by the supervisor, not by you.',
-          AGENT_NOTES_REMINDER,
-        ].join('\n'),
+          `Usa la skill ronin:fix-ci. Eres ronin, en el PR #${task.prNumber} de ${repoUrl()}, que abriste tú para el issue #${task.issueNumber}: su CI está fallando. Este checkout es la cabeza del PR, en detached HEAD; su rama es "${pr.headRefName}".`,
+        ].join('\n\n'),
       };
     }
 
