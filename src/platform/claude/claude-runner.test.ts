@@ -118,7 +118,7 @@ describe("runClaudeHeadless as the agent's user", () => {
     (config as { claudeConfigDir: string }).claudeConfigDir = '/claude/cuenta';
     try {
       fakeChild = new FakeChildProcess();
-      const user = { uid: 1500, gid: 1500, home: '/home/agent' };
+      const user = { name: 'agent-cuenta', uid: 1500, gid: 1500, home: '/home/agent' };
       const running = withActiveRepo({ productRepo: 'acme/tienda', productRepoPath: '/tmp/x' }, () => runClaudeHeadless('/tmp', 'hi', 'test', { runAs: user, sealedEnv: {} }));
       await vi.waitFor(() => expect(spawn).toHaveBeenCalled());
       fakeChild.emit('close', 0);
