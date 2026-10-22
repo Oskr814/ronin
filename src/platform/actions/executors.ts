@@ -69,7 +69,9 @@ async function takeHead(scope: RunScope, checkout: RunCheckout): Promise<string>
   const anchor = mode.mode === 'amend'
     ? await rootGit(checkout.repo, ['rev-parse', `${start}^`])
     : mode.mode === 'branch' ? mode.baseSha : start;
-  const bundle = join(checkout.dir, '.git', 'ronin-push.bundle');
+  // In the checkout's git directory: .git in a clone, but in a worktree
+  // (a runner without agent users) .git is a file pointing elsewhere.
+  const bundle = join(await checkout.git(['rev-parse', '--absolute-git-dir']), 'ronin-push.bundle');
   await checkout.git(['bundle', 'create', bundle, 'HEAD', `^${anchor}`]);
   const ref = `refs/ronin/push/${randomBytes(6).toString('hex')}`;
   try {

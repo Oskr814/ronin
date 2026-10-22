@@ -11,6 +11,15 @@ vi.mock('@platform/config/config.js', () => ({ config: { githubLogin: 'ronin' } 
 const runAgentTask = vi.fn();
 vi.mock('@platform/agents/agent-task.js', () => ({ runAgentTask: (...args: unknown[]) => runAgentTask(...args) }));
 
+// The agent's user, when a test plays the image: this same user, so git can
+// run "as" it without root.
+const agent: { user: null | { name: string; uid: number; gid: number; home: string } } = { user: null };
+vi.mock('@platform/agents/agent-user.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@platform/agents/agent-user.js')>()),
+  repoAgentUser: () => agent.user,
+  prepareAgentUser: async () => {},
+}));
+
 const { resolveConflicts, parseAgentResolution, renderConflictsOutcome } = await import('./conflicts.js');
 
 let root: string;
@@ -63,6 +72,7 @@ beforeEach(() => {
   origin = join(root, 'origin.git');
   repo.worktreeBasePath = join(root, 'worktrees');
   runAgentTask.mockReset();
+  agent.user = null;
 });
 
 afterEach(() => {
@@ -168,6 +178,27 @@ describe('resolveConflicts', () => {
   it('leaves no checkout behind', async () => {
     setup('UNO\ndos\ntres\n', 'uno\ndos\nTRES\n');
     await resolveConflicts(1, pr);
+    expect(git(repo.productRepoPath, 'worktree', 'list').split('\n')).toHaveLength(1);
+    expect(() => readFileSync(join(repo.worktreeBasePath, 'conflicts-pr-1', 'app.txt'))).toThrow();
+  });
+});
+
+describe('resolveConflicts — in the agent\'s clone (#257)', () => {
+  it('merges, lets the agent resolve, commits and pushes, with nothing of it in the shared repo', async () => {
+    agent.user = { name: 'agent-test', uid: process.getuid!(), gid: process.getgid!(), home: process.env.HOME ?? tmpdir() };
+    setup('uno\ndos (main)\ntres\n', 'uno\ndos (feature)\ntres\n');
+    runAgentTask.mockImplementation(async (task: { checkoutDir: string; outputPath: string }) => {
+      // Its own clone, not a worktree of the shared repo.
+      expect(git(task.checkoutDir, 'rev-parse', '--git-dir')).toBe('.git');
+      writeFileSync(join(task.checkoutDir, 'app.txt'), 'uno\ndos (main + feature)\ntres\n');
+      git(task.checkoutDir, 'add', 'app.txt');
+      writeFileSync(task.outputPath, JSON.stringify({ resuelto: true, archivos: [], revisar: [], verificacion: '' }));
+    });
+
+    const outcome = await resolveConflicts(1, pr);
+    expect(outcome.kind).toBe('resolved');
+    expect(originFile('feature')).toBe('uno\ndos (main + feature)\ntres');
+    expect(git(origin, 'rev-parse', 'feature^2')).toBe(git(origin, 'rev-parse', 'main'));
     expect(git(repo.productRepoPath, 'worktree', 'list').split('\n')).toHaveLength(1);
     expect(() => readFileSync(join(repo.worktreeBasePath, 'conflicts-pr-1', 'app.txt'))).toThrow();
   });

@@ -8,6 +8,10 @@ import { launchWorker } from '@platform/workers/worker-launch.js';
 import { log } from '@platform/logger.js';
 import { worktreeLock } from '@platform/workers/worktree-lock.js';
 import { host } from '@platform/host/host.js';
+import { prepareAgentUser, repoAgentUser, type AgentUser } from '@platform/agents/agent-user.js';
+import { agentCheckout, executeAction, rootCheckout, type RunCheckout } from '@platform/actions/executors.js';
+import { ActionRefused } from '@platform/actions/catalog.js';
+import { agentCloneAt } from '@platform/git/worktree.js';
 
 
 // `/resolve-conflicts` on a PR: ronin merges the PR's base into its branch —
@@ -15,7 +19,10 @@ import { host } from '@platform/host/host.js';
 // history is rewritten and nothing is force-pushed — and has an agent
 // resolve whatever git couldn't. The merge, the checks on the agent's work,
 // the commit and the push are all done here, by code; the agent only edits
-// the conflicted files.
+// the conflicted files. In the image (#257) all of it happens in a clone of
+// the agent's user: git runs there as that user (never as root in a
+// checkout the agent controls), and the merge commit goes up the way
+// git.push takes it, in fast-forward.
 
 export interface ConflictsWorkerRequest {
   repo: string;
@@ -81,24 +88,20 @@ export type ConflictsOutcome =
   | { kind: 'unresolved'; base: string; files: string[]; reason: string; resolution?: AgentResolution }
   | { kind: 'branch-moved'; base: string };
 
-async function git(dir: string, args: string[]): Promise<string> {
-  const { stdout } = await host().exec('git', args, { cwd: dir, maxBuffer: 16 * 1024 * 1024 });
-  return stdout.trim();
+async function gitOk(co: RunCheckout, args: string[]): Promise<boolean> {
+  return co.git(args).then(() => true, () => false);
 }
 
-async function gitOk(dir: string, args: string[]): Promise<boolean> {
-  return host().exec('git', args, { cwd: dir }).then(() => true, () => false);
-}
-
-async function unmergedFiles(dir: string): Promise<string[]> {
-  return (await git(dir, ['diff', '--name-only', '--diff-filter=U'])).split('\n').filter(Boolean);
+async function unmergedFiles(co: RunCheckout): Promise<string[]> {
+  return (await co.git(['diff', '--name-only', '--diff-filter=U'])).split('\n').filter(Boolean);
 }
 
 // What has to be true before the merge commit is made — checked by code, not
 // taken from the agent's word. Returns why not, or null when it can go.
-export async function mergeNotReady(dir: string, files: string[]): Promise<string | null> {
-  if (!(await gitOk(dir, ['rev-parse', '-q', '--verify', 'MERGE_HEAD']))) return 'el merge ya no está en curso en el checkout';
-  const left = await unmergedFiles(dir);
+export async function mergeNotReady(co: RunCheckout, files: string[]): Promise<string | null> {
+  const dir = co.dir;
+  if (!(await gitOk(co, ['rev-parse', '-q', '--verify', 'MERGE_HEAD']))) return 'el merge ya no está en curso en el checkout';
+  const left = await unmergedFiles(co);
   if (left.length > 0) return `quedaron archivos sin resolver: ${left.join(', ')}`;
   const markers = await Promise.all(files.map(async (f) => {
     const path = join(dir, f);
@@ -107,29 +110,36 @@ export async function mergeNotReady(dir: string, files: string[]): Promise<strin
   }));
   const withMarkers = markers.filter((f): f is string => f !== null);
   if (withMarkers.length > 0) return `quedaron marcas de conflicto en ${withMarkers.join(', ')}`;
-  if ((await git(dir, ['diff', '--name-only'])) !== '') return 'quedaron cambios sin agregar al merge';
+  if ((await co.git(['diff', '--name-only'])) !== '') return 'quedaron cambios sin agregar al merge';
   return null;
 }
 
-async function prepareCheckout(dir: string, head: string, base: string): Promise<void> {
+async function prepareCheckout(dir: string, head: string, base: string, user: AgentUser | null): Promise<RunCheckout> {
   const repoPath = activeRepo().productRepoPath;
   await host().exec('git', ['fetch', 'origin', head, base], { cwd: repoPath });
+  if (user) {
+    await prepareAgentUser(user);
+    await agentCloneAt(dir, `origin/${head}`, user);
+    return agentCheckout(dir, repoPath, user);
+  }
   if (await host().fs.exists(dir)) await removeWorktreeDir(dir, 'resolveConflicts');
   await host().fs.mkdir(activeRepo().worktreeBasePath, { recursive: true });
   // Detached, like ensureTrustedFixWorktree: the branch is often checked out
   // in the primary worktree by whoever is working on it.
   await host().exec('git', ['worktree', 'add', '--detach', dir, `origin/${head}`], { cwd: repoPath });
+  return rootCheckout(dir, repoPath);
 }
 
-// Plain push, never forced: if someone pushed to the branch while this ran,
-// it's rejected and they're asked to run the command again.
-async function push(dir: string, head: string): Promise<boolean> {
+// Never forced: what git.push does in fast-forward (actions/executors.ts),
+// leased on the commit the branch had when this started. If someone pushed
+// to it meanwhile, nothing goes up and they're asked to run the command
+// again.
+async function push(co: RunCheckout, head: string, startSha: string): Promise<boolean> {
   try {
-    await host().exec('git', ['push', 'origin', `HEAD:refs/heads/${head}`], { cwd: dir });
+    await executeAction({ headRef: head, startSha, push: { mode: 'fast-forward' }, threads: [], triggers: [], allowed: ['git.push'] }, co, { name: 'git.push', input: {} });
     return true;
   } catch (error) {
-    const message = String((error as { stderr?: string }).stderr ?? error);
-    if (/rejected|non-fast-forward|fetch first/i.test(message)) return false;
+    if (error instanceof ActionRefused && /alguien subió/.test(error.message)) return false;
     throw error;
   }
 }
@@ -138,20 +148,22 @@ export async function resolveConflicts(prNumber: number, pr: PrHead): Promise<Co
   const base = pr.baseRefName;
   const head = pr.headRefName;
   const dir = conflictsDirFor(prNumber);
-  await prepareCheckout(dir, head, base);
+  const user = repoAgentUser();
+  const co = await prepareCheckout(dir, head, base, user);
   try {
-    if (await gitOk(dir, ['merge-base', '--is-ancestor', `origin/${base}`, 'HEAD'])) return { kind: 'up-to-date', base };
+    const startSha = await co.git(['rev-parse', 'HEAD']);
+    if (await gitOk(co, ['merge-base', '--is-ancestor', `origin/${base}`, 'HEAD'])) return { kind: 'up-to-date', base };
 
     const message = `Merge branch '${base}' into ${head}`;
     // --no-verify: the product repo's commit hooks (lint-staged and the like)
     // would check every file the base brings in, which is already reviewed
     // code, with tools this host may not have (dotnet csharpier on #849).
-    if (await gitOk(dir, ['merge', '--no-ff', '--no-edit', '--no-verify', '-m', message, `origin/${base}`])) {
-      if (!(await push(dir, head))) return { kind: 'branch-moved', base };
-      return { kind: 'merged-clean', base, sha: await git(dir, ['rev-parse', 'HEAD']) };
+    if (await gitOk(co, ['merge', '--no-ff', '--no-edit', '--no-verify', '-m', message, `origin/${base}`])) {
+      if (!(await push(co, head, startSha))) return { kind: 'branch-moved', base };
+      return { kind: 'merged-clean', base, sha: await co.git(['rev-parse', 'HEAD']) };
     }
 
-    const files = await unmergedFiles(dir);
+    const files = await unmergedFiles(co);
     if (files.length === 0) throw new Error(`git merge origin/${base} falló sin dejar conflictos`);
 
     const outDir = join(activeRepo().worktreeBasePath, `.conflicts-pr-${prNumber}-out`);
@@ -170,14 +182,15 @@ export async function resolveConflicts(prNumber: number, pr: PrHead): Promise<Co
     }
     if (!resolution.resuelto) return { kind: 'unresolved', base, files, reason: resolution.error ?? 'el agente no pudo resolverlos', resolution };
 
-    const notReady = await mergeNotReady(dir, files);
+    const notReady = await mergeNotReady(co, files);
     if (notReady) return { kind: 'unresolved', base, files, reason: notReady, resolution };
 
-    await git(dir, ['commit', '--no-edit', '--no-verify', '-m', message]);
-    if (!(await push(dir, head))) return { kind: 'branch-moved', base };
-    return { kind: 'resolved', base, sha: await git(dir, ['rev-parse', 'HEAD']), files, resolution };
+    await co.git(['commit', '--no-edit', '--no-verify', '-m', message]);
+    if (!(await push(co, head, startSha))) return { kind: 'branch-moved', base };
+    return { kind: 'resolved', base, sha: await co.git(['rev-parse', 'HEAD']), files, resolution };
   } finally {
-    await removeWorktreeDir(dir, 'resolveConflicts').catch((error) => log.error(`conflictos PR #${prNumber}: no se pudo borrar el checkout`, error));
+    await (user ? host().fs.rm(dir, { recursive: true, force: true }) : removeWorktreeDir(dir, 'resolveConflicts'))
+      .catch((error) => log.error(`conflictos PR #${prNumber}: no se pudo borrar el checkout`, error));
   }
 }
 

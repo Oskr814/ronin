@@ -363,7 +363,9 @@ export async function ensureAgentPrClone(prNumber: number, headSha: string, user
   return agentCloneAt(agentPrCloneDirFor(prNumber), headSha, user);
 }
 
-async function agentCloneAt(dir: string, ref: string, user: AgentUser): Promise<string> {
+// A clone of the agent's user at `ref`, in `dir`: what the helpers above
+// make, for a caller that names its own directory (resolve-conflicts).
+export async function agentCloneAt(dir: string, ref: string, user: AgentUser): Promise<string> {
   const repo = activeRepo().productRepoPath;
   await host().fs.rm(dir, { recursive: true, force: true });
   await host().fs.mkdir(dir, { recursive: true });
