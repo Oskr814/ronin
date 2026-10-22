@@ -55,6 +55,7 @@ Si algo quedó raro, un `/preview` a mano (o **Actualizar la preview** en el tab
 
 - **Se baja sola** a la hora de levantarse (`PREVIEW_TTL_MINUTES`), o al mergear o cerrar el PR. Las actualizaciones no reinician la hora.
 - `@ronin-agent /preview stop`, o **Bajar la preview** en el tablero, la baja antes.
+- **Un despliegue del runner de ronin también la baja.** Después, `/preview` la vuelve a levantar.
 - **Hay un tope** de previews activas a la vez por repo (`PREVIEW_MAX_PER_REPO`, 2 por defecto). Si no queda lugar, ronin te dice qué PRs las tienen.
 
 ## Para alguien de afuera

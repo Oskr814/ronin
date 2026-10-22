@@ -9,10 +9,11 @@ import { busyProcesses, drain } from './drain.js';
 const RUNNER = '0::/../runner.scope\n';
 const API = '0::/../api.scope\n';
 let dir: string;
-function proc(pid: number, ppid: number, cgroup: string, state = 'S', name = 'node') {
+function proc(pid: number, ppid: number, cgroup: string, state = 'S', name = 'node', env = 'PATH=/usr/bin\0') {
   mkdirSync(join(dir, String(pid)), { recursive: true });
   writeFileSync(join(dir, String(pid), 'stat'), `${pid} (${name}) ${state} ${ppid} 1 1 0 -1`);
   writeFileSync(join(dir, String(pid), 'cgroup'), cgroup);
+  writeFileSync(join(dir, String(pid), 'environ'), env);
 }
 afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
@@ -30,6 +31,9 @@ describe('what the runner waits for before it goes', () => {
     proc(202, 1, RUNNER, 'Z');
     proc(203, 0, RUNNER, 'S', 'bash');
     proc(300, 1, API);
+    // A preview's dev server, and what it started: the app's, not a job.
+    proc(400, 1, RUNNER, 'S', 'next-server', 'PATH=/usr/bin\0RONIN_APP_PROCESS=1\0CI=true\0');
+    proc(401, 400, RUNNER, 'S', 'node', 'RONIN_APP_PROCESS=1\0');
     expect(busyProcesses(dir, 100).sort()).toEqual([200, 201]);
   });
 

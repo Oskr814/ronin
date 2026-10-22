@@ -9,3 +9,8 @@ export function pidAlive(pid: unknown): boolean {
     return (error as NodeJS.ErrnoException).code === 'EPERM';
   }
 }
+
+// Set in the env of an app's own processes (a preview's dev servers, a
+// prototype's, an exploration's: domains/product-app/runtime.ts). They aren't
+// jobs: the runner's drain doesn't wait for them (apps/api/jobs/drain.ts).
+export const APP_PROCESS_ENV = 'RONIN_APP_PROCESS';

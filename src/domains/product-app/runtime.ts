@@ -5,6 +5,7 @@ import { getFreePort } from '@platform/git/worktree.js';
 import { log } from '@platform/logger.js';
 import { loadAppDefinition, namedPortsIn, publicizeTemplate, publicPortsIn, renderTemplate, type AppDefinition, type AppStep, type TemplateContext } from './manifest.js';
 import { host } from '@platform/host/host.js';
+import { APP_PROCESS_ENV } from '@platform/workers/process.js';
 
 
 // Brings an app of the product repo up in a checkout, from its
@@ -43,9 +44,10 @@ const RONIN_ONLY_ENV = ['RONIN_GITHUB_TOKEN', 'GH_TOKEN', 'GMAIL_APP_PASSWORD', 
 // installed another way (without its devDependencies, before NODE_ENV went),
 // `pnpm install` asks before reinstalling it from scratch, and with no
 // terminal it exits 0 having installed nothing — the dev server then isn't
-// found. Under CI it reinstalls without asking.
+// found. Under CI it reinstalls without asking. APP_PROCESS_ENV marks them as
+// the app's, so the runner's drain doesn't wait on a dev server.
 export function appEnv(extra: Record<string, string> = {}): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = { ...process.env, CI: 'true' };
+  const env: NodeJS.ProcessEnv = { ...process.env, CI: 'true', [APP_PROCESS_ENV]: '1' };
   for (const key of RONIN_ONLY_ENV) delete env[key];
   Object.assign(env, extra);
   return env;
