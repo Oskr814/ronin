@@ -181,6 +181,12 @@ export function sealedAgentEnv(base: NodeJS.ProcessEnv, vars: Record<string, str
   return { ...env, ...vars };
 }
 
+// Tools that schedule work for later. In `claude -p` a pending wakeup keeps
+// the process alive until it fires: an agent that set one as a fallback
+// while waiting for its subagent sat 18 minutes after it was done, holding
+// its run, its handler and the runner's drain (bmedical#517).
+export const HEADLESS_DISALLOWED_TOOLS = ['ScheduleWakeup', 'CronCreate', 'CronDelete', 'CronList', 'RemoteTrigger'];
+
 // The arguments of every headless run; shared with scripts/fix-replay.ts so
 // a replay runs on the same model and effort as the real task.
 export function claudeHeadlessArgs(prompt: string, opts: HeadlessRunOptions = {}): string[] {
@@ -195,7 +201,7 @@ export function claudeHeadlessArgs(prompt: string, opts: HeadlessRunOptions = {}
     ...(opts.agentsFile ? ['--agents', opts.agentsFile] : []),
     ...(opts.mcpConfigFile ? ['--mcp-config', opts.mcpConfigFile] : []),
     '--strict-mcp-config',
-    ...(opts.noTools ? ['--tools', ''] : []),
+    ...(opts.noTools ? ['--tools', ''] : ['--disallowedTools', ...HEADLESS_DISALLOWED_TOOLS]),
     ...(opts.pluginDir ? ['--plugin-dir', opts.pluginDir] : []),
     ...(opts.pluginDir || opts.userSettingsOnly ? ['--setting-sources', 'user'] : []),
   ];

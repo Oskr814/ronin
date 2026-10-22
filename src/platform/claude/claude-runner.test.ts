@@ -27,7 +27,7 @@ vi.mock('node:child_process', () => ({
 const lendClaudeAccount = vi.fn(async (..._args: unknown[]) => {});
 vi.mock('../agents/agent-user.js', () => ({ lendClaudeAccount: (...args: unknown[]) => lendClaudeAccount(...args) }));
 
-const { runClaudeHeadless, ClaudeUsageLimitError, claudeHeadlessArgs, sealedAgentEnv, streamSteps } = await import('./claude-runner.js');
+const { runClaudeHeadless, ClaudeUsageLimitError, claudeHeadlessArgs, HEADLESS_DISALLOWED_TOOLS, sealedAgentEnv, streamSteps } = await import('./claude-runner.js');
 const { config } = await import('../config/config.js');
 // The mock above is a plain object; the real config is typed read-only.
 const mutableConfig = config as { agentModel: string; agentEffort: string };
@@ -92,6 +92,16 @@ describe('claudeHeadlessArgs', () => {
     const args = claudeHeadlessArgs('do it', { noTools: true });
     expect(args).toContain('--strict-mcp-config');
     expect(args[args.indexOf('--tools') + 1]).toBe('');
+  });
+
+  // A pending wakeup keeps `claude -p` alive after the agent is done
+  // (bmedical#517).
+  it('never lets an agent schedule work for later', () => {
+    const args = claudeHeadlessArgs('do it', { pluginDir: '/plugin' });
+    const at = args.indexOf('--disallowedTools');
+    expect(args.slice(at + 1, at + 1 + HEADLESS_DISALLOWED_TOOLS.length)).toEqual(HEADLESS_DISALLOWED_TOOLS);
+    expect(HEADLESS_DISALLOWED_TOOLS).toContain('ScheduleWakeup');
+    expect(args[at + 1 + HEADLESS_DISALLOWED_TOOLS.length]).toMatch(/^--/);
   });
 
   it('passes an MCP config, and only that one', () => {
