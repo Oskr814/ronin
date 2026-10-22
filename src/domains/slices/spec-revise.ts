@@ -4,7 +4,6 @@ import { commentOnIssue, setReviewStatus, type Comment, type PullRequestStatus }
 import { log } from '@platform/logger.js';
 import { markProcessed } from '@platform/state/processed-comments.js';
 import { activeRepo } from '@platform/agents/repo-context.js';
-import { ensureWorktree } from '@platform/git/worktree.js';
 import { findUnprocessedMentions } from '../commands/mentions.js';
 import { sliceTask } from './prompts.js';
 import { publishMockup } from './spec-flow.js';
@@ -55,18 +54,6 @@ export async function findSpecRevisionCandidates(prs: PullRequestStatus[], only?
   return candidates;
 }
 
-// The spec's worktree, brought up to origin's branch: a person may have
-// edited the spec on GitHub since ronin last touched it, and ronin's commit
-// goes on top of theirs. The worktree is ronin's own, so nothing of anyone
-// else's is lost by the reset.
-async function specCheckout(issueNumber: number): Promise<string> {
-  const branch = `ronin/${issueNumber}/spec`;
-  const dir = await ensureWorktree(branch);
-  await host().exec('git', ['fetch', 'origin', branch], { cwd: dir });
-  await host().exec('git', ['reset', '--hard', `origin/${branch}`], { cwd: dir });
-  return dir;
-}
-
 // Every mention of one PR in one run. Marked done only after it succeeds:
 // one that fails is retried on the next tick, like the other flows.
 export async function processSpecRevision(candidate: SpecRevisionCandidate): Promise<void> {
@@ -76,7 +63,7 @@ export async function processSpecRevision(candidate: SpecRevisionCandidate): Pro
     await host().fs.rm(outDir, { recursive: true, force: true });
     await host().fs.mkdir(outDir, { recursive: true });
     await setReviewStatus(prNumber, 'pending', 'ronin está leyendo los comentarios del spec…', { context: SPEC_STATUS_CONTEXT });
-    await runAgentTask(sliceTask({ type: 'revise-spec', issueNumber, prNumber, mentions: candidate.mentions, dir: () => specCheckout(issueNumber), outDir }));
+    await runAgentTask(sliceTask({ type: 'revise-spec', issueNumber, prNumber, mentions: candidate.mentions, outDir }));
     const mockup = join(outDir, 'mockup.html');
     if (await host().fs.exists(mockup)) {
       const url = await publishMockup(issueNumber, mockup, outDir).catch((error: unknown) => {

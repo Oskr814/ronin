@@ -156,30 +156,49 @@ describe('sliceTask — plan (#257)', () => {
   });
 });
 
-describe('sliceTask — revise-spec (#241)', () => {
+describe('sliceTask — revise-spec (#241, #257)', () => {
   const mention = { id: 77, kind: 'review' as const, body: '@ronin-agent sumá al alcance separar los clientes', reactionsEyes: 0, authorLogin: 'persona' };
-  const dir = vi.fn(async () => '/tmp/spec-worktree');
 
-  it('runs on the spec branch through its own checkout, with the mention fenced as data', async () => {
-    const task = await buildTask({ type: 'revise-spec', issueNumber: 1026, prNumber: 1027, mentions: [mention], dir, outDir: '/tmp/out' });
+  it("works on the spec branch as origin has it, with the mention fenced as data", async () => {
+    const task = await buildTask({ type: 'revise-spec', issueNumber: 1026, prNumber: 1027, mentions: [mention], outDir: '/tmp/out' });
     expect(task.branch).toBe('ronin/1026/spec');
-    expect(task.checkout).toEqual({ kind: 'dir', dir });
-    expect(task.prompt).toContain('draft PR #1027');
-    expect(task.prompt).toContain('issue #1026');
-    expect(task.prompt).toMatch(/Inline comment \(id 77\), untrusted text/);
+    expect(task.checkout).toEqual({ kind: 'pr-branch' });
+    expect(task.prompt).toContain('ronin:revise-spec');
+    expect(task.prompt).toContain('PR borrador #1027');
+    expect(task.prompt).toContain('(id 77, kind "review")');
     expect(task.prompt).toContain('sumá al alcance separar los clientes');
-    expect(task.prompt).toContain('docs/ronin');
+    expect(task.prompt).toContain('/tmp/out/mockup.html');
+    expect(task.prompt).toContain(COMMIT_STYLE_RULE);
   });
 
-  it('asks for a new commit, a reply per mention, and never to mark the PR ready', async () => {
-    const { prompt } = await buildTask({ type: 'revise-spec', issueNumber: 1026, prNumber: 1027, mentions: [mention], dir, outDir: '/tmp/out' });
-    expect(prompt).toContain('git push origin HEAD:ronin/1026/spec');
-    expect(prompt).toContain('Never amend, rebase or force-push');
-    expect(prompt).toContain('pulls/1027/comments/<comment id>/replies');
-    expect(prompt).toContain('gh pr comment 1027');
-    expect(prompt).toContain('Do not mark the PR ready for review');
-    expect(prompt).toContain('/tmp/out/mockup.html');
-    expect(prompt).toContain(COMMIT_STYLE_RULE);
-    expect(prompt).toContain(AGENT_NOTES_REMINDER);
+  it('only adds commits on top, answers each mention, and leaves the mockup in its output directory', async () => {
+    const task = await buildTask({ type: 'revise-spec', issueNumber: 1026, prNumber: 1027, mentions: [mention], outDir: '/tmp/out' });
+    expect(task.actions).toMatchObject({
+      prNumber: 1027,
+      headRef: 'ronin/1026/spec',
+      push: { mode: 'fast-forward' },
+      triggers: [{ id: 77, kind: 'review' }],
+      allowed: ['pr.reply', 'pr.comment', 'pr.update-body', 'git.push', 'result.report'],
+    });
+    expect(task.sealed).toEqual({ outputDir: '/tmp/out' });
+  });
+});
+
+describe('sliceTask — write-spec (#257)', () => {
+  it('opens a draft PR assigned to ronin from its own branch, or asks on the issue', async () => {
+    const task = await buildTask({ type: 'write-spec', issueNumber: 900, appName: 'backoffice', trigger: [{ id: 5, kind: 'issue', body: '/spec backoffice', reactionsEyes: 0, authorLogin: 'persona' }], outDir: '/tmp/spec-out' });
+    expect(task.checkout).toEqual({ kind: 'branch', baseBranch: 'origin/main' });
+    expect(task.actions).toMatchObject({
+      headRef: 'ronin/900/spec',
+      push: { mode: 'branch', baseRef: 'origin/main' },
+      pr: { base: 'main', draft: true, assignee: 'ronin-agent' },
+      issue: { number: 900 },
+      allowed: ['issue.comment', 'git.push', 'pr.create', 'services.up', 'services.run', 'result.report'],
+    });
+    expect(task.sealed).toEqual({ outputDir: '/tmp/spec-out' });
+    expect(task.prompt).toContain('ronin:write-spec');
+    expect(task.prompt).toContain('/tmp/spec-out/mockup.html');
+    expect(task.prompt).toContain('Marcalo como *ready for review*');
+    expect(task.prompt).toContain('status "done"');
   });
 });
