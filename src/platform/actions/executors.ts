@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { join } from 'node:path';
 import { addIssueAssignees, createPullRequest, getIssueBody, getPullRequestStatus, postIssueComment, replyToComment, resolveReviewThread, setIssueBody, setPullRequestBody } from '../github/github.js';
-import { HELP_FOOTER_MARKER } from '../github/pr-body.js';
+import { closingRefs, HELP_FOOTER_MARKER } from '../github/pr-body.js';
 import { host } from '../host/host.js';
 import { asAgent, type AgentUser } from '../agents/agent-user.js';
 import { ActionRefused, prNumberOf, type CheckoutState, type RunScope, type ValidAction } from './catalog.js';
@@ -101,10 +101,14 @@ function leaseOf(scope: RunScope): string {
 
 // What a new description must keep of the current one: its "Closes #N"
 // first line, which links the PR to its issue, and ronin's help footer, from
-// its marker on. Null when it keeps them; the reason otherwise.
+// its marker on. It closes no issue the current one doesn't. Null when it
+// keeps them; the reason otherwise.
 export function bodyKeepsWhatItMust(current: string, next: string): string | null {
   const closes = /^Closes #\d+/i.exec(current.trimStart())?.[0];
   if (closes && !next.trimStart().startsWith(closes)) return `la descripción tiene que seguir empezando con "${closes}"`;
+  const had = new Set(closingRefs(current));
+  const added = closingRefs(next).filter((ref) => !had.has(ref));
+  if (added.length > 0) return `la descripción no puede cerrar issues que antes no cerraba: saca "${added.join('", "')}"`;
   const at = current.indexOf(HELP_FOOTER_MARKER);
   if (at >= 0 && !next.trimEnd().endsWith(current.slice(at).trimEnd())) return `todo desde la línea "${HELP_FOOTER_MARKER}" tiene que quedar exactamente como está`;
   return null;

@@ -69,7 +69,7 @@ export const PR_BODY_RULE =
   'if there is nothing to try in the app (a refactor, a script, the CI), only "No hay nada que probar en la app: <why>." inside it; invented data only, the preview prepares exactly these); ' +
   '"## Decisiones propias" (every choice the request did not settle and you made on your own, each with the reason; "Ninguna." if there were none); ' +
   '"## Fuera de alcance" (what you noticed but left alone on purpose, e.g. the same problem somewhere else; "Nada." if nothing). ' +
-  'No other sections. A closing reference ("Closes #N") goes on the first line, before the first section; screenshots go under "## Qué cambió".';
+  'No other sections. A closing reference ("Closes #N"), only when the task says the PR closes its issue, goes on the first line, before the first section; screenshots go under "## Qué cambió".';
 
 export const AGENT_NOTES_REMINDER =
   "If you are committing code changes for this task and learned something " +

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { CommentKind } from '../github/github.js';
+import { closingRefs } from '../github/pr-body.js';
 
 // The actions an agent can ask the supervisor for (#257): everything that
 // changes something outside the agent's own checkout goes through one of
@@ -204,6 +205,14 @@ export async function validateAction(
     const closes = scope.pr.closes;
     if (closes !== undefined && !new RegExp(`^Closes #${closes}\\b`, 'i').test(action.input.body.trimStart())) {
       throw new ActionRefused(`la descripción tiene que empezar con "Closes #${closes}"`);
+    }
+    // Only the issue the run closes: a slice PR closes none, ronin closes its
+    // issue once the last slice merges.
+    const other = closingRefs(action.input.body).filter((ref) => ref !== `#${closes}`);
+    if (other.length > 0) {
+      throw new ActionRefused(closes === undefined
+        ? `este PR no cierra ningún issue: saca "${other.join('", "')}" (para enlazarlo, "Parte de #N")`
+        : `este PR solo cierra #${closes}: saca "${other.join('", "')}"`);
     }
   }
   if ((action.name === 'issue.comment' || action.name === 'issue.update-body') && !scope.issue) throw new ActionRefused('esta corrida no tiene un issue');

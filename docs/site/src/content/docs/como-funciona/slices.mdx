@@ -17,7 +17,7 @@ Un spec es para un cambio grande. ronin lo trocea en **slices**: unidades chicas
 
 3. **El plan:** un agente lee el spec y el código, y escribe en el issue de tracking un checklist de slices.
 
-4. **Una slice, un PR**, en una rama `ronin/<issue>/slice-<n>`. Cada PR sale con [`ronin:auto-merge`](/ronin/referencia/comandos/#auto-merge): aprobado y en verde, se mergea solo.
+4. **Una slice, un PR**, en una rama `ronin/<issue>/slice-<n>`, que empieza con «Parte de #N»: el PR de una slice nunca cierra el issue. Cada PR sale con [`ronin:auto-merge`](/ronin/referencia/comandos/#auto-merge): aprobado y en verde, se mergea solo.
 
 5. **Al mergearse la última**, el issue pasa a `ronin:done`.
 

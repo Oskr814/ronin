@@ -91,6 +91,9 @@ describe('sliceTask — implementing with the skill (#257)', () => {
     expect(task.actions).not.toHaveProperty('issue');
     expect(task.prompt).toContain('ronin:implement');
     expect(task.prompt).toContain('<<<SLICE_START>>>Add foo<<<SLICE_END>>>');
+    // Its PR never closes the issue: ronin does, after the last slice.
+    expect(task.actions?.pr).not.toHaveProperty('closes');
+    expect(task.prompt).toContain('"Parte de #228", nunca "Closes"');
   });
 
   it('stacks a later slice on the previous one, while that branch is on origin', async () => {
