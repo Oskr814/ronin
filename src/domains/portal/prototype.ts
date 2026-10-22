@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, extname } from 'node:path';
-import { makePrototype, PrototypeDeclined, type PrototypeDraft } from '../commands/prototype.js';
+import { makePrototype, PrototypeDeclined, type PrototypeDraft } from './app-run.js';
 import { config } from '@platform/config/config.js';
 import { log } from '@platform/logger.js';
 import { host } from '@platform/host/host.js';
@@ -25,10 +25,10 @@ import {
   type PortalRequest,
 } from './requests.js';
 
-// The prototype of a small change asked in the portal (#114): the same run
-// as an issue's /prototype (domains/commands/prototype.ts), but the images stay
-// with the request, behind the person's login, and the diff stays on the
-// runner for the team. Then the person approves it, asks for an adjustment
+// The prototype of a small change asked in the portal (#114), made on the
+// running app (app-run.ts's makePrototype). The images stay with the
+// request, behind the person's login, and the diff stays on the runner for
+// the team. Then the person approves it, asks for an adjustment
 // (a new message, read again by classify.ts) or turns it down.
 
 // A run that fails twice in a row, or an agent that finds no prototype to

@@ -53,7 +53,7 @@ describe('buildItems — issues only (#100)', () => {
   it('keeps the exploration PR pinned, a PR without an issue unlisted and a closed issue ronin worked on listed', () => {
     const items = buildItems([REPO], [
       run({ runId: 'a', taskType: 'external-review', prNumber: 722 }),
-      run({ runId: 'b', taskType: 'issue-request', issueNumber: 300 }),
+      run({ runId: 'b', taskType: 'spike', issueNumber: 300 }),
     ], [github({ prs: [pr({ number: 911, headRefName: 'ronin/exploration/2026-10-16' }), pr({ number: 722, headRefName: 'feat/scanner', author: 'oskr' })] })]);
     expect(Object.fromEntries(items.map((i) => [i.id, [i.kind, i.listed, i.pinned ?? false]]))).toEqual({
       'acme/product#911': ['pr', true, true],
@@ -65,8 +65,8 @@ describe('buildItems — issues only (#100)', () => {
   it("stops listing an issue ronin worked on once it's closed, and keeps one whose state is unknown", () => {
     const items = buildItems([REPO], [
       run({ runId: 'a', taskType: 'implement-slice', issueNumber: 300 }),
-      run({ runId: 'b', taskType: 'issue-request', issueNumber: 301 }),
-      run({ runId: 'c', taskType: 'issue-request', issueNumber: 302 }),
+      run({ runId: 'b', taskType: 'spike', issueNumber: 301 }),
+      run({ runId: 'c', taskType: 'spike', issueNumber: 302 }),
     ], [github({ closed: { 300: 'completed', 301: 'not_planned' } })]);
     expect(Object.fromEntries(items.map((i) => [i.id, [i.github, i.listed]]))).toEqual({
       'acme/product#300': ['completed', false],

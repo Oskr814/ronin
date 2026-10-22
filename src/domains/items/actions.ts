@@ -19,11 +19,11 @@ import { DomainError } from '@platform/errors.js';
 // An issue ronin doesn't manage yet can be handed to it: assigned to
 // its account, which it takes like any issue assigned on GitHub
 // (discoverAssignedIssues) and, if what's asked isn't clear, asks on the
-// issue before touching code. Or a /spike or a /prototype first, on one of
-// the repo's apps. Any open issue can also be closed, as not planned, with
+// issue before touching code. Or a /spike first, on one of the repo's
+// apps. Any open issue can also be closed, as not planned, with
 // its reason as a comment first.
 
-export type ActionId = 'resolve-conflicts' | 'preview' | 'preview-stop' | 'auto-merge-on' | 'auto-merge-off' | 'unblock' | 'assign' | 'spike' | 'prototype' | 'close-issue';
+export type ActionId = 'resolve-conflicts' | 'preview' | 'preview-stop' | 'auto-merge-on' | 'auto-merge-off' | 'unblock' | 'assign' | 'spike' | 'close-issue';
 
 export interface ActionView {
   id: ActionId;
@@ -92,10 +92,6 @@ export function listActions(ref: ItemRef, gh: RepoGithub | undefined, detail: It
         id: 'spike', label: 'Investigar (spike)', command: '/spike', target: ref.number, apps,
         help: 'Investiga en solo lectura y agrega una sección de contexto al issue. No lo toma ni abre un PR.',
         text: { required: false, label: 'Qué investigar (opcional)', placeholder: 'Por ejemplo: de dónde sale el total del checkout' },
-      }, {
-        id: 'prototype', label: 'Prototipar', command: '/prototype', target: ref.number, apps,
-        help: 'Levanta la app, aplica un cambio borrador y deja en el issue las capturas del antes y el después, con el diff. No abre rama ni PR.',
-        text: { required: false, label: 'Qué probar (opcional)', placeholder: 'Por ejemplo: el botón arriba a la derecha' },
       });
     }
     actions.unshift(...before);

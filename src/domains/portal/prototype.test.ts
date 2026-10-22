@@ -4,7 +4,7 @@ import { readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { config } from '@platform/config/config.js';
-import type { PrototypeDraft, PrototypeTarget } from '../commands/prototype.js';
+import type { PrototypeDraft, PrototypeTarget } from './app-run.js';
 import { createUser } from './accounts.js';
 import { createRequest, getRequest, MAX_PROTOTYPES, prototypePatchPath, requestImagePath, updateRequest } from './requests.js';
 
@@ -12,13 +12,13 @@ vi.mock('@platform/logger.js', () => ({ log: { info: vi.fn(), error: vi.fn() } }
 const sendMail = vi.fn(async () => {});
 vi.mock('@platform/notify/notifier.js', () => ({ sendMail: (...args: unknown[]) => sendMail(...(args as [])) }));
 const makePrototype = vi.fn();
-vi.mock('../commands/prototype.js', async (original) => ({
-  ...(await original<typeof import('../commands/prototype.js')>()),
+vi.mock('./app-run.js', async (original) => ({
+  ...(await original<typeof import('./app-run.js')>()),
   makePrototype: (...args: unknown[]) => makePrototype(...args),
 }));
 
 const { APPROVED_REPLY, decideRequest, FAILED_PROTOTYPE_REPLY, proposedReply, prototypeRequest, REJECTED_REPLY } = await import('./prototype.js');
-const { PrototypeDeclined } = await import('../commands/prototype.js');
+const { PrototypeDeclined } = await import('./app-run.js');
 
 const shots = mkdtempSync(join(tmpdir(), 'ronin-portal-shots-'));
 for (const name of ['antes-1.png', 'despues-1.png', 'despues-2.png']) writeFileSync(join(shots, name), name);

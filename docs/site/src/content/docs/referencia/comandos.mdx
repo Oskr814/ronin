@@ -20,10 +20,8 @@ Desde el tablero no hace falta escribirlos: el menú **Acciones** de cada ficha 
 | [`/preview`](#preview) | PR | Levanta el PR en una URL de la tailnet. |
 | [`/auto-merge`](#auto-merge) | PR | Lo mergea apenas esté aprobado y en verde. |
 | [`/resolve-conflicts`](#resolve-conflicts) | PR | Trae la base y resuelve los conflictos. |
-| [`<pedido>`](#pedido-en-un-issue) | Issue sin asignar | Ajusta el alcance, investiga o responde. |
 | [`/spike`](#spike) | Issue sin asignar | Investiga y agrega contexto al issue. |
 | [`/spec`](#spec) | Issue sin asignar | Convierte el pedido en un spec. |
-| [`/prototype`](#prototype) | Issue sin asignar | Capturas del antes y el después de un cambio borrador. |
 | [`/explore`](#explore) | Issue | Usa la app y propone mejoras. |
 | [`/help`](#help) | PR o issue | Los comandos que se pueden usar ahí. |
 
@@ -93,16 +91,7 @@ Trae la base al PR con un merge, como «Update branch» de GitHub, y resuelve lo
 
 ## En un issue
 
-### Pedido en un issue
-
-<div class="cmd-scope"><Badge text="Issue sin asignar" variant="success" /></div>
-
-Nunca abre un PR desde acá:
-
-- **Cambiar el alcance:** lo reescribe en `## Alcance`, sin tocar la descripción original, y anota el cambio.
-- **Investigar algo:** agrega una sección de contexto.
-- **Un prototipo:** lo hace como `/prototype`.
-- **Una pregunta:** la responde en el issue.
+En un issue que ronin todavía no tomó solo actúan los comandos. Si lo mencionás sin uno, te responde con la lista de comandos que podés usar ahí. Para que lo implemente, asignale el issue.
 
 ### `/spike`
 
@@ -119,12 +108,6 @@ Investiga en solo lectura la parte del repo que corresponde a `<app>` (encuentra
 <div class="cmd-scope"><Badge text="Issue sin asignar" variant="success" /></div>
 
 Investiga, pregunta en el issue lo que falte y abre un PR draft con el spec. Mientras sigue en draft, mencionarlo en el PR edita el spec y responde en el hilo ([cómo](/ronin/guias/darle-trabajo/#un-spec-que-escribió-ronin)). Cuando lo marcás *ready for review*, lo implementa como cualquier [spec](/ronin/guias/darle-trabajo/#un-spec).
-
-### `/prototype`
-
-<div class="cmd-scope"><Badge text="Issue sin asignar" variant="success" /><Badge text="también desde Acciones" variant="tip" /></div>
-
-Levanta la app, saca una captura del antes, aplica un cambio borrador y saca la del después. Responde en el issue con las dos capturas y el diff. No abre rama ni PR, y corre uno a la vez por repo.
 
 ### `/explore`
 

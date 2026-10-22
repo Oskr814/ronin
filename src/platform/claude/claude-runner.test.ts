@@ -85,6 +85,12 @@ describe('claudeHeadlessArgs', () => {
     }
   });
 
+  it('leaves a plain call without any tool or MCP server', () => {
+    const args = claudeHeadlessArgs('do it', { noTools: true });
+    expect(args.join(' ')).toContain('--tools  --strict-mcp-config');
+    expect(args[args.indexOf('--tools') + 1]).toBe('');
+  });
+
   it('passes an MCP config, and only that one', () => {
     const args = claudeHeadlessArgs('do it', { mcpConfigFile: '/tmp/mcp.json' });
     expect(args.join(' ')).toContain('--mcp-config /tmp/mcp.json --strict-mcp-config');

@@ -120,7 +120,7 @@ En cada tick:
 1. Escanea specs e issues asignados a la cuenta de ronin (§1) → mergea el spec, crea el issue de tracking y corre el plan; un issue asignado directamente pasa a ser su propio issue de tracking.
 2. Barre lo que vive fuera de un issue: issues cerrados con todas sus slices mergeadas, previews de PRs cerrados o vencidas (§12) y PRs con `ronin:auto-merge` listos para mergear (§13).
 3. Escanea issues abiertos `in-progress` → decide la próxima acción según el estado real del PR/CI/reviews (implementar siguiente slice, resolver comentarios de review, arreglar e2e, registrar las slices que un humano mergeó).
-4. Junta el resto del trabajo: reviews de PRs de humanos y menciones en ellos, `/spike`/`/spec`/`/prototype` y pedidos en issues sin asignar, entradas de changelog, el PR de exploración y la exploración nocturna (§11.8).
+4. Junta el resto del trabajo: reviews de PRs de humanos y menciones en ellos, `/spike` y `/spec` en issues sin asignar, entradas de changelog, el PR de exploración y la exploración nocturna (§11.8).
 5. Cada acción es una invocación de Claude no interactiva, aislada en su propio worktree, que termina al completar la unidad de trabajo — así nunca se acumula contexto entre tareas.
 6. Manejo de cuota: si `claude` sale por el límite de uso de la cuenta (`ClaudeUsageLimitError` en `claude-runner.ts`), no es un bloqueo: el tick deja esa tarea como está y la retoma en un tick posterior, cuando vuelve la cuota. No hay backoff calculado a partir del reset time; el reintento es simplemente el tick siguiente.
 7. Bloqueo real (spec ambiguo, e2e fallando tras N intentos, feedback que no converge — ver `docs/BLOCKING.md`) → notificación por email, el loop deja ese issue en paz hasta recibir input humano.
@@ -418,16 +418,11 @@ Pendiente: calibrar la calidad de las propuestas con varias corridas a mano (ver
 
 Piloto: el backoffice de shoppingcart (herramienta interna, se levanta entero con stubs de Odoo/GCP, usuarios con el mismo rol `Sales` pero dos usos distintos — vendedores en desktop y bodega en el teléfono). El mecanismo se evalúa por la calidad de lo que encuentra: ¿detecta lo que el equipo ya sabía?, ¿encuentra algo nuevo?, ¿cuántas propuestas se descartan?
 
-#### 11.11 Pedidos en un issue: alcance, investigación y prototipos
+#### 11.11 Menciones en un issue sin asignar
 
-Antes de asignárselo a ronin, el issue se puede ir dando forma con él: cualquier mención sin comando en un issue sin el label `ronin` (es decir, que ronin todavía no está trabajando) es un pedido en palabras. Nunca termina en un PR. Para eso está asignar el issue o `/spec`.
+En un issue que ronin todavía no está trabajando (sin el label `ronin`), solo actúan los comandos: `/spike`, `/spec` y `/explore`. Una mención sin comando no hace nada más que responder con la lista de comandos (`mentions.ts`, sin Claude), igual que `/help`. Para que lo implemente, se le asigna el issue.
 
-- **Un agente de solo lectura decide, el supervisor escribe** (`issue-request.ts`). El agente lee el issue y el código y deja en un JSON lo que pide el comentario: un alcance nuevo, una investigación, un prototipo y/o la respuesta. El supervisor compone el cuerpo nuevo (`issue-sections.ts`), así la descripción original nunca cambia, diga lo que diga el agente.
-- **Alcance:** la sección `## Alcance` (entre marcadores `<!-- ronin:alcance -->`) tiene el alcance vigente completo y se reemplaza en cada cambio. `## Cambios de alcance` suma una línea por cambio, con fecha y link al comentario que lo pidió. Cuando el cambio amplía el alcance ("aplica a otras vistas"), el agente nombra los lugares concretos.
-- **Investigación:** se agrega al final como `## Contexto adicional (<fecha>)`, sin reemplazar las anteriores, igual que `/spike`.
-- **Prototipo** (`/prototype <app> [instrucción]`, o pedido en palabras): corre en un worker aparte (`prototype-worker.ts`), uno a la vez por repo, que espera su turno en lugar de descartar el pedido. Levanta la app desde la rama base en un worktree propio (`prototype-issue-<n>`) con una instancia de compose propia. El agente tiene un navegador por rol y viewport. Saca el antes, hace un cambio borrador, saca el después (o un HTML si el cambio real no es práctico) y deja el cambio sin revertir. El supervisor toma el diff del checkout, sube las capturas a `ronin/evidence` (§11.5) y responde en el issue con antes, después y diff. Después tira el worktree: no queda rama ni PR.
-- **El portal de pedidos** (§16.4) usa el mismo prototipo: `makePrototype` separa el armado (checkout, app, agente, capturas, diff) de la entrega, que en un issue es el comentario y en el portal es el pedido.
-- Cada comentario queda como procesado aunque falle, y la falla se responde. Así un pedido roto no se reintenta en cada tick. En un issue que ronin ya está implementando, estas menciones no se leen: el cambio se pide en el PR.
+La app levantada con un navegador por rol y viewport sigue existiendo para el portal (§16.4): `runOnApp` en `domains/portal/app-run.ts` levanta la app desde la rama base en un worktree propio con una instancia de compose propia, corre el agente y le pasa al que llama lo que dejó. Después tira el worktree, así que no queda rama ni PR. `makePrototype` le suma el antes, el cambio borrador y el después. Una app a la vez por repo (`.prototype.lock`), y el worker espera su turno en lugar de descartar el pedido.
 
 ### 12. Previews por PR en la tailnet (`/preview`)
 
@@ -758,7 +753,6 @@ Desde la ficha se le piden a ronin los comandos que hoy se piden comentando en G
 | Responder y destrabar | Comentar y volver a `ronin:in-progress` | Issue con `ronin:blocked`. Lleva un texto obligatorio, la respuesta |
 | Asignar a ronin | Asignarle el issue a `@ronin-agent` | Issue abierto que ronin no gestiona (sin el label `ronin`). Se destaca. Lleva un contexto opcional |
 | Investigar (spike) | `/spike <app> <qué investigar>` | Igual que *Asignar*, en un repo con `ronin.app.json`. Se elige la app y lleva un texto opcional |
-| Prototipar | `/prototype <app> <qué probar>` | Igual que *Investigar* |
 | Cerrar el issue | *Close as not planned* | Cualquier issue abierto, al final de la lista. Lleva un motivo opcional |
 
 En un issue, las acciones de PR van al PR de su slice que avanza ("Resolver conflictos en #849").
@@ -1012,11 +1006,11 @@ Lo que escribe la persona va cercado como dato, nunca como instrucción. El supe
 
 #### 16.4 El prototipo (`prototype.ts`)
 
-Es el mismo de `/prototype` (§11.11): `makePrototype` en `domains/commands/prototype.ts` levanta la app desde la rama base, con instancia `portal-p-<n>`, y el agente (`portal-prototype`) saca el antes, hace el cambio borrador y saca el después, en desktop y mobile si hace falta. Lo único que cambia es la entrega:
+Es `makePrototype` (§11.11), en `domains/portal/app-run.ts`: levanta la app desde la rama base, con instancia `portal-p-<n>`, y el agente (`portal-prototype`) saca el antes, hace el cambio borrador y saca el después, en desktop y mobile si hace falta. Lo único que cambia es la entrega:
 
 - **Las capturas quedan con el pedido** (`img/p<ronda>-antes-1.png`…), detrás del login de la persona, en pares con su leyenda ("Antes: …", "Después: …"). El agente escribe además un mensaje para la persona, en palabras simples.
 - **El diff queda en el runner** (`proto/<ronda>.diff`), para el equipo. No incluye lo que el arranque de la app ya había cambiado: el build puede regenerar archivos versionados, como el XML de documentación de una API .NET.
-- **Un prototipo a la vez por repo:** espera el mismo lock que `/prototype` (`.prototype.lock`).
+- **Un prototipo a la vez por repo:** espera el lock de la app (`.prototype.lock`), el mismo que la reproducción (16.12).
 - **Si falla dos veces,** o el agente dice que no hay prototipo posible (`PrototypeDeclined`, sin reintento), el pedido pasa al equipo.
 
 La persona tiene tres salidas:
@@ -1119,7 +1113,7 @@ Un pedido no tiene issue hasta que ronin lo abre, y algunos no lo tienen nunca. 
 
 Cuando la persona reporta algo que no funciona, `classify.ts` lo lee como **error** y deja los pasos para reproducirlo como los entendió. El pedido pasa a `reproducing` y el worker lo reproduce:
 
-1. **En una copia de la app.** `runOnApp` en `domains/commands/prototype.ts`, la parte de `makePrototype` que levanta la app desde la rama base, con instancia `portal-r-<n>` y un navegador por rol y tamaño de pantalla. Espera el mismo lock que los prototipos (`.prototype.lock`): una app a la vez por repo.
+1. **En una copia de la app.** `runOnApp` en `domains/portal/app-run.ts`, la parte de `makePrototype` que levanta la app desde la rama base, con instancia `portal-r-<n>` y un navegador por rol y tamaño de pantalla. Espera el mismo lock que los prototipos (`.prototype.lock`): una app a la vez por repo.
 2. **El agente (`portal-reproduce`)** sigue los pasos y captura el error (`error-N.png`). Después escribe un test que falla por ese error, antes de cualquier arreglo, como en TDD: directo en la capa donde está el problema si sabe cuál es (por ejemplo, un test solo sobre la API), o un e2e que sigue los pasos de la persona si no. Lo corre con los comandos del CLAUDE.md del repo, dentro del stack de la app (le pasa el `docker compose -p …` de esa instancia), y comprueba que falla por la razón que vio la persona.
 3. **El arreglo, solo si es pequeño** (los mismos criterios que un "menor": sin esquema ni migraciones, dependencias, configuración, permisos ni otras apps). Lo hace, vuelve a correr el test (tiene que pasar a verde) y los de alrededor, y captura la pantalla con el arreglo (`arreglo-N.png`) si se ve.
 4. **El supervisor guarda el intento** en `request.bug.reproductions`: si se reprodujo, los pasos, el test (`red`, y `green` solo si antes fue rojo) con el final de su salida, el arreglo (`small` o `big`, con su motivo), el resumen para el equipo y el diff (`proto/r<intento>.diff`, el test y el arreglo). Las capturas van a la conversación (`img/r<intento>-error-1.png`…) con su leyenda.

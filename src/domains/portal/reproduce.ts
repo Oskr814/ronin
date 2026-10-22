@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, extname } from 'node:path';
-import { draftDiff, runOnApp, type AppRun } from '../commands/prototype.js';
+import { draftDiff, runOnApp, type AppRun } from './app-run.js';
 import { config } from '@platform/config/config.js';
 import { log } from '@platform/logger.js';
 import { portalTask } from './prompts.js';

@@ -66,9 +66,9 @@ describe('listActions', () => {
     expect(actions[4].help).toContain('#849 queda abierto');
   });
 
-  it("offers an issue ronin doesn't manage to assign it, and a spike or a prototype on one of the repo's apps", () => {
+  it("offers an issue ronin doesn't manage to assign it, and a spike on one of the repo's apps", () => {
     const actions = listActions(NEW_REF, unmanaged(), undefined, 'Oskr814', APPS);
-    expect(ids(actions)).toEqual(['assign', 'spike', 'prototype', 'close-issue']);
+    expect(ids(actions)).toEqual(['assign', 'spike', 'close-issue']);
     expect(actions[0]).toMatchObject({ primary: true, target: 901, text: { required: false }, preview: '…' });
     expect(actions[1]).toMatchObject({ apps: APPS, preview: '@ronin-agent /spike {app} …' });
   });
@@ -139,11 +139,11 @@ describe('runAction', () => {
     expect(assign).toHaveBeenCalledOnce();
   });
 
-  it('writes a spike or a prototype with its app and instruction on one line', async () => {
+  it('writes a spike with its app and instruction on one line', async () => {
     await runAction(ENTRY, NEW_REF, unmanaged(), undefined, SESSION, 'spike', 'de dónde sale\nel total', post, APPS, 'backoffice', assign);
     expect(post).toHaveBeenLastCalledWith('gho_user', 'acme/product', 901, '@ronin-agent /spike backoffice de dónde sale el total');
-    await runAction(ENTRY, NEW_REF, unmanaged(), undefined, SESSION, 'prototype', undefined, post, APPS, 'webapp', assign);
-    expect(post).toHaveBeenLastCalledWith('gho_user', 'acme/product', 901, '@ronin-agent /prototype webapp');
+    await runAction(ENTRY, NEW_REF, unmanaged(), undefined, SESSION, 'spike', undefined, post, APPS, 'webapp', assign);
+    expect(post).toHaveBeenLastCalledWith('gho_user', 'acme/product', 901, '@ronin-agent /spike webapp');
     expect(assign).not.toHaveBeenCalled();
   });
 

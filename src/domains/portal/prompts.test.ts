@@ -54,6 +54,7 @@ vi.mock('../review/criteria.js', () => ({ loadReviewCriteria: (...args: unknown[
 
 const { runAgentTask: run } = await import('@platform/agents/agent-task.js');
 const { portalTask } = await import('./prompts.js');
+const { REALISTIC_DATA_RULE } = await import('@platform/agents/prompts.js');
 // Each task runs through the real runAgentTask, with its checkout and
 // `claude -p` mocked: what a test reads is the prompt it was handed.
 const runAgentTask = (task: Parameters<typeof portalTask>[0]) => run(portalTask(task));
@@ -200,6 +201,7 @@ describe('buildTask — portal-prototype (#114)', () => {
     expect(prompt).toContain('prototype 2');
     expect(prompt).toContain('"admin-desktop": role "Admin", desktop');
     expect(prompt).toContain('"mensaje"');
+    expect(prompt).toContain(REALISTIC_DATA_RULE);
     expect(prompt).not.toContain('gh issue view');
   });
 });

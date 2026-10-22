@@ -7,7 +7,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { changedFiles, draftDiff, parsePrototypeResult, prototypeBrowsers, renderPrototypeComment, serverName } from './prototype.js';
+import { changedFiles, draftDiff, parsePrototypeResult, prototypeBrowsers, serverName } from './app-run.js';
 
 const OUT = '/tmp/prototype-out/820-1';
 
@@ -51,34 +51,6 @@ describe('parsePrototypeResult', () => {
 
   it('fails without any after image', () => {
     expect(() => parsePrototypeResult('{"resumen": "x", "despues": [{"imagen": "/etc/passwd"}]}', OUT)).toThrow('después');
-  });
-});
-
-describe('renderPrototypeComment', () => {
-  const result = {
-    appName: 'backoffice',
-    resumen: 'Guarda búsqueda, estado y página en la URL.',
-    antes: [{ url: 'https://x/antes-1.png', nota: 'hoy', viewport: 'desktop' as const }],
-    despues: [{ url: 'https://x/despues-1.png', nota: 'con el cambio', viewport: 'mobile' as const }],
-    patch: 'diff --git a/x b/x\n+nuevo',
-  };
-
-  it('shows each before next to its after, the diff, and says there is no PR', () => {
-    const body = renderPrototypeComment(result, 'ronin');
-    expect(body.indexOf('**Antes**: hoy')).toBeLessThan(body.indexOf('**Después**: con el cambio'));
-    expect(body).toContain('<img src="https://x/despues-1.png" alt="con el cambio" width="320">');
-    expect(body).toContain('```diff\ndiff --git a/x b/x\n+nuevo\n```');
-    expect(body).toContain('no hay rama ni PR');
-  });
-
-  it('cuts a huge diff so the comment stays under GitHub\'s limit', () => {
-    const body = renderPrototypeComment({ ...result, patch: 'x'.repeat(100_000) }, 'ronin');
-    expect(body.length).toBeLessThan(65_536);
-    expect(body).toContain('(recortado)');
-  });
-
-  it('leaves the diff out when the after is only an HTML drawing', () => {
-    expect(renderPrototypeComment({ ...result, patch: '' }, 'ronin')).not.toContain('<details>');
   });
 });
 

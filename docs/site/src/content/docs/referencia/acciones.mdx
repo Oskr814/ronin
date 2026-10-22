@@ -7,13 +7,12 @@ import { Aside } from '@astrojs/starlight/components';
 
 El botón **Acciones** de la ficha (`M`) muestra lo que se le puede pedir a ronin sobre ese issue o PR en ese momento. El tablero escribe el comando por vos, **con tu cuenta de GitHub**: desde ahí es igual que si lo hubieras escrito en GitHub, ronin le pone 👀, lo hace y responde.
 
-![El menú Acciones de un issue que ronin no tomó: Asignar a ronin, Investigar y Prototipar](../../../assets/capturas/acciones-issue.png)
+![El menú Acciones de un issue que ronin no tomó: Asignar a ronin e Investigar](../../../assets/capturas/acciones-issue.png)
 
 | Acción | Igual que | Cuándo aparece |
 |---|---|---|
 | **Asignar a ronin** | Asignar el issue a `ronin-agent` | Un issue abierto que ronin no gestiona. Destacada. Lleva un contexto opcional. |
 | **Investigar (spike)** | `/spike <app> [qué]` | Igual que *Asignar*, en un repo con `ronin.app.json`. Se elige la app. |
-| **Prototipar** | `/prototype <app> [qué]` | Igual que *Investigar*. |
 | **Responder y destrabar** | Comentar y volver a `ronin:in-progress` | Un issue con `ronin:blocked`. Lleva tu respuesta, obligatoria. Destacada. |
 | **Resolver conflictos** | `/resolve-conflicts` | Un PR abierto. Destacada si tiene conflictos con su base. |
 | **Levantar o actualizar la preview** | `/preview [app] [qué preparar]` | Un PR abierto. Lleva un texto opcional. *Actualizar* la levanta de cero. Si el repo tiene varias apps, se elige una: viene marcada la que está arriba, o la única que cambia el PR. |

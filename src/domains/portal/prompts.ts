@@ -1,9 +1,45 @@
 import type { AgentTask, PreparedTask } from '@platform/agents/agent-task.js';
 import { fence, fenceBlock, REALISTIC_DATA_RULE, repoUrl, UNTRUSTED_APP_WARNING } from '@platform/agents/prompts.js';
-import { prototypeSteps, runningApp, type PrototypeBrowser } from '../commands/prompts.js';
 
 // What the agent is told for each task of a request from the portal (#114);
 // platform/agents/agent-task.ts runs it.
+
+export interface PrototypeBrowser {
+  // The MCP server's name, e.g. "admin-desktop".
+  server: string;
+  role: string;
+  viewport: 'desktop' | 'mobile';
+  notes?: string;
+}
+
+// The app a task runs on (app-run.ts's runOnApp).
+export interface RunningApp {
+  appName: string;
+  appPath: string;
+  outDir: string;
+  baseUrl: string;
+  homePath: string;
+  browsers: PrototypeBrowser[];
+}
+
+// What a task on the running app is told about it.
+export function runningApp(task: RunningApp, subject: string): string {
+  const browsers = task.browsers
+    .map((b) => `- "${b.server}": role "${b.role}", ${b.viewport}${b.notes ? ` — about this role: ${b.notes}` : ''}`)
+    .join('\n');
+  return `The app "${task.appName}" is running from this checkout (its code under ${task.appPath}) at ${task.baseUrl}, with disposable seed data you may change. You have one browser per role and viewport, each an MCP server already logged in, starting at ${task.baseUrl}${task.homePath}:\n${browsers}\nUse the role ${subject} names, otherwise the one that fits it best; desktop unless ${subject} is about mobile, both when it matters on both.`;
+}
+
+export function prototypeSteps(task: RunningApp, subject: string): string[] {
+  return [
+    runningApp(task, subject),
+    `Before: go to the screen(s) ${subject} is about, in the state it describes (create the data it needs through the app if the seed lacks it), check it with browser_snapshot and take the screenshot with browser_take_screenshot giving it a bare file name ("antes-1.png", "antes-2.png"…).`,
+    `After: make the draft change in this checkout's code (the dev server reloads it), keeping the app's existing layout and design system. Everything on the screen that the proposal does not change must keep its size, position and alignment; check the row and the containers around what you changed with browser_snapshot and, if needed, element sizes via browser_evaluate, and fix whatever the draft broke. Then take the same screens again ("despues-1.png"…), each after matching the before with the same number. Only if a real change is not practical, write a self-contained HTML/CSS file at ${task.outDir}/despues-<n>.html that imitates the screen (no external resources) instead.`,
+    'Do not revert the draft change: leave it in place. This checkout is thrown away after you finish, and the supervisor takes the diff from it. At most three befores and three afters.',
+    REALISTIC_DATA_RULE,
+    UNTRUSTED_APP_WARNING,
+  ];
+}
 
 export type PortalTask =
   | {

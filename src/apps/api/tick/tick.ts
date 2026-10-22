@@ -53,9 +53,7 @@ import { removeWorktree, sweepOrphanedWorktrees } from '@platform/git/worktree.j
 import { findUnprocessedMentions, isFixCommentsCommand } from '@domains/commands/index.js';
 import { withHelpFooter } from '@domains/commands/index.js';
 import { findPrsNeedingReview, type ReviewCandidate, type ThreadMentionCandidate, type TrustedFixCandidate } from '@domains/review/index.js';
-import { findIssueCommands, type ExploreCandidate, type PrototypeCandidate, type RequestCandidate, type SpecCandidate, type SpikeCandidate } from '@domains/commands/index.js';
-import { processIssueRequest } from '@domains/commands/index.js';
-import { launchPrototypeWorker } from '@domains/commands/index.js';
+import { findIssueCommands, type ExploreCandidate, type SpecCandidate, type SpikeCandidate } from '@domains/commands/index.js';
 import { processSpecCandidate, findSpecRevisionCandidates, processSpecRevision } from '@domains/slices/index.js';
 import { explorationPrs, exploreWorkerBusy, launchExploreWorker, processExplorationPr } from '@domains/explorations/index.js';
 import { maybeLaunchNightlyExploration } from '@domains/explorations/index.js';
@@ -866,10 +864,8 @@ export async function spikeJobs(only?: number[]): Promise<TickJob[]> {
   let candidates: SpikeCandidate[];
   let explores: ExploreCandidate[];
   let specs: SpecCandidate[];
-  let prototypes: PrototypeCandidate[];
-  let requests: RequestCandidate[];
   try {
-    ({ spikes: candidates, explores, specs, prototypes, requests } = await findIssueCommands(only));
+    ({ spikes: candidates, explores, specs } = await findIssueCommands(only));
   } catch (error) {
     log.info(`tick: findIssueCommands falló, reintentando en el próximo tick: ${(error as Error).message}`);
     return [];
@@ -878,35 +874,7 @@ export async function spikeJobs(only?: number[]): Promise<TickJob[]> {
     ...candidates.map((c) => issueJob('spike', c.issueNumber, () => processSpikeCandidate(c))),
     ...specs.map((c) => issueJob('spec', c.issueNumber, () => processSpecCandidate(c))),
     ...explores.slice(0, 1).map((c) => issueJob('explore-launch', c.issueNumber, () => launchExploreCandidate(c))),
-    ...prototypes.map((c) => issueJob('prototype-launch', c.issueNumber, () => launchPrototypeCandidate(c))),
-    ...requests.map((c) => issueJob('issue-request', c.issueNumber, () => processRequestCandidate(c))),
   ];
-}
-
-// Plain-words mentions on one issue, one after the other: they share the
-// issue's body and the request worktree. Each is answered on its own (see
-// issue-request.ts, which never throws).
-export async function processRequestCandidate(candidate: RequestCandidate): Promise<void> {
-  for (const comment of candidate.trigger) await processIssueRequest({ issueNumber: candidate.issueNumber, trigger: comment });
-}
-
-// A /prototype never runs inside the tick: it brings a whole app up. Its
-// worker waits for the per-repo prototype lock itself, so it's launched
-// right away; it's marked done once it is, which keeps the next tick from
-// launching it again. A launch that fails isn't, and is retried.
-export async function launchPrototypeCandidate(candidate: PrototypeCandidate): Promise<void> {
-  try {
-    launchPrototypeWorker({
-      repo: activeRepo().productRepo,
-      issueNumber: candidate.issueNumber,
-      appName: candidate.appName,
-      ...(candidate.instruction ? { instruction: candidate.instruction } : {}),
-      commentId: candidate.trigger[0].id,
-    });
-    for (const m of candidate.trigger) await markProcessed(m);
-  } catch (error) {
-    log.error(`issue #${candidate.issueNumber}: no se pudo lanzar el prototipo`, error);
-  }
 }
 
 // An /explore never runs inside the tick: it can take an hour, and the tick
@@ -1030,7 +998,7 @@ function issueJob(kind: string, issueNumber: number, run: () => Promise<void>): 
 // Jobs that never run an agent — they answer, launch a worker or apply a
 // label — so they don't take a slot of the quota, and never wait behind
 // three long `claude -p` runs to answer a /help.
-const NO_SLOT_KINDS = new Set(['pr-commands', 'idle-commands', 'prototype-launch', 'explore-launch']);
+const NO_SLOT_KINDS = new Set(['pr-commands', 'idle-commands', 'explore-launch']);
 
 // The job as it runs: holding its lock, then a slot of the runner-wide
 // quota (shared with every other process, see locks.ts's withSlots) — the

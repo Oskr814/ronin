@@ -48,21 +48,6 @@ export function parseSpecCommand(body: string): { appName: string; instruction?:
   return { appName: match[1], instruction: instruction ? instruction : undefined };
 }
 
-// Before/after images of a draft change on the running app, posted on the
-// issue — see prototype.ts. Same arguments as /spike, issues only.
-export function isPrototypeCommand(body: string): boolean {
-  return /\/prototype\b/i.test(body);
-}
-
-const PROTOTYPE_COMMAND_RE = /\/prototype\s+(\S+)(?:\s+([\s\S]+))?/i;
-
-export function parsePrototypeCommand(body: string): { appName: string; instruction?: string } | null {
-  const match = body.match(PROTOTYPE_COMMAND_RE);
-  if (!match) return null;
-  const instruction = match[2]?.trim();
-  return { appName: match[1], instruction: instruction ? instruction : undefined };
-}
-
 // Triggers an exploration run of one app — see domains/explorations/flow.ts. Issue
 // comments only, same as /spike.
 export function isExploreCommand(body: string): boolean {
@@ -176,28 +161,37 @@ export interface IssueCommands {
   spike: Comment[];
   explore: Comment[];
   spec: Comment[];
-  prototype: Comment[];
-  // Mentions with no command: a request in plain words (change the scope,
-  // look into something, draw a prototype, a question) — see
-  // issue-request.ts.
-  request: Comment[];
 }
 
 // Every issue command from one read of the issue's comments — the tick
 // checks every open unmanaged issue for all of them, every time. Each
 // mention lands in exactly one bucket, the first command it carries in this
-// order.
+// order. Side effect: a mention with no command (a request in plain words)
+// is answered right here with the commands that do work on an issue — ronin
+// doesn't take plain-words requests on an issue it wasn't assigned.
 export async function findTrustedIssueCommands(issueNumber: number): Promise<IssueCommands> {
   const unprocessed = (await findUnprocessedIssueMentions(issueNumber)).filter((c) => c.authorLogin !== '');
-  const commands: IssueCommands = { spike: [], explore: [], spec: [], prototype: [], request: [] };
+  const commands: IssueCommands = { spike: [], explore: [], spec: [] };
   for (const c of unprocessed) {
     if (isSpikeCommand(c.body)) commands.spike.push(c);
     else if (isExploreCommand(c.body)) commands.explore.push(c);
     else if (isSpecCommand(c.body)) commands.spec.push(c);
-    else if (isPrototypeCommand(c.body)) commands.prototype.push(c);
-    else commands.request.push(c);
+    else await answerFreeText(issueNumber, c);
   }
   return commands;
+}
+
+// Same as handleMetaCommands' reply: one that fails isn't marked done, and
+// is answered on a later tick.
+async function answerFreeText(issueNumber: number, comment: Comment): Promise<void> {
+  try {
+    await claimComment(comment, async () => {
+      await replyToComment(issueNumber, comment, renderMetaReply({ kind: 'free-text' }, config.githubLogin, 'issue'));
+      await markProcessed(comment);
+    });
+  } catch (error) {
+    log.error(`respuesta al pedido del comentario ${comment.id} falló en #${issueNumber}`, error);
+  }
 }
 
 async function filterUnprocessed(comments: Comment[]): Promise<Comment[]> {
