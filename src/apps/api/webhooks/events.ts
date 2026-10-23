@@ -115,6 +115,15 @@ function isQuickCommand(body: string, botLogin: string): boolean {
 
 const COMMENT_EVENTS = ['issue_comment', 'pull_request_review_comment', 'pull_request_review'];
 
+// Whether a delivery comes in a burst, and so waits the long debounce window
+// for the rest of it (debounce.ts, #370): each workflow's check_suite and
+// workflow_run come 5 to 15 s apart. Everything else — a comment, a command,
+// a mention, an approval, a label — is a person waiting on ronin, and waits
+// the short one, as before.
+const BURST_EVENTS = new Set(['check_suite', 'workflow_run']);
+
+export const comesInBursts = (eventName: string): boolean => BURST_EVENTS.has(eventName);
+
 // What an event asks ronin to look at: its repo, and the Scope tick.ts's
 // runScoped runs for it. Null for an event nothing reacts to — including
 // ronin's own comments and reviews, which are never requests to itself.
