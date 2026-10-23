@@ -83,7 +83,7 @@ interface PayloadComment {
 
 export interface EventPayload {
   action?: string;
-  sender?: { login?: string };
+  sender?: { login?: string; type?: string };
   comment?: PayloadComment;
   review?: { id?: number; body?: string | null; user?: { login?: string } | null; submitted_at?: string; state?: string };
   repository?: { full_name?: string };
@@ -127,6 +127,11 @@ function isQuickCommand(body: string, botLogin: string): boolean {
 }
 
 const COMMENT_EVENTS = ['issue_comment', 'pull_request_review_comment', 'pull_request_review'];
+const BOT_COMMENT_EVENTS = ['issue_comment', 'pull_request_review_comment'];
+
+// botLogin is operator config (RONIN_GITHUB_LOGIN), never comment input —
+// same reasoning as isQuickCommand's.
+const mentions = (body: string, botLogin: string): boolean => new RegExp(`\\B@${botLogin}\\b`, 'i').test(body);
 
 // Whether a delivery comes in a burst, and so waits the long debounce window
 // for the rest of it (debounce.ts, #370): each workflow's check_suite and
@@ -150,6 +155,11 @@ export function scopeForEvent(eventName: string, payload: EventPayload, trackedR
   const repo = payload.repository?.full_name;
   if (!repo || !trackedRepos.includes(repo)) return null;
   if (COMMENT_EVENTS.includes(eventName) && payload.sender?.login?.toLowerCase() === botLogin.toLowerCase()) return null;
+  // Nor another app's comments that don't mention ronin (#370): Linear's,
+  // linking an issue, are a run of four flows each that finds nothing to do
+  // (ronin reads that link later, in the issue's own run). A bot's review
+  // still counts: it may matter to auto-merge.
+  if (BOT_COMMENT_EVENTS.includes(eventName) && payload.sender?.type === 'Bot' && !mentions(payload.comment?.body ?? '', botLogin)) return null;
   // Only ronin:auto-merge going on (by hand or by /auto-merge): ronin changes
   // other labels on its own PRs as it works, and each of those would start
   // another run.
