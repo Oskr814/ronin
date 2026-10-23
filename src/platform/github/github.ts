@@ -1131,8 +1131,7 @@ function reactionsPath(kind: CommentKind): string | null {
 // a page never fetched, silently. 100 is the API maximum.
 export async function listIssueComments(prNumber: number): Promise<Comment[]> {
   const stdout = await ghApi(['api', `repos/${activeRepo().productRepo}/issues/${prNumber}/comments?per_page=100`]);
-  const raw = JSON.parse(stdout) as RawApiComment[];
-  return raw.map((c) => ({ id: c.id, kind: 'issue' as const, body: c.body, reactionsEyes: c.reactions.eyes, authorLogin: c.user?.login ?? '', createdAt: c.created_at }));
+  return (JSON.parse(stdout) as RawApiComment[]).map(issueCommentOf);
 }
 
 export interface RawReview {
@@ -1186,10 +1185,13 @@ export async function listReviewComments(prNumber: number): Promise<Comment[]> {
     ghApi(['api', `repos/${activeRepo().productRepo}/pulls/${prNumber}/comments?per_page=100`]),
     ghApi(['api', `repos/${activeRepo().productRepo}/pulls/${prNumber}/reviews?per_page=100`]),
   ]);
-  const rawComments = JSON.parse(commentsStdout) as RawApiComment[];
-  const rawReviews = JSON.parse(reviewsStdout) as RawReview[];
-  const pendingReviewIds = new Set(rawReviews.filter((r) => r.state === 'PENDING').map((r) => r.id));
+  return reviewCommentsFrom(JSON.parse(commentsStdout) as RawApiComment[], JSON.parse(reviewsStdout) as RawReview[]);
+}
 
+// A PR's inline comments, without the ones of a review still pending, and
+// the text each review was sent with.
+function reviewCommentsFrom(rawComments: RawApiComment[], rawReviews: RawReview[]): Comment[] {
+  const pendingReviewIds = new Set(rawReviews.filter((r) => r.state === 'PENDING').map((r) => r.id));
   const published = rawComments.filter((c) => !(c.pull_request_review_id != null && pendingReviewIds.has(c.pull_request_review_id)));
   const inline = published.map((c) => ({
     id: c.id,
@@ -1201,6 +1203,58 @@ export async function listReviewComments(prNumber: number): Promise<Comment[]> {
     thread: threadOf(c, published),
   }));
   return [...inline, ...reviewBodyComments(rawReviews)];
+}
+
+// ---------- the repo's recent comments, for the mentions of a run (#370)
+
+// How far back a tick's run looks for mentions: the comments updated in
+// these last days. Far longer than a tick, so a few ticks that failed in a
+// row still find a mention; one already handled is skipped anyway
+// (processed-comments.ts). The same window as the commands on issues
+// (spike.ts).
+export const RECENT_COMMENTS_MS = 3 * 24 * 60 * 60 * 1000;
+
+interface RepoComment extends RawApiComment {
+  issue_url?: string;
+  pull_request_url?: string;
+}
+
+// What each comment keeps, one per line: the whole repo's comments are a
+// few pages, and only these fields are read.
+const REPO_COMMENT_JQ = '.[] | {id, body, created_at, reactions: {eyes: .reactions.eyes}, pull_request_review_id, user: (if .user then {login: .user.login} else null end), path, line, diff_hunk, in_reply_to_id, html_url, issue_url, pull_request_url}';
+
+// The repo's conversation comments (of issues and PRs) or inline review
+// comments updated in the last days, all of them in a few pages: what used
+// to be two calls per PR and one per issue. Read once in a tick's run and
+// shared (run-memo.ts).
+function readRecentComments(kind: 'issues' | 'pulls'): Promise<RepoComment[]> {
+  return memoized(`recent-comments-${kind}`, async () => {
+    const since = new Date(Date.now() - RECENT_COMMENTS_MS).toISOString();
+    const stdout = await ghApi(['api', '--paginate', `repos/${activeRepo().productRepo}/${kind}/comments?since=${since}&per_page=100`, '--jq', REPO_COMMENT_JQ]);
+    return stdout.split('\n').filter((line) => line.trim() !== '').map((line) => JSON.parse(line) as RepoComment);
+  });
+}
+
+const issueCommentOf = (c: RawApiComment): Comment => ({ id: c.id, kind: 'issue', body: c.body, reactionsEyes: c.reactions.eyes, authorLogin: c.user?.login ?? '', createdAt: c.created_at });
+
+// The conversation comments of an issue or a PR updated in the last days.
+export async function listRecentIssueComments(number: number): Promise<Comment[]> {
+  return (await readRecentComments('issues')).filter((c) => c.issue_url?.endsWith(`/issues/${number}`)).map(issueCommentOf);
+}
+
+// Where a PR's mentions can be, from the last days: its conversation
+// comments and inline ones from the repo's recent comments, and the texts
+// of its reviews (GitHub has no list of them for the whole repo: one call).
+// An inline comment's thread is built from what came, so it may lack its
+// start: whoever answers it reads the PR's own (findUnprocessedMentions).
+export async function listRecentPrComments(prNumber: number): Promise<Comment[]> {
+  const [issues, pulls, reviewsStdout] = await Promise.all([
+    listRecentIssueComments(prNumber),
+    readRecentComments('pulls'),
+    ghApi(['api', `repos/${activeRepo().productRepo}/pulls/${prNumber}/reviews?per_page=100`]),
+  ]);
+  const inline = pulls.filter((c) => c.pull_request_url?.endsWith(`/pulls/${prNumber}`));
+  return [...issues, ...reviewCommentsFrom(inline, JSON.parse(reviewsStdout) as RawReview[])];
 }
 
 // From when a review's own text is read for mentions (#351). Before it, none

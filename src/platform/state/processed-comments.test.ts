@@ -49,6 +49,14 @@ describe('unprocessed', () => {
     expect(botReactedBefore).toHaveBeenCalledWith(4, 'issue', 'ronin', ACK_EYES_SINCE);
   });
 
+  // #370: it used to look the same old comment up again on every tick.
+  it('records an old comment it found done, so the next tick does not look it up again', async () => {
+    botReactedBefore.mockImplementation(async (id: number) => id === 4);
+    await unprocessed([comment(4, '2026-10-15T00:00:00Z', 1), comment(5, '2026-10-15T00:00:00Z', 1)]);
+    expect(recordProcessedComment).toHaveBeenCalledTimes(1);
+    expect(recordProcessedComment).toHaveBeenCalledWith('issue-4', expect.any(Number));
+  });
+
   it('answers a comment whose 👀 came seconds after the switch (regression: /help on #849)', async () => {
     // Created 01:06:33, ronin's "got it" 👀 at 01:06:35: still to do.
     const result = await unprocessed([comment(6205676051, '2026-10-16T01:06:33Z', 1)]);

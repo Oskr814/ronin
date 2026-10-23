@@ -6,6 +6,8 @@ vi.mock('@platform/config/config.js', () => ({
 
 const issueComments = vi.fn();
 const reviewComments = vi.fn();
+const recentPrComments = vi.fn();
+const recentIssueComments = vi.fn();
 const botReaction = vi.fn();
 const replyToComment = vi.fn();
 const addReaction = vi.fn();
@@ -13,6 +15,8 @@ const addReaction = vi.fn();
 vi.mock('@platform/github/github.js', () => ({
   listIssueComments: (...args: unknown[]) => issueComments(...args),
   listReviewComments: (...args: unknown[]) => reviewComments(...args),
+  listRecentPrComments: (...args: unknown[]) => recentPrComments(...args),
+  listRecentIssueComments: (...args: unknown[]) => recentIssueComments(...args),
   hasBotReaction: (...args: unknown[]) => botReaction(...args),
   replyToComment: (...args: unknown[]) => replyToComment(...args),
   addReaction: (...args: unknown[]) => addReaction(...args),
@@ -49,6 +53,7 @@ vi.mock('@platform/agents/repo-context.js', () => ({ activeRepo: () => ({ produc
 const launchConflictsWorker = vi.fn();
 vi.mock('./conflicts.js', () => ({ launchConflictsWorker: (...args: unknown[]) => launchConflictsWorker(...args) }));
 
+import { withGithubMemo } from '@platform/github/run-memo.js';
 import {
   parseAutoMergeCommand,
   parsePreviewCommand,
@@ -581,3 +586,58 @@ describe('findTrustedIssueCommands', () => {
     expect(replyToComment).not.toHaveBeenCalled();
   });
 });
+
+// #370: in a tick's run, the mentions come from the repo's recent comments,
+// read once for the whole repo, not from three calls per PR.
+describe('findUnprocessedMentions in a tick\'s run', () => {
+  beforeEach(() => {
+    issueComments.mockReset().mockResolvedValue([]);
+    reviewComments.mockReset().mockResolvedValue([]);
+    recentPrComments.mockReset().mockResolvedValue([]);
+    recentIssueComments.mockReset().mockResolvedValue([]);
+    botReaction.mockReset().mockResolvedValue(false);
+  });
+
+  it("reads the recent comments, not the PR's own", async () => {
+    recentPrComments.mockResolvedValue([{ id: 2, kind: 'issue', body: '@ronin revisá esto', reactionsEyes: 0, authorLogin: 'ana' }]);
+
+    const result = await withGithubMemo(() => findUnprocessedMentions(42));
+
+    expect(result.map((c) => c.id)).toEqual([2]);
+    expect(recentPrComments).toHaveBeenCalledWith(42);
+    expect(issueComments).not.toHaveBeenCalled();
+    expect(reviewComments).not.toHaveBeenCalled();
+  });
+
+  it('takes the whole thread of an inline mention still to answer from the PR', async () => {
+    const partial = { id: 9, kind: 'review', body: '@ronin ¿y esto?', reactionsEyes: 0, authorLogin: 'ana', thread: { path: 'a.ts', line: 3, diffHunk: '', comments: [{ id: 9, authorLogin: 'ana', body: '@ronin ¿y esto?' }] } };
+    const whole = { ...partial, thread: { ...partial.thread, comments: [{ id: 5, authorLogin: 'luis', body: 'Esto falla con 0' }, ...partial.thread.comments] } };
+    recentPrComments.mockResolvedValue([partial]);
+    reviewComments.mockResolvedValue([whole]);
+
+    const [mention] = await withGithubMemo(() => findUnprocessedMentions(42));
+
+    expect(mention.thread?.comments.map((c) => c.id)).toEqual([5, 9]);
+  });
+
+  it('reads nothing more when there is no inline mention to answer', async () => {
+    recentPrComments.mockResolvedValue([{ id: 2, kind: 'issue', body: 'sin mención', reactionsEyes: 0, authorLogin: 'ana' }]);
+    await withGithubMemo(() => findUnprocessedMentions(42));
+    expect(reviewComments).not.toHaveBeenCalled();
+  });
+
+  it("reads an issue's mentions from the recent comments too, with no call of its own", async () => {
+    recentIssueComments.mockResolvedValue([{ id: 3, kind: 'issue', body: '@ronin ayuda', reactionsEyes: 0, authorLogin: 'ana' }]);
+    const inRun = await withGithubMemo(() => findUnprocessedIssueMentions(7));
+    expect(inRun.map((c) => c.id)).toEqual([3]);
+    expect(issueComments).not.toHaveBeenCalled();
+  });
+
+  it("outside a run, reads the PR's own comments as before", async () => {
+    await findUnprocessedMentions(42);
+    expect(issueComments).toHaveBeenCalledWith(42);
+    expect(reviewComments).toHaveBeenCalledWith(42);
+    expect(recentPrComments).not.toHaveBeenCalled();
+  });
+});
+
