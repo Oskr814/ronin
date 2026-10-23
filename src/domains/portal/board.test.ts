@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { PortalRequest } from './requests.js';
 import type { RunSummary } from '../runs/data.js';
-import { activity, requestRuns, waitsOn } from './board.js';
+import { activity, requestRuns, waitsOn, withTeamPr } from './board.js';
 
 const request = (over: Partial<PortalRequest> = {}): PortalRequest => ({
   number: 2, userId: 'u', repo: 'a/b', app: 'web', title: 'Foto', status: 'proposed', questions: 0,
@@ -45,6 +45,18 @@ describe("a portal request on the dashboard (#132)", () => {
     ];
     expect(requestRuns(request(), runs).map((r) => r.runId)).toEqual(['own']);
     expect(requestRuns(request({ issue: { number: 925, url: '' }, pr: 928 }), runs).map((r) => r.runId)).toEqual(['own', 'issue', 'pr']);
+  });
+
+  it("shows a big one's PR, the lowest open one GitHub links to its issue, without keeping it", () => {
+    const big = request({ status: 'big', issue: { number: 925, url: '' } });
+    const links = { 931: 925, 928: 925, 940: 7 };
+    expect(withTeamPr(big, links).pr).toBe(928);
+    expect(withTeamPr(big, { 940: 7 }).pr).toBeUndefined();
+    expect(withTeamPr(big, undefined)).toBe(big);
+    expect(big.pr).toBeUndefined();
+    // ronin's own keep theirs (follow.ts), and one without an issue has none.
+    expect(withTeamPr(request({ status: 'approved', issue: { number: 925, url: '' } }), links).pr).toBeUndefined();
+    expect(withTeamPr(request({ status: 'big' }), links).pr).toBeUndefined();
   });
 
   it('puts its messages, events and runs in order, and marks the first message and the prototypes', () => {

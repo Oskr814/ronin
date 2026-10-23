@@ -78,6 +78,7 @@ function Now({ d }: { d: Detail }) {
       if (d.issue) return card('running', k, `ronin va a hacer el cambio en #${d.issue.number}`, desc('Lo toma como cualquier issue asignado a ronin y abre el PR.'), open(d.issue.number, `Abrir #${d.issue.number}`));
       return card('running', k, 'ronin va a abrir el issue del cambio');
     case 'big':
+      if (d.issue && d.pr) return card('waiting', k, `Espera al equipo: el PR #${d.pr} del issue #${d.issue.number}`, desc(`${who} recibe un correo cuando el issue se cierre. Mientras, ronin no hace nada más con este pedido.`), <>{open(d.pr, `Abrir el PR #${d.pr}`)}{open(d.issue.number, `Abrir #${d.issue.number}`)}</>);
       if (d.issue) return card('waiting', k, `Espera al equipo: el issue #${d.issue.number}`, desc(`${who} recibe un correo cuando el issue se cierre. Mientras, ronin no hace nada más con este pedido.`), open(d.issue.number, `Abrir #${d.issue.number}`));
       return card('running', k, 'ronin va a abrir el issue del equipo');
     default: {

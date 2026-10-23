@@ -57,6 +57,17 @@ export function requestRuns(r: Pick<PortalRequest, 'number' | 'repo' | 'issue' |
     || (r.pr && (run.prNumber === r.pr || run.issueNumber === r.pr))));
 }
 
+// A big request's PR: the team's, or one of ronin's slices on its issue.
+// ronin keeps only the PR of a request it makes itself (follow.ts), so the
+// big one's is read from the open PRs GitHub links to its issue
+// (items/github.ts linkPrs), the lowest when there are several. Read on
+// every visit, never kept: it changes as slices merge.
+export function withTeamPr(r: PortalRequest, prIssue: Record<number, number> | undefined): PortalRequest {
+  if (r.status !== 'big' || r.pr || !r.issue || !prIssue) return r;
+  const pr = Object.entries(prIssue).filter(([, issue]) => issue === r.issue!.number).map(([n]) => Number(n)).sort((a, b) => a - b)[0];
+  return pr ? { ...r, pr } : r;
+}
+
 const appName = (entries: RepoEntry[], r: PortalRequest) => entries.find((e) => e.productRepo === r.repo)?.portal?.apps[r.app]?.name ?? r.app;
 const lastAt = (r: PortalRequest, runs: RunSummary[]) => [r.updatedAt, ...runs.map((run) => run.endedAt ?? run.startedAt)].sort().at(-1)!;
 
