@@ -334,6 +334,32 @@ describe('portal issues', () => {
     expect((await getRequest(n))?.status).toBe('declined');
   });
 
+  it('a request that changed while GitHub answered is left alone: no close, no mail (#402)', async () => {
+    const n = await approvedRequest({ status: 'big', issue: { number: 901, url: 'u' } });
+    gh.listIssuesWithLabel.mockResolvedValue([{ number: 901, body: '', state: 'CLOSED' }]);
+    // Handed back to ronin for its prototype, its issue unlinked, while the pass asked how the issue closed.
+    gh.getIssueState.mockImplementation(async () => {
+      await updateRequest(n, (x) => { x.status = 'minor'; delete x.issue; });
+      return { state: 'CLOSED', stateReason: 'NOT_PLANNED' };
+    });
+    await followPortalIssues();
+    const r = (await getRequest(n))!;
+    expect(r.status).toBe('minor');
+    expect(r.messages.map((m) => m.text)).not.toContain(DECLINED_REPLY);
+    expect(sendMail).not.toHaveBeenCalled();
+  });
+
+  it("a PR found for a request cancelled meanwhile doesn't touch it (#402)", async () => {
+    const n = await approvedRequest({ issue: { number: 901, url: 'u' } });
+    gh.listPrClosingIssues.mockImplementation(async () => {
+      await updateRequest(n, (x) => { x.status = 'cancelled'; });
+      return { 950: [901] };
+    });
+    await followPortalIssues();
+    expect((await getRequest(n))?.pr).toBeUndefined();
+    expect(sendMail).not.toHaveBeenCalled();
+  });
+
   it('leaves other repos and requests without an issue alone', async () => {
     await approvedRequest({ repo: 'Bmedical/bmedical', issue: { number: 5, url: 'u' } });
     await approvedRequest();

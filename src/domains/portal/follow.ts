@@ -62,14 +62,24 @@ export async function dropCloseNote(n: number): Promise<void> {
   });
 }
 
+// The pass reads every request at its start and GitHub takes seconds: one
+// that changed meanwhile (handed back to ronin, cancelled, its issue
+// unlinked) is no longer what the pass saw, and is left alone (#402).
+const unchanged = (r: PortalRequest, seen: PortalRequest) => r.status === seen.status && r.issue?.number === seen.issue?.number && r.pr === seen.pr;
+
 async function close(request: PortalRequest, status: 'done' | 'resolved' | 'declined'): Promise<void> {
   const closed = await updateRequest(request.number, (r) => {
+    if (!unchanged(r, request)) return undefined;
     r.status = status;
     const note = status !== 'done' ? r.closeNote?.text : undefined;
     addRoninMessage(r, note && status !== 'done' ? closedReply(status, note) : status === 'done' && r.bug ? FIXED_REPLY : CLOSE[status]);
     addEvent(r, { kind: 'closed', status });
     return r;
   });
+  if (!closed) {
+    log.info(`portal: el pedido P-${request.number} cambió mientras se seguía su issue #${request.issue?.number}; no lo cierro`);
+    return;
+  }
   log.info(`portal: el pedido P-${request.number} quedó ${status} (issue #${request.issue?.number})`);
   const user = await getUser(closed.userId);
   if (user) await sendPortalMails(closed, [status === 'done' ? doneMail(closed, user, config.portal.url) : closedMail(closed, user, config.portal.url)]);
@@ -126,6 +136,7 @@ export async function followPortalIssues(): Promise<void> {
         else if (pr.state === 'CLOSED') {
           // Closed without merging: whatever PR closes the issue next is the one.
           await updateRequest(request.number, (r) => {
+            if (!unchanged(r, request)) return;
             addEvent(r, { kind: 'pr-closed', number: request.pr! });
             delete r.pr;
           });
@@ -140,12 +151,14 @@ export async function followPortalIssues(): Promise<void> {
           await addIssueLabel(Number(pr), LABEL_AUTO_MERGE);
           const approved = await approveAsDecider(request, Number(pr));
           const updated = await updateRequest(request.number, (r) => {
+            if (!unchanged(r, request)) return undefined;
             r.pr = Number(pr);
             addEvent(r, { kind: 'pr', number: r.pr });
             if (approved !== null) addEvent(r, { kind: 'pr-approved', number: r.pr, by: r.devDecision!.by, ok: approved });
             addRoninMessage(r, approved ? (r.status === 'fixing' ? FIX_DEPLOY_REPLY : DEPLOY_READY_REPLY) : r.status === 'fixing' ? FIX_READY_REPLY : PR_READY_REPLY);
             return r;
           });
+          if (!updated) continue;
           log.info(`portal: el pedido P-${request.number} tiene el PR #${pr}, con ${LABEL_AUTO_MERGE}`);
           await sendPortalMails(updated, [{ ...teamPrMail(updated, await getUser(updated.userId), await teamTo('pedido-revisar'), `https://github.com/${repo}/pull/${pr}`), team: true }]);
           continue;
