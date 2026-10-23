@@ -92,6 +92,8 @@ export interface FindingMeta {
   estado: FindingState;
   huella: string;
   issue?: number;
+  // The issue whose request the run that found it was focused on (#376).
+  origen?: number;
   // A problem of the dev environment ronin ran (seed data, stubs), not of
   // the app: recorded and reviewed, but never an issue before the review.
   entorno?: boolean;
@@ -194,6 +196,7 @@ export function parseFinding(raw: string): Finding {
     estado: (FINDING_STATES as readonly string[]).includes(meta.estado) ? meta.estado : 'propuesto',
     huella: meta.huella,
     ...(typeof meta.issue === 'number' ? { issue: meta.issue } : {}),
+    ...(typeof meta.origen === 'number' ? { origen: meta.origen } : {}),
     ...(meta.entorno === true ? { entorno: true } : {}),
     ...(typeof meta.motivo === 'string' ? { motivo: meta.motivo } : {}),
     ...(typeof meta.revisor === 'string' && meta.revisor ? { revisor: meta.revisor } : {}),
@@ -302,6 +305,17 @@ export function mergeInventory(inventory: Inventory, discovered: DiscoveredFunct
     added.push(fresh.id);
   }
   return { inventory: { actualizado: { fecha: today, sha }, funciones }, added, retired };
+}
+
+// Functions a focused run (#376) explores that the inventory doesn't have:
+// added as new, the rest untouched (nothing retired, unlike mergeInventory).
+export function addFunctions(inventory: Inventory, fresh: DiscoveredFunction[]): Inventory {
+  const funciones = [...inventory.funciones];
+  for (const f of fresh) {
+    if (funciones.some((x) => x.id === f.id)) continue;
+    funciones.push({ ...f, prioridad: 'normal', cobertura: emptyCoverage(), hallazgos: [] });
+  }
+  return { ...inventory, funciones };
 }
 
 export function recordCoverage(

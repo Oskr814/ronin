@@ -10,6 +10,7 @@ import { config } from '@platform/config/config.js';
 import { log } from '@platform/logger.js';
 import { evidenceUrl, publishEvidence, type EvidenceFile } from '../product-app/index.js';
 import {
+  addFunctions,
   ensureMemoryDir,
   findDuplicate,
   loadMemory,
@@ -23,7 +24,19 @@ import {
   type Inventory,
 } from './memory.js';
 import { refreshInventory, explorationOutDir } from './inventory.js';
-import { changedFunctions, codeHistory, newSeed, planRun, riskByFunction, type ExplorationPlan, type PlannedFunction } from './plan.js';
+import {
+  changedFunctions,
+  codeHistory,
+  hasFocus,
+  newSeed,
+  parseFocusPlan,
+  planChosen,
+  planRun,
+  riskByFunction,
+  type ExploreFocus,
+  type ExplorationPlan,
+  type PlannedFunction,
+} from './plan.js';
 import { capCandidates, parseFunctionResult, parseVerdicts, renderFindingBody, type Candidate, type FindingImage, type TriedTask } from './output.js';
 import { host } from '@platform/host/host.js';
 
@@ -46,6 +59,8 @@ export interface RunOptions {
   today: string;
   seed?: number;
   maxFunctions?: number;
+  // Where to look, when someone said (#376); without it, as at night.
+  focus?: ExploreFocus;
   // Push the kept findings' screenshots to the evidence branch (off for a
   // dry run nobody else will see).
   publishEvidence?: boolean;
@@ -70,6 +85,9 @@ export interface RunSummary {
   discarded: Array<{ titulo: string; funcion: string; motivo: string }>;
   runFile: string;
   inventory: { added: string[]; retired: string[]; refreshed: boolean };
+  focus?: ExploreFocus;
+  // A focused run whose request no function fits: why, in the agent's words.
+  unfocused?: string;
 }
 
 interface PendingCandidate extends Candidate {
@@ -143,19 +161,35 @@ export async function runExploration(opts: RunOptions): Promise<RunSummary> {
   memory = { ...memory, inventory };
 
   const seed = opts.seed ?? newSeed();
-  const history = await codeHistory(codeDir);
-  const plan = planRun({
-    inventory,
-    changed: await changedFunctions(history.dir, inventory, history.rev),
-    risk: await riskByFunction(history.dir, inventory, history.rev),
-    roles: app.users.map((u) => u.role),
-    maxFunctions: opts.maxFunctions ?? config.exploreFunctionsPerRun,
-    seed,
-  });
+  const roles = app.users.map((u) => u.role);
+  const maxFunctions = opts.maxFunctions ?? config.exploreFunctionsPerRun;
+  const focus = hasFocus(opts.focus) ? opts.focus : undefined;
   const runId = `${today}-${seed}`;
   const outRoot = join(explorationOutDir(), runId);
   await host().fs.rm(outRoot, { recursive: true, force: true });
   await host().fs.mkdir(outRoot, { recursive: true });
+  let plan: ExplorationPlan;
+  let unfocused: string | undefined;
+  if (focus?.text?.trim()) {
+    const focused = await planFocus({ appName, app, codeDir, memory, inventory, focus, roles, max: maxFunctions, seed, outRoot });
+    plan = focused.plan;
+    unfocused = focused.motivo;
+    if (focused.added.length > 0) inventory = addFunctions(inventory, focused.added);
+    refreshed.added.push(...focused.added.map((f) => f.id));
+  } else if (focus?.functions?.length) {
+    plan = planChosen({ inventory, functions: focus.functions, roles, seed });
+  } else {
+    const history = await codeHistory(codeDir);
+    plan = planRun({
+      inventory,
+      changed: await changedFunctions(history.dir, inventory, history.rev),
+      risk: await riskByFunction(history.dir, inventory, history.rev),
+      roles,
+      maxFunctions,
+      seed,
+    });
+  }
+  memory = { ...memory, inventory };
   log.info(`exploración ${appName}: corrida ${runId}, ${plan.functions.map((p) => `${p.functionId} (${p.charter})`).join(', ')}`);
 
   const outcomes: FunctionOutcome[] = [];
@@ -163,9 +197,10 @@ export async function runExploration(opts: RunOptions): Promise<RunSummary> {
   const discarded: RunSummary['discarded'] = [];
   const existing = summarizeExisting(memory);
 
-  const as: AgentUser | null = await checkoutAgent(codeDir);
-  const session = await appUp(codeDir, appName, as ? { as } : {});
-  try {
+  const as: AgentUser | null = plan.functions.length > 0 ? await checkoutAgent(codeDir) : null;
+  // A focus no function fits: nothing to bring the app up for.
+  const session = plan.functions.length > 0 ? await appUp(codeDir, appName, as ? { as } : {}) : null;
+  if (session) try {
     const authStates = await loginAllUsers(session);
     const origins = originsOf(session.baseUrl, session.ctx.ports, session.ctx.port);
     for (const planned of plan.functions) {
@@ -199,6 +234,7 @@ export async function runExploration(opts: RunOptions): Promise<RunSummary> {
           homePath: app.homePath ?? '/',
           fn: { id: fn.id, nombre: fn.nombre, rutas: fn.rutas, ...(fn.notas ? { notas: fn.notas } : {}) },
           charter: planned.charter,
+          ...(focus?.text?.trim() && planned.encargo ? { focus: { request: focus.text.trim(), encargo: planned.encargo } } : {}),
           role: planned.role,
           roleNotes: app.users.find((u) => u.role === planned.role)?.notes,
           seed,
@@ -289,6 +325,7 @@ export async function runExploration(opts: RunOptions): Promise<RunSummary> {
       fecha: today,
       estado: 'propuesto',
       huella: c.huella,
+      ...(focus?.issue ? { origen: focus.issue } : {}),
       ...(c.entorno ? { entorno: true } : {}),
       body: renderFindingBody(c, { functionName: c.functionName, ...(patch ? { patch } : {}), ...images.get(id) }),
     };
@@ -308,9 +345,62 @@ export async function runExploration(opts: RunOptions): Promise<RunSummary> {
   await saveInventory(memoryDir, inventory);
 
   const runFile = runFileName(memoryDir, runId);
-  const summary: RunSummary = { runId, seed, plan, outcomes, findings, discarded, runFile, inventory: { added: refreshed.added, retired: refreshed.retired, refreshed: refreshed.refreshed } };
+  const summary: RunSummary = {
+    runId, seed, plan, outcomes, findings, discarded, runFile,
+    inventory: { added: refreshed.added, retired: refreshed.retired, refreshed: refreshed.refreshed },
+    ...(focus ? { focus } : {}),
+    ...(unfocused ? { unfocused } : {}),
+  };
   await host().fs.writeFile(runFile, renderRunFile(appName, summary, inventory));
   return summary;
+}
+
+// The plan of a run with a request in words (#376): the explore-focus agent
+// reads it with the functions to choose among (the ones picked by hand, or
+// the whole inventory) and says which ones it is about and what to look at
+// in each. An empty choice is a valid answer: the run then explores nothing
+// and says why.
+async function planFocus(opts: {
+  appName: string;
+  app: AppDefinition;
+  codeDir: string;
+  memory: ExplorationMemory;
+  inventory: Inventory;
+  focus: ExploreFocus;
+  roles: string[];
+  max: number;
+  seed: number;
+  outRoot: string;
+}) {
+  const live = opts.inventory.funciones.filter((f) => !f.retirada && f.prioridad !== 'excluida');
+  const picked = opts.focus.functions?.length ? live.filter((f) => opts.focus.functions!.includes(f.id)) : live;
+  const allowNew = !opts.focus.functions?.length;
+  const max = opts.focus.functions?.length ? picked.length : opts.max;
+  // A directory of its own: the agent writes only there (sealed, #257).
+  const outputPath = join(opts.outRoot, 'focus', 'focus.json');
+  await host().fs.mkdir(dirname(outputPath), { recursive: true });
+  await runAgentTask(explorationTask({
+    type: 'explore-focus',
+    appName: opts.appName,
+    appPath: opts.app.path,
+    checkoutDir: opts.codeDir,
+    outputPath,
+    request: opts.focus.text!.trim(),
+    functions: picked.map((f) => ({ id: f.id, nombre: f.nombre, rutas: f.rutas, roles: f.roles })),
+    allowNew,
+    roles: opts.roles,
+    max,
+    knowledge: opts.memory.knowledge,
+  }));
+  let raw: string;
+  try {
+    raw = await host().fs.readFile(outputPath, 'utf8');
+  } catch {
+    throw new Error(`explore-focus no escribió ${outputPath}`);
+  }
+  const parsed = parseFocusPlan(raw, { inventory: opts.inventory, pool: picked.map((f) => f.id), allowNew, roles: opts.roles, max, seed: opts.seed });
+  for (const d of parsed.dropped) log.info(`exploración ${opts.appName}: el foco nombró algo que no se explora (${d})`);
+  return { ...parsed, motivo: parsed.plan.functions.length === 0 ? parsed.motivo ?? 'ninguna función de la app encaja con el pedido' : undefined };
 }
 
 // At most this many "before" screenshots per finding reach the team.
@@ -377,11 +467,20 @@ async function publishImages(opts: {
   return result;
 }
 
+function renderFocusLine(focus: ExploreFocus, name: (id: string) => string): string {
+  const where = focus.issue ? `el pedido de #${focus.issue}` : focus.text?.trim() ? 'un pedido del tablero' : 'las funciones que eligió una persona';
+  const chosen = !focus.text?.trim() && focus.functions?.length ? `: ${focus.functions.map(name).join(', ')}` : '';
+  const quote = focus.text?.trim() && !focus.issue ? `\n\n> ${focus.text.trim().slice(0, 600).replace(/\n+/g, '\n> ')}` : '';
+  return `Con foco en ${where}${chosen}.${quote}`;
+}
+
 export function renderRunFile(appName: string, s: RunSummary, inventory: Inventory): string {
   const name = (id: string) => inventory.funciones.find((f) => f.id === id)?.nombre ?? id;
   const lines = [
     `# Corrida ${s.runId} — ${appName}`,
     '',
+    ...(s.focus ? [renderFocusLine(s.focus, name), ''] : []),
+    ...(s.unfocused ? [`No exploré ninguna función: ${s.unfocused}.`, ''] : []),
     `Semilla \`${s.seed}\`. ${s.inventory.refreshed ? `Inventario refrescado (${s.inventory.added.length} funciones nuevas, ${s.inventory.retired.length} retiradas).` : 'Inventario sin cambios.'}`,
     '',
     '## Plan',

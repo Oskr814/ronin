@@ -80,8 +80,8 @@ const COMMANDS: CommandSpec[] = [
   {
     name: 'explore',
     scopes: ['issue'],
-    usage: '/explore <app> [cantidad de funciones]',
-    summary: 'Levanto la app, uso algunas de sus funciones como cada rol en desktop y mobile, y dejo las propuestas de mejora en el PR de exploración abierto (o abro uno).',
+    usage: '/explore <app> [cantidad de funciones] [en qué fijarse]',
+    summary: 'Levanto la app, uso las funciones que tocan lo que pide el issue como cada rol en desktop y mobile, y dejo las propuestas de mejora en el PR de exploración abierto (o abro uno), sin tocar el código.',
     validateArgs: (rest) => SPIKE_HAS_APP_NAME_RE.test(rest),
   },
   {

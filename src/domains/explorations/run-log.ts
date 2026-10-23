@@ -45,7 +45,13 @@ export interface ExplorationRunRecord {
   findings?: Array<{ id: string; titulo: string; tipo: string; gravedad: string }>;
   discarded?: number;
   inventory?: { added: string[]; retired: string[] };
+  // Where it looked, when someone said (#376): the request, cut short, and
+  // the functions picked by hand. `unfocused`: why it explored nothing.
+  focus?: { text?: string; functions?: string[]; issue?: number };
+  unfocused?: string;
 }
+
+const FOCUS_SHOWN = 300;
 
 const dirOf = (repo: string) => join(logsDir(), 'exploration', repo.replaceAll('/', '-'));
 const stamp = (date: Date) => date.toISOString().replace(/[-:]/g, '').slice(0, 15);
@@ -86,6 +92,8 @@ export function summaryFields(summary: RunSummary): Partial<ExplorationRunRecord
     findings: summary.findings.map((f) => ({ id: f.id, titulo: f.titulo, tipo: f.tipo, gravedad: f.gravedad })),
     discarded: summary.discarded.length,
     inventory: { added: summary.inventory.added, retired: summary.inventory.retired },
+    ...(summary.focus ? { focus: { ...summary.focus, ...(summary.focus.text ? { text: summary.focus.text.slice(0, FOCUS_SHOWN) } : {}) } } : {}),
+    ...(summary.unfocused ? { unfocused: summary.unfocused } : {}),
   };
 }
 

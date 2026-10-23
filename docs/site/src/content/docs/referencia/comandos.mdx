@@ -22,7 +22,7 @@ Desde el tablero no hace falta escribirlos: el menú **Acciones** de cada ficha 
 | [`/resolve-conflicts`](#resolve-conflicts) | PR | Trae la base y resuelve los conflictos. |
 | [`/spike`](#spike) | Issue sin asignar | Investiga y agrega contexto al issue. |
 | [`/spec`](#spec) | Issue sin asignar | Convierte el pedido en un spec. |
-| [`/explore`](#explore) | Issue | Usa la app y propone mejoras. |
+| [`/explore`](#explore) | Issue | Usa la app con lo que pide el issue como foco y propone mejoras. |
 | [`/help`](#help) | PR o issue | Los comandos que se pueden usar ahí. |
 
 ## En un PR
@@ -114,10 +114,12 @@ Investiga, pregunta en el issue lo que falte y abre un PR draft con el spec. Mie
 <div class="cmd-scope"><Badge text="Issue" variant="success" /></div>
 
 ```
-@ronin-agent /explore <app> [cantidad de funciones]
+@ronin-agent /explore <app> [cantidad de funciones] [en qué fijarse]
 ```
 
-Usa hasta 10 funciones de la app como cada rol, en desktop y mobile, y deja las propuestas en el PR de exploración abierto (o abre uno), con capturas del antes y el después. Al aprobar el PR, ronin abre un issue por cada propuesta que quedó en pie, asignado a sí mismo. Ver [Explorar una app](/ronin/guias/explorar-una-app/).
+Usa hasta 10 funciones de la app como cada rol, en desktop y mobile, y deja las propuestas en el PR de exploración abierto (o abre uno), con capturas del antes y el después. Al aprobar el PR, ronin abre un issue por cada propuesta que quedó en pie, asignado a sí mismo.
+
+Lo que pide el issue es el foco de la corrida: ronin elige las funciones que tocan ese pedido y qué revisar en cada una, en vez de elegir como de noche. Lo que escribas después de la app y la cantidad se suma al pedido. Cada ficha guarda el issue de donde salió, y al aprobar el PR ronin comenta en él los issues que quedaron. En un issue sin descripción ni comentarios, elige como de noche. Ver [Explorar lo que pide un issue](/ronin/guias/explorar-una-app/#explorar-lo-que-pide-un-issue).
 
 ## En cualquier lado
 

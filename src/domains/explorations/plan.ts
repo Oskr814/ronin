@@ -14,8 +14,25 @@ export interface PlannedFunction {
   functionId: string;
   charter: Charter;
   role: string;
-  reason: 'nueva' | 'cambiada' | 'prioritaria' | 'antigua' | 'azar';
+  reason: 'nueva' | 'cambiada' | 'prioritaria' | 'antigua' | 'azar' | 'foco' | 'elegida';
+  // With a focus (#376): what to look at in this function, in words, drawn
+  // from the request by the explore-focus agent.
+  encargo?: string;
 }
+
+// Where a run looks, when someone says (#376): functions picked from the
+// inventory by hand, a request in words (an issue's, or the dashboard's
+// text), or both — the words then choose among the functions picked.
+// Without one, the run plans as at night (planRun).
+export interface ExploreFocus {
+  functions?: string[];
+  text?: string;
+  // The issue the request came from: every finding links to it.
+  issue?: number;
+}
+
+export const hasFocus = (focus: ExploreFocus | undefined): focus is ExploreFocus =>
+  Boolean(focus && (focus.functions?.length || focus.text?.trim()));
 
 export interface ExplorationPlan {
   seed: number;
@@ -90,7 +107,7 @@ export function planRun(input: PlanInput): ExplorationPlan {
   }
   const tierOf = (f: InventoryFunction): PlannedFunction['reason'] =>
     !lastExplored(f) ? 'nueva' : input.changed.has(f.id) ? 'cambiada' : f.prioridad === 'alta' ? 'prioritaria' : 'antigua';
-  const tierRank = { nueva: 0, cambiada: 1, prioritaria: 2, antigua: 3, azar: 4 };
+  const tierRank: Record<PlannedFunction['reason'], number> = { nueva: 0, cambiada: 1, prioritaria: 2, antigua: 3, azar: 4, foco: 5, elegida: 5 };
   const ordered = shuffled
     .map((f, index) => ({ f, tier: tierOf(f), index }))
     .sort((a, b) =>
@@ -117,6 +134,83 @@ export function planRun(input: PlanInput): ExplorationPlan {
       return { functionId: f.id, charter: pickCharter(f, random), role: pool[Math.floor(random() * pool.length)], reason };
     }),
   };
+}
+
+const roleFor = (f: Pick<InventoryFunction, 'roles'>, roles: string[], random: () => number, wanted?: string): string => {
+  if (wanted && roles.includes(wanted)) return wanted;
+  const own = f.roles.filter((r) => roles.includes(r));
+  const pool = own.length > 0 ? own : roles;
+  return pool[Math.floor(random() * pool.length)];
+};
+
+// The functions picked by hand (Explorar ahora, #376), each with the charter
+// pickCharter draws for it — the order and the count are the person's.
+export function planChosen(input: { inventory: Inventory; functions: string[]; roles: string[]; seed: number }): ExplorationPlan {
+  const random = seededRandom(input.seed);
+  const functions: PlannedFunction[] = [];
+  for (const id of [...new Set(input.functions)]) {
+    const f = input.inventory.funciones.find((x) => x.id === id && !x.retirada);
+    if (!f) continue;
+    functions.push({ functionId: f.id, charter: pickCharter(f, random), role: roleFor(f, input.roles, random), reason: 'elegida' });
+  }
+  return { seed: input.seed, functions };
+}
+
+export interface FocusPlan {
+  plan: ExplorationPlan;
+  // Functions the request is about that the inventory doesn't have yet:
+  // added to it before the run, like the inventory refresh adds one.
+  added: DiscoveredFunction[];
+  // Why nothing fits, when nothing does.
+  motivo?: string;
+}
+
+// The explore-focus agent's choice (see prompts.ts), validated: a function
+// it names must be in `pool` or come with its name and routes (one the
+// inventory doesn't have), a charter outside CHARTERS gets pickCharter's,
+// a role outside `roles` gets one of the function's own, and at most `max`.
+// `allowNew`: whether it may name one the inventory doesn't have — only when
+// nobody narrowed the choice to some functions.
+export function parseFocusPlan(raw: string, input: { inventory: Inventory; pool: string[]; allowNew: boolean; roles: string[]; max: number; seed: number }): FocusPlan & { dropped: string[] } {
+  const parsed = JSON.parse(raw) as { funciones?: unknown; motivo?: unknown };
+  if (!Array.isArray(parsed?.funciones)) throw new Error('focus.json no contiene una lista de funciones');
+  const random = seededRandom(input.seed);
+  const functions: PlannedFunction[] = [];
+  const added: DiscoveredFunction[] = [];
+  const dropped: string[] = [];
+  const strings = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string' && x.length > 0) : []);
+  for (const entry of parsed.funciones as any[]) {
+    if (functions.length >= input.max) {
+      dropped.push(`fuera del tope: ${String(entry?.id)}`);
+      continue;
+    }
+    const id = typeof entry?.id === 'string' ? entry.id.trim().toLowerCase().replace(/[^a-z0-9._-]+/g, '-') : '';
+    const encargo = typeof entry?.encargo === 'string' ? entry.encargo.trim().slice(0, 1200) : '';
+    if (!id || !encargo || functions.some((p) => p.functionId === id)) {
+      dropped.push(`entrada inválida: ${JSON.stringify(entry).slice(0, 120)}`);
+      continue;
+    }
+    let f: Pick<InventoryFunction, 'roles' | 'cobertura'> | undefined = input.inventory.funciones.find((x) => x.id === id && !x.retirada);
+    if (f && !input.pool.includes(id)) {
+      dropped.push(`no está entre las elegidas: ${id}`);
+      continue;
+    }
+    if (!f) {
+      const nombre = typeof entry?.nombre === 'string' ? entry.nombre.trim() : '';
+      const rutas = strings(entry?.rutas);
+      if (!input.allowNew || !nombre || rutas.length === 0 || input.inventory.funciones.some((x) => x.id === id)) {
+        dropped.push(`no está en el inventario: ${id}`);
+        continue;
+      }
+      const fresh: DiscoveredFunction = { id, nombre, rutas, roles: strings(entry.roles), archivos: strings(entry.archivos).slice(0, 8) };
+      added.push(fresh);
+      f = { roles: fresh.roles, cobertura: { desktop: {}, mobile: {} } };
+    }
+    const charter = (CHARTERS as readonly string[]).includes(entry?.charter) ? (entry.charter as Charter) : pickCharter(f as InventoryFunction, random);
+    functions.push({ functionId: id, charter, role: roleFor(f, input.roles, random, typeof entry?.rol === 'string' ? entry.rol : undefined), reason: 'foco', encargo });
+  }
+  const motivo = typeof parsed.motivo === 'string' && parsed.motivo.trim() ? parsed.motivo.trim().slice(0, 300) : undefined;
+  return { plan: { seed: input.seed, functions }, added, dropped, ...(motivo ? { motivo } : {}) };
 }
 
 // The agent's functions.json (see prompts.ts's explore-inventory),

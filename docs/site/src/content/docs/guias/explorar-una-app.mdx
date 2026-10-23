@@ -11,7 +11,7 @@ ronin levanta la app, usa algunas de sus funciones como cada rol, en desktop y e
 
 - **De noche**, las apps listadas en `explore` de [`repos.json`](/ronin/referencia/repos-json/), dentro de `EXPLORE_NIGHT_WINDOW`.
 - **Cuando lo pedís** con **Explorar ahora**, desde la página de la app en el tablero.
-- **Con `/explore`** en un issue: `@ronin-agent /explore <app> [cantidad de funciones]`, hasta 10.
+- **Con `/explore`** en un issue: `@ronin-agent /explore <app> [cantidad de funciones]`, hasta 10. También desde la ficha del issue en el tablero, con **Acciones → Explorar**.
 
 Hay un solo PR de exploración por repo: las corridas se van sumando a él hasta que lo aprobás.
 
@@ -22,18 +22,38 @@ El botón **Exploraciones**, arriba a la izquierda, lista las apps. El número a
 La página de una app tiene tres pestañas:
 
 - **Fichas**, para decidir las propuestas (abajo).
-- **Corridas:** quién la lanzó y cómo terminó, cuánto duró y costó, las funciones que exploró con su ángulo (*charter*) y viewport, las fichas que propuso y descartó, la semilla para repetirla y el transcript de cada agente.
+- **Corridas:** quién la lanzó, con qué foco si tuvo uno, y cómo terminó, cuánto duró y costó, las funciones que exploró con su ángulo (*charter*) y viewport, las fichas que propuso y descartó, la semilla para repetirla y el transcript de cada agente.
 - **Inventario:** las funciones que ronin encontró, con su prioridad (alta, excluida o retirada), cuándo se exploró cada una y qué ángulos ya se le aplicaron. Se edita en el repo, en `docs/exploration/<app>/inventory.yml`.
 
 ### Explorar ahora
 
-Lanza una corrida sin esperar a la noche. Elegís:
+Lanza una corrida sin esperar a la noche. Primero elegís **dónde**:
 
-- cuántas funciones explorar, de 1 a 10;
+- **Como de noche:** ronin elige las funciones y el ángulo de cada una. Primero las nuevas y las que cambiaron, después las marcadas *alta*, la que hace más tiempo que no se explora, y una al azar.
+- **Estas funciones:** las marcás en el inventario de la app, hasta 10. Si además escribís en qué fijarte («solo cómo se ven en mobile»), ronin lo usa como foco en esas funciones.
+- **Un foco en palabras:** contás qué mirar («los formularios de alta ocupan mucho en el teléfono; proponé cómo compactar cada campo»). ronin elige las funciones que tocan eso, como mucho las que digas, y qué revisar en cada una. Si lo que pedís no es ninguna función del inventario, puede sumar una nueva.
+
+Después elegís:
+
+- cuántas funciones explorar, de 1 a 10 (con *Estas funciones*, son las que marcaste);
 - un tope de tiempo: 1, 2 o 4 horas, o ninguno;
 - **Cuenta como la de esta noche**, marcada por defecto: esa noche ya no corre otra de esa app, porque el límite semanal de Claude es el mismo que usa el trabajo de día.
 
-Qué funciones y con qué ángulo las sigue eligiendo ronin. Hay una exploración por repo a la vez: mientras corre una, el botón dice por qué está deshabilitado.
+Hay una exploración por repo a la vez: mientras corre una, el botón dice por qué está deshabilitado.
+
+### Explorar lo que pide un issue
+
+Un `/explore` en un issue usa lo que pide el issue como foco: el título, la descripción y los comentarios de las personas (sin los comandos a ronin ni los comentarios de bots), más lo que escribas después de `/explore <app>`. Funciona igual que **Un foco en palabras**:
+
+- Las fichas van al PR de exploración, como siempre, y cada una guarda el issue de donde salió (`origen` en el archivo de la ficha).
+- Cuando termina, ronin responde en el issue qué exploró y qué propone. Si ninguna función encaja con el pedido (por ejemplo, porque es de otra app), no explora nada y dice por qué.
+- Al aprobar el PR de exploración, el issue de cada ficha que quedó en pie dice de qué issue viene, y ronin comenta en el issue de origen la lista de esos issues.
+
+Si el issue solo tiene el título y el comando, la corrida elige como de noche.
+
+<Aside type="tip">
+Para que ronin proponga en vez de cambiar el código, usá `/explore` (o **Acciones → Explorar**). Si le asignás el issue, lo implementa.
+</Aside>
 
 ## Decidir las fichas
 

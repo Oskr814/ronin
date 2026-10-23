@@ -9,6 +9,7 @@ import { log } from '@platform/logger.js';
 import {
   acquireExploreLock,
   exploreAndPublish,
+  issueFocus,
   reactToTrigger,
   redoAndPublish,
   releaseExploreLock,
@@ -57,9 +58,13 @@ async function main(): Promise<void> {
     // Answering the /explore comment can fail after the run was published: that run still ended well.
     let published = false;
     try {
+      // An /explore's focus is what its issue asks for (#376), if it asks anything.
+      const focus = request.focus ?? (request.trigger ? await issueFocus(request.trigger) : undefined);
+      if (focus) log.info(`exploración ${request.appName}: con foco${focus.issue ? ` en el pedido de #${focus.issue}` : ''}${focus.functions?.length ? ` en ${focus.functions.join(', ')}` : ''}`);
       const run = await exploreAndPublish({
         appName: request.appName,
         ...(request.maxFunctions ? { maxFunctions: request.maxFunctions } : {}),
+        ...(focus ? { focus } : {}),
         ...(request.until ? { shouldContinue: () => Date.now() < Date.parse(request.until!) } : {}),
       });
       log.info(`exploración ${request.appName}: corrida ${run.summary.runId} publicada en el PR #${run.prNumber}`);

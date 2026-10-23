@@ -122,6 +122,32 @@ describe('Explorar ahora', () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
+  it('explores the functions picked from the inventory, with what to look at in them', async () => {
+    show(<ExploreNow repo="acme/tienda" app="backoffice" onClose={vi.fn()} />);
+    fireEvent.click(screen.getByText('Estas funciones'));
+    await screen.findByText('Perfil');
+    expect(document.getElementById('xn-n')).toBeNull();
+    expect((screen.getByText('Explorar') as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByText('Perfil'));
+    fireEvent.click(screen.getByText('Carrito'));
+    expect(screen.getByText('2 elegidas (hasta 10)')).toBeTruthy();
+    fireEvent.change(document.getElementById('xn-focus')!, { target: { value: ' solo en mobile ' } });
+    fireEvent.click(screen.getByText('Explorar'));
+    await waitFor(() => expect(calls.filter((c) => c.method === 'POST')).toHaveLength(1));
+    expect(calls.find((c) => c.method === 'POST')!.body).toEqual({ maxFunctions: 2, hours: 2, tonight: true, functions: ['perfil', 'carrito'], focus: 'solo en mobile' });
+  });
+
+  it('explores a request in words, only once there is one', async () => {
+    show(<ExploreNow repo="acme/tienda" app="backoffice" onClose={vi.fn()} />);
+    fireEvent.click(screen.getByText('Un foco en palabras'));
+    expect((screen.getByText('Explorar') as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(document.getElementById('xn-focus')!, { target: { value: 'Los formularios ocupan mucho en el teléfono' } });
+    fireEvent.click(screen.getByText('Explorar'));
+    await waitFor(() => expect(calls.filter((c) => c.method === 'POST')).toHaveLength(1));
+    expect(calls.find((c) => c.method === 'POST')!.body).toEqual({ maxFunctions: 3, hours: 2, tonight: true, focus: 'Los formularios ocupan mucho en el teléfono' });
+    expect(calls.some((c) => c.path.endsWith('/inventory'))).toBe(false);
+  });
+
   it('says why it couldn\'t, and closes with Escape', async () => {
     answer = () => new Response(JSON.stringify({ error: 'ya hay una corriendo' }), { status: 409, headers: { 'Content-Type': 'application/json' } });
     const onClose = vi.fn();

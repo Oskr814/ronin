@@ -154,6 +154,7 @@ export function renderFindingIssue(appName: string, finding: Finding, fileUrl: s
     finding.body.replace(/^## .*\n+/, ''),
     '',
     `Encontrado por la exploración de ronin en \`${appName}\` (charter \`${finding.charter}\`, ${finding.viewport}, rol ${finding.rol}, semilla ${finding.semilla}). Ficha: [${finding.id}](${fileUrl}).`,
+    ...(finding.origen ? ['', `Viene de lo que se pidió en #${finding.origen}.`] : []),
     '',
     `Ya está asignado a ronin, que lo empieza solo. \`${findingIssueKey(appName, finding.id)}\``,
   ].join('\n');

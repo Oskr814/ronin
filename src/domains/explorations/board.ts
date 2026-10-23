@@ -5,6 +5,7 @@ import { addDays, instantAt, wallClock } from '@platform/config/timezone.js';
 import { currentNight, parseNightWindow, upcomingNight, type NightWindow } from './schedule.js';
 import { exploreWorkerBusy, launchExploreWorker, type ExploreWorkerRequest } from './flow.js';
 import { CHARTERS, EXPLORATION_DIR, VIEWPORTS, parseInventory } from './memory.js';
+import { hasFocus, type ExploreFocus } from './plan.js';
 import { listRunRecords, type ExplorationRunFunction, type ExplorationRunRecord, type ExplorationTrigger } from './run-log.js';
 import type { RunSummary } from '../runs/data.js';
 import { explorationReview, isExplorationPr, readBranchFile, type ExplorationPr, type FindingCard } from './review.js';
@@ -51,7 +52,7 @@ export interface ExplorationListRow extends ExplorationRow {
 
 // The agents of an exploration run (domains/explorations/run.ts). Not the ones that
 // answer comments on the PR or redo an after image: those are about findings.
-const EXPLORATION_TASKS = new Set(['explore-inventory', 'explore-function', 'explore-evaluate']);
+const EXPLORATION_TASKS = new Set(['explore-inventory', 'explore-focus', 'explore-function', 'explore-evaluate']);
 // Their label starts with `app <name>`, and the one on a function goes on
 // with ` → <function id>` (domains/explorations/prompts.ts).
 const LABEL_RE = /^app ([\w.-]+)(?: → (.+))?$/;
@@ -198,6 +199,8 @@ export interface ExplorationRun {
   functions: Array<Pick<ExplorationRunFunction, 'id' | 'status'> & Partial<ExplorationRunFunction>>;
   findings?: ExplorationRunRecord['findings'];
   discarded?: number;
+  focus?: ExplorationRunRecord['focus'];
+  unfocused?: string;
   costUsd: number;
   agents: ExplorationRunAgent[];
   // Put together from the agent runs: no record of its own.
@@ -240,6 +243,8 @@ export function buildExplorationRuns(records: ExplorationRunRecord[], agentRuns:
       functions: rec.functions ?? [...new Set(agents.flatMap((a) => (a.fn ? [a.fn] : [])))].map((id) => ({ id, status: 'explorada' as const })),
       ...(rec.findings ? { findings: rec.findings } : {}),
       ...(rec.discarded !== undefined ? { discarded: rec.discarded } : {}),
+      ...(rec.focus ? { focus: rec.focus } : {}),
+      ...(rec.unfocused ? { unfocused: rec.unfocused } : {}),
       costUsd: cost(agents),
       agents,
     };
@@ -339,10 +344,11 @@ export async function inventoryViewOf(entry: RepoEntry, app: string, pr: Pick<Ex
 }
 
 // ---------- Explorar ahora (#155, 3/4)
-// A run started from the dashboard: ronin still chooses the functions and
-// the charters (§11.1, §11.4) — only how many and for how long are asked.
-// By default it stands for that night's run of the app, since the weekly
-// Claude limit is the one the day's work uses too.
+// A run started from the dashboard: how many functions and for how long,
+// and where (#376) — as at night (ronin chooses, §11.1, §11.4), functions
+// picked from the inventory, or a request in words. By default it stands
+// for that night's run of the app, since the weekly Claude limit is the one
+// the day's work uses too.
 
 // Each repo's open PRs, from its GitHub read (items/github.ts), by repo.
 export const prsOf = <P>(entries: Array<{ productRepo: string }>, github: Array<{ prs: P[] } | null | undefined>) => new Map(entries.map((entry, i) => [entry.productRepo, github[i]?.prs ?? []]));
@@ -355,7 +361,12 @@ export interface ExploreNow {
   hours: number | null;
   // Whether it stands for the app's next nightly run.
   tonight: boolean;
+  // Where to look, when the person says: functions of the inventory and/or
+  // a request in words.
+  focus?: ExploreFocus;
 }
+
+export const EXPLORE_NOW_FOCUS_MAX = 4000;
 
 export const EXPLORE_NOW_MAX_FUNCTIONS = 10;
 export const EXPLORE_NOW_HOURS = [1, 2, 4];
@@ -366,7 +377,14 @@ export function parseExploreNow(body: Record<string, unknown>): ExploreNow {
   const hours = body.hours ?? null;
   if (hours !== null && !EXPLORE_NOW_HOURS.includes(hours as number)) throw new ExploreNowError(`el tope de tiempo es de ${EXPLORE_NOW_HOURS.join(', ')} horas, o ninguno`);
   if (body.tonight !== undefined && typeof body.tonight !== 'boolean') throw new ExploreNowError('"tonight" es sí o no');
-  return { maxFunctions: n, hours: hours as number | null, tonight: body.tonight !== false };
+  const functions = body.functions ?? [];
+  if (!Array.isArray(functions) || functions.some((f) => typeof f !== 'string' || !f) || functions.length > EXPLORE_NOW_MAX_FUNCTIONS) {
+    throw new ExploreNowError(`"functions" es una lista de hasta ${EXPLORE_NOW_MAX_FUNCTIONS} funciones del inventario`);
+  }
+  const text = body.focus ?? '';
+  if (typeof text !== 'string' || text.length > EXPLORE_NOW_FOCUS_MAX) throw new ExploreNowError(`el foco es un texto de hasta ${EXPLORE_NOW_FOCUS_MAX} caracteres`);
+  const focus: ExploreFocus = { ...(functions.length ? { functions: [...new Set(functions as string[])] } : {}), ...(text.trim() ? { text: text.trim() } : {}) };
+  return { maxFunctions: n, hours: hours as number | null, tonight: body.tonight !== false, ...(hasFocus(focus) ? { focus } : {}) };
 }
 
 // A launch just made, by repo: its worker takes a moment to take the lock,
@@ -396,7 +414,7 @@ export async function exploreNow(entry: RepoEntry, app: string, login: string, a
   }
   const until = ask.hours ? new Date(now.getTime() + ask.hours * 3600_000).toISOString() : undefined;
   launchedAt.set(repo, now.getTime());
-  launch({ repo, appName: app, maxFunctions: ask.maxFunctions, by: login, ...(until ? { until } : {}) });
+  launch({ repo, appName: app, maxFunctions: ask.maxFunctions, by: login, ...(until ? { until } : {}), ...(ask.focus ? { focus: ask.focus } : {}) });
   return { ...(until ? { until } : {}), ...(night ? { night } : {}) };
 }
 

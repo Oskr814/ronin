@@ -56,6 +56,13 @@ describe('renderFindingIssue', () => {
     expect(body).toContain(findingIssueKey('backoffice', 'F-0007'));
     expect(findingIssueKey('backoffice', 'F-0007')).toBe('ronin-ficha:backoffice/F-0007');
     expect(body).toContain('Ya está asignado a ronin');
+    expect(body).not.toContain('Viene de');
+  });
+
+  it('links the issue whose request the finding came from, and the finding keeps it', () => {
+    const finding: Finding = { ...meta({ origen: 31 }), body: '## x\n\ny' };
+    expect(renderFindingIssue('backoffice', finding, 'u').body).toContain('Viene de lo que se pidió en #31.');
+    expect(parseFinding(serializeFinding(finding)).origen).toBe(31);
   });
 });
 

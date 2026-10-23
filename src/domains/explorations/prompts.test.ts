@@ -82,11 +82,12 @@ describe('explorationTask', () => {
     const prompts = await Promise.all([
       buildTask({ type: 'explore-inventory', appName: 'backoffice', appPath: 'apps/backoffice', checkoutDir: '/tmp/w', outputPath: '/tmp/out/i.json', roles: ['Admin'], known: [] }),
       buildTask({ type: 'explore-function', ...app, fn: { id: 'pedidos.surtir', nombre: 'Surtir', rutas: ['/pedidos'] }, charter: 'datos-hostiles', role: 'Admin', seed: 1, knowledge: '', existing: [], maxIdeas: 1 }),
+      buildTask({ type: 'explore-focus', appName: 'backoffice', appPath: 'apps/backoffice', checkoutDir: '/tmp/w', outputPath: '/tmp/focus/focus.json', request: 'x', functions: [], allowNew: true, roles: ['Admin'], max: 3, knowledge: '' }),
       buildTask({ type: 'explore-evaluate', appName: 'backoffice', checkoutDir: '/tmp/w', candidatesPath: '/tmp/c.json', outputPath: '/tmp/v.json', knowledge: '', existing: [] }),
       buildTask({ type: 'explore-feedback', prNumber: 9, checkoutDir: '/tmp/w', comments: [], outputPath: '/tmp/f.json' }),
       buildTask({ type: 'explore-redo-after', ...app, role: 'Admin', viewport: 'desktop', findingId: 'F-0001', findingFile: 'f.md', instruction: 'x' }),
     ]);
-    const jobs = ['el inventario', 'explorar una función', 'evaluar los candidatos', 'los comentarios del PR', 'rehacer el después de un hallazgo'];
+    const jobs = ['el inventario', 'explorar una función', 'elegir dónde explorar con un foco', 'evaluar los candidatos', 'los comentarios del PR', 'rehacer el después de un hallazgo'];
     prompts.forEach(({ prompt, sealed }, i) => {
       expect(prompt.startsWith(`Usa la skill ronin:explore, para ${jobs[i]}.`)).toBe(true);
       expect(sealed).toBeDefined();
@@ -99,6 +100,22 @@ describe('explorationTask', () => {
     expect(prompt).toContain('<<<KNOWLEDGE_START>>>\nNo proponer mobile\n<<<KNOWLEDGE_END>>>');
     expect(prompt).toContain('- F-0002 [rechazado] pedidos.surtir: t — huella "h" — rechazado porque: ya está');
     expect(prompt).toContain('"candidatos"');
+  });
+
+  it('gives a focused function run the request, fenced, and what to look at in it', async () => {
+    const { prompt } = await buildTask({ type: 'explore-function', ...app, fn: { id: 'pedidos.surtir', nombre: 'Surtir', rutas: ['/pedidos'] }, charter: 'camino-feliz', focus: { request: 'Los campos ocupan mucho', encargo: 'Medir cada campo en mobile' }, role: 'Admin', seed: 7, knowledge: '', existing: [], maxIdeas: 2 });
+    expect(prompt).toContain('<<<REQUEST_START>>>\nLos campos ocupan mucho\n<<<REQUEST_END>>>');
+    expect(prompt).toContain('<<<ENCARGO_START>>>Medir cada campo en mobile<<<ENCARGO_END>>>');
+    expect(prompt).toContain('El charter, "camino-feliz", es el ángulo secundario.');
+    expect(prompt).not.toContain('El charter de esta corrida');
+  });
+
+  it('gives the focus run the request, the functions to choose among and whether it may name a new one', async () => {
+    const task = { type: 'explore-focus' as const, appName: 'backoffice', appPath: 'apps/backoffice', checkoutDir: '/tmp/w', outputPath: '/tmp/focus/focus.json', request: 'Compactar', functions: [{ id: 'a.b', nombre: 'AB', rutas: ['/ab'], roles: ['Admin'] }], allowNew: false, roles: ['Admin'], max: 1, knowledge: '' };
+    const { prompt } = await buildTask(task);
+    expect(prompt).toContain('- a.b — AB (/ab; roles Admin)');
+    expect(prompt).toContain('no nombres ninguna otra');
+    expect((await buildTask({ ...task, allowNew: true })).prompt).toContain('puedes nombrar una función nueva');
   });
 
   it('asks every agent that creates data in the app for realistic data', () => {

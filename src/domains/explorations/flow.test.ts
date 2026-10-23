@@ -12,7 +12,7 @@ vi.mock('../product-app/runtime.js', () => ({}));
 vi.mock('./run.js', () => ({}));
 vi.mock('./inventory.js', () => ({ explorationOutDir: () => base }));
 
-import { acquireExploreLock, explorationDay, exploreWorkerBusy, releaseExploreLock, renderRunReply, type PublishedRun } from './flow.js';
+import { acquireExploreLock, explorationDay, exploreWorkerBusy, issueRequest, releaseExploreLock, renderOriginReply, renderRunReply, type PublishedRun } from './flow.js';
 
 beforeEach(async () => {
   base = await mkdtemp(join(tmpdir(), 'ronin-flow-'));
@@ -62,6 +62,43 @@ describe('renderRunReply', () => {
 
   it('is honest when nothing made it', () => {
     expect(renderRunReply('backoffice', run([], 3))).toContain('No encontré nada que valga la pena proponer (descarté 3 candidato(s)');
+  });
+
+  it('says it followed the issue, or why it explored nothing', () => {
+    const focused = run([]);
+    focused.summary.focus = { text: 'x', issue: 31 };
+    expect(renderRunReply('backoffice', focused)).toContain('Exploré `backoffice` con foco en lo que pide este issue:');
+    focused.summary.unfocused = 'el pedido es de otra app';
+    expect(renderRunReply('backoffice', focused)).toBe('No exploré `backoffice`: el pedido es de otra app. Si el pedido es de otra app, pedímelo con esa; si es de esta, contame en qué pantalla está y volvé a pedirlo.');
+  });
+});
+
+describe('issueRequest', () => {
+  const comment = (author: string, body: string, id = 1) => ({ author, body, createdAt: '', url: `https://github.com/acme/x/issues/3#issuecomment-${id}` });
+
+  it('is the title, the body and what people said, without the commands to ronin or bots', () => {
+    const text = issueRequest({
+      title: 'Los formularios ocupan mucho',
+      body: 'En el teléfono hay que hacer scroll todo el rato.',
+      comments: [
+        comment('linear[bot]', 'DEV-1'),
+        comment('persona', 'Sobre todo los numéricos.'),
+        comment('ronin-agent', 'Exploré...'),
+        comment('persona', '@ronin-agent /explore webapp 4 y mirá el rango también', 9),
+      ],
+    });
+    expect(text).toBe('# Los formularios ocupan mucho\n\nEn el teléfono hay que hacer scroll todo el rato.\n\nSobre todo los numéricos.\n\ny mirá el rango también');
+  });
+
+  it('is nothing when the issue only has a title and the command: that run goes as at night', () => {
+    expect(issueRequest({ title: 'Explorar', body: '  ', comments: [comment('persona', '@ronin-agent /explore webapp')] })).toBeUndefined();
+  });
+});
+
+describe('renderOriginReply', () => {
+  it('lists what stood with its issue', () => {
+    expect(renderOriginReply(840, [{ id: 'F-0002', titulo: 'Signos en una fila', issue: 77 }, { id: 'F-0003', titulo: 'Sin issue' }]))
+      .toBe('Se aprobó el PR de exploración #840. De lo que se pidió acá quedaron en pie estas propuestas, cada una con su issue:\n\n- #77 Signos en una fila\n- F-0003 Sin issue');
   });
 });
 

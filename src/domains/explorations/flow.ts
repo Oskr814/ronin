@@ -10,8 +10,10 @@ import { runAgentTask } from '@platform/agents/agent-task.js';
 import { explorationTask, type FindingFeedback, type FindingSummary, type GeneralFeedback } from './prompts.js';
 import {
   closeIssueNotPlanned,
+  commentOnIssue,
   createIssue,
   getDiscussion,
+  type Discussion,
   listFileReviewComments,
   listIssueComments,
   listOpenPrsByHeadPrefix,
@@ -24,6 +26,7 @@ import { ensureAppWorktree } from '../product-app/index.js';
 import { appendKnowledge, EXPLORATION_DIR, findingFileName, loadMemory, memoryDirFor, parseFinding, serializeFinding } from './memory.js';
 import { explorationOutDir } from './inventory.js';
 import { runExploration, type RunSummary } from './run.js';
+import { hasFocus, type ExploreFocus } from './plan.js';
 import {
   appsWithMemory,
   approveFindings,
@@ -71,6 +74,7 @@ export function explorationDay(now: Date): string {
 export async function exploreAndPublish(opts: {
   appName: string;
   maxFunctions?: number;
+  focus?: ExploreFocus;
   shouldContinue?: () => boolean | Promise<boolean>;
   now?: Date;
 }): Promise<PublishedRun> {
@@ -88,6 +92,7 @@ export async function exploreAndPublish(opts: {
     memoryDir,
     today,
     ...(opts.maxFunctions ? { maxFunctions: opts.maxFunctions } : {}),
+    ...(hasFocus(opts.focus) ? { focus: opts.focus } : {}),
     ...(opts.shouldContinue ? { shouldContinue: opts.shouldContinue } : {}),
   });
 
@@ -103,10 +108,13 @@ export function renderRunReply(appName: string, run: PublishedRun): string {
   const { summary } = run;
   const explored = summary.outcomes.filter((o) => o.status === 'explorada').map((o) => `\`${o.planned.functionId}\` (${o.planned.charter})`);
   const failed = summary.outcomes.filter((o) => o.status === 'fallo').map((o) => `\`${o.planned.functionId}\``);
-  const lines = [
-    `Exploré \`${appName}\`: ${explored.length > 0 ? explored.join(', ') : 'ninguna función'}${failed.length > 0 ? `; fallaron ${failed.join(', ')}` : ''}.`,
-    '',
-  ];
+  const lines = summary.unfocused
+    ? [`No exploré \`${appName}\`: ${summary.unfocused}. Si el pedido es de otra app, pedímelo con esa; si es de esta, contame en qué pantalla está y volvé a pedirlo.`, '']
+    : [
+        `Exploré \`${appName}\`${summary.focus?.issue ? ' con foco en lo que pide este issue' : ''}: ${explored.length > 0 ? explored.join(', ') : 'ninguna función'}${failed.length > 0 ? `; fallaron ${failed.join(', ')}` : ''}.`,
+        '',
+      ];
+  if (summary.unfocused) return lines.join('\n').trim();
   if (summary.findings.length === 0) {
     lines.push(`No encontré nada que valga la pena proponer${summary.discarded.length > 0 ? ` (descarté ${summary.discarded.length} candidato(s); el detalle está en la corrida)` : ''}.`);
   } else {
@@ -117,6 +125,35 @@ export function renderRunReply(appName: string, run: PublishedRun): string {
   }
   lines.push('', `Están en el PR de exploración: #${run.prNumber}. Revisalas ahí: al aprobarlo abro un issue por cada una que siga en pie.`);
   return lines.join('\n');
+}
+
+const REQUEST_MAX = 6000;
+
+// What an issue asks for, as the focus of an /explore on it (#376): its
+// title and body, and what people said in its comments — the commands to
+// ronin (their name and app) left out, bots' comments too. Undefined
+// when nothing but the title and the command is there: that /explore runs as
+// at night.
+export function issueRequest(issue: Pick<Discussion, 'title' | 'body' | 'comments'>, bot = config.githubLogin): string | undefined {
+  const command = new RegExp(`@${bot}\\s+/[\\w-]+(?:[ \\t]+[\\w.-]+(?:[ \\t]+\\d+(?=\\s|$))?)?`, 'gi');
+  const said: string[] = [];
+  const body = issue.body.trim();
+  if (body) said.push(body);
+  for (const c of issue.comments) {
+    if (!c.author || c.author.toLowerCase() === bot.toLowerCase() || c.author.endsWith('[bot]')) continue;
+    // Of the /explore itself, only what comes after its app and count.
+    const text = c.body.replace(command, '').trim();
+    if (text) said.push(text);
+  }
+  if (said.length === 0) return undefined;
+  return [`# ${issue.title.trim()}`, ...said].join('\n\n').slice(0, REQUEST_MAX);
+}
+
+// The focus of an /explore: the request of the issue it was asked on, read
+// when the run starts so it has every comment up to then.
+export async function issueFocus(trigger: NonNullable<ExploreWorkerRequest['trigger']>): Promise<ExploreFocus | undefined> {
+  const text = issueRequest(await getDiscussion('issue', trigger.issueNumber));
+  return text ? { text, issue: trigger.issueNumber } : undefined;
 }
 
 // "F-0001, F-0002" for a few ids, "F-0001–F-0008" for many.
@@ -406,17 +443,36 @@ async function approveAndMerge(pr: PullRequestStatus, batch: string): Promise<vo
   const revisor = await getDiscussion('pr', pr.number)
     .then((d) => (d.decisions ?? []).filter((x) => x.state === 'APPROVED' && !isBot(x.author)).map((x) => x.author).join(', ') || undefined)
     .catch(() => undefined);
+  // Approved now, by the issue whose request they came from (#376).
+  const byOrigin = new Map<number, Array<{ id: string; titulo: string; issue?: number }>>();
   for (const app of await appsWithMemory(batchDir)) {
     const memoryDir = memoryDirFor(batchDir, app);
     const ids = await approveFindings(memoryDir, () => true, revisor);
     await openFindingIssues(app, memoryDir, batchDir, base, (f) => f.estado === 'aprobado');
     const { findings } = await loadMemory(memoryDir);
     approved.push(...ids.map((id) => ({ id, titulo: findings.find((f) => f.id === id)?.titulo ?? id })));
+    for (const f of findings.filter((x) => ids.includes(x.id) && x.origen)) {
+      byOrigin.set(f.origen!, [...(byOrigin.get(f.origen!) ?? []), { id: f.id, titulo: f.titulo, ...(f.issue ? { issue: f.issue } : {}) }]);
+    }
   }
   if (approved.length > 0) log.info(`exploración: PR #${pr.number} aprobado, fichas aprobadas: ${approved.map((a) => a.id).join(', ')}`);
   if (await commitAndPush(batchDir, explorationBranch(batch), approveCommitChange(pr.number, approved))) await upsertExplorationPr(batch, batchDir);
   await mergePullRequest(pr.number);
   log.info(`exploración: PR #${pr.number} mergeado`);
+  for (const [issue, findings] of byOrigin) {
+    await commentOnIssue(issue, renderOriginReply(pr.number, findings))
+      .catch((error) => log.error(`exploración: no se pudo avisar en #${issue} lo aprobado del PR #${pr.number}`, error));
+  }
+}
+
+// What the issue a focused run came from (#376) is told once the
+// exploration PR is approved: which of its proposals stood, and their issues.
+export function renderOriginReply(prNumber: number, findings: Array<{ id: string; titulo: string; issue?: number }>): string {
+  return [
+    `Se aprobó el PR de exploración #${prNumber}. De lo que se pidió acá quedaron en pie estas propuestas, cada una con su issue:`,
+    '',
+    ...findings.map((f) => `- ${f.issue ? `#${f.issue}` : f.id} ${f.titulo}`),
+  ].join('\n');
 }
 
 export async function processExplorationPr(pr: PullRequestStatus): Promise<void> {
@@ -474,6 +530,9 @@ export interface ExploreWorkerRequest {
   repo: string;
   appName: string;
   maxFunctions?: number;
+  // Where to look, from Explorar ahora (#376). An /explore's is its issue's
+  // request, read by the worker when it starts (issueFocus).
+  focus?: ExploreFocus;
   // The /explore comment that asked for it, to answer and react to.
   trigger?: { issueNumber: number; commentIds: number[] };
   // Nightly runs stop starting new functions once the window closes; one
