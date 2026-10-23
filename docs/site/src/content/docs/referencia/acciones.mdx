@@ -13,6 +13,7 @@ El botón **Acciones** de la ficha (`M`) muestra lo que se le puede pedir a roni
 |---|---|---|
 | **Asignar a ronin** | Asignar el issue a `ronin-agent` | Un issue abierto que ronin no gestiona. Destacada. Lleva un contexto opcional. |
 | **Investigar (spike)** | `/spike <app> [qué]` | Igual que *Asignar*, en un repo con `ronin.app.json`. Se elige la app. |
+| **Explorar** | `/explore <app> [en qué fijarse]` | Igual que *Investigar*. Usa la app con lo que pide el issue como foco y deja fichas en el PR de exploración, sin tocar el código. Ver [Explorar lo que pide un issue](/ronin/guias/explorar-una-app/#explorar-lo-que-pide-un-issue). |
 | **Responder y destrabar** | Comentar y volver a `ronin:in-progress` | Un issue con `ronin:blocked`. Lleva tu respuesta, obligatoria. Destacada. |
 | **Resolver conflictos** | `/resolve-conflicts` | Un PR abierto. Destacada si tiene conflictos con su base. |
 | **Levantar o actualizar la preview** | `/preview [app] [qué preparar]` | Un PR abierto. Lleva un texto opcional. *Actualizar* la levanta de cero. Si el repo tiene varias apps, se elige una: viene marcada la que está arriba, o la única que cambia el PR. |
@@ -41,5 +42,5 @@ El botón **+** de cada repo, en la barra lateral, crea un issue en GitHub a tu 
 Con [Linear](/ronin/operar/linear/) elegís, si querés, el proyecto y el ciclo: el issue se crea en GitHub y ronin se los pone apenas la sincronización lo lleva a Linear.
 
 <Aside type="note">
-Lo demás (`/fix-comments`, `/spec` o `/explore` en un issue existente, los pedidos en palabras) se sigue comentando en GitHub. Ver [Comandos](/ronin/referencia/comandos/). En un PR de ronin, los ajustes se piden con [**Ajustar**](/ronin/guias/decidir-un-pr/).
+Lo demás (`/fix-comments`, `/spec` en un issue existente, los pedidos en palabras) se sigue comentando en GitHub. Ver [Comandos](/ronin/referencia/comandos/). En un PR de ronin, los ajustes se piden con [**Ajustar**](/ronin/guias/decidir-un-pr/).
 </Aside>

@@ -66,11 +66,12 @@ describe('listActions', () => {
     expect(actions[4].help).toContain('#849 queda abierto');
   });
 
-  it("offers an issue ronin doesn't manage to assign it, and a spike on one of the repo's apps", () => {
+  it("offers an issue ronin doesn't manage to assign it, and a spike or an exploration on one of the repo's apps", () => {
     const actions = listActions(NEW_REF, unmanaged(), undefined, 'Oskr814', APPS);
-    expect(ids(actions)).toEqual(['assign', 'spike', 'close-issue']);
+    expect(ids(actions)).toEqual(['assign', 'spike', 'explore', 'close-issue']);
     expect(actions[0]).toMatchObject({ primary: true, target: 901, text: { required: false }, preview: '…' });
     expect(actions[1]).toMatchObject({ apps: APPS, preview: '@ronin-agent /spike {app} …' });
+    expect(actions[2]).toMatchObject({ apps: APPS, text: { required: false }, preview: '@ronin-agent /explore {app} …' });
   });
 
   it('offers only the assignment in a repo without apps, and only closing once ronin manages the issue', () => {

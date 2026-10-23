@@ -102,12 +102,76 @@ function agentBehaviour(results: Record<string, unknown>, verdicts: (candidates:
         await writeFile(join(task.outDir, file), 'img');
       }
       await writeFile(task.outputPath, JSON.stringify(result));
+    } else if (task.type === 'explore-focus') {
+      await mkdir(dirname(task.outputPath), { recursive: true });
+      await writeFile(task.outputPath, JSON.stringify(results['@focus'] ?? { funciones: [] }));
     } else if (task.type === 'explore-evaluate') {
       const candidates = JSON.parse(await readFile(task.candidatesPath, 'utf8'));
       await writeFile(task.outputPath, JSON.stringify(verdicts(candidates)));
     }
   });
 }
+
+describe('runExploration with a focus (#376)', () => {
+  const keep = (candidates: unknown[]) => ({ veredictos: candidates.map((_, index) => ({ index, veredicto: 'mantener', motivo: 'ok' })) });
+
+  it('explores what the request is about, tells each explorer what to look at, and links the findings to the issue', async () => {
+    agentBehaviour(
+      {
+        '@focus': { funciones: [{ id: 'pedidos.surtir', charter: 'cambio-de-dispositivo', encargo: 'Revisar cuánto ocupa cada campo en mobile' }] },
+        'pedidos.surtir': { tareas: [], candidatos: [candidate({ titulo: 'Campos muy altos', huella: 'pedidos.surtir|campos|altos' })] },
+      },
+      keep,
+    );
+    const summary = await runExploration({ appName: 'backoffice', codeDir: '/code', memoryDir, today: '2026-10-12', seed: 7, focus: { text: '# Compactar\n\nLos campos ocupan mucho', issue: 31 } });
+
+    const focus = runAgentTask.mock.calls.find(([t]: any) => t.type === 'explore-focus')![0] as any;
+    expect(focus).toMatchObject({ request: '# Compactar\n\nLos campos ocupan mucho', allowNew: true, max: 3 });
+    expect(focus.functions.map((f: { id: string }) => f.id)).toEqual(['pedidos.confirmar', 'pedidos.surtir']);
+    const explored = runAgentTask.mock.calls.filter(([t]: any) => t.type === 'explore-function').map(([t]: any) => t);
+    expect(explored).toHaveLength(1);
+    expect(explored[0]).toMatchObject({ fn: { id: 'pedidos.surtir' }, charter: 'cambio-de-dispositivo', focus: { request: '# Compactar\n\nLos campos ocupan mucho', encargo: 'Revisar cuánto ocupa cada campo en mobile' } });
+    expect(summary.plan.functions[0].reason).toBe('foco');
+    expect(summary.findings[0].origen).toBe(31);
+    expect((await loadMemory(memoryDir)).findings[0].origen).toBe(31);
+    expect(await readFile(summary.runFile, 'utf8')).toContain('Con foco en el pedido de #31.');
+  });
+
+  it('explores nothing, and never brings the app up, when nothing fits', async () => {
+    agentBehaviour({ '@focus': { funciones: [], motivo: 'es de otra app' } }, keep);
+    const summary = await runExploration({ appName: 'backoffice', codeDir: '/code', memoryDir, today: '2026-10-12', seed: 7, focus: { text: 'la facturación', issue: 31 } });
+    expect(summary.unfocused).toBe('es de otra app');
+    expect(summary.outcomes).toEqual([]);
+    expect(appDown).not.toHaveBeenCalled();
+    expect(await readFile(summary.runFile, 'utf8')).toContain('No exploré ninguna función: es de otra app.');
+  });
+
+  it('explores the functions picked by hand without asking an agent', async () => {
+    agentBehaviour({ 'pedidos.surtir': { tareas: [], candidatos: [] } }, keep);
+    const summary = await runExploration({ appName: 'backoffice', codeDir: '/code', memoryDir, today: '2026-10-12', seed: 7, focus: { functions: ['pedidos.surtir'] } });
+    expect(runAgentTask.mock.calls.map(([t]: any) => t.type)).toEqual(['explore-function']);
+    expect(summary.plan.functions.map((p) => [p.functionId, p.reason])).toEqual([['pedidos.surtir', 'elegida']]);
+  });
+
+  it('with picked functions and words, lets the words choose only among them, and adds no new one', async () => {
+    agentBehaviour({ '@focus': { funciones: [{ id: 'nueva.cosa', nombre: 'Nueva', rutas: ['/n'], encargo: 'x' }] } }, keep);
+    await runExploration({ appName: 'backoffice', codeDir: '/code', memoryDir, today: '2026-10-12', seed: 7, focus: { functions: ['pedidos.surtir'], text: 'en mobile' } });
+    const focus = runAgentTask.mock.calls.find(([t]: any) => t.type === 'explore-focus')![0] as any;
+    expect(focus).toMatchObject({ allowNew: false, max: 1, functions: [{ id: 'pedidos.surtir' }] });
+    expect((await loadMemory(memoryDir)).inventory.funciones.map((f) => f.id)).toEqual(['pedidos.confirmar', 'pedidos.surtir']);
+  });
+
+  it('adds to the inventory a function the request names that it lacks', async () => {
+    agentBehaviour({
+      '@focus': { funciones: [{ id: 'pedidos.notas', nombre: 'Notas del pedido', rutas: ['/pedidos/:id/notas'], roles: ['Sales'], encargo: 'x' }] },
+      'pedidos.notas': { tareas: [], candidatos: [] },
+    }, keep);
+    const summary = await runExploration({ appName: 'backoffice', codeDir: '/code', memoryDir, today: '2026-10-12', seed: 7, focus: { text: 'las notas' } });
+    expect(summary.inventory.added).toEqual(['pedidos.notas']);
+    const notas = (await loadMemory(memoryDir)).inventory.funciones.find((f) => f.id === 'pedidos.notas')!;
+    expect(Object.values(notas.cobertura.mobile)).toEqual(['2026-10-12']);
+  });
+});
 
 describe('runExploration', () => {
   it('explores each planned function, keeps what the evaluator keeps and writes the memory', async () => {

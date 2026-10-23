@@ -20,10 +20,10 @@ import { DomainError } from '@platform/errors.js';
 // its account, which it takes like any issue assigned on GitHub
 // (discoverAssignedIssues) and, if what's asked isn't clear, asks on the
 // issue before touching code. Or a /spike first, on one of the repo's
-// apps. Any open issue can also be closed, as not planned, with
+// apps, or an /explore with the issue as its focus (#376). Any open issue can also be closed, as not planned, with
 // its reason as a comment first.
 
-export type ActionId = 'resolve-conflicts' | 'preview' | 'preview-stop' | 'auto-merge-on' | 'auto-merge-off' | 'unblock' | 'assign' | 'spike' | 'close-issue';
+export type ActionId = 'resolve-conflicts' | 'preview' | 'preview-stop' | 'auto-merge-on' | 'auto-merge-off' | 'unblock' | 'assign' | 'spike' | 'explore' | 'close-issue';
 
 export interface ActionView {
   id: ActionId;
@@ -92,6 +92,11 @@ export function listActions(ref: ItemRef, gh: RepoGithub | undefined, detail: It
         id: 'spike', label: 'Investigar (spike)', command: '/spike', target: ref.number, apps,
         help: 'Investiga en solo lectura y agrega una sección de contexto al issue. No lo toma ni abre un PR.',
         text: { required: false, label: 'Qué investigar (opcional)', placeholder: 'Por ejemplo: de dónde sale el total del checkout' },
+      });
+      before.push({
+        id: 'explore', label: 'Explorar', command: '/explore', target: ref.number, apps,
+        help: 'Usa la app como cada rol con lo que pide el issue como foco, y deja fichas con el antes y el después en el PR de exploración. No lo toma ni cambia el código.',
+        text: { required: false, label: 'En qué fijarse, además de lo que dice el issue (opcional)', placeholder: 'Por ejemplo: sobre todo en el teléfono' },
       });
     }
     actions.unshift(...before);

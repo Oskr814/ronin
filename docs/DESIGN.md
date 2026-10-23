@@ -345,6 +345,13 @@ Gravedad, en orden: bug → fricción que bloquea la tarea → fricción que la 
 | recorrido-completo | la función como parte de un flujo de punta a punta |
 | cambio-de-dispositivo | la misma tarea en desktop y mobile, comparando |
 
+**Con foco** (#376). Una corrida también puede mirar donde dice una persona, en vez de seguir la selección de arriba (`ExploreFocus` en `domains/explorations/plan.ts`):
+
+- **Funciones elegidas a mano** (*Explorar ahora → Estas funciones*): se exploran esas, en ese orden, con el charter que les sortea `pickCharter` (`planChosen`).
+- **Un pedido en palabras:** lo que pide el issue de un `/explore` (título, descripción y comentarios de personas, sin los comandos a ronin, `issueRequest` en `flow.ts`) o el texto de *Explorar ahora*. Un agente de solo lectura, `explore-focus`, lee el pedido con las funciones entre las que elige (todo el inventario, o las elegidas a mano) y devuelve cuáles toca, el charter, el rol y un **encargo** por función. `parseFocusPlan` lo valida. Cada explorador recibe el pedido y su encargo, y el encargo manda sobre el charter. Si el pedido es de algo que el inventario no tiene, y nadie acotó la elección, el agente puede nombrar una función nueva, que se suma al inventario como en un refresco. Si nada encaja, la corrida no levanta la app y dice por qué.
+
+Esto no es un archivo de objetivos (§11.1): el pedido dice *dónde* mirar, y la propuesta sigue saliendo de usar la app. Cada ficha de una corrida que salió de un issue guarda `origen: <issue>`. Al aprobar el PR (§11.7), el issue de la ficha lo enlaza y ronin comenta en el issue de origen la lista de los issues que quedaron. Asignar un issue sigue siendo implementarlo: para que proponga, se pide `/explore`.
+
 Los datos concretos (cliente, productos, cantidades) también se eligen al azar dentro del seed. **Toda la aleatoriedad usa una semilla registrada en el run y en cada hallazgo**: un bug encontrado al azar que no se puede reproducir no sirve. No se hace monkey testing puro (clicks al azar), salvo como presupuesto chico para detectar crashes sin proponer nada.
 
 #### 11.5 Antes y después: capturas en una rama huérfana
@@ -355,7 +362,7 @@ Las imágenes van a la rama huérfana **`ronin/evidence`** del repo del producto
 
 **Como el agente** (#257). En la imagen, el checkout de la exploración (`app-<app>`, `ensureAppWorktree`) es un clon del usuario del agente, que se conserva entre corridas por su `node_modules`, y la app corre como él (§11.2).
 
-- **Los agentes de la exploración** corren sellados y como ese usuario: el inventario, cada función, el evaluador, el feedback del PR y rehacer un después. Cada uno escribe solo en su directorio de salida, y lo que leen sus navegadores (los logins) va ahí también.
+- **Los agentes de la exploración** corren sellados y como ese usuario: el inventario, el foco, cada función, el evaluador, el feedback del PR y rehacer un después. Cada uno escribe solo en su directorio de salida, y lo que leen sus navegadores (los logins) va ahí también.
 - **El git de ronin:** lo que necesita de la historia del código (qué cambió, el riesgo, el último commit de la app) lo lee del repo compartido en la rama base. La evidencia también se commitea ahí, porque usa un índice temporal y no necesita checkout.
 - **Revertir el parche borrador** entre funciones es git del usuario del agente.
 

@@ -187,6 +187,15 @@ describe('parseExploreNow', () => {
     expect(() => parseExploreNow({ maxFunctions: 2.5 })).toThrow(ExploreNowError);
     expect(() => parseExploreNow({ hours: 3 })).toThrow('1, 2, 4 horas');
     expect(() => parseExploreNow({ tonight: 'sí' })).toThrow('sí o no');
+    expect(() => parseExploreNow({ functions: 'citas' })).toThrow('lista');
+    expect(() => parseExploreNow({ functions: Array.from({ length: 11 }, (_, i) => `f${i}`) })).toThrow('hasta 10');
+    expect(() => parseExploreNow({ focus: 'x'.repeat(4001) })).toThrow('4000');
+  });
+
+  it('takes where to look: functions of the inventory and/or a request in words', () => {
+    expect(parseExploreNow({ functions: ['a', 'b', 'a'] })).toMatchObject({ focus: { functions: ['a', 'b'] } });
+    expect(parseExploreNow({ focus: '  los formularios en mobile ' })).toMatchObject({ focus: { text: 'los formularios en mobile' } });
+    expect(parseExploreNow({ functions: [], focus: ' ' })).not.toHaveProperty('focus');
   });
 });
 
@@ -212,6 +221,11 @@ describe('exploreNow', () => {
     expect(markNight).not.toHaveBeenCalled();
     expect(launch).toHaveBeenCalledWith({ repo: 'acme/product', appName: 'backoffice', maxFunctions: 3, by: 'persona' });
     expect(done).toEqual({});
+  });
+
+  it('hands the focus to the worker', async () => {
+    await exploreNow(ENTRY, 'backoffice', 'persona', { maxFunctions: 2, hours: null, tonight: false, focus: { functions: ['a', 'b'], text: 'en mobile' } }, new Date('2026-10-18T22:50:00Z'), { busy: async () => false, launch, markNight });
+    expect(launch).toHaveBeenCalledWith(expect.objectContaining({ maxFunctions: 2, focus: { functions: ['a', 'b'], text: 'en mobile' } }));
   });
 
   it('inside the window, stands for the night going on', async () => {

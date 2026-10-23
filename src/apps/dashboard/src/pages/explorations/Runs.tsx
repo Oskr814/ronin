@@ -35,6 +35,7 @@ function RunItem({ c, open, onOpen }: { c: ExplorationRun; open: string | null; 
   if (c.discarded) facts.push(`${c.discarded} ${c.discarded === 1 ? 'descartada' : 'descartadas'}`);
   if (c.prNumber) facts.push(`PR #${c.prNumber}`);
   if (c.seed !== undefined) facts.push(`semilla ${c.seed}`);
+  if (c.focus?.functions?.length && !c.focus.text) facts.push(`elegidas: ${c.focus.functions.join(', ')}`);
   if (c.legacy) facts.push('de antes del registro de corridas: sin semilla ni fichas');
   return (
     <div className="xr">
@@ -44,6 +45,8 @@ function RunItem({ c, open, onOpen }: { c: ExplorationRun; open: string | null; 
           {f.id}{f.charter && <> <span className="m">{f.charter}{f.viewports?.length ? ` · ${f.viewports.join(', ')}` : ''}</span></>}
         </span>
       ))}</div>}
+      {c.focus?.text && <div className="xr-focus" title={c.focus.text}>Foco{c.focus.issue ? ` de #${c.focus.issue}` : ''}: {c.focus.text}</div>}
+      {c.unfocused && <div className="xr-err">No exploró nada: {c.unfocused}</div>}
       {c.error && <div className="xr-err">{c.error}</div>}
       {facts.length > 0 && <div className="xr-f">{facts.map((f) => <span key={f}>{f}</span>)}</div>}
       {c.agents.length > 0 && <div className="xr-ags">{c.agents.map((a) => (
