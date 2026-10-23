@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import { ApiError, client, ok } from '@apps/dashboard/src/api.js';
-import { useSession, useShell } from '@apps/dashboard/src/shell/hooks.js';
+import { changed, reviewed, unreviewed, useSession, useShell, useShellVersion } from '@apps/dashboard/src/shell/hooks.js';
 import { checksChip, itemParam, oneOr, type ItemPage } from './model.js';
 import { questionsOf } from './Questions.js';
 import { isSpecPr } from '@apps/dashboard/src/lib/item.js';
@@ -23,7 +23,8 @@ export interface Deciding {
 }
 
 // What was just decided here, for a few minutes: GitHub takes a moment to
-// show it. Kept while the person is elsewhere.
+// show it. Kept while the person is elsewhere. `sending` (#368): shown the
+// moment it's decided, until GitHub takes it.
 const DECIDED_SHOWN_MS = 10 * 60_000;
 interface Decided {
   at: number;
@@ -33,7 +34,9 @@ interface Decided {
   issue: boolean;
   count: number;
   spec: boolean;
+  sending: boolean;
 }
+export const deciding = (id: string) => Boolean(decided.get(id)?.sending);
 const decided = new Map<string, Decided>();
 
 export function useDecide(v: ItemPage | null) {
@@ -42,7 +45,7 @@ export function useDecide(v: ItemPage | null) {
   const [focusText, setFocusText] = useState(0);
   const pending = v?.files.pending.length ?? 0;
   const open = (kind: DecideKind) => {
-    if (!v) return;
+    if (!v || deciding(v.item.id)) return;
     // Closing a spec usually drops that spec, not what its issue asks for.
     const spec = Boolean(v.detail?.data?.pr && isSpecPr(v.detail.data.pr));
     const next = p?.kind === kind ? null : { kind, text: '', closeIssue: !spec, sending: false, error: null };
@@ -51,22 +54,36 @@ export function useDecide(v: ItemPage | null) {
     if (next && !v.files.data) v.files.load();
     setFocusText((n) => n + 1);
   };
+  // Optimistic (#368): the drop closes the moment it's decided, and the
+  // page says it's on its way (an approval, on the PR's chips too) with the
+  // buttons held. If GitHub doesn't take it, that's undone and the drop
+  // comes back with what was written and why.
   const send = async () => {
-    if (!v || !p || p.sending) return;
+    if (!v || !p || p.sending || deciding(v.item.id)) return;
     if (p.kind === 'adjust' && !p.text.trim() && !pending) return;
     const id = v.item.id;
-    setP({ ...p, sending: true, error: null });
+    const given = p;
     const shown = clickTimer('decision');
+    const spec = Boolean(v.detail?.data?.pr && isSpecPr(v.detail.data.pr));
+    const prNumber = v.files.data?.pr ?? v.detail?.data?.pr?.number;
+    decided.set(id, { at: Date.now(), kind: given.kind, autoMerge: false, issue: false, count: pending, spec, sending: true });
+    if (given.kind === 'approve' && prNumber !== undefined) reviewed(id, prNumber, 'APPROVED');
+    setP(null);
+    changed();
     try {
-      const sent = (await ok(client.api.items[':id'].decision.$post({ param: itemParam(id), json: { decision: p.kind, text: p.text, closeIssue: p.closeIssue } }))) as { url: string; autoMergeUrl?: string; issueUrl?: string };
-      setP(null);
-      const spec = Boolean(v.detail?.data?.pr && isSpecPr(v.detail.data.pr));
-      decided.set(id, { at: Date.now(), kind: p.kind, url: sent.url, autoMerge: Boolean(sent.autoMergeUrl), issue: Boolean(sent.issueUrl), count: pending, spec });
-      shell.toast(p.kind === 'approve' ? (spec ? 'Aprobaste el spec: ronin lo mergea y arranca las slices.' : 'Aprobaste el PR.') : p.kind === 'adjust' ? 'Se lo mandaste a ronin.' : 'Cerraste el PR.', sent.url);
+      const sent = (await ok(client.api.items[':id'].decision.$post({ param: itemParam(id), json: { decision: given.kind, text: given.text, closeIssue: given.closeIssue } }))) as { url: string; autoMergeUrl?: string; issueUrl?: string };
+      decided.set(id, { at: Date.now(), kind: given.kind, url: sent.url, autoMerge: Boolean(sent.autoMergeUrl), issue: Boolean(sent.issueUrl), count: pending, spec, sending: false });
+      changed();
+      shell.toast(given.kind === 'approve' ? (spec ? 'Aprobaste el spec: ronin lo mergea y arranca las slices.' : 'Aprobaste el PR.') : given.kind === 'adjust' ? 'Se lo mandaste a ronin.' : 'Cerraste el PR.', sent.url);
       shown(v.files.reread());
     } catch (e) {
+      decided.delete(id);
+      if (given.kind === 'approve' && prNumber !== undefined) unreviewed(id, prNumber);
+      changed();
       if (e instanceof ApiError && e.status === 401) return shell.unauthorized(e.message);
-      setP({ ...p, sending: false, error: `No se pudo: ${(e as Error).message}` });
+      const error = `No se pudo: ${(e as Error).message}`;
+      shell.toast(`${given.kind === 'approve' ? 'No se aprobó' : given.kind === 'adjust' ? 'No se mandó el ajuste' : 'No se cerró'}: ${(e as Error).message}`);
+      setP({ ...given, sending: false, error });
     }
   };
   const addQuick = (i: number) => {
@@ -79,8 +96,13 @@ export function useDecide(v: ItemPage | null) {
 export type Decide = ReturnType<typeof useDecide>;
 
 export function DecidedNote({ id }: { id: string }) {
+  useShellVersion();
   const done = decided.get(id);
   if (!done || Date.now() - done.at > DECIDED_SHOWN_MS) return null;
+  if (done.sending) {
+    const going = done.kind === 'approve' ? (done.spec ? 'Aprobando el spec…' : 'Aprobando el PR…') : done.kind === 'adjust' ? 'Mandándole el ajuste a ronin…' : 'Cerrando el PR…';
+    return <div className="decided pending">{going}</div>;
+  }
   const what = done.kind === 'approve'
     ? done.spec ? 'Aprobaste el spec. ronin lo mergea y arranca las slices en este issue: en unos minutos aparecen.' : `Aprobaste el PR${done.autoMerge ? ' y le pediste el auto-merge a ronin' : ''}.`
     : done.kind === 'adjust'
@@ -93,10 +115,13 @@ export function DecidedNote({ id }: { id: string }) {
 const SENDING: Record<DecideKind, string> = { approve: 'Aprobando…', adjust: 'Enviando…', close: 'Cerrando…' };
 
 export function DecideBar({ v, decide }: { v: ItemPage; decide: Decide }) {
+  useShellVersion();
   const { p } = decide;
   const spec = isSpecPr(v.detail!.data!.pr!);
+  // Held while a decision is on its way: one at a time.
+  const held = deciding(v.item.id);
   const button = (kind: DecideKind, cls: string, label: string, key: string, title: string) => (
-    <button className={cls} aria-haspopup="dialog" aria-expanded={p?.kind === kind} title={title} onClick={(e) => {
+    <button className={cls} disabled={held} aria-haspopup="dialog" aria-expanded={p?.kind === kind} title={title} onClick={(e) => {
       e.stopPropagation();
       decide.open(kind);
     }}>{label} <kbd>{key}</kbd></button>

@@ -1,6 +1,7 @@
 import { useEffect, useReducer, useRef, useState } from 'react';
 import { ApiError, client, ok } from '@apps/dashboard/src/api.js';
-import { type ItemDetail, reread, type SnapshotItem, useSession, useShell } from '@apps/dashboard/src/shell/hooks.js';
+import { type ItemDetail, reread, type SnapshotItem, useSession, useShell, useShellVersion } from '@apps/dashboard/src/shell/hooks.js';
+import { addPending, dropPending, pendingOn, sentPending, type PendingWrite } from '@apps/dashboard/src/shell/pending.js';
 import { when } from '@apps/dashboard/src/lib/format.js';
 import { Md } from '@apps/dashboard/src/lib/markdown.js';
 import { Avatar, checksChip, Chips, itemParam, sameLogin, type Doc } from './model.js';
@@ -82,7 +83,17 @@ function EntryView({ e, ronin, doc, repo }: { e: Entry; ronin: string; doc: Doc;
 }
 
 export function Comments({ doc, ronin, repo }: { doc: Doc; ronin: string; repo: string }) {
-  return <div className="comments">{conversation(doc).map((e, i) => <EntryView key={i} e={e} ronin={ronin} doc={doc} repo={repo} />)}</div>;
+  useShellVersion();
+  const pending = pendingOn(repo, doc.number, doc.comments);
+  return <div className="comments">{conversation(doc).map((e, i) => <EntryView key={i} e={e} ronin={ronin} doc={doc} repo={repo} />)}{pending.map((w) => <PendingEntry key={w.id} w={w} repo={repo} />)}</div>;
+}
+
+// Something just written here that GitHub hasn't brought back yet (#368):
+// at the end of the conversation, said to be on its way until it's there.
+function PendingEntry({ w, repo }: { w: PendingWrite; repo: string }) {
+  const state = <span className={`chip ${w.state === 'sent' ? 'ok' : 'idle'}`}>{w.state === 'sent' ? 'publicado' : 'enviando…'}</span>;
+  if (!w.body) return <article className="cm pending note"><header><Avatar login={w.author} /><b>{w.author}</b>{state}</header><p>{w.note}</p></article>;
+  return <article className="cm pending"><header><Avatar login={w.author} /><b>{w.author}</b>{state}{w.url && <a href={w.url} target="_blank" rel="noopener">{when(w.at)}</a>}</header><Md text={w.body} repo={repo} /></article>;
 }
 
 // The sections every PR ronin opens has (#195, PR_BODY_SECTIONS in
@@ -139,26 +150,34 @@ function Composer({ item, tab, number }: { item: SnapshotItem; tab: 'issue' | 'p
   const session = useSession();
   const key = `${item.id}:${tab}`;
   const [text, setText] = useState(drafts.get(key) ?? '');
-  const [sending, setSending] = useState(false);
   const area = useRef<HTMLTextAreaElement>(null);
   useEffect(() => setText(drafts.get(key) ?? ''), [key]);
+  // Optimistic (#368): the comment is in the conversation at once, as
+  // being sent, and the box is free for the next one. If GitHub doesn't take
+  // it, it leaves the conversation and its text comes back to the box.
   const send = async () => {
     const said = text.trim();
-    if (!said || sending) return area.current?.focus();
-    setSending(true);
+    if (!said) return area.current?.focus();
     const shown = clickTimer('comentar');
+    const pending = addPending({ repo: item.repo, number, author: session.me, body: said });
+    drafts.delete(key);
+    setText('');
     try {
       // A refusal makes the client's type of the answer {}: it's written here.
       const { url } = (await ok(client.api.items[':id'].comment.$post({ param: itemParam(item.id), json: { on: tab, text: said } }))) as { url?: string };
-      drafts.delete(key);
-      setText('');
+      sentPending(pending, url);
       shell.toast(`Listo: comentaste en #${number}.`, url);
       shown(reread(item.id));
     } catch (e) {
+      dropPending(pending);
+      // Back to the box, unless something else was written there meanwhile.
+      if (!drafts.get(key)) {
+        drafts.set(key, said);
+        setText(said);
+      }
       if (e instanceof ApiError && e.status === 401) return shell.unauthorized(e.message);
       shell.toast(`No se pudo comentar: ${(e as Error).message}`);
     }
-    setSending(false);
   };
   return (
     <div className="composer"><textarea id="dcomment" ref={area} rows={3} maxLength={4000} placeholder={`Comentar en ${tab === 'pr' ? 'el PR' : 'el issue'}… ronin lo lee con el resto de la conversación`} value={text}
@@ -167,7 +186,7 @@ function Composer({ item, tab, number }: { item: SnapshotItem; tab: 'issue' | 'p
         if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) void send();
         if (e.key === 'Escape') e.currentTarget.blur();
       }} />
-      <div className="cf"><span>Comentás como {session.me} en #{number}. Sin mencionar a ronin, lo lee con el resto cuando lo trabaja.</span><span className="kbd-hint"><kbd>Ctrl</kbd> <kbd>Enter</kbd></span><button className="btn-s primary" id="dcomment-send" disabled={sending || !text.trim()} onClick={() => void send()}>{sending ? 'Comentando…' : 'Comentar'}</button></div></div>
+      <div className="cf"><span>Comentás como {session.me} en #{number}. Sin mencionar a ronin, lo lee con el resto cuando lo trabaja.</span><span className="kbd-hint"><kbd>Ctrl</kbd> <kbd>Enter</kbd></span><button className="btn-s primary" id="dcomment-send" disabled={!text.trim()} onClick={() => void send()}>Comentar</button></div></div>
   );
 }
 
@@ -177,7 +196,9 @@ export function DocPage({ item, d, tab }: { item: SnapshotItem; d: ItemDetail; t
   const session = useSession();
   const doc = (tab === 'issue' ? d.issue : d.pr)!;
   const other = (tab === 'issue') !== (item.kind === 'issue');
-  const n = conversation(doc).length;
+  useShellVersion();
+  // What was just written here counts too: the first comment of an issue shows at once.
+  const n = conversation(doc).length + pendingOn(item.repo, doc.number, doc.comments).length;
   return <>
     <div className="page">{other && <a className="other" href={doc.url} target="_blank" rel="noopener">{doc.title} <span className="m">{tab === 'pr' ? 'PR' : 'Issue'} #{doc.number} ↗</span></a>}
       <div className="meta"><Avatar login={doc.author} /><b>{doc.author}</b><span>{when(doc.createdAt)}</span></div>{tab === 'pr' && <PrState item={item} doc={doc} />}

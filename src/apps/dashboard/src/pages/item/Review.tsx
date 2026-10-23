@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import { ApiError, client, ok } from '@apps/dashboard/src/api.js';
-import { reviewed, showDoc, useSession, useShell } from '@apps/dashboard/src/shell/hooks.js';
+import { reviewed, showDoc, unreviewed, useSession, useShell } from '@apps/dashboard/src/shell/hooks.js';
+import { addPending, dropPending } from '@apps/dashboard/src/shell/pending.js';
 import { goFile } from './files/model.js';
 import { itemParam, sameLogin, type ItemPage } from './model.js';
 import { clickTimer } from '@apps/dashboard/src/lib/click-timing.js';
@@ -65,22 +66,33 @@ export function useReview(v: ItemPage | null) {
     const fixable = Boolean(d?.ronin && sameLogin(data.author, d.ronin) && (pending > 0 || event === 'REQUEST_CHANGES'));
     return { data, event, fixable, autoMerge: autoMergeChoice(event, v, fixable && r.fix) === 'offer' && r.autoMerge };
   };
+  // Optimistic (#368): the panel closes as it's sent, the PR's chips say
+  // the decision and its conversation that the review is on its way. If
+  // GitHub doesn't take it, that's undone and the panel comes back with the
+  // text and why.
   const send = async () => {
     const s = p && shape(p);
     if (!v || !p || !s || p.sending) return;
     const id = v.item.id;
-    setP({ ...p, sending: true, error: null });
+    const given = p;
     const shown = clickTimer('review');
+    const decision = REVIEW_DECISION[s.event];
+    if (decision) reviewed(id, s.data.pr, decision);
+    const pending = addPending({ repo: v.item.repo, number: s.data.pr, author: session.me, body: given.text.trim(), note: `${REVIEW_SENT[s.event]}.` });
+    setP(null);
     try {
-      const sent = (await ok(client.api.items[':id'].files.actions.$post({ param: itemParam(id), json: { action: 'submit', event: s.event, text: p.text, commitId: s.data.headSha, fixComments: Boolean(s.fixable && p.fix), autoMerge: s.autoMerge } }))) as { url?: string; fixUrl?: string; autoMergeUrl?: string };
-      setP(null);
-      const decision = REVIEW_DECISION[s.event];
-      if (decision) reviewed(id, s.data.pr, decision);
+      const sent = (await ok(client.api.items[':id'].files.actions.$post({ param: itemParam(id), json: { action: 'submit', event: s.event, text: given.text, commitId: s.data.headSha, fixComments: Boolean(s.fixable && given.fix), autoMerge: s.autoMerge } }))) as { url?: string; fixUrl?: string; autoMergeUrl?: string };
       shell.toast(`${REVIEW_SENT[s.event]}${sent.fixUrl ? '; ronin ya tiene el /fix-comments' : ''}${sent.autoMergeUrl ? ' y le pediste el auto-merge' : ''}.`, sent.url);
-      shown(v.files.reread());
+      // It comes back as a review, not a comment: the note goes once the item is read again.
+      const read = v.files.reread();
+      shown(read);
+      void read.then(() => dropPending(pending));
     } catch (e) {
+      dropPending(pending);
+      if (decision) unreviewed(id, s.data.pr);
       if (e instanceof ApiError && e.status === 401) return shell.unauthorized(e.message);
-      setP({ ...p, sending: false, error: `No se pudo: ${(e as Error).message}` });
+      shell.toast(`No se mandó la revisión: ${(e as Error).message}`);
+      setP({ ...given, sending: false, error: `No se pudo: ${(e as Error).message}` });
     }
   };
   const discard = async () => {

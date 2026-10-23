@@ -4,6 +4,7 @@ import { ApiError, client, ok } from '@apps/dashboard/src/api.js';
 import { type ItemView, reread, showDoc, useMarkdown, useSession, useShell } from '@apps/dashboard/src/shell/hooks.js';
 import { itemParam, type Action } from './model.js';
 import { clickTimer } from '@apps/dashboard/src/lib/click-timing.js';
+import { addPending, dropPending, sentPending } from '@apps/dashboard/src/shell/pending.js';
 
 // The item's actions (#85): each one a command that exists on GitHub,
 // commented as whoever is logged in (#93), the same comment they'd write
@@ -58,21 +59,25 @@ const ACTION_TIMEOUT_MS = 30_000;
 export interface Asked {
   item: string;
   action: Action;
+  // Asked again after it failed: what was written, and why it didn't go.
+  retry?: { text: string; app: string; error: string };
 }
 
-// `busy`: whether it's sending, for the page's Escape (which closes it otherwise).
-export function ActionDialog({ v, asked, close, busy }: { v: ItemView; asked: Asked; close: () => void; busy: MutableRefObject<boolean> }) {
+// `busy`: what the page's Escape waits on; this dialog closes as it sends, so it never holds it.
+// `reopen`: back with what was written and the error, if the page is still
+// on the item.
+export function ActionDialog({ v, asked, close, reopen, busy }: { v: ItemView; asked: Asked; close: () => void; reopen: (asked: Asked) => void; busy: MutableRefObject<boolean> }) {
   const shell = useShell();
   const session = useSession();
   const markdown = useMarkdown();
   const { action } = asked;
-  const [text, setText] = useState('');
-  const [app, setApp] = useState(action.app ?? action.apps?.[0] ?? '');
-  const [sending, setSending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [text, setText] = useState(asked.retry?.text ?? '');
+  const [app, setApp] = useState(asked.retry?.app ?? action.app ?? action.apps?.[0] ?? '');
+  const [error, setError] = useState<string | null>(asked.retry?.error ?? null);
   const first = useRef<HTMLTextAreaElement & HTMLButtonElement>(null);
-  const sendingRef = busy;
-  sendingRef.current = sending;
+  // Sent once: the dialog closes as it goes, so the page's Escape is never held up by it.
+  const sent = useRef(false);
+  busy.current = false;
   useEffect(() => first.current?.focus(), []);
 
   // `…` stands for the text: filled as it's typed, left out when the text is optional and empty.
@@ -85,39 +90,59 @@ export function ActionDialog({ v, asked, close, busy }: { v: ItemView; asked: As
   const said = action.id === 'assign' ? (typed ? `Comentás en #${action.target} y se lo asignás a @${bot}, como ${me}` : `Se lo asignás a @${bot} como ${me}, sin comentario`)
     : action.id === 'close-issue' ? (typed ? `Comentás en #${action.target} y lo cerrás como no planeado, como ${me}` : `Lo cerrás como no planeado, como ${me}, sin comentario`)
     : `Comentás en #${action.target} como ${me}`;
-  const disabled = sending || Boolean(action.text?.required && !text.trim());
+  const disabled = Boolean(action.text?.required && !text.trim());
 
+  // Optimistic (#368): the dialog closes at once, and what it writes is in
+  // the conversation of what it's on, as being sent — the comment as
+  // previewed, or what's done when there's none. If it doesn't go, it
+  // leaves the conversation and the dialog comes back with the text and why.
   const send = async () => {
-    if (sendingRef.current || disabled) return;
-    sendingRef.current = true;
-    setSending(true);
-    setError(null);
+    if (sent.current || disabled) return;
+    sent.current = true;
     const shown = clickTimer('accion');
+    const body = { action: action.id, ...(text.trim() ? { text: text.trim() } : {}), ...(action.apps ? { app } : {}) };
+    const comments = !['assign', 'close-issue'].includes(action.id) || Boolean(typed);
+    const pending = addPending({
+      repo: v.item.repo,
+      number: action.target,
+      author: me,
+      body: comments ? preview : '',
+      ...(comments ? {} : { note: action.id === 'assign' ? `Se lo asignás a @${bot}.` : 'Lo cerrás como no planeado.' }),
+    });
+    close();
+    // Its comment is where the answer will come: the tab of what it was on (the issue or its PR).
+    const d = v.detail?.data;
+    if (d) showDoc(asked.item, d.pr?.number === action.target ? 'pr' : 'issue');
     try {
-      const body = { action: action.id, ...(text.trim() ? { text: text.trim() } : {}), ...(action.apps ? { app } : {}) };
       // A refusal makes the client's type of the answer {} (Explorar ahora's too): it's written here.
       const { url } = (await ok(client.api.items[':id'].actions.$post({ param: itemParam(asked.item), json: body }, { init: { signal: AbortSignal.timeout(ACTION_TIMEOUT_MS) } }))) as { url?: string };
-      close();
       shell.toast(action.id === 'assign' ? `Listo: se lo asignaste a ronin. Lo toma en el próximo tick.` : action.id === 'close-issue' ? `Listo: cerraste #${action.target}.` : `Listo: comentaste en #${action.target}.`, url);
-      // Its comment is where the answer will come: the tab of what it was on (the issue or its PR).
-      const d = v.detail?.data;
-      if (d) showDoc(asked.item, d.pr?.number === action.target ? 'pr' : 'issue');
-      shown(reread(asked.item));
+      if (comments) {
+        sentPending(pending, url);
+        shown(reread(asked.item));
+      } else {
+        // Nothing in the conversation to wait for: the note goes once the item is read again.
+        const read = reread(asked.item);
+        shown(read);
+        void read.then(() => dropPending(pending));
+      }
     } catch (e) {
+      dropPending(pending);
       if (e instanceof ApiError && e.status === 401) return shell.unauthorized(e.message);
-      setSending(false);
       // No answer, or the connection dropped: the comment may well be out
       // already. The item is read again so its conversation says.
       const err = e as Error;
       const lost = err.name === 'TimeoutError' || err.name === 'AbortError' || err instanceof TypeError;
-      setError(lost
+      const error = lost
         ? 'No llegó la respuesta del servidor. El comentario puede haberse publicado igual: mira la conversación del ítem antes de volver a intentar.'
-        : `No se pudo: ${err.message}`);
-      if (lost) reread(asked.item);
+        : `No se pudo: ${err.message}`;
+      if (lost) void reread(asked.item);
+      shell.toast(`No se pudo ${action.id === 'assign' ? 'asignar' : action.id === 'close-issue' ? 'cerrar' : 'comentar'} en #${action.target}: ${lost ? 'no llegó la respuesta del servidor' : err.message}`);
+      reopen({ ...asked, retry: { text, app, error } });
     }
   };
   const cancel = () => {
-    if (!sendingRef.current) close();
+    close();
   };
 
   return createPortal(
@@ -137,7 +162,7 @@ export function ActionDialog({ v, asked, close, busy }: { v: ItemView; asked: As
       <div className="prev"><div className="lbl" id="dlg-said">{said}</div><div className="md" id="dlg-prev" hidden={!preview} dangerouslySetInnerHTML={{ __html: markdown.html(preview, v.item.repo) }} /></div>
       <p className="bad" id="dlg-err" hidden={!error}>{error ?? ''}</p>
       <div className="foot-d"><span className="kbd-hint"><kbd>Ctrl</kbd> <kbd>Enter</kbd> para {action.id === 'assign' ? 'asignar' : action.id === 'close-issue' ? 'cerrar' : 'comentar'}</span><button className="btn-s" id="dlg-no" onClick={cancel}>Cancelar</button>
-        <button className={`btn-s ${action.id === 'close-issue' ? 'danger-solid' : 'primary'}`} id="dlg-yes" ref={action.text ? undefined : first} disabled={disabled} onClick={() => void send()}>{action.id === 'assign' ? (sending ? 'Asignando…' : 'Asignar a ronin') : action.id === 'close-issue' ? (sending ? 'Cerrando…' : 'Cerrar el issue') : sending ? 'Comentando…' : action.id === 'unblock' ? 'Comentar y destrabar' : 'Comentar'}</button></div></div></div></div>,
+        <button className={`btn-s ${action.id === 'close-issue' ? 'danger-solid' : 'primary'}`} id="dlg-yes" ref={action.text ? undefined : first} disabled={disabled} onClick={() => void send()}>{action.id === 'assign' ? 'Asignar a ronin' : action.id === 'close-issue' ? 'Cerrar el issue' : action.id === 'unblock' ? 'Comentar y destrabar' : 'Comentar'}</button></div></div></div></div>,
     document.body,
   );
 }

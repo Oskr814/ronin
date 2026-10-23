@@ -5,6 +5,7 @@ import { vi } from 'vitest';
 import type { Snapshot } from './api.js';
 import { ShellContext, type ShellActions } from './shell/hooks.js';
 import { queryClient, S, SNAPSHOT_KEY } from './shell/state.js';
+import { resetPending } from './shell/pending.js';
 
 // The shell around a page in its tests: what the page asks of it, recorded,
 // and the cache it reads, with the snapshot the test gives it.
@@ -56,4 +57,5 @@ export function resetShell() {
     sel: null, open: [], runIdx: {}, pendingRun: null, view: {}, doc: {}, ficha: {}, fichaOpen: {}, extra: {}, revSent: {}, project: '',
     newIssue: null, xnow: null, toast: null, xpl: { repo: null, app: null, launched: {} },
   });
+  resetPending();
 }

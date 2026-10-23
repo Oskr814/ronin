@@ -6,7 +6,7 @@ import { useSession } from '@apps/dashboard/src/shell/hooks.js';
 import { useExpanded } from '../Doc.js';
 import { Avatar } from '../model.js';
 import type { Content } from './Files.js';
-import { hunksOf, MORE_LINES, type Line, type PendingReview, type PrFile, type SeenThread, type Side } from './diff.js';
+import { hunksOf, isSending, MORE_LINES, SENDING, type Line, type PendingReview, type PrFile, type SeenThread, type Side } from './diff.js';
 import type { PrFiles } from './model.js';
 
 // A file's diff (#111): its hunks, the unchanged lines opened around them,
@@ -197,14 +197,15 @@ export function FileThread({ ctx, t, Composer }: { ctx: FilesCtx; t: SeenThread;
       setExpanded(key, e.currentTarget.open === t.isResolved);
     }}>
       <summary><span>{where}</span>{t.isResolved && <span className="chip ok">resuelto</span>}{t.isOutdated && <span className="chip idle">desactualizado</span>}{t.pending && <span className="pendl">{t.mine ? 'en tu revisión' : `${t.pending.length} en tu revisión`}</span>}<span className="n">{count} {count === 1 ? 'comentario' : 'comentarios'}</span></summary>
-      {t.comments.map((x) => <div key={x.id} className="tc"><Avatar login={x.author} /><div><header><b>{x.author || 'alguien'}</b>{x.author === ctx.ronin && <span className="botl">bot</span>}<a href={x.url} target="_blank" rel="noopener">{when(x.createdAt)}</a></header><Md text={x.body} repo={ctx.item.repo} /></div></div>)}
+      {t.comments.map((x) => <div key={x.id} className={`tc${isSending(x) ? ' sending' : ''}`}><Avatar login={x.author} /><div><header><b>{x.author || 'alguien'}</b>{x.author === ctx.ronin && <span className="botl">bot</span>}{isSending(x) ? <span className="chip idle">enviando…</span> : <a href={x.url} target="_blank" rel="noopener">{when(x.createdAt)}</a>}</header><Md text={x.body} repo={ctx.item.repo} /></div></div>)}
       {(t.pending ?? []).map((x) => (c?.edit === x.nodeId
         ? <Composer key={x.nodeId} ctx={ctx} file={null} />
         : <div key={x.nodeId} className="tc pend" id={`p-${x.nodeId}`}><Avatar login={me} /><div><header><b>{me}</b><span className="pendl">Pendiente</span><span className="pact"><button onClick={() => ctx.openComposer({ path: t.path, edit: x.nodeId, text: x.body })}>Editar</button><button disabled={ctx.busy.has(x.nodeId)} onClick={() => void ctx.deletePending(x.nodeId)}>Borrar</button></span></header><Md text={x.body} repo={ctx.item.repo} /></div></div>))}
       {replying
         ? <Composer ctx={ctx} file={null} />
         // A thread the review starts takes no replies or resolving until it's sent.
-        : !t.mine && <div className="tfoot"><button className="treply" onClick={() => ctx.openComposer({ path: t.path, reply: t.id, commentId: t.comments[t.comments.length - 1].id })}>Responder…</button><button className="btn-s" disabled={busy} onClick={() => void ctx.resolve(t.id, !t.isResolved)}>{busy ? '…' : t.isResolved ? 'Reabrir' : 'Resolver conversación'}</button></div>}
+        // Nor one still on its way.
+        : !t.mine && !t.id.startsWith(SENDING) && <div className="tfoot"><button className="treply" onClick={() => ctx.openComposer({ path: t.path, reply: t.id, commentId: t.comments[t.comments.length - 1].id })}>Responder…</button><button className="btn-s" disabled={busy} onClick={() => void ctx.resolve(t.id, !t.isResolved)}>{busy ? '…' : t.isResolved ? 'Reabrir' : 'Resolver conversación'}</button></div>}
     </details>
   );
 }

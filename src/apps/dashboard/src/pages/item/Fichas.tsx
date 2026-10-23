@@ -269,7 +269,6 @@ function Thread({ v, data, f }: { v: ItemView; data: Exploration; f: FindingCard
   const key = fichaKey(f);
   const [text, setText] = useState(drafts.get(key) ?? '');
   const queryClient = useQueryClient();
-  const [sending, setSending] = useState(false);
   const area = useRef<HTMLTextAreaElement>(null);
   useEffect(() => setText(drafts.get(key) ?? ''), [key]);
   // A comment that comes in pushes the box down: it stays in sight while
@@ -285,31 +284,41 @@ function Thread({ v, data, f }: { v: ItemView; data: Exploration; f: FindingCard
   const roots = f.comments.filter((c) => !c.replyTo || !f.comments.some((o) => o.id === c.replyTo));
   const ordered = roots.flatMap((root) => [root, ...f.comments.filter((c) => c.replyTo === root.id)]);
   const files = /^[\w.-]+\/[\w.-]+$/.test(item.repo) ? `https://github.com/${item.repo}/pull/${item.number}` : null;
+  // Optimistic (#368): in the thread at once, as being sent, with the box
+  // free; out of it, and its text back in the box, if GitHub says no.
   const send = async () => {
     const said = text.trim();
-    if (!said || sending) return area.current?.focus();
-    setSending(true);
+    if (!said) return area.current?.focus();
+    const queryKey = ['exploration', item.id];
+    const before = queryClient.getQueryData<Exploration>(queryKey);
+    await queryClient.cancelQueries({ queryKey });
+    const comment = { id: -Date.now(), author: session.me, body: said, createdAt: new Date().toISOString() };
+    if (before) queryClient.setQueryData<Exploration>(queryKey, { ...before, fichas: before.fichas.map((x) => (fichaKey(x) === key ? { ...x, comments: [...x.comments, comment] } : x)) });
+    drafts.delete(key);
+    setText('');
     try {
       const done = await postFichaComment(item.id, key, 'comentar', said, false);
-      drafts.delete(key);
-      setText('');
       shell.toast(`Comentaste en ${key.split('/')[1]}. ronin lo va a aplicar y te responde en el hilo.`, done.url);
-      await queryClient.invalidateQueries({ queryKey: ['exploration', item.id] });
+      await queryClient.invalidateQueries({ queryKey });
     } catch (e) {
+      if (before) queryClient.setQueryData(queryKey, before);
+      if (!drafts.get(key)) {
+        drafts.set(key, said);
+        setText(said);
+      }
       if (e instanceof ApiError && e.status === 401) return shell.unauthorized(e.message);
       shell.toast(`No se pudo comentar: ${(e as Error).message}`);
     }
-    setSending(false);
   };
   return (
     <div className="fthread"><h3>Conversación <span className="m">{f.comments.length ? `${f.comments.length} ${f.comments.length === 1 ? 'comentario' : 'comentarios'} en la ficha` : 'nadie comentó esta ficha'}</span></h3>
       {ordered.length > 0 && <div className="cms">{ordered.map((c) => (
-        <article key={c.id} className={`cm${c.author === data.ronin ? ' bot' : ''}${c.replyTo ? ' reply' : ''}`}><header><Avatar login={c.author} /><b>{c.author}</b>{c.url ? <a href={c.url} target="_blank" rel="noopener">{when(c.createdAt)}</a> : <span>{when(c.createdAt)}</span>}</header><Md text={c.body} repo={item.repo} /></article>
+        <article key={c.id} className={`cm${c.author === data.ronin ? ' bot' : ''}${c.replyTo ? ' reply' : ''}${c.id < 0 ? ' pending' : ''}`}><header><Avatar login={c.author} /><b>{c.author}</b>{c.id < 0 ? <span className="chip idle">enviando…</span> : c.url ? <a href={c.url} target="_blank" rel="noopener">{when(c.createdAt)}</a> : <span>{when(c.createdAt)}</span>}</header><Md text={c.body} repo={item.repo} /></article>
       ))}</div>}
       <div className="composer"><textarea id="fcomment" ref={area} rows={3} maxLength={4000} placeholder="Comentar en la ficha… ronin lo lee como en GitHub: puede rechazarla, corregirla, abrir un issue o responder." value={text}
         onChange={(e) => { setText(e.target.value); drafts.set(key, e.target.value); }}
         onKeyDown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) void send(); }} />
-        <div className="cf"><span>Comentás como {session.me} sobre el archivo de la ficha{files && <>, en <a href={`${files}/files`} target="_blank" rel="noopener">“Files changed”</a></>}.</span><button className="btn-s" id="fcomment-send" disabled={sending} onClick={() => void send()}>{sending ? 'Comentando…' : 'Comentar'}</button></div></div></div>
+        <div className="cf"><span>Comentás como {session.me} sobre el archivo de la ficha{files && <>, en <a href={`${files}/files`} target="_blank" rel="noopener">“Files changed”</a></>}.</span><button className="btn-s" id="fcomment-send" onClick={() => void send()}>Comentar</button></div></div></div>
   );
 }
 

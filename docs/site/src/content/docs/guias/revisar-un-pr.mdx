@@ -25,6 +25,8 @@ Todo queda en GitHub a tu nombre, igual que en *Files changed*:
 | **Conversaciones** | **Responder…**, **Resolver conversación** o **Reabrir**. |
 | **Visto** | El mismo *Viewed* de GitHub. Si el archivo cambia, GitHub lo vuelve a marcar sin ver. |
 
+Un comentario que mandás ya, una respuesta, resolver o reabrir una conversación y borrar un comentario de tu revisión se ven en el momento, sin esperar a GitHub: lo que se está mandando dice *enviando…*. Si GitHub no lo toma, vuelve como estaba y el editor se abre con tu texto.
+
 ## La revisión
 
 Como en GitHub, podés **Comentar ya** o **Empezar una revisión**. Una revisión empezada es la revisión pendiente de GitHub: lo que sumás queda como *Pendiente* (con editar y borrar), nadie más lo ve, y la encontrás igual en github.com o en otro dispositivo.
@@ -36,7 +38,7 @@ Para mandarla, **Terminar revisión ▾** (arriba en la ficha, en la barra de Ar
 - en un draft de ronin, **Que ronin los atienda ahora**: después de la revisión comenta `@ronin-agent /fix-comments` a tu nombre. Hace falta porque ronin no lee el resumen de una revisión;
 - **Descartar** borra la revisión pendiente con todo lo que tenía.
 
-Al aprobar o pedir cambios, el tablero lo muestra enseguida (*aprobado*, *cambios pedidos*) en la ficha, la lista, *Hoy* y el pedido, sin esperar a la próxima lectura de GitHub.
+Al mandarla, el panel se cierra y la conversación del PR la muestra *enviando…*. Al aprobar o pedir cambios, el tablero lo muestra enseguida (*aprobado*, *cambios pedidos*) en la ficha, la lista, *Hoy* y el pedido, sin esperar a la próxima lectura de GitHub. Si GitHub no la toma, se deshace y el panel vuelve con el resumen y el motivo.
 
 <Aside type="tip" title="Que ronin aplique los comentarios">
 En el PR de una persona (no fork), `@ronin-agent /fix-comments` aplica en un solo pase todos los hilos abiertos. Ver [`/fix-comments`](/ronin/referencia/comandos/#fix-comments).
