@@ -719,9 +719,9 @@ export function showFicha(key: string, ficha: string | null, open: boolean) {
 
 // Something was written on GitHub from the page: the item is read again,
 // and so is the snapshot.
-export function reread(key: string) {
-  void loadDetail(key);
-  void refresh();
+// What's read again after writing on an item; done once both are back.
+export function reread(key: string): Promise<void> {
+  return Promise.all([loadDetail(key), refresh()]).then(() => {});
 }
 
 // The snapshot: the sidebar, the status bar, the items. Read every

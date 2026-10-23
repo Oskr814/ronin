@@ -19,9 +19,11 @@ const files = {
 };
 let mine: { viewed: string[]; review: unknown } = { viewed: [], review: null };
 let posted: Array<[string, unknown]> = [];
+let clicks: Array<{ what: string; ms: number }> = [];
 let asked: string[] = [];
 beforeEach(() => {
   posted = [];
+  clicks = [];
   asked = [];
   mine = { viewed: [], review: null };
   // A desk's window: diffs can go side by side.
@@ -35,6 +37,11 @@ beforeEach(() => {
     if (!init?.method || init.method === 'GET') {
       asked.push(url);
       return json(url.endsWith('/detail') ? PR : url === '/api/snapshot' ? shown.snap : {});
+    }
+    // The time of a click (#368), apart from what the page writes.
+    if (url === '/api/timings') {
+      clicks.push(JSON.parse(String(init?.body ?? 'null')) as { what: string; ms: number });
+      return json({});
     }
     posted.push([url, JSON.parse(String(init?.body ?? 'null'))]);
     return json({ url: 'https://github.com/acme/tienda/pull/50#discussion_r2' });

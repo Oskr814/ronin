@@ -3,6 +3,7 @@ import { listOpenIssues, listOpenManagedIssues, listOpenPrsWithChecks, listPrClo
 import { getBlocks, type BlockRecord } from '@platform/state/local-state.js';
 import { log } from '@platform/logger.js';
 import { withActiveRepo, type RepoEntry } from '@platform/agents/repo-context.js';
+import { ReadCache } from '@platform/cache/read-cache.js';
 import { listPreviewStates } from '../previews/index.js';
 import { parseSlices, type Slice } from '../slices/checklist.js';
 
@@ -12,13 +13,16 @@ import { parseSlices, type Slice } from '../slices/checklist.js';
 // how the latest closed ones closed (#129). Plus what this runner keeps about them: the
 // reasons it blocked them (local state) and the previews it has up.
 //
-// Cached: several open tabs, each polling, never multiply GitHub's calls. A
-// repo is read again after DASHBOARD_GITHUB_TTL_SECONDS, or sooner when one
-// of its runs started or ended since the last read. While a read is on its
-// way, the previous one is served; if it fails, the previous one stays, with
-// the error, so the page can say its GitHub data is old. The previews are
-// the exception: they're files on this machine, read again on every call,
-// so a preview whose data just got ready says so on the next poll.
+// Cached (platform/cache/read-cache.ts): several open tabs, each polling,
+// never multiply GitHub's calls. A repo is read again after
+// DASHBOARD_GITHUB_TTL_SECONDS, or sooner when one of its runs started or
+// ended since the last read, or when a write from the dashboard or a webhook
+// changed it (expireGithub). While a read is on its way, the previous one is
+// served — the sidebar never waits for a whole read of the repo, only its
+// very first one; if it fails, the previous one stays, with the error, so
+// the page can say its GitHub data is old. The previews are the exception:
+// they're files on this machine, read again on every call, so a preview
+// whose data just got ready says so on the next poll.
 
 export interface IssueView {
   number: number;
@@ -134,49 +138,37 @@ async function readPreviews(entry: RepoEntry): Promise<PreviewView[]> {
   }
 }
 
-const cache = new Map<string, { data?: Omit<RepoGithub, 'previews'>; readAt: number; reading?: Promise<Omit<RepoGithub, 'previews'>> }>();
+const cache = new ReadCache<Omit<RepoGithub, 'previews'>>({
+  label: (repo) => `el repo ${repo}`,
+  ttlMs: () => config.dashboard.githubTtlSeconds * 1000,
+  failed: (previous, error) => ({ ...(previous ?? { fetchedAt: '', issues: [], openIssues: [], prs: [], prIssue: {}, closed: {}, blocks: {} }), repo: previous?.repo ?? '', error }),
+});
 
 // `changedSince`: the latest start or end of one of the repo's runs (epoch
 // ms) — a read older than that is stale whatever its age.
 export async function repoGithub(entry: RepoEntry, changedSince = 0, now = Date.now()): Promise<RepoGithub | undefined> {
-  const [github, previews] = await Promise.all([cachedGithub(entry, changedSince, now), readPreviews(entry)]);
-  return github && { ...github, previews };
-}
-
-async function cachedGithub(entry: RepoEntry, changedSince: number, now: number): Promise<Omit<RepoGithub, 'previews'> | undefined> {
   const key = entry.productRepo;
-  const entryCache = cache.get(key) ?? { readAt: 0 };
-  cache.set(key, entryCache);
-  const fresh = entryCache.data && now - entryCache.readAt < config.dashboard.githubTtlSeconds * 1000 && entryCache.readAt >= changedSince;
-  if (fresh) return entryCache.data;
-
-  if (!entryCache.reading) {
-    entryCache.reading = fetchRepo(entry)
-      .then((data) => {
-        entryCache.data = data;
-        entryCache.readAt = Date.now();
-        return data;
-      })
-      .catch((error) => {
-        log.error(`tablero: no se pudo leer GitHub para ${key}`, error);
-        // Tried again on the next snapshot, not on every one of them.
-        entryCache.readAt = Date.now();
-        const stale = entryCache.data ?? { repo: key, fetchedAt: '', issues: [], openIssues: [], prs: [], prIssue: {}, closed: {}, blocks: {} };
-        entryCache.data = { ...stale, error: (error as Error).message.split('\n')[0] };
-        return entryCache.data;
-      })
-      .finally(() => {
-        entryCache.reading = undefined;
-      });
-  }
-  // The first read is waited for; after that, the previous one is served meanwhile.
-  return entryCache.data ?? entryCache.reading;
+  const [github, previews] = await Promise.all([cache.get(key, () => fetchRepo(entry), { tags: [key], changedSince, now }), readPreviews(entry)]);
+  return github && { ...github, repo: key, previews };
 }
 
-// After something changed the repo from the dashboard (a new issue): its
-// next read is fresh.
+// After something changed the repo from the dashboard or GitHub said so (a
+// webhook): read again right away, the previous read served meanwhile.
+// `wait`: the next request waits for that read, for something the person
+// is about to open (an issue they just created).
+export function expireGithub(repo: string, { wait = false }: { wait?: boolean } = {}): void {
+  cache.expire(repo, { wait });
+}
+
+// What a write already knows about the repo, in what's kept (a new issue in
+// the list), so it shows before the read that follows lands.
+export function updateGithub(repo: string, change: (github: Omit<RepoGithub, 'previews'>) => Omit<RepoGithub, 'previews'>): void {
+  cache.update(repo, change);
+}
+
+// After the repo's settings changed: its next read is from scratch.
 export function forgetGithub(repo: string): void {
-  cache.delete(repo);
+  cache.forget(repo);
 }
 
 export function resetGithubCache(): void {

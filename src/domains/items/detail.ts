@@ -1,9 +1,9 @@
 import { config } from '@platform/config/config.js';
-import { getDiscussion, type Discussion } from '@platform/github/github.js';
+import { getItemDiscussions, type Discussion } from '@platform/github/github.js';
 import { prQuestions, type PrQuestion } from '@platform/github/pr-body.js';
 import { linearRefFrom, type LinearRef } from '@platform/linear/linear.js';
-import { log } from '@platform/logger.js';
 import { withActiveRepo, type RepoEntry } from '@platform/agents/repo-context.js';
+import { ReadCache } from '@platform/cache/read-cache.js';
 import type { RepoGithub } from './github.js';
 
 // An item's page in the dashboard (#85): the issue's and the PR's bodies,
@@ -13,7 +13,8 @@ import type { RepoGithub } from './github.js';
 //
 // Read only when an item is opened, never for the sidebar, and cached like
 // the repo reads (items/github.ts): DASHBOARD_GITHUB_TTL_SECONDS, or
-// sooner when one of the item's runs started or ended since.
+// sooner when one of the item's runs started or ended since, or a write or a
+// webhook changed it (expireDetails).
 
 export interface ItemRef {
   kind: 'issue' | 'pr';
@@ -67,10 +68,8 @@ async function fetchDetail(entry: RepoEntry, ref: ItemRef): Promise<ItemDetail> 
   return withActiveRepo(entry, async () => {
     const issueNumber = ref.kind === 'issue' ? ref.number : ref.issue;
     const prNumber = ref.kind === 'pr' ? ref.number : ref.pr;
-    const [issue, pr] = await Promise.all([
-      issueNumber !== undefined ? getDiscussion('issue', issueNumber) : undefined,
-      prNumber !== undefined ? getDiscussion('pr', prNumber) : undefined,
-    ]);
+    // Both in one query (#368).
+    const { issue, pr } = await getItemDiscussions(issueNumber, prNumber);
     // Each half with its own conversation, shown on its own tab: the issue's
     // comments under the issue, the PR's comments and reviews under the PR.
     const trim = (d: Discussion): Discussion => ({ ...d, comments: d.comments.slice(-MAX_COMMENTS) });
@@ -86,41 +85,37 @@ async function fetchDetail(entry: RepoEntry, ref: ItemRef): Promise<ItemDetail> 
   });
 }
 
-const cache = new Map<string, { data?: ItemDetail; readAt: number; reading?: Promise<ItemDetail> }>();
 // Items nobody opened in a while are dropped, so the cache doesn't grow with every item ever opened.
-const FORGET_MS = 30 * 60_000;
+const cache = new ReadCache<ItemDetail>({
+  label: (key) => key,
+  ttlMs: () => config.dashboard.githubTtlSeconds * 1000,
+  forgetMs: 30 * 60_000,
+  failed: (previous, error) => ({ ...(previous ?? { fetchedAt: '' }), error }),
+});
 
-export async function itemDetail(entry: RepoEntry, ref: ItemRef, changedSince = 0, now = Date.now()): Promise<ItemDetail> {
-  for (const [key, value] of cache) if (!value.reading && now - value.readAt > FORGET_MS) cache.delete(key);
-  const key = `${entry.productRepo}#${ref.kind}${ref.number}:${ref.issue ?? ''}:${ref.pr ?? ''}`;
-  const entryCache = cache.get(key) ?? { readAt: 0 };
-  cache.set(key, entryCache);
-  if (entryCache.data && now - entryCache.readAt < config.dashboard.githubTtlSeconds * 1000 && entryCache.readAt >= changedSince) return entryCache.data;
-
-  if (!entryCache.reading) {
-    entryCache.reading = fetchDetail(entry, ref)
-      .then((data) => {
-        entryCache.data = data;
-        entryCache.readAt = Date.now();
-        return data;
-      })
-      .catch((error) => {
-        log.error(`tablero: no se pudo leer ${key} de GitHub`, error);
-        entryCache.readAt = Date.now();
-        entryCache.data = { ...(entryCache.data ?? { fetchedAt: '' }), error: (error as Error).message.split('\n')[0] };
-        return entryCache.data;
-      })
-      .finally(() => {
-        entryCache.reading = undefined;
-      });
-  }
-  return entryCache.data ?? entryCache.reading;
+// Tagged with the repo and each number it shows: an issue's page carries its PR too.
+export function itemDetail(entry: RepoEntry, ref: ItemRef, changedSince = 0, now = Date.now()): Promise<ItemDetail> {
+  const repo = entry.productRepo;
+  const key = `${repo}#${ref.kind}${ref.number}:${ref.issue ?? ''}:${ref.pr ?? ''}`;
+  const numbers = [ref.number, ref.issue, ref.pr].filter((n): n is number => n !== undefined);
+  return cache.get(key, () => fetchDetail(entry, ref), { tags: [repo, ...numbers.map((n) => `${repo}#${n}`)], changedSince, now });
 }
 
-// After an action on one of the repo's items: its next read is fresh. Every
-// item of the repo, since an issue's page carries its PR too.
-export function forgetDetails(repo: string): void {
-  for (const key of cache.keys()) if (key.startsWith(`${repo}#`)) cache.delete(key);
+// After a write to `number` (or, without it, to any of the repo's items):
+// read again right away. `wait`: the next request waits for it — the person
+// who wrote sees what they did; a webhook's doesn't.
+export function expireDetails(repo: string, number?: number, { wait = false }: { wait?: boolean } = {}): void {
+  cache.expire(number === undefined ? repo : `${repo}#${number}`, { wait });
+}
+
+// A comment just posted from the dashboard, on the pages that show `number`:
+// there before the read that follows lands.
+export function addDetailComment(repo: string, number: number, comment: Discussion['comments'][number]): void {
+  cache.update(`${repo}#${number}`, (d) => ({
+    ...d,
+    ...(d.issue?.number === number ? { issue: { ...d.issue, comments: [...d.issue.comments, comment].slice(-MAX_COMMENTS) } } : {}),
+    ...(d.pr?.number === number ? { pr: { ...d.pr, comments: [...d.pr.comments, comment].slice(-MAX_COMMENTS) } } : {}),
+  }));
 }
 
 export function resetDetailCache(): void {

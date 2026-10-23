@@ -4,6 +4,7 @@ import { useSession, useShell } from '@apps/dashboard/src/shell/hooks.js';
 import { checksChip, itemParam, oneOr, type ItemPage } from './model.js';
 import { questionsOf } from './Questions.js';
 import { isSpecPr } from '@apps/dashboard/src/lib/item.js';
+import { clickTimer } from '@apps/dashboard/src/lib/click-timing.js';
 
 // Deciding a PR ronin opened (#195): its page asks what's decided, not how
 // to review it: merge it, ask ronin for an adjustment, or close it. Always
@@ -55,13 +56,14 @@ export function useDecide(v: ItemPage | null) {
     if (p.kind === 'adjust' && !p.text.trim() && !pending) return;
     const id = v.item.id;
     setP({ ...p, sending: true, error: null });
+    const shown = clickTimer('decision');
     try {
       const sent = (await ok(client.api.items[':id'].decision.$post({ param: itemParam(id), json: { decision: p.kind, text: p.text, closeIssue: p.closeIssue } }))) as { url: string; autoMergeUrl?: string; issueUrl?: string };
       setP(null);
       const spec = Boolean(v.detail?.data?.pr && isSpecPr(v.detail.data.pr));
       decided.set(id, { at: Date.now(), kind: p.kind, url: sent.url, autoMerge: Boolean(sent.autoMergeUrl), issue: Boolean(sent.issueUrl), count: pending, spec });
       shell.toast(p.kind === 'approve' ? (spec ? 'Aprobaste el spec: ronin lo mergea y arranca las slices.' : 'Aprobaste el PR.') : p.kind === 'adjust' ? 'Se lo mandaste a ronin.' : 'Cerraste el PR.', sent.url);
-      v.files.reread();
+      shown(v.files.reread());
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) return shell.unauthorized(e.message);
       setP({ ...p, sending: false, error: `No se pudo: ${(e as Error).message}` });

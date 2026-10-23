@@ -10,7 +10,7 @@ vi.mock('@platform/github/github.js', () => ({
 }));
 vi.mock('@platform/logger.js', () => ({ log: { error: vi.fn(), info: vi.fn() } }));
 
-const { fileContent, forgetFiles, MAX_CONTENT_BYTES, prFiles, resetFilesCache } = await import('./files.js');
+const { expireFiles, fileContent, MAX_CONTENT_BYTES, prFiles, resetFilesCache } = await import('./files.js');
 
 const ENTRY = { productRepo: 'acme/product', productRepoPath: '/tmp/x' };
 const FILE = { path: 'src/a.ts', status: 'modified', additions: 1, deletions: 1, patch: '@@ -1 +1 @@\n-a\n+b' };
@@ -31,15 +31,18 @@ describe('prFiles', () => {
     expect(data).toMatchObject({ headSha: 'h1', baseSha: 'b1', files: [FILE], threads: [THREAD] });
   });
 
-  it('serves a fresh read from the cache, and reads again once a run changed it or it was forgotten', async () => {
+  it('serves a fresh read from the cache, and reads again once a run changed it or a write expired it', async () => {
     const t = Date.now();
     await prFiles(ENTRY, 849, 0, t);
     await prFiles(ENTRY, 849, 0, t + 1000);
     expect(getPrFiles).toHaveBeenCalledTimes(1);
     await prFiles(ENTRY, 849, Date.now() + 60_000, t + 2000);
     expect(getPrFiles).toHaveBeenCalledTimes(2);
-    forgetFiles('acme/product');
-    await prFiles(ENTRY, 849);
+    // A write (#368): read again right away, and the next request waits for it.
+    getPrFiles.mockResolvedValueOnce({ prId: 'PR_1', author: 'ana', headSha: 'h2', baseSha: 'b1', files: [FILE] });
+    expireFiles('acme/product', 849, { wait: true });
+    expect(getPrFiles).toHaveBeenCalledTimes(3);
+    expect((await prFiles(ENTRY, 849)).headSha).toBe('h2');
     expect(getPrFiles).toHaveBeenCalledTimes(3);
   });
 

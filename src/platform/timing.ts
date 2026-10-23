@@ -161,6 +161,19 @@ export class RouteTimings {
   }
 }
 
+// What the dashboard measured itself (#368): from a click to its result on
+// the page, which no request alone says. The API (apps/api/http/timing.ts)
+// sums it up with its routes; without it, nothing is kept.
+export const CLICK_KINDS = ['comentar', 'accion', 'decision', 'review', 'archivos'] as const;
+export type ClickKind = (typeof CLICK_KINDS)[number];
+let clickSink: (kind: ClickKind, ms: number) => void = () => {};
+export function onClickTiming(sink: (kind: ClickKind, ms: number) => void): void {
+  clickSink = sink;
+}
+export function recordClickTiming(kind: ClickKind, ms: number): void {
+  clickSink(kind, ms);
+}
+
 export const timingsPath = (day: string) => join(logsDir(), 'timings', `${day}.jsonl`);
 
 // Never throws: a summary that can't be written must never touch a request.

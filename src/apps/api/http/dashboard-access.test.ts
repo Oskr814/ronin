@@ -18,6 +18,8 @@ vi.mock('@platform/config/repos.js', () => ({
 vi.mock('@domains/items/github.js', () => ({
   repoGithub: async (entry: { productRepo: string }) => ({ repo: entry.productRepo, fetchedAt: '', issues: [], openIssues: [{ number: 1, title: `issue de ${entry.productRepo}`, url: '', labels: [] }], prs: [{ number: 2, title: 'PR', url: '', author: 'a', isDraft: false, headRefName: 'feat/x', baseRefName: 'main', reviewDecision: '', checks: [] }], prIssue: {}, previews: [], blocks: {} }),
   forgetGithub: vi.fn(),
+  expireGithub: vi.fn(),
+  updateGithub: vi.fn(),
 }));
 vi.mock('@domains/items/linear.js', () => ({ repoLinear: async () => undefined, cycleView: () => null }));
 vi.mock('@domains/items/new-issue.js', async (importOriginal) => ({ ...(await importOriginal<typeof import('@domains/items/new-issue.js')>()), repoApps: async () => [] }));
@@ -216,5 +218,18 @@ describe('an admin (#222)', () => {
   it('is told what it asked wrong', async () => {
     expect((await call('/api/metrics?days=14', 'GET', undefined, ADMIN as never)).status).toBe(400);
     expect((await call('/api/metrics?repo=otro%2Frepo', 'GET', undefined, ADMIN as never)).status).toBe(404);
+  });
+});
+
+// #368: the page's own measure, from a click to its result.
+describe('the time of a click', () => {
+  it('is summed up with the routes, only for the kinds the page measures', async () => {
+    const { onClickTiming } = await import('@platform/timing.js');
+    const seen: Array<[string, number]> = [];
+    onClickTiming((kind, ms) => seen.push([kind, ms]));
+    expect((await call('/api/timings', 'POST', { what: 'comentar', ms: 840 })).status).toBe(200);
+    expect((await call('/api/timings', 'POST', { what: 'otra-cosa', ms: 840 })).status).toBe(400);
+    expect((await call('/api/timings', 'POST', { what: 'decision', ms: -1 })).status).toBe(400);
+    expect(seen).toEqual([['comentar', 840]]);
   });
 });

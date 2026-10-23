@@ -747,16 +747,26 @@ Por repo, dos llamadas:
 
 A eso se suman los motivos de bloqueo y las previews arriba.
 
-El servidor hace la primera lectura de cada repo (GitHub y Linear) al arrancar (`warmDashboard`), para que la primera visita después de un reinicio no la espere. Cada repo se vuelve a leer a los `DASHBOARD_GITHUB_TTL_SECONDS` (60), o antes si una corrida suya empezó o terminó después de la última lectura. Mientras tanto se muestra la lectura anterior, así que varias pestañas abiertas no multiplican las llamadas. Si GitHub falla, se conserva la última lectura con el error, que la página muestra, y las corridas locales se siguen viendo. Las previews no entran en esa caché: son archivos de esta máquina y se leen en cada pedido, así que una preview que terminó de preparar sus datos ofrece su URL en el siguiente refresco.
+El servidor hace la primera lectura de cada repo (GitHub y Linear) al arrancar (`warmDashboard`), para que la primera visita después de un reinicio no la espere. Cada repo se vuelve a leer a los `DASHBOARD_GITHUB_TTL_SECONDS` (60), o antes si una corrida suya empezó o terminó después de la última lectura. Mientras tanto se muestra la lectura anterior, así que varias pestañas abiertas no multiplican las llamadas. La barra lateral nunca espera una lectura entera del repo, salvo la primera (ver «Después de escribir», más abajo). Si GitHub falla, se conserva la última lectura con el error, que la página muestra, y las corridas locales se siguen viendo. Las previews no entran en esa caché: son archivos de esta máquina y se leen en cada pedido, así que una preview que terminó de preparar sus datos ofrece su URL en el siguiente refresco.
 
 `items/list.ts` arma los ítems de la barra lateral con eso y con las corridas: estado, lo que espera cada issue, slices, el PR que avanza y su preview.
 
-**La ficha** (`items/detail.ts`) se lee aparte, solo cuando alguien abre un ítem: la descripción del issue y la del PR, con los labels y, en un PR, sus ramas y si tiene conflictos (`getDiscussion`, con `gh issue view` y `gh pr view`). Trae los últimos 50 comentarios del ítem, sin los comentarios de review de línea. Qué es cada número sale de la lectura del repo en caché:
+**La ficha** (`items/detail.ts`) se lee aparte, solo cuando alguien abre un ítem: la descripción del issue y la del PR, con los labels y, en un PR, sus ramas y si tiene conflictos. Los dos salen de una sola consulta GraphQL (`getItemDiscussions`, #368), con lo mismo que `getDiscussion`, que antes eran `gh issue view`, `gh pr view`, los hilos y, en un issue cerrado, cómo se cerró. Trae los últimos 50 comentarios del ítem, sin los comentarios de review de línea. Qué es cada número sale de la lectura del repo en caché:
 - **Un issue** trae el PR de su slice que avanza.
 - **Un PR de una slice** trae su issue de tracking, por el checklist o por la rama `ronin/<issue>/…`.
 - **Lo que GitHub no lista** (el PR de una persona, un issue cerrado) usa lo que dicen sus corridas.
 
-La caché es la misma idea que la de los repos: `DASHBOARD_GITHUB_TTL_SECONDS`, o antes si una corrida del ítem empezó o terminó después. Después de una acción se descarta la del repo, para que la próxima lectura ya traiga el comentario de ronin. Una ficha que nadie abre en 30 minutos se olvida.
+La caché es la misma idea que la de los repos: `DASHBOARD_GITHUB_TTL_SECONDS`, o antes si una corrida del ítem empezó o terminó después. Una ficha que nadie abre en 30 minutos se olvida.
+
+**Después de escribir (#368).** Las cachés del tablero (el repo, la ficha, los archivos de un PR, lo de cada persona en Archivos y la exploración) son una sola pieza, `platform/cache/read-cache.ts`. Cada entrada lleva etiquetas: el repo y `<repo>#<número>` de cada issue o PR que muestra. Después de una acción del tablero, lo que cambió no se borra:
+- **La ficha y los archivos del ítem** se vuelven a leer en el momento de escribir. El siguiente pedido de la persona espera esa lectura, que ya está en camino, así que ve lo que hizo. Los otros ítems del repo no se tocan.
+- **Un comentario** entra en la ficha tal como se publicó (`addDetailComment`), y la lectura que lo confirma corre sin que nadie la espere.
+- **El repo** se vuelve a leer en segundo plano, y la barra lateral sirve la lectura anterior mientras tanto. Un issue creado desde el tablero entra antes en la lista (`updateGithub`), así se puede abrir enseguida. Aprobar una reunión espera su lectura, porque crea issues que se abren después.
+- **Lo de cada persona en Archivos** (`/files/mine`: los archivos vistos y su revisión pendiente) se guarda por persona y PR, y se vuelve a leer cuando esa persona escribe algo en el PR.
+
+Una lectura que ya estaba en camino cuando se escribió nunca queda como la última: puede haber empezado antes del cambio.
+
+**Los webhooks también (#368).** El servidor de webhooks y el tablero son el mismo proceso. Un `issues`, `pull_request`, `issue_comment`, `pull_request_review`, `pull_request_review_comment` o `check_suite` vence lo que el tablero tiene de ese issue o PR (`items/freshness.ts`). Lo que alguien tiene abierto (pedido en los últimos 2 minutos) se vuelve a leer en el momento, sin que nadie lo espere; lo demás queda vencido para su próximo pedido. Si llega una ráfaga mientras una lectura está en camino, se suma una sola lectura más, no una por webhook.
 
 #### 15.9 API
 
@@ -1663,6 +1673,7 @@ Antes de optimizar nada se mide. `platform/timing.ts` abre una medición (`measu
 
   Quedan afuera los archivos de la web y los streams en vivo (`text/event-stream`).
 - **Resumen por ruta:** cada 10 minutos, una línea por ruta en `logs/timings/<día>.jsonl` con la cantidad, los errores 5xx, el total, el máximo, el tiempo en GitHub, el de cada operación (`githubOps`) y cuántos requests cayeron en cada tramo (`≤25, 50, 100, 250, 500 ms, 1, 2.5, 5, 10 s` y más). Se guardan tramos y no percentiles para poder juntar ventanas sin perder exactitud. Un reinicio pierde a lo sumo los últimos 10 minutos.
+- **El clic (#368):** el tablero mide cuánto pasa desde un clic hasta que muestra su resultado, que ningún request dice solo: la escritura y lo que se vuelve a leer después. Lo mide al comentar, en una acción, en una decisión, al mandar una revisión y en Archivos (`lib/click-timing.ts`), y lo manda a `POST /api/timings`. Se suma al resumen como una ruta más: `CLIC comentar`, `CLIC accion`, `CLIC decision`, `CLIC review`, `CLIC archivos`.
 - **El tick:** `tick_complete` (y `event_complete`) suma `steps` (cuánto tardó cada paso: `assign`, `sweeps`, `auto-merge`, `portal`, `deploys`, `nightly`), `discoveryMs`, `jobsMs`, `githubMs`, `githubCalls` y `githubOps` (el tiempo y las llamadas de cada operación).
 - **`pnpm timings [días]`** (`scripts/timings.ts`, la cuenta en `platform/timing-report.ts`) arma la tabla: por ruta, la cantidad, el promedio, los percentiles por tramo, el máximo y GitHub por request, con sus tres operaciones más pesadas; por repo, los ticks con su p50, p90 y máximo, la mediana de cada paso y GitHub por operación (el promedio por tick de su tiempo y sus llamadas, las 15 más pesadas). Lee también los `tick_complete` de antes de esta medición, que solo traen el total.
 

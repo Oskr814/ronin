@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { log } from '@platform/logger.js';
-import { measure, routeOf, RouteTimings, serverTiming, spansOf, writeTimings } from '@platform/timing.js';
+import { measure, onClickTiming, routeOf, RouteTimings, serverTiming, spansOf, writeTimings } from '@platform/timing.js';
 
 // Every request of the API, measured (#235, stage 1): a Server-Timing header
 // on its answer, a log line when it's slow, and a summary per route every
@@ -14,6 +14,12 @@ const FLUSH_MS = 10 * 60_000;
 
 const routes = new RouteTimings();
 let flushing: NodeJS.Timeout | undefined;
+
+// The dashboard's clicks (#368), summed up as one more route: "CLIC comentar".
+onClickTiming((kind, ms) => {
+  startFlushing();
+  routes.record({ listener: 'tablero', method: 'CLIC', route: kind, status: 200, ms, spans: new Map() });
+});
 
 // The summaries are written from the first measured request on, so a test
 // that never measures one leaves no timer behind.

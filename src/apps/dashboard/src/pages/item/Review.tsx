@@ -3,6 +3,7 @@ import { ApiError, client, ok } from '@apps/dashboard/src/api.js';
 import { reviewed, showDoc, useSession, useShell } from '@apps/dashboard/src/shell/hooks.js';
 import { goFile } from './files/model.js';
 import { itemParam, sameLogin, type ItemPage } from './model.js';
+import { clickTimer } from '@apps/dashboard/src/lib/click-timing.js';
 
 // The review panel (#111): finishing the review as in GitHub's "Review
 // changes", with a summary, Comment, Approve or Request changes, and the
@@ -69,13 +70,14 @@ export function useReview(v: ItemPage | null) {
     if (!v || !p || !s || p.sending) return;
     const id = v.item.id;
     setP({ ...p, sending: true, error: null });
+    const shown = clickTimer('review');
     try {
       const sent = (await ok(client.api.items[':id'].files.actions.$post({ param: itemParam(id), json: { action: 'submit', event: s.event, text: p.text, commitId: s.data.headSha, fixComments: Boolean(s.fixable && p.fix), autoMerge: s.autoMerge } }))) as { url?: string; fixUrl?: string; autoMergeUrl?: string };
       setP(null);
       const decision = REVIEW_DECISION[s.event];
       if (decision) reviewed(id, s.data.pr, decision);
       shell.toast(`${REVIEW_SENT[s.event]}${sent.fixUrl ? '; ronin ya tiene el /fix-comments' : ''}${sent.autoMergeUrl ? ' y le pediste el auto-merge' : ''}.`, sent.url);
-      v.files.reread();
+      shown(v.files.reread());
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) return shell.unauthorized(e.message);
       setP({ ...p, sending: false, error: `No se pudo: ${(e as Error).message}` });

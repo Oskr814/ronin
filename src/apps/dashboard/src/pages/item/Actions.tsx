@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { ApiError, client, ok } from '@apps/dashboard/src/api.js';
 import { type ItemView, reread, showDoc, useMarkdown, useSession, useShell } from '@apps/dashboard/src/shell/hooks.js';
 import { itemParam, type Action } from './model.js';
+import { clickTimer } from '@apps/dashboard/src/lib/click-timing.js';
 
 // The item's actions (#85): each one a command that exists on GitHub,
 // commented as whoever is logged in (#93), the same comment they'd write
@@ -91,6 +92,7 @@ export function ActionDialog({ v, asked, close, busy }: { v: ItemView; asked: As
     sendingRef.current = true;
     setSending(true);
     setError(null);
+    const shown = clickTimer('accion');
     try {
       const body = { action: action.id, ...(text.trim() ? { text: text.trim() } : {}), ...(action.apps ? { app } : {}) };
       // A refusal makes the client's type of the answer {} (Explorar ahora's too): it's written here.
@@ -100,7 +102,7 @@ export function ActionDialog({ v, asked, close, busy }: { v: ItemView; asked: As
       // Its comment is where the answer will come: the tab of what it was on (the issue or its PR).
       const d = v.detail?.data;
       if (d) showDoc(asked.item, d.pr?.number === action.target ? 'pr' : 'issue');
-      reread(asked.item);
+      shown(reread(asked.item));
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) return shell.unauthorized(e.message);
       setSending(false);

@@ -42,7 +42,7 @@ export interface FilesView {
   // Reads it, if it wasn't yet.
   load(): void;
   // Something was written on GitHub: it's read again, and so is the item.
-  reread(): void;
+  reread(): Promise<void>;
 }
 
 export interface PendingComment {
@@ -104,9 +104,8 @@ export function useFiles(key: string, shown: boolean) {
 }
 
 // After writing on GitHub: the files and the item's comments are read again.
-export function rereadFiles(qc: QueryClient, shell: ShellActions, key: string) {
-  void qc.invalidateQueries({ queryKey: filesKey(key) });
-  reread(key);
+export function rereadFiles(qc: QueryClient, shell: ShellActions, key: string): Promise<void> {
+  return Promise.all([qc.invalidateQueries({ queryKey: filesKey(key) }), reread(key)]).then(() => {});
 }
 
 // A file, and a comment in it, picked in the review panel: shown once

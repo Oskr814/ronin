@@ -729,6 +729,88 @@ export async function getDiscussion(kind: 'issue' | 'pr', number: number): Promi
   };
 }
 
+// An item's page in one query (#368): its issue and its PR, each as
+// getDiscussion reads it, which took a `gh issue view`, a `gh pr view`, the
+// PR's threads and, for a closed issue, how it closed — two processes and up
+// to four calls. Its last MAX_PAGE_COMMENTS comments, which is what the page
+// shows.
+const MAX_PAGE_COMMENTS = 50;
+const DISCUSSION_FIELDS = `number title body createdAt url state author { login } labels(first: 100) { nodes { name } }
+      comments(last: ${MAX_PAGE_COMMENTS}) { nodes { author { login } body createdAt url } }`;
+const ITEM_DISCUSSIONS_QUERY = `
+query($owner: String!, $repo: String!, $issue: Int!, $pr: Int!, $withIssue: Boolean!, $withPr: Boolean!) {
+  repository(owner: $owner, name: $repo) {
+    issue(number: $issue) @include(if: $withIssue) { ${DISCUSSION_FIELDS} stateReason }
+    pullRequest(number: $pr) @include(if: $withPr) {
+      ${DISCUSSION_FIELDS}
+      mergeable baseRefName headRefName isDraft reviewDecision
+      reviews(last: 100) { nodes { author { login } body state submittedAt } }
+      files(first: 100) { nodes { path } }
+      reviewThreads(first: 100) { nodes { isResolved isOutdated path line originalLine comments(first: 50) { nodes { author { login } body createdAt url } } } }
+    }
+  }
+}`;
+
+type RawLogin = { login: string } | null;
+type RawDiscussionComment = { author: RawLogin; body: string; createdAt: string; url: string };
+interface RawItemDiscussion {
+  number: number;
+  title: string;
+  body: string | null;
+  createdAt: string;
+  url: string;
+  state: string;
+  author: RawLogin;
+  labels: { nodes: Array<{ name: string }> };
+  comments: { nodes: RawDiscussionComment[] };
+  stateReason?: string | null;
+  mergeable?: Discussion['mergeable'];
+  baseRefName?: string;
+  headRefName?: string;
+  isDraft?: boolean;
+  reviewDecision?: Discussion['reviewDecision'] | null;
+  reviews?: { nodes: Array<{ author: RawLogin; body: string; state: string; submittedAt: string | null }> };
+  files?: { nodes: Array<{ path: string }> };
+  reviewThreads?: { nodes: Array<{ isResolved: boolean; isOutdated: boolean; path: string | null; line: number | null; originalLine: number | null; comments: { nodes: RawDiscussionComment[] } }> };
+}
+
+const commentOf = (c: RawDiscussionComment) => ({ author: c.author?.login ?? '', body: c.body, createdAt: c.createdAt, url: c.url });
+
+// One of them as getDiscussion returns it.
+export function discussionOf(kind: 'issue' | 'pr', raw: RawItemDiscussion): Discussion {
+  const all = raw.reviews?.nodes.map((r) => ({ author: r.author?.login ?? '', body: r.body, state: r.state, submittedAt: r.submittedAt ?? '' }));
+  const threads = raw.reviewThreads?.nodes
+    .filter((t) => t.comments.nodes.length > 0)
+    .map((t) => ({ path: t.path, line: t.line ?? t.originalLine, isResolved: t.isResolved, isOutdated: t.isOutdated, url: t.comments.nodes[0]!.url, comments: t.comments.nodes.map(commentOf) }));
+  return {
+    number: raw.number,
+    title: raw.title,
+    createdAt: raw.createdAt,
+    url: raw.url,
+    state: raw.state,
+    ...(kind === 'issue' && raw.state === 'CLOSED' && raw.stateReason ? { stateReason: raw.stateReason } : {}),
+    ...(kind === 'pr' ? { isDraft: raw.isDraft ?? false, mergeable: raw.mergeable ?? 'UNKNOWN', baseRefName: raw.baseRefName ?? '', headRefName: raw.headRefName ?? '' } : {}),
+    ...(all ? { reviews: all.filter((r) => r.body.trim() || ['APPROVED', 'CHANGES_REQUESTED', 'DISMISSED'].includes(r.state)), decisions: reviewerDecisions(all) } : {}),
+    ...(kind === 'pr' ? { reviewDecision: raw.reviewDecision ?? '' } : {}),
+    ...(threads ? { threads } : {}),
+    ...(raw.files ? { files: raw.files.nodes.map((f) => f.path) } : {}),
+    body: raw.body ?? '',
+    author: raw.author?.login ?? '',
+    labels: raw.labels.nodes.map((l) => l.name),
+    comments: raw.comments.nodes.map(commentOf),
+  };
+}
+
+export async function getItemDiscussions(issueNumber: number | undefined, prNumber: number | undefined): Promise<{ issue?: Discussion; pr?: Discussion }> {
+  if (issueNumber === undefined && prNumber === undefined) return {};
+  const { owner, name: repo } = parseRepo(activeRepo().productRepo);
+  type Raw = { data: { repository: { issue?: RawItemDiscussion | null; pullRequest?: RawItemDiscussion | null } } };
+  const raw = JSON.parse(await ghApi(['api', 'graphql', '-f', `query=${ITEM_DISCUSSIONS_QUERY}`, '-f', `owner=${owner}`, '-f', `repo=${repo}`,
+    '-F', `issue=${issueNumber ?? 0}`, '-F', `pr=${prNumber ?? 0}`, '-F', `withIssue=${issueNumber !== undefined}`, '-F', `withPr=${prNumber !== undefined}`])) as Raw;
+  const { issue, pullRequest } = raw.data.repository;
+  return { ...(issue ? { issue: discussionOf('issue', issue) } : {}), ...(pullRequest ? { pr: discussionOf('pr', pullRequest) } : {}) };
+}
+
 // A PR's changed files as "Files changed" shows them (#111): each with its
 // patch, which GitHub leaves out for a binary or too big a file. GitHub lists
 // at most 3000.

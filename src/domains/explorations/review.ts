@@ -6,6 +6,7 @@ import { EXPLORATION_DIR, parseFinding, type FindingMeta } from './memory.js';
 import { parseFindingBody, type FindingBodyParts, type FindingImage } from './output.js';
 import { EXPLORATION_BRANCH_PREFIX, findingsAddedOverBase } from './pr.js';
 import { host } from '@platform/host/host.js';
+import { ReadCache } from '@platform/cache/read-cache.js';
 
 
 // The review of an exploration PR on the dashboard (#93): the findings the
@@ -178,37 +179,25 @@ async function readFindingCards(entry: RepoEntry, pr: ExplorationPr): Promise<Om
   };
 }
 
-const cache = new Map<string, { data?: ExplorationReview; readAt: number; reading?: Promise<ExplorationReview> }>();
-const FORGET_MS = 30 * 60_000;
+const cache = new ReadCache<ExplorationReview>({
+  label: (key) => `la exploración de ${key}`,
+  ttlMs: () => config.dashboard.githubTtlSeconds * 1000,
+  forgetMs: 30 * 60_000,
+  failed: (previous, error) => ({ ...(previous ?? { fetchedAt: '', branch: '', base: '', fichas: [], runs: [] }), error }),
+});
 
-export async function explorationReview(entry: RepoEntry, pr: ExplorationPr, changedSince = 0, now = Date.now()): Promise<ExplorationReview> {
-  for (const [key, value] of cache) if (!value.reading && now - value.readAt > FORGET_MS) cache.delete(key);
+export function explorationReview(entry: RepoEntry, pr: ExplorationPr, changedSince = 0, now = Date.now()): Promise<ExplorationReview> {
   const key = `${entry.productRepo}#${pr.number}:${pr.headRefName}`;
-  const entryCache = cache.get(key) ?? { readAt: 0 };
-  cache.set(key, entryCache);
-  if (entryCache.data && now - entryCache.readAt < config.dashboard.githubTtlSeconds * 1000 && entryCache.readAt >= changedSince) return entryCache.data;
-  if (!entryCache.reading) {
-    entryCache.reading = readFindingCards(entry, pr)
-      .then((data) => ({ fetchedAt: new Date().toISOString(), ...data }))
-      .catch((error) => {
-        log.error(`tablero: no se pudo leer la exploración de ${key}`, error);
-        return { ...(entryCache.data ?? { fetchedAt: '', branch: pr.headRefName, base: pr.baseRefName, fichas: [], runs: [] }), error: (error as Error).message.split('\n')[0] };
-      })
-      .then((data) => {
-        entryCache.data = data;
-        entryCache.readAt = Date.now();
-        return data;
-      })
-      .finally(() => {
-        entryCache.reading = undefined;
-      });
-  }
-  return entryCache.data ?? entryCache.reading;
+  const read = async () => ({ fetchedAt: new Date().toISOString(), ...(await readFindingCards(entry, pr)) });
+  const failed = (previous: ExplorationReview | undefined, error: string) => ({ ...(previous ?? { fetchedAt: '', branch: pr.headRefName, base: pr.baseRefName, fichas: [], runs: [] }), error });
+  return cache.get(key, read, { tags: [entry.productRepo, `${entry.productRepo}#${pr.number}`], changedSince, now, failed });
 }
 
-// After someone commented from the dashboard: the next read brings the comment.
-export function forgetExploration(repo: string, prNumber: number): void {
-  for (const key of cache.keys()) if (key.startsWith(`${repo}#${prNumber}:`)) cache.delete(key);
+// After someone commented from the dashboard: read again right away, and
+// the next request waits for it, so it brings the comment. A webhook's
+// doesn't wait.
+export function expireExploration(repo: string, prNumber: number, { wait = false }: { wait?: boolean } = {}): void {
+  cache.expire(`${repo}#${prNumber}`, { wait });
 }
 
 export function resetExplorationCache(): void {
