@@ -13,13 +13,13 @@ Un spec es para un cambio grande. ronin lo trocea en **slices**: unidades chicas
 
 1. **El spec es un PR draft** en el repo del producto, con un `.md` en `docs/ronin/specs/`, asignado a `ronin-agent`. Mientras sea draft, ronin lo ignora.
 
-2. **Marcarlo *ready for review* es la señal.** ronin lo marca `ronin:in-progress`, lo mergea (es documentación: el gate de aprobación es para el código) y abre un **issue de tracking**.
+2. **Marcarlo *ready for review* es la señal.** ronin lo marca `ronin:in-progress`, lo mergea (es documentación: el gate de aprobación es para el código) y abre un **issue de tracking**. Si el spec salió de un issue con `/spec`, ronin comenta en ese issue dónde sigue el trabajo y lo cierra como completado. Si es el issue de un pedido del portal, solo comenta y lo deja abierto: cerrado así, a la persona le llegaría que su pedido ya está resuelto.
 
 3. **El plan:** un agente lee el spec y el código, y escribe en el issue de tracking un checklist de slices.
 
 4. **Una slice, un PR**, en una rama `ronin/<issue>/slice-<n>`, que empieza con «Parte de #N»: el PR de una slice nunca cierra el issue. Cada PR sale con [`ronin:auto-merge`](/ronin/referencia/comandos/#auto-merge): aprobado y en verde, se mergea solo.
 
-5. **Al mergearse la última**, el issue pasa a `ronin:done`.
+5. **Al mergearse la última**, el issue pasa a `ronin:done` y ronin lo cierra como completado.
 
 </Steps>
 

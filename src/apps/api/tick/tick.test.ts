@@ -29,6 +29,7 @@ vi.mock('@platform/config/config.js', () => ({
   },
   concurrencyFor: () => 3,
   LABEL_DIRECT_ISSUE: 'ronin:issue-fix',
+  LABEL_PORTAL: 'ronin:portal',
   LABEL_MANAGED: 'ronin',
   LABEL_STACK_PRS: 'ronin:stack-prs',
   LABEL_STATES: { ready: 'ronin:ready', 'in-progress': 'ronin:in-progress', blocked: 'ronin:blocked', done: 'ronin:done' },
@@ -76,6 +77,9 @@ const addReaction = vi.fn();
 const retargetDependents = vi.fn();
 const incrementAttemptCount = vi.fn();
 const setIssueState = vi.fn();
+const closeIssueCompleted = vi.fn(async (..._args: unknown[]) => {});
+const commentOnIssue = vi.fn(async (..._args: unknown[]) => {});
+const getIssueLabels = vi.fn(async (..._args: unknown[]): Promise<string[]> => ['ronin', 'ronin:in-progress']);
 const getPullRequestStatus = vi.fn();
 const addIssueLabel = vi.fn();
 const listAssignedIssues = vi.fn();
@@ -92,11 +96,13 @@ vi.mock('@platform/github/github.js', () => ({
   attemptCountFromLabels: (labels: string[]) => Number(labels.map((l) => l.match(/^ronin:attempts-(\d+)$/)?.[1]).find(Boolean) ?? 0),
   resetAttemptCount: (...args: unknown[]) => resetAttemptCount(...args),
   isTransientGhError: (...args: unknown[]) => isTransientGhError(...args),
-  getIssueLabels: async () => ['ronin', 'ronin:in-progress'],
+  getIssueLabels: (...args: unknown[]) => getIssueLabels(...args),
   addReaction: (...args: unknown[]) => addReaction(...args),
   retargetDependents: (...args: unknown[]) => retargetDependents(...args),
   incrementAttemptCount: (...args: unknown[]) => incrementAttemptCount(...args),
   setIssueState: (...args: unknown[]) => setIssueState(...args),
+  closeIssueCompleted: (...args: unknown[]) => closeIssueCompleted(...args),
+  commentOnIssue: (...args: unknown[]) => commentOnIssue(...args),
   getPullRequestStatus: (...args: unknown[]) => getPullRequestStatus(...args),
   addIssueLabel: (...args: unknown[]) => addIssueLabel(...args),
   listAssignedIssues: (...args: unknown[]) => listAssignedIssues(...args),
@@ -181,7 +187,7 @@ vi.mock('@domains/changelog/changelog.js', () => ({
   findReleasesNeedingChangelog: (...args: unknown[]) => findReleasesNeedingChangelog(...args),
 }));
 
-const { runScoped, runIssueStep, idleCommandJobs, specRevisionJobs, processSlicePr, processIssue, finishClosedIssues, agentTaskFor, needsMoreInfo, discoverAssignedIssues, processExternalReviewCandidate, processTrustedFixCandidate, runExternalReviews, processSpikeCandidate, processChangelogCandidate, runChangelogUpdates, renderTrackingIssueBody, cycleFirst } = await import('./tick.js');
+const { runScoped, runIssueStep, idleCommandJobs, specRevisionJobs, processSlicePr, processIssue, finishClosedIssues, handOffSpecOrigin, agentTaskFor, needsMoreInfo, discoverAssignedIssues, processExternalReviewCandidate, processTrustedFixCandidate, runExternalReviews, processSpikeCandidate, processChangelogCandidate, runChangelogUpdates, renderTrackingIssueBody, cycleFirst } = await import('./tick.js');
 
 function issue(overrides: Partial<TrackingIssue> = {}): TrackingIssue {
   return { number: 228, title: 'Test issue', url: 'https://github.com/x/y/issues/228', labels: [], ...overrides };
@@ -887,6 +893,9 @@ describe('processIssue — slices merged by a human', () => {
     expect(markSliceMerged).toHaveBeenCalledWith(228, 0);
     expect(retargetDependents).toHaveBeenCalledWith('ronin/228/slice-1', 'main');
     expect(setIssueState).toHaveBeenCalledWith(228, 'done');
+    // And closes it, after: closed while in-progress, finishClosedIssues would take it.
+    expect(closeIssueCompleted).toHaveBeenCalledWith(228);
+    expect(setIssueState.mock.invocationCallOrder[0]).toBeLessThan(closeIssueCompleted.mock.invocationCallOrder[0]);
   });
 
   it('hands the next slice its new base in the same tick', async () => {
@@ -1439,5 +1448,21 @@ describe('runIssueStep', () => {
   it('still counts any other error', async () => {
     await runIssueStep(issue, async () => { throw new Error('claude exited with code 1'); });
     expect(incrementAttemptCount).toHaveBeenCalledWith(350);
+  });
+});
+
+describe('handOffSpecOrigin — the issue a /spec came from', () => {
+  it('says where the work went and closes it as completed', async () => {
+    getIssueLabels.mockResolvedValueOnce([]);
+    await handOffSpecOrigin(300, 310);
+    expect(commentOnIssue).toHaveBeenCalledWith(300, expect.stringContaining('sigue en #310'));
+    expect(closeIssueCompleted).toHaveBeenCalledWith(300);
+  });
+
+  it("leaves a portal request's issue open: closed as completed, its person would hear it was solved", async () => {
+    getIssueLabels.mockResolvedValueOnce(['ronin:portal']);
+    await handOffSpecOrigin(300, 310);
+    expect(commentOnIssue).toHaveBeenCalledWith(300, expect.stringContaining('queda abierto'));
+    expect(closeIssueCompleted).not.toHaveBeenCalled();
   });
 });
