@@ -382,6 +382,9 @@ export async function getPullRequestStatus(prNumber: number): Promise<PullReques
 // once. No config knob: there's no legitimate reason to tune this per
 // environment, only room to raise it if the warning below ever fires.
 const PR_LIST_LIMIT = 300;
+// gh lists 30 without --limit, and a list cut short loses its tail with no
+// warning: every list of open issues or PRs passes one.
+const ISSUE_LIST_LIMIT = 1000;
 
 // Single batched read behind tick()'s whole per-issue loop, replacing what
 // used to be one `gh pr list` + one `gh pr view` per PR per issue — see
@@ -857,7 +860,7 @@ export async function getPrHead(prNumber: number): Promise<PrHead> {
 }
 
 async function listOpenPrsWithBase(baseBranch: string): Promise<number[]> {
-  const stdout = await gh(['pr', 'list', '--state', 'open', '--base', baseBranch, '--json', 'number']);
+  const stdout = await gh(['pr', 'list', '--state', 'open', '--base', baseBranch, '--limit', String(PR_LIST_LIMIT), '--json', 'number']);
   return (JSON.parse(stdout) as Array<{ number: number }>).map((p) => p.number);
 }
 
@@ -936,6 +939,7 @@ export async function listAssignedSpecPrs(): Promise<SpecPr[]> {
     'pr', 'list',
     '--assignee', config.githubLogin,
     '--state', 'open',
+    '--limit', String(PR_LIST_LIMIT),
     '--json', 'number,isDraft,headRefName,labels',
   ]);
   const raw = JSON.parse(stdout) as Array<{ number: number; isDraft: boolean; headRefName: string; labels: Array<{ name: string }> }>;
@@ -966,6 +970,7 @@ export async function listAssignedIssues(): Promise<BugIssue[]> {
     'issue', 'list',
     '--assignee', config.githubLogin,
     '--state', 'open',
+    '--limit', String(ISSUE_LIST_LIMIT),
     '--json', 'number,title,labels',
   ]);
   const raw = JSON.parse(stdout) as Array<{ number: number; title: string; labels: Array<{ name: string }> }>;
@@ -981,16 +986,20 @@ export async function listAssignedIssues(): Promise<BugIssue[]> {
 // handed off, so there's no --assignee filter here. Same LABEL_MANAGED
 // exclusion as listAssignedIssues: once an issue is ronin-managed, it's
 // tracked by the main pipeline instead and /spike no longer applies to it.
-export async function listOpenUnmanagedIssues(): Promise<BugIssue[]> {
+// All of them: without --limit gh stops at 30, and the issues past those
+// were never looked at. When each was last updated, so the caller reads the
+// comments of only the ones that moved (see spike.ts's findIssueCommands).
+export async function listOpenUnmanagedIssues(): Promise<Array<BugIssue & { updatedAt: string }>> {
   const stdout = await gh([
     'issue', 'list',
     '--state', 'open',
-    '--json', 'number,title,labels',
+    '--limit', String(ISSUE_LIST_LIMIT),
+    '--json', 'number,title,labels,updatedAt',
   ]);
-  const raw = JSON.parse(stdout) as Array<{ number: number; title: string; labels: Array<{ name: string }> }>;
+  const raw = JSON.parse(stdout) as Array<{ number: number; title: string; labels: Array<{ name: string }>; updatedAt: string }>;
   return raw
     .filter((issue) => !issue.labels.some((l) => l.name === LABEL_MANAGED))
-    .map((issue) => ({ number: issue.number, title: issue.title }));
+    .map((issue) => ({ number: issue.number, title: issue.title, updatedAt: issue.updatedAt }));
 }
 
 // Swaps state labels on a spec PR the same way setIssueState does on a

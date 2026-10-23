@@ -35,12 +35,22 @@ export async function findIssuesNeedingSpike(): Promise<SpikeCandidate[]> {
   return (await findIssueCommands()).spikes;
 }
 
+// A command is a comment, and a comment updates its issue: an issue nobody
+// touched in this long has no new command. Far longer than a tick, so a
+// few ticks that failed in a row still find it; one already handled is
+// skipped anyway (processed-comments.ts).
+const COMMAND_WINDOW_MS = 3 * 24 * 60 * 60 * 1000;
+
 // /spike, /explore and /spec, found in one
-// pass over the open unmanaged issues.
-// `only` narrows it to those issues, like findPrsNeedingReview's.
-export async function findIssueCommands(only?: number[]): Promise<IssueCommandCandidates> {
+// pass over the open unmanaged issues updated lately: their comments are
+// read one issue at a time.
+// `only` narrows it to those issues, like findPrsNeedingReview's, however
+// long ago they were updated: the event that names them just happened.
+export async function findIssueCommands(only?: number[], now = Date.now()): Promise<IssueCommandCandidates> {
   const open = await listOpenUnmanagedIssues();
-  const issues = only ? open.filter((issue) => only.includes(issue.number)) : open;
+  const issues = only
+    ? open.filter((issue) => only.includes(issue.number))
+    : open.filter((issue) => now - Date.parse(issue.updatedAt) <= COMMAND_WINDOW_MS);
   const spikes: SpikeCandidate[] = [];
   const explores: ExploreCandidate[] = [];
   const specs: SpecCandidate[] = [];
