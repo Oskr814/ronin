@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { ms, summarizeRoutes, summarizeTicks, tickMetricsOf } from './timing-report.js';
+import { averageOps, ms, summarizeRoutes, summarizeTicks, tickMetricsOf } from './timing-report.js';
 import type { RouteWindow } from './timing.js';
 
 const window = (over: Partial<RouteWindow>): RouteWindow => ({
@@ -28,10 +28,34 @@ describe('the timings report', () => {
     ].join('\n');
     const metrics = tickMetricsOf(log);
     expect(metrics).toHaveLength(2);
-    expect(summarizeTicks(metrics)).toEqual([{ repo: 'acme/app', ticks: 2, p50: 40000, p90: 40000, max: 40000, steps: { assign: 2000, sweeps: 9000 }, discoveryMs: 12000, jobsMs: 3000, githubMs: 25000, githubCalls: 80 }]);
+    expect(summarizeTicks(metrics)).toEqual([{ repo: 'acme/app', ticks: 2, p50: 40000, p90: 40000, max: 40000, steps: { assign: 2000, sweeps: 9000 }, discoveryMs: 12000, jobsMs: 3000, githubMs: 25000, githubCalls: 80, githubOps: [] }]);
   });
 
   it('writes durations the way people read them', () => {
     expect([ms(null), ms(12.4), ms(2500), ms(Infinity)]).toEqual(['—', '12 ms', '2.5 s', '>10 s']);
   });
 });
+
+describe('the timings report, GitHub by operation (#370)', () => {
+  it('averages each operation over the requests or ticks, the heaviest first', () => {
+    expect(averageOps([{ listX: { ms: 300, count: 2 }, getY: { ms: 100, count: 1 } }, { listX: { ms: 100, count: 2 } }, undefined], 2)).toEqual([
+      { name: 'listX', ms: 200, calls: 2 },
+      { name: 'getY', ms: 50, calls: 0.5 },
+    ]);
+  });
+
+  it('per route, per request', () => {
+    const [detail] = summarizeRoutes([window({ route: '/api/items/:id/detail', count: 4, totalMs: 800, githubOps: { getDiscussion: { ms: 400, count: 4 } } })]);
+    expect(detail.githubOps).toEqual([{ name: 'getDiscussion', ms: 100, calls: 1 }]);
+  });
+
+  it('per tick, only over the ticks that measured them', () => {
+    const [repo] = summarizeTicks([
+      { repo: 'acme/tienda', durationMs: 30_000 },
+      { repo: 'acme/tienda', durationMs: 30_000, githubOps: { listAllOpenRoninPrs: { ms: 4000, count: 2 } } },
+      { repo: 'acme/tienda', durationMs: 30_000, githubOps: { listAllOpenRoninPrs: { ms: 2000, count: 2 } } },
+    ]);
+    expect(repo.githubOps).toEqual([{ name: 'listAllOpenRoninPrs', ms: 3000, calls: 2 }]);
+  });
+});
+

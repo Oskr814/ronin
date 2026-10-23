@@ -48,6 +48,43 @@ export async function timed<T>(name: string, fn: () => Promise<T>): Promise<T> {
 
 const round = (ms: number) => Math.round(ms * 10) / 10;
 
+// ---------- GitHub, by what asked for it (#370)
+
+// A GitHub call counts in the "github" span, as always, and in one of its
+// own, "github:<operation>": the function of ronin that made the call
+// (listAllOpenRoninPrs, getIssueBody…), read off the stack. So the six
+// open-PR lists of a tick come out apart, and no call site has to name
+// itself. These are the wrappers every call goes through, never the name.
+export const GITHUB_SPAN = 'github';
+const GITHUB_OP = 'github:';
+const GITHUB_WRAPPERS = new Set(['gh', 'ghApi', 'ghGraphql', 'githubFetch', 'call', 'graphql', 'timed', 'timedGithub', 'githubCaller']);
+
+// The first named function on the stack that isn't a wrapper: "at listX
+// (file…)" or "at async listX (file…)", with Object. or Module. dropped (a
+// call through `import * as`). A frame
+// without a name (a callback) or of the runtime (Array.map) is skipped.
+export function githubCaller(stack = new Error().stack ?? ''): string {
+  for (const line of stack.split('\n').slice(1)) {
+    const name = /^\s*at (?:async )?(?:Object\.|Module\.)?([\w$.]+) \(/.exec(line)?.[1];
+    if (!name || name.includes('.') || GITHUB_WRAPPERS.has(name)) continue;
+    return name;
+  }
+  return 'desconocida';
+}
+
+// What fn took, in "github" and in its operation's span. The operation is
+// read when the call starts, while its caller is still on the stack.
+export function timedGithub<T>(fn: () => Promise<T>, operation = githubCaller()): Promise<T> {
+  return timed(GITHUB_SPAN, () => timed(`${GITHUB_OP}${operation}`, fn));
+}
+
+// The operations of a measurement, by name: what each took and how many
+// calls it made.
+export function githubOpsOf(spans: Measurement['spans']): Record<string, Span> {
+  return Object.fromEntries([...spans].filter(([name]) => name.startsWith(GITHUB_OP)).map(([name, s]) => [name.slice(GITHUB_OP.length), { ms: Math.round(s.ms), count: s.count }]));
+}
+
+
 // The Server-Timing header: the total so far, then each span with how many
 // times it ran (DevTools shows them under the request's Timing tab).
 export function serverTiming(measurement: Measurement, now = performance.now()): string {
@@ -84,6 +121,8 @@ export interface RouteWindow {
   buckets: number[];
   githubMs: number;
   githubCount: number;
+  // By operation (#370); absent in the lines written before.
+  githubOps?: Record<string, Span>;
 }
 
 export class RouteTimings {
@@ -99,10 +138,15 @@ export class RouteTimings {
     w.maxMs = Math.max(w.maxMs, entry.ms);
     const i = BUCKETS.findIndex((upper) => entry.ms <= upper);
     w.buckets[i === -1 ? BUCKETS.length : i] += 1;
-    const github = entry.spans.get('github');
+    const github = entry.spans.get(GITHUB_SPAN);
     if (github) {
       w.githubMs += github.ms;
       w.githubCount += github.count;
+    }
+    for (const [name, op] of Object.entries(githubOpsOf(entry.spans))) {
+      const ops = (w.githubOps ??= {});
+      const sum = ops[name] ?? { ms: 0, count: 0 };
+      ops[name] = { ms: sum.ms + op.ms, count: sum.count + op.count };
     }
     this.windows.set(key, w);
   }

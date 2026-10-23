@@ -1,4 +1,4 @@
-import { BUCKETS, percentile, type RouteWindow } from './timing.js';
+import { BUCKETS, percentile, type RouteWindow, type Span } from './timing.js';
 
 // What `pnpm timings` prints (scripts/timings.ts): the API's routes and the
 // tick's steps over the last days, the baseline the stages of #235 compare
@@ -18,6 +18,27 @@ export interface RouteSummary {
   // Per request, on average.
   githubMs: number;
   githubCalls: number;
+  // By operation, per request on average, the heaviest first (#370).
+  githubOps: GithubOp[];
+}
+
+export interface GithubOp {
+  name: string;
+  ms: number;
+  calls: number;
+}
+
+// The operations of several measurements, summed and then divided by how
+// many there were: what each costs per request or per tick, heaviest first.
+export function averageOps(ops: Array<Record<string, Span> | undefined>, over: number): GithubOp[] {
+  const sums = new Map<string, Span>();
+  for (const one of ops) {
+    for (const [name, s] of Object.entries(one ?? {})) {
+      const sum = sums.get(name) ?? { ms: 0, count: 0 };
+      sums.set(name, { ms: sum.ms + s.ms, count: sum.count + s.count });
+    }
+  }
+  return [...sums].map(([name, s]) => ({ name, ms: over ? s.ms / over : 0, calls: over ? s.count / over : 0 })).sort((a, b) => b.ms - a.ms);
 }
 
 export function summarizeRoutes(windows: RouteWindow[]): RouteSummary[] {
@@ -39,6 +60,7 @@ export function summarizeRoutes(windows: RouteWindow[]): RouteSummary[] {
       maxMs: Math.max(...ws.map((w) => w.maxMs)),
       githubMs: count ? sum((w) => w.githubMs) / count : 0,
       githubCalls: count ? sum((w) => w.githubCount) / count : 0,
+      githubOps: averageOps(ws.map((w) => w.githubOps), count),
     };
   }).sort((a, b) => b.avgMs * b.count - a.avgMs * a.count);
 }
@@ -53,6 +75,7 @@ export interface TickMetric {
   jobsMs?: number;
   githubMs?: number;
   githubCalls?: number;
+  githubOps?: Record<string, Span>;
 }
 
 export interface TickSummary {
@@ -67,6 +90,8 @@ export interface TickSummary {
   jobsMs: number | null;
   githubMs: number | null;
   githubCalls: number | null;
+  // By operation, per tick on average, of the ticks that measured them.
+  githubOps: GithubOp[];
 }
 
 const quantile = (values: number[], q: number): number => {
@@ -93,6 +118,7 @@ export function summarizeTicks(metrics: TickMetric[]): TickSummary[] {
       jobsMs: medianOf(ms.map((m) => m.jobsMs)),
       githubMs: medianOf(ms.map((m) => m.githubMs)),
       githubCalls: medianOf(ms.map((m) => m.githubCalls)),
+      githubOps: averageOps(ms.map((m) => m.githubOps), ms.filter((m) => m.githubOps).length),
     };
   }).sort((a, b) => a.repo.localeCompare(b.repo));
 }
