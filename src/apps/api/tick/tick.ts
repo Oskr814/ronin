@@ -479,7 +479,12 @@ export async function processSlicePr(issue: TrackingIssue, pr: StackedPr, isBott
         await runInternalReview(issue.number, pr);
       } catch (error) {
         log.error(`review interna PR #${pr.number}: falló`, error);
+        return true;
       }
+      // Its status wakes no webhook, and this event's auto-merge step ran
+      // before it: an approved, green PR that only waited for it merges
+      // now, not on the next tick.
+      await sweepAutoMerge().catch((error) => log.error(`auto-merge: no se pudo revisar después de la review interna de #${pr.number}`, error));
       return true;
     }
 
