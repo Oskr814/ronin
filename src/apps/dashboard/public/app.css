@@ -127,6 +127,22 @@ a { color: inherit; }
 .pill .dot.live { width: 9px; height: 9px; }
 .pill .m { color: var(--muted); }
 .tx { flex: 1; overflow: auto; padding: 16px 18px 24px; font: 12.5px/1.6 "JetBrains Mono", monospace; color: var(--ink-2); min-height: 0; }
+.hist { flex: 1; overflow: auto; padding: 4px 20px 24px; min-height: 0; font-size: 13px; }
+.hist .htot { margin: 10px 0 0; color: var(--ink-2); }
+.hist h3 { font-size: 12px; font-weight: 500; color: var(--muted); margin: 14px 0 4px; }
+.hist ol { list-style: none; margin: 0; padding: 0; }
+.hist li { border-bottom: 1px solid var(--rule); }
+.hist li li { border-bottom: 0; }
+.hist ol ol { padding: 0 0 6px 18px; }
+.hist .hline { display: flex; align-items: center; gap: 8px; }
+.hist .hrow { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; padding: 7px 6px; border-radius: 5px; color: var(--ink-2); }
+.hist .hrow:hover { background: var(--hover); }
+.hist .hrow[aria-current="true"] { background: var(--raise); }
+.hist .hrow .dot { margin-top: 0; flex: none; }
+.hist .hrow b { font-weight: 500; color: var(--ink); white-space: nowrap; }
+.hist .hrow .m { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hist .fold { flex: none; font-size: 12px; color: var(--run); padding: 4px 6px; white-space: nowrap; }
+.hist .hnote { margin: 14px 0 0; font-size: 12px; color: var(--muted); }
 .tx .say { color: var(--ink); margin: 12px 0 4px; font-family: "Schibsted Grotesk", sans-serif; font-size: 13.5px; max-width: 78ch; white-space: pre-wrap; overflow-wrap: anywhere; }
 .tx .say:first-child { margin-top: 0; }
 .tx .step { margin: 8px 0 0; overflow-wrap: anywhere; }
@@ -161,7 +177,7 @@ a { color: inherit; }
 .activity .m { color: var(--muted); }
 .act-line { display: flex; align-items: center; gap: 10px; padding: 8px 20px; font-size: 13px; color: var(--ink-2); }
 .act-line .lbl { font-size: 12px; color: var(--muted); flex: none; }
-.act-line .pills { display: flex; gap: 6px; overflow-x: auto; min-width: 0; scrollbar-width: none; }
+.act-line .pills { display: flex; gap: 6px; flex: none; }
 .act-line .sp { margin-left: auto; display: flex; gap: 10px; align-items: center; flex: none; font-size: 12px; }
 .link { color: var(--run); font-size: 12.5px; white-space: nowrap; }
 .link:hover { text-decoration: underline; }
@@ -696,6 +712,9 @@ table.fdiff tr.sel td, table.fdiff td.sel { box-shadow: inset 0 0 0 9999px color
   .head h1 { flex-basis: 100%; }
   .head .row .actions { position: static; }
   .act-line, .last-err { padding-left: 14px; padding-right: 14px; }
+  .hist { overflow: visible; flex: none; padding-left: 14px; padding-right: 14px; }
+  .hist .hrow { flex-wrap: wrap; }
+  .hist .hrow .m { flex-basis: 100%; padding-left: 15px; }
   .act-line { flex-wrap: wrap; }
   .act-line .latest { flex-basis: 100%; }
   .act-line .lbl, .doctabs .src { display: none; }

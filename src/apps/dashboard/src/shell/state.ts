@@ -49,6 +49,8 @@ export const runKey = (runId: string) => ['run', runId];
 export const EXPLORATIONS_KEY = ['explorations'];
 // `from`: how many lines the run had when it was read, where its stream starts.
 export type ReadRun = ShownRun & { from: number };
+// What an item's page shows: its page, a run's transcript or its runs' history (#363).
+export type ItemViewMode = 'ficha' | 'tx' | 'history';
 
 export const S = {
   // The snapshot, as the shell's query last read it.
@@ -68,7 +70,7 @@ export const S = {
   pendingRun: null as string | null,
   filter: null as 'running' | 'queue' | null,
   q: '',
-  view: {} as Record<string, 'ficha' | 'tx'>,
+  view: {} as Record<string, ItemViewMode>,
   doc: {} as Record<string, string>,
   ficha: {} as Record<string, string>,
   fichaOpen: {} as Record<string, boolean>,
@@ -683,7 +685,7 @@ async function loadRuns(id: string) {
   await queryClient.fetchQuery({ ...runsQuery(id), staleTime: 0 }).catch(() => {});
 }
 
-export function showRun(key: string, index: number, view: 'ficha' | 'tx') {
+export function showRun(key: string, index: number, view: ItemViewMode) {
   S.view[key] = view;
   S.runIdx[key] = index;
   changed();
