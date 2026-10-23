@@ -10,10 +10,14 @@ import { changed, closeExploreNow, closeNewIssue, linearRepos, md, repoShort, S,
 // What opens on top of the page, on the body: a note, the keys' help, a new
 // issue, Explorar ahora, and the notice to log in again in another tab.
 
+// What went well comes with a check; what couldn't be done, without.
+export const toastDone = (message: string) => !/^(No se pudo|Ningún|Sin cambios)/.test(message);
+
 export function Toast() {
   const t = S.toast;
   if (!t) return null;
-  return createPortal(<div key={t.id} className="toast" role="status">{t.message}{t.url && t.url.startsWith('https://github.com/') ? <> <a href={t.url} target="_blank" rel="noopener">Ver ↗</a></> : null}</div>, document.body);
+  const done = toastDone(t.message);
+  return createPortal(<div key={t.id} className={`toast${t.leaving ? ' leaving' : ''}`} role={done ? 'status' : 'alert'}>{done && <span className="tick" aria-hidden="true">✓</span>}{t.message}{t.url && t.url.startsWith('https://github.com/') ? <> <a href={t.url} target="_blank" rel="noopener">Ver ↗</a></> : null}</div>, document.body);
 }
 
 export function Relogin() {

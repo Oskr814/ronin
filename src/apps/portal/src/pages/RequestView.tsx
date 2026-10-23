@@ -119,6 +119,26 @@ export function RequestView({ n, me, onMenu, onZoom, onMissing }: {
   const imageLoaded = () => {
     if (!round && atBottom.current && thread.current) thread.current.scrollTop = thread.current.scrollHeight;
   };
+  // A message that arrives while the person reads further up: a notice that
+  // takes them down, instead of moving what they read (#372). ronin's, said
+  // to a screen reader too.
+  const count = d?.messages.length ?? 0;
+  const counted = useRef(count);
+  const [below, setBelow] = useState(false);
+  const [said, setSaid] = useState('');
+  useEffect(() => {
+    const before = counted.current;
+    counted.current = count;
+    if (!d || !before || count <= before) return;
+    if (!atBottom.current) setBelow(true);
+    const last = d.messages.at(-1);
+    if (last?.from === 'ronin') setSaid(`ronin te escribió: ${last.text ?? 'una respuesta nueva'}`);
+  }, [count, d]);
+  const toBottom = () => {
+    const el = thread.current;
+    setBelow(false);
+    el?.scrollTo({ top: el.scrollHeight, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+  };
 
   if (!d) return <><div className="top"><MenuButton onClick={onMenu} /><h2>Cargando…</h2></div><div className="content" /></>;
 
@@ -204,6 +224,7 @@ export function RequestView({ n, me, onMenu, onZoom, onMissing }: {
       <div className="content" id="thread" ref={thread} onScroll={(e) => {
         const el = e.currentTarget;
         atBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+        if (atBottom.current && below) setBelow(false);
       }}>
         <div className="content-in thread">
           <Thread d={d} me={me} onZoom={onZoom} onImage={imageLoaded} />
@@ -211,6 +232,8 @@ export function RequestView({ n, me, onMenu, onZoom, onMissing }: {
           <Working d={d} />
         </div>
       </div>
+      {below && <div className="newmsg-w"><button className="newmsg" onClick={toBottom}>Mensaje nuevo ↓</button></div>}
+      <div className="sr" aria-live="polite">{said}</div>
       {foot}
     </>
   );

@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { onAnnounce } from '../lib/motion.js';
 import { shellActions } from './actions.js';
 import { Center, route } from './Center.js';
 import { Context } from './Context.js';
@@ -77,6 +78,25 @@ function Login() {
   );
 }
 
+// What changed on screen by itself, said to a screen reader (lib/motion.ts):
+// the last thing, emptied a moment later so the same words say it again.
+function Announcer() {
+  const [text, setText] = useState('');
+  useEffect(() => {
+    let timer = 0;
+    const stop = onAnnounce((said) => {
+      setText(said);
+      clearTimeout(timer);
+      timer = window.setTimeout(() => setText(''), 4000);
+    });
+    return () => {
+      stop();
+      clearTimeout(timer);
+    };
+  }, []);
+  return <div className="sr" aria-live="polite">{text}</div>;
+}
+
 // The queries whose answers the shell shows.
 const SHOWN = new Set(['deploys', 'today', 'explorations', 'item']);
 
@@ -119,6 +139,7 @@ export function Shell() {
       {at ? <><NewIssue /><KeysHelp /><ExploreNowLayer /></> : null}
       <Toast />
       <Relogin />
+      <Announcer />
     </ShellContext.Provider>
   );
 }

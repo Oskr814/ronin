@@ -81,7 +81,7 @@ export const S = {
   extra: {} as Record<string, Item>,
   newIssue: null as NewIssue | null,
   keysHelp: false,
-  toast: null as { message: string; url?: string; id: number } | null,
+  toast: null as { message: string; url?: string; id: number; leaving?: boolean } | null,
   revSent: {} as Record<string, { repo: string; pr: number; decision: 'APPROVED' | 'CHANGES_REQUESTED'; readAt: string | null; at: number }>,
   page: null as Page,
   // A phone shows the sidebar (list) or the page (detail).
@@ -266,14 +266,20 @@ export function reviewed(key: string, pr: number, decision: 'APPROVED' | 'CHANGE
 
 // ---------- overlays
 let toastTimer = 0;
+const TOAST_OUT_MS = 180;
 export function toast(message: string, url?: string) {
   // The newest says it all: one on top of another can't be read.
   clearTimeout(toastTimer);
   S.toast = { message, url, id: (S.toast?.id ?? 0) + 1 };
   changed();
+  // It goes with a fade (the only thing that does, app.css), then it's gone.
   toastTimer = window.setTimeout(() => {
-    S.toast = null;
+    S.toast = { ...S.toast!, leaving: true };
     changed();
+    toastTimer = window.setTimeout(() => {
+      S.toast = null;
+      changed();
+    }, TOAST_OUT_MS);
   }, 5000);
 }
 

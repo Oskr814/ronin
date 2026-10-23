@@ -3,8 +3,9 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { ApiError, client, ok, type Run } from '@apps/dashboard/src/api.js';
 import { useRepoColor, useShell } from '@apps/dashboard/src/shell/hooks.js';
 import { hhmm, repoShort, when } from '@apps/dashboard/src/lib/format.js';
+import { FLASH_MS, landOn } from '@apps/dashboard/src/lib/motion.js';
 import { ICON } from '@apps/dashboard/src/lib/icons.js';
-import { Dot, money, RunCard, Transcript, typeName } from '@apps/dashboard/src/lib/runs.js';
+import { Dot, money, RunCard, Skeleton, Transcript, typeName } from '@apps/dashboard/src/lib/runs.js';
 import { useViewState } from '@apps/dashboard/src/lib/view-state.js';
 import { ago, useNow } from '@ui/time.js';
 import { EVERY_MS, StatusChip } from './Meetings.js';
@@ -55,8 +56,10 @@ export function Meeting({ n, run }: { n: number; run?: string | null }) {
   // A line the person asked to see in the notes, outlined for a moment.
   useEffect(() => {
     if (flash === null) return;
-    document.getElementById(`reu-l${flash}`)?.scrollIntoView({ block: 'center' });
-    const timer = setTimeout(() => setFlash(null), 1600);
+    const line = document.getElementById(`reu-l${flash}`);
+    line?.scrollIntoView({ block: 'center' });
+    landOn(line);
+    const timer = setTimeout(() => setFlash(null), FLASH_MS);
     return () => clearTimeout(timer);
   }, [flash]);
 
@@ -105,7 +108,7 @@ export function Meeting({ n, run }: { n: number; run?: string | null }) {
             {tab === 'props' ? <Proposals d={d} cites={cites} onDone={reload} />
               : tab === 'act' ? <Activity d={d} onRun={openRun} />
                 : tab === 'runs' ? <Runs d={d} open={shown.run} view={runQuery.data} error={runQuery.error && !isUnauthorized(runQuery.error) ? runQuery.error.message : null} onRun={openRun} onClose={() => set({ run: null })} />
-                  : <Notes d={d} flash={flash} />}
+                  : <Notes d={d} />}
           </div>
           <Side d={d} />
         </div>
@@ -157,7 +160,7 @@ function Now({ d, onRun, retrying, onRetry }: { d: Detail; onRun: (runId: string
   return null;
 }
 
-function Notes({ d, flash }: { d: Detail; flash: number | null }) {
+function Notes({ d }: { d: Detail }) {
   const by = citedBy(d);
   const path = `/api/meetings/${d.number}/original`;
   return <>
@@ -167,7 +170,7 @@ function Notes({ d, flash }: { d: Detail; flash: number | null }) {
     <div className="reu-notes">
       {noteLines(d.text).map((line, i) => {
         const tags = by[i + 1];
-        return <div key={i} className={`reu-line ${tags ? 'cited' : ''}${flash === i + 1 ? ' flash' : ''}`} id={`reu-l${i + 1}`}><span className="n">{i + 1}</span><span className="t">{line}{tags && <span className="tags">{[...tags].join(', ')}</span>}</span></div>;
+        return <div key={i} className={`reu-line ${tags ? 'cited' : ''}`} id={`reu-l${i + 1}`}><span className="n">{i + 1}</span><span className="t">{line}{tags && <span className="tags">{[...tags].join(', ')}</span>}</span></div>;
       })}
     </div>
   </>;
@@ -205,7 +208,7 @@ function Runs({ d, open, view, error, onRun, onClose }: { d: Detail; open: strin
   return <>
     <div className="pd-runview">
       <div className="pd-runbar"><b>{typeName(summary?.taskType ?? '')}</b><span className="m">{summary ? when(summary.startedAt) : ''}</span><button className="btn-s" onClick={onClose}>Cerrar</button></div>
-      {summary ? <Transcript run={view!} /> : <div className="empty">{error ?? 'Cargando la corrida…'}</div>}
+      {summary ? <Transcript run={view!} /> : error ? <div className="empty">{error}</div> : <Skeleton kind="tx" label="Cargando la corrida…" />}
     </div>
     {list}
   </>;

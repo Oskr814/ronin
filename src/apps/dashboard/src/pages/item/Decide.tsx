@@ -89,6 +89,9 @@ export function DecidedNote({ id }: { id: string }) {
   return <div className="decided">{what}{done.url && <> <a href={done.url} target="_blank" rel="noopener">Ver ↗</a></>}</div>;
 }
 
+// What the dropdown's button says while it waits for the server.
+const SENDING: Record<DecideKind, string> = { approve: 'Aprobando…', adjust: 'Enviando…', close: 'Cerrando…' };
+
 export function DecideBar({ v, decide }: { v: ItemPage; decide: Decide }) {
   const { p } = decide;
   const spec = isSpecPr(v.detail!.data!.pr!);
@@ -121,7 +124,7 @@ function Drop({ v, decide, p }: { v: ItemPage; decide: Decide; p: Deciding }) {
   const spec = isSpecPr(pr);
   const err = p.error ? <p className="bad">{p.error}</p> : null;
   const footer = (keys: string, cls: string, label: string, disabled = false) => (
-    <footer><span className="m"><kbd>{keys}</kbd> {p.kind === 'approve' ? 'confirma' : p.kind === 'close' ? 'cierra' : 'manda'} · <kbd>Esc</kbd></span><button className="btn-s" onClick={decide.close}>Cancelar</button><button className={`btn-s ${cls}`} disabled={p.sending || disabled} onClick={() => void decide.send()}>{label}</button></footer>
+    <footer><span className="m"><kbd>{keys}</kbd> {p.kind === 'approve' ? 'confirma' : p.kind === 'close' ? 'cierra' : 'manda'} · <kbd>Esc</kbd></span><button className="btn-s" onClick={decide.close}>Cancelar</button><button className={`btn-s ${cls}`} disabled={p.sending || disabled} onClick={() => void decide.send()}>{p.sending ? SENDING[p.kind] : label}</button></footer>
   );
   // A spec: approving it is the go. ronin merges it and plans the slices on its issue.
   if (p.kind === 'approve' && spec) {

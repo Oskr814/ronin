@@ -1,7 +1,7 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import { type ItemView, showRun } from '@apps/dashboard/src/shell/hooks.js';
 import { DAY_MS, dayMonth, hhmm, isMobile } from '@apps/dashboard/src/lib/format.js';
-import { duration, Ending, money, RUN_STATE, RunDot, Since, Steps, typeName } from '@apps/dashboard/src/lib/runs.js';
+import { duration, Ending, money, RUN_STATE, RunDot, Since, Skeleton, Steps, typeName } from '@apps/dashboard/src/lib/runs.js';
 import { short } from '@ui/time.js';
 import { type Entry, entryRun, FAILED, runEntries, runsOf, runNames } from './model.js';
 
@@ -68,7 +68,7 @@ export function Transcript({ v }: { v: ItemView }) {
   });
   const back = item.kind !== 'other' ? <button className="pill back-ficha" onClick={() => showRun(item.id, 0, 'ficha')}>← Ficha</button> : null;
   if (runs.length === 0) {
-    return <>{back && <div className="runs">{back}</div>}<div className="tx"><div className="empty">{v.runs === null ? 'Cargando…' : <b>Sin corridas de agentes en los últimos 14 días</b>}</div></div></>;
+    return <>{back && <div className="runs">{back}</div>}<div className="tx">{v.runs === null ? <Skeleton kind="tx" /> : <div className="empty"><b>Sin corridas de agentes en los últimos 14 días</b></div>}</div></>;
   }
   const index = Math.min(v.runIdx, runs.length - 1);
   const pill = (i: number, label: string, pressed: boolean, run = runs[i]) => (
@@ -83,7 +83,7 @@ export function Transcript({ v }: { v: ItemView }) {
     <div className="runs">{back}{entries.length > SHOWN && <button className="pill" onClick={() => showRun(item.id, index, 'history')}>Historial<span className="m">{entries.length}</span></button>}
       <span className="lbl">Corridas</span>{shown.map((entry) => pill(entry.idx[0], runNames.entryName(item, runs, entry), entry === open, entryRun(runs, entry)))}</div>
     {open.idx.length > 1 && <div className="runs steps"><span className="lbl">Pasos</span>{[...open.idx].reverse().map((i) => pill(i, typeName(runs[i].taskType), i === index))}</div>}
-    {!loaded ? <div className="tx"><div className="empty">Cargando la corrida…</div></div> : <>
+    {!loaded ? <div className="tx"><Skeleton kind="tx" label="Cargando la corrida…" /></div> : <>
       <div className="tx" id="tx" ref={tx} onScroll={(e) => {
         const el = e.currentTarget;
         atBottom.current = el.scrollTop + el.clientHeight >= el.scrollHeight - 30;
@@ -110,7 +110,7 @@ export function History({ v }: { v: ItemView }) {
   const [unfolded, setUnfolded] = useState<number[]>([]);
   const back = item.kind !== 'other' ? <button className="pill back-ficha" onClick={() => showRun(item.id, 0, 'ficha')}>← Ficha</button> : null;
   if (runs.length === 0) {
-    return <>{back && <div className="runs">{back}</div>}<div className="tx"><div className="empty">{v.runs === null ? 'Cargando…' : <b>Sin corridas de agentes en los últimos 14 días</b>}</div></div></>;
+    return <>{back && <div className="runs">{back}</div>}<div className="hist">{v.runs === null ? <Skeleton kind="hist" /> : <div className="empty"><b>Sin corridas de agentes en los últimos 14 días</b></div>}</div></>;
   }
   const index = Math.min(v.runIdx, runs.length - 1);
   const entries = runEntries(runs);
@@ -136,7 +136,7 @@ export function History({ v }: { v: ItemView }) {
         const first = entry.idx[0];
         const open = unfolded.includes(first);
         return <li key={first}><div className="hline">{row(first, runNames.entryName(item, runs, entry), entryRun(runs, entry), entry.idx.length === 1 && first === index)}
-          {entry.idx.length > 1 && <button className="fold" aria-expanded={open} onClick={() => setUnfolded(open ? unfolded.filter((i) => i !== first) : [...unfolded, first])}>{entry.idx.length} pasos {open ? '▾' : '▸'}</button>}</div>
+          {entry.idx.length > 1 && <button className="fold" aria-expanded={open} onClick={() => setUnfolded(open ? unfolded.filter((i) => i !== first) : [...unfolded, first])}>{entry.idx.length} pasos <span className="chev">▸</span></button>}</div>
           {open && <ol>{[...entry.idx].reverse().map((i) => <li key={i}>{row(i, typeName(runs[i].taskType), runs[i], i === index)}</li>)}</ol>}</li>;
       })}</ol></section>)}
       <p className="hnote">Se guardan las corridas de los últimos 14 días.</p>

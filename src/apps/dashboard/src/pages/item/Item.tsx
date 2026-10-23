@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type MutableRefObject } f
 import type { UseQueryResult } from '@tanstack/react-query';
 import { shellLayer, showDoc, useSession, useShell } from '@apps/dashboard/src/shell/hooks.js';
 import { short } from '@ui/time.js';
+import { Skeleton } from '@apps/dashboard/src/lib/runs.js';
 import { ExplorationInventory } from '../explorations/Inventory.js';
 import { ExplorationRuns } from '../explorations/Runs.js';
 import { ActionDialog, ActionsMenu, menuKey, type Asked } from './Actions.js';
@@ -54,7 +55,7 @@ function DocBar({ v }: { v: ItemPage }) {
 
 function Tab({ v, files, review, keys, ask, fichaKeys }: { v: ItemPage; files: UseQueryResult<FilesRead>; review: Review; keys: MutableRefObject<FilesKeys | null>; ask: (asked: FichaAsked) => void; fichaKeys: FichaKeys }) {
   const d = v.detail?.data;
-  if (!d) return <div className="doc" id="doc"><div className="empty">{v.detail?.error ? `No se pudo leer de GitHub: ${v.detail.error}` : 'Cargando de GitHub…'}</div></div>;
+  if (!d) return <div className="doc" id="doc">{v.detail?.error ? <div className="empty">No se pudo leer de GitHub: {v.detail.error}</div> : <Skeleton kind="ficha" label="Cargando de GitHub…" />}</div>;
   const cur = v.doc!;
   let body;
   if (cur === 'files') body = <Files key={cur} v={v} q={files} review={review} keys={keys} />;

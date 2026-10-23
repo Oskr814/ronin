@@ -1,5 +1,6 @@
-import { Fragment, type ReactNode } from 'react';
+import { Fragment, useEffect, type ReactNode } from 'react';
 import { GhIcon, LinearIcon } from '../lib/github.js';
+import { announce, useFlash } from '../lib/motion.js';
 import { clock, Dot, RunDot, runKind } from '../lib/runs.js';
 import { short } from '@ui/time.js';
 import { Live } from './Live.js';
@@ -65,8 +66,17 @@ function PreviewTag({ preview }: { preview: Item['preview'] }) {
 // the request itself is on Pedidos del portal.
 const pedidoOf = (item: Item) => (item.kind === 'issue' ? (S.snap?.pedidos ?? []).find((p) => p.repo === item.repo && p.issue === item.number) : undefined);
 
+// The statuses a row is highlighted for when it moves into one (#372), and
+// the last one each item was seen in.
+const NOTICED = ['running', 'blocked', 'waiting'];
+const seenStatus = new Map<string, string>();
+
 // `hit`: the PR number the search found the issue by, whose slice shows highlighted.
 function ItemRow({ item, hit }: { item: Item; hit: number | null }) {
+  const flash = useFlash(item.id, item.status, seenStatus, (status) => NOTICED.includes(status));
+  useEffect(() => {
+    if (flash && item.status === 'blocked') announce(`${item.title}: quedó bloqueado.`);
+  }, [flash, item.status, item.title]);
   const pedido = pedidoOf(item);
   const last = itemLast(item);
   // A slice's PR open on its own page keeps its issue's slices in sight.
@@ -74,7 +84,7 @@ function ItemRow({ item, hit }: { item: Item; hit: number | null }) {
   const showSlices = item.slices?.length && (S.sel === item.id || item.slices.some((slice) => slicePr(slice) === S.sel) || item.status === 'running' || item.status === 'blocked' || hit);
   return (
     <>
-      <button className={`item ${item.pinned ? 'pinned' : ''}`} data-id={item.id} aria-current={S.sel === item.id} title={item.pinned ? 'PR de exploración: sus fichas se revisan acá' : undefined} onClick={() => void select(item.id)}>
+      <button className={`item ${item.pinned ? 'pinned' : ''}${flash ? ' flash' : ''}`} data-id={item.id} aria-current={S.sel === item.id} title={item.pinned ? 'PR de exploración: sus fichas se revisan acá' : undefined} onClick={() => void select(item.id)}>
         {item.pinned ? EXPLORE_ICON : <RunDot state={item.status} />}<span className="t">{item.title}</span><Live className="age" since={item.status === 'running' && item.lastRun ? item.lastRun.startedAt : undefined} text={itemAge(item)} />
         <span className="sub"><PreviewTag preview={item.preview} />{pedido ? <span className="pd-pn" title={`Del pedido P-${pedido.number} del portal`}>P-{pedido.number}</span> : null}<GhIcon kind={item.kind} state={item.github} />{itemSub(item)}{item.linear && <>, <span className="red">{item.linear.id}</span></>}{item.linear?.project && !S.project && <>, <span className="ptag"><i style={{ background: projectColor(item.linear.project.id) }} />{item.linear.project.name}</span></>}</span>
         {last ? <span className="last">{last}</span> : null}

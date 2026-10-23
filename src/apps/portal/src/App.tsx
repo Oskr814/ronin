@@ -94,6 +94,7 @@ function Shell({ onOut }: { onOut: () => void }) {
           await ok(client.logout.$post()).catch(() => {});
           onOut();
         }} />
+        {menu && <button className="side-scrim" aria-label="Cerrar el menú" onClick={() => setMenu(false)} />}
         <main className="main">
           {stale && <div className="stale" role="status">Hay una versión nueva del portal. <button className="btn" onClick={() => location.reload()}>Recargar</button></div>}
           {n
