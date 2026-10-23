@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { forgetGithubMemo, ghWrites, inGithubMemo, memoized, withGithubMemo } from './run-memo.js';
+import { forgetGithubMemo, ghWrites, inGithubMemo, memoized, remember, withGithubMemo } from './run-memo.js';
 
 // #370: a tick's run reads the open PRs once and its steps share them.
 describe('the memo of a run', () => {
@@ -41,6 +41,21 @@ describe('the memo of a run', () => {
       await expect(memoized('open-prs', failing)).rejects.toThrow('HTTP 502');
       await expect(memoized('open-prs', failing)).resolves.toEqual(['#1']);
     });
+  });
+});
+
+describe('what another read already brought', () => {
+  it('is served as if it had been read, until a write; outside a run it keeps nothing', async () => {
+    const read = vi.fn(async () => 'leído');
+    await withGithubMemo(async () => {
+      remember('issue-body-7', 'del listado');
+      expect(await memoized('issue-body-7', read)).toBe('del listado');
+      forgetGithubMemo();
+      expect(await memoized('issue-body-7', read)).toBe('leído');
+    });
+    remember('issue-body-7', 'del listado');
+    expect(await memoized('issue-body-7', read)).toBe('leído');
+    expect(read).toHaveBeenCalledTimes(2);
   });
 });
 

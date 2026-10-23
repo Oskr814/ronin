@@ -125,6 +125,8 @@ describe('GitHub, by operation', () => {
     expect(githubCaller(stack)).toBe('listReviewComments');
     expect(githubCaller('Error\n    at gh (x.js:1:1)\n    at Module.listOpenPrHeads (github.js:578:26)')).toBe('listOpenPrHeads');
     expect(githubCaller('Error\n    at gh (x.js:1:1)')).toBe('desconocida');
+    // A read memoized for the run (run-memo.ts) counts under who asked for it.
+    expect(githubCaller('Error\n    at gh (x.js:1:1)\n    at x.js:2:2\n    at memoized (run-memo.js:30:3)\n    at getIssueBody (github.js:112:10)')).toBe('getIssueBody');
   });
 
   it('sums the operations of each route by window', () => {

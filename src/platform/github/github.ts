@@ -8,7 +8,7 @@ import { activeRepo } from '../agents/repo-context.js';
 import { log } from '../logger.js';
 import type { FailedCheck } from '../agents/failure-signature.js';
 import { timedGithub } from '../timing.js';
-import { forgetGithubMemo, ghWrites, inGithubMemo, memoized } from './run-memo.js';
+import { forgetGithubMemo, ghWrites, inGithubMemo, memoized, remember } from './run-memo.js';
 import { parseRepo } from './rest.js';
 
 const execFileAsync = promisify(execFile);
@@ -77,9 +77,12 @@ async function ensureLabel(name: string): Promise<void> {
   ensuredLabels.add(key);
 }
 
+// Once per issue in a tick's run, like getIssueBody.
 export async function getIssueLabels(issueNumber: number): Promise<string[]> {
-  const stdout = await gh(['issue', 'view', String(issueNumber), '--json', 'labels']);
-  return (JSON.parse(stdout) as { labels: Array<{ name: string }> }).labels.map((l) => l.name);
+  return memoized(`issue-labels-${issueNumber}`, async () => {
+    const stdout = await gh(['issue', 'view', String(issueNumber), '--json', 'labels']);
+    return (JSON.parse(stdout) as { labels: Array<{ name: string }> }).labels.map((l) => l.name);
+  });
 }
 
 export async function addIssueLabel(issueNumber: number, label: string): Promise<void> {
@@ -105,9 +108,14 @@ export async function getIssueState(issueNumber: number): Promise<{ state: 'OPEN
   return { state: raw.state.toUpperCase() as 'OPEN' | 'CLOSED', stateReason: (raw.state_reason ?? '').toUpperCase() };
 }
 
+// Once per issue in a tick's run (#370): the steps of an issue used to read
+// it again each (its slices, its PRs, what's left). A write empties the
+// memo, so after setIssueBody it's read again (run-memo.ts).
 export async function getIssueBody(issueNumber: number): Promise<string> {
-  const stdout = await gh(['issue', 'view', String(issueNumber), '--json', 'body']);
-  return (JSON.parse(stdout) as { body: string }).body;
+  return memoized(`issue-body-${issueNumber}`, async () => {
+    const stdout = await gh(['issue', 'view', String(issueNumber), '--json', 'body']);
+    return (JSON.parse(stdout) as { body: string }).body;
+  });
 }
 
 export async function setIssueBody(issueNumber: number, body: string): Promise<void> {
@@ -456,6 +464,12 @@ async function issuesByLabel(label: string, state: 'open' | 'closed'): Promise<A
     after = page.pageInfo.hasNextPage ? page.pageInfo.endCursor : null;
   } while (after && issues.length < ISSUES_WITH_LABEL_LIMIT);
   if (issues.length >= ISSUES_WITH_LABEL_LIMIT) log.error(`issuesByLabel: alcanzó el límite de ${ISSUES_WITH_LABEL_LIMIT} issues con ${label} — puede haber issues no traídos`);
+  // In a tick's run, what came here is what getIssueBody and getIssueLabels
+  // would read next (#370). Labels only when they all came (labels(first: 50)).
+  for (const issue of issues) {
+    remember(`issue-body-${issue.number}`, issue.body);
+    if (issue.labels.length < 50) remember(`issue-labels-${issue.number}`, issue.labels);
+  }
   return issues.slice(0, ISSUES_WITH_LABEL_LIMIT);
 }
 
