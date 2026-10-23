@@ -97,7 +97,7 @@ export interface Repo {
   portal: { name: string; notifyTo: string[] } | null;
   apps: RepoApp[];
   linear: { apiKeyEnv: string; connected: boolean; projects: string[] } | null;
-  deploy: { prerelease: boolean; selective: boolean } | null;
+  deploy: { prerelease: boolean; selective: boolean; auto: string | null } | null;
   agent: { model: string; effort: string };
   autoMerge: boolean;
   concurrency: number | null;

@@ -58,6 +58,9 @@ export interface LocalState {
   // tracked here rather than by ronin's 👀 on them, which only says "got
   // it" (see processed-comments.ts).
   processedComments: Record<string, string>;
+  // The last pass of the automatic deploy (#353, domains/deploys/auto.ts):
+  // the batch it published, or why the repo isn't deploying on its own.
+  autoDeploy?: AutoDeployState;
   // Issue or PR number -> why ronin last blocked it (notifier.ts), for the
   // dashboard (#65). Today the reason only goes out by
   // email and to the log. Shown only while the item has ronin:blocked, so
@@ -72,6 +75,14 @@ export interface LocalState {
   // seeded": the PRs open then are recorded without the label, so turning
   // this on doesn't merge what was already waiting for review.
   autoMergeDefaulted?: number[];
+}
+
+export interface AutoDeployState {
+  at: string;
+  // Why no batch went out, in words; null when nothing stood in the way.
+  problem: string | null;
+  // The last batch it published.
+  tag?: string;
 }
 
 export interface LinearPending {
@@ -168,6 +179,7 @@ export async function readStateFile(path: string): Promise<LocalState> {
       blocks: raw.blocks ?? {},
       linearPending: raw.linearPending ?? [],
       ...(raw.autoMergeDefaulted ? { autoMergeDefaulted: raw.autoMergeDefaulted } : {}),
+      ...(raw.autoDeploy ? { autoDeploy: raw.autoDeploy } : {}),
     };
   } catch {
     return { claimedIssues: [], checksPendingCounts: {}, lastReviewedSha: {}, internalReviewedSha: {}, internalReviewFailed: {}, failureSignatures: {}, nightlyExploration: {}, processedComments: {}, blocks: {}, linearPending: [] };
@@ -322,6 +334,20 @@ export async function setNightlyExploration(appName: string, night: string): Pro
   return withLocalStateLock(async () => {
     const state = await readLocalState();
     state.nightlyExploration[appName] = night;
+    await writeLocalState(state);
+  });
+}
+
+export async function getAutoDeploy(): Promise<AutoDeployState | undefined> {
+  return (await readLocalState()).autoDeploy;
+}
+
+export async function setAutoDeploy(next: AutoDeployState): Promise<void> {
+  return withLocalStateLock(async () => {
+    const state = await readLocalState();
+    // The last batch stays known until another goes out.
+    const tag = next.tag ?? state.autoDeploy?.tag;
+    state.autoDeploy = { ...next, ...(tag ? { tag } : {}) };
     await writeLocalState(state);
   });
 }

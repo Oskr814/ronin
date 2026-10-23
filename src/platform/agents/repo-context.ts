@@ -60,6 +60,10 @@ export interface DeployConfig {
   // onto the last release): the repo's workflow deploys whatever commit the
   // tag points to, even one that isn't on its branch.
   selective?: boolean;
+  // The portal requests' merged PRs go out on their own, a batch a tick, on
+  // a tag of this pattern (domains/deploys/auto.ts, #353). Only with
+  // `selective`.
+  auto?: { tag: string };
 }
 
 export interface PortalRepoConfig {

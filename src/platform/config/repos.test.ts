@@ -162,7 +162,7 @@ describe('loadRepos', () => {
   });
 
   it('keeps a valid deploy block (#158) and rejects a malformed one', async () => {
-    for (const deploy of [{}, { prerelease: true, selective: false }]) {
+    for (const deploy of [{}, { prerelease: true, selective: false }, { selective: true, auto: { tag: 'v{major}.{minor}.{patch+1}' } }]) {
       await writeFile(reposConfigPath, JSON.stringify([{ productRepo: 'a/b', productRepoPath: '/tmp/a', deploy }]));
       expect((await loadRepos())[0].deploy).toEqual(deploy);
     }
@@ -174,6 +174,8 @@ describe('loadRepos', () => {
       [{ selective: 'sí' }, /deploy\.selective/],
       [{ prerelease: 1 }, /deploy\.prerelease/],
       [{ workflow: 'deploy.yml' }, /campos desconocidos: workflow/],
+      [{ auto: 'v{patch+1}' }, /deploy\.auto debe ser/],
+      [{ auto: { tag: 'v1', on: true } }, /deploy\.auto debe ser/],
     ] as const) {
       await writeFile(reposConfigPath, JSON.stringify([{ productRepo: 'a/b', productRepoPath: '/tmp/a', deploy: bad }]));
       await expect(loadRepos()).rejects.toThrow(error);

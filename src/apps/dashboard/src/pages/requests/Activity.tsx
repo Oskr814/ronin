@@ -96,6 +96,7 @@ function shownEvent(d: Detail, e: RequestEvent): Shown {
     case 'dev-decided': return e.decision === 'decline'
       ? ['crit', 'crit', `${e.by} decidió no hacerlo`, d.devDecision?.reason ? <div className="bx">{d.devDecision.reason}</div> : null]
       : ['ok', 'ok', `${e.by} lo aprobó ${e.decision === 'deploy' ? 'para desplegar' : 'con revisión'}`, <span className="m">{e.decision === 'deploy' ? 'ronin aprueba el PR a su nombre y lo mergea con el CI en verde' : 'el PR espera la aprobación de un dev'}</span>];
+    case 'deploy-skipped': return ['warn', 'crit', `Quedó fuera del despliegue automático: no se aplica sobre ${e.base}`, <span className="m">{e.files.length ? `Choca en ${e.files.join(', ')}.` : ''}{e.needs.length ? ` Necesita ${e.needs.map((n) => `#${n}`).join(', ')}.` : ''} Se intenta otra vez en el próximo lote, o se despliega a mano.</span>];
     case 'pr-approved': return e.ok
       ? ['ok', 'ok', `ronin aprobó el PR #${e.number} a nombre de ${e.by}`, null, true]
       : ['warn', 'crit', `No se pudo aprobar el PR #${e.number} a nombre de ${e.by}`, <span className="m">Su sesión de GitHub ya no sirve: el PR espera que un dev lo apruebe.</span>];

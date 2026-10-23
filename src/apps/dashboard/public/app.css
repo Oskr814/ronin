@@ -977,6 +977,8 @@ button.brow:hover { background: var(--hover); }
 .dep-card { margin-bottom: 18px; max-width: 980px; padding: 0; }
 .dep-card > header { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 11px 13px; border-bottom: 1px solid var(--rule); }
 .dep-card > header i { width: 10px; height: 10px; border-radius: 2px; }
+/* Why the requests aren't deploying on their own (#353). */
+.dep-auto { margin: 10px 13px 0; background: var(--warn-bg); color: var(--ink); border-radius: 6px; padding: 8px 10px; font-size: 12.5px; }
 .dep-card > header b { font-size: 14.5px; }
 .dep-card > header .m { color: var(--muted); font-size: 12.5px; }
 .dep-card > header .act-btn { margin-left: auto; }

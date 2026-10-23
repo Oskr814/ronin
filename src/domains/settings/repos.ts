@@ -8,11 +8,12 @@ import { linearKey, teamPlanning } from '@platform/linear/linear-api.js';
 import { withJson } from '@platform/fs/atomic-json.js';
 import { SettingsError, record } from './settings.js';
 import { repoApps } from '../items/new-issue.js';
+import { patternProblem } from '../deploys/tag-pattern.js';
 
 // Ajustes → Repos (#174, stage 5), admins only:
 //   GET  /api/settings/repos                  each repo of repos.json, with what can be changed from here
 //   POST /api/settings/repos/<owner>/<repo>   one change: { baseRef } | { portalName } | { app: { id, portal?, name?, description?, explore?, project? } }
-//                                            | { linear } | { deploy: { on?, prerelease?, selective? } } | { agent: { model?, effort? } } | { autoMerge } | { concurrency } | { notifyTo }
+//                                            | { linear } | { deploy: { on?, prerelease?, selective?, auto? } } | { agent: { model?, effort? } } | { autoMerge } | { concurrency } | { notifyTo }
 //
 // repos.json stays where every repo lives: what changes here is written
 // there, checked with the same rules that read it (validateRepos) and with
@@ -71,7 +72,7 @@ export async function reposView(entries: RepoEntry[]): Promise<unknown> {
           ...(entry.linear?.explorationProject?.[id] ? { project: entry.linear.explorationProject[id] } : {}),
         })),
         linear: entry.linear ? { apiKeyEnv: entry.linear.apiKeyEnv, connected: Boolean(linearKey(entry)), projects: await linearProjects(entry) } : null,
-        deploy: entry.deploy ? { prerelease: entry.deploy.prerelease === true, selective: entry.deploy.selective === true } : null,
+        deploy: entry.deploy ? { prerelease: entry.deploy.prerelease === true, selective: entry.deploy.selective === true, auto: entry.deploy.auto?.tag ?? null } : null,
         agent: { model: entry.agent?.model ?? '', effort: entry.agent?.effort ?? '' },
         autoMerge: entry.autoMerge !== false,
         concurrency: entry.concurrency ?? null,
@@ -181,18 +182,29 @@ function apply(raw: Raw, body: Record<string, unknown>, manifest: string[]): Arr
   if (body.deploy !== undefined) {
     const d = (body.deploy ?? {}) as Record<string, unknown>;
     for (const k of ['on', 'prerelease', 'selective']) if (d[k] !== undefined && typeof d[k] !== 'boolean') throw new SettingsError('Despliegues: cada opción es sí o no.');
-    const before = raw.deploy as { prerelease?: boolean; selective?: boolean } | undefined;
+    // The automatic batches (#353): the tag's pattern, or null for none.
+    if (d.auto !== undefined && d.auto !== null && typeof d.auto !== 'string') throw new SettingsError('Despliegue automático: el patrón del tag, o vacío para apagarlo.');
+    const auto = typeof d.auto === 'string' ? d.auto.trim() : d.auto;
+    if (auto) {
+      const problem = patternProblem(auto);
+      if (problem) throw new SettingsError(problem);
+    }
+    type Deploy = { prerelease?: boolean; selective?: boolean; auto?: { tag: string } };
+    const before = raw.deploy as Deploy | undefined;
     if (d.on === false) delete raw.deploy;
     else {
       if (d.on !== true && !before) throw new SettingsError('Este repo no se despliega desde ronin: primero hay que prenderlo.');
-      const next: { prerelease?: boolean; selective?: boolean } = { ...(before ?? {}) };
+      const next: Deploy = { ...(before ?? {}) };
       for (const k of ['prerelease', 'selective'] as const) {
         if (d[k] === true) next[k] = true;
         else if (d[k] === false) delete next[k];
       }
+      if (auto) next.auto = { tag: auto };
+      else if (auto !== undefined) delete next.auto;
+      if (next.auto && !next.selective) throw new SettingsError('El despliegue automático necesita «Solo lo que elijas»: el lote se arma con los PRs de los pedidos sobre el último release.');
       raw.deploy = next;
     }
-    const label = (x: { prerelease?: boolean; selective?: boolean } | undefined) => (x ? ['sí', x.prerelease ? 'pre-release' : '', x.selective ? 'PRs elegidos' : ''].filter(Boolean).join(', ') : 'no');
+    const label = (x: Deploy | undefined) => (x ? ['sí', x.prerelease ? 'pre-release' : '', x.selective ? 'PRs elegidos' : '', x.auto ? `automático (${x.auto.tag})` : ''].filter(Boolean).join(', ') : 'no');
     if (label(before) !== label(raw.deploy as typeof before)) changes.push({ what: 'despliegues', from: label(before), to: label(raw.deploy as typeof before) });
   }
 

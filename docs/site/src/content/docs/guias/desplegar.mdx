@@ -12,7 +12,8 @@ import { Aside, Steps } from '@astrojs/starlight/components';
 Cada repo con `deploy` en [`repos.json`](/ronin/referencia/repos-json/) tiene su tarjeta:
 
 - **Lo mergeado sin desplegar,** un cambio por PR, con las apps que toca y «del pedido P-n» si salió del portal. Donde el repo lo permite, cada PR tiene **Desplegar solo este**.
-- **Los últimos releases,** con *Latest*, *Pre-release* o *Solo elegidos*, cuándo se publicaron y quién. Los que publicó ronin muestran el estado de su workflow (en curso, desplegado, falló), con un enlace a cada run, y qué pedidos llevaron.
+- **Los últimos releases,** con *Latest*, *Pre-release*, *Solo elegidos* o *Pedidos, automático*, cuándo se publicaron y quién.
+- **Si los pedidos no se despliegan solos** donde está prendido (abajo), por qué: el último release no encaja con el patrón del tag, por ejemplo. Los que publicó ronin muestran el estado de su workflow (en curso, desplegado, falló), con un enlace a cada run, y qué pedidos llevaron.
 
 ## Publicar uno
 
@@ -34,6 +35,21 @@ Cada repo con `deploy` en [`repos.json`](/ronin/referencia/repos-json/) tiene su
 
 **Si el workflow falla,** podés volver a correrlo desde GitHub (*Re-run jobs*). ronin lo sigue mirando durante 30 días: si termina bien, queda *desplegado* y avisa a sus pedidos.
 
+## Los pedidos, solos
+
+Donde se prende, los PRs de [pedidos del portal](/ronin/guias/pedidos-del-portal/) mergeados se despliegan sin que nadie publique nada. En cada tick (cada 30 minutos), si hay alguno sin desplegar, ronin publica un release **solo con esos PRs**, como *Solo lo que elijas*, sobre el último release:
+
+- **Lo que no es de un pedido no entra:** sigue saliendo en los releases que publiques a mano.
+- **Es un release, no un pre-release,** aunque el repo use pre-releases: un dev ya aprobó cada pedido.
+- **Si un PR choca** al aplicarlo sobre el último release, queda fuera del lote y el resto sale. El pedido dice por qué en su actividad, y al equipo le llega un correo, una sola vez por release base. En el próximo lote se intenta de nuevo; si sigue chocando, se despliega a mano con lo que le falta.
+- **Uno a la vez por repo,** con el mismo lock que un despliegue del tablero. Lo publica ronin, y sigue igual que los demás: su workflow, el registro en el pedido y el correo «Ya está en la aplicación».
+
+**El tag** sale de un patrón con marcadores:
+- `{major}`, `{minor}` y `{patch}` se leen del último release, y se les suma lo que digas: `v{major}.{minor}.{patch+1}` después de `v1.4.7` da `v1.4.8`.
+- `{yyyy}`, `{mm}` y `{dd}` son la fecha del lote, y `{n}` el número de lote del día: `{yyyy}.{mm}.{dd}-{n}` da `2026.10.22-1`, y el segundo del día, `2026.10.22-2`.
+
+Si el último release no encaja con el patrón, o el repo todavía no tiene releases, no se despliega solo: la tarjeta del repo dice por qué.
+
 ## Activarlo
 
 1. En `repos.json`, un bloque `deploy` en cada repo que se despliega desde ronin:
@@ -44,6 +60,9 @@ Cada repo con `deploy` en [`repos.json`](/ronin/referencia/repos-json/) tiene su
 
    - `prerelease`: el repo despliega pre-releases.
    - `selective`: un release puede llevar solo algunos PRs. Solo si el workflow del repo despliega el commit al que apunta el tag aunque no esté en la rama.
+   - `auto`: los pedidos se despliegan solos (arriba), con el patrón de su tag: `"auto": { "tag": "v{major}.{minor}.{patch+1}" }`. Necesita `selective`. Apagado si no está.
+
+   Todo esto se puede cambiar también en [Ajustes → Repos](/ronin/operar/ajustes/#administración).
 
 2. Qué llevó cada release lo guarda [la base de datos](/ronin/operar/base-de-datos/) o, sin ella, `DEPLOYS_DATA_DIR` (por defecto `deploys-data`). Es la única copia: respaldala.
 

@@ -28,6 +28,7 @@ const LINEAR = 'linear-pending';
 const CHANGELOG = 'last-changelog-release';
 const AUTO_MERGE = 'auto-merge-defaulted';
 const INTERNAL_REVIEW_SEEDED = 'internal-review-seeded';
+const AUTO_DEPLOY = 'auto-deploy';
 
 export function toEntries(state: LocalState): Entry[] {
   const entries: Entry[] = [];
@@ -39,6 +40,7 @@ export function toEntries(state: LocalState): Entry[] {
   if (state.lastChangelogRelease) entries.push({ kind: CHANGELOG, key: '', value: state.lastChangelogRelease });
   if (state.autoMergeDefaulted) entries.push({ kind: AUTO_MERGE, key: '', value: state.autoMergeDefaulted });
   if (state.internalReviewSeeded) entries.push({ kind: INTERNAL_REVIEW_SEEDED, key: '', value: true });
+  if (state.autoDeploy) entries.push({ kind: AUTO_DEPLOY, key: '', value: state.autoDeploy });
   return entries;
 }
 
@@ -53,6 +55,7 @@ export function fromEntries(entries: Entry[]): LocalState {
     else if (kind === CHANGELOG) state.lastChangelogRelease = value as LocalState['lastChangelogRelease'];
     else if (kind === AUTO_MERGE) state.autoMergeDefaulted = value as number[];
     else if (kind === INTERNAL_REVIEW_SEEDED) state.internalReviewSeeded = true;
+    else if (kind === AUTO_DEPLOY) state.autoDeploy = value as LocalState['autoDeploy'];
   }
   state.claimedIssues.sort((a, b) => a - b);
   state.linearPending.sort((a, b) => a.since.localeCompare(b.since));

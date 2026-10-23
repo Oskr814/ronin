@@ -70,6 +70,16 @@ describe('editRepo', () => {
     expect(sc.agent).toBeUndefined();
   });
 
+  it("sets the automatic deploy's tag pattern (#353), only with picked PRs and a pattern that works", async () => {
+    await edit({ deploy: { on: true } });
+    await expect(edit({ deploy: { auto: 'v{major}.{minor}.{patch+1}' } })).rejects.toThrow(/Solo lo que elijas/);
+    await expect(edit({ deploy: { selective: true, auto: 'v{major}.{minor}.{patch}' } })).rejects.toThrow(/subir algún número/);
+    await edit({ deploy: { selective: true, auto: ' v{major}.{minor}.{patch+1} ' } });
+    expect(file()[0].deploy).toEqual({ selective: true, auto: { tag: 'v{major}.{minor}.{patch+1}' } });
+    await edit({ deploy: { auto: null } });
+    expect(file()[0].deploy).toEqual({ selective: true });
+  });
+
   it('sets how many tasks of the repo run at once, and back to the general one', async () => {
     await edit({ concurrency: 2 });
     expect(file()[0].concurrency).toBe(2);

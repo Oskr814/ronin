@@ -35,7 +35,7 @@ export function Deploys() {
   const head = (
     <>
       <h1>Despliegues</h1>
-      <p className="lead">Un despliegue es un release de GitHub: ronin lo publica con el tag que escribas y el workflow del repo hace el resto. Lleva todo lo mergeado o, donde el repo lo permite, solo los PRs que elijas. Cuando el workflow termina bien, los pedidos del portal que entraron le avisan a su persona.</p>
+      <p className="lead">Un despliegue es un release de GitHub: ronin lo publica con el tag que escribas y el workflow del repo hace el resto. Lleva todo lo mergeado o, donde el repo lo permite, solo los PRs que elijas. Cuando el workflow termina bien, los pedidos del portal que entraron le avisan a su persona. Donde está prendido, los PRs de pedidos mergeados salen solos, en un lote por tick.</p>
     </>
   );
   const error = query.error && !(query.error instanceof ApiError && query.error.status === 401) ? <p className="bad">{query.error.message}</p> : null;
@@ -64,9 +64,10 @@ function Card({ r, onNew }: { r: Repo; onNew: (pr?: number) => void }) {
     <section className="pd-card dep-card">
       <header>
         {header}<b>{r.repo}</b>
-        <span className="m">desde {r.branch}{r.prerelease ? ' · con pre-releases' : ''}{r.selective ? ' · PRs elegidos' : ''}</span>
+        <span className="m">desde {r.branch}{r.prerelease ? ' · con pre-releases' : ''}{r.selective ? ' · PRs elegidos' : ''}{r.auto ? ` · pedidos automáticos (${r.auto.tag})` : ''}</span>
         <button className="act-btn" onClick={() => onNew()}>Nuevo despliegue</button>
       </header>
+      {r.auto?.problem && <p className="dep-auto warnbox"><b>Los pedidos no se despliegan solos:</b> {r.auto.problem}{r.auto.at ? <span className="m"> · {ago(r.auto.at, now)}</span> : null}</p>}
       <div className="dep-pend">
         {!p.base ? <p className="m">El repo no tiene releases todavía: el primero lleva todo lo de la rama.</p>
           : p.changes.length ? (
@@ -102,7 +103,7 @@ function ReleaseRow({ x, now }: { x: Release; now: number }) {
     <tr>
       <td>
         <span className="dep-tag">{x.url ? <a href={x.url} target="_blank" rel="noopener">{x.tag}</a> : x.tag}</span>
-        {x.latest && <span className="chip ok">Latest</span>}{x.prerelease && <span className="chip warn">Pre-release</span>}{d?.mode === 'pick' && <span className="chip run">Solo elegidos</span>}
+        {x.latest && <span className="chip ok">Latest</span>}{x.prerelease && <span className="chip warn">Pre-release</span>}{d?.auto ? <span className="chip run">Pedidos, automático</span> : d?.mode === 'pick' && <span className="chip run">Solo elegidos</span>}
       </td>
       <td className="hide-m m">{ago(x.at, now)}</td>
       <td>
@@ -117,7 +118,7 @@ function ReleaseRow({ x, now }: { x: Release; now: number }) {
           </>
         ) : <span className="m">publicado en GitHub</span>}
       </td>
-      <td className="hide-m m">{d?.by ?? ''}</td>
+      <td className="hide-m m">{d?.auto ? 'ronin' : d?.by ?? ''}</td>
     </tr>
   );
 }

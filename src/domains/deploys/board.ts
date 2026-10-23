@@ -2,6 +2,7 @@ import { config } from '@platform/config/config.js';
 import { withResourceLock } from '@platform/locks/locks.js';
 import { log } from '@platform/logger.js';
 import { withActiveRepo, type RepoEntry } from '@platform/agents/repo-context.js';
+import { getAutoDeploy } from '@platform/state/local-state.js';
 import { DeployError, followDeploys, listDeploys, pendingChanges, planRelease, problemText, publishRelease, readRepo, type DeployRecord, type RepoRead, type Pending, type PendingChange, type Plan, type ReleaseRequest } from './index.js';
 import { DomainError } from '@platform/errors.js';
 
@@ -17,7 +18,8 @@ const RELEASES_SHOWN = 8;
 
 const changeView = (c: PendingChange) => ({ sha: c.sha, subject: c.subject, pr: c.pr, apps: c.apps, pedidos: c.pedidos });
 const pendingView = (p: Pending) => ({ base: p.base?.tag ?? null, head: p.head, changes: p.changes.map(changeView) });
-const deployView = (d: DeployRecord) => ({ state: d.state, mode: d.mode, by: d.by, at: d.at, pedidos: d.pedidos, changes: d.changes.length, runs: d.runs ?? [], ...(d.releaseError ? { releaseError: d.releaseError } : {}) });
+// An automatic batch of the portal's requests (#353) is published by ronin itself.
+const deployView = (d: DeployRecord) => ({ state: d.state, mode: d.mode, by: d.by, auto: d.by === config.githubLogin, at: d.at, pedidos: d.pedidos, changes: d.changes.length, runs: d.runs ?? [], ...(d.releaseError ? { releaseError: d.releaseError } : {}) });
 
 export function planView(plan: Plan) {
   return {
@@ -75,10 +77,11 @@ async function repoView(entry: RepoEntry) {
     }
     // One fetch and one read of GitHub for both kinds of release and the releases shown.
     const read = await cachedRead(entry.productRepo);
-    const [pending, prePending, records] = await Promise.all([
+    const [pending, prePending, records, auto] = await Promise.all([
       pendingChanges({}, read),
       entry.deploy?.prerelease ? pendingChanges({ prerelease: true }, read) : null,
       listDeploys(entry.productRepo),
+      entry.deploy?.auto ? getAutoDeploy() : undefined,
     ]);
     const releases = read.releases.filter((r) => !r.isDraft).sort((a, b) => b.publishedAt.localeCompare(a.publishedAt));
     const latest = releases.find((r) => !r.isPrerelease)?.tagName;
@@ -93,6 +96,9 @@ async function repoView(entry: RepoEntry) {
       branch: pending.branch,
       prerelease: Boolean(entry.deploy?.prerelease),
       selective: Boolean(entry.deploy?.selective),
+      // The automatic deploy of the requests (#353): its tag's pattern, and
+      // why its last pass published nothing, if something stood in the way.
+      auto: entry.deploy?.auto ? { tag: entry.deploy.auto.tag, problem: auto?.problem ?? null, at: auto?.at ?? null } : null,
       pending: pendingView(pending),
       ...(prePending ? { prePending: pendingView(prePending) } : {}),
       releases: [...orphans, ...shown],
