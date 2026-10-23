@@ -19,7 +19,7 @@ export interface Cites {
 
 const LinIcon = () => <svg width="12" height="12" viewBox="0 0 100 100" aria-hidden="true" style={{ verticalAlign: '-1px', flex: 'none' }}><path fill="currentColor" d="M1.2 61.5a50 50 0 0 0 37.3 37.3zM.1 48.9l51 51a50 50 0 0 0 9.3-1.4L1.5 39.6A50 50 0 0 0 .1 48.9zm3.6-17.8 65.2 65.2a50 50 0 0 0 7.2-3.9L7.6 23.9a50 50 0 0 0-3.9 7.2zm8.4-12.2a50 50 0 1 1 69 69z" /></svg>;
 const cycleName = (c: { name?: string; number: number }) => c.name || `Ciclo ${c.number}`;
-const arrow = (open: boolean | undefined) => (open ? '▾' : '▸');
+const arrow = (open: boolean | undefined) => <span className={`chev${open ? ' open' : ''}`}>▸</span>;
 
 // Everything a proposal's parts need: the meeting, its review, and what's open.
 interface Ctx {

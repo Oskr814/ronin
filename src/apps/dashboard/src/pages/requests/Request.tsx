@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom';
 import { ApiError, client, ok } from '@apps/dashboard/src/api.js';
 import { useRepoColor, useShell } from '@apps/dashboard/src/shell/hooks.js';
 import { hhmm, when } from '@apps/dashboard/src/lib/format.js';
-import { Ending, money, RunCard, Steps, typeName } from '@apps/dashboard/src/lib/runs.js';
+import { Ending, money, RunCard, Skeleton, Steps, typeName } from '@apps/dashboard/src/lib/runs.js';
 import { useViewState } from '@apps/dashboard/src/lib/view-state.js';
 import { ago, useNow } from '@ui/time.js';
 import { Activity } from './Activity.js';
@@ -67,7 +67,7 @@ function Runs({ d, open, close }: { d: Detail; open: string | null; close: () =>
     <>
       <div className="pd-runview"><div className="pd-runbar"><b>{typeName(data?.summary.taskType ?? '')}</b><span className="m">{data ? when(data.summary.startedAt) : ''}</span><button className="btn-s" onClick={close}>Cerrar</button></div>
         {data ? <div className="tx pd-tx"><Steps lines={data.lines} /><Ending summary={data.summary} /></div>
-          : <div className="empty">{query.error ? query.error.message : 'Cargando la corrida…'}</div>}</div>
+          : query.error ? <div className="empty">{query.error.message}</div> : <Skeleton kind="tx" label="Cargando la corrida…" />}</div>
       {list}
     </>
   );

@@ -151,6 +151,15 @@ button, a, input, textarea, .btn, .proj, .req, .box { transition: background-col
 @keyframes rise-in { from { opacity: 0; transform: translateY(6px); } }
 .content-in, .lb, .stale, .msg-bad, .msg-ok { animation: fade-in .16s ease-out both; }
 .card, .msg, .working, .confirm, .iv { animation: rise-in .2s var(--ease-out) both; }
+/* A message that arrived below what the person reads: a notice that takes
+   them down. The composer's images on their way, and a send that went. */
+.newmsg-w { position: relative; height: 0; display: flex; justify-content: center; z-index: 5; }
+.newmsg { position: absolute; bottom: 12px; padding: 6px 14px; border-radius: 99px; background: var(--ink); color: var(--bg); font-size: 13px; font-weight: 600; box-shadow: 0 6px 18px rgba(0, 0, 0, .25); animation: rise-in .2s var(--ease-out) both; }
+.up { margin: 0; display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); animation: fade-in .16s ease-out both; }
+.up .spin { width: 14px; height: 14px; }
+.btn.primary.sent { background: var(--ok); border-color: var(--ok); }
+/* The menu on a phone: the page behind dims, and a tap on it closes it. */
+.side-scrim { display: none; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
   .spin { animation-duration: 3s !important; animation-iteration-count: infinite !important; }
@@ -233,6 +242,7 @@ button, a, input, textarea, .btn, .proj, .req, .box { transition: background-col
   .app { grid-template-columns: 1fr; }
   .side { position: fixed; inset: 0 auto 0 0; width: 86vw; max-width: 320px; z-index: 40; transform: translateX(-100%); transition: transform .2s; }
   .app.menu .side { transform: none; box-shadow: 0 0 40px rgba(0,0,0,.3); }
+  .side-scrim { display: block; position: fixed; inset: 0; z-index: 39; background: rgba(10, 12, 18, .45); animation: fade-in .16s ease-out both; }
   .menu-btn { display: grid; }
   .top { padding: 10px 16px; }
   .content { padding: 16px; }

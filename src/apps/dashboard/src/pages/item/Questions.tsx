@@ -76,7 +76,7 @@ export function Questions({ v }: { v: ItemPage }) {
         </li>
       ))}</ol>
       {error && <p className="bad">{error}</p>}
-      <footer><span className="m">Se comenta en el PR a tu nombre, mencionando a ronin.</span><button className="btn-s primary" disabled={!text || sending} onClick={() => void send()}>{answered ? `Mandar ${oneOr(answered, 'la respuesta', `${answered} respuestas`)}` : 'Mandar a ronin'}</button></footer>
+      <footer><span className="m">Se comenta en el PR a tu nombre, mencionando a ronin.</span><button className="btn-s primary" disabled={!text || sending} onClick={() => void send()}>{sending ? 'Enviando…' : answered ? `Mandar ${oneOr(answered, 'la respuesta', `${answered} respuestas`)}` : 'Mandar a ronin'}</button></footer>
     </section>
   );
 }

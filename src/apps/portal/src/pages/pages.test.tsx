@@ -89,3 +89,35 @@ describe('a request in its interview', () => {
     expect(await screen.findByText('ronin está leyendo tus respuestas…', { exact: false })).toBeTruthy();
   });
 });
+
+describe('a request answered by ronin (#372)', () => {
+  const DETAIL = {
+    number: 4, title: 'Un botón', repo: 'acme/tienda', app: 'backoffice', appName: 'Acme · Backoffice', status: 'answered',
+    cancellable: true, adjustmentsLeft: 2, interview: { round: 0, rounds: 2, correctionsLeft: 2 }, createdAt: '2026-10-20T15:00:00Z', updatedAt: '2026-10-20T15:00:00Z',
+    messages: [
+      { id: 1, from: 'person', text: 'Un botón para exportar', at: '2026-10-20T15:00:00Z', images: [] },
+      { id: 2, from: 'ronin', text: 'Ya está en la pantalla de reportes.', at: '2026-10-20T15:01:00Z', images: [] },
+    ],
+  };
+
+  it('says a send went, and a message that arrives below what the person reads', async () => {
+    const sent = { ...DETAIL, messages: [...DETAIL.messages, { id: 3, from: 'person', text: 'Gracias', at: '2026-10-20T15:02:00Z', images: [] }] };
+    answers = { 'GET /api/portal/requests/4': () => json(DETAIL), 'POST /api/portal/requests/4/messages': () => json(sent), 'GET /api/portal/requests': () => json([]) };
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={queryClient}><RequestView n={4} me={ME} onMenu={() => {}} onZoom={() => {}} onMissing={() => {}} /></QueryClientProvider>);
+    await screen.findByText('Ya está en la pantalla de reportes.');
+
+    fireEvent.change(screen.getByPlaceholderText(/Escríbele a ronin/), { target: { value: 'Gracias' } });
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Enviar' })));
+    expect(await screen.findByRole('button', { name: '✓ Enviado' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Mensaje nuevo ↓' })).toBeNull();
+
+    // The person scrolls up; ronin answers.
+    const thread = document.getElementById('thread')!;
+    Object.defineProperties(thread, { scrollHeight: { value: 1000 }, clientHeight: { value: 200 } });
+    fireEvent.scroll(thread);
+    act(() => queryClient.setQueryData(['request', 4], { ...sent, messages: [...sent.messages, { id: 4, from: 'ronin', text: 'De nada.', at: '2026-10-20T15:03:00Z', images: [] }] }));
+    expect(await screen.findByRole('button', { name: 'Mensaje nuevo ↓' })).toBeTruthy();
+    expect(document.querySelector('[aria-live]')?.textContent).toBe('ronin te escribió: De nada.');
+  });
+});

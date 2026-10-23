@@ -126,3 +126,16 @@ export function Ending({ summary }: { summary: { state: string; durationMs?: num
 export function Transcript({ run }: { run: { lines: RunLine[]; summary: { state: string; durationMs?: number; costUsd?: number; error?: string } } }) {
   return <div className="tx pd-tx"><Steps lines={run.lines} /><Ending summary={run.summary} /></div>;
 }
+
+// What's on its way, in the shape it'll have (#372): the page doesn't jump
+// when it comes. Only the four that take a while: an item's page, a run's
+// transcript, the requests' list and the runs' history.
+const SKELETONS: Record<'ficha' | 'tx' | 'list' | 'hist', string[]> = {
+  ficha: ['h', 's', 'gap', '', 'm', '', 's'],
+  tx: ['m', 's', '', 'm', 's', ''],
+  list: ['row', 'row', 'row', 'row'],
+  hist: ['s', 'row', 'row', 'row'],
+};
+export function Skeleton({ kind, label = 'Cargando…' }: { kind: keyof typeof SKELETONS; label?: string }) {
+  return <div className={`skel skel-${kind}`} role="status" aria-busy="true"><span className="sr">{label}</span>{SKELETONS[kind].map((cls, i) => <i key={i} className={cls} aria-hidden="true" />)}</div>;
+}

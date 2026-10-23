@@ -4,6 +4,8 @@
 // The digits go to a tab, and ]p/[p to the next PR that waits on a
 // decision. Two-key sequences wait a moment for their second key.
 
+import { landOn, reducedMotion } from '@apps/dashboard/src/lib/motion.js';
+
 export const KEY_SEQ_MS = 900;
 export const UNITS: Record<string, string> = { pr: '.page .psec, .page .md > :is(h1, h2, h3), .conv .comments > article', issue: '.page .md > :is(h1, h2, h3), .conv .comments > article' };
 
@@ -29,6 +31,7 @@ export function moveUnit(tab: string, key: string, at: { key: string; i: number 
   const i = Math.max(0, Math.min(all.length - 1, from < 0 ? (step > 0 ? 0 : all.length - 1) : from + step));
   const next = { key, i };
   markUnit(tab, next, key);
-  all[i].scrollIntoView({ block: 'start', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+  all[i].scrollIntoView({ block: 'start', behavior: reducedMotion() ? 'auto' : 'smooth' });
+  landOn(all[i]);
   return next;
 }

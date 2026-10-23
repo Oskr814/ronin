@@ -3,7 +3,7 @@ import { useEffect, useRef } from 'react';
 import { ApiError, client, ok } from '@apps/dashboard/src/api.js';
 import { useSession, useShell } from '@apps/dashboard/src/shell/hooks.js';
 import { isMobile } from '@apps/dashboard/src/lib/format.js';
-import { Dot } from '@apps/dashboard/src/lib/runs.js';
+import { Dot, Skeleton } from '@apps/dashboard/src/lib/runs.js';
 import { useViewState } from '@apps/dashboard/src/lib/view-state.js';
 import { ago, useNow } from '@ui/time.js';
 import { BugTag, CLOSED, EVERY_MS, Mini, repoShort, StatusChip, waitsLabel, type Row } from './model.js';
@@ -64,7 +64,7 @@ export function Requests() {
   const list = query.data;
   if (!list) {
     const error = query.error && !(query.error instanceof ApiError && query.error.status === 401) ? query.error.message : null;
-    return <div className="today pd">{head}{error ? <p className="bad">{error}</p> : <div className="empty">Cargando…</div>}</div>;
+    return <div className="today pd">{head}{error ? <p className="bad">{error}</p> : <Skeleton kind="list" />}</div>;
   }
   const groups: Record<Filter, Row[]> = {
     pend: list.filter((p) => !CLOSED.includes(p.status)),

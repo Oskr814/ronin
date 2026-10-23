@@ -3,6 +3,7 @@ import { Fragment, useLayoutEffect, useReducer, useRef, type MutableRefObject } 
 import { ApiError, client, ok } from '@apps/dashboard/src/api.js';
 import { useMarkdown, useSession, useShell } from '@apps/dashboard/src/shell/hooks.js';
 import { isMobile } from '@apps/dashboard/src/lib/format.js';
+import { landOn } from '@apps/dashboard/src/lib/motion.js';
 import { useViewState } from '@apps/dashboard/src/lib/view-state.js';
 import { itemParam, oneOr, type ItemPage } from '../model.js';
 import { ReviewPanel, type Review } from '../Review.js';
@@ -72,8 +73,11 @@ export function Files({ v, q, review, keys }: { v: ItemPage; q: UseQueryResult<F
     const to = scrollTo.current;
     if (!to) return;
     scrollTo.current = null;
-    document.getElementById(fileAnchor(to.path))?.scrollIntoView({ block: 'start' });
-    if (to.comment) document.getElementById(`p-${to.comment}`)?.scrollIntoView({ block: 'center' });
+    const file = document.getElementById(fileAnchor(to.path));
+    file?.scrollIntoView({ block: 'start' });
+    const comment = to.comment ? document.getElementById(`p-${to.comment}`) : null;
+    comment?.scrollIntoView({ block: 'center' });
+    landOn(comment ?? file);
   });
   // The composer takes the focus when it opens, the end of its text
   // selected, and still showing its start (a suggestion added below what was written).
@@ -318,7 +322,7 @@ function FileCard({ ctx, file, folded, seen, explicit, toggle, setViewed }: { ct
   const name = parts.pop();
   const own = threadsSeen(ctx.data.threads, ctx.review, file.path);
   const c = ctx.comp;
-  const header = <header><button className="fold" aria-expanded={!folded} aria-label={folded ? 'Abrir' : 'Plegar'} onClick={toggle}>{folded ? '▸' : '▾'}</button>
+  const header = <header><button className="fold" aria-expanded={!folded} aria-label={folded ? 'Abrir' : 'Plegar'} onClick={toggle}><span className="chev">▸</span></button>
     <span className="p" title={file.path}>{file.previousPath && <span>{file.previousPath} → </span>}<span>{parts.length ? `${parts.join('/')}/` : ''}</span><b>{name}</b></span>
     <span className="addel"><span className="a">+{file.additions}</span> <span className="d">−{file.deletions}</span></span>
     <button className="btn-s fcfile" title="Comentar el archivo entero" onClick={() => ctx.openComposer({ path: file.path, subject: 'file' })}>Comentar archivo</button>

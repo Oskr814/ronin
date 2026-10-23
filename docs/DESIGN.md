@@ -638,6 +638,13 @@ Una página para ver qué está haciendo ronin sin recorrer GitHub issue por iss
 - **Teclado (#195).** En la ficha, mientras no se escribe: `1`–`9` van a una pestaña; `j`/`k` a la siguiente o anterior unidad de la pestaña (sección de la descripción, comentario, archivo en *Archivos*, ficha en *Fichas*); `d`/`u` media página; `gg`/`G` al inicio o al final; `]p`/`[p` al siguiente o anterior PR de ronin que espera una decisión (listado, no draft, sin aprobar y sin un agente corriendo). `?` abre la ayuda con todos, también desde el botón junto a las pistas de la barra de pestañas. `Ctrl/Cmd + número` no se usa: el navegador lo reserva.
 - **Celular.** La barra lateral es la lista principal, y un ítem abre su ficha con el contexto debajo.
 - **Movimiento.** Poco y rápido (120–200 ms): lo que se señala cambia de color suave, y lo que aparece (una página, el cuerpo de una pestaña, un menú, un panel, un diálogo, un aviso, las slices de la barra lateral) entra con un fundido o un desplazamiento corto en vez de aparecer de golpe. Nada se anima al irse. En el celular, los paneles que suben desde abajo entran desde abajo. La página y el cuerpo de una pestaña solo cambian de opacidad, para que un hijo fijo (el árbol de archivos en el celular) no se mueva mientras entran. Con *reducir movimiento* en el sistema no hay animaciones ni transiciones, y el punto de una corrida en curso queda quieto, como antes.
+  - **Lo que cambia solo se nota** (#372). Cuando un ítem de la barra lateral pasa a corriendo, bloqueado o esperando, su fila se ilumina un segundo y se apaga. Un paso nuevo del transcript de una corrida en curso entra con el mismo fundido que el resto.
+  - **Al saltar a algo** (`j`/`k`, un comentario o un archivo en *Archivos*, una línea citada de las notas de una reunión), el destino queda remarcado un momento.
+  - **Cargas sin saltos.** La ficha, el transcript de una corrida, la lista de pedidos y el historial de corridas muestran un esqueleto con su forma mientras llegan, en vez de «Cargando…».
+  - **Los botones que mandan algo** quedan desactivados y dicen qué hacen («Enviando…», «Aprobando…», «Cerrando…») mientras esperan al servidor; no se puede mandar dos veces. El aviso de abajo (toast) trae un check cuando salió bien, y es lo único que se va con un fundido; todo lo demás se cierra al instante.
+  - **Lo que gira:** la flecha de lo plegable (los pasos del historial, los archivos, las citas de una reunión) gira en vez de cambiar de carácter.
+  - **Para lectores de pantalla:** un ítem que pasa a bloqueado se anuncia en una región `aria-live`, y el toast es un `status` (o un `alert`, si algo no se pudo).
+  - **Con *reducir movimiento*,** los resaltados se ven el mismo tiempo pero sin desvanecerse, y los esqueletos quedan quietos.
 - **Actualización.** La página pide el snapshot cada 5 segundos mientras está visible, y el transcript de una corrida en curso le llega por *server-sent events*. La ficha se vuelve a pedir cada 30 segundos (el servidor la tiene en caché, 15.8). El centro solo se redibuja si algo cambió, así que leer, seleccionar texto o tener el menú abierto no se interrumpe. No hace falta recargar.
 
 #### 15.2 El servidor de ronin: API y aplicación web
@@ -1074,6 +1081,12 @@ Cada paso que hace ronin corre en un **worker por pedido** (`domains/portal/work
 **Una página abierta antes de un despliegue:** cada respuesta de la API del portal lleva `X-Portal-Version`, una huella de `index.html` (que nombra el JS por su hash) y `portal.css` (`portalVersion`). La página guarda la primera que ve. Si cambia, corre código viejo contra un servidor nuevo (por ejemplo, no conoce un estado nuevo y deja de consultar), así que se recarga sola. Si la persona está escribiendo o enviando algo, en cambio, muestra *Hay una versión nueva del portal* con *Recargar*, y recarga en la próxima consulta cuando ya no hay nada a medio escribir. Al volver a la pestaña, consulta enseguida en vez de esperar su turno (TanStack Query: mientras ronin trabaja en el pedido, cada 2 s y al volver).
 
 **Movimiento,** como en el tablero (§15.1): lo que se señala cambia de color suave, y lo que aparece (un pedido, un mensaje nuevo, ronin trabajando, un formulario, un aviso) entra con un fundido o un desplazamiento corto, de 120 a 200 ms. Los mensajes que ya estaban no se vuelven a animar. Con *reducir movimiento* en el sistema no hay animaciones, salvo el giro lento de ronin trabajando.
+
+Lo que cambia mientras la persona mira (#372):
+- **Un mensaje nuevo** mientras lee más arriba no mueve lo que lee: aparece un aviso «Mensaje nuevo ↓» que la lleva al final. Un mensaje nuevo de ronin se anuncia a los lectores de pantalla (`aria-live`).
+- **Las imágenes:** mientras se preparan (la página achica las grandes) y mientras viajan con el mensaje, la caja dice «Preparando…» o «Subiendo N imágenes…».
+- **Enviar:** el botón dice «Enviando…» mientras espera y «✓ Enviado» un momento al terminar.
+- **El menú en el celular** oscurece la página de atrás, y tocarla lo cierra.
 
 #### 16.3 La conversación (`classify.ts`)
 

@@ -19,6 +19,23 @@ export function useDraft(): Draft {
   return { text, pending, setText, setPending, clear: () => { setText(''); setPending([]); } };
 }
 
+// True for a moment after a send ends without an error.
+export function useSent(sending: boolean, error: string | null | undefined): boolean {
+  const [done, setDone] = useState(false);
+  const was = useRef(sending);
+  useEffect(() => {
+    const ended = was.current && !sending;
+    was.current = sending;
+    if (sending) setDone(false);
+    if (!ended || error) return;
+    setDone(true);
+    const timer = setTimeout(() => setDone(false), SENT_MS);
+    return () => clearTimeout(timer);
+  }, [sending, error]);
+  return done;
+}
+const SENT_MS = 1500;
+
 export function ComposerFrame({ children, error }: { children: ReactNode; error?: string | null }) {
   return <div className="composer"><div className="composer-in">{children}{error && <p className="msg-bad" role="alert">{error}</p>}</div></div>;
 }
@@ -42,16 +59,32 @@ export function Composer({ draft, placeholder, label, note, above, sending, erro
   useEffect(() => {
     if (focus) area.current?.focus();
   }, [focus]);
+  // Sent: the button says so for a moment (#372).
+  const done = useSent(sending, error);
+  // The images being read and scaled down, and the ones on their way with
+  // the message: said, so the wait isn't silent.
+  const [preparing, setPreparing] = useState(0);
+  const [uploading, setUploading] = useState(0);
+  useEffect(() => {
+    if (sending) setUploading(draft.pending.length);
+    else setUploading(0);
+    // Only when sending starts or ends: what's pending then is what travels.
+  }, [sending]);
 
   const add = async (files: File[]) => {
+    setPreparing(files.length);
     const { pending, error: problem } = await attach(draft.pending, files);
+    setPreparing(0);
     draft.setPending(pending);
     onError(problem);
   };
+  const images = (n: number) => (n === 1 ? 'la imagen' : `${n} imágenes`);
+  const status = uploading ? `Subiendo ${images(uploading)}…` : preparing ? `Preparando ${images(preparing)}…` : '';
 
   return (
     <ComposerFrame error={error}>
       {above}
+      {status && <p className="up" role="status"><span className="spin" aria-hidden="true" />{status}</p>}
       <div className={`box ${drag ? 'drag' : ''}`} id="box"
         onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
         onDragLeave={() => setDrag(false)}
@@ -85,7 +118,7 @@ export function Composer({ draft, placeholder, label, note, above, sending, erro
             <span className="sr">Adjuntar imágenes</span>
           </label>
           <span className="hint">{note || 'Puedes pegar o arrastrar capturas (hasta 4)'}</span>
-          <button className="btn primary" disabled={sending} onClick={onSend}>{sending ? 'Enviando…' : label}</button>
+          <button className={`btn primary${done ? ' sent' : ''}`} disabled={sending || preparing > 0} onClick={onSend}>{sending ? 'Enviando…' : done ? '✓ Enviado' : label}</button>
         </div>
       </div>
     </ComposerFrame>

@@ -3,7 +3,7 @@ import { useEffect, useRef } from 'react';
 import { ApiError, client, ok } from '@apps/dashboard/src/api.js';
 import { useShell } from '@apps/dashboard/src/shell/hooks.js';
 import { when } from '@apps/dashboard/src/lib/format.js';
-import { Dot, duration, money, RunDot, Since, Transcript, typeName } from '@apps/dashboard/src/lib/runs.js';
+import { Dot, duration, money, RunDot, Since, Skeleton, Transcript, typeName } from '@apps/dashboard/src/lib/runs.js';
 import { useViewState } from '@apps/dashboard/src/lib/view-state.js';
 import { at, RUNS_EVERY_MS } from './model.js';
 
@@ -95,7 +95,7 @@ export function ExplorationRuns({ repo, app }: { repo: string; app: string }) {
   return <>
     {open && <div className="pd-runview">
       <div className="pd-runbar"><b>{typeName(summary?.taskType ?? '')}</b><span className="m">{summary ? when(summary.startedAt) : ''}</span><button className="btn-s" onClick={() => keep(null)}>Cerrar</button></div>
-      {summary ? <Transcript run={run.data!} /> : <div className="empty">{run.error ? run.error.message : 'Cargando la corrida…'}</div>}
+      {summary ? <Transcript run={run.data!} /> : run.error ? <div className="empty">{run.error.message}</div> : <Skeleton kind="tx" label="Cargando la corrida…" />}
     </div>}
     <div className="xr-list" ref={here}>{list.map((c) => <RunItem key={c.id} c={c} open={open} onOpen={onOpen} />)}</div>
   </>;
