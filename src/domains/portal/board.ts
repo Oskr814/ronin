@@ -171,7 +171,7 @@ export function requestDetail(r: PortalRequest, user: PortalUser | undefined, en
     bug: r.bug ?? null,
     decision: r.decision ?? null,
     // A dev's decision before ronin made it (#353): never their token.
-    devDecision: r.devDecision ? { kind: r.devDecision.kind, by: r.devDecision.by, at: r.devDecision.at, ...(r.devDecision.reason ? { reason: r.devDecision.reason } : {}) } : null,
+    devDecision: r.devDecision ? { kind: r.devDecision.kind, by: r.devDecision.by, at: r.devDecision.at, ...(r.devDecision.reason ? { reason: r.devDecision.reason } : {}), ...(r.devDecision.answers ? { answers: r.devDecision.answers } : {}) } : null,
     // The interview of a big request (#225): rounds, corrections, how it ended.
     interview: r.interview ?? null,
     issue: r.issue ?? null,

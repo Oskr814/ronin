@@ -19,7 +19,7 @@ El portal, `https://ronin-agent.redmotoshn.com`, es para que la gente que usa la
 
 4. **Aprobado por la persona, lo decide un dev.** ronin todavía no hace el cambio: en la lista, el pedido dice **Decidir si se hace** (o **Decidir el arreglo**), en índigo, y al equipo del repo le llega un correo. En la ficha, *Ahora* muestra solo lo que hace falta para decidir:
    - **qué cambia,** en palabras simples, con las capturas del antes y el después en miniatura. Un clic las abre para [compararlas](#comparar-el-antes-y-el-después). Si la persona aprobó la propuesta sin prototipo, no hay capturas ni diff: el diff aparece en el PR;
-   - **antes de aprobar:** lo que el dev tiene que decidir, si ronin dejó algo;
+   - **antes de aprobar:** lo que el dev tiene que decidir, si ronin dejó algo, con un campo para responder cada punto. Es opcional: al aprobar, las respuestas van en el issue y ronin las sigue al hacer el cambio, aunque no coincidan con el borrador. Lo que quede sin responder, lo hace como propuso;
    - **una línea de alcance y pruebas:** las áreas, cuántos archivos, las líneas agregadas y quitadas, cuántas pruebas pasaron y cuántas no se corrieron o fallaron;
    - **Detalles,** plegado: lo que pidió la persona, los cambios, cada prueba, los riesgos, los archivos y el diff. En los pedidos anteriores a esto, que solo tienen el resumen técnico, viene desplegado.
 

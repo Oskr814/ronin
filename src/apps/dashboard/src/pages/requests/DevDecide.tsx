@@ -15,7 +15,9 @@ import { firstName, imagePath, type Detail } from './model.js';
 // and tests — with the rest folded under Detalles, and the three
 // decisions: deploy it (ronin approves its PR as whoever decides and it
 // merges on green CI), make it with a review of the PR, or not do it, with
-// a reason the person gets.
+// a reason the person gets. Approving it, the dev may answer each point of
+// «Antes de aprobar» (#413): the answers go in its issue, and ronin follows
+// them.
 
 type Kind = 'deploy' | 'review' | 'decline';
 
@@ -36,6 +38,7 @@ export function DevDecide({ d }: { d: Detail }) {
   const now = useNow();
   const [open, setOpen] = useState<Kind | null>(null);
   const [reason, setReason] = useState('');
+  const [answers, setAnswers] = useState<string[]>([]);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const who = firstName(d.person);
@@ -56,13 +59,15 @@ export function DevDecide({ d }: { d: Detail }) {
   const passed = tests.filter((t) => t.ok).length;
   const failed = tests.length - passed;
   const scope = d.scope;
+  const asks = team?.decide ?? [];
+  const answered = asks.flatMap((question, i) => (answers[i]?.trim() ? [{ question, answer: answers[i].trim() }] : []));
 
   const send = async (kind: Kind) => {
     if (sending || (kind === 'decline' && !reason.trim())) return;
     setSending(true);
     setError(null);
     try {
-      const decided = await ok(client.api.requests[':n'].decision.$post({ param: { n: String(d.number) }, json: { decision: kind, ...(kind === 'decline' ? { reason: reason.trim() } : {}) } }));
+      const decided = await ok(client.api.requests[':n'].decision.$post({ param: { n: String(d.number) }, json: { decision: kind, ...(kind === 'decline' ? { reason: reason.trim() } : answered.length ? { answers: answered } : {}) } }));
       queryClient.setQueryData(['request', d.number], decided);
       void queryClient.invalidateQueries({ queryKey: ['requests'] });
       shell.toast(kind === 'decline' ? `Cerraste P-${d.number}: ${who} recibe el motivo.` : kind === 'deploy' ? `Aprobaste P-${d.number}: ronin lo hace, aprueba el PR a tu nombre y lo mergea con el CI en verde.` : `Aprobaste P-${d.number}: ronin lo hace y el PR espera la aprobación de un dev.`);
@@ -82,7 +87,11 @@ export function DevDecide({ d }: { d: Detail }) {
     const text = kind === 'deploy'
       ? <>ronin abre el issue y el PR, <b>lo aprueba a tu nombre</b> ({session.me}) y lo mergea cuando el CI esté en verde. Sale en el próximo despliegue.</>
       : <>ronin abre el issue y el PR, que se mergea cuando un dev lo apruebe y el CI esté en verde.</>;
-    return <div className="pd-dd"><p>{text}</p>
+    const told = !asks.length ? null
+      : answered.length === asks.length ? <>Con tus respuestas a «Antes de aprobar»: van en el issue y ronin las sigue.</>
+        : answered.length ? <>Con tus respuestas a {answered.length} de {asks.length} puntos de «Antes de aprobar»: van en el issue y ronin las sigue. Lo demás lo hace como propuso.</>
+          : <>No respondiste «Antes de aprobar»: ronin lo hace como propuso.</>;
+    return <div className="pd-dd"><p>{text}</p>{told && <p className="pd-dd-ans">{told}</p>}
       <div className="acts"><button className="btn-s" disabled={sending} onClick={() => setOpen(null)}>Volver</button><button className="btn-s ok-solid" disabled={sending} onClick={() => void send(kind)}>{sending ? SENDING[kind] : kind === 'deploy' ? 'Aprobar y desplegar' : 'Aprobar con revisión'}</button></div></div>;
   };
 
@@ -96,7 +105,10 @@ export function DevDecide({ d }: { d: Detail }) {
         {pairs && <Pairs pairs={pairs} />}
       </Row>
 
-      {team?.decide.length ? <Row label="Antes de aprobar"><ul className="pd-dc-ask">{team.decide.map((x, i) => <li key={i}>{x}</li>)}</ul></Row> : null}
+      {asks.length ? <Row label="Antes de aprobar"><ul className="pd-dc-ask">{asks.map((x, i) => <li key={i}>{x}
+        {canAct && <textarea className="pd-dc-ans" rows={1} maxLength={2000} aria-label={`Tu respuesta: ${x}`} placeholder="Tu respuesta (opcional): ronin la sigue al hacerlo"
+          value={answers[i] ?? ''} disabled={sending} onChange={(e) => { const next = [...answers]; next[i] = e.target.value; setAnswers(next); }} />}
+      </li>)}</ul></Row> : null}
 
       {(scope || tests.length > 0) && <div className="pd-dc-sum">
         {scope && <>{scope.areas.map((a) => <span key={a} className="tag">{a}</span>)}<span>{scope.files.length} {scope.files.length === 1 ? 'archivo' : 'archivos'} <span className="add">+{scope.add}</span> <span className="del">−{scope.del}</span></span></>}
@@ -124,7 +136,7 @@ export function DevDecide({ d }: { d: Detail }) {
             <button className="btn-s ok-solid" disabled={!canDeploy} title={canDeploy ? undefined : 'Hace falta el permiso para desplegar este repo'} onClick={() => setOpen('deploy')}>Aprobar y desplegar</button>
             <button className="btn-s primary" onClick={() => setOpen('review')}>Aprobar con revisión</button>
             <button className="btn-s danger" onClick={() => { setOpen('decline'); setReason(''); }}>No hacerlo</button>
-            {team?.decide.length ? <span className="m">Si algo de «Antes de aprobar» cambia el borrador, elige con revisión y coméntalo en el PR.</span> : null}
+            {asks.length ? <span className="m">Lo que respondas en «Antes de aprobar» va en el issue y ronin lo sigue; sin respuesta, lo hace como propuso.</span> : null}
           </div>}
       {error && <p className="bad">{error}</p>}
     </div>

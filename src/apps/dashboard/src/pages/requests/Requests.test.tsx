@@ -170,10 +170,21 @@ describe('Pedidos, in React', () => {
     fireEvent.click(screen.getByRole('button', { name: 'No hacerlo' }));
     const send = () => screen.getAllByRole('button', { name: 'No hacerlo' }).at(-1) as HTMLButtonElement;
     expect(send().disabled).toBe(true);
-    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Esa pantalla se rehace.' } });
+    fireEvent.change(screen.getByPlaceholderText(/Por ejemplo/), { target: { value: 'Esa pantalla se rehace.' } });
     fireEvent.click(send());
     await waitFor(() => expect(decided).toEqual([{ decision: 'decline', reason: 'Esa pantalla se rehace.' }]));
     await waitFor(() => expect(shell.toast).toHaveBeenCalledWith('Cerraste P-8: Ana recibe el motivo.'));
+  });
+
+  it('the dev answers «Antes de aprobar» and the answers go with the approval (#413)', async () => {
+    show(<Request n={8} />);
+    const answer = await screen.findByRole('textbox', { name: 'Tu respuesta: ¿También en el PDF del pedido?' });
+    fireEvent.click(screen.getByRole('button', { name: 'Aprobar con revisión' }));
+    expect(screen.getByText('No respondiste «Antes de aprobar»: ronin lo hace como propuso.')).toBeTruthy();
+    fireEvent.change(answer, { target: { value: ' No, solo en la pantalla. ' } });
+    expect(screen.getByText('Con tus respuestas a «Antes de aprobar»: van en el issue y ronin las sigue.')).toBeTruthy();
+    fireEvent.click(screen.getAllByRole('button', { name: 'Aprobar con revisión' }).at(-1)!);
+    await waitFor(() => expect(decided).toEqual([{ decision: 'review', answers: [{ question: '¿También en el PDF del pedido?', answer: 'No, solo en la pantalla.' }] }]));
   });
 
   it('a request waiting on the person says when it expires, and the team closes it with a reason (#404)', async () => {
