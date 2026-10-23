@@ -1660,6 +1660,8 @@ Antes de optimizar nada se mide. `platform/timing.ts` abre una medición (`measu
 
 La lectura compartida no queda vieja por lo que la corrida misma escribe: cualquier escritura a GitHub la vacía (`ghWrites`: todo `gh pr`/`gh issue` salvo `list`, `view`, `status`, `checks` y `diff`; `gh api` con un método distinto de GET o con campos; una mutación de GraphQL). La excepción es `gh label create`, que no cambia ningún PR y que `ensureLabel` corre en cada tick. Tampoco dura más de 2 minutos, porque los trabajos de una corrida pueden seguir por varios.
 
+El cuerpo y las etiquetas de un issue (`getIssueBody`, `getIssueLabels`) también se leen una vez por issue en la corrida: los pasos de un issue en curso los releían cada uno (sus slices, sus PRs, lo que queda). El listado de los issues en curso (`issuesByLabel`) ya los trae, así que los deja en el memo (`remember`), y la primera lectura tampoco va a GitHub. Las etiquetas, solo si vinieron todas (`labels(first: 50)`). Como el resto del memo, una escritura lo vacía: después de `setIssueBody` el cuerpo se vuelve a leer.
+
 ### 22. Instalación con Docker Compose (#235, etapa 5)
 
 Una instalación es `compose.yml` con cuatro servicios: `ronin` (la imagen del `Dockerfile`), `postgres`, `tailscale` (el sidecar) y `docker` (un Docker propio, DinD con TLS). El detalle y el porqué, en [`ARCHITECTURE.md`](ARCHITECTURE.md) («Docker»); cómo se usa, en el sitio: [Instalar con Docker](https://oskr814.github.io/ronin/operar/docker/) y [Respaldar y recuperar](https://oskr814.github.io/ronin/operar/respaldos/).

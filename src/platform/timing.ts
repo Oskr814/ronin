@@ -57,7 +57,7 @@ const round = (ms: number) => Math.round(ms * 10) / 10;
 // itself. These are the wrappers every call goes through, never the name.
 export const GITHUB_SPAN = 'github';
 const GITHUB_OP = 'github:';
-const GITHUB_WRAPPERS = new Set(['gh', 'ghApi', 'ghGraphql', 'githubFetch', 'call', 'graphql', 'timed', 'timedGithub', 'githubCaller']);
+const GITHUB_WRAPPERS = new Set(['gh', 'ghApi', 'ghGraphql', 'githubFetch', 'call', 'graphql', 'timed', 'timedGithub', 'githubCaller', 'memoized']);
 
 // The first named function on the stack that isn't a wrapper: "at listX
 // (file…)" or "at async listX (file…)", with Object. or Module. dropped (a

@@ -39,6 +39,13 @@ export function memoized<T>(key: string, read: () => Promise<T>, now = Date.now(
   return promise;
 }
 
+// What another read of the run already brought (an issue's body, in the
+// list of issues), kept as if it had been read on its own. Outside a run,
+// nothing.
+export function remember<T>(key: string, value: T, now = Date.now()): void {
+  store.getStore()?.set(key, { at: now, read: Promise.resolve(value) });
+}
+
 export const inGithubMemo = (): boolean => store.getStore() !== undefined;
 
 export function forgetGithubMemo(): void {
