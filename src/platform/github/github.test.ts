@@ -25,6 +25,7 @@ vi.mock('../agents/repo-context.js', () => ({
 }));
 
 const { attemptCountFromLabels, isTransientGhError, isExternalReviewable, lastMarkedReviewSha, threadOf, changesRequestedOn, checksStatus, reviewerDecisions, reviewBodyComments, rawReviewOf } = await import('./github.js');
+const { GithubApiError } = await import('./gh-api.js');
 
 describe('changesRequestedOn', () => {
   const review = (login: string, state: string, commitId: string) => ({ login, state, commitId });
@@ -145,6 +146,10 @@ describe('isTransientGhError', () => {
   it('leaves real errors and other commands out', () => {
     expect(isTransientGhError(new Error('Command failed: gh issue view 9\nGraphQL: Could not resolve to an issue'))).toBe(false);
     expect(isTransientGhError(new Error('Command failed: gh pr edit 3\nHTTP 422: Validation Failed'))).toBe(false);
+    // Sent with fetch (#370): worded like gh, without its "Command failed".
+    expect(isTransientGhError(new GithubApiError('gh api POST /graphql: Bad Gateway (HTTP 502)', 502))).toBe(true);
+    expect(isTransientGhError(new GithubApiError('gh api GET /x: fetch failed (ECONNRESET)'))).toBe(true);
+    expect(isTransientGhError(new GithubApiError('gh api GET /repos/x/issues/9: Not Found (HTTP 404)', 404))).toBe(false);
     expect(isTransientGhError(new Error('claude exited with code 1: HTTP 500'))).toBe(false);
   });
 });

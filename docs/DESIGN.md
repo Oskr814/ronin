@@ -152,7 +152,7 @@ Scaffold en TypeScript. `src/` tiene las apps y tres capas, con las dependencias
 Los módulos del núcleo (en `platform/` salvo que se indique otra carpeta); los de cada feature se describen en su sección:
 
 - `config/config.ts` — env vars, labels, límites de reintento
-- `github/github.ts` — wrappers sobre `gh` CLI (execFile con argv array, nunca shell string) para issues/PRs/labels/merge/body/contador de intentos. El gate de approval está *en código*, no solo documentado: `mergePullRequest` (que usan el PR de exploración y el auto-merge) lanza si `reviewDecision !== 'APPROVED'`
+- `github/github.ts` — wrappers sobre `gh` CLI (execFile con argv array, nunca shell string; `gh api`, con `fetch` desde #370, ver `gh-api.ts`) para issues/PRs/labels/merge/body/contador de intentos. El gate de approval está *en código*, no solo documentado: `mergePullRequest` (que usan el PR de exploración y el auto-merge) lanza si `reviewDecision !== 'APPROVED'`
 - `domains/slices/checklist.ts` — parsea y edita el checklist de slices del body del issue (índice de próxima slice, marcar merged, registrar PR); es la fuente de verdad para "qué slice sigue", no un contador aparte
 - `domains/slices/spec-revise.ts` — las menciones en el PR draft de un spec de ronin: responde y edita el spec (§1.1)
 - `domains/slices/spec-content.ts` — lee el contenido de un spec ya mergeado vía `git show origin/main:<path>` (nunca toca el working directory del checkout principal, así que no importa qué branch tenga el humano checked-out ahí)
@@ -1664,6 +1664,15 @@ Antes de optimizar nada se mide. `platform/timing.ts` abre una medición (`measu
 La lectura compartida no queda vieja por lo que la corrida misma escribe: cualquier escritura a GitHub la vacía (`ghWrites`: todo `gh pr`/`gh issue` salvo `list`, `view`, `status`, `checks` y `diff`; `gh api` con un método distinto de GET o con campos; una mutación de GraphQL). La excepción es `gh label create`, que no cambia ningún PR y que `ensureLabel` corre en cada tick. Tampoco dura más de 2 minutos, porque los trabajos de una corrida pueden seguir por varios.
 
 El cuerpo y las etiquetas de un issue (`getIssueBody`, `getIssueLabels`) también se leen una vez por issue en la corrida: los pasos de un issue en curso los releían cada uno (sus slices, sus PRs, lo que queda). El listado de los issues en curso (`issuesByLabel`) ya los trae, así que los deja en el memo (`remember`), y la primera lectura tampoco va a GitHub. Las etiquetas, solo si vinieron todas (`labels(first: 50)`). Como el resto del memo, una escritura lo vacía: después de `setIssueBody` el cuerpo se vuelve a leer.
+
+**`gh api` sin un proceso por llamada (#370).** Cada `gh` arrancaba un proceso y abría su propia conexión: ~250–300 ms antes de que GitHub contestara nada. Ahora `ghApi` manda la misma llamada con `fetch` (`platform/github/gh-api.ts`), con una conexión abierta a `api.github.com` para todo el proceso. `apiRequestOf` traduce los argumentos como lo hace `gh`:
+- el método, que es GET sin campos y POST con ellos, salvo `-X`;
+- `-f` y `-F`, con `-F` tipado (`true`, números…), y la sintaxis `clave[]` para las listas;
+- los campos de un GET, que van en la URL;
+- `--input` y `-H`;
+- en GraphQL, la consulta y el resto como variables.
+
+Los errores se escriben como los de `gh` («Not Found (HTTP 404)», «GraphQL: …»), así que un 404 sigue queriendo decir «no existe», y `isTransientGhError` reconoce los transitorios (5xx, `ECONNRESET`…). Lo que no entiende (`--jq`, `--paginate`, un campo leído de un archivo) sigue por `gh`. En este archivo no queda nada así: las lecturas por páginas usan `ghApiPages`, que sigue el `Link` de cada página, y cada página cuenta como una llamada en las métricas. `gh pr`, `gh issue`, `gh run` y `gh release` siguen siendo procesos.
 
 ### 22. Instalación con Docker Compose (#235, etapa 5)
 
