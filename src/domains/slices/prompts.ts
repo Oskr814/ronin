@@ -11,12 +11,15 @@ import { runServices } from '../product-app/services.js';
 // slices, its PRs' CI and its spec; platform/agents/agent-task.ts runs it.
 
 export type SliceTask =
-  | { type: 'plan'; issueNumber: number; specPaths: string[] }
+  // `keepBody`: the issue is the one a /spec came from, its description the
+  // person's: the plan adds its slices at the end instead of replacing it.
+  | { type: 'plan'; issueNumber: number; specPaths: string[]; keepBody?: boolean }
   | { type: 'implement-slice'; issueNumber: number; sliceIndex: number; sliceTitle: string }
   | { type: 'fix-issue'; issueNumber: number; sliceIndex: number; sliceTitle: string }
   | { type: 'fix-e2e'; issueNumber: number; prNumber: number }
   | {
-      // Turns an issue into a spec PR (draft, assigned to ronin) — see
+      // Turns an issue into a spec PR (assigned to ronin, started once a
+      // person approves it) — see
       // spec-flow.ts. Ends with RONIN_STATUS: done or needs-info.
       type: 'write-spec';
       issueNumber: number;
@@ -27,7 +30,7 @@ export type SliceTask =
       outDir: string;
     }
   | {
-      // Someone mentioned ronin on the draft PR of a spec it wrote (#241):
+      // Someone mentioned ronin on the PR of a spec it wrote (#241):
       // answers each mention and, when asked, edits the spec in a new
       // commit — see spec-revise.ts. The checkout is the spec's branch as
       // origin has it.
@@ -82,7 +85,7 @@ async function buildSliceTask(task: SliceTask): Promise<PreparedTask> {
         // Plan only (#257): reads the spec and the code, and writes nothing
         // but the issue's checklist.
         actions: {
-          issue: { number: task.issueNumber, body: 'replace' },
+          issue: { number: task.issueNumber, body: task.keepBody ? 'append' : 'replace' },
           threads: [],
           triggers: [],
           allowed: ['issue.update-body', 'result.report'],
@@ -90,6 +93,7 @@ async function buildSliceTask(task: SliceTask): Promise<PreparedTask> {
         prompt: [
           `Usa la skill ronin:plan-slices. Eres ronin, en el issue de seguimiento #${task.issueNumber} de ${repoUrl()}.`,
           `Los archivos del spec, dentro de este checkout:\n${task.specPaths.map((p) => `- ${p}`).join('\n')}`,
+          ...(task.keepBody ? ['La descripción del issue es el pedido de una persona, con los enlaces al spec al final: no la reemplaces. issue.update-body agrega lo que mandes al final: manda solo la sección "## Slices" con el checklist.'] : []),
         ].join('\n\n'),
       };
 
@@ -179,12 +183,12 @@ async function buildSliceTask(task: SliceTask): Promise<PreparedTask> {
       return {
         branch,
         checkout: { kind: 'branch', baseBranch: base },
-        // Its own branch and a draft PR assigned to ronin, or its questions
+        // Its own branch and a PR assigned to ronin, or its questions
         // on the issue (#257); the mockup, in its output directory.
         actions: {
           headRef: branch,
           push: { mode: 'branch', baseRef: base },
-          pr: { base: stripOrigin(base), draft: true, assignee: config.githubLogin },
+          pr: { base: stripOrigin(base), draft: false, assignee: config.githubLogin },
           issue: { number: task.issueNumber },
           threads: [],
           triggers: [],
@@ -198,7 +202,7 @@ async function buildSliceTask(task: SliceTask): Promise<PreparedTask> {
           `El comentario que lo pidió:\n${triggerList}`,
           `El spec va en ${specDir}/${today}-<slug-corto>-design.md (los anteriores, en ${specDir}; si no hay, los viejos en docs/superpowers/specs). Trabajas en la rama "${branch}", sobre "${stripOrigin(base)}".`,
           `El mockup, si lo haces: ${task.outDir}/mockup.html.`,
-          'La nota que lleva la descripción del PR, tal cual: "Revisá y editá el spec en este PR. Marcalo como *ready for review* solo cuando quieras que arranque a implementarlo: esa es la señal."',
+          'La nota que lleva la descripción del PR, tal cual: "Revisá el spec en este PR y pedile cambios a ronin mencionándolo (o con **Ajustar** en el tablero). Cuando esté listo, aprobalo: esa es la señal para que lo mergee y arranque las slices en este mismo issue."',
           `Reglas de los commits:\n${COMMIT_STYLE_RULE}`,
           'Esta corrida pide estado: termina con result.report con status "done" si abriste el PR, o "needs-info" si preguntaste en el issue.',
         ].join('\n\n'),
@@ -226,7 +230,7 @@ async function buildSliceTask(task: SliceTask): Promise<PreparedTask> {
         },
         sealed: { outputDir: task.outDir },
         prompt: [
-          `Usa la skill ronin:revise-spec. Eres ronin. Escribiste el spec del PR borrador #${task.prNumber} de ${repoUrl()}, para el issue #${task.issueNumber}, y te mencionaron en él. Sus archivos están bajo ${config.specDir}. Este checkout es su rama, "${branch}", en detached HEAD.`,
+          `Usa la skill ronin:revise-spec. Eres ronin. Escribiste el spec del PR #${task.prNumber} de ${repoUrl()}, para el issue #${task.issueNumber}, y te mencionaron en él. Sus archivos están bajo ${config.specDir}. Este checkout es su rama, "${branch}", en detached HEAD.`,
           `Las menciones:\n${mentionList}`,
           `El mockup, si lo haces: ${task.outDir}/mockup.html.`,
           `Reglas de los commits:\n${COMMIT_STYLE_RULE}`,

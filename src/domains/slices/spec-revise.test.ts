@@ -20,7 +20,7 @@ vi.mock('./prompts.js', () => ({ sliceTask: (task: unknown) => task }));
 const publishMockup = vi.fn();
 vi.mock('./spec-flow.js', () => ({ publishMockup: (...a: unknown[]) => publishMockup(...a) }));
 
-const { draftSpecPrs, findSpecRevisionCandidates, processSpecRevision } = await import('./spec-revise.js');
+const { openSpecPrs, findSpecRevisionCandidates, processSpecRevision } = await import('./spec-revise.js');
 
 const pr = (number: number, headRefName: string, isDraft = true) => ({ number, headRefName, isDraft }) as never;
 const mention = (id: number, authorLogin = 'persona') => ({ id, kind: 'review' as const, body: '@ronin-agent cambiá esto', reactionsEyes: 0, authorLogin });
@@ -33,14 +33,14 @@ beforeEach(async () => {
   return () => rm(base, { recursive: true, force: true });
 });
 
-describe('draftSpecPrs', () => {
-  it('keeps only the draft PRs on a spec branch, with the issue they came from', () => {
-    expect(draftSpecPrs([pr(10, 'ronin/9/spec'), pr(11, 'ronin/8/spec', false), pr(12, 'ronin/9/slice-1'), pr(13, 'feature/spec')])).toEqual([{ prNumber: 10, issueNumber: 9 }]);
+describe('openSpecPrs', () => {
+  it('keeps the PRs on a spec branch, draft or not, with the issue they came from', () => {
+    expect(openSpecPrs([pr(10, 'ronin/9/spec'), pr(11, 'ronin/8/spec', false), pr(12, 'ronin/9/slice-1'), pr(13, 'feature/spec')])).toEqual([{ prNumber: 10, issueNumber: 9 }, { prNumber: 11, issueNumber: 8 }]);
   });
 });
 
 describe('findSpecRevisionCandidates', () => {
-  it('lists the mentions left to answer on each draft spec PR, without the ones with no author', async () => {
+  it('lists the mentions left to answer on each spec PR, without the ones with no author', async () => {
     findUnprocessedMentions.mockImplementation(async (n: number) => (n === 10 ? [mention(1), mention(2, '')] : []));
     const out = await findSpecRevisionCandidates([pr(10, 'ronin/9/spec'), pr(20, 'ronin/19/spec')]);
     expect(out).toEqual([{ prNumber: 10, issueNumber: 9, mentions: [mention(1)] }]);

@@ -26,7 +26,7 @@ y la key en `.env` (*Linear → Settings → Security & access → Personal API 
 - **Hoy** suma el ciclo actual: cuántos issues están hechos, en review, bloqueados o sin empezar, el avance día por día, el desglose por proyecto y quién tiene lo que falta.
 - **Si no alcanzan los lugares** para agentes, ronin toma primero los issues del ciclo actual.
 - **Nuevo issue** deja elegir el proyecto y el ciclo. ronin se los pone apenas la sincronización lo crea en Linear.
-- **El issue de tracking** que nace de un spec toma el proyecto del issue del que salió.
+- **Un `/spec`** se implementa en el mismo issue de donde salió, así que conserva su proyecto y su ciclo.
 - **Las reuniones** pueden proponer proyectos nuevos. Ver [Planificar desde una reunión](/ronin/guias/reuniones/).
 - Opcional: los issues que abre la exploración van a un proyecto fijo por app, con `"explorationProject": { "backoffice": "<proyecto>" }` dentro de `linear`.
 

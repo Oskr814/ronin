@@ -11,10 +11,10 @@ import { host } from '@platform/host/host.js';
 
 
 // Talking about a spec on its PR (#241). While the PR of a spec ronin wrote
-// (/spec, spec-flow.ts) is still a draft, a mention there gets an answer,
-// and the spec gets edited when that's what was asked: one new commit on
-// ronin/<issue>/spec. Marking it ready for review is still the only signal
-// to merge it and start (discoverAssignedSpecs in tick.ts); nothing here
+// (/spec, spec-flow.ts) is open and not started, a mention there gets an
+// answer, and the spec gets edited when that's what was asked: one new
+// commit on ronin/<issue>/spec. A person approving it is the only signal to
+// merge it and start (discoverAssignedSpecs in tick.ts); nothing here
 // touches that.
 //
 // Who can ask: anyone with a real GitHub identity, the same criterion as
@@ -30,19 +30,19 @@ export interface SpecRevisionCandidate {
   mentions: Comment[];
 }
 
-// The draft spec PRs among ronin's open PRs, with the issue each came from.
-export function draftSpecPrs(prs: Pick<PullRequestStatus, 'number' | 'headRefName' | 'isDraft'>[]): Array<{ prNumber: number; issueNumber: number }> {
+// The spec PRs among ronin's open PRs, with the issue each came from.
+export function openSpecPrs(prs: Pick<PullRequestStatus, 'number' | 'headRefName'>[]): Array<{ prNumber: number; issueNumber: number }> {
   return prs.flatMap((pr) => {
     const match = SPEC_BRANCH_RE.exec(pr.headRefName);
-    return match && pr.isDraft ? [{ prNumber: pr.number, issueNumber: Number(match[1]) }] : [];
+    return match ? [{ prNumber: pr.number, issueNumber: Number(match[1]) }] : [];
   });
 }
 
-// Each draft spec PR with mentions left to answer. findUnprocessedMentions
+// Each spec PR with mentions left to answer. findUnprocessedMentions
 // answers the meta-commands (help, /preview…) itself and leaves them out.
 export async function findSpecRevisionCandidates(prs: PullRequestStatus[], only?: number[]): Promise<SpecRevisionCandidate[]> {
   const candidates: SpecRevisionCandidate[] = [];
-  for (const spec of draftSpecPrs(prs)) {
+  for (const spec of openSpecPrs(prs)) {
     if (only && !only.includes(spec.prNumber)) continue;
     try {
       const mentions = (await findUnprocessedMentions(spec.prNumber)).filter((m) => m.authorLogin !== '');

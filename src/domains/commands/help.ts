@@ -74,7 +74,7 @@ const COMMANDS: CommandSpec[] = [
     name: 'spec',
     scopes: ['issue'],
     usage: '/spec <app> [instrucción]',
-    summary: 'Convierto el pedido del issue en un spec: investigo, te pregunto lo que falte y abro un PR draft con el spec. Cuando lo marcás listo, lo implemento.',
+    summary: 'Convierto el pedido del issue en un spec: investigo, te pregunto lo que falte y abro un PR con el spec. Cuando lo aprobás, lo implemento en slices, en este mismo issue.',
     validateArgs: (rest) => SPIKE_HAS_APP_NAME_RE.test(rest),
   },
   {

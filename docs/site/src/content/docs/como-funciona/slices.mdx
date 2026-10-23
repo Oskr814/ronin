@@ -1,6 +1,6 @@
 ---
 title: "Specs y slices"
-description: "Cómo un spec se convierte en un issue de tracking y en PRs chicos, en secuencia o apilados."
+description: "Cómo un spec se convierte en un plan de slices en un issue y en PRs chicos, en secuencia o apilados."
 ---
 
 import { Aside, Steps } from '@astrojs/starlight/components';
@@ -11,15 +11,17 @@ Un spec es para un cambio grande. ronin lo trocea en **slices**: unidades chicas
 
 <Steps>
 
-1. **El spec es un PR draft** en el repo del producto, con un `.md` en `docs/ronin/specs/`, asignado a `ronin-agent`. Mientras sea draft, ronin lo ignora.
+1. **El spec es un PR** en el repo del producto, con un `.md` en `docs/ronin/specs/`, asignado a `ronin-agent`. Uno que escribió ronin con `/spec` sale de un issue; uno que escribe una persona va en draft mientras lo escribe.
 
-2. **Marcarlo *ready for review* es la señal.** ronin lo marca `ronin:in-progress`, lo mergea (es documentación: el gate de aprobación es para el código) y abre un **issue de tracking**. Si el spec salió de un issue con `/spec`, ronin comenta en ese issue dónde sigue el trabajo y lo cierra como completado. Si es el issue de un pedido del portal, solo comenta y lo deja abierto: cerrado así, a la persona le llegaría que su pedido ya está resuelto.
+2. **La señal de arranque.** Al spec de ronin, **aprobarlo** (**Aprobar** en el tablero, o *Approve* en GitHub). Al de una persona, marcarlo ***ready for review***. ronin le pone `ronin:in-progress` y lo mergea, porque es documentación: el gate de aprobación es para el código.
 
-3. **El plan:** un agente lee el spec y el código, y escribe en el issue de tracking un checklist de slices.
+3. **El issue de tracking.** El spec de ronin sigue en **el mismo issue de donde salió**: su descripción queda como la escribió la persona, con los enlaces al spec al final. El de una persona abre un issue `[spec] …` nuevo.
 
-4. **Una slice, un PR**, en una rama `ronin/<issue>/slice-<n>`, que empieza con «Parte de #N»: el PR de una slice nunca cierra el issue. Cada PR sale con [`ronin:auto-merge`](/ronin/referencia/comandos/#auto-merge): aprobado y en verde, se mergea solo.
+4. **El plan:** un agente lee el spec y el código, y escribe en ese issue un checklist de slices. En el issue de donde salió el spec, lo agrega al final, sin tocar la descripción.
 
-5. **Al mergearse la última**, el issue pasa a `ronin:done` y ronin lo cierra como completado.
+5. **Una slice, un PR**, en una rama `ronin/<issue>/slice-<n>`, que empieza con «Parte de #N»: el PR de una slice nunca cierra el issue. Cada PR sale con [`ronin:auto-merge`](/ronin/referencia/comandos/#auto-merge): aprobado y en verde, se mergea solo.
+
+6. **Al mergearse la última**, el issue pasa a `ronin:done` y ronin lo cierra como completado. Si es el de un pedido del portal, recién ahí le llega a la persona que su pedido está resuelto.
 
 </Steps>
 

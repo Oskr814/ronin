@@ -12,11 +12,12 @@ import { describe, it, expect, vi } from 'vitest';
 // CI decision on a slice PR reads, and reviewerDecisions — pure too, and
 // who the dashboard says approved a PR, and reviewBodyComments — pure too,
 // and which review texts get read for mentions, and rawReviewOf — pure too,
-// and what those review texts are read from in a tick (#370).
+// and what those review texts are read from in a tick (#370), and
+// specPrsToStart — pure too, and what starts a spec.
 vi.mock('../config/config.js', () => ({
   config: { githubLogin: 'ronin' },
   LABEL_MANAGED: 'ronin',
-  LABEL_STATES: [],
+  LABEL_STATES: { ready: 'ronin:ready', 'in-progress': 'ronin:in-progress', blocked: 'ronin:blocked', done: 'ronin:done' },
   LABEL_DIRECT_ISSUE: 'ronin:issue-fix',
 }));
 
@@ -24,7 +25,7 @@ vi.mock('../agents/repo-context.js', () => ({
   activeRepo: () => ({ productRepo: 'bmedical/bmedical', productRepoPath: '/tmp/repo', worktreeBasePath: '/tmp/worktrees' }),
 }));
 
-const { attemptCountFromLabels, isTransientGhError, isExternalReviewable, lastMarkedReviewSha, threadOf, changesRequestedOn, checksStatus, reviewerDecisions, reviewBodyComments, rawReviewOf } = await import('./github.js');
+const { attemptCountFromLabels, isTransientGhError, isExternalReviewable, lastMarkedReviewSha, threadOf, changesRequestedOn, checksStatus, reviewerDecisions, reviewBodyComments, rawReviewOf, specPrsToStart } = await import('./github.js');
 const { GithubApiError } = await import('./gh-api.js');
 
 describe('changesRequestedOn', () => {
@@ -245,5 +246,26 @@ describe('rawReviewOf (#370)', () => {
   it('keeps a pending review pending, with no submitted_at, and drops one without a REST id', () => {
     expect(rawReviewOf({ databaseId: 8, state: 'PENDING', body: '', submittedAt: null, author: { login: 'ronin' } })).toEqual({ id: 8, state: 'PENDING', body: '', user: { login: 'ronin' } });
     expect(rawReviewOf({ databaseId: null, state: 'COMMENTED', body: 'x', submittedAt: null, author: null })).toBeNull();
+  });
+});
+
+describe('specPrsToStart', () => {
+  const spec = (number: number, headRefName: string, over: { isDraft?: boolean; labels?: string[]; reviews?: string[] } = {}) => ({
+    number, headRefName, isDraft: over.isDraft ?? false, labels: (over.labels ?? []).map((name) => ({ name })), latestReviews: (over.reviews ?? []).map((state) => ({ state })),
+  });
+
+  it("starts a spec ronin wrote when a person approves it, a draft too, and one a person wrote when it's ready", () => {
+    expect(specPrsToStart([
+      spec(10, 'ronin/9/spec', { reviews: ['APPROVED'] }),
+      spec(11, 'ronin/8/spec', { isDraft: true, reviews: ['COMMENTED', 'APPROVED'] }),
+      spec(12, 'ronin/7/spec'),
+      spec(13, 'ronin/6/spec', { reviews: ['CHANGES_REQUESTED'] }),
+      spec(14, 'specs/carrito'),
+      spec(15, 'specs/pagos', { isDraft: true }),
+    ])).toEqual([{ number: 10, headRefName: 'ronin/9/spec', isDraft: false }, { number: 11, headRefName: 'ronin/8/spec', isDraft: true }, { number: 14, headRefName: 'specs/carrito', isDraft: false }]);
+  });
+
+  it('never one already taken', () => {
+    expect(specPrsToStart([spec(10, 'ronin/9/spec', { reviews: ['APPROVED'], labels: ['ronin:in-progress'] }), spec(14, 'specs/carrito', { labels: ['ronin:done'] })])).toEqual([]);
   });
 });

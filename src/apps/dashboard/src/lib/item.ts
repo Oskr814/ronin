@@ -28,5 +28,9 @@ export function docOf(tabs: Array<[string, string]>, chosen: string | undefined)
 // A PR's page offers the review, and so does an issue's, for its moving PR
 // (the one in its Archivos tab); an exploration PR has its own approval (#93).
 export const reviewable = (item: Item, d: ItemDetail) => (item.kind === 'pr' || item.kind === 'issue') && !d?.exploration && d?.pr?.state === 'OPEN';
-// A PR ronin opened, decided in the item's page (pages/item/Decide.tsx, #195).
-export const decidable = (item: Item, d: ItemDetail) => reviewable(item, d) && Boolean(d.ronin) && sameLogin(d.pr!.author, d.ronin) && !d.pr!.isDraft;
+// A spec ronin wrote (/spec): its branch is ronin/<issue>/spec, as
+// domains/items/decision.ts's isSpecPr reads it.
+export const isSpecPr = (pr: { headRefName?: string }) => /^ronin\/\d+\/spec$/.test(pr.headRefName ?? '');
+// A PR ronin opened, decided in the item's page (pages/item/Decide.tsx,
+// #195): not a draft, but for a spec, which approving starts.
+export const decidable = (item: Item, d: ItemDetail) => reviewable(item, d) && Boolean(d.ronin) && sameLogin(d.pr!.author, d.ronin) && (!d.pr!.isDraft || isSpecPr(d.pr!));

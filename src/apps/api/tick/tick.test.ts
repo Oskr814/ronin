@@ -29,7 +29,6 @@ vi.mock('@platform/config/config.js', () => ({
   },
   concurrencyFor: () => 3,
   LABEL_DIRECT_ISSUE: 'ronin:issue-fix',
-  LABEL_PORTAL: 'ronin:portal',
   LABEL_MANAGED: 'ronin',
   LABEL_STACK_PRS: 'ronin:stack-prs',
   LABEL_STATES: { ready: 'ronin:ready', 'in-progress': 'ronin:in-progress', blocked: 'ronin:blocked', done: 'ronin:done' },
@@ -78,8 +77,8 @@ const retargetDependents = vi.fn();
 const incrementAttemptCount = vi.fn();
 const setIssueState = vi.fn();
 const closeIssueCompleted = vi.fn(async (..._args: unknown[]) => {});
-const commentOnIssue = vi.fn(async (..._args: unknown[]) => {});
-const getIssueLabels = vi.fn(async (..._args: unknown[]): Promise<string[]> => ['ronin', 'ronin:in-progress']);
+const getIssueBody = vi.fn(async (..._args: unknown[]) => '');
+const setIssueBody = vi.fn(async (..._args: unknown[]) => {});
 const getPullRequestStatus = vi.fn();
 const addIssueLabel = vi.fn();
 const listAssignedIssues = vi.fn();
@@ -96,13 +95,14 @@ vi.mock('@platform/github/github.js', () => ({
   attemptCountFromLabels: (labels: string[]) => Number(labels.map((l) => l.match(/^ronin:attempts-(\d+)$/)?.[1]).find(Boolean) ?? 0),
   resetAttemptCount: (...args: unknown[]) => resetAttemptCount(...args),
   isTransientGhError: (...args: unknown[]) => isTransientGhError(...args),
-  getIssueLabels: (...args: unknown[]) => getIssueLabels(...args),
+  getIssueLabels: async () => ['ronin', 'ronin:in-progress'],
   addReaction: (...args: unknown[]) => addReaction(...args),
   retargetDependents: (...args: unknown[]) => retargetDependents(...args),
   incrementAttemptCount: (...args: unknown[]) => incrementAttemptCount(...args),
   setIssueState: (...args: unknown[]) => setIssueState(...args),
   closeIssueCompleted: (...args: unknown[]) => closeIssueCompleted(...args),
-  commentOnIssue: (...args: unknown[]) => commentOnIssue(...args),
+  getIssueBody: (...args: unknown[]) => getIssueBody(...args),
+  setIssueBody: (...args: unknown[]) => setIssueBody(...args),
   getPullRequestStatus: (...args: unknown[]) => getPullRequestStatus(...args),
   addIssueLabel: (...args: unknown[]) => addIssueLabel(...args),
   listAssignedIssues: (...args: unknown[]) => listAssignedIssues(...args),
@@ -187,7 +187,7 @@ vi.mock('@domains/changelog/changelog.js', () => ({
   findReleasesNeedingChangelog: (...args: unknown[]) => findReleasesNeedingChangelog(...args),
 }));
 
-const { runScoped, runIssueStep, idleCommandJobs, specRevisionJobs, processSlicePr, processIssue, finishClosedIssues, handOffSpecOrigin, agentTaskFor, needsMoreInfo, discoverAssignedIssues, processExternalReviewCandidate, processTrustedFixCandidate, runExternalReviews, processSpikeCandidate, processChangelogCandidate, runChangelogUpdates, renderTrackingIssueBody, cycleFirst } = await import('./tick.js');
+const { runScoped, runIssueStep, idleCommandJobs, specRevisionJobs, processSlicePr, processIssue, finishClosedIssues, adoptSpecOrigin, agentTaskFor, needsMoreInfo, discoverAssignedIssues, processExternalReviewCandidate, processTrustedFixCandidate, runExternalReviews, processSpikeCandidate, processChangelogCandidate, runChangelogUpdates, renderTrackingIssueBody, cycleFirst } = await import('./tick.js');
 
 function issue(overrides: Partial<TrackingIssue> = {}): TrackingIssue {
   return { number: 228, title: 'Test issue', url: 'https://github.com/x/y/issues/228', labels: [], ...overrides };
@@ -1400,7 +1400,7 @@ describe('idleCommandJobs', () => {
 });
 
 describe('specRevisionJobs (#241)', () => {
-  it('makes one job per draft spec PR with mentions to answer, found by an event on the PR or on its issue', async () => {
+  it('makes one job per spec PR with mentions to answer, draft or not, found by an event on the PR or on its issue', async () => {
     const mention = { id: 9, kind: 'review', body: '@ronin-agent sumá esto', reactionsEyes: 0, authorLogin: 'persona' };
     findUnprocessedMentions.mockReset().mockImplementation(async (n: number) => (n === 1027 ? [mention] : []));
     const prs = [
@@ -1411,7 +1411,7 @@ describe('specRevisionJobs (#241)', () => {
 
     const jobs = await specRevisionJobs(prs);
 
-    expect(findUnprocessedMentions.mock.calls).toEqual([[1027]]);
+    expect(findUnprocessedMentions.mock.calls).toEqual([[1027], [1030]]);
     expect(jobs).toHaveLength(1);
     expect(jobs[0]).toMatchObject({ kind: 'revise-spec', lock: 'pr-1027', resources: ['pr-1027', 'issue-1026'] });
   });
@@ -1451,18 +1451,12 @@ describe('runIssueStep', () => {
   });
 });
 
-describe('handOffSpecOrigin — the issue a /spec came from', () => {
-  it('says where the work went and closes it as completed', async () => {
-    getIssueLabels.mockResolvedValueOnce([]);
-    await handOffSpecOrigin(300, 310);
-    expect(commentOnIssue).toHaveBeenCalledWith(300, expect.stringContaining('sigue en #310'));
-    expect(closeIssueCompleted).toHaveBeenCalledWith(300);
-  });
-
-  it("leaves a portal request's issue open: closed as completed, its person would hear it was solved", async () => {
-    getIssueLabels.mockResolvedValueOnce(['ronin:portal']);
-    await handOffSpecOrigin(300, 310);
-    expect(commentOnIssue).toHaveBeenCalledWith(300, expect.stringContaining('queda abierto'));
-    expect(closeIssueCompleted).not.toHaveBeenCalled();
+describe('adoptSpecOrigin — the issue a /spec came from', () => {
+  it("keeps the person's description and adds the spec's links at the end, managed by ronin", async () => {
+    getIssueBody.mockResolvedValueOnce('Quiero guardar varias direcciones.\n');
+    const issue = await adoptSpecOrigin(300, ['docs/ronin/specs/2026-10-23-direcciones-design.md']);
+    expect(issue).toEqual({ number: 300, url: 'https://github.com/bmedical/bmedical/issues/300' });
+    expect(setIssueBody).toHaveBeenCalledWith(300, 'Quiero guardar varias direcciones.\n\n## Spec\n\n- [docs/ronin/specs/2026-10-23-direcciones-design.md](https://github.com/bmedical/bmedical/blob/main/docs/ronin/specs/2026-10-23-direcciones-design.md)\n');
+    expect(addIssueLabel).toHaveBeenCalledWith(300, 'ronin');
   });
 });

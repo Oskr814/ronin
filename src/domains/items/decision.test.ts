@@ -44,6 +44,36 @@ describe('decidable', () => {
     expect(decidable({ ...PR, state: 'MERGED' }, 'ronin-agent')).toBe(false);
     expect(decidable({ ...PR, isDraft: true }, 'ronin-agent')).toBe(false);
   });
+
+  it('is for the spec ronin wrote even while an older one is still a draft: approving it is the go', () => {
+    expect(decidable({ ...PR, isDraft: true, headRefName: 'ronin/912/spec' }, 'ronin-agent')).toBe(true);
+    expect(decidable({ ...PR, isDraft: true, headRefName: 'ronin/912/slice-1' }, 'ronin-agent')).toBe(false);
+  });
+});
+
+describe('runDecision on a spec ronin wrote', () => {
+  const SPEC = { headRefName: 'ronin/912/spec' };
+
+  it('approves it and nothing else: the approval is what starts it, without /auto-merge', async () => {
+    const done = await run({ decision: 'approve' }, SPEC);
+    expect(submitReview).toHaveBeenCalledWith('gho_user', 'acme/product', { prId: 'PR_1', commitId: SHA, event: 'APPROVE', body: '' });
+    expect(commentOnIssue).not.toHaveBeenCalled();
+    expect(done).toEqual({ url: 'review' });
+  });
+
+  it('sends the line comments as a review that mentions ronin, which the spec conversation answers', async () => {
+    pendingReview.mockResolvedValue(PENDING);
+    await run({ decision: 'adjust', text: 'sumá los clientes sin pedidos' }, SPEC);
+    expect(submitReview).toHaveBeenCalledWith('gho_user', 'acme/product', { prId: 'PR_1', commitId: SHA, pendingId: 'PRR_1', event: 'COMMENT', body: '@ronin-agent sumá los clientes sin pedidos' });
+    expect(commentOnIssue).not.toHaveBeenCalled();
+    await run({ decision: 'adjust', text: '' }, SPEC);
+    expect(submitReview).toHaveBeenLastCalledWith('gho_user', 'acme/product', expect.objectContaining({ body: '@ronin-agent atendé los comentarios de esta revisión.' }));
+  });
+
+  it('asks for an adjustment without line comments with a plain mention, as on any PR', async () => {
+    await run({ decision: 'adjust', text: 'separá los clientes' }, SPEC);
+    expect(commentOnIssue).toHaveBeenCalledWith('gho_user', 'acme/product', 918, '@ronin-agent separá los clientes');
+  });
 });
 
 describe('runDecision', () => {

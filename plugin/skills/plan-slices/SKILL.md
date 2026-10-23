@@ -15,11 +15,11 @@ Lo que cambia algo fuera de este checkout lo haces solo con las acciones de roni
 
 2. **Parte el trabajo en slices** chicas e independientes de revisar, en el orden en que se implementan: cada una se apila sobre la anterior y es un PR propio. Cada slice deja el repo funcionando y con sus tests; ninguna mezcla cosas que no hacen falta juntas. Un título por slice, corto y concreto, que diga qué queda hecho.
 
-3. **Reemplaza la descripción del issue** con `ronin-act issue.update-body --body-file <archivo>`: en lugar del checklist de la plantilla, una línea por slice con este formato exacto, que el supervisor lee:
+3. **Escribe el checklist en el issue** con `ronin-act issue.update-body --body-file <archivo>`: una línea por slice con este formato exacto, que el supervisor lee:
 
    `- [ ] Slice N: <título> — PR: _pending_`
 
-   N empieza en 1. Si la descripción tiene otras secciones fuera del checklist, consérvalas como están.
+   N empieza en 1. Por defecto la acción reemplaza la descripción: pon el checklist en lugar del de la plantilla y conserva como están las otras secciones. Si la corrida te dice que la descripción es el pedido de una persona, la acción agrega al final lo que mandes: manda solo una sección `## Slices` con el checklist, sin repetir nada de lo que ya está.
 
 4. **No implementes nada:** esta corrida solo planea. No hagas commits ni toques el código.
 

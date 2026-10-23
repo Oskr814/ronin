@@ -85,6 +85,27 @@ describe('an item’s page', () => {
     await waitFor(() => expect(container.querySelector('.pqs-sent')).not.toBeNull());
   });
 
+  it('approves a spec ronin wrote with A, a draft too: the approval is what starts it', async () => {
+    const spec = detail({ pr: doc({ number: 42, title: 'Spec: varias direcciones', author: 'ronin-bot', url: 'https://github.com/acme/tienda/pull/42', body: 'Refs #41', mergeable: 'MERGEABLE', baseRefName: 'main', headRefName: 'ronin/41/spec', isDraft: true, reviewDecision: '', decisions: [] }) });
+    const { shell } = show({ detail: spec });
+    fireEvent.keyDown(document, { key: 'a' });
+    expect(screen.getByRole('dialog', { name: 'Aprobar el spec' }).textContent).toContain('lo saca de draft antes');
+    fireEvent.keyDown(document, { key: 'Enter' });
+    await waitFor(() => expect(posted).toHaveLength(1));
+    expect(posted[0]).toEqual(['/api/items/acme%2Ftienda%2341/decision', { decision: 'approve', text: '', closeIssue: false }]);
+    expect(shell.toast).toHaveBeenCalledWith('Aprobaste el spec: ronin lo mergea y arranca las slices.', expect.anything());
+  });
+
+  it('asks for an adjustment to a spec without the suggestions about code', () => {
+    show({ detail: detail({ pr: doc({ number: 42, author: 'ronin-bot', headRefName: 'ronin/41/spec', isDraft: false, mergeable: 'MERGEABLE', baseRefName: 'main', reviewDecision: '', decisions: [] }) }) });
+    fireEvent.keyDown(document, { key: 'p' });
+    expect(document.querySelector('.drop .quick')).toBeNull();
+    // Closing it drops the spec; the issue stays unless asked.
+    fireEvent.keyDown(document, { key: 'Escape' });
+    fireEvent.keyDown(document, { key: 'x' });
+    expect((document.getElementById('dissue') as HTMLInputElement).checked).toBe(false);
+  });
+
   it('asks ronin for an adjustment with P, a suggestion and Ctrl+Enter', async () => {
     show();
     fireEvent.keyDown(document, { key: 'p' });

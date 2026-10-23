@@ -45,7 +45,7 @@ En un issue que ronin todavía no tomó, podés pedirle que investigue o que esc
 | | Qué hace | Desde el tablero | Desde GitHub |
 |---|---|---|---|
 | **Investigar** | Lee el código en solo lectura y agrega al issue una sección de contexto: archivos, hipótesis, preguntas abiertas. | *Acciones* → **Investigar (spike)**, eligiendo la app | `@ronin-agent /spike <app> [qué]` |
-| **Un spec** | Convierte el pedido en un spec y abre un PR draft con él. | *Acciones* → **Pedir un spec**, eligiendo la app | `@ronin-agent /spec <app> [qué]` |
+| **Un spec** | Convierte el pedido en un spec y abre un PR con él. Al aprobarlo, lo implementa en slices en el mismo issue. | *Acciones* → **Pedir un spec**, eligiendo la app | `@ronin-agent /spec <app> [qué]` |
 
 ## Un spec
 
@@ -63,14 +63,16 @@ En un issue que ronin todavía no tomó, podés pedirle que investigue o que esc
 
 ### Un spec que escribió ronin
 
-Con `/spec`, ronin abre el PR draft por vos. Mientras siga en draft, podés conversarlo ahí: mencioná a `@ronin-agent` en un comentario general, en una línea del spec o en el texto del review con que enviás tus respuestas en los hilos (por ejemplo, para sumar algo al alcance o discutir una decisión que tomó solo). ronin:
+Con `/spec`, ronin abre el PR por vos, asignado a su cuenta. Mientras no lo apruebes, podés conversarlo ahí: **Ajustar** (`P`) en el tablero, o mencioná a `@ronin-agent` en un comentario general, en una línea del spec o en el texto del review con que enviás tus respuestas en los hilos (por ejemplo, para sumar algo al alcance o discutir una decisión que tomó solo). ronin:
 
 - si le pedís un cambio, edita el spec en un commit nuevo, sin reescribir lo anterior;
 - te contesta en el mismo hilo qué cambió, o responde la pregunta;
 - si le falta algo para decidir, te lo pregunta.
 
-Mientras trabaja, el PR muestra el estado `ronin/spec`. Marcarlo *ready for review* sigue siendo la señal de arranque. Ningún comentario lo hace.
+Mientras trabaja, el PR muestra el estado `ronin/spec`.
 
-Al arrancar, el issue donde pediste el `/spec` recibe un comentario con el enlace al issue de tracking y se cierra como completado: lo que falta sigue allá, y ese se cierra solo cuando se mergea la última slice. El de un pedido del portal recibe el comentario pero queda abierto.
+Cuando esté listo, **aprobalo**: **Aprobar** (`A`) en la ficha del issue o del PR, o *Approve* en GitHub. Es la señal de arranque, y ningún comentario la reemplaza. ronin mergea el spec y sigue en **el mismo issue**: agrega al final de la descripción los enlaces al spec y el checklist de slices, sin tocar lo que escribió la persona, y abre un PR por slice. Al mergearse la última, cierra el issue como completado. Si es el de un pedido del portal, recién ahí le llega a la persona que está resuelto.
+
+Si lo cerrás con **Cerrar** (`X`), el issue sigue abierto como estaba (*Cerrar también el issue* viene desmarcada) y se puede volver a pedir el `/spec`. Un spec viejo que todavía esté en draft también se aprueba así: ronin lo saca de draft antes de mergearlo.
 
 Por defecto va de a una slice: la siguiente arranca cuando se mergea la anterior. Con el label <Badge text="ronin:stack-prs" variant="note" /> en el issue de tracking, las apila sin esperar. Los PRs de slice salen con [auto-merge](/ronin/referencia/comandos/#auto-merge).

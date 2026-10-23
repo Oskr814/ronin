@@ -1,7 +1,7 @@
 import { markProcessed } from '@platform/state/processed-comments.js';
 import { linearIdInPr, linearRefFrom, withLinearLink } from '@platform/linear/linear.js';
 import { currentCycle, linearKey } from '@platform/linear/linear-api.js';
-import { processLinearAssignments, queueLinearAssignment } from '@platform/linear/linear-assign.js';
+import { processLinearAssignments } from '@platform/linear/linear-assign.js';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
@@ -14,9 +14,10 @@ import {
   getSpecPathsFromPr,
   mergeSpecPr,
   commentOnSpecPr,
-  commentOnIssue,
   closeIssueCompleted,
-  getIssueLabels,
+  getIssueBody,
+  setIssueBody,
+  markPrReady,
   listAllOpenRoninPrs,
   retargetDependents,
   setIssueState,
@@ -48,7 +49,7 @@ import { commandTask } from '@domains/commands/index.js';
 import { changelogTask } from '@domains/changelog/index.js';
 import { internalReviewDue, runExternalReview, runInternalReview } from '@domains/review/index.js';
 import { ClaudeUsageLimitError } from '@platform/claude/claude-runner.js';
-import { toStackedPrs, pickBottomPr, prsForIssue, planBranch, spikeBranch, issueFromSliceBranch, type StackedPr } from '@domains/slices/index.js';
+import { toStackedPrs, pickBottomPr, prsForIssue, planBranch, spikeBranch, issueFromSliceBranch, issueFromSpecBranch, type StackedPr } from '@domains/slices/index.js';
 import { incrementChecksPendingCount, resetChecksPendingCount, setLastReviewedSha, recordFailureSignature, pruneFailureSignatures, pruneInternalReviewedSha } from '@platform/state/local-state.js';
 import { failureSignature, type FailureSignature } from '@platform/agents/failure-signature.js';
 import { tryClaim, releaseIfNoLongerInProgress } from '@platform/state/claim.js';
@@ -68,7 +69,7 @@ import { sweepMeetings } from '@domains/meetings/launch.js';
 import { sweepAutoMerge } from '@domains/commands/index.js';
 import { findReleasesNeedingChangelog, type ChangelogCandidate } from '@domains/changelog/index.js';
 import { setLastChangelogRelease } from '@platform/state/local-state.js';
-import { concurrencyFor, config, LABEL_DIRECT_ISSUE, LABEL_MANAGED, LABEL_PORTAL, LABEL_STACK_PRS, LABEL_STATES } from '@platform/config/config.js';
+import { concurrencyFor, config, LABEL_DIRECT_ISSUE, LABEL_MANAGED, LABEL_STACK_PRS, LABEL_STATES } from '@platform/config/config.js';
 import { activeRepo, withActiveRepo } from '@platform/agents/repo-context.js';
 import { loadRepos } from '@platform/config/repos.js';
 import { log } from '@platform/logger.js';
@@ -100,13 +101,16 @@ function prUrl(prNumber: number): string {
 // discoverAssignedSpecs, which needs a lot of unrelated mocking to exercise.
 export async function renderTrackingIssueBody(specPaths: string[]): Promise<string> {
   const template = await readFile(join(process.cwd(), 'templates/tracking-issue.md'), 'utf8');
-  const repoUrl = `https://github.com/${activeRepo().productRepo}`;
   // rootBranchName(), not a hardcoded "main": the spec file these links
   // point at was just merged onto the active repo's own base branch, which
   // isn't "main" for every repo (see worktreeBaseRef in repo-context.ts) —
   // a hardcoded "main" here produced a 404 for any repo where it differs.
-  const specLinks = specPaths.map((p) => `- [${p}](${repoUrl}/blob/${rootBranchName()}/${p})`).join('\n');
-  return template.replaceAll('{{spec_links}}', specLinks);
+  return template.replaceAll('{{spec_links}}', specLinks(specPaths));
+}
+
+function specLinks(specPaths: string[]): string {
+  const repoUrl = `https://github.com/${activeRepo().productRepo}`;
+  return specPaths.map((p) => `- [${p}](${repoUrl}/blob/${rootBranchName()}/${p})`).join('\n');
 }
 
 // Prefers a file under a `specs/` subdirectory as the "primary" doc (title,
@@ -117,17 +121,16 @@ function primarySpecPath(specPaths: string[]): string {
   return specPaths.find((p) => p.includes('/specs/')) ?? specPaths[0];
 }
 
-// The issue a /spec came from, once its spec is merged and the work has its
-// tracking issue: it says where, and closes as completed so it isn't left
-// open with nothing moving it. A portal request's stays open: closed as
-// completed, its person would hear the request was solved (portal/follow.ts).
-// Exported for direct unit testing.
-export async function handOffSpecOrigin(origin: number, tracking: number): Promise<void> {
-  const portal = (await getIssueLabels(origin)).includes(LABEL_PORTAL);
-  await commentOnIssue(origin, portal
-    ? `El spec ya se mergeó y el trabajo sigue en #${tracking}, una slice por PR. Este issue queda abierto porque es de un pedido del portal.`
-    : `El spec ya se mergeó y el trabajo sigue en #${tracking}, una slice por PR. Cierro este issue: lo que falta se sigue allá.`);
-  if (!portal) await closeIssueCompleted(origin);
+// The issue a /spec came from becomes the spec's own tracking issue once the
+// spec is merged: its description stays as the person wrote it, with the
+// spec's links added at the end (the plan adds the slices after them), and
+// it closes when the last slice merges — for a portal request, that's when
+// its person hears it was solved. Exported for direct unit testing.
+export async function adoptSpecOrigin(origin: number, specPaths: string[]): Promise<{ number: number; url: string }> {
+  const body = (await getIssueBody(origin)).trimEnd();
+  await setIssueBody(origin, `${body ? `${body}\n\n` : ''}## Spec\n\n${specLinks(specPaths)}\n`);
+  await addIssueLabel(origin, LABEL_MANAGED);
+  return { number: origin, url: issueUrl(origin) };
 }
 
 // A directly-assigned issue (see discoverAssignedIssues below) and a spec's
@@ -177,17 +180,21 @@ async function discoverAssignedSpecs(): Promise<TrackingIssue[]> {
 
       // Deliberately skips the approval gate mergePullRequest enforces for
       // implementation PRs — this is documentation, and the human already
-      // signaled readiness via the label + undraft. See docs/DESIGN.md §1.
+      // signaled readiness: approving a spec ronin wrote, marking ready one
+      // they wrote. See docs/DESIGN.md §1.
+      if (pr.isDraft) await markPrReady(pr.number);
       await mergeSpecPr(pr.number);
       await fetchOriginMain();
       const title = extractTitle(await readSpecFile(primaryPath), primaryPath);
 
-      const body = await renderTrackingIssueBody(specPaths);
-      const issue = await createTrackingIssue(`[spec] ${title}`, body);
-      // In Linear, into the project of the issue the spec came from (#101):
-      // its branch is ronin/<issue>/spec.
-      const origin = Number(/^ronin\/(\d+)\/spec$/.exec(pr.headRefName)?.[1]);
-      if (Number.isInteger(origin)) await queueLinearAssignment({ number: issue.number, fromIssue: origin }).catch((error) => log.error(`Linear: no se pudo encolar el proyecto de #${issue.number}`, error));
+      // A /spec's: the issue it came from (its branch is ronin/<issue>/spec)
+      // is the one the work goes on. A spec a person wrote gets a new one.
+      const origin = issueFromSpecBranch(pr.headRefName);
+      let issue: { number: number; url: string };
+      if (origin !== null) issue = await adoptSpecOrigin(origin, specPaths);
+      else {
+        issue = await createTrackingIssue(`[spec] ${title}`, await renderTrackingIssueBody(specPaths));
+      }
       // Without this, the issue stays labeled ronin:ready forever and
       // listTrackingIssues('in-progress') would never find it again.
       await setIssueState(issue.number, 'in-progress');
@@ -197,7 +204,6 @@ async function discoverAssignedSpecs(): Promise<TrackingIssue[]> {
       // is the one place a human watching that PR (not the tracking issue)
       // finds out where the actual work moved to.
       await commentOnSpecPr(pr.number, `🚀 Started: tracked in ${issue.url}`);
-      if (Number.isInteger(origin)) await handOffSpecOrigin(origin, issue.number).catch((error) => log.error(`spec: no se pudo pasar #${origin} a #${issue.number}`, error));
       // The plan task rewrites the issue body with the real slice checklist.
       // Its worktree never has a PR (see stack.ts's planBranch), so unlike
       // every other task type it never goes through the merge-time cleanup
@@ -210,7 +216,7 @@ async function discoverAssignedSpecs(): Promise<TrackingIssue[]> {
       // event handler is the one running this.
       const locked = await tryLockResource(issueResource(issue.number));
       try {
-        await runAgentTask(sliceTask({ type: 'plan', issueNumber: issue.number, specPaths }));
+        await runAgentTask(sliceTask({ type: 'plan', issueNumber: issue.number, specPaths, keepBody: origin !== null }));
       } finally {
         await removeWorktree(planBranch(issue.number));
         if (locked) await unlockResource(issueResource(issue.number));
@@ -837,7 +843,7 @@ export async function externalReviewJobs(only?: number[]): Promise<TickJob[]> {
   ];
 }
 
-// Mentions on the draft PR of a spec ronin wrote (#241, domains/slices/spec-revise.ts).
+// Mentions on the open PR of a spec ronin wrote (#241, domains/slices/spec-revise.ts).
 // Uses the run's list of ronin's PRs when it has one. Same isolation as the
 // other flows: a failed discovery only leaves its own jobs out.
 export async function specRevisionJobs(allPrs: PullRequestStatus[] | null, only?: number[]): Promise<TickJob[]> {
