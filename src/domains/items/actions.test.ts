@@ -6,7 +6,7 @@ vi.mock('@platform/config/config.js', () => ({ config: { githubLogin: 'ronin-age
 vi.mock('@platform/logger.js', () => ({ log: { error: vi.fn(), info: vi.fn() } }));
 vi.mock('@platform/agents/repo-context.js', () => ({ withActiveRepo: (_entry: unknown, fn: () => unknown) => fn() }));
 
-const { listActions, actionComment, runAction, ActionError } = await import('./actions.js');
+const { listActions, actionComment, runAction, runComment, ActionError } = await import('./actions.js');
 
 const SESSION = { login: 'oskr814', token: 'gho_user' };
 const post = vi.fn();
@@ -177,5 +177,23 @@ describe('runAction', () => {
     post.mockRejectedValueOnce(new Error('GitHub respondió 403'));
     await expect(runAction(ENTRY, { kind: 'issue', number: 844 }, gh(), undefined, SESSION, 'unblock', 'vamos', post)).rejects.toThrow('403');
     expect(setIssueState).not.toHaveBeenCalled();
+  });
+});
+
+describe('runComment', () => {
+  const detail = { fetchedAt: '', issue: discussion(844), pr: discussion(849) };
+
+  it('comments on the tab\'s issue or PR as the person, with just what they wrote', async () => {
+    await runComment(ENTRY, detail, SESSION, 'issue', '  el caso es con un cliente sin pedidos\n ', post);
+    expect(post).toHaveBeenCalledWith('gho_user', 'acme/product', 844, 'el caso es con un cliente sin pedidos');
+    const done = await runComment(ENTRY, detail, SESSION, 'pr', 'se ve bien en el teléfono', post);
+    expect(post).toHaveBeenLastCalledWith('gho_user', 'acme/product', 849, 'se ve bien en el teléfono');
+    expect(done.url).toContain('issuecomment-77');
+  });
+
+  it('refuses an empty comment, or a tab the item does not have', async () => {
+    await expect(runComment(ENTRY, detail, SESSION, 'issue', '   ', post)).rejects.toThrow('Falta el texto.');
+    await expect(runComment(ENTRY, { fetchedAt: '', issue: discussion(844) }, SESSION, 'pr', 'algo', post)).rejects.toBeInstanceOf(ActionError);
+    expect(post).not.toHaveBeenCalled();
   });
 });

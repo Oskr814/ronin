@@ -30,6 +30,7 @@ let kunit: { key: string; i: number } | null = null;
 
 function DocBar({ v }: { v: ItemPage }) {
   const shell = useShell();
+  const session = useSession();
   const d = v.detail!.data!;
   const fichas = useExploration(v.item.id, Boolean(d.exploration)).data?.fichas.length ?? null;
   const cur = v.doc;
@@ -44,7 +45,7 @@ function DocBar({ v }: { v: ItemPage }) {
   };
   const hint = cur === 'fichas' ? <><kbd>j</kbd> <kbd>k</kbd> otra ficha</>
     : cur === 'files' ? <><kbd>j</kbd> <kbd>k</kbd> otro archivo · <kbd>v</kbd> visto{v.decidable ? '' : <> · <kbd>r</kbd> revisión</>}</>
-      : <><kbd>j</kbd> <kbd>k</kbd> sección o comentario</>;
+      : <><kbd>j</kbd> <kbd>k</kbd> sección o comentario{session.can(v.item.repo, 'acciones') && <> · <kbd>c</kbd> comentar</>}</>;
   return (
     <div className="doctabs" role="tablist">{v.tabs.map(([k, label]) => <button key={k} className="doctab" role="tab" aria-selected={k === cur} onClick={() => showDoc(v.item.id, k)}>{label}{counter(k)}</button>)}
       <span className="keys"><kbd>1</kbd>–<kbd>{v.tabs.length}</kbd> pestaña · {hint} <button className="kh" title="Atajos (?)" aria-label="Atajos" onClick={() => shell.keysHelp()}>?</button></span><span className="src">{d.error && <><span className="bad">GitHub no respondió: {d.error}</span>, </>}{d.fetchedAt ? `leído hace ${short(Date.now() - Date.parse(d.fetchedAt))}` : ''}</span></div>
@@ -147,6 +148,13 @@ export function Item({ id }: { id: string }) {
       if (/^[1-9]$/.test(event.key) && v.tabs[Number(event.key) - 1]) {
         event.preventDefault();
         showDoc(v.item.id, v.tabs[Number(event.key) - 1][0]);
+        return true;
+      }
+      // c: the box under the issue's or the PR's conversation.
+      const box = document.getElementById('dcomment');
+      if (event.key === 'c' && (tab === 'issue' || tab === 'pr') && box) {
+        event.preventDefault();
+        box.focus();
         return true;
       }
       if ((event.key === 'j' || event.key === 'k') && tab !== 'files' && tab !== 'fichas') {

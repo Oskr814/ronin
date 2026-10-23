@@ -1,8 +1,9 @@
-import { useReducer } from 'react';
-import type { ItemDetail, SnapshotItem } from '@apps/dashboard/src/shell/hooks.js';
+import { useEffect, useReducer, useRef, useState } from 'react';
+import { ApiError, client, ok } from '@apps/dashboard/src/api.js';
+import { type ItemDetail, reread, type SnapshotItem, useSession, useShell } from '@apps/dashboard/src/shell/hooks.js';
 import { when } from '@apps/dashboard/src/lib/format.js';
 import { Md } from '@apps/dashboard/src/lib/markdown.js';
-import { Avatar, checksChip, Chips, sameLogin, type Doc } from './model.js';
+import { Avatar, checksChip, Chips, itemParam, sameLogin, type Doc } from './model.js';
 
 // An issue or a PR as its tab shows it (#85): its body, where a PR stands,
 // and its conversation as GitHub shows it. A portal request's Issue tab
@@ -124,9 +125,54 @@ function PrState({ item, doc }: { item: SnapshotItem; doc: Doc }) {
   return <div className="prstate"><Chips chips={chips} /></div>;
 }
 
+// What's being written under each conversation, per item and tab: kept
+// while the person is elsewhere, as GitHub keeps it.
+const drafts = new Map<string, string>();
+
+// The box under the conversation (c goes to it), as GitHub has it at the
+// end of an issue or a PR: the comment goes out as the person, the same one
+// they'd leave there, and ronin reads it as such: with the rest of the
+// conversation when it works on it, as a request when it's mentioned.
+function Composer({ item, tab, number }: { item: SnapshotItem; tab: 'issue' | 'pr'; number: number }) {
+  const shell = useShell();
+  const session = useSession();
+  const key = `${item.id}:${tab}`;
+  const [text, setText] = useState(drafts.get(key) ?? '');
+  const [sending, setSending] = useState(false);
+  const area = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => setText(drafts.get(key) ?? ''), [key]);
+  const send = async () => {
+    const said = text.trim();
+    if (!said || sending) return area.current?.focus();
+    setSending(true);
+    try {
+      // A refusal makes the client's type of the answer {}: it's written here.
+      const { url } = (await ok(client.api.items[':id'].comment.$post({ param: itemParam(item.id), json: { on: tab, text: said } }))) as { url?: string };
+      drafts.delete(key);
+      setText('');
+      shell.toast(`Listo: comentaste en #${number}.`, url);
+      reread(item.id);
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 401) return shell.unauthorized(e.message);
+      shell.toast(`No se pudo comentar: ${(e as Error).message}`);
+    }
+    setSending(false);
+  };
+  return (
+    <div className="composer"><textarea id="dcomment" ref={area} rows={3} maxLength={4000} placeholder={`Comentar en ${tab === 'pr' ? 'el PR' : 'el issue'}… ronin lo lee con el resto de la conversación`} value={text}
+      onChange={(e) => { setText(e.target.value); drafts.set(key, e.target.value); }}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) void send();
+        if (e.key === 'Escape') e.currentTarget.blur();
+      }} />
+      <div className="cf"><span>Comentás como {session.me} en #{number}. Sin mencionar a ronin, lo lee con el resto cuando lo trabaja.</span><span className="kbd-hint"><kbd>Ctrl</kbd> <kbd>Enter</kbd></span><button className="btn-s primary" id="dcomment-send" disabled={sending || !text.trim()} onClick={() => void send()}>{sending ? 'Comentando…' : 'Comentar'}</button></div></div>
+  );
+}
+
 // The issue's or the PR's tab: the other one's link when it's not the
 // item itself, its body and its conversation.
 export function DocPage({ item, d, tab }: { item: SnapshotItem; d: ItemDetail; tab: 'issue' | 'pr' }) {
+  const session = useSession();
   const doc = (tab === 'issue' ? d.issue : d.pr)!;
   const other = (tab === 'issue') !== (item.kind === 'issue');
   const n = conversation(doc).length;
@@ -136,6 +182,7 @@ export function DocPage({ item, d, tab }: { item: SnapshotItem; d: ItemDetail; t
       {tab === 'pr' && sameLogin(doc.author, d.ronin) ? <PrBody body={doc.body} repo={item.repo} /> : <Body body={doc.body} repo={item.repo} />}</div>
     <section className="conv"><h3>Comentarios {tab === 'pr' ? 'del PR' : 'del issue'}{n ? <> <span className="c">{n}</span></> : null}</h3>{n
       ? <Comments doc={doc} ronin={d.ronin} repo={item.repo} />
-      : <p className="m">Nadie comentó todavía.</p>}</section>
+      : <p className="m">Nadie comentó todavía.</p>}
+      {session.can(item.repo, 'acciones') && <Composer item={item} tab={tab} number={doc.number} />}</section>
   </>;
 }

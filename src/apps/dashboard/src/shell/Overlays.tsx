@@ -25,6 +25,7 @@ const KEYS_HELP: Array<[string, Array<[string, string]>]> = [
   ['Moverse', [['1 – 9', 'Ir a una pestaña'], ['j / k', 'Siguiente / anterior sección, comentario, archivo o ficha'], ['d / u', 'Media página abajo / arriba'], ['gg / G', 'Al inicio / al final'], [']p / [p', 'Siguiente / anterior PR de ronin que espera una decisión']]],
   ['En un PR de ronin', [['A', 'Aprobar: aprueba y mergea (↵ confirma)'], ['P', 'Ajustar: le pide un cambio a ronin (Ctrl ↵ manda)'], ['X', 'Cerrar el PR (Ctrl ↵ confirma)'], ['1 – 3', 'Fuera del texto del ajuste: sumar una sugerencia'], ['I', 'Fuera del texto del cierre: cerrar también el issue, o no']]],
   ['Acciones', [['M', 'Abrir o cerrar el menú de acciones'], ['1 – 9', 'En el menú: pedir esa acción'], ['j / k', 'En el menú: la siguiente / anterior (también ↓ ↑, y ↵ la pide)'], ['Ctrl ↵', 'En el diálogo de la acción: comentar']]],
+  ['En Issue o PR', [['c', 'Escribir un comentario al pie de la conversación (Ctrl ↵ lo manda, Esc sale del cuadro)']]],
   ['En Archivos', [['v', 'Marcar el archivo como visto'], ['r', 'Revisión, en los PRs de personas']]],
   ['General', [['?', 'Esta ayuda'], ['Esc', 'Cerrar lo que esté abierto']]],
 ];

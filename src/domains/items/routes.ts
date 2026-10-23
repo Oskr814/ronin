@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { config } from '@platform/config/config.js';
 import { log } from '@platform/logger.js';
 import { dropCloseNote, noteClosing } from '../portal/follow.js';
-import { runAction } from './actions.js';
+import { runAction, runComment } from './actions.js';
 import { HISTORY_DAYS, itemKey } from '../runs/data.js';
 import { runDecision } from './decision.js';
 import { forgetDetails } from './detail.js';
@@ -35,6 +35,7 @@ import { detail, exploration, explorationContext, filesContext, itemContext, sna
 //   GET  /api/items/<id>/files/mine          the person's own: the files they marked as viewed, and their pending review
 //   GET  /api/items/<id>/exploration         an exploration PR's findings and their threads, to review them (#93)
 //   POST /api/items/<id>/actions             asks for one of those (items/actions.ts)
+//   POST /api/items/<id>/comment             a comment on its issue or its PR, as the person
 //   POST /api/items/<id>/decision            on a PR ronin opened: approve and merge it, ask for an adjustment, or close it, as the person (#195)
 //   POST /api/items/<id>/files/actions       a comment, a reply, resolving a thread, marking a file viewed, the review, as the person
 //   POST /api/items/<id>/exploration/<what>  on its findings: actions on one, a general comment, the approval, as the person
@@ -147,6 +148,19 @@ export function itemsRoutes() {
         if (noted !== null) await dropCloseNote(noted).catch((e) => log.error(`tablero: no se pudo quitar el motivo del pedido P-${noted}`, e));
         throw error;
       }
+    })
+
+    // { on: issue | pr, text }
+    .post('/:id/comment', onlyJson, jsonBody(MAX_BODY, 'falta el comentario'), body(z.object({ on: z.enum(['issue', 'pr'], { error: 'falta dónde comentar' }), text: z.unknown() })), async (c) => {
+      const { on, text } = c.req.valid('json');
+      const ctx = await itemContext(c.env.access, c.req.param('id'));
+      if (!ctx) return c.json(NO_ITEM, 404);
+      const refused = refusal(c, c.env.access, ctx.entry.productRepo, 'acciones');
+      if (refused) return refused;
+      const done = await runComment(ctx.entry, ctx.detail, c.env.session, on, text);
+      // The next read shows it in the conversation.
+      forgetDetails(ctx.entry.productRepo);
+      return c.json(done, 200);
     })
 
     // { decision: approve | adjust | close | answer, text?, closeIssue? }
