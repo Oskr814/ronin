@@ -11,7 +11,8 @@ import { describe, it, expect, vi } from 'vitest';
 // review ronin already answered, and checksStatus — pure too, and what every
 // CI decision on a slice PR reads, and reviewerDecisions — pure too, and
 // who the dashboard says approved a PR, and reviewBodyComments — pure too,
-// and which review texts get read for mentions.
+// and which review texts get read for mentions, and rawReviewOf — pure too,
+// and what those review texts are read from in a tick (#370).
 vi.mock('../config/config.js', () => ({
   config: { githubLogin: 'ronin' },
   LABEL_MANAGED: 'ronin',
@@ -23,7 +24,7 @@ vi.mock('../agents/repo-context.js', () => ({
   activeRepo: () => ({ productRepo: 'bmedical/bmedical', productRepoPath: '/tmp/repo', worktreeBasePath: '/tmp/worktrees' }),
 }));
 
-const { attemptCountFromLabels, isTransientGhError, isExternalReviewable, lastMarkedReviewSha, threadOf, changesRequestedOn, checksStatus, reviewerDecisions, reviewBodyComments } = await import('./github.js');
+const { attemptCountFromLabels, isTransientGhError, isExternalReviewable, lastMarkedReviewSha, threadOf, changesRequestedOn, checksStatus, reviewerDecisions, reviewBodyComments, rawReviewOf } = await import('./github.js');
 
 describe('changesRequestedOn', () => {
   const review = (login: string, state: string, commitId: string) => ({ login, state, commitId });
@@ -224,5 +225,20 @@ describe('reviewBodyComments', () => {
 
   it('leaves out a review sent before review texts were read (#351)', () => {
     expect(reviewBodyComments([review(4, 'COMMENTED', '@ronin de antes', '2026-10-01T10:00:00Z')])).toEqual([]);
+  });
+});
+
+describe('rawReviewOf (#370)', () => {
+  it('reads a review from GraphQL as the REST /reviews brings it, by its REST id', () => {
+    const review = rawReviewOf({ databaseId: 7, state: 'COMMENTED', body: '@ronin ya respondí', submittedAt: '2026-10-23T10:00:00Z', author: { login: 'ana' } });
+    expect(review).toEqual({ id: 7, state: 'COMMENTED', body: '@ronin ya respondí', user: { login: 'ana' }, submitted_at: '2026-10-23T10:00:00Z' });
+    expect(reviewBodyComments([review!])).toEqual([
+      { id: 7, kind: 'review-body', body: '@ronin ya respondí', reactionsEyes: 0, authorLogin: 'ana', createdAt: '2026-10-23T10:00:00Z' },
+    ]);
+  });
+
+  it('keeps a pending review pending, with no submitted_at, and drops one without a REST id', () => {
+    expect(rawReviewOf({ databaseId: 8, state: 'PENDING', body: '', submittedAt: null, author: { login: 'ronin' } })).toEqual({ id: 8, state: 'PENDING', body: '', user: { login: 'ronin' } });
+    expect(rawReviewOf({ databaseId: null, state: 'COMMENTED', body: 'x', submittedAt: null, author: null })).toBeNull();
   });
 });

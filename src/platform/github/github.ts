@@ -1256,19 +1256,72 @@ export async function listRecentIssueComments(number: number): Promise<Comment[]
   return (await readRecentComments('issues')).filter((c) => c.issue_url?.endsWith(`/issues/${number}`)).map(issueCommentOf);
 }
 
+const OPEN_PR_REVIEWS_QUERY = `
+query($owner: String!, $repo: String!, $after: String) {
+  repository(owner: $owner, name: $repo) {
+    pullRequests(states: OPEN, first: 50, after: $after) {
+      nodes { number reviews(last: 100) { nodes { databaseId state body submittedAt author { login } } } }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+}`;
+
+export interface GraphqlReview {
+  databaseId: number | null;
+  state: string;
+  body: string | null;
+  submittedAt: string | null;
+  author: { login: string } | null;
+}
+
+// A review as GraphQL brings it, as the REST /reviews would have: what
+// reviewCommentsFrom reads. databaseId is the REST id, the one its comments'
+// pull_request_review_id and processed-comments.ts know it by.
+export function rawReviewOf(review: GraphqlReview): RawReview | null {
+  if (review.databaseId === null) return null;
+  return { id: review.databaseId, state: review.state, body: review.body, user: review.author, ...(review.submittedAt ? { submitted_at: review.submittedAt } : {}) };
+}
+
+// The reviews of every open PR, in one query for the whole repo: what used
+// to be one call per PR in each tick (#370). Read once in a tick's run and
+// shared, like the recent comments.
+function readOpenPrReviews(): Promise<Map<number, RawReview[]>> {
+  return memoized('open-pr-reviews', async () => {
+    const { owner, name: repo } = parseRepo(activeRepo().productRepo);
+    type Raw = { data: { repository: { pullRequests: { nodes: Array<{ number: number; reviews: { nodes: GraphqlReview[] } }>; pageInfo: { hasNextPage: boolean; endCursor: string | null } } } } };
+    const reviews = new Map<number, RawReview[]>();
+    let after: string | null = null;
+    do {
+      const raw = JSON.parse(await ghApi(['api', 'graphql', '-f', `query=${OPEN_PR_REVIEWS_QUERY}`, '-f', `owner=${owner}`, '-f', `repo=${repo}`, ...(after ? ['-f', `after=${after}`] : [])])) as Raw;
+      const page = raw.data.repository.pullRequests;
+      for (const pr of page.nodes) reviews.set(pr.number, pr.reviews.nodes.flatMap((r) => rawReviewOf(r) ?? []));
+      after = page.pageInfo.hasNextPage ? page.pageInfo.endCursor : null;
+    } while (after);
+    return reviews;
+  });
+}
+
+// One PR's reviews: from the read of every open PR's, or, for one that
+// wasn't open when it was read, its own.
+async function reviewsOfPr(prNumber: number): Promise<RawReview[]> {
+  const known = (await readOpenPrReviews()).get(prNumber);
+  if (known) return known;
+  return JSON.parse(await ghApi(['api', `repos/${activeRepo().productRepo}/pulls/${prNumber}/reviews?per_page=100`])) as RawReview[];
+}
+
 // Where a PR's mentions can be, from the last days: its conversation
 // comments and inline ones from the repo's recent comments, and the texts
-// of its reviews (GitHub has no list of them for the whole repo: one call).
-// An inline comment's thread is built from what came, so it may lack its
-// start: whoever answers it reads the PR's own (findUnprocessedMentions).
+// of its reviews, from the read of every open PR's. An inline comment's
+// thread is built from what came, so it may lack its start: whoever answers
+// it reads the PR's own (findUnprocessedMentions).
 export async function listRecentPrComments(prNumber: number): Promise<Comment[]> {
-  const [issues, pulls, reviewsStdout] = await Promise.all([
+  const [issues, pulls, reviews] = await Promise.all([
     listRecentIssueComments(prNumber),
     readRecentComments('pulls'),
-    ghApi(['api', `repos/${activeRepo().productRepo}/pulls/${prNumber}/reviews?per_page=100`]),
+    reviewsOfPr(prNumber),
   ]);
   const inline = pulls.filter((c) => c.pull_request_url?.endsWith(`/pulls/${prNumber}`));
-  return [...issues, ...reviewCommentsFrom(inline, JSON.parse(reviewsStdout) as RawReview[])];
+  return [...issues, ...reviewCommentsFrom(inline, reviews)];
 }
 
 // From when a review's own text is read for mentions (#351). Before it, none
