@@ -40,7 +40,8 @@ export function DevDecide({ d }: { d: Detail }) {
   const [error, setError] = useState<string | null>(null);
   const who = firstName(d.person);
   const repro = d.bug?.reproductions.at(-1);
-  const proto = d.prototypes.at(-1);
+  // Approved in words only (#409): no prototype, nor its diff.
+  const proto = d.worded ? undefined : d.prototypes.at(-1);
   const made = repro ?? proto;
   const team = made?.team;
   const shown = d.messages.find((m) => m.id === made?.messageId);
@@ -88,7 +89,7 @@ export function DevDecide({ d }: { d: Detail }) {
   return (
     <div className="pd-now pd-dc"><div className="k">{canAct ? 'Ahora · te toca decidir' : 'Ahora · espera la decisión de un dev'}</div>
       <div className="t">{d.bug ? '¿Hace ronin este arreglo?' : '¿Hace ronin este cambio?'}</div>
-      <div className="meta">{d.bug ? 'Arreglo chico de un error reportado' : `Ajuste chico · ${who} aprobó ${d.prototypes.length > 1 ? `el ${d.prototypes.length}.º prototipo` : 'el prototipo'}`}{since ? ` · espera ${ago(since, now)}` : ''}</div>
+      <div className="meta">{d.bug ? 'Arreglo chico de un error reportado' : `Ajuste chico · ${who} aprobó ${d.worded ? 'la propuesta, sin prototipo' : d.prototypes.length > 1 ? `el ${d.prototypes.length}.º prototipo` : 'el prototipo'}`}{since ? ` · espera ${ago(since, now)}` : ''}</div>
 
       <Row label={d.bug ? 'Qué falla' : 'Qué cambia'}>
         {d.bug ? <p>{d.bug.steps || repro?.summary}</p> : d.verdict?.proposal ? <p>{d.verdict.proposal}</p> : null}
@@ -105,12 +106,12 @@ export function DevDecide({ d }: { d: Detail }) {
       </div>}
 
       {/* Without its parts (an older one), what to decide is in the summary: open. */}
-      <details className="pd-dc-more" open={!team}><summary>Detalles: lo que pidió, {team ? 'los cambios, las pruebas, los riesgos' : 'el resumen técnico'} y los archivos</summary>
+      <details className="pd-dc-more" open={!team}><summary>Detalles: lo que pidió, {team ? 'los cambios, las pruebas, los riesgos' : 'el resumen técnico'}{made?.patch || scope ? ' y los archivos' : ''}</summary>
         {asked.length > 0 && <Row label="Lo que pidió">{asked.map((m, i) => <div key={m.id} className="pd-dc-quote">{m.text || '(solo imágenes)'}<small>{who} · {i === 0 ? 'al abrir el pedido' : 'después'}</small></div>)}</Row>}
         {team?.changes.length ? <Row label="Cambios"><ul>{team.changes.map((x, i) => <li key={i}>{x}</li>)}</ul></Row> : null}
         {tests.length > 0 && <Row label="Pruebas"><ul className="pd-dc-tests">{tests.map((t, i) => <li key={i} className={t.ok ? 'ok' : 'warn'}><span className="i">{t.ok ? '✓' : '!'}</span><span>{t.text}</span></li>)}</ul></Row>}
         {team?.risks.length ? <Row label="Riesgos"><ul>{team.risks.map((x, i) => <li key={i}>{x}</li>)}</ul></Row> : null}
-        {!team && made?.summary && <Row label="Resumen técnico">{paragraphs(made.summary).map((p, i) => <p key={i}>{p}</p>)}</Row>}
+        {!team && (made?.summary ?? d.verdict?.summary) && <Row label="Resumen técnico">{paragraphs(made?.summary ?? d.verdict?.summary ?? '').map((p, i) => <p key={i}>{p}</p>)}</Row>}
         {(scope || made?.patch) && <Row label="Archivos">
           {scope && <div className="pd-dc-files">{scope.files.map((f) => <div key={f.path}><span>{f.path}</span><span className="add">+{f.add}</span><span className="del">−{f.del}</span></div>)}</div>}
           {made?.patch && <div className="pd-dpatch"><Patch n={d.number} of={repro ? 'reproduction' : 'prototype'} round={made.round} /></div>}

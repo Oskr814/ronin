@@ -7,15 +7,16 @@ import { activeRepo } from '@platform/agents/repo-context.js';
 import { removeWorktreeDir } from '@platform/git/worktree.js';
 import { getUser, type PortalUser } from './accounts.js';
 import { interviewText, MAX_ROUNDS, parseQuestions, parseUnderstood } from './interview.js';
-import { interviewMail, replyMail, understoodMail } from './mail.js';
+import { interviewMail, proposalMail, replyMail, understoodMail } from './mail.js';
 import { handOverMail, sendPortalMails } from './notify.js';
-import { addEvent, addRoninMessage, errorLine, getRequest, MAX_PROTOTYPES, MAX_REPRODUCTIONS, requestImagePath, TITLE_MAX, updateUnlessClosed, type InterviewQuestion, type PortalRequest, type Understood, type Verdict } from './requests.js';
+import { addEvent, addRoninMessage, errorLine, getRequest, MAX_PROTOTYPES, MAX_REPRODUCTIONS, proposalRounds, requestImagePath, TITLE_MAX, updateUnlessClosed, type InterviewQuestion, type PortalRequest, type Understood, type Verdict } from './requests.js';
 import { host } from '@platform/host/host.js';
 
 
 // ronin reads a portal request (#114) and does one of six things: asks the
 // person something, answers them, or decides it's a small change (the
-// prototype comes next), a reported error (reproducing it comes next, #137),
+// prototype comes next, or the person decides on the proposal in words,
+// #409), a reported error (reproducing it comes next, #137),
 // one for the dev team, or one for the team that first needs the person's
 // decisions — it interviews them (#225). A read-only agent decides; this writes the
 // reply, so the person only ever sees what passes through here.
@@ -33,6 +34,9 @@ export interface PortalResult {
   titulo?: string;
   propuesta?: string;
   instruccion?: string;
+  // menor: false when the proposal in words is enough to decide on, without
+  // a prototype (#409).
+  prototipo?: boolean;
   motivo?: string;
   resumen?: string;
   // error: the steps to reproduce it, as ronin understood them.
@@ -50,12 +54,13 @@ const text = (value: unknown, max: number): string | undefined => {
   return trimmed.length > max ? `${trimmed.slice(0, max - 1)}…` : trimmed;
 };
 
-// What the agent wrote. A small change without what the prototype needs or
-// past the prototypes allowed, an error without its steps or past the
+// What the agent wrote. A small change without what the prototype needs (its
+// proposal, and its instruction unless it needs no prototype) or past the
+// proposals allowed, an error without its steps or past the
 // reproductions allowed, a question past the limit, or an interview without
 // usable questions or past its rounds, goes to the team: never left
 // half-decided.
-export function parsePortalResult(raw: string, questionsAsked: number, prototypesShown = 0, reproductions = 0, interviewRounds = 0): PortalResult {
+export function parsePortalResult(raw: string, questionsAsked: number, proposalsShown = 0, reproductions = 0, interviewRounds = 0): PortalResult {
   const parsed: unknown = JSON.parse(raw);
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) throw new Error('el resultado no es un objeto JSON');
   const r = parsed as Record<string, unknown>;
@@ -67,10 +72,11 @@ export function parsePortalResult(raw: string, questionsAsked: number, prototype
     const value = text(r[key], max);
     if (value) result[key] = value;
   }
-  if (result.accion === 'menor' && (!result.propuesta || !result.instruccion)) {
+  if (result.accion === 'menor' && r.prototipo === false) result.prototipo = false;
+  if (result.accion === 'menor' && (!result.propuesta || (!result.instruccion && result.prototipo !== false))) {
     return { ...result, accion: 'grande', motivo: result.motivo ?? 'No quedó claro qué cambiar.' };
   }
-  if (result.accion === 'menor' && prototypesShown >= MAX_PROTOTYPES) {
+  if (result.accion === 'menor' && proposalsShown >= MAX_PROTOTYPES) {
     return { ...result, accion: 'grande', motivo: result.motivo ?? 'Pidió más ajustes de los que se pueden hacer aquí.', mensaje: 'Para dejarlo como lo necesitas hace falta que lo vea el equipo.' };
   }
   if (result.accion === 'error' && !result.pasos) {
@@ -103,12 +109,21 @@ export const NEXT_STEP: Record<'menor' | 'otra' | 'error' | 'grande' | 'entrevis
   entrevistado: 'Se lo envié al equipo de desarrollo con tu pedido, tus respuestas y tus imágenes. Te aviso por correo cuando esté resuelto.',
 };
 
+// After a proposal (a prototype, or in words only, #409): what the person
+// can do with it, by how many they already saw (this one included).
+export function decideHint(round: number): string {
+  const left = MAX_PROTOTYPES - round;
+  return left > 0
+    ? `Si te gusta, apruébalo. Si quieres cambiar algo, escríbeme qué (${left === 1 ? 'queda 1 ajuste' : `quedan ${left} ajustes`}). Si no es lo que buscabas, elige «No me sirve» y se lo paso al equipo.`
+    : 'Este es el último ajuste que puedo hacer aquí: si te gusta, apruébalo; si no, elige «No me sirve» y se lo paso al equipo.';
+}
+
 // The reply the person sees, and where the request goes.
 export function applyResult(request: PortalRequest, result: PortalResult, now = new Date()): void {
   if (result.titulo && request.messages.filter((m) => m.from === 'ronin').length === 0) request.title = result.titulo;
   delete request.worker;
-  // An answer about the prototype on screen leaves it there to decide on.
-  const onScreen = (request.prototypes?.length ?? 0) > 0 && request.verdict?.kind === 'minor';
+  // An answer about the proposal on screen leaves it there to decide on.
+  const onScreen = proposalRounds(request) > 0 && request.verdict?.kind === 'minor';
   if (result.accion === 'preguntar' || result.accion === 'responder') {
     addRoninMessage(request, result.mensaje, now);
     request.status = result.accion === 'preguntar' ? 'asking' : onScreen ? 'proposed' : 'answered';
@@ -150,13 +165,22 @@ export function applyResult(request: PortalRequest, result: PortalResult, now = 
   const verdict: Verdict = { kind, summary: result.resumen ?? '', at: now.toISOString() };
   if (kind === 'minor') {
     verdict.proposal = result.propuesta;
-    verdict.instruction = result.instruccion;
+    if (result.instruccion) verdict.instruction = result.instruccion;
+    if (result.prototipo === false) verdict.prototype = false;
   } else if (result.motivo) verdict.reason = result.motivo;
+  const shown = proposalRounds(request);
   request.verdict = verdict;
-  request.status = kind;
   addEvent(request, { kind: 'classified', verdict: kind }, now);
   const proposal = kind === 'minor' ? `\n\nLa propuesta: ${result.propuesta}` : '';
-  const next = kind === 'big' ? (request.interview?.rounds ? NEXT_STEP.entrevistado : NEXT_STEP.grande) : request.prototypes?.length ? NEXT_STEP.otra : NEXT_STEP.menor;
+  if (verdict.prototype === false) {
+    // In words only (#409): the person decides on it now, as on a prototype.
+    request.proposals = (request.proposals ?? 0) + 1;
+    request.status = 'proposed';
+    addRoninMessage(request, `${result.mensaje}${proposal}\n\n${decideHint(shown + 1)}`, now);
+    return;
+  }
+  request.status = kind;
+  const next = kind === 'big' ? (request.interview?.rounds ? NEXT_STEP.entrevistado : NEXT_STEP.grande) : shown ? NEXT_STEP.otra : NEXT_STEP.menor;
   addRoninMessage(request, `${result.mensaje}${proposal}\n\n${next}`, now);
 }
 
@@ -177,9 +201,13 @@ async function checkout(n: number): Promise<string> {
 // The person hears back by email (they may have closed the page), except
 // for a small change or an error: the next email is the prototype's, or the
 // reproduction's. A big one's issue
-// for the team comes next, in the same worker.
-async function notify(request: PortalRequest, user: PortalUser | undefined): Promise<void> {
+// for the team comes next, in the same worker. `proposed`: ronin just
+// proposed a small change in words only (#409).
+async function notify(request: PortalRequest, user: PortalUser | undefined, proposed = false): Promise<void> {
   if (request.status === 'big') await handOverMail(request, user);
+  else if (proposed) {
+    if (user) await sendPortalMails(request, [proposalMail(request, user, config.portal.url)]);
+  }
   else if (request.status === 'interviewing' || request.status === 'confirming') {
     if (user) await sendPortalMails(request, [(request.status === 'interviewing' ? interviewMail : understoodMail)(request, user, config.portal.url)]);
   }
@@ -193,7 +221,7 @@ async function settle(n: number, result: PortalResult): Promise<void> {
     return;
   }
   log.info(`portal: pedido P-${n} → ${result.accion}`);
-  await notify(updated, await getUser(updated.userId));
+  await notify(updated, await getUser(updated.userId), result.accion === 'menor' && updated.status === 'proposed');
 }
 
 // The person answered the interview or corrected its summary (#225), and
@@ -286,22 +314,25 @@ export async function classifyRequest(n: number): Promise<void> {
       interviewRoundsLeft: Math.max(0, MAX_ROUNDS - (request.interview?.rounds ?? 0)),
       interviewed: (request.interview?.rounds ?? 0) > 0,
       prototypes: request.prototypes?.length ?? 0,
-      ...(request.verdict?.instruction ? { instruction: request.verdict.instruction } : {}),
-      adjustmentsLeft: Math.max(0, MAX_PROTOTYPES - (request.prototypes?.length ?? 0)),
+      proposals: request.proposals ?? 0,
+      ...(request.verdict?.kind === 'minor' && request.verdict.prototype === false
+        ? { proposal: request.verdict.proposal ?? '' }
+        : request.verdict?.instruction ? { instruction: request.verdict.instruction } : {}),
+      adjustmentsLeft: Math.max(0, MAX_PROTOTYPES - proposalRounds(request)),
       ...(request.bug ? { reproductions: request.bug.reproductions.map((t) => ({ reproduced: t.reproduced, summary: t.summary })) } : {}),
       reproductionsLeft: Math.max(0, MAX_REPRODUCTIONS - (request.bug?.reproductions.length ?? 0)),
       checkoutDir: dir,
       outputPath,
     }));
-    await settle(n, parsePortalResult(await host().fs.readFile(outputPath, 'utf8'), request.questions, request.prototypes?.length ?? 0, request.bug?.reproductions.length ?? 0, request.interview?.rounds ?? 0));
+    await settle(n, parsePortalResult(await host().fs.readFile(outputPath, 'utf8'), request.questions, proposalRounds(request), request.bug?.reproductions.length ?? 0, request.interview?.rounds ?? 0));
   } catch (error) {
     log.error(`portal: no se pudo revisar el pedido P-${n}`, error);
     try {
       const failed = await updateUnlessClosed(n, (r) => {
         addEvent(r, { kind: 'failed', step: 'classify', error: errorLine(error) });
         addRoninMessage(r, FAILED_REPLY);
-        // The prototype on screen, if any, is still there to decide on.
-        r.status = r.prototypes?.length && r.verdict?.kind === 'minor' ? 'proposed' : 'asking';
+        // The proposal on screen, if any, is still there to decide on.
+        r.status = proposalRounds(r) && r.verdict?.kind === 'minor' ? 'proposed' : 'asking';
         delete r.worker;
       });
       if (failed) await notify(failed, await getUser(failed.userId));

@@ -74,6 +74,8 @@ export interface RequestRow {
   issue?: number;
   pr?: number;
   prototypes: number;
+  proposals: number;
+  worded: boolean;
   questions: number;
   decision?: 'approved' | 'rejected';
   verdict?: Verdict['kind'];
@@ -101,6 +103,9 @@ export function requestRow(r: PortalRequest, user: PortalUser | undefined, entri
     ...(r.issue ? { issue: r.issue.number } : {}),
     ...(r.pr ? { pr: r.pr } : {}),
     prototypes: r.prototypes?.length ?? 0,
+    // Proposals in words only (#409), and whether the last one was.
+    proposals: r.proposals ?? 0,
+    worded: r.verdict?.kind === 'minor' && r.verdict.prototype === false,
     questions: r.questions,
     ...(r.decision ? { decision: r.decision.kind } : {}),
     ...(r.verdict ? { verdict: r.verdict.kind } : {}),

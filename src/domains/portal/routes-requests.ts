@@ -13,7 +13,7 @@ import { answerInterview, confirmUnderstood, MAX_CORRECTIONS, MAX_ROUNDS, skipIn
 import { launchPortalWorker } from './launch.js';
 import { decideRequest } from './prototype.js';
 import { canReplyToTeam, replyToTeam } from './team-conversation.js';
-import { addPersonMessage, CANCELLABLE, createRequest, getRequest, listRequestsOf, MAX_PROTOTYPES, requestImagePath, RequestError, startedToday, TEXT_MAX, type PortalRequest } from './requests.js';
+import { addPersonMessage, CANCELLABLE, createRequest, getRequest, listRequestsOf, MAX_PROTOTYPES, proposalRounds, requestImagePath, RequestError, startedToday, TEXT_MAX, type PortalRequest } from './requests.js';
 
 // A person's requests in the portal (#114), always behind their session and
 // only their own — routes.ts mounts them under /api/portal/requests:
@@ -54,8 +54,10 @@ function personView(r: PortalRequest, app: PortalApp | undefined) {
     expired: expiredHow(r),
     // Whether they can answer the team now (#353): the team has it and wrote to them.
     replyToTeam: canReplyToTeam(r),
-    // Adjustments the person may still ask for on the prototype.
-    adjustmentsLeft: Math.max(0, MAX_PROTOTYPES - (r.prototypes?.length ?? 0)),
+    // Adjustments the person may still ask for on the proposal.
+    adjustmentsLeft: Math.max(0, MAX_PROTOTYPES - proposalRounds(r)),
+    // The proposal on screen is in words only, without a prototype (#409).
+    worded: r.verdict?.kind === 'minor' && r.verdict.prototype === false,
     // The interview (#225): the round on screen, of how many, and the
     // corrections to the summary still allowed.
     interview: { round: r.interview?.rounds ?? 0, rounds: MAX_ROUNDS, correctionsLeft: Math.max(0, MAX_CORRECTIONS - (r.interview?.corrections ?? 0)) },

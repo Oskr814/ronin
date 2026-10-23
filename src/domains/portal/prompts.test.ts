@@ -167,6 +167,17 @@ describe('buildTask — portal-request (#114)', () => {
     expect((await task(2)).prompt).not.toContain('Ya le mostraste');
     expect(readRequest).toContain('Si la corrida dice que no le quedan ajustes, no elijas «menor»');
   });
+
+  it('after a proposal in words only, reads the reply against that proposal (#409)', async () => {
+    const { prompt } = await buildTask({
+      type: 'portal-request', requestNumber: 31, appName: 'backoffice', questionsLeft: 3, checkoutDir: '/tmp/w', outputPath: '/tmp/o.json',
+      prototypes: 1, proposals: 1, proposal: 'Sin los anulados', instruction: 'vieja', adjustmentsLeft: 1, reproductionsLeft: 2, interviewRoundsLeft: 2, interviewed: false,
+      conversation: [{ from: 'person', text: 'Y en gris', images: [] }],
+    });
+    expect(prompt).toContain('Ya le mostraste un prototipo (tus mensajes con imágenes) y una propuesta sin prototipo.');
+    expect(prompt).toContain('<<<PROPOSAL_START>>>Sin los anulados<<<PROPOSAL_END>>>');
+    expect(prompt).not.toContain('INSTRUCTION_START');
+  });
 });
 
 describe('buildTask — portal-reproduce (#137)', () => {

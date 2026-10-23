@@ -67,8 +67,10 @@ function Now({ d }: { d: Detail }) {
     case 'interviewing': return card('waiting', k, `Espera a ${who}: las preguntas de la entrevista`, desc(`Es para el equipo. ronin le dejó preguntas ${ago(d.messages.at(-1)?.at)} para que el issue llegue con las decisiones tomadas, y le avisó por correo. Ronda ${d.interview?.rounds ?? 1} de 2. Si no responde, el pedido puede pasarse al equipo sin las respuestas.`));
     case 'confirming': return card('waiting', k, `Espera a ${who}: confirmar lo que entendió ronin`, desc('Al confirmarlo pasa al equipo, con sus respuestas y el resumen.'));
     case 'proposed': {
-      const left = 3 - d.prototypes.length;
-      return card('waiting', k, `Espera a ${who}: aprobar el prototipo, pedir un ajuste o pasarlo al equipo`, desc(`Se lo mostró ${ago(d.prototypes.at(-1)?.at)} y le avisó por correo. ${left > 0 ? `Le ${left === 1 ? 'queda 1 ajuste' : `quedan ${left} ajustes`}.` : 'No le quedan ajustes.'}`));
+      const left = 3 - d.prototypes.length - d.proposals;
+      // A proposal in words only (#409): since ronin's last message.
+      const shown = d.worded ? d.messages.filter((m) => m.from === 'ronin').at(-1)?.at : d.prototypes.at(-1)?.at;
+      return card('waiting', k, d.worded ? `Espera a ${who}: aprobar la propuesta, pedir un ajuste o pasarla al equipo` : `Espera a ${who}: aprobar el prototipo, pedir un ajuste o pasarlo al equipo`, desc(`${d.worded ? 'Se la propuso sin prototipo' : 'Se lo mostró'} ${ago(shown)} y le avisó por correo. ${left > 0 ? `Le ${left === 1 ? 'queda 1 ajuste' : `quedan ${left} ajustes`}.` : 'No le quedan ajustes.'}`));
     }
     case 'approved':
       if (d.pr && deployed) return card('waiting', k, `El PR #${d.pr} se mergea con el CI en verde`, desc(`${deployed} eligió aprobarlo y desplegarlo, y ronin lo aprobó a su nombre. Al mergear, ${who} recibe “listo, sale en la próxima actualización”.`), open(d.pr, `Abrir el PR #${d.pr}`));
@@ -98,7 +100,7 @@ function shownEvent(d: Detail, e: RequestEvent): Shown {
       ? ['ok', 'ok', `Lo reprodujo (intento ${e.round})`, <span className="m">{TEST[e.test]}</span>, true]
       : ['warn', 'crit', `No lo pudo reproducir (intento ${e.round})`, <span className="m">{TEST[e.test]}</span>, true];
     case 'classified': return e.verdict === 'minor'
-      ? ['ok', 'ok', 'Lo clasificó como cambio menor', d.verdict?.kind === 'minor' && d.verdict.proposal ? <div className="bx">{d.verdict.proposal}</div> : null]
+      ? ['ok', 'ok', d.verdict?.kind === 'minor' && d.verdict.prototype === false ? 'Lo clasificó como cambio menor, sin prototipo' : 'Lo clasificó como cambio menor', d.verdict?.kind === 'minor' && d.verdict.proposal ? <div className="bx">{d.verdict.proposal}</div> : null]
       : e.verdict === 'error' ? ['run', 'run', 'Lo leyó como un reporte de error', d.bug?.steps ? <div className="bx">{d.bug.steps}</div> : null]
         : ['warn', 'crit', 'Lo pasó al equipo', d.verdict?.kind === 'big' && d.verdict.reason ? <div className="bx">{d.verdict.reason}</div> : null];
     case 'interview': return ({

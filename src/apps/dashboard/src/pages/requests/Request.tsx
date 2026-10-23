@@ -34,7 +34,7 @@ function Side({ d }: { d: Detail }) {
         <dt>App</dt><dd>{d.appName} <small>{d.repo}</small></dd>
         <dt>Abierto</dt><dd>{when(d.createdAt)}</dd>
         <dt>Preguntas</dt><dd>{d.questions} de 3</dd>
-        {d.bug ? <><dt>Reproducciones</dt><dd>{d.bug.reproductions.length} de {REPRODUCTIONS}</dd></> : <><dt>Prototipos</dt><dd>{d.prototypes.length} de 3</dd></>}
+        {d.bug ? <><dt>Reproducciones</dt><dd>{d.bug.reproductions.length} de {REPRODUCTIONS}</dd></> : <><dt>Propuestas</dt><dd>{d.prototypes.length + d.proposals} de 3{d.proposals > 0 && <small>{d.proposals === 1 ? '1 sin prototipo' : `${d.proposals} sin prototipo`}</small>}</dd></>}
         {d.issue && <><dt>Issue</dt><dd>{gh(d.issue.number, issueUrl(d.repo, d.issue.number) ?? '#', `#${d.issue.number}`)}</dd></>}
         {d.pr && <><dt>PR</dt><dd>{gh(d.pr, prUrl(d.repo, d.pr) ?? '#', `#${d.pr}`)}</dd></>}
       </dl></div>

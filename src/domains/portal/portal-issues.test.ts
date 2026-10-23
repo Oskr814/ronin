@@ -183,6 +183,16 @@ describe('portal issues', () => {
     expect(body({})).not.toContain('Lo que definió la persona');
   });
 
+  it('approved in words only, the issue is for the proposal, without a prototype (#409)', () => {
+    const body = portalIssueBody({
+      number: 5, title: 'Sin los anulados', app: 'backoffice', status: 'approved', messages: [], proposals: 1,
+      verdict: { kind: 'minor', proposal: 'La lista de pedidos deja fuera los anulados.', prototype: false, summary: 'orders.ts: filtro por estado', at: '' },
+      prototypes: [{ round: 1, summary: 'Un prototipo anterior', messageId: 2, at: '' }],
+    } as unknown as PortalRequest, undefined, { prototype: [], attached: [] }, undefined, undefined);
+    for (const part of ['Aprobó la propuesta, sin prototipo (después de 1 ajuste)', 'La lista de pedidos deja fuera los anulados.', 'No hubo prototipo', 'orders.ts: filtro por estado']) expect(body).toContain(part);
+    for (const part of ['Partir del diff', 'Un prototipo anterior', 'una maqueta']) expect(body).not.toContain(part);
+  });
+
   it('cuts a huge diff and says where the whole one is', () => {
     const body = portalIssueBody({ number: 3, title: 't', app: 'backoffice', messages: [], verdict: { kind: 'minor', summary: '', at: '' } } as unknown as PortalRequest, undefined, { prototype: [], attached: [] }, 'x'.repeat(50_000), '/data/requests/3/proto/1.diff');
     expect(body.length).toBeLessThan(45_000);

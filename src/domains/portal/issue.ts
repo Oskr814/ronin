@@ -8,7 +8,7 @@ import { activeRepo } from '@platform/agents/repo-context.js';
 import { getUser, type PortalUser } from './accounts.js';
 import { interviewRecord } from './interview.js';
 import { sendPortalMails, teamMail } from './notify.js';
-import { addEvent, getRequest, patchOf, prototypePatchPath, requestImagePath, RONINS, updateRequest, type PortalRequest } from './requests.js';
+import { addEvent, getRequest, patchOf, proposalRounds, prototypePatchPath, requestImagePath, RONINS, shownPrototype, updateRequest, type PortalRequest } from './requests.js';
 
 // The issue a portal request (#114) becomes in its product repo, with label
 // ronin:portal: what the person asked, the conversation, the prototype and
@@ -116,8 +116,11 @@ export function portalIssueBody(request: PortalRequest, user: PortalUser | undef
   if (request.status === 'fixing') return fixIssueBody(request, user, shots, patch, patchFile, appName);
   const approved = request.status === 'approved';
   const v = request.verdict;
-  const last = request.prototypes?.at(-1);
+  // The last proposal in words only (#409): no prototype of it.
+  const worded = v?.prototype === false;
+  const last = shownPrototype(request);
   const rounds = request.prototypes?.length ?? 0;
+  const adjusted = proposalRounds(request) - 1;
   const who = user?.name ?? 'una persona';
   const conversation = request.messages
     .filter((m) => m.text && !m.captions)
@@ -135,7 +138,7 @@ export function portalIssueBody(request: PortalRequest, user: PortalUser | undef
   return [
     issueMarker(request.number),
     approved
-      ? `${where} Aprobó el prototipo${rounds > 1 ? ` (después de ${rounds - 1} ${rounds === 2 ? 'ajuste' : 'ajustes'})` : ''}: este issue es para hacer ese cambio tal como lo vio.`
+      ? `${where} Aprobó ${worded ? 'la propuesta, sin prototipo' : 'el prototipo'}${adjusted > 0 ? ` (después de ${adjusted} ${adjusted === 1 ? 'ajuste' : 'ajustes'})` : ''}: este issue es para hacer ese cambio tal como ${worded ? 'se le describió' : 'lo vio'}.`
       : `${where} ${bug ? 'Es un **reporte de error**, para' : 'Es para'} el equipo de desarrollo: ${teamReason(request)}`,
     approved ? '## El cambio aprobado' : bug ? '## Lo que reporta' : '## Lo que pide',
     approved ? (v?.proposal ?? request.title) : `${request.title}${v?.proposal ? `\n\nLo que ronin le propuso: ${v.proposal}` : ''}`,
@@ -143,10 +146,11 @@ export function portalIssueBody(request: PortalRequest, user: PortalUser | undef
     shots.prototype.length ? `## ${approved ? 'El prototipo' : `El último prototipo que vio${rounds > 1 ? ` (de ${rounds})` : ''}`}\n\n${shots.prototype.map((s) => `**${s.caption}**\n\n${image(s)}`).join('\n\n')}` : '',
     bug ? reproductionSection(request, shots.reproduction ?? [], image) : '',
     approved ? '## Para implementarlo' : '## Lo que vio ronin',
-    approved ? 'Partir del diff del prototipo: es el cambio que la persona vio y aprobó. Completar lo que un borrador deja fuera (tests, tipos, otros tamaños de pantalla que ya muestra el prototipo) sin ampliar el alcance: lo que no esté en el prototipo queda para otro issue.' : '',
+    approved && worded ? 'No hubo prototipo: la persona aprobó la propuesta en palabras. Hacer el cambio que describe, guiándose por el análisis de abajo, con sus tests, sin ampliar el alcance: lo que no esté en la propuesta queda para otro issue.' : '',
+    approved && !worded ? 'Partir del diff del prototipo: es el cambio que la persona vio y aprobó. Completar lo que un borrador deja fuera (tests, tipos, otros tamaños de pantalla que ya muestra el prototipo) sin ampliar el alcance: lo que no esté en el prototipo queda para otro issue.' : '',
     v?.summary ? `**Análisis de ronin al leer el pedido:**\n\n${v.summary}` : '',
     last?.summary ? `**Lo que cambia el prototipo:**\n\n${last.summary}` : '',
-    approved && !patch ? 'El prototipo no dejó diff: el después es una maqueta. Hacer el cambio que muestran las imágenes.' : diff,
+    approved && !patch && !worded ? 'El prototipo no dejó diff: el después es una maqueta. Hacer el cambio que muestran las imágenes.' : diff,
     `<details><summary>La conversación en el portal</summary>\n\n${conversation}${shots.attached.length ? `\n\n${shots.attached.map(image).join('\n')}` : ''}\n\n</details>`,
     approved ? '' : '_Cuando se cierre este issue, ronin le avisa a la persona por correo: como completado, que quedó resuelto; como no planeado, que el equipo decidió no hacerlo por ahora._',
   ].filter(Boolean).join('\n\n');
@@ -179,13 +183,14 @@ function fixIssueBody(request: PortalRequest, user: PortalUser | undefined, shot
   ].filter(Boolean).join('\n\n');
 }
 
-// The last prototype's images and the person's own, on the evidence branch
+// The last prototype's images (none when the last proposal was in words
+// only, #409) and the person's own, on the evidence branch
 // (the product repo is private: only the team sees them). Named like an
 // exploration finding's, so the 'fix-issue' run shows the afters in the PR
 // (and the changelog) and leaves the befores out: the person's images are
 // befores too.
 async function publishShots(request: PortalRequest): Promise<IssueShots> {
-  const last = request.prototypes?.at(-1);
+  const last = shownPrototype(request);
   const shown = last ? request.messages.find((m) => m.id === last.messageId) : undefined;
   const repro = request.bug?.reproductions.at(-1);
   const reproduced = repro ? request.messages.find((m) => m.id === repro.messageId) : undefined;
