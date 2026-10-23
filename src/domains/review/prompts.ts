@@ -216,7 +216,7 @@ async function buildReviewTask(task: ReviewTask): Promise<PreparedTask> {
         rules: [
           'No hay un comentario que haya pedido esto: en lugar del paso 7, deja un solo pr.comment que resuma la tanda (qué cambiaste y qué queda para una persona). Lo que la review pidió solo en su resumen, sin un hilo, también lo atiendes, y lo cuentas ahí.',
           'El spec del issue es una guía de antes de implementar, no un contrato: si la review da un motivo claro y concreto para apartarse de él (un caso borde que faltaba, un bug o un hueco real), aplícalo.',
-          'La descripción del PR es tuya: si cambiaste código, ponla al día con pr.update-body, como dice la skill. No toques el issue ni las etiquetas: son del supervisor.',
+          'La descripción del PR es tuya: si cambiaste código o una respuesta resolvió una de sus «## Preguntas», ponla al día con pr.update-body, como dice la skill. No toques el issue ni las etiquetas: son del supervisor.',
         ],
         allowUpdateBody: true,
       });
@@ -258,7 +258,7 @@ async function buildReviewTask(task: ReviewTask): Promise<PreparedTask> {
         intro: `Usa la skill ronin:answer-mentions. Eres ronin, en el PR #${task.prNumber} de ${repoUrl()}, que abriste tú para el issue #${task.issueNumber}. Una persona te mencionó para pedirte algo sobre el PR. Este checkout es la cabeza del PR, en detached HEAD; su rama es "${pr.headRefName}".`,
         rules: [
           'El spec del issue es una guía de antes de implementar, no un contrato: si una mención da un motivo claro y concreto para apartarse de él (un caso borde que faltaba, un bug o un hueco real), aplícalo.',
-          'La descripción del PR es tuya: si cambiaste código, ponla al día con pr.update-body, como dice la skill. No toques el issue ni las etiquetas: son del supervisor.',
+          'La descripción del PR es tuya: si cambiaste código o una respuesta resolvió una de sus «## Preguntas», ponla al día con pr.update-body, como dice la skill. No toques el issue ni las etiquetas: son del supervisor.',
         ],
         allowUpdateBody: true,
       });
@@ -273,7 +273,7 @@ async function buildReviewTask(task: ReviewTask): Promise<PreparedTask> {
         threadsTitle: 'Los hilos de review sin resolver del PR que no abriste tú (de una persona, de Copilot o de otro bot)',
         rules: [
           'El spec del issue es una guía de antes de implementar, no un contrato: si un comentario da un motivo claro y concreto para apartarse de él (un caso borde que faltaba, un bug o un hueco real), aplícalo.',
-          'La descripción del PR es tuya: si cambiaste código, ponla al día con pr.update-body, como dice la skill. No toques el issue ni las etiquetas: son del supervisor.',
+          'La descripción del PR es tuya: si cambiaste código o una respuesta resolvió una de sus «## Preguntas», ponla al día con pr.update-body, como dice la skill. No toques el issue ni las etiquetas: son del supervisor.',
         ],
         allowUpdateBody: true,
       });
