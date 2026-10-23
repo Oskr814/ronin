@@ -93,8 +93,16 @@ export const TEAM_CLOSABLE: RequestStatus[] = ['thinking', 'asking', 'answered',
 // ronin answered and nothing is left to do.
 export const EXPIRING: RequestStatus[] = ['asking', 'interviewing', 'confirming', 'proposed', 'answered'];
 
-// Prototypes per request: the first and up to two adjustments.
+// Prototypes per request: the first and up to two adjustments. A proposal
+// in words only counts as one (#409).
 export const MAX_PROTOTYPES = 3;
+
+// Proposals the person saw: prototypes, and proposals in words only.
+export const proposalRounds = (r: PortalRequest) => (r.prototypes?.length ?? 0) + (r.proposals ?? 0);
+
+// The prototype the person decides on, unless the last proposal was in
+// words only (#409).
+export const shownPrototype = (r: PortalRequest) => (r.verdict?.prototype === false ? undefined : r.prototypes?.at(-1));
 
 // Tries to reproduce a reported error: the first and one more with what
 // the person answered.
@@ -179,6 +187,9 @@ export interface Verdict {
   // minor: what changes, in plain words; the prototype's instruction.
   proposal?: string;
   instruction?: string;
+  // minor, proposed in words only (#409): the person decides on the
+  // proposal, without a prototype.
+  prototype?: false;
   // big: why, in plain words.
   reason?: string;
   // For the team: the technical summary (areas, files, risks).
@@ -298,6 +309,8 @@ export interface PortalRequest {
   questions: number;
   verdict?: Verdict;
   prototypes?: Prototype[];
+  // Small changes proposed in words only, without a prototype (#409).
+  proposals?: number;
   // A reported error (#137), from the moment ronin read it as one.
   bug?: BugReport;
   // The interview (#225): rounds of questions asked, corrections to the
@@ -332,7 +345,7 @@ export interface PortalRequest {
 
 // The diff that goes with it, for the team: a reported error's last
 // reproduction's, or the last prototype's.
-export const patchOf = (r: PortalRequest) => (r.bug ? r.bug.reproductions.at(-1)?.patch : r.prototypes?.at(-1)?.patch);
+export const patchOf = (r: PortalRequest) => (r.bug ? r.bug.reproductions.at(-1)?.patch : shownPrototype(r)?.patch);
 
 const requestsDir = () => join(config.portal.dataDir, 'requests');
 export const requestDir = (n: number) => join(requestsDir(), String(n));
@@ -443,7 +456,7 @@ async function newRequest(number: number, input: { userId: string; repo: string;
 export async function addPersonMessage(n: number, text: string, images: ImageUpload[], now = new Date()): Promise<PortalRequest> {
   return updateRequest(n, async (request) => {
     if (!OPEN_FOR_PERSON.includes(request.status)) throw new RequestError('Este pedido no espera una respuesta ahora.');
-    if (request.status === 'proposed' && (request.prototypes?.length ?? 0) >= MAX_PROTOTYPES) {
+    if (request.status === 'proposed' && proposalRounds(request) >= MAX_PROTOTYPES) {
       throw new RequestError('Ya no quedan ajustes para este pedido: apruébalo o pásalo al equipo.');
     }
     const id = Math.max(0, ...request.messages.map((m) => m.id)) + 1;

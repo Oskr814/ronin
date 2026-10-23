@@ -1,6 +1,6 @@
 ---
 name: read-request
-description: Lee un pedido del portal de pedidos y decide qué sigue — preguntar, responder, un cambio chico, un error para reproducir, uno grande para el equipo o una entrevista — o lee las respuestas de su entrevista. Escribe la respuesta a la persona y lo que lee el equipo en un JSON. Úsala cuando la corrida de ronin te pasa un pedido del portal o las respuestas de su entrevista.
+description: Lee un pedido del portal de pedidos y decide qué sigue — preguntar, responder, un cambio chico (con o sin prototipo), un error para reproducir, uno grande para el equipo o una entrevista — o lee las respuestas de su entrevista. Escribe la respuesta a la persona y lo que lee el equipo en un JSON. Úsala cuando la corrida de ronin te pasa un pedido del portal o las respuestas de su entrevista.
 ---
 
 # Un pedido del portal
@@ -22,14 +22,19 @@ Este checkout es la rama base, la app como está hoy. La app es una de las clave
 2. **Decide una de seis cosas:**
    - **`"preguntar"`:** necesitas algo de la persona para entender lo que quiere (qué pantalla, qué esperaba, un ejemplo). Pregunta solo lo que necesitas, en un mensaje corto, como mucho dos preguntas. No es para las decisiones de un pedido grande: eso es «entrevistar». La corrida dice cuántas veces más puedes preguntar; si no te quedan, decide con lo que tienes.
    - **`"responder"`:** no es un cambio que hacer, sino una pregunta sobre cómo funciona la app o algo que ya hace. Respóndela.
-   - **`"menor"`:** un cambio chico a algo que ya existe en esta sola app, que un desarrollador terminaría en unas horas: un texto o una etiqueta, un enlace, un campo o una columna que ya está en los datos, un formato, un arreglo visual, algo roto en el teléfono, una validación chica.
+   - **`"menor"`:** un cambio chico a algo que ya existe en esta sola app, que un desarrollador terminaría en unas horas: un texto o una etiqueta, un enlace, un campo o una columna que ya está en los datos, un formato, un arreglo visual, algo roto en el teléfono, una validación chica. La persona lo aprueba antes de que el equipo lo haga, con un prototipo o solo con tu propuesta (ver «¿Hace falta un prototipo?» abajo).
    - **`"error"`:** avisa que algo no funciona como debería —un mensaje de error, algo que falla, datos que están mal o faltan— en esta sola app. Después ronin levanta una copia de la app con datos de prueba para reproducirlo con un test, así que ahora no hace falta encontrar la causa. No es para cómo usar la app ni para algo que hace a propósito: eso es «responder». Si no sabes cómo reproducirlo (qué pantalla, qué hizo, qué esperaba ver), pregunta primero.
    - **`"grande"`:** todo lo demás: una pantalla, un módulo o un flujo nuevo; un cambio al esquema de la base de datos o una migración de datos; dependencias nuevas; configuración, infraestructura, permisos o seguridad; integraciones con otros sistemas (Odoo, por ejemplo); un cambio en varias apps; una regla de negocio que nadie definió; o cualquier cosa cuya causa no pudiste encontrar. Si dudas entre «menor» y «grande», elige «grande».
    - **`"entrevistar"`:** es «grande», pero el equipo necesitaría decisiones que solo la persona puede tomar: quién puede hacerlo, qué tiene que pasar en un caso dado, qué datos o pantallas entran, qué queda fuera. En lugar de pasarlo con esas preguntas abiertas, déjale un formulario corto. Solo si la corrida dice que te quedan rondas de entrevista; si no, decide con lo que tienes.
 
-3. **Si ya le mostraste un prototipo:** su último mensaje reacciona a él, y la corrida te da la instrucción de la que salió el último.
-   - Si pide ajustes que todavía caben en un cambio chico, elige «menor» otra vez, con la `"instruccion"` entera puesta al día (todo lo que el después tiene que mostrar, no solo lo que cambia) y la `"propuesta"` puesta al día. Si la corrida dice que no le quedan ajustes, no elijas «menor»: si todavía quiere cambios, elige «grande».
-   - Si solo pregunta algo sobre el prototipo, elige «responder».
+   **¿Hace falta un prototipo?** Con «menor», decide también `"prototipo"`. El prototipo levanta la app, hace el cambio en borrador y saca capturas de antes y después: tarda entre 5 y 15 minutos, y solo vale si las imágenes le ayudan a la persona a decidir.
+   - **`true`:** cambia algo que se ve y una imagen lo explica mejor que una frase: un elemento nuevo en una pantalla, algo que cambia de lugar, de tamaño o de diseño, cómo se ve en el teléfono, una columna o un campo nuevo en una tabla o un formulario.
+   - **`false`:** la propuesta en palabras basta para decidir: una regla, un filtro, un cálculo, un orden, un valor por defecto, quién puede hacer algo, qué opciones salen en una lista, cambiar un texto o una etiqueta por otro exacto, algo que pasa por detrás (un correo, un dato que se guarda). También cuando el cambio en pantalla sería tan chico que el antes y el después se verían casi iguales.
+   - Si dudas, `false` si la `"propuesta"` dice exactamente qué va a ver o qué va a pasar; `true` si no.
+
+3. **Si ya le mostraste un prototipo o una propuesta:** su último mensaje reacciona a lo último que le mostraste, y la corrida te da de dónde salió (la instrucción del último prototipo, o tu última propuesta sin prototipo).
+   - Si pide ajustes que todavía caben en un cambio chico, elige «menor» otra vez, con la `"propuesta"` puesta al día y, si hace falta un prototipo, la `"instruccion"` entera (todo lo que el después tiene que mostrar, no solo lo que cambia). Decide `"prototipo"` otra vez: una propuesta en palabras puede necesitar un prototipo después del ajuste, y al revés. Si la corrida dice que no le quedan ajustes, no elijas «menor»: si todavía quiere cambios, elige «grande».
+   - Si solo pregunta algo sobre el prototipo o la propuesta, elige «responder».
    - Si los ajustes lo vuelven más que un cambio chico, elige «grande».
 
 4. **Si avisó un error y ya intentaste reproducirlo** en una copia de la app con datos de prueba (la corrida te da cada intento y lo que encontraste), su último mensaje responde lo que le preguntaste. Si te da lo que necesitabas para volver a intentarlo, elige «error» otra vez, con los `"pasos"` puestos al día. Si la corrida dice que no puedes volver a intentarlo, no elijas «error»: elige «grande».
@@ -45,7 +50,7 @@ Este checkout es la rama base, la app como está hoy. La app es una de las clave
    - Cada pregunta en español simple, de «tú», corta, sobre una sola cosa. `"ayuda"` es una línea corta sobre por qué importa o cómo funciona hoy (sin código ni jerga). Si no falta nada, elige «grande».
 
 7. **El mensaje, según lo que elegiste:**
-   - **«menor»:** no digas que el cambio está hecho o aprobado, y no lo describas en `"mensaje"`: el portal muestra tu `"propuesta"` justo después y luego dice que viene un prototipo, así que `"mensaje"` es solo una oración corta antes de eso (que es un ajuste chico, por ejemplo).
+   - **«menor»:** no digas que el cambio está hecho o aprobado, y no lo describas en `"mensaje"`: el portal muestra tu `"propuesta"` justo después y luego dice que viene un prototipo o, sin prototipo, le pide aprobarla, así que `"mensaje"` es solo una oración corta antes de eso (que es un ajuste chico, por ejemplo). Sin prototipo, la `"propuesta"` es lo único que ve para decidir: que diga exactamente qué va a ver o qué va a pasar, con los nombres de las pantallas y los textos que conoce.
    - **«grande»:** di en corto por qué es más que un ajuste chico. Después de una entrevista, `"mensaje"` es una oración corta antes del resumen (que esto es lo que entendiste, por ejemplo).
    - **«error»:** solo una oración corta antes de que el portal diga que vas a intentar reproducirlo (agradecerle el aviso, por ejemplo). No digas que encontraste la causa ni que se va a arreglar.
    - **«entrevistar»:** una o dos oraciones cortas: por qué es más que un ajuste chico, y que responder ayuda al equipo a hacerlo bien desde el principio. El portal muestra el formulario justo después.
@@ -59,7 +64,8 @@ Este checkout es la rama base, la app como está hoy. La app es una de las clave
     "mensaje": "<tu respuesta a la persona>",
     "titulo": "<un título corto del pedido, en español, como mucho 70 caracteres, que describa lo que quiere>",
     "propuesta": "<solo para menor: qué cambiaría, en español simple, de una a tres oraciones>",
-    "instruccion": "<solo para menor: para la corrida del prototipo, en español — la pantalla o las pantallas, el rol y el viewport, el estado que mostrar, y exactamente lo que el después tiene que mostrar>",
+    "prototipo": "<solo para menor: true si hace falta un prototipo, false si la propuesta basta>",
+    "instruccion": "<solo para menor con prototipo: para la corrida del prototipo, en español — la pantalla, el rol y el viewport, el estado que mostrar, y exactamente lo que el después tiene que mostrar>",
     "motivo": "<solo para grande y entrevistar: por qué es para el equipo, en español simple, una oración>",
     "entendido": "<solo para grande después de una entrevista: {\"decisiones\": [{\"tema\": \"…\", \"decision\": \"…\"}], \"fuera\": [\"…\"], \"equipo\": [\"…\"]}>",
     "preguntas": "<solo para entrevistar: [{\"id\": \"<slug corto, a-z0-9 y guiones>\", \"tipo\": \"una\" | \"varias\" | \"texto\", \"pregunta\": \"…\", \"ayuda\": \"<opcional>\", \"opciones\": [\"…\"], \"otra\": true | false, \"opcional\": true | false, \"ejemplo\": \"<solo para texto: una respuesta de ejemplo>\"}]>",

@@ -73,6 +73,21 @@ export function replyMail(request: PortalRequest, user: PortalUser, portalUrl: s
   };
 }
 
+// To the person, when ronin proposed a small change in words only (#409):
+// they approve it, ask for an adjustment or turn it down in the portal.
+export function proposalMail(request: PortalRequest, user: PortalUser, portalUrl: string): Mail {
+  const first = user.name.split(/\s+/)[0] || user.name;
+  const reply = request.messages.filter((m) => m.from === 'ronin').at(-1)?.text ?? '';
+  const lines = [`Hola ${first},`, `ronin te propone un cambio para tu pedido P-${request.number} ("${request.title}"):`];
+  const url = requestUrl(portalUrl, request.number);
+  return {
+    to: user.email,
+    subject: `Revisa la propuesta: ${request.title}`,
+    text: `${lines.join('\n\n')}\n\n${reply}\n\nDecide en el portal: ${url}`,
+    html: html([...lines.map(esc), `<i>${esc(reply).replace(/\n/g, '<br>')}</i>`], { label: 'Ver la propuesta', url }, portalUrl),
+  };
+}
+
 // To the person, when ronin left them questions about a big request
 // (#225): they answer them in the portal, in a form.
 export function interviewMail(request: PortalRequest, user: PortalUser, portalUrl: string): Mail {
@@ -137,7 +152,7 @@ export function bigRequestMail(request: PortalRequest, user: PortalUser, portalU
   const lines = [
     `Hola ${first},`,
     request.decision?.kind === 'rejected'
-      ? `Le enviamos tu pedido P-${request.number} ("${request.title}") al equipo de desarrollo, con tu descripción y lo que conversamos sobre el prototipo.`
+      ? `Le enviamos tu pedido P-${request.number} ("${request.title}") al equipo de desarrollo, con tu descripción y lo que conversamos sobre ${request.verdict?.prototype === false ? 'la propuesta' : 'el prototipo'}.`
       : request.bug
         ? `Le enviamos el error que reportaste en P-${request.number} ("${request.title}") al equipo de desarrollo, con tu descripción, tus imágenes y lo que encontró ronin al intentar reproducirlo.`
         : `Tu pedido P-${request.number} ("${request.title}") necesita más trabajo que un ajuste chico, así que se lo enviamos al equipo de desarrollo con tu descripción y tus imágenes.`,
@@ -236,7 +251,7 @@ export function reminderMail(request: PortalRequest, user: PortalUser, portalUrl
     asking: `ronin te hizo una pregunta sobre ${what} y todavía espera tu respuesta.`,
     interviewing: `ronin te dejó unas preguntas sobre ${what} y todavía esperan tus respuestas.`,
     confirming: `ronin te mostró lo que entendió de ${what} y espera que lo confirmes o lo corrijas.`,
-    proposed: `El prototipo de ${what} espera que lo apruebes, pidas un ajuste o lo pases al equipo.`,
+    proposed: `${request.verdict?.prototype === false ? 'La propuesta' : 'El prototipo'} de ${what} espera que ${request.verdict?.prototype === false ? 'la' : 'lo'} apruebes, pidas un ajuste o ${request.verdict?.prototype === false ? 'la' : 'lo'} pases al equipo.`,
   } as Record<string, string>)[request.status] ?? `${what[0].toUpperCase()}${what.slice(1)} espera tu respuesta.`;
   const at = new Intl.DateTimeFormat('es', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit', timeZone: timezone }).format(expiresAt);
   const lines = [`Hola ${first},`, waiting, `Si no respondes, lo cancelamos el ${at}.`];
@@ -347,10 +362,20 @@ export function decideMail(request: PortalRequest, user: PortalUser | undefined,
 const MAX_PATCH = 30_000;
 
 // What the team is told a request is.
+// What the person saw before deciding: prototypes and proposals in words
+// only (#409).
+function seen(request: PortalRequest): string {
+  const p = request.prototypes?.length ?? 0;
+  const w = request.proposals ?? 0;
+  if (p + w <= 1) return p ? 'el prototipo' : 'la propuesta, sin prototipo';
+  return [p ? (p === 1 ? 'un prototipo' : `${p} prototipos`) : '', w ? (w === 1 ? 'una propuesta sin prototipo' : `${w} propuestas sin prototipo`) : ''].filter(Boolean).join(' y ');
+}
+
 function teamKind(request: PortalRequest): string {
-  if (request.status === 'approved' || (request.status === 'awaiting-dev' && !request.bug)) return 'prototipo aprobado';
+  const what = request.verdict?.prototype === false ? 'propuesta' : 'prototipo';
+  if (request.status === 'approved' || (request.status === 'awaiting-dev' && !request.bug)) return `${what} ${what === 'propuesta' ? 'aprobada' : 'aprobado'}`;
   if (request.status === 'fixing') return 'error a corregir';
-  if (request.decision?.kind === 'rejected') return 'prototipo no aprobado';
+  if (request.decision?.kind === 'rejected') return `${what} no ${what === 'propuesta' ? 'aprobada' : 'aprobado'}`;
   if (request.bug) return request.bug.reproductions.at(-1)?.reproduced ? 'error reproducido' : 'error sin reproducir';
   return request.verdict?.kind === 'minor' ? 'ajuste chico' : 'pedido grande';
 }
@@ -386,7 +411,7 @@ export function teamRequestMail(request: PortalRequest, user: PortalUser | undef
     `De: ${who}`,
     `App: ${request.repo} · ${request.app}`,
     request.issue ? `Issue: ${request.issue.url}` : null,
-    request.bug ? `Es un reporte de error; ronin ${repro ? `intentó reproducirlo ${request.bug.reproductions.length === 1 ? 'una vez' : `${request.bug.reproductions.length} veces`}` : 'no llegó a reproducirlo'}.` : request.status === 'approved' || request.decision ? `La persona vio ${request.prototypes?.length === 1 ? 'el prototipo' : `${request.prototypes?.length ?? 0} prototipos`}: ${kind}.` : `ronin lo clasificó como ${kind}.`,
+    request.bug ? `Es un reporte de error; ronin ${repro ? `intentó reproducirlo ${request.bug.reproductions.length === 1 ? 'una vez' : `${request.bug.reproductions.length} veces`}` : 'no llegó a reproducirlo'}.` : request.status === 'approved' || request.decision ? `La persona vio ${seen(request)}: ${kind}.` : `ronin lo clasificó como ${kind}.`,
     v?.proposal ? `Propuesta: ${v.proposal}` : null,
     v?.reason ? `Motivo: ${v.reason}` : null,
     interviewLines(request),

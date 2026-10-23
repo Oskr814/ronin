@@ -17,7 +17,7 @@ vi.mock('./app-run.js', async (original) => ({
   makePrototype: (...args: unknown[]) => makePrototype(...args),
 }));
 
-const { APPROVED_REPLY, decideRequest, FAILED_PROTOTYPE_REPLY, proposedReply, prototypeRequest, REJECTED_REPLY } = await import('./prototype.js');
+const { APPROVED_REPLY, decideRequest, distinctPairs, FAILED_PROTOTYPE_REPLY, proposedReply, prototypeRequest, REJECTED_REPLY } = await import('./prototype.js');
 const { PrototypeDeclined } = await import('./app-run.js');
 
 const shots = mkdtempSync(join(tmpdir(), 'ronin-portal-shots-'));
@@ -84,6 +84,43 @@ describe('portal prototype', () => {
     expect((await getRequest(n))?.status).toBe('cancelled');
     expect((await getRequest(n))?.prototypes).toBeUndefined();
     expect(sendMail).not.toHaveBeenCalled();
+  });
+
+  it('leaves out a pair where nothing changes and a repeated one, and numbers the rest in order (#409)', async () => {
+    const n = await minorRequest();
+    const dir = mkdtempSync(join(tmpdir(), 'ronin-portal-pairs-'));
+    const shot = (name: string, content: string) => {
+      writeFileSync(join(dir, name), content);
+      return { path: join(dir, name), viewport: 'desktop' as const };
+    };
+    const repeated: PrototypeDraft = {
+      ...draft,
+      antes: [shot('a1.png', 'tabla'), shot('a2.png', 'menú'), shot('a3.png', 'tabla'), shot('a4.png', 'reporte')],
+      despues: [shot('d1.png', 'tabla con hora'), shot('d2.png', 'menú'), shot('d3.png', 'tabla con hora'), shot('d4.png', 'reporte con hora')],
+    };
+    makePrototype.mockImplementation(async (_t: PrototypeTarget, deliver: (d: PrototypeDraft) => Promise<unknown>) => deliver(repeated));
+    await prototypeRequest(n);
+    const shown = (await getRequest(n))!.messages.at(-1)!;
+    expect(shown.images).toEqual(['p1-antes-1.png', 'p1-despues-1.png', 'p1-antes-2.png', 'p1-despues-2.png']);
+    expect(await readFile(requestImagePath(n, 'p1-despues-2.png'), 'utf8')).toBe('reporte con hora');
+  });
+
+  it('all pairs alike, it still shows the first', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ronin-portal-pairs-'));
+    writeFileSync(join(dir, 'same.png'), 'igual');
+    const same = { path: join(dir, 'same.png'), viewport: 'desktop' as const };
+    expect(await distinctPairs({ ...draft, antes: [same, same], despues: [same, same] })).toEqual([0]);
+  });
+
+  it('a proposal without a prototype, turned down, goes to the team saying so (#409)', async () => {
+    const n = await minorRequest();
+    await updateRequest(n, (x) => {
+      x.status = 'proposed';
+      x.proposals = 1;
+      x.verdict = { kind: 'minor', proposal: 'Sin los anulados', prototype: false, summary: '', at: '' };
+    });
+    const rejected = await decideRequest(n, 'rechazar', '', vi.fn(async () => {}));
+    expect(rejected.verdict).toMatchObject({ kind: 'big', reason: 'La persona no aprobó la propuesta.' });
   });
 
   it('counts the adjustments left in its reply', () => {

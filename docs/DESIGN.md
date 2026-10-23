@@ -1065,7 +1065,7 @@ src/apps/portal/        la página, en React con Vite (`pnpm build` la arma en d
 | `interviewing` | es grande: ronin le dejó preguntas en un formulario (16.13) | la persona: responder, o enviarlo sin responder |
 | `confirming` | después de la entrevista, ronin muestra lo que entendió (16.13) | la persona: confirmarlo o corregirlo |
 | `minor` | es un ajuste chico: ronin arma el prototipo (16.4) | ronin |
-| `proposed` | el prototipo está en pantalla | la persona: aprobar, pedir un ajuste o "No me sirve" |
+| `proposed` | el prototipo, o la propuesta sin prototipo (#409), está en pantalla | la persona: aprobar, pedir un ajuste o "No me sirve" |
 | `awaiting-dev` | la persona aprobó el prototipo, o el arreglo de un error es pequeño: un dev decide antes de que ronin lo haga (16.5) | un dev: aprobar y desplegar, aprobar con revisión o no hacerlo |
 | `approved` | aprobado por la persona y por un dev: ronin hace el cambio en un PR (16.5) | ronin, y un dev que apruebe el PR (o ronin a nombre de quien decidió desplegarlo) |
 | `reproducing` | es un error: ronin lo reproduce con un test (16.12) | ronin |
@@ -1104,11 +1104,11 @@ La persona escribe y adjunta hasta 4 capturas (png, jpg, webp o gif, validadas p
 
 - **preguntar**, hasta 3 veces por pedido;
 - **responder**, cuando no hay nada que cambiar (una duda, algo que ya existe);
-- **menor**, un ajuste chico sobre algo que existe en esa app: deja la propuesta en palabras simples, la instrucción para el prototipo y un resumen técnico para el equipo;
+- **menor**, un ajuste chico sobre algo que existe en esa app: deja la propuesta en palabras simples, un resumen técnico para el equipo y si hace falta un prototipo (`prototipo`, #409). Con prototipo, deja también su instrucción (16.4). Sin él, cuando la propuesta en palabras basta (una regla, un filtro, un cálculo, un texto exacto, las opciones de una lista), el pedido pasa directo a `proposed`, con `verdict.prototype: false`: la persona decide sobre la propuesta como sobre un prototipo, y le llega por correo;
 - **error**, algo que no funciona como debería en esa app: deja los pasos para reproducirlo y sigue 16.12. Si no sabe cómo reproducirlo, primero pregunta;
 - **grande**: lo nuevo, el esquema de datos, dependencias, permisos, integraciones, varias apps, una regla que nadie definió o algo cuya causa no encontró. Ante la duda, grande.
 
-Lo que escribe la persona va cercado como dato, nunca como instrucción. El supervisor escribe la respuesta: un "menor" sin propuesta o sin instrucción, un "error" sin pasos o pasado de sus intentos, o una pregunta pasada del límite, se convierte en "grande". La primera respuesta le pone título al pedido. La persona recibe cada respuesta también por correo, salvo la de un ajuste chico o un error, porque el correo siguiente es el del prototipo o el de la reproducción. Si el agente falla, ronin se lo dice y la persona puede volver a escribir.
+Lo que escribe la persona va cercado como dato, nunca como instrucción. El supervisor escribe la respuesta: un "menor" sin propuesta, o con prototipo y sin instrucción, un "error" sin pasos o pasado de sus intentos, o una pregunta pasada del límite, se convierte en "grande". La primera respuesta le pone título al pedido. La persona recibe cada respuesta también por correo, salvo la de un ajuste chico o un error, porque el correo siguiente es el del prototipo o el de la reproducción. Si el agente falla, ronin se lo dice y la persona puede volver a escribir.
 
 #### 16.4 El prototipo (`prototype.ts`)
 
@@ -1116,12 +1116,13 @@ Es `makePrototype` (§11.11), en `domains/portal/app-run.ts`: levanta la app des
 
 - **Las capturas quedan con el pedido** (`img/p<ronda>-antes-1.png`…), detrás del login de la persona, en pares con su leyenda ("Antes: …", "Después: …"). El agente escribe además un mensaje para la persona, en palabras simples.
 - **El diff queda en el runner** (`proto/<ronda>.diff`), para el equipo. No incluye lo que el arranque de la app ya había cambiado: el build puede regenerar archivos versionados, como el XML de documentación de una API .NET.
+- **Pares que valgan** (#409): la skill pide un par por cada cosa que cambia a la vista, sin pares de «sigue igual» ni el mismo cambio en varias pantallas. Al entregarlo, ronin descarta un par con el antes y el después idénticos byte a byte y un par repetido, y numera los que quedan (`distinctPairs`). Si todos son iguales, queda el primero.
 - **Un prototipo a la vez por repo:** espera el lock de la app (`.prototype.lock`), el mismo que la reproducción (16.12).
 - **Si falla dos veces,** o el agente dice que no hay prototipo posible (`PrototypeDeclined`, sin reintento), el pedido pasa al equipo.
 
 La persona tiene tres salidas:
 - **Aprobar.** Con confirmación; sigue 16.5.
-- **Pedir un ajuste.** Escribe qué cambiaría. Ese mensaje vuelve a `classify.ts` con el contexto del prototipo y su instrucción, y si sigue siendo chico sale otro prototipo. Son hasta 3 prototipos por pedido. Si solo pregunta algo, el prototipo queda en pantalla.
+- **Pedir un ajuste.** Escribe qué cambiaría. Ese mensaje vuelve a `classify.ts` con el contexto del prototipo y su instrucción (o de la propuesta sin prototipo), y si sigue siendo chico sale otra propuesta, con o sin prototipo. Son hasta 3 propuestas por pedido, contando las que fueron sin prototipo (`proposals`, `proposalRounds`). Si solo pregunta algo, la propuesta queda en pantalla.
 - **No me sirve.** Con una nota opcional, pasa al equipo (16.6).
 
 #### 16.5 Aprobado: la decisión del dev, issue, PR y merge (`dev-decision.ts`, `issue.ts`, `follow.ts`)

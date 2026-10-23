@@ -8,7 +8,8 @@ export const STATUS: Record<string, [string, string]> = {
   confirming: ['warn', 'Revisa el resumen'],
   answered: ['idle', 'Respondido'],
   minor: ['run', 'Preparando prototipo'],
-  proposed: ['warn', 'Prototipo listo'],
+  // A prototype, or a proposal in words only (#409).
+  proposed: ['warn', 'Espera tu aprobación'],
   reproducing: ['run', 'Reproduciendo el error'],
   'awaiting-dev': ['run', 'El equipo lo revisa'],
   approved: ['run', 'En desarrollo'],

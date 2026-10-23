@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { applyResult, MAX_QUESTIONS, NEXT_STEP, parsePortalResult } from './classify.js';
+import { applyResult, decideHint, MAX_QUESTIONS, NEXT_STEP, parsePortalResult } from './classify.js';
 import { MAX_ROUNDS } from './interview.js';
 import { MAX_PROTOTYPES, MAX_REPRODUCTIONS, type PortalRequest } from './requests.js';
 
@@ -132,6 +132,39 @@ describe('applyResult', () => {
     applyResult(adjusted, { accion: 'menor', mensaje: 'Va.', propuesta: 'Más grande', instruccion: 'i2' });
     expect(adjusted).toMatchObject({ status: 'minor', verdict: { instruction: 'i2' } });
     expect(adjusted.messages.at(-1)?.text).toContain(NEXT_STEP.otra);
+  });
+
+  it('a small change without a prototype needs only its proposal, and only when it says so (#409)', () => {
+    expect(parsePortalResult(json({ accion: 'menor', mensaje: 'Va.', propuesta: 'El filtro deja fuera los anulados.', prototipo: false }), 0)).toMatchObject({ accion: 'menor', prototipo: false });
+    expect(parsePortalResult(json({ accion: 'menor', mensaje: 'Va.', propuesta: 'p', instruccion: 'i', prototipo: 'no' }), 0)).not.toHaveProperty('prototipo');
+    expect(parsePortalResult(json({ accion: 'menor', mensaje: 'Va.', propuesta: 'p', prototipo: true }), 0)).toMatchObject({ accion: 'grande' });
+    expect(parsePortalResult(json({ accion: 'menor', mensaje: 'Va.', prototipo: false }), 0)).toMatchObject({ accion: 'grande' });
+  });
+
+  it('a small change without a prototype waits on the person to decide on the proposal, and counts as one (#409)', () => {
+    const r = request();
+    applyResult(r, { accion: 'menor', mensaje: 'Es un ajuste chico.', propuesta: 'La lista de pedidos deja fuera los anulados.', prototipo: false, resumen: 'orders.ts' });
+    expect(r).toMatchObject({ status: 'proposed', proposals: 1, verdict: { kind: 'minor', prototype: false, proposal: 'La lista de pedidos deja fuera los anulados.' } });
+    expect(r.verdict).not.toHaveProperty('instruction');
+    expect(r.events?.at(-1)).toMatchObject({ kind: 'classified', verdict: 'minor' });
+    expect(r.messages.at(-1)?.text).toBe(`Es un ajuste chico.\n\nLa propuesta: La lista de pedidos deja fuera los anulados.\n\n${decideHint(1)}`);
+    // An answer about it leaves it on screen; an adjustment can draw a prototype.
+    const asked = structuredClone(r);
+    asked.status = 'thinking';
+    applyResult(asked, { accion: 'responder', mensaje: 'Sí, también en el reporte.' });
+    expect(asked.status).toBe('proposed');
+    r.status = 'thinking';
+    applyResult(r, { accion: 'menor', mensaje: 'Va.', propuesta: 'Y se marcan en gris.', instruccion: 'Lista de pedidos, desktop' });
+    expect(r).toMatchObject({ status: 'minor', proposals: 1 });
+    expect(r.verdict).not.toHaveProperty('prototype');
+    expect(r.messages.at(-1)?.text).toContain(NEXT_STEP.otra);
+  });
+
+  it('a proposal without a prototype takes one of the adjustments (#409)', () => {
+    const r: PortalRequest = { ...request(), proposals: 1, prototypes: [{ round: 1, summary: 's', messageId: 2, at: '' }] };
+    applyResult(r, { accion: 'menor', mensaje: 'Va.', propuesta: 'p', prototipo: false });
+    expect(r.proposals).toBe(2);
+    expect(r.messages.at(-1)?.text).toContain('el último ajuste');
   });
 
   it('an error is reproduced next, keeping the tries before it (#137)', () => {

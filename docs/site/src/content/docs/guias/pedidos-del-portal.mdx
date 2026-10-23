@@ -15,10 +15,10 @@ El portal, `https://ronin-agent.redmotoshn.com`, es para que la gente que usa la
 
 2. **ronin lo lee y revisa el código.** Puede preguntarle algo (hasta 3 veces), responderle si no hay nada que cambiar, o decidir si es un ajuste chico o algo para el equipo. Ante la duda, lo pasa al equipo.
 
-3. **Si es chico, le muestra un prototipo:** capturas del antes y el después, con la app levantada y un cambio borrador. La persona lo aprueba, pide un ajuste (hasta 3 prototipos en total) o elige *No me sirve*.
+3. **Si es chico, se lo propone:** con un prototipo cuando una imagen ayuda a decidir (algo que cambia en una pantalla), o solo en palabras cuando la propuesta basta (una regla, un filtro, un cálculo, un texto exacto, qué opciones salen en una lista). El prototipo son capturas del antes y el después, con la app levantada y un cambio borrador: un par por cada cosa que cambia, sin pares donde nada cambia ni el mismo cambio repetido en varias pantallas. La persona aprueba la propuesta, pide un ajuste (hasta 3 propuestas en total, con o sin prototipo) o elige *No me sirve*.
 
 4. **Aprobado por la persona, lo decide un dev.** ronin todavía no hace el cambio: en la lista, el pedido dice **Decidir si se hace** (o **Decidir el arreglo**), en índigo, y al equipo del repo le llega un correo. En la ficha, *Ahora* muestra solo lo que hace falta para decidir:
-   - **qué cambia,** en palabras simples, con las capturas del antes y el después en miniatura. Un clic las abre para [compararlas](#comparar-el-antes-y-el-después);
+   - **qué cambia,** en palabras simples, con las capturas del antes y el después en miniatura. Un clic las abre para [compararlas](#comparar-el-antes-y-el-después). Si la persona aprobó la propuesta sin prototipo, no hay capturas ni diff: el diff aparece en el PR;
    - **antes de aprobar:** lo que el dev tiene que decidir, si ronin dejó algo;
    - **una línea de alcance y pruebas:** las áreas, cuántos archivos, las líneas agregadas y quitadas, cuántas pruebas pasaron y cuántas no se corrieron o fallaron;
    - **Detalles,** plegado: lo que pidió la persona, los cambios, cada prueba, los riesgos, los archivos y el diff. En los pedidos anteriores a esto, que solo tienen el resumen técnico, viene desplegado.
@@ -34,7 +34,7 @@ El portal, `https://ronin-agent.redmotoshn.com`, es para que la gente que usa la
 
 6. **Si es grande, ronin primero entrevista a la persona.** Si al equipo le faltarían decisiones que solo ella puede tomar (quién puede hacerlo, qué pasa en tal caso, qué queda fuera), le deja **un formulario** de una a cinco preguntas, la mayoría con opciones sacadas de lo que vio en el código. Siempre puede marcar **«No sé, que lo decida el equipo»**, agregar algo con capturas, o **enviarlo sin responder**. La primera lectura tarda alrededor de un minuto; lo que sigue (las respuestas, la segunda ronda, el resumen y sus correcciones) tarda **unos segundos**, porque ronin no vuelve a revisar el código. Con las respuestas, ronin puede hacer una segunda ronda (no más) o decidir que al final es un ajuste chico. Si es para el equipo, le muestra **«Así lo entendí»**: cada decisión en una línea, lo que decide el equipo y lo que queda fuera. La persona lo confirma (*Sí, enviarlo al equipo*) o lo corrige (hasta 2 veces). Si el pedido ya viene claro, lo pasa directo.
 
-7. **Si es grande, o la persona no aprueba el prototipo:** ronin abre un issue para el equipo, sin asignar. Si hubo entrevista, el issue trae **«Lo que definió la persona»**: el resumen (y si lo confirmó), lo que queda fuera, lo que decide el equipo y las preguntas y respuestas tal cual. El correo al equipo también lo trae. Cuando se cierra, la persona recibe un correo: resuelto si se cerró como completado, o que no se hará por ahora si se cerró como no planeado.
+7. **Si es grande, o la persona no aprueba la propuesta:** ronin abre un issue para el equipo, sin asignar. Si hubo entrevista, el issue trae **«Lo que definió la persona»**: el resumen (y si lo confirmó), lo que queda fuera, lo que decide el equipo y las preguntas y respuestas tal cual. El correo al equipo también lo trae. Cuando se cierra, la persona recibe un correo: resuelto si se cerró como completado, o que no se hará por ahora si se cerró como no planeado.
 
 </Steps>
 
@@ -72,7 +72,7 @@ El tick lo revisa cada 30 minutos, así que el recordatorio y la cancelación pu
 
 **Pedidos del portal** (`/pedidos`) muestra los pedidos de los repos que ves. En la barra lateral, el issue de un pedido en curso lleva su número (**P-n**); un pedido sin issue solo está acá.
 
-- **La lista** dice en qué está cada pedido y a quién espera: a **la persona** (responder, contestar la entrevista, confirmar su resumen o decidir sobre el prototipo), a **ronin** (leerlo, prototipar, abrir el issue o hacer el cambio) o al **equipo** (decidir si se hace, su issue, o aprobar el PR). Abre en *Pendientes*, con filtros por a quién espera, *Cerrados* y *Todos*, de 25 en 25.
+- **La lista** dice en qué está cada pedido y a quién espera: a **la persona** (responder, contestar la entrevista, confirmar su resumen o decidir sobre la propuesta o el prototipo), a **ronin** (leerlo, prototipar, abrir el issue o hacer el cambio) o al **equipo** (decidir si se hace, su issue, o aprobar el PR). Abre en *Pendientes*, con filtros por a quién espera, *Cerrados* y *Todos*, de 25 en 25.
 - **La ficha de un pedido** (`/pedidos/<n>`):
   - **Las etapas:** Pedido → Conversación → Prototipo → Aprobación → Issue → PR → Listo. Mientras espera al equipo, la aprobación dice *Decisión del equipo*.
   - **Ahora:** qué falta y quién lo tiene que hacer. Si ronin está trabajando, la corrida en vivo. Si espera al equipo, las tres acciones de arriba (hace falta el permiso para las acciones del repo). Si espera a la persona, cuándo vence y si ya le llegó el recordatorio. Sin issue, **Cerrar pedido**.

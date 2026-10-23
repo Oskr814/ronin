@@ -57,6 +57,9 @@ interface Staged {
   pr?: number | null;
   verdict?: string | { kind: string } | null;
   prototypes: number | unknown[];
+  // Proposals in words only (#409), and whether the last one was.
+  proposals?: number;
+  worded?: boolean;
 }
 interface Stage { cur: number; tone: string; skip: number[]; labels: string[] }
 
@@ -84,10 +87,10 @@ function bugStage(p: Staged): Stage {
 export function stage(p: Staged): Stage {
   if (p.bug) return bugStage(p);
   const verdict = typeof p.verdict === 'string' ? p.verdict : p.verdict?.kind;
-  const prototypes = Array.isArray(p.prototypes) ? p.prototypes.length : p.prototypes;
+  const prototypes = (Array.isArray(p.prototypes) ? p.prototypes.length : p.prototypes) + (p.proposals ?? 0);
   const big = p.status === 'big' || p.status === 'resolved' || verdict === 'big';
   const skip = big && !prototypes ? [2, 3] : [];
-  const labels = ['Pedido', 'Conversación', 'Prototipo', 'Aprobación', big ? 'Issue del equipo' : 'Issue', 'PR', big ? 'Resuelto' : 'Listo'];
+  const labels = ['Pedido', 'Conversación', p.worded ? 'Propuesta' : 'Prototipo', 'Aprobación', big ? 'Issue del equipo' : 'Issue', 'PR', big ? 'Resuelto' : 'Listo'];
   let cur;
   let tone = 'run';
   switch (p.status) {

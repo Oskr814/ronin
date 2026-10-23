@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, extname } from 'node:path';
 import { makePrototype, PrototypeDeclined, stagedConversation, type PrototypeDraft } from './app-run.js';
@@ -8,6 +9,7 @@ import { portalTask } from './prompts.js';
 import { getUser } from './accounts.js';
 import { prototypeMail } from './mail.js';
 import { launchPortalWorker } from './launch.js';
+import { decideHint } from './classify.js';
 import { awaitingDevMail, handOverMail, sendPortalMails } from './notify.js';
 import {
   addEvent,
@@ -16,8 +18,8 @@ import {
   noteEvent,
   addRoninMessage,
   getRequest,
-  MAX_PROTOTYPES,
   prototypePatchPath,
+  proposalRounds,
   requestImagePath,
   RequestError,
   updateRequest,
@@ -36,24 +38,41 @@ import {
 // a prototype that won't come.
 const ATTEMPTS = 2;
 
+// `round`: the proposals the person saw, this one included (#409).
 export function proposedReply(mensaje: string | undefined, round: number): string {
-  const left = MAX_PROTOTYPES - round;
-  const next = left > 0
-    ? `Si te gusta, apruébalo. Si quieres cambiar algo, escríbeme qué (${left === 1 ? 'queda 1 ajuste' : `quedan ${left} ajustes`}). Si no es lo que buscabas, elige «No me sirve» y se lo paso al equipo.`
-    : 'Este es el último ajuste que puedo hacer aquí: si te gusta, apruébalo; si no, elige «No me sirve» y se lo paso al equipo.';
-  return `${mensaje ?? 'Así quedaría el cambio.'}\n\n${next}`;
+  return `${mensaje ?? 'Así quedaría el cambio.'}\n\n${decideHint(round)}`;
 }
 
 export const APPROVED_REPLY = '¡Quedó aprobado! Ahora el equipo de desarrollo revisa tu pedido antes de que haga el cambio. Te aviso por correo cuando esté listo para la próxima actualización.';
 export const REJECTED_REPLY = 'Entendido. Se lo paso al equipo de desarrollo con tu pedido y lo que conversamos. Te aviso por correo cuando esté resuelto.';
 export const FAILED_PROTOTYPE_REPLY = 'No pude armar el prototipo de este cambio, así que se lo paso al equipo de desarrollo con tu pedido y lo que conversamos. Te aviso por correo cuando esté resuelto.';
 
-// Befores and afters side by side: antes-1, después-1, antes-2…
-function pairs(draft: PrototypeDraft): Array<{ kind: 'antes' | 'despues'; i: number; path: string; caption: string }> {
-  const out = [];
+// The pairs worth showing (#409), by their index: not one whose before and
+// after are the same image (nothing changes there), nor the same pair
+// again. Never none: when all are alike, the first stays.
+export async function distinctPairs(draft: PrototypeDraft): Promise<number[]> {
+  const digest = (shot: PrototypeDraft['antes'][number] | undefined) => (shot
+    ? host().fs.readFile(shot.path).then((data) => createHash('sha256').update(data).digest('hex'), () => shot.path)
+    : Promise.resolve(''));
+  const seen = new Set<string>();
+  const keep: number[] = [];
   for (let i = 0; i < Math.max(draft.antes.length, draft.despues.length); i++) {
+    const [before, after] = await Promise.all([digest(draft.antes[i]), digest(draft.despues[i])]);
+    if (before && before === after) continue;
+    if (seen.has(`${before} ${after}`)) continue;
+    seen.add(`${before} ${after}`);
+    keep.push(i);
+  }
+  return keep.length ? keep : [0];
+}
+
+// Befores and afters side by side: antes-1, después-1, antes-2…, numbered
+// by the pairs kept.
+function pairs(draft: PrototypeDraft, keep: number[]): Array<{ kind: 'antes' | 'despues'; i: number; path: string; caption: string }> {
+  const out = [];
+  for (const [i, at] of keep.entries()) {
     for (const kind of ['antes', 'despues'] as const) {
-      const shot = draft[kind][i];
+      const shot = draft[kind][at];
       if (shot) out.push({ kind, i, path: shot.path, caption: `${kind === 'antes' ? 'Antes' : 'Después'}${shot.nota ? `: ${shot.nota}` : ''}` });
     }
   }
@@ -64,7 +83,10 @@ function pairs(draft: PrototypeDraft): Array<{ kind: 'antes' | 'despues'; i: num
 async function deliver(n: number, round: number, draft: PrototypeDraft): Promise<PortalRequest | undefined> {
   const images: string[] = [];
   const captions: string[] = [];
-  for (const shot of pairs(draft)) {
+  const keep = await distinctPairs(draft);
+  const total = Math.max(draft.antes.length, draft.despues.length);
+  if (keep.length < total) log.info(`portal: el prototipo ${round} del pedido P-${n} trae ${total - keep.length} ${total - keep.length === 1 ? 'par repetido o sin cambios' : 'pares repetidos o sin cambios'}: no se muestran`);
+  for (const shot of pairs(draft, keep)) {
     const file = `p${round}-${shot.kind}-${shot.i + 1}${extname(shot.path).toLowerCase()}`;
     await mkdir(dirname(requestImagePath(n, file)), { recursive: true, mode: 0o700 });
     // From the host, where the run left it, to the request's own data.
@@ -80,7 +102,7 @@ async function deliver(n: number, round: number, draft: PrototypeDraft): Promise
   }
   return updateUnlessClosed(n, (r) => {
     const at = new Date();
-    const messageId = addRoninMessage(r, proposedReply(draft.mensaje, round), at, { images, captions });
+    const messageId = addRoninMessage(r, proposedReply(draft.mensaje, proposalRounds(r) + 1), at, { images, captions });
     (r.prototypes ??= []).push({ round, summary: draft.resumen, ...(draft.team ? { team: draft.team } : {}), ...(patch ? { patch } : {}), messageId, at: at.toISOString() });
     r.status = 'proposed';
     delete r.worker;
@@ -162,7 +184,7 @@ export async function decideRequest(n: number, decision: Decision, note = '', la
       addRoninMessage(r, APPROVED_REPLY, at);
     } else {
       if (note.trim()) addPersonNote(r, note.trim(), at);
-      r.verdict = { ...(r.verdict ?? { summary: '' }), kind: 'big', reason: 'La persona no aprobó el prototipo.', at: at.toISOString() };
+      r.verdict = { ...(r.verdict ?? { summary: '' }), kind: 'big', reason: r.verdict?.prototype === false ? 'La persona no aprobó la propuesta.' : 'La persona no aprobó el prototipo.', at: at.toISOString() };
       r.status = 'big';
       addRoninMessage(r, REJECTED_REPLY, at);
     }

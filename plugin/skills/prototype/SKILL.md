@@ -15,15 +15,21 @@ La app corre desde este checkout con datos de seed desechables, que puedes cambi
 
 ## Pasos
 
-1. **El antes.** Ve a la pantalla (o las pantallas) de lo que te pidieron, en el estado que describe (crea por la app los datos que necesita si el seed no los tiene). Compruébala con `browser_snapshot` y saca la captura con `browser_take_screenshot`, con un nombre de archivo sin ruta («antes-1.png», «antes-2.png»…).
+1. **Qué pares.** Un par (antes y después) por cada cosa distinta que cambia a la vista; casi siempre basta con uno.
+   - Si el mismo cambio sale en varias pantallas o pestañas, muéstralo en una sola y nombra las otras en el mensaje.
+   - Nunca un par donde no cambia nada, para mostrar que algo «sigue igual»: dilo en el mensaje.
+   - Nunca la misma pantalla dos veces con otro dato.
+   - Que lo que cambia se vea sin buscarlo, con la pantalla alrededor para ubicarlo: si la página es larga, desplázate hasta el cambio antes de la captura, y el antes y el después con el mismo encuadre.
 
-2. **El después.** Haz el cambio en borrador en el código de este checkout (el servidor de desarrollo lo recarga), con el diseño y el sistema de diseño que la app ya tiene. Todo lo de la pantalla que la propuesta no cambia tiene que mantener su tamaño, su posición y su alineación: revisa la fila y los contenedores alrededor de lo que cambiaste con `browser_snapshot` y, si hace falta, el tamaño de los elementos con `browser_evaluate`, y arregla lo que el borrador rompió. Después saca las mismas pantallas otra vez («despues-1.png»…), cada una con el mismo número que su antes. Solo si un cambio real no es práctico, escribe en la carpeta de salida de la corrida un archivo HTML/CSS autocontenido, `despues-<n>.html`, que imite la pantalla (sin recursos externos).
+2. **El antes.** Ve a la pantalla (o las pantallas) de lo que te pidieron, en el estado que describe (crea por la app los datos que necesita si el seed no los tiene). Compruébala con `browser_snapshot` y saca la captura con `browser_take_screenshot`, con un nombre de archivo sin ruta («antes-1.png», «antes-2.png»…).
 
-3. **El borrador se queda:** no lo reviertas. Este checkout se tira cuando terminas, y ronin saca el diff de ahí. Como mucho tres antes y tres después.
+3. **El después.** Haz el cambio en borrador en el código de este checkout (el servidor de desarrollo lo recarga), con el diseño y el sistema de diseño que la app ya tiene. Todo lo de la pantalla que la propuesta no cambia tiene que mantener su tamaño, su posición y su alineación: revisa la fila y los contenedores alrededor de lo que cambiaste con `browser_snapshot` y, si hace falta, el tamaño de los elementos con `browser_evaluate`, y arregla lo que el borrador rompió. Después saca las mismas pantallas otra vez («despues-1.png»…), cada una con el mismo número que su antes. Solo si un cambio real no es práctico, escribe en la carpeta de salida de la corrida un archivo HTML/CSS autocontenido, `despues-<n>.html`, que imite la pantalla (sin recursos externos).
 
-4. **Datos realistas.** Todo lo que creas o escribes termina en las capturas, así que haz que parezca lo que cargan los usuarios reales de esta app: nombres, productos, teléfonos, direcciones y montos que encajan con su dominio, su país y su idioma, siguiendo el estilo de los datos del seed. Valores raros (textos muy largos, símbolos, alfabetos que sus usuarios no escriben) solo cuando ese valor es lo que estás probando, solo en el campo bajo prueba, y cuando termina esa prueba edita o borra esos registros para que no salgan en ninguna otra captura.
+4. **El borrador se queda:** no lo reviertas. Este checkout se tira cuando terminas, y ronin saca el diff de ahí. Como mucho tres antes y tres después. ronin no muestra un par con el antes y el después iguales, ni uno repetido.
 
-5. **La salida:** exactamente un objeto JSON en el archivo que dice la corrida, con la herramienta Write:
+5. **Datos realistas.** Todo lo que creas o escribes termina en las capturas, así que haz que parezca lo que cargan los usuarios reales de esta app: nombres, productos, teléfonos, direcciones y montos que encajan con su dominio, su país y su idioma, siguiendo el estilo de los datos del seed. Valores raros (textos muy largos, símbolos, alfabetos que sus usuarios no escriben) solo cuando ese valor es lo que estás probando, solo en el campo bajo prueba, y cuando termina esa prueba edita o borra esos registros para que no salgan en ninguna otra captura.
+
+6. **La salida:** exactamente un objeto JSON en el archivo que dice la corrida, con la herramienta Write:
 
    ```json
    {"mensaje": "<para quien lo pidió: de una a tres oraciones cortas sobre qué cambia en el después y dónde mirar>",

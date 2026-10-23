@@ -159,11 +159,11 @@ export function RequestView({ n, me, onMenu, onZoom, onMissing }: {
     );
   } else if (d.status === 'proposed') {
     foot = deciding ? (
-      <Confirm title={deciding === 'aprobar' ? '¿Apruebas este prototipo?' : '¿Se lo pasamos al equipo?'} error={error} sending={sending} busyLabel="Enviando…"
+      <Confirm title={deciding === 'aprobar' ? `¿Apruebas ${d.worded ? 'esta propuesta' : 'este prototipo'}?` : '¿Se lo pasamos al equipo?'} error={error} sending={sending} busyLabel="Enviando…"
         label={deciding === 'aprobar' ? 'Sí, aprobar' : 'Pasar al equipo'}
         onBack={() => { setDeciding(null); setError(null); }}
         onGo={() => act(() => ok(client.requests[':n'].decision.$post({ ...params, json: { decision: deciding, text: note.trim() } })), () => setDeciding(null))}>
-        <p>{deciding === 'aprobar' ? 'El equipo de desarrollo hará el cambio tal como lo ves.' : 'El equipo de desarrollo verá tu pedido, lo que conversamos y el prototipo.'}</p>
+        <p>{deciding === 'aprobar' ? `El equipo de desarrollo hará el cambio tal como ${d.worded ? 'lo describe la propuesta' : 'lo ves'}.` : `El equipo de desarrollo verá tu pedido, lo que conversamos y ${d.worded ? 'la propuesta' : 'el prototipo'}.`}</p>
         {deciding === 'rechazar' && <textarea id="note" rows={2} maxLength={4000} placeholder="¿Qué no te convenció? (opcional)" autoFocus value={note} onChange={(e) => setNote(e.target.value)} />}
       </Confirm>
     ) : (
@@ -309,9 +309,10 @@ function Decision({ d, composer, onDecide }: {
   composer: (props: { placeholder: string; label: string; note?: string; above?: ReactNode }) => ReactNode;
   onDecide: (how: 'aprobar' | 'rechazar') => void;
 }) {
-  const bar = <div className="decide"><span>¿Qué te parece el prototipo?</span><button className="btn" onClick={() => onDecide('rechazar')}>No me sirve</button><button className="btn primary" onClick={() => onDecide('aprobar')}>Aprobar</button></div>;
+  // A proposal in words only (#409) is decided on like a prototype.
+  const bar = <div className="decide"><span>¿Qué te parece {d.worded ? 'la propuesta' : 'el prototipo'}?</span><button className="btn" onClick={() => onDecide('rechazar')}>No me sirve</button><button className="btn primary" onClick={() => onDecide('aprobar')}>Aprobar</button></div>;
   if (d.adjustmentsLeft === 0) return <ComposerFrame>{bar}<p className="hint">No quedan ajustes para este pedido.</p></ComposerFrame>;
-  return composer({ placeholder: '¿Qué le cambiarías? Escríbelo para otro prototipo…', label: 'Pedir ajuste', note: `${left(d.adjustmentsLeft, 'ajuste', 'ajustes')} · puedes adjuntar capturas`, above: bar });
+  return composer({ placeholder: d.worded ? '¿Qué le cambiarías? Escríbelo para ajustar la propuesta…' : '¿Qué le cambiarías? Escríbelo para otro prototipo…', label: 'Pedir ajuste', note: `${left(d.adjustmentsLeft, 'ajuste', 'ajustes')} · puedes adjuntar capturas`, above: bar });
 }
 
 // A question before something that can't be undone.
