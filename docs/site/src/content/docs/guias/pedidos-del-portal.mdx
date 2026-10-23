@@ -17,34 +17,41 @@ El portal, `https://ronin-agent.redmotoshn.com`, es para que la gente que usa la
 
 3. **Si es chico, le muestra un prototipo:** capturas del antes y el después, con la app levantada y un cambio borrador. La persona lo aprueba, pide un ajuste (hasta 3 prototipos en total) o elige *No me sirve*.
 
-4. **Aprobado:** ronin abre un issue asignado a sí mismo, con `ronin:portal`, hace el cambio en un PR y le pone `ronin:auto-merge`. **El PR se mergea cuando un dev lo aprueba** y el CI está en verde. La persona recibe «listo, sale en la próxima actualización» y, cuando el release que lo lleva termina de [desplegarse](/ronin/guias/desplegar/), «ya está en la aplicación».
+4. **Aprobado por la persona, lo decide un dev.** ronin todavía no hace el cambio: el pedido queda **esperando al equipo** y al equipo del repo le llega un correo. En la ficha del pedido, *Ahora* muestra qué cambia, lo que cambia el prototipo, sus capturas y el diff, con tres acciones:
+   - **Aprobar y desplegar:** ronin abre el issue y el PR, **aprueba el PR a tu nombre** y lo mergea cuando el CI está en verde. Hace falta el permiso para desplegar el repo.
+   - **Aprobar con revisión:** ronin abre el issue y el PR, que se mergea cuando un dev lo aprueba y el CI está en verde.
+   - **No hacerlo:** el pedido se cierra con el motivo que escribas, que le llega a la persona con esas palabras, en la conversación y por correo. No se abre issue.
 
-5. **Si es grande, ronin primero entrevista a la persona.** Si al equipo le faltarían decisiones que solo ella puede tomar (quién puede hacerlo, qué pasa en tal caso, qué queda fuera), le deja **un formulario** de una a cinco preguntas, la mayoría con opciones sacadas de lo que vio en el código. Siempre puede marcar **«No sé, que lo decida el equipo»**, agregar algo con capturas, o **enviarlo sin responder**. La primera lectura tarda alrededor de un minuto; lo que sigue (las respuestas, la segunda ronda, el resumen y sus correcciones) tarda **unos segundos**, porque ronin no vuelve a revisar el código. Con las respuestas, ronin puede hacer una segunda ronda (no más) o decidir que al final es un ajuste chico. Si es para el equipo, le muestra **«Así lo entendí»**: cada decisión en una línea, lo que decide el equipo y lo que queda fuera. La persona lo confirma (*Sí, enviarlo al equipo*) o lo corrige (hasta 2 veces). Si el pedido ya viene claro, lo pasa directo.
+   Mientras tanto, la persona ve que el equipo está revisando su pedido.
 
-6. **Si es grande, o la persona no aprueba el prototipo:** ronin abre un issue para el equipo, sin asignar. Si hubo entrevista, el issue trae **«Lo que definió la persona»**: el resumen (y si lo confirmó), lo que queda fuera, lo que decide el equipo y las preguntas y respuestas tal cual. El correo al equipo también lo trae. Cuando se cierra, la persona recibe un correo: resuelto si se cerró como completado, o que no se hará por ahora si se cerró como no planeado.
+5. **Aprobado por un dev:** ronin abre un issue asignado a sí mismo, con `ronin:portal`, hace el cambio en un PR y le pone `ronin:auto-merge`. El PR se mergea con el CI en verde y la aprobación de un dev: la tuya, si elegiste *Aprobar y desplegar*. Si tu sesión de GitHub ya no sirve cuando ronin abre el PR (saliste del tablero, por ejemplo), el PR espera la aprobación de un dev y el pedido lo dice. La persona recibe «listo, sale en la próxima actualización» y, cuando el release que lo lleva termina de [desplegarse](/ronin/guias/desplegar/), «ya está en la aplicación».
+
+6. **Si es grande, ronin primero entrevista a la persona.** Si al equipo le faltarían decisiones que solo ella puede tomar (quién puede hacerlo, qué pasa en tal caso, qué queda fuera), le deja **un formulario** de una a cinco preguntas, la mayoría con opciones sacadas de lo que vio en el código. Siempre puede marcar **«No sé, que lo decida el equipo»**, agregar algo con capturas, o **enviarlo sin responder**. La primera lectura tarda alrededor de un minuto; lo que sigue (las respuestas, la segunda ronda, el resumen y sus correcciones) tarda **unos segundos**, porque ronin no vuelve a revisar el código. Con las respuestas, ronin puede hacer una segunda ronda (no más) o decidir que al final es un ajuste chico. Si es para el equipo, le muestra **«Así lo entendí»**: cada decisión en una línea, lo que decide el equipo y lo que queda fuera. La persona lo confirma (*Sí, enviarlo al equipo*) o lo corrige (hasta 2 veces). Si el pedido ya viene claro, lo pasa directo.
+
+7. **Si es grande, o la persona no aprueba el prototipo:** ronin abre un issue para el equipo, sin asignar. Si hubo entrevista, el issue trae **«Lo que definió la persona»**: el resumen (y si lo confirmó), lo que queda fuera, lo que decide el equipo y las preguntas y respuestas tal cual. El correo al equipo también lo trae. Cuando se cierra, la persona recibe un correo: resuelto si se cerró como completado, o que no se hará por ahora si se cerró como no planeado.
 
 </Steps>
 
 **Si cerrás el PR de un pedido desde el tablero** (*Cerrar*, con *Cerrar también el issue*), o su issue con **Acciones → Cerrar el issue**, el motivo que escribas le llega a la persona con esas mismas palabras, en la conversación y en el correo. Sin motivo, recibe el aviso de siempre. Lo que se comente en GitHub fuera de ese diálogo no le llega.
 
-**Si reporta un error,** ronin primero lo reproduce en una copia de la app con datos de prueba y escribe un test que falla por ese error. Si el arreglo es chico y el test pasa a verde con él, abre el issue asignado a sí mismo, sin prototipo. Si no, lo pasa al equipo con los pasos, la causa y el test. Un error que no pudo reproducir nunca se cierra como «no es un error»: va al equipo, porque puede depender de datos reales.
+**Si reporta un error,** ronin primero lo reproduce en una copia de la app con datos de prueba y escribe un test que falla por ese error. Si el arreglo es chico y el test pasa a verde con él, el pedido espera la decisión de un dev, como un prototipo aprobado, con el test y el arreglo como propuesta. Aprobado, ronin abre el issue asignado a sí mismo, sin prototipo. Si no, lo pasa al equipo con los pasos, la causa y el test. Un error que no pudo reproducir nunca se cierra como «no es un error»: va al equipo, porque puede depender de datos reales.
 
 **Cancelar:** la persona puede cancelar un pedido mientras nadie lo tomó. Si ya tenía un issue del equipo sin asignar, ese issue se cierra como no planeado.
 
 ## Los correos
 
 - **A la persona:** cada respuesta de ronin, las preguntas de la entrevista y su resumen, el prototipo, el paso al equipo, el merge, el despliegue y el cierre.
-- **Al equipo del repo:** el issue de un pedido que es suyo y el PR que espera aprobación. Le llega a quien eligió esos avisos en [Ajustes → Notificaciones](/ronin/operar/ajustes/#tu-cuenta).
+- **Al equipo del repo:** el pedido que espera su decisión, el issue de un pedido que es suyo y el PR que espera aprobación. Le llega a quien eligió esos avisos en [Ajustes → Notificaciones](/ronin/operar/ajustes/#tu-cuenta).
 
 ## Los pedidos en el tablero
 
 **Pedidos del portal** (`/pedidos`) muestra los pedidos de los repos que ves. En la barra lateral, el issue de un pedido en curso lleva su número (**P-n**); un pedido sin issue solo está acá.
 
-- **La lista** dice en qué está cada pedido y a quién espera: a **la persona** (responder, contestar la entrevista, confirmar su resumen o decidir sobre el prototipo), a **ronin** (leerlo, prototipar, abrir el issue o hacer el cambio) o al **equipo** (su issue, o aprobar el PR). Abre en *Pendientes*, con filtros por a quién espera, *Cerrados* y *Todos*, de 25 en 25.
+- **La lista** dice en qué está cada pedido y a quién espera: a **la persona** (responder, contestar la entrevista, confirmar su resumen o decidir sobre el prototipo), a **ronin** (leerlo, prototipar, abrir el issue o hacer el cambio) o al **equipo** (decidir si se hace, su issue, o aprobar el PR). Abre en *Pendientes*, con filtros por a quién espera, *Cerrados* y *Todos*, de 25 en 25.
 - **La ficha de un pedido** (`/pedidos/<n>`):
-  - **Las etapas:** Pedido → Conversación → Prototipo → Aprobación → Issue → PR → Listo.
-  - **Ahora:** qué falta y quién lo tiene que hacer. Si ronin está trabajando, la corrida en vivo.
-  - **Actividad:** todo en orden con su hora: los mensajes, cada corrida con su duración y costo, la clasificación, cada ronda de la entrevista, la decisión, cada correo (y si salió), el issue, el PR, el merge y el release que lo llevó.
+  - **Las etapas:** Pedido → Conversación → Prototipo → Aprobación → Issue → PR → Listo. Mientras espera al equipo, la aprobación dice *Decisión del equipo*.
+  - **Ahora:** qué falta y quién lo tiene que hacer. Si ronin está trabajando, la corrida en vivo. Si espera al equipo, las tres acciones de arriba (hace falta el permiso para las acciones del repo).
+  - **Actividad:** todo en orden con su hora: los mensajes, cada corrida con su duración y costo, la clasificación, cada ronda de la entrevista, la decisión de la persona y la del dev, la aprobación del PR a su nombre, cada correo (y si salió), el issue, el PR, el merge y el release que lo llevó.
   - **Conversación:** lo mismo que ve la persona, con las preguntas de la entrevista, sus respuestas y el resumen.
   - **Para el equipo:** por qué es chico o grande, lo que definió la persona en la entrevista, el resumen técnico, lo que se le pidió al prototipo y el diff de cada uno.
   - **Issue y PR:** como en su ficha, con **Revisar el PR** (abre *Archivos*) y **Abrir la ficha**.

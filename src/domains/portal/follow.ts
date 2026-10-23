@@ -1,8 +1,10 @@
 import { config, LABEL_AUTO_MERGE, LABEL_PORTAL } from '@platform/config/config.js';
 import { addIssueLabel, getIssueState, getPullRequestStatus, listIssuesWithLabel, listPrClosingIssues } from '@platform/github/github.js';
+import { approvePr } from '@platform/github/github-as-user.js';
 import { log } from '@platform/logger.js';
 import { activeRepo } from '@platform/agents/repo-context.js';
 import { getUser } from './accounts.js';
+import { deciderToken, dropDeciderToken } from './dev-decision.js';
 import { closedMail, doneMail, teamPrMail } from './mail.js';
 import { sendPortalMails, teamTo } from './notify.js';
 import { addEvent, addRoninMessage, listRequests, RONINS, updateRequest, type PortalRequest, type RequestStatus } from './requests.js';
@@ -14,13 +16,16 @@ import { addEvent, addRoninMessage, listRequests, RONINS, updateRequest, type Po
 //     gets ronin:auto-merge — it merges once
 //     a dev approves it and CI is green (auto-merge.ts) — and the team hears
 //     it waits for them; merged, the person hears it goes out in the next
-//     release.
+//     release. When the dev who decided chose to deploy it (#353), ronin
+//     approves it as them right away (their token, sealed until then).
 //   - The team's (and an approved one the team closed without its PR): when
 //     the issue closes, the person hears it was solved (completed) or that
 //     the team decided not to do it for now (not planned).
 
 export const PR_READY_REPLY = 'Ya hice el cambio. Ahora una persona del equipo lo revisa antes de publicarlo; te aviso por correo cuando esté listo.';
 export const DONE_REPLY = '¡Listo! El cambio ya está hecho y sale en la próxima actualización de la aplicación.';
+export const DEPLOY_READY_REPLY = 'Ya hice el cambio. Sale apenas pasen las pruebas automáticas; te aviso por correo cuando esté listo.';
+export const FIX_DEPLOY_REPLY = 'Ya corregí el error. El arreglo sale apenas pasen las pruebas automáticas; te aviso por correo cuando esté listo.';
 export const FIX_READY_REPLY = 'Ya corregí el error. Ahora una persona del equipo revisa el arreglo antes de publicarlo; te aviso por correo cuando esté listo.';
 export const FIXED_REPLY = '¡Listo! El error ya está corregido y el arreglo sale en la próxima actualización de la aplicación.';
 export const RESOLVED_REPLY = 'El equipo de desarrollo resolvió tu pedido. Si era un cambio en la aplicación, sale en una próxima actualización.';
@@ -79,6 +84,27 @@ async function closedAs(request: PortalRequest): Promise<'done' | 'resolved' | '
 }
 
 
+// The PR of a request a dev chose to deploy (#353), approved as them: then
+// auto-merge merges it on green CI. Null when nobody chose that; false when
+// their token no longer works (they logged out, it was revoked): the PR
+// waits for an approval like any other. The token goes either way.
+async function approveAsDecider(request: PortalRequest, pr: number): Promise<boolean | null> {
+  if (request.devDecision?.kind !== 'deploy') return null;
+  const token = deciderToken(request);
+  let ok = false;
+  if (token) {
+    try {
+      await approvePr(token, activeRepo().productRepo, pr, `Aprobado desde el tablero al decidir el pedido P-${request.number} del portal (Aprobar y desplegar).`);
+      ok = true;
+      log.info(`portal: el PR #${pr} del pedido P-${request.number} quedó aprobado a nombre de ${request.devDecision.by}`);
+    } catch (error) {
+      log.error(`portal: no se pudo aprobar el PR #${pr} a nombre de ${request.devDecision.by}`, error);
+    }
+  }
+  await dropDeciderToken(request.number);
+  return ok;
+}
+
 export async function followPortalIssues(): Promise<void> {
   const repo = activeRepo().productRepo;
   const followed = (await listRequests()).filter((r) => r.repo === repo && FOLLOWED.includes(r.status) && r.issue);
@@ -112,10 +138,12 @@ export async function followPortalIssues(): Promise<void> {
         const pr = Object.entries(closing).find(([, issues]) => issues.includes(issue))?.[0];
         if (pr) {
           await addIssueLabel(Number(pr), LABEL_AUTO_MERGE);
+          const approved = await approveAsDecider(request, Number(pr));
           const updated = await updateRequest(request.number, (r) => {
             r.pr = Number(pr);
             addEvent(r, { kind: 'pr', number: r.pr });
-            addRoninMessage(r, r.status === 'fixing' ? FIX_READY_REPLY : PR_READY_REPLY);
+            if (approved !== null) addEvent(r, { kind: 'pr-approved', number: r.pr, by: r.devDecision!.by, ok: approved });
+            addRoninMessage(r, approved ? (r.status === 'fixing' ? FIX_DEPLOY_REPLY : DEPLOY_READY_REPLY) : r.status === 'fixing' ? FIX_READY_REPLY : PR_READY_REPLY);
             return r;
           });
           log.info(`portal: el pedido P-${request.number} tiene el PR #${pr}, con ${LABEL_AUTO_MERGE}`);

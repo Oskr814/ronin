@@ -152,7 +152,7 @@ export function RequestView({ n, me, onMenu, onZoom, onMissing }: {
       <Confirm title="¿Cancelar este pedido?" error={error} sending={sending} busyLabel="Cancelando…" label="Sí, cancelar"
         onBack={() => { setCancelling(false); setError(null); }}
         onGo={() => act(() => ok(client.requests[':n'].cancel.$post(params)), () => setCancelling(false))}>
-        <p>{d.status === 'big' ? 'El equipo de desarrollo deja de tenerlo pendiente.' : 'ronin deja de trabajar en él.'} No se puede deshacer, pero puedes enviar uno nuevo cuando quieras.</p>
+        <p>{d.status === 'big' || d.status === 'awaiting-dev' ? 'El equipo de desarrollo deja de tenerlo pendiente.' : 'ronin deja de trabajar en él.'} No se puede deshacer, pero puedes enviar uno nuevo cuando quieras.</p>
       </Confirm>
     );
   } else if (d.status === 'proposed') {

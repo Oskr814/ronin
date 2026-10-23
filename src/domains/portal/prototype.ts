@@ -8,7 +8,7 @@ import { portalTask } from './prompts.js';
 import { getUser } from './accounts.js';
 import { prototypeMail } from './mail.js';
 import { launchPortalWorker } from './launch.js';
-import { handOverMail, sendPortalMails } from './notify.js';
+import { awaitingDevMail, handOverMail, sendPortalMails } from './notify.js';
 import {
   addEvent,
   addPersonNote,
@@ -44,7 +44,7 @@ export function proposedReply(mensaje: string | undefined, round: number): strin
   return `${mensaje ?? 'Así quedaría el cambio.'}\n\n${next}`;
 }
 
-export const APPROVED_REPLY = '¡Quedó aprobado! Voy a hacer el cambio tal como lo viste, y antes de publicarlo lo revisa una persona del equipo. Te aviso por correo cuando esté listo para la próxima actualización.';
+export const APPROVED_REPLY = '¡Quedó aprobado! Ahora el equipo de desarrollo revisa tu pedido antes de que haga el cambio. Te aviso por correo cuando esté listo para la próxima actualización.';
 export const REJECTED_REPLY = 'Entendido. Se lo paso al equipo de desarrollo con tu pedido y lo que conversamos. Te aviso por correo cuando esté resuelto.';
 export const FAILED_PROTOTYPE_REPLY = 'No pude armar el prototipo de este cambio, así que se lo paso al equipo de desarrollo con tu pedido y lo que conversamos. Te aviso por correo cuando esté resuelto.';
 
@@ -157,7 +157,8 @@ export async function decideRequest(n: number, decision: Decision, note = '', la
     r.decision = { kind: decision === 'aprobar' ? 'approved' : 'rejected', at: at.toISOString() };
     addEvent(r, { kind: 'decided', decision: r.decision.kind }, at);
     if (decision === 'aprobar') {
-      r.status = 'approved';
+      // A dev decides before ronin makes it (#353, dev-decision.ts).
+      r.status = 'awaiting-dev';
       addRoninMessage(r, APPROVED_REPLY, at);
     } else {
       if (note.trim()) addPersonNote(r, note.trim(), at);
@@ -168,7 +169,9 @@ export async function decideRequest(n: number, decision: Decision, note = '', la
     return r;
   });
   log.info(`portal: el pedido P-${n} quedó ${decision === 'aprobar' ? 'aprobado' : 'para el equipo (prototipo no aprobado)'}`);
-  if (decided.status === 'big') await handOverMail(decided, await getUser(decided.userId));
-  await launch(n);
+  if (decided.status === 'big') {
+    await handOverMail(decided, await getUser(decided.userId));
+    await launch(n);
+  } else await awaitingDevMail(decided, await getUser(decided.userId));
   return decided;
 }

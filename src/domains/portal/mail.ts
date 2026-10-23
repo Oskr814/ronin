@@ -236,17 +236,40 @@ export function teamPrMail(request: PortalRequest, user: PortalUser | undefined,
     `App: ${request.repo} · ${request.app}`,
     request.status === 'fixing' ? 'Es el arreglo de un error que reportó: ronin lo reprodujo con un test que falla y el arreglo de prueba lo pasó a verde.' : request.verdict?.proposal ? `Lo que aprobó: ${request.verdict.proposal}` : null,
     `PR: ${prUrl}`,
-    'Tiene ronin:auto-merge: se mergea cuando alguien del equipo lo aprueba y CI está en verde. Entonces se le avisa a la persona que sale en la próxima actualización.',
+    request.devDecision?.kind === 'deploy'
+      ? `${request.devDecision.by} eligió aprobarlo y desplegarlo: ronin lo aprueba a su nombre y lo mergea cuando CI está en verde (ronin:auto-merge).`
+      : 'Tiene ronin:auto-merge: se mergea cuando alguien del equipo lo aprueba y CI está en verde. Entonces se le avisa a la persona que sale en la próxima actualización.',
     request.issue ? `Issue: ${request.issue.url}` : null,
   ].filter(Boolean).join('\n\n');
   return { to, subject: `[ronin] PR para aprobar: pedido P-${request.number} del portal (${request.title})`, text };
+}
+
+// To the dev team (teamTo in notify.ts), when a request waits for a dev to
+// decide before ronin makes it (#353): what the person approved (or the
+// error ronin can fix), and where to decide.
+export function decideMail(request: PortalRequest, user: PortalUser | undefined, to: string, dashboardUrl: string): Mail {
+  const who = user ? `${user.name} <${user.email}>` : request.userId;
+  const repro = request.bug?.reproductions.at(-1);
+  const link = dashboardUrl ? `${dashboardUrl}/pedidos/${request.number}` : null;
+  const text = [
+    `El pedido P-${request.number} del portal espera que alguien del equipo decida antes de que ronin lo haga: ${request.title}`,
+    `De: ${who}`,
+    `App: ${request.repo} · ${request.app}`,
+    request.bug
+      ? `Es un error que reportó: ronin lo reprodujo con un test que falla y un arreglo chico lo pasó a verde.${repro?.summary ? `\n\nCausa:\n${repro.summary}` : ''}`
+      : `Aprobó el prototipo${request.verdict?.proposal ? `: ${request.verdict.proposal}` : '.'}`,
+    request.verdict?.summary ? `Resumen técnico:\n${request.verdict.summary}` : null,
+    'Se puede:\n- Aprobar y desplegar: ronin hace el cambio, aprueba el PR a nombre de quien decidió y lo mergea con el CI en verde.\n- Aprobar con revisión: ronin hace el cambio y el PR espera que un dev lo apruebe.\n- No hacerlo: el pedido se cierra con el motivo, que le llega a la persona.',
+    link ? `Decidir en el tablero: ${link}` : 'Se decide en el tablero, en Pedidos del portal.',
+  ].filter(Boolean).join('\n\n');
+  return { to, subject: `[ronin] Pedido P-${request.number} para decidir: ${request.title}`, text };
 }
 
 const MAX_PATCH = 30_000;
 
 // What the team is told a request is.
 function teamKind(request: PortalRequest): string {
-  if (request.status === 'approved') return 'prototipo aprobado';
+  if (request.status === 'approved' || (request.status === 'awaiting-dev' && !request.bug)) return 'prototipo aprobado';
   if (request.status === 'fixing') return 'error a corregir';
   if (request.decision?.kind === 'rejected') return 'prototipo no aprobado';
   if (request.bug) return request.bug.reproductions.at(-1)?.reproduced ? 'error reproducido' : 'error sin reproducir';

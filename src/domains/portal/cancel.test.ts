@@ -29,7 +29,7 @@ beforeEach(async () => {
 
 describe('cancelling a portal request', () => {
   it('works while nobody took it, and says so in the conversation', async () => {
-    for (const status of ['thinking', 'asking', 'answered', 'interviewing', 'confirming', 'minor', 'proposed', 'big'] as RequestStatus[]) {
+    for (const status of ['thinking', 'asking', 'answered', 'interviewing', 'confirming', 'minor', 'proposed', 'awaiting-dev', 'big'] as RequestStatus[]) {
       const n = await request({ status, worker: { pid: 1, since: '' } });
       const cancelled = await cancelRequest(n, entries);
       expect(cancelled.status, status).toBe('cancelled');

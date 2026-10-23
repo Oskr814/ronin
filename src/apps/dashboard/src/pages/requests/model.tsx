@@ -18,7 +18,7 @@ export const EVERY_MS = 10_000;
 export const STATUS: Record<string, [string, string]> = {
   thinking: ['run', 'ronin lo está leyendo'], asking: ['warn', 'Espera a la persona'], answered: ['idle', 'Respondido'],
   interviewing: ['warn', 'Espera sus respuestas'], confirming: ['warn', 'Espera que confirme'],
-  minor: ['run', 'Armando el prototipo'], proposed: ['warn', 'Espera que apruebe'], approved: ['run', 'Aprobado'],
+  minor: ['run', 'Armando el prototipo'], proposed: ['warn', 'Espera que apruebe'], 'awaiting-dev': ['warn', 'Espera al equipo'], approved: ['run', 'Aprobado'],
   reproducing: ['run', 'Reproduciendo el error'], fixing: ['run', 'En corrección'],
   done: ['ok', 'Listo'], resolved: ['ok', 'Resuelto por el equipo'], declined: ['idle', 'No se hará'],
   cancelled: ['idle', 'Cancelado'], big: ['warn', 'En el equipo'],
@@ -41,7 +41,7 @@ export function waitsLabel(p: Row): string {
   switch (p.waitsOn) {
     case 'person': return p.status === 'proposed' ? `${who}: aprobar o ajustar` : p.status === 'interviewing' ? `${who}: responder las preguntas` : p.status === 'confirming' ? `${who}: confirmar el resumen` : `${who}: responder`;
     case 'ronin': return p.running ? 'ronin trabajando' : p.status === 'approved' && p.issue ? `ronin: el cambio en #${p.issue}` : p.status === 'fixing' && p.issue ? `ronin: el arreglo en #${p.issue}` : p.status === 'minor' ? 'ronin: el prototipo' : p.status === 'reproducing' ? 'ronin: reproducirlo' : p.status === 'thinking' ? 'ronin: leerlo' : 'ronin: abrir el issue';
-    case 'team': return p.pr ? `Un dev: aprobar el PR #${p.pr}` : `El equipo: #${p.issue}`;
+    case 'team': return p.status === 'awaiting-dev' ? 'Un dev: decidir si se hace' : p.pr ? `Un dev: aprobar el PR #${p.pr}` : `El equipo: #${p.issue}`;
     default: return CLOSED.includes(p.status) ? 'Cerrado' : 'Nadie';
   }
 }
@@ -68,6 +68,7 @@ function bugStage(p: Staged): Stage {
   switch (p.status) {
     case 'thinking': case 'asking': case 'answered': cur = 1; tone = p.status === 'asking' ? 'warn' : p.status === 'answered' ? 'idle' : 'run'; break;
     case 'reproducing': cur = 2; break;
+    case 'awaiting-dev': cur = 3; tone = 'warn'; labels[3] = 'Decisión del equipo'; break;
     case 'fixing': cur = p.pr ? 4 : 3; tone = p.pr ? 'warn' : 'run'; break;
     case 'big': cur = 3; tone = p.issue ? 'warn' : 'run'; break;
     case 'done': case 'resolved': cur = 6; break;
@@ -92,6 +93,7 @@ export function stage(p: Staged): Stage {
     case 'interviewing': case 'confirming': cur = 1; tone = 'warn'; break;
     case 'minor': cur = 2; break;
     case 'proposed': cur = 3; tone = 'warn'; break;
+    case 'awaiting-dev': cur = 3; tone = 'warn'; labels[3] = 'Decisión del equipo'; break;
     case 'approved': cur = p.pr ? 5 : 4; tone = p.pr ? 'warn' : 'run'; break;
     case 'big': cur = 4; tone = p.issue ? 'warn' : 'run'; break;
     case 'done': case 'resolved': cur = 7; break;
