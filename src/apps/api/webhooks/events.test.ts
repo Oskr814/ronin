@@ -153,6 +153,19 @@ describe('scopeForEvent', () => {
     expect(scopeForEvent('issue_comment', { action: 'created', issue: { number: 40, pull_request: {} }, comment: { id: 1, body: '@ronin-agent /fix-comments' }, repository }, tracked, 'ronin-agent')?.scope.flows).toEqual(['issues', 'idle-commands', 'review', 'exploration']);
   });
 
+  // #370: Linear's bot links each issue with a comment, and each one was a
+  // run of four flows that found nothing to do.
+  it("ignores another app's comments unless they mention ronin, but not its reviews", () => {
+    const bot = { login: 'linear[bot]', type: 'Bot' };
+    expect(scopeForEvent('issue_comment', { action: 'created', sender: bot, issue: { number: 40, pull_request: {} }, comment: { id: 1, body: 'Linked to RED-12' }, repository }, tracked, 'ronin-agent')).toBeNull();
+    expect(scopeForEvent('issue_comment', { action: 'created', sender: bot, issue: { number: 9 }, comment: { id: 2, body: 'Linked to RED-12' }, repository }, tracked, 'ronin-agent')).toBeNull();
+    expect(scopeForEvent('pull_request_review_comment', { action: 'created', sender: bot, pull_request: slicePr, comment: { id: 3, body: 'Sugerencia' }, repository }, tracked, 'ronin-agent')).toBeNull();
+    expect(scopeForEvent('issue_comment', { action: 'created', sender: bot, issue: { number: 40, pull_request: {} }, comment: { id: 4, body: '@ronin-agent mirá esto' }, repository }, tracked, 'ronin-agent')).not.toBeNull();
+    expect(scopeForEvent('pull_request_review', { action: 'submitted', sender: bot, pull_request: slicePr, review: { id: 5, body: 'Revisé' }, repository }, tracked, 'ronin-agent')).not.toBeNull();
+    // A person's comment without a mention still starts its run.
+    expect(scopeForEvent('issue_comment', { action: 'created', sender: { login: 'ana', type: 'User' }, issue: { number: 40, pull_request: {} }, comment: { id: 6, body: 'Lo miro mañana' }, repository }, tracked, 'ronin-agent')).not.toBeNull();
+  });
+
   it("ignores ronin's own comments and reviews", () => {
     const sender = { login: 'ronin-agent' };
     expect(scopeForEvent('issue_comment', { action: 'created', issue: { number: 40, pull_request: {} }, comment: { id: 1, body: 'Estos son los comandos…' }, sender, repository }, tracked, 'ronin-agent')).toBeNull();
