@@ -1118,6 +1118,18 @@ button.brow:hover { background: var(--hover); }
 .pd-chat .msg { border-radius: 10px; padding: 9px 12px; max-width: 86%; white-space: pre-wrap; overflow-wrap: anywhere; }
 .pd-chat .msg.person { background: var(--raise); justify-self: end; }
 .pd-chat .msg.ronin { background: var(--panel); border: 1px solid var(--rule); }
+.pd-chat .msg.team { background: var(--run-bg); }
+.pd-ev.team .ic { color: var(--run); box-shadow: inset 0 0 0 1.5px var(--run); }
+/* The team writes to the person (#353). */
+.pd-tw { max-width: 760px; margin-top: 16px; border: 1px solid var(--rule); border-radius: 10px; background: var(--panel); padding: 10px 12px; }
+.pd-tw h4 { margin: 0 0 6px; font-size: 13px; }
+.pd-tw textarea { width: 100%; min-height: 70px; resize: vertical; }
+.pd-tw .pend { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+.pd-tw .pend span { position: relative; }
+.pd-tw .pend img { height: 48px; border-radius: 5px; border: 1px solid var(--rule); display: block; }
+.pd-tw .pend button { position: absolute; top: -6px; right: -6px; width: 18px; height: 18px; border-radius: 50%; background: var(--ink); color: var(--bg); font-size: 11px; line-height: 18px; }
+.pd-tw .cf { display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+.pd-tw .cf .m { flex: 1; min-width: 200px; font-size: 12px; }
 .pd-chat .w { font-size: 11.5px; color: var(--muted); margin-bottom: 3px; white-space: normal; }
 /* the interview of a big request (#225) */
 .pd-qs, .pd-qa { white-space: normal; margin: 6px 0 0; font-size: 13px; }

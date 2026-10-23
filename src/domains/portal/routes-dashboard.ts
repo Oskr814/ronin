@@ -11,7 +11,12 @@ import { refusal, visibleRepos, visibleRuns } from '../access/visible.js';
 import { missingPortalConfig } from './http.js';
 import { listUsers } from './accounts.js';
 import { devDecide, parseDevDecision } from './dev-decision.js';
-import { getRequest, listRequests } from './requests.js';
+import { seenByTeam, writeToPerson } from './team-conversation.js';
+import { getRequest, listRequests, TEXT_MAX } from './requests.js';
+import { MAX_IMAGE_BYTES, MAX_IMAGES, parseImages } from './images.js';
+
+// Four images as data URLs, and the text.
+const MAX_MESSAGE_BODY = MAX_IMAGES * Math.ceil((MAX_IMAGE_BYTES * 4) / 3) + 64 * 1024;
 
 // The portal from the dashboard, in Hono (#235, stage 6) — server/
 // apps/api/routes.ts mounts them:
@@ -24,6 +29,7 @@ import { getRequest, listRequests } from './requests.js';
 // GET /api/requests/<n>/prototype/<round>     a prototype's diff
 // GET /api/requests/<n>/reproduction/<round>  a reproduction's diff
 // POST /api/requests/<n>/decision           { decision: deploy|review|decline, reason? }: a dev decides it (#353)
+// POST /api/requests/<n>/messages           { text, images? }: the team writes to the person (#353)
 // A request of a repo the session sees, or none: one it doesn't see is one
 // that isn't there.
 async function visibleRequest(access: Access, n: string) {
@@ -45,6 +51,8 @@ export function requestsRoutes() {
     .get('/:n', async (c) => {
       const request = await visibleRequest(c.env.access, c.req.param('n'));
       if (!request) return c.json(missing, 404);
+      // Someone of the team opened it: the person's answer is seen.
+      if (request.personReplied) await seenByTeam(request.number);
       const users = new Map((await listUsers()).map((u) => [u.id, u]));
       return c.json(requestDetail(request, users.get(request.userId), await visibleRepos(c.env.access), await visibleRuns(c.env.access, HISTORY_DAYS)), 200);
     })
@@ -62,6 +70,18 @@ export function requestsRoutes() {
       const patch = await requestPatch(request, Number(c.req.param('round')), prototype ? 'prototype' : 'reproduction');
       if (patch === null) return c.json({ error: prototype ? 'ese prototipo no dejó diff' : 'esa reproducción no dejó diff' }, 404);
       return c.json({ patch }, 200);
+    })
+    .post('/:n/messages', onlyJson, jsonBody(MAX_MESSAGE_BODY, 'El mensaje no llegó bien (¿imágenes muy pesadas?).'), anyObject(), async (c) => {
+      const request = await visibleRequest(c.env.access, c.req.param('n'));
+      if (!request) return c.json(missing, 404);
+      const refused = refusal(c, c.env.access, request.repo, 'acciones');
+      if (refused) return refused;
+      const body = c.req.valid('json');
+      const text = typeof body.text === 'string' ? body.text.trim() : '';
+      if (text.length > TEXT_MAX) return c.json({ error: `El mensaje puede tener hasta ${TEXT_MAX} caracteres.` }, 400);
+      const written = await writeToPerson(request.number, { text, images: parseImages(body.images), by: c.env.session.login });
+      const users = new Map((await listUsers()).map((u) => [u.id, u]));
+      return c.json(requestDetail(written, users.get(written.userId), await visibleRepos(c.env.access), await visibleRuns(c.env.access, HISTORY_DAYS)), 200);
     })
     // Making it or not is the repo's actions; deploying it without anyone
     // else's review, its deploys too.

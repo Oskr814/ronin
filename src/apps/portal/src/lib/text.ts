@@ -35,6 +35,13 @@ export const CLOSED: Record<string, string> = {
   big: 'El equipo de desarrollo tiene este pedido. Te avisamos por correo cuando esté resuelto.',
 };
 
+// While the team has it (#353): the team may write, so the page asks again
+// now and then, slower than while ronin works.
+export const TEAM_HELD = ['awaiting-dev', 'approved', 'fixing', 'big'];
+export const TEAM_POLL_MS = 15_000;
+// How the team signs to the person.
+export const TEAM_NAME = 'Equipo de desarrollo';
+
 // While ronin works on a request: what it's doing, and how long it takes.
 // Its page asks again every few seconds meanwhile.
 export const WORKING: Record<string, [string, string]> = {

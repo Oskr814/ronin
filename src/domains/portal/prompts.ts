@@ -130,7 +130,7 @@ export type PortalTask =
 
 // A message of a portal request (#114), each image as its absolute path.
 export interface ConversationMessage {
-  from: 'person' | 'ronin';
+  from: 'person' | 'ronin' | 'team';
   text: string;
   images: string[];
 }
@@ -139,7 +139,7 @@ function portalConversation(messages: ConversationMessage[]): string {
   return messages
     .map((m) => (m.from === 'ronin'
       ? `ronin (tú, antes): ${fenceBlock('RONIN', m.text)}${m.images.length ? `\nLas imágenes del prototipo que mostraste (abre cada una con la herramienta Read): ${m.images.join(', ')}` : ''}`
-      : `La persona: ${fenceBlock('PERSON', m.text || '(sin texto)')}${m.images.length ? `\nLas imágenes que adjuntó (abre cada una con la herramienta Read): ${m.images.join(', ')}` : ''}`))
+      : `${m.from === 'team' ? 'El equipo de desarrollo' : 'La persona'}: ${fenceBlock('PERSON', m.text || '(sin texto)')}${m.images.length ? `\nLas imágenes que adjuntó (abre cada una con la herramienta Read): ${m.images.join(', ')}` : ''}`))
     .join('\n\n');
 }
 

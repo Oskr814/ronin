@@ -5,6 +5,7 @@ import { useShell } from '@apps/dashboard/src/shell/hooks.js';
 import { when } from '@apps/dashboard/src/lib/format.js';
 import { useViewState } from '@apps/dashboard/src/lib/view-state.js';
 import { firstName, imagePath, REPRODUCTIONS, type Detail, type Message, type Reproduction } from './model.js';
+import { TeamWrite } from './TeamWrite.js';
 
 // What a request's tabs do on the page around them: show another tab, open
 // a run in Corridas, or an image in the lightbox.
@@ -50,11 +51,16 @@ export function Interview({ m }: { m: Message }) {
   return null;
 }
 
+// Who wrote it: the person (to ronin, or to the team), ronin, or someone of
+// the team (#353), whom the person sees as «Equipo de desarrollo».
+const author = (d: Detail, m: Message) => (m.from === 'team' ? `${m.by ?? 'El equipo'}, del equipo` : m.from === 'ronin' ? 'ronin' : m.to === 'team' ? `${d.person}, al equipo` : d.person);
+
 export function Chat({ d }: { d: Detail }) {
   return (
     <>
-      <p className="m pd-note">Lo mismo que ve {firstName(d.person)} en el portal.</p>
-      <div className="pd-chat">{d.messages.map((m) => <div key={m.id} className={`msg ${m.from}`}><div className="w">{m.from === 'person' ? d.person : 'ronin'} · {when(m.at)}</div>{m.text}<Interview m={m} /><Thumbs d={d} m={m} /></div>)}</div>
+      <p className="m pd-note">Lo mismo que ve {firstName(d.person)} en el portal{d.messages.some((m) => m.from === 'team') ? ', donde los mensajes del equipo van firmados «Equipo de desarrollo»' : ''}.</p>
+      <div className="pd-chat">{d.messages.map((m) => <div key={m.id} className={`msg ${m.from}`}><div className="w">{author(d, m)} · {when(m.at)}</div>{m.text}<Interview m={m} /><Thumbs d={d} m={m} /></div>)}</div>
+      <TeamWrite d={d} />
     </>
   );
 }

@@ -122,6 +122,9 @@ a { color: inherit; }
 .bubble { background: var(--raise); border: 1px solid var(--rule); border-radius: 4px 12px 12px 12px; padding: 10px 14px; overflow-wrap: anywhere; }
 .bubble p { margin: 0 0 8px; color: var(--ink); } .bubble p:last-child { margin: 0; }
 .msg.mine .bubble { background: var(--run-bg); border-color: transparent; }
+/* The team writing to the person (#353). */
+.msg.team .bubble { border-color: color-mix(in srgb, var(--ok) 45%, var(--rule)); }
+.av.team { background: var(--ok-bg); color: var(--ok); }
 .atts { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
 .att img { height: 92px; max-width: 220px; object-fit: cover; border-radius: 6px; border: 1px solid var(--rule); display: block; cursor: zoom-in; }
 .shots { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 10px; }

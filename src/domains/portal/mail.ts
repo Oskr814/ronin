@@ -244,6 +244,43 @@ export function teamPrMail(request: PortalRequest, user: PortalUser | undefined,
   return { to, subject: `[ronin] PR para aprobar: pedido P-${request.number} del portal (${request.title})`, text };
 }
 
+// The team signs as one to the person (#353): who wrote stays in the tablero.
+export const TEAM_NAME = 'Equipo de desarrollo';
+
+// To the person, when someone of the team wrote to them about their request.
+export function teamWroteMail(request: PortalRequest, user: PortalUser, portalUrl: string, text: string, images: number): Mail {
+  const first = user.name.split(/\s+/)[0] || user.name;
+  const said = text.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
+  const lines = [
+    `Hola ${first},`,
+    `El ${TEAM_NAME.toLowerCase()} te escribió sobre tu pedido P-${request.number} ("${request.title}")${said.length ? ':' : '.'}`,
+    ...said,
+    images ? `Adjuntó ${images === 1 ? 'una imagen' : `${images} imágenes`}: está${images === 1 ? '' : 'n'} en el pedido.` : '',
+    'Puedes responderle desde el pedido.',
+  ].filter(Boolean);
+  const url = requestUrl(portalUrl, request.number);
+  return {
+    to: user.email,
+    subject: `El equipo te escribió sobre tu pedido P-${request.number}`,
+    text: `${lines.join('\n\n')}\n\n${url}`,
+    html: html(lines.map((line) => esc(line).replace(/\n/g, '<br>')), { label: 'Ver el pedido', url }, portalUrl),
+  };
+}
+
+// To the team (teamTo in notify.ts), when the person answered them: it's
+// theirs, ronin doesn't read it.
+export function personRepliedMail(request: PortalRequest, user: PortalUser | undefined, to: string, text: string, images: number, dashboardUrl: string): Mail {
+  const who = user ? `${user.name} <${user.email}>` : request.userId;
+  const body = [
+    `${user?.name ?? 'La persona'} le respondió al equipo sobre el pedido P-${request.number} del portal: ${request.title}`,
+    `De: ${who}`,
+    text || '(sin texto)',
+    images ? `[${images} imagen(es), en el pedido]` : null,
+    dashboardUrl ? `Responder desde el tablero: ${dashboardUrl}/pedidos/${request.number}` : null,
+  ].filter(Boolean).join('\n\n');
+  return { to, subject: `[ronin] ${user?.name ?? 'La persona'} respondió sobre el pedido P-${request.number}: ${request.title}`, text: body, team: true };
+}
+
 // To the dev team (teamTo in notify.ts), when a request waits for a dev to
 // decide before ronin makes it (#353): what the person approved (or the
 // error ronin can fix), and where to decide.
@@ -296,7 +333,7 @@ export function teamRequestMail(request: PortalRequest, user: PortalUser | undef
   const kind = teamKind(request);
   const who = user ? `${user.name} <${user.email}>` : request.userId;
   const conversation = request.messages
-    .map((m) => `${m.from === 'ronin' ? 'ronin' : user?.name ?? 'Persona'} (${m.at.slice(0, 16).replace('T', ' ')} UTC):\n${m.text}${m.images.length ? `\n[${m.images.length} imagen(es)]` : ''}`)
+    .map((m) => `${m.from === 'ronin' ? 'ronin' : m.from === 'team' ? `${TEAM_NAME} (${m.by})` : user?.name ?? 'Persona'} (${m.at.slice(0, 16).replace('T', ' ')} UTC):\n${m.text}${m.images.length ? `\n[${m.images.length} imagen(es)]` : ''}`)
     .join('\n\n');
   const v = request.verdict;
   const last = request.prototypes?.at(-1);

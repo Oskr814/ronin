@@ -121,3 +121,29 @@ describe('a request answered by ronin (#372)', () => {
     expect(document.querySelector('[aria-live]')?.textContent).toBe('ronin te escribió: De nada.');
   });
 });
+
+describe('a request the team has (#353)', () => {
+  const DETAIL = {
+    number: 5, title: 'Un reporte nuevo', repo: 'acme/tienda', app: 'backoffice', appName: 'Acme · Backoffice', status: 'big', replyToTeam: true,
+    cancellable: true, adjustmentsLeft: 3, interview: { round: 0, rounds: 2, correctionsLeft: 2 }, createdAt: '2026-10-20T15:00:00Z', updatedAt: '2026-10-20T15:00:00Z',
+    messages: [
+      { id: 1, from: 'person', text: 'Un reporte de ventas', at: '2026-10-20T15:00:00Z', images: [] },
+      { id: 2, from: 'team', text: '¿Por sucursal o en total?', at: '2026-10-20T16:00:00Z', images: [] },
+    ],
+  };
+
+  it("shows the team's message signed as the team, and the answer goes to them", async () => {
+    answers = {
+      'GET /api/portal/requests/5': () => json(DETAIL),
+      'POST /api/portal/requests/5/messages': () => json({ ...DETAIL, messages: [...DETAIL.messages, { id: 3, from: 'person', to: 'team', text: 'Por sucursal', at: '2026-10-20T16:05:00Z', images: [] }] }),
+      'GET /api/portal/requests': () => json([]),
+    };
+    wrap(<RequestView n={5} me={ME} onMenu={() => {}} onZoom={() => {}} onMissing={() => {}} />);
+    expect(await screen.findByText('¿Por sucursal o en total?')).toBeTruthy();
+    expect(screen.getByText('Equipo de desarrollo')).toBeTruthy();
+    fireEvent.change(screen.getByPlaceholderText('Respóndele al equipo de desarrollo…'), { target: { value: 'Por sucursal' } });
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Enviar al equipo' })));
+    expect(await screen.findByText(/al equipo/)).toBeTruthy();
+    expect(calls.find((c) => c.path === '/api/portal/requests/5/messages')?.body).toEqual({ text: 'Por sucursal', images: [] });
+  });
+});

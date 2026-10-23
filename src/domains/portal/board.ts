@@ -19,7 +19,9 @@ import type { RunSummary } from '../runs/data.js';
 // answered and the person may write again if they want.
 export type WaitsOn = 'person' | 'ronin' | 'team' | null;
 
-export function waitsOn(r: Pick<PortalRequest, 'status' | 'issue' | 'pr'>): WaitsOn {
+export function waitsOn(r: Pick<PortalRequest, 'status' | 'issue' | 'pr' | 'personReplied'>): WaitsOn {
+  // The person answered the team (#353): it's the team's to read.
+  if (r.personReplied) return 'team';
   switch (r.status) {
     case 'thinking':
     case 'minor':
@@ -75,6 +77,8 @@ export interface RequestRow {
   verdict?: Verdict['kind'];
   // A reported error (#137).
   bug: boolean;
+  // The person answered the team and nobody of the team opened it since (#353).
+  personReplied: boolean;
   createdAt: string;
   // Its last change or its last run's, whichever is later.
   lastAt: string;
@@ -99,6 +103,7 @@ export function requestRow(r: PortalRequest, user: PortalUser | undefined, entri
     ...(r.decision ? { decision: r.decision.kind } : {}),
     ...(r.verdict ? { verdict: r.verdict.kind } : {}),
     bug: Boolean(r.bug),
+    personReplied: Boolean(r.personReplied),
     createdAt: r.createdAt,
     lastAt: lastAt(r, own),
   };

@@ -12,6 +12,7 @@ import { IMAGE_TYPES, MAX_IMAGE_BYTES, MAX_IMAGES, parseImages } from './images.
 import { answerInterview, confirmUnderstood, MAX_CORRECTIONS, MAX_ROUNDS, skipInterview } from './interview.js';
 import { launchPortalWorker } from './launch.js';
 import { decideRequest } from './prototype.js';
+import { canReplyToTeam, replyToTeam } from './team-conversation.js';
 import { addPersonMessage, CANCELLABLE, createRequest, getRequest, listRequestsOf, MAX_PROTOTYPES, requestImagePath, RequestError, startedToday, TEXT_MAX, type PortalRequest } from './requests.js';
 
 // A person's requests in the portal (#114), always behind their session and
@@ -43,6 +44,8 @@ function personView(r: PortalRequest, app: PortalApp | undefined) {
     // Whether it offers "Cancelar": for the team's, the server still checks
     // no one assigned its issue.
     cancellable: CANCELLABLE.includes(r.status),
+    // Whether they can answer the team now (#353): the team has it and wrote to them.
+    replyToTeam: canReplyToTeam(r),
     // Adjustments the person may still ask for on the prototype.
     adjustmentsLeft: Math.max(0, MAX_PROTOTYPES - (r.prototypes?.length ?? 0)),
     // The interview (#225): the round on screen, of how many, and the
@@ -52,7 +55,9 @@ function personView(r: PortalRequest, app: PortalApp | undefined) {
     updatedAt: r.updatedAt,
     messages: r.messages.map((m) => ({
       id: m.id,
+      // The team signs as one: who of them wrote stays in the tablero.
       from: m.from,
+      ...(m.to ? { to: m.to } : {}),
       text: m.text,
       at: m.at,
       images: m.images.map((file) => `/api/portal/requests/${r.number}/images/${file}`),
@@ -142,8 +147,12 @@ export function requestRoutes(config: PortalConfig, deps: PortalDeps) {
     .post(`${N}/messages`, jsonBody(MAX_REQUEST_BODY, 'El mensaje no llegó bien (¿imágenes muy pesadas?).'), body(messageSchema), async (c) => {
       const request = c.get('request');
       const { text, images } = message(c.req.valid('json'));
-      await addPersonMessage(request.number, text, images);
-      await launch(request.number);
+      // While the team has it, their answer is for the team, not for ronin (#353).
+      if (canReplyToTeam(request)) await replyToTeam(request.number, text, images);
+      else {
+        await addPersonMessage(request.number, text, images);
+        await launch(request.number);
+      }
       return c.json(await fresh(c.get('apps'), request), 200);
     })
 
