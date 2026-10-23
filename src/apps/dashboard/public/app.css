@@ -1079,6 +1079,10 @@ button.brow:hover { background: var(--hover); }
 .pd-dd { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--rule); }
 .pd-dd p { margin: 0; color: var(--ink-2); max-width: 72ch; }
 .pd-dd .field textarea { width: 100%; }
+/* Waiting on the person (#404): when it expires, and Cerrar pedido. */
+.pd-now .pd-exp { color: var(--muted); font-size: 12.5px; margin-top: 6px; }
+.pd-close { margin-top: 10px; }
+.pd-close.pd-dd { margin-top: 12px; }
 
 .pd-tl { list-style: none; margin: 0; padding: 0; position: relative; }
 .pd-tl::before { content: ""; position: absolute; left: 10px; top: 6px; bottom: 6px; width: 1.5px; background: var(--rule); }

@@ -83,6 +83,15 @@ export const RONINS: RequestStatus[] = ['approved', 'fixing'];
 // issue yet.
 export const CANCELLABLE: RequestStatus[] = ['thinking', 'asking', 'answered', 'interviewing', 'confirming', 'minor', 'proposed', 'reproducing', 'awaiting-dev', 'big'];
 
+// When someone of the team can close it from the tablero (#404), with a
+// reason the person gets: while it waits on the person, ronin answered, or
+// ronin reads it. With an issue, it closes from the issue.
+export const TEAM_CLOSABLE: RequestStatus[] = ['thinking', 'asking', 'answered', 'interviewing', 'confirming', 'proposed'];
+
+// When it expires on its own (#404, expire.ts): it waits on the person, or
+// ronin answered and nothing is left to do.
+export const EXPIRING: RequestStatus[] = ['asking', 'interviewing', 'confirming', 'proposed', 'answered'];
+
 // Prototypes per request: the first and up to two adjustments.
 export const MAX_PROTOTYPES = 3;
 
@@ -251,8 +260,13 @@ export type RequestEvent = { at: string } & (
   | { kind: 'issue'; number: number; team: boolean }
   | { kind: 'pr'; number: number }
   | { kind: 'pr-closed'; number: number }
-  | { kind: 'closed'; status: 'done' | 'resolved' | 'declined' }
+  // `by`: someone of the team closed it from the tablero (#404).
+  | { kind: 'closed'; status: 'done' | 'resolved' | 'declined'; by?: string }
   | { kind: 'cancelled' }
+  // Waiting on the person (#404, expire.ts): the reminder they got, and the
+  // request cancelled because they didn't answer (or, answered, closed).
+  | { kind: 'reminded' }
+  | { kind: 'expired'; answered?: true }
   // A release that carries its change (#158): published, and how its
   // workflow ended. Only a deployed one that isn't a pre-release tells the
   // person.
@@ -339,11 +353,12 @@ const store = documentStore<PortalRequest, Counter>({
 export const getRequest = store.get;
 export const updateRequest = store.update;
 
-// What a worker writes when it finishes, unless the person cancelled the
-// request meanwhile: then it's left as it is, and this returns undefined.
-export async function updateUnlessCancelled(n: number, fn: (request: PortalRequest) => void): Promise<PortalRequest | undefined> {
+// What a worker writes when it finishes, unless the request closed
+// meanwhile — the person cancelled it, it expired, or the team closed it
+// (#404): then it's left as it is, and this returns undefined.
+export async function updateUnlessClosed(n: number, fn: (request: PortalRequest) => void): Promise<PortalRequest | undefined> {
   return updateRequest(n, (r) => {
-    if (r.status === 'cancelled') return undefined;
+    if (r.status === 'cancelled' || r.status === 'declined') return undefined;
     fn(r);
     return r;
   });

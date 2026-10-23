@@ -18,7 +18,7 @@ import {
   noteEvent,
   prototypePatchPath,
   requestImagePath,
-  updateUnlessCancelled,
+  updateUnlessClosed,
   type PortalRequest,
   type Reproduction,
   type ReproductionTest,
@@ -189,7 +189,7 @@ async function deliver(n: number, round: number, output: ReproductionOutput, run
     await mkdir(dirname(prototypePatchPath(n, patch)), { recursive: true, mode: 0o700 });
     await writeFile(prototypePatchPath(n, patch), `${diff}\n`, { mode: 0o600 });
   }
-  return updateUnlessCancelled(n, (r) => {
+  return updateUnlessClosed(n, (r) => {
     const at = new Date();
     const ask = !output.reproduced && output.pregunta && r.questions < MAX_QUESTIONS && round < MAX_REPRODUCTIONS;
     const fix = fixable(output, patch);
@@ -263,7 +263,7 @@ export async function reproduceRequest(n: number): Promise<void> {
     try {
       const done = await reproduce(request, round);
       if (!done) {
-        log.info(`portal: el pedido P-${n} se canceló mientras se reproducía su error`);
+        log.info(`portal: el pedido P-${n} se cerró mientras se reproducía su error`);
         return;
       }
       log.info(`portal: reproducción ${round} del pedido P-${n} → ${done.status}`);
@@ -280,7 +280,7 @@ export async function reproduceRequest(n: number): Promise<void> {
     }
   }
   try {
-    const handed = await updateUnlessCancelled(n, (r) => {
+    const handed = await updateUnlessClosed(n, (r) => {
       r.verdict = { ...(r.verdict ?? { summary: '' }), kind: 'big', reason: `No se pudo reproducir: ${failure ? errorLine(failure) : 'sin detalle'}`, at: new Date().toISOString() };
       addRoninMessage(r, FAILED_REPRODUCE_REPLY);
       addEvent(r, { kind: 'classified', verdict: 'big' });

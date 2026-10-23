@@ -43,9 +43,19 @@ El portal, `https://ronin-agent.redmotoshn.com`, es para que la gente que usa la
 
 **Cancelar:** la persona puede cancelar un pedido mientras nadie lo tomó. Si ya tenía un issue del equipo sin asignar, ese issue se cierra como no planeado.
 
+**Cerrar un pedido desde el tablero.** Un pedido sin issue que espera a la persona, que ronin respondió o que ronin está leyendo tiene **Cerrar pedido** en *Ahora*. Hace falta el permiso para las acciones del repo y un motivo, que le llega a la persona con esas palabras, en la conversación y por correo. El pedido queda como *No se hará*, y la actividad dice quién lo cerró. Si ronin lo estaba leyendo, termina sin cambiarle nada. Un pedido con issue se cierra desde el issue.
+
+**Si la persona no responde.** Un pedido que espera a la persona (una pregunta, la entrevista, su resumen o el prototipo) no espera para siempre. El reloj corre desde el último mensaje de ronin:
+- **A las 12 horas,** le llega un correo de recordatorio, uno solo por espera, con el enlace y la hora en que se cancela.
+- **A las 24 horas,** el pedido se cancela solo, con un mensaje y un correo: «Cancelamos este pedido porque no tuvimos respuesta en 24 horas. Si todavía lo necesitas, puedes enviar uno nuevo.»
+- **Si la persona responde,** aprueba o pide un ajuste, el reloj se reinicia. Si ronin vuelve a preguntar, empieza otra espera.
+- **Un pedido que ronin respondió** y donde no queda nada pendiente se cierra solo a las 24 horas, sin recordatorio, con «Cerramos este pedido. Si necesitas algo más, puedes enviar uno nuevo.»
+
+El tick lo revisa cada 30 minutos, así que el recordatorio y la cancelación pueden llegar hasta media hora tarde. Si el recordatorio salió tarde, la cancelación espera las 12 horas que prometió. Las horas se cambian en [Ajustes → General](/ronin/operar/ajustes/).
+
 ## Los correos
 
-- **A la persona:** cada respuesta de ronin, las preguntas de la entrevista y su resumen, el prototipo, el paso al equipo, lo que le escriba el equipo, el merge, el despliegue y el cierre.
+- **A la persona:** cada respuesta de ronin, las preguntas de la entrevista y su resumen, el prototipo, el paso al equipo, lo que le escriba el equipo, el recordatorio y la cancelación si no responde, el merge, el despliegue y el cierre.
 - **Al equipo del repo:** el pedido que espera su decisión, el issue de un pedido que es suyo, el PR que espera aprobación y las respuestas de la persona al equipo. Le llega a quien eligió esos avisos en [Ajustes → Notificaciones](/ronin/operar/ajustes/#tu-cuenta).
 
 ## Los pedidos en el tablero
@@ -55,8 +65,8 @@ El portal, `https://ronin-agent.redmotoshn.com`, es para que la gente que usa la
 - **La lista** dice en qué está cada pedido y a quién espera: a **la persona** (responder, contestar la entrevista, confirmar su resumen o decidir sobre el prototipo), a **ronin** (leerlo, prototipar, abrir el issue o hacer el cambio) o al **equipo** (decidir si se hace, su issue, o aprobar el PR). Abre en *Pendientes*, con filtros por a quién espera, *Cerrados* y *Todos*, de 25 en 25.
 - **La ficha de un pedido** (`/pedidos/<n>`):
   - **Las etapas:** Pedido → Conversación → Prototipo → Aprobación → Issue → PR → Listo. Mientras espera al equipo, la aprobación dice *Decisión del equipo*.
-  - **Ahora:** qué falta y quién lo tiene que hacer. Si ronin está trabajando, la corrida en vivo. Si espera al equipo, las tres acciones de arriba (hace falta el permiso para las acciones del repo).
-  - **Actividad:** todo en orden con su hora: los mensajes, cada corrida con su duración y costo, la clasificación, cada ronda de la entrevista, la decisión de la persona y la del dev, la aprobación del PR a su nombre, cada correo (y si salió), el issue, el PR, el merge y el release que lo llevó.
+  - **Ahora:** qué falta y quién lo tiene que hacer. Si ronin está trabajando, la corrida en vivo. Si espera al equipo, las tres acciones de arriba (hace falta el permiso para las acciones del repo). Si espera a la persona, cuándo vence y si ya le llegó el recordatorio. Sin issue, **Cerrar pedido**.
+  - **Actividad:** todo en orden con su hora: los mensajes, cada corrida con su duración y costo, la clasificación, cada ronda de la entrevista, la decisión de la persona y la del dev, la aprobación del PR a su nombre, cada correo (y si salió), el recordatorio, el vencimiento o quién lo cerró, el issue, el PR, el merge y el release que lo llevó.
   - **Conversación:** lo mismo que ve la persona, con las preguntas de la entrevista, sus respuestas y el resumen. Los mensajes del equipo dicen quién los escribió. Mientras el equipo tiene el pedido, abajo está la caja para escribirle a la persona.
   - **Para el equipo:** por qué es chico o grande, lo que definió la persona en la entrevista, el resumen técnico, lo que se le pidió al prototipo y el diff de cada uno.
   - **Issue y PR:** como en su ficha, con **Revisar el PR** (abre *Archivos*) y **Abrir la ficha**.

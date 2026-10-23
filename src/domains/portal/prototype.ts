@@ -21,7 +21,7 @@ import {
   requestImagePath,
   RequestError,
   updateRequest,
-  updateUnlessCancelled,
+  updateUnlessClosed,
   type PortalRequest,
 } from './requests.js';
 
@@ -78,7 +78,7 @@ async function deliver(n: number, round: number, draft: PrototypeDraft): Promise
     await mkdir(dirname(prototypePatchPath(n, patch)), { recursive: true, mode: 0o700 });
     await writeFile(prototypePatchPath(n, patch), `${draft.patch}\n`, { mode: 0o600 });
   }
-  return updateUnlessCancelled(n, (r) => {
+  return updateUnlessClosed(n, (r) => {
     const at = new Date();
     const messageId = addRoninMessage(r, proposedReply(draft.mensaje, round), at, { images, captions });
     (r.prototypes ??= []).push({ round, summary: draft.resumen, ...(patch ? { patch } : {}), messageId, at: at.toISOString() });
@@ -117,7 +117,7 @@ export async function prototypeRequest(n: number): Promise<void> {
     try {
       const shown = await draw(request, round);
       if (!shown) {
-        log.info(`portal: el pedido P-${n} se canceló mientras se armaba su prototipo`);
+        log.info(`portal: el pedido P-${n} se cerró mientras se armaba su prototipo`);
         return;
       }
       log.info(`portal: prototipo ${round} del pedido P-${n} listo`);
@@ -132,7 +132,7 @@ export async function prototypeRequest(n: number): Promise<void> {
     }
   }
   try {
-    const handed = await updateUnlessCancelled(n, (r) => {
+    const handed = await updateUnlessClosed(n, (r) => {
       r.verdict = { ...(r.verdict ?? { summary: '' }), kind: 'big', reason: `No se pudo armar el prototipo: ${failure?.message.split('\n')[0].slice(0, 300) ?? 'sin detalle'}`, at: new Date().toISOString() };
       addRoninMessage(r, FAILED_PROTOTYPE_REPLY);
       addEvent(r, { kind: 'classified', verdict: 'big' });

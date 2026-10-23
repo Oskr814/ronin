@@ -9,7 +9,7 @@ import { getUser, type PortalUser } from './accounts.js';
 import { interviewText, MAX_ROUNDS, parseQuestions, parseUnderstood } from './interview.js';
 import { interviewMail, replyMail, understoodMail } from './mail.js';
 import { handOverMail, sendPortalMails } from './notify.js';
-import { addEvent, addRoninMessage, errorLine, getRequest, MAX_PROTOTYPES, MAX_REPRODUCTIONS, requestImagePath, TITLE_MAX, updateUnlessCancelled, type InterviewQuestion, type PortalRequest, type Understood, type Verdict } from './requests.js';
+import { addEvent, addRoninMessage, errorLine, getRequest, MAX_PROTOTYPES, MAX_REPRODUCTIONS, requestImagePath, TITLE_MAX, updateUnlessClosed, type InterviewQuestion, type PortalRequest, type Understood, type Verdict } from './requests.js';
 import { host } from '@platform/host/host.js';
 
 
@@ -187,9 +187,9 @@ async function notify(request: PortalRequest, user: PortalUser | undefined): Pro
 }
 
 async function settle(n: number, result: PortalResult): Promise<void> {
-  const updated = await updateUnlessCancelled(n, (r) => applyResult(r, result));
+  const updated = await updateUnlessClosed(n, (r) => applyResult(r, result));
   if (!updated) {
-    log.info(`portal: el pedido P-${n} se canceló mientras ronin lo leía`);
+    log.info(`portal: el pedido P-${n} se cerró mientras ronin lo leía`);
     return;
   }
   log.info(`portal: pedido P-${n} → ${result.accion}`);
@@ -297,7 +297,7 @@ export async function classifyRequest(n: number): Promise<void> {
   } catch (error) {
     log.error(`portal: no se pudo revisar el pedido P-${n}`, error);
     try {
-      const failed = await updateUnlessCancelled(n, (r) => {
+      const failed = await updateUnlessClosed(n, (r) => {
         addEvent(r, { kind: 'failed', step: 'classify', error: errorLine(error) });
         addRoninMessage(r, FAILED_REPLY);
         // The prototype on screen, if any, is still there to decide on.

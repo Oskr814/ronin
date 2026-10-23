@@ -47,6 +47,8 @@ export const SETTINGS: SettingDef[] = [
   int('dashboard.githubTtlSeconds', 'DASHBOARD_GITHUB_TTL_SECONDS', ['dashboard', 'githubTtlSeconds'], 60, 10, 3600),
   int('portal.dailyLimit', 'PORTAL_DAILY_LIMIT', ['portal', 'dailyLimit'], 5, 0, 100),
   int('portal.sessionDays', 'PORTAL_SESSION_DAYS', ['portal', 'sessionDays'], 30, 1, 365),
+  int('portal.remindHours', 'PORTAL_REMIND_HOURS', ['portal', 'remindHours'], 12, 1, 168),
+  int('portal.expireHours', 'PORTAL_EXPIRE_HOURS', ['portal', 'expireHours'], 24, 1, 720),
   // Agentes ('' = whatever the account's Claude config says, as in .env)
   { key: 'agent.model', env: 'AGENT_MODEL', path: ['agentModel'], type: 'enum', default: 'opus', options: [...MODELS, ''] },
   { key: 'agent.effort', env: 'AGENT_EFFORT', path: ['agentEffort'], type: 'enum', default: 'high', options: [...EFFORTS, ''] },

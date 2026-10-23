@@ -209,6 +209,22 @@ describe('a session that sees only some repos', () => {
     expect((await getRequest(other))?.devDecision?.token).toMatch(/^s1\./);
   });
 
+  it('closes a request without an issue only in its repos, with the repo actions and a reason (#404)', async () => {
+    const { createRequest, getRequest, updateRequest } = await import('@domains/portal/requests.js');
+    const asking = async (repo: string) => {
+      const r = await createRequest({ userId: 'u', repo, app: 'web', text: 'Un ajuste', images: [] });
+      await updateRequest(r.number, (x) => { x.status = 'asking'; });
+      return r.number;
+    };
+    expect((await call(`/api/requests/${await asking(BM)}/close`, 'POST', { reason: 'No aplica' })).status).toBe(404);
+    const sc = await asking(SC);
+    expect((await call(`/api/requests/${sc}/close`, 'POST', { reason: ' ' })).body.error).toMatch(/motivo/);
+    const closed = await call(`/api/requests/${sc}/close`, 'POST', { reason: 'Ya existe en otra pantalla.' });
+    expect(closed.body).toMatchObject({ status: 'declined', expiry: null });
+    expect((await getRequest(sc))?.events?.at(-1)).toMatchObject({ kind: 'closed', status: 'declined', by: 'valeria' });
+    expect((await call(`/api/requests/${sc}/close`, 'POST', { reason: 'Otra vez' })).body.error).toMatch(/ya no se puede cerrar/);
+  });
+
   it("reads only a file the PR changes (#111)", async () => {
     expect((await call(`/api/items/${encodeURIComponent(`${SC}#2`)}/files/content?path=.env`)).status).toBe(404);
   });
@@ -227,6 +243,7 @@ describe('a session that sees only some repos', () => {
     const asked = (await createRequest({ userId: 'u', repo: SC, app: 'web', text: 'x', images: [] })).number;
     expect(await refused(`/api/requests/${asked}/decision`, { decision: 'review' })).toMatch(/acciones del tablero/);
     expect(await refused(`/api/requests/${asked}/messages`, { text: 'Hola' })).toMatch(/acciones del tablero/);
+    expect(await refused(`/api/requests/${asked}/close`, { reason: 'No aplica' })).toMatch(/acciones del tablero/);
     await refused(`/api/deploys/${SC}/plan`, { tag: 'v1', prs: 'all' });
     expect((await call('/api/snapshot', 'GET', undefined, readOnly)).body.despliegues).toBe(false);
     expect((await call('/api/settings/users', 'GET', undefined, readOnly)).status).toBe(403);

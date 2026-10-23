@@ -31,6 +31,12 @@ import { addPersonMessage, CANCELLABLE, createRequest, getRequest, listRequestsO
 
 const MAX_REQUEST_BODY = MAX_IMAGES * Math.ceil((MAX_IMAGE_BYTES * 4) / 3) + 64 * 1024;
 
+function expiredHow(r: PortalRequest): 'unanswered' | 'answered' | null {
+  if (r.status !== 'cancelled') return null;
+  const e = r.events?.filter((x) => x.kind === 'expired').at(-1);
+  return e?.kind === 'expired' ? (e.answered ? 'answered' : 'unanswered') : null;
+}
+
 // What the person sees of a request: never the team's technical summary,
 // the prototype's instruction or its diff.
 function personView(r: PortalRequest, app: PortalApp | undefined) {
@@ -44,6 +50,8 @@ function personView(r: PortalRequest, app: PortalApp | undefined) {
     // Whether it offers "Cancelar": for the team's, the server still checks
     // no one assigned its issue.
     cancellable: CANCELLABLE.includes(r.status),
+    // Cancelled on its own (#404): nobody answered, or nothing was left to do.
+    expired: expiredHow(r),
     // Whether they can answer the team now (#353): the team has it and wrote to them.
     replyToTeam: canReplyToTeam(r),
     // Adjustments the person may still ask for on the prototype.
