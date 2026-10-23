@@ -24,6 +24,7 @@ import {
   type ReproductionTest,
 } from './requests.js';
 import { host } from '@platform/host/host.js';
+import { parseTeamNotes, type TeamNotes } from './team-notes.js';
 
 // A reported error from the portal (#137): on the same app and browsers as
 // a prototype (runOnApp), ronin follows the person's steps, writes a test
@@ -68,6 +69,7 @@ export interface ReproductionOutput {
   fix?: 'small' | 'big';
   reason?: string;
   summary: string;
+  team?: TeamNotes;
   shots: ReproductionShot[];
 }
 
@@ -135,6 +137,7 @@ export function parseReproduction(raw: string, outDir: string): ReproductionOutp
   const question = r.reproducido ? undefined : text(r.pregunta, 1000);
   const reason = text(r.motivo, 1000);
   const fix = r.arreglo === 'pequeño' ? 'small' : r.arreglo === 'grande' ? 'big' : undefined;
+  const team = parseTeamNotes(r.equipo);
   return {
     reproduced: r.reproducido,
     mensaje,
@@ -145,6 +148,7 @@ export function parseReproduction(raw: string, outDir: string): ReproductionOutp
     ...(fix && r.reproducido ? { fix } : {}),
     ...(reason ? { reason } : {}),
     summary: text(r.resumen, 4000) ?? '',
+    ...(team ? { team } : {}),
     shots,
   };
 }
@@ -203,6 +207,7 @@ async function deliver(n: number, round: number, output: ReproductionOutput, run
       ...(output.fix ? { fix: output.fix } : {}),
       ...(output.reason ? { reason: output.reason } : {}),
       summary: output.summary,
+      ...(output.team ? { team: output.team } : {}),
       ...(patch ? { patch } : {}),
       messageId,
       at: at.toISOString(),

@@ -18,7 +18,7 @@ export const EVERY_MS = 10_000;
 export const STATUS: Record<string, [string, string]> = {
   thinking: ['run', 'ronin lo está leyendo'], asking: ['warn', 'Espera a la persona'], answered: ['idle', 'Respondido'],
   interviewing: ['warn', 'Espera sus respuestas'], confirming: ['warn', 'Espera que confirme'],
-  minor: ['run', 'Armando el prototipo'], proposed: ['warn', 'Espera que apruebe'], 'awaiting-dev': ['warn', 'Espera al equipo'], approved: ['run', 'Aprobado'],
+  minor: ['run', 'Armando el prototipo'], proposed: ['warn', 'Espera que apruebe'], 'awaiting-dev': ['decide', 'Decidir si se hace'], approved: ['run', 'Aprobado'],
   reproducing: ['run', 'Reproduciendo el error'], fixing: ['run', 'En corrección'],
   done: ['ok', 'Listo'], resolved: ['ok', 'Resuelto por el equipo'], declined: ['idle', 'No se hará'],
   cancelled: ['idle', 'Cancelado'], big: ['warn', 'En el equipo'],
@@ -36,13 +36,14 @@ const safeRepo = (repo: string) => /^[\w.-]+\/[\w.-]+$/.test(repo);
 export const issueUrl = (repo: string, number: number) => (safeRepo(repo) ? `https://github.com/${repo}/issues/${number}` : null);
 export const prUrl = (repo: string, number: number) => (safeRepo(repo) ? `https://github.com/${repo}/pull/${number}` : null);
 
-export function waitsLabel(p: Row): string {
+// `mine`: the one looking at it can decide it (#406).
+export function waitsLabel(p: Row, mine = false): string {
   const who = firstName(p.person);
   if (p.personReplied) return `${who} respondió: leerlo`;
   switch (p.waitsOn) {
     case 'person': return p.status === 'proposed' ? `${who}: aprobar o ajustar` : p.status === 'interviewing' ? `${who}: responder las preguntas` : p.status === 'confirming' ? `${who}: confirmar el resumen` : `${who}: responder`;
     case 'ronin': return p.running ? 'ronin trabajando' : p.status === 'approved' && p.issue ? `ronin: el cambio en #${p.issue}` : p.status === 'fixing' && p.issue ? `ronin: el arreglo en #${p.issue}` : p.status === 'minor' ? 'ronin: el prototipo' : p.status === 'reproducing' ? 'ronin: reproducirlo' : p.status === 'thinking' ? 'ronin: leerlo' : 'ronin: abrir el issue';
-    case 'team': return p.status === 'awaiting-dev' ? 'Un dev: decidir si se hace' : p.pr ? `Un dev: aprobar el PR #${p.pr}` : `El equipo: #${p.issue}`;
+    case 'team': return p.status === 'awaiting-dev' ? (mine ? 'Tú: aprobar o no hacerlo' : 'Un dev: decidir si se hace') : p.pr ? `Un dev: aprobar el PR #${p.pr}` : `El equipo: #${p.issue}`;
     default: return CLOSED.includes(p.status) ? 'Cerrado' : 'Nadie';
   }
 }
@@ -122,9 +123,9 @@ export function Stepper({ p }: { p: Staged }) {
   );
 }
 
-export function StatusChip({ p }: { p: { status: string; pr?: number | null } }) {
+export function StatusChip({ p }: { p: { status: string; pr?: number | null; bug?: unknown } }) {
   const [cls, label] = STATUS[p.status] ?? ['idle', p.status];
-  return <span className={`chip ${cls}`}>{p.status === 'approved' && p.pr ? 'Aprobado · en un PR' : p.status === 'fixing' && p.pr ? 'En corrección · en un PR' : label}</span>;
+  return <span className={`chip ${cls}`}>{p.status === 'approved' && p.pr ? 'Aprobado · en un PR' : p.status === 'fixing' && p.pr ? 'En corrección · en un PR' : p.status === 'awaiting-dev' && p.bug ? 'Decidir el arreglo' : label}</span>;
 }
 
 export const BugTag = ({ p }: { p: { bug: unknown } }) => (p.bug ? <span className="pd-tag">Reporte de error</span> : null);

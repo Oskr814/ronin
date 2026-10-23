@@ -17,7 +17,13 @@ El portal, `https://ronin-agent.redmotoshn.com`, es para que la gente que usa la
 
 3. **Si es chico, le muestra un prototipo:** capturas del antes y el después, con la app levantada y un cambio borrador. La persona lo aprueba, pide un ajuste (hasta 3 prototipos en total) o elige *No me sirve*.
 
-4. **Aprobado por la persona, lo decide un dev.** ronin todavía no hace el cambio: el pedido queda **esperando al equipo** y al equipo del repo le llega un correo. En la ficha del pedido, *Ahora* muestra qué cambia, lo que cambia el prototipo, sus capturas y el diff, con tres acciones:
+4. **Aprobado por la persona, lo decide un dev.** ronin todavía no hace el cambio: en la lista, el pedido dice **Decidir si se hace** (o **Decidir el arreglo**), en índigo, y al equipo del repo le llega un correo. En la ficha, *Ahora* muestra solo lo que hace falta para decidir:
+   - **qué cambia,** en palabras simples, con las capturas del antes y el después en miniatura. Un clic las abre para [compararlas](#comparar-el-antes-y-el-después);
+   - **antes de aprobar:** lo que el dev tiene que decidir, si ronin dejó algo;
+   - **una línea de alcance y pruebas:** las áreas, cuántos archivos, las líneas agregadas y quitadas, cuántas pruebas pasaron y cuántas no se corrieron o fallaron;
+   - **Detalles,** plegado: lo que pidió la persona, los cambios, cada prueba, los riesgos, los archivos y el diff. En los pedidos anteriores a esto, que solo tienen el resumen técnico, viene desplegado.
+
+   Y tres acciones:
    - **Aprobar y desplegar:** ronin abre el issue y el PR, **aprueba el PR a tu nombre** y lo mergea cuando el CI está en verde. Hace falta el permiso para desplegar el repo.
    - **Aprobar con revisión:** ronin abre el issue y el PR, que se mergea cuando un dev lo aprueba y el CI está en verde.
    - **No hacerlo:** el pedido se cierra con el motivo que escribas, que le llega a la persona con esas palabras, en la conversación y por correo. No se abre issue.
@@ -31,6 +37,10 @@ El portal, `https://ronin-agent.redmotoshn.com`, es para que la gente que usa la
 7. **Si es grande, o la persona no aprueba el prototipo:** ronin abre un issue para el equipo, sin asignar. Si hubo entrevista, el issue trae **«Lo que definió la persona»**: el resumen (y si lo confirmó), lo que queda fuera, lo que decide el equipo y las preguntas y respuestas tal cual. El correo al equipo también lo trae. Cuando se cierra, la persona recibe un correo: resuelto si se cerró como completado, o que no se hará por ahora si se cerró como no planeado.
 
 </Steps>
+
+### Comparar el antes y el después
+
+Las capturas de un prototipo, o de una reproducción, van en pares: el antes y el después de la misma pantalla. En la ficha se ven chicas, en *Ahora*, en la actividad y en la conversación. Con un clic se abren a pantalla completa, lado a lado y con lo que muestra cada una. También se puede ver solo el antes o solo el después, pasar al par siguiente con ← → y cerrar con Esc. En el portal, la persona las compara igual tocando cualquiera de las dos.
 
 **Si cerrás el PR de un pedido desde el tablero** (*Cerrar*, con *Cerrar también el issue*), o su issue con **Acciones → Cerrar el issue**, el motivo que escribas le llega a la persona con esas mismas palabras, en la conversación y en el correo. Sin motivo, recibe el aviso de siempre. Lo que se comente en GitHub fuera de ese diálogo no le llega.
 

@@ -45,6 +45,16 @@ describe('parsePrototypeResult', () => {
     });
   });
 
+  it('keeps what the agent wrote for the dev who decides, in parts (#406)', () => {
+    const result = parsePrototypeResult(JSON.stringify({
+      resumen: 'Guarda los filtros en la URL.',
+      equipo: { cambios: ['Backoffice: los filtros van a la URL.', 3], pruebas: [{ ok: true, texto: '20 tests, en verde' }, { texto: 'El e2e no se corrió' }, 'x'], decidir: [], riesgos: ['  '] },
+      despues: [{ imagen: 'admin-desktop/despues-1.png' }],
+    }), OUT);
+    expect(result).toMatchObject({ equipo: { changes: ['Backoffice: los filtros van a la URL.'], tests: [{ ok: true, text: '20 tests, en verde' }, { ok: false, text: 'El e2e no se corrió' }], decide: [], risks: [] } });
+    expect(parsePrototypeResult(JSON.stringify({ resumen: 'x', equipo: { cambios: [] }, despues: [{ imagen: 'a/despues-1.png' }] }), OUT)).not.toHaveProperty('equipo');
+  });
+
   it('passes the agent\'s reason through when it could not make one', () => {
     expect(parsePrototypeResult('{"error": "el issue no dice qué cambiar"}', OUT)).toEqual({ error: 'el issue no dice qué cambiar' });
   });

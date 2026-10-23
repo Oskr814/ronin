@@ -131,6 +131,22 @@ a { color: inherit; }
 .shot { margin: 0; display: grid; gap: 4px; }
 .shot .att img { height: auto; max-width: 100%; width: 100%; max-height: 360px; object-fit: contain; object-position: top; background: var(--bg); }
 .shot figcaption { font-size: 12.5px; color: var(--muted); }
+/* Comparing a before and its after at full size (#407). */
+.cmp { position: fixed; inset: 0; background: #0B0D14; z-index: 70; display: flex; flex-direction: column; color: #E4E7F0; }
+.cmp-bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 10px 16px; }
+.cmp-bar .sp { flex: 1; }
+.cmp-bar .kb { color: #868DA3; font-size: 12px; }
+.cmp-bar button { background: #232A3E; color: #E4E7F0; border: 0; border-radius: 6px; padding: 4px 10px; cursor: pointer; font: inherit; font-size: 13px; }
+.cmp-bar button[aria-pressed="true"] { background: #6383E8; }
+.cmp-stage { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 0 16px 16px; min-height: 0; }
+.cmp-stage.one { grid-template-columns: 1fr; }
+.cmp-side { display: flex; flex-direction: column; min-height: 0; }
+.cmp-side .h { color: #B4BACC; font-size: 12.5px; padding: 4px 0 6px; }
+.cmp-side .h b { text-transform: uppercase; font-size: 11px; letter-spacing: .05em; margin-right: 6px; color: #868DA3; }
+.cmp-side.after .h b { color: #78B871; }
+.cmp-side img { min-height: 0; max-height: 100%; max-width: 100%; object-fit: contain; object-position: top left; border-radius: 6px; align-self: flex-start; }
+@media (max-width: 720px) { .cmp-stage { grid-template-columns: 1fr; } }
+
 .decide { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .decide span { margin-right: auto; font-weight: 600; font-size: 14px; }
 .confirm { display: grid; gap: 8px; padding: 14px 16px; background: var(--raise); border: 1px solid var(--rule); border-radius: 12px; }

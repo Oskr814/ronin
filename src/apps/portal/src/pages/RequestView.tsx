@@ -7,6 +7,7 @@ import { Composer, ComposerFrame, useDraft } from '../components/Composer.js';
 import { AnswersView, InterviewForm, missing, openQuestions, Paragraphs, payload, progress, UnderstoodView, type Answers } from '../components/Interview.js';
 import { Chip } from '../components/Chip.js';
 import { CLOSED, EXPIRED, hhmm, initials, left, TEAM_HELD, TEAM_NAME, TEAM_POLL_MS, WORKING } from '../lib/text.js';
+import { Compare, pairsOf, type Pair } from '@ui/components/Compare.js';
 
 const POLL_MS = 2000;
 
@@ -244,8 +245,17 @@ export function RequestView({ n, me, onMenu, onZoom, onMissing }: {
 }
 
 function Thread({ d, me, onZoom, onImage }: { d: Detail; me: Me; onZoom: (src: string) => void; onImage: () => void }) {
+  // A prototype's before and after, compared at full size (#407).
+  const [comparing, setComparing] = useState<{ pairs: Pair[]; start: number } | null>(null);
+  const open = (m: Detail['messages'][number], src: string) => {
+    const pairs = pairsOf(m);
+    const start = pairs?.findIndex((p) => p.before?.src === src || p.after?.src === src) ?? -1;
+    if (pairs && start >= 0) setComparing({ pairs, start });
+    else onZoom(src);
+  };
   return (
     <>
+      {comparing && <Compare pairs={comparing.pairs} start={comparing.start} close={() => setComparing(null)} />}
       <div className="sys">{d.appName} · {hhmm(d.createdAt)}</div>
       {d.messages.map((m) => {
         const ronin = m.from === 'ronin';
@@ -254,7 +264,7 @@ function Thread({ d, me, onZoom, onImage }: { d: Detail; me: Me; onZoom: (src: s
         const images = !m.images.length ? null
           : m.captions ? (
             <div className="shots">{m.images.map((src, i) => (
-              <figure key={src} className="shot"><button className="att" onClick={() => onZoom(src)}><img src={src} alt={m.captions![i] ?? `Imagen ${i + 1}`} onLoad={onImage} /></button><figcaption>{m.captions![i] ?? ''}</figcaption></figure>
+              <figure key={src} className="shot"><button className="att" onClick={() => open(m, src)}><img src={src} alt={m.captions![i] ?? `Imagen ${i + 1}`} onLoad={onImage} /></button><figcaption>{m.captions![i] ?? ''}</figcaption></figure>
             ))}</div>
           ) : (
             <div className="atts">{m.images.map((src, i) => (

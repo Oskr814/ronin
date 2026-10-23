@@ -48,8 +48,11 @@ Exactamente un objeto JSON en el archivo que dice la corrida, con la herramienta
  "arreglo": "pequeño" | "grande" | null,
  "motivo": "<solo para un arreglo grande, o ninguno: por qué, en español, una o dos oraciones>",
  "resumen": "<para el equipo, en español, técnico: la causa y los archivos involucrados, o lo que sospechas si no pudiste reproducirlo, y los riesgos>",
+ "equipo": {"cambios": ["<lo que cambia el arreglo, una línea por área>"], "pruebas": [{"ok": true | false, "texto": "<otras pruebas que corriste, o que no pudiste correr y por qué>"}], "decidir": ["<lo que el dev tiene que decidir antes de aprobar el arreglo>"], "riesgos": ["<una línea cada uno>"]},
  "capturas": [{"imagen": "<ruta relativa a la carpeta de salida, p. ej. admin-desktop/error-1.png>", "nota": "<una línea de leyenda para la persona>", "tipo": "error" | "arreglo"}]}
 ```
+
+`"equipo"` es el resumen partido para quien decide si se hace el arreglo: líneas cortas, en español. El test de la reproducción ya va en `"test"`: no lo repitas en `"pruebas"`. Déjalo fuera si no hiciste un arreglo.
 
 La ruta de cada imagen empieza con el nombre de su navegador, que es la carpeta donde ese navegador guarda sus capturas. Deja `"test"` fuera si no escribiste ninguno, y `"arreglo"` en `null` si no hiciste ningún arreglo. Si la app ni siquiera te deja intentarlo (no carga, la pantalla no existe en ella), escribe en cambio `{"error": "<por qué, en español, una oración>"}`.
 

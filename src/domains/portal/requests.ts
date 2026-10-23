@@ -4,6 +4,7 @@ import { config } from '@platform/config/config.js';
 import { log } from '@platform/logger.js';
 import { dayIn } from '@platform/config/timezone.js';
 import type { ImageUpload } from './images.js';
+import type { TeamNotes } from './team-notes.js';
 import { documentStore, type Counter } from '@platform/store/document-store.js';
 import { DomainError } from '@platform/errors.js';
 
@@ -162,6 +163,8 @@ export interface Prototype {
   round: number;
   // For the team: what the draft changes, technically.
   summary: string;
+  // The same in parts, for the dev who decides (#406): none in older ones.
+  team?: TeamNotes;
   // The draft's diff, under proto/ (empty when the after is a mockup).
   patch?: string;
   // The message that shows it.
@@ -213,6 +216,8 @@ export interface Reproduction {
   // For the team: the cause, the files involved and the risks; or, not
   // reproduced, what ronin suspects.
   summary: string;
+  // The same in parts, for the dev who decides (#406).
+  team?: TeamNotes;
   // Its diff, under proto/: the test, and the fix when it made one.
   patch?: string;
   // The message that told the person.

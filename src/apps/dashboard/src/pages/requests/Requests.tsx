@@ -97,7 +97,7 @@ export function Requests() {
           <tr key={p.number} tabIndex={0} onClick={() => shell.openRequest(p.number)} onKeyDown={(event) => { if (event.key === 'Enter') shell.openRequest(p.number); }}><td className="pn">P-{p.number}</td>
             <td><span className="tt">{p.title}</span><BugTag p={p} /><small>{p.person} · {p.appName}{many ? ` · ${repoShort(p.repo)}` : ''}</small><Mini p={p} /></td>
             <td><StatusChip p={p} /></td>
-            <td className="hide-m"><span className="pd-waits">{p.running && <Dot cls="live" />}{waitsLabel(p)}</span></td>
+            <td className="hide-m">{p.status === 'awaiting-dev' && session.can(p.repo, 'acciones') ? <span className="pd-waits decide">{waitsLabel(p, true)}</span> : <span className="pd-waits">{p.running && <Dot cls="live" />}{waitsLabel(p)}</span>}</td>
             <td className="hide-m pd-gh">{p.issue ? `#${p.issue}` : <span className="m">—</span>}{p.pr ? ` · PR #${p.pr}` : ''}</td>
             <td className="hide-m m">{ago(p.lastAt, now)}</td></tr>
         ))}</tbody></table>
