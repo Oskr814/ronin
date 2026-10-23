@@ -227,7 +227,14 @@ describe('runAgentTask — agent-run metrics', () => {
 describe('runAgentTask — model and effort per task type', () => {
   it("runs each task on its own type's model and effort", async () => {
     await runAgentTask(task({ type: 'fix-review', issueNumber: 1, prNumber: 2 }));
-    expect(runClaudeHeadless.mock.calls[0][3]).toEqual({ model: 'model-for-fix-review', effort: 'effort-for-fix-review' });
+    expect(runClaudeHeadless.mock.calls[0][3]).toEqual({ model: 'model-for-fix-review', effort: 'effort-for-fix-review', pluginDir: expect.stringMatching(/\/plugin$/) });
+  });
+
+  // Every task's behavior is its skill (#257): a run with neither actions
+  // nor a seal (update-changelog) loads the plugin too.
+  it('loads ronin\'s skills in every run', async () => {
+    await runAgentTask(task({ type: 'fix-review', issueNumber: 1, prNumber: 2 }));
+    expect(runClaudeHeadless.mock.calls[0][3].pluginDir).toMatch(/\/plugin$/);
   });
 });
 
