@@ -9,7 +9,7 @@ import { config } from '@platform/config/config.js';
 import { loadRepos } from '@platform/config/repos.js';
 import { launchWorker } from '@platform/workers/worker-launch.js';
 import { getDb } from '@platform/db/db.js';
-import { enqueue } from '../jobs/store.js';
+import { enqueueEvent } from '../jobs/store.js';
 import { verifySignature, scopeForEvent, ackTarget, type EventPayload } from './events.js';
 import { addAckReaction } from '@platform/github/github.js';
 import { log } from '@platform/logger.js';
@@ -49,17 +49,18 @@ function scheduleHandler(repo: string, scope: Scope): void {
 }
 
 // With DATABASE_URL (#235, stage 3), a job in the queue that the runner
-// starts (apps/api/jobs/runner.ts): one already queued for the same thing isn't
-// queued twice. Without it, its process right away, as before.
+// starts (apps/api/jobs/runner.ts): one already queued for the same issues
+// or PRs takes this one's flows instead of a second run being queued
+// (enqueueEvent, #370). Without it, its process right away, as before.
 async function startHandler(request: EventHandlerRequest): Promise<void> {
   const db = getDb();
   if (!db) {
     launchWorker('apps/api/webhooks/handler', request);
     return;
   }
-  const dedupeKey = `event:${JSON.stringify([request.repo, [...request.scope.flows].sort(), [...request.scope.resources].sort()])}`;
-  const id = await enqueue(db, 'event', { repo: request.repo, payload: request, dedupeKey });
-  if (!id) log.info(`webhook: ya hay uno en cola para ${request.scope.resources.join(', ')}, este no hace falta`);
+  const dedupeKey = `event:${JSON.stringify([request.repo, [...request.scope.resources].sort()])}`;
+  const { joined } = await enqueueEvent(db, { repo: request.repo, payload: request, dedupeKey });
+  if (joined) log.info(`webhook: ya había uno en cola para ${request.scope.resources.join(', ')}; se le suman ${request.scope.flows.join(', ')}`);
 }
 
 function readBody(req: IncomingMessage): Promise<Buffer> {

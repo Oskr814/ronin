@@ -56,6 +56,28 @@ export async function enqueue(db: Db, kind: JobKind, opts: { repo?: string; payl
   return row ? String(row.id) : null;
 }
 
+// An event about issues or PRs that already have one waiting in the queue
+// (same repo and resources: its dedupe key) doesn't queue a second run: its
+// flows join the waiting one's (#370). A burst about one PR — a check_suite
+// for auto-merge, then a review for its issue — is one run with every flow,
+// instead of one run each re-reading the same lists. Whether it joined one,
+// so the caller can say so.
+export async function enqueueEvent(db: Db, opts: { repo: string; payload: { scope: { flows: string[] } }; dedupeKey: string }): Promise<{ id: string; joined: boolean }> {
+  const row = await db.insertInto('jobs')
+    .values({ kind: 'event', repo: opts.repo, payload: JSON.stringify(opts.payload), dedupe_key: opts.dedupeKey, status: 'queued' })
+    .onConflict((oc) => oc.column('dedupe_key').where('status', '=', 'queued').doUpdateSet({
+      payload: sql`jsonb_set(jobs.payload, '{scope,flows}', (
+        select jsonb_agg(distinct flow order by flow) from (
+          select jsonb_array_elements_text(jobs.payload->'scope'->'flows') as flow
+          union select jsonb_array_elements_text(excluded.payload->'scope'->'flows')
+        ) flows
+      ))`,
+    }))
+    .returning(['id', sql<boolean>`xmax <> 0`.as('joined')])
+    .executeTakeFirstOrThrow();
+  return { id: String(row.id), joined: row.joined };
+}
+
 // Takes the oldest queued job of `kind` that's due, if fewer than `cap` of
 // that kind are running: it's running from now on, leased to `runner`. Two
 // runners never take the same one (FOR UPDATE SKIP LOCKED), and the count
