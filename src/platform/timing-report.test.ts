@@ -31,6 +31,12 @@ describe('the timings report', () => {
     expect(summarizeTicks(metrics)).toEqual([{ repo: 'acme/app', ticks: 2, p50: 40000, p90: 40000, max: 40000, steps: { assign: 2000, sweeps: 9000 }, discoveryMs: 12000, jobsMs: 3000, githubMs: 25000, githubCalls: 80, githubOps: [] }]);
   });
 
+  it('reads a tick_complete whose operation the logger broke, like mintReadToken (#370)', () => {
+    const broken = '{"event":"tick_complete","ts":"x","durationMs":16000,"repo":"acme/app","githubOps":{"mintReadToken":[redacted]"ms":611,"count":2},"getIssueBody":{"ms":5,"count":1}}}';
+    const [metric] = tickMetricsOf(broken);
+    expect(metric.githubOps).toEqual({ mintReadToken: { ms: 611, count: 2 }, getIssueBody: { ms: 5, count: 1 } });
+  });
+
   it('writes durations the way people read them', () => {
     expect([ms(null), ms(12.4), ms(2500), ms(Infinity)]).toEqual(['—', '12 ms', '2.5 s', '>10 s']);
   });

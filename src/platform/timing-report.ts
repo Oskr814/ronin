@@ -129,7 +129,10 @@ export function tickMetricsOf(text: string): TickMetric[] {
   for (const line of text.split('\n')) {
     if (!line.includes('"tick_complete"')) continue;
     try {
-      const parsed = JSON.parse(line.slice(line.indexOf('{'))) as TickMetric & { event?: string };
+      // The lines written before the logger left an object alone (#370): an
+      // operation like mintReadToken came out as "mintReadToken":[redacted]"ms":…
+      const json = line.slice(line.indexOf('{')).replace(/":\[redacted\]"ms":/g, '":{"ms":');
+      const parsed = JSON.parse(json) as TickMetric & { event?: string };
       if (parsed.event === 'tick_complete' && typeof parsed.durationMs === 'number' && parsed.repo) metrics.push(parsed);
     } catch {
       // Not one of ours.
