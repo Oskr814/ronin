@@ -34,10 +34,17 @@ describe.skipIf(!TEST_DATABASE_URL)('the job queue', () => {
     const pr12 = queued.find((j) => j.id === first.id)!;
     expect((pr12.payload as { scope: { flows: string[] } }).scope.flows).toEqual(['auto-merge', 'issues']);
 
+    // And the comments each one brought, both (#370).
+    const withComment = (id: number) => ({ ...event(['pr-commands'], ['pr-14']), payload: { repo: 'acme/app', scope: { flows: ['pr-commands'], resources: ['pr-14'], comments: [{ number: 14, comment: { id } }] } } });
+    await enqueueEvent(db, withComment(1));
+    await enqueueEvent(db, withComment(2));
+    const pr14 = (await listJobs(db)).find((j) => (j.payload as { scope: { resources: string[] } }).scope.resources[0] === 'pr-14')!;
+    expect((pr14.payload as { scope: { comments: Array<{ comment: { id: number } }> } }).scope.comments.map((c) => c.comment.id)).toEqual([1, 2]);
+
     // Once it's running, a new one for that PR is queued apart.
     while (await claimNext(db, 'event', 5, 'r'));
     expect((await enqueueEvent(db, event(['portal']))).joined).toBe(false);
-    expect(await listJobs(db)).toHaveLength(3);
+    expect(await listJobs(db)).toHaveLength(4);
   });
 
   it('never queues twice what has the same key, but does once the first one left the queue', async () => {

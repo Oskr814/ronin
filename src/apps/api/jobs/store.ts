@@ -66,12 +66,13 @@ export async function enqueueEvent(db: Db, opts: { repo: string; payload: { scop
   const row = await db.insertInto('jobs')
     .values({ kind: 'event', repo: opts.repo, payload: JSON.stringify(opts.payload), dedupe_key: opts.dedupeKey, status: 'queued' })
     .onConflict((oc) => oc.column('dedupe_key').where('status', '=', 'queued').doUpdateSet({
-      payload: sql`jsonb_set(jobs.payload, '{scope,flows}', (
+      // The union of the flows, and the comments of both (#370).
+      payload: sql`jsonb_set(jsonb_set(jobs.payload, '{scope,flows}', (
         select jsonb_agg(distinct flow order by flow) from (
           select jsonb_array_elements_text(jobs.payload->'scope'->'flows') as flow
           union select jsonb_array_elements_text(excluded.payload->'scope'->'flows')
         ) flows
-      ))`,
+      )), '{scope,comments}', coalesce(jobs.payload->'scope'->'comments', '[]') || coalesce(excluded.payload->'scope'->'comments', '[]'))`,
     }))
     .returning(['id', sql<boolean>`xmax <> 0`.as('joined')])
     .executeTakeFirstOrThrow();

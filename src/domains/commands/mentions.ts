@@ -1,5 +1,5 @@
 import { listIssueComments, listRecentIssueComments, listRecentPrComments, listReviewComments, replyToComment, type Comment } from '@platform/github/github.js';
-import { inGithubMemo } from '@platform/github/run-memo.js';
+import { eventCommentsFor, inGithubMemo } from '@platform/github/run-memo.js';
 import { isProcessed, markProcessed, unprocessed } from '@platform/state/processed-comments.js';
 import { classifyMetaCommand, renderMetaReply, type CommandContext } from './help.js';
 import { config } from '@platform/config/config.js';
@@ -331,13 +331,18 @@ async function handleAutoMergeCommands(prNumber: number, comments: Comment[]): P
 //
 // In a tick's run (#370) it looks at the comments of the last days, read
 // once for the whole repo (listRecentPrComments): one call per PR, for its
-// reviews, instead of three. Anywhere else, at the PR's own, as before.
+// reviews, instead of three. In the run of an event about a comment on this
+// PR, only at what the event brought, with no call at all: an older mention
+// still to answer is the next tick's. Anywhere else, at the PR's own, as
+// before.
 export async function findUnprocessedMentions(prNumber: number): Promise<Comment[]> {
   const botLogin = config.githubLogin;
-  const recent = inGithubMemo();
-  const comments = recent
-    ? await listRecentPrComments(prNumber)
-    : (await Promise.all([listIssueComments(prNumber), listReviewComments(prNumber)])).flat();
+  const fromEvent = eventCommentsFor(prNumber);
+  const recent = fromEvent !== undefined || inGithubMemo();
+  const comments = fromEvent
+    ?? (recent
+      ? await listRecentPrComments(prNumber)
+      : (await Promise.all([listIssueComments(prNumber), listReviewComments(prNumber)])).flat());
   const mentioned = comments.filter((c) => mentionsHandle(c.body, botLogin));
   const pending = await withWholeThreads(prNumber, await filterUnprocessed(mentioned), recent);
   const rest = await handleMetaCommands(prNumber, 'pr', pending);
@@ -358,10 +363,11 @@ async function withWholeThreads(prNumber: number, pending: Comment[], recent: bo
 // skips listReviewComments entirely — a plain issue never has inline review
 // comments, and that endpoint (pulls/{n}/comments) errors for a number that
 // isn't actually a pull request.
-// In a tick's run, from the repo's recent comments, with no call of its own.
+// In a tick's run, from the repo's recent comments, with no call of its own;
+// in an event's, from the comment it brought.
 export async function findUnprocessedIssueMentions(issueNumber: number): Promise<Comment[]> {
   const botLogin = config.githubLogin;
-  const issueComments = inGithubMemo() ? await listRecentIssueComments(issueNumber) : await listIssueComments(issueNumber);
+  const issueComments = eventCommentsFor(issueNumber) ?? (inGithubMemo() ? await listRecentIssueComments(issueNumber) : await listIssueComments(issueNumber));
   const mentioned = issueComments.filter((c) => mentionsHandle(c.body, botLogin));
   return handleMetaCommands(issueNumber, 'issue', await filterUnprocessed(mentioned));
 }

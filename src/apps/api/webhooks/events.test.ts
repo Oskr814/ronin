@@ -1,6 +1,6 @@
 import { createHmac } from 'node:crypto';
 import { describe, it, expect } from 'vitest';
-import { verifySignature, scopeForEvent, ackTarget } from './events.js';
+import { verifySignature, scopeForEvent, ackTarget, commentOf } from './events.js';
 
 const SECRET = 'test-secret';
 
@@ -81,6 +81,8 @@ describe('scopeForEvent', () => {
     expect(scopeForEvent('issue_comment', { action: 'created', issue: { number: 40, pull_request: {} }, comment: { id: 1, body: '@ronin-agent revisá esto' }, repository }, tracked, 'ronin-agent')?.scope).toEqual({
       flows: ['issues', 'idle-commands', 'review', 'exploration'],
       resources: ['pr-40'],
+      // #370: the comment itself, so the run doesn't read it again.
+      comments: [{ number: 40, comment: { id: 1, kind: 'issue', body: '@ronin-agent revisá esto', reactionsEyes: 0, authorLogin: '' } }],
     });
   });
 
@@ -139,7 +141,7 @@ describe('scopeForEvent', () => {
 
   it('goes straight to the command for a command on a PR, in a general or an inline comment', () => {
     for (const body of ['@ronin-agent /help', '@ronin-agent /preview un cliente con 40 catálogos', '@Ronin-Agent /auto-merge off', '@ronin-agent /fix-coments']) {
-      expect(scopeForEvent('issue_comment', { action: 'created', issue: { number: 40, pull_request: {} }, comment: { id: 1, body }, repository }, tracked, 'ronin-agent')?.scope).toEqual({
+      expect(scopeForEvent('issue_comment', { action: 'created', issue: { number: 40, pull_request: {} }, comment: { id: 1, body }, repository }, tracked, 'ronin-agent')?.scope).toMatchObject({
         flows: ['pr-commands'],
         resources: ['pr-40'],
       });
@@ -174,3 +176,23 @@ describe('ackTarget', () => {
     expect(ackTarget('issue_comment', { action: 'created', comment: { id: 5, body: 'mail a x@ronin-agent.com' }, sender: { login: 'someone' } }, 'ronin-agent')).toBeNull();
   });
 });
+
+// #370: what an event about a comment brings of it.
+describe('commentOf', () => {
+  const sender = { login: 'ana' };
+  it('takes a comment on a PR or an issue, an inline one with what it has of its thread, and a review with text', () => {
+    expect(commentOf('issue_comment', { action: 'created', issue: { number: 9 }, comment: { id: 3, body: '@ronin-agent /spike api', user: sender, created_at: '2026-10-23T03:00:00Z' } })).toEqual({
+      number: 9, comment: { id: 3, kind: 'issue', body: '@ronin-agent /spike api', reactionsEyes: 0, authorLogin: 'ana', createdAt: '2026-10-23T03:00:00Z' },
+    });
+    expect(commentOf('pull_request_review_comment', { action: 'created', pull_request: { number: 40 }, comment: { id: 5, body: '@ronin-agent ¿y esto?', user: sender, path: 'a.ts', line: 3, diff_hunk: '@@' } })?.comment).toMatchObject({
+      kind: 'review', thread: { path: 'a.ts', line: 3, diffHunk: '@@', comments: [{ id: 5, authorLogin: 'ana', body: '@ronin-agent ¿y esto?' }] },
+    });
+    expect(commentOf('pull_request_review', { action: 'submitted', pull_request: { number: 40 }, review: { id: 7, body: '@ronin-agent mirá', user: sender, submitted_at: '2026-10-23T03:00:00Z' } })?.comment).toMatchObject({ id: 7, kind: 'review-body' });
+  });
+
+  it('brings nothing for a review without text or for an event that is no comment', () => {
+    expect(commentOf('pull_request_review', { action: 'submitted', pull_request: { number: 40 }, review: { id: 7, body: '' } })).toBeNull();
+    expect(commentOf('check_suite', { action: 'completed', check_suite: { pull_requests: [{ number: 40 }] } })).toBeNull();
+  });
+});
+

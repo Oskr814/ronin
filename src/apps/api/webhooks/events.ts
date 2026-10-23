@@ -1,4 +1,5 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
+import type { EventComment } from '@platform/github/run-memo.js';
 
 // GitHub signs the raw body with the webhook secret as `sha256=<hex>` — see
 // https://docs.github.com/en/webhooks/using-webhooks/validating-webhook-deliveries.
@@ -69,10 +70,22 @@ interface PrRef {
   head?: { ref?: string };
 }
 
+interface PayloadComment {
+  id?: number;
+  body?: string;
+  user?: { login?: string } | null;
+  created_at?: string;
+  in_reply_to_id?: number;
+  path?: string;
+  line?: number | null;
+  diff_hunk?: string;
+}
+
 export interface EventPayload {
   action?: string;
   sender?: { login?: string };
-  comment?: { id?: number; body?: string };
+  comment?: PayloadComment;
+  review?: { id?: number; body?: string | null; user?: { login?: string } | null; submitted_at?: string; state?: string };
   repository?: { full_name?: string };
   label?: { name?: string };
   issue?: { number?: number; pull_request?: unknown };
@@ -131,7 +144,8 @@ export const comesInBursts = (eventName: string): boolean => BURST_EVENTS.has(ev
 // `payload` is untyped GitHub webhook JSON on purpose — we only ever read a
 // couple of well-known fields off it, never trust it for anything beyond
 // "what is this about". The actual work still re-reads fresh state from
-// GitHub.
+// GitHub; the one exception is the comment itself (commentOf, #370), which
+// can't go stale: what it says doesn't change, and an edit is another event.
 export function scopeForEvent(eventName: string, payload: EventPayload, trackedRepos: string[], botLogin: string): { repo: string; scope: Scope } | null {
   const repo = payload.repository?.full_name;
   if (!repo || !trackedRepos.includes(repo)) return null;
@@ -149,7 +163,30 @@ export function scopeForEvent(eventName: string, payload: EventPayload, trackedR
   const resources = resourcesOf(eventName, payload);
   // A suite on a branch with no PR (a push to main) has nothing to look at.
   if (resources.length === 0) return null;
-  return { repo, scope: { flows, resources } };
+  const comment = commentOf(eventName, payload);
+  return { repo, scope: { flows, resources, ...(comment ? { comments: [comment] } : {}) } };
+}
+
+// The comment or review an event is about, as ronin reads one (#370): the
+// run looks for mentions in it instead of reading its issue's or PR's
+// comments again. What a comment says doesn't change, and an edit is
+// another event. An inline one comes without its whole thread: whoever
+// answers it reads that from the PR (mentions.ts's withWholeThreads).
+export function commentOf(eventName: string, payload: EventPayload): EventComment | null {
+  const number = payload.issue?.number ?? payload.pull_request?.number;
+  if (typeof number !== 'number') return null;
+  const c = payload.comment;
+  if ((eventName === 'issue_comment' || eventName === 'pull_request_review_comment') && typeof c?.id === 'number') {
+    const base = { id: c.id, body: c.body ?? '', reactionsEyes: 0, authorLogin: c.user?.login ?? '', ...(c.created_at ? { createdAt: c.created_at } : {}) };
+    if (eventName === 'issue_comment') return { number, comment: { ...base, kind: 'issue' } };
+    const thread = { path: c.path ?? '', line: c.line ?? null, diffHunk: c.diff_hunk ?? '', comments: [{ id: c.id, authorLogin: base.authorLogin, body: base.body }] };
+    return { number, comment: { ...base, kind: 'review', thread } };
+  }
+  const r = payload.review;
+  if (eventName === 'pull_request_review' && typeof r?.id === 'number' && r.body) {
+    return { number, comment: { id: r.id, kind: 'review-body', body: r.body, reactionsEyes: 0, authorLogin: r.user?.login ?? '', ...(r.submitted_at ? { createdAt: r.submitted_at } : {}) } };
+  }
+  return null;
 }
 
 // The comment to put the "got it" 👀 on as soon as the event arrives

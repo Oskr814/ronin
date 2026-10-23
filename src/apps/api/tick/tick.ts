@@ -70,7 +70,7 @@ import { activeRepo, withActiveRepo } from '@platform/agents/repo-context.js';
 import { loadRepos } from '@platform/config/repos.js';
 import { log } from '@platform/logger.js';
 import { GITHUB_SPAN, githubOpsOf, measure, type Measurement } from '@platform/timing.js';
-import { withGithubMemo } from '@platform/github/run-memo.js';
+import { withGithubMemo, type EventComment } from '@platform/github/run-memo.js';
 import { host } from '@platform/host/host.js';
 
 
@@ -1144,6 +1144,9 @@ export type Flow =
 export interface Scope {
   flows: Flow[];
   resources: string[];
+  // The comments the events brought (#370): the run looks for mentions on
+  // their issue or PR in them, without reading its comments again.
+  comments?: EventComment[];
 }
 
 // A repo-wide step (assignments, sweeps, auto-merge), under a lock of its
@@ -1189,7 +1192,7 @@ export async function cycleFirst(issues: TrackingIssue[]): Promise<TrackingIssue
 // And with one memo (platform/github/run-memo.ts): the open PRs its steps
 // list are read once for the whole run (#370).
 function tickOneRepo(scope?: Scope): Promise<void> {
-  return withGithubMemo(() => measure((measurement) => tickRepo(scope, measurement)));
+  return withGithubMemo(() => measure((measurement) => tickRepo(scope, measurement)), scope?.comments);
 }
 
 async function tickRepo(scope: Scope | undefined, measurement: Measurement): Promise<void> {
