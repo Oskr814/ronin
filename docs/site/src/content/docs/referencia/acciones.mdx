@@ -31,6 +31,12 @@ Un diálogo muestra el comentario que va a quedar, tal cual y a tu nombre, mient
 - **Responder y destrabar** comenta tu respuesta y ronin le vuelve a poner `ronin:in-progress` al issue. Si GitHub rechazó el comentario, el label no se toca.
 - **Cerrar el issue** deja el motivo, si escribiste uno, como un comentario común, y después lo cierra como no planeado. Si es el issue de un pedido del portal, el motivo también le llega a quien lo pidió, en la conversación y por correo. Si el issue tiene un PR abierto, el PR queda abierto: para cerrar los dos, usá **Cerrar** en el PR con *Cerrar también el issue* (ver [Decidir un PR](/ronin/guias/decidir-un-pr/)). Si ronin lo estaba trabajando, lo pasa a `ronin:done` en el próximo tick, salvo que siga abierto el PR de una de sus slices.
 
+## Comentar
+
+Al pie de la conversación de las pestañas **Issue** y **PR** hay un cuadro para comentar, como el de GitHub, sin diálogo: escribís, `Ctrl ↵` (o **Comentar**) y el comentario queda en GitHub a tu nombre y aparece en la conversación. `c` lleva el foco al cuadro y `Esc` lo saca. Lo que estabas escribiendo queda en el cuadro si te vas a otra ficha y volvés.
+
+Es un comentario común: ronin lo lee con el resto de la conversación cuando trabaja el issue o el PR, así que sirve para ir dejándole contexto antes de asignarlo. Si mencionás a `@ronin-agent`, lo toma como un pedido, igual que en GitHub. Aparece para quien tiene el permiso de acciones en el repo.
+
 ## Nuevo issue
 
 El botón **+** de cada repo, en la barra lateral, crea un issue en GitHub a tu nombre: título y descripción en Markdown, con vista previa. Después de crearlo, una de cuatro:

@@ -187,3 +187,23 @@ export async function runAction(
   if (action.id === 'unblock') await withActiveRepo(entry, () => setIssueState(action.target, 'in-progress'));
   return { url: posted.url };
 }
+
+// A comment on the item's issue or PR (its tab's), as the person, from the
+// box under its conversation: the same comment they'd leave on GitHub, and
+// ronin reads it as such, when it takes the issue or when it's mentioned.
+export async function runComment(
+  entry: RepoEntry,
+  detail: ItemDetail | undefined,
+  session: Session,
+  on: 'issue' | 'pr',
+  rawText: unknown,
+  post: (token: string, repo: string, number: number, body: string) => Promise<Posted> = commentOnIssue,
+): Promise<{ url: string }> {
+  const doc = on === 'issue' ? detail?.issue : detail?.pr;
+  if (!doc) throw new ActionError(on === 'issue' ? 'Este ítem no tiene un issue.' : 'Este ítem no tiene un PR.');
+  const text = typeof rawText === 'string' ? rawText.trim().slice(0, MAX_TEXT) : '';
+  if (!text) throw new ActionError('Falta el texto.');
+  const posted = await post(session.token, entry.productRepo, doc.number, text);
+  log.info(`tablero: ${session.login} comentó en ${entry.productRepo}#${doc.number} (${posted.url})`);
+  return { url: posted.url };
+}

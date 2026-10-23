@@ -114,6 +114,27 @@ describe('an item’s page', () => {
     expect(document.getElementById('layer')).toBeNull();
   });
 
+  it('comments under the conversation, as on GitHub: c goes to the box, Ctrl+Enter sends it', async () => {
+    const { shell } = show({ detail: person, doc: 'issue' });
+    fireEvent.keyDown(document, { key: 'c' });
+    const box = document.getElementById('dcomment') as HTMLTextAreaElement;
+    expect(document.activeElement).toBe(box);
+    fireEvent.change(box, { target: { value: 'El caso es con un cliente sin pedidos' } });
+    fireEvent.keyDown(box, { key: 'Enter', ctrlKey: true });
+    await waitFor(() => expect(posted).toHaveLength(1));
+    expect(posted[0]).toEqual(['/api/items/acme%2Ftienda%2341/comment', { on: 'issue', text: 'El caso es con un cliente sin pedidos' }]);
+    await waitFor(() => expect(box.value).toBe(''));
+    expect(shell.toast).toHaveBeenCalledWith('Listo: comentaste en #41.', 'https://github.com/acme/tienda/pull/42#issuecomment-1');
+    // Esc leaves the box, and the keys are the page's again: on the PR's tab, it goes to the PR.
+    fireEvent.keyDown(box, { key: 'Escape' });
+    fireEvent.keyDown(document, { key: '1' });
+    expect(tab()).toBe('PR #42');
+    fireEvent.change(document.getElementById('dcomment')!, { target: { value: 'Se ve bien' } });
+    fireEvent.click(document.getElementById('dcomment-send')!);
+    await waitFor(() => expect(posted).toHaveLength(2));
+    expect(posted[1]).toEqual(['/api/items/acme%2Ftienda%2341/comment', { on: 'pr', text: 'Se ve bien' }]);
+  });
+
   it('sends a review from the head, approving with its summary', async () => {
     const files: FilesRead = {
       data: { pr: 42, author: 'beto-dev', headSha: 'abc', files: [], threads: [] },
