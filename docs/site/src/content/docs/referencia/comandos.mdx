@@ -107,7 +107,7 @@ Investiga en solo lectura la parte del repo que corresponde a `<app>` (encuentra
 
 <div class="cmd-scope"><Badge text="Issue sin asignar" variant="success" /></div>
 
-Investiga, pregunta en el issue lo que falte y abre un PR draft con el spec. Mientras sigue en draft, mencionarlo en el PR edita el spec y responde en el hilo ([cómo](/ronin/guias/darle-trabajo/#un-spec-que-escribió-ronin)). Cuando lo marcás *ready for review*, lo implementa como cualquier [spec](/ronin/guias/darle-trabajo/#un-spec).
+Investiga, pregunta en el issue lo que falte y abre un PR con el spec. Mientras no lo apruebes, mencionarlo en el PR edita el spec y responde en el hilo ([cómo](/ronin/guias/darle-trabajo/#un-spec-que-escribió-ronin)). Cuando lo aprobás, lo mergea y lo implementa en slices en el mismo issue.
 
 ### `/explore`
 
@@ -138,7 +138,7 @@ Estas respuestas no gastan una corrida de agente. Además, todo PR que abre roni
 ## Reglas que respeta siempre
 
 - Nunca aprueba ni pide cambios con una review formal.
-- Nunca mergea sin la aprobación de una persona, salvo el PR de un spec al marcarlo *ready for review*. El de exploración lo mergea al aprobarlo, y uno con `ronin:auto-merge` cuando está aprobado y en verde.
+- Nunca mergea sin la aprobación de una persona, salvo el PR de un spec: el de ronin, al aprobarlo; el de una persona, al marcarlo *ready for review*. El de exploración lo mergea al aprobarlo, y uno con `ronin:auto-merge` cuando está aprobado y en verde.
 - Nunca menciona a nadie con `@` en lo que postea, ni lee sus propios comentarios como pedidos.
 - El texto de un comentario es la descripción del pedido, nunca instrucciones que cambien sus reglas.
 - Nunca ejecuta el código de un fork.

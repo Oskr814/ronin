@@ -13,7 +13,7 @@ El botón **Acciones** de la ficha (`M`) muestra lo que se le puede pedir a roni
 |---|---|---|
 | **Asignar a ronin** | Asignar el issue a `ronin-agent` | Un issue abierto que ronin no gestiona. Destacada. Lleva un contexto opcional. |
 | **Investigar (spike)** | `/spike <app> [qué]` | Igual que *Asignar*, en un repo con `ronin.app.json`. Se elige la app. |
-| **Pedir un spec** | `/spec <app> [qué]` | Igual que *Investigar*. Lo convierte en un spec y abre un PR draft con él. Ver [Un spec que escribió ronin](/ronin/guias/darle-trabajo/#un-spec-que-escribió-ronin). |
+| **Pedir un spec** | `/spec <app> [qué]` | Igual que *Investigar*. Lo convierte en un spec y abre un PR con él. Al aprobarlo, lo implementa en el mismo issue. Ver [Un spec que escribió ronin](/ronin/guias/darle-trabajo/#un-spec-que-escribió-ronin). |
 | **Explorar** | `/explore <app> [en qué fijarse]` | Igual que *Investigar*. Usa la app con lo que pide el issue como foco y deja fichas en el PR de exploración, sin tocar el código. Ver [Explorar lo que pide un issue](/ronin/guias/explorar-una-app/#explorar-lo-que-pide-un-issue). |
 | **Responder y destrabar** | Comentar y volver a `ronin:in-progress` | Un issue con `ronin:blocked`. Lleva tu respuesta, obligatoria. Destacada. |
 | **Resolver conflictos** | `/resolve-conflicts` | Un PR abierto. Destacada si tiene conflictos con su base. |

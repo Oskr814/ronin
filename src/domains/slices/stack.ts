@@ -29,6 +29,15 @@ export function specBranch(issueNumber: number): string {
   return `ronin/${issueNumber}/spec`;
 }
 
+const SPEC_BRANCH_RE = /^ronin\/(\d+)\/spec$/;
+
+// The issue a spec PR ronin wrote (/spec) came from, by its branch; null
+// for any other branch, a spec a person wrote included.
+export function issueFromSpecBranch(branch: string): number | null {
+  const match = SPEC_BRANCH_RE.exec(branch);
+  return match ? Number(match[1]) : null;
+}
+
 const SLICE_BRANCH_RE = /^ronin\/\d+\/slice-(\d+)$/;
 
 const SLICE_ISSUE_RE = /^ronin\/(\d+)\/slice-\d+$/;

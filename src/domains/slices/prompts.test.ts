@@ -156,6 +156,14 @@ describe('sliceTask — plan (#257)', () => {
     expect(actions).toMatchObject({ issue: { number: 228, body: 'replace' }, allowed: ['issue.update-body', 'result.report'] });
     expect(prompt).toContain('ronin:plan-slices');
     expect(prompt).toContain('- docs/ronin/specs/a.md\n- docs/ronin/specs/b.md');
+    expect(prompt).not.toContain('## Slices');
+  });
+
+  it("only adds the slices at the end of the issue a /spec came from: its description is the person's", async () => {
+    const { prompt, actions } = await buildTask({ type: 'plan', issueNumber: 300, specPaths: ['docs/ronin/specs/a.md'], keepBody: true });
+    expect(actions).toMatchObject({ issue: { number: 300, body: 'append' } });
+    expect(prompt).toContain('no la reemplaces');
+    expect(prompt).toContain('"## Slices"');
   });
 });
 
@@ -167,7 +175,7 @@ describe('sliceTask — revise-spec (#241, #257)', () => {
     expect(task.branch).toBe('ronin/1026/spec');
     expect(task.checkout).toEqual({ kind: 'pr-branch' });
     expect(task.prompt).toContain('ronin:revise-spec');
-    expect(task.prompt).toContain('PR borrador #1027');
+    expect(task.prompt).toContain('spec del PR #1027');
     expect(task.prompt).toContain('(id 77, kind "review")');
     expect(task.prompt).toContain('sumá al alcance separar los clientes');
     expect(task.prompt).toContain('/tmp/out/mockup.html');
@@ -188,20 +196,20 @@ describe('sliceTask — revise-spec (#241, #257)', () => {
 });
 
 describe('sliceTask — write-spec (#257)', () => {
-  it('opens a draft PR assigned to ronin from its own branch, or asks on the issue', async () => {
+  it('opens a PR assigned to ronin from its own branch, not a draft (approving it is the go), or asks on the issue', async () => {
     const task = await buildTask({ type: 'write-spec', issueNumber: 900, appName: 'backoffice', trigger: [{ id: 5, kind: 'issue', body: '/spec backoffice', reactionsEyes: 0, authorLogin: 'persona' }], outDir: '/tmp/spec-out' });
     expect(task.checkout).toEqual({ kind: 'branch', baseBranch: 'origin/main' });
     expect(task.actions).toMatchObject({
       headRef: 'ronin/900/spec',
       push: { mode: 'branch', baseRef: 'origin/main' },
-      pr: { base: 'main', draft: true, assignee: 'ronin-agent' },
+      pr: { base: 'main', draft: false, assignee: 'ronin-agent' },
       issue: { number: 900 },
       allowed: ['issue.comment', 'git.push', 'pr.create', 'services.up', 'services.run', 'result.report'],
     });
     expect(task.sealed).toEqual({ outputDir: '/tmp/spec-out' });
     expect(task.prompt).toContain('ronin:write-spec');
     expect(task.prompt).toContain('/tmp/spec-out/mockup.html');
-    expect(task.prompt).toContain('Marcalo como *ready for review*');
+    expect(task.prompt).toContain('aprobalo: esa es la señal');
     expect(task.prompt).toContain('status "done"');
   });
 });

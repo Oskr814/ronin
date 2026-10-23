@@ -3,6 +3,7 @@ import { ApiError, client, ok } from '@apps/dashboard/src/api.js';
 import { useSession, useShell } from '@apps/dashboard/src/shell/hooks.js';
 import { checksChip, itemParam, oneOr, type ItemPage } from './model.js';
 import { questionsOf } from './Questions.js';
+import { isSpecPr } from '@apps/dashboard/src/lib/item.js';
 
 // Deciding a PR ronin opened (#195): its page asks what's decided, not how
 // to review it: merge it, ask ronin for an adjustment, or close it. Always
@@ -30,6 +31,7 @@ interface Decided {
   autoMerge: boolean;
   issue: boolean;
   count: number;
+  spec: boolean;
 }
 const decided = new Map<string, Decided>();
 
@@ -40,7 +42,9 @@ export function useDecide(v: ItemPage | null) {
   const pending = v?.files.pending.length ?? 0;
   const open = (kind: DecideKind) => {
     if (!v) return;
-    const next = p?.kind === kind ? null : { kind, text: '', closeIssue: true, sending: false, error: null };
+    // Closing a spec usually drops that spec, not what its issue asks for.
+    const spec = Boolean(v.detail?.data?.pr && isSpecPr(v.detail.data.pr));
+    const next = p?.kind === kind ? null : { kind, text: '', closeIssue: !spec, sending: false, error: null };
     setP(next);
     // The pending comments it carries.
     if (next && !v.files.data) v.files.load();
@@ -54,8 +58,9 @@ export function useDecide(v: ItemPage | null) {
     try {
       const sent = (await ok(client.api.items[':id'].decision.$post({ param: itemParam(id), json: { decision: p.kind, text: p.text, closeIssue: p.closeIssue } }))) as { url: string; autoMergeUrl?: string; issueUrl?: string };
       setP(null);
-      decided.set(id, { at: Date.now(), kind: p.kind, url: sent.url, autoMerge: Boolean(sent.autoMergeUrl), issue: Boolean(sent.issueUrl), count: pending });
-      shell.toast(p.kind === 'approve' ? 'Aprobaste el PR.' : p.kind === 'adjust' ? 'Se lo mandaste a ronin.' : 'Cerraste el PR.', sent.url);
+      const spec = Boolean(v.detail?.data?.pr && isSpecPr(v.detail.data.pr));
+      decided.set(id, { at: Date.now(), kind: p.kind, url: sent.url, autoMerge: Boolean(sent.autoMergeUrl), issue: Boolean(sent.issueUrl), count: pending, spec });
+      shell.toast(p.kind === 'approve' ? (spec ? 'Aprobaste el spec: ronin lo mergea y arranca las slices.' : 'Aprobaste el PR.') : p.kind === 'adjust' ? 'Se lo mandaste a ronin.' : 'Cerraste el PR.', sent.url);
       v.files.reread();
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) return shell.unauthorized(e.message);
@@ -75,7 +80,7 @@ export function DecidedNote({ id }: { id: string }) {
   const done = decided.get(id);
   if (!done || Date.now() - done.at > DECIDED_SHOWN_MS) return null;
   const what = done.kind === 'approve'
-    ? `Aprobaste el PR${done.autoMerge ? ' y le pediste el auto-merge a ronin' : ''}.`
+    ? done.spec ? 'Aprobaste el spec. ronin lo mergea y arranca las slices en este issue: en unos minutos aparecen.' : `Aprobaste el PR${done.autoMerge ? ' y le pediste el auto-merge a ronin' : ''}.`
     : done.kind === 'adjust'
       ? `Le pediste un ajuste a ronin${done.count ? ` con ${oneOr(done.count, 'un comentario', `${done.count} comentarios`)} de Archivos` : ''}. Lo toma en el próximo tick.`
       : `Cerraste el PR${done.issue ? ' y su issue' : ''}.`;
@@ -84,6 +89,7 @@ export function DecidedNote({ id }: { id: string }) {
 
 export function DecideBar({ v, decide }: { v: ItemPage; decide: Decide }) {
   const { p } = decide;
+  const spec = isSpecPr(v.detail!.data!.pr!);
   const button = (kind: DecideKind, cls: string, label: string, key: string, title: string) => (
     <button className={cls} aria-haspopup="dialog" aria-expanded={p?.kind === kind} title={title} onClick={(e) => {
       e.stopPropagation();
@@ -91,7 +97,7 @@ export function DecideBar({ v, decide }: { v: ItemPage; decide: Decide }) {
     }}>{label} <kbd>{key}</kbd></button>
   );
   return (
-    <div className="actions dwrap">{button('close', 'gh dbtn danger', 'Cerrar', 'X', 'Cerrar el PR (X)')}{button('adjust', 'gh dbtn run', 'Ajustar', 'P', 'Pedirle un ajuste a ronin (P)')}{button('approve', 'act-btn dbtn ok', 'Aprobar', 'A', 'Aprobar y mergear (A)')}{p && <Drop v={v} decide={decide} p={p} />}</div>
+    <div className="actions dwrap">{button('close', 'gh dbtn danger', 'Cerrar', 'X', 'Cerrar el PR (X)')}{button('adjust', 'gh dbtn run', 'Ajustar', 'P', 'Pedirle un ajuste a ronin (P)')}{button('approve', 'act-btn dbtn ok', 'Aprobar', 'A', spec ? 'Aprobar el spec: ronin lo mergea y arranca (A)' : 'Aprobar y mergear (A)')}{p && <Drop v={v} decide={decide} p={p} />}</div>
   );
 }
 
@@ -110,10 +116,19 @@ function Drop({ v, decide, p }: { v: ItemPage; decide: Decide; p: Deciding }) {
     el.focus();
     el.setSelectionRange(el.value.length, el.value.length);
   }, [decide.focusText]);
+  const spec = isSpecPr(pr);
   const err = p.error ? <p className="bad">{p.error}</p> : null;
   const footer = (keys: string, cls: string, label: string, disabled = false) => (
     <footer><span className="m"><kbd>{keys}</kbd> {p.kind === 'approve' ? 'confirma' : p.kind === 'close' ? 'cierra' : 'manda'} · <kbd>Esc</kbd></span><button className="btn-s" onClick={decide.close}>Cancelar</button><button className={`btn-s ${cls}`} disabled={p.sending || disabled} onClick={() => void decide.send()}>{label}</button></footer>
   );
+  // A spec: approving it is the go. ronin merges it and plans the slices on its issue.
+  if (p.kind === 'approve' && spec) {
+    return (
+      <div className="drop ok" role="dialog" aria-label="Aprobar el spec"><div className="dt">Lo aprobás como <b>{me}</b>. ronin lo mergea{pr.isDraft ? ' (lo saca de draft antes)' : ''}, arma el plan en este issue y abre un PR por slice.
+        {n > 0 && <p className="warnbox">{oneOr(n, 'Tu comentario', `Tus ${n} comentarios`)} de Archivos {n === 1 ? 'va' : 'van'} con la aprobación, pero ronin no {n === 1 ? 'lo atiende' : 'los atiende'}: para eso, <b>Ajustar</b>.</p>}</div>{err}
+        {footer('↵', 'ok-solid', 'Aprobar el spec')}</div>
+    );
+  }
   if (p.kind === 'approve') {
     const checks = checksChip(v.item.pr?.checks);
     const autoMerge = !pr.labels?.includes('ronin:auto-merge') && pr.mergeable !== 'CONFLICTING';
@@ -133,14 +148,16 @@ function Drop({ v, decide, p }: { v: ItemPage; decide: Decide; p: Deciding }) {
     return (
       <div className="drop crit" role="dialog" aria-label="Cerrar el PR"><textarea id="dtext" ref={text} rows={3} placeholder="Por qué lo cerrás (opcional). Queda como comentario en el PR." value={p.text} onChange={(e) => decide.setP({ ...p, text: e.target.value })} />
         {d.pedido && issue !== undefined && <p className="help">Es el pedido P-{d.pedido.number} del portal: si cerrás también el issue, este motivo le llega a quien lo pidió, en el portal y por correo. Sin motivo, recibe el aviso de siempre.</p>}
-        {issue !== undefined && <label className="dchk"><input type="checkbox" id="dissue" checked={p.closeIssue} onChange={(e) => decide.setP({ ...p, closeIssue: e.target.checked })} /><span>Cerrar también el issue #{issue} <kbd>I</kbd><small>Si queda abierto, ronin lo bloquea y avisa: se queda sin PR para seguir.</small></span></label>}{err}
+        {issue !== undefined && <label className="dchk"><input type="checkbox" id="dissue" checked={p.closeIssue} onChange={(e) => decide.setP({ ...p, closeIssue: e.target.checked })} /><span>Cerrar también el issue #{issue} <kbd>I</kbd><small>{spec ? 'Si queda abierto, sigue como estaba: se puede volver a pedir el /spec.' : 'Si queda abierto, ronin lo bloquea y avisa: se queda sin PR para seguir.'}</small></span></label>}{err}
         {footer('Ctrl ↵', 'danger-solid', 'Cerrar el PR')}</div>
     );
   }
   return (
     <div className="drop" role="dialog" aria-label="Pedir un ajuste"><textarea id="dtext" ref={text} rows={4} placeholder="¿Qué debería cambiar ronin?" value={p.text} onChange={(e) => decide.setP({ ...p, text: e.target.value })} />
-      <div className="quick">{DECIDE_QUICK.map((q, i) => <button key={q} onClick={() => decide.addQuick(i)}><kbd>{i + 1}</kbd> {q}</button>)}</div>
-      {n > 0 && <div className="carry">✎ Incluye {oneOr(n, 'tu comentario', `tus ${n} comentarios`)} de Archivos</div>}<p className="how">{n
+      {!spec && <div className="quick">{DECIDE_QUICK.map((q, i) => <button key={q} onClick={() => decide.addQuick(i)}><kbd>{i + 1}</kbd> {q}</button>)}</div>}
+      {n > 0 && <div className="carry">✎ Incluye {oneOr(n, 'tu comentario', `tus ${n} comentarios`)} de Archivos</div>}<p className="how">{n && spec
+        ? <>Se manda una revisión con {oneOr(n, 'tu comentario', `tus ${n} comentarios`)} y este texto, que menciona a <code>{`@${bot}`}</code>, a tu nombre. ronin cambia el spec en un commit nuevo y contesta.</>
+        : n
         ? <>Se manda una revisión con {oneOr(n, 'tu comentario', `tus ${n} comentarios`)} y después <code>{`@${bot} /fix-comments`}</code> con este texto, a tu nombre.</>
         : <>Se comenta <code>{`@${bot}`}</code> y este texto en el PR, a tu nombre.</>}</p>{err}
       {footer('Ctrl ↵', 'primary', 'Mandar a ronin', !p.text.trim() && !n)}</div>
@@ -164,7 +181,8 @@ export function decideKey(event: KeyboardEvent, decide: Decide): boolean {
   if (at === text || event.ctrlKey || event.metaKey || event.altKey || event.key.length !== 1) return false;
   // A button or the box of the dropdown keep their space.
   if (event.key === ' ' && at?.closest('.drop')) return false;
-  if (p.kind === 'adjust' && DECIDE_QUICK[Number(event.key) - 1]) {
+  // The suggestions are about code: a spec's adjustment has none.
+  if (p.kind === 'adjust' && DECIDE_QUICK[Number(event.key) - 1] && document.querySelector('.drop .quick')) {
     event.preventDefault();
     decide.addQuick(Number(event.key) - 1);
     return true;

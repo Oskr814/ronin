@@ -95,7 +95,7 @@ describe('scopeForEvent', () => {
 
   it('reads a new inline review comment and a submitted review as PR activity', () => {
     expect(scopeForEvent('pull_request_review_comment', { action: 'created', pull_request: slicePr, repository }, tracked, 'ronin-agent')?.scope.flows).toEqual(['issues', 'idle-commands', 'review', 'exploration']);
-    expect(scopeForEvent('pull_request_review', { action: 'submitted', pull_request: slicePr, repository }, tracked, 'ronin-agent')?.scope.flows).toEqual(['auto-merge', 'issues', 'idle-commands', 'review', 'exploration']);
+    expect(scopeForEvent('pull_request_review', { action: 'submitted', pull_request: slicePr, repository }, tracked, 'ronin-agent')?.scope.flows).toEqual(['auto-merge', 'assign', 'issues', 'idle-commands', 'review', 'exploration']);
   });
 
   it('ignores a review being edited or dismissed, and an edited comment', () => {

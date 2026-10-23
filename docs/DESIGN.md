@@ -14,7 +14,7 @@ El flujo actual para implementar un spec es esencialmente manual más allá de l
 
 - **Nunca una sesión continua.** Cada unidad de trabajo (plan, slice, fix de review) corre en una sesión de Claude nueva, para no degradar la ventana de contexto. La continuidad entre sesiones no vive en la memoria del agente, vive en estado externo verificable.
 - **GitHub como máquina de estados.** No se construye una base de datos propia para trackear progreso. El estado real de un spec es el estado de su issue/PRs en GitHub. Esto hace que "reanudar tras un corte de cuota" no sea un caso especial — es simplemente la siguiente vuelta del loop leyendo el mismo estado.
-- **Autonomía en el descubrimiento, no en el criterio de merge.** El agente decide solo cómo trocear un spec, pero **un PR de slice no se mergea sin la aprobación de un humano**. Por defecto sale con `ronin:auto-merge` (§13), así que esa aprobación, con el CI en verde, es la que lo mergea. Sin el label (si alguien lo saca, o en un repo con `autoMerge: false`) lo mergea el humano, cuando le conviene, y ronin se entera en el tick siguiente. Fuera de las slices hay dos casos más: el PR del spec, que se mergea al marcarlo *ready for review* porque es documentación (§1), y el PR de exploración, al aprobarlo (§11.7). Las dos últimas pasan por `mergePullRequest`, que lanza sin approval explícito. Este gate no es negociable.
+- **Autonomía en el descubrimiento, no en el criterio de merge.** El agente decide solo cómo trocear un spec, pero **un PR de slice no se mergea sin la aprobación de un humano**. Por defecto sale con `ronin:auto-merge` (§13), así que esa aprobación, con el CI en verde, es la que lo mergea. Sin el label (si alguien lo saca, o en un repo con `autoMerge: false`) lo mergea el humano, cuando le conviene, y ronin se entera en el tick siguiente. Fuera de las slices hay dos casos más: el PR del spec, que se mergea al aprobarlo (el de `/spec`) o al marcarlo *ready for review* (el de una persona), porque es documentación (§1), y el PR de exploración, al aprobarlo (§11.7). Las dos últimas pasan por `mergePullRequest`, que lanza sin approval explícito. Este gate no es negociable.
 - **La revisión humana se mantiene, pero en PRs pequeños.** El review sigue siendo manual (técnica de stacked PRs), la mejora es que cada PR sea revisable en minutos, no horas.
 
 ## Arquitectura
@@ -23,15 +23,21 @@ Hacia dónde va la arquitectura del sistema (Postgres, cola de trabajos, Docker,
 
 ### 1. Descubrimiento de specs
 
-El spec se escribe como un **PR draft contra el repo del producto** (ej. `bmedical`), con el archivo `.md` en `docs/ronin/specs/` — sin frontmatter, un doc markdown normal, igual que los specs ya existentes en el repo.
+El spec es un **PR contra el repo del producto** (ej. `bmedical`), con el archivo `.md` en `docs/ronin/specs/` — sin frontmatter, un doc markdown normal, igual que los specs ya existentes en el repo.
 
 Flujo:
 
-1. El humano escribe el spec, abre el PR **en draft** y lo asigna a la cuenta de ronin (`RONIN_GITHUB_LOGIN`) con el picker de Assignees de GitHub. Mientras está en draft, el agente no lo implementa: el humano puede seguir iterando el contenido sin que nada arranque. Si el spec lo escribió ronin con `/spec` (rama `ronin/<issue>/spec`), se puede conversar en el PR (§1.1).
-2. Cuando el spec está listo, el humano lo marca **ready for review** (sin necesidad de aprobación — undraft es la señal de "andá"). Esta es la única señal que importa; no hace falta más.
-3. El runner detecta el PR (abierto, no-draft, asignado a su cuenta y sin un label de estado `ronin:in-progress`/`done`/`blocked` — ver `listAssignedSpecPrs` en `github.ts`), lo marca `ronin:in-progress` antes de cualquier otra cosa, lo mergea (sin el gate de approval que aplica a PRs de implementación — es documentación, no código de producto, y el humano ya señaló que está listo con la asignación + el undraft), y a partir de ahí sigue el flujo normal: crear issue de tracking, plan, slicing. Si el PR salió de un `/spec` (rama `ronin/<issue>/spec`), el issue de origen recibe un comentario con el enlace al de tracking y se cierra como *completed* (`handOffSpecOrigin` en `tick.ts`); uno con `ronin:portal` solo recibe el comentario, porque cerrarlo como *completed* le avisaría a la persona que su pedido está resuelto (`portal/follow.ts`). Cuando se mergea la última slice, el issue de tracking pasa a `done` y después se cierra como *completed* (en ese orden: cerrado mientras sigue `in-progress`, lo tomaría `finishClosedIssues`).
+1. **El PR.** Hay dos orígenes:
+   - **Una persona** escribe el spec, abre el PR **en draft** y lo asigna a la cuenta de ronin (`RONIN_GITHUB_LOGIN`) con el picker de Assignees de GitHub. Mientras está en draft, el agente no lo implementa: puede seguir iterando el contenido sin que nada arranque.
+   - **ronin** lo escribe con `/spec` desde un issue (rama `ronin/<issue>/spec`) y abre el PR asignado a su cuenta, sin draft. Se conversa en el PR (§1.1).
+2. **La señal.** El spec de una persona arranca cuando lo marca **ready for review**. El de `/spec`, cuando una persona lo **aprueba** (*Aprobar* en el tablero, 15.15, o *Approve* en GitHub): con un solo archivo, el draft era un paso más sin nada que revisar en el medio. Un `/spec` viejo que siga en draft también arranca al aprobarlo. Es la única señal: ningún comentario la reemplaza. El evento `pull_request_review` corre el flujo `assign`, así que arranca en el momento.
+3. **El arranque.** El runner detecta el PR (abierto, asignado a su cuenta, con su señal y sin un label de estado `ronin:in-progress`/`done`/`blocked` — `specPrsToStart` en `github.ts`), lo marca `ronin:in-progress` antes de cualquier otra cosa, lo saca de draft si hace falta y lo mergea (sin el gate de approval que aplica a PRs de implementación — es documentación, no código de producto). Después:
+   - **El de `/spec`** sigue en **el issue de donde salió** (`adoptSpecOrigin` en `tick.ts`): su descripción queda como la escribió la persona, con una sección `## Spec` con los enlaces al final, y lleva `ronin`. El plan corre con `keepBody`: la acción `issue.update-body` agrega al final la sección `## Slices` en vez de reemplazar la descripción. Al ser el mismo issue, conserva su proyecto de Linear, y en un pedido del portal la persona se entera de que está resuelto recién cuando se cierra, con la última slice.
+   - **El de una persona** abre un issue de tracking nuevo, `[spec] <título>`, con la plantilla, y el plan reemplaza su descripción.
+   
+   Cuando se mergea la última slice, el issue pasa a `done` y después se cierra como *completed* (en ese orden: cerrado mientras sigue `in-progress`, lo tomaría `finishClosedIssues`).
 
-Por qué asignación manual y no descubrimiento automático: nada arranca hasta que un humano asigna el PR y lo saca de draft, así que ronin nunca toma un spec a medio escribir ni uno que nadie le pidió. Lo que la asignación no resuelve es el caso de dos PRs que describen lo mismo: se procesan como dos specs distintos, y eso es un problema de proceso humano, no una condición de carrera en el código (§9).
+Por qué asignación manual y no descubrimiento automático: nada arranca hasta que un humano asigna el PR y lo saca de draft (o aprueba el de `/spec`), así que ronin nunca toma un spec a medio escribir ni uno que nadie le pidió. Lo que la asignación no resuelve es el caso de dos PRs que describen lo mismo: se procesan como dos specs distintos, y eso es un problema de proceso humano, no una condición de carrera en el código (§9).
 
 **Variante: issues asignados directamente.** Cualquier issue ya existente en el
 repo del producto, asignado a la cuenta `ronin` (Assignees nativo de GitHub —
@@ -62,9 +68,9 @@ cada tick. Ver
 
 #### 1.1 Conversar un spec de ronin en su PR (#241, `domains/slices/spec-revise.ts`)
 
-Mientras el PR de un spec que escribió ronin con `/spec` sigue en draft, mencionarlo ahí abre una conversación sobre el spec, en un comentario general o en una línea del archivo.
+Mientras el PR de un spec que escribió ronin con `/spec` está abierto y no arrancó, mencionarlo ahí abre una conversación sobre el spec, en un comentario general, en una línea del archivo o en el texto de una revisión. *Ajustar* (15.15) es una de esas menciones.
 
-- **Detección:** en el flujo `review`, del tick y del handler de un evento, los PRs de ronin abiertos, en draft y con rama `ronin/<issue>/spec`. Se buscan las menciones sin procesar con `findUnprocessedMentions`, que antes contesta los meta-comandos.
+- **Detección:** en el flujo `review`, del tick y del handler de un evento, los PRs de ronin abiertos con rama `ronin/<issue>/spec`, en draft o no. Se buscan las menciones sin procesar con `findUnprocessedMentions`, que antes contesta los meta-comandos.
 - **Quién puede:** cualquiera con identidad de GitHub, igual que `/fix-comments` en los PRs externos.
 - **Una corrida por PR:** la tarea `revise-spec` recibe juntas todas las menciones pendientes.
   - Corre en el worktree de la rama, puesto al día con `origin` antes de empezar, para que una edición a mano en GitHub no se pierda.
@@ -73,7 +79,7 @@ Mientras el PR de un spec que escribió ronin con `/spec` sigue en draft, mencio
   - Si dibuja un mockup nuevo, se publica como el de `/spec`.
 - **Estado en el PR:** `ronin/spec`, pendiente mientras trabaja.
 - **Si falla:** las menciones quedan sin procesar y se reintentan en el tick siguiente.
-- **Lo que no cambia:** marcarlo *ready for review* sigue siendo la única señal para mergearlo e implementarlo, y la tarea nunca lo hace. Los specs que escribe una persona se siguen editando a mano.
+- **Lo que no cambia:** aprobarlo sigue siendo la única señal para mergearlo e implementarlo, y la tarea nunca lo hace. Los specs que escribe una persona se siguen editando a mano.
 
 ### 2. Mapeo a GitHub
 
@@ -117,7 +123,7 @@ En producción (y en el cron) lo que se ejecuta es el build compilado en `dist/`
 
 En cada tick:
 
-1. Escanea specs e issues asignados a la cuenta de ronin (§1) → mergea el spec, crea el issue de tracking y corre el plan; un issue asignado directamente pasa a ser su propio issue de tracking.
+1. Escanea specs e issues asignados a la cuenta de ronin (§1) → mergea el spec, crea el issue de tracking (o, en un `/spec`, toma el issue de donde salió) y corre el plan; un issue asignado directamente pasa a ser su propio issue de tracking.
 2. Barre lo que vive fuera de un issue: issues cerrados con todas sus slices mergeadas, previews de PRs cerrados o vencidas (§12) y PRs con `ronin:auto-merge` listos para mergear (§13).
 3. Escanea issues abiertos `in-progress` → decide la próxima acción según el estado real del PR/CI/reviews (implementar siguiente slice, resolver comentarios de review, arreglar e2e, registrar las slices que un humano mergeó).
 4. Junta el resto del trabajo: reviews de PRs de humanos y menciones en ellos, `/spike` y `/spec` en issues sin asignar, entradas de changelog, el PR de exploración y la exploración nocturna (§11.8).
@@ -154,7 +160,7 @@ Los módulos del núcleo (en `platform/` salvo que se indique otra carpeta); los
 - `config/config.ts` — env vars, labels, límites de reintento
 - `github/github.ts` — wrappers sobre `gh` CLI (execFile con argv array, nunca shell string; `gh api`, con `fetch` desde #370, ver `gh-api.ts`) para issues/PRs/labels/merge/body/contador de intentos. El gate de approval está *en código*, no solo documentado: `mergePullRequest` (que usan el PR de exploración y el auto-merge) lanza si `reviewDecision !== 'APPROVED'`
 - `domains/slices/checklist.ts` — parsea y edita el checklist de slices del body del issue (índice de próxima slice, marcar merged, registrar PR); es la fuente de verdad para "qué slice sigue", no un contador aparte
-- `domains/slices/spec-revise.ts` — las menciones en el PR draft de un spec de ronin: responde y edita el spec (§1.1)
+- `domains/slices/spec-revise.ts` — las menciones en el PR abierto de un spec de ronin: responde y edita el spec (§1.1)
 - `domains/slices/spec-content.ts` — lee el contenido de un spec ya mergeado vía `git show origin/main:<path>` (nunca toca el working directory del checkout principal, así que no importa qué branch tenga el humano checked-out ahí)
 - `notify/notifier.ts` — el notificador de bloqueos (nodemailer + Gmail SMTP)
 - `logger.ts` — formato `[ISO_TIMESTAMP] LEVEL mensaje`, usado en vez de `console.log` suelto (ver `logs/tick-YYYY-MM-DD.log`, §3)
@@ -776,7 +782,7 @@ Todo, salvo los webhooks y `/api/auth/*`, pide sesión. Las rutas pasan a Hono d
 | `GET /api/items/<id>/files/content?path=` | Uno de esos archivos en el head del PR, para mostrar más líneas |
 | `GET /api/items/<id>/files/mine` | Lo que la persona marcó como visto y su revisión pendiente |
 | `POST /api/items/<id>/files/actions` | Comenta, responde, resuelve, marca visto o maneja la revisión: `{ action, … }` (15.14) |
-| `POST /api/items/<id>/decision` | En un PR abierto de ronin que no es draft: `{ decision: approve \| adjust \| close, text?, closeIssue? }` (15.15) |
+| `POST /api/items/<id>/decision` | En un PR abierto de ronin que no es draft (o en su spec, aunque lo sea): `{ decision: approve \| adjust \| close, text?, closeIssue? }` (15.15) |
 | `GET /api/runs/<runId>` | El transcript de una corrida |
 | `GET /api/runs/<runId>/stream` | Lo que se le agrega, por *server-sent events*, hasta que termina |
 | `GET /api/requests` | Los pedidos del portal de los repos que ve la sesión, con a quién espera cada uno (§16.11) |
@@ -954,7 +960,7 @@ La pestaña *Archivos* de la ficha de un PR (o de un issue, con los archivos de 
   - "Empezar una revisión" la crea sobre el commit a la vista (`addPullRequestReview`). Desde ahí, cada comentario o respuesta "Se suma a la revisión" (`addPullRequestReviewThread`, `addPullRequestReviewThreadReply`);
   - lo pendiente se ve en el diff como *Pendiente*, con editar y borrar, y solo lo ve su autor;
   - se lee de los hilos del PR con el token de la persona: cada comentario dice si está `PENDING`, y los pendientes de otros no aparecen.
-- ***Revisar*** / ***Terminar revisión***, en un PR de una persona o en el draft de ronin (un spec), en la cabecera de la ficha (en un issue, *Revisar PR #N*, para su PR que avanza), en la barra de *Archivos* o con `r`:
+- ***Revisar*** / ***Terminar revisión***, en un PR de una persona o en un draft de ronin que no es un spec, en la cabecera de la ficha (en un issue, *Revisar PR #N*, para su PR que avanza), en la barra de *Archivos* o con `r`:
   - **El panel:** un resumen, Comentar / Aprobar / Pedir cambios y la lista de lo pendiente.
   - **Se cierra** con la ×, con Escape o con un clic fuera de él, salvo mientras se manda.
   - **Mandar:** `submitPullRequestReview`. Sin nada pendiente, va una revisión con solo el resumen (aprobar sin comentarios).
@@ -979,13 +985,14 @@ La pestaña *Archivos* de la ficha de un PR (o de un issue, con los archivos de 
 Ante un PR de ronin casi siempre se decide una de tres cosas, y se decide leyendo su descripción: mergearlo, pedirle un ajuste o descartarlo. Por eso su ficha no ofrece la revisión de GitHub (15.14), cuyo "Pedir cambios" ronin no lee, sino esas tres decisiones.
 
 - **La descripción.** `implement-slice` y `fix-issue` escriben el cuerpo del PR siempre con las mismas secciones, en este orden y con estos títulos (`PR_BODY_RULE` y `PR_BODY_SECTIONS` en `platform/agents/prompts.ts`): *Qué se pidió*, *Qué cambió* (con las capturas), *Cómo se verificó* (lo que corrió y lo que no probó, y al final, plegado en un `<details>`, *Cómo probar*: los **Datos** que tienen que existir y los **Pasos**, cada uno con rol, pantalla, acción y lo que se debería ver; #193), *Decisiones propias* (lo que el pedido no definía, con el porqué) y *Fuera de alcance*. En la primera línea va `Closes #N` (`fix-issue`) o `Parte de #N` (`implement-slice`). La plantilla de PR del repo no se usa. La pestaña *Descripción* (o *PR #N* en un issue) las muestra por separado, con *Decisiones propias* destacada, que es lo que más vale revisar. Un cuerpo sin esas secciones (un PR viejo) se muestra tal cual. Cuando ronin cambia el código del PR después de abrirlo (`fix-review`, un pedido mencionándolo, `/fix-comments`), también pone al día la descripción (`prBodyUpdateRule`): reescribe lo que su cambio dejó viejo, casi siempre *Qué cambió* y *Cómo se verificó* (con su *Cómo probar*), con las mismas secciones, y no toca lo que va desde el pie de comandos (`<!-- ronin:help -->`). Lo guarda por la API REST, porque `gh pr edit` falla en los repos que alguna vez usaron Projects classic.
-- **Dónde.** En el encabezado de la ficha, así están en todas las pestañas: *Cerrar*, *Ajustar* y *Aprobar*, con `X`, `P` y `A`. Los botones son cortos: el alcance lo dice su panel. Solo en un PR de ronin abierto que no es draft (`decidable`); en un issue, para su PR que avanza. Cada una abre un panel debajo de los botones que dice qué se va a mandar; se cierra con Escape o con un clic fuera, salvo mientras se manda.
+- **Dónde.** En el encabezado de la ficha, así están en todas las pestañas: *Cerrar*, *Ajustar* y *Aprobar*, con `X`, `P` y `A`. Los botones son cortos: el alcance lo dice su panel. Solo en un PR de ronin abierto que no es draft, o en su spec aunque lo sea (`decidable`); en un issue, para su PR que avanza. Cada una abre un panel debajo de los botones que dice qué se va a mandar; se cierra con Escape o con un clic fuera, salvo mientras se manda.
 - **El teclado en el panel.** El texto que se está escribiendo sobrevive a los redibujos del tablero (el refresco, la carga de *Archivos*), como los otros cuadros de texto. Con el foco fuera del texto, `1`–`3` suman una frase rápida al ajuste, `I` marca o desmarca *Cerrar también el issue* y `Ctrl ↵` manda igual; cualquier otra tecla vuelve al texto y se escribe ahí, así nada de lo tecleado abre otra decisión.
 - **Aprobar** (`↵` confirma) aprueba y mergea: la aprobación (`submitPullRequestReview`, con la revisión pendiente si hay: GitHub admite una sola por persona) y `@ronin-agent /auto-merge`, salvo que el PR ya tenga `ronin:auto-merge` o conflictos. El panel dice si los checks pasaron, corren o fallan, y que los comentarios pendientes van con la aprobación sin que ronin los atienda.
 - **Ajustar** (`Ctrl ↵` manda): un texto, con frases rápidas. Sin comentarios pendientes, se comenta `@ronin-agent <texto>`: el flujo `review-request` (§7.2), que aplica lo pedido y responde. Con comentarios pendientes, se manda la revisión como COMMENT y después `@ronin-agent /fix-comments` con el texto, que llega al prompt de `fix-comments` como su comentario disparador. Un texto que empieza con `/` se rechaza: se leería como un comando (para eso está *Acciones*). En *Archivos*, la barra dice cuántos comentarios pendientes hay y que los lleva *Ajustar*.
+- **En el spec de `/spec`** (rama `ronin/<issue>/spec`, `isSpecPr`): *Aprobar* solo aprueba, sin `/auto-merge`, porque la aprobación es la señal de arranque (§1). *Ajustar* con comentarios pendientes los manda como una revisión COMMENT cuyo texto menciona a ronin, que lee la conversación del spec (§1.1) en vez de `/fix-comments`; sin pendientes, la mención de siempre. Las frases rápidas, que son sobre código, no aparecen. *Cerrar* trae *Cerrar también el issue* desmarcada, porque cerrar un spec suele descartar ese spec y no el pedido; el issue abierto queda como estaba y nada lo bloquea.
 - **Cerrar** (`Ctrl ↵` confirma): el motivo, opcional, como comentario; se descarta la revisión pendiente y se cierra el PR (`closePr`). *Cerrar también el issue* viene marcada y lo cierra como no planeado (`closeIssue`); en el PR de un pedido del portal, el motivo también le llega a quien lo pidió (§16). Si queda abierto, `processIssue` lo bloquea y avisa: una slice sin PR abierto ni mergeado.
 - **Después de decidir,** una línea bajo el encabezado dice qué se hizo durante unos minutos, mientras GitHub lo refleja, y se descartan las cachés de archivos, de la ficha y de la lectura del repo.
-- **Servidor:** `POST /api/items/<id>/decision` (`domains/items/decision.ts`), a nombre de quien entró (`platform/github/github-as-user.ts`, 15.3) y con el permiso `acciones`. Rechaza con 400 lo que no es un PR abierto de ronin fuera de draft, una decisión que no existe y un ajuste vacío.
+- **Servidor:** `POST /api/items/<id>/decision` (`domains/items/decision.ts`), a nombre de quien entró (`platform/github/github-as-user.ts`, 15.3) y con el permiso `acciones`. Rechaza con 400 lo que no es un PR abierto de ronin fuera de draft (salvo su spec), una decisión que no existe y un ajuste vacío.
 
 ### 16. Portal de pedidos (#114)
 

@@ -46,9 +46,10 @@ const FLOWS: Record<string, Record<string, Flow[]>> = {
   },
   issue_comment: { created: PR_ACTIVITY },
   pull_request_review_comment: { created: PR_ACTIVITY },
-  // An approval (an exploration PR merges on it, so does an auto-merge one)
-  // or a request for changes with no inline comment.
-  pull_request_review: { submitted: ['auto-merge', ...PR_ACTIVITY] },
+  // An approval (an exploration PR merges on it, so does an auto-merge one,
+  // and a spec ronin wrote starts on it) or a request for changes with no
+  // inline comment.
+  pull_request_review: { submitted: ['auto-merge', 'assign', ...PR_ACTIVITY] },
   // CI finishing on a PR: one with ronin:auto-merge merges right then, a
   // slice with failing checks gets its fix-e2e.
   check_suite: { completed: ['auto-merge', 'issues'] },

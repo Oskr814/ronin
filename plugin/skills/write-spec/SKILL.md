@@ -1,6 +1,6 @@
 ---
 name: write-spec
-description: Convierte un issue en un spec — el documento de diseño que el equipo revisa antes de escribir código — y abre su PR borrador, o pregunta en el issue si falta algo esencial. Úsala cuando la corrida de ronin te pide escribir el spec de un issue.
+description: Convierte un issue en un spec — el documento de diseño que el equipo revisa antes de escribir código — y abre su PR, o pregunta en el issue si falta algo esencial. Úsala cuando la corrida de ronin te pide escribir el spec de un issue.
 ---
 
 # Escribir el spec de un issue
@@ -23,7 +23,7 @@ Lo que cambia algo fuera de este checkout lo haces solo con las acciones de roni
 
 6. **Un solo commit** con solo el archivo del spec, y súbelo con `ronin-act git.push`.
 
-7. **Abre el PR** con `ronin-act pr.create --title '<título>' --body-file <archivo>`. La descripción: un resumen corto, `Refs #<issue>`, las decisiones que tomaste por tu cuenta y la nota que da la corrida, tal cual. Ronin lo abre como borrador y asignado a su cuenta.
+7. **Abre el PR** con `ronin-act pr.create --title '<título>' --body-file <archivo>`. La descripción: un resumen corto, `Refs #<issue>`, las decisiones que tomaste por tu cuenta y la nota que da la corrida, tal cual. Ronin lo abre asignado a su cuenta; arranca cuando una persona lo aprueba.
 
 8. **Responde una vez** al comentario que lo pidió, con `issue.comment`: el enlace al PR y dos o tres líneas sobre el enfoque.
 

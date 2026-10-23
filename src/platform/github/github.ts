@@ -977,6 +977,7 @@ export async function mergePullRequest(prNumber: number): Promise<void> {
 export interface SpecPr {
   number: number;
   headRefName: string;
+  isDraft: boolean;
 }
 
 // Discovery source of truth: a spec PR is ready for this runner once a
@@ -991,13 +992,30 @@ export async function listAssignedSpecPrs(): Promise<SpecPr[]> {
     '--assignee', config.githubLogin,
     '--state', 'open',
     '--limit', String(PR_LIST_LIMIT),
-    '--json', 'number,isDraft,headRefName,labels',
+    '--json', 'number,isDraft,headRefName,labels,latestReviews',
   ]);
-  const raw = JSON.parse(stdout) as Array<{ number: number; isDraft: boolean; headRefName: string; labels: Array<{ name: string }> }>;
+  return specPrsToStart(JSON.parse(stdout) as RawSpecPr[]);
+}
+
+type RawSpecPr = { number: number; isDraft: boolean; headRefName: string; labels: Array<{ name: string }>; latestReviews?: Array<{ state: string }> };
+
+// The go signal: a spec ronin wrote (/spec, its branch ronin/<issue>/spec)
+// starts when a person approves it, draft or not (an older one may still be
+// a draft); one a person wrote, when it's marked ready for review. Never one
+// already taken. Exported for direct unit testing.
+export function specPrsToStart(raw: RawSpecPr[]): SpecPr[] {
   return raw
-    .filter((pr) => !pr.isDraft)
+    .filter((pr) => (SPEC_PR_BRANCH_RE.test(pr.headRefName) ? (pr.latestReviews ?? []).some((r) => r.state === 'APPROVED') : !pr.isDraft))
     .filter((pr) => !pr.labels.some((l) => l.name === LABEL_STATES['in-progress'] || l.name === LABEL_STATES.done || l.name === LABEL_STATES.blocked))
-    .map((pr) => ({ number: pr.number, headRefName: pr.headRefName }));
+    .map((pr) => ({ number: pr.number, headRefName: pr.headRefName, isDraft: pr.isDraft }));
+}
+
+// stack.ts's specBranch, repeated here: platform doesn't import domains.
+const SPEC_PR_BRANCH_RE = /^ronin\/\d+\/spec$/;
+
+// A draft out of draft: GitHub doesn't merge a draft.
+export async function markPrReady(prNumber: number): Promise<void> {
+  await gh(['pr', 'ready', String(prNumber)]);
 }
 
 export interface BugIssue {

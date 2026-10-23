@@ -39,10 +39,14 @@ function textOf(body: Record<string, unknown>): string {
   return value;
 }
 
-// Whether a PR's page offers the decisions: ronin's, open, and not a draft
-// (a draft is a spec, which is approved by marking it ready).
-export function decidable(pr: Pick<Discussion, 'author' | 'state' | 'isDraft'>, botLogin: string): boolean {
-  return same(pr.author, botLogin) && pr.state === 'OPEN' && !pr.isDraft;
+// A spec ronin wrote (/spec): its branch is ronin/<issue>/spec.
+export const isSpecPr = (pr: Pick<Discussion, 'headRefName'>) => /^ronin\/\d+\/spec$/.test(pr.headRefName ?? '');
+
+// Whether a PR's page offers the decisions: ronin's, open, and not a draft —
+// but for a spec, which an older one may still be: approving it is what
+// starts it, and ronin takes it out of draft then.
+export function decidable(pr: Pick<Discussion, 'author' | 'state' | 'isDraft' | 'headRefName'>, botLogin: string): boolean {
+  return same(pr.author, botLogin) && pr.state === 'OPEN' && (!pr.isDraft || isSpecPr(pr));
 }
 
 export async function runDecision(entry: RepoEntry, target: DecisionTarget, session: Session, body: Record<string, unknown>, botLogin: string): Promise<{ url: string; autoMergeUrl?: string; issueUrl?: string }> {
@@ -55,6 +59,9 @@ export async function runDecision(entry: RepoEntry, target: DecisionTarget, sess
       // The person's pending comments go along with the approval; ronin
       // doesn't act on them (that's what an adjustment is for).
       const sent = await submitReview(session.token, repo, { prId: files.prId, commitId: files.headSha, ...(pending ? { pendingId: pending.id } : {}), event: 'APPROVE', body: '' });
+      // A spec: the approval is the go — ronin merges it and starts its
+      // slices (discoverAssignedSpecs), no /auto-merge.
+      if (isSpecPr(pr)) return sent;
       // Merged once the checks pass: ronin's /auto-merge, unless it's on
       // already or can't merge (conflicts). It answers with what's missing.
       if (pr.labels.includes(AUTO_MERGE_LABEL) || pr.mergeable === 'CONFLICTING') return sent;
@@ -68,6 +75,11 @@ export async function runDecision(entry: RepoEntry, target: DecisionTarget, sess
       // With line comments, they're sent as a review and /fix-comments takes
       // them all, with the text as its trigger comment; without, the text
       // alone is a mention: the review-request flow.
+      // A spec's comments go to ronin as a review that mentions it: the spec
+      // conversation (revise-spec) answers mentions, not /fix-comments.
+      if (pending && isSpecPr(pr)) {
+        return submitReview(session.token, repo, { prId: files.prId, commitId: files.headSha, pendingId: pending.id, event: 'COMMENT', body: `@${botLogin} ${text || 'atendé los comentarios de esta revisión.'}` });
+      }
       if (pending) {
         await submitReview(session.token, repo, { prId: files.prId, commitId: files.headSha, pendingId: pending.id, event: 'COMMENT', body: '' });
         return commentOnIssue(session.token, repo, prNumber, `@${botLogin} /fix-comments${text ? `\n\n${text}` : ''}`);
