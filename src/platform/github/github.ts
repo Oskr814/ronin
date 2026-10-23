@@ -7,9 +7,10 @@ import { config, LABEL_MANAGED, LABEL_STATES, type SpecStatus } from '../config/
 import { activeRepo } from '../agents/repo-context.js';
 import { log } from '../logger.js';
 import type { FailedCheck } from '../agents/failure-signature.js';
-import { timedGithub } from '../timing.js';
+import { githubCaller, timedGithub } from '../timing.js';
 import { forgetGithubMemo, ghWrites, inGithubMemo, memoized, remember } from './run-memo.js';
 import { parseRepo } from './rest.js';
+import { apiRequestOf, callGithubApi, GithubApiError } from './gh-api.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -38,17 +39,36 @@ async function gh(args: string[]): Promise<string> {
 // own checkout, not PRODUCT_REPO_PATH, so those placeholders would target the
 // wrong repo anyway. Every caller therefore spells out
 // `repos/${activeRepo().productRepo}/...` literally instead.
+// Sent with fetch when gh-api.ts understands the arguments (#370), which is
+// every call in this file; through gh otherwise.
 async function ghApi(args: string[]): Promise<string> {
+  const operation = githubCaller();
   try {
+    const request = apiRequestOf(args);
+    if (request) return (await callGithubApi(request, config.githubToken, operation)).text;
     const { stdout } = await timedGithub(() => execFileAsync('gh', args, {
       env: { ...process.env, GH_TOKEN: config.githubToken },
       // A big PR's files with their patches (getPrFiles) are well over the 1 MB default.
       maxBuffer: 64 * 1024 * 1024,
-    }));
+    }), operation);
     return stdout;
   } finally {
     if (ghWrites(args)) forgetGithubMemo();
   }
+}
+
+// Every page of a REST list, in one array: what `gh api --paginate` was.
+// Each page is a call of its own.
+async function ghApiPages<T>(path: string): Promise<T[]> {
+  const operation = githubCaller();
+  const items: T[] = [];
+  let next: string | null = `/${path}`;
+  while (next) {
+    const page = await callGithubApi({ method: 'GET', path: next, headers: {} }, config.githubToken, operation);
+    items.push(...(JSON.parse(page.text) as T[]));
+    next = page.next;
+  }
+  return items;
 }
 
 // A GraphQL query with its variables, for callers that name the repo
@@ -163,7 +183,7 @@ const TRANSIENT_GH_RE = /HTTP (5\d\d|429|499)\b|secondary rate limit|ETIMEDOUT|E
 
 export function isTransientGhError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
-  return /Command failed: gh\b/.test(message) && TRANSIENT_GH_RE.test(message);
+  return (error instanceof GithubApiError || /Command failed: gh\b/.test(message)) && TRANSIENT_GH_RE.test(message);
 }
 
 export async function getAttemptCount(prNumber: number): Promise<number> {
@@ -724,15 +744,15 @@ export interface PrFile {
 // `prId`: its node id, which GraphQL's mutations on it take.
 export async function getPrFiles(prNumber: number): Promise<{ prId: string; author: string; headSha: string; baseSha: string; files: PrFile[] }> {
   const path = `repos/${activeRepo().productRepo}/pulls/${prNumber}`;
-  const [pr, lines] = await Promise.all([
-    ghApi(['api', path, '--jq', '{id: .node_id, author: .user.login, head: .head.sha, base: .base.sha}']).then((out) => JSON.parse(out) as { id: string; author: string; head: string; base: string }),
-    ghApi(['api', '--paginate', `${path}/files?per_page=100`, '--jq', '.[] | {path: .filename, previousPath: .previous_filename, status, additions, deletions, patch}']),
+  type RawFile = Omit<PrFile, 'path' | 'previousPath' | 'patch'> & { filename: string; previous_filename?: string | null; patch?: string | null };
+  const [pr, rawFiles] = await Promise.all([
+    ghApi(['api', path]).then((out) => JSON.parse(out) as { node_id: string; user: { login: string } | null; head: { sha: string }; base: { sha: string } }),
+    ghApiPages<RawFile>(`${path}/files?per_page=100`),
   ]);
-  const files = lines.split('\n').filter(Boolean).map((line) => {
-    const { previousPath, patch, ...file } = JSON.parse(line) as PrFile & { previousPath: string | null; patch: string | null };
-    return { ...file, ...(previousPath ? { previousPath } : {}), ...(patch ? { patch } : {}) };
-  });
-  return { prId: pr.id, author: pr.author, headSha: pr.head, baseSha: pr.base, files };
+  const files = rawFiles.map(({ filename, previous_filename: previousPath, patch, status, additions, deletions }) => (
+    { path: filename, status, additions, deletions, ...(previousPath ? { previousPath } : {}), ...(patch ? { patch } : {}) }
+  ));
+  return { prId: pr.node_id, author: pr.user?.login ?? '', headSha: pr.head.sha, baseSha: pr.base.sha, files };
 }
 
 // A review thread where the diff puts it (#111): on a side and a line (or a
@@ -1180,12 +1200,12 @@ export function changesRequestedOn(reviews: RawReviewWithCommit[], headSha: stri
 }
 
 export async function changesRequestedOnHead(prNumber: number): Promise<boolean> {
-  const [prStdout, reviewsStdout] = await Promise.all([
-    ghApi(['api', `repos/${activeRepo().productRepo}/pulls/${prNumber}`, '--jq', '.head.sha']),
-    ghApi(['api', '--paginate', `repos/${activeRepo().productRepo}/pulls/${prNumber}/reviews?per_page=100`, '--jq', '.[] | {login: .user.login, state: .state, commitId: .commit_id}']),
+  const [pr, rawReviews] = await Promise.all([
+    ghApi(['api', `repos/${activeRepo().productRepo}/pulls/${prNumber}`]).then((out) => JSON.parse(out) as { head: { sha: string } }),
+    ghApiPages<{ user: { login: string } | null; state: string; commit_id: string }>(`repos/${activeRepo().productRepo}/pulls/${prNumber}/reviews?per_page=100`),
   ]);
-  const reviews = reviewsStdout.split('\n').filter((line) => line.trim() !== '').map((line) => JSON.parse(line) as RawReviewWithCommit);
-  return changesRequestedOn(reviews, prStdout.trim());
+  const reviews: RawReviewWithCommit[] = rawReviews.map((r) => ({ login: r.user?.login ?? '', state: r.state, commitId: r.commit_id }));
+  return changesRequestedOn(reviews, pr.head.sha);
 }
 
 // Excluye comentarios que pertenecen a una review todavía en borrador
@@ -1233,9 +1253,6 @@ interface RepoComment extends RawApiComment {
   pull_request_url?: string;
 }
 
-// What each comment keeps, one per line: the whole repo's comments are a
-// few pages, and only these fields are read.
-const REPO_COMMENT_JQ = '.[] | {id, body, created_at, reactions: {eyes: .reactions.eyes}, pull_request_review_id, user: (if .user then {login: .user.login} else null end), path, line, diff_hunk, in_reply_to_id, html_url, issue_url, pull_request_url}';
 
 // The repo's conversation comments (of issues and PRs) or inline review
 // comments updated in the last days, all of them in a few pages: what used
@@ -1244,8 +1261,7 @@ const REPO_COMMENT_JQ = '.[] | {id, body, created_at, reactions: {eyes: .reactio
 function readRecentComments(kind: 'issues' | 'pulls'): Promise<RepoComment[]> {
   return memoized(`recent-comments-${kind}`, async () => {
     const since = new Date(Date.now() - RECENT_COMMENTS_MS).toISOString();
-    const stdout = await ghApi(['api', '--paginate', `repos/${activeRepo().productRepo}/${kind}/comments?since=${since}&per_page=100`, '--jq', REPO_COMMENT_JQ]);
-    return stdout.split('\n').filter((line) => line.trim() !== '').map((line) => JSON.parse(line) as RepoComment);
+    return ghApiPages<RepoComment>(`repos/${activeRepo().productRepo}/${kind}/comments?since=${since}&per_page=100`);
   });
 }
 
@@ -1620,15 +1636,8 @@ export function lastMarkedReviewSha(reviews: RawReviewForMarker[], botLogin: str
 }
 
 export async function getLastReviewedShaFromGitHub(prNumber: number, botLogin: string): Promise<string | undefined> {
-  // --jq prints one compact JSON object per line across every page.
-  const stdout = await ghApi([
-    'api', '--paginate', `repos/${activeRepo().productRepo}/pulls/${prNumber}/reviews?per_page=100`,
-    '--jq', '.[] | {login: .user.login, body: .body, submittedAt: .submitted_at}',
-  ]);
-  const reviews = stdout
-    .split('\n')
-    .filter((line) => line.trim() !== '')
-    .map((line) => JSON.parse(line) as RawReviewForMarker);
+  const raw = await ghApiPages<{ user: { login: string } | null; body: string | null; submitted_at?: string | null }>(`repos/${activeRepo().productRepo}/pulls/${prNumber}/reviews?per_page=100`);
+  const reviews: RawReviewForMarker[] = raw.map((r) => ({ login: r.user?.login ?? null, body: r.body, submittedAt: r.submitted_at ?? null }));
   return lastMarkedReviewSha(reviews, botLogin);
 }
 
