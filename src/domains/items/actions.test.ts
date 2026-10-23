@@ -68,10 +68,11 @@ describe('listActions', () => {
 
   it("offers an issue ronin doesn't manage to assign it, and a spike or an exploration on one of the repo's apps", () => {
     const actions = listActions(NEW_REF, unmanaged(), undefined, 'Oskr814', APPS);
-    expect(ids(actions)).toEqual(['assign', 'spike', 'explore', 'close-issue']);
+    expect(ids(actions)).toEqual(['assign', 'spike', 'spec', 'explore', 'close-issue']);
     expect(actions[0]).toMatchObject({ primary: true, target: 901, text: { required: false }, preview: '…' });
     expect(actions[1]).toMatchObject({ apps: APPS, preview: '@ronin-agent /spike {app} …' });
-    expect(actions[2]).toMatchObject({ apps: APPS, text: { required: false }, preview: '@ronin-agent /explore {app} …' });
+    expect(actions[2]).toMatchObject({ apps: APPS, text: { required: false }, preview: '@ronin-agent /spec {app} …' });
+    expect(actions[3]).toMatchObject({ apps: APPS, text: { required: false }, preview: '@ronin-agent /explore {app} …' });
   });
 
   it('offers only the assignment in a repo without apps, and only closing once ronin manages the issue', () => {
@@ -145,6 +146,8 @@ describe('runAction', () => {
     expect(post).toHaveBeenLastCalledWith('gho_user', 'acme/product', 901, '@ronin-agent /spike backoffice de dónde sale el total');
     await runAction(ENTRY, NEW_REF, unmanaged(), undefined, SESSION, 'spike', undefined, post, APPS, 'webapp', assign);
     expect(post).toHaveBeenLastCalledWith('gho_user', 'acme/product', 901, '@ronin-agent /spike webapp');
+    await runAction(ENTRY, NEW_REF, unmanaged(), undefined, SESSION, 'spec', 'en varias\nentregas', post, APPS, 'webapp', assign);
+    expect(post).toHaveBeenLastCalledWith('gho_user', 'acme/product', 901, '@ronin-agent /spec webapp en varias entregas');
     expect(assign).not.toHaveBeenCalled();
   });
 
