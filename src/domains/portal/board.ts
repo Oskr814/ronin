@@ -1,7 +1,8 @@
 import { readFile } from 'node:fs/promises';
 import type { RepoEntry } from '@platform/agents/repo-context.js';
 import type { PortalUser } from './accounts.js';
-import { prototypePatchPath, requestImagePath, type PortalMessage, type PortalRequest, type RequestEvent, type Verdict } from './requests.js';
+import { patchOf, prototypePatchPath, requestImagePath, type PortalMessage, type PortalRequest, type RequestEvent, type Verdict } from './requests.js';
+import { patchScope, type PatchScope } from './team-notes.js';
 import type { RunSummary } from '../runs/data.js';
 import { expiry } from './expire.js';
 
@@ -145,7 +146,16 @@ function expiryOf(r: PortalRequest) {
   return e ? { expiresAt: e.expiresAt.toISOString(), remindAt: e.remindAt?.toISOString() ?? null, remindedAt: e.remindedAt?.toISOString() ?? null } : null;
 }
 
-export function requestDetail(r: PortalRequest, user: PortalUser | undefined, entries: RepoEntry[], runs: RunSummary[]) {
+// What its diff touches, for the dev who decides (#406): only while it
+// waits for one, read from its last prototype's or reproduction's diff.
+export async function decisionScope(r: PortalRequest): Promise<PatchScope | null> {
+  const file = r.status === 'awaiting-dev' ? patchOf(r) : undefined;
+  if (!file) return null;
+  const patch = await readFile(prototypePatchPath(r.number, file), 'utf8').catch(() => null);
+  return patch ? patchScope(patch) : null;
+}
+
+export function requestDetail(r: PortalRequest, user: PortalUser | undefined, entries: RepoEntry[], runs: RunSummary[], scope: PatchScope | null = null) {
   const own = requestRuns(r, runs);
   return {
     ...requestRow(r, user, entries, runs),
@@ -167,6 +177,8 @@ export function requestDetail(r: PortalRequest, user: PortalUser | undefined, en
     expiry: expiryOf(r),
     // Why the team closed it, and who.
     closeNote: r.closeNote ?? null,
+    // What its diff touches, while a dev decides it (#406).
+    scope,
     activity: activity(r, own),
     runs: [...own].sort((a, b) => b.startedAt.localeCompare(a.startedAt)),
     costUsd: own.reduce((sum, run) => sum + (run.costUsd ?? 0), 0),

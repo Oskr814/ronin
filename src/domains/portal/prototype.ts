@@ -81,7 +81,7 @@ async function deliver(n: number, round: number, draft: PrototypeDraft): Promise
   return updateUnlessClosed(n, (r) => {
     const at = new Date();
     const messageId = addRoninMessage(r, proposedReply(draft.mensaje, round), at, { images, captions });
-    (r.prototypes ??= []).push({ round, summary: draft.resumen, ...(patch ? { patch } : {}), messageId, at: at.toISOString() });
+    (r.prototypes ??= []).push({ round, summary: draft.resumen, ...(draft.team ? { team: draft.team } : {}), ...(patch ? { patch } : {}), messageId, at: at.toISOString() });
     r.status = 'proposed';
     delete r.worker;
   });

@@ -420,6 +420,9 @@ button, a, input, textarea, select, .chip { transition: background-color .12s, b
 .chip.warn { background: var(--warn-bg); color: var(--warn); }
 .chip.crit { background: var(--crit-bg); color: var(--crit); }
 .chip.idle { background: var(--hover); color: var(--ink-2); }
+/* Yours to decide (#406): not the orange of waiting on someone. */
+.chip.decide { background: var(--lin-bg); color: var(--lin); font-weight: 600; }
+.chip.decide::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 .kv { display: grid; grid-template-columns: auto 1fr; gap: 5px 14px; font-size: 13px; margin: 0; }
 .kv dt { color: var(--muted); }
 .kv dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
@@ -1079,6 +1082,68 @@ button.brow:hover { background: var(--hover); }
 .pd-dd { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--rule); }
 .pd-dd p { margin: 0; color: var(--ink-2); max-width: 72ch; }
 .pd-dd .field textarea { width: 100%; }
+/* A dev decides a request (#406): what the decision needs, the rest under Detalles. */
+.pd-waits.decide { color: var(--lin); font-weight: 500; }
+.pd-now.pd-dc { border-color: color-mix(in srgb, var(--lin) 55%, var(--rule)); }
+.pd-dc > .k { color: var(--lin); font-weight: 600; }
+.pd-dc .meta { color: var(--muted); font-size: 12.5px; margin-top: 2px; }
+.pd-dc-row { display: grid; grid-template-columns: 140px 1fr; gap: 6px 16px; padding: 12px 0; border-top: 1px solid var(--rule); }
+.pd-dc > .pd-dc-row:first-of-type { margin-top: 12px; }
+.pd-dc-row > .l { color: var(--muted); font-size: 12.5px; font-weight: 500; padding-top: 1px; }
+.pd-dc-row p { margin: 0; max-width: 72ch; }
+.pd-dc-row p + p { margin-top: 6px; }
+.pd-dc-row ul { margin: 0; padding-left: 18px; }
+.pd-dc-row li { margin: 2px 0; max-width: 72ch; }
+.pd-dc-row .pd-pairs { margin-top: 10px; }
+.pd-dc-ask { background: var(--warn-bg); border-radius: 8px; padding: 8px 12px 8px 30px !important; }
+.pd-dc-sum { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 10px 0; border-top: 1px solid var(--rule); font-size: 13px; }
+.pd-dc-sum .tag { background: var(--raise); border-radius: 6px; padding: 1px 7px; font-size: 12.5px; }
+.pd-dc-sum .sep { color: var(--faint); }
+.pd-dc .add { color: var(--ok); font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 12.5px; }
+.pd-dc .del { color: var(--crit); font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 12.5px; }
+.pd-dc .okc { color: var(--ok); }
+.pd-dc .warnc { color: var(--warn); font-weight: 500; }
+.pd-dc-more { border-top: 1px solid var(--rule); }
+.pd-dc-more > summary { cursor: pointer; padding: 10px 0; color: var(--muted); font-size: 13px; }
+.pd-dc-more > summary:hover, .pd-dc-more[open] > summary { color: var(--ink); }
+.pd-dc-quote { border-left: 3px solid var(--repo-2); padding: 2px 0 2px 10px; color: var(--ink-2); white-space: pre-wrap; }
+.pd-dc-quote + .pd-dc-quote { margin-top: 6px; }
+.pd-dc-quote small { display: block; color: var(--faint); font-size: 11.5px; white-space: normal; }
+.pd-dc-tests { list-style: none; padding-left: 0 !important; }
+.pd-dc-tests li { display: flex; gap: 8px; }
+.pd-dc-tests .i { width: 14px; flex: none; text-align: center; font-weight: 700; }
+.pd-dc-tests .ok .i { color: var(--ok); }
+.pd-dc-tests .warn .i { color: var(--warn); }
+.pd-dc-files { font: 12px "JetBrains Mono", ui-monospace, monospace; color: var(--ink-2); display: grid; gap: 2px; }
+.pd-dc-files > div { display: grid; grid-template-columns: 1fr auto auto; gap: 12px; }
+.pd-dc-files span:first-child { overflow-wrap: anywhere; }
+.pd-dc .acts > .m { color: var(--muted); font-size: 12px; align-self: center; }
+@media (max-width: 720px) { .pd-dc-row { grid-template-columns: 1fr; } }
+
+/* A prototype's or a reproduction's shots, in pairs (#407), and comparing them. */
+.pd-pairs { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 8px; }
+.pd-pair { display: flex; align-items: center; gap: 6px; padding: 6px 8px; border: 1px solid var(--rule); border-radius: 8px; background: var(--bg); cursor: zoom-in; font: inherit; color: inherit; }
+.pd-pair:hover, .pd-pair:focus-visible { border-color: var(--lin); }
+.pd-pair figure { margin: 0; display: grid; gap: 2px; justify-items: start; }
+.pd-pair img { width: 96px; height: 60px; object-fit: cover; object-position: top left; border-radius: 4px; border: 1px solid var(--rule); display: block; }
+.pd-pair figcaption { font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; font-weight: 600; color: var(--muted); }
+.pd-pair .after figcaption { color: var(--ok); }
+.pd-pair .arr { color: var(--faint); font-size: 13px; }
+.cmp { position: fixed; inset: 0; background: #0B0D14; z-index: 60; display: flex; flex-direction: column; color: #E4E7F0; }
+.cmp-bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 10px 16px; }
+.cmp-bar .sp { flex: 1; }
+.cmp-bar .kb { color: #868DA3; font-size: 12px; }
+.cmp-bar button { background: #232A3E; color: #E4E7F0; border: 0; border-radius: 6px; padding: 4px 10px; cursor: pointer; font: inherit; font-size: 13px; }
+.cmp-bar button[aria-pressed="true"] { background: #6383E8; }
+.cmp-stage { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 0 16px 16px; min-height: 0; }
+.cmp-stage.one { grid-template-columns: 1fr; }
+.cmp-side { display: flex; flex-direction: column; min-height: 0; }
+.cmp-side .h { color: #B4BACC; font-size: 12.5px; padding: 4px 0 6px; }
+.cmp-side .h b { text-transform: uppercase; font-size: 11px; letter-spacing: .05em; margin-right: 6px; color: #868DA3; }
+.cmp-side.after .h b { color: #78B871; }
+.cmp-side img { min-height: 0; max-height: 100%; max-width: 100%; object-fit: contain; object-position: top left; border-radius: 6px; align-self: flex-start; }
+@media (max-width: 720px) { .cmp-stage { grid-template-columns: 1fr; } }
+
 /* Waiting on the person (#404): when it expires, and Cerrar pedido. */
 .pd-now .pd-exp { color: var(--muted); font-size: 12.5px; margin-top: 6px; }
 .pd-close { margin-top: 10px; }

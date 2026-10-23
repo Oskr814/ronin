@@ -35,7 +35,10 @@ const PATCH = 'diff --git a/src/carrito.ts b/src/carrito.ts\n@@ -1 +1 @@\n-  ret
 const WAITING = {
   ...DETAIL, ...row(8, 'awaiting-dev', { waitsOn: 'team', prototypes: 1 }), bug: null, issue: null,
   verdict: { kind: 'minor', proposal: 'El total se ve en negrita.', summary: 'OrdersPage.tsx', at: at(290) },
-  prototypes: [{ round: 1, summary: 'Agrega font-bold a la columna.', patch: 'p1.patch', messageId: 2, at: at(100) }],
+  prototypes: [{ round: 1, summary: 'Agrega font-bold a la columna.', patch: 'p1.patch', messageId: 3, at: at(100),
+    team: { changes: ['Backoffice: el total de la columna en negrita.'], tests: [{ ok: true, text: '12 tests de pedidos, en verde' }, { ok: false, text: 'El e2e no se corrió: no hay navegador.' }], decide: ['¿También en el PDF del pedido?'], risks: ['Ninguno visible.'] } }],
+  messages: [...DETAIL.messages, message(3, 'ronin', 'Listo el prototipo.', 100, { images: ['p1-antes-1.png', 'p1-despues-1.png'], captions: ['Antes: El total en texto normal.', 'Después: El total en negrita.'] })],
+  scope: { files: [{ path: 'apps/backoffice/src/Orders.tsx', add: 2, del: 1 }, { path: 'apps/backoffice/src/Orders.test.tsx', add: 5, del: 0 }], areas: ['backoffice'], add: 7, del: 1 },
   devDecision: null,
 };
 const decided: unknown[] = [];
@@ -146,10 +149,21 @@ describe('Pedidos, in React', () => {
   });
 
   it('a prototype the person approved waits for a dev, who decides it from Ahora (#353)', async () => {
-    show(<Request n={8} />);
-    expect(await screen.findByText('Espera que el equipo decida si ronin hace el cambio')).toBeTruthy();
+    const { container } = show(<Request n={8} />);
+    expect(await screen.findByText('¿Hace ronin este cambio?')).toBeTruthy();
+    expect(container.querySelector('.pd-head .chip')?.textContent).toBe('Decidir si se hace');
     expect(screen.getByText('El total se ve en negrita.')).toBeTruthy();
-    expect(screen.getByText('Agrega font-bold a la columna.')).toBeTruthy();
+    // What to decide, and one line of scope and tests; the rest under Detalles (#406).
+    expect(screen.getByText('¿También en el PDF del pedido?')).toBeTruthy();
+    expect(container.querySelector('.pd-dc-sum')?.textContent).toBe('backoffice2 archivos +7 −1·✓ 1 prueba! 1 sin correr o en rojo');
+    expect(container.querySelector('.pd-dc-more')?.textContent).toContain('El e2e no se corrió');
+    // Its shots in a pair, compared at full size (#407).
+    fireEvent.click(container.querySelector('.pd-pair')!);
+    expect(document.querySelector('.cmp .cmp-side.after')?.textContent).toBe('DespuésEl total en negrita.');
+    fireEvent.click(screen.getByRole('button', { name: 'Después' }));
+    expect(document.querySelectorAll('.cmp .cmp-side')).toHaveLength(1);
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(document.querySelector('.cmp')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Aprobar y desplegar' }));
     expect(screen.getByText(/lo aprueba a tu nombre/)).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Volver' }));

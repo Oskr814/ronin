@@ -15,6 +15,7 @@ import { agentCloneAt } from '@platform/git/worktree.js';
 import { worktreeLock } from '@platform/workers/worktree-lock.js';
 import { host } from '@platform/host/host.js';
 import { requestImagePath, type PortalRequest } from './requests.js';
+import { parseTeamNotes, type TeamNotes } from './team-notes.js';
 
 
 // A run of an agent on the app, brought up from the base branch in a
@@ -81,7 +82,7 @@ export interface PrototypeImage {
   nota?: string;
 }
 
-export type PrototypeOutput = { resumen: string; mensaje?: string; antes: PrototypeImage[]; despues: PrototypeImage[] } | { error: string };
+export type PrototypeOutput = { resumen: string; mensaje?: string; equipo?: TeamNotes; antes: PrototypeImage[]; despues: PrototypeImage[] } | { error: string };
 
 const MAX_IMAGES = 3;
 
@@ -107,7 +108,8 @@ export function parsePrototypeResult(raw: string, outDir: string): PrototypeOutp
   if (after.length === 0) throw new Error('el resultado no trae ninguna imagen del después');
   const summary = typeof obj.resumen === 'string' && obj.resumen.trim() ? obj.resumen.trim().slice(0, 2_000) : 'Prototipo del cambio pedido.';
   const mensaje = typeof obj.mensaje === 'string' && obj.mensaje.trim() ? obj.mensaje.trim().slice(0, 2_000) : undefined;
-  return { resumen: summary, ...(mensaje ? { mensaje } : {}), antes: images(obj.antes, outDir), despues: after };
+  const equipo = parseTeamNotes(obj.equipo);
+  return { resumen: summary, ...(mensaje ? { mensaje } : {}), ...(equipo ? { equipo } : {}), antes: images(obj.antes, outDir), despues: after };
 }
 
 // A shot ready to deliver: always an image file (an HTML after is rendered),
@@ -121,6 +123,8 @@ export interface PrototypeShot {
 export interface PrototypeDraft {
   appName: string;
   resumen: string;
+  // The same for the dev who decides, in parts (#406).
+  team?: TeamNotes;
   // What the agent wrote for whoever asked, when the task asks for it (the
   // request portal).
   mensaje?: string;
@@ -319,6 +323,7 @@ export function makePrototype<T>(target: PrototypeTarget, deliver: (draft: Proto
     return deliver({
       appName: run.appName,
       resumen: output.resumen,
+      ...(output.equipo ? { team: output.equipo } : {}),
       ...(output.mensaje ? { mensaje: output.mensaje } : {}),
       ...shots,
       patch: await run.diff(),

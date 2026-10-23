@@ -28,9 +28,15 @@ La app corre desde este checkout con datos de seed desechables, que puedes cambi
    ```json
    {"mensaje": "<para quien lo pidió: de una a tres oraciones cortas sobre qué cambia en el después y dónde mirar>",
     "resumen": "<para el equipo, en español, técnico: qué cambia el borrador, los archivos, y lo que haya que decidir o revisar antes de sacarlo>",
+    "equipo": {"cambios": ["<lo que cambia, una línea por área, p. ej. «API: …», «Backoffice: …»>"],
+               "pruebas": [{"ok": true, "texto": "<qué corriste y cómo salió, p. ej. «40 tests del módulo, en verde»>"}, {"ok": false, "texto": "<lo que no pudiste correr o no pasó, y por qué>"}],
+               "decidir": ["<lo que el dev tiene que decidir antes de aprobarlo, una pregunta o consecuencia por línea; vacío si no hay nada>"],
+               "riesgos": ["<qué podría salir mal o cambiarle a alguien, una línea cada uno>"]},
     "antes": [{"imagen": "<ruta relativa a la carpeta de salida, p. ej. admin-desktop/antes-1.png>", "nota": "<una línea de leyenda>"}],
     "despues": [{"imagen": "…", "nota": "…"}]}
    ```
+
+   `"equipo"` es lo mismo que `"resumen"`, partido para quien decide si se hace: líneas cortas, en español, sin repetir el resumen entero. En `"pruebas"`, todo lo que no pudiste correr va con `"ok": false` y dice por qué. En `"decidir"`, solo lo que de verdad cambia la decisión.
 
    La ruta de cada imagen empieza con el nombre de su navegador, que es la carpeta donde ese navegador guarda sus capturas. Si no puedes hacer un prototipo que valga (la pantalla no existe en esta app, o el cambio resulta no ser chico), escribe en cambio `{"error": "<por qué, en español simple, una oración>"}`.
 

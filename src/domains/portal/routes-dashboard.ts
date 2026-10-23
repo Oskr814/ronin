@@ -5,7 +5,7 @@ import { adminsOnly, anyObject, jsonBody, onError, onlyJson } from '@platform/ht
 import type { DashboardEnv } from '../access/http.js';
 import { sees, type Access } from '../access/access.js';
 import { HISTORY_DAYS } from '../runs/data.js';
-import { requestDetail, requestImage, requestPatch, requestRow } from './board.js';
+import { decisionScope, requestDetail, requestImage, requestPatch, requestRow } from './board.js';
 import { createAccount, editAccount, portalAdminView, sendAccountLink, type PortalAdminContext } from './admin.js';
 import { refusal, visibleRepos, visibleRuns } from '../access/visible.js';
 import { missingPortalConfig } from './http.js';
@@ -56,7 +56,7 @@ export function requestsRoutes() {
       // Someone of the team opened it: the person's answer is seen.
       if (request.personReplied) await seenByTeam(request.number);
       const users = new Map((await listUsers()).map((u) => [u.id, u]));
-      return c.json(requestDetail(request, users.get(request.userId), await visibleRepos(c.env.access), await visibleRuns(c.env.access, HISTORY_DAYS)), 200);
+      return c.json(requestDetail(request, users.get(request.userId), await visibleRepos(c.env.access), await visibleRuns(c.env.access, HISTORY_DAYS), await decisionScope(request)), 200);
     })
     .get('/:n/img/:file', async (c) => {
       const request = await visibleRequest(c.env.access, c.req.param('n'));
@@ -83,7 +83,7 @@ export function requestsRoutes() {
       if (text.length > TEXT_MAX) return c.json({ error: `El mensaje puede tener hasta ${TEXT_MAX} caracteres.` }, 400);
       const written = await writeToPerson(request.number, { text, images: parseImages(body.images), by: c.env.session.login });
       const users = new Map((await listUsers()).map((u) => [u.id, u]));
-      return c.json(requestDetail(written, users.get(written.userId), await visibleRepos(c.env.access), await visibleRuns(c.env.access, HISTORY_DAYS)), 200);
+      return c.json(requestDetail(written, users.get(written.userId), await visibleRepos(c.env.access), await visibleRuns(c.env.access, HISTORY_DAYS), await decisionScope(written)), 200);
     })
     // As writing to the person: the repo's actions.
     .post('/:n/close', onlyJson, jsonBody(16 * 1024, 'falta el motivo'), anyObject(), async (c) => {
@@ -93,7 +93,7 @@ export function requestsRoutes() {
       if (refused) return refused;
       const closed = await teamClose(request.number, { reason: parseCloseReason(c.req.valid('json')), by: c.env.session.login });
       const users = new Map((await listUsers()).map((u) => [u.id, u]));
-      return c.json(requestDetail(closed, users.get(closed.userId), await visibleRepos(c.env.access), await visibleRuns(c.env.access, HISTORY_DAYS)), 200);
+      return c.json(requestDetail(closed, users.get(closed.userId), await visibleRepos(c.env.access), await visibleRuns(c.env.access, HISTORY_DAYS), await decisionScope(closed)), 200);
     })
     // Making it or not is the repo's actions; deploying it without anyone
     // else's review, its deploys too.
@@ -109,7 +109,7 @@ export function requestsRoutes() {
       await devDecide(request.number, { ...input, by: session.login, ...(input.decision === 'deploy' ? { token: session.token } : {}) });
       const users = new Map((await listUsers()).map((u) => [u.id, u]));
       const decided = (await getRequest(request.number))!;
-      return c.json(requestDetail(decided, users.get(decided.userId), await visibleRepos(c.env.access), await visibleRuns(c.env.access, HISTORY_DAYS)), 200);
+      return c.json(requestDetail(decided, users.get(decided.userId), await visibleRepos(c.env.access), await visibleRuns(c.env.access, HISTORY_DAYS), await decisionScope(decided)), 200);
     });
 }
 

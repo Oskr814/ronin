@@ -5,6 +5,8 @@ import { useShell } from '@apps/dashboard/src/shell/hooks.js';
 import { when } from '@apps/dashboard/src/lib/format.js';
 import { useViewState } from '@apps/dashboard/src/lib/view-state.js';
 import { firstName, imagePath, REPRODUCTIONS, type Detail, type Message, type Reproduction } from './model.js';
+import { pairsOf } from '@ui/components/Compare.js';
+import { Pairs } from './Pairs.js';
 import { TeamWrite } from './TeamWrite.js';
 
 // What a request's tabs do on the page around them: show another tab, open
@@ -20,6 +22,9 @@ export const useActions = () => useContext(ActionsContext);
 export function Thumbs({ d, m }: { d: Detail; m: Message }) {
   const actions = useActions();
   if (!m.images.length) return null;
+  // A prototype's or a reproduction's: in pairs, to compare (#407).
+  const pairs = pairsOf(m, (file) => imagePath(d.number, file));
+  if (pairs) return <Pairs pairs={pairs} />;
   return (
     <div className="pd-thumbs">{m.images.map((file, i) => (
       <figure key={file}><button onClick={() => actions.zoom(file)}><img src={imagePath(d.number, file)} alt={m.captions?.[i] ?? 'Imagen'} loading="lazy" /></button>{m.captions?.[i] && <figcaption>{m.captions[i].split(':')[0]}</figcaption>}</figure>
