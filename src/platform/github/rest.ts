@@ -1,4 +1,4 @@
-import { timed } from '../timing.js';
+import { timedGithub } from '../timing.js';
 
 // GitHub's REST API, as ronin calls it everywhere: its headers, a timeout,
 // and the time it takes counted as Server-Timing's github (#235, stage 1).
@@ -19,7 +19,7 @@ export interface GithubRequest {
 // `path`: from the API's root, like /repos/<owner>/<name>.
 export function githubFetch(path: string, req: GithubRequest = {}): Promise<Response> {
   const authorization = req.authorization ?? (req.token ? `Bearer ${req.token}` : undefined);
-  return timed('github', () => fetch(`${GITHUB_API}${path}`, {
+  return timedGithub(() => fetch(`${GITHUB_API}${path}`, {
     method: req.method ?? 'GET',
     headers: {
       Accept: 'application/vnd.github+json',

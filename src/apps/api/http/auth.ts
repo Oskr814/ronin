@@ -1,7 +1,7 @@
 import { createCipheriv, createDecipheriv, hkdfSync, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { log } from '@platform/logger.js';
-import { timed } from '@platform/timing.js';
+import { timedGithub } from '@platform/timing.js';
 import { parseCookies } from '@platform/http/cookies.js';
 import type { Session } from '@domains/access/http.js';
 import { githubFetch } from '@platform/github/rest.js';
@@ -125,7 +125,7 @@ export interface GithubOAuth {
 
 export const githubOAuth: GithubOAuth = {
   async exchangeCode(code, config) {
-    const response = await timed('github', () => fetch('https://github.com/login/oauth/access_token', {
+    const response = await timedGithub(() => fetch('https://github.com/login/oauth/access_token', {
       method: 'POST',
       headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
       body: JSON.stringify({ client_id: config.githubClientId, client_secret: config.githubClientSecret, code, redirect_uri: callbackUrl(config) }),

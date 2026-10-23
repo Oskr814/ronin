@@ -63,9 +63,9 @@ El proceso no recarga `dist/` solo. Reiniciarlo no corta los handlers que estén
 
 ronin mide cada request de su API y cada tick:
 
-- **En el navegador:** cada respuesta de la API trae la cabecera `Server-Timing` con el total y el tiempo en GitHub. En las herramientas de desarrollo aparece en la pestaña *Timing* del request.
+- **En el navegador:** cada respuesta de la API trae la cabecera `Server-Timing` con el total y el tiempo en GitHub, también por operación (`github:getDiscussion`, por ejemplo: la función de ronin que hizo la llamada). En las herramientas de desarrollo aparece en la pestaña *Timing* del request.
 - **En el log:** un request que pasa de `SLOW_REQUEST_MS` (500 ms por defecto) deja una línea `slow_request` con su ruta, su estado y en qué se fue el tiempo. Cada `tick_complete` trae lo que tardó cada paso, el descubrimiento, los trabajos y el tiempo en GitHub.
-- **El resumen:** cada 10 minutos el servidor guarda un resumen por ruta en `logs/timings/<día>.jsonl`. `pnpm timings [días]` arma la tabla de los últimos días (7 por defecto), con las rutas y los ticks:
+- **El resumen:** cada 10 minutos el servidor guarda un resumen por ruta en `logs/timings/<día>.jsonl`. `pnpm timings [días]` arma la tabla de los últimos días (7 por defecto), con las rutas y los ticks, y en cada uno las operaciones de GitHub que más tiempo se llevan:
 
 ```bash
 pnpm timings 7

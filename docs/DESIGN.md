@@ -1636,16 +1636,16 @@ Cuánto se aprovecha el plan de cada cuenta de Claude (19.11), contando todo lo 
 
 ### 21. Tiempos (#235, etapa 1)
 
-Antes de optimizar nada se mide. `platform/timing.ts` abre una medición (`measure`, un `AsyncLocalStorage`) y cualquier código que corre adentro suma sus tramos con `timed(nombre, fn)` sin que se lo pasen. Hoy el único tramo es `github`: las llamadas con `gh` de `platform/github/github.ts` y las de `fetch` del tablero (como la persona, sus permisos, los usuarios). Los tramos que corren a la vez se suman, así que el de GitHub dice cuánto se gastó ahí, no cuánto se esperó.
+Antes de optimizar nada se mide. `platform/timing.ts` abre una medición (`measure`, un `AsyncLocalStorage`) y cualquier código que corre adentro suma sus tramos con `timed(nombre, fn)` sin que se lo pasen. El tramo `github` suma las llamadas con `gh` de `platform/github/github.ts` y las de `fetch` del tablero (como la persona, sus permisos, los usuarios). Desde #370, cada llamada cuenta también en `github:<operación>`, con la función de ronin que la hizo (`listAllOpenRoninPrs`, `getIssueBody`…). La función sale del stack (`githubCaller`, salteando los envoltorios `gh`, `ghApi`, `githubFetch`…), así que ninguna llamada tiene que nombrarse. Los tramos que corren a la vez se suman, así que el de GitHub dice cuánto se gastó ahí, no cuánto se esperó.
 
 - **Cada request de `/api/*`** (`apps/api/http/timing.ts`, en los dos listeners):
   - responde con `Server-Timing`, con el total hasta la cabecera y cada tramo con sus llamadas;
   - si pasa de `SLOW_REQUEST_MS` (500), deja una línea `slow_request` con la ruta (sin números ni ids: `/api/portal/requests/:n/interview`), el estado y los tramos.
 
   Quedan afuera los archivos de la web y los streams en vivo (`text/event-stream`).
-- **Resumen por ruta:** cada 10 minutos, una línea por ruta en `logs/timings/<día>.jsonl` con la cantidad, los errores 5xx, el total, el máximo, el tiempo en GitHub y cuántos requests cayeron en cada tramo (`≤25, 50, 100, 250, 500 ms, 1, 2.5, 5, 10 s` y más). Se guardan tramos y no percentiles para poder juntar ventanas sin perder exactitud. Un reinicio pierde a lo sumo los últimos 10 minutos.
-- **El tick:** `tick_complete` (y `event_complete`) suma `steps` (cuánto tardó cada paso: `assign`, `sweeps`, `auto-merge`, `portal`, `deploys`, `nightly`), `discoveryMs`, `jobsMs`, `githubMs` y `githubCalls`.
-- **`pnpm timings [días]`** (`scripts/timings.ts`, la cuenta en `platform/timing-report.ts`) arma la tabla: por ruta, la cantidad, el promedio, los percentiles por tramo, el máximo y GitHub por request; por repo, los ticks con su p50, p90 y máximo y la mediana de cada paso. Lee también los `tick_complete` de antes de esta medición, que solo traen el total.
+- **Resumen por ruta:** cada 10 minutos, una línea por ruta en `logs/timings/<día>.jsonl` con la cantidad, los errores 5xx, el total, el máximo, el tiempo en GitHub, el de cada operación (`githubOps`) y cuántos requests cayeron en cada tramo (`≤25, 50, 100, 250, 500 ms, 1, 2.5, 5, 10 s` y más). Se guardan tramos y no percentiles para poder juntar ventanas sin perder exactitud. Un reinicio pierde a lo sumo los últimos 10 minutos.
+- **El tick:** `tick_complete` (y `event_complete`) suma `steps` (cuánto tardó cada paso: `assign`, `sweeps`, `auto-merge`, `portal`, `deploys`, `nightly`), `discoveryMs`, `jobsMs`, `githubMs`, `githubCalls` y `githubOps` (el tiempo y las llamadas de cada operación).
+- **`pnpm timings [días]`** (`scripts/timings.ts`, la cuenta en `platform/timing-report.ts`) arma la tabla: por ruta, la cantidad, el promedio, los percentiles por tramo, el máximo y GitHub por request, con sus tres operaciones más pesadas; por repo, los ticks con su p50, p90 y máximo, la mediana de cada paso y GitHub por operación (el promedio por tick de su tiempo y sus llamadas, las 15 más pesadas). Lee también los `tick_complete` de antes de esta medición, que solo traen el total.
 
 ### 22. Instalación con Docker Compose (#235, etapa 5)
 

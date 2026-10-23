@@ -69,7 +69,7 @@ import { concurrencyFor, config, LABEL_DIRECT_ISSUE, LABEL_MANAGED, LABEL_STACK_
 import { activeRepo, withActiveRepo } from '@platform/agents/repo-context.js';
 import { loadRepos } from '@platform/config/repos.js';
 import { log } from '@platform/logger.js';
-import { measure, type Measurement } from '@platform/timing.js';
+import { GITHUB_SPAN, githubOpsOf, measure, type Measurement } from '@platform/timing.js';
 import { host } from '@platform/host/host.js';
 
 
@@ -1292,10 +1292,10 @@ async function tickRepo(scope: Scope | undefined, measurement: Measurement): Pro
     // waiting on sequential `claude -p` runs (an argument for parallelizing
     // them) or on something else entirely.
     const { agentRuns, agentRunsDurationMs } = getTickAgentMetrics();
-    const github = measurement.spans.get('github');
+    const github = measurement.spans.get(GITHUB_SPAN);
     log.metric(scope ? 'event_complete' : 'tick_complete', {
       durationMs: Date.now() - start, issuesInProgress: inProgress.length, agentRuns, agentRunsDurationMs, repo: activeRepo().productRepo,
-      steps, discoveryMs, jobsMs, githubMs: Math.round(github?.ms ?? 0), githubCalls: github?.count ?? 0,
+      steps, discoveryMs, jobsMs, githubMs: Math.round(github?.ms ?? 0), githubCalls: github?.count ?? 0, githubOps: githubOpsOf(measurement.spans),
     });
   }
 }

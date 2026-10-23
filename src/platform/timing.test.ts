@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { BUCKETS, currentMeasurement, measure, percentile, routeOf, RouteTimings, serverTiming, timed, timingsPath, writeTimings } from './timing.js';
+import { BUCKETS, currentMeasurement, githubCaller, githubOpsOf, measure, percentile, routeOf, RouteTimings, serverTiming, timed, timedGithub, timingsPath, writeTimings } from './timing.js';
 import { localDay } from './agents/run-files.js';
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -81,3 +81,61 @@ describe('the routes', () => {
     expect(percentile(buckets, 0.99)).toBe(Infinity);
   });
 });
+
+// #370: each GitHub call also counts under the ronin function that made it.
+describe('GitHub, by operation', () => {
+  // Like github.ts: a wrapper every call goes through, and the functions
+  // that use it, before and after an await of their own.
+  async function gh(): Promise<void> {
+    await timedGithub(() => wait(1));
+  }
+  async function listAllOpenRoninPrs(): Promise<void> {
+    await gh();
+  }
+  async function getIssueBody(): Promise<void> {
+    await wait(1);
+    await gh();
+    await gh();
+  }
+
+  it('counts each call in github and under the function that made it, not the wrapper', async () => {
+    const spans = await measure(async (m) => {
+      await listAllOpenRoninPrs();
+      await getIssueBody();
+      return m.spans;
+    });
+    expect(spans.get('github')?.count).toBe(3);
+    expect(githubOpsOf(spans)).toEqual({
+      listAllOpenRoninPrs: { ms: expect.any(Number), count: 1 },
+      getIssueBody: { ms: expect.any(Number), count: 2 },
+    });
+  });
+
+  it('reads the name off the stack, skipping wrappers, callbacks and the runtime', () => {
+    const stack = [
+      'Error',
+      '    at githubCaller (file:///app/dist/platform/timing.js:60:20)',
+      '    at timedGithub (file:///app/dist/platform/timing.js:70:40)',
+      '    at ghApi (file:///app/dist/platform/github/github.js:36:30)',
+      '    at file:///app/dist/platform/github/github.js:500:10',
+      '    at Array.map (<anonymous>)',
+      '    at async Object.listReviewComments (file:///app/dist/platform/github/github.js:1160:5)',
+      '    at async findUnprocessedMentions (file:///app/dist/domains/commands/mentions.js:330:20)',
+    ].join('\n');
+    expect(githubCaller(stack)).toBe('listReviewComments');
+    expect(githubCaller('Error\n    at gh (x.js:1:1)\n    at Module.listOpenPrHeads (github.js:578:26)')).toBe('listOpenPrHeads');
+    expect(githubCaller('Error\n    at gh (x.js:1:1)')).toBe('desconocida');
+  });
+
+  it('sums the operations of each route by window', () => {
+    const t = new RouteTimings();
+    const spans = (ms: number) => new Map([['github', { ms, count: 1 }], ['github:getDiscussion', { ms, count: 1 }]]);
+    t.record({ listener: 'tablero', method: 'GET', route: '/api/items/:id/detail', status: 200, ms: 300, spans: spans(200) });
+    t.record({ listener: 'tablero', method: 'GET', route: '/api/items/:id/detail', status: 200, ms: 500, spans: spans(400) });
+    t.record({ listener: 'tablero', method: 'GET', route: '/api/snapshot', status: 200, ms: 5, spans: new Map() });
+    const [detail, snapshot] = t.flush();
+    expect(detail.githubOps).toEqual({ getDiscussion: { ms: 600, count: 2 } });
+    expect(snapshot.githubOps).toBeUndefined();
+  });
+});
+

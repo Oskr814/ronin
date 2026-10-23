@@ -39,6 +39,7 @@ else {
   console.log(`  ${pad('listener', 9)} ${pad('método', 6)} ${pad('ruta', 52)} ${lpad('n', 6)} ${lpad('prom.', 8)} ${lpad('p50', 8)} ${lpad('p90', 8)} ${lpad('p99', 8)} ${lpad('máx', 8)} ${lpad('GitHub', 8)} ${lpad('llam.', 5)} ${lpad('5xx', 4)}`);
   for (const r of routes) {
     console.log(`  ${pad(r.listener, 9)} ${pad(r.method, 6)} ${pad(r.route.slice(0, 52), 52)} ${lpad(r.count, 6)} ${lpad(ms(r.avgMs), 8)} ${lpad(`≤${ms(r.p50)}`, 8)} ${lpad(`≤${ms(r.p90)}`, 8)} ${lpad(`≤${ms(r.p99)}`, 8)} ${lpad(ms(r.maxMs), 8)} ${lpad(ms(r.githubMs), 8)} ${lpad(r.githubCalls.toFixed(1), 5)} ${lpad(r.errors, 4)}`);
+    if (r.githubOps.length) console.log(`    ${' '.repeat(16)}GitHub: ${r.githubOps.slice(0, 3).map((o) => `${o.name} ${ms(o.ms)} (${o.calls.toFixed(1)})`).join(' · ')}`);
   }
 }
 
@@ -50,5 +51,10 @@ for (const t of summaries) {
   if (t.discoveryMs !== null) console.log(`    descubrimiento ${ms(t.discoveryMs)} · trabajos ${ms(t.jobsMs)} · GitHub ${ms(t.githubMs)} en ${t.githubCalls} llamadas`);
   const steps = Object.entries(t.steps).map(([name, v]) => `${name} ${ms(v)}`).join(' · ');
   if (steps) console.log(`    pasos: ${steps}`);
+  // Per tick on average: what each operation spent and how many calls.
+  if (t.githubOps.length) {
+    console.log('    GitHub por operación, por tick (tiempo · llamadas):');
+    for (const o of t.githubOps.slice(0, 15)) console.log(`      ${pad(o.name, 36)} ${lpad(ms(o.ms), 8)} ${lpad(o.calls.toFixed(1), 6)}`);
+  }
 }
 console.log('');
