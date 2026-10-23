@@ -59,7 +59,8 @@ Ver [Cuándo se bloquea](/ronin/referencia/bloqueos/).
 |---|---|---|
 | `WEBHOOK_SECRET` | — | El secreto de los webhooks de GitHub. Sin él, no hay servidor. |
 | `SERVER_PORT` | `3939` | El listener público, el de los webhooks y el portal. |
-| `WEBHOOK_DEBOUNCE_MS` | `1000` | Cuánto esperar para juntar una ráfaga de eventos. |
+| `WEBHOOK_DEBOUNCE_MS` | `1000` | Cuánto esperar para juntar una ráfaga de eventos sobre el mismo issue o PR: un comentario, un comando, una aprobación. |
+| `WEBHOOK_BURST_DEBOUNCE_MS` | `15000` | Lo mismo para los eventos que llegan en ráfaga (`check_suite`, `workflow_run`). Si llega un comentario sobre el mismo PR, se lanza con la espera corta. |
 | `EVENT_HANDLER_TIMEOUT_MINUTES` | `120` | Tope de un handler de webhook entero. |
 | `SLOW_REQUEST_MS` | `500` | Desde cuántos ms un request de la API queda en el log como lento. |
 | `DASHBOARD_GITHUB_CLIENT_ID`, `DASHBOARD_GITHUB_CLIENT_SECRET` | — | La OAuth App del tablero. |

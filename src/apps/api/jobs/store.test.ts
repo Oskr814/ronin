@@ -2,7 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import { sql } from 'kysely';
 import { setDb, type Db } from '@platform/db/db.js';
 import { TEST_DATABASE_URL, testDb } from '@platform/db/testing.js';
-import { claimNext, enqueue, finish, heartbeat, lastQueuedOrStarted, listJobs, pruneFinished, reapExpired } from './store.js';
+import { claimNext, enqueue, enqueueEvent, finish, heartbeat, lastQueuedOrStarted, listJobs, pruneFinished, reapExpired } from './store.js';
 import { runOnce } from './runner.js';
 import { runAsJob } from './child.js';
 import { scheduleTick } from './scheduler.js';
@@ -18,6 +18,26 @@ describe.skipIf(!TEST_DATABASE_URL)('the job queue', () => {
   beforeEach(async () => {
     setDb(db);
     await db.deleteFrom('jobs').execute();
+  });
+
+  // #370: a burst about one PR, a run with every flow.
+  it('adds the flows of an event to the one already waiting for the same resources', async () => {
+    const event = (flows: string[], resources = ['pr-12']) => ({ repo: 'acme/app', payload: { repo: 'acme/app', scope: { flows, resources } }, dedupeKey: `event:${JSON.stringify(['acme/app', resources])}` });
+    const first = await enqueueEvent(db, event(['auto-merge']));
+    const second = await enqueueEvent(db, event(['issues', 'auto-merge']));
+    expect(first.joined).toBe(false);
+    expect(second).toEqual({ id: first.id, joined: true });
+    expect((await enqueueEvent(db, event(['review'], ['pr-13']))).joined).toBe(false);
+
+    const queued = await listJobs(db);
+    expect(queued).toHaveLength(2);
+    const pr12 = queued.find((j) => j.id === first.id)!;
+    expect((pr12.payload as { scope: { flows: string[] } }).scope.flows).toEqual(['auto-merge', 'issues']);
+
+    // Once it's running, a new one for that PR is queued apart.
+    while (await claimNext(db, 'event', 5, 'r'));
+    expect((await enqueueEvent(db, event(['portal']))).joined).toBe(false);
+    expect(await listJobs(db)).toHaveLength(3);
   });
 
   it('never queues twice what has the same key, but does once the first one left the queue', async () => {

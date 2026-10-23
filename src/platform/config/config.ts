@@ -162,6 +162,9 @@ export const config = {
   // lands after the window is coalesced anyway, by handler.ts keeping at
   // most one handler waiting per scope.
   webhookDebounceMs: Number(process.env.WEBHOOK_DEBOUNCE_MS ?? 1000),
+  // For the deliveries that come in bursts, check_suite and workflow_run
+  // (#370): mostly 5 to 15 s apart, one per workflow.
+  webhookBurstDebounceMs: Number(process.env.WEBHOOK_BURST_DEBOUNCE_MS ?? 15000),
   // The dashboard (#65): the web app and the rest of the API, on a second
   // listener that only the tailnet reaches (127.0.0.1, published with
   // `tailscale serve` by scripts/setup-server-service.sh). Off unless the

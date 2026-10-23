@@ -9,57 +9,35 @@ import { config } from '@platform/config/config.js';
 import { loadRepos } from '@platform/config/repos.js';
 import { launchWorker } from '@platform/workers/worker-launch.js';
 import { getDb } from '@platform/db/db.js';
-import { enqueue } from '../jobs/store.js';
-import { verifySignature, scopeForEvent, ackTarget, type EventPayload } from './events.js';
+import { enqueueEvent } from '../jobs/store.js';
+import { EventDebouncer } from './debounce.js';
+import { verifySignature, scopeForEvent, ackTarget, comesInBursts, type EventPayload } from './events.js';
 import { addAckReaction } from '@platform/github/github.js';
 import { log } from '@platform/logger.js';
-import type { Scope } from '../tick/tick.js';
 import type { EventHandlerRequest } from './handler.js';
 
-// Open debounce windows, one per repo + resources: what's been asked of them
-// so far, and the timer that starts their handler.
-const pending = new Map<string, { repo: string; scope: Scope; receivedAt: number; timer: NodeJS.Timeout }>();
-
-// Coalesces a burst of deliveries about the same thing (a review's several
-// inline comments, a few check suites finishing together) into one handler,
-// with every flow any of them asked for. Different PRs or issues get their
-// own handlers, at once.
-function scheduleHandler(repo: string, scope: Scope): void {
-  const key = JSON.stringify([repo, [...scope.resources].sort()]);
-  const open = pending.get(key);
-  if (open) {
-    open.scope = { ...open.scope, flows: [...new Set([...open.scope.flows, ...scope.flows])] };
-    return;
-  }
-  const entry = {
-    repo,
-    scope,
-    receivedAt: Date.now(),
-    timer: setTimeout(() => {
-      pending.delete(key);
-      log.info(`webhook: atendiendo ${entry.scope.resources.join(', ')} en ${repo} (${entry.scope.flows.join(', ')})`);
-      const request: EventHandlerRequest = { repo, scope: entry.scope, receivedAt: entry.receivedAt };
-      startHandler(request).catch((error) => {
-        // The tick picks the event up anyway, just later.
-        log.error('webhook: no se pudo lanzar el handler', error);
-      });
-    }, config.webhookDebounceMs),
-  };
-  pending.set(key, entry);
-}
+// The debounce windows (debounce.ts): each one, once it closes, a handler.
+const debouncer = new EventDebouncer((repo, scope, receivedAt) => {
+  log.info(`webhook: atendiendo ${scope.resources.join(', ')} en ${repo} (${scope.flows.join(', ')})`);
+  startHandler({ repo, scope, receivedAt }).catch((error) => {
+    // The tick picks the event up anyway, just later.
+    log.error('webhook: no se pudo lanzar el handler', error);
+  });
+});
 
 // With DATABASE_URL (#235, stage 3), a job in the queue that the runner
-// starts (apps/api/jobs/runner.ts): one already queued for the same thing isn't
-// queued twice. Without it, its process right away, as before.
+// starts (apps/api/jobs/runner.ts): one already queued for the same issues
+// or PRs takes this one's flows instead of a second run being queued
+// (enqueueEvent, #370). Without it, its process right away, as before.
 async function startHandler(request: EventHandlerRequest): Promise<void> {
   const db = getDb();
   if (!db) {
     launchWorker('apps/api/webhooks/handler', request);
     return;
   }
-  const dedupeKey = `event:${JSON.stringify([request.repo, [...request.scope.flows].sort(), [...request.scope.resources].sort()])}`;
-  const id = await enqueue(db, 'event', { repo: request.repo, payload: request, dedupeKey });
-  if (!id) log.info(`webhook: ya hay uno en cola para ${request.scope.resources.join(', ')}, este no hace falta`);
+  const dedupeKey = `event:${JSON.stringify([request.repo, [...request.scope.resources].sort()])}`;
+  const { joined } = await enqueueEvent(db, { repo: request.repo, payload: request, dedupeKey });
+  if (joined) log.info(`webhook: ya había uno en cola para ${request.scope.resources.join(', ')}; se le suman ${request.scope.flows.join(', ')}`);
 }
 
 function readBody(req: IncomingMessage): Promise<Buffer> {
@@ -105,7 +83,7 @@ export async function handleGithubWebhook(req: IncomingMessage, res: ServerRespo
       const trackedRepos = repos.map((r) => r.productRepo);
       const target = typeof eventName === 'string' ? scopeForEvent(eventName, payload, trackedRepos, config.githubLogin) : null;
       if (target) {
-        scheduleHandler(target.repo, target.scope);
+        debouncer.schedule(target.repo, target.scope, comesInBursts(eventName as string) ? config.webhookBurstDebounceMs : config.webhookDebounceMs);
         // The "got it" on a mention, right away — not awaited: GitHub's
         // delivery doesn't wait on it, and a failure costs only the 👀.
         const ack = ackTarget(eventName as string, payload, config.githubLogin);
