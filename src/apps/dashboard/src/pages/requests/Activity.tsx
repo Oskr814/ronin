@@ -2,8 +2,9 @@ import type { ReactNode } from 'react';
 import { useShell } from '@apps/dashboard/src/shell/hooks.js';
 import { hhmm, when } from '@apps/dashboard/src/lib/format.js';
 import { Dot, RunCard, runTitle, typeName } from '@apps/dashboard/src/lib/runs.js';
-import { ago } from '@ui/time.js';
+import { ago, short, useNow } from '@ui/time.js';
 import { DevDecide } from './DevDecide.js';
+import { TeamClose } from './TeamClose.js';
 import { useActions, Interview, Thumbs } from './Docs.js';
 import { firstName, ICON, REPRODUCTIONS, STATUS, type Detail, type Entry, type RequestEvent } from './model.js';
 
@@ -13,6 +14,20 @@ import { firstName, ICON, REPRODUCTIONS, STATUS, type Detail, type Entry, type R
 const TEST: Record<string, string> = { red: 'test en rojo', green: 'test de rojo a verde', none: 'sin un test que falle' };
 const mailTo = (d: Detail, to: string) => (to === 'team' ? 'el equipo' : d.person);
 
+// When a request waiting on the person expires (#404), and its reminder.
+function Expiry({ d }: { d: Detail }) {
+  const now = useNow();
+  const e = d.expiry;
+  if (!e) return null;
+  const left = Date.parse(e.expiresAt) - now;
+  const whenLeft = left > 0 ? `en ${short(left)}` : 'en la próxima vuelta del tick';
+  const who = firstName(d.person);
+  const reminder = e.remindedAt ? ` Le llegó un recordatorio ${ago(e.remindedAt, now)}.` : e.remindAt ? ` Si no responde, le llega un recordatorio el ${when(e.remindAt)}.` : '';
+  return <div className="d pd-exp">{d.status === 'answered'
+    ? `Se cierra solo el ${when(e.expiresAt)} (${whenLeft}) si ${who} no escribe.`
+    : `Vence el ${when(e.expiresAt)} (${whenLeft}): sin respuesta, se cancela solo.${reminder}`}</div>;
+}
+
 // What it waits on now, and who has to do it.
 function Now({ d }: { d: Detail }) {
   const shell = useShell();
@@ -20,8 +35,9 @@ function Now({ d }: { d: Detail }) {
   const who = firstName(d.person);
   const running = d.runs.find((run) => run.state === 'running');
   const lastEvent = d.activity.entries.flatMap((e) => (e.type === 'event' ? [e.event] : [])).at(-1);
+  // Every card ends with when it expires and Cerrar pedido, where they apply (#404).
   const card = (cls: string, k: ReactNode, t: string, body: ReactNode = null, acts: ReactNode = null) => (
-    <div className={`pd-now ${cls}`}><div className="k">{k}</div><div className="t">{t}</div>{body}{acts && <div className="acts">{acts}</div>}</div>
+    <div className={`pd-now ${cls}`}><div className="k">{k}</div><div className="t">{t}</div>{body}<Expiry d={d} />{acts && <div className="acts">{acts}</div>}<TeamClose d={d} /></div>
   );
   const open = (number: number, label: string) => <button className="btn-s" onClick={() => shell.openItem(`${d.repo}#${number}`)}>{label}</button>;
   const desc = (text: string) => <div className="d">{text}</div>;
@@ -106,8 +122,11 @@ function shownEvent(d: Detail, e: RequestEvent): Shown {
     case 'issue': return ['ok', 'ok', e.team ? `Abrió el issue del equipo #${e.number}` : `Abrió el issue #${e.number} para ronin`, null];
     case 'pr': return ['ok', 'ok', `ronin abrió el PR #${e.number}, con ronin:auto-merge`, null];
     case 'pr-closed': return ['warn', 'crit', `El PR #${e.number} se cerró sin merge`, null];
-    case 'closed': return e.status === 'done' ? ['ok', 'ok', 'Se mergeó: sale en la próxima actualización', null] : e.status === 'resolved' ? ['ok', 'ok', 'El equipo cerró el issue como resuelto', null] : ['', 'crit', 'El equipo decidió no hacerlo por ahora', null];
+    case 'closed': return e.by ? ['', 'crit', `${e.by} cerró el pedido desde el tablero`, d.closeNote ? <div className="bx">{d.closeNote.text}</div> : null]
+      : e.status === 'done' ? ['ok', 'ok', 'Se mergeó: sale en la próxima actualización', null] : e.status === 'resolved' ? ['ok', 'ok', 'El equipo cerró el issue como resuelto', null] : ['', 'crit', 'El equipo decidió no hacerlo por ahora', null];
     case 'cancelled': return ['', 'person', `${who} lo canceló`, null];
+    case 'reminded': return ['', 'mail', `Recordatorio a ${who}: el pedido espera su respuesta`, null, true];
+    case 'expired': return ['', 'wait', e.answered ? 'Se cerró solo: nadie escribió después de la respuesta' : `Se canceló solo: ${who} no respondió a tiempo`, null];
     case 'deploy': return e.state === 'deployed' ? ['ok', 'ok', `Salió en ${e.tag}${e.prerelease ? ' (pre-release)' : ''}`, null] : e.state === 'failed' ? ['crit', 'crit', `Falló el despliegue de ${e.tag}`, null] : ['run', 'run', `Entró en el release ${e.tag}${e.prerelease ? ' (pre-release)' : ''}`, null];
     default: return ['', 'wait', (e as { kind: string }).kind, null];
   }

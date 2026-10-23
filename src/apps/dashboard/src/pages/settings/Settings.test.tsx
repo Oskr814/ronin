@@ -12,7 +12,7 @@ const notificaciones = [{ repo: 'acme/tienda', events: ['bloqueo'], chosen: true
 const PAGE = {
   admin: {
     me: { login: 'ana-dev', admin: true }, perfil: { name: 'Ana Dev', email: 'persona@gmail.com' }, notificaciones, notifyTo: 'equipo@example.com', linear: [],
-    valores: [setting('dashboard.sessionDays', 7), setting('dashboard.githubTtlSeconds', 60), setting('portal.dailyLimit', 8, { source: 'tablero', base: 5 }), setting('portal.sessionDays', 30)],
+    valores: [setting('dashboard.sessionDays', 7), setting('dashboard.githubTtlSeconds', 60), setting('portal.dailyLimit', 8, { source: 'tablero', base: 5 }), setting('portal.sessionDays', 30), setting('portal.remindHours', 12), setting('portal.expireHours', 24)],
     tareas: [], fixed: { previewPortRange: '20000-20999', runnerId: 'runner-1', githubLogin: 'ronin-bot' }, portal: { url: 'https://portal.example.com' }, dashboard: { url: '' },
   },
   member: { me: { login: 'beto-qa', admin: false }, perfil: {}, notificaciones, linear: [] },

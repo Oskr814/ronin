@@ -226,6 +226,48 @@ export function closedMail(request: PortalRequest, user: PortalUser, portalUrl: 
   };
 }
 
+// To the person, when a request still waits on them past PORTAL_REMIND_HOURS
+// (#404, expire.ts): once per wait, with when it's cancelled. `timezone`:
+// the team's clock, the one the person reads.
+export function reminderMail(request: PortalRequest, user: PortalUser, portalUrl: string, expiresAt: Date, timezone: string): Mail {
+  const first = user.name.split(/\s+/)[0] || user.name;
+  const what = `tu pedido P-${request.number} ("${request.title}")`;
+  const waiting = ({
+    asking: `ronin te hizo una pregunta sobre ${what} y todavía espera tu respuesta.`,
+    interviewing: `ronin te dejó unas preguntas sobre ${what} y todavía esperan tus respuestas.`,
+    confirming: `ronin te mostró lo que entendió de ${what} y espera que lo confirmes o lo corrijas.`,
+    proposed: `El prototipo de ${what} espera que lo apruebes, pidas un ajuste o lo pases al equipo.`,
+  } as Record<string, string>)[request.status] ?? `${what[0].toUpperCase()}${what.slice(1)} espera tu respuesta.`;
+  const at = new Intl.DateTimeFormat('es', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit', timeZone: timezone }).format(expiresAt);
+  const lines = [`Hola ${first},`, waiting, `Si no respondes, lo cancelamos el ${at}.`];
+  const url = requestUrl(portalUrl, request.number);
+  return {
+    to: user.email,
+    subject: `Tu pedido espera tu respuesta: ${request.title}`,
+    text: `${lines.join('\n\n')}\n\n${url}`,
+    html: html(lines.map(esc), { label: 'Ver el pedido', url }, portalUrl),
+  };
+}
+
+// To the person, when a request expired (#404): cancelled because they
+// didn't answer, or closed because nothing was left to do.
+export function expiredMail(request: PortalRequest, user: PortalUser, portalUrl: string, hours: number, answered: boolean): Mail {
+  const first = user.name.split(/\s+/)[0] || user.name;
+  const what = `tu pedido P-${request.number} ("${request.title}")`;
+  const lines = [
+    `Hola ${first},`,
+    answered ? `Cerramos ${what}.` : `Cancelamos ${what} porque no tuvimos respuesta en ${hours} horas.`,
+    answered ? 'Si necesitas algo más, puedes enviar un pedido nuevo desde el portal.' : 'Si todavía lo necesitas, puedes enviar uno nuevo desde el portal.',
+  ];
+  const url = requestUrl(portalUrl, request.number);
+  return {
+    to: user.email,
+    subject: `${answered ? 'Cerramos tu pedido' : 'Cancelamos tu pedido'}: ${request.title}`,
+    text: `${lines.join('\n\n')}\n\n${url}`,
+    html: html(lines.map(esc), { label: 'Ver el pedido', url }, portalUrl),
+  };
+}
+
 // To the dev team (teamTo in notify.ts), when ronin opened the PR of an approved
 // request: it merges once one of them approves it and CI is green.
 export function teamPrMail(request: PortalRequest, user: PortalUser | undefined, to: string, prUrl: string): Mail {

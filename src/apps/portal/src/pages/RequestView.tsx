@@ -6,7 +6,7 @@ import { useBusy } from '../lib/busy.js';
 import { Composer, ComposerFrame, useDraft } from '../components/Composer.js';
 import { AnswersView, InterviewForm, missing, openQuestions, Paragraphs, payload, progress, UnderstoodView, type Answers } from '../components/Interview.js';
 import { Chip } from '../components/Chip.js';
-import { CLOSED, hhmm, initials, left, TEAM_HELD, TEAM_NAME, TEAM_POLL_MS, WORKING } from '../lib/text.js';
+import { CLOSED, EXPIRED, hhmm, initials, left, TEAM_HELD, TEAM_NAME, TEAM_POLL_MS, WORKING } from '../lib/text.js';
 
 const POLL_MS = 2000;
 
@@ -216,7 +216,7 @@ export function RequestView({ n, me, onMenu, onZoom, onMissing }: {
   } else if (d.status === 'asking' || d.status === 'answered') {
     foot = composer({ placeholder: d.status === 'asking' ? 'Responde a ronin…' : 'Escríbele a ronin si necesitas algo más…', label: 'Enviar' });
   } else {
-    foot = <div className="closed-bar">{CLOSED[d.status] ?? ''}</div>;
+    foot = <div className="closed-bar">{(d.expired && EXPIRED[d.expired]) ?? CLOSED[d.status] ?? ''}</div>;
   }
 
   return (

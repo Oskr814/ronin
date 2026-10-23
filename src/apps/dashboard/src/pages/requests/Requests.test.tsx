@@ -41,6 +41,12 @@ const WAITING = {
 const decided: unknown[] = [];
 // A big one the team has, where the person answered the team (#353).
 const TEAMS = { ...WAITING, ...row(9, 'big', { waitsOn: 'team', personReplied: true }), bug: null, prototypes: WAITING.prototypes, issue: { number: 109, url: 'https://github.com/acme/tienda/issues/109' }, devDecision: null };
+// A question waiting on the person, that expires (#404).
+const later = (min: number) => new Date(Date.now() + min * 60e3).toISOString();
+const ASKING = {
+  ...WAITING, ...row(10, 'asking', { waitsOn: 'person', questions: 1 }), bug: null, prototypes: [], verdict: null,
+  expiry: { expiresAt: later(300), remindAt: null, remindedAt: at(60) }, closeNote: null,
+};
 
 // jsdom doesn't scroll.
 HTMLElement.prototype.scrollTo = () => {};
@@ -60,6 +66,11 @@ beforeEach(() => {
     if (path === '/api/runs/r1') return json({ summary: DETAIL.runs[0], lines: [{ type: 'text', text: 'Reproduzco el error.' }] });
     if (path === '/api/requests/8') return json(WAITING);
     if (path === '/api/requests/9') return json(TEAMS);
+    if (path === '/api/requests/10') return json(ASKING);
+    if (path === '/api/requests/10/close') {
+      decided.push(JSON.parse(String(init?.body)));
+      return json({ ...ASKING, status: 'declined', waitsOn: null, expiry: null });
+    }
     if (path === '/api/requests/9/messages') {
       decided.push(JSON.parse(String(init?.body)));
       return json({ ...TEAMS, messages: [...TEAMS.messages, message(3, 'team', '¿Por sucursal o en total?', 0, { by: 'ana-dev' })] });
@@ -149,6 +160,19 @@ describe('Pedidos, in React', () => {
     fireEvent.click(send());
     await waitFor(() => expect(decided).toEqual([{ decision: 'decline', reason: 'Esa pantalla se rehace.' }]));
     await waitFor(() => expect(shell.toast).toHaveBeenCalledWith('Cerraste P-8: Ana recibe el motivo.'));
+  });
+
+  it('a request waiting on the person says when it expires, and the team closes it with a reason (#404)', async () => {
+    show(<Request n={10} />);
+    expect(await screen.findByText(/^Vence el .* \(en 5h\): sin respuesta, se cancela solo\. Le llegó un recordatorio hace 1h\.$/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Cerrar pedido' }));
+    const send = () => screen.getAllByRole('button', { name: 'Cerrar pedido' }).at(-1) as HTMLButtonElement;
+    expect(send().disabled).toBe(true);
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Ya existe en Reportes.' } });
+    fireEvent.click(send());
+    await waitFor(() => expect(decided).toEqual([{ reason: 'Ya existe en Reportes.' }]));
+    await waitFor(() => expect(shell.toast).toHaveBeenCalledWith('Cerraste P-10: Ana recibe el motivo.'));
+    expect(screen.queryByRole('button', { name: 'Cerrar pedido' })).toBeNull();
   });
 
   it('the team writes to the person from Conversación (#353)', async () => {

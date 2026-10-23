@@ -85,6 +85,8 @@ Ver [El servidor y los webhooks](/ronin/operar/servidor/) y [El tablero](/ronin/
 | `PORTAL_SESSION_SECRET` | — | Firma las sesiones del portal, distinto del del tablero. |
 | `PORTAL_SESSION_DAYS` | `30` | Cuánto dura una sesión del portal. |
 | `PORTAL_DAILY_LIMIT` | `5` | Pedidos por día por persona. |
+| `PORTAL_REMIND_HOURS` | `12` | Horas sin respuesta de la persona hasta el correo de recordatorio. |
+| `PORTAL_EXPIRE_HOURS` | `24` | Horas sin respuesta de la persona hasta que el pedido se cancela solo. |
 | `PORTAL_DATA_DIR` | `portal-data` | Las imágenes de los pedidos y, sin `DATABASE_URL`, los pedidos y las cuentas. Única copia: respaldalo. |
 | `MEETINGS_DATA_DIR` | `meetings-data` | Las notas de las reuniones. Única copia: respaldalo. |
 | `DEPLOYS_DATA_DIR` | `deploys-data` | Qué llevó cada release, sin `DATABASE_URL`. Única copia: respaldalo. |

@@ -3,6 +3,7 @@ import type { RepoEntry } from '@platform/agents/repo-context.js';
 import type { PortalUser } from './accounts.js';
 import { prototypePatchPath, requestImagePath, type PortalMessage, type PortalRequest, type RequestEvent, type Verdict } from './requests.js';
 import type { RunSummary } from '../runs/data.js';
+import { expiry } from './expire.js';
 
 // The request portal's requests on the dashboard (#132): every one of the
 // repos the session sees, for anyone who sees them (the accounts stay the
@@ -139,6 +140,11 @@ export function activity(r: PortalRequest, runs: RunSummary[]): { entries: Activ
   return { entries, untimed };
 }
 
+function expiryOf(r: PortalRequest) {
+  const e = expiry(r);
+  return e ? { expiresAt: e.expiresAt.toISOString(), remindAt: e.remindAt?.toISOString() ?? null, remindedAt: e.remindedAt?.toISOString() ?? null } : null;
+}
+
 export function requestDetail(r: PortalRequest, user: PortalUser | undefined, entries: RepoEntry[], runs: RunSummary[]) {
   const own = requestRuns(r, runs);
   return {
@@ -157,6 +163,10 @@ export function requestDetail(r: PortalRequest, user: PortalUser | undefined, en
     pr: r.pr ?? null,
     // The release its change went out in (#158).
     deployed: r.deployed ?? null,
+    // Waiting on the person (#404): when it expires, and the reminder.
+    expiry: expiryOf(r),
+    // Why the team closed it, and who.
+    closeNote: r.closeNote ?? null,
     activity: activity(r, own),
     runs: [...own].sort((a, b) => b.startedAt.localeCompare(a.startedAt)),
     costUsd: own.reduce((sum, run) => sum + (run.costUsd ?? 0), 0),

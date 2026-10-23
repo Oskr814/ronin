@@ -14,7 +14,7 @@ El portal es para que la gente que usa las apps le pida a ronin ajustes chicos s
 1. **En `.env`:**
    - `PORTAL_URL`: dónde se abre, por ejemplo `https://ronin-agent.redmotoshn.com`;
    - `PORTAL_SESSION_SECRET`: `openssl rand -hex 32`, distinto del del tablero;
-   - opcionales: `PORTAL_SESSION_DAYS` (30), `PORTAL_DAILY_LIMIT` (5) y `PORTAL_DATA_DIR` (`portal-data`).
+   - opcionales: `PORTAL_SESSION_DAYS` (30), `PORTAL_DAILY_LIMIT` (5), `PORTAL_REMIND_HOURS` (12), `PORTAL_EXPIRE_HOURS` (24) y `PORTAL_DATA_DIR` (`portal-data`). Las dos de horas son el recordatorio y el vencimiento de un pedido que espera a la persona ([si la persona no responde](/ronin/guias/pedidos-del-portal/#cómo-avanza-un-pedido)).
 
 2. **En `repos.json`**, un bloque `portal` en cada repo que se ofrece:
 

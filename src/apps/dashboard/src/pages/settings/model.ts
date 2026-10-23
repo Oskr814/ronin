@@ -138,6 +138,8 @@ export const SETTINGS: Record<string, [string, string, string]> = {
   'dashboard.githubTtlSeconds': ['Datos de GitHub', 'Cuánto se reusa lo que el tablero leyó de GitHub antes de volver a pedirlo.', 's'],
   'portal.dailyLimit': ['Pedidos por día', 'Los que puede empezar cada persona del portal por día, salvo que su cuenta tenga otro tope.', 'pedidos'],
   'portal.sessionDays': ['Duración de la sesión del portal', 'Las sesiones que ya están abiertas no cambian.', 'días'],
+  'portal.remindHours': ['Recordatorio de un pedido en espera', 'Si la persona no responde, le llega un correo a estas horas del último mensaje de ronin. Igual o mayor que el vencimiento: no hay recordatorio.', 'horas'],
+  'portal.expireHours': ['Vencimiento de un pedido en espera', 'Sin respuesta, el pedido se cancela solo a estas horas del último mensaje de ronin.', 'horas'],
   'agent.model': ['Modelo', 'El de todas las corridas, salvo las que tienen el suyo abajo o en su repo. "(lo que diga Claude)": el de la configuración de la cuenta.', ''],
   'agent.effort': ['Esfuerzo', '', ''],
   'agent.reviewWorkerModel': ['Modelo de los revisores', 'Los agentes que juntan candidatos en la review de PRs externos; el orquestador usa el modelo de arriba.', ''],

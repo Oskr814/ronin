@@ -12,6 +12,7 @@ import { missingPortalConfig } from './http.js';
 import { listUsers } from './accounts.js';
 import { devDecide, parseDevDecision } from './dev-decision.js';
 import { seenByTeam, writeToPerson } from './team-conversation.js';
+import { parseCloseReason, teamClose } from './team-close.js';
 import { getRequest, listRequests, TEXT_MAX } from './requests.js';
 import { MAX_IMAGE_BYTES, MAX_IMAGES, parseImages } from './images.js';
 
@@ -30,6 +31,7 @@ const MAX_MESSAGE_BODY = MAX_IMAGES * Math.ceil((MAX_IMAGE_BYTES * 4) / 3) + 64 
 // GET /api/requests/<n>/reproduction/<round>  a reproduction's diff
 // POST /api/requests/<n>/decision           { decision: deploy|review|decline, reason? }: a dev decides it (#353)
 // POST /api/requests/<n>/messages           { text, images? }: the team writes to the person (#353)
+// POST /api/requests/<n>/close              { reason }: the team closes it, without an issue (#404)
 // A request of a repo the session sees, or none: one it doesn't see is one
 // that isn't there.
 async function visibleRequest(access: Access, n: string) {
@@ -82,6 +84,16 @@ export function requestsRoutes() {
       const written = await writeToPerson(request.number, { text, images: parseImages(body.images), by: c.env.session.login });
       const users = new Map((await listUsers()).map((u) => [u.id, u]));
       return c.json(requestDetail(written, users.get(written.userId), await visibleRepos(c.env.access), await visibleRuns(c.env.access, HISTORY_DAYS)), 200);
+    })
+    // As writing to the person: the repo's actions.
+    .post('/:n/close', onlyJson, jsonBody(16 * 1024, 'falta el motivo'), anyObject(), async (c) => {
+      const request = await visibleRequest(c.env.access, c.req.param('n'));
+      if (!request) return c.json(missing, 404);
+      const refused = refusal(c, c.env.access, request.repo, 'acciones');
+      if (refused) return refused;
+      const closed = await teamClose(request.number, { reason: parseCloseReason(c.req.valid('json')), by: c.env.session.login });
+      const users = new Map((await listUsers()).map((u) => [u.id, u]));
+      return c.json(requestDetail(closed, users.get(closed.userId), await visibleRepos(c.env.access), await visibleRuns(c.env.access, HISTORY_DAYS)), 200);
     })
     // Making it or not is the repo's actions; deploying it without anyone
     // else's review, its deploys too.

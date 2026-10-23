@@ -1034,6 +1034,8 @@ src/domains/portal/    el dominio: cuentas, pedidos, la conversación, el protot
   reproduce.ts         la reproducción de un error reportado, con su test (#137)
   issue.ts             el issue en el repo del producto: para ronin (aprobado, o el arreglo de un error) o para el equipo
   cancel.ts            la persona cancela un pedido que nadie tomó
+  team-close.ts        el equipo cierra desde el tablero un pedido sin issue (#404)
+  expire.ts            el recordatorio y el vencimiento de un pedido que espera a la persona (#404)
   follow.ts            el tick sigue esos issues y sus PRs
   worker.ts, launch.ts el worker por pedido y su relanzamiento
   mail.ts, notify.ts   los correos
@@ -1070,8 +1072,8 @@ src/apps/portal/        la página, en React con Vite (`pnpm build` la arma en d
 | `fixing` | lo reprodujo, el arreglo es pequeño y un dev lo aprobó: ronin lo hace en un PR, como uno aprobado (16.12) | ronin, y un dev que apruebe el PR |
 | `done` | el PR se mergeó: sale en la próxima actualización | — |
 | `big` | es del equipo, en un issue (16.6) | el equipo |
-| `resolved` / `declined` | el equipo cerró el issue como completado / no planeado, o un dev decidió no hacerlo (16.5) | — |
-| `cancelled` | la persona lo canceló (16.10) | — |
+| `resolved` / `declined` | el equipo cerró el issue como completado / no planeado, un dev decidió no hacerlo (16.5) o alguien del equipo lo cerró desde el tablero (16.15) | — |
+| `cancelled` | la persona lo canceló (16.10), o venció sin respuesta (16.15) | — |
 
 Cada paso que hace ronin corre en un **worker por pedido** (`domains/portal/worker.ts`, lanzado con `launchWorker` desde el servidor cuando la persona escribe o decide). Toma el lock `portal-<n>`, así que dos workers nunca trabajan el mismo pedido, y anota su pid en el pedido. Al empezar cada tick, `sweepPortalRequests` relanza los pedidos que esperan a ronin (`thinking`, `minor`, `reproducing`, o aprobados, en `fixing` o del equipo sin issue todavía) cuyo worker murió, con 2 minutos de gracia para uno recién lanzado.
 
@@ -1145,7 +1147,7 @@ Un PR cerrado sin merge se olvida hasta que otro cierre el issue. Si `fix-issue`
 
 #### 16.7 Correos
 
-Todos salen de la misma cuenta, `GMAIL_USER` / `GMAIL_APP_PASSWORD` (la de los bloqueos), con el nombre "ronin · Pedidos de ajustes", para todos los repos. A la persona: la invitación, el cambio de contraseña, cada respuesta de ronin, el prototipo listo, el paso al equipo, el merge, el cierre del issue y, cuando el release que lo lleva termina de desplegarse, *Ya está en la aplicación* (§18.6). Al equipo: el issue de un pedido que es suyo y el PR que espera aprobación, a quien eligió esos avisos del repo en Ajustes → Notificaciones (§19.5). Mientras nadie elige, vale la lista `notifyTo` del bloque `portal` en `repos.json`, y sin nadie, `NOTIFY_TO`. Nunca recibe los pedidos de otro repo. Las imágenes nunca van en el correo: el enlace lleva al portal. Un correo que falla queda en el log y no frena el pedido.
+Todos salen de la misma cuenta, `GMAIL_USER` / `GMAIL_APP_PASSWORD` (la de los bloqueos), con el nombre "ronin · Pedidos de ajustes", para todos los repos. A la persona: la invitación, el cambio de contraseña, cada respuesta de ronin, el prototipo listo, el paso al equipo, el recordatorio y el vencimiento de un pedido que espera su respuesta (16.15), el merge, el cierre del issue (o del pedido, desde el tablero) y, cuando el release que lo lleva termina de desplegarse, *Ya está en la aplicación* (§18.6). Al equipo: el issue de un pedido que es suyo y el PR que espera aprobación, a quien eligió esos avisos del repo en Ajustes → Notificaciones (§19.5). Mientras nadie elige, vale la lista `notifyTo` del bloque `portal` en `repos.json`, y sin nadie, `NOTIFY_TO`. Nunca recibe los pedidos de otro repo. Las imágenes nunca van en el correo: el enlace lleva al portal. Un correo que falla queda en el log y no frena el pedido.
 
 #### 16.8 API
 
@@ -1172,7 +1174,7 @@ La administración está en la API del tablero, solo para sus admins (la página
 
 #### 16.9 Activarlo
 
-1. En `.env`: `PORTAL_URL` (`https://ronin-agent.redmotoshn.com`) y `PORTAL_SESSION_SECRET` (`openssl rand -hex 32`, distinto del del tablero). Opcionales: `PORTAL_SESSION_DAYS` (30), `PORTAL_DAILY_LIMIT` (5) y `PORTAL_DATA_DIR` (`portal-data`).
+1. En `.env`: `PORTAL_URL` (`https://ronin-agent.redmotoshn.com`) y `PORTAL_SESSION_SECRET` (`openssl rand -hex 32`, distinto del del tablero). Opcionales: `PORTAL_SESSION_DAYS` (30), `PORTAL_DAILY_LIMIT` (5), `PORTAL_REMIND_HOURS` (12), `PORTAL_EXPIRE_HOURS` (24) y `PORTAL_DATA_DIR` (`portal-data`).
 2. En `repos.json` (o desde Ajustes → Repos, §19.6), el bloque `portal` de cada repo que se ofrece, con sus aplicaciones. Quién del equipo recibe sus correos lo elige cada uno en Ajustes → Notificaciones; `notifyTo` queda como lista de respaldo.
 3. nginx-proxy-manager tiene que pasarle al 3939 todas las rutas del dominio, no solo la de los webhooks.
 4. `pnpm build` y reiniciar `ronin-server`. Las cuentas se crean desde el tablero.
@@ -1191,7 +1193,7 @@ La persona puede cancelar un pedido mientras nadie lo tomó, con *Cancelar pedid
   - aprobado o en `fixing`, porque su issue es de ronin;
   - del equipo, con el issue ya asignado a alguien;
   - terminado.
-- **Un worker que seguía trabajando** en el pedido termina y lo deja cancelado (`updateUnlessCancelled`): no escribe su respuesta ni su prototipo y no manda correos. Si el issue del equipo se estaba abriendo justo entonces, lo cierra.
+- **Un worker que seguía trabajando** en el pedido termina y lo deja cancelado (`updateUnlessClosed`, que también respeta un pedido que el equipo cerró, 16.15): no escribe su respuesta ni su prototipo y no manda correos. Si el issue del equipo se estaba abriendo justo entonces, lo cierra.
 - **Cuenta para el tope diario:** cancelar no devuelve el pedido del día.
 
 
@@ -1267,6 +1269,22 @@ Antes, la conversación del portal era solo entre la persona y ronin. Mientras e
 - **La persona lo ve firmado «Equipo de desarrollo»:** quién escribió no sale del tablero. Le llega un correo («El equipo te escribió sobre tu pedido P-n») y, mientras el equipo tiene el pedido, la página se relee cada 15 segundos.
 - **La persona contesta desde el mismo pedido,** pero solo después de que el equipo le escribió. La respuesta va con `to: 'team'`, la registra `person-reply` y **no la lee ronin**: el pedido no vuelve a `thinking`. Al equipo le llega un correo con el aviso `pedido-equipo`, y el pedido queda con `personReplied`: la lista dice «Ana respondió: leerlo» y espera al equipo hasta que alguien del equipo lo abre o le contesta.
 - **Con GitHub:** si el pedido ya tiene issue, cada mensaje se copia como comentario de ronin («Equipo → persona» o «Persona → equipo»), con lo escrito citado y sin `@`. Así quien trabaja desde GitHub (ronin también, cuando implementa o atiende comentarios) tiene el contexto. Si todavía no tiene issue, la conversación entra en su cuerpo cuando se abre, con cada mensaje marcado igual.
+#### 16.15 Cerrar desde el tablero y vencer sin respuesta (`team-close.ts`, `expire.ts`, #404)
+
+Antes, un pedido que esperaba a la persona no vencía nunca, y el equipo no lo podía cerrar desde el tablero: solo decidía en `awaiting-dev` o cerrando el issue de un pedido que ya era suyo.
+
+- **Cerrar pedido.** En *Ahora*, en la ficha de un pedido abierto sin issue que espera a la persona (`asking`, `interviewing`, `confirming`, `proposed`), que ronin respondió (`answered`) o que ronin está leyendo (`thinking`): `TEAM_CLOSABLE`. Con el permiso `acciones` del repo, el mismo que escribirle a la persona (16.14), y un motivo obligatorio (`POST /api/requests/<n>/close`, `{ reason }`).
+  - Queda `declined`, con el motivo en `closeNote` y un evento `closed` con `by` (quién lo cerró).
+  - La persona recibe el motivo con esas palabras, en la conversación y por correo (`closedReply('declined', motivo)`, `closedMail`), como cuando un dev decide no hacerlo.
+  - Un worker que seguía trabajando termina y no escribe nada (`updateUnlessClosed`). Un pedido con issue se sigue cerrando desde el issue.
+- **Vencimiento.** Los pedidos que esperan a la persona y los respondidos (`EXPIRING`). El tick, al empezar y para todos los repos a la vez, corre `expirePortalRequests` después de `sweepPortalRequests`:
+  - **El reloj** corre desde el último mensaje de ronin, el que dejó el pedido esperando: la pregunta, el formulario, el resumen o el prototipo. Si la persona escribe, aprueba o pide un ajuste, el pedido sale de la espera. Si ronin vuelve a preguntar, empieza una espera nueva.
+  - **A las `PORTAL_REMIND_HOURS` (12):** un correo de recordatorio, uno por espera (el evento `reminded`), con el enlace y la hora en que se cancela, en el reloj del equipo (`EXPLORE_TIMEZONE`).
+  - **A las `PORTAL_EXPIRE_HOURS` (24):** queda `cancelled`, con el evento `expired` (distinto del `cancelled` que pone la persona), un mensaje y un correo: «Cancelamos este pedido porque no tuvimos respuesta en 24 horas. Si todavía lo necesitas, puedes enviar uno nuevo.» En el portal, la barra de abajo lo dice en lugar de «Cancelaste este pedido».
+  - **`answered`** se cierra a las mismas horas, sin recordatorio, porque nadie espera nada. Queda `cancelled` con `expired` (`answered: true`), y su mensaje no habla de falta de respuesta: «Cerramos este pedido. Si necesitas algo más, puedes enviar uno nuevo.»
+  - **El recordatorio cumple lo que promete:** la cancelación es a las 24 h, o 12 h después del recordatorio si salió tarde, lo que sea más tarde. Así, un pedido que ya llevaba días esperando cuando esto se desplegó, o un tick que no corrió, recibe primero el recordatorio y nunca se cancela sin aviso. Con el tick cada 30 minutos, todo llega con hasta media hora de atraso.
+  - **Las horas** se cambian en `.env` o en Ajustes → General (§19). Si el recordatorio quedara igual o después del vencimiento, no hay recordatorio.
+  - **En el tablero,** *Ahora* dice cuándo vence y si ya salió el recordatorio (`expiry` en la ficha).
 
 ### 17. Reuniones: de las notas al trabajo planificado (#62)
 

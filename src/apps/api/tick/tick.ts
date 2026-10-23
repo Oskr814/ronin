@@ -66,6 +66,7 @@ import { followPortalIssues } from '@domains/portal/follow.js';
 import { followDeploys } from '@domains/deploys/follow.js';
 import { autoDeploy } from '@domains/deploys/auto.js';
 import { sweepPortalRequests } from '@domains/portal/launch.js';
+import { expirePortalRequests } from '@domains/portal/expire.js';
 import { sweepMeetings } from '@domains/meetings/launch.js';
 import { sweepAutoMerge } from '@domains/commands/index.js';
 import { findReleasesNeedingChangelog, type ChangelogCandidate } from '@domains/changelog/index.js';
@@ -1352,6 +1353,8 @@ async function tickRepo(scope: Scope | undefined, measurement: Measurement): Pro
 export async function tick(): Promise<void> {
   // Portal requests (#114) whose worker died: across every repo, once.
   await sweepPortalRequests().catch((error) => log.error('portal: no se pudieron revisar los pedidos en curso', error));
+  // Those waiting on the person (#404): a reminder, or cancelled.
+  await expirePortalRequests().catch((error) => log.error('portal: no se pudieron revisar los pedidos en espera', error));
   // Meetings (#62) still to read whose worker died, likewise.
   await sweepMeetings().catch((error) => log.error('reuniones: no se pudieron revisar las reuniones por leer', error));
   const repos = await loadRepos();

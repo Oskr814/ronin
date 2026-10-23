@@ -35,6 +35,12 @@ export const CLOSED: Record<string, string> = {
   big: 'El equipo de desarrollo tiene este pedido. Te avisamos por correo cuando esté resuelto.',
 };
 
+// Cancelled on its own (#404), instead of «Cancelaste este pedido».
+export const EXPIRED: Record<string, string> = {
+  unanswered: 'Cancelamos este pedido porque no tuvimos respuesta a tiempo. Si todavía lo necesitas, puedes enviar uno nuevo.',
+  answered: 'Cerramos este pedido. Si necesitas algo más, puedes enviar uno nuevo.',
+};
+
 // While the team has it (#353): the team may write, so the page asks again
 // now and then, slower than while ronin works.
 export const TEAM_HELD = ['awaiting-dev', 'approved', 'fixing', 'big'];

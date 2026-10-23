@@ -206,6 +206,11 @@ export const config = {
     dataDir: resolve(process.env.PORTAL_DATA_DIR || 'portal-data'),
     // Requests a person can start per day unless the admin set theirs.
     dailyLimit: Number(process.env.PORTAL_DAILY_LIMIT ?? 5),
+    // A request waiting on the person (#404, domains/portal/expire.ts): a
+    // reminder this many hours after ronin's last message, and cancelled
+    // after these many.
+    remindHours: Number(process.env.PORTAL_REMIND_HOURS ?? 12),
+    expireHours: Number(process.env.PORTAL_EXPIRE_HOURS ?? 24),
   },
   // The meetings whose notes the team uploads to the dashboard (#62): the
   // original file, its text and what ronin proposes from it. The only copy,

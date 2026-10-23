@@ -9,7 +9,7 @@ import { addEvent, addRoninMessage, CANCELLABLE, getRequest, RequestError, updat
 // issue is still unassigned (that issue closes as not planned, saying so).
 // Approved, its issue is ronin's: it can't be cancelled anymore. A worker
 // still running on it finishes and leaves it as it is
-// (updateUnlessCancelled).
+// (updateUnlessClosed).
 
 export const CANCELLED_REPLY = 'Cancelaste este pedido. Si necesitas algo más, puedes enviar uno nuevo cuando quieras.';
 export const TAKEN = 'Alguien del equipo ya tomó este pedido, así que no se puede cancelar desde aquí.';
