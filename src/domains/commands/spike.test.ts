@@ -25,8 +25,8 @@ vi.mock('./mentions.js', () => ({
 
 import { findIssueCommands, findIssuesNeedingSpike } from './spike.js';
 
-function issue(overrides: Partial<{ number: number; title: string }> = {}) {
-  return { number: 500, title: 'Login redirects to 404', ...overrides };
+function issue(overrides: Partial<{ number: number; title: string; updatedAt: string }> = {}) {
+  return { number: 500, title: 'Login redirects to 404', updatedAt: new Date().toISOString(), ...overrides };
 }
 
 function comment(overrides: Partial<{ id: number; kind: 'issue' | 'review'; body: string; reactionsEyes: number; authorLogin: string }> = {}) {
@@ -107,4 +107,30 @@ describe('findIssueCommands', () => {
     expect(explores).toEqual([{ issueNumber: 501, appName: 'backoffice', maxFunctions: 2, trigger: [comment({ id: 9, body: '@ronin /explore backoffice 2' })] }]);
   });
 
+});
+
+// gh listed only 30 open issues, so a command on any past those was never
+// seen. Now all of them are listed, and only the ones updated lately have
+// their comments read.
+describe('findIssueCommands — which issues it reads', () => {
+  const daysAgo = (n: number) => new Date(Date.now() - n * 24 * 60 * 60 * 1000).toISOString();
+
+  it('reads the comments of the issues updated in the last days, not of the ones nobody touched', async () => {
+    listOpenUnmanagedIssues.mockResolvedValue([issue({ number: 500, updatedAt: daysAgo(1) }), issue({ number: 501, updatedAt: daysAgo(10) })]);
+    findTrustedSpikeCommand.mockResolvedValue([comment()]);
+
+    const { spikes } = await findIssueCommands();
+
+    expect(spikes.map((s) => s.issueNumber)).toEqual([500]);
+    expect(findTrustedSpikeCommand).toHaveBeenCalledTimes(1);
+  });
+
+  it('reads the issues an event names, however long ago they were updated', async () => {
+    listOpenUnmanagedIssues.mockResolvedValue([issue({ number: 500, updatedAt: daysAgo(10) }), issue({ number: 501, updatedAt: daysAgo(10) })]);
+    findTrustedSpikeCommand.mockResolvedValue([comment()]);
+
+    const { spikes } = await findIssueCommands([501]);
+
+    expect(spikes.map((s) => s.issueNumber)).toEqual([501]);
+  });
 });
