@@ -25,7 +25,7 @@ export function RepoList({ data }: { data: Data }) {
             <td><b><i className="aj-sq" style={{ background: repoColor(r.repo) }} />{r.repo}</b><small className="mono">{r.baseRef ?? d.defaults.baseRef}</small></td>
             <td className="hide-m">{r.portal ? <>{r.portal.name}<small>{r.apps.filter((a) => a.portal).length} apps</small></> : <span className="m">—</span>}</td>
             <td className="hide-m">{r.linear ? (r.linear.connected ? <span className="ok-t">● conectado</span> : <span className="warn-t">○ sin key en .env</span>) : <span className="m">—</span>}</td>
-            <td className="hide-m">{r.deploy ? (r.deploy.prerelease ? 'QA y producción' : 'release') : <span className="m">—</span>}</td>
+            <td className="hide-m">{r.deploy ? `${r.deploy.prerelease ? 'QA y producción' : 'release'}${r.deploy.auto ? ', automático' : ''}` : <span className="m">—</span>}</td>
             <td className="hide-m">{explored || <span className="m">—</span>}</td>
           </tr>
         );
@@ -109,6 +109,8 @@ export function Repo({ data, repo }: { data: Data; repo: string }) {
       {r.deploy ? <>
         <Row label="Pre-release primero" desc="QA antes de producción." ctl={<Switch on={r.deploy.prerelease} data-ajdeploy="prerelease" label="Pre-release" onToggle={() => deploy('prerelease', !r.deploy!.prerelease)} />} />
         <Row label="Solo los PRs que se elijan" desc="En vez de todo lo mergeado desde el último release." ctl={<Switch on={r.deploy.selective} data-ajdeploy="selective" label="PRs elegidos" onToggle={() => deploy('selective', !r.deploy!.selective)} />} />
+        <Row label="Despliegue automático de los pedidos" desc={<>Cada tick, los PRs de pedidos del portal mergeados salen solos en un release, sobre el último. El patrón del tag: <code>{'{major}'}</code>, <code>{'{minor}'}</code> y <code>{'{patch}'}</code> del último release (con <code>+1</code>), <code>{'{yyyy}'}</code>, <code>{'{mm}'}</code>, <code>{'{dd}'}</code> y <code>{'{n}'}</code>, el lote del día. Vacío: apagado.{r.deploy.selective ? '' : ' Necesita «Solo los PRs que se elijan».'}</>}
+          ctl={<input className="aj-in mono" data-ajdeploy="auto" defaultValue={r.deploy.auto ?? ''} placeholder="v{major}.{minor}.{patch+1}" disabled={!r.deploy.selective && !r.deploy.auto} aria-label="Patrón del tag del despliegue automático" ref={onCommit((el) => save({ deploy: { auto: el.value.trim() || null } }))} />} />
       </> : null}
     </Sec>
     <Sec title="Agentes en este repo" lead="Gana sobre lo general para todo lo que corre en este repo.">

@@ -64,6 +64,7 @@ import { maybeLaunchNightlyExploration } from '@domains/explorations/index.js';
 import { sweepPreviews } from '@domains/previews/index.js';
 import { followPortalIssues } from '@domains/portal/follow.js';
 import { followDeploys } from '@domains/deploys/follow.js';
+import { autoDeploy } from '@domains/deploys/auto.js';
 import { sweepPortalRequests } from '@domains/portal/launch.js';
 import { sweepMeetings } from '@domains/meetings/launch.js';
 import { sweepAutoMerge } from '@domains/commands/index.js';
@@ -1259,6 +1260,9 @@ async function tickRepo(scope: Scope | undefined, measurement: Measurement): Pro
   await repoStep(scope, 'portal', () => followPortalIssues().catch((error) => log.error('portal: no se pudieron seguir los issues de los pedidos', error)), steps);
   // The releases published from the dashboard (#158): how their workflow ended.
   if (activeRepo().deploy) await repoStep(scope, 'deploys', () => followDeploys().catch((error) => log.error('deploy: no se pudieron seguir los despliegues', error)), steps);
+  // The portal requests' merged PRs, out on their own (#353): on the cron
+  // pass only, so what merged meanwhile goes out together.
+  if (!scope && activeRepo().deploy?.auto) await repoStep(scope, 'deploys', () => autoDeploy(), steps);
 
   // What this run's jobs are narrowed to — the event's resources, plus any
   // issue its assignment just started.

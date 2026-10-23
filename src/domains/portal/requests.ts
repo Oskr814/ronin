@@ -244,6 +244,10 @@ export type RequestEvent = { at: string } & (
   // workflow ended. Only a deployed one that isn't a pre-release tells the
   // person.
   | { kind: 'deploy'; tag: string; state: 'published' | 'deployed' | 'failed'; prerelease: boolean }
+  // Its PR left out of an automatic batch (#353): it doesn't apply onto the
+  // last release (`base`), because of `files`, without the PRs in `needs`.
+  // Noted once per base: the next batch tries it again.
+  | { kind: 'deploy-skipped'; base: string; files: string[]; needs: number[] }
 );
 
 // Enough for every round a request can go through, with room for the

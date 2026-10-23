@@ -101,7 +101,7 @@ async function tagExists(tag: string): Promise<boolean> {
 
 // The newest published release of the kind: a pre-release compares with the
 // last pre-release, a full one with the last full one.
-function lastRelease(all: Release[], prerelease: boolean) {
+export function lastRelease(all: Release[], prerelease: boolean) {
   const releases = all.filter((r) => !r.isDraft && r.isPrerelease === prerelease);
   return releases.sort((a, b) => b.publishedAt.localeCompare(a.publishedAt))[0] ?? null;
 }

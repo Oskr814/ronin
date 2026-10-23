@@ -94,12 +94,15 @@ function validateEntry(entry: unknown, index: number): RepoEntry {
 
 function validateDeploy(deploy: unknown, where: string): DeployConfig {
   if (typeof deploy !== 'object' || deploy === null || Array.isArray(deploy)) throw new Error(`${where} debe ser un objeto ({} si no usa pre-releases ni PRs elegidos)`);
-  const { prerelease, selective, ...rest } = deploy as Record<string, unknown>;
+  const { prerelease, selective, auto, ...rest } = deploy as Record<string, unknown>;
   const unknownKeys = Object.keys(rest);
-  if (unknownKeys.length > 0) throw new Error(`${where} tiene campos desconocidos: ${unknownKeys.join(', ')} (válidos: prerelease, selective)`);
+  if (unknownKeys.length > 0) throw new Error(`${where} tiene campos desconocidos: ${unknownKeys.join(', ')} (válidos: prerelease, selective, auto)`);
   if (prerelease !== undefined && typeof prerelease !== 'boolean') throw new Error(`${where}.prerelease debe ser true o false`);
   if (selective !== undefined && typeof selective !== 'boolean') throw new Error(`${where}.selective debe ser true o false`);
-  return { ...(prerelease !== undefined ? { prerelease } : {}), ...(selective !== undefined ? { selective } : {}) };
+  if (auto !== undefined && (typeof auto !== 'object' || auto === null || typeof (auto as { tag?: unknown }).tag !== 'string' || Object.keys(auto).some((k) => k !== 'tag'))) {
+    throw new Error(`${where}.auto debe ser { "tag": "<patrón>" }, por ejemplo { "tag": "v{major}.{minor}.{patch+1}" }`);
+  }
+  return { ...(prerelease !== undefined ? { prerelease } : {}), ...(selective !== undefined ? { selective } : {}), ...(auto !== undefined ? { auto: { tag: (auto as { tag: string }).tag } } : {}) };
 }
 
 function validatePortal(portal: unknown, where: string): PortalRepoConfig {

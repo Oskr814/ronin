@@ -1391,6 +1391,7 @@ Un bloque `deploy` por repo en `repos.json`. Un repo sin él no aparece en *Desp
 
 - **`prerelease`:** el repo despliega pre-releases a otro lado (QA). El diálogo ofrece la casilla, y un pre-release se compara con el último pre-release.
 - **`selective`:** un release puede llevar solo algunos de los PRs sin desplegar (18.3). Hace falta que el workflow del repo despliegue el commit al que apunta el tag aunque no esté en la rama. Un workflow que solo acepta commits de la rama lo rechazaría: ese repo va sin `selective`.
+- **`auto`:** `{ "tag": "<patrón>" }`, los pedidos del portal se despliegan solos (18.9). Solo con `selective`: Ajustes → Repos no lo deja prender sin él.
 
 La rama es la de `worktreeBaseRef`. `DEPLOYS_DATA_DIR` (por defecto `deploys-data`) guarda el registro de lo que se publicó.
 
@@ -1446,7 +1447,8 @@ Para los admins, y para quien tenga *Desplegar* en ese repo (Ajustes → Usuario
 
 - **Una tarjeta por repo con `deploy`:**
   - lo mergeado sin desplegar, con sus apps y "del pedido P-n". Con `selective`, cada PR tiene *Desplegar solo este*;
-  - los últimos 8 releases: *Latest*, *Pre-release* y *Solo elegidos*, cuándo, el estado de su workflow con un enlace a cada run, quién lo publicó y qué pedidos llevó;
+  - si el repo tiene `auto` y su última pasada no publicó por algo que lo impide, por qué (18.9);
+  - los últimos 8 releases: *Latest*, *Pre-release*, *Solo elegidos* y *Pedidos, automático*, cuándo, el estado de su workflow con un enlace a cada run, quién lo publicó y qué pedidos llevó;
   - un release publicado fuera de ronin dice *publicado en GitHub*.
 - **El diálogo *Nuevo despliegue*,** como *Draft a new release*:
   - el tag a mano, con el último release (y el último pre-release) a la vista;
@@ -1464,12 +1466,20 @@ Para los admins, y para quien tenga *Desplegar* en ese repo (Ajustes → Usuario
 2. `DEPLOYS_DATA_DIR` en `.env`, si no sirve el de por defecto. Hay que respaldarlo.
 3. `scripts/init-webhooks.sh <url-pública>/api/webhooks/github`, para que llegue `workflow_run`. Sin el evento, el tick lo sigue igual, cada 30 minutos.
 
-#### 18.9 Más adelante
+#### 18.9 Los pedidos se despliegan solos (`auto.ts`, #353)
 
-- **El despliegue automático de pedidos aprobados.** Los pedidos del portal son ajustes chicos: al mergearse el PR de uno, ronin lo desplegaría solo, con `planRelease` y `publishRelease` y nada más que ese cambio (o los de los pedidos listos para salir). `src/domains/deploys/` no sabe quién lo llama justamente para esto. Falta decidir:
-  - cómo se elige el tag sin una persona;
-  - qué hacer si la prueba falla;
-  - qué pasa en los repos sin `selective`.
+Un paso del tick para cada repo con `deploy.auto`, solo en la pasada del cron, no con cada evento: así lo que se mergea entre ticks sale junto.
+
+1. **Sin nada que desplegar no cuesta nada.** Primero mira los pedidos del repo: si ninguno está `done` con su PR, sin `deployed` y sin un release (no pre-release) anotado, termina ahí, sin `fetch` ni GitHub.
+2. **El lote:** de `pendingChanges`, los cambios con pedidos. Lo que no es de un pedido no entra: sale en los releases a mano.
+3. **El tag** (`tag-pattern.ts`): `{major}`, `{minor}` y `{patch}` se leen del último release (no pre-release) con el mismo patrón, y `{patch+1}` les suma. `{yyyy}`, `{mm}` y `{dd}` son la fecha del lote con el reloj del equipo (`EXPLORE_TIMEZONE`), y `{n}` el primer número que no es un tag existente. Si el último tag no encaja, o el repo no tiene releases, no publica.
+4. **El plan** es el de *Solo lo que elijas* (`planRelease`, 18.3). Un PR que choca sale del lote y el plan se repite con el resto. Su pedido anota `deploy-skipped` con la base, los archivos y lo que le falta, y al equipo le llega un correo (`pedido-revisar`), una vez por base. El tick siguiente lo vuelve a intentar.
+5. **Publica** con `publishRelease`, como release (nunca pre-release: un dev ya aprobó cada pedido), con `by` igual a la cuenta de ronin. El lock `deploy-publish` hace que salga uno a la vez por repo; si está tomado, lo intenta el tick siguiente. De ahí en adelante es un despliegue como cualquier otro (18.6).
+
+Lo que impidió publicar queda en el estado del repo (`autoDeploy` en `repo_state`), y la tarjeta de *Despliegues* lo muestra. Se borra cuando un lote sale o ya no hay nada que desplegar.
+
+#### 18.10 Más adelante
+
 - ***Desplegar solo este*** desde la ficha del pedido y desde la del PR mergeado.
 
 ### 19. Ajustes (#174)
