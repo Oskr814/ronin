@@ -264,6 +264,16 @@ export function reviewed(key: string, pr: number, decision: 'APPROVED' | 'CHANGE
   changed();
 }
 
+// One shown at once that GitHub didn't take (#368): the chips go back to
+// what the last read said, on the next snapshot.
+export function unreviewed(key: string, pr: number) {
+  const item = itemById(key);
+  if (!item) return;
+  delete S.revSent[`${item.repo}#${pr}`];
+  void refresh();
+  changed();
+}
+
 // ---------- overlays
 let toastTimer = 0;
 const TOAST_OUT_MS = 180;

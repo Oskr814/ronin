@@ -68,7 +68,7 @@ export function useShell(): ShellActions {
 }
 
 // What the pages change of what the shell has open.
-export { explored, refresh, reread, reviewed, showDoc, showRun } from './state.js';
+export { changed, explored, refresh, reread, reviewed, showDoc, showRun, unreviewed } from './state.js';
 
 // ---------- what the pages read
 // The shell's state, again each time it changes.

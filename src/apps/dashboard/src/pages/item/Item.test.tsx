@@ -14,7 +14,12 @@ let posted: Array<[string, unknown]> = [];
 let clicks: Array<{ what: string; ms: number }> = [];
 let asked: string[] = [];
 let snap: unknown;
+// A write held until it's let go, and one GitHub says no to (#368).
+let gate: Promise<void> | null = null;
+let failNext: string | null = null;
 beforeEach(() => {
+  gate = null;
+  failNext = null;
   posted = [];
   clicks = [];
   asked = [];
@@ -36,6 +41,12 @@ beforeEach(() => {
       return json({});
     }
     posted.push([url, JSON.parse(String(init?.body ?? 'null'))]);
+    if (gate) await gate;
+    if (failNext) {
+      const error = failNext;
+      failNext = null;
+      return new Response(JSON.stringify({ error }), { status: 502, headers: { 'Content-Type': 'application/json' } });
+    }
     return json({ url: 'https://github.com/acme/tienda/pull/42#issuecomment-1' });
   }));
 });
@@ -228,5 +239,91 @@ describe('an item’s page', () => {
     expect(pills.map((p) => p.getAttribute('aria-pressed'))).toEqual([null, 'false', 'false', 'false', 'true']);
     expect(pills[0].textContent).toBe('Historial6');
     vi.useRealTimers();
+  });
+
+  // #368: what's done here shows at once, as on its way, and is undone if GitHub says no.
+  describe('optimistic', () => {
+    const hold = () => {
+      let release = () => {};
+      gate = new Promise<void>((resolve) => { release = resolve; });
+      return () => release();
+    };
+
+    it('shows a comment in the conversation as it is sent, with the box free', async () => {
+      const release = hold();
+      const { container } = show({ detail: person, doc: 'issue' });
+      const box = document.getElementById('dcomment') as HTMLTextAreaElement;
+      fireEvent.change(box, { target: { value: 'Va con el cliente nuevo' } });
+      fireEvent.keyDown(box, { key: 'Enter', ctrlKey: true });
+      await waitFor(() => expect(posted).toHaveLength(1));
+      const pending = container.querySelector('.cm.pending');
+      expect(pending?.textContent).toContain('Va con el cliente nuevo');
+      expect(pending?.textContent).toContain('enviando…');
+      expect(box.value).toBe('');
+      release();
+      await waitFor(() => expect(container.querySelector('.cm.pending')?.textContent).toContain('publicado'));
+    });
+
+    it('takes a comment GitHub said no to out of the conversation, and puts its text back in the box', async () => {
+      failNext = 'GitHub no respondió';
+      const { container, shell } = show({ detail: person, doc: 'issue' });
+      const box = document.getElementById('dcomment') as HTMLTextAreaElement;
+      fireEvent.change(box, { target: { value: 'Va con el cliente nuevo' } });
+      fireEvent.keyDown(box, { key: 'Enter', ctrlKey: true });
+      await waitFor(() => expect(shell.toast).toHaveBeenCalledWith('No se pudo comentar: GitHub no respondió'));
+      expect(container.querySelector('.cm.pending')).toBeNull();
+      expect(box.value).toBe('Va con el cliente nuevo');
+    });
+
+    it('says an approval is on its way with the buttons held, then that it is done', async () => {
+      const release = hold();
+      const { container } = show();
+      fireEvent.keyDown(document, { key: 'a' });
+      fireEvent.keyDown(document, { key: 'Enter' });
+      await waitFor(() => expect(posted).toHaveLength(1));
+      expect(container.querySelector('.decided.pending')?.textContent).toBe('Aprobando el PR…');
+      expect(screen.queryByRole('dialog')).toBeNull();
+      expect((screen.getByRole('button', { name: /^Aprobar/ }) as HTMLButtonElement).disabled).toBe(true);
+      release();
+      await waitFor(() => expect(container.querySelector('.decided:not(.pending)')?.textContent).toContain('Aprobaste el PR'));
+      expect((screen.getByRole('button', { name: /^Aprobar/ }) as HTMLButtonElement).disabled).toBe(false);
+    });
+
+    it('brings an approval GitHub said no to back to its drop, with why', async () => {
+      failNext = 'el PR tiene conflictos';
+      const { container, shell } = show();
+      fireEvent.keyDown(document, { key: 'p' });
+      fireEvent.change(document.getElementById('dtext')!, { target: { value: 'Mové el teléfono' } });
+      fireEvent.keyDown(document, { key: 'Enter', ctrlKey: true });
+      await waitFor(() => expect(container.querySelector('.drop .bad')?.textContent).toBe('No se pudo: el PR tiene conflictos'));
+      expect((document.getElementById('dtext') as HTMLTextAreaElement).value).toBe('Mové el teléfono');
+      expect(container.querySelector('.decided')).toBeNull();
+      expect(shell.toast).toHaveBeenCalledWith('No se mandó el ajuste: el PR tiene conflictos');
+    });
+
+    it('closes an action\'s dialog at once and shows its comment as it is sent', async () => {
+      const release = hold();
+      const { container } = show({ detail: { ...person, actions }, doc: 'issue' });
+      fireEvent.keyDown(document, { key: 'm' });
+      fireEvent.keyDown(document, { key: '1' });
+      fireEvent.change(document.getElementById('dlg-text')!, { target: { value: 'un pedido con envío' } });
+      fireEvent.click(document.getElementById('dlg-yes')!);
+      expect(document.getElementById('layer')).toBeNull();
+      await waitFor(() => expect(container.querySelector('.cm.pending')?.textContent).toContain('@ronin-bot /preview tienda un pedido con envío'));
+      release();
+      await waitFor(() => expect(container.querySelector('.cm.pending')?.textContent).toContain('publicado'));
+    });
+
+    it('brings an action GitHub said no to back to its dialog, with its text and why', async () => {
+      failNext = 'GitHub no respondió';
+      const { container } = show({ detail: { ...person, actions }, doc: 'issue' });
+      fireEvent.keyDown(document, { key: 'm' });
+      fireEvent.keyDown(document, { key: '1' });
+      fireEvent.change(document.getElementById('dlg-text')!, { target: { value: 'otra vez' } });
+      fireEvent.click(document.getElementById('dlg-yes')!);
+      await waitFor(() => expect(document.getElementById('dlg-err')?.textContent).toBe('No se pudo: GitHub no respondió'));
+      expect((document.getElementById('dlg-text') as HTMLTextAreaElement).value).toBe('otra vez');
+      expect(container.querySelector('.cm.pending')).toBeNull();
+    });
   });
 });

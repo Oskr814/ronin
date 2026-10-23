@@ -775,6 +775,13 @@ Una lectura que ya estaba en camino cuando se escribió nunca queda como la últ
 
 **Los webhooks también (#368).** El servidor de webhooks y el tablero son el mismo proceso. Un `issues`, `pull_request`, `issue_comment`, `pull_request_review`, `pull_request_review_comment` o `check_suite` vence lo que el tablero tiene de ese issue o PR (`items/freshness.ts`). Lo que alguien tiene abierto (pedido en los últimos 2 minutos) se vuelve a leer en el momento, sin que nadie lo espere; lo demás queda vencido para su próximo pedido. Si llega una ráfaga mientras una lectura está en camino, se suma una sola lectura más, no una por webhook.
 
+**Optimista en el tablero (#368).** Lo que se hace desde el tablero se ve en el momento, como algo en camino, y se deshace si GitHub no lo toma:
+- **Comentar**, en la conversación o en una ficha, y **una acción** que comenta: el comentario aparece al final, con *enviando…*, y queda hasta que una lectura del ítem lo trae (por su URL, o por quién escribió qué; `shell/pending.ts`). Si falla, sale de la conversación y el texto vuelve al cuadro o al diálogo, con el motivo.
+- **Una decisión** (aprobar, ajustar, cerrar) y **una revisión**: el panel se cierra, la ficha dice que va en camino y, al aprobar o pedir cambios, los chips del PR ya lo muestran. Los botones de decisión esperan hasta que GitHub responde. Si falla, se deshace y el panel vuelve con el texto.
+- **En Archivos**, comentar ya, responder, resolver o reabrir, y borrar un comentario de la revisión pendiente cambian lo leído en el momento (`setQueryData`) y vuelven a como estaba si falla. Sumar o editar comentarios de la revisión pendiente espera, como antes: solo los ve la persona.
+
+Lo que sigue esperando: las acciones de una ficha en su diálogo (desarrollar, finalizar la revisión), cuyo comentario arma el servidor, y crear un issue.
+
 #### 15.9 API
 
 Todo, salvo los webhooks y `/api/auth/*`, pide sesión. Las rutas pasan a Hono de a un grupo (#235, etapa 6): cada grupo vive con su dominio (`domains/portal/routes-dashboard.ts`, `domains/meetings/routes.ts`, `domains/deploys/routes.ts`, `domains/metrics/routes.ts`, `domains/explorations/routes.ts`, `domains/settings/routes.ts`, `domains/runs/routes.ts` e `domains/items/routes.ts`, con lo que leen en `domains/items/service.ts`) y `apps/api/routes.ts` los monta; `apps/api/http/dashboard.ts` solo le entrega cada pedido. Las rutas y lo que devuelven no cambian:

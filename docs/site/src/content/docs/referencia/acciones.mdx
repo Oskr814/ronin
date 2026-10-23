@@ -26,7 +26,7 @@ En un issue, las acciones de PR van al PR de su slice que avanza («Resolver con
 
 ## Antes de pedirla
 
-Un diálogo muestra el comentario que va a quedar, tal cual y a tu nombre, mientras escribís. `Ctrl ↵` comenta. Si mientras tanto la acción dejó de aplicar (alguien la pidió en GitHub, el PR se cerró), el tablero no comenta nada y te lo dice.
+Un diálogo muestra el comentario que va a quedar, tal cual y a tu nombre, mientras escribís. `Ctrl ↵` comenta: el diálogo se cierra y el comentario aparece en la conversación con *enviando…*, sin esperar a GitHub. Si mientras tanto la acción dejó de aplicar (alguien la pidió en GitHub, el PR se cerró), o GitHub no lo toma, el tablero no comenta nada: el diálogo vuelve con tu texto y te dice por qué.
 
 - **Asignar a ronin** deja tu contexto, si escribiste uno, como un comentario común en el issue, sin mencionar a ronin (una mención se leería como un pedido aparte). Después le asigna el issue. Si a ronin no le queda claro qué hacer, pregunta en el issue antes de tocar código.
 - **Responder y destrabar** comenta tu respuesta y ronin le vuelve a poner `ronin:in-progress` al issue. Si GitHub rechazó el comentario, el label no se toca.
@@ -34,7 +34,7 @@ Un diálogo muestra el comentario que va a quedar, tal cual y a tu nombre, mient
 
 ## Comentar
 
-Al pie de la conversación de las pestañas **Issue** y **PR** hay un cuadro para comentar, como el de GitHub, sin diálogo: escribís, `Ctrl ↵` (o **Comentar**) y el comentario queda en GitHub a tu nombre y aparece en la conversación. `c` lleva el foco al cuadro y `Esc` lo saca. Lo que estabas escribiendo queda en el cuadro si te vas a otra ficha y volvés.
+Al pie de la conversación de las pestañas **Issue** y **PR** hay un cuadro para comentar, como el de GitHub, sin diálogo: escribís, `Ctrl ↵` (o **Comentar**) y el comentario aparece en la conversación al instante, con *enviando…* hasta que GitHub lo publica a tu nombre. El cuadro queda libre para el siguiente. Si GitHub no lo toma, sale de la conversación y tu texto vuelve al cuadro. `c` lleva el foco al cuadro y `Esc` lo saca. Lo que estabas escribiendo queda en el cuadro si te vas a otra ficha y volvés.
 
 Es un comentario común: ronin lo lee con el resto de la conversación cuando trabaja el issue o el PR, así que sirve para ir dejándole contexto antes de asignarlo. Si mencionás a `@ronin-agent`, lo toma como un pedido, igual que en GitHub. Aparece para quien tiene el permiso de acciones en el repo.
 

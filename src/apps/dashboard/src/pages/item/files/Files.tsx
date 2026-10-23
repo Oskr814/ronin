@@ -7,10 +7,13 @@ import { landOn } from '@apps/dashboard/src/lib/motion.js';
 import { useViewState } from '@apps/dashboard/src/lib/view-state.js';
 import { itemParam, oneOr, type ItemPage } from '../model.js';
 import { ReviewPanel, type Review } from '../Review.js';
-import { BIG_DIFF_LINES, FILE_STATUS, fileAnchor, linesForSuggestion, pendingOf, threadsSeen, type PrFile } from './diff.js';
+import { BIG_DIFF_LINES, FILE_STATUS, fileAnchor, linesForSuggestion, pendingOf, SENDING, threadsSeen, type PrFile } from './diff.js';
 import { diffRows, DiffTable, FileThread, type Composing, type FilesCtx } from './Diff.js';
 import { filesKey, rereadFiles, takeJump, type FilesRead } from './model.js';
 import { clickTimer } from '@apps/dashboard/src/lib/click-timing.js';
+
+// Comments on their way (#368), numbered for their stand-in ids.
+let sendingCount = 0;
 
 // A PR's Archivos (#111): the files on the left, their diffs on the right,
 // each review thread under the line it's on. Commenting, replying,
@@ -38,6 +41,7 @@ const TALK = <svg width="11" height="11" viewBox="0 0 11 11" aria-hidden="true">
 
 export function Files({ v, q, review, keys }: { v: ItemPage; q: UseQueryResult<FilesRead>; review: Review; keys: MutableRefObject<FilesKeys | null> }) {
   const shell = useShell();
+  const session = useSession();
   const qc = useQueryClient();
   const key = v.item.id;
   const [, redraw] = useReducer((n: number) => n + 1, 0);
@@ -108,6 +112,22 @@ export function Files({ v, q, review, keys }: { v: ItemPage; q: UseQueryResult<F
     }
   };
 
+  // What's shown at once of a write to the PR (#368), and undone if GitHub
+  // says no: the files as read, changed as the write will leave them.
+  const optimistic = async <T,>(change: (read: FilesRead) => FilesRead, run: () => Promise<T>): Promise<T> => {
+    const before = qc.getQueryData<FilesRead>(filesKey(key));
+    // A read under way would bring them back as they were.
+    await qc.cancelQueries({ queryKey: filesKey(key) });
+    if (before) qc.setQueryData(filesKey(key), change(before));
+    try {
+      return await run();
+    } catch (e) {
+      if (before) qc.setQueryData(filesKey(key), before);
+      throw e;
+    }
+  };
+  const withThreads = (read: FilesRead, threads: (all: FilesRead['data']['threads']) => FilesRead['data']['threads']): FilesRead => ({ ...read, data: { ...read.data, threads: threads(read.data.threads) } });
+
   // "Viewed" shows at once and is undone if GitHub says no.
   const setViewed = async (path: string, on: boolean) => {
     if (!read) return;
@@ -144,13 +164,33 @@ export function Files({ v, q, review, keys }: { v: ItemPage; q: UseQueryResult<F
         ? { action: 'reply', commentId: c.commentId, text: c.text, ...rev }
         : { action: 'comment', path: c.path, commitId: data.headSha, subject: c.subject, text: c.text, ...rev, ...(c.subject === 'line' ? { side: c.side, line: c.line, ...(c.startLine ? { startLine: c.startLine } : {}) } : {}) };
     const started = m === 'review' && !read?.review;
-    setComp({ ...c, sending: m, error: null });
     const shown = clickTimer('archivos');
-    try {
-      const posted = await action(body);
+    // Out at once (#368): in its thread, or as a thread of its own on its
+    // line, as being sent; the composer closes, and comes back with the text
+    // if GitHub says no. What goes into the person's own review waits, as before.
+    if (m === 'now') {
       setComp(null);
-      if (m === 'now') shell.toast(c.reply ? 'Respondiste en el hilo.' : 'Comentaste en el PR.', posted?.url);
-      else shell.toast(m === 'edit' ? 'Guardado en tu revisión.' : started ? `Empezaste una revisión: nadie la ve hasta que la mandes${v.decidable ? ' con Ajustar' : ''}.` : 'Sumado a tu revisión.');
+      const n = ++sendingCount;
+      const comment = { id: -n, author: session.me, body: c.text, createdAt: new Date().toISOString(), url: '' };
+      const add = (all: FilesRead['data']['threads']) => (c.reply
+        ? all.map((t) => (t.id === c.reply ? { ...t, comments: [...t.comments, comment] } : t))
+        : [...all, { id: `${SENDING}${n}`, path: c.path ?? '', subject: c.subject ?? 'file', side: c.side ?? 'RIGHT', line: c.line ?? null, startLine: c.startLine ?? null, originalLine: c.line ?? null, isResolved: false, isOutdated: false, url: `${SENDING}${n}`, comments: [comment] }]);
+      try {
+        const posted = await optimistic((r) => withThreads(r, add), () => action(body));
+        shell.toast(c.reply ? 'Respondiste en el hilo.' : 'Comentaste en el PR.', posted?.url);
+        shown(rereadFiles(qc, shell, key));
+      } catch (e) {
+        if (failed(e)) return;
+        shell.toast(`No se publicó el comentario: ${(e as Error).message}`);
+        setComp({ ...c, sending: false, error: `No se pudo: ${(e as Error).message}` });
+      }
+      return;
+    }
+    setComp({ ...c, sending: m, error: null });
+    try {
+      await action(body);
+      setComp(null);
+      shell.toast(m === 'edit' ? 'Guardado en tu revisión.' : started ? `Empezaste una revisión: nadie la ve hasta que la mandes${v.decidable ? ' con Ajustar' : ''}.` : 'Sumado a tu revisión.');
       shown(rereadFiles(qc, shell, key));
     } catch (e) {
       if (failed(e)) return;
@@ -158,21 +198,26 @@ export function Files({ v, q, review, keys }: { v: ItemPage; q: UseQueryResult<F
     }
   };
 
+  // Resolved or reopened at once (#368), undone if GitHub says no.
   const resolve = (threadId: string, resolved: boolean) => withBusy(threadId, async () => {
     const shown = clickTimer('archivos');
     try {
-      await action({ action: 'resolve', threadId, resolved });
+      await optimistic((r) => withThreads(r, (all) => all.map((t) => (t.id === threadId ? { ...t, isResolved: resolved } : t))), () => action({ action: 'resolve', threadId, resolved }));
       shell.toast(resolved ? 'Conversación resuelta.' : 'Conversación reabierta.');
       shown(rereadFiles(qc, shell, key));
     } catch (e) {
       if (!failed(e)) shell.toast(`No se pudo: ${(e as Error).message}`);
     }
   });
+  // Out of the review at once, back if GitHub says no.
   const deletePending = (nodeId: string) => withBusy(nodeId, async () => {
+    const drop = (r: FilesRead): FilesRead => (r.review
+      ? { ...r, review: { ...r.review, threads: r.review.threads.map((t) => ({ ...t, comments: t.comments.filter((x) => x.nodeId !== nodeId) })).filter((t) => t.comments.length > 0) } }
+      : r);
     try {
-      await action({ action: 'pending-delete', commentId: nodeId });
+      await optimistic(drop, () => action({ action: 'pending-delete', commentId: nodeId }));
       shell.toast('Borrado de tu revisión.');
-      rereadFiles(qc, shell, key);
+      void rereadFiles(qc, shell, key);
     } catch (e) {
       if (!failed(e)) shell.toast(`No se pudo: ${(e as Error).message}`);
     }

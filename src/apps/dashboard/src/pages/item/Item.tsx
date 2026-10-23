@@ -288,7 +288,10 @@ export function Item({ id }: { id: string }) {
     <Activity v={v} />
     <Questions key={id} v={v} />
     {v.item.kind !== 'other' && <Tab v={v} files={files.q} review={review} keys={filesKeys} ask={setFasked} fichaKeys={fichaKeys} />}
-    {asked && <ActionDialog v={v} asked={asked} busy={dialogBusy} close={() => setAsked(null)} />}
+    {asked && <ActionDialog key={asked.retry ? `retry:${asked.retry.error}` : 'ask'} v={v} asked={asked} busy={dialogBusy} close={() => setAsked(null)} reopen={(again) => {
+      // Only on the item it was about: elsewhere, the toast says it.
+      if (live.current.v?.item.id === again.item) setAsked(again);
+    }} />}
     {fasked && <FichaDialog key={`${fasked.action}:${fasked.ficha?.key ?? ''}`} v={v} asked={fasked} busy={fichaBusy} close={() => setFasked(null)} />}
   </>;
 }

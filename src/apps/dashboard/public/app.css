@@ -308,6 +308,12 @@ button, a, input, textarea, select, .chip { transition: background-color .12s, b
 .cm header .chip { margin-left: 2px; }
 .cm .md.clip { max-height: 320px; overflow: hidden; -webkit-mask-image: linear-gradient(#000 75%, transparent); mask-image: linear-gradient(#000 75%, transparent); }
 .cm .more { margin: 0 12px 10px; }
+/* Written here and on its way to GitHub (#368): in its place at once, quieter until GitHub has it. */
+.cm.pending { border-style: dashed; animation: rise-in .16s var(--ease-out) both; }
+.cm.pending .md, .cm.pending > p { opacity: .75; }
+.cm.pending.note > p { margin: 0; padding: 9px 12px; font-size: 13px; color: var(--ink-2); }
+.tc.sending { opacity: .75; }
+.head .decided.pending { border-style: dashed; color: var(--muted); }
 .cm.thread summary { display: flex; align-items: center; gap: 8px; padding: 8px 12px; cursor: pointer; font-size: 12.5px; color: var(--muted); list-style: none; }
 .cm.thread summary::-webkit-details-marker { display: none; }
 .cm.thread summary::before { content: "▸"; color: var(--faint); }
@@ -1420,6 +1426,8 @@ select.aj-in { width: auto; min-width: 180px; }
 :root[data-theme="light"] .act-btn.dbtn.ok { color: #fff; }
 :root[data-theme="light"] .act-btn.dbtn.ok kbd { border-color: rgba(255, 255, 255, .45); }
 .dbtn[aria-expanded="true"] { box-shadow: 0 0 0 2px color-mix(in srgb, currentColor 35%, transparent); }
+/* Held while a decision is on its way (#368). */
+.actions .dbtn:disabled { opacity: .45; cursor: default; }
 .btn-s.ok-solid { background: var(--ok); color: #0d1a0c; border-color: var(--ok); font-weight: 600; }
 :root[data-theme="light"] .btn-s.ok-solid { color: #fff; }
 .drop { position: absolute; top: calc(100% + 8px); right: 0; width: min(520px, calc(100vw - 32px)); text-align: left; color: var(--ink); font-size: 13px; z-index: 30; background: var(--raise); border: 1px solid var(--run); border-radius: 10px; box-shadow: 0 20px 60px rgba(0, 0, 0, .45); }

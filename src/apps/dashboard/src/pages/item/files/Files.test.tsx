@@ -21,7 +21,12 @@ let mine: { viewed: string[]; review: unknown } = { viewed: [], review: null };
 let posted: Array<[string, unknown]> = [];
 let clicks: Array<{ what: string; ms: number }> = [];
 let asked: string[] = [];
+// A write held until it's let go, and one GitHub says no to (#368).
+let gate: Promise<void> | null = null;
+let failNext: string | null = null;
 beforeEach(() => {
+  gate = null;
+  failNext = null;
   posted = [];
   clicks = [];
   asked = [];
@@ -44,6 +49,12 @@ beforeEach(() => {
       return json({});
     }
     posted.push([url, JSON.parse(String(init?.body ?? 'null'))]);
+    if (gate) await gate;
+    if (failNext) {
+      const error = failNext;
+      failNext = null;
+      return new Response(JSON.stringify({ error }), { status: 502, headers: { 'Content-Type': 'application/json' } });
+    }
     return json({ url: 'https://github.com/acme/tienda/pull/50#discussion_r2' });
   }));
 });
@@ -107,6 +118,41 @@ describe('Archivos', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Resolver conversación' }));
     await waitFor(() => expect(posted).toHaveLength(2));
     expect(posted[1]).toEqual([FILES, { action: 'resolve', threadId: 'T1', resolved: true }]);
+  });
+
+  // #368: in the thread at once, as being sent; undone if GitHub says no.
+  it('shows a reply in its thread and a resolved thread at once, as they are sent', async () => {
+    let release = () => {};
+    gate = new Promise<void>((resolve) => { release = resolve; });
+    show(person());
+    await screen.findByText('¿Por qué 4?');
+    fireEvent.click(screen.getByRole('button', { name: 'Responder…' }));
+    fireEvent.change(document.getElementById('fcbox')!, { target: { value: 'Porque sí.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Responder ya' }));
+    await waitFor(() => expect(posted).toHaveLength(1));
+    expect(document.getElementById('fcbox')).toBeNull();
+    expect(document.querySelector('.tc.sending')?.textContent).toContain('Porque sí.');
+    expect(document.querySelector('.tc.sending')?.textContent).toContain('enviando…');
+    fireEvent.click(screen.getByRole('button', { name: 'Resolver conversación' }));
+    await waitFor(() => expect(document.querySelector('.dthread summary')?.textContent).toContain('resuelto'));
+    release();
+    await waitFor(() => expect(posted).toHaveLength(2));
+  });
+
+  it('takes back a reply and a resolved thread GitHub said no to, with the reply\'s text in its box', async () => {
+    show(person());
+    await screen.findByText('¿Por qué 4?');
+    failNext = 'GitHub no respondió';
+    fireEvent.click(screen.getByRole('button', { name: 'Responder…' }));
+    fireEvent.change(document.getElementById('fcbox')!, { target: { value: 'Porque sí.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Responder ya' }));
+    await waitFor(() => expect((document.getElementById('fcbox') as HTMLTextAreaElement | null)?.value).toBe('Porque sí.'));
+    expect(document.querySelector('.tc.sending')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
+    failNext = 'GitHub no respondió';
+    fireEvent.click(screen.getByRole('button', { name: 'Resolver conversación' }));
+    await waitFor(() => expect(posted).toHaveLength(2));
+    await waitFor(() => expect(document.querySelector('.dthread summary')?.textContent).not.toContain('resuelto'));
   });
 
   it('marks a file as viewed with v, and goes on to the next one not viewed', async () => {

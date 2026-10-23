@@ -63,6 +63,11 @@ export function hunksOf(file: PrFile): Hunk[] {
 // A file card's anchor, the same for the same path.
 export const fileAnchor = (path: string) => `f-${[...path].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7).toString(36)}`;
 
+// A comment on its way (#368): a thread it starts has this id (and URL)
+// until GitHub gives it one, and the comment itself a negative id.
+export const SENDING = 'sending:';
+export const isSending = (c: { id: number }) => c.id < 0;
+
 // A thread as Archivos draws it: the PR's, with the replies the person's
 // review adds (`pending`), or one their review starts (`mine`).
 export type SeenThread = Omit<DiffThread, 'comments'> & { comments: DiffThread['comments']; pending?: PendingComment[]; mine?: boolean };
