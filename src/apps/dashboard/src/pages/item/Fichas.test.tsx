@@ -125,6 +125,21 @@ describe('an exploration PR’s Fichas', () => {
     expect(posted[0]).toEqual([URL_ACTIONS, { action: 'issue', ficha: 'backoffice/F-0001', text: 'Revisar los filtros' }]);
   });
 
+  it('sends a finding to development from Más, with or without context', async () => {
+    const { shell } = show();
+    await screen.findByText('El buscador no avisa', { selector: '.tl' });
+    fireEvent.click(screen.getByRole('button', { name: 'Más ▾' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /Desarrollar ya/ }));
+    expect(document.getElementById('fdlg-prev')!.textContent?.trim()).toBe('Desarrollar ya.');
+    expect((document.getElementById('fdlg-yes') as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.change(document.getElementById('fdlg-text')!, { target: { value: 'Es urgente' } });
+    expect(document.getElementById('fdlg-prev')!.textContent?.trim()).toBe('Desarrollar ya: Es urgente');
+    fireEvent.click(document.getElementById('fdlg-yes')!);
+    await waitFor(() => expect(posted).toHaveLength(1));
+    expect(posted[0]).toEqual([URL_ACTIONS, { action: 'desarrollar', ficha: 'backoffice/F-0001', text: 'Es urgente' }]);
+    await waitFor(() => expect(shell.toast).toHaveBeenCalledWith('Mandaste F-0001 a desarrollar. ronin abre su issue y te responde en el hilo con el número.', expect.anything()));
+  });
+
   it('comments on a finding from the box under its thread', async () => {
     show();
     fireEvent.click(await screen.findByText('El menú tapa el botón', { selector: '.tl' }));

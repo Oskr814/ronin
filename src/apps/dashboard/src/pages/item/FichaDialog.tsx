@@ -67,7 +67,7 @@ export function FichaDialog({ v, asked, close, busy }: { v: ItemView; asked: Fic
       } else {
         const ficha = asked.ficha!;
         const done = await postFichaComment(id, ficha.key, asked.action, typed, redo);
-        shell.toast(`Comentaste en ${ficha.key.split('/')[1]}. ronin lo va a aplicar y te responde en el hilo.`, done.url);
+        shell.toast(asked.action === 'desarrollar' ? `Mandaste ${ficha.id} a desarrollar. ronin abre su issue y te responde en el hilo con el número.` : `Comentaste en ${ficha.key.split('/')[1]}. ronin lo va a aplicar y te responde en el hilo.`, done.url);
       }
       await queryClient.invalidateQueries({ queryKey: ['exploration', id] });
       busy.current = false;
@@ -83,7 +83,7 @@ export function FichaDialog({ v, asked, close, busy }: { v: ItemView; asked: Fic
     if (!busy.current) close();
   };
   const me = session.me;
-  const preview = asked.action === 'general' ? `@ronin-agent ${typed || '…'}` : fichaCommentText(asked.action, typed || '…', redo);
+  const preview = asked.action === 'general' ? `@ronin-agent ${typed || '…'}` : fichaCommentText(asked.action, asked.action === 'desarrollar' ? typed : typed || '…', redo);
 
   return createPortal(
     <div id="flayer"><div className="scrim" onClick={(e) => {

@@ -431,11 +431,13 @@ Qué pasó, cómo reproducirlo, evidencia (con las capturas del antes) y propues
    - **crear un issue** aparte a partir del comentario;
    - **responder** una pregunta.
 
+   **Desarrollar ya** (#379) no pasa por esa clasificación: un comentario en la ficha que empieza con `Desarrollar ya` lo lee el código (`developNow` en `flow.ts`), no el agente. ronin abre en ese momento el issue de la ficha, asignado a sí mismo y con la clave `ronin-ficha:` de siempre (`ensureFindingIssue`), lo dice en el issue y responde en el hilo. Después marca la ficha `aprobado` con su issue y lo commitea al PR. Si una corrida está escribiendo la rama, el issue sale igual y el resto espera a que termine. Al aprobar el PR, la ficha ya está aprobada y su issue se encuentra por la clave, así que no se abre otro.
+
    Las mismas decisiones se pueden tomar desde el tablero, que comenta como quien entró (§15.12).
 
    Un comentario general del PR que menciona a ronin también se aplica: puede cubrir varias fichas a la vez ("los de mobile se resuelven con F-0003"), que se rechazan o corrigen como arriba, y dejar en `knowledge.md` lo que las exploraciones siguientes no deben volver a proponer. Se procesa antes del merge, así que no se abren issues de fichas que ese comentario descartó.
 4. Approve + merge (mismo gate que el resto): al ver el PR aprobado, ronin marca como `aprobado` **las fichas que siguen en pie**, les crea su issue, commitea ambos al PR y recién entonces lo mergea (si sigue aprobado), así la base queda con el estado y el número de issue de cada ficha. La corrida siguiente abre el PR nuevo. Cada issue sale **asignado a ronin**, así que entra solo al flujo de `fix-issue` de siempre: aprobar la ficha es la decisión de hacerla. `fix-issue` lo reconoce por la clave `ronin-ficha:` del cuerpo y parte de lo que la ficha ya hizo, sin investigar de cero: confirma el diagnóstico contra el código e implementa la propuesta, con el cambio borrador del después como punto de partida y sin ampliar el alcance. Solo investiga más donde el código contradice la ficha. En el tablero, esa corrida se llama *Resolver issue*. Para no hacer una, se rechaza la ficha antes de aprobar el PR.
-5. Sin excepciones: ninguna ficha abre issue antes de la aprobación, ni siquiera un bug de gravedad `bug`. Así una ficha rechazada nunca deja un issue abierto. Los problemas del **entorno de desarrollo** (seed, stubs), que el evaluador marca con `entorno`, siguen el mismo camino.
+5. Ninguna ficha abre issue antes de la aprobación sin que una persona lo pida (con *Desarrollar ya*), ni siquiera un bug de gravedad `bug`. Así una ficha rechazada nunca deja un issue abierto. Los problemas del **entorno de desarrollo** (seed, stubs), que el evaluador marca con `entorno`, siguen el mismo camino.
 
 #### 11.8 Programación nocturna
 

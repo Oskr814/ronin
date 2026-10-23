@@ -23,6 +23,8 @@ describe('findingCardComment', () => {
     expect(findingCardComment('cambios', 'Solo el texto')).toBe('Solo el texto');
     expect(findingCardComment('issue', 'revisar los toasts de catálogos')).toBe('Abrí un issue aparte: revisar los toasts de catálogos');
     expect(findingCardComment('pregunta', '¿Pasa como Sales?')).toBe('¿Pasa como Sales?');
+    expect(findingCardComment('desarrollar', '')).toBe('Desarrollar ya.');
+    expect(findingCardComment('desarrollar', 'es urgente')).toBe('Desarrollar ya: es urgente');
   });
 });
 
@@ -31,6 +33,12 @@ describe('runFindingCardAction', () => {
     const done = await runFindingCardAction(ENTRY, PR, REVIEW, SESSION, { action: 'cambios', ficha: 'backoffice/F-0017', text: '  Que el aviso diga el motivo ', redo: true }, post);
     expect(post).toHaveBeenCalledWith('gho_user', 'acme/product', 840, 'docs/exploration/backoffice/findings/F-0017-x.md', 'Que el aviso diga el motivo\n\nTambién hay que rehacer la captura del después.');
     expect(done).toEqual({ id: 9, url: 'https://github.com/acme/product/pull/840#discussion_r9', ficha: 'backoffice/F-0017' });
+  });
+
+  it('sends a finding to development with or without context, never one already decided', async () => {
+    await runFindingCardAction(ENTRY, PR, REVIEW, SESSION, { action: 'desarrollar', ficha: 'backoffice/F-0017' }, post);
+    expect(post).toHaveBeenCalledWith('gho_user', 'acme/product', 840, 'docs/exploration/backoffice/findings/F-0017-x.md', 'Desarrollar ya.');
+    await expect(runFindingCardAction(ENTRY, PR, REVIEW, SESSION, { action: 'desarrollar', ficha: 'backoffice/F-0015' }, post)).rejects.toThrow('ya está rechazada');
   });
 
   it('only lets people talk on a finding already decided', async () => {

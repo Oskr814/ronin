@@ -16,10 +16,12 @@ import {
   type Discussion,
   listFileReviewComments,
   listIssueComments,
+  listIssuesWithLabel,
   listOpenPrsByHeadPrefix,
   markPullRequestReady,
   mergePullRequest,
   replyToComment,
+  type FileReviewComment,
   type PullRequestStatus,
 } from '@platform/github/github.js';
 import { ensureAppWorktree } from '../product-app/index.js';
@@ -34,14 +36,18 @@ import {
   commitAndPush,
   currentBatch,
   ensureBatchWorktree,
+  ensureFindingIssue,
+  findingIssueKey,
   explorationBranch,
   EXPLORATION_BRANCH_PREFIX,
+  LABEL_PROPOSAL,
   openFindingIssues,
   reconcileApproved,
   upsertExplorationPr,
 } from './pr.js';
 import { clip, LIMITS, replaceProposal } from './output.js';
 import { redoAfterImages } from './redo.js';
+import { readBranchFile } from './review.js';
 import { mentionsHandle } from '../commands/index.js';
 import type { CommitChange } from '@platform/git/commit-style.js';
 import { worktreeLock } from '@platform/workers/worktree-lock.js';
@@ -238,14 +244,15 @@ const isBot = (login: string) => login.toLowerCase() === config.githubLogin.toLo
 
 // A new comment on a finding file is feedback; inside a thread, a reply is
 // only when it mentions ronin — people also talk among themselves there.
-async function pendingFeedback(pr: PullRequestStatus): Promise<PendingFeedback[]> {
-  const comments = await listFileReviewComments(pr.number);
+async function pendingFeedback(comments: FileReviewComment[]): Promise<PendingFeedback[]> {
   const rootOf = (c: { id: number; inReplyToId?: number }) => c.inReplyToId ?? c.id;
   const findingOf = (path: string) => path.match(FINDING_PATH_RE);
   const result: PendingFeedback[] = [];
   for (const c of comments) {
     if (isBot(c.authorLogin) || !c.authorLogin) continue;
     if (c.inReplyToId && !mentionsHandle(c.body, config.githubLogin)) continue;
+    // Sending it to development is the code's (developNow), not the agent's.
+    if (!c.inReplyToId && developRequest(c.body) !== null) continue;
     const match = findingOf(c.path);
     if (!match) continue;
     if (await isProcessed({ ...c, kind: 'review' })) continue;
@@ -316,8 +323,8 @@ export function renderRejectedIssueClose(findingId: string, prNumber: number, mo
 // closed if it had one), edit (title, proposal), add to the knowledge, open
 // a follow-up issue. Redoing an after
 // image needs the app running, so those come back for the worker.
-async function applyFeedback(pr: PullRequestStatus, batch: string): Promise<RedoItem[]> {
-  const [pending, general] = await Promise.all([pendingFeedback(pr), pendingGeneralFeedback(pr)]);
+async function applyFeedback(pr: PullRequestStatus, batch: string, fileComments: FileReviewComment[]): Promise<RedoItem[]> {
+  const [pending, general] = await Promise.all([pendingFeedback(fileComments), pendingGeneralFeedback(pr)]);
   if (pending.length === 0 && general.length === 0) return [];
   const batchDir = await ensureBatchWorktree(batch);
   const apps = await appsWithMemory(batchDir);
@@ -475,11 +482,101 @@ export function renderOriginReply(prNumber: number, findings: Array<{ id: string
   ].join('\n');
 }
 
+// "Desarrollar ya" on a finding (#379), as the dashboard writes it: the
+// context after it ('' for none), or null for any other comment. Fixed
+// words, read by the code: sending a finding to development isn't left to
+// how the agent reads a comment.
+const DEVELOP_RE = /^\s*desarrollar ya\b[.:]?\s*([\s\S]*)$/i;
+export function developRequest(body: string): string | null {
+  const match = DEVELOP_RE.exec(body);
+  return match ? match[1].trim() : null;
+}
+
+export function developCommitChange(prNumber: number, developed: Array<{ id: string; titulo: string; issue: number }>): CommitChange {
+  const ids = developed.map((d) => d.id);
+  return {
+    description: `Before PR #${prNumber} is approved, these findings were sent to development: marks them approved and records the issue opened for each one:\n${developed.map((d) => `- ${d.id} ${d.titulo} (#${d.issue})`).join('\n')}`,
+    fallback: { en: `send ${idList(ids)} to development from PR #${prNumber}`, es: `mandar ${idList(ids)} a desarrollar desde el PR #${prNumber}` },
+  };
+}
+
+// Sends the findings asked for to development before the PR is approved
+// (#379): each one gets its own issue now, assigned to ronin, with the key
+// approveAndMerge looks for, so approving the PR later opens no second one.
+// `write`: whether the branch can be written — not while a run of the repo
+// is on it. Then the issue goes out anyway, and the finding is marked
+// approved (and the comment done) once the run is over.
+export async function developNow(pr: PullRequestStatus, batch: string, comments: FileReviewComment[], write: boolean): Promise<void> {
+  const asks: Array<{ c: FileReviewComment; app: string; id: string; context: string }> = [];
+  for (const c of comments) {
+    if (isBot(c.authorLogin) || !c.authorLogin || c.inReplyToId) continue;
+    const match = c.path.match(FINDING_PATH_RE);
+    const context = developRequest(c.body);
+    if (!match || context === null || (await isProcessed({ ...c, kind: 'review' }))) continue;
+    asks.push({ c, app: match[1], id: match[2], context });
+  }
+  if (asks.length === 0) return;
+  const existing = await listIssuesWithLabel(LABEL_PROPOSAL);
+  const base = (activeRepo().worktreeBaseRef ?? config.worktreeBaseRef).replace(/^origin\//, '');
+  const batchDir = write ? await ensureBatchWorktree(batch) : undefined;
+  const developed: Array<{ id: string; titulo: string; issue: number; commentId: number }> = [];
+  const done: number[] = [];
+  const reply = (c: FileReviewComment, body: string) => replyToComment(pr.number, { id: c.id, kind: 'review' }, body).catch((error) => log.error(`exploración: no se pudo responder el comentario ${c.id}`, error));
+  for (const { c, app, id, context } of asks) {
+    // From the checkout when it can be written, and from the PR's branch otherwise.
+    let path: string | undefined;
+    let raw: string | null = null;
+    if (batchDir) {
+      const memoryDir = memoryDirFor(batchDir, app);
+      const meta = (await loadMemory(memoryDir)).findings.find((f) => f.id === id);
+      path = meta ? join(memoryDir, 'findings', findingFileName(meta)) : undefined;
+      raw = path ? await host().fs.readFile(path, 'utf8') : null;
+    } else {
+      raw = await readBranchFile(activeRepo(), pr.headRefName, c.path);
+    }
+    if (!raw) {
+      if (batchDir) {
+        await reply(c, `No encuentro la ficha ${id} en este PR: no la mandé a desarrollar.`);
+        done.push(c.id);
+      }
+      continue;
+    }
+    const finding = parseFinding(raw);
+    if (finding.estado === 'rechazado' || finding.issue) {
+      await reply(c, finding.issue ? `${id} ya tiene su issue: #${finding.issue}.` : `${id} está rechazada: no la mandé a desarrollar. Si igual hace falta, pedí un issue aparte.`);
+      done.push(c.id);
+      continue;
+    }
+    const note = [
+      `Se mandó a desarrollar desde el PR de exploración #${pr.number}, antes de aprobarlo, a pedido de ${c.authorLogin}.`,
+      ...(context ? ['', `Contexto: ${clean(context)}`] : []),
+    ].join('\n');
+    const issue = await ensureFindingIssue(app, finding, `https://github.com/${activeRepo().productRepo}/blob/${base}/${c.path}`, { existing, note });
+    if (issue.created) {
+      existing.push({ number: issue.number, body: findingIssueKey(app, id), state: 'OPEN' });
+      await reply(c, `Abrí #${issue.number} y me lo asigné: lo empiezo en el próximo tick. Al aprobar el PR, esta ficha no abre otro.${batchDir ? '' : ' La ficha queda aprobada cuando termine la exploración que está corriendo.'}`);
+    }
+    if (!batchDir || !path) continue;
+    await host().fs.writeFile(path, serializeFinding({ ...finding, estado: 'aprobado', issue: issue.number, revisor: c.authorLogin, revisado: new Date().toISOString() }));
+    developed.push({ id, titulo: finding.titulo, issue: issue.number, commentId: c.id });
+  }
+  if (batchDir && developed.length > 0 && (await commitAndPush(batchDir, explorationBranch(batch), developCommitChange(pr.number, developed)))) {
+    await upsertExplorationPr(batch, batchDir);
+  }
+  for (const id of [...done, ...developed.map((d) => d.commentId)]) await markProcessed({ id, kind: 'review' }).catch(() => {});
+  if (developed.length > 0) log.info(`exploración: PR #${pr.number}, mandadas a desarrollar: ${developed.map((d) => `${d.id} (#${d.issue})`).join(', ')}`);
+}
+
 export async function processExplorationPr(pr: PullRequestStatus): Promise<void> {
   const batch = batchOfBranch(pr.headRefName);
   if (!batch) return;
-  if (await exploreWorkerBusy()) return; // the worker is writing this branch right now
-  const redo = await applyFeedback(pr, batch);
+  // While the worker writes this branch, only what needs no commit: the
+  // issue of a finding sent to development.
+  const busy = await exploreWorkerBusy();
+  const comments = await listFileReviewComments(pr.number);
+  await developNow(pr, batch, comments, !busy).catch((error) => log.error(`exploración: no se pudo mandar a desarrollar desde el PR #${pr.number}`, error));
+  if (busy) return;
+  const redo = await applyFeedback(pr, batch, comments);
   if (redo.length > 0) {
     launchExploreWorker({ repo: activeRepo().productRepo, appName: redo[0].app, redo: { prNumber: pr.number, batch, items: redo } });
     return; // the worker now owns the branch; merging waits for the next tick
