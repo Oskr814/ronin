@@ -69,6 +69,11 @@ export type DevDecisionKind = 'deploy' | 'review' | 'decline';
 // When the person can write: an answer, or an adjustment to the prototype.
 export const OPEN_FOR_PERSON: RequestStatus[] = ['asking', 'answered', 'proposed'];
 
+// While the team has it (#353), until it closes: someone of the team can
+// write to the person, and the person can answer them, without it going
+// back to ronin (team-conversation.ts).
+export const TEAM_HELD: RequestStatus[] = ['awaiting-dev', 'approved', 'fixing', 'big'];
+
 // Its issue is ronin's: an approved prototype, or a reported error's small
 // fix (#137).
 export const RONINS: RequestStatus[] = ['approved', 'fixing'];
@@ -87,7 +92,12 @@ export const MAX_REPRODUCTIONS = 2;
 
 export interface PortalMessage {
   id: number;
-  from: 'person' | 'ronin';
+  // 'team': someone of the dev team, from the tablero (#353): `by` is their
+  // GitHub login (the person sees «Equipo de desarrollo»).
+  from: 'person' | 'ronin' | 'team';
+  by?: string;
+  // The person's answer to the team, which ronin doesn't read.
+  to?: 'team';
   text: string;
   // File names under img/.
   images: string[];
@@ -231,6 +241,9 @@ export type RequestEvent = { at: string } & (
   // longer worked: the PR waits for an approval).
   | { kind: 'dev-decided'; decision: DevDecisionKind; by: string }
   | { kind: 'pr-approved'; number: number; by: string; ok: boolean }
+  // The team and the person writing to each other while the team has it.
+  | { kind: 'team-message'; by: string }
+  | { kind: 'person-reply' }
   // The interview (#225): a round of questions, its answers, a summary, a
   // correction, or sending it to the team (confirmed, or without answering).
   | { kind: 'interview'; step: 'asked' | 'answered' | 'summary' | 'corrected' | 'confirmed' | 'skipped'; round: number }
@@ -291,6 +304,9 @@ export interface PortalRequest {
   // Why the team closed it, as written when closing its PR from the
   // tablero: the same words go to the person when its issue closes.
   closeNote?: { text: string; by: string; at: string };
+  // When the person answered the team, until someone of the team opens it
+  // or writes back (#353): Pendientes shows «La persona respondió».
+  personReplied?: string;
   createdAt: string;
   updatedAt: string;
 }

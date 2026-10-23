@@ -38,6 +38,7 @@ export const prUrl = (repo: string, number: number) => (safeRepo(repo) ? `https:
 
 export function waitsLabel(p: Row): string {
   const who = firstName(p.person);
+  if (p.personReplied) return `${who} respondió: leerlo`;
   switch (p.waitsOn) {
     case 'person': return p.status === 'proposed' ? `${who}: aprobar o ajustar` : p.status === 'interviewing' ? `${who}: responder las preguntas` : p.status === 'confirming' ? `${who}: confirmar el resumen` : `${who}: responder`;
     case 'ronin': return p.running ? 'ronin trabajando' : p.status === 'approved' && p.issue ? `ronin: el cambio en #${p.issue}` : p.status === 'fixing' && p.issue ? `ronin: el arreglo en #${p.issue}` : p.status === 'minor' ? 'ronin: el prototipo' : p.status === 'reproducing' ? 'ronin: reproducirlo' : p.status === 'thinking' ? 'ronin: leerlo' : 'ronin: abrir el issue';

@@ -1259,6 +1259,15 @@ Antes de pasar un pedido grande al equipo, ronin le hace a la persona las pregun
 - **Para el equipo:** `interviewRecord` junta las respuestas de cada ronda, el último resumen y cómo terminó (`confirmed`, `answered` o `skipped`). El issue del equipo (16.6) trae **«Lo que definió la persona»** después de «Lo que pide»: la tabla del resumen (o la de las respuestas si no hubo resumen), si la persona lo confirmó, lo que queda fuera, lo que decide el equipo y las preguntas y respuestas tal cual. Si saltó las preguntas, lo dice. El correo al equipo trae lo mismo en texto.
 - **En el tablero** (16.11): la conversación y la actividad muestran las preguntas, las respuestas y el resumen; *Para el equipo* muestra lo que definió la persona. Los eventos `interview` van como líneas cortas en la actividad.
 
+#### 16.14 El equipo le escribe a la persona (`team-conversation.ts`, #353)
+
+Antes, la conversación del portal era solo entre la persona y ronin. Mientras el pedido está en manos del equipo (`TEAM_HELD`: `awaiting-dev`, `approved`, `fixing` y `big`) y hasta que se cierra, el equipo y la persona se escriben sin que el pedido vuelva a ronin ni cambie de estado.
+
+- **El equipo escribe** desde la pestaña *Conversación* del pedido (`POST /api/requests/<n>/messages`, con texto e imágenes), con el permiso `acciones` del repo. El mensaje queda con `from: 'team'` y `by` (el login de quien escribió), y en la actividad (`team-message`).
+- **La persona lo ve firmado «Equipo de desarrollo»:** quién escribió no sale del tablero. Le llega un correo («El equipo te escribió sobre tu pedido P-n») y, mientras el equipo tiene el pedido, la página se relee cada 15 segundos.
+- **La persona contesta desde el mismo pedido,** pero solo después de que el equipo le escribió. La respuesta va con `to: 'team'`, la registra `person-reply` y **no la lee ronin**: el pedido no vuelve a `thinking`. Al equipo le llega un correo con el aviso `pedido-equipo`, y el pedido queda con `personReplied`: la lista dice «Ana respondió: leerlo» y espera al equipo hasta que alguien del equipo lo abre o le contesta.
+- **Con GitHub:** si el pedido ya tiene issue, cada mensaje se copia como comentario de ronin («Equipo → persona» o «Persona → equipo»), con lo escrito citado y sin `@`. Así quien trabaja desde GitHub (ronin también, cuando implementa o atiende comentarios) tiene el contexto. Si todavía no tiene issue, la conversación entra en su cuerpo cuando se abre, con cada mensaje marcado igual.
+
 ### 17. Reuniones: de las notas al trabajo planificado (#62)
 
 Las reuniones ya dejan notas escritas (las de Gemini en Meet, u otro agente), pero pasar de las notas a trabajo planificado era manual y muchas veces no pasaba. En la página *Reuniones* del tablero, alguien sube las notas de una reunión y ronin propone el trabajo que sale de ellas: proyectos nuevos de Linear con sus issues, issues, y comentarios en issues que ya existen. **Nada se crea hasta que alguien lo apruebe ahí**: no hay borradores en Linear, y GitHub sigue siendo la fuente de verdad (§15.13).

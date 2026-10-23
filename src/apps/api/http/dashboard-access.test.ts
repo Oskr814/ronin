@@ -189,6 +189,7 @@ describe('a session that sees only some repos', () => {
     };
     const bm = await waiting(BM);
     expect((await call(`/api/requests/${bm}/decision`, 'POST', { decision: 'review' })).status).toBe(404);
+    expect((await call(`/api/requests/${bm}/messages`, 'POST', { text: 'Hola' })).status).toBe(404);
     const sc = await waiting(SC);
     expect((await call('/api/requests')).body.requests.find((r: { number: number }) => r.number === sc)).toMatchObject({ status: 'awaiting-dev', waitsOn: 'team' });
     const actionsOnly = { admin: false, repos: [{ repo: SC, permission: 'triage' as const, perms: { notas: false, aprobar: false, acciones: true, desplegar: false } }] };
@@ -223,7 +224,9 @@ describe('a session that sees only some repos', () => {
     await refused(`/api/items/${encodeURIComponent(`${SC}#2`)}/files/actions`, { action: 'comment', path: 'a.ts', body: 'x' });
     expect(await refused('/api/meetings', { repo: SC, text: 'notas de la reunión' })).toMatch(/subir notas/);
     const { createRequest } = await import('@domains/portal/requests.js');
-    expect(await refused(`/api/requests/${(await createRequest({ userId: 'u', repo: SC, app: 'web', text: 'x', images: [] })).number}/decision`, { decision: 'review' })).toMatch(/acciones del tablero/);
+    const asked = (await createRequest({ userId: 'u', repo: SC, app: 'web', text: 'x', images: [] })).number;
+    expect(await refused(`/api/requests/${asked}/decision`, { decision: 'review' })).toMatch(/acciones del tablero/);
+    expect(await refused(`/api/requests/${asked}/messages`, { text: 'Hola' })).toMatch(/acciones del tablero/);
     await refused(`/api/deploys/${SC}/plan`, { tag: 'v1', prs: 'all' });
     expect((await call('/api/snapshot', 'GET', undefined, readOnly)).body.despliegues).toBe(false);
     expect((await call('/api/settings/users', 'GET', undefined, readOnly)).status).toBe(403);

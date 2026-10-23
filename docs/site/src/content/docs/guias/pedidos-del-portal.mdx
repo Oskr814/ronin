@@ -36,12 +36,17 @@ El portal, `https://ronin-agent.redmotoshn.com`, es para que la gente que usa la
 
 **Si reporta un error,** ronin primero lo reproduce en una copia de la app con datos de prueba y escribe un test que falla por ese error. Si el arreglo es chico y el test pasa a verde con él, el pedido espera la decisión de un dev, como un prototipo aprobado, con el test y el arreglo como propuesta. Aprobado, ronin abre el issue asignado a sí mismo, sin prototipo. Si no, lo pasa al equipo con los pasos, la causa y el test. Un error que no pudo reproducir nunca se cierra como «no es un error»: va al equipo, porque puede depender de datos reales.
 
+**Escribirle a la persona.** Mientras el pedido está en manos del equipo (esperando su decisión, aprobado, en corrección o grande) y hasta que se cierra, en la pestaña *Conversación* hay una caja **Escribirle a la persona**, con texto e imágenes. Hace falta el permiso para las acciones del repo.
+- **La persona** lo ve firmado «Equipo de desarrollo», le llega un correo y puede responder desde el mismo pedido. **ronin no lee nada de esto:** el pedido sigue donde estaba.
+- **Cuando la persona responde,** al equipo le llega un correo y la lista dice *respondió: leerlo* hasta que alguien del equipo abre el pedido o le contesta.
+- **Si el pedido ya tiene issue,** cada mensaje queda copiado ahí como comentario. Si no, entra en el cuerpo del issue cuando se abre.
+
 **Cancelar:** la persona puede cancelar un pedido mientras nadie lo tomó. Si ya tenía un issue del equipo sin asignar, ese issue se cierra como no planeado.
 
 ## Los correos
 
-- **A la persona:** cada respuesta de ronin, las preguntas de la entrevista y su resumen, el prototipo, el paso al equipo, el merge, el despliegue y el cierre.
-- **Al equipo del repo:** el pedido que espera su decisión, el issue de un pedido que es suyo y el PR que espera aprobación. Le llega a quien eligió esos avisos en [Ajustes → Notificaciones](/ronin/operar/ajustes/#tu-cuenta).
+- **A la persona:** cada respuesta de ronin, las preguntas de la entrevista y su resumen, el prototipo, el paso al equipo, lo que le escriba el equipo, el merge, el despliegue y el cierre.
+- **Al equipo del repo:** el pedido que espera su decisión, el issue de un pedido que es suyo, el PR que espera aprobación y las respuestas de la persona al equipo. Le llega a quien eligió esos avisos en [Ajustes → Notificaciones](/ronin/operar/ajustes/#tu-cuenta).
 
 ## Los pedidos en el tablero
 
@@ -52,7 +57,7 @@ El portal, `https://ronin-agent.redmotoshn.com`, es para que la gente que usa la
   - **Las etapas:** Pedido → Conversación → Prototipo → Aprobación → Issue → PR → Listo. Mientras espera al equipo, la aprobación dice *Decisión del equipo*.
   - **Ahora:** qué falta y quién lo tiene que hacer. Si ronin está trabajando, la corrida en vivo. Si espera al equipo, las tres acciones de arriba (hace falta el permiso para las acciones del repo).
   - **Actividad:** todo en orden con su hora: los mensajes, cada corrida con su duración y costo, la clasificación, cada ronda de la entrevista, la decisión de la persona y la del dev, la aprobación del PR a su nombre, cada correo (y si salió), el issue, el PR, el merge y el release que lo llevó.
-  - **Conversación:** lo mismo que ve la persona, con las preguntas de la entrevista, sus respuestas y el resumen.
+  - **Conversación:** lo mismo que ve la persona, con las preguntas de la entrevista, sus respuestas y el resumen. Los mensajes del equipo dicen quién los escribió. Mientras el equipo tiene el pedido, abajo está la caja para escribirle a la persona.
   - **Para el equipo:** por qué es chico o grande, lo que definió la persona en la entrevista, el resumen técnico, lo que se le pidió al prototipo y el diff de cada uno.
   - **Issue y PR:** como en su ficha, con **Revisar el PR** (abre *Archivos*) y **Abrir la ficha**.
   - **Corridas:** todas las del pedido, con su transcripción.

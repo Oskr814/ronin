@@ -29,6 +29,10 @@ export const issueMarker = (n: number) => `<!-- ronin:portal P-${n} -->`;
 // few thousand at most.
 const MAX_PATCH = 40_000;
 
+// Who said it, in the conversation the issue carries: ronin, the person, or
+// someone of the team writing to the person from the tablero (#353).
+const speaker = (m: PortalRequest['messages'][number], who: string) => (m.from === 'ronin' ? 'ronin' : m.from === 'team' ? `Equipo → persona (${m.by})` : m.to === 'team' ? `${who} → equipo` : who);
+
 // What a person wrote, quoted and without pinging anyone.
 const quote = (text: string) => text.trim().replace(/@/g, '@​').split('\n').map((line) => `> ${line}`).join('\n');
 
@@ -117,7 +121,7 @@ export function portalIssueBody(request: PortalRequest, user: PortalUser | undef
   const who = user?.name ?? 'una persona';
   const conversation = request.messages
     .filter((m) => m.text && !m.captions)
-    .map((m) => `**${m.from === 'ronin' ? 'ronin' : who}:**\n${m.from === 'ronin' ? m.text : quote(m.text)}`)
+    .map((m) => `**${speaker(m, who)}:**\n${m.from === 'ronin' ? m.text : quote(m.text)}`)
     .join('\n\n');
   const image = (s: IssueShot) => `<img src="${s.url}" alt="${s.caption.replace(/"/g, "'")}" width="720">`;
   const truncated = patch !== undefined && patch.length > MAX_PATCH;
@@ -156,7 +160,7 @@ function fixIssueBody(request: PortalRequest, user: PortalUser | undefined, shot
   const who = user?.name ?? 'una persona';
   const conversation = request.messages
     .filter((m) => m.text && !m.captions)
-    .map((m) => `**${m.from === 'ronin' ? 'ronin' : who}:**\n${m.from === 'ronin' ? m.text : quote(m.text)}`)
+    .map((m) => `**${speaker(m, who)}:**\n${m.from === 'ronin' ? m.text : quote(m.text)}`)
     .join('\n\n');
   const image = (s: IssueShot) => `<img src="${s.url}" alt="${s.caption.replace(/"/g, "'")}" width="720">`;
   const truncated = patch !== undefined && patch.length > MAX_FIX_PATCH;

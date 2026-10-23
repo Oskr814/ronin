@@ -6,7 +6,7 @@ import { useBusy } from '../lib/busy.js';
 import { Composer, ComposerFrame, useDraft } from '../components/Composer.js';
 import { AnswersView, InterviewForm, missing, openQuestions, Paragraphs, payload, progress, UnderstoodView, type Answers } from '../components/Interview.js';
 import { Chip } from '../components/Chip.js';
-import { CLOSED, hhmm, initials, left, WORKING } from '../lib/text.js';
+import { CLOSED, hhmm, initials, left, TEAM_HELD, TEAM_NAME, TEAM_POLL_MS, WORKING } from '../lib/text.js';
 
 const POLL_MS = 2000;
 
@@ -27,7 +27,7 @@ export function RequestView({ n, me, onMenu, onZoom, onMissing }: {
   const query = useQuery({
     queryKey: ['request', n],
     queryFn: () => ok(client.requests[':n'].$get(params)),
-    refetchInterval: (q) => (q.state.data && WORKING[q.state.data.status] ? POLL_MS : false),
+    refetchInterval: (q) => (q.state.data && WORKING[q.state.data.status] ? POLL_MS : q.state.data && TEAM_HELD.includes(q.state.data.status) ? TEAM_POLL_MS : false),
     refetchOnWindowFocus: (q) => Boolean(q.state.data && WORKING[q.state.data.status]),
   });
   const d = query.data;
@@ -133,6 +133,7 @@ export function RequestView({ n, me, onMenu, onZoom, onMissing }: {
     if (!atBottom.current) setBelow(true);
     const last = d.messages.at(-1);
     if (last?.from === 'ronin') setSaid(`ronin te escribió: ${last.text ?? 'una respuesta nueva'}`);
+    if (last?.from === 'team') setSaid(`El ${TEAM_NAME.toLowerCase()} te escribió: ${last.text ?? 'un mensaje nuevo'}`);
   }, [count, d]);
   const toBottom = () => {
     const el = thread.current;
@@ -209,6 +210,9 @@ export function RequestView({ n, me, onMenu, onZoom, onMissing }: {
           {d.interview.correctionsLeft === 0 && <p className="hint">No quedan correcciones: lo que falte, el equipo lo ve contigo.</p>}
         </ComposerFrame>
       );
+  } else if (d.replyToTeam) {
+    // The team wrote (#353): the answer is theirs, ronin doesn't read it.
+    foot = composer({ placeholder: 'Respóndele al equipo de desarrollo…', label: 'Enviar al equipo', note: 'Lo lee el equipo de desarrollo' });
   } else if (d.status === 'asking' || d.status === 'answered') {
     foot = composer({ placeholder: d.status === 'asking' ? 'Responde a ronin…' : 'Escríbele a ronin si necesitas algo más…', label: 'Enviar' });
   } else {
@@ -245,6 +249,7 @@ function Thread({ d, me, onZoom, onImage }: { d: Detail; me: Me; onZoom: (src: s
       <div className="sys">{d.appName} · {hhmm(d.createdAt)}</div>
       {d.messages.map((m) => {
         const ronin = m.from === 'ronin';
+        const team = m.from === 'team';
         // A prototype's images come with their captions ("Antes: …", "Después: …").
         const images = !m.images.length ? null
           : m.captions ? (
@@ -257,10 +262,10 @@ function Thread({ d, me, onZoom, onImage }: { d: Detail; me: Me; onZoom: (src: s
             ))}</div>
           );
         return (
-          <div key={m.id} className={`msg ${ronin ? '' : 'mine'}`}>
-            {ronin ? <div className="seal" aria-hidden="true">浪人</div> : <div className="av" aria-hidden="true">{initials(me.name)}</div>}
+          <div key={m.id} className={`msg ${ronin ? '' : team ? 'team' : 'mine'}`}>
+            {ronin ? <div className="seal" aria-hidden="true">浪人</div> : team ? <div className="av team" aria-hidden="true">ED</div> : <div className="av" aria-hidden="true">{initials(me.name)}</div>}
             <div className="body">
-              <div className="who"><b>{ronin ? 'ronin' : me.name}</b> {hhmm(m.at)}</div>
+              <div className="who"><b>{ronin ? 'ronin' : team ? TEAM_NAME : me.name}</b> {hhmm(m.at)}{m.to === 'team' ? ' · al equipo' : ''}</div>
               <div className="bubble">
                 {m.answers ? <AnswersView m={m} />
                   : m.skipped ? <p className="ack">Lo envié sin responder las preguntas.</p>

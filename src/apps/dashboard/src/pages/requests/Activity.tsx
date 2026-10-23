@@ -97,6 +97,7 @@ function shownEvent(d: Detail, e: RequestEvent): Shown {
       ? ['crit', 'crit', `${e.by} decidió no hacerlo`, d.devDecision?.reason ? <div className="bx">{d.devDecision.reason}</div> : null]
       : ['ok', 'ok', `${e.by} lo aprobó ${e.decision === 'deploy' ? 'para desplegar' : 'con revisión'}`, <span className="m">{e.decision === 'deploy' ? 'ronin aprueba el PR a su nombre y lo mergea con el CI en verde' : 'el PR espera la aprobación de un dev'}</span>];
     case 'deploy-skipped': return ['warn', 'crit', `Quedó fuera del despliegue automático: no se aplica sobre ${e.base}`, <span className="m">{e.files.length ? `Choca en ${e.files.join(', ')}.` : ''}{e.needs.length ? ` Necesita ${e.needs.map((n) => `#${n}`).join(', ')}.` : ''} Se intenta otra vez en el próximo lote, o se despliega a mano.</span>];
+    case 'team-message': case 'person-reply': return ['', 'mail', '', null, true];
     case 'pr-approved': return e.ok
       ? ['ok', 'ok', `ronin aprobó el PR #${e.number} a nombre de ${e.by}`, null, true]
       : ['warn', 'crit', `No se pudo aprobar el PR #${e.number} a nombre de ${e.by}`, <span className="m">Su sesión de GitHub ya no sirve: el PR espera que un dev lo apruebe.</span>];
@@ -127,13 +128,13 @@ function EntryView({ d, e }: { d: Detail; e: Entry }) {
     const m = e.message;
     const long = m.text.length > 320;
     const tried = d.bug?.reproductions.find((t) => t.messageId === m.id);
-    const title = m.answers ? `${d.person} respondió las preguntas` : m.confirmed ? `${d.person} confirmó el resumen` : m.skipped ? `${d.person} lo envió sin responder`
+    const title = m.from === 'team' ? `${m.by ?? 'El equipo'} le escribió a ${firstName(d.person)}` : m.to === 'team' ? `${d.person} le respondió al equipo` : m.answers ? `${d.person} respondió las preguntas` : m.confirmed ? `${d.person} confirmó el resumen` : m.skipped ? `${d.person} lo envió sin responder`
       : m.questions ? 'Le dejó preguntas' : m.understood ? 'Le mostró lo que entendió'
         : m.from === 'person' ? (e.first ? `${d.person} abrió el pedido` : `${d.person} escribió`) : e.prototype ? `Le mostró el prototipo ${e.prototype}` : tried ? `Le contó lo que encontró (intento ${tried.round})` : 'ronin le respondió';
     const side = m.from === 'person' ? 'person' : 'ronin';
     return (
-      <Item tone={side} icon={side} title={title} extra={e.first ? <span className="m">{d.appName}</span> : null} time={e.at}>
-        {m.text && <div className={`bx ${m.from === 'person' ? 'q' : 'r'}`}>{long ? `${m.text.slice(0, 300)}…` : m.text}{long && <> <button className="more" onClick={() => actions.tab('chat')}>Ver completo</button></>}</div>}
+      <Item tone={m.from === 'team' ? 'team' : side} icon={m.from === 'team' ? 'person' : side} title={title} extra={e.first ? <span className="m">{d.appName}</span> : null} time={e.at}>
+        {m.text && <div className={`bx ${m.from === 'ronin' ? 'r' : 'q'}`}>{long ? `${m.text.slice(0, 300)}…` : m.text}{long && <> <button className="more" onClick={() => actions.tab('chat')}>Ver completo</button></>}</div>}
         <Interview m={m} />
         <Thumbs d={d} m={m} />
         {e.prototype && d.prototypes.find((p) => p.round === e.prototype)?.patch ? <button className="more" onClick={() => actions.tab('team')}>Ver el borrador para el equipo →</button>
@@ -141,6 +142,8 @@ function EntryView({ d, e }: { d: Detail; e: Entry }) {
       </Item>
     );
   }
+  // The team's messages and the person's answers are their messages, above.
+  if (e.event.kind === 'team-message' || e.event.kind === 'person-reply') return null;
   const [tone, icon, title, extra, small] = shownEvent(d, e.event);
   return <Item tone={tone} icon={icon} title={title} extra={small ? extra : null} time={e.at} small={small}>{small ? null : extra}</Item>;
 }
