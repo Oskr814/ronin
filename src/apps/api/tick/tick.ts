@@ -14,6 +14,9 @@ import {
   getSpecPathsFromPr,
   mergeSpecPr,
   commentOnSpecPr,
+  commentOnIssue,
+  closeIssueCompleted,
+  getIssueLabels,
   listAllOpenRoninPrs,
   retargetDependents,
   setIssueState,
@@ -65,7 +68,7 @@ import { sweepMeetings } from '@domains/meetings/launch.js';
 import { sweepAutoMerge } from '@domains/commands/index.js';
 import { findReleasesNeedingChangelog, type ChangelogCandidate } from '@domains/changelog/index.js';
 import { setLastChangelogRelease } from '@platform/state/local-state.js';
-import { concurrencyFor, config, LABEL_DIRECT_ISSUE, LABEL_MANAGED, LABEL_STACK_PRS, LABEL_STATES } from '@platform/config/config.js';
+import { concurrencyFor, config, LABEL_DIRECT_ISSUE, LABEL_MANAGED, LABEL_PORTAL, LABEL_STACK_PRS, LABEL_STATES } from '@platform/config/config.js';
 import { activeRepo, withActiveRepo } from '@platform/agents/repo-context.js';
 import { loadRepos } from '@platform/config/repos.js';
 import { log } from '@platform/logger.js';
@@ -112,6 +115,19 @@ export async function renderTrackingIssueBody(specPaths: string[]): Promise<stri
 // falls back to the first file if nothing matches that shape.
 function primarySpecPath(specPaths: string[]): string {
   return specPaths.find((p) => p.includes('/specs/')) ?? specPaths[0];
+}
+
+// The issue a /spec came from, once its spec is merged and the work has its
+// tracking issue: it says where, and closes as completed so it isn't left
+// open with nothing moving it. A portal request's stays open: closed as
+// completed, its person would hear the request was solved (portal/follow.ts).
+// Exported for direct unit testing.
+export async function handOffSpecOrigin(origin: number, tracking: number): Promise<void> {
+  const portal = (await getIssueLabels(origin)).includes(LABEL_PORTAL);
+  await commentOnIssue(origin, portal
+    ? `El spec ya se mergeó y el trabajo sigue en #${tracking}, una slice por PR. Este issue queda abierto porque es de un pedido del portal.`
+    : `El spec ya se mergeó y el trabajo sigue en #${tracking}, una slice por PR. Cierro este issue: lo que falta se sigue allá.`);
+  if (!portal) await closeIssueCompleted(origin);
 }
 
 // A directly-assigned issue (see discoverAssignedIssues below) and a spec's
@@ -181,6 +197,7 @@ async function discoverAssignedSpecs(): Promise<TrackingIssue[]> {
       // is the one place a human watching that PR (not the tracking issue)
       // finds out where the actual work moved to.
       await commentOnSpecPr(pr.number, `🚀 Started: tracked in ${issue.url}`);
+      if (Number.isInteger(origin)) await handOffSpecOrigin(origin, issue.number).catch((error) => log.error(`spec: no se pudo pasar #${origin} a #${issue.number}`, error));
       // The plan task rewrites the issue body with the real slice checklist.
       // Its worktree never has a PR (see stack.ts's planBranch), so unlike
       // every other task type it never goes through the merge-time cleanup
@@ -644,7 +661,9 @@ export async function processIssue(issue: TrackingIssue, openPrs: PullRequestSta
       return null;
     }
     log.info(`issue #${issue.number}: todas las slices mergeadas, done`);
+    // Done first: closed while still in-progress, finishClosedIssues would take it too.
     await setIssueState(issue.number, 'done');
+    await closeIssueCompleted(issue.number).catch((error) => log.error(`issue #${issue.number}: no se pudo cerrar`, error));
     return null;
   }
 

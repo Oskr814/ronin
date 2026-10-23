@@ -1891,6 +1891,12 @@ export async function listIssuesWithLabel(label: string): Promise<Array<{ number
   return JSON.parse(stdout) as Array<{ number: number; body: string; state: string }>;
 }
 
+// Closed as completed, as ronin: its last slice merged, or a spec's issue
+// whose work moved on to its tracking issue.
+export async function closeIssueCompleted(issueNumber: number): Promise<void> {
+  await ghApi(['api', '-X', 'PATCH', `repos/${activeRepo().productRepo}/issues/${issueNumber}`, '-f', 'state=closed', '-f', 'state_reason=completed']);
+}
+
 export async function commentOnIssue(issueNumber: number, body: string): Promise<void> {
   await ghApi(['api', `repos/${activeRepo().productRepo}/issues/${issueNumber}/comments`, '-f', `body=${body}`]);
 }

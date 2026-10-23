@@ -71,4 +71,6 @@ Con `/spec`, ronin abre el PR draft por vos. Mientras siga en draft, podés conv
 
 Mientras trabaja, el PR muestra el estado `ronin/spec`. Marcarlo *ready for review* sigue siendo la señal de arranque. Ningún comentario lo hace.
 
+Al arrancar, el issue donde pediste el `/spec` recibe un comentario con el enlace al issue de tracking y se cierra como completado: lo que falta sigue allá, y ese se cierra solo cuando se mergea la última slice. El de un pedido del portal recibe el comentario pero queda abierto.
+
 Por defecto va de a una slice: la siguiente arranca cuando se mergea la anterior. Con el label <Badge text="ronin:stack-prs" variant="note" /> en el issue de tracking, las apila sin esperar. Los PRs de slice salen con [auto-merge](/ronin/referencia/comandos/#auto-merge).
