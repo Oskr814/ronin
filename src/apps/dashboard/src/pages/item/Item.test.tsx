@@ -11,10 +11,12 @@ import { detail, doc, item, itemRead, NOW, type ItemRead } from './test-view.js'
 // and the bodies it sends.
 
 let posted: Array<[string, unknown]> = [];
+let clicks: Array<{ what: string; ms: number }> = [];
 let asked: string[] = [];
 let snap: unknown;
 beforeEach(() => {
   posted = [];
+  clicks = [];
   asked = [];
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } });
@@ -26,6 +28,11 @@ beforeEach(() => {
       if (url.endsWith('/files')) return json({ pr: 42, author: 'beto-dev', headSha: 'abc', files: [], threads: [] });
       if (url.endsWith('/detail')) return json(detail());
       if (url === '/api/snapshot') return json(snap);
+      return json({});
+    }
+    // The time of a click (#368), apart from what the page writes.
+    if (url === '/api/timings') {
+      clicks.push(JSON.parse(String(init?.body ?? 'null')) as { what: string; ms: number });
       return json({});
     }
     posted.push([url, JSON.parse(String(init?.body ?? 'null'))]);
@@ -146,6 +153,8 @@ describe('an item’s page', () => {
     expect(posted[0]).toEqual(['/api/items/acme%2Ftienda%2341/comment', { on: 'issue', text: 'El caso es con un cliente sin pedidos' }]);
     await waitFor(() => expect(box.value).toBe(''));
     expect(shell.toast).toHaveBeenCalledWith('Listo: comentaste en #41.', 'https://github.com/acme/tienda/pull/42#issuecomment-1');
+    // Once the item is read again, the page says how long it took (#368).
+    await waitFor(() => expect(clicks).toEqual([{ what: 'comentar', ms: expect.any(Number) }]));
     // Esc leaves the box, and the keys are the page's again: on the PR's tab, it goes to the PR.
     fireEvent.keyDown(box, { key: 'Escape' });
     fireEvent.keyDown(document, { key: '1' });

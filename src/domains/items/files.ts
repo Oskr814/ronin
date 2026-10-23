@@ -1,13 +1,15 @@
 import { config } from '@platform/config/config.js';
 import { getDiffThreads, getFileAt, getPrFiles, type DiffThread, type PrFile } from '@platform/github/github.js';
-import { log } from '@platform/logger.js';
+import { pendingReview, viewedFiles, type PendingReview } from '@platform/github/github-as-user.js';
 import { withActiveRepo, type RepoEntry } from '@platform/agents/repo-context.js';
+import { ReadCache } from '@platform/cache/read-cache.js';
 
 // A PR's "Files changed" on the dashboard (#111): its files with their
 // patches, and its review threads where the diff puts them. Read with
 // ronin's token when the Archivos tab is opened, never for the sidebar, and
 // cached like an item's page (items/detail.ts): DASHBOARD_GITHUB_TTL_SECONDS,
-// or sooner when one of the item's runs started or ended since.
+// or sooner when one of the item's runs started or ended since, or a write or
+// a webhook changed it (expireFiles).
 
 export interface PrFiles {
   fetchedAt: string;
@@ -28,40 +30,65 @@ async function fetchFiles(entry: RepoEntry, prNumber: number): Promise<PrFiles> 
   });
 }
 
-const cache = new Map<string, { data?: PrFiles; readAt: number; reading?: Promise<PrFiles> }>();
 // PRs nobody opened in a while are dropped, so the cache doesn't grow with every PR ever opened.
-const FORGET_MS = 30 * 60_000;
+const cache = new ReadCache<PrFiles>({
+  label: (key) => `los archivos de ${key}`,
+  ttlMs: () => config.dashboard.githubTtlSeconds * 1000,
+  forgetMs: 30 * 60_000,
+  failed: (previous, error) => ({ ...(previous ?? { fetchedAt: '', prId: '', author: '', headSha: '', baseSha: '', files: [], threads: [] }), error }),
+});
 
-export async function prFiles(entry: RepoEntry, prNumber: number, changedSince = 0, now = Date.now()): Promise<PrFiles> {
-  for (const [key, value] of cache) if (!value.reading && now - value.readAt > FORGET_MS) cache.delete(key);
+export function prFiles(entry: RepoEntry, prNumber: number, changedSince = 0, now = Date.now()): Promise<PrFiles> {
   const key = `${entry.productRepo}#${prNumber}`;
-  const entryCache = cache.get(key) ?? { readAt: 0 };
-  cache.set(key, entryCache);
-  if (entryCache.data && now - entryCache.readAt < config.dashboard.githubTtlSeconds * 1000 && entryCache.readAt >= changedSince) return entryCache.data;
-
-  if (!entryCache.reading) {
-    entryCache.reading = fetchFiles(entry, prNumber)
-      .then((data) => {
-        entryCache.data = data;
-        entryCache.readAt = Date.now();
-        return data;
-      })
-      .catch((error) => {
-        log.error(`tablero: no se pudieron leer los archivos de ${key} de GitHub`, error);
-        entryCache.readAt = Date.now();
-        entryCache.data = { ...(entryCache.data ?? { fetchedAt: '', prId: '', author: '', headSha: '', baseSha: '', files: [], threads: [] }), error: (error as Error).message.split('\n')[0] };
-        return entryCache.data;
-      })
-      .finally(() => {
-        entryCache.reading = undefined;
-      });
-  }
-  return entryCache.data ?? entryCache.reading;
+  return cache.get(key, () => fetchFiles(entry, prNumber), { tags: [entry.productRepo, key], changedSince, now });
 }
 
-// After an action on one of the repo's PRs: its next read is fresh.
-export function forgetFiles(repo: string): void {
-  for (const key of cache.keys()) if (key.startsWith(`${repo}#`)) cache.delete(key);
+// After a write to the PR (or, without it, to any of the repo's): read
+// again right away; `wait` as in expireDetails.
+export function expireFiles(repo: string, prNumber?: number, { wait = false }: { wait?: boolean } = {}): void {
+  cache.expire(prNumber === undefined ? repo : `${repo}#${prNumber}`, { wait });
+}
+
+// Each person's own on a PR (#368): the files they marked as viewed and
+// their pending review, read with their token. Cached per person and PR, so
+// every tab of Archivos polling it doesn't read it each time; read again
+// once that person writes on the PR (their next request waits for it) or a
+// review of it comes in by webhook. A failed read fails the request, as
+// before: none viewed isn't something to show on a guess.
+export interface PersonFiles {
+  viewed: string[];
+  review: PendingReview | null;
+}
+
+const mine = new ReadCache<PersonFiles>({
+  label: (key) => `lo de ${key}`,
+  ttlMs: () => config.dashboard.githubTtlSeconds * 1000,
+  forgetMs: 30 * 60_000,
+  // The error as it came: a token GitHub no longer takes asks to log in again.
+  failed: (previous, _message, error) => {
+    if (previous) return previous;
+    throw error;
+  },
+});
+
+const personTag = (login: string, repo: string, prNumber: number) => `${login}:${repo}#${prNumber}`;
+
+export function personFiles(token: string, login: string, repo: string, prNumber: number): Promise<PersonFiles> {
+  const read = async () => {
+    const [viewed, review] = await Promise.all([viewedFiles(token, repo, prNumber), pendingReview(token, repo, prNumber)]);
+    return { viewed, review };
+  };
+  return mine.get(personTag(login, repo, prNumber), read, { tags: [personTag(login, repo, prNumber), `${repo}#${prNumber}`] });
+}
+
+// After the person wrote on the PR: their next request waits for a fresh read.
+export function expirePersonFiles(login: string, repo: string, prNumber: number): void {
+  mine.expire(personTag(login, repo, prNumber), { wait: true });
+}
+
+// A review of the PR came in: everyone's, read again for whoever has it open.
+export function expireReviewsOf(repo: string, prNumber: number): void {
+  mine.expire(`${repo}#${prNumber}`);
 }
 
 // A file's text at a commit, for "show more lines" around a hunk. A commit
@@ -93,5 +120,6 @@ export function fileContent(entry: RepoEntry, sha: string, path: string): Promis
 
 export function resetFilesCache(): void {
   cache.clear();
+  mine.clear();
   contents.clear();
 }

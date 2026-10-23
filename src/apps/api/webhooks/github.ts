@@ -13,6 +13,7 @@ import { enqueueEvent } from '../jobs/store.js';
 import { EventDebouncer } from './debounce.js';
 import { verifySignature, scopeForEvent, ackTarget, comesInBursts, type EventPayload } from './events.js';
 import { addAckReaction } from '@platform/github/github.js';
+import { applyGithubChange, githubChangeOf } from '@domains/items/freshness.js';
 import { log } from '@platform/logger.js';
 import type { EventHandlerRequest } from './handler.js';
 
@@ -81,6 +82,10 @@ export async function handleGithubWebhook(req: IncomingMessage, res: ServerRespo
     try {
       const repos = await loadRepos();
       const trackedRepos = repos.map((r) => r.productRepo);
+      // What the dashboard has open of it, read again (#368): whether or not
+      // the event starts a run.
+      const change = typeof eventName === 'string' ? githubChangeOf(eventName, payload, trackedRepos) : null;
+      if (change) applyGithubChange(change);
       const target = typeof eventName === 'string' ? scopeForEvent(eventName, payload, trackedRepos, config.githubLogin) : null;
       if (target) {
         debouncer.schedule(target.repo, target.scope, comesInBursts(eventName as string) ? config.webhookBurstDebounceMs : config.webhookDebounceMs);

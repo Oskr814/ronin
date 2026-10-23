@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { log } from '@platform/logger.js';
 import { sees, type Access } from '../access/access.js';
 import { HISTORY_DAYS } from '../runs/data.js';
-import { forgetGithub } from '../items/github.js';
+import { expireGithub } from '../items/github.js';
 import { MAX_UPLOAD_BODY, meetingDetail, meetingOriginal, meetingRow, parseUpload } from './board.js';
 import { approveMeeting, discardMeeting } from './approve.js';
 import { refusal, visibleRepos, visibleRuns } from '../access/visible.js';
@@ -91,8 +91,8 @@ export function meetingsRoutes() {
       const refused = refusal(c, c.env.access, meeting.repo, 'aprobar');
       if (refused) return refused;
       const outcome = await approveMeeting(entry, meeting.number, c.env.session, c.req.valid('json').items);
-      // The next snapshot lists the new issues.
-      forgetGithub(entry.productRepo);
+      // The next snapshot lists the new issues: it waits for the read that starts now.
+      expireGithub(entry.productRepo, { wait: true });
       return c.json(outcome, 200);
     });
 }

@@ -4,6 +4,7 @@ import { type ItemDetail, reread, type SnapshotItem, useSession, useShell } from
 import { when } from '@apps/dashboard/src/lib/format.js';
 import { Md } from '@apps/dashboard/src/lib/markdown.js';
 import { Avatar, checksChip, Chips, itemParam, sameLogin, type Doc } from './model.js';
+import { clickTimer } from '@apps/dashboard/src/lib/click-timing.js';
 
 // An issue or a PR as its tab shows it (#85): its body, where a PR stands,
 // and its conversation as GitHub shows it. A portal request's Issue tab
@@ -145,13 +146,14 @@ function Composer({ item, tab, number }: { item: SnapshotItem; tab: 'issue' | 'p
     const said = text.trim();
     if (!said || sending) return area.current?.focus();
     setSending(true);
+    const shown = clickTimer('comentar');
     try {
       // A refusal makes the client's type of the answer {}: it's written here.
       const { url } = (await ok(client.api.items[':id'].comment.$post({ param: itemParam(item.id), json: { on: tab, text: said } }))) as { url?: string };
       drafts.delete(key);
       setText('');
       shell.toast(`Listo: comentaste en #${number}.`, url);
-      reread(item.id);
+      shown(reread(item.id));
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) return shell.unauthorized(e.message);
       shell.toast(`No se pudo comentar: ${(e as Error).message}`);

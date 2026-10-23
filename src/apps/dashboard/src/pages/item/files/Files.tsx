@@ -9,6 +9,7 @@ import { ReviewPanel, type Review } from '../Review.js';
 import { BIG_DIFF_LINES, FILE_STATUS, fileAnchor, linesForSuggestion, pendingOf, threadsSeen, type PrFile } from './diff.js';
 import { diffRows, DiffTable, FileThread, type Composing, type FilesCtx } from './Diff.js';
 import { filesKey, rereadFiles, takeJump, type FilesRead } from './model.js';
+import { clickTimer } from '@apps/dashboard/src/lib/click-timing.js';
 
 // A PR's Archivos (#111): the files on the left, their diffs on the right,
 // each review thread under the line it's on. Commenting, replying,
@@ -140,12 +141,13 @@ export function Files({ v, q, review, keys }: { v: ItemPage; q: UseQueryResult<F
         : { action: 'comment', path: c.path, commitId: data.headSha, subject: c.subject, text: c.text, ...rev, ...(c.subject === 'line' ? { side: c.side, line: c.line, ...(c.startLine ? { startLine: c.startLine } : {}) } : {}) };
     const started = m === 'review' && !read?.review;
     setComp({ ...c, sending: m, error: null });
+    const shown = clickTimer('archivos');
     try {
       const posted = await action(body);
       setComp(null);
       if (m === 'now') shell.toast(c.reply ? 'Respondiste en el hilo.' : 'Comentaste en el PR.', posted?.url);
       else shell.toast(m === 'edit' ? 'Guardado en tu revisión.' : started ? `Empezaste una revisión: nadie la ve hasta que la mandes${v.decidable ? ' con Ajustar' : ''}.` : 'Sumado a tu revisión.');
-      rereadFiles(qc, shell, key);
+      shown(rereadFiles(qc, shell, key));
     } catch (e) {
       if (failed(e)) return;
       setComp({ ...c, sending: false, error: `No se pudo: ${(e as Error).message}` });
@@ -153,10 +155,11 @@ export function Files({ v, q, review, keys }: { v: ItemPage; q: UseQueryResult<F
   };
 
   const resolve = (threadId: string, resolved: boolean) => withBusy(threadId, async () => {
+    const shown = clickTimer('archivos');
     try {
       await action({ action: 'resolve', threadId, resolved });
       shell.toast(resolved ? 'Conversación resuelta.' : 'Conversación reabierta.');
-      rereadFiles(qc, shell, key);
+      shown(rereadFiles(qc, shell, key));
     } catch (e) {
       if (!failed(e)) shell.toast(`No se pudo: ${(e as Error).message}`);
     }

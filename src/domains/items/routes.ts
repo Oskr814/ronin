@@ -2,21 +2,21 @@ import { zValidator } from '@hono/zod-validator';
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { config } from '@platform/config/config.js';
+import { CLICK_KINDS, recordClickTiming } from '@platform/timing.js';
 import { log } from '@platform/logger.js';
 import { dropCloseNote, noteClosing } from '../portal/follow.js';
 import { runAction, runComment } from './actions.js';
 import { HISTORY_DAYS, itemKey } from '../runs/data.js';
 import { runDecision } from './decision.js';
-import { forgetDetails } from './detail.js';
-import { forgetExploration } from '../explorations/review.js';
+import { addDetailComment, expireDetails, type ItemRef } from './detail.js';
+import { expireExploration } from '../explorations/review.js';
 import { runApprove, runFindingCardAction, runGeneralComment } from '../explorations/review-actions.js';
-import { fileContent, forgetFiles } from './files.js';
+import { expireFiles, expirePersonFiles, fileContent, personFiles } from './files.js';
 import { runFilesAction } from './files-actions.js';
-import { forgetGithub, repoGithub } from './github.js';
+import { expireGithub, repoGithub, updateGithub } from './github.js';
 import { itemRunKeys } from './list.js';
 import { repoLinear } from './linear.js';
 import { createFromDashboard, parseNewIssue, repoApps } from './new-issue.js';
-import { pendingReview, viewedFiles } from '@platform/github/github-as-user.js';
 import { touchSeen } from '../access/team.js';
 import { refusal, visibleRepos, visibleRuns } from '../access/visible.js';
 import { anyObject, body, jsonBody, onError, onlyJson, repoParam } from '@platform/http/middleware.js';
@@ -27,6 +27,7 @@ import { detail, exploration, explorationContext, filesContext, itemContext, sna
 // apps/api/routes.ts mounts them:
 //   GET  /api/snapshot                       the sidebar and the status bar
 //   GET  /api/today                          the last 12 hours' runs, the day's totals and the week's, and each repo's Linear cycle (#101)
+//   POST /api/timings                        how long a click took to show its result, as the page measured it (#368)
 //   POST /api/repos/<owner>/<repo>/issues    a new issue, as the person, and what to do with it (#100)
 //   GET  /api/items/<id>                     one item's runs (14 days)
 //   GET  /api/items/<id>/detail              its issue and PR from GitHub, with its comments and what can be asked of it (#85)
@@ -50,6 +51,20 @@ const MAX_BODY = 16 * 1024;
 // A change only as JSON: a form from another site can't send it, on top of
 // tailnet.ts's Origin check.
 
+// After a write (#368), what it changed is read again right away instead of
+// dropped: the item's page and its PR's files, which the person's next
+// request waits for (they expect to see what they did), and the repo, which
+// the sidebar keeps serving meanwhile (it never waits for a whole read of
+// the repo). Only the item's numbers: the other items of the repo stay.
+const numbersOf = (ref: ItemRef) => [ref.number, ref.issue, ref.pr].filter((n): n is number => n !== undefined);
+
+function expireItem(repo: string, numbers: number[], { files = true } = {}): void {
+  for (const n of numbers) {
+    expireDetails(repo, n, { wait: true });
+    if (files) expireFiles(repo, n, { wait: true });
+  }
+}
+
 export function boardRoutes() {
   return new Hono<DashboardEnv>()
     .onError(onError)
@@ -58,6 +73,12 @@ export function boardRoutes() {
       return c.json(await snapshot(c.env.access, c.env.session.login), 200);
     })
     .get('/today', async (c) => c.json(await todayWithCycles(c.env.access), 200))
+    // { what, ms }: only the kinds the page measures, and a sane time.
+    .post('/timings', onlyJson, jsonBody(1024, 'falta el tiempo'), body(z.object({ what: z.enum(CLICK_KINDS), ms: z.number().min(0).max(10 * 60_000) })), (c) => {
+      const { what, ms } = c.req.valid('json');
+      recordClickTiming(what, ms);
+      return c.json({}, 200);
+    })
     .post('/repos/:owner/:name/issues', onlyJson, jsonBody(MAX_BODY, 'falta el pedido'), anyObject(), async (c) => {
       const repo = repoParam(c);
       const entry = (await visibleRepos(c.env.access)).find((r) => r.productRepo === repo);
@@ -67,8 +88,9 @@ export function boardRoutes() {
       const linear = await repoLinear(entry, await repoGithub(entry));
       const issue = parseNewIssue(c.req.valid('json'), await repoApps(entry), linear?.planning);
       const created = await createFromDashboard(entry, c.env.session, issue, config.githubLogin);
-      // The next snapshot lists it.
-      forgetGithub(entry.productRepo);
+      // Listed right away, so it can be opened; the read that follows brings the rest.
+      updateGithub(entry.productRepo, (gh) => ({ ...gh, openIssues: [{ number: created.number, title: issue.title, url: created.url, labels: [] }, ...gh.openIssues.filter((i) => i.number !== created.number)] }));
+      expireGithub(entry.productRepo);
       return c.json(created, 200);
     });
 }
@@ -110,12 +132,12 @@ export function itemsRoutes() {
         return c.json({ error: `GitHub no respondió: ${(error as Error).message.split('\n')[0]}` }, 502);
       }
     })
-    // Each person's own: read with their token, never cached.
+    // Each person's own: read with their token, cached per person (files.ts).
     .get('/:id/files/mine', async (c) => {
       const ctx = await filesContext(c.env.access, c.req.param('id'));
       if (!ctx) return c.json(NO_PR, 404);
-      const { token } = c.env.session;
-      const [viewed, review] = await Promise.all([viewedFiles(token, ctx.entry.productRepo, ctx.prNumber), pendingReview(token, ctx.entry.productRepo, ctx.prNumber)]);
+      const { token, login } = c.env.session;
+      const { viewed, review } = await personFiles(token, login, ctx.entry.productRepo, ctx.prNumber);
       return c.json({ viewed, review }, 200);
     })
     .get('/:id/exploration', async (c) => {
@@ -139,10 +161,9 @@ export function itemsRoutes() {
       try {
         const done = await runAction(ctx.entry, ctx.ref, ctx.gh, ctx.detail, c.env.session, action, text, undefined, await repoApps(ctx.entry), app);
         // The next read shows the comment and whatever the action changed.
-        forgetDetails(ctx.entry.productRepo);
-        forgetFiles(ctx.entry.productRepo);
-        // Taken, it moves to ronin's issues; closed, it leaves the list: read again on the next poll.
-        if (action === 'assign' || action === 'close-issue') forgetGithub(ctx.entry.productRepo);
+        expireItem(ctx.entry.productRepo, numbersOf(ctx.ref), { files: false });
+        // Taken, it moves to ronin's issues; closed, it leaves the list.
+        if (action === 'assign' || action === 'close-issue') expireGithub(ctx.entry.productRepo);
         return c.json(done, 200);
       } catch (error) {
         if (noted !== null) await dropCloseNote(noted).catch((e) => log.error(`tablero: no se pudo quitar el motivo del pedido P-${noted}`, e));
@@ -157,10 +178,11 @@ export function itemsRoutes() {
       if (!ctx) return c.json(NO_ITEM, 404);
       const refused = refusal(c, c.env.access, ctx.entry.productRepo, 'acciones');
       if (refused) return refused;
-      const done = await runComment(ctx.entry, ctx.detail, c.env.session, on, text);
-      // The next read shows it in the conversation.
-      forgetDetails(ctx.entry.productRepo);
-      return c.json(done, 200);
+      const { url, comment, number } = await runComment(ctx.entry, ctx.detail, c.env.session, on, text);
+      // In the conversation right away; the read that follows confirms it.
+      addDetailComment(ctx.entry.productRepo, number, comment);
+      expireDetails(ctx.entry.productRepo, number);
+      return c.json({ url }, 200);
     })
 
     // { decision: approve | adjust | close | answer, text?, closeIssue? }
@@ -181,9 +203,9 @@ export function itemsRoutes() {
       try {
         const done = await runDecision(ctx.entry, { prNumber: files.prNumber, ...(issueNumber !== undefined ? { issueNumber } : {}), files: files.files, pr: ctx.detail.pr }, c.env.session, given, config.githubLogin);
         // Its review, its comments, its state: all of it on the page and in the sidebar.
-        forgetFiles(ctx.entry.productRepo);
-        forgetDetails(ctx.entry.productRepo);
-        forgetGithub(ctx.entry.productRepo);
+        expireItem(ctx.entry.productRepo, [...numbersOf(ctx.ref), files.prNumber]);
+        expirePersonFiles(c.env.session.login, ctx.entry.productRepo, files.prNumber);
+        expireGithub(ctx.entry.productRepo);
         return c.json(done, 200);
       } catch (error) {
         if (noted !== null) await dropCloseNote(noted).catch((e) => log.error(`tablero: no se pudo quitar el motivo del pedido P-${noted}`, e));
@@ -202,13 +224,12 @@ export function itemsRoutes() {
         if (refused) return refused;
       }
       const done = await runFilesAction(ctx.entry, ctx.prNumber, ctx.files, c.env.session, given, config.githubLogin);
+      // Whatever it was, it may be in the person's own: a viewed mark, their pending review.
+      expirePersonFiles(c.env.session.login, ctx.entry.productRepo, ctx.prNumber);
       // A viewed mark and a pending review are only the person's; the rest changes what everyone reads.
-      if (!(given.action === 'viewed' || given.review || String(given.action).startsWith('pending-'))) {
-        forgetFiles(ctx.entry.productRepo);
-        forgetDetails(ctx.entry.productRepo);
-      }
-      // An approval or a request for changes is on the PR's chips: the next snapshot reads it.
-      if (given.action === 'submit') forgetGithub(ctx.entry.productRepo);
+      if (!(given.action === 'viewed' || given.review || String(given.action).startsWith('pending-'))) expireItem(ctx.entry.productRepo, [ctx.prNumber]);
+      // An approval or a request for changes is on the PR's chips.
+      if (given.action === 'submit') expireGithub(ctx.entry.productRepo);
       return c.json(done, 200);
     })
 
@@ -225,9 +246,8 @@ export function itemsRoutes() {
         : what === 'general'
           ? await runGeneralComment(ctx.entry, ctx.pr, c.env.session, given)
           : await runFindingCardAction(ctx.entry, ctx.pr, ctx.review, c.env.session, given);
-      forgetExploration(ctx.entry.productRepo, ctx.pr.number);
-      forgetDetails(ctx.entry.productRepo);
-      forgetFiles(ctx.entry.productRepo);
+      expireExploration(ctx.entry.productRepo, ctx.pr.number, { wait: true });
+      expireItem(ctx.entry.productRepo, [ctx.pr.number]);
       return c.json(done, 200);
     });
 }

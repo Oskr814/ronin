@@ -1,10 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const getDiscussion = vi.fn();
-vi.mock('@platform/github/github.js', () => ({ getDiscussion: (...args: unknown[]) => getDiscussion(...args) }));
+// The page's one query (#368), made of what each half reads.
+vi.mock('@platform/github/github.js', () => ({
+  getItemDiscussions: async (issue?: number, pr?: number) => ({
+    ...(issue !== undefined ? { issue: await getDiscussion('issue', issue) } : {}),
+    ...(pr !== undefined ? { pr: await getDiscussion('pr', pr) } : {}),
+  }),
+}));
 vi.mock('@platform/logger.js', () => ({ log: { error: vi.fn(), info: vi.fn() } }));
 
-const { itemDetail, resetDetailCache, resolveItem } = await import('./detail.js');
+const { addDetailComment, expireDetails, itemDetail, resetDetailCache, resolveItem } = await import('./detail.js');
 
 const ENTRY = { productRepo: 'acme/product', productRepoPath: '/tmp/x' };
 
@@ -113,5 +119,35 @@ describe('itemDetail', () => {
       const detail = await itemDetail(ENTRY, { kind: 'issue', number: 844 }, 0, now + 3000);
       expect(detail).toMatchObject({ error: 'HTTP 502', issue: { number: 844 } });
     });
+  });
+});
+
+// #368: after a write, what it changed is read again instead of dropped.
+describe('an item page after a write', () => {
+  it('has the comment just posted at once, and confirms it with a read nobody waits for', async () => {
+    const ref = { kind: 'issue' as const, number: 844, pr: 849 };
+    await itemDetail(ENTRY, ref);
+    expect(getDiscussion).toHaveBeenCalledTimes(2);
+    const comment = { author: 'oskr814', body: 'Ya está', createdAt: '2026-10-23T05:00:00Z', url: 'https://github.com/acme/product/pull/849#issuecomment-9' };
+    addDetailComment('acme/product', 849, comment);
+    let release = () => {};
+    getDiscussion.mockImplementation((_kind: string, number: number) => new Promise((resolve) => { release = () => resolve(discussion(number, 3)); }));
+    expireDetails('acme/product', 849);
+    const page = await itemDetail(ENTRY, ref);
+    expect(page.pr?.comments.at(-1)).toEqual(comment);
+    expect(page.issue?.comments).toHaveLength(3);
+    release();
+  });
+
+  it('makes the writer wait for the read that started with the write, and only for the item written to', async () => {
+    const ref = { kind: 'issue' as const, number: 844, pr: 849 };
+    const other = { kind: 'pr' as const, number: 870 };
+    await itemDetail(ENTRY, ref);
+    await itemDetail(ENTRY, other);
+    getDiscussion.mockClear().mockImplementation(async (_kind: string, number: number) => ({ ...discussion(number, 3), title: 'después' }));
+    expireDetails('acme/product', 844, { wait: true });
+    expect((await itemDetail(ENTRY, ref)).issue?.title).toBe('después');
+    expect(getDiscussion).toHaveBeenCalledTimes(2);
+    expect((await itemDetail(ENTRY, other)).pr?.title).toBe('#870');
   });
 });
