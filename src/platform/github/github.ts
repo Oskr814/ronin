@@ -8,6 +8,7 @@ import { activeRepo } from '../agents/repo-context.js';
 import { log } from '../logger.js';
 import type { FailedCheck } from '../agents/failure-signature.js';
 import { timedGithub } from '../timing.js';
+import { forgetGithubMemo, ghWrites, inGithubMemo, memoized } from './run-memo.js';
 import { parseRepo } from './rest.js';
 
 const execFileAsync = promisify(execFile);
@@ -19,10 +20,15 @@ const execFileAsync = promisify(execFile);
 // host, so every issue/PR is authored by that account regardless of who
 // else is logged into `gh` there.
 async function gh(args: string[]): Promise<string> {
-  const { stdout } = await timedGithub(() => execFileAsync('gh', [...args, '--repo', activeRepo().productRepo], {
-    env: { ...process.env, GH_TOKEN: config.githubToken },
-  }));
-  return stdout;
+  try {
+    const { stdout } = await timedGithub(() => execFileAsync('gh', [...args, '--repo', activeRepo().productRepo], {
+      env: { ...process.env, GH_TOKEN: config.githubToken },
+    }));
+    return stdout;
+  } finally {
+    // What the run read before a write may no longer hold (run-memo.ts).
+    if (ghWrites(args)) forgetGithubMemo();
+  }
 }
 
 // `gh api` has no --repo/-R flag at all (unlike `gh pr`/`gh issue`), so it
@@ -33,12 +39,16 @@ async function gh(args: string[]): Promise<string> {
 // wrong repo anyway. Every caller therefore spells out
 // `repos/${activeRepo().productRepo}/...` literally instead.
 async function ghApi(args: string[]): Promise<string> {
-  const { stdout } = await timedGithub(() => execFileAsync('gh', args, {
-    env: { ...process.env, GH_TOKEN: config.githubToken },
-    // A big PR's files with their patches (getPrFiles) are well over the 1 MB default.
-    maxBuffer: 64 * 1024 * 1024,
-  }));
-  return stdout;
+  try {
+    const { stdout } = await timedGithub(() => execFileAsync('gh', args, {
+      env: { ...process.env, GH_TOKEN: config.githubToken },
+      // A big PR's files with their patches (getPrFiles) are well over the 1 MB default.
+      maxBuffer: 64 * 1024 * 1024,
+    }));
+    return stdout;
+  } finally {
+    if (ghWrites(args)) forgetGithubMemo();
+  }
 }
 
 // A GraphQL query with its variables, for callers that name the repo
@@ -382,6 +392,22 @@ export async function getPullRequestStatus(prNumber: number): Promise<PullReques
 // once. No config knob: there's no legitimate reason to tune this per
 // environment, only room to raise it if the warning below ever fires.
 const PR_LIST_LIMIT = 300;
+
+// Every open PR with the fields `fields` asks for. Inside a tick's run
+// (withGithubMemo, run-memo.ts) the lists below share one read with all
+// their fields, instead of one read each (#370); anywhere else, each asks
+// for only its own. Whoever gets them maps or filters them, never changes
+// them: in a run they're shared.
+const OPEN_PR_FIELDS = `${PR_JSON_FIELDS},labels,author,isCrossRepository`;
+
+function listOpenPrs<T>(fields: string): Promise<T[]> {
+  return inGithubMemo() ? memoized('open-prs', () => readOpenPrs<T>(OPEN_PR_FIELDS)) : readOpenPrs<T>(fields);
+}
+
+// Its own name, for the measurement by operation (timing.ts's githubCaller).
+async function readOpenPrs<T>(fields: string): Promise<T[]> {
+  return JSON.parse(await gh(['pr', 'list', '--state', 'open', '--limit', String(PR_LIST_LIMIT), '--json', fields])) as T[];
+}
 // gh lists 30 without --limit, and a list cut short loses its tail with no
 // warning: every list of open issues or PRs passes one.
 const ISSUE_LIST_LIMIT = 1000;
@@ -393,8 +419,7 @@ const ISSUE_LIST_LIMIT = 1000;
 // stack.ts's sliceBranch) since PRODUCT_REPO also carries ordinary human PRs
 // under the same `--state open`.
 export async function listAllOpenRoninPrs(): Promise<PullRequestStatus[]> {
-  const stdout = await gh(['pr', 'list', '--state', 'open', '--limit', String(PR_LIST_LIMIT), '--json', PR_JSON_FIELDS]);
-  const raw = (JSON.parse(stdout) as RawPr[]).filter((pr) => pr.headRefName.startsWith('ronin/'));
+  const raw = (await listOpenPrs<RawPr>(PR_JSON_FIELDS)).filter((pr) => pr.headRefName.startsWith('ronin/'));
   if (raw.length === PR_LIST_LIMIT) {
     log.error(`listAllOpenRoninPrs: alcanzó el límite de ${PR_LIST_LIMIT} — puede haber PRs no traídos, subir PR_LIST_LIMIT`);
   }
@@ -800,13 +825,7 @@ export function isExternalReviewable(pr: RawExternalPrForFilter, botLogin: strin
 // docs/superpowers/specs/2026-08-20-external-pr-review-design.md). Draft PRs
 // are excluded here too, same as the rest of the pipeline.
 export async function listAllOpenExternalPrs(): Promise<ExternalPr[]> {
-  const stdout = await gh([
-    'pr', 'list',
-    '--state', 'open',
-    '--limit', String(PR_LIST_LIMIT),
-    '--json', 'number,isDraft,headRefName,headRefOid,baseRefName,author,isCrossRepository',
-  ]);
-  const raw = JSON.parse(stdout) as RawExternalPr[];
+  const raw = await listOpenPrs<RawExternalPr>('number,isDraft,headRefName,headRefOid,baseRefName,author,isCrossRepository');
   if (raw.length === PR_LIST_LIMIT) {
     log.error(`listAllOpenExternalPrs: alcanzó el límite de ${PR_LIST_LIMIT} — puede haber PRs no traídos, subir PR_LIST_LIMIT`);
   }
@@ -820,8 +839,7 @@ export async function listAllOpenExternalPrs(): Promise<ExternalPr[]> {
 // …and the commit each one is at, to notice a preview left behind by new
 // commits.
 export async function listOpenPrHeads(): Promise<Array<{ number: number; headRefOid: string }>> {
-  const stdout = await gh(['pr', 'list', '--state', 'open', '--limit', String(PR_LIST_LIMIT), '--json', 'number,headRefOid']);
-  return JSON.parse(stdout) as Array<{ number: number; headRefOid: string }>;
+  return (await listOpenPrs<{ number: number; headRefOid: string }>('number,headRefOid')).map((pr) => ({ number: pr.number, headRefOid: pr.headRefOid }));
 }
 
 export interface PrHead {
@@ -846,8 +864,7 @@ export interface AutoMergeCandidate {
 }
 
 export async function listOpenPrsForAutoMerge(): Promise<AutoMergeCandidate[]> {
-  const stdout = await gh(['pr', 'list', '--state', 'open', '--limit', String(PR_LIST_LIMIT), '--json', `${PR_JSON_FIELDS},labels`]);
-  const raw = JSON.parse(stdout) as Array<RawPr & { labels: Array<{ name: string }> }>;
+  const raw = await listOpenPrs<RawPr & { labels: Array<{ name: string }> }>(`${PR_JSON_FIELDS},labels`);
   return raw.map((pr) => ({
     status: toPullRequestStatus(pr),
     conflicting: pr.mergeable === 'CONFLICTING',
@@ -1659,8 +1676,7 @@ export async function findOpenPrByHead(headBranch: string): Promise<PullRequestS
 }
 
 export async function listOpenPrsByHeadPrefix(prefix: string): Promise<PullRequestStatus[]> {
-  const stdout = await gh(['pr', 'list', '--state', 'open', '--limit', String(PR_LIST_LIMIT), '--json', PR_JSON_FIELDS]);
-  return (JSON.parse(stdout) as RawPr[]).filter((pr) => pr.headRefName.startsWith(prefix)).map(toPullRequestStatus);
+  return (await listOpenPrs<RawPr>(PR_JSON_FIELDS)).filter((pr) => pr.headRefName.startsWith(prefix)).map(toPullRequestStatus);
 }
 
 // REST, not `gh pr create`: same deprecated-Projects GraphQL failure as `gh

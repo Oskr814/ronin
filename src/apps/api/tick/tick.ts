@@ -70,6 +70,7 @@ import { activeRepo, withActiveRepo } from '@platform/agents/repo-context.js';
 import { loadRepos } from '@platform/config/repos.js';
 import { log } from '@platform/logger.js';
 import { GITHUB_SPAN, githubOpsOf, measure, type Measurement } from '@platform/timing.js';
+import { withGithubMemo } from '@platform/github/run-memo.js';
 import { host } from '@platform/host/host.js';
 
 
@@ -1185,8 +1186,10 @@ export async function cycleFirst(issues: TrackingIssue[]): Promise<TrackingIssue
 
 // Measured (platform/timing.ts): its steps, its discovery, its jobs and how much
 // of it went to GitHub go in tick_complete.
+// And with one memo (platform/github/run-memo.ts): the open PRs its steps
+// list are read once for the whole run (#370).
 function tickOneRepo(scope?: Scope): Promise<void> {
-  return measure((measurement) => tickRepo(scope, measurement));
+  return withGithubMemo(() => measure((measurement) => tickRepo(scope, measurement)));
 }
 
 async function tickRepo(scope: Scope | undefined, measurement: Measurement): Promise<void> {
