@@ -38,6 +38,13 @@ describe('redact', () => {
     expect(JSON.parse(out)).toEqual({ event: 'x', token: '[redacted]', n: 3 });
   });
 
+  // #370: the GitHub operations of a tick_complete, one of them named
+  // mintReadToken, came out with "[redacted]" where the object opened.
+  it('keeps a metric valid JSON when a sensitive-sounding key holds an object or a list, still redacting inside it', () => {
+    const line = JSON.stringify({ event: 'tick_complete', githubOps: { mintReadToken: { ms: 611, count: 2 }, getIssueBody: { ms: 5, count: 1 } }, tokens: [1, 2], auth: { accessToken: 'xyz123456789' } });
+    expect(JSON.parse(redact(line, {}))).toEqual({ event: 'tick_complete', githubOps: { mintReadToken: { ms: 611, count: 2 }, getIssueBody: { ms: 5, count: 1 } }, tokens: [1, 2], auth: { accessToken: '[redacted]' } });
+  });
+
   it('does not touch ordinary log lines that merely mention tokens', () => {
     const lines = [
       'public | invite_tokens | table | root',

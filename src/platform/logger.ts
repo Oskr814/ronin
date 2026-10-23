@@ -26,7 +26,10 @@ const PATTERNS: Array<[RegExp, string]> = [
   // api_key, password…), in JSON, Python dicts, env files or query strings —
   // the key stays, so the line still reads. A plural ("input_tokens", in
   // Claude's usage) is a count, not a secret, and doesn't match.
-  [/(["']?\b[\w-]*(?:token|api_?key|client_?secret|secret|password|passwd|pwd|cookie|session_?id|private_?key)["']?\s*[:=]\s*["']?)[^\s"',;&}]+/gi, `$1${REDACTED}`],
+  // Not a value that's an object or a list (a metric's "mintReadToken":
+  // {"ms":…}, #370): it's no secret itself, whatever is inside is redacted
+  // by its own key, and redacting its first character broke the line's JSON.
+  [/(["']?\b[\w-]*(?:token|api_?key|client_?secret|secret|password|passwd|pwd|cookie|session_?id|private_?key)["']?\s*[:=]\s*["']?)(?![{[])[^\s"',;&}]+/gi, `$1${REDACTED}`],
 ];
 
 // Logs are read by people and, with the dashboard (#65), shown on a page:
