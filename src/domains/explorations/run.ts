@@ -1,5 +1,6 @@
 import { dirname, extname, join } from 'node:path';
 import { runAgentTask } from '@platform/agents/agent-task.js';
+import { ClaudeUsageLimitError } from '@platform/claude/claude-runner.js';
 import { explorationTask, type ExistingFindingSummary } from './prompts.js';
 import { appDown, appUp, checkoutAgent, checkoutGit } from '../product-app/index.js';
 import { activeRepo } from '@platform/agents/repo-context.js';
@@ -85,6 +86,9 @@ export interface RunSummary {
   discarded: Array<{ titulo: string; funcion: string; motivo: string }>;
   runFile: string;
   inventory: { added: string[]; retired: string[]; refreshed: boolean };
+  // Candidates the evaluator couldn't see for lack of Claude quota (#382):
+  // kept for the app's next run, which evaluates them with its own.
+  deferred: Array<{ titulo: string; funcion: string }>;
   focus?: ExploreFocus;
   // A focused run whose request no function fits: why, in the agent's words.
   unfocused?: string;
@@ -95,7 +99,34 @@ interface PendingCandidate extends Candidate {
   functionId: string;
   functionName: string;
   planned: PlannedFunction;
+  // The run's that found it: a candidate left for a later run (#382) keeps
+  // the seed that reproduces it and the issue it answers.
+  seed: number;
+  origen?: number;
 }
+
+// Candidates waiting for the evaluator (#382), one file per app next to the
+// runs' output dirs — where their screenshots and patches still are.
+const deferredFile = (appName: string) => join(explorationOutDir(), `pending-${appName}.json`);
+
+async function loadDeferred(appName: string): Promise<PendingCandidate[]> {
+  const raw = await host().fs.readFile(deferredFile(appName), 'utf8').catch(() => '');
+  if (!raw) return [];
+  try {
+    const list = JSON.parse(raw) as unknown;
+    return Array.isArray(list) ? (list as PendingCandidate[]) : [];
+  } catch {
+    log.error(`exploración ${appName}: ${deferredFile(appName)} no se pudo leer, se ignora`);
+    return [];
+  }
+}
+
+async function saveDeferred(appName: string, list: PendingCandidate[]): Promise<void> {
+  if (list.length === 0) await host().fs.rm(deferredFile(appName), { force: true });
+  else await host().fs.writeFile(deferredFile(appName), JSON.stringify(list, null, 1));
+}
+
+const NO_QUOTA = 'sin cuota de Claude';
 
 export function mcpServer(app: AppDefinition, viewport: 'desktop' | 'mobile', storageState: string, outputDir: string, origins: string[]) {
   const vp = app.viewports[viewport];
@@ -193,7 +224,12 @@ export async function runExploration(opts: RunOptions): Promise<RunSummary> {
   log.info(`exploración ${appName}: corrida ${runId}, ${plan.functions.map((p) => `${p.functionId} (${p.charter})`).join(', ')}`);
 
   const outcomes: FunctionOutcome[] = [];
+  // Those an earlier run left for lack of quota go to the evaluator with this run's.
+  const carried = await loadDeferred(appName);
+  if (carried.length > 0) log.info(`exploración ${appName}: ${carried.length} candidato(s) de una corrida anterior esperan al evaluador`);
   const pending: PendingCandidate[] = [];
+  // Out of Claude quota: no more functions this run, nor the evaluator.
+  let limited = false;
   const discarded: RunSummary['discarded'] = [];
   const existing = summarizeExisting(memory);
 
@@ -204,7 +240,7 @@ export async function runExploration(opts: RunOptions): Promise<RunSummary> {
     const authStates = await loginAllUsers(session);
     const origins = originsOf(session.baseUrl, session.ctx.ports, session.ctx.port);
     for (const planned of plan.functions) {
-      if (opts.shouldContinue && !(await opts.shouldContinue())) {
+      if (limited || (opts.shouldContinue && !(await opts.shouldContinue()))) {
         outcomes.push({ planned, status: 'omitida', tareas: [] });
         continue;
       }
@@ -244,11 +280,12 @@ export async function runExploration(opts: RunOptions): Promise<RunSummary> {
         }));
         const { result, dropped } = parseFunctionResult(await host().fs.readFile(outputPath, 'utf8'), fn.id, fnOut);
         for (const d of dropped) discarded.push({ titulo: d, funcion: fn.id, motivo: 'no cumple el contrato' });
-        pending.push(...result.candidatos.map((c) => ({ ...c, functionId: fn.id, functionName: fn.nombre, planned })));
+        pending.push(...result.candidatos.map((c) => ({ ...c, functionId: fn.id, functionName: fn.nombre, planned, seed, ...(focus?.issue ? { origen: focus.issue } : {}) })));
         outcomes.push({ planned, status: 'explorada', tareas: result.tareas });
       } catch (error) {
-        log.error(`exploración ${appName}: ${fn.id} falló`, error);
-        outcomes.push({ planned, status: 'fallo', tareas: [], error: (error as Error).message.slice(0, 300) });
+        limited = error instanceof ClaudeUsageLimitError;
+        log.error(`exploración ${appName}: ${fn.id} falló${limited ? ', sin cuota de Claude: no arranco más funciones' : ''}`, error);
+        outcomes.push({ planned, status: 'fallo', tareas: [], error: limited ? NO_QUOTA : (error as Error).message.slice(0, 300) });
       } finally {
         await ensureCleanCheckout(codeDir, app.path).catch((error) => log.error('exploración: no se pudo limpiar el checkout', error));
       }
@@ -260,7 +297,7 @@ export async function runExploration(opts: RunOptions): Promise<RunSummary> {
   // Repeats of what the memory already has (rejected included), and of each
   // other within this run, never reach the evaluator.
   const fresh: PendingCandidate[] = [];
-  for (const c of pending) {
+  for (const c of [...carried, ...pending]) {
     const repeat = findDuplicate({ funcion: c.functionId, huella: c.huella }, [
       ...memory.findings,
       ...fresh.map((f, i) => ({ id: `candidato ${i}`, funcion: f.functionId, huella: f.huella })),
@@ -270,7 +307,10 @@ export async function runExploration(opts: RunOptions): Promise<RunSummary> {
   }
 
   let kept: PendingCandidate[] = [];
-  if (fresh.length > 0) {
+  let deferred: PendingCandidate[] = [];
+  if (fresh.length > 0 && limited) {
+    deferred = fresh;
+  } else if (fresh.length > 0) {
     const candidatesPath = join(outRoot, 'candidates.json');
     // In a directory of its own: the evaluator writes only there (sealed).
     const verdictsPath = join(outRoot, 'evaluate', 'verdicts.json');
@@ -285,11 +325,19 @@ export async function runExploration(opts: RunOptions): Promise<RunSummary> {
         else discarded.push({ titulo: c.titulo, funcion: c.functionId, motivo: `evaluador: ${v.motivo}` });
       }
     } catch (error) {
-      // Without the evaluator nothing is published: it is the gate.
-      log.error(`exploración ${appName}: el evaluador falló, no se publica nada de esta corrida`, error);
-      for (const c of fresh) discarded.push({ titulo: c.titulo, funcion: c.functionId, motivo: 'el evaluador falló' });
+      // Without the evaluator nothing is published: it is the gate. For
+      // lack of quota, what it didn't see waits for the next run.
+      if (error instanceof ClaudeUsageLimitError) {
+        log.error(`exploración ${appName}: el evaluador se quedó sin cuota de Claude, los candidatos esperan a la próxima corrida`, error);
+        deferred = fresh;
+      } else {
+        log.error(`exploración ${appName}: el evaluador falló, no se publica nada de esta corrida`, error);
+        for (const c of fresh) discarded.push({ titulo: c.titulo, funcion: c.functionId, motivo: 'el evaluador falló' });
+      }
     }
   }
+  await saveDeferred(appName, deferred);
+  if (deferred.length > 0) log.info(`exploración ${appName}: ${deferred.length} candidato(s) esperan al evaluador de la próxima corrida`);
 
   const capped = capCandidates(kept, config.exploreFindingsPerRun, config.exploreIdeasPerRun);
   for (const c of capped.cut) discarded.push({ titulo: c.titulo, funcion: c.functionId, motivo: 'fuera del tope de la corrida' });
@@ -321,11 +369,11 @@ export async function runExploration(opts: RunOptions): Promise<RunSummary> {
       charter: c.planned.charter,
       viewport: c.viewport,
       rol: c.planned.role,
-      semilla: seed,
+      semilla: c.seed ?? seed,
       fecha: today,
       estado: 'propuesto',
       huella: c.huella,
-      ...(focus?.issue ? { origen: focus.issue } : {}),
+      ...(c.origen ? { origen: c.origen } : {}),
       ...(c.entorno ? { entorno: true } : {}),
       body: renderFindingBody(c, { functionName: c.functionName, ...(patch ? { patch } : {}), ...images.get(id) }),
     };
@@ -347,6 +395,7 @@ export async function runExploration(opts: RunOptions): Promise<RunSummary> {
   const runFile = runFileName(memoryDir, runId);
   const summary: RunSummary = {
     runId, seed, plan, outcomes, findings, discarded, runFile,
+    deferred: deferred.map((c) => ({ titulo: c.titulo, funcion: c.functionId })),
     inventory: { added: refreshed.added, retired: refreshed.retired, refreshed: refreshed.refreshed },
     ...(focus ? { focus } : {}),
     ...(unfocused ? { unfocused } : {}),
@@ -497,9 +546,14 @@ export function renderRunFile(appName: string, s: RunSummary, inventory: Invento
     lines.push('');
   }
   lines.push('## Propuestas', '');
-  if (s.findings.length === 0) lines.push('Ninguna: nada de lo encontrado pasó el filtro.', '');
+  if (s.findings.length === 0) lines.push(s.deferred.length > 0 ? 'Ninguna todavía: lo encontrado espera al evaluador (abajo).' : 'Ninguna: nada de lo encontrado pasó el filtro.', '');
   for (const f of s.findings) lines.push(`- **${f.id}** (${f.tipo}, \`${f.gravedad}\`) ${f.titulo} — \`${f.funcion}\``);
   if (s.findings.length > 0) lines.push('');
+  if (s.deferred.length > 0) {
+    lines.push('## Esperan a la próxima corrida', '', `El evaluador no los vio: la cuenta de Claude se quedó sin cuota. La próxima corrida de ${appName} los evalúa con los suyos.`, '');
+    for (const d of s.deferred) lines.push(`- ${d.titulo} (\`${d.funcion}\`)`);
+    lines.push('');
+  }
   if (s.discarded.length > 0) {
     lines.push('## Descartado', '');
     for (const d of s.discarded) lines.push(`- ${d.titulo} (\`${d.funcion}\`): ${d.motivo}`);

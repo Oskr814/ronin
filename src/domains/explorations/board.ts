@@ -199,6 +199,7 @@ export interface ExplorationRun {
   functions: Array<Pick<ExplorationRunFunction, 'id' | 'status'> & Partial<ExplorationRunFunction>>;
   findings?: ExplorationRunRecord['findings'];
   discarded?: number;
+  deferred?: number;
   focus?: ExplorationRunRecord['focus'];
   unfocused?: string;
   costUsd: number;
@@ -243,6 +244,7 @@ export function buildExplorationRuns(records: ExplorationRunRecord[], agentRuns:
       functions: rec.functions ?? [...new Set(agents.flatMap((a) => (a.fn ? [a.fn] : [])))].map((id) => ({ id, status: 'explorada' as const })),
       ...(rec.findings ? { findings: rec.findings } : {}),
       ...(rec.discarded !== undefined ? { discarded: rec.discarded } : {}),
+      ...(rec.deferred ? { deferred: rec.deferred } : {}),
       ...(rec.focus ? { focus: rec.focus } : {}),
       ...(rec.unfocused ? { unfocused: rec.unfocused } : {}),
       costUsd: cost(agents),

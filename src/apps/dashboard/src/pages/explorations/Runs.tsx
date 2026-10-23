@@ -33,6 +33,7 @@ function RunItem({ c, open, onOpen }: { c: ExplorationRun; open: string | null; 
   const facts: string[] = [];
   if (c.findings) facts.push(c.findings.length ? `${c.findings.length} ${c.findings.length === 1 ? 'ficha' : 'fichas'}: ${c.findings.map((f) => f.id).join(', ')}` : 'ninguna ficha');
   if (c.discarded) facts.push(`${c.discarded} ${c.discarded === 1 ? 'descartada' : 'descartadas'}`);
+  if (c.deferred) facts.push(`${c.deferred} sin evaluar por falta de cuota: ${c.deferred === 1 ? 'espera' : 'esperan'} a la próxima corrida`);
   if (c.prNumber) facts.push(`PR #${c.prNumber}`);
   if (c.seed !== undefined) facts.push(`semilla ${c.seed}`);
   if (c.focus?.functions?.length && !c.focus.text) facts.push(`elegidas: ${c.focus.functions.join(', ')}`);

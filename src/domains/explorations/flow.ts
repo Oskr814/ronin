@@ -121,6 +121,10 @@ export function renderRunReply(appName: string, run: PublishedRun): string {
         '',
       ];
   if (summary.unfocused) return lines.join('\n').trim();
+  if (summary.findings.length === 0 && summary.deferred.length > 0) {
+    lines.push(`Encontré ${summary.deferred.length} candidato(s), pero la cuenta de Claude se quedó sin cuota antes de evaluarlos. Los guardé: la próxima corrida de \`${appName}\` los evalúa y, si pasan, los suma al PR de exploración.`);
+    return lines.join('\n');
+  }
   if (summary.findings.length === 0) {
     lines.push(`No encontré nada que valga la pena proponer${summary.discarded.length > 0 ? ` (descarté ${summary.discarded.length} candidato(s); el detalle está en la corrida)` : ''}.`);
   } else {
@@ -130,6 +134,7 @@ export function renderRunReply(appName: string, run: PublishedRun): string {
     }
   }
   lines.push('', `Están en el PR de exploración: #${run.prNumber}. Revisalas ahí: al aprobarlo abro un issue por cada una que siga en pie.`);
+  if (summary.deferred.length > 0) lines.push('', `Otros ${summary.deferred.length} candidato(s) esperan a la próxima corrida: la cuenta de Claude se quedó sin cuota antes de evaluarlos.`);
   return lines.join('\n');
 }
 

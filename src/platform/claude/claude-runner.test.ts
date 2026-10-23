@@ -52,6 +52,18 @@ describe('runClaudeHeadless usage-limit detection', () => {
     await expect(promise).rejects.toBeInstanceOf(ClaudeUsageLimitError);
   });
 
+  it('also reads a subscription\'s session and weekly limits as the usage limit', async () => {
+    for (const notice of ["You've hit your session limit · resets 6:10am (UTC)", "You've hit your weekly limit · resets Oct 27"]) {
+      fakeChild = new FakeChildProcess();
+      const promise = runInRepo('/tmp/wt', 'prompt', 'label');
+      await vi.waitFor(() => expect(spawn).toHaveBeenCalled());
+      emitStdout(fakeChild, JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: notice }] } }));
+      fakeChild.emit('close', 1);
+      await expect(promise).rejects.toBeInstanceOf(ClaudeUsageLimitError);
+      spawn.mockClear();
+    }
+  });
+
   it('throws ClaudeUsageLimitError when the notice is embedded in a JSON stream-json event', async () => {
     fakeChild = new FakeChildProcess();
     const promise = runInRepo('/tmp/wt', 'prompt', 'label');

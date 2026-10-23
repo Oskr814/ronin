@@ -44,6 +44,8 @@ export interface ExplorationRunRecord {
   functions?: ExplorationRunFunction[];
   findings?: Array<{ id: string; titulo: string; tipo: string; gravedad: string }>;
   discarded?: number;
+  // Left for the next run: the evaluator had no Claude quota (#382).
+  deferred?: number;
   inventory?: { added: string[]; retired: string[] };
   // Where it looked, when someone said (#376): the request, cut short, and
   // the functions picked by hand. `unfocused`: why it explored nothing.
@@ -91,6 +93,7 @@ export function summaryFields(summary: RunSummary): Partial<ExplorationRunRecord
     })),
     findings: summary.findings.map((f) => ({ id: f.id, titulo: f.titulo, tipo: f.tipo, gravedad: f.gravedad })),
     discarded: summary.discarded.length,
+    ...(summary.deferred.length > 0 ? { deferred: summary.deferred.length } : {}),
     inventory: { added: summary.inventory.added, retired: summary.inventory.retired },
     ...(summary.focus ? { focus: { ...summary.focus, ...(summary.focus.text ? { text: summary.focus.text.slice(0, FOCUS_SHOWN) } : {}) } } : {}),
     ...(summary.unfocused ? { unfocused: summary.unfocused } : {}),
