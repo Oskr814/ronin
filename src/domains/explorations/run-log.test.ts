@@ -14,6 +14,7 @@ const summary = {
   ],
   findings: [{ id: 'F-0021', titulo: 'Recargar pierde lo marcado', tipo: 'hallazgo', gravedad: 'bug' }],
   discarded: [{ titulo: 'a', funcion: 'surtir', motivo: 'b' }],
+  deferred: [{ titulo: 'c', funcion: 'surtir' }],
   runFile: '',
   inventory: { added: ['cotizaciones'], retired: [], refreshed: true },
 } as any;
@@ -31,7 +32,7 @@ describe('run records', () => {
     await finishRunRecord(record, { summary, prNumber: 919 }, new Date('2026-10-19T07:49:00Z'));
     const [done] = await listRunRecords('acme/shop', 'backoffice');
     expect(done).toMatchObject({
-      state: 'ok', endedAt: '2026-10-19T07:49:00.000Z', runId: '2026-10-18-559417', seed: 559417, prNumber: 919, discarded: 1,
+      state: 'ok', endedAt: '2026-10-19T07:49:00.000Z', runId: '2026-10-18-559417', seed: 559417, prNumber: 919, discarded: 1, deferred: 1,
       functions: [
         { id: 'surtir', charter: 'interrupciones', role: 'Sales', reason: 'nueva', status: 'explorada', viewports: ['mobile'] },
         { id: 'clientes', charter: 'datos-hostiles', status: 'fallo', viewports: [], error: 'el navegador no abrió' },

@@ -15,6 +15,8 @@ ronin levanta la app, usa algunas de sus funciones como cada rol, en desktop y e
 
 Hay un solo PR de exploración por repo: las corridas se van sumando a él hasta que lo aprobás.
 
+Si la cuenta de Claude del repo se queda sin cuota en medio de una corrida, ronin no arranca más funciones y guarda lo que ya encontró. La próxima corrida de esa app lo evalúa y, si pasa, lo suma al PR. En **Corridas**, esa corrida dice cuántos candidatos esperan.
+
 ## Las exploraciones en el tablero
 
 El botón **Exploraciones**, arriba a la izquierda, lista las apps. El número al lado son las fichas que esperan una decisión. Cada app muestra su estado (explorando ahora, fichas por decidir, esperando a ronin o sin PR), su PR de exploración, la última corrida y la próxima de la noche.

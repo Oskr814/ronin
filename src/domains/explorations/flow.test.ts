@@ -49,6 +49,7 @@ describe('renderRunReply', () => {
       ],
       findings: findings as any,
       discarded: Array.from({ length: discarded }, () => ({ titulo: 't', funcion: 'f', motivo: 'm' })),
+      deferred: [],
     },
   });
 
@@ -62,6 +63,15 @@ describe('renderRunReply', () => {
 
   it('is honest when nothing made it', () => {
     expect(renderRunReply('backoffice', run([], 3))).toContain('No encontré nada que valga la pena proponer (descarté 3 candidato(s)');
+  });
+
+  it('says what waits for quota, with or without findings', () => {
+    const waiting = run([]);
+    waiting.summary.deferred = [{ titulo: 'a', funcion: 'f' }, { titulo: 'b', funcion: 'f' }];
+    expect(renderRunReply('backoffice', waiting)).toContain('Encontré 2 candidato(s), pero la cuenta de Claude se quedó sin cuota antes de evaluarlos.');
+    const some = run([{ id: 'F-0001', titulo: 'Doble toque', gravedad: 'bug' }]);
+    some.summary.deferred = [{ titulo: 'a', funcion: 'f' }];
+    expect(renderRunReply('backoffice', some)).toContain('Otros 1 candidato(s) esperan a la próxima corrida');
   });
 
   it('says it followed the issue, or why it explored nothing', () => {

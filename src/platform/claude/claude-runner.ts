@@ -12,8 +12,10 @@ const MAX_LOG_LINE = 2000;
 // the account's spend/usage cap is hit mid-session — a transient, expected
 // condition (quota resets on its own) that must never be treated the same
 // as a real bug in the agent's work. Callers use this to skip the task
-// instead of blocking the issue — see tick.ts.
-const USAGE_LIMIT_PATTERN = /usage limit|spend limit/i;
+// instead of blocking the issue — see tick.ts. The wording changes with
+// the plan and the window: "usage limit", "monthly spend limit", "session
+// limit · resets 6:10am" (a subscription's 5-hour window, #382), "weekly limit".
+const USAGE_LIMIT_PATTERN = /usage limit|spend limit|hit your [\w ]{0,20}limit/i;
 
 export class ClaudeUsageLimitError extends Error {}
 

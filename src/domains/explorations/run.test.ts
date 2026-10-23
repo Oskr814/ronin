@@ -59,6 +59,7 @@ const runAgentTask = vi.fn();
 vi.mock('@platform/agents/agent-task.js', () => ({ runAgentTask: (...args: unknown[]) => runAgentTask(...args) }));
 
 import { runExploration } from './run.js';
+import { ClaudeUsageLimitError } from '@platform/claude/claude-runner.js';
 import { loadMemory, saveInventory, writeFinding, ensureMemoryDir } from './memory.js';
 
 function candidate(overrides: Record<string, unknown> = {}) {
@@ -111,6 +112,49 @@ function agentBehaviour(results: Record<string, unknown>, verdicts: (candidates:
     }
   });
 }
+
+describe('runExploration out of Claude quota (#382)', () => {
+  const keep = (candidates: unknown[]) => ({ veredictos: candidates.map((_, index) => ({ index, veredicto: 'mantener', motivo: 'ok' })) });
+  const found = { tareas: [], candidatos: [candidate()] };
+
+  it('starts no more functions and keeps what was found for the next run, which evaluates it', async () => {
+    await saveInventory(memoryDir, { funciones: [fnFixture('pedidos.confirmar'), fnFixture('pedidos.surtir'), fnFixture('pedidos.anular')] as any });
+    agentBehaviour({ 'pedidos.confirmar': found, 'pedidos.surtir': new ClaudeUsageLimitError('limit') }, keep);
+    const first = await runExploration({ appName: 'backoffice', codeDir: '/code', memoryDir, today: '2026-10-12', seed: 7, focus: { functions: ['pedidos.confirmar', 'pedidos.surtir', 'pedidos.anular'] } });
+    expect(first.outcomes.map((o) => [o.status, o.error])).toEqual([['explorada', undefined], ['fallo', 'sin cuota de Claude'], ['omitida', undefined]]);
+    expect(runAgentTask.mock.calls.map(([t]: any) => t.type)).toEqual(['explore-function', 'explore-function']);
+    expect(first.findings).toEqual([]);
+    expect(first.discarded).toEqual([]);
+    expect(first.deferred).toEqual([{ titulo: candidate().titulo, funcion: 'pedidos.confirmar' }]);
+    expect(await readFile(first.runFile, 'utf8')).toContain('## Esperan a la próxima corrida');
+
+    runAgentTask.mockReset();
+    agentBehaviour({ 'pedidos.anular': { tareas: [], candidatos: [] } }, keep);
+    const next = await runExploration({ appName: 'backoffice', codeDir: '/code', memoryDir, today: '2026-10-13', seed: 9, focus: { functions: ['pedidos.anular'] } });
+    expect(next.findings.map((f) => [f.funcion, f.semilla, f.charter])).toEqual([['pedidos.confirmar', 7, first.plan.functions[0].charter]]);
+    expect(next.deferred).toEqual([]);
+
+    // Consumed: a third run has nothing left to evaluate.
+    runAgentTask.mockReset();
+    agentBehaviour({ 'pedidos.anular': { tareas: [], candidatos: [] } }, keep);
+    await runExploration({ appName: 'backoffice', codeDir: '/code', memoryDir, today: '2026-10-14', seed: 11, focus: { functions: ['pedidos.anular'] } });
+    expect(runAgentTask.mock.calls.map(([t]: any) => t.type)).toEqual(['explore-function']);
+  });
+
+  it('keeps the candidates when it is the evaluator that runs out', async () => {
+    agentBehaviour({ 'pedidos.confirmar': found, 'pedidos.surtir': { tareas: [], candidatos: [] } }, () => { throw new ClaudeUsageLimitError('limit'); });
+    const run = await runExploration({ appName: 'backoffice', codeDir: '/code', memoryDir, today: '2026-10-12', seed: 7, maxFunctions: 2 });
+    expect(run.deferred).toHaveLength(1);
+    expect(run.discarded).toEqual([]);
+  });
+
+  it('still discards what the evaluator couldn’t see for any other failure', async () => {
+    agentBehaviour({ 'pedidos.confirmar': found, 'pedidos.surtir': { tareas: [], candidatos: [] } }, () => { throw new Error('boom'); });
+    const run = await runExploration({ appName: 'backoffice', codeDir: '/code', memoryDir, today: '2026-10-12', seed: 7, maxFunctions: 2 });
+    expect(run.deferred).toEqual([]);
+    expect(run.discarded.map((d) => d.motivo)).toEqual(['el evaluador falló']);
+  });
+});
 
 describe('runExploration with a focus (#376)', () => {
   const keep = (candidates: unknown[]) => ({ veredictos: candidates.map((_, index) => ({ index, veredicto: 'mantener', motivo: 'ok' })) });
