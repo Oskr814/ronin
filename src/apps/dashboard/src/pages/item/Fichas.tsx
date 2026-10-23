@@ -207,6 +207,7 @@ function Decisions({ status, menu, setMenu, act, toggleLista }: { status: FichaS
       <button className="btn-s danger" data-fact="rechazar" onClick={button('rechazar')}>Rechazar <kbd>r</kbd></button>
       <span className="actions"><button className="btn-s" id="fmore" aria-haspopup="menu" aria-expanded={menu} onClick={(e) => { e.stopPropagation(); setMenu(!menu); }}>Más ▾</button>
         {menu && <div className="menu fmenu" role="menu">
+          <button role="menuitem" data-fact="desarrollar" onClick={button('desarrollar')}><b>Desarrollar ya</b><small>Abre ahora el issue de esta ficha, asignado a ronin, sin esperar a aprobar el PR.</small></button>
           <button role="menuitem" data-fact="issue" onClick={button('issue')}><b>Pedir un issue aparte</b><small>Algo que surge de esta ficha pero no es su propuesta.</small></button>
           <button role="menuitem" data-fact="pregunta" onClick={button('pregunta')}><b>Preguntarle a ronin</b><small>Responde en el hilo, sin tocar la ficha.</small></button></div>}</span></span>
   );

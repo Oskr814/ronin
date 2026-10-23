@@ -149,12 +149,15 @@ export function findingIssueKey(appName: string, id: string): string {
   return `ronin-ficha:${appName}/${id}`;
 }
 
-export function renderFindingIssue(appName: string, finding: Finding, fileUrl: string): { title: string; body: string } {
+// `note`: how it got to be an issue, when it wasn't the PR's approval (sent
+// to development early from the PR, #379).
+export function renderFindingIssue(appName: string, finding: Finding, fileUrl: string, note?: string): { title: string; body: string } {
   const body = [
     finding.body.replace(/^## .*\n+/, ''),
     '',
     `Encontrado por la exploración de ronin en \`${appName}\` (charter \`${finding.charter}\`, ${finding.viewport}, rol ${finding.rol}, semilla ${finding.semilla}). Ficha: [${finding.id}](${fileUrl}).`,
     ...(finding.origen ? ['', `Viene de lo que se pidió en #${finding.origen}.`] : []),
+    ...(note ? ['', note] : []),
     '',
     `Ya está asignado a ronin, que lo empieza solo. \`${findingIssueKey(appName, finding.id)}\``,
   ].join('\n');
@@ -183,21 +186,34 @@ export async function openFindingIssues(
   const existing = await listIssuesWithLabel(LABEL_PROPOSAL);
   const opened: Array<{ id: string; issue: number }> = [];
   for (const meta of candidates) {
-    const key = findingIssueKey(appName, meta.id);
     const path = findingPath(memoryDir, meta);
     const finding = parseFinding(await host().fs.readFile(path, 'utf8'));
-    let number = existing.find((i) => i.body.includes(key))?.number;
-    if (!number) {
-      const fileUrl = `https://github.com/${activeRepo().productRepo}/blob/${branchForLinks}/${relative(checkoutDir, path)}`;
-      const { title, body } = renderFindingIssue(appName, finding, fileUrl);
-      number = (await createIssue(title, body, finding.tipo === 'idea' ? [LABEL_PROPOSAL, LABEL_IDEA] : [LABEL_PROPOSAL], [config.githubLogin])).number;
-      log.info(`exploración ${appName}: issue #${number} para ${meta.id}`);
-      await queueExplorationProject(appName, number);
-    }
+    const fileUrl = `https://github.com/${activeRepo().productRepo}/blob/${branchForLinks}/${relative(checkoutDir, path)}`;
+    const { number } = await ensureFindingIssue(appName, finding, fileUrl, { existing });
     await host().fs.writeFile(path, serializeFinding({ ...finding, issue: number }));
     opened.push({ id: meta.id, issue: number });
   }
   return opened;
+}
+
+// The issue of a finding: the one already open with its key, found among
+// `existing` (or the open proposals) — so a retry, or approving a finding
+// already sent to development (#379), never opens a second — or a new one
+// assigned to ronin.
+export async function ensureFindingIssue(
+  appName: string,
+  finding: Finding,
+  fileUrl: string,
+  opts: { existing?: Array<{ number: number; body: string }>; note?: string } = {},
+): Promise<{ number: number; created: boolean }> {
+  const key = findingIssueKey(appName, finding.id);
+  const found = (opts.existing ?? (await listIssuesWithLabel(LABEL_PROPOSAL))).find((i) => i.body.includes(key))?.number;
+  if (found) return { number: found, created: false };
+  const { title, body } = renderFindingIssue(appName, finding, fileUrl, opts.note);
+  const { number } = await createIssue(title, body, finding.tipo === 'idea' ? [LABEL_PROPOSAL, LABEL_IDEA] : [LABEL_PROPOSAL], [config.githubLogin]);
+  log.info(`exploración ${appName}: issue #${number} para ${finding.id}`);
+  await queueExplorationProject(appName, number);
+  return { number, created: true };
 }
 
 // Marks as approved every proposed finding `select` picks. Returns their ids.
@@ -247,6 +263,7 @@ export function renderDigest(opts: { since: string; branch: string; repo: string
     '**Cómo revisar:**',
     '- **Para rechazar una propuesta**, comentá en su ficha (en "Files changed") con el motivo, por ejemplo: "ya está cubierto". La marco como rechazada y la sumo a `knowledge.md` para no volver a proponerla.',
     '- **Para corregir una propuesta**, comentá qué cambiar: ajusto la ficha y, si hace falta, rehago la captura del después. **Para pedir un issue aparte** a partir de una ficha, pedímelo en el comentario.',
+    '- **Para que una propuesta se desarrolle ya**, sin esperar a aprobar el PR, comentá en su ficha `Desarrollar ya.` (o `Desarrollar ya: <contexto>`): abro su issue en ese momento y me lo asigno.',
     `- **Para decidir sobre varias propuestas a la vez** (por ejemplo, "los de mobile se resuelven con F-0003") o sobre lo que no querés que vuelva a proponer, dejá un comentario general en el PR mencionándome. Rechazo o corrijo las fichas que cubre y lo sumo a \`knowledge.md\`.`,
     '- **Para aceptar el resto**, aprobá el PR cuando quieras. Marco como aprobadas las propuestas que sigan en pie, abro un issue por cada una y mergeo el PR; asignándome ese issue, la implemento.',
     '- Los bugs de la app de gravedad alta ya tienen su issue abierto desde que se encontraron.',

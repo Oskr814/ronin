@@ -13,8 +13,8 @@ import { DomainError } from '@platform/errors.js';
 // after), open an issue, answer. So the comment says what it asks for in
 // plain words, and needs no mention: a new comment on a finding is feedback.
 
-export type FindingCardActionId = 'rechazar' | 'cambios' | 'issue' | 'pregunta' | 'comentar';
-const ACTIONS: FindingCardActionId[] = ['rechazar', 'cambios', 'issue', 'pregunta', 'comentar'];
+export type FindingCardActionId = 'rechazar' | 'cambios' | 'issue' | 'desarrollar' | 'pregunta' | 'comentar';
+const ACTIONS: FindingCardActionId[] = ['rechazar', 'cambios', 'issue', 'desarrollar', 'pregunta', 'comentar'];
 // On a finding already decided there's only talking left.
 const ON_DECIDED: FindingCardActionId[] = ['pregunta', 'comentar'];
 const MAX_TEXT = 4000;
@@ -31,6 +31,8 @@ export function findingCardComment(action: FindingCardActionId, text: string, re
     case 'rechazar': return `Rechazo esta ficha: ${text}`;
     case 'cambios': return redo ? `${text}\n\nTambién hay que rehacer la captura del después.` : text;
     case 'issue': return `Abrí un issue aparte: ${text}`;
+    // Read by the code, not the agent (flow.ts's developRequest): the words are fixed.
+    case 'desarrollar': return text ? `Desarrollar ya: ${text}` : 'Desarrollar ya.';
     default: return text;
   }
 }
@@ -56,7 +58,7 @@ export async function runFindingCardAction(
   if (!card) throw new FindingCardActionError('Esa ficha no está en este PR.');
   if ((card.estado === 'rechazado' || card.estado === 'aprobado') && !ON_DECIDED.includes(action)) throw new FindingCardActionError(`${card.id} ya está ${card.estado === 'rechazado' ? 'rechazada' : 'aprobada'}: solo se puede comentar.`);
   const text = typeof request.text === 'string' ? request.text.trim().slice(0, MAX_TEXT) : '';
-  if (!text) throw new FindingCardActionError('Falta el texto.');
+  if (!text && action !== 'desarrollar') throw new FindingCardActionError('Falta el texto.');
   if (request.redo === true && action !== 'cambios') throw new FindingCardActionError('Rehacer el después va con "Pedir cambios".');
   const posted = await post(session.token, entry.productRepo, pr.number, card.path, findingCardComment(action, text, request.redo === true));
   log.info(`tablero: ${session.login} comentó ${action} en ${card.id} de ${entry.productRepo}#${pr.number} (${posted.url})`);

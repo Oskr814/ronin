@@ -63,11 +63,14 @@ En **Fichas**, a la izquierda la lista agrupada (por decidir, esperando a ronin,
 |---|---|
 | **Rechazar** (`r`) | `Rechazo esta ficha: <motivo>`. El motivo queda en la memoria y no se vuelve a proponer. |
 | **Pedir cambios** (`c`) | Lo que hay que cambiar. Podés marcar que rehaga la captura del después. |
+| **Más → Desarrollar ya** | `Desarrollar ya.`, o `Desarrollar ya: <contexto>`. ronin abre en ese momento el issue de la ficha, asignado a sí mismo, sin esperar a que apruebes el PR, y te responde con el número. La ficha queda aprobada; al aprobar el PR no se abre otro issue. |
 | **Más → Pedir un issue aparte** | `Abrí un issue aparte: <qué>` |
 | **Más → Preguntar** | Tu texto |
 | **Aprobar** (`a`) | Nada todavía: la marca como *Para aprobar* en tu navegador. Se aprueba de verdad al finalizar la revisión. |
 
 ronin aplica cada comentario como si lo hubieras escrito en GitHub y responde en la conversación de la ficha.
+
+*Desarrollar ya* sirve para lo urgente: el issue sale enseguida, aunque haya una exploración corriendo. En ese caso, la ficha se marca aprobada cuando termina la corrida. En una ficha rechazada, o que ya tiene issue, ronin responde eso y no abre nada.
 
 La ficha dice quién la decidió: *Rechazada por persona* o *Aprobada por persona*, con el usuario de GitHub de quien comentó o aprobó, y *editada por persona* si alguien pidió cambios. Queda también en el archivo de la ficha (`revisor` y `revisado`).
 

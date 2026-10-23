@@ -88,11 +88,13 @@ export const waitingCount = (data: Exploration | undefined, id: string) => (data
 
 // What a finding's dialog does: on the finding (a comment on its file), or
 // on the whole PR.
-export type FichaActionId = 'rechazar' | 'cambios' | 'issue' | 'pregunta' | 'general' | 'approve';
+export type FichaActionId = 'rechazar' | 'cambios' | 'issue' | 'desarrollar' | 'pregunta' | 'general' | 'approve';
 export const FICHA_ACTIONS: Record<FichaActionId, { title: string; field: string; btn: string; placeholder: string; cls?: 'danger'; quick?: string[]; redo?: boolean; pr?: boolean; optional?: boolean }> = {
   rechazar: { title: 'Rechazar', field: 'Motivo: queda en knowledge.md para que no se vuelva a proponer', btn: 'Rechazar', cls: 'danger', placeholder: 'Por qué no va', quick: ['Muy poco probable: es una app interna con pocos usuarios', 'Ya está cubierto', 'No es un problema para el equipo', 'Lo resolvemos con otra ficha'] },
   cambios: { title: 'Pedir cambios', field: 'Qué cambiar en la propuesta', btn: 'Pedir cambios', placeholder: 'Por ejemplo: que el aviso diga “No se encontró el producto o ya fue eliminado por otro usuario”', redo: true },
   issue: { title: 'Pedir un issue aparte', field: 'Qué tiene que tener el issue', btn: 'Pedir el issue', placeholder: 'Por ejemplo: revisar todos los toasts de error de catálogos' },
+  // Its own issue now, before the PR is approved (#379).
+  desarrollar: { optional: true, title: 'Desarrollar ya', field: 'Contexto para el issue (opcional)', btn: 'Mandar a desarrollar', placeholder: 'Por ejemplo: es urgente, lo reportó un cliente esta semana' },
   pregunta: { title: 'Preguntarle a ronin', field: 'Tu pregunta', btn: 'Preguntar', placeholder: '¿Esto pasa también como Sales?' },
   // On the whole PR, not a finding.
   general: { pr: true, title: 'Comentario general', field: 'Sobre varias fichas a la vez, o lo que las próximas exploraciones no deben volver a proponer', btn: 'Comentar', placeholder: 'Por ejemplo: F-0017 y F-0018 no aplican, el listado de catálogos lo usa una sola persona' },
@@ -105,6 +107,7 @@ export function fichaCommentText(action: string, text: string, redo: boolean): s
   if (action === 'rechazar') return `Rechazo esta ficha: ${text}`;
   if (action === 'cambios') return redo ? `${text}\n\nTambién hay que rehacer la captura del después.` : text;
   if (action === 'issue') return `Abrí un issue aparte: ${text}`;
+  if (action === 'desarrollar') return text ? `Desarrollar ya: ${text}` : 'Desarrollar ya.';
   return text;
 }
 
