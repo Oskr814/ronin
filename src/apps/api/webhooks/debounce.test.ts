@@ -1,20 +1,20 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { EventDebouncer } from './debounce.js';
+import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest';
+import { EventDebouncer, type StartHandler } from './debounce.js';
 import { comesInBursts } from './events.js';
 
 const SHORT = 1000;
 const BURST = 15000;
 
-let start: ReturnType<typeof vi.fn>;
+let start: Mock<StartHandler>;
 let debouncer: EventDebouncer;
 beforeEach(() => {
   vi.useFakeTimers();
-  start = vi.fn();
+  start = vi.fn<StartHandler>();
   debouncer = new EventDebouncer(start);
 });
 afterEach(() => vi.useRealTimers());
 
-const scope = (flows: string[], resources = ['pr-12']) => ({ flows, resources }) as never;
+const scope = (flows: string[], resources = ['pr-12']) => ({ flows, resources }) as unknown as Parameters<StartHandler>[1];
 
 describe('the debounce windows (#370)', () => {
   it('waits out a burst of check suites and starts one handler with every flow', () => {
@@ -44,16 +44,16 @@ describe('the debounce windows (#370)', () => {
     debouncer.schedule('acme/app', scope(['auto-merge']), BURST);
     vi.advanceTimersByTime(SHORT);
     expect(start).toHaveBeenCalledTimes(1);
-    expect(start.mock.calls[0][1].flows).toEqual(['issues', 'auto-merge']);
+    expect((start.mock.calls[0][1] as { flows: string[] }).flows).toEqual(['issues', 'auto-merge']);
   });
 
   it('keeps different PRs apart, each with its own window', () => {
     debouncer.schedule('acme/app', scope(['auto-merge'], ['pr-12']), BURST);
     debouncer.schedule('acme/app', scope(['pr-commands'], ['pr-13']), SHORT);
     vi.advanceTimersByTime(SHORT);
-    expect(start.mock.calls.map((c) => c[1].resources)).toEqual([['pr-13']]);
+    expect(start.mock.calls.map((c) => (c[1] as { resources: string[] }).resources)).toEqual([['pr-13']]);
     vi.advanceTimersByTime(BURST);
-    expect(start.mock.calls.map((c) => c[1].resources)).toEqual([['pr-13'], ['pr-12']]);
+    expect(start.mock.calls.map((c) => (c[1] as { resources: string[] }).resources)).toEqual([['pr-13'], ['pr-12']]);
   });
 
   it('gives the long window only to the deliveries that come in bursts', () => {
