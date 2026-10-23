@@ -20,10 +20,10 @@ import { DomainError } from '@platform/errors.js';
 // its account, which it takes like any issue assigned on GitHub
 // (discoverAssignedIssues) and, if what's asked isn't clear, asks on the
 // issue before touching code. Or a /spike first, on one of the repo's
-// apps, or an /explore with the issue as its focus (#376). Any open issue can also be closed, as not planned, with
+// apps, a /spec that turns it into a spec in a draft PR, or an /explore with the issue as its focus (#376). Any open issue can also be closed, as not planned, with
 // its reason as a comment first.
 
-export type ActionId = 'resolve-conflicts' | 'preview' | 'preview-stop' | 'auto-merge-on' | 'auto-merge-off' | 'unblock' | 'assign' | 'spike' | 'explore' | 'close-issue';
+export type ActionId = 'resolve-conflicts' | 'preview' | 'preview-stop' | 'auto-merge-on' | 'auto-merge-off' | 'unblock' | 'assign' | 'spike' | 'spec' | 'explore' | 'close-issue';
 
 export interface ActionView {
   id: ActionId;
@@ -94,6 +94,11 @@ export function listActions(ref: ItemRef, gh: RepoGithub | undefined, detail: It
         text: { required: false, label: 'Qué investigar (opcional)', placeholder: 'Por ejemplo: de dónde sale el total del checkout' },
       });
       before.push({
+        id: 'spec', label: 'Pedir un spec', command: '/spec', target: ref.number, apps,
+        help: 'Lo convierte en un spec: investiga, pregunta en el issue lo que falte y abre un PR draft con el spec. Lo implementa cuando marcás el PR ready for review.',
+        text: { required: false, label: 'Qué tener en cuenta (opcional)', placeholder: 'Por ejemplo: que se pueda hacer en varias entregas' },
+      });
+      before.push({
         id: 'explore', label: 'Explorar', command: '/explore', target: ref.number, apps,
         help: 'Usa la app como cada rol con lo que pide el issue como foco, y deja fichas con el antes y el después en el PR de exploración. No lo toma ni cambia el código.',
         text: { required: false, label: 'En qué fijarse, además de lo que dice el issue (opcional)', placeholder: 'Por ejemplo: sobre todo en el teléfono' },
@@ -126,7 +131,7 @@ export function listActions(ref: ItemRef, gh: RepoGithub | undefined, detail: It
 // /preview parser reads the lines after the command too). The answer that
 // unblocks an issue is just the answer, and so is the context that goes
 // with an assignment: a mention there would also be read as a request. A
-// /spike or /prototype takes its app and instruction on one line, as
+// /spike, /spec or /explore takes its app and instruction on one line, as
 // "Nuevo issue" writes them.
 export function actionComment(action: Pick<ActionView, 'id' | 'command'>, text?: string, app?: string): string {
   if (action.id === 'unblock' || action.id === 'assign' || action.id === 'close-issue') return text ?? '';
