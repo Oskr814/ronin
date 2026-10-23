@@ -75,7 +75,7 @@ Detalle en [Probar con una preview](/ronin/guias/probar-con-preview/).
 
 <div class="cmd-scope"><Badge text="PR" variant="note" /></div>
 
-Le pone el label `ronin:auto-merge` y responde qué falta. En el primer tick en que el PR está aprobado, en verde y mergeable, lo mergea. Un PR de slice espera además a la [review interna](/ronin/como-funciona/review/#los-prs-de-ronin) de su último commit y a que no queden preguntas en su descripción. `/auto-merge off`, o sacar el label, lo cancela.
+Le pone el label `ronin:auto-merge` y responde qué falta. Apenas el PR está aprobado, en verde y mergeable, lo mergea: con la aprobación, al terminar el CI, al terminar la review interna o, si no, en el próximo tick. Un PR de slice espera además a la [review interna](/ronin/como-funciona/review/#los-prs-de-ronin) de su último commit y a que no queden preguntas en su descripción. `/auto-merge off`, o sacar el label, lo cancela.
 
 - Un PR apilado espera a que se mergee el de abajo.
 - Si tiene conflictos o el merge falla, ronin saca el label y avisa en el PR.

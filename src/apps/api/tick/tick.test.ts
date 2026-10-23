@@ -145,6 +145,8 @@ vi.mock('@domains/commands/mentions.js', () => ({
 
 const runExternalReview = vi.fn();
 vi.mock('@domains/review/publish.js', () => ({ runExternalReview }));
+const sweepAutoMerge = vi.fn(async () => {});
+vi.mock('@domains/commands/auto-merge.js', async (importOriginal) => ({ ...(await importOriginal<object>()), sweepAutoMerge: () => sweepAutoMerge() }));
 // Done for every head unless a test says otherwise (#194).
 const internalReviewDue = vi.fn(async () => false);
 const runInternalReview = vi.fn();
@@ -389,6 +391,21 @@ describe('processSlicePr — bottom-of-stack PR (unchanged behavior)', () => {
       expect(await processSlicePr(issue(), bottomPr, true)).toBe(true);
       expect(runInternalReview).toHaveBeenCalledWith(228, bottomPr);
     }
+    internalReviewDue.mockResolvedValue(false);
+  });
+
+  // A commit status wakes no webhook: the PR that only waited for the
+  // review merges right after it, not on the next tick.
+  it('sweeps auto-merge once the internal review ends, and not when it fails', async () => {
+    internalReviewDue.mockResolvedValue(true);
+    const bottomPr = pr({ number: 229, sliceIndex: 0, baseRefName: 'main', headRefName: 'ronin/228/slice-1', checksPassing: true, checksPending: false, reviewDecision: 'APPROVED' });
+    sweepAutoMerge.mockClear();
+    await processSlicePr(issue(), bottomPr, true);
+    expect(sweepAutoMerge).toHaveBeenCalledTimes(1);
+    sweepAutoMerge.mockClear();
+    runInternalReview.mockRejectedValueOnce(new Error('se cortó'));
+    await processSlicePr(issue(), bottomPr, true);
+    expect(sweepAutoMerge).not.toHaveBeenCalled();
     internalReviewDue.mockResolvedValue(false);
   });
 
