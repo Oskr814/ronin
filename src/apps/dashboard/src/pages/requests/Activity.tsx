@@ -113,7 +113,11 @@ function shownEvent(d: Detail, e: RequestEvent): Shown {
     } as Record<string, Shown>)[e.step] ?? ['', 'wait', 'Entrevista', null];
     case 'dev-decided': return e.decision === 'decline'
       ? ['crit', 'crit', `${e.by} decidió no hacerlo`, d.devDecision?.reason ? <div className="bx">{d.devDecision.reason}</div> : null]
-      : ['ok', 'ok', `${e.by} lo aprobó ${e.decision === 'deploy' ? 'para desplegar' : 'con revisión'}`, <span className="m">{e.decision === 'deploy' ? 'ronin aprueba el PR a su nombre y lo mergea con el CI en verde' : 'el PR espera la aprobación de un dev'}</span>];
+      : ['ok', 'ok', `${e.by} lo aprobó ${e.decision === 'deploy' ? 'para desplegar' : 'con revisión'}`, <>
+        <span className="m">{e.decision === 'deploy' ? 'ronin aprueba el PR a su nombre y lo mergea con el CI en verde' : 'el PR espera la aprobación de un dev'}</span>
+        {/* What they answered of «Antes de aprobar» (#413). */}
+        {d.devDecision?.answers?.length ? <div className="bx">{d.devDecision.answers.map((a, i) => <p key={i}><b>{a.question}</b><br />{a.answer}</p>)}</div> : null}
+      </>];
     case 'deploy-skipped': return ['warn', 'crit', `Quedó fuera del despliegue automático: no se aplica sobre ${e.base}`, <span className="m">{e.files.length ? `Choca en ${e.files.join(', ')}.` : ''}{e.needs.length ? ` Necesita ${e.needs.map((n) => `#${n}`).join(', ')}.` : ''} Se intenta otra vez en el próximo lote, o se despliega a mano.</span>];
     case 'team-message': case 'person-reply': return ['', 'mail', '', null, true];
     case 'pr-approved': return e.ok

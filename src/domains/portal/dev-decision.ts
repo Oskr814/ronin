@@ -6,7 +6,7 @@ import { closedReply } from './follow.js';
 import { launchPortalWorker } from './launch.js';
 import { closedMail } from './mail.js';
 import { sendPortalMails } from './notify.js';
-import { addEvent, addRoninMessage, RequestError, updateRequest, type DevDecisionKind, type PortalRequest } from './requests.js';
+import { addEvent, addRoninMessage, RequestError, updateRequest, type DevAnswer, type DevDecisionKind, type PortalRequest } from './requests.js';
 
 // A dev decides a request before ronin makes it (#353): a prototype the
 // person approved, or a reported error's small fix (#137), waits in
@@ -17,8 +17,11 @@ import { addEvent, addRoninMessage, RequestError, updateRequest, type DevDecisio
 //     approval, as before;
 //   - decline: the request closes with the reason, which the person gets in
 //     those words; no issue.
+// Approving it, the dev may answer what ronin left to decide before
+// approving (#413): the answers go in its issue, for ronin to follow.
 
 const MAX_REASON = 2000;
+const MAX_ANSWERS = 10;
 // What the dev's token is sealed for (platform/crypto/sealed.ts).
 const PURPOSE = 'dev-decision';
 
@@ -26,18 +29,33 @@ export interface DevDecisionInput {
   decision: DevDecisionKind;
   // Why not, for the person: required declining it.
   reason?: string;
+  // Approving it: the dev's answers, only the answered ones (#413).
+  answers?: DevAnswer[];
   // Who decides (their GitHub login) and, deploying it, their token.
   by: string;
   token?: string;
 }
 
-export function parseDevDecision(body: Record<string, unknown>): Pick<DevDecisionInput, 'decision' | 'reason'> {
+export function parseDevDecision(body: Record<string, unknown>): Pick<DevDecisionInput, 'decision' | 'reason' | 'answers'> {
   const decision = body.decision;
   if (decision !== 'deploy' && decision !== 'review' && decision !== 'decline') throw new RequestError('decision: deploy, review o decline');
   const reason = typeof body.reason === 'string' ? body.reason.trim() : '';
   if (decision === 'decline' && !reason) throw new RequestError('Escribe el motivo: le llega a la persona.');
   if (reason.length > MAX_REASON) throw new RequestError(`El motivo puede tener hasta ${MAX_REASON} caracteres.`);
-  return { decision, ...(reason ? { reason } : {}) };
+  const answers = decision === 'decline' ? [] : parseAnswers(body.answers);
+  return { decision, ...(reason ? { reason } : {}), ...(answers.length ? { answers } : {}) };
+}
+
+function parseAnswers(raw: unknown): DevAnswer[] {
+  if (raw === undefined) return [];
+  if (!Array.isArray(raw) || raw.length > MAX_ANSWERS) throw new RequestError(`answers: hasta ${MAX_ANSWERS} respuestas`);
+  return raw.flatMap((a) => {
+    const question = typeof a?.question === 'string' ? a.question.trim() : '';
+    const answer = typeof a?.answer === 'string' ? a.answer.trim() : '';
+    if (!question || !answer) return [];
+    if (question.length > MAX_REASON || answer.length > MAX_REASON) throw new RequestError(`Cada respuesta puede tener hasta ${MAX_REASON} caracteres.`);
+    return [{ question, answer }];
+  });
 }
 
 export async function devDecide(n: number, input: DevDecisionInput, launch = launchPortalWorker): Promise<PortalRequest> {
@@ -50,6 +68,7 @@ export async function devDecide(n: number, input: DevDecisionInput, launch = lau
       by: input.by,
       at: at.toISOString(),
       ...(input.reason ? { reason: input.reason } : {}),
+      ...(input.answers?.length ? { answers: input.answers } : {}),
       ...(input.decision === 'deploy' ? { token: seal(input.token!, config.dashboard.sessionSecret, PURPOSE) } : {}),
     };
     addEvent(r, { kind: 'dev-decided', decision: input.decision, by: input.by }, at);

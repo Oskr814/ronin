@@ -1096,6 +1096,10 @@ button.brow:hover { background: var(--hover); }
 .pd-dc-row li { margin: 2px 0; max-width: 72ch; }
 .pd-dc-row .pd-pairs { margin-top: 10px; }
 .pd-dc-ask { background: var(--warn-bg); border-radius: 8px; padding: 8px 12px 8px 30px !important; }
+.pd-dc-ask li + li { margin-top: 8px; }
+.pd-dc-ans { display: block; width: 100%; max-width: 72ch; margin-top: 5px; background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; color: var(--ink); font: inherit; font-size: 13px; padding: 5px 8px; resize: vertical; field-sizing: content; min-height: 30px; }
+.pd-dc-ans:focus { outline: none; border-color: var(--run); }
+.pd-dd p.pd-dd-ans { margin-top: 6px; color: var(--muted); }
 .pd-dc-sum { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 10px 0; border-top: 1px solid var(--rule); font-size: 13px; }
 .pd-dc-sum .tag { background: var(--raise); border-radius: 6px; padding: 1px 7px; font-size: 12.5px; }
 .pd-dc-sum .sep { color: var(--faint); }

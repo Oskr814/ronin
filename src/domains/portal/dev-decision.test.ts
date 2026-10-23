@@ -67,6 +67,17 @@ describe("a dev's decision on a request (#353)", () => {
     expect((await getRequest(n))?.events?.map((e) => e.kind)).toEqual(['dev-decided', 'closed', 'mail']);
   });
 
+  it('approving it, keeps only the answered points of «Antes de aprobar», never declining (#413)', async () => {
+    const answers = [{ question: ' ¿También en el reporte? ', answer: ' Sí, en los dos. ' }, { question: '¿Gris o tachado?', answer: '  ' }, { question: 1, answer: 'x' }];
+    expect(parseDevDecision({ decision: 'review', answers })).toEqual({ decision: 'review', answers: [{ question: '¿También en el reporte?', answer: 'Sí, en los dos.' }] });
+    expect(parseDevDecision({ decision: 'decline', reason: 'No', answers })).toEqual({ decision: 'decline', reason: 'No' });
+    expect(() => parseDevDecision({ decision: 'deploy', answers: 'sí' })).toThrow(/answers/);
+    expect(() => parseDevDecision({ decision: 'deploy', answers: Array(11).fill({ question: 'q', answer: 'a' }) })).toThrow(/hasta 10/);
+    const n = await waiting();
+    const r = await devDecide(n, { decision: 'review', by: 'ana-dev', answers: [{ question: '¿También en el reporte?', answer: 'Sí, en los dos.' }] }, vi.fn(async () => {}));
+    expect(r.devDecision).toMatchObject({ kind: 'review', answers: [{ question: '¿También en el reporte?', answer: 'Sí, en los dos.' }] });
+  });
+
   it('deploy needs the session of who decides', async () => {
     const n = await waiting();
     await expect(devDecide(n, { decision: 'deploy', by: 'ana-dev' }, vi.fn(async () => {}))).rejects.toThrow(/sesión de GitHub/);

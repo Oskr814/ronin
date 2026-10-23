@@ -193,6 +193,17 @@ describe('portal issues', () => {
     for (const part of ['Partir del diff', 'Un prototipo anterior', 'una maqueta']) expect(body).not.toContain(part);
   });
 
+  it("carries what the dev answered approving it, for ronin to follow (#413)", () => {
+    const devDecision = { kind: 'review', by: 'ana-dev', at: '', answers: [{ question: '¿También en el reporte?', answer: 'Sí,\nen los dos.' }] };
+    const of = (over: object) => portalIssueBody({ number: 5, title: 't', app: 'backoffice', messages: [], verdict: { kind: 'minor', proposal: 'p', summary: '', at: '' }, ...over } as unknown as PortalRequest, undefined, { prototype: [], attached: [] }, undefined, undefined);
+    for (const status of ['approved', 'fixing']) {
+      const body = of({ status, devDecision, ...(status === 'fixing' ? { bug: { steps: 's', reproductions: [{ round: 1, reproduced: true, steps: [], summary: 'c', messageId: 1, at: '' }] } } : {}) });
+      for (const part of ['## Lo que decidió el equipo', 'Al aprobarlo, ana-dev respondió', 'manda esta respuesta', '- **¿También en el reporte?**\n  Sí, en los dos.']) expect(body).toContain(part);
+      expect(body.indexOf('## Lo que decidió el equipo')).toBeLessThan(body.indexOf('## Para implementarlo'));
+    }
+    expect(of({ status: 'approved', devDecision: { ...devDecision, answers: undefined } })).not.toContain('Lo que decidió el equipo');
+  });
+
   it('cuts a huge diff and says where the whole one is', () => {
     const body = portalIssueBody({ number: 3, title: 't', app: 'backoffice', messages: [], verdict: { kind: 'minor', summary: '', at: '' } } as unknown as PortalRequest, undefined, { prototype: [], attached: [] }, 'x'.repeat(50_000), '/data/requests/3/proto/1.diff');
     expect(body.length).toBeLessThan(45_000);

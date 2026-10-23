@@ -67,6 +67,14 @@ export type RequestStatus =
 // of the PR, or not do it.
 export type DevDecisionKind = 'deploy' | 'review' | 'decline';
 
+// The dev's answer, approving it, to one of what ronin left to decide
+// before approving (#413, the prototype's or reproduction's team.decide):
+// ronin follows it making the change.
+export interface DevAnswer {
+  question: string;
+  answer: string;
+}
+
 // When the person can write: an answer, or an adjustment to the prototype.
 export const OPEN_FOR_PERSON: RequestStatus[] = ['asking', 'answered', 'proposed'];
 
@@ -321,7 +329,7 @@ export interface PortalRequest {
   // What a dev decided while it was 'awaiting-dev' (#353): who and when, the
   // reason given not doing it, and — deploying it — their GitHub token,
   // sealed (dev-decision.ts), until ronin approves the PR as them.
-  devDecision?: { kind: DevDecisionKind; by: string; at: string; reason?: string; token?: string };
+  devDecision?: { kind: DevDecisionKind; by: string; at: string; reason?: string; answers?: DevAnswer[]; token?: string };
   // The issue it became in the product repo (approved: for ronin; big: for
   // the team), and an approved one's PR once ronin opened it.
   issue?: { number: number; url: string };

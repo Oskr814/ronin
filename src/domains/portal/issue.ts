@@ -112,6 +112,18 @@ export function reproductionSection(request: PortalRequest, shots: IssueShot[], 
   ].filter(Boolean).join('\n\n');
 }
 
+// What the dev answered approving it (#413), for ronin to follow: it
+// decides over the draft.
+function devAnswersSection(request: PortalRequest): string {
+  const d = request.devDecision;
+  if (!d?.answers?.length) return '';
+  return [
+    '## Lo que decidió el equipo',
+    `Al aprobarlo, ${d.by} respondió lo que ronin dejó para decidir. Hacerlo así: si algo no coincide con el borrador o su diff, manda esta respuesta.`,
+    d.answers.map((a) => `- **${a.question}**\n  ${a.answer.replace(/\n+/g, ' ')}`).join('\n'),
+  ].join('\n\n');
+}
+
 export function portalIssueBody(request: PortalRequest, user: PortalUser | undefined, shots: IssueShots, patch: string | undefined, patchFile: string | undefined, appName?: string): string {
   if (request.status === 'fixing') return fixIssueBody(request, user, shots, patch, patchFile, appName);
   const approved = request.status === 'approved';
@@ -143,6 +155,7 @@ export function portalIssueBody(request: PortalRequest, user: PortalUser | undef
     approved ? '## El cambio aprobado' : bug ? '## Lo que reporta' : '## Lo que pide',
     approved ? (v?.proposal ?? request.title) : `${request.title}${v?.proposal ? `\n\nLo que ronin le propuso: ${v.proposal}` : ''}`,
     approved ? '' : interviewSection(request),
+    devAnswersSection(request),
     shots.prototype.length ? `## ${approved ? 'El prototipo' : `El último prototipo que vio${rounds > 1 ? ` (de ${rounds})` : ''}`}\n\n${shots.prototype.map((s) => `**${s.caption}**\n\n${image(s)}`).join('\n\n')}` : '',
     bug ? reproductionSection(request, shots.reproduction ?? [], image) : '',
     approved ? '## Para implementarlo' : '## Lo que vio ronin',
@@ -175,6 +188,7 @@ function fixIssueBody(request: PortalRequest, user: PortalUser | undefined, shot
     '## Lo que reporta',
     request.title,
     reproductionSection(request, shots.reproduction ?? [], image),
+    devAnswersSection(request),
     '## Para implementarlo',
     'Partir del diff de la reproducción: el test ya está y el arreglo de prueba lo pasa a verde. Completar lo que un borrador deja fuera (el mismo error en otros lugares, los tests de alrededor) sin ampliar el alcance: lo que no sea este error queda para otro issue.',
     request.verdict?.summary ? `**Análisis de ronin al leer el reporte:**\n\n${request.verdict.summary}` : '',
