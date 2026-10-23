@@ -141,6 +141,21 @@ a { color: inherit; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .spin { animation-duration: 3s; } }
 
+/* Movement, little and quick, as in the dashboard: what's pointed at
+   changes color softly, and what appears (a request, a new message, ronin
+   working, a form, a note) comes in instead of blinking in. Nothing
+   animates on its way out. Off when the system asks for less motion. */
+:root { --ease-out: cubic-bezier(.2, .7, .3, 1); }
+button, a, input, textarea, .btn, .proj, .req, .box { transition: background-color .12s, border-color .12s, color .12s, box-shadow .12s, opacity .12s; }
+@keyframes fade-in { from { opacity: 0; } }
+@keyframes rise-in { from { opacity: 0; transform: translateY(6px); } }
+.content-in, .lb, .stale, .msg-bad, .msg-ok { animation: fade-in .16s ease-out both; }
+.card, .msg, .working, .confirm, .iv { animation: rise-in .2s var(--ease-out) both; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+  .spin { animation-duration: 3s !important; animation-iteration-count: infinite !important; }
+}
+
 /* the composer */
 .composer { border-top: 1px solid var(--rule); background: var(--panel); padding: 12px 24px 16px; }
 .composer-in { max-width: 760px; margin: 0 auto; display: grid; gap: 8px; }

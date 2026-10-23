@@ -1044,6 +1044,8 @@ Cada paso que hace ronin corre en un **worker por pedido** (`domains/portal/work
 
 **Una página abierta antes de un despliegue:** cada respuesta de la API del portal lleva `X-Portal-Version`, una huella de `index.html` (que nombra el JS por su hash) y `portal.css` (`portalVersion`). La página guarda la primera que ve. Si cambia, corre código viejo contra un servidor nuevo (por ejemplo, no conoce un estado nuevo y deja de consultar), así que se recarga sola. Si la persona está escribiendo o enviando algo, en cambio, muestra *Hay una versión nueva del portal* con *Recargar*, y recarga en la próxima consulta cuando ya no hay nada a medio escribir. Al volver a la pestaña, consulta enseguida en vez de esperar su turno (TanStack Query: mientras ronin trabaja en el pedido, cada 2 s y al volver).
 
+**Movimiento,** como en el tablero (§15.1): lo que se señala cambia de color suave, y lo que aparece (un pedido, un mensaje nuevo, ronin trabajando, un formulario, un aviso) entra con un fundido o un desplazamiento corto, de 120 a 200 ms. Los mensajes que ya estaban no se vuelven a animar. Con *reducir movimiento* en el sistema no hay animaciones, salvo el giro lento de ronin trabajando.
+
 #### 16.3 La conversación (`classify.ts`)
 
 La persona escribe y adjunta hasta 4 capturas (png, jpg, webp o gif, validadas por sus primeros bytes, hasta 5 MB cada una; la página achica las grandes antes de mandarlas). Un agente de solo lectura (`portal-request`) lee la conversación y las imágenes en un checkout aparte de la rama base (`portal-P-<n>`, sin rama, que se borra al terminar), revisa el código de esa app y decide una de seis cosas (la sexta, `entrevistar`, en 16.13):
