@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
+import type { Comment } from './github.js';
 
 // What one run of the tick reads from GitHub once and every step shares
 // (#370): the repo's open PRs, which sweeps, auto-merge, discovery, the
@@ -20,8 +21,25 @@ interface Entry {
 
 const store = new AsyncLocalStorage<Map<string, Entry>>();
 
-export function withGithubMemo<T>(fn: () => Promise<T>): Promise<T> {
-  return store.run(new Map(), fn);
+// A comment the webhook brought (#370), with the issue or PR it's on.
+export interface EventComment {
+  number: number;
+  comment: Comment;
+}
+
+// The comments of the events a run is for: what was said doesn't change
+// (an edit is another event), so unlike the memo a write doesn't empty it.
+const eventStore = new AsyncLocalStorage<EventComment[]>();
+
+export function withGithubMemo<T>(fn: () => Promise<T>, comments?: EventComment[]): Promise<T> {
+  return store.run(new Map(), () => (comments?.length ? eventStore.run(comments, fn) : fn()));
+}
+
+// The comments an event brought for this issue or PR; undefined when it
+// brought none, and its comments are read as usual.
+export function eventCommentsFor(number: number): Comment[] | undefined {
+  const found = eventStore.getStore()?.filter((c) => c.number === number).map((c) => c.comment);
+  return found?.length ? found : undefined;
 }
 
 // read()'s answer, shared by whoever asks for the same key in this run; a

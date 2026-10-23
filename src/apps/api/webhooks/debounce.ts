@@ -31,7 +31,8 @@ export class EventDebouncer {
     const key = JSON.stringify([repo, [...scope.resources].sort()]);
     const open = this.windows.get(key);
     if (open) {
-      open.scope = { ...open.scope, flows: [...new Set([...open.scope.flows, ...scope.flows])] };
+      const comments = [...(open.scope.comments ?? []), ...(scope.comments ?? [])];
+      open.scope = { ...open.scope, flows: [...new Set([...open.scope.flows, ...scope.flows])], ...(comments.length ? { comments } : {}) };
       if (now + waitMs < open.fireAt) this.arm(key, open, now + waitMs, now);
       return;
     }

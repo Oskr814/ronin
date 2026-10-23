@@ -641,3 +641,40 @@ describe('findUnprocessedMentions in a tick\'s run', () => {
   });
 });
 
+// #370: in the run of an event about a comment, the comment it brought.
+describe('findUnprocessedMentions in the run of an event', () => {
+  beforeEach(() => {
+    issueComments.mockReset().mockResolvedValue([]);
+    reviewComments.mockReset().mockResolvedValue([]);
+    recentPrComments.mockReset().mockResolvedValue([]);
+    recentIssueComments.mockReset().mockResolvedValue([]);
+    botReaction.mockReset().mockResolvedValue(false);
+  });
+  const brought = (number: number, comment: object) => [{ number, comment: { reactionsEyes: 0, authorLogin: 'ana', ...comment } as never }];
+
+  it('looks only at the comment it brought for that PR, with no call at all', async () => {
+    const result = await withGithubMemo(() => findUnprocessedMentions(42), brought(42, { id: 2, kind: 'issue', body: '@ronin revisá esto' }));
+    expect(result.map((c) => c.id)).toEqual([2]);
+    expect(recentPrComments).not.toHaveBeenCalled();
+    expect(issueComments).not.toHaveBeenCalled();
+  });
+
+  it('reads another PR of the same run as usual', async () => {
+    await withGithubMemo(() => findUnprocessedMentions(43), brought(42, { id: 2, kind: 'issue', body: '@ronin revisá esto' }));
+    expect(recentPrComments).toHaveBeenCalledWith(43);
+  });
+
+  it('takes the whole thread of an inline comment it brought from the PR', async () => {
+    const thread = (ids: number[]) => ({ path: 'a.ts', line: 3, diffHunk: '', comments: ids.map((id) => ({ id, authorLogin: 'ana', body: 'x' })) });
+    reviewComments.mockResolvedValue([{ id: 9, kind: 'review', body: '@ronin ¿y esto?', reactionsEyes: 0, authorLogin: 'ana', thread: thread([5, 9]) }]);
+    const [mention] = await withGithubMemo(() => findUnprocessedMentions(42), brought(42, { id: 9, kind: 'review', body: '@ronin ¿y esto?', thread: thread([9]) }));
+    expect(mention.thread?.comments.map((c) => c.id)).toEqual([5, 9]);
+  });
+
+  it("finds an issue's command in the comment it brought", async () => {
+    const result = await withGithubMemo(() => findUnprocessedIssueMentions(7), brought(7, { id: 3, kind: 'issue', body: '@ronin ayuda' }));
+    expect(result.map((c) => c.id)).toEqual([3]);
+    expect(recentIssueComments).not.toHaveBeenCalled();
+  });
+});
+
