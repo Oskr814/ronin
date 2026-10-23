@@ -164,6 +164,19 @@ describe('the shell, in React', () => {
     expect([...container.querySelectorAll('.tab .l')].map((t) => t.textContent)).toEqual(['El total no suma el envío', 'El menú no cierra']);
   });
 
+  it("opens a slice's PR on its own page, merged or moving the issue", async () => {
+    const slices = [{ index: 0, title: 'Columnas', prNumber: 5, status: 'merged' }, { index: 1, title: 'Endpoint', prNumber: 4, status: 'open' }, { index: 2, title: 'Pestaña', prNumber: null, status: 'pending' }];
+    snap = { ...SNAP, items: ITEMS.map((item) => (item.id === 'acme/web#3' ? { ...item, slices } : item)) };
+    const { container } = await open('/i/acme%2Fweb%233');
+    const kid = (n: number) => [...container.querySelectorAll('.kid')].find((k) => k.textContent?.endsWith(`#${n}`))!;
+    fireEvent.click(kid(5));
+    await waitFor(() => expect(location.pathname).toBe('/i/acme%2Fweb%235'));
+    expect(kid(5).getAttribute('aria-current')).toBe('true');
+    fireEvent.click(kid(4));
+    await waitFor(() => expect(location.pathname).toBe('/i/acme%2Fweb%234'));
+    expect([...container.querySelectorAll('.tab .l')].map((t) => t.textContent).at(-1)).toBe('#4');
+  });
+
   it('goes to the next PR that waits on a decision with ]p', async () => {
     await open('/');
     fireEvent.keyDown(document, { key: ']' });

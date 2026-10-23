@@ -40,6 +40,10 @@ describe('resolveItem', () => {
     expect(resolveItem(870, GH)).toEqual({ kind: 'pr', number: 870 });
   });
 
+  it("brings a merged slice PR's issue, from the checklist", () => {
+    expect(resolveItem(801, GH)).toEqual({ kind: 'pr', number: 801, issue: 844 });
+  });
+
   it("resolves anyone's open issue with its PR, and a PR with the issue it belongs to (#100)", () => {
     const gh = { ...GH, openIssues: [{ number: 405, title: 'Excel', url: '', labels: [] }], prs: [...GH.prs, pr(920, 'feat/405-excel')], prIssue: { 920: 405 } };
     expect(resolveItem(405, gh)).toEqual({ kind: 'issue', number: 405, pr: 920 });

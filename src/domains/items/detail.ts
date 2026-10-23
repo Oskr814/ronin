@@ -55,6 +55,9 @@ export function resolveItem(number: number, gh: RepoGithub | undefined, runKind?
     const tracking = gh!.prIssue[number] ?? Number(SLICE_BRANCH.exec(pr.headRefName)?.[1] ?? NaN);
     return { kind: 'pr', number, ...(Number.isInteger(tracking) ? { issue: tracking } : {}) };
   }
+  // A merged (or closed) slice's PR, still its issue's.
+  const sliced = gh?.issues.find((i) => i.slices.some((s) => s.prNumber === number));
+  if (sliced) return { kind: 'pr', number, issue: sliced.number };
   return runKind ? { kind: runKind, number } : null;
 }
 

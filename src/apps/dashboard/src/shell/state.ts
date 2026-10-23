@@ -539,6 +539,17 @@ export function togglePin(id: string) {
   changed();
 }
 
+// A slice's PR, on a page of its own: its title and number, not its
+// issue's. By its number the PR would open as its issue, on the PR's tab
+// (select); known here first, it doesn't. The one moving the issue brings
+// the issue's facts of it (checks, review), which the snapshot has.
+export function openSlice(issue: Item, prNumber: number | null) {
+  if (prNumber === null) return select(issue.id);
+  const id = `${issue.repo}#${prNumber}`;
+  if (!itemById(id)) S.extra[id] = { id, repo: issue.repo, number: prNumber, kind: 'pr', title: `#${prNumber}`, status: 'open', runs: 0, listed: false, ...(issue.pr?.number === prNumber ? { pr: issue.pr } : {}) } as unknown as Item;
+  return select(id);
+}
+
 // The snapshot's issue whose PR this is, when the PR isn't an item itself.
 function issueOfPr(id: string): string | null {
   const n = /^(.+)#(\d+)$/.exec(id);
