@@ -75,7 +75,7 @@ function bugStage(p: Staged): Stage {
     case 'reproducing': cur = 2; break;
     case 'awaiting-dev': cur = 3; tone = 'warn'; labels[3] = 'Decisión del equipo'; break;
     case 'fixing': cur = p.pr ? 4 : 3; tone = p.pr ? 'warn' : 'run'; break;
-    case 'big': cur = 3; tone = p.issue ? 'warn' : 'run'; break;
+    case 'big': cur = p.pr ? 4 : 3; tone = p.issue ? 'warn' : 'run'; break;
     case 'done': case 'resolved': cur = 6; break;
     case 'declined': cur = 5; tone = 'crit'; labels[5] = 'No se hará'; break;
     default: cur = p.issue ? 3 : 2; tone = 'idle'; labels[cur] = 'Cancelado';
@@ -100,7 +100,7 @@ export function stage(p: Staged): Stage {
     case 'proposed': cur = 3; tone = 'warn'; break;
     case 'awaiting-dev': cur = 3; tone = 'warn'; labels[3] = 'Decisión del equipo'; break;
     case 'approved': cur = p.pr ? 5 : 4; tone = p.pr ? 'warn' : 'run'; break;
-    case 'big': cur = 4; tone = p.issue ? 'warn' : 'run'; break;
+    case 'big': cur = p.pr ? 5 : 4; tone = p.issue ? 'warn' : 'run'; break;
     case 'done': case 'resolved': cur = 7; break;
     case 'declined': cur = 6; tone = 'crit'; labels[6] = 'No se hará'; break;
     default: cur = p.issue ? 4 : prototypes ? 3 : 1; tone = 'idle'; labels[cur] = 'Cancelado';

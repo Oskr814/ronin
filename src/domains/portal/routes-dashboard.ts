@@ -5,7 +5,9 @@ import { adminsOnly, anyObject, jsonBody, onError, onlyJson } from '@platform/ht
 import type { DashboardEnv } from '../access/http.js';
 import { sees, type Access } from '../access/access.js';
 import { HISTORY_DAYS } from '../runs/data.js';
-import { decisionScope, requestDetail, requestImage, requestPatch, requestRow } from './board.js';
+import { decisionScope, requestDetail, requestImage, requestPatch, requestRow, withTeamPr } from './board.js';
+import { repoGithub } from '../items/github.js';
+import type { RepoEntry } from '@platform/agents/repo-context.js';
 import { createAccount, editAccount, portalAdminView, sendAccountLink, type PortalAdminContext } from './admin.js';
 import { refusal, visibleRepos, visibleRuns } from '../access/visible.js';
 import { missingPortalConfig } from './http.js';
@@ -13,7 +15,7 @@ import { listUsers } from './accounts.js';
 import { devDecide, parseDevDecision } from './dev-decision.js';
 import { seenByTeam, writeToPerson } from './team-conversation.js';
 import { parseCloseReason, teamClose } from './team-close.js';
-import { getRequest, listRequests, TEXT_MAX } from './requests.js';
+import { getRequest, listRequests, TEXT_MAX, type PortalRequest } from './requests.js';
 import { MAX_IMAGE_BYTES, MAX_IMAGES, parseImages } from './images.js';
 
 // Four images as data URLs, and the text.
@@ -39,6 +41,21 @@ async function visibleRequest(access: Access, n: string) {
   return request && sees(access, request.repo) ? request : undefined;
 }
 
+// The open PRs each repo's issues have (items/github.ts, cached), for a big
+// request's PR (withTeamPr).
+async function prLinks(entries: RepoEntry[]): Promise<(repo: string) => Record<number, number> | undefined> {
+  const github = await Promise.all(entries.map((entry) => repoGithub(entry)));
+  return (repo) => github.find((gh) => gh?.repo === repo)?.prIssue;
+}
+
+// A request as the dashboard shows it, with its big one's PR.
+async function detailOf(access: Access, request: PortalRequest) {
+  const users = new Map((await listUsers()).map((u) => [u.id, u]));
+  const entries = await visibleRepos(access);
+  const prIssue = await prLinks(entries.filter((e) => e.productRepo === request.repo));
+  return requestDetail(withTeamPr(request, prIssue(request.repo)), users.get(request.userId), entries, await visibleRuns(access, HISTORY_DAYS), await decisionScope(request));
+}
+
 export function requestsRoutes() {
   const missing = { error: 'no existe ese pedido' };
   return new Hono<DashboardEnv>()
@@ -48,15 +65,15 @@ export function requestsRoutes() {
       const requests = (await listRequests()).filter((r) => sees(access, r.repo));
       const users = new Map(requests.length ? (await listUsers()).map((u) => [u.id, u]) : []);
       const [entries, runs] = await Promise.all([visibleRepos(access), visibleRuns(access, HISTORY_DAYS)]);
-      return c.json({ requests: requests.map((r) => requestRow(r, users.get(r.userId), entries, runs)).sort((a, b) => b.number - a.number) }, 200);
+      const prIssue = await prLinks(entries);
+      return c.json({ requests: requests.map((r) => requestRow(withTeamPr(r, prIssue(r.repo)), users.get(r.userId), entries, runs)).sort((a, b) => b.number - a.number) }, 200);
     })
     .get('/:n', async (c) => {
       const request = await visibleRequest(c.env.access, c.req.param('n'));
       if (!request) return c.json(missing, 404);
       // Someone of the team opened it: the person's answer is seen.
       if (request.personReplied) await seenByTeam(request.number);
-      const users = new Map((await listUsers()).map((u) => [u.id, u]));
-      return c.json(requestDetail(request, users.get(request.userId), await visibleRepos(c.env.access), await visibleRuns(c.env.access, HISTORY_DAYS), await decisionScope(request)), 200);
+      return c.json(await detailOf(c.env.access, request), 200);
     })
     .get('/:n/img/:file', async (c) => {
       const request = await visibleRequest(c.env.access, c.req.param('n'));
@@ -82,8 +99,7 @@ export function requestsRoutes() {
       const text = typeof body.text === 'string' ? body.text.trim() : '';
       if (text.length > TEXT_MAX) return c.json({ error: `El mensaje puede tener hasta ${TEXT_MAX} caracteres.` }, 400);
       const written = await writeToPerson(request.number, { text, images: parseImages(body.images), by: c.env.session.login });
-      const users = new Map((await listUsers()).map((u) => [u.id, u]));
-      return c.json(requestDetail(written, users.get(written.userId), await visibleRepos(c.env.access), await visibleRuns(c.env.access, HISTORY_DAYS), await decisionScope(written)), 200);
+      return c.json(await detailOf(c.env.access, written), 200);
     })
     // As writing to the person: the repo's actions.
     .post('/:n/close', onlyJson, jsonBody(16 * 1024, 'falta el motivo'), anyObject(), async (c) => {
@@ -92,8 +108,7 @@ export function requestsRoutes() {
       const refused = refusal(c, c.env.access, request.repo, 'acciones');
       if (refused) return refused;
       const closed = await teamClose(request.number, { reason: parseCloseReason(c.req.valid('json')), by: c.env.session.login });
-      const users = new Map((await listUsers()).map((u) => [u.id, u]));
-      return c.json(requestDetail(closed, users.get(closed.userId), await visibleRepos(c.env.access), await visibleRuns(c.env.access, HISTORY_DAYS), await decisionScope(closed)), 200);
+      return c.json(await detailOf(c.env.access, closed), 200);
     })
     // Making it or not is the repo's actions; deploying it without anyone
     // else's review, its deploys too.
@@ -107,9 +122,8 @@ export function requestsRoutes() {
       }
       const { session } = c.env;
       await devDecide(request.number, { ...input, by: session.login, ...(input.decision === 'deploy' ? { token: session.token } : {}) });
-      const users = new Map((await listUsers()).map((u) => [u.id, u]));
       const decided = (await getRequest(request.number))!;
-      return c.json(requestDetail(decided, users.get(decided.userId), await visibleRepos(c.env.access), await visibleRuns(c.env.access, HISTORY_DAYS), await decisionScope(decided)), 200);
+      return c.json(await detailOf(c.env.access, decided), 200);
     });
 }
 

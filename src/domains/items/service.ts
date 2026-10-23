@@ -17,11 +17,11 @@ import { itemDetail, resolveItem } from './detail.js';
 import { explorationReview, isExplorationPr, type ExplorationReview } from '../explorations/review.js';
 import { explorationRows, liveRuns, prsOf } from '../explorations/board.js';
 import { prFiles } from './files.js';
-import { repoGithub } from './github.js';
+import { repoGithub, type RepoGithub } from './github.js';
 import { buildItems, itemRunKeys } from './list.js';
 import { cycleView, repoLinear } from './linear.js';
 import { repoAppPaths, repoApps } from './new-issue.js';
-import { isOpen, requestRow } from '../portal/board.js';
+import { isOpen, requestRow, withTeamPr } from '../portal/board.js';
 import { today, WEEK_DAYS } from './today.js';
 import { can } from '../access/team.js';
 import { visibleRepos, visibleRuns } from '../access/visible.js';
@@ -80,7 +80,7 @@ export async function snapshot(access: Access, login: string) {
     // Whether it can manage the request portal's accounts (#114).
     portalAdmin: access.admin && missingPortalConfig(config.portal).length === 0,
     // The portal's requests still going, for the sidebar, and how many there are in all (#132).
-    ...(await portalSummary(access, runs)),
+    ...(await portalSummary(access, runs, github)),
     // The meetings that wait on someone to review what ronin proposed (#62).
     reunionesPorRevisar: (await visibleMeetings(access)).filter((m) => m.status === 'review').length,
     repos,
@@ -120,11 +120,12 @@ async function visibleMeetings(access: Access) {
   return (await listMeetings()).filter((m) => sees(access, m.repo));
 }
 
-async function portalSummary(access: Access, runs: RunSummary[]) {
+async function portalSummary(access: Access, runs: RunSummary[], github: Array<RepoGithub | undefined>) {
   const { requests, users } = await visibleRequests(access);
   const entries = await visibleRepos(access);
+  const prIssue = (repo: string) => github.find((gh) => gh?.repo === repo)?.prIssue;
   return {
-    pedidos: requests.filter(isOpen).map((r) => requestRow(r, users.get(r.userId), entries, runs)).sort((a, b) => b.lastAt.localeCompare(a.lastAt)),
+    pedidos: requests.filter(isOpen).map((r) => requestRow(withTeamPr(r, prIssue(r.repo)), users.get(r.userId), entries, runs)).sort((a, b) => b.lastAt.localeCompare(a.lastAt)),
     pedidosTotal: requests.length,
   };
 }
