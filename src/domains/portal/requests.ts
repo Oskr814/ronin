@@ -36,12 +36,17 @@ export type RequestStatus =
   // test that fails because of it, and tries the fix (a worker,
   // reproduce.ts).
   | 'reproducing'
-  // The person approved the prototype: ronin opens an issue for it, makes
-  // the change in a PR and a dev approves it before it merges.
+  // The person approved the prototype, or ronin found a reported error's
+  // small fix (#137): a dev decides before ronin makes it (#353) — deploy
+  // it, make it with a review, or not do it (devDecide).
+  | 'awaiting-dev'
+  // A dev approved the prototype the person approved: ronin opens an issue
+  // for it and makes the change in a PR, which merges on green CI once a dev
+  // approves it (the one who decided, when they chose to deploy it).
   | 'approved'
   // A reported error ronin reproduced with a test that fails, whose small
-  // fix turned it green (#137): like an approved one, ronin opens an issue
-  // for it, makes the fix in a PR and a dev approves it before it merges.
+  // fix turned it green (#137), once a dev approved it (#353): like an
+  // approved one, ronin opens an issue for it and makes the fix in a PR.
   // The person approves nothing.
   | 'fixing'
   // Its PR merged: it goes out in the next release.
@@ -56,6 +61,11 @@ export type RequestStatus =
   // issue of its own.
   | 'big';
 
+// A dev's decision on a request waiting for one (#353): deploy it once its
+// PR merges (ronin approves the PR as them), make it with a dev's review
+// of the PR, or not do it.
+export type DevDecisionKind = 'deploy' | 'review' | 'decline';
+
 // When the person can write: an answer, or an adjustment to the prototype.
 export const OPEN_FOR_PERSON: RequestStatus[] = ['asking', 'answered', 'proposed'];
 
@@ -66,7 +76,7 @@ export const RONINS: RequestStatus[] = ['approved', 'fixing'];
 // When the person can cancel it: while nobody took it. Approved or fixing,
 // its issue is assigned to ronin; the team's, cancel.ts checks no one assigned its
 // issue yet.
-export const CANCELLABLE: RequestStatus[] = ['thinking', 'asking', 'answered', 'interviewing', 'confirming', 'minor', 'proposed', 'reproducing', 'big'];
+export const CANCELLABLE: RequestStatus[] = ['thinking', 'asking', 'answered', 'interviewing', 'confirming', 'minor', 'proposed', 'reproducing', 'awaiting-dev', 'big'];
 
 // Prototypes per request: the first and up to two adjustments.
 export const MAX_PROTOTYPES = 3;
@@ -216,6 +226,11 @@ export type RequestEvent = { at: string } & (
   // A try at reproducing a reported error (#137).
   | { kind: 'reproduced'; round: number; reproduced: boolean; test: 'red' | 'green' | 'none' }
   | { kind: 'decided'; decision: 'approved' | 'rejected' }
+  // A dev's decision before ronin makes it (#353), and, deploying it, their
+  // approval left on the PR ronin opened (ok: false when their token no
+  // longer worked: the PR waits for an approval).
+  | { kind: 'dev-decided'; decision: DevDecisionKind; by: string }
+  | { kind: 'pr-approved'; number: number; by: string; ok: boolean }
   // The interview (#225): a round of questions, its answers, a summary, a
   // correction, or sending it to the team (confirmed, or without answering).
   | { kind: 'interview'; step: 'asked' | 'answered' | 'summary' | 'corrected' | 'confirmed' | 'skipped'; round: number }
@@ -254,6 +269,10 @@ export interface PortalRequest {
   interview?: { rounds: number; corrections: number; skipped?: true; confirmed?: true };
   // When the person approved the prototype or turned it down.
   decision?: { kind: 'approved' | 'rejected'; at: string };
+  // What a dev decided while it was 'awaiting-dev' (#353): who and when, the
+  // reason given not doing it, and — deploying it — their GitHub token,
+  // sealed (dev-decision.ts), until ronin approves the PR as them.
+  devDecision?: { kind: DevDecisionKind; by: string; at: string; reason?: string; token?: string };
   // The issue it became in the product repo (approved: for ronin; big: for
   // the team), and an approved one's PR once ronin opened it.
   issue?: { number: number; url: string };

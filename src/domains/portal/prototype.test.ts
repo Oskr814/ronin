@@ -114,17 +114,19 @@ describe('portal prototype', () => {
     expect((await getRequest(n))?.status).toBe('big');
   });
 
-  it('either way the worker opens its issue: approved, for ronin; turned down, for the team, with the person’s note', async () => {
+  it('approved, it waits for a dev to decide (#353); turned down, the worker opens the team’s issue, with the person’s note', async () => {
     const approve = await minorRequest();
     const launch = vi.fn(async () => {});
     await expect(decideRequest(approve, 'aprobar', '', launch)).rejects.toThrow(/no espera tu decisión/);
     await updateRequest(approve, (x) => { x.status = 'proposed'; });
     const approved = await decideRequest(approve, 'aprobar', '', launch);
-    expect(approved).toMatchObject({ status: 'approved', decision: { kind: 'approved' }, events: [{ kind: 'decided', decision: 'approved' }] });
+    expect(approved).toMatchObject({ status: 'awaiting-dev', decision: { kind: 'approved' }, events: [{ kind: 'decided', decision: 'approved' }] });
     expect(approved.messages.at(-1)?.text).toBe(APPROVED_REPLY);
-    // The worker opens its issue; nobody is mailed yet.
-    expect(launch).toHaveBeenCalledWith(approve);
-    expect(sendMail).not.toHaveBeenCalled();
+    // No issue until a dev decides: the team hears it waits for them.
+    expect(launch).not.toHaveBeenCalled();
+    expect(sendMail).toHaveBeenCalledOnce();
+    expect((sendMail.mock.calls[0] as unknown as [{ subject: string; text: string }])[0]).toMatchObject({ subject: expect.stringMatching(/^\[ronin\] Pedido P-\d+ para decidir/), text: expect.stringContaining('Aprobar y desplegar') });
+    expect((await getRequest(approve))?.events?.at(-1)).toMatchObject({ kind: 'mail', to: 'team' });
 
     sendMail.mockClear();
     const reject = (await createRequest({ userId: approved.userId, repo: 'redmotos/shoppingcart', app: 'backoffice', text: 'Otra', images: [] })).number;

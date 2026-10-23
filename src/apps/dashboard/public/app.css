@@ -1069,6 +1069,14 @@ button.brow:hover { background: var(--hover); }
 .pd-now .feed, .pd-now .err { margin-top: 8px; font: 12px "JetBrains Mono", ui-monospace, monospace; color: var(--ink-2); background: var(--bg); border-radius: 6px; padding: 7px 9px; overflow-wrap: anywhere; }
 .pd-now .err { color: var(--crit); background: var(--crit-bg); }
 .pd-now .acts { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
+/* A dev's decision (#353): what would be made, and the three choices. */
+.pd-now h4 { font-size: 12px; font-weight: 600; color: var(--muted); margin: 12px 0 2px; }
+.pd-now h4 + p { margin: 0; color: var(--ink); max-width: 72ch; }
+.pd-now .pd-thumbs { margin-top: 10px; }
+.pd-dpatch { margin-top: 10px; }
+.pd-dd { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--rule); }
+.pd-dd p { margin: 0; color: var(--ink-2); max-width: 72ch; }
+.pd-dd .field textarea { width: 100%; }
 
 .pd-tl { list-style: none; margin: 0; padding: 0; position: relative; }
 .pd-tl::before { content: ""; position: absolute; left: 10px; top: 6px; bottom: 6px; width: 1.5px; background: var(--rule); }

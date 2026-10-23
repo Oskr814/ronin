@@ -18,6 +18,8 @@ const gh = {
   listPrClosingIssues: vi.fn(async () => ({}) as Record<number, number[]>),
 };
 vi.mock('@platform/github/github.js', () => Object.fromEntries(Object.keys(gh).map((k) => [k, (...args: unknown[]) => (gh as Record<string, (...a: unknown[]) => unknown>)[k](...args)])));
+const approvePr = vi.fn(async (..._args: unknown[]) => ({ id: 1, url: 'u' }));
+vi.mock('@platform/github/github-as-user.js', () => ({ approvePr: (...args: unknown[]) => approvePr(...args) }));
 const publishEvidence = vi.fn(async () => 'abc123');
 vi.mock('../product-app/index.js', () => ({
   publishEvidence: (...args: unknown[]) => publishEvidence(...(args as [])),
@@ -27,7 +29,8 @@ const team: { notifyTo?: string[] } = {};
 vi.mock('@platform/agents/repo-context.js', () => ({ activeRepo: () => ({ productRepo: 'redmotos/shoppingcart', productRepoPath: '/repo', portal: { name: 'Red Motos', apps: { backoffice: { name: 'Backoffice' } }, ...team } }) }));
 
 const { portalIssueBody, issueMarker, openPortalIssue } = await import('./issue.js');
-const { closedReply, DECLINED_REPLY, DONE_REPLY, dropCloseNote, FIX_READY_REPLY, FIXED_REPLY, followPortalIssues, noteClosing, PR_READY_REPLY, RESOLVED_REPLY } = await import('./follow.js');
+const { closedReply, DECLINED_REPLY, DEPLOY_READY_REPLY, DONE_REPLY, dropCloseNote, FIX_READY_REPLY, FIXED_REPLY, followPortalIssues, noteClosing, PR_READY_REPLY, RESOLVED_REPLY } = await import('./follow.js');
+const { seal } = await import('@platform/crypto/sealed.js');
 
 async function approvedRequest(over: Partial<PortalRequest> = {}): Promise<number> {
   const user = await createUser({ email: `mf${Math.random()}@x.com`, name: 'María Fernández', grants: [], createdBy: 'oskr814' });
@@ -203,6 +206,34 @@ describe('portal issues', () => {
     await followPortalIssues();
     expect(sendMail).not.toHaveBeenCalled();
     expect((await getRequest(n))?.status).toBe('approved');
+  });
+
+  it('a dev chose to deploy it (#353): its PR is approved as them, once, and their token goes', async () => {
+    (config.dashboard as { sessionSecret: string }).sessionSecret = 's'.repeat(40);
+    const token = seal('gho_inventado', config.dashboard.sessionSecret, 'dev-decision');
+    const n = await approvedRequest({ issue: { number: 901, url: 'u' }, devDecision: { kind: 'deploy', by: 'ana-dev', at: '', token } });
+    gh.listPrClosingIssues.mockResolvedValue({ 950: [901] });
+    await followPortalIssues();
+    expect(gh.addIssueLabel).toHaveBeenCalledWith(950, LABEL_AUTO_MERGE);
+    expect(approvePr).toHaveBeenCalledWith('gho_inventado', 'redmotos/shoppingcart', 950, expect.stringContaining(`P-${n}`));
+    const r = (await getRequest(n))!;
+    expect(r.devDecision).toEqual({ kind: 'deploy', by: 'ana-dev', at: '' });
+    expect(r.events?.slice(0, 2)).toEqual([{ kind: 'pr', number: 950, at: expect.any(String) }, { kind: 'pr-approved', number: 950, by: 'ana-dev', ok: true, at: expect.any(String) }]);
+    expect(r.messages.at(-1)?.text).toBe(DEPLOY_READY_REPLY);
+    expect((sendMail.mock.calls[0] as unknown as [{ text: string }])[0].text).toContain('ana-dev eligió aprobarlo y desplegarlo');
+  });
+
+  it("deploying it with a token that no longer works, the PR waits for an approval and the request says so", async () => {
+    (config.dashboard as { sessionSecret: string }).sessionSecret = 's'.repeat(40);
+    const token = seal('gho_revocado', config.dashboard.sessionSecret, 'dev-decision');
+    const n = await approvedRequest({ issue: { number: 901, url: 'u' }, devDecision: { kind: 'deploy', by: 'ana-dev', at: '', token } });
+    gh.listPrClosingIssues.mockResolvedValue({ 950: [901] });
+    approvePr.mockRejectedValueOnce(new Error('Bad credentials'));
+    await followPortalIssues();
+    const r = (await getRequest(n))!;
+    expect(r.devDecision?.token).toBeUndefined();
+    expect(r.events?.[1]).toMatchObject({ kind: 'pr-approved', ok: false });
+    expect(r.messages.at(-1)?.text).toBe(PR_READY_REPLY);
   });
 
   it('once merged, tells the person it goes out in the next release', async () => {

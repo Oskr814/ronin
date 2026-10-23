@@ -31,14 +31,24 @@ const DETAIL = {
 };
 const PATCH = 'diff --git a/src/carrito.ts b/src/carrito.ts\n@@ -1 +1 @@\n-  return d / n;\n+  return n ? d / n : 0;';
 
+// A prototype the person approved, waiting for a dev (#353).
+const WAITING = {
+  ...DETAIL, ...row(8, 'awaiting-dev', { waitsOn: 'team', prototypes: 1 }), bug: null, issue: null,
+  verdict: { kind: 'minor', proposal: 'El total se ve en negrita.', summary: 'OrdersPage.tsx', at: at(290) },
+  prototypes: [{ round: 1, summary: 'Agrega font-bold a la columna.', patch: 'p1.patch', messageId: 2, at: at(100) }],
+  devDecision: null,
+};
+const decided: unknown[] = [];
+
 // jsdom doesn't scroll.
 HTMLElement.prototype.scrollTo = () => {};
 
 const asked: string[] = [];
 beforeEach(() => {
   asked.length = 0;
+  decided.length = 0;
   vi.stubGlobal('matchMedia', () => ({ matches: false }));
-  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const path = new URL(String(input), 'http://x').pathname;
     asked.push(path);
     const json = (b: unknown) => new Response(JSON.stringify(b), { status: 200, headers: { 'Content-Type': 'application/json' } });
@@ -46,6 +56,11 @@ beforeEach(() => {
     if (path === '/api/requests/7') return json(DETAIL);
     if (path === '/api/requests/7/reproduction/1') return json({ patch: PATCH });
     if (path === '/api/runs/r1') return json({ summary: DETAIL.runs[0], lines: [{ type: 'text', text: 'Reproduzco el error.' }] });
+    if (path === '/api/requests/8') return json(WAITING);
+    if (path === '/api/requests/8/decision') {
+      decided.push(JSON.parse(String(init?.body)));
+      return json({ ...WAITING, status: 'declined', waitsOn: null, devDecision: { kind: 'decline', by: 'ana-dev', at: at(0), reason: 'Esa pantalla se rehace.' } });
+    }
     return json({});
   }));
 });
@@ -110,5 +125,22 @@ describe('Pedidos, in React', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Ver corrida →' }));
     expect(await screen.findByText('Reproduzco el error.')).toBeTruthy();
     expect(asked).toContain('/api/runs/r1');
+  });
+
+  it('a prototype the person approved waits for a dev, who decides it from Ahora (#353)', async () => {
+    show(<Request n={8} />);
+    expect(await screen.findByText('Espera que el equipo decida si ronin hace el cambio')).toBeTruthy();
+    expect(screen.getByText('El total se ve en negrita.')).toBeTruthy();
+    expect(screen.getByText('Agrega font-bold a la columna.')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Aprobar y desplegar' }));
+    expect(screen.getByText(/lo aprueba a tu nombre/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Volver' }));
+    fireEvent.click(screen.getByRole('button', { name: 'No hacerlo' }));
+    const send = () => screen.getAllByRole('button', { name: 'No hacerlo' }).at(-1) as HTMLButtonElement;
+    expect(send().disabled).toBe(true);
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Esa pantalla se rehace.' } });
+    fireEvent.click(send());
+    await waitFor(() => expect(decided).toEqual([{ decision: 'decline', reason: 'Esa pantalla se rehace.' }]));
+    await waitFor(() => expect(shell.toast).toHaveBeenCalledWith('Cerraste P-8: Ana recibe el motivo.'));
   });
 });

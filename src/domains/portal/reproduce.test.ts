@@ -97,7 +97,7 @@ describe('parseReproduction', () => {
 });
 
 describe('reproduceRequest', () => {
-  it('reproduced with a small fix that turned its test green: ronin fixes it, the person approves nothing', async () => {
+  it('reproduced with a small fix that turned its test green: it waits for a dev to decide (#353), the person approves nothing', async () => {
     const n = await errorRequest();
     agentWrites(reproduced, async (target) => {
       expect(target).toMatchObject({ key: `portal-r-${n}`, appName: 'backoffice' });
@@ -105,16 +105,20 @@ describe('reproduceRequest', () => {
     });
     await reproduceRequest(n);
     const r = (await getRequest(n))!;
-    expect(r).toMatchObject({ status: 'fixing', verdict: { kind: 'error', summary: 'OrderHeaderExtensions' } });
+    expect(r).toMatchObject({ status: 'awaiting-dev', verdict: { kind: 'error', summary: 'OrderHeaderExtensions' } });
     expect(r.worker).toBeUndefined();
     const shown = r.messages.at(-1)!;
     expect(shown).toMatchObject({ from: 'ronin', text: `${reproduced.mensaje}\n\n${FIXING_REPLY}`, images: ['r1-error-1.png', 'r1-arreglo-1.png'], captions: ['Hasta el 16, sin los del 16', 'Con el arreglo de prueba'] });
     expect(await readFile(requestImagePath(n, 'r1-error-1.png'), 'utf8')).toBe('error-1.png');
     expect(r.bug?.reproductions).toEqual([expect.objectContaining({ round: 1, reproduced: true, fix: 'small', patch: 'r1.diff', messageId: shown.id, test: expect.objectContaining({ green: true }) })]);
     expect(await readFile(prototypePatchPath(n, 'r1.diff'), 'utf8')).toContain('+[Fact]');
-    expect(r.events?.map((e) => e.kind)).toEqual(['reproduced', 'mail']);
+    expect(r.events?.map((e) => e.kind)).toEqual(['reproduced', 'mail', 'mail']);
     expect(r.events?.[0]).toMatchObject({ round: 1, reproduced: true, test: 'green' });
-    expect(sendMail.mock.calls.map((c) => (c as unknown as [{ to: string; subject: string }])[0])).toEqual([expect.objectContaining({ to: 'km@x.com', subject: expect.stringMatching(/^ronin te respondió/) })]);
+    // The person hears it; the team, that it waits for their decision.
+    expect(sendMail.mock.calls.map((c) => (c as unknown as [{ to: string; subject: string }])[0])).toEqual([
+      expect.objectContaining({ to: 'km@x.com', subject: expect.stringMatching(/^ronin te respondió/) }),
+      expect.objectContaining({ subject: expect.stringMatching(/para decidir/), text: expect.stringContaining('un arreglo chico lo pasó a verde') }),
+    ]);
   });
 
   it('reproduced otherwise — a big fix, a test that never went green, or no diff: the team’s, with what it found', async () => {

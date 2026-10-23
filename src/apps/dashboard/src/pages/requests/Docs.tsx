@@ -69,7 +69,7 @@ export function diffStat(patch: string): string {
 }
 
 // A prototype's diff, or a reproduction's (#137): read when asked, and kept.
-function Patch({ n, of, round }: { n: number; of: 'prototype' | 'reproduction'; round: number }) {
+export function Patch({ n, of, round }: { n: number; of: 'prototype' | 'reproduction'; round: number }) {
   const shell = useShell();
   const [asked, setAsked] = useViewState(`request.patch:${n}:${of}:${round}`, false);
   const query = useQuery({
@@ -114,6 +114,7 @@ export function Team({ d }: { d: Detail }) {
 // Where a try left it: ronin fixes it, the person answers, or the team.
 function goes(d: Detail, t: Reproduction, last: boolean): [string, string, string] {
   if (!last) return ['', 'Siguiente intento', `${d.bug!.reproductions.length} de ${REPRODUCTIONS}`];
+  if (d.status === 'awaiting-dev') return ['warn', 'Equipo', 'decide si ronin hace el arreglo'];
   if (['fixing', 'done'].includes(d.status) && t.fix === 'small') return ['ok', 'ronin', 'hace el arreglo; un dev aprueba el PR'];
   if (d.status === 'asking' || d.status === 'thinking' || d.status === 'reproducing') return ['warn', `${firstName(d.person)}`, 'le preguntó lo que necesita'];
   if (d.status === 'cancelled') return ['', 'Nadie', 'cancelado'];

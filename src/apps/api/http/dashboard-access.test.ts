@@ -49,6 +49,8 @@ vi.mock('@domains/meetings/launch.js', async (importOriginal) => ({ ...(await im
 const metricsView = vi.fn(async (repos: string[], days: number, repo: string | null) => ({ repos, days, repo }));
 vi.mock('@domains/metrics/index.js', async (importOriginal) => ({ ...(await importOriginal<typeof import('@domains/metrics/index.js')>()), metricsView: (...args: [string[], number, string | null]) => metricsView(...args) }));
 
+const launchPortalWorker = vi.fn(async (_n: number) => {});
+vi.mock('@domains/portal/launch.js', async (importOriginal) => ({ ...(await importOriginal<typeof import('@domains/portal/launch.js')>()), launchPortalWorker: (n: number) => launchPortalWorker(n) }));
 const { handleDashboard } = await import('./dashboard.js');
 const ACCESS = { admin: false, repos: [{ repo: SC, permission: 'triage' as const }] };
 const SESSION = { login: 'valeria', token: 'gho_v' };
@@ -178,6 +180,34 @@ describe('a session that sees only some repos', () => {
     expect((await call(`/api/meetings/${up.body.number}`)).body).toMatchObject({ status: 'pending', events: [{ kind: 'uploaded' }, { kind: 'retried', by: 'valeria' }] });
   });
 
+  it("decides a request waiting for the team only in its repos, with the permission each decision needs (#353)", async () => {
+    const { createRequest, getRequest, updateRequest } = await import('@domains/portal/requests.js');
+    const waiting = async (repo: string) => {
+      const r = await createRequest({ userId: 'u', repo, app: 'web', text: 'Un ajuste', images: [] });
+      await updateRequest(r.number, (x) => { x.status = 'awaiting-dev'; });
+      return r.number;
+    };
+    const bm = await waiting(BM);
+    expect((await call(`/api/requests/${bm}/decision`, 'POST', { decision: 'review' })).status).toBe(404);
+    const sc = await waiting(SC);
+    expect((await call('/api/requests')).body.requests.find((r: { number: number }) => r.number === sc)).toMatchObject({ status: 'awaiting-dev', waitsOn: 'team' });
+    const actionsOnly = { admin: false, repos: [{ repo: SC, permission: 'triage' as const, perms: { notas: false, aprobar: false, acciones: true, desplegar: false } }] };
+    const deploy = await call(`/api/requests/${sc}/decision`, 'POST', { decision: 'deploy' }, actionsOnly);
+    expect([deploy.status, deploy.body.error]).toEqual([403, expect.stringMatching(/desplegar/)]);
+    expect((await call(`/api/requests/${sc}/decision`, 'POST', { decision: 'decline' }, actionsOnly)).body.error).toMatch(/motivo/);
+    const reviewed = await call(`/api/requests/${sc}/decision`, 'POST', { decision: 'review' }, actionsOnly);
+    expect(reviewed.body).toMatchObject({ status: 'approved', devDecision: { kind: 'review', by: 'valeria' } });
+    expect(launchPortalWorker).toHaveBeenCalledWith(sc);
+    expect((await call(`/api/requests/${sc}/decision`, 'POST', { decision: 'review' }, actionsOnly)).body.error).toMatch(/ya no espera/);
+    // Deploying it keeps the token sealed, never in what the page reads.
+    const other = await waiting(SC);
+    const deployer = { admin: false, repos: [{ repo: SC, permission: 'triage' as const, perms: { notas: false, aprobar: false, acciones: true, desplegar: true } }] };
+    const deployed = await call(`/api/requests/${other}/decision`, 'POST', { decision: 'deploy' }, deployer);
+    expect(deployed.body.devDecision).toEqual({ kind: 'deploy', by: 'valeria', at: expect.any(String) });
+    expect(JSON.stringify(deployed.body)).not.toContain('gho_v');
+    expect((await getRequest(other))?.devDecision?.token).toMatch(/^s1\./);
+  });
+
   it("reads only a file the PR changes (#111)", async () => {
     expect((await call(`/api/items/${encodeURIComponent(`${SC}#2`)}/files/content?path=.env`)).status).toBe(404);
   });
@@ -192,6 +222,8 @@ describe('a session that sees only some repos', () => {
     await refused(`/api/repos/${SC}/issues`, { title: 'x', body: 'y', after: 'none' });
     await refused(`/api/items/${encodeURIComponent(`${SC}#2`)}/files/actions`, { action: 'comment', path: 'a.ts', body: 'x' });
     expect(await refused('/api/meetings', { repo: SC, text: 'notas de la reunión' })).toMatch(/subir notas/);
+    const { createRequest } = await import('@domains/portal/requests.js');
+    expect(await refused(`/api/requests/${(await createRequest({ userId: 'u', repo: SC, app: 'web', text: 'x', images: [] })).number}/decision`, { decision: 'review' })).toMatch(/acciones del tablero/);
     await refused(`/api/deploys/${SC}/plan`, { tag: 'v1', prs: 'all' });
     expect((await call('/api/snapshot', 'GET', undefined, readOnly)).body.despliegues).toBe(false);
     expect((await call('/api/settings/users', 'GET', undefined, readOnly)).status).toBe(403);

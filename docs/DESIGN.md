@@ -1020,7 +1020,7 @@ Ante un PR de ronin casi siempre se decide una de tres cosas, y se decide leyend
 
 ### 16. Portal de pedidos (#114)
 
-Una página pública, `https://ronin-agent.redmotoshn.com`, para que la gente que usa las aplicaciones pida ajustes chicos sin cuenta de GitHub. Entra con email y contraseña, elige la aplicación, le cuenta a ronin qué necesita (texto y capturas) y conversa con él. Si es un ajuste chico, ronin le muestra un prototipo; si lo aprueba, ronin hace el cambio en un PR que mergea cuando un dev lo aprueba, y le avisa a la persona que sale en la próxima actualización. Si reporta un error, ronin lo reproduce en una copia de la app con un test que falla y, si el arreglo es pequeño, lo corrige él (16.12). Lo que es más que un ajuste, o lo que la persona no aprueba, pasa al equipo de desarrollo en un issue, y la persona se entera cuando se cierra.
+Una página pública, `https://ronin-agent.redmotoshn.com`, para que la gente que usa las aplicaciones pida ajustes chicos sin cuenta de GitHub. Entra con email y contraseña, elige la aplicación, le cuenta a ronin qué necesita (texto y capturas) y conversa con él. Si es un ajuste chico, ronin le muestra un prototipo; si lo aprueba, un dev decide si se hace (#353) y ronin hace el cambio en un PR que se mergea con la aprobación de un dev, y le avisa a la persona que sale en la próxima actualización. Si reporta un error, ronin lo reproduce en una copia de la app con un test que falla y, si el arreglo es pequeño, lo corrige él (16.12). Lo que es más que un ajuste, o lo que la persona no aprueba, pasa al equipo de desarrollo en un issue, y la persona se entera cuando se cierra.
 
 ```
 src/domains/portal/    el dominio: cuentas, pedidos, la conversación, el prototipo y los issues
@@ -1064,12 +1064,13 @@ src/apps/portal/        la página, en React con Vite (`pnpm build` la arma en d
 | `confirming` | después de la entrevista, ronin muestra lo que entendió (16.13) | la persona: confirmarlo o corregirlo |
 | `minor` | es un ajuste chico: ronin arma el prototipo (16.4) | ronin |
 | `proposed` | el prototipo está en pantalla | la persona: aprobar, pedir un ajuste o "No me sirve" |
-| `approved` | aprobado: ronin hace el cambio en un PR (16.5) | ronin, y un dev que apruebe el PR |
+| `awaiting-dev` | la persona aprobó el prototipo, o el arreglo de un error es pequeño: un dev decide antes de que ronin lo haga (16.5) | un dev: aprobar y desplegar, aprobar con revisión o no hacerlo |
+| `approved` | aprobado por la persona y por un dev: ronin hace el cambio en un PR (16.5) | ronin, y un dev que apruebe el PR (o ronin a nombre de quien decidió desplegarlo) |
 | `reproducing` | es un error: ronin lo reproduce con un test (16.12) | ronin |
-| `fixing` | lo reprodujo y el arreglo es pequeño: ronin lo hace en un PR, como uno aprobado (16.12) | ronin, y un dev que apruebe el PR |
+| `fixing` | lo reprodujo, el arreglo es pequeño y un dev lo aprobó: ronin lo hace en un PR, como uno aprobado (16.12) | ronin, y un dev que apruebe el PR |
 | `done` | el PR se mergeó: sale en la próxima actualización | — |
 | `big` | es del equipo, en un issue (16.6) | el equipo |
-| `resolved` / `declined` | el equipo cerró el issue como completado / no planeado | — |
+| `resolved` / `declined` | el equipo cerró el issue como completado / no planeado, o un dev decidió no hacerlo (16.5) | — |
 | `cancelled` | la persona lo canceló (16.10) | — |
 
 Cada paso que hace ronin corre en un **worker por pedido** (`domains/portal/worker.ts`, lanzado con `launchWorker` desde el servidor cuando la persona escribe o decide). Toma el lock `portal-<n>`, así que dos workers nunca trabajan el mismo pedido, y anota su pid en el pedido. Al empezar cada tick, `sweepPortalRequests` relanza los pedidos que esperan a ronin (`thinking`, `minor`, `reproducing`, o aprobados, en `fixing` o del equipo sin issue todavía) cuyo worker murió, con 2 minutos de gracia para uno recién lanzado.
@@ -1121,14 +1122,20 @@ La persona tiene tres salidas:
 - **Pedir un ajuste.** Escribe qué cambiaría. Ese mensaje vuelve a `classify.ts` con el contexto del prototipo y su instrucción, y si sigue siendo chico sale otro prototipo. Son hasta 3 prototipos por pedido. Si solo pregunta algo, el prototipo queda en pantalla.
 - **No me sirve.** Con una nota opcional, pasa al equipo (16.6).
 
-#### 16.5 Aprobado: issue, PR y merge (`issue.ts`, `follow.ts`)
+#### 16.5 Aprobado: la decisión del dev, issue, PR y merge (`dev-decision.ts`, `issue.ts`, `follow.ts`)
 
+0. **Un dev decide antes de que ronin lo haga** (#353). El prototipo aprobado, y el arreglo chico de un error (16.12), dejan el pedido en `awaiting-dev`, sin issue. Al equipo del repo le llega un correo (el aviso `pedido-revisar`, el mismo del PR que espera aprobación) con el enlace al pedido en el tablero. La persona ve que el equipo revisa su pedido y lo puede cancelar. En *Ahora*, con el permiso `acciones` del repo, un dev elige (`POST /api/requests/<n>/decision`):
+   - **Aprobar y desplegar** (además `desplegar`): el pedido pasa a `approved` (o `fixing`) y guarda su token de GitHub cifrado con AES-256-GCM, con una clave derivada de `DASHBOARD_SESSION_SECRET` (`platform/crypto/sealed.ts`). Cuando ronin abre el PR, `followPortalIssues` lo aprueba a su nombre y borra el token. Si el token ya no sirve, el PR espera una aprobación como cualquier otro, y la actividad lo dice (`pr-approved` con `ok: false`). El merge sigue siendo el de `ronin:auto-merge`: `mergePullRequest` nunca mergea sin una aprobación.
+   - **Aprobar con revisión:** pasa a `approved` (o `fixing`), sin token. El PR espera la aprobación de un dev.
+   - **No hacerlo:** con un motivo obligatorio. El pedido se cierra en `declined`, sin issue, y la persona recibe el motivo con esas palabras (`closeNote`), en la conversación y por correo.
+
+   La decisión queda en `devDecision` (quién, cuándo, el motivo) y en la actividad (`dev-decided`). El token nunca sale en lo que lee el tablero ni el portal.
 1. El worker publica las capturas en la rama de evidencia (§11.5) y abre un **issue en el repo del producto, asignado a ronin**, con label `ronin:portal` y un marcador (`<!-- ronin:portal P-n -->`) que evita abrir otro si el worker muere justo después. El issue lleva el cambio aprobado, el prototipo, el análisis de ronin, el diff y la conversación, con lo que escribió la persona citado y sin `@`. Las capturas se llaman `antes-N` y `despues-N`, así `fix-issue` muestra en el PR, y en el changelog, solo los después.
 2. ronin lo toma como cualquier issue asignado (`discoverAssignedIssues` → `fix-issue`), partiendo del diff del prototipo sin ampliar el alcance, y abre el PR con "Closes #n".
 3. `followPortalIssues`, un paso del tick que también corre con el webhook de un PR abierto (flujo `portal`), encuentra ese PR (`closingIssuesReferences`) y le pone **`ronin:auto-merge`**. Además le avisa al equipo del repo (§16.7) que espera su aprobación, y la persona ve en la conversación que el cambio está hecho y lo revisa el equipo.
 4. Con la aprobación de un dev y CI en verde, `sweepAutoMerge` lo mergea (§13). Con el webhook del PR cerrado o el tick siguiente, el pedido queda en `done` y la persona recibe "Listo, sale en la próxima actualización".
 
-Un PR cerrado sin merge se olvida hasta que otro cierre el issue. Si `fix-issue` necesita información, el issue queda bloqueado con las preguntas y el email, como con cualquier issue asignado. El merge automático con deploy queda para más adelante: por ahora siempre aprueba una persona.
+Un PR cerrado sin merge se olvida hasta que otro cierre el issue. Si `fix-issue` necesita información, el issue queda bloqueado con las preguntas y el email, como con cualquier issue asignado. Siempre aprueba una persona: la que decidió *Aprobar y desplegar*, a través de ronin, o un dev que revisa el PR.
 
 #### 16.6 Del equipo: pedidos grandes y "No me sirve"
 
@@ -1178,6 +1185,7 @@ La persona puede cancelar un pedido mientras nadie lo tomó, con *Cancelar pedid
   - mientras ronin lo lee o espera su respuesta (`thinking`, `asking`, `answered`), también en la entrevista (`interviewing`, `confirming`);
   - alrededor del prototipo (`minor`, `proposed`);
   - mientras ronin reproduce un error (`reproducing`);
+  - mientras espera la decisión de un dev (`awaiting-dev`, 16.5);
   - ya en manos del equipo (`big`), si su issue sigue sin asignar. Lo comprueba en GitHub al momento, y el issue se cierra como no planeado con un comentario que dice que la persona lo canceló.
 - **No se puede:**
   - aprobado o en `fixing`, porque su issue es de ronin;
@@ -1225,7 +1233,7 @@ Según lo que salió:
 
 | Resultado | Estado | Qué pasa |
 |---|---|---|
-| Reproducido, arreglo pequeño, test de rojo a verde y con diff | `fixing` | Un issue **asignado a ronin** con la reproducción y el diff, sin prototipo ni aprobación de la persona. `fix-issue` parte del test y el diff, y `follow.ts` lo sigue como uno aprobado (16.5): `ronin:auto-merge`, aprobación de un dev y `done` |
+| Reproducido, arreglo pequeño, test de rojo a verde y con diff | `awaiting-dev`, y `fixing` cuando un dev lo aprueba (16.5) | Un issue **asignado a ronin** con la reproducción y el diff, sin prototipo ni aprobación de la persona. `fix-issue` parte del test y el diff, y `follow.ts` lo sigue como uno aprobado (16.5): `ronin:auto-merge`, aprobación de un dev y `done` |
 | Reproducido, cualquier otro caso (arreglo grande, test que no pasó a verde, sin test) | `big` | Issue del equipo (16.6), con los pasos, la causa, el test que falla y su diff |
 | No reproducido, y puede preguntar | `asking` | Le pregunta a la persona lo que necesita (cuenta para las 3 preguntas). Su respuesta vuelve a `classify.ts`, que lo intenta de nuevo: hasta 2 intentos |
 | No reproducido, sin preguntas ni intentos | `big` | Al equipo, diciendo que **no se pudo reproducir con datos de prueba**. Nunca se cierra como "no es un error": puede depender de datos reales. Un test que no falla va en el issue como lo que se intentó, no como prueba |

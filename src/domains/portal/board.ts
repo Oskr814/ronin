@@ -14,7 +14,8 @@ import type { RunSummary } from '../runs/data.js';
 // interview and confirm its summary, #225), ronin (reading it,
 // drawing a prototype, reproducing an error, opening its issue, making the
 // change) or the dev
-// team (its issue, or approving the PR). Null: nobody — closed, or ronin
+// team (deciding whether ronin makes it, #353; its issue, or approving the
+// PR). Null: nobody — closed, or ronin
 // answered and the person may write again if they want.
 export type WaitsOn = 'person' | 'ronin' | 'team' | null;
 
@@ -29,6 +30,8 @@ export function waitsOn(r: Pick<PortalRequest, 'status' | 'issue' | 'pr'>): Wait
     case 'confirming':
     case 'proposed':
       return 'person';
+    case 'awaiting-dev':
+      return 'team';
     case 'approved':
     case 'fixing':
       return r.pr ? 'team' : 'ronin';
@@ -141,6 +144,8 @@ export function requestDetail(r: PortalRequest, user: PortalUser | undefined, en
     prototypes: r.prototypes ?? [],
     bug: r.bug ?? null,
     decision: r.decision ?? null,
+    // A dev's decision before ronin made it (#353): never their token.
+    devDecision: r.devDecision ? { kind: r.devDecision.kind, by: r.devDecision.by, at: r.devDecision.at, ...(r.devDecision.reason ? { reason: r.devDecision.reason } : {}) } : null,
     // The interview of a big request (#225): rounds, corrections, how it ended.
     interview: r.interview ?? null,
     issue: r.issue ?? null,

@@ -1,11 +1,12 @@
 import { readFile } from 'node:fs/promises';
 import { config } from '@platform/config/config.js';
+import { loadRepos } from '@platform/config/repos.js';
 import { log } from '@platform/logger.js';
 import { activeRepo } from '@platform/agents/repo-context.js';
 import { recipientsFor, type NotifyEvent } from '@platform/notify/notifications.js';
 import { sendMail, type Mail } from '@platform/notify/notifier.js';
 import type { PortalUser } from './accounts.js';
-import { bigRequestMail, PORTAL_FROM_NAME, teamRequestMail } from './mail.js';
+import { bigRequestMail, decideMail, PORTAL_FROM_NAME, teamRequestMail } from './mail.js';
 import { noteEvent, patchOf, prototypePatchPath, requestDir, type PortalRequest } from './requests.js';
 
 // Sends a request's emails and logs the ones that fail: a lost email never
@@ -47,4 +48,14 @@ export async function teamMail(request: PortalRequest, user: PortalUser | undefi
 // the link, once its issue is open (issue.ts).
 export async function handOverMail(request: PortalRequest, user: PortalUser | undefined): Promise<void> {
   if (user) await sendPortalMails(request, [bigRequestMail(request, user, config.portal.url)]);
+}
+
+// A request that waits for a dev's decision (#353): the team hears it as it
+// hears of a PR waiting for an approval. Outside withActiveRepo too (the
+// person approving the prototype, on the portal): its repo by its name.
+export async function awaitingDevMail(request: PortalRequest, user: PortalUser | undefined): Promise<void> {
+  // Without repos.json, the team's own choices (or NOTIFY_TO) still get it.
+  const entry = (await loadRepos().catch(() => [])).find((e) => e.productRepo === request.repo);
+  const to = await recipientsFor(request.repo, entry, 'pedido-revisar');
+  await sendPortalMails(request, [{ ...decideMail(request, user, to, config.dashboard.url), team: true }]);
 }

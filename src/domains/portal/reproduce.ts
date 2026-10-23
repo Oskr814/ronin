@@ -8,7 +8,7 @@ import { insideDir } from '../explorations/index.js';
 import { getUser } from './accounts.js';
 import { MAX_QUESTIONS } from './classify.js';
 import { replyMail } from './mail.js';
-import { handOverMail, sendPortalMails } from './notify.js';
+import { awaitingDevMail, handOverMail, sendPortalMails } from './notify.js';
 import {
   addEvent,
   addRoninMessage,
@@ -43,7 +43,7 @@ import { host } from '@platform/host/host.js';
 // waiting on a reproduction that won't come.
 const ATTEMPTS = 2;
 
-export const FIXING_REPLY = 'Es un error pequeño y ya se está corrigiendo; una persona del equipo revisa el arreglo antes de que salga. Te aviso por correo cuando esté listo.';
+export const FIXING_REPLY = 'Es un error pequeño y ya sé cómo corregirlo. Ahora el equipo de desarrollo revisa el arreglo antes de que lo haga; te aviso por correo cuando esté listo.';
 export const REPRODUCED_REPLY = 'Se lo envié al equipo de desarrollo con lo que encontré. Te aviso por correo cuando esté resuelto.';
 export const NOT_REPRODUCED_REPLY = 'Puede depender de datos que solo están en la aplicación real, así que se lo envié al equipo de desarrollo con tu descripción y lo que intenté. Te aviso por correo cuando esté resuelto.';
 export const FAILED_REPRODUCE_REPLY = 'No pude abrir la copia de la aplicación para reproducir el error, así que se lo envié al equipo de desarrollo con tu descripción. Te aviso por correo cuando esté resuelto.';
@@ -215,8 +215,9 @@ async function deliver(n: number, round: number, output: ReproductionOutput, run
       r.questions += 1;
       return;
     }
+    // A dev decides before ronin makes the fix (#353, dev-decision.ts).
     if (fix) {
-      r.status = 'fixing';
+      r.status = 'awaiting-dev';
       return;
     }
     r.verdict = { ...(r.verdict ?? { summary: '' }), kind: 'big', reason: teamReason(output), at: at.toISOString() };
@@ -269,6 +270,7 @@ export async function reproduceRequest(n: number): Promise<void> {
       const user = await getUser(done.userId);
       if (done.status === 'big') await handOverMail(done, user);
       else if (user) await sendPortalMails(done, [replyMail(done, user, config.portal.url)]);
+      if (done.status === 'awaiting-dev') await awaitingDevMail(done, user);
       return;
     } catch (error) {
       failure = error as Error;

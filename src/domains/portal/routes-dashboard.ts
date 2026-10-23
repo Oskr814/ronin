@@ -7,9 +7,10 @@ import { sees, type Access } from '../access/access.js';
 import { HISTORY_DAYS } from '../runs/data.js';
 import { requestDetail, requestImage, requestPatch, requestRow } from './board.js';
 import { createAccount, editAccount, portalAdminView, sendAccountLink, type PortalAdminContext } from './admin.js';
-import { visibleRepos, visibleRuns } from '../access/visible.js';
+import { refusal, visibleRepos, visibleRuns } from '../access/visible.js';
 import { missingPortalConfig } from './http.js';
 import { listUsers } from './accounts.js';
+import { devDecide, parseDevDecision } from './dev-decision.js';
 import { getRequest, listRequests } from './requests.js';
 
 // The portal from the dashboard, in Hono (#235, stage 6) — server/
@@ -22,6 +23,7 @@ import { getRequest, listRequests } from './requests.js';
 // GET /api/requests/<n>/img/<file>          an image of its conversation
 // GET /api/requests/<n>/prototype/<round>     a prototype's diff
 // GET /api/requests/<n>/reproduction/<round>  a reproduction's diff
+// POST /api/requests/<n>/decision           { decision: deploy|review|decline, reason? }: a dev decides it (#353)
 // A request of a repo the session sees, or none: one it doesn't see is one
 // that isn't there.
 async function visibleRequest(access: Access, n: string) {
@@ -32,6 +34,7 @@ async function visibleRequest(access: Access, n: string) {
 export function requestsRoutes() {
   const missing = { error: 'no existe ese pedido' };
   return new Hono<DashboardEnv>()
+    .onError(onError)
     .get('/', async (c) => {
       const access = c.env.access;
       const requests = (await listRequests()).filter((r) => sees(access, r.repo));
@@ -59,6 +62,22 @@ export function requestsRoutes() {
       const patch = await requestPatch(request, Number(c.req.param('round')), prototype ? 'prototype' : 'reproduction');
       if (patch === null) return c.json({ error: prototype ? 'ese prototipo no dejó diff' : 'esa reproducción no dejó diff' }, 404);
       return c.json({ patch }, 200);
+    })
+    // Making it or not is the repo's actions; deploying it without anyone
+    // else's review, its deploys too.
+    .post('/:n/decision', onlyJson, jsonBody(16 * 1024, 'falta la decisión'), anyObject(), async (c) => {
+      const request = await visibleRequest(c.env.access, c.req.param('n'));
+      if (!request) return c.json(missing, 404);
+      const input = parseDevDecision(c.req.valid('json'));
+      for (const perm of input.decision === 'deploy' ? (['acciones', 'desplegar'] as const) : (['acciones'] as const)) {
+        const refused = refusal(c, c.env.access, request.repo, perm);
+        if (refused) return refused;
+      }
+      const { session } = c.env;
+      await devDecide(request.number, { ...input, by: session.login, ...(input.decision === 'deploy' ? { token: session.token } : {}) });
+      const users = new Map((await listUsers()).map((u) => [u.id, u]));
+      const decided = (await getRequest(request.number))!;
+      return c.json(requestDetail(decided, users.get(decided.userId), await visibleRepos(c.env.access), await visibleRuns(c.env.access, HISTORY_DAYS)), 200);
     });
 }
 

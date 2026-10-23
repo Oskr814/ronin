@@ -3,6 +3,7 @@ import { useShell } from '@apps/dashboard/src/shell/hooks.js';
 import { hhmm, when } from '@apps/dashboard/src/lib/format.js';
 import { Dot, RunCard, runTitle, typeName } from '@apps/dashboard/src/lib/runs.js';
 import { ago } from '@ui/time.js';
+import { DevDecide } from './DevDecide.js';
 import { useActions, Interview, Thumbs } from './Docs.js';
 import { firstName, ICON, REPRODUCTIONS, STATUS, type Detail, type Entry, type RequestEvent } from './model.js';
 
@@ -32,11 +33,16 @@ function Now({ d }: { d: Detail }) {
     return card('failed', 'Ahora · falló lo último que hizo ronin', 'El tick lanza otro worker en su próxima vuelta', <div className="err">{lastEvent.error}</div>);
   }
   const k = <>{ICON.wait} Ahora</>;
+  // Who chose to deploy it (#353), when ronin could approve its PR as them.
+  const approvedAs = d.activity.entries.some((e) => e.type === 'event' && e.event.kind === 'pr-approved' && e.event.ok && e.event.number === d.pr);
+  const deployed = d.devDecision?.kind === 'deploy' && approvedAs ? d.devDecision.by : null;
   switch (d.status) {
     case 'thinking': return card('running', k, 'ronin va a leerlo', desc('Espera un lugar para el agente.'));
     case 'minor': return card('running', k, lastEvent?.kind === 'waiting' ? 'El prototipo espera turno: hay otro en curso en este repo' : 'ronin va a armar el prototipo');
     case 'reproducing': return card('running', k, lastEvent?.kind === 'waiting' ? 'La reproducción espera turno: hay otra copia de la app en curso en este repo' : 'ronin va a reproducir el error', desc(`Levanta una copia de la app con datos de prueba, sigue los pasos, escribe un test que falle y prueba el arreglo. Intento ${(d.bug?.reproductions.length ?? 0) + 1} de ${REPRODUCTIONS}.`));
+    case 'awaiting-dev': return <DevDecide d={d} />;
     case 'fixing':
+      if (d.pr && deployed) return card('waiting', k, `El PR #${d.pr} se mergea con el CI en verde`, desc(`${deployed} eligió aprobarlo y desplegarlo, y ronin lo aprobó a su nombre. Al mergear, ${who} recibe “listo”.`), open(d.pr, `Abrir el PR #${d.pr}`));
       if (d.pr) return card('waiting', k, `Espera que un dev apruebe el PR #${d.pr}`, desc(`Es el arreglo del error, partiendo del test y el diff de la reproducción. Tiene ronin:auto-merge: se mergea solo cuando lo aprueben y el CI esté verde. Al mergear, ${who} recibe “listo”.`), open(d.pr, `Abrir el PR #${d.pr}`));
       if (d.issue) return card('running', k, `ronin va a hacer el arreglo en #${d.issue.number}`, desc(`Lo reprodujo con un test que falla y el arreglo de prueba lo pasó a verde. ${who} no tiene que aprobar nada.`), open(d.issue.number, `Abrir #${d.issue.number}`));
       return card('running', k, 'ronin va a abrir el issue del arreglo');
@@ -49,6 +55,7 @@ function Now({ d }: { d: Detail }) {
       return card('waiting', k, `Espera a ${who}: aprobar el prototipo, pedir un ajuste o pasarlo al equipo`, desc(`Se lo mostró ${ago(d.prototypes.at(-1)?.at)} y le avisó por correo. ${left > 0 ? `Le ${left === 1 ? 'queda 1 ajuste' : `quedan ${left} ajustes`}.` : 'No le quedan ajustes.'}`));
     }
     case 'approved':
+      if (d.pr && deployed) return card('waiting', k, `El PR #${d.pr} se mergea con el CI en verde`, desc(`${deployed} eligió aprobarlo y desplegarlo, y ronin lo aprobó a su nombre. Al mergear, ${who} recibe “listo, sale en la próxima actualización”.`), open(d.pr, `Abrir el PR #${d.pr}`));
       if (d.pr) return card('waiting', k, `Espera que un dev apruebe el PR #${d.pr}`, desc(`Tiene ronin:auto-merge: se mergea solo cuando lo aprueben y el CI esté verde. Al mergear, ${who} recibe “listo, sale en la próxima actualización”.`), open(d.pr, `Abrir el PR #${d.pr}`));
       if (d.issue) return card('running', k, `ronin va a hacer el cambio en #${d.issue.number}`, desc('Lo toma como cualquier issue asignado a ronin y abre el PR.'), open(d.issue.number, `Abrir #${d.issue.number}`));
       return card('running', k, 'ronin va a abrir el issue del cambio');
@@ -86,6 +93,12 @@ function shownEvent(d: Detail, e: RequestEvent): Shown {
       confirmed: ['ok', 'ok', `${who} confirmó el resumen: pasa al equipo`, null, true],
       skipped: ['warn', 'person', `${who} lo envió al equipo sin terminar la entrevista`, null, true],
     } as Record<string, Shown>)[e.step] ?? ['', 'wait', 'Entrevista', null];
+    case 'dev-decided': return e.decision === 'decline'
+      ? ['crit', 'crit', `${e.by} decidió no hacerlo`, d.devDecision?.reason ? <div className="bx">{d.devDecision.reason}</div> : null]
+      : ['ok', 'ok', `${e.by} lo aprobó ${e.decision === 'deploy' ? 'para desplegar' : 'con revisión'}`, <span className="m">{e.decision === 'deploy' ? 'ronin aprueba el PR a su nombre y lo mergea con el CI en verde' : 'el PR espera la aprobación de un dev'}</span>];
+    case 'pr-approved': return e.ok
+      ? ['ok', 'ok', `ronin aprobó el PR #${e.number} a nombre de ${e.by}`, null, true]
+      : ['warn', 'crit', `No se pudo aprobar el PR #${e.number} a nombre de ${e.by}`, <span className="m">Su sesión de GitHub ya no sirve: el PR espera que un dev lo apruebe.</span>];
     case 'decided': return e.decision === 'approved' ? ['ok', 'ok', `${who} aprobó el prototipo`, null] : ['warn', 'person', `${who} no aprobó el prototipo`, null];
     case 'mail': return [e.ok ? 'mail' : 'crit', 'mail', e.ok ? `Correo a ${mailTo(d, e.to)}` : `No salió el correo a ${mailTo(d, e.to)}`, <span className="m">{e.subject}</span>, e.ok];
     case 'issue': return ['ok', 'ok', e.team ? `Abrió el issue del equipo #${e.number}` : `Abrió el issue #${e.number} para ronin`, null];
