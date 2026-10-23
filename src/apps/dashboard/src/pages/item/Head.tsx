@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { useProjectColor, useRepoColor, useShell } from '@apps/dashboard/src/shell/hooks.js';
+import { useProjectColor, useRepoColor, useShell, useSnapshot } from '@apps/dashboard/src/shell/hooks.js';
 import { XplHead } from '../explorations/model.js';
 import { DecideBar, DecidedNote, type Decide } from './Decide.js';
 import { checksChip, Chips, GhPill, itemRef, runNames, type ItemPage } from './model.js';
@@ -30,7 +30,11 @@ const STATE_CHIP: Record<string, [string, string]> = { running: ['run', 'trabaja
 export function Head({ v, actions, decide, review, explore }: { v: ItemPage; actions: ReactNode; decide: Decide; review: Review; explore: (action: 'general' | 'approve') => void }) {
   const shell = useShell();
   const repoColor = useRepoColor();
+  const snap = useSnapshot();
   const { item } = v;
+  // A slice's PR says whose and which one, and goes back to its issue.
+  const spec = item.kind === 'pr' ? snap.items.find((i) => i.repo === item.repo && i.slices?.some((s) => s.prNumber === item.number)) : undefined;
+  const slice = spec?.slices?.find((s) => s.prNumber === item.number);
   const d = v.detail?.data;
   const general = d?.exploration && <button className="gh" onClick={() => explore('general')}>Comentario general</button>;
   const finish = d?.exploration && <button className="act-btn" title="Termina la revisión: aprueba las fichas que quedan y mergea el PR" onClick={() => explore('approve')}>Finalizar…</button>;
@@ -64,6 +68,6 @@ export function Head({ v, actions, decide, review, explore }: { v: ItemPage; act
     <div className="head">
       <div className="crumb"><i style={{ background: repoColor(item.repo) }} />{item.repo} · {item.kind === 'pr' ? 'Pull request' : item.kind === 'issue' ? 'Issue' : 'Tarea'}</div>
       <div className="row"><h1>{item.title}{item.number !== undefined && <> <span className="n">{itemRef(item, runNames.kind)}</span></>}</h1>{general}{v.decidable ? <div className="hbtns"><DecideBar v={v} decide={decide} />{actions}</div> : reviewButton}{!v.decidable && actions}{finish}</div>
-      <div className="state"><GhPill item={item} d={d} />{d?.pedido && <button className="chip plain goped" title={d.pedido.title} onClick={() => shell.openRequest(d.pedido!.number)}>del pedido P-{d.pedido.number}</button>}<LinearChips v={v} /><Chips chips={chips} />{v.decidable && pending > 0 && <span className="chip run">✎ {pending} en Archivos</span>}{facts.map((f, i) => <span key={i}>{f}</span>)}</div><DecidedNote id={item.id} /></div>
+      <div className="state"><GhPill item={item} d={d} />{spec && slice && <button className="chip plain goped" title={spec.title} onClick={() => shell.openItem(spec.id)}>slice {slice.index + 1} de {spec.slices!.length} de #{spec.number}</button>}{d?.pedido && <button className="chip plain goped" title={d.pedido.title} onClick={() => shell.openRequest(d.pedido!.number)}>del pedido P-{d.pedido.number}</button>}<LinearChips v={v} /><Chips chips={chips} />{v.decidable && pending > 0 && <span className="chip run">✎ {pending} en Archivos</span>}{facts.map((f, i) => <span key={i}>{f}</span>)}</div><DecidedNote id={item.id} /></div>
   );
 }

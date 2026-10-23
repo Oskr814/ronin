@@ -4,8 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resetShell, showPage, testShell } from '@apps/dashboard/src/test-shell.js';
 import { filesKey, type FilesRead } from './files/model.js';
 import { Item } from './Item.js';
-import type { ItemRun } from '@apps/dashboard/src/shell/hooks.js';
-import { detail, doc, itemRead, NOW, type ItemRead } from './test-view.js';
+import type { ItemDetail, ItemRun, SnapshotItem } from '@apps/dashboard/src/shell/hooks.js';
+import { detail, doc, item, itemRead, NOW, type ItemRead } from './test-view.js';
 
 // The item's page on what the shell read of it: what it draws, its keys,
 // and the bodies it sends.
@@ -137,6 +137,19 @@ describe('an item’s page', () => {
     const { container } = show({ item: { status: 'running' }, runs: [live], run: { runId: 'r1', summary: live, lines: [{ type: 'text', text: 'Busco el total.' }, { type: 'tool', name: 'Read', summary: 'total.ts' }, { type: 'tool', name: 'Bash', summary: '$ pnpm test' }] } });
     expect(container.querySelector('.livecard .say')?.textContent).toBe('Busco el total.');
     expect([...container.querySelectorAll('.livecard li')].map((li) => li.textContent)).toEqual(['Leyó total.ts', 'Corrió pnpm test']);
+  });
+
+  it("says which slice a slice's PR is, and goes back to its issue", () => {
+    const shown = itemRead({ item: { id: 'acme/tienda#43', number: 43, kind: 'pr', title: 'Columnas', pr: undefined }, detail: detail({ ref: { kind: 'pr', number: 43, issue: 41 } as ItemDetail['ref'] }) });
+    const spec = item({ slices: [{ index: 0, title: 'Columnas', prNumber: 43, status: 'merged' }, { index: 1, title: 'Endpoint', prNumber: 42, status: 'open' }] as SnapshotItem['slices'] });
+    const snapshot = { ...shown.snap, items: [...shown.snap.items, spec] } as typeof shown.snap;
+    snap = snapshot;
+    const shell = testShell();
+    const { container } = showPage(<Item id={shown.id} />, { shell, snap: snapshot, data: shown.data });
+    const chip = container.querySelector('.head .goped')!;
+    expect(chip.textContent).toBe('slice 1 de 2 de #41');
+    fireEvent.click(chip);
+    expect(shell.openItem).toHaveBeenCalledWith('acme/tienda#41');
   });
 
   // Many runs (#363): the last three on the activity line and the

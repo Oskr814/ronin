@@ -5,7 +5,7 @@ import { short } from '@ui/time.js';
 import { Live } from './Live.js';
 import {
   AJ_SECTIONS, canDo, changed, goHome, inScope, type Item, linearRepos, openSettings, openDeploys, openExploration, openExplorations, openMetrics,
-  openNewIssue, openRequests, openMeetings, projectColor, queryClient, repoColor, repoShort, S, safeRepo, saveScope, select,
+  openNewIssue, openRequests, openMeetings, openSlice, projectColor, queryClient, repoColor, repoShort, S, safeRepo, saveScope, select,
   xplCounts, xplRows, xplToDecide,
 } from './state.js';
 import type { ExplorationRow } from './hooks.js';
@@ -69,7 +69,9 @@ const pedidoOf = (item: Item) => (item.kind === 'issue' ? (S.snap?.pedidos ?? []
 function ItemRow({ item, hit }: { item: Item; hit: number | null }) {
   const pedido = pedidoOf(item);
   const last = itemLast(item);
-  const showSlices = item.slices?.length && (S.sel === item.id || item.status === 'running' || item.status === 'blocked' || hit);
+  // A slice's PR open on its own page keeps its issue's slices in sight.
+  const slicePr = (slice: Slice) => (slice.prNumber !== null ? `${item.repo}#${slice.prNumber}` : null);
+  const showSlices = item.slices?.length && (S.sel === item.id || item.slices.some((slice) => slicePr(slice) === S.sel) || item.status === 'running' || item.status === 'blocked' || hit);
   return (
     <>
       <button className={`item ${item.pinned ? 'pinned' : ''}`} data-id={item.id} aria-current={S.sel === item.id} title={item.pinned ? 'PR de exploración: sus fichas se revisan acá' : undefined} onClick={() => void select(item.id)}>
@@ -77,7 +79,7 @@ function ItemRow({ item, hit }: { item: Item; hit: number | null }) {
         <span className="sub"><PreviewTag preview={item.preview} />{pedido ? <span className="pd-pn" title={`Del pedido P-${pedido.number} del portal`}>P-{pedido.number}</span> : null}<GhIcon kind={item.kind} state={item.github} />{itemSub(item)}{item.linear && <>, <span className="red">{item.linear.id}</span></>}{item.linear?.project && !S.project && <>, <span className="ptag"><i style={{ background: projectColor(item.linear.project.id) }} />{item.linear.project.name}</span></>}</span>
         {last ? <span className="last">{last}</span> : null}
       </button>
-      {showSlices ? <div className="kids">{item.slices!.map((slice) => <button key={slice.index} className={`kid ${hit && slice.prNumber === hit ? 'hit' : ''}`} data-id={item.id} onClick={() => void select(item.id)}><SliceMark slice={slice} /><span className="t">{slice.index + 1}. {slice.title}</span><span className="age">{slice.prNumber ? `#${slice.prNumber}` : ''}</span></button>)}</div> : null}
+      {showSlices ? <div className="kids">{item.slices!.map((slice) => <button key={slice.index} className={`kid ${hit && slice.prNumber === hit ? 'hit' : ''}`} data-id={item.id} aria-current={slicePr(slice) === S.sel} title={slice.prNumber !== null ? `Abrir el PR #${slice.prNumber}` : undefined} onClick={() => void openSlice(item, slice.prNumber)}><SliceMark slice={slice} /><span className="t">{slice.index + 1}. {slice.title}</span><span className="age">{slice.prNumber ? `#${slice.prNumber}` : ''}</span></button>)}</div> : null}
     </>
   );
 }

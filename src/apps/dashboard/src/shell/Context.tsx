@@ -5,7 +5,7 @@ import { clock, Dot, duration, money, RunDot, runTitle } from '../lib/runs.js';
 import { short } from '@ui/time.js';
 import { Live } from './Live.js';
 import { cycleName, SliceMark } from './Sidebar.js';
-import { currentCycleOf, detailOf, type Item, itemById, itemRuns, linearRepos, MINUTE, repoColor, repoShort, S, safeRepo } from './state.js';
+import { currentCycleOf, detailOf, type Item, itemById, itemRuns, linearRepos, MINUTE, openSlice, repoColor, repoShort, S, safeRepo } from './state.js';
 
 // The context column: what's around the item open (GitHub, Linear, why it's
 // blocked, its slices, checks, preview and runs), or, with none, the
@@ -87,7 +87,7 @@ export function ItemCtx({ item }: { item: Item }) {
             const [, text] = SLICE_STATE[slice.status];
             const link = slice.prNumber ? prUrl(item.repo, slice.prNumber) : null;
             const detail = slice.status === 'open' ? [slice.checks && slice.checks !== 'none' ? `checks: ${CHECK_STATE[slice.checks][1]}` : null, slice.reviewDecision === 'APPROVED' ? 'aprobada' : slice.reviewDecision === 'CHANGES_REQUESTED' ? 'cambios pedidos' : null].filter(Boolean).join(', ') : '';
-            return <div key={slice.index} className={`sl ${slice.status === 'pending' ? 'pending' : ''}`}><SliceMark slice={slice} /><span>{slice.index + 1}. {slice.title}</span>{link ? <a href={link} target="_blank" rel="noopener">#{slice.prNumber}</a> : <span />}<small>{text}{detail ? `, ${detail}` : ''}</small></div>;
+            return <div key={slice.index} className={`sl ${slice.status === 'pending' ? 'pending' : ''}`}><SliceMark slice={slice} />{slice.prNumber !== null ? <button className="slt" title={`Abrir el PR #${slice.prNumber}`} onClick={() => void openSlice(item, slice.prNumber)}>{slice.index + 1}. {slice.title}</button> : <span>{slice.index + 1}. {slice.title}</span>}{link ? <a href={link} target="_blank" rel="noopener">#{slice.prNumber} ↗</a> : <span />}<small>{text}{detail ? `, ${detail}` : ''}</small></div>;
           })}</div></section>
       ) : null}
       {item.pr?.checks?.length ? <section><h3>Checks de #{item.pr.number}</h3><ul className="checks">{item.pr.checks.map((check, i) => <li key={i}><Dot cls={CHECK_STATE[check.outcome][0]} /><span>{check.name}</span><span className="m">{CHECK_STATE[check.outcome][1]}</span></li>)}</ul></section> : null}
