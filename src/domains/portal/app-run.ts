@@ -215,14 +215,28 @@ export async function changedFiles(dir: string, user: AgentUser | null = null): 
   return files;
 }
 
+// Paths per git diff: a draft is a handful of files, but one that touches
+// many still stays well under the argv limit.
+const DIFF_BATCH = 200;
+
 // The draft change the agent left in the checkout, new files included, and
-// leaving out what the app's own startup had already changed.
+// leaving out what the app's own startup had already changed. The startup
+// can leave thousands of files (a build's output): they're filtered here,
+// never passed to git as pathspecs, which overflowed argv (spawn E2BIG).
 export async function draftDiff(dir: string, generated: string[] = [], user: AgentUser | null = null): Promise<string> {
   await gitIn(dir, user, ['add', '-A', '-N']).catch(() => {});
-  const exclude = generated.map((file) => `:(exclude,literal)${file}`);
-  const { stdout } = await gitIn(dir, user, ['diff', '--', '.', ...exclude]);
-  return stdout.trim();
+  const skip = new Set(generated);
+  const { stdout: names } = await gitIn(dir, user, ['diff', '--name-only', '--no-renames', '-z']);
+  const draft = names.split('\0').filter((file) => file && !skip.has(file));
+  const parts: string[] = [];
+  for (let i = 0; i < draft.length; i += DIFF_BATCH) {
+    const paths = draft.slice(i, i + DIFF_BATCH).map((file) => `:(literal)${file}`);
+    const { stdout } = await gitIn(dir, user, ['diff', '--no-renames', '--', ...paths]);
+    if (stdout.trim()) parts.push(stdout.trim());
+  }
+  return parts.join('\n');
 }
+
 
 // Brings the app up from a fresh checkout, with one logged-in browser per
 // role and viewport, runs the agent on it and hands what it left to

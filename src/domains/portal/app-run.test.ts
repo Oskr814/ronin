@@ -4,7 +4,7 @@ vi.mock('@platform/config/config.js', () => ({ config: { githubLogin: 'ronin', w
 vi.mock('@platform/logger.js', () => ({ log: { error: vi.fn(), info: vi.fn() } }));
 
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { changedFiles, draftDiff, parsePrototypeResult, prototypeBrowsers, serverName } from './app-run.js';
@@ -74,4 +74,22 @@ describe('draftDiff', () => {
     expect(patch).toContain('nuevo.ts');
     expect(patch).not.toMatch(/api\.xml|build\.log/);
   });
+
+  it('copes with a startup that leaves thousands of files, more than fit in argv', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ronin-draft-'));
+    const git = (...args: string[]) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { cwd: dir });
+    git('init', '-q');
+    writeFileSync(join(dir, 'page.tsx'), 'total\n');
+    git('add', '.');
+    git('commit', '-qm', 'base');
+    const out = join(dir, 'bin', 'Debug', 'net8.0', 'una-carpeta-de-salida-con-un-nombre-bastante-largo'.repeat(2));
+    mkdirSync(out, { recursive: true });
+    for (let i = 0; i < 15_000; i++) writeFileSync(join(out, `Ensamblado.Generado.Numero${i}.dll.config`), 'x\n');
+    const generated = await changedFiles(dir);
+    expect(generated.length).toBe(15_000);
+    writeFileSync(join(dir, 'page.tsx'), 'total en negrita\n');
+    const patch = await draftDiff(dir, generated);
+    expect(patch).toContain('+total en negrita');
+    expect(patch).not.toContain('Ensamblado');
+  }, 60_000);
 });
