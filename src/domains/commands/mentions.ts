@@ -1,4 +1,5 @@
-import { listIssueComments, listReviewComments, replyToComment, type Comment } from '@platform/github/github.js';
+import { listIssueComments, listRecentIssueComments, listRecentPrComments, listReviewComments, replyToComment, type Comment } from '@platform/github/github.js';
+import { inGithubMemo } from '@platform/github/run-memo.js';
 import { isProcessed, markProcessed, unprocessed } from '@platform/state/processed-comments.js';
 import { classifyMetaCommand, renderMetaReply, type CommandContext } from './help.js';
 import { config } from '@platform/config/config.js';
@@ -327,15 +328,29 @@ async function handleAutoMergeCommands(prNumber: number, comments: Comment[]): P
 // handleMetaCommands above), launches any /preview (handlePreviewCommands)
 // or /resolve-conflicts (handleConflictsCommands), applies any /auto-merge
 // (handleAutoMergeCommands), and leaves them all out of the result.
+//
+// In a tick's run (#370) it looks at the comments of the last days, read
+// once for the whole repo (listRecentPrComments): one call per PR, for its
+// reviews, instead of three. Anywhere else, at the PR's own, as before.
 export async function findUnprocessedMentions(prNumber: number): Promise<Comment[]> {
   const botLogin = config.githubLogin;
-  const [issueComments, reviewComments] = await Promise.all([
-    listIssueComments(prNumber),
-    listReviewComments(prNumber),
-  ]);
-  const mentioned = [...issueComments, ...reviewComments].filter((c) => mentionsHandle(c.body, botLogin));
-  const rest = await handleMetaCommands(prNumber, 'pr', await filterUnprocessed(mentioned));
+  const recent = inGithubMemo();
+  const comments = recent
+    ? await listRecentPrComments(prNumber)
+    : (await Promise.all([listIssueComments(prNumber), listReviewComments(prNumber)])).flat();
+  const mentioned = comments.filter((c) => mentionsHandle(c.body, botLogin));
+  const pending = await withWholeThreads(prNumber, await filterUnprocessed(mentioned), recent);
+  const rest = await handleMetaCommands(prNumber, 'pr', pending);
   return handleAutoMergeCommands(prNumber, await handleConflictsCommands(prNumber, await handlePreviewCommands(prNumber, rest)));
+}
+
+// An inline mention read from the last days may lack the start of its
+// thread, which whoever answers it reads: those take it from the PR's own
+// comments. Only when there is one, so almost never.
+async function withWholeThreads(prNumber: number, pending: Comment[], recent: boolean): Promise<Comment[]> {
+  if (!recent || !pending.some((c) => c.kind === 'review')) return pending;
+  const whole = new Map((await listReviewComments(prNumber)).map((c) => [`${c.kind}-${c.id}`, c]));
+  return pending.map((c) => whole.get(`${c.kind}-${c.id}`) ?? c);
 }
 
 // Same as findUnprocessedMentions (including its meta-command side effect,
@@ -343,9 +358,10 @@ export async function findUnprocessedMentions(prNumber: number): Promise<Comment
 // skips listReviewComments entirely — a plain issue never has inline review
 // comments, and that endpoint (pulls/{n}/comments) errors for a number that
 // isn't actually a pull request.
+// In a tick's run, from the repo's recent comments, with no call of its own.
 export async function findUnprocessedIssueMentions(issueNumber: number): Promise<Comment[]> {
   const botLogin = config.githubLogin;
-  const issueComments = await listIssueComments(issueNumber);
+  const issueComments = inGithubMemo() ? await listRecentIssueComments(issueNumber) : await listIssueComments(issueNumber);
   const mentioned = issueComments.filter((c) => mentionsHandle(c.body, botLogin));
   return handleMetaCommands(issueNumber, 'issue', await filterUnprocessed(mentioned));
 }

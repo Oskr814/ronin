@@ -38,12 +38,16 @@ export async function unprocessed<T extends TrackedComment>(comments: T[]): Prom
   const done = await getProcessedComments();
   const now = Date.now();
   // One reaction lookup per old comment with a 👀, in parallel — only for
-  // comments from before ACK_EYES_SINCE.
+  // comments from before ACK_EYES_SINCE. Once it says done, that's recorded,
+  // so the same comment isn't looked up again on every tick (#370).
   const isDone = await Promise.all(comments.map(async (c) => {
     if (done.has(keyOf(c))) return true;
     if (!c.createdAt) return false;
     if (now - Date.parse(c.createdAt) > MAX_AGE_MS) return true;
-    return c.createdAt < ACK_EYES_SINCE && c.reactionsEyes > 0 && botReactedBefore(c.id, c.kind, config.githubLogin, ACK_EYES_SINCE);
+    if (!(c.createdAt < ACK_EYES_SINCE && c.reactionsEyes > 0)) return false;
+    const reacted = await botReactedBefore(c.id, c.kind, config.githubLogin, ACK_EYES_SINCE);
+    if (reacted) await recordProcessedComment(keyOf(c), MAX_AGE_MS);
+    return reacted;
   }));
   return comments.filter((_, i) => !isDone[i]);
 }
