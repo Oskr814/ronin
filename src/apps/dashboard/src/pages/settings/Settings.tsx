@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { ApiError, client, ok } from '@apps/dashboard/src/api.js';
 import { type SettingsView, useSession, useSettingsView, useShell } from '@apps/dashboard/src/shell/hooks.js';
 import { Accounts } from './Accounts.js';
@@ -55,7 +55,23 @@ export function Settings() {
     setChosen(true);
     keep(f);
   };
-  const change = useMemo(() => makeChange(shell.unauthorized, shell.toast, () => setRev((n) => n + 1)), [shell]);
+  // Where the page was scrolled to before the redraw, put back after it: the
+  // section's new copy would start at the top (the page's own scroller on a
+  // wide screen, the window's on a phone).
+  const scroller = useRef<HTMLDivElement>(null);
+  const scrolled = useRef<{ top: number; y: number } | null>(null);
+  const redraw = () => {
+    scrolled.current = { top: scroller.current?.scrollTop ?? 0, y: window.scrollY };
+    setRev((n) => n + 1);
+  };
+  useLayoutEffect(() => {
+    const at = scrolled.current;
+    if (!at) return;
+    scrolled.current = null;
+    if (scroller.current) scroller.current.scrollTop = at.top;
+    window.scrollTo(0, at.y);
+  }, [rev]);
+  const change = useMemo(() => makeChange(shell.unauthorized, shell.toast, redraw), [shell]);
 
   const main = useQuery({ queryKey: ['settings'], queryFn: () => ok(client.api.settings.$get()) as Promise<unknown> as Promise<Page> });
   const ready = Boolean(main.data);
@@ -81,7 +97,7 @@ export function Settings() {
   else body = <Section key={rev} d={d} data={data} />;
   return (
     <ChangeContext.Provider value={change}>
-      <div className="today aj"><div className="aj-col">{body}</div></div>
+      <div className="today aj" ref={scroller}><div className="aj-col">{body}</div></div>
     </ChangeContext.Provider>
   );
 }
