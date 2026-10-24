@@ -1081,7 +1081,10 @@ button.brow:hover { background: var(--hover); }
 .pd-dpatch { margin-top: 10px; }
 .pd-dd { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--rule); }
 .pd-dd p { margin: 0; color: var(--ink-2); max-width: 72ch; }
-.pd-dd .field textarea { width: 100%; }
+.pd-dd .field { display: grid; gap: 6px; margin-top: 10px; font-size: 12.5px; color: var(--ink-2); max-width: 72ch; }
+.pd-dd .field textarea { display: block; width: 100%; background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; color: var(--ink); font: inherit; font-size: 13px; padding: 6px 8px; resize: vertical; min-height: 60px; }
+.pd-dd .field textarea:focus { outline: none; border-color: var(--run); }
+.pd-dd .field textarea::placeholder { color: var(--muted); }
 /* A dev decides a request (#406): what the decision needs, the rest under Detalles. */
 .pd-waits.decide { color: var(--lin); font-weight: 500; }
 .pd-now.pd-dc { border-color: color-mix(in srgb, var(--lin) 55%, var(--rule)); }
