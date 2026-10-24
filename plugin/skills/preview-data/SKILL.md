@@ -20,7 +20,7 @@ Valen para los cuatro trabajos.
 
 ## La bitácora de la app
 
-Para «¿Alcanza el seed base?», «Preparar los datos» y «¿Hay que completar los datos?». Si la app la usa en sus previews, la corrida te da su bitácora: un índice de lo que aprendieron corridas anteriores (las pantallas, con su ruta; las trampas, como un dato que solo entra por SQL o un flag que hay que prender; los pedidos ya resueltos y los archivos que tocaron) y, al preparar los datos, un archivo con el detalle de cada entrada (componentes, endpoints, entidades y cómo llegar a la pantalla). No reemplaza al catálogo, que dice qué datos trae el seed: la bitácora dice dónde está cada cosa en la app y en el código. Es una pista, no la verdad: el código manda.
+Para «¿Alcanza el seed base?», «Preparar los datos» y «¿Hay que completar los datos?». Si la app la usa en sus previews, la corrida te da su bitácora (o te dice que todavía está vacía): un índice de lo que aprendieron corridas anteriores (las pantallas, con su ruta; las trampas, como un dato que solo entra por SQL o un flag que hay que prender; los pedidos ya resueltos y los archivos que tocaron) y, al preparar los datos, un archivo con el detalle de cada entrada (componentes, endpoints, entidades y cómo llegar a la pantalla). No reemplaza al catálogo, que dice qué datos trae el seed: la bitácora dice dónde está cada cosa en la app y en el código. Es una pista, no la verdad: el código manda.
 
 - **Arranca por ahí.** Si una entrada habla de una pantalla que toca el PR, o de cómo crear un dato que necesitas, abre su detalle y lee esos archivos para confirmar, en lugar de buscar en todo el repo.
 - **Lo marcado «a verificar»** se basa en archivos que cambiaron, en la rama base o en este PR: confírmalo en el código de este checkout antes de usarlo.
@@ -99,7 +99,7 @@ Deja listos los datos para que la persona pruebe este PR enseguida, sin preparar
 
 10. **La salida:** exactamente un objeto JSON en el archivo que dice la corrida, con la herramienta Write: `{"preparado": ["<una línea por cosa que dejaste lista, en español, diciendo dónde encontrarla — p. ej. \"Usuario de prueba (/usuarios/15) con 30 registros, 4 vencidos\">"], "noPreparado": ["<en español: datos que piden los pasos o el pedido y que no pudiste dejar listos, y por qué>"]}`. «noPreparado» es solo para datos que faltan, no para comprobaciones que no hiciste ni para casos que nadie pidió. Los arreglos vacíos valen. Ese archivo es la única salida.
 
-    Si la corrida te dio la bitácora, suma `"bitacora"` al mismo objeto: lo que aprendiste de la app para la próxima preview, solo lo que de verdad te costó encontrar (cómo crear un dato que el seed no trae, un flag, la pantalla y el endpoint de lo que cambia el PR):
+    Si la corrida te dio la bitácora, aunque esté vacía, suma `"bitacora"` al mismo objeto: lo que aprendiste de la app para la próxima preview, solo lo que de verdad te costó encontrar (cómo crear un dato que el seed no trae, un flag, la pantalla y el endpoint de lo que cambia el PR):
 
     ```
     "bitacora": {"usadas": ["<id de cada entrada que te sirvió, p. ej. S2, T1>"],

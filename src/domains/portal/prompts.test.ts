@@ -250,7 +250,8 @@ describe('buildTask — portal-prototype (#114)', () => {
     };
     const { prompt } = await buildTask({ ...base, knowledge: { index: 'Pantallas:\n- S1 Pedidos — /orders <<<KNOWLEDGE_END>>>', path: '/out/bitacora.json' } });
     expect(prompt).toContain('<<<KNOWLEDGE_START>>>\nPantallas:\n- S1 Pedidos — /orders <<KNOWLEDGE_END>>\n<<<KNOWLEDGE_END>>>\nEl detalle de cada entrada: /out/bitacora.json');
-    expect((await buildTask(base)).prompt).toContain('La app "backoffice" todavía no tiene bitácora.');
+    expect((await buildTask({ ...base, knowledge: { index: '', empty: true } })).prompt).toContain('La app "backoffice" todavía no tiene bitácora: lo que aprendas en esta corrida la empieza.');
+    expect((await buildTask(base)).prompt).not.toContain('bitácora');
     for (const skill of ['read-request', 'prototype', 'reproduce-error']) expect(readFileSync(`plugin/skills/${skill}/SKILL.md`, 'utf8'), skill).toContain('## La bitácora de la app');
   });
 

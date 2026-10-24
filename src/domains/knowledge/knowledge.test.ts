@@ -100,7 +100,7 @@ describe('what an agent learned (#412)', () => {
     const { path, first } = repo();
     const out = mkdtempSync(join(tmpdir(), 'ronin-knowledge-out-'));
     await inRepo(path, async () => {
-      expect(await knowledgeForRun('backoffice', out)).toBeUndefined();
+      expect(await knowledgeForRun('backoffice', out)).toEqual({ index: '', empty: true });
       const commit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: path, encoding: 'utf8' }).trim();
       await saveLearned('backoffice', { used: [], screens: [{ route: '/orders', name: 'Pedidos', components: [], endpoints: [], entities: [], files: ['web/src/orders/List.tsx'] }], traps: [{ text: 'El seed trae un solo cliente con catálogos.', files: [] }], removed: [] });
       await saveResolved('backoffice', { request: 12, summary: 'Enlace a la ficha del cliente', files: ['web/src/orders/Detail.tsx'], pr: 40, mergedAt: NOW.toISOString() });
