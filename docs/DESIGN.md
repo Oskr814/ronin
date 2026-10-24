@@ -1199,7 +1199,7 @@ La persona puede cancelar un pedido mientras nadie lo tomó, con *Cancelar pedid
   - alrededor del prototipo (`minor`, `proposed`);
   - mientras ronin reproduce un error (`reproducing`);
   - mientras espera la decisión de un dev (`awaiting-dev`, 16.5);
-  - ya en manos del equipo (`big`), si su issue sigue sin asignar. Lo comprueba en GitHub al momento, y el issue se cierra como no planeado con un comentario que dice que la persona lo canceló.
+  - ya en manos del equipo (`big`), si su issue sigue sin asignar. Lo comprueba en GitHub al momento, y el issue se cierra como no planeado con un comentario que dice que la persona lo canceló. El cierre va después de contestar (#411): la persona no espera las tres llamadas a GitHub, y si falla queda en el log y el pedido sigue cancelado.
 - **No se puede:**
   - aprobado o en `fixing`, porque su issue es de ronin;
   - del equipo, con el issue ya asignado a alguien;

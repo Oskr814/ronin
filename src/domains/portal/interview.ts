@@ -153,8 +153,12 @@ async function handOver(n: number, how: 'skipped' | 'confirmed', now: Date, laun
     return r;
   });
   log.info(`portal: el pedido P-${n} pasó al equipo (${how === 'confirmed' ? 'confirmó lo que entendió ronin' : 'sin terminar la entrevista'})`);
-  await handOverMail(handed, await getUser(handed.userId));
   await launch(n);
+  // The mail goes out over SMTP, about a second (#411): the person hears
+  // back without waiting on it.
+  void getUser(handed.userId)
+    .then((user) => handOverMail(handed, user))
+    .catch((error) => log.error(`portal: no se pudo avisar por correo que el pedido P-${n} pasó al equipo`, error));
   return handed;
 }
 
