@@ -28,6 +28,8 @@ El portal, `https://ronin-agent.redmotoshn.com`, es para que la gente que usa la
    - **Aprobar con revisión:** ronin abre el issue y el PR, que se mergea cuando un dev lo aprueba y el CI está en verde.
    - **No hacerlo:** el pedido se cierra con el motivo que escribas, que le llega a la persona con esas palabras, en la conversación y por correo. No se abre issue.
 
+   Al elegir una de las dos primeras, antes de confirmar aparece una caja para una **nota para el issue**, opcional: lo que quieras que ronin sepa al hacer el cambio. Va en el issue, junto a las respuestas a «Antes de aprobar», y ronin la sigue aunque no coincida con el borrador. También se ve en la actividad del pedido.
+
    Mientras tanto, la persona ve que el equipo está revisando su pedido.
 
 5. **Aprobado por un dev:** ronin abre un issue asignado a sí mismo, con `ronin:portal`, hace el cambio en un PR y le pone `ronin:auto-merge`. El PR se mergea con el CI en verde y la aprobación de un dev: la tuya, si elegiste *Aprobar y desplegar*. Si tu sesión de GitHub ya no sirve cuando ronin abre el PR (saliste del tablero, por ejemplo), el PR espera la aprobación de un dev y el pedido lo dice. La persona recibe «listo, sale en la próxima actualización» y, cuando el release que lo lleva termina de [desplegarse](/ronin/guias/desplegar/), «ya está en la aplicación». Donde el repo lo tiene prendido, ese release sale solo, en el próximo tick ([los pedidos, solos](/ronin/guias/desplegar/#los-pedidos-solos)).

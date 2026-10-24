@@ -72,6 +72,9 @@ describe("a dev's decision on a request (#353)", () => {
     expect(parseDevDecision({ decision: 'review', answers })).toEqual({ decision: 'review', answers: [{ question: '¿También en el reporte?', answer: 'Sí, en los dos.' }] });
     expect(parseDevDecision({ decision: 'decline', reason: 'No', answers })).toEqual({ decision: 'decline', reason: 'No' });
     expect(() => parseDevDecision({ decision: 'deploy', answers: 'sí' })).toThrow(/answers/);
+    expect(parseDevDecision({ decision: 'deploy', note: ' Igual que en Reportes. ' })).toEqual({ decision: 'deploy', note: 'Igual que en Reportes.' });
+    expect(parseDevDecision({ decision: 'decline', reason: 'No', note: 'x' })).toEqual({ decision: 'decline', reason: 'No' });
+    expect(() => parseDevDecision({ decision: 'review', note: 'x'.repeat(2001) })).toThrow(/nota/);
     expect(() => parseDevDecision({ decision: 'deploy', answers: Array(11).fill({ question: 'q', answer: 'a' }) })).toThrow(/hasta 10/);
     const n = await waiting();
     const r = await devDecide(n, { decision: 'review', by: 'ana-dev', answers: [{ question: '¿También en el reporte?', answer: 'Sí, en los dos.' }] }, vi.fn(async () => {}));

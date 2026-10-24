@@ -118,6 +118,7 @@ function shownEvent(d: Detail, e: RequestEvent): Shown {
         <span className="m">{e.decision === 'deploy' ? 'ronin aprueba el PR a su nombre y lo mergea con el CI en verde' : 'el PR espera la aprobación de un dev'}</span>
         {/* What they answered of «Antes de aprobar» (#413). */}
         {d.devDecision?.answers?.length ? <div className="bx">{d.devDecision.answers.map((a, i) => <p key={i}><b>{a.question}</b><br />{a.answer}</p>)}</div> : null}
+        {d.devDecision?.note ? <div className="bx">{d.devDecision.note}</div> : null}
       </>];
     case 'deploy-skipped': return ['warn', 'crit', `Quedó fuera del despliegue automático: no se aplica sobre ${e.base}`, <span className="m">{e.files.length ? `Choca en ${e.files.join(', ')}.` : ''}{e.needs.length ? ` Necesita ${e.needs.map((n) => `#${n}`).join(', ')}.` : ''} Se intenta otra vez en el próximo lote, o se despliega a mano.</span>];
     case 'team-message': case 'person-reply': return ['', 'mail', '', null, true];

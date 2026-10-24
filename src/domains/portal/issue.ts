@@ -112,16 +112,17 @@ export function reproductionSection(request: PortalRequest, shots: IssueShot[], 
   ].filter(Boolean).join('\n\n');
 }
 
-// What the dev answered approving it (#413), for ronin to follow: it
-// decides over the draft.
+// What the dev answered and noted approving it (#413), for ronin to
+// follow: it decides over the draft.
 function devAnswersSection(request: PortalRequest): string {
   const d = request.devDecision;
-  if (!d?.answers?.length) return '';
+  if (!d?.answers?.length && !d?.note) return '';
   return [
     '## Lo que decidió el equipo',
-    `Al aprobarlo, ${d.by} respondió lo que ronin dejó para decidir. Hacerlo así: si algo no coincide con el borrador o su diff, manda esta respuesta.`,
-    d.answers.map((a) => `- **${a.question}**\n  ${a.answer.replace(/\n+/g, ' ')}`).join('\n'),
-  ].join('\n\n');
+    d.answers?.length ? `Al aprobarlo, ${d.by} respondió lo que ronin dejó para decidir. Hacerlo así: si algo no coincide con el borrador o su diff, manda esta respuesta.` : '',
+    d.answers?.length ? d.answers.map((a) => `- **${a.question}**\n  ${a.answer.replace(/\n+/g, ' ')}`).join('\n') : '',
+    d.note ? `${d.answers?.length ? 'Y agregó' : `Al aprobarlo, ${d.by} agregó`} (si algo no coincide con el borrador o su diff, manda esto):\n\n${d.note.split('\n').map((l) => `> ${l}`).join('\n')}` : '',
+  ].filter(Boolean).join('\n\n');
 }
 
 export function portalIssueBody(request: PortalRequest, user: PortalUser | undefined, shots: IssueShots, patch: string | undefined, patchFile: string | undefined, appName?: string): string {

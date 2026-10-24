@@ -202,6 +202,9 @@ describe('portal issues', () => {
       expect(body.indexOf('## Lo que decidió el equipo')).toBeLessThan(body.indexOf('## Para implementarlo'));
     }
     expect(of({ status: 'approved', devDecision: { ...devDecision, answers: undefined } })).not.toContain('Lo que decidió el equipo');
+    const noted = of({ status: 'approved', devDecision: { ...devDecision, answers: undefined, note: 'Igual que en Reportes.\nSin tocar el PDF.' } });
+    for (const part of ['## Lo que decidió el equipo', 'Al aprobarlo, ana-dev agregó', '> Igual que en Reportes.\n> Sin tocar el PDF.']) expect(noted).toContain(part);
+    expect(of({ status: 'approved', devDecision: { ...devDecision, note: 'n' } })).toContain('Y agregó');
   });
 
   it('cuts a huge diff and says where the whole one is', () => {

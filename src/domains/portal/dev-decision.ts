@@ -18,7 +18,8 @@ import { addEvent, addRoninMessage, RequestError, updateRequest, type DevAnswer,
 //   - decline: the request closes with the reason, which the person gets in
 //     those words; no issue.
 // Approving it, the dev may answer what ronin left to decide before
-// approving (#413): the answers go in its issue, for ronin to follow.
+// approving (#413), and add a note of their own: both go in its issue, for
+// ronin to follow.
 
 const MAX_REASON = 2000;
 const MAX_ANSWERS = 10;
@@ -31,19 +32,23 @@ export interface DevDecisionInput {
   reason?: string;
   // Approving it: the dev's answers, only the answered ones (#413).
   answers?: DevAnswer[];
+  // Approving it: what else the dev wants ronin to know, optional.
+  note?: string;
   // Who decides (their GitHub login) and, deploying it, their token.
   by: string;
   token?: string;
 }
 
-export function parseDevDecision(body: Record<string, unknown>): Pick<DevDecisionInput, 'decision' | 'reason' | 'answers'> {
+export function parseDevDecision(body: Record<string, unknown>): Pick<DevDecisionInput, 'decision' | 'reason' | 'answers' | 'note'> {
   const decision = body.decision;
   if (decision !== 'deploy' && decision !== 'review' && decision !== 'decline') throw new RequestError('decision: deploy, review o decline');
   const reason = typeof body.reason === 'string' ? body.reason.trim() : '';
   if (decision === 'decline' && !reason) throw new RequestError('Escribe el motivo: le llega a la persona.');
   if (reason.length > MAX_REASON) throw new RequestError(`El motivo puede tener hasta ${MAX_REASON} caracteres.`);
   const answers = decision === 'decline' ? [] : parseAnswers(body.answers);
-  return { decision, ...(reason ? { reason } : {}), ...(answers.length ? { answers } : {}) };
+  const note = decision !== 'decline' && typeof body.note === 'string' ? body.note.trim() : '';
+  if (note.length > MAX_REASON) throw new RequestError(`La nota puede tener hasta ${MAX_REASON} caracteres.`);
+  return { decision, ...(reason ? { reason } : {}), ...(answers.length ? { answers } : {}), ...(note ? { note } : {}) };
 }
 
 function parseAnswers(raw: unknown): DevAnswer[] {
@@ -69,6 +74,7 @@ export async function devDecide(n: number, input: DevDecisionInput, launch = lau
       at: at.toISOString(),
       ...(input.reason ? { reason: input.reason } : {}),
       ...(input.answers?.length ? { answers: input.answers } : {}),
+      ...(input.note ? { note: input.note } : {}),
       ...(input.decision === 'deploy' ? { token: seal(input.token!, config.dashboard.sessionSecret, PURPOSE) } : {}),
     };
     addEvent(r, { kind: 'dev-decided', decision: input.decision, by: input.by }, at);
