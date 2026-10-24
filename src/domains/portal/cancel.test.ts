@@ -50,7 +50,7 @@ describe('cancelling a portal request', () => {
   it("closes the team's issue as not planned while it's unassigned, and refuses once someone took it", async () => {
     const free = await request({ status: 'big', issue: { number: 61, url: 'u' } });
     await cancelRequest(free, entries);
-    expect(closeIssueNotPlanned).toHaveBeenCalledWith(61, `La persona canceló el pedido P-${free} desde el portal de pedidos.`);
+    await vi.waitFor(() => expect(closeIssueNotPlanned).toHaveBeenCalledWith(61, `La persona canceló el pedido P-${free} desde el portal de pedidos.`));
     expect((await getRequest(free))?.status).toBe('cancelled');
 
     closeIssueNotPlanned.mockClear();
@@ -59,5 +59,17 @@ describe('cancelling a portal request', () => {
     await expect(cancelRequest(taken, entries)).rejects.toThrow(TAKEN);
     expect(closeIssueNotPlanned).not.toHaveBeenCalled();
     expect((await getRequest(taken))?.status).toBe('big');
+  });
+
+  it('answers before the issue is closed, and a failed close leaves it cancelled (#411)', async () => {
+    closeIssueNotPlanned.mockImplementationOnce(() => new Promise(() => {}));
+    const n = await request({ status: 'big', issue: { number: 63, url: 'u' } });
+    expect((await cancelRequest(n, entries)).status).toBe('cancelled');
+
+    closeIssueNotPlanned.mockRejectedValueOnce(new Error('GitHub caído'));
+    const m = await request({ status: 'big', issue: { number: 64, url: 'u' } });
+    expect((await cancelRequest(m, entries)).status).toBe('cancelled');
+    await vi.waitFor(() => expect(closeIssueNotPlanned).toHaveBeenCalledWith(64, expect.any(String)));
+    expect((await getRequest(m))?.status).toBe('cancelled');
   });
 });

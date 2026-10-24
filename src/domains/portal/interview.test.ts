@@ -105,7 +105,7 @@ describe('the interview', () => {
     expect(r.interview).toMatchObject({ skipped: true });
     expect(r.messages.at(-2)).toMatchObject({ from: 'person', skipped: true });
     expect(r.messages.at(-1)).toMatchObject({ from: 'ronin', text: SKIPPED_REPLY });
-    expect(handOverMail).toHaveBeenCalledOnce();
+    await vi.waitFor(() => expect(handOverMail).toHaveBeenCalledOnce());
     expect(launch).toHaveBeenCalledWith(n);
   });
 });
@@ -119,7 +119,14 @@ describe('what ronin understood', () => {
     expect(r.messages.at(-2)).toMatchObject({ from: 'person', confirmed: true });
     expect(r.messages.at(-1)).toMatchObject({ from: 'ronin', text: CONFIRMED_REPLY });
     expect(r.events?.at(-1)).toMatchObject({ kind: 'interview', step: 'confirmed' });
-    expect(handOverMail).toHaveBeenCalledOnce();
+    await vi.waitFor(() => expect(handOverMail).toHaveBeenCalledOnce());
+    expect(launch).toHaveBeenCalledWith(n);
+  });
+
+  it('answers without waiting on the mail (#411)', async () => {
+    handOverMail.mockImplementationOnce(() => new Promise(() => {}));
+    const n = await confirming();
+    expect((await confirmUnderstood(n, true, '', [], launch)).status).toBe('big');
     expect(launch).toHaveBeenCalledWith(n);
   });
 

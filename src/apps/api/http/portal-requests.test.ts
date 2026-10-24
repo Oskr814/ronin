@@ -216,6 +216,9 @@ describe('portal requests API', () => {
       r.messages.push({ id: 2, from: 'ronin', text: 'Respóndeme esto', images: [], questions: questions as never, at: '' });
     });
     expect(await (await post(cookie, '/api/portal/requests/2/skip', {})).json()).toMatchObject({ status: 'big', messages: [{}, {}, { skipped: true }, { from: 'ronin' }] });
+    // The mail goes out after the answer (#411): noted before the next test
+    // empties the data.
+    await vi.waitFor(async () => expect((await getRequest(2))?.events?.some((e) => e.kind === 'mail')).toBe(true));
   });
 
   it('cancels a request while nobody took it, only its owner', async () => {
