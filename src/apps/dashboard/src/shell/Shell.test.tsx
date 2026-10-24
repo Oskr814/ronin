@@ -79,7 +79,11 @@ describe('the shell, in React', () => {
       ['/ajustes', 'settings', '/ajustes/perfil'],
       ['/ajustes/repos/acme/web', 'settings', '/ajustes/repos/acme/web'],
       ['/portal', 'settings', '/ajustes/usuarios'],
-      ['/i/acme%2Ftienda%231', 'item', '/i/acme%2Ftienda%231'],
+      ['/acme/tienda/issues/1', 'item', '/acme/tienda/issues/1'],
+      // A PR the sidebar doesn't have stays a PR.
+      ['/acme/web/pull/5', 'item', '/acme/web/pull/5'],
+      // A link from before: it opens, and the address bar takes the path it has now.
+      ['/i/acme%2Ftienda%231', 'item', '/acme/tienda/issues/1'],
       ['/no-existe', 'today', '/no-existe'],
     ];
     for (const [path, name, to] of routes) {
@@ -117,7 +121,7 @@ describe('the shell, in React', () => {
     fireEvent.change(container.querySelector('#proj')!, { target: { value: '' } });
     fireEvent.change(container.querySelector('#q')!, { target: { value: '#77' } });
     fireEvent.click(container.querySelectorAll('.open-n')[1]);
-    await waitFor(() => expect(location.pathname).toBe('/i/acme%2Fweb%2377'));
+    await waitFor(() => expect(location.pathname).toBe('/acme/web/issues/77'));
     expect(page()).toBe('item');
   });
 
@@ -143,7 +147,7 @@ describe('the shell, in React', () => {
     // The tabs of the items open, and closing the last one goes home.
     expect([...container.querySelectorAll('.tab .l')].map((t) => t.textContent)).toEqual(['El total no suma el envío', 'Cobrar en cuotas']);
     fireEvent.click(container.querySelectorAll('.tab .x')[1]);
-    await waitFor(() => expect(location.pathname).toBe('/i/acme%2Ftienda%231'));
+    await waitFor(() => expect(location.pathname).toBe('/acme/tienda/issues/1'));
   });
 
   it('opens an item over the tab shown, unless it is pinned', async () => {
@@ -160,21 +164,21 @@ describe('the shell, in React', () => {
   });
 
   it("opens an issue's PR as the issue, on the PR's tab", async () => {
-    const { container } = await open('/i/acme%2Fweb%234');
-    await waitFor(() => expect(location.pathname).toBe('/i/acme%2Fweb%233'));
+    const { container } = await open('/acme/web/pull/4');
+    await waitFor(() => expect(location.pathname).toBe('/acme/web/issues/3'));
     expect([...container.querySelectorAll('.tab .l')].map((t) => t.textContent)).toEqual(['El total no suma el envío', 'El menú no cierra']);
   });
 
   it("opens a slice's PR on its own page, merged or moving the issue", async () => {
     const slices = [{ index: 0, title: 'Columnas', prNumber: 5, status: 'merged' }, { index: 1, title: 'Endpoint', prNumber: 4, status: 'open' }, { index: 2, title: 'Pestaña', prNumber: null, status: 'pending' }];
     snap = { ...SNAP, items: ITEMS.map((item) => (item.id === 'acme/web#3' ? { ...item, slices } : item)) };
-    const { container } = await open('/i/acme%2Fweb%233');
+    const { container } = await open('/acme/web/issues/3');
     const kid = (n: number) => [...container.querySelectorAll('.kid')].find((k) => k.textContent?.endsWith(`#${n}`))!;
     fireEvent.click(kid(5));
-    await waitFor(() => expect(location.pathname).toBe('/i/acme%2Fweb%235'));
+    await waitFor(() => expect(location.pathname).toBe('/acme/web/pull/5'));
     expect(kid(5).getAttribute('aria-current')).toBe('true');
     fireEvent.click(kid(4));
-    await waitFor(() => expect(location.pathname).toBe('/i/acme%2Fweb%234'));
+    await waitFor(() => expect(location.pathname).toBe('/acme/web/pull/4'));
     expect([...container.querySelectorAll('.tab .l')].map((t) => t.textContent).at(-1)).toBe('#4');
   });
 
@@ -182,7 +186,7 @@ describe('the shell, in React', () => {
     await open('/');
     fireEvent.keyDown(document, { key: ']' });
     fireEvent.keyDown(document, { key: 'p' });
-    await waitFor(() => expect(location.pathname).toBe('/i/acme%2Fweb%233'));
+    await waitFor(() => expect(location.pathname).toBe('/acme/web/issues/3'));
   });
 
   it('creates an issue with the same body app.js sent', async () => {
@@ -200,7 +204,7 @@ describe('the shell, in React', () => {
     await waitFor(() => expect(posts).toHaveLength(1));
     expect(posts[0]).toEqual({ path: '/api/repos/acme/tienda/issues', body: '{"title":"El cupón no se aplica","body":"Pasos.","after":"spike","app":"tienda","instruction":"mirá   el carrito","projectId":"p1"}' });
     await waitFor(() => expect(container.ownerDocument.querySelector('.toast')?.textContent).toContain('Listo: creaste #9 y pediste /spike.'));
-    await waitFor(() => expect(location.pathname).toBe('/i/acme%2Ftienda%239'));
+    await waitFor(() => expect(location.pathname).toBe('/acme/tienda/issues/9'));
   });
 
   it('goes to the login when there is no session', async () => {
