@@ -22,6 +22,10 @@ export const XPL_EVERY_MS = 60_000;
 const MIN = 60e3;
 
 export type Item = Snapshot['items'][number];
+// Métricas' tabs (#222, #234, #428), each at its own address.
+export type MetricsTab = 'trabajo' | 'pedidos' | 'suscripcion';
+const METRICS_PATH: Record<MetricsTab, string> = { trabajo: '/metricas', pedidos: '/metricas/pedidos', suscripcion: '/metricas/suscripcion' };
+
 export type Page = null | 'pedidos' | 'pedido' | 'reuniones' | 'reunion' | 'despliegues' | 'metricas' | 'exploraciones' | 'exploracion' | 'ajustes';
 export interface NewIssue {
   repo: string;
@@ -91,7 +95,7 @@ export const S = {
   // The app open, and the apps launched from here, by repo, until the snapshot sees them.
   xpl: { repo: null as string | null, app: null as string | null, launched: {} as Record<string, { app: string; at: number }> },
   xnow: null as { repo: string; app: string } | null,
-  mt: { tab: 'trabajo' as 'trabajo' | 'suscripcion' },
+  mt: { tab: 'trabajo' as MetricsTab },
   aj: { sec: 'perfil', login: null as string | null, repo: null as string | null, cuenta: null as string | null, f: null as string | null, visits: 0 },
 };
 // The sidebar's Linear filter (#101), remembered per browser.
@@ -475,11 +479,11 @@ export function openDeploys() {
   shown();
 }
 
-// `tab`: trabajo (#222) or suscripcion (#234), each at its own address. Admins only.
+// `tab`: trabajo (#222), pedidos (#428) or suscripcion (#234), each at its own address. Admins only.
 export function openMetrics(tab: string = S.mt.tab) {
   toPage('metricas');
-  S.mt.tab = tab === 'suscripcion' ? 'suscripcion' : 'trabajo';
-  go(S.mt.tab === 'suscripcion' ? '/metricas/suscripcion' : '/metricas');
+  S.mt.tab = tab in METRICS_PATH ? (tab as MetricsTab) : 'trabajo';
+  go(METRICS_PATH[S.mt.tab]);
   changed();
   shown();
 }
@@ -795,7 +799,7 @@ export function openPortalPath(): boolean {
   else if (x) openExploration(x[1], decodeURIComponent(x[2]), new URLSearchParams(location.search).get('f'));
   else if (location.pathname === '/exploraciones') openExplorations();
   else if (location.pathname === '/despliegues' && S.snap!.despliegues) openDeploys();
-  else if (/^\/metricas(\/suscripcion)?$/.test(location.pathname) && S.snap!.access?.admin) openMetrics(location.pathname === '/metricas' ? 'trabajo' : 'suscripcion');
+  else if (/^\/metricas(\/(suscripcion|pedidos))?$/.test(location.pathname) && S.snap!.access?.admin) openMetrics(location.pathname.split('/')[2] ?? 'trabajo');
   else if (r) openMeeting(Number(r));
   else if (location.pathname === '/reuniones') openMeetings();
   else if (n) openRequest(Number(n));

@@ -38,7 +38,7 @@ export interface ShellActions {
   openSettings(section: string, login?: string | null, filter?: string | null, account?: string | null): void;
   openPortalAccounts(): void;
   // A tab of Métricas.
-  openMetrics(tab: 'trabajo' | 'suscripcion'): void;
+  openMetrics(tab: 'trabajo' | 'pedidos' | 'suscripcion'): void;
   // A portal request's page, or the list of them.
   openRequest(n: number): void;
   openRequests(): void;

@@ -6,6 +6,7 @@ import { Item } from '../pages/item/Item.js';
 import { Meeting } from '../pages/meetings/Meeting.js';
 import { Meetings } from '../pages/meetings/Meetings.js';
 import { Subscription } from '../pages/metrics/Subscription.js';
+import { RequestMetrics } from '../pages/metrics/Requests.js';
 import { Work } from '../pages/metrics/Work.js';
 import { Request } from '../pages/requests/Request.js';
 import { Requests } from '../pages/requests/Requests.js';
@@ -31,6 +32,7 @@ export const PAGES: Record<string, ComponentType<any>> = {
   metrics: Work,
   settings: Settings,
   subscription: Subscription,
+  requestMetrics: RequestMetrics,
   requests: Requests,
   request: Request,
   today: Today,
@@ -67,7 +69,7 @@ export function route(): Route {
   }
   if (!item && S.page === 'despliegues') return { page: 'deploys', props: {}, title: 'Despliegues', wide: false };
   // Its tables and charts take the room of the context column.
-  if (!item && S.page === 'metricas') return { page: S.mt.tab === 'suscripcion' ? 'subscription' : 'metrics', props: {}, title: 'Métricas', wide: true };
+  if (!item && S.page === 'metricas') return { page: S.mt.tab === 'suscripcion' ? 'subscription' : S.mt.tab === 'pedidos' ? 'requestMetrics' : 'metrics', props: {}, title: 'Métricas', wide: true };
   if (!item && (S.page === 'exploraciones' || S.page === 'exploracion')) {
     return S.page === 'exploracion'
       ? { page: 'exploration', props: { repo: S.xpl.repo, app: S.xpl.app }, title: S.xpl.app ?? '', wide: false }

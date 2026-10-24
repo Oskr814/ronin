@@ -1724,6 +1724,16 @@ Una segunda pestaña, *Suscripción* (`/metricas/suscripcion`), dibuja `GET /api
 
 Nada: sin `METRICS_DATA_DIR`, usa `metrics-data/` en el checkout del runner (fuera de git). Lo de GitHub se vuelve a traer solo si se pierde; el registro de bloqueos no, así que hay que respaldarlo.
 
+#### 20.6b Pedidos (#428, `domains/metrics/requests.ts`)
+
+La pestaña **Pedidos** (`/metricas/pedidos`, `GET /api/metrics/requests?days=&repo=`, solo admins) calcula, con funciones puras como `compute.ts`, cómo se atienden los pedidos del portal de los repos que se ven. Usa los pedidos (`listRequests`), los nombres de las cuentas (`listUsers`) y, para el dueño de un pedido grande, los asignados de su issue en el caché de GitHub de Métricas (`repoDataOf`). No hay una acción para «tomar» un pedido: el dueño es el asignado, y en un pedido chico, el dev que decidió.
+
+- **Cómo termina** (`ending`): `closed` con `done` es *entregado* (`resolved` también llega como `closed`), `closed` con `declined` es *declinado*, `expired` es *vencido* o, con `answered`, *respondido por ronin*, y `cancelled` es *cancelado*. Sin ninguno sigue abierto.
+- **Los tramos** (`stretches`), cada uno con de quién es la espera: *leer* (creado → primer `classified`), *prototipo* (`classified` minor → primer prototipo), *reproducir* (`classified` error → primer `reproduced`), *aprobar* (el último mensaje de ronin antes de la decisión → `decision`), *decidir* (la aprobación, o la última reproducción, → `devDecision`), *hacer* (`devDecision` → `closed` done), *grande* (su issue del equipo → `closed`) y *desplegar* (`closed` done → `deployed`). Cada tramo cuenta en el período en que termina.
+- **El equipo:** decisiones por `devDecision.by`, grandes por asignado, mensajes por `team-message`, prioridades quitadas por `priority-removed` y cierres desde el tablero por `closed.by`.
+- **Las cuentas:** pedidos, entregados, prioritarios (por `priority.at`), quitados y cancelados o vencidos.
+- **Ahora** (no por período): los que esperan a un dev hace más de 24 h, los grandes sin asignado y los que tienen `personReplied`, los más viejos primero, hasta 10 de cada uno.
+
 #### 20.7 Suscripción (#234, `domains/metrics/subscription.ts`)
 
 Cuánto se aprovecha el plan de cada cuenta de Claude (19.11), contando todo lo que usa la cuenta, sea ronin o no, y qué parte es de ronin. `domains/metrics/subscription-view.ts` lee los archivos y `computeSubscription` calcula, sin tocar nada más: los tests le pasan historiales y corridas inventados.
