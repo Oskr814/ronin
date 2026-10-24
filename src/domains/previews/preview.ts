@@ -16,6 +16,7 @@ import { parsePortRange, PreviewReservations } from './reservations.js';
 import { log } from '@platform/logger.js';
 import { previewRunGroup, withRunGroup } from '@platform/agents/run-group.js';
 import { worktreeLock } from '@platform/workers/worktree-lock.js';
+import { knowledgeForRun, parseLearned, saveLearned, type KnowledgeForRun } from '../knowledge/knowledge.js';
 import { host } from '@platform/host/host.js';
 
 
@@ -340,6 +341,22 @@ export function parsePreviewData(raw: string): { preparado: string[]; noPreparad
   return { preparado: stringLines(parsed.preparado), noPreparado: stringLines(parsed.noPreparado) };
 }
 
+const parseJsonObject = (raw: string): Record<string, unknown> | undefined => {
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed) ? parsed as Record<string, unknown> : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+// The app's bitácora for a preview's run, when its previews use it (#437):
+// the index, and in `dir` the detail.
+async function knowledgeForPreview(appName: string, dir?: string): Promise<{ knowledge?: KnowledgeForRun }> {
+  const knowledge = await knowledgeForRun(appName, dir, 'previews');
+  return knowledge ? { knowledge } : {};
+}
+
 const stringLines = (value: unknown) => (Array.isArray(value) ? value.filter((l): l is string => typeof l === 'string' && l.trim() !== '').map((l) => l.trim()) : []);
 
 // Only an explicit true skips preparing the data.
@@ -456,7 +473,7 @@ async function prepareData(opts: {
     // already decided the data needs completing.
     const catalog = since ? null : await seedCatalog(prNumber, pr.headRefOid, session);
     if (catalog) {
-      const triage = await triageData({ ...about, catalog });
+      const triage = await triageData({ ...about, catalog, ...(await knowledgeForPreview(session.appName)) });
       if (triage?.alcanzan) return { preparado: [], noPreparado: [], base: triage.usar };
     }
     const app = await previewStack(dir);
@@ -470,6 +487,7 @@ async function prepareData(opts: {
         outputPath,
         ...(catalog ? { catalog } : {}),
         ...(since ? { previous: since.previous } : {}),
+        ...(await knowledgeForPreview(session.appName, out)),
         baseUrl: session.baseUrl,
         services: describeServices(session.ctx),
         app,
@@ -478,6 +496,8 @@ async function prepareData(opts: {
       return host().fs.readFile(outputPath, 'utf8');
     });
     const data = parsePreviewData(raw);
+    // What it learned of the app, on the PR's head (#437).
+    await saveLearned(session.appName, parseLearned(parseJsonObject(raw)?.bitacora), { commit: pr.headRefOid, use: 'previews' });
     // What a later update builds on (completeData): the first preparation's
     // as it came; an update's, merged there.
     if (!since) await host().fs.writeFile(join(session.stateDir, 'preview-data.json'), JSON.stringify(data, null, 2));
@@ -604,6 +624,7 @@ async function completeData(opts: {
   let decision: { completar: boolean; motivo: string };
   try {
     const stat = (await host().exec('git', ['diff', '--stat', from, pr.headRefOid], { cwd: activeRepo().productRepoPath })).stdout.trim();
+    const knowledge = await knowledgeForPreview(session.appName);
     decision = parseDataDecision(await withOutputDir(prNumber, 'delta', (outputDir) => runAgentTask(previewTask({
       type: 'preview-data-delta',
       prNumber,
@@ -614,6 +635,7 @@ async function completeData(opts: {
       ...(instruction ? { instruction } : {}),
       diff: { from, stat },
       previous,
+      ...knowledge,
     }))));
   } catch (error) {
     log.error(`preview PR #${prNumber}: no se pudo decidir si los commits nuevos necesitan más datos, quedan los que había`, error);

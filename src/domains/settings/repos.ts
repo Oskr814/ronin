@@ -79,6 +79,8 @@ export async function reposView(entries: RepoEntry[]): Promise<unknown> {
           ...(entry.portal?.apps[id] ? { name: entry.portal.apps[id].name, ...(entry.portal.apps[id].description ? { description: entry.portal.apps[id].description } : {}) } : {}),
           explore: (entry.explore ?? []).includes(id),
           nightly: (entry.explore ?? []).includes(id) && !(entry.exploreNightlyOff ?? []).includes(id),
+          knowledgePortal: !(entry.knowledge?.portalOff ?? []).includes(id),
+          knowledgePreviews: (entry.knowledge?.previews ?? []).includes(id),
           ...(entry.linear?.explorationProject?.[id] ? { project: entry.linear.explorationProject[id] } : {}),
         })),
         linear: entry.linear ? { apiKeyEnv: entry.linear.apiKeyEnv, connected: Boolean(linearKey(entry)), projects: await linearProjects(entry) } : null,
@@ -106,6 +108,18 @@ function setNightlyOff(raw: Raw, id: string, off: boolean): void {
   if (off) list.push(id);
   if (list.length) raw.exploreNightlyOff = list;
   else delete raw.exploreNightlyOff;
+}
+
+// The bitácora's switches (#437): each a list of apps in `knowledge`, gone
+// when empty.
+function setKnowledgeList(raw: Raw, key: 'portalOff' | 'previews', id: string, inList: boolean): void {
+  const knowledge = { ...((raw.knowledge as Record<string, string[]> | undefined) ?? {}) };
+  const list = (knowledge[key] ?? []).filter((a) => a !== id);
+  if (inList) list.push(id);
+  if (list.length) knowledge[key] = list;
+  else delete knowledge[key];
+  if (Object.keys(knowledge).length) raw.knowledge = knowledge;
+  else delete raw.knowledge;
 }
 
 const str = (value: unknown) => (typeof value === 'string' ? value.trim() : undefined);
@@ -182,6 +196,16 @@ function apply(raw: Raw, body: Record<string, unknown>, manifest: string[]): Arr
       const was = !((raw.exploreNightlyOff as string[] | undefined) ?? []).includes(id);
       setNightlyOff(raw, id, !app.nightly);
       if (was !== app.nightly) changes.push({ what: `${id} · exploración nocturna`, from: yesNo(was), to: yesNo(app.nightly) });
+    }
+    // The app's bitácora (#437): its portal runs use it unless turned off,
+    // its previews only once turned on.
+    for (const [field, key, what] of [['knowledgePortal', 'portalOff', 'bitácora en el portal'], ['knowledgePreviews', 'previews', 'bitácora en las previews']] as const) {
+      if (app[field] === undefined) continue;
+      if (typeof app[field] !== 'boolean') throw new SettingsError('La bitácora: es sí o no.');
+      const listed = (((raw.knowledge as Record<string, string[]> | undefined)?.[key]) ?? []).includes(id);
+      const was = key === 'portalOff' ? !listed : listed;
+      setKnowledgeList(raw, key, id, key === 'portalOff' ? !app[field] : app[field] as boolean);
+      if (was !== app[field]) changes.push({ what: `${id} · ${what}`, from: yesNo(was), to: yesNo(app[field]) });
     }
     if (app.project !== undefined) {
       const linear = raw.linear as { apiKeyEnv: string; explorationProject?: Record<string, string> } | undefined;

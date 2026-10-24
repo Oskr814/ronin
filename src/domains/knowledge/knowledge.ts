@@ -69,6 +69,15 @@ export interface Learned {
   removed: string[];
 }
 
+// Who reads and writes it: the portal's runs, on by default, or a PR's
+// preview (#437), on per app — repos.json's `knowledge`.
+export type KnowledgeUse = 'portal' | 'previews';
+
+export function knowledgeOn(appName: string, use: KnowledgeUse): boolean {
+  const k = activeRepo().knowledge;
+  return use === 'portal' ? !(k?.portalOff ?? []).includes(appName) : (k?.previews ?? []).includes(appName);
+}
+
 const UNUSED_DAYS = 30;
 export const LIMITS = { screens: 80, traps: 40, resolved: 50 };
 const MAX_INDEX = 4_000;
@@ -161,8 +170,9 @@ export interface KnowledgeForRun {
 // What a run on `appName` gets: the index, and the detail written into
 // `dir` (its output dir: a sealed run reads nothing of ronin's data, #257).
 // Nothing when the app has none yet, or it can't be read.
-export async function knowledgeForRun(appName: string, dir?: string): Promise<KnowledgeForRun | undefined> {
+export async function knowledgeForRun(appName: string, dir?: string, use: KnowledgeUse = 'portal'): Promise<KnowledgeForRun | undefined> {
   try {
+    if (!knowledgeOn(appName, use)) return undefined;
     const k = await readKnowledge(appName);
     prune(k);
     if (!k.screens.length && !k.traps.length && !k.resolved.length) return undefined;
@@ -258,11 +268,14 @@ export function mergeLearned(k: Knowledge, learned: Learned, commit: string, opt
 }
 
 // Inside withActiveRepo, after a run that left a "bitacora": never fails
-// the request it came with.
-export async function saveLearned(appName: string, learned: Learned | undefined, opts: { script?: string } = {}): Promise<void> {
+// the request it came with. `commit`: what the run's checkout was, when not
+// the base branch — a preview's PR head (#437). What that PR changed then
+// stays to check until the base branch has the same files (staleIds).
+export async function saveLearned(appName: string, learned: Learned | undefined, opts: { script?: string; commit?: string; use?: KnowledgeUse } = {}): Promise<void> {
   if (!learned) return;
   try {
-    const commit = await baseCommit();
+    if (!knowledgeOn(appName, opts.use ?? 'portal')) return;
+    const commit = opts.commit ?? await baseCommit();
     await withJson(knowledgePath(appName), empty, (k) => mergeLearned(k, learned, commit, opts));
   } catch (error) {
     log.error(`bitácora: no se pudo guardar lo aprendido sobre ${appName}`, error);
@@ -273,6 +286,7 @@ export async function saveLearned(appName: string, learned: Learned | undefined,
 // files, no agent.
 export async function saveResolved(appName: string, resolved: Resolved): Promise<void> {
   try {
+    if (!knowledgeOn(appName, 'portal')) return;
     await withJson(knowledgePath(appName), empty, (k) => {
       k.resolved = [resolved, ...k.resolved.filter((r) => r.request !== resolved.request)];
       prune(k);

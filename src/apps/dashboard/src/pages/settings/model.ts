@@ -90,7 +90,7 @@ export interface User extends Person {
   repos: Array<{ repo: string; github: string | null; githubLets: boolean | null; set: string | null; hidden: boolean; perms: Perms }>;
 }
 
-export interface RepoApp { id: string; inManifest: boolean; portal: boolean; name?: string; description?: string; explore: boolean; nightly: boolean; project?: string }
+export interface RepoApp { id: string; inManifest: boolean; portal: boolean; name?: string; description?: string; explore: boolean; nightly: boolean; knowledgePortal: boolean; knowledgePreviews: boolean; project?: string }
 export interface Repo {
   repo: string;
   productRepoPath: string;

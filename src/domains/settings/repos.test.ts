@@ -71,6 +71,16 @@ describe('editRepo', () => {
     expect(sc.agent).toBeUndefined();
   });
 
+  it('turns the bitácora off in the portal and on in the previews, app by app (#437)', async () => {
+    await edit({ app: { id: 'backoffice', knowledgePortal: false, knowledgePreviews: true } });
+    expect(file()[0].knowledge).toEqual({ portalOff: ['backoffice'], previews: ['backoffice'] });
+    await edit({ app: { id: 'backoffice', knowledgePortal: true } });
+    expect(file()[0].knowledge).toEqual({ previews: ['backoffice'] });
+    await edit({ app: { id: 'backoffice', knowledgePreviews: false } });
+    expect(file()[0].knowledge).toBeUndefined();
+    await expect(edit({ app: { id: 'backoffice', knowledgePreviews: 'sí' } })).rejects.toThrow(/sí o no/);
+  });
+
   it('turns the nightly exploration off without taking the app out of the exploration (#426)', async () => {
     await expect(edit({ app: { id: 'backoffice', nightly: false } })).rejects.toThrow(/primero prende/);
     await edit({ app: { id: 'backoffice', explore: true } });

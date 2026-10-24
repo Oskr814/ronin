@@ -46,11 +46,20 @@ export function validateRepos(parsed: unknown): RepoEntry[] {
   return entries;
 }
 
+// The bitácora's switches (#437): lists of app names.
+function validateKnowledge(value: unknown, where: string): void {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new Error(`${where} debe ser un objeto`);
+  for (const [key, list] of Object.entries(value)) {
+    if (key !== 'portalOff' && key !== 'previews') throw new Error(`${where}.${key} no existe (son portalOff y previews)`);
+    if (!Array.isArray(list) || list.some((a) => typeof a !== 'string' || a.length === 0)) throw new Error(`${where}.${key} debe ser una lista de nombres de apps`);
+  }
+}
+
 function validateEntry(entry: unknown, index: number): RepoEntry {
   if (typeof entry !== 'object' || entry === null) {
     throw new Error(`${config.reposConfigPath}[${index}] no es un objeto`);
   }
-  const { productRepo, productRepoPath, claudeConfigDir, worktreeBaseRef, changelogRepo, changelogRepoPath, explore, exploreNightlyOff, agent, linear, portal, deploy, autoMerge, concurrency, apiFallback } = entry as Record<string, unknown>;
+  const { productRepo, productRepoPath, claudeConfigDir, worktreeBaseRef, changelogRepo, changelogRepoPath, explore, exploreNightlyOff, knowledge, agent, linear, portal, deploy, autoMerge, concurrency, apiFallback } = entry as Record<string, unknown>;
   if (typeof productRepo !== 'string' || productRepo.length === 0) {
     throw new Error(`${config.reposConfigPath}[${index}].productRepo falta o no es un string`);
   }
@@ -78,6 +87,7 @@ function validateEntry(entry: unknown, index: number): RepoEntry {
   if (exploreNightlyOff !== undefined && (!Array.isArray(exploreNightlyOff) || exploreNightlyOff.some((a) => typeof a !== 'string' || !((explore as string[] | undefined) ?? []).includes(a)))) {
     throw new Error(`${config.reposConfigPath}[${index}].exploreNightlyOff debe ser una lista de apps que están en explore`);
   }
+  if (knowledge !== undefined) validateKnowledge(knowledge, `${config.reposConfigPath}[${index}].knowledge`);
   if (autoMerge !== undefined && typeof autoMerge !== 'boolean') {
     throw new Error(`${config.reposConfigPath}[${index}].autoMerge debe ser true o false si está presente`);
   }
@@ -88,6 +98,7 @@ function validateEntry(entry: unknown, index: number): RepoEntry {
     productRepo, productRepoPath, claudeConfigDir, worktreeBaseRef, changelogRepo, changelogRepoPath,
     ...(explore !== undefined ? { explore: explore as string[] } : {}),
     ...(exploreNightlyOff !== undefined ? { exploreNightlyOff: exploreNightlyOff as string[] } : {}),
+    ...(knowledge !== undefined ? { knowledge: knowledge as NonNullable<RepoEntry['knowledge']> } : {}),
     ...(agent !== undefined ? { agent: validateAgent(agent, `${config.reposConfigPath}[${index}].agent`) } : {}),
     ...(linear !== undefined ? { linear: validateLinear(linear, `${config.reposConfigPath}[${index}].linear`) } : {}),
     ...(portal !== undefined ? { portal: validatePortal(portal, `${config.reposConfigPath}[${index}].portal`) } : {}),
