@@ -240,6 +240,12 @@ export const config = {
   seedCatalogs: {
     dataDir: resolve(process.env.SEED_CATALOG_DATA_DIR || 'seed-catalog-data'),
   },
+  // What the agents learned about each app (#412), per repo and app — see
+  // domains/knowledge/knowledge.ts. ronin's own: it can be deleted, and the
+  // agents start again from the code.
+  knowledge: {
+    dataDir: resolve(process.env.KNOWLEDGE_DATA_DIR || 'knowledge-data'),
+  },
   // What the dashboard's Métricas read from GitHub (#222), per repo, kept
   // between reads so each one only asks for what changed; plus the record of
   // every block, which the local state keeps only while it's recent. A cache

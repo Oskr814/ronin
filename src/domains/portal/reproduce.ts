@@ -24,6 +24,7 @@ import {
   type ReproductionTest,
 } from './requests.js';
 import { host } from '@platform/host/host.js';
+import { knowledgeForRun } from '../knowledge/knowledge.js';
 import { parseTeamNotes, type TeamNotes } from './team-notes.js';
 
 // A reported error from the portal (#137): on the same app and browsers as
@@ -246,6 +247,7 @@ function reproduce(request: PortalRequest, round: number): Promise<PortalRequest
         steps: request.bug?.steps ?? '',
         round,
         canAsk: request.questions < MAX_QUESTIONS && round < MAX_REPRODUCTIONS,
+        knowledge: await knowledgeForRun(request.app, base.outDir),
       }),
     },
     async (run) => {

@@ -823,6 +823,12 @@ export interface PrFile {
   patch?: string;
 }
 
+// Only the paths a PR touches, without their patches (#412).
+export async function getPrFileNames(prNumber: number): Promise<string[]> {
+  const files = await ghApiPages<{ filename: string }>(`repos/${activeRepo().productRepo}/pulls/${prNumber}/files?per_page=100`);
+  return files.map((f) => f.filename);
+}
+
 // `prId`: its node id, which GraphQL's mutations on it take.
 export async function getPrFiles(prNumber: number): Promise<{ prId: string; author: string; headSha: string; baseSha: string; files: PrFile[] }> {
   const path = `repos/${activeRepo().productRepo}/pulls/${prNumber}`;

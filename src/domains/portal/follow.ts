@@ -1,8 +1,9 @@
 import { config, LABEL_AUTO_MERGE, LABEL_PORTAL } from '@platform/config/config.js';
-import { addIssueLabel, getIssueState, getPullRequestStatus, listIssuesWithLabel, listPrClosingIssues } from '@platform/github/github.js';
+import { addIssueLabel, getIssueState, getPrFileNames, getPullRequestStatus, listIssuesWithLabel, listPrClosingIssues } from '@platform/github/github.js';
 import { approvePr } from '@platform/github/github-as-user.js';
 import { log } from '@platform/logger.js';
 import { activeRepo } from '@platform/agents/repo-context.js';
+import { saveResolved } from '../knowledge/knowledge.js';
 import { getUser } from './accounts.js';
 import { deciderToken, dropDeciderToken } from './dev-decision.js';
 import { closedMail, doneMail, teamPrMail } from './mail.js';
@@ -85,6 +86,16 @@ async function close(request: PortalRequest, status: 'done' | 'resolved' | 'decl
   if (user) await sendPortalMails(closed, [status === 'done' ? doneMail(closed, user, config.portal.url) : closedMail(closed, user, config.portal.url)]);
 }
 
+// Its PR merged: the app's bitácora notes what it was about and the files
+// it touched (#412). A failure only costs that line.
+async function noteResolved(request: PortalRequest, pr: number): Promise<void> {
+  try {
+    await saveResolved(request.app, { request: request.number, summary: request.title, files: await getPrFileNames(pr), pr, mergedAt: new Date().toISOString() });
+  } catch (error) {
+    log.error(`portal: no se pudo anotar en la bitácora el pedido P-${request.number}`, error);
+  }
+}
+
 // How a closed issue ends the request: done as completed (by an approved
 // one's merge, or the team's work), or not planned.
 async function closedAs(request: PortalRequest): Promise<'done' | 'resolved' | 'declined'> {
@@ -132,7 +143,10 @@ export async function followPortalIssues(): Promise<void> {
     try {
       if (RONINS.includes(request.status) && request.pr) {
         const pr = await getPullRequestStatus(request.pr);
-        if (pr.state === 'MERGED') await close(request, 'done');
+        if (pr.state === 'MERGED') {
+          await close(request, 'done');
+          await noteResolved(request, request.pr);
+        }
         else if (pr.state === 'CLOSED') {
           // Closed without merging: whatever PR closes the issue next is the one.
           await updateRequest(request.number, (r) => {

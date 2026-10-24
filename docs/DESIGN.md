@@ -1298,6 +1298,26 @@ Antes, un pedido que esperaba a la persona no vencía nunca, y el equipo no lo p
   - **Las horas** se cambian en `.env` o en Ajustes → General (§19). Si el recordatorio quedara igual o después del vencimiento, no hay recordatorio.
   - **En el tablero,** *Ahora* dice cuándo vence y si ya salió el recordatorio (`expiry` en la ficha).
 
+#### 16.16 La bitácora de cada app (`domains/knowledge/knowledge.ts`, #412)
+
+Los agentes del portal exploraban el repo de cero en cada pedido. La memoria de Claude Code se guarda según la carpeta de trabajo, y cada pedido usa un checkout nuevo, así que se perdía. La bitácora es lo que aprendieron, guardado por repo y app en el directorio de datos de ronin (`KNOWLEDGE_DATA_DIR`, un `bitacora.json` por app, con `withJson`). No va en este repo ni en el de producto, y no necesita PRs.
+
+- **Qué guarda:**
+  - **Pantallas** (`S1`, `S2`…): ruta, nombre, componentes, endpoints, entidades y cómo llegar (rol, viewport, pasos y el tramo del guion de capturas de #411 que llegó a ella).
+  - **Trampas** (`T1`…): lo que costó y cómo se resuelve.
+  - **Pedidos resueltos:** número, título, archivos y PR.
+- **Quién escribe:**
+  - `portal-request` y `portal-prototype` dejan `bitacora` en su JSON (`usadas`, `pantallas`, `trampas`, `borrar`), y `parseLearned` se queda con lo que tiene forma usable. `mergeLearned` junta una pantalla por su id o por su ruta y una trampa por su id, y las marca con el commit de la rama base del que salió el checkout (`baseCommit`).
+  - Una pantalla del prototipo con `captura` guarda ese tramo de su guion (`guion.json`).
+  - Los resueltos los anota `follow.ts` al mergearse el PR del pedido, con sus archivos (`getPrFileNames`), sin agente.
+  - Si guardar falla, el pedido sigue igual.
+- **Quién lee:** `portal-request`, `portal-prototype` y `portal-reproduce` reciben en el prompt un índice cercado (`knowledgeIndex`, hasta 4 KB) y el detalle en `bitacora.json` dentro de su carpeta de salida, porque corren sellados y no leen los datos de ronin (#257). La entrevista recibe solo el índice. Qué hacer con ella lo dice cada skill, en «La bitácora de la app».
+- **Que no envejezca:** `staleIds` hace un `git diff --name-only <commit> <rama base>` por commit, sobre los archivos de sus entradas. Lo que cambió, o lo que se basa en un commit que el repo ya no tiene, va marcado *a verificar* (`verificar: true` en el detalle). El agente lo confirma en el código antes de usarlo y, si sigue valiendo, lo vuelve a escribir.
+- **Que no crezca:** `prune` borra lo que nadie usó en 30 días y deja como mucho 80 pantallas, 40 trampas y 50 resueltos por app (`LIMITS`), los usados más recientes.
+- **Privacidad:** describe el código y la app. Las skills prohíben guardar el texto de un pedido o datos de personas. El resumen de un resuelto es el título del pedido.
+
+Usar la bitácora en las previews va en #437.
+
 ### 17. Reuniones: de las notas al trabajo planificado (#62)
 
 Las reuniones ya dejan notas escritas (las de Gemini en Meet, u otro agente), pero pasar de las notas a trabajo planificado era manual y muchas veces no pasaba. En la página *Reuniones* del tablero, alguien sube las notas de una reunión y ronin propone el trabajo que sale de ellas: proyectos nuevos de Linear con sus issues, issues, y comentarios en issues que ya existen. **Nada se crea hasta que alguien lo apruebe ahí**: no hay borradores en Linear, y GitHub sigue siendo la fuente de verdad (§15.13).

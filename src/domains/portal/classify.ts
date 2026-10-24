@@ -11,6 +11,7 @@ import { interviewMail, proposalMail, replyMail, understoodMail } from './mail.j
 import { handOverMail, sendPortalMails } from './notify.js';
 import { addEvent, addRoninMessage, errorLine, getRequest, MAX_PROTOTYPES, MAX_REPRODUCTIONS, proposalRounds, requestImagePath, TITLE_MAX, updateUnlessClosed, type Findings, type InterviewQuestion, type PortalRequest, type Understood, type Verdict } from './requests.js';
 import { host } from '@platform/host/host.js';
+import { knowledgeForRun, parseLearned, saveLearned, type Learned } from '../knowledge/knowledge.js';
 
 
 // ronin reads a portal request (#114) and does one of six things: asks the
@@ -48,6 +49,8 @@ export interface PortalResult {
   // grande, after an interview: what ronin understood, for the person to
   // confirm (#225).
   entendido?: Understood;
+  // Any action: what it learned about the app, for its bitácora (#412).
+  bitacora?: Learned;
 }
 
 const text = (value: unknown, max: number): string | undefined => {
@@ -103,6 +106,8 @@ export function parsePortalResult(raw: string, questionsAsked: number, proposals
   if (result.accion === 'menor' && r.prototipo === false) result.prototipo = false;
   const hallazgos = result.accion === 'menor' ? parseFindings(r.hallazgos) : undefined;
   if (hallazgos) result.hallazgos = hallazgos;
+  const bitacora = parseLearned(r.bitacora);
+  if (bitacora) result.bitacora = bitacora;
   if (result.accion === 'menor' && (!result.propuesta || (!result.instruccion && result.prototipo !== false))) {
     return { ...result, accion: 'grande', motivo: result.motivo ?? 'No quedó claro qué cambiar.' };
   }
@@ -305,6 +310,7 @@ export async function followUpRequest(n: number): Promise<boolean> {
       analysis: request.verdict!.summary,
       ...(request.verdict!.reason ? { reason: request.verdict!.reason } : {}),
       roundsLeft: Math.max(0, MAX_ROUNDS - (request.interview?.rounds ?? 0)),
+      knowledge: await knowledgeForRun(request.app),
       dir,
       outputPath,
     }));
@@ -352,10 +358,13 @@ export async function classifyRequest(n: number): Promise<void> {
       adjustmentsLeft: Math.max(0, MAX_PROTOTYPES - proposalRounds(request)),
       ...(request.bug ? { reproductions: request.bug.reproductions.map((t) => ({ reproduced: t.reproduced, summary: t.summary })) } : {}),
       reproductionsLeft: Math.max(0, MAX_REPRODUCTIONS - (request.bug?.reproductions.length ?? 0)),
+      knowledge: await knowledgeForRun(request.app, outDir),
       checkoutDir: dir,
       outputPath,
     }));
-    await settle(n, parsePortalResult(await host().fs.readFile(outputPath, 'utf8'), request.questions, proposalRounds(request), request.bug?.reproductions.length ?? 0, request.interview?.rounds ?? 0));
+    const result = parsePortalResult(await host().fs.readFile(outputPath, 'utf8'), request.questions, proposalRounds(request), request.bug?.reproductions.length ?? 0, request.interview?.rounds ?? 0);
+    await saveLearned(request.app, result.bitacora);
+    await settle(n, result);
   } catch (error) {
     log.error(`portal: no se pudo revisar el pedido P-${n}`, error);
     try {

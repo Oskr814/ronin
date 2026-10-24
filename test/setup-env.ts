@@ -24,6 +24,7 @@ process.env.SETTINGS_DATA_DIR = join(scratch, 'settings-data');
 process.env.MEETINGS_DATA_DIR = join(scratch, 'meetings-data');
 process.env.DEPLOYS_DATA_DIR = join(scratch, 'deploys-data');
 process.env.SEED_CATALOG_DATA_DIR = join(scratch, 'seed-catalog-data');
+process.env.KNOWLEDGE_DATA_DIR = join(scratch, 'knowledge-data');
 process.env.METRICS_DATA_DIR = join(scratch, 'metrics-data');
 // Nor the runner's database: a test that needs Postgres gets one of its own
 // from TEST_DATABASE_URL (src/db/testing.ts).

@@ -32,6 +32,7 @@ x-ronin-env: &ronin-env
   SETTINGS_DATA_DIR: /data/settings-data
   METRICS_DATA_DIR: /data/metrics-data
   SEED_CATALOG_DATA_DIR: /data/seed-catalog-data
+  KNOWLEDGE_DATA_DIR: /data/knowledge
   PREVIEW_RESERVATIONS_DIR: /data/.preview-reservations
   # The default Claude account; each repo can name its own in repos.json
   # ("claudeConfigDir": "/claude/<cuenta>").

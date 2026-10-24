@@ -16,6 +16,7 @@ import { worktreeLock } from '@platform/workers/worktree-lock.js';
 import { host } from '@platform/host/host.js';
 import { requestImagePath, type PortalRequest } from './requests.js';
 import { parseTeamNotes, type TeamNotes } from './team-notes.js';
+import { parseLearned, type Learned } from '../knowledge/knowledge.js';
 
 
 // A run of an agent on the app, brought up from the base branch in a
@@ -82,7 +83,7 @@ export interface PrototypeImage {
   nota?: string;
 }
 
-export type PrototypeOutput = { resumen: string; mensaje?: string; equipo?: TeamNotes; antes: PrototypeImage[]; despues: PrototypeImage[] } | { error: string };
+export type PrototypeOutput = { resumen: string; mensaje?: string; equipo?: TeamNotes; bitacora?: Learned; antes: PrototypeImage[]; despues: PrototypeImage[] } | { error: string };
 
 const MAX_IMAGES = 3;
 
@@ -109,7 +110,8 @@ export function parsePrototypeResult(raw: string, outDir: string): PrototypeOutp
   const summary = typeof obj.resumen === 'string' && obj.resumen.trim() ? obj.resumen.trim().slice(0, 2_000) : 'Prototipo del cambio pedido.';
   const mensaje = typeof obj.mensaje === 'string' && obj.mensaje.trim() ? obj.mensaje.trim().slice(0, 2_000) : undefined;
   const equipo = parseTeamNotes(obj.equipo);
-  return { resumen: summary, ...(mensaje ? { mensaje } : {}), ...(equipo ? { equipo } : {}), antes: images(obj.antes, outDir), despues: after };
+  const bitacora = parseLearned(obj.bitacora);
+  return { resumen: summary, ...(mensaje ? { mensaje } : {}), ...(equipo ? { equipo } : {}), ...(bitacora ? { bitacora } : {}), antes: images(obj.antes, outDir), despues: after };
 }
 
 // A shot ready to deliver: always an image file (an HTML after is rendered),
@@ -133,6 +135,8 @@ export interface PrototypeDraft {
   patch: string;
   // The script its captures came from (#411), when it wrote one.
   script?: string;
+  // What it learned about the app, for its bitácora (#412).
+  learned?: Learned;
 }
 
 // The agent said no meaningful prototype could be made (its "error"), as
@@ -348,6 +352,7 @@ export function makePrototype<T>(target: PrototypeTarget, deliver: (draft: Proto
       ...shots,
       patch: await run.diff(),
       ...(script ? { script } : {}),
+      ...(output.bitacora ? { learned: output.bitacora } : {}),
     });
   });
 }
