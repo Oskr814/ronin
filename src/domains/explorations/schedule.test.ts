@@ -2,9 +2,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const state: Record<string, string> = {};
 let explore: string[] | undefined = ['backoffice', 'tienda'];
+let exploreNightlyOff: string[] | undefined;
 const busy = vi.fn();
 const launch = vi.fn();
-vi.mock('@platform/agents/repo-context.js', () => ({ activeRepo: () => ({ productRepo: 'redmotos/shoppingcart', explore }) }));
+vi.mock('@platform/agents/repo-context.js', () => ({ activeRepo: () => ({ productRepo: 'redmotos/shoppingcart', explore, exploreNightlyOff }) }));
 vi.mock('@platform/config/config.js', () => ({ config: { exploreNightWindow: '23:00-05:00', exploreFunctionsPerNight: 4, exploreTimezone: 'America/Tegucigalpa' } }));
 vi.mock('@platform/state/local-state.js', () => ({
   getNightlyExploration: async () => ({ ...state }),
@@ -25,6 +26,7 @@ const teg = (day: number, hour: number, minute: number) =>
 beforeEach(() => {
   for (const k of Object.keys(state)) delete state[k];
   explore = ['backoffice', 'tienda'];
+  exploreNightlyOff = undefined;
   busy.mockReset().mockResolvedValue(false);
   launch.mockReset();
 });
@@ -96,6 +98,17 @@ describe('maybeLaunchNightlyExploration', () => {
     await maybeLaunchNightlyExploration(night);
     expect(launch.mock.calls.map(([r]) => r.appName)).toEqual(['backoffice', 'tienda']);
     expect(launch.mock.calls[0][0]).toEqual({ repo: 'redmotos/shoppingcart', appName: 'backoffice', maxFunctions: 4, until: teg(13, 5, 0).toISOString() });
+  });
+
+  it('skips the apps with the nightly exploration off', async () => {
+    exploreNightlyOff = ['backoffice'];
+    const night = teg(12, 23, 30);
+    await maybeLaunchNightlyExploration(night);
+    await maybeLaunchNightlyExploration(night);
+    expect(launch.mock.calls.map(([r]) => r.appName)).toEqual(['tienda']);
+    exploreNightlyOff = ['backoffice', 'tienda'];
+    await maybeLaunchNightlyExploration(teg(13, 23, 30));
+    expect(launch).toHaveBeenCalledTimes(1);
   });
 
   it('does nothing by day, while a worker runs, or for a repo without nightly apps', async () => {

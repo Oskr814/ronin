@@ -44,6 +44,8 @@ export interface FindingCardCounts {
 
 export interface ExplorationListRow extends ExplorationRow {
   lastRun: { at: string; state: RunSummary['state'] } | null;
+  // Whether the nightly exploration runs it (#426): off, it's explored on demand only.
+  nightly: boolean;
   // When the nightly exploration starts this app next.
   next: string | null;
   fichas: FindingCardCounts | null;
@@ -152,6 +154,7 @@ export async function explorationList(entries: RepoEntry[], rows: ExplorationRow
   return Promise.all(rows.map(async (row) => {
     const entry = entries.find((e) => e.productRepo === row.repo)!;
     const last = appRuns(runs, row.repo, row.app).sort((a, b) => b.startedAt.localeCompare(a.startedAt))[0];
+    const nightly = !(entry.exploreNightlyOff ?? []).includes(row.app);
     let cardCounts: FindingCardCounts | null = null;
     let error: string | undefined;
     const pr = row.pr && (prsByRepo.get(row.repo) ?? []).find((p) => p.number === row.pr!.number);
@@ -163,7 +166,8 @@ export async function explorationList(entries: RepoEntry[], rows: ExplorationRow
     return {
       ...row,
       lastRun: last ? { at: last.startedAt, state: last.state } : null,
-      next: window ? nextNightly(now, window, config.exploreTimezone, nights.get(row.repo)?.[row.app]) : null,
+      nightly,
+      next: window && nightly ? nextNightly(now, window, config.exploreTimezone, nights.get(row.repo)?.[row.app]) : null,
       fichas: cardCounts,
       ...(error ? { error } : {}),
     };

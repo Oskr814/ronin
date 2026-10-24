@@ -21,10 +21,14 @@ export interface RepoEntry {
   // productRepoPath — ronin never clones this itself, only fetches/resets it
   // (see changelog.ts's ensureChangelogRepoUpToDate).
   changelogRepoPath?: string;
-  // Apps of this repo's ronin.app.json that get explored every night — see
+  // Apps of this repo's ronin.app.json that ronin explores: in the dashboard's
+  // Exploraciones, with Explorar ahora, and every night — see
   // domains/explorations/schedule.ts. Absent: no nightly exploration (/explore still
   // works on demand).
   explore?: string[];
+  // Apps of `explore` left out of the nightly exploration (#426): they stay in
+  // Exploraciones and are explored on demand only.
+  exploreNightlyOff?: string[];
   // Model/effort defaults for the Claude account this entry runs under
   // (claudeConfigDir), for when that account can't afford the global ones —
   // see config.ts's agentModelFor for how they combine with the env vars.

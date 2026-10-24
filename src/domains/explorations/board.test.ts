@@ -106,6 +106,12 @@ describe('explorationList', () => {
     expect(row).toMatchObject({ app: 'backoffice', lastRun: { at: '2026-10-18T07:40:00Z', state: 'error' }, next: '2026-10-19T07:00:00.000Z', fichas: { total: 2, decidir: 1, rechazadas: 1 } });
   });
 
+  it('has no next night for an app with the nightly exploration off', async () => {
+    const entry = { ...OTHER, exploreNightlyOff: ['webapp'] };
+    const [row] = await explorationList([entry], explorationRows([entry], new Map(), []), [], new Map(), new Date('2026-10-18T22:50:00Z'));
+    expect(row).toMatchObject({ app: 'webapp', nightly: false, next: null });
+  });
+
   it('has no findings to count without a PR', async () => {
     const [row] = await explorationList([OTHER], explorationRows([OTHER], new Map(), []), [], new Map());
     expect(row).toMatchObject({ pr: null, fichas: null, lastRun: null });

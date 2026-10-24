@@ -19,7 +19,7 @@ export function RepoList({ data }: { data: Data }) {
     <h1>Repos</h1><p className="lead">Los repos que supervisa ronin. Todo sigue en <code>repos.json</code>: lo que se cambia aquí se escribe ahí, con las mismas reglas que lo leen y una copia del anterior. Agregar o quitar un repo, su checkout y su cuenta de Claude se hacen en el archivo.</p>
     <div className="aj-card"><table className="aj-tbl"><thead><tr><th>Repo</th><th className="hide-m">Portal</th><th className="hide-m">Linear</th><th className="hide-m">Despliegues</th><th className="hide-m">Exploración</th></tr></thead><tbody>
       {d.repos.map((r) => {
-        const explored = r.apps.filter((a) => a.explore).map((a) => a.id).join(', ');
+        const explored = r.apps.filter((a) => a.explore).map((a) => (a.nightly ? a.id : `${a.id} (a mano)`)).join(', ');
         return (
           <tr key={r.repo} data-ajrepo-row={r.repo} tabIndex={0} onClick={() => open(r.repo)} onKeyDown={(event) => { if (event.key === 'Enter') open(r.repo); }}>
             <td><b><i className="aj-sq" style={{ background: repoColor(r.repo) }} />{r.repo}</b><small className="mono">{r.baseRef ?? d.defaults.baseRef}</small></td>
@@ -71,7 +71,7 @@ export function Repo({ data, repo }: { data: Data; repo: string }) {
     <section className="aj-sec"><h2>Apps</h2><p className="aj-d">Las de <code>ronin.app.json</code> del repo, una por tarjeta.</p>
       {r.apps.length ? r.apps.map((a) => {
         const lastInPortal = a.portal && r.apps.filter((x) => x.portal).length === 1;
-        const toggle = (key: 'portal' | 'explore', on: boolean) => save({ app: { id: a.id, [key]: !on } });
+        const toggle = (key: 'portal' | 'explore' | 'nightly', on: boolean) => save({ app: { id: a.id, [key]: !on } });
         const text = (key: 'name' | 'description' | 'project') => onCommit<HTMLInputElement | HTMLSelectElement>((el) => save({ app: { id: a.id, [key]: el.value || (key === 'project' ? null : el.value) } }));
         return (
           <div key={a.id} className="aj-card aj-appcard"><div className="aj-apphead"><b className="mono">{a.id}</b>{a.inManifest ? null : <small className="warn-t">ya no está en ronin.app.json</small>}</div>
@@ -80,7 +80,8 @@ export function Repo({ data, repo }: { data: Data; repo: string }) {
               <Row label="Nombre en el portal" desc="Con el que la ve quien pide." ctl={<input className="aj-in" maxLength={80} data-ajapp={a.id} data-f="name" defaultValue={a.name ?? ''} aria-label={`Nombre de ${a.id} en el portal`} ref={text('name')} />} />
               <Row label="Descripción" desc="Una línea debajo del nombre, para saber cuál elegir." ctl={<input className="aj-in aj-wide" maxLength={200} data-ajapp={a.id} data-f="description" defaultValue={a.description ?? ''} placeholder="Opcional" aria-label={`Descripción de ${a.id}`} ref={text('description')} />} />
             </> : null}
-            <Row label="Exploración nocturna" desc="ronin la usa de noche y propone mejoras en el PR de exploración." ctl={<Switch on={a.explore} data-ajapp={a.id} data-f="explore" label={`Explorar ${a.id} de noche`} onToggle={() => toggle('explore', a.explore)} />} />
+            <Row label="Exploración" desc="ronin la usa como un QA y propone mejoras en el PR de exploración. Aparece en Exploraciones, con «Explorar ahora»." ctl={<Switch on={a.explore} data-ajapp={a.id} data-f="explore" label={`Explorar ${a.id}`} onToggle={() => toggle('explore', a.explore)} />} />
+            {a.explore ? <Row label="De noche" desc="Cada noche, en la ventana de Ajustes → Exploración. Apagada: solo a mano, y la app sigue en Exploraciones." ctl={<Switch on={a.nightly} data-ajapp={a.id} data-f="nightly" label={`Explorar ${a.id} de noche`} onToggle={() => toggle('nightly', a.nightly)} />} /> : null}
             {r.linear ? <Row label="Proyecto de Linear" desc="Donde van los issues que abre su exploración." ctl={<select className="aj-in" data-ajapp={a.id} data-f="project" aria-label={`Proyecto de Linear de ${a.id}`} defaultValue={a.project ?? ''} ref={text('project')}><option value="">Sin proyecto</option>{options([...new Set([...(a.project ? [a.project] : []), ...projects])])}</select>} /> : null}
           </div>
         );
