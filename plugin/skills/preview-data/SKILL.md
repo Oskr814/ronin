@@ -18,6 +18,14 @@ Valen para los cuatro trabajos.
 - **Sin Docker:** un comando en un servicio del stack (`psql` en el de la base de datos, por ejemplo) va por ronin, desde Bash: `ronin-act app.exec --service <servicio> --command '<comando>'`. Corre en el contenedor de ese servicio y devuelve el código de salida y el final de la salida. `ronin-act app.exec --help` dice el resto; un servicio que no existe se rechaza con la lista de los que hay.
 - **Los usuarios del seed** te los da la corrida, con su rol, usuario y contraseña.
 
+## La bitácora de la app
+
+Para «¿Alcanza el seed base?», «Preparar los datos» y «¿Hay que completar los datos?». Si la app la usa en sus previews, la corrida te da su bitácora: un índice de lo que aprendieron corridas anteriores (las pantallas, con su ruta; las trampas, como un dato que solo entra por SQL o un flag que hay que prender; los pedidos ya resueltos y los archivos que tocaron) y, al preparar los datos, un archivo con el detalle de cada entrada (componentes, endpoints, entidades y cómo llegar a la pantalla). No reemplaza al catálogo, que dice qué datos trae el seed: la bitácora dice dónde está cada cosa en la app y en el código. Es una pista, no la verdad: el código manda.
+
+- **Arranca por ahí.** Si una entrada habla de una pantalla que toca el PR, o de cómo crear un dato que necesitas, abre su detalle y lee esos archivos para confirmar, en lugar de buscar en todo el repo.
+- **Lo marcado «a verificar»** se basa en archivos que cambiaron, en la rama base o en este PR: confírmalo en el código de este checkout antes de usarlo.
+- **Nunca** pongas en la bitácora a las personas: ni nombres, correos o datos de clientes, ni los registros que creaste. Describe el código y la app.
+
 ## Qué es «Cómo probar»
 
 La descripción de un PR de ronin trae un bloque «Cómo probar», con sus «Datos» y sus «Pasos». Lo que hay que preparar sale de ahí: las precondiciones que pide («un cliente con más de 12 catálogos, 3 vencidos»), para que cada paso funcione tal como está escrito. El diff solo cuando el PR no tiene ese bloque (un PR viejo, o uno que escribió una persona).
@@ -90,6 +98,17 @@ Deja listos los datos para que la persona pruebe este PR enseguida, sin preparar
 9. **Unos 15 minutos como mucho.**
 
 10. **La salida:** exactamente un objeto JSON en el archivo que dice la corrida, con la herramienta Write: `{"preparado": ["<una línea por cosa que dejaste lista, en español, diciendo dónde encontrarla — p. ej. \"Usuario de prueba (/usuarios/15) con 30 registros, 4 vencidos\">"], "noPreparado": ["<en español: datos que piden los pasos o el pedido y que no pudiste dejar listos, y por qué>"]}`. «noPreparado» es solo para datos que faltan, no para comprobaciones que no hiciste ni para casos que nadie pidió. Los arreglos vacíos valen. Ese archivo es la única salida.
+
+    Si la corrida te dio la bitácora, suma `"bitacora"` al mismo objeto: lo que aprendiste de la app para la próxima preview, solo lo que de verdad te costó encontrar (cómo crear un dato que el seed no trae, un flag, la pantalla y el endpoint de lo que cambia el PR):
+
+    ```
+    "bitacora": {"usadas": ["<id de cada entrada que te sirvió, p. ej. S2, T1>"],
+                 "pantallas": [{"id": "<el de la bitácora, si ya estaba>", "ruta": "<la ruta en la app>", "nombre": "<cómo se llama la pantalla>", "componentes": ["<archivo>"], "endpoints": ["<método y ruta>"], "entidades": ["<entidad>"], "archivos": ["<los archivos en los que se basa, relativos a la raíz del checkout>"], "llegar": {"rol": "<rol>", "viewport": "desktop" | "mobile", "pasos": "<cómo se llega, en corto>"}}],
+                 "trampas": [{"id": "<si ya estaba>", "texto": "<lo que costó y cómo se resuelve, una o dos oraciones>", "archivos": ["<archivo>"]}],
+                 "borrar": ["<id de cada entrada que resultó estar mal>"]}
+    ```
+
+    Lo que escribes se basa en la cabeza de este PR: lo que el PR cambió queda «a verificar» para los demás hasta que se mergee.
 
 ## ¿Hay que completar los datos?
 

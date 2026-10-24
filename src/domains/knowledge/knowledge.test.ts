@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { withActiveRepo } from '@platform/agents/repo-context.js';
 import {
-  knowledgeForRun, knowledgeIndex, knowledgePath, LIMITS, mergeLearned, parseLearned, prune, readKnowledge, saveLearned, saveResolved, staleIds,
+  knowledgeForRun, knowledgeIndex, knowledgeOn, knowledgePath, LIMITS, mergeLearned, parseLearned, prune, readKnowledge, saveLearned, saveResolved, staleIds,
   type Knowledge, type Screen,
 } from './knowledge.js';
 
@@ -131,5 +131,45 @@ describe('what an agent learned (#412)', () => {
   it('keeps the index within a few KB', () => {
     const k: Knowledge = { ...empty(), traps: Array.from({ length: 40 }, (_, i) => ({ id: `T${i + 1}`, text: 'x'.repeat(400), files: [], commit: 'c', updatedAt: '', usedAt: '' })) };
     expect(knowledgeIndex(k, new Set()).length).toBeLessThanOrEqual(4_000);
+  });
+});
+
+describe('who uses the bitácora (#437)', () => {
+  const learned = { used: [], screens: [{ route: '/orders', name: 'Pedidos', components: [], endpoints: [], entities: [], files: ['web/src/orders/List.tsx'] }], traps: [], removed: [] };
+  const at = <T>(path: string, knowledge: { portalOff?: string[]; previews?: string[] } | undefined, fn: () => Promise<T>) =>
+    withActiveRepo({ productRepo: 'redmotos/previews', productRepoPath: path, worktreeBaseRef: 'main', ...(knowledge ? { knowledge } : {}) }, fn);
+
+  it('the portal unless turned off; a preview only once turned on', async () => {
+    const { path } = repo();
+    await at(path, undefined, async () => {
+      expect(knowledgeOn('backoffice', 'portal')).toBe(true);
+      expect(knowledgeOn('backoffice', 'previews')).toBe(false);
+      await saveLearned('backoffice', learned, { use: 'previews' });
+      expect((await readKnowledge('backoffice')).screens).toEqual([]);
+    });
+    await at(path, { portalOff: ['backoffice'] }, async () => {
+      await saveLearned('backoffice', learned);
+      expect((await readKnowledge('backoffice')).screens).toEqual([]);
+    });
+  });
+
+  it('what a preview learned is on its PR’s head: to check while the base branch has other files, confirmed once it has the same', async () => {
+    const { path } = repo();
+    const git = (...args: string[]) => execFileSync('git', args, { cwd: path, encoding: 'utf8' }).trim();
+    // The PR: List.tsx changes on a branch of its own.
+    git('checkout', '-q', '-b', 'pr');
+    writeFileSync(join(path, 'web/src/orders/List.tsx'), 'v2');
+    git('commit', '-qam', 'pr');
+    const head = git('rev-parse', 'HEAD');
+    git('checkout', '-q', 'main');
+    await at(path, { previews: ['backoffice'] }, async () => {
+      await saveLearned('backoffice', learned, { use: 'previews', commit: head });
+      expect((await readKnowledge('backoffice')).screens[0]).toMatchObject({ id: 'S1', commit: head });
+      expect((await knowledgeForRun('backoffice', undefined, 'previews'))?.index).toContain('S1 Pedidos — /orders (a verificar)');
+      // Squash-merged: main gets the same file in a commit of its own.
+      writeFileSync(join(path, 'web/src/orders/List.tsx'), 'v2');
+      git('commit', '-qam', 'squash');
+      expect((await knowledgeForRun('backoffice', undefined, 'previews'))?.index).toBe('Pantallas:\n- S1 Pedidos — /orders');
+    });
   });
 });

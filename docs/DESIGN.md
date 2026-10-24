@@ -1316,7 +1316,15 @@ Los agentes del portal exploraban el repo de cero en cada pedido. La memoria de 
 - **Que no crezca:** `prune` borra lo que nadie usó en 30 días y deja como mucho 80 pantallas, 40 trampas y 50 resueltos por app (`LIMITS`), los usados más recientes.
 - **Privacidad:** describe el código y la app. Las skills prohíben guardar el texto de un pedido o datos de personas. El resumen de un resuelto es el título del pedido.
 
-Usar la bitácora en las previews va en #437.
+**En las previews (#437).** Los tres trabajos de datos de una preview (§12) también la usan:
+- **Qué reciben:** `preview-data-triage` y `preview-data-delta` reciben el índice. `prepare-preview-data` recibe además el detalle en su carpeta de salida y deja `bitacora` en su JSON.
+- **El commit de lo que escriben:** el de la cabeza del PR (`saveLearned` con `commit`), no el de la rama base. `staleIds` compara los archivos de cada entrada entre su commit y la rama base. Lo que el PR cambió queda *a verificar* mientras la rama base tenga otros archivos. Cuando el PR se mergea, aunque sea con squash, son los mismos y la entrada vale sin que nadie la toque. Si el PR nunca se mergea, sigue *a verificar* hasta que se borra por falta de uso.
+- **El catálogo de seeds sigue aparte:** describe los datos del seed y se invalida por su hash. La bitácora describe la app y el código.
+
+**Encendido por app:** `knowledge` en `repos.json` (`knowledgeOn`), con sus interruptores en Ajustes → Repos.
+- `portalOff` apaga los pedidos de una app: el portal la usa por defecto.
+- `previews` la prende en las previews de una app: apagada por defecto.
+- Apagada, la corrida no la recibe y lo que aprende no se guarda.
 
 ### 17. Reuniones: de las notas al trabajo planificado (#62)
 

@@ -37,6 +37,12 @@ En el tablero, la fila del issue lo dice: **preview…** mientras prepara los da
 
 **Los datos base.** La primera preview con unos seeds y migraciones dados escribe un catálogo de lo que traen (usuarios, clientes, pedidos, sus casos) y tarda un poco más. Las siguientes con los mismos seeds parten de él: si ya alcanzan para probar el PR, ronin no prepara nada y te dice con qué registros del seed probarlo; si no, crea solo lo que falta.
 
+**La bitácora.** Si la app tiene prendida *Bitácora en las previews* en [Ajustes → Repos](/ronin/operar/ajustes/), los agentes que preparan los datos leen la [bitácora de la app](/ronin/guias/pedidos-del-portal/#la-bitácora-de-cada-app), la misma que usan los pedidos del portal, y la completan:
+- **Qué leen:** dónde está cada pantalla, cómo se llega a ella y lo que costó la vez anterior, como un dato que solo entra por SQL o un flag que hay que prender.
+- **El catálogo sigue aparte:** el catálogo dice qué datos trae el seed y la bitácora dice dónde está cada cosa en la app y en el código.
+- **Lo que escriben:** se basa en la cabeza del PR. Lo que el PR cambió queda *a verificar* para los demás mientras no se mergee. Al mergearse, la rama base tiene los mismos archivos y la entrada vale para todos.
+- **Por defecto:** viene apagada en las previews.
+
 ## Se actualiza sola
 
 Con cada commit nuevo del PR, de ronin aplicando un pedido o de cualquiera, sin que nadie lo pida:

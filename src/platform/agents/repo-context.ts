@@ -29,6 +29,9 @@ export interface RepoEntry {
   // Apps of `explore` left out of the nightly exploration (#426): they stay in
   // Exploraciones and are explored on demand only.
   exploreNightlyOff?: string[];
+  // Each app's bitácora (#412, #437): the apps whose portal runs leave it
+  // out (on by default), and those whose previews use it (off by default).
+  knowledge?: { portalOff?: string[]; previews?: string[] };
   // Model/effort defaults for the Claude account this entry runs under
   // (claudeConfigDir), for when that account can't afford the global ones —
   // see config.ts's agentModelFor for how they combine with the env vars.

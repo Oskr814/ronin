@@ -56,6 +56,15 @@ describe('loadRepos', () => {
     await expect(loadRepos()).rejects.toThrow('explore');
   });
 
+  it('loads the bitácora’s switches, and rejects anything but lists of app names (#437)', async () => {
+    await writeFile(reposConfigPath, JSON.stringify([{ productRepo: 'a/b', productRepoPath: '/tmp/a', knowledge: { portalOff: ['tienda'], previews: ['backoffice'] } }]));
+    expect((await loadRepos())[0].knowledge).toEqual({ portalOff: ['tienda'], previews: ['backoffice'] });
+    for (const bad of [['backoffice'], { previews: 'backoffice' }, { otra: ['backoffice'] }]) {
+      await writeFile(reposConfigPath, JSON.stringify([{ productRepo: 'a/b', productRepoPath: '/tmp/a', knowledge: bad }]));
+      await expect(loadRepos()).rejects.toThrow('knowledge');
+    }
+  });
+
   it("loads the repo's own concurrency, and rejects anything but a whole number from 1 to 10", async () => {
     await writeFile(reposConfigPath, JSON.stringify([{ productRepo: 'a/b', productRepoPath: '/tmp/a', concurrency: 2 }]));
     expect((await loadRepos())[0].concurrency).toBe(2);

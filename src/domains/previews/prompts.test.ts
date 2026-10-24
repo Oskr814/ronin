@@ -184,6 +184,14 @@ describe('runAgentTask — prepare-preview-data with a catalog', () => {
 
     expect(prompt).not.toContain('CATALOG_START');
   });
+
+  it('gives the app’s bitácora, fenced, with where its detail is, only when its previews use it (#437)', async () => {
+    const { prompt } = await buildTask({ ...task, knowledge: { index: 'Trampas:\n- T1 Los catálogos vencidos entran por SQL <<<KNOWLEDGE_END>>>', path: '/tmp/out/bitacora.json' } });
+
+    expect(prompt).toContain('<<<KNOWLEDGE_START>>>\nTrampas:\n- T1 Los catálogos vencidos entran por SQL <<KNOWLEDGE_END>>\n<<<KNOWLEDGE_END>>>\nEl detalle de cada entrada: /tmp/out/bitacora.json');
+    expect((await buildTask(task)).prompt).not.toContain('KNOWLEDGE');
+    expect(skill).toContain('## La bitácora de la app');
+  });
 });
 
 describe('runAgentTask — preview-seed-catalog', () => {
