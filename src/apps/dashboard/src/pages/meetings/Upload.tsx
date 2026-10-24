@@ -49,8 +49,8 @@ export function Upload({ repos, onClose }: { repos: string[]; onClose: () => voi
       refresh();
       shell.openMeeting(out.number);
     } catch (e) {
-      if (e instanceof ApiError && e.status === 401) return shell.unauthorized(e.message);
       setSending(false);
+      if (e instanceof ApiError && e.status === 401) return shell.unauthorized(e.message);
       // The same notes again: a way to the meeting that has them.
       const number = e instanceof ApiError && e.status === 409 ? Number(e.body?.number) || 0 : 0;
       setError(number

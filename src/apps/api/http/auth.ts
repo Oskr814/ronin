@@ -34,6 +34,15 @@ export interface AuthConfig {
 export const SESSION_COOKIE = 'ronin_session';
 const STATE_COOKIE = 'ronin_oauth_state';
 const STATE_MAX_AGE_S = 600;
+// Where the person was when the login started, to go back there after it.
+const NEXT_COOKIE = 'ronin_oauth_next';
+
+// A path of the dashboard's own to go back to, or '/': never another site
+// (`//host`, `/\\host`) nor the login itself.
+export function safeNext(next: string | null | undefined): string {
+  if (!next || !next.startsWith('/') || next.startsWith('//') || next.includes('\\') || next.startsWith('/api/') || next.length > 512) return '/';
+  return next;
+}
 export const OAUTH_SCOPE = 'repo';
 // Cookies of an older format (the HMAC-signed one, without a token) don't
 // start with this, so they read as no session and the page asks to log in.
@@ -159,14 +168,17 @@ export async function handleAuth(req: IncomingMessage, res: ServerResponse, path
   if (path === '/api/auth/login' && req.method === 'GET') {
     const state = randomBytes(16).toString('base64url');
     const params = new URLSearchParams({ client_id: config.githubClientId, redirect_uri: callbackUrl(config), scope: OAUTH_SCOPE, state, allow_signup: 'false' });
-    redirect(res, `https://github.com/login/oauth/authorize?${params}`, [cookie(STATE_COOKIE, state, STATE_MAX_AGE_S, '/api/auth')]);
+    const next = safeNext(new URL(req.url ?? '/', 'http://localhost').searchParams.get('next'));
+    redirect(res, `https://github.com/login/oauth/authorize?${params}`, [cookie(STATE_COOKIE, state, STATE_MAX_AGE_S, '/api/auth'), cookie(NEXT_COOKIE, next, STATE_MAX_AGE_S, '/api/auth')]);
     return true;
   }
 
   if (path === '/api/auth/callback' && req.method === 'GET') {
     const query = new URL(req.url ?? '/', 'http://localhost').searchParams;
-    const expected = parseCookies(req.headers.cookie)[STATE_COOKIE];
+    const cookies = parseCookies(req.headers.cookie);
+    const expected = cookies[STATE_COOKIE];
     const clearState = cookie(STATE_COOKIE, '', 0, '/api/auth');
+    const clearNext = cookie(NEXT_COOKIE, '', 0, '/api/auth');
     const state = query.get('state') ?? '';
     if (!expected || expected.length !== state.length || !timingSafeEqual(Buffer.from(expected), Buffer.from(state))) {
       text(res, 400, 'El login venció o no empezó acá. Volvé a entrar desde el tablero.');
@@ -209,7 +221,7 @@ export async function handleAuth(req: IncomingMessage, res: ServerResponse, path
       return true;
     }
     log.info(`tablero: ${login} entró`);
-    redirect(res, '/', [clearState, cookie(SESSION_COOKIE, sealSession({ login, token: granted.token }, config.sessionSecret, config.sessionDays), config.sessionDays * 24 * 60 * 60)]);
+    redirect(res, safeNext(cookies[NEXT_COOKIE]), [clearState, clearNext, cookie(SESSION_COOKIE, sealSession({ login, token: granted.token }, config.sessionSecret, config.sessionDays), config.sessionDays * 24 * 60 * 60)]);
     return true;
   }
 

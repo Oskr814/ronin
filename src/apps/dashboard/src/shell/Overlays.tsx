@@ -5,7 +5,7 @@ import { LinearIcon } from '../lib/github.js';
 import { dayMonth } from '../lib/format.js';
 import { endDay } from './Context.js';
 import { cycleName } from './Sidebar.js';
-import { changed, closeExploreNow, closeNewIssue, linearRepos, md, repoShort, S, sendNewIssue, toggleKeysHelp } from './state.js';
+import { changed, closeExploreNow, closeNewIssue, linearRepos, loginHref, md, repoShort, S, sendNewIssue, toggleKeysHelp } from './state.js';
 
 // What opens on top of the page, on the body: a note, the keys' help, a new
 // issue, Explorar ahora, and the notice to log in again in another tab.
@@ -22,7 +22,7 @@ export function Toast() {
 
 export function Relogin() {
   if (!S.relogin) return null;
-  return createPortal(<div id="relogin" className="relogin" role="alert"><span>{S.relogin} Lo que escribiste sigue acá: entrá en otra pestaña y volvé a enviarlo.</span><a className="btn-s primary" href="/api/auth/login" target="_blank" rel="noopener">Entrar con GitHub</a></div>, document.body);
+  return createPortal(<div id="relogin" className="relogin" role="alert"><span>{S.relogin} Lo que escribiste sigue acá: entrá en otra pestaña y volvé a enviarlo.</span><a className="btn-s primary" href={loginHref()} target="_blank" rel="noopener" onClick={() => { S.reloginOpened = true; }}>Entrar con GitHub</a></div>, document.body);
 }
 
 const KEYS_HELP: Array<[string, Array<[string, string]>]> = [

@@ -97,6 +97,23 @@ describe('an exploration PR’s Fichas', () => {
     expect(shell.toast).toHaveBeenCalledWith('Comentaste en F-0001. ronin lo va a aplicar y te responde en el hilo.', 'https://github.com/acme/web/pull/12#issuecomment-1');
   });
 
+  it('lets the rejection go again when the GitHub session ran out on the way', async () => {
+    const { shell } = show();
+    await screen.findByText('El buscador no avisa', { selector: '.tl' });
+    const fetch = vi.mocked(globalThis.fetch);
+    const answer = fetch.getMockImplementation()!;
+    fetch.mockImplementation(async (input, init) => (init?.method === 'POST'
+      ? new Response(JSON.stringify({ error: 'Tu sesión de GitHub venció o se revocó. Volvé a entrar.' }), { status: 401, headers: { 'Content-Type': 'application/json' } })
+      : answer(input, init)));
+    fireEvent.keyDown(document, { key: 'r' });
+    fireEvent.click(screen.getByRole('button', { name: 'Ya está cubierto' }));
+    fireEvent.click(document.getElementById('fdlg-yes')!);
+    await waitFor(() => expect(shell.unauthorized).toHaveBeenCalled());
+    const button = document.getElementById('fdlg-yes') as HTMLButtonElement;
+    expect(button.disabled).toBe(false);
+    expect(button.textContent).toBe('Rechazar');
+  });
+
   it('asks for changes with c, redoing the after, with Ctrl+Enter', async () => {
     show();
     await screen.findByText('El buscador no avisa', { selector: '.tl' });

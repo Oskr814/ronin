@@ -97,6 +97,22 @@ describe('tailnet listener', () => {
     expect(await me.json()).toEqual({ login: 'oskr814' });
   });
 
+  it('goes back after the login to the dashboard page it started on, never to another site', async () => {
+    const back = async (next: string) => {
+      const login = await fetch(`${base}/api/auth/login?next=${encodeURIComponent(next)}`, { redirect: 'manual' });
+      const state = new URL(login.headers.get('location')!).searchParams.get('state')!;
+      const cookie = login.headers.getSetCookie().map((c) => c.split(';')[0]).join('; ');
+      const callback = await fetch(`${base}/api/auth/callback?code=c1&state=${state}`, { redirect: 'manual', headers: { cookie } });
+      expect(callback.headers.getSetCookie()).toContainEqual(expect.stringMatching(/^ronin_oauth_next=; .*Max-Age=0/));
+      return callback.headers.get('location');
+    };
+    expect(await back('/acme/web/pull/12?tab=files')).toBe('/acme/web/pull/12?tab=files');
+    expect(await back('//evil.example')).toBe('/');
+    expect(await back('/\\evil.example')).toBe('/');
+    expect(await back('https://evil.example')).toBe('/');
+    expect(await back('/api/auth/logout')).toBe('/');
+  });
+
   it('turns away a callback without the state it started with', async () => {
     const res = await fetch(`${base}/api/auth/callback?code=c1&state=otro`, { redirect: 'manual', headers: { cookie: 'ronin_oauth_state=uno' } });
     expect(res.status).toBe(400);
