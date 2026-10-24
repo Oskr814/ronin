@@ -70,6 +70,10 @@ beforeEach(() => {
     if (path === '/api/requests/8') return json(WAITING);
     if (path === '/api/requests/9') return json(TEAMS);
     if (path === '/api/requests/10') return json(ASKING);
+    if (path === '/api/requests/9/close') {
+      decided.push(JSON.parse(String(init?.body)));
+      return json({ ...TEAMS, status: 'declined', waitsOn: null });
+    }
     if (path === '/api/requests/10/close') {
       decided.push(JSON.parse(String(init?.body)));
       return json({ ...ASKING, status: 'declined', waitsOn: null, expiry: null });
@@ -199,6 +203,15 @@ describe('Pedidos, in React', () => {
     await waitFor(() => expect(decided).toEqual([{ reason: 'Ya existe en Reportes.' }]));
     await waitFor(() => expect(shell.toast).toHaveBeenCalledWith('Cerraste P-10: Ana recibe el motivo.'));
     expect(screen.queryByRole('button', { name: 'Cerrar pedido' })).toBeNull();
+  });
+
+  it("the team closes a big one, and its issue with it", async () => {
+    show(<Request n={9} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Cerrar pedido' }));
+    expect(screen.getByText(/El issue #109 se cierra como no planeado, a tu nombre/)).toBeTruthy();
+    fireEvent.change(screen.getByPlaceholderText(/Reportes → Ventas/), { target: { value: 'Lo cubre otro pedido.' } });
+    fireEvent.click(screen.getAllByRole('button', { name: 'Cerrar pedido' }).at(-1)!);
+    await waitFor(() => expect(decided).toEqual([{ reason: 'Lo cubre otro pedido.' }]));
   });
 
   it('the team writes to the person from Conversación (#353)', async () => {

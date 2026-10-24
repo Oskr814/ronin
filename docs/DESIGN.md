@@ -1034,7 +1034,7 @@ src/domains/portal/    el dominio: cuentas, pedidos, la conversación, el protot
   reproduce.ts         la reproducción de un error reportado, con su test (#137)
   issue.ts             el issue en el repo del producto: para ronin (aprobado, o el arreglo de un error) o para el equipo
   cancel.ts            la persona cancela un pedido que nadie tomó
-  team-close.ts        el equipo cierra desde el tablero un pedido sin issue (#404)
+  team-close.ts        el equipo cierra desde el tablero un pedido sin issue (#404), o uno grande con su issue
   expire.ts            el recordatorio y el vencimiento de un pedido que espera a la persona (#404)
   follow.ts            el tick sigue esos issues y sus PRs
   worker.ts, launch.ts el worker por pedido y su relanzamiento
@@ -1282,10 +1282,10 @@ Antes, la conversación del portal era solo entre la persona y ronin. Mientras e
 
 Antes, un pedido que esperaba a la persona no vencía nunca, y el equipo no lo podía cerrar desde el tablero: solo decidía en `awaiting-dev` o cerrando el issue de un pedido que ya era suyo.
 
-- **Cerrar pedido.** En *Ahora*, en la ficha de un pedido abierto sin issue que espera a la persona (`asking`, `interviewing`, `confirming`, `proposed`), que ronin respondió (`answered`) o que ronin está leyendo (`thinking`): `TEAM_CLOSABLE`. Con el permiso `acciones` del repo, el mismo que escribirle a la persona (16.14), y un motivo obligatorio (`POST /api/requests/<n>/close`, `{ reason }`).
+- **Cerrar pedido.** En *Ahora*, en la ficha de un pedido abierto sin issue que espera a la persona (`asking`, `interviewing`, `confirming`, `proposed`), que ronin respondió (`answered`) o que ronin está leyendo (`thinking`): `TEAM_CLOSABLE`. Con el permiso `acciones` del repo, el mismo que escribirle a la persona (16.14), y un motivo obligatorio (`POST /api/requests/<n>/close`, `{ reason }`). También uno grande con su issue (`big` con `issue`): primero guarda el motivo en `closeNote`, después comenta el motivo en el issue y lo cierra como `not_planned` con el token de quien lo cierra (`github-as-user.ts`), y recién entonces lo pasa a `declined`. Si GitHub falla, borra el motivo y el pedido queda como estaba. Si el webhook del issue cerrado llega primero, `follow.ts` lo declina con el mismo motivo, y `teamClose` no lo vuelve a declinar.
   - Queda `declined`, con el motivo en `closeNote` y un evento `closed` con `by` (quién lo cerró).
   - La persona recibe el motivo con esas palabras, en la conversación y por correo (`closedReply('declined', motivo)`, `closedMail`), como cuando un dev decide no hacerlo.
-  - Un worker que seguía trabajando termina y no escribe nada (`updateUnlessClosed`). Un pedido con issue se sigue cerrando desde el issue.
+  - Un worker que seguía trabajando termina y no escribe nada (`updateUnlessClosed`). Los demás pedidos con issue se siguen cerrando desde el issue.
 - **Vencimiento.** Los pedidos que esperan a la persona y los respondidos (`EXPIRING`). El tick, al empezar y para todos los repos a la vez, corre `expirePortalRequests` después de `sweepPortalRequests`:
   - **El reloj** corre desde el último mensaje de ronin, el que dejó el pedido esperando: la pregunta, el formulario, el resumen o el prototipo. Si la persona escribe, aprueba o pide un ajuste, el pedido sale de la espera. Si ronin vuelve a preguntar, empieza una espera nueva.
   - **A las `PORTAL_REMIND_HOURS` (12):** un correo de recordatorio, uno por espera (el evento `reminded`), con el enlace y la hora en que se cancela, en el reloj del equipo (`EXPLORE_TIMEZONE`).

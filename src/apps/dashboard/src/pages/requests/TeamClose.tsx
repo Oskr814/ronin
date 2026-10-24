@@ -7,7 +7,8 @@ import { firstName, type Detail } from './model.js';
 // Cerrar pedido (#404): while the request has no issue and waits on the
 // person, ronin answered it, or ronin reads it, someone with the repo's
 // actions closes it with a reason the person gets in those words, in the
-// portal and by mail. With an issue, it closes from the issue.
+// portal and by mail. With an issue, only a big one, the team's: its issue
+// closes as not planned, as whoever closes it, with the reason.
 
 const CLOSABLE = ['thinking', 'asking', 'answered', 'interviewing', 'confirming', 'proposed'];
 
@@ -19,7 +20,8 @@ export function TeamClose({ d }: { d: Detail }) {
   const [reason, setReason] = useState('');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  if (!CLOSABLE.includes(d.status) || d.issue || !session.can(d.repo, 'acciones')) return null;
+  const big = d.status === 'big' && Boolean(d.issue);
+  if (!(big || (CLOSABLE.includes(d.status) && !d.issue)) || !session.can(d.repo, 'acciones')) return null;
   const who = firstName(d.person);
 
   const send = async () => {
@@ -41,7 +43,7 @@ export function TeamClose({ d }: { d: Detail }) {
   if (!open) return <div className="pd-close"><button className="btn-s danger" onClick={() => { setOpen(true); setReason(''); setError(null); }}>Cerrar pedido</button></div>;
   return (
     <div className="pd-close pd-dd">
-      <label className="field"><span>Por qué se cierra. Le llega a {who} con estas palabras, en el portal y por correo.{d.status === 'thinking' ? ' Si ronin lo está leyendo, termina y no le cambia nada.' : ''}</span>
+      <label className="field"><span>Por qué se cierra. Le llega a {who} con estas palabras, en el portal y por correo.{d.status === 'thinking' ? ' Si ronin lo está leyendo, termina y no le cambia nada.' : ''}{big ? ` El issue #${d.issue!.number} se cierra como no planeado, a tu nombre, con este motivo en un comentario.` : ''}</span>
         <textarea rows={3} maxLength={2000} autoFocus value={reason} placeholder="Por ejemplo: eso ya se puede hacer desde Reportes → Ventas." onChange={(e) => setReason(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) void send();
