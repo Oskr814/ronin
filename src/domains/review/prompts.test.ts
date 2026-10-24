@@ -743,6 +743,48 @@ describe('runAgentTask — fix-review', () => {
 });
 
 describe('runAgentTask — the self-review', () => {
+  const mention = { id: 1, kind: 'issue' as const, body: '@ronin-agent renombrá esto', reactionsEyes: 0, authorLogin: 'someone' };
+  const prompt = () => runClaudeHeadless.mock.calls.at(-1)![1] as string;
+
+  // The internal review goes over every new head of ronin's own PR, unless a
+  // person asked for changes (#442): the run doesn't review its change twice.
+  it('is left to the internal review on ronin’s own PR, unless a person asked for changes', async () => {
+    for (const task of [
+      { type: 'review-request' as const, issueNumber: 228, prNumber: 229, mentions: [mention] },
+      { type: 'fix-comments' as const, issueNumber: 228, prNumber: 229, trigger: [mention], openThreads: [] },
+    ]) {
+      getPullRequestStatus.mockResolvedValue({ headRefName: 'ronin/228/slice-1', reviewDecision: 'REVIEW_REQUIRED' });
+      await runAgentTask(task);
+      expect(prompt(), task.type).toContain('La review interna de ronin revisa tu push: no hace falta la autorrevisión.');
+      expect(prompt(), task.type).not.toContain('Modelo de la autorrevisión');
+
+      getPullRequestStatus.mockResolvedValue({ headRefName: 'ronin/228/slice-1', reviewDecision: 'CHANGES_REQUESTED' });
+      await runAgentTask(task);
+      expect(prompt(), task.type).toContain('Modelo de la autorrevisión');
+    }
+  });
+
+  it('stays where no internal review follows: changes a person asked for, another person’s PR, the internal review’s own fix', async () => {
+    getPullRequestStatus.mockResolvedValue({ headRefName: 'ronin/228/slice-1', reviewDecision: 'REVIEW_REQUIRED' });
+    await runAgentTask({ type: 'fix-review', issueNumber: 228, prNumber: 229, openThreads: [] });
+    expect(prompt()).toContain('Modelo de la autorrevisión');
+    await runAgentTask({ type: 'fix-comments-external', prNumber: 305, headRefName: 'someone-else/x', trigger: [mention], openThreads: [] });
+    expect(prompt()).toContain('Modelo de la autorrevisión');
+    await runAgentTask({ type: 'fix-internal-review', issueNumber: 228, prNumber: 229, findings: [] });
+    expect(prompt()).toContain('Modelo de la autorrevisión');
+  });
+
+  it('is skipped by the skills when the run says so, and kept to the diff when it runs', () => {
+    for (const skill of ['answer-mentions', 'address-comments']) {
+      expect(readFileSync(`plugin/skills/${skill}/SKILL.md`, 'utf8'), skill).toContain('Si la corrida dice que la review interna de ronin revisa tu push, sáltate este paso');
+    }
+    for (const skill of ['answer-mentions', 'address-comments', 'fix-findings']) {
+      const text = readFileSync(`plugin/skills/${skill}/SKILL.md`, 'utf8');
+      expect(text, skill).toContain('sin correr tests (ya los corriste tú)');
+      expect(text, skill).toContain('para que no lo vuelva a buscar');
+    }
+  });
+
   it('is not added to tasks that do not answer a review', async () => {
     runClaudeHeadless.mockClear();
     await run(sliceTask({ type: 'fix-e2e', issueNumber: 228, prNumber: 229 }));
