@@ -9,6 +9,18 @@ import { requestsRoutes, portalAdminRoutes } from '@domains/portal/routes-dashbo
 import { evidenceRoutes, runsRoutes } from '@domains/runs/routes.js';
 import { eventsRoutes } from '@domains/commands/routes.js';
 import type { DashboardEnv } from '@domains/access/http.js';
+import { getDb } from '@platform/db/db.js';
+import { enqueueEvent } from './jobs/store.js';
+
+// What's asked from the tablero starts its issue's or PR's run now (#446):
+// a job like a webhook's (webhooks/github.ts), joined to one already
+// waiting for the same ones. Without a database, the next tick.
+async function wake(repo: string, resources: string[]): Promise<void> {
+  const db = getDb();
+  if (!db) return;
+  const payload = { repo, scope: { flows: ['issues'], resources }, receivedAt: Date.now() };
+  await enqueueEvent(db, { repo, payload, dedupeKey: `event:${JSON.stringify([repo, [...resources].sort()])}` });
+}
 
 // The dashboard's API in Hono (#235, stage 6): handleDashboard (api/
 // apps/api/http/dashboard.ts) hands it every /api path once tailnet.ts checked the session
@@ -25,7 +37,7 @@ export const dashboardApp = new Hono<DashboardEnv>()
   .route('/api/runs', runsRoutes())
   .route('/api/events', eventsRoutes())
   .route('/api/evidence', evidenceRoutes())
-  .route('/api/items', itemsRoutes())
+  .route('/api/items', itemsRoutes({ wake }))
   .route('/api', boardRoutes());
 
 export type DashboardApi = typeof dashboardApp;

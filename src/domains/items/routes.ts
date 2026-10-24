@@ -15,8 +15,9 @@ import { expireFiles, expirePersonFiles, fileContent, personFiles } from './file
 import { runFilesAction } from './files-actions.js';
 import { expireGithub, repoGithub, updateGithub } from './github.js';
 import { itemRunKeys } from './list.js';
+import type { Wake } from './decision.js';
 import { getDb } from '@platform/db/db.js';
-import { listCommands } from '../commands/store.js';
+import { listCommands } from '@platform/commands/store.js';
 import { repoLinear } from './linear.js';
 import { createFromDashboard, parseNewIssue, repoApps } from './new-issue.js';
 import { touchSeen } from '../access/team.js';
@@ -97,7 +98,8 @@ export function boardRoutes() {
     });
 }
 
-export function itemsRoutes() {
+// `wake`: starts the run of an issue or PR now (the job queue, apps/api/routes.ts).
+export function itemsRoutes({ wake }: { wake?: Wake } = {}) {
   return new Hono<DashboardEnv>()
     .onError(onError)
     // An issue ronin manages can have no runs in that window: an empty list.
@@ -207,7 +209,7 @@ export function itemsRoutes() {
         ? await noteClosing(ctx.entry.productRepo, { issue: issueNumber, pr: files.prNumber }, reason, c.env.session.login)
         : null;
       try {
-        const done = await runDecision(ctx.entry, { prNumber: files.prNumber, ...(issueNumber !== undefined ? { issueNumber } : {}), files: files.files, pr: ctx.detail.pr }, c.env.session, given, config.githubLogin);
+        const done = await runDecision(ctx.entry, { prNumber: files.prNumber, ...(issueNumber !== undefined ? { issueNumber } : {}), files: files.files, pr: ctx.detail.pr }, c.env.session, given, config.githubLogin, wake);
         // Its review, its comments, its state: all of it on the page and in the sidebar.
         expireItem(ctx.entry.productRepo, [...numbersOf(ctx.ref), files.prNumber]);
         expirePersonFiles(c.env.session.login, ctx.entry.productRepo, files.prNumber);

@@ -16,6 +16,8 @@ describe('validateAction', () => {
   it('accepts a reply to a listed thread or to a review trigger', async () => {
     expect(await validateAction(scope, 'pr.reply', { commentId: 100, body: 'Listo, lo cambié.' })).toEqual({ name: 'pr.reply', input: { commentId: 100, body: 'Listo, lo cambié.' } });
     expect(await refusal(validateAction(scope, 'pr.reply', { commentId: 300, body: 'Hecho.' }))).toBe('aceptada');
+    // A request from the tablero (#446) is answered by its id too.
+    expect(await refusal(validateAction({ ...scope, triggers: [{ id: 12, kind: 'command' }] }, 'pr.reply', { commentId: 12, body: 'Hecho.' }))).toBe('aceptada');
   });
 
   it('refuses what the run is not scoped for', async () => {

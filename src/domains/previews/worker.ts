@@ -24,7 +24,7 @@ import {
 } from './preview.js';
 import { runWorker, withProductRepo, workerRequest } from '@platform/workers/run.js';
 import { getDb } from '@platform/db/db.js';
-import { createCommand, finishCommand, noteCommand, startCommand } from '../commands/store.js';
+import { createCommand, finishCommand, noteCommand, startCommand } from '@platform/commands/store.js';
 
 const request = workerRequest<PreviewWorkerRequest>();
 

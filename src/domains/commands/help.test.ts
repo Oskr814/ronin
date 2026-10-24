@@ -140,4 +140,10 @@ describe('withHelpFooter', () => {
   it('works on an empty body', () => {
     expect(withHelpFooter('', 'ronin').startsWith(HELP_FOOTER_MARKER)).toBe(true);
   });
+
+  it('links the PR on the tablero, where what is asked from there is answered (#446)', () => {
+    const body = withHelpFooter('Descripción', 'ronin', 'https://tablero.example/acme/web/pull/42');
+    expect(body).toContain(`${HELP_FOOTER_MARKER}\n🥷 [Abrir en el tablero de ronin](https://tablero.example/acme/web/pull/42)`);
+    expect(withHelpFooter('Descripción', 'ronin')).not.toContain('tablero de ronin');
+  });
 });

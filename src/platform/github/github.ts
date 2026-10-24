@@ -1221,7 +1221,7 @@ export async function commentOnSpecPr(prNumber: number, body: string): Promise<v
 // Where a comment lives: the PR's or issue's conversation, a thread on the
 // diff, or the text a review was submitted with (#351). Each has its own id
 // space on GitHub.
-export type CommentKind = 'issue' | 'review' | 'review-body';
+export type CommentKind = 'issue' | 'review' | 'review-body' | 'command';
 
 export interface Comment {
   id: number;

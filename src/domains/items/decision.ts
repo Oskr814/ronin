@@ -4,12 +4,24 @@ import type { Session } from '../access/http.js';
 import type { PrFiles } from './files.js';
 import { closeIssue, closePr, commentOnIssue, discardReview, pendingReview, submitReview } from '@platform/github/github-as-user.js';
 import { DomainError } from '@platform/errors.js';
+import { getDb } from '@platform/db/db.js';
+import { log } from '@platform/logger.js';
+import { issueResource, prResource } from '@platform/locks/locks.js';
+import { createCommand, type Command } from '@platform/commands/store.js';
 
 // What's decided about a PR ronin opened, from its page (#195), as whoever
 // is logged in (platform/github/github-as-user.ts): merge it, ask ronin for an adjustment, or
 // close it. Each is what the person would do on GitHub — an approval, a
 // comment mentioning ronin, closing the PR — so ronin reacts the way it
 // already does: /auto-merge, the review-request flow, /fix-comments.
+//
+// An adjustment in words or the answers to its questions go straight to
+// ronin instead (#446), when there's a database: a command, which the PR's
+// review-request run takes as one more mention (platform/commands/
+// mentions.ts), and `wake` starts that run now instead of waiting for a
+// webhook. Nothing is written on GitHub; the answer is on the item's page.
+// With line comments from Archivos it stays a review on GitHub: those live
+// on the code.
 //
 // A PR by anyone else keeps GitHub's own review (items/files-actions.ts).
 
@@ -45,11 +57,23 @@ export const isSpecPr = (pr: Pick<Discussion, 'headRefName'>) => /^ronin\/\d+\/s
 // Whether a PR's page offers the decisions: ronin's, open, and not a draft —
 // but for a spec, which an older one may still be: approving it is what
 // starts it, and ronin takes it out of draft then.
+// Starts the run that takes a PR's mentions now (apps/api/routes.ts hands it the job queue).
+export type Wake = (repo: string, resources: string[]) => Promise<void>;
+
+async function askRonin(repo: string, target: DecisionTarget, login: string, kind: 'adjust' | 'answer', text: string, wake: Wake): Promise<{ command: Command }> {
+  const db = getDb()!;
+  const { command } = await createCommand(db, { repo, number: target.prNumber, kind, args: { text }, requestedBy: login });
+  await wake(repo, [prResource(target.prNumber), ...(target.issueNumber !== undefined ? [issueResource(target.issueNumber)] : [])])
+    .catch((error) => log.error(`tablero: no se pudo despertar el PR #${target.prNumber}; lo toma el próximo tick`, error));
+  log.info(`tablero: ${login} pidió ${kind} en ${repo}#${target.prNumber} (comando ${command.id})`);
+  return { command };
+}
+
 export function decidable(pr: Pick<Discussion, 'author' | 'state' | 'isDraft' | 'headRefName'>, botLogin: string): boolean {
   return same(pr.author, botLogin) && pr.state === 'OPEN' && (!pr.isDraft || isSpecPr(pr));
 }
 
-export async function runDecision(entry: RepoEntry, target: DecisionTarget, session: Session, body: Record<string, unknown>, botLogin: string): Promise<{ url: string; autoMergeUrl?: string; issueUrl?: string }> {
+export async function runDecision(entry: RepoEntry, target: DecisionTarget, session: Session, body: Record<string, unknown>, botLogin: string, wake?: Wake): Promise<{ url?: string; autoMergeUrl?: string; issueUrl?: string; command?: Command }> {
   const repo = entry.productRepo;
   const { prNumber, files, pr } = target;
   if (!decidable(pr, botLogin)) throw new DecisionError('esto es solo para los PRs abiertos de ronin: los demás se revisan con Revisar');
@@ -85,11 +109,13 @@ export async function runDecision(entry: RepoEntry, target: DecisionTarget, sess
         return commentOnIssue(session.token, repo, prNumber, `@${botLogin} /fix-comments${text ? `\n\n${text}` : ''}`);
       }
       if (!text) throw new DecisionError('escribí qué debería cambiar ronin');
+      if (wake && getDb() && !isSpecPr(pr)) return askRonin(repo, target, session.login, 'adjust', text, wake);
       return commentOnIssue(session.token, repo, prNumber, `@${botLogin} ${text}`);
     }
     case 'answer': {
       const text = textOf(body);
       if (!text) throw new DecisionError('elegí o escribí al menos una respuesta');
+      if (wake && getDb() && !isSpecPr(pr)) return askRonin(repo, target, session.login, 'answer', text, wake);
       return commentOnIssue(session.token, repo, prNumber, `@${botLogin} ${text}`);
     }
     case 'close': {

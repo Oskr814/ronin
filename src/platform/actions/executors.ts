@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import { answerTableroMention } from '../commands/mentions.js';
 import { join } from 'node:path';
 import { addIssueAssignees, createPullRequest, getIssueBody, getPullRequestStatus, postIssueComment, replyToComment, resolveReviewThread, setIssueBody, setPullRequestBody } from '../github/github.js';
 import { closingRefs, HELP_FOOTER_MARKER } from '../github/pr-body.js';
@@ -129,11 +130,22 @@ export function bodyKeepsWhatItMust(current: string, next: string): string | nul
 
 export async function executeAction(scope: RunScope, checkout: RunCheckout, action: ValidAction, { services, app }: RunTools = {}): Promise<ActionResult> {
   switch (action.name) {
-    case 'pr.reply':
-      await replyToComment(prNumberOf(scope), { id: action.input.commentId, kind: 'review' }, action.input.body);
+    case 'pr.reply': {
+      // A request from the tablero (#446) is answered there, not on GitHub.
+      const asked = scope.triggers.find((t) => t.id === action.input.commentId && t.kind === 'command');
+      if (asked) await answerTableroMention(asked.id, action.input.body);
+      else await replyToComment(prNumberOf(scope), { id: action.input.commentId, kind: 'review' }, action.input.body);
       return {};
-    case 'pr.comment':
+    }
+    case 'pr.comment': {
+      // A run that only answers requests from the tablero says it there.
+      const asked = scope.triggers.length > 0 && scope.triggers.every((t) => t.kind === 'command') ? scope.triggers[0] : undefined;
+      if (asked) {
+        await answerTableroMention(asked.id, action.input.body);
+        return {};
+      }
       return { url: (await postIssueComment(prNumberOf(scope), action.input.body)).url };
+    }
     case 'pr.resolve-thread':
       await resolveReviewThread(scope.threads.find((t) => t.commentId === action.input.commentId)!.threadId);
       return {};

@@ -138,6 +138,29 @@ describe('an item’s page', () => {
     expect(screen.getByText(/Le pediste un ajuste a ronin/)).toBeTruthy();
   });
 
+  it('asks ronin for an adjustment straight, without GitHub (#446): under the activity, started now', async () => {
+    const command = { id: '31', repo: 'acme/tienda', number: 42, kind: 'adjust', args: { text: 'Mové el teléfono' }, requestedBy: 'ana-dev', status: 'queued', messages: [], runId: null, error: null, createdAt: new Date(NOW).toISOString(), startedAt: null, finishedAt: null };
+    const fetch = vi.mocked(globalThis.fetch);
+    const answer = fetch.getMockImplementation()!;
+    fetch.mockImplementation(async (input, init) => {
+      const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      if (init?.method === 'POST' && String(input).endsWith('/decision')) {
+        posted.push([String(input), JSON.parse(String(init.body))]);
+        return json({ command });
+      }
+      if (String(input) === '/api/items/acme%2Ftienda%2341') return json({ runs: [], commands: [command] });
+      return answer(input, init);
+    });
+    const { container, shell } = show();
+    fireEvent.keyDown(document, { key: 'p' });
+    fireEvent.change(document.getElementById('dtext')!, { target: { value: 'Mové el teléfono' } });
+    fireEvent.keyDown(document, { key: 'Enter', ctrlKey: true });
+    await waitFor(() => expect(container.querySelector('.cmd .cmd-top')?.textContent).toContain('Ajuste en #42'));
+    expect(container.querySelector('.cmd .cmd-ask')?.textContent).toBe('«Mové el teléfono»');
+    expect(screen.getByText(/ya empezó, y su respuesta queda bajo la actividad/)).toBeTruthy();
+    expect(shell.toast).toHaveBeenCalledWith('Se lo pediste a ronin: empieza ahora y responde bajo la actividad.', undefined);
+  });
+
   it('asks for an action from the menu: M, its number, the text and the app', async () => {
     show({ detail: { ...person, actions }, doc: 'issue' });
     fireEvent.keyDown(document, { key: 'm' });
