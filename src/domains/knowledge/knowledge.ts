@@ -171,8 +171,8 @@ export interface KnowledgeForRun {
 // `dir` (its output dir: a sealed run reads nothing of ronin's data, #257).
 // Nothing when the app has none yet, or it can't be read.
 export async function knowledgeForRun(appName: string, dir?: string, use: KnowledgeUse = 'portal'): Promise<KnowledgeForRun | undefined> {
-  if (!knowledgeOn(appName, use)) return undefined;
   try {
+    if (!knowledgeOn(appName, use)) return undefined;
     const k = await readKnowledge(appName);
     prune(k);
     if (!k.screens.length && !k.traps.length && !k.resolved.length) return undefined;
@@ -272,8 +272,9 @@ export function mergeLearned(k: Knowledge, learned: Learned, commit: string, opt
 // the base branch — a preview's PR head (#437). What that PR changed then
 // stays to check until the base branch has the same files (staleIds).
 export async function saveLearned(appName: string, learned: Learned | undefined, opts: { script?: string; commit?: string; use?: KnowledgeUse } = {}): Promise<void> {
-  if (!learned || !knowledgeOn(appName, opts.use ?? 'portal')) return;
+  if (!learned) return;
   try {
+    if (!knowledgeOn(appName, opts.use ?? 'portal')) return;
     const commit = opts.commit ?? await baseCommit();
     await withJson(knowledgePath(appName), empty, (k) => mergeLearned(k, learned, commit, opts));
   } catch (error) {
@@ -284,8 +285,8 @@ export async function saveLearned(appName: string, learned: Learned | undefined,
 // A request whose PR merged (follow.ts): written by ronin, from the PR's
 // files, no agent.
 export async function saveResolved(appName: string, resolved: Resolved): Promise<void> {
-  if (!knowledgeOn(appName, 'portal')) return;
   try {
+    if (!knowledgeOn(appName, 'portal')) return;
     await withJson(knowledgePath(appName), empty, (k) => {
       k.resolved = [resolved, ...k.resolved.filter((r) => r.request !== resolved.request)];
       prune(k);
