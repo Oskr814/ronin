@@ -6,6 +6,7 @@ import { config } from '@platform/config/config.js';
 import { log } from '@platform/logger.js';
 import { host } from '@platform/host/host.js';
 import { portalTask } from './prompts.js';
+import { knowledgeForRun, saveLearned } from '../knowledge/knowledge.js';
 import { getUser } from './accounts.js';
 import { prototypeMail } from './mail.js';
 import { launchPortalWorker } from './launch.js';
@@ -131,9 +132,13 @@ function draw(request: PortalRequest, round: number): Promise<PortalRequest | un
         instruction: request.verdict?.instruction ?? '',
         ...(request.verdict?.findings ? { findings: request.verdict.findings } : {}),
         round,
+        knowledge: await knowledgeForRun(request.app, base.outDir),
       }),
     },
-    (draft) => deliver(n, round, draft),
+    async (draft) => {
+      await saveLearned(request.app, draft.learned, draft.script ? { script: draft.script } : {});
+      return deliver(n, round, draft);
+    },
   );
 }
 

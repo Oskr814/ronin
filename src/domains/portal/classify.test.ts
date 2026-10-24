@@ -38,6 +38,11 @@ describe('parsePortalResult', () => {
     expect(parsePortalResult(json({ accion: 'grande', mensaje: 'Es grande.', hallazgos: { pantalla: 'Pedidos' } }), 0).hallazgos).toBeUndefined();
   });
 
+  it('keeps what it learned about the app, with any action (#412)', () => {
+    expect(parsePortalResult(json({ accion: 'grande', mensaje: 'Es grande.', bitacora: { trampas: [{ texto: 'El seed no trae anulados.' }] } }), 0).bitacora).toEqual({ used: [], screens: [], traps: [{ text: 'El seed no trae anulados.', files: [] }], removed: [] });
+    expect(parsePortalResult(json({ accion: 'responder', mensaje: 'Ya existe.' }), 0).bitacora).toBeUndefined();
+  });
+
   it('a small change without what the prototype needs goes to the team', () => {
     expect(parsePortalResult(json({ accion: 'menor', mensaje: 'Sí se puede.', propuesta: 'Un enlace' }), 0)).toMatchObject({ accion: 'grande', motivo: expect.any(String) });
   });

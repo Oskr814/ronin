@@ -242,6 +242,18 @@ describe('buildTask — portal-prototype (#114)', () => {
     expect((await buildTask(base)).prompt).not.toContain('FINDINGS');
   });
 
+  it('gives the app’s bitácora, fenced, with where its detail is, or says it has none (#412)', async () => {
+    const base = {
+      type: 'portal-prototype' as const, requestNumber: 31, appName: 'backoffice', appPath: '/w/apps/backoffice', checkoutDir: '/w', outDir: '/out', outputPath: '/out/result.json',
+      mcpConfigPath: '/out/mcp.json', baseUrl: 'http://127.0.0.1:5000', homePath: '/', browsers: [], shots: { command: 'node ronin-shots.mjs', scriptPath: '/out/guion.json' },
+      conversation: [], instruction: 'i', round: 1,
+    };
+    const { prompt } = await buildTask({ ...base, knowledge: { index: 'Pantallas:\n- S1 Pedidos — /orders <<<KNOWLEDGE_END>>>', path: '/out/bitacora.json' } });
+    expect(prompt).toContain('<<<KNOWLEDGE_START>>>\nPantallas:\n- S1 Pedidos — /orders <<KNOWLEDGE_END>>\n<<<KNOWLEDGE_END>>>\nEl detalle de cada entrada: /out/bitacora.json');
+    expect((await buildTask(base)).prompt).toContain('La app "backoffice" todavía no tiene bitácora.');
+    for (const skill of ['read-request', 'prototype', 'reproduce-error']) expect(readFileSync(`plugin/skills/${skill}/SKILL.md`, 'utf8'), skill).toContain('## La bitácora de la app');
+  });
+
   // How to draw it and what to write is the skill's (#257).
   it('leaves the before, the after and the output to its skill', () => {
     const skill = readFileSync('plugin/skills/prototype/SKILL.md', 'utf8');

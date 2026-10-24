@@ -17,6 +17,14 @@ La app corre desde este checkout con datos de seed desechables, que puedes cambi
 
 Si la corrida te da dónde lo encontraste al leer el pedido (la pantalla, los endpoints, los archivos y sus líneas), arranca desde ahí: lee esos archivos para confirmar y ve directo a la pantalla, sin volver a buscar en todo el repo. Busca solo si algo no está donde dice o falta una pieza.
 
+## La bitácora de la app
+
+La corrida te da la bitácora de la app, si ya tiene: un índice de lo que aprendiste en corridas anteriores (las pantallas, con su ruta; las trampas, lo que costó la vez anterior; los pedidos ya resueltos y los archivos que tocaron) y un archivo con el detalle de cada entrada (componentes, endpoints, entidades, cómo llegar a la pantalla y, si lo hay, el guion de capturas que funcionó: reúsalo como punto de partida del tuyo). Es una pista, no la verdad: el código manda.
+
+- **Arranca por ahí.** Si una entrada habla de lo que te piden, abre su detalle y lee esos archivos para confirmar, en lugar de buscar en todo el repo. Un pedido resuelto parecido te dice dónde mirar.
+- **Lo marcado «a verificar»** se basa en archivos que cambiaron desde que se escribió: confírmalo en el código antes de usarlo y, si sigue valiendo, vuelve a escribirlo en `"bitacora"` (con su `"id"`) para que quede al día.
+- **Nunca** pongas en la bitácora a las personas: ni el texto de un pedido, ni nombres, correos o datos de clientes. Describe el código y la app.
+
 ## Las capturas, con un guion
 
 Las capturas las saca un guion, no el navegador paso a paso: así el antes y el después salen con los mismos pasos y el mismo encuadre, y sin una llamada por clic. La corrida te da dónde escribirlo y el comando que lo corre. Es un JSON:
@@ -60,7 +68,17 @@ Las capturas las saca un guion, no el navegador paso a paso: así el antes y el 
                "decidir": ["<lo que el dev tiene que decidir antes de aprobarlo, una pregunta o consecuencia por línea; vacío si no hay nada>"],
                "riesgos": ["<qué podría salir mal o cambiarle a alguien, una línea cada uno>"]},
     "antes": [{"imagen": "<ruta relativa a la carpeta de salida, p. ej. admin-desktop/antes-1.png>", "nota": "<una línea de leyenda>"}],
-    "despues": [{"imagen": "…", "nota": "…"}]}
+    "despues": [{"imagen": "…", "nota": "…"}],
+    "bitacora": "<opcional: lo que aprendiste de la app, ver abajo>"}
+   ```
+
+   `"bitacora"` es lo que aprendiste de la app en esta corrida, para la próxima. Las pantallas que fotografiaste, con su `"captura"`: ronin guarda ese tramo de tu guion para que la próxima corrida llegue directo. Además, solo lo que de verdad te costó encontrar o vas a querer la próxima vez, y siempre sobre el código y la app, nunca sobre las personas:
+
+   ```
+   "bitacora": {"usadas": ["<id de cada entrada que te sirvió, p. ej. S2, T1>"],
+                "pantallas": [{"id": "<el de la bitácora, si ya estaba>", "ruta": "<la ruta en la app>", "nombre": "<cómo se llama la pantalla>", "componentes": ["<archivo>"], "endpoints": ["<método y ruta>"], "entidades": ["<entidad>"], "archivos": ["<los archivos en los que se basa, relativos a la raíz del checkout>"], "llegar": {"rol": "<rol>", "viewport": "desktop" | "mobile", "pasos": "<cómo se llega, en corto>"}, "captura": <el "n" de la captura de tu guion que llega a esta pantalla>}],
+                "trampas": [{"id": "<si ya estaba>", "texto": "<lo que costó y cómo se resuelve, una o dos oraciones>", "archivos": ["<archivo>"]}],
+                "borrar": ["<id de cada entrada que resultó estar mal>"]}
    ```
 
    `"equipo"` es lo mismo que `"resumen"`, partido para quien decide si se hace: líneas cortas, en español, sin repetir el resumen entero. En `"pruebas"`, todo lo que no pudiste correr va con `"ok": false` y dice por qué. En `"decidir"`, solo lo que de verdad cambia la decisión.

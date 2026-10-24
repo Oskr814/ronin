@@ -34,6 +34,7 @@ Cuando una etapa de #235 se mergea, lo que cambió se pasa a `DESIGN.md` y la se
 | Ajustes | `SETTINGS_DATA_DIR` (Postgres con `DATABASE_URL` desde la etapa 2) | ídem |
 | Métricas (caché de GitHub) | `METRICS_DATA_DIR` | ídem |
 | Catálogo de seeds | `SEED_CATALOG_DATA_DIR` | ídem |
+| Bitácora de cada app | `KNOWLEDGE_DATA_DIR` (un `bitacora.json` por repo y app) | ídem |
 | Corridas de agentes | `logs/runs/<día>/<corrida>.jsonl` | un archivo por corrida; el tablero los recorre |
 | Uso de cada cuenta de Claude | `logs/usage/` | se reescribe en cada corrida, con historial aparte |
 | Estado local (claims, comentarios procesados, firmas de fallas, bloqueos…) | `.ronin-state.json` | lock de archivo y escritura atómica |

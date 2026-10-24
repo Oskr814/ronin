@@ -82,6 +82,26 @@ Las capturas de un prototipo, o de una reproducción, van en pares: el antes y e
 
 El tick lo revisa cada 30 minutos, así que el recordatorio y la cancelación pueden llegar hasta media hora tarde. Si el recordatorio salió tarde, la cancelación espera las 12 horas que prometió. Las horas se cambian en [Ajustes → General](/ronin/operar/ajustes/).
 
+## La bitácora de cada app
+
+ronin guarda una bitácora por repo y app, con lo que aprendieron sus agentes al leer pedidos y armar prototipos. Así el pedido siguiente no explora el repo de cero. Guarda:
+
+- **Las pantallas:** su ruta, los componentes, los endpoints y las entidades, y cómo llegar a cada una en la app de prototipo, con el guion de capturas que funcionó.
+- **Las trampas:** lo que costó la vez anterior, como un dato que el seed no trae o un flag que hay que prender.
+- **Los pedidos resueltos:** de qué se trataba cada uno, en una línea, y qué archivos tocó su PR. Se anota solo, al mergearse.
+
+Los agentes reciben un índice corto y abren el detalle cuando lo necesitan. Cada entrada guarda el commit en el que se basa. Si sus archivos cambiaron desde entonces, el agente la ve como *a verificar* y la confirma antes de usarla. Lo que nadie usa en 30 días se borra solo.
+
+La bitácora describe el código y la app, no a las personas: no guarda el texto de los pedidos ni datos de clientes.
+
+Vive en el directorio de datos de ronin (`KNOWLEDGE_DATA_DIR`, `/data/knowledge` con Docker), un `bitacora.json` por repo y app. Si quedó mal, se puede borrar entera o la de una app, y los agentes vuelven a partir del código:
+
+```sh
+docker compose exec runner rm /data/knowledge/<repo>/<app>/bitacora.json
+```
+
+`<repo>` es el nombre del repo en minúsculas, con guiones en lugar de `/` (`redmotos-shoppingcart`, por ejemplo).
+
 ## Los correos
 
 - **A la persona:** cada respuesta de ronin, las preguntas de la entrevista y su resumen, el prototipo, el paso al equipo, lo que le escriba el equipo, el recordatorio y la cancelación si no responde, el merge, el despliegue y el cierre.
