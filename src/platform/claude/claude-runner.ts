@@ -15,9 +15,16 @@ const MAX_LOG_LINE = 2000;
 // instead of blocking the issue — see tick.ts. The wording changes with
 // the plan and the window: "usage limit", "monthly spend limit", "session
 // limit · resets 6:10am" (a subscription's 5-hour window, #382), "weekly limit".
-const USAGE_LIMIT_PATTERN = /usage limit|spend limit|hit your [\w ]{0,20}limit/i;
+// On an API key (#421): the workspace's "API usage limits", or "credit
+// balance is too low".
+const USAGE_LIMIT_PATTERN = /usage limit|spend limit|hit your [\w ]{0,20}limit|credit balance/i;
 
 export class ClaudeUsageLimitError extends Error {}
+
+// `--resume` of a session claude -p doesn't have (its account's projects/
+// folder lost it): the caller starts the run over instead.
+const NO_SESSION_PATTERN = /No conversation found with session ID/;
+export class ClaudeNoSessionError extends Error {}
 
 // The run went past agentTaskTimeoutMs and was killed. Its own class so the
 // run record can tell a timeout from any other failure (run-record.ts).
@@ -164,6 +171,13 @@ export interface HeadlessRunOptions {
   // Told the pid of `claude` as soon as it starts: the actions server
   // answers only it and its descendants (actions/peer.ts).
   onSpawn?: (pid: number) => void;
+  // The API fallback (#421, api-fallback.ts): the run goes on this Anthropic
+  // Console key instead of the account's subscription, spends at most
+  // `maxBudgetUsd`, and with `resume` goes on in that session — `prompt`
+  // is then the next message in it.
+  apiKey?: string;
+  maxBudgetUsd?: number;
+  resume?: string;
 }
 
 // What a sealed run keeps of ronin's environment: what the tools an agent
@@ -195,7 +209,9 @@ export function claudeHeadlessArgs(prompt: string, opts: HeadlessRunOptions = {}
     '-p', prompt,
     '--permission-mode', 'bypassPermissions',
     '--output-format', 'stream-json', '--verbose',
+    ...(opts.resume ? ['--resume', opts.resume] : []),
     ...(model ? ['--model', model] : []),
+    ...(opts.maxBudgetUsd !== undefined ? ['--max-budget-usd', String(opts.maxBudgetUsd)] : []),
     ...(effort ? ['--effort', effort] : []),
     ...(opts.agentsFile ? ['--agents', opts.agentsFile] : []),
     ...(opts.mcpConfigFile ? ['--mcp-config', opts.mcpConfigFile] : []),
@@ -216,6 +232,10 @@ export async function runClaudeHeadless(cwd: string, prompt: string, label: stri
   // ronin's own NODE_ENV (production in the image) would make the agent's
   // `pnpm install` in the product repo skip its devDependencies.
   delete env.NODE_ENV;
+  // The key wins over the account's login in claude -p: only the run that
+  // asks for it gets one, never one from ronin's own environment.
+  delete env.ANTHROPIC_API_KEY;
+  if (opts.apiKey) env.ANTHROPIC_API_KEY = opts.apiKey;
   // A repos.json entry's own claudeConfigDir wins over the global default —
   // lets each repo run under its own Claude account (docs/superpowers/specs/
   // 2026-08-19-multi-repo-pat-auth-design.md §2).
@@ -238,6 +258,7 @@ export async function runClaudeHeadless(cwd: string, prompt: string, label: stri
     let stderr = '';
     let timedOut = false;
     let usageLimitHit = false;
+    let noSession = false;
     const timer = setTimeout(() => { timedOut = true; child.kill('SIGTERM'); }, config.agentTaskTimeoutMs);
 
     const handleStdoutLine = (line: string) => {
@@ -248,6 +269,7 @@ export async function runClaudeHeadless(cwd: string, prompt: string, label: stri
       // case JSON.parse succeeds and a check placed only in the catch below
       // would never run.
       if (USAGE_LIMIT_PATTERN.test(line)) usageLimitHit = true;
+      if (NO_SESSION_PATTERN.test(line)) noSession = true;
       let event: any;
       try {
         event = JSON.parse(line);
@@ -258,8 +280,14 @@ export async function runClaudeHeadless(cwd: string, prompt: string, label: stri
       if (event.type === 'result') {
         finalResult = String(event.result ?? '');
         sink?.result(resultStats(event));
+        // --max-budget-usd ran out: like a spent quota, the run waits.
+        if (event.subtype === 'error_max_budget_usd') usageLimitHit = true;
       } else if (event.type === 'rate_limit_event') {
-        void recordRateLimit(claudeConfigDir ?? '', event.rate_limit_info);
+        if (!opts.apiKey) void recordRateLimit(claudeConfigDir ?? '', event.rate_limit_info);
+      } else if (event.type === 'system' && event.subtype === 'init') {
+        // Known from the start, not only from the result: a run the quota
+        // cuts may never get one.
+        if (typeof event.session_id === 'string') sink?.result({ sessionId: event.session_id });
       } else {
         for (const step of streamSteps(event)) {
           logStep(label, step);
@@ -269,6 +297,7 @@ export async function runClaudeHeadless(cwd: string, prompt: string, label: stri
     };
     const handleStderrLine = (line: string) => {
       if (USAGE_LIMIT_PATTERN.test(line)) usageLimitHit = true;
+      if (NO_SESSION_PATTERN.test(line)) noSession = true;
       stderr += `${line}\n`;
       log.info(`[${label}] ${line}`);
     };
@@ -282,9 +311,10 @@ export async function runClaudeHeadless(cwd: string, prompt: string, label: stri
       if (code === 0) resolve(finalResult);
       else if (timedOut) reject(new ClaudeTimeoutError(`${config.claudeCommand} timed out after ${config.agentTaskTimeoutMs}ms`));
       else if (usageLimitHit) {
-        void recordUsageLimitHit(claudeConfigDir ?? '');
+        if (!opts.apiKey) void recordUsageLimitHit(claudeConfigDir ?? '');
         reject(new ClaudeUsageLimitError(`${config.claudeCommand} hit its usage/spend limit`));
       }
+      else if (noSession) reject(new ClaudeNoSessionError(`${config.claudeCommand} no tiene la sesión ${opts.resume}`));
       else reject(new Error(`${config.claudeCommand} exited with code ${code}: ${stderr.slice(-2000)}`));
     });
   });

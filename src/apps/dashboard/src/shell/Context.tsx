@@ -97,7 +97,7 @@ export function ItemCtx({ item }: { item: Item }) {
           <section><h3>Esta corrida</h3><dl className="kv">
             <dt>Tarea</dt><dd>{runTitle(shown)}{shown.sliceIndex !== undefined ? `, slice ${shown.sliceIndex + 1}` : ''}</dd>
             {shown.model ? <><dt>Modelo</dt><dd>{shown.model}{shown.effort ? `, ${shown.effort}` : ''}</dd></> : null}
-            <dt>Cuenta</dt><dd>{shown.account}</dd>
+            <dt>Cuenta</dt><dd>{shown.billing === 'api' ? `${shown.account}, por API (la key del repo)` : shown.account}</dd>
             <dt>Empezó</dt><dd>{new Date(shown.startedAt).toLocaleString('es', { dateStyle: 'short', timeStyle: 'short' })}</dd>
             {shown.durationMs !== undefined ? <><dt>Duró</dt><dd>{duration(shown.durationMs)}</dd></> : null}
             {shown.costUsd !== undefined ? <><dt>Costo</dt><dd>{money(shown.costUsd)}</dd></> : null}

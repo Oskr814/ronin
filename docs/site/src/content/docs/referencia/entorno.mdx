@@ -123,6 +123,12 @@ Solo las lee `compose.yml`, en una [instalación con Docker](/ronin/operar/docke
 | `BACKUP_DIR` | `./backups` | Dónde deja sus respaldos `scripts/backup.sh`. |
 | `RONIN_IMAGE_TAG` | `local` | El tag de la imagen que construye el compose. |
 
+## Respaldo por API
+
+| Variable | Qué es |
+|---|---|
+| `ANTHROPIC_API_KEY_<REPO>` | La API key de la consola de Anthropic de un repo, con el nombre que diga `apiFallback.apiKeyEnv` en `repos.json`. Solo la recibe la corrida que la cuota cortó. Ver [Respaldo por API](/ronin/referencia/repos-json/#respaldo-por-api). |
+
 ## Linear
 
 | Variable | Qué es |

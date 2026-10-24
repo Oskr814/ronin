@@ -30,6 +30,7 @@ export async function runStarted(db: Db, runId: string, context: RunContext, sta
     model: orNull(context.model),
     effort: orNull(context.effort),
     account: context.account,
+    billing: orNull(context.billing),
     worktree: context.worktree,
     host: HOST,
     pid,
@@ -63,9 +64,9 @@ export async function runEnded(db: Db, runId: string, end: RunEnd): Promise<void
 // A run as its file says it, whole: for the import, and to catch up a row
 // whose end didn't make it (the database was down when the run ended).
 export async function putRun(db: Db, run: RunSummary, pid?: number): Promise<void> {
-  const { runId, repo, taskType, label, account, worktree, startedAt } = run;
+  const { runId, repo, taskType, label, account, billing, worktree, startedAt } = run;
   await db.deleteFrom('runs').where('run_id', '=', runId).execute();
-  await runStarted(db, runId, { repo, taskType, label, account, worktree, issueNumber: run.issueNumber, prNumber: run.prNumber, portalRequest: run.portalRequest, meeting: run.meeting, sliceIndex: run.sliceIndex, sliceTitle: run.sliceTitle, group: run.group, model: run.model, effort: run.effort }, startedAt, pid);
+  await runStarted(db, runId, { repo, taskType, label, account, ...(billing ? { billing } : {}), worktree, issueNumber: run.issueNumber, prNumber: run.prNumber, portalRequest: run.portalRequest, meeting: run.meeting, sliceIndex: run.sliceIndex, sliceTitle: run.sliceTitle, group: run.group, model: run.model, effort: run.effort }, startedAt, pid);
   if (run.endedAt) {
     await runEnded(db, runId, { endedAt: run.endedAt, durationMs: run.durationMs ?? 0, outcome: run.state as RunOutcome, costUsd: run.costUsd, error: run.error, steps: run.steps, lastStep: run.lastStep });
   } else {
@@ -98,6 +99,7 @@ function toSummary(row: Selectable<RunsTable>): RunSummary {
     ...opt('model', row.model),
     ...opt('effort', row.effort),
     account: row.account,
+    ...(row.billing === 'api' ? { billing: 'api' as const } : {}),
     worktree: row.worktree,
     startedAt: row.started_at.toISOString(),
     ...(row.ended_at ? { endedAt: row.ended_at.toISOString(), durationMs: row.duration_ms ?? 0 } : {}),

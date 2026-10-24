@@ -21,6 +21,15 @@ function UsageMeter({ usage }: { usage: Usage }) {
   return <span className={`meter${out ? ' out' : ''}`} title={title}>{usage.account}<span className="m"><span className={five !== null && five >= 0.75 ? 'hot' : ''} style={{ width: `${five === null ? 0 : Math.min(100, five * 100)}%` }} /></span><b>{value}</b>{week !== null ? <span className="hide-m">{pct(week)} sem</span> : null}</span>;
 }
 
+// A repo whose API fallback (#421) is near its cap, or at it: only shown then.
+type ApiBudget = NonNullable<typeof S.snap>['apiBudgets'][number];
+function ApiMeter({ budget }: { budget: ApiBudget }) {
+  const used = budget.maxUsd ? budget.spentUsd / budget.maxUsd : 1;
+  const title = `Respaldo por API de ${budget.repo}: gastó $${budget.spentUsd.toFixed(2)} de $${budget.maxUsd.toFixed(2)}.` +
+    (budget.out ? ' Ya no termina corridas cortadas por la cuota: recarga los créditos y reinícialo en Ajustes → Cuentas de Claude.' : '');
+  return <span className={`meter ${budget.out ? 'out' : 'hot'}`} title={title}>API {repoShort(budget.repo)}<span className="m"><span className="hot" style={{ width: `${Math.min(100, used * 100)}%` }} /></span><b>{budget.out ? 'sin saldo' : pct(used)}</b></span>;
+}
+
 // The runner's machine: CPU and memory in use, hot from 85%.
 const HOST_HOT = 0.85;
 function HostMeter({ host }: { host: HostLoad | null | undefined }) {
@@ -46,6 +55,7 @@ export function StatusBar() {
   return (
     <footer className="bar-s" id="statusbar">
       {snap.usage.map((usage) => <UsageMeter key={usage.account} usage={usage} />)}
+      {(snap.apiBudgets ?? []).map((budget) => <ApiMeter key={budget.repo} budget={budget} />)}
       <HostMeter host={snap.runner.host} />
       <span className="sp hide-m" title={(slots.repos ?? []).map((r) => `${repoShort(r.repo)}: ${r.used} de ${r.limit}`).join(', ')}>agentes {slots.used}/{slots.limit}</span>
       <span className="hide-m">en cola {queue.length}</span>

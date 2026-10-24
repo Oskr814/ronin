@@ -37,6 +37,19 @@ describe.skipIf(!TEST_DATABASE_URL)('the runs index', () => {
     expect(summary).not.toHaveProperty('prNumber');
   });
 
+  it('keeps a run paid by API apart, in the row and in the file (#421)', async () => {
+    const api = RunRecord.start({ ...context, billing: 'api' });
+    await api.end('ok');
+    const plain = RunRecord.start(context);
+    await plain.end('ok');
+    const runs = await listRuns(1);
+    expect(runs.find((r) => r.runId === api.runId)).toMatchObject({ billing: 'api' });
+    expect(runs.find((r) => r.runId === plain.runId)).not.toHaveProperty('billing');
+    setDb(null);
+    expect((await listRuns(1)).find((r) => r.runId === api.runId)).toMatchObject({ billing: 'api' });
+    setDb(db);
+  });
+
   it('lists a run still going with its steps from the file, and catches up one whose end only the file has', async () => {
     const going = RunRecord.start(context);
     going.step({ kind: 'text', text: 'Arranco' });

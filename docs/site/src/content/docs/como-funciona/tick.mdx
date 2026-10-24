@@ -45,6 +45,8 @@ Con el [servidor](/ronin/operar/servidor/), cada evento de GitHub tiene su handl
 
 Si una corrida se corta por el límite de uso de la cuenta, no es un bloqueo: la tarea queda como estaba y la retoma un tick posterior, cuando vuelve la cuota. El tablero muestra el uso de cada cuenta abajo.
 
+Un repo con [respaldo por API](/ronin/referencia/repos-json/#respaldo-por-api) no espera: ronin termina en el momento la corrida cortada con la API key del repo, en un modelo más barato y hasta su tope de gasto. En el historial, esa corrida aparece aparte, marcada «por API».
+
 <Aside type="note">
 El detalle está en [`docs/DESIGN.md` §3, §9 y §14](https://github.com/Oskr814/ronin/blob/main/docs/DESIGN.md).
 </Aside>

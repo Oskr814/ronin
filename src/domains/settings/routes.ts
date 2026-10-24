@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { loadRepos } from '@platform/config/repos.js';
 import { settingsPageView, connectionsView, linearTeams, readSettingsLog, saveNotifications, saveProfile, setTask, setValue, testMail } from './settings.js';
-import { accountsView, setAccountPlan } from './claude-accounts.js';
+import { accountsView, resetApiBudget, setAccountPlan } from './claude-accounts.js';
 import { forgetGithub } from '../items/github.js';
 import { editRepo, reposView } from './repos.js';
 import { addUser, removeUser, updateTeamDefaults, updateUser, usersView, userView } from './users.js';
@@ -20,6 +20,7 @@ import type { DashboardEnv } from '../access/http.js';
 //   POST /repos/<owner>/<repo>    edits one
 //   GET  /accounts                the Claude accounts and their plans (#234, settings/claude-accounts.ts)
 //   POST /accounts/<account>      sets an account's plan
+//   POST /api-budget/<owner>/<repo>/reset   what a repo spent by API back to zero (#421)
 //   GET  /users[/<login>]         the team: its people, or one of them (settings/users.ts)
 //   POST /users                   adds someone
 //   POST /users/<login>           changes what they can do
@@ -57,6 +58,7 @@ export function settingsRoutes() {
 
     .get('/accounts', accounts, async (c) => c.json(await accountsView(await loadRepos()), 200))
     .post('/accounts/:account', accounts, onlyJson, json(), anyObject(), async (c) => c.json(await setAccountPlan(c.env.session.login, c.req.param('account'), c.req.valid('json'), await loadRepos()), 200))
+    .post('/api-budget/:owner/:name/reset', accounts, onlyJson, async (c) => c.json(await resetApiBudget(c.env.session.login, repoParam(c), await loadRepos()), 200))
 
     .get('/users', users, async (c) => c.json(await usersView(await loadRepos()), 200))
     .get('/users/:login', users, async (c) => {

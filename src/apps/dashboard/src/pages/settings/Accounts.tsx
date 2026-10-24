@@ -4,11 +4,12 @@ import { useShell } from '@apps/dashboard/src/shell/hooks.js';
 import { pct } from '@apps/dashboard/src/lib/format.js';
 import { ago } from '@ui/time.js';
 import { onCommit, Row, Sec, useChange } from './parts.js';
-import type { Account, Accounts as AccountsData, UsageWindow } from './model.js';
+import type { Account, Accounts as AccountsData, ApiFallback, UsageWindow } from './model.js';
 import type { Data } from './Settings.js';
 
 // Cuentas de Claude (#234): the plan each account pays, for Métricas →
-// Suscripción.
+// Suscripción. And each repo's API fallback (#421): what it spent of its
+// cap, and the reset for when the credits are topped up.
 
 const usd = (n: number | null) => (n === null ? '—' : `$${n}`);
 
@@ -58,6 +59,28 @@ function Card({ c, d }: { c: Account; d: AccountsData }) {
       })} /><span className="aj-unit">al mes</span></>} src={priceSrc} />
       <Row label="Uso ahora" desc={u ? `Lo que dijo la última corrida de ronin, ${ago(u.measuredAt)}. Cuenta todo lo que usa la cuenta, no solo ronin.` : 'Aparece con la primera corrida de ronin en esta cuenta.'} ctl={<span>{now}</span>} />
       <Row label="Configuración" ctl={<span className="aj-ro">{c.claudeConfigDir || '~/.claude (la de Claude Code por defecto)'}</span>} src={<><span className="aj-env">repos.json</span><code>claudeConfigDir</code><span>· se cambia en el archivo</span></>} />
+      {c.apiFallbacks.map((f) => <Fallback key={f.repo} f={f} account={a} />)}
     </div></section>
   );
+}
+
+const cents = (usd: number) => `$${usd.toFixed(2)}`;
+
+// One repo's API fallback: the cap and the model are repos.json's; only the
+// counter is reset here.
+function Fallback({ f, account }: { f: ApiFallback; account: string }) {
+  const shell = useShell();
+  const queryClient = useQueryClient();
+  const change = useChange();
+  const [owner, name] = f.repo.split('/');
+  const reset = () => change(async () => {
+    if (!confirm(`¿Reiniciar lo gastado por API de ${f.repo}? Vuelve a tener ${cents(f.maxUsd)} para gastar. Hazlo después de recargar los créditos de la key.`)) return;
+    const { fallback } = (await ok(client.api.settings['api-budget'][':owner'][':name'].reset.$post({ param: { owner: owner!, name: name! } }))) as { fallback: ApiFallback };
+    queryClient.setQueryData<AccountsData>(['settings', 'accounts'], (x) => x && { ...x, cuentas: x.cuentas.map((y) => (y.account === account ? { ...y, apiFallbacks: y.apiFallbacks.map((g) => (g.repo === f.repo ? fallback : g)) } : y)) });
+    shell.toast(`Reiniciado: ${f.repo} vuelve a tener ${cents(f.maxUsd)} por API.`);
+  });
+  const used = f.maxUsd ? f.spentUsd / f.maxUsd : 0;
+  const desc = <>Si la cuota se corta a mitad de una corrida de {f.repo}, ronin la termina con la API key en {f.model}. {f.resetAt ? `Desde ${new Date(f.resetAt).toLocaleDateString('es', { dateStyle: 'medium' })}${f.resetBy ? `, cuando ${f.resetBy} lo reinició` : ''}.` : 'Desde que se configuró.'}</>;
+  const src = <>{f.keySet ? null : <span className="bad">● La variable no está en .env: no hay respaldo.</span>}<span className="aj-env">repos.json</span><code>apiFallback</code><span>· tope y modelo, en el archivo; la key, en</span><code>{f.apiKeyEnv}</code><button data-ajapireset={f.repo} onClick={reset}>Reiniciar lo gastado</button></>;
+  return <Row label={`Respaldo por API · ${f.repo}`} desc={desc} ctl={<span className={`meter${used >= 0.8 ? ' hot' : ''}`}><span className="m"><span className={used >= 0.8 ? 'hot' : ''} style={{ width: `${Math.min(100, used * 100)}%` }} /></span><b>{cents(f.spentUsd)} de {cents(f.maxUsd)}</b></span>} src={src} />;
 }

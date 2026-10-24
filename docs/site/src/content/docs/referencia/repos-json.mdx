@@ -20,7 +20,8 @@ import { Aside } from '@astrojs/starlight/components';
       "name": "Acme",
       "apps": { "backoffice": { "name": "Backoffice", "description": "Pedidos, clientes y catálogo" } }
     },
-    "deploy": { "selective": true }
+    "deploy": { "selective": true },
+    "apiFallback": { "apiKeyEnv": "ANTHROPIC_API_KEY_ACME", "model": "sonnet", "maxUsd": 30 }
   }
 ]
 ```
@@ -40,8 +41,25 @@ import { Aside } from '@astrojs/starlight/components';
 | `linear` | `apiKeyEnv`: el nombre de la variable de `.env` con la key de Linear del workspace. `explorationProject`: app → proyecto donde van los issues de su exploración. Ver [Linear](/ronin/operar/linear/). |
 | `portal` | El repo en el [portal de pedidos](/ronin/operar/portal/): `name` (como lo ve la gente), `apps` (las claves son las de `ronin.app.json`, con `name` y `description`) y `notifyTo` (correos de respaldo del equipo). |
 | `deploy` | Que se pueda [desplegar](/ronin/guias/desplegar/) desde el tablero: `prerelease`, `selective` y `auto` (los pedidos del portal se despliegan solos, con el patrón de su tag: `{ "tag": "v{major}.{minor}.{patch+1}" }`). |
+| `apiFallback` | Terminar con una API key de la consola de Anthropic la corrida que la cuota de la suscripción cortó a mitad de camino: `apiKeyEnv` (la variable de `.env` con la key), `model` (por defecto `sonnet`) y `maxUsd` (el tope de gasto, obligatorio). Ver [Respaldo por API](#respaldo-por-api). |
 | `changelogRepo`, `changelogRepoPath` | Publicar una entrada en un repo de changelog con cada release. Van juntos. Ver [Changelog](/ronin/operar/changelog/). |
 
 <Aside type="note">
 Agregar o quitar un repo, y cambiar sus rutas, se hace en el archivo. Después de agregar uno, corré `pnpm init-labels` y, con el servidor, `pnpm init-webhooks <url>`.
 </Aside>
+
+## Respaldo por API
+
+Cuando la cuota de la suscripción de Claude se agota mientras un agente trabaja (arreglando los checks de un PR, por ejemplo), la corrida se corta. Sin `apiFallback`, la tarea espera a que vuelva la cuota. Con `apiFallback`, ronin la retoma en el momento con la API key del repo:
+
+- **Sigue en la misma sesión,** con `claude --resume`: el agente conserva lo que ya hizo y leyó. Si la sesión no está, empieza la tarea de nuevo con la key.
+- **En el modelo del respaldo,** más barato que el de las corridas normales.
+- **Con lo que le queda al repo** como `--max-budget-usd`. Claude Code lo revisa al terminar cada turno, así que una corrida puede pasarse un poco. Con menos de $0,50 de saldo, la corrida espera a la cuota como antes.
+- **Solo lo que se cortó:** una tarea que no llegó a empezar porque la cuota ya estaba agotada no arranca por API, espera.
+
+Lo que gasta cada repo por API se ve en [Ajustes → Cuentas de Claude](/ronin/operar/ajustes/#administración). El contador se reinicia ahí, después de recargar los créditos de la key. Al pasar el 80 % del tope, el repo aparece en la barra de abajo del tablero.
+
+<Aside type="caution">
+La key va en `.env` con el nombre que diga `apiKeyEnv`, nunca en `repos.json` y nunca como `ANTHROPIC_API_KEY`: con ese nombre todas las corridas cobrarían a la API. Créala en un workspace propio de la consola, con un límite de gasto: es el tope que se cumple aunque ronin cuente mal (no cuenta, por ejemplo, una corrida que se cortó por tiempo).
+</Aside>
+

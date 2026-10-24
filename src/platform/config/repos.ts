@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { config } from './config.js';
-import type { RepoEntry, AgentDefaults, DeployConfig, PortalRepoConfig } from '../agents/repo-context.js';
+import type { RepoEntry, AgentDefaults, ApiFallbackConfig, DeployConfig, PortalRepoConfig } from '../agents/repo-context.js';
+import { MODELS } from './settings.js';
 
 // The same top as TICK_CONCURRENCY's in Ajustes (platform/config/settings.ts).
 export const MAX_REPO_CONCURRENCY = 10;
@@ -49,7 +50,7 @@ function validateEntry(entry: unknown, index: number): RepoEntry {
   if (typeof entry !== 'object' || entry === null) {
     throw new Error(`${config.reposConfigPath}[${index}] no es un objeto`);
   }
-  const { productRepo, productRepoPath, claudeConfigDir, worktreeBaseRef, changelogRepo, changelogRepoPath, explore, agent, linear, portal, deploy, autoMerge, concurrency } = entry as Record<string, unknown>;
+  const { productRepo, productRepoPath, claudeConfigDir, worktreeBaseRef, changelogRepo, changelogRepoPath, explore, agent, linear, portal, deploy, autoMerge, concurrency, apiFallback } = entry as Record<string, unknown>;
   if (typeof productRepo !== 'string' || productRepo.length === 0) {
     throw new Error(`${config.reposConfigPath}[${index}].productRepo falta o no es un string`);
   }
@@ -89,6 +90,7 @@ function validateEntry(entry: unknown, index: number): RepoEntry {
     ...(deploy !== undefined ? { deploy: validateDeploy(deploy, `${config.reposConfigPath}[${index}].deploy`) } : {}),
     ...(autoMerge !== undefined ? { autoMerge } : {}),
     ...(concurrency !== undefined ? { concurrency: concurrency as number } : {}),
+    ...(apiFallback !== undefined ? { apiFallback: validateApiFallback(apiFallback, `${config.reposConfigPath}[${index}].apiFallback`) } : {}),
   };
 }
 
@@ -137,6 +139,22 @@ function validateLinear(linear: unknown, where: string): NonNullable<RepoEntry['
     throw new Error(`${where}.explorationProject debe ser un objeto app → proyecto de Linear (nombre o id)`);
   }
   return { apiKeyEnv, ...(explorationProject !== undefined ? { explorationProject: explorationProject as Record<string, string> } : {}) };
+}
+
+export const API_FALLBACK_MAX_USD = 10_000;
+
+// The model defaults to sonnet: cheaper than the runs' usual one, and
+// enough to finish what a run had going (#421).
+function validateApiFallback(fallback: unknown, where: string): ApiFallbackConfig {
+  if (typeof fallback !== 'object' || fallback === null || Array.isArray(fallback)) throw new Error(`${where} debe ser un objeto`);
+  const { apiKeyEnv, model, maxUsd, ...rest } = fallback as Record<string, unknown>;
+  const unknownKeys = Object.keys(rest);
+  if (unknownKeys.length > 0) throw new Error(`${where} tiene campos desconocidos: ${unknownKeys.join(', ')} (válidos: apiKeyEnv, model, maxUsd)`);
+  if (typeof apiKeyEnv !== 'string' || !/^[A-Z_][A-Z0-9_]*$/.test(apiKeyEnv)) throw new Error(`${where}.apiKeyEnv debe ser el nombre de una variable de .env (p. ej. ANTHROPIC_API_KEY_REDMOTOS)`);
+  if (apiKeyEnv === 'ANTHROPIC_API_KEY') throw new Error(`${where}.apiKeyEnv no puede ser ANTHROPIC_API_KEY: en el entorno de ronin, todas las corridas cobrarían a la API`);
+  if (model !== undefined && (typeof model !== 'string' || !MODELS.includes(model))) throw new Error(`${where}.model debe ser uno de: ${MODELS.join(', ')}`);
+  if (typeof maxUsd !== 'number' || !Number.isFinite(maxUsd) || maxUsd <= 0 || maxUsd > API_FALLBACK_MAX_USD) throw new Error(`${where}.maxUsd debe ser el tope de gasto en USD, un número mayor que 0 y hasta ${API_FALLBACK_MAX_USD}`);
+  return { apiKeyEnv, model: (model as string | undefined) ?? 'sonnet', maxUsd };
 }
 
 const isStringMap = (value: unknown): value is Record<string, string> =>

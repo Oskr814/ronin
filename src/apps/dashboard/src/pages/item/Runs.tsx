@@ -90,7 +90,7 @@ export function Transcript({ v }: { v: ItemView }) {
       }}><Steps lines={loaded.lines} /><Ending summary={loaded.summary} /></div>
       <div className="foot">{loaded.summary.state === 'running'
         ? <><span className="w">● Trabajando</span><Since at={loaded.summary.startedAt} /></>
-        : <span>{RUN_STATE[loaded.summary.state]?.[2] ?? loaded.summary.state}</span>}<span>{runNames.title(loaded.summary)}</span><span className="r">{[loaded.summary.model, loaded.summary.worktree].filter(Boolean).join('  ')}</span></div>
+        : <span>{RUN_STATE[loaded.summary.state]?.[2] ?? loaded.summary.state}</span>}<span>{runNames.title(loaded.summary)}</span><span className="r">{[loaded.summary.model, loaded.summary.billing === 'api' ? 'por API' : null, loaded.summary.worktree].filter(Boolean).join('  ')}</span></div>
     </>}
   </>;
 }

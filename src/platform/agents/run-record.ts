@@ -37,6 +37,8 @@ export interface RunContext {
   model?: string;
   effort?: string;
   account: string;
+  // 'api': the run went on its repo's API key, not the subscription (#421).
+  billing?: 'api';
   worktree: string;
 }
 
@@ -85,6 +87,7 @@ export interface RunSummary {
   model?: string;
   effort?: string;
   account: string;
+  billing?: 'api';
   worktree: string;
   startedAt: string;
   endedAt?: string;
@@ -121,6 +124,7 @@ export class RunRecord implements RunSink {
   private stats: RunResult = {};
   private broken = false;
   private steps = 0;
+  private toolSteps = 0;
   private lastStep?: string;
   // The row's insert, which its end waits for.
   private indexed: Promise<void> = Promise.resolve();
@@ -143,12 +147,29 @@ export class RunRecord implements RunSink {
   step(step: RunStep): void {
     const { kind, ...fields } = step;
     this.steps++;
+    if (kind === 'tool') this.toolSteps++;
     this.lastStep = redact(stepText({ type: kind, ...fields }));
     this.write({ type: kind, ts: new Date().toISOString(), ...fields });
   }
 
   result(result: RunResult): void {
     this.stats = { ...this.stats, ...result };
+  }
+
+  // The Claude session the run is in, once claude -p said it: what a run
+  // the quota cut resumes (agent-task.ts).
+  get sessionId(): string | undefined {
+    return this.stats.sessionId;
+  }
+
+  // Whether the agent got to do anything: the notice of a spent quota
+  // comes as a text step, never a tool.
+  get usedTools(): boolean {
+    return this.toolSteps > 0;
+  }
+
+  get costUsd(): number | undefined {
+    return this.stats.costUsd;
   }
 
   async end(outcome: RunOutcome, error?: unknown, now = new Date()): Promise<void> {

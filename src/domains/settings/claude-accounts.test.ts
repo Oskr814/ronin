@@ -12,7 +12,8 @@ const usage = vi.hoisted(() => ({ list: [] as unknown[] }));
 vi.mock('@platform/claude/claude-usage.js', async (importOriginal) => ({ ...(await importOriginal<typeof import('@platform/claude/claude-usage.js')>()), listUsage: async () => usage.list }));
 
 const { readSettingsLog } = await import('./settings.js');
-const { accountsView, setAccountPlan } = await import('./claude-accounts.js');
+const { accountsView, resetApiBudget, setAccountPlan } = await import('./claude-accounts.js');
+const { addApiSpend } = await import('@platform/claude/api-fallback.js');
 
 const ENTRIES = [
   { productRepo: 'redmotos/shoppingcart', productRepoPath: '/sc', claudeConfigDir: '/home/x/.claude-redmotos' },
@@ -94,5 +95,26 @@ describe('setAccountPlan', () => {
     await set('bmedical', { plan: 'pro' });
     await set('bmedical', { plan: 'pro' });
     expect(await readSettingsLog()).toHaveLength(2);
+  });
+});
+
+describe('the API fallback of a repo (#421)', () => {
+  const entries = [
+    { productRepo: 'acme/app', productRepoPath: '/a', claudeConfigDir: '/home/x/.claude-acme', apiFallback: { apiKeyEnv: 'ANTHROPIC_API_KEY_ACME_TEST', model: 'sonnet', maxUsd: 20 } },
+    { productRepo: 'acme/web', productRepoPath: '/w', claudeConfigDir: '/home/x/.claude-acme' },
+  ];
+
+  it('shows under its account what it spent, and whether its key is set', async () => {
+    await addApiSpend('acme/app', 3.5);
+    const [acme] = (await accountsView(entries)).cuentas;
+    expect(acme.apiFallbacks).toEqual([{ repo: 'acme/app', model: 'sonnet', maxUsd: 20, spentUsd: 3.5, apiKeyEnv: 'ANTHROPIC_API_KEY_ACME_TEST', keySet: false }]);
+  });
+
+  it('resets it to zero, and records who did', async () => {
+    await addApiSpend('acme/app', 18);
+    const { fallback } = await resetApiBudget('jefa', 'acme/app', entries);
+    expect(fallback).toMatchObject({ spentUsd: 0, resetBy: 'jefa' });
+    expect((await readSettingsLog()).map((e) => `${e.what}: ${e.from} → ${e.to}`)).toEqual(['Cuentas de Claude · acme/app · gastado por API: $18.00 → $0.00']);
+    await expect(resetApiBudget('jefa', 'acme/web', entries)).rejects.toThrow(/no tiene respaldo por API/);
   });
 });

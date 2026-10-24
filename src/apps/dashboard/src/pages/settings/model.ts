@@ -60,7 +60,10 @@ export interface Account {
   repos: string[];
   plan: { plan: string; name: string; priceUsd: number | null; source: string };
   usage: { measuredAt: string; fiveHour?: UsageWindow; sevenDay?: UsageWindow } | null;
+  apiFallbacks: ApiFallback[];
 }
+// A repo's API fallback (#421): what it spent of its cap since the last reset.
+export interface ApiFallback { repo: string; model: string; maxUsd: number; spentUsd: number; resetAt?: string; resetBy?: string; apiKeyEnv: string; keySet: boolean }
 export interface Accounts { plans: Plan[]; cuentas: Account[] }
 
 export interface Person {

@@ -168,9 +168,19 @@ export interface RunsTable {
   duration_ms: MaybeNum;
   outcome: string | null;
   cost_usd: MaybeNum;
+  billing: ColumnType<string | null, string | null | undefined, string | null>;
   error: string | null;
   steps: ColumnType<number, number | undefined, number>;
   last_step: string | null;
+  updated_at: Stamp;
+}
+
+// What each repo spent on its API fallback since it was last reset (#421).
+export interface ApiBudgetsTable {
+  repo: string;
+  spent_usd: ColumnType<number, number | undefined, number>;
+  reset_at: MaybeStamp;
+  reset_by: string | null;
   updated_at: Stamp;
 }
 
@@ -205,4 +215,5 @@ export interface Database {
   runs: RunsTable;
   claude_usage: ClaudeUsageTable;
   claude_usage_history: ClaudeUsageHistoryTable;
+  api_budgets: ApiBudgetsTable;
 }

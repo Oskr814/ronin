@@ -27,7 +27,7 @@ vi.mock('node:child_process', () => ({
 const lendClaudeAccount = vi.fn(async (..._args: unknown[]) => {});
 vi.mock('../agents/agent-user.js', () => ({ lendClaudeAccount: (...args: unknown[]) => lendClaudeAccount(...args) }));
 
-const { runClaudeHeadless, ClaudeUsageLimitError, claudeHeadlessArgs, HEADLESS_DISALLOWED_TOOLS, sealedAgentEnv, streamSteps } = await import('./claude-runner.js');
+const { runClaudeHeadless, ClaudeUsageLimitError, ClaudeNoSessionError, claudeHeadlessArgs, HEADLESS_DISALLOWED_TOOLS, sealedAgentEnv, streamSteps } = await import('./claude-runner.js');
 const { config } = await import('../config/config.js');
 // The mock above is a plain object; the real config is typed read-only.
 const mutableConfig = config as { agentModel: string; agentEffort: string };
@@ -216,6 +216,79 @@ describe('runClaudeHeadless run record and usage', () => {
     fakeChild.emit('close', 1);
     await expect(promise).rejects.toBeInstanceOf(ClaudeUsageLimitError);
     expect(readAccountUsage('default')).toHaveProperty('limitHitAt');
+  });
+});
+
+describe('runClaudeHeadless on an API key (#421)', () => {
+  const spawnedEnv = () => (spawn.mock.calls.at(-1)![2] as { env: NodeJS.ProcessEnv }).env;
+
+  it('puts the key in its environment, and only when the run asks for one', async () => {
+    process.env.ANTHROPIC_API_KEY = 'sk-of-ronin';
+    try {
+      fakeChild = new FakeChildProcess();
+      let promise = runInRepo('/tmp/wt', 'prompt', 'label');
+      await vi.waitFor(() => expect(spawn).toHaveBeenCalled());
+      fakeChild.emit('close', 0);
+      await promise;
+      expect(spawnedEnv()).not.toHaveProperty('ANTHROPIC_API_KEY');
+
+      spawn.mockClear();
+      fakeChild = new FakeChildProcess();
+      promise = withActiveRepo({ productRepo: 'a/b', productRepoPath: '/tmp/a' }, () => runClaudeHeadless('/tmp/wt', 'prompt', 'label', { apiKey: 'sk-of-the-repo' }));
+      await vi.waitFor(() => expect(spawn).toHaveBeenCalled());
+      fakeChild.emit('close', 0);
+      await promise;
+      expect(spawnedEnv().ANTHROPIC_API_KEY).toBe('sk-of-the-repo');
+    } finally {
+      delete process.env.ANTHROPIC_API_KEY;
+    }
+  });
+
+  it('resumes the session with its budget', () => {
+    const args = claudeHeadlessArgs('sigue', { resume: 's1', model: 'sonnet', maxBudgetUsd: 12.5 });
+    expect(args.slice(args.indexOf('--resume'), args.indexOf('--resume') + 2)).toEqual(['--resume', 's1']);
+    expect(args.slice(args.indexOf('--max-budget-usd'), args.indexOf('--max-budget-usd') + 2)).toEqual(['--max-budget-usd', '12.5']);
+    expect(claudeHeadlessArgs('p')).not.toContain('--resume');
+    expect(claudeHeadlessArgs('p')).not.toContain('--max-budget-usd');
+  });
+
+  it('reads a spent budget as the usage limit, without marking the account out of quota', async () => {
+    fakeChild = new FakeChildProcess();
+    const promise = withActiveRepo({ productRepo: 'a/b', productRepoPath: '/tmp/a', claudeConfigDir: '/tmp/.claude-apionly' }, () => runClaudeHeadless('/tmp/wt', 'prompt', 'label', { apiKey: 'k', maxBudgetUsd: 1 }));
+    await vi.waitFor(() => expect(spawn).toHaveBeenCalled());
+    emitStdout(fakeChild, JSON.stringify({ type: 'result', subtype: 'error_max_budget_usd', is_error: true, total_cost_usd: 1.2, errors: ['Reached maximum budget ($1)'] }));
+    fakeChild.emit('close', 1);
+    await expect(promise).rejects.toBeInstanceOf(ClaudeUsageLimitError);
+    expect(readAccountUsage('apionly')).toBeNull();
+  });
+
+  it('reads a spent credit balance as the usage limit', async () => {
+    fakeChild = new FakeChildProcess();
+    const promise = runInRepo('/tmp/wt', 'prompt', 'label');
+    await vi.waitFor(() => expect(spawn).toHaveBeenCalled());
+    emitStdout(fakeChild, 'API Error: 400 Your credit balance is too low to access the Anthropic API.');
+    fakeChild.emit('close', 1);
+    await expect(promise).rejects.toBeInstanceOf(ClaudeUsageLimitError);
+  });
+
+  it('says so when the session to resume is gone', async () => {
+    fakeChild = new FakeChildProcess();
+    const promise = withActiveRepo({ productRepo: 'a/b', productRepoPath: '/tmp/a' }, () => runClaudeHeadless('/tmp/wt', 'sigue', 'label', { resume: 'gone' }));
+    await vi.waitFor(() => expect(spawn).toHaveBeenCalled());
+    fakeChild.stderr.emit('data', Buffer.from('No conversation found with session ID: gone\n'));
+    fakeChild.emit('close', 1);
+    await expect(promise).rejects.toBeInstanceOf(ClaudeNoSessionError);
+  });
+
+  it('hands the session over as soon as the run starts', async () => {
+    fakeChild = new FakeChildProcess();
+    const sink = { step: vi.fn(), result: vi.fn() };
+    const promise = withActiveRepo({ productRepo: 'a/b', productRepoPath: '/tmp/a' }, () => runClaudeHeadless('/tmp/wt', 'prompt', 'label', {}, sink));
+    await vi.waitFor(() => expect(spawn).toHaveBeenCalled());
+    emitStdout(fakeChild, JSON.stringify({ type: 'system', subtype: 'init', session_id: 's9' }));
+    fakeChild.emit('close', 0);
+    await promise;
+    expect(sink.result).toHaveBeenCalledWith({ sessionId: 's9' });
   });
 });
 

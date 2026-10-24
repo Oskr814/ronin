@@ -124,6 +124,25 @@ describe('loadRepos', () => {
     await expect(loadRepos()).rejects.toThrow(/agent\.models/);
   });
 
+  it('keeps an API fallback, with sonnet unless it says, and rejects a malformed one', async () => {
+    const write = (apiFallback: unknown) => writeFile(reposConfigPath, JSON.stringify([{ productRepo: 'a/b', productRepoPath: '/tmp/a', apiFallback }]));
+    await write({ apiKeyEnv: 'ANTHROPIC_API_KEY_AB', maxUsd: 30 });
+    expect((await loadRepos())[0].apiFallback).toEqual({ apiKeyEnv: 'ANTHROPIC_API_KEY_AB', model: 'sonnet', maxUsd: 30 });
+    await write({ apiKeyEnv: 'ANTHROPIC_API_KEY_AB', model: 'haiku', maxUsd: 5 });
+    expect((await loadRepos())[0].apiFallback).toMatchObject({ model: 'haiku' });
+
+    await write({ apiKeyEnv: 'ANTHROPIC_API_KEY', maxUsd: 30 });
+    await expect(loadRepos()).rejects.toThrow(/no puede ser ANTHROPIC_API_KEY/);
+    await write({ apiKeyEnv: 'sk-ant-pegada-aqui', maxUsd: 30 });
+    await expect(loadRepos()).rejects.toThrow(/apiFallback\.apiKeyEnv/);
+    await write({ apiKeyEnv: 'ANTHROPIC_API_KEY_AB' });
+    await expect(loadRepos()).rejects.toThrow(/apiFallback\.maxUsd/);
+    await write({ apiKeyEnv: 'ANTHROPIC_API_KEY_AB', maxUsd: 30, model: 'gpt' });
+    await expect(loadRepos()).rejects.toThrow(/apiFallback\.model/);
+    await write({ apiKeyEnv: 'ANTHROPIC_API_KEY_AB', maxUsd: 30, maxusd: 1 });
+    await expect(loadRepos()).rejects.toThrow(/campos desconocidos: maxusd/);
+  });
+
   it('keeps a valid linear block and rejects a malformed one', async () => {
     await writeFile(reposConfigPath, JSON.stringify([{ productRepo: 'a/b', productRepoPath: '/tmp/a', linear: { apiKeyEnv: 'LINEAR_API_KEY_X' } }]));
     expect((await loadRepos())[0].linear).toEqual({ apiKeyEnv: 'LINEAR_API_KEY_X' });

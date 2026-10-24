@@ -62,6 +62,7 @@ export function summarizeRun(lines: RunLine[]): RunSummary | null {
     ...(pick<string>('model') ? { model: pick<string>('model') } : {}),
     ...(pick<string>('effort') ? { effort: pick<string>('effort') } : {}),
     account: String(start.account ?? ''),
+    ...(start.billing === 'api' ? { billing: 'api' as const } : {}),
     worktree: String(start.worktree ?? ''),
     startedAt: String(start.startedAt),
     ...(end ? { endedAt: String(end.endedAt), durationMs: Number(end.durationMs) } : {}),
