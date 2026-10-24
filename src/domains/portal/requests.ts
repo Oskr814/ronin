@@ -231,6 +231,9 @@ export interface Prototype {
   team?: TeamNotes;
   // The draft's diff, under proto/ (empty when the after is a mockup).
   patch?: string;
+  // The script its captures came from (#411), under proto/ too: for the
+  // next prototype of the same screen to start from.
+  script?: string;
   // The message that shows it.
   messageId: number;
   at: string;

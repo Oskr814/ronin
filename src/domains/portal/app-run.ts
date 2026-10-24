@@ -1,4 +1,4 @@
-import { basename, join } from 'node:path';
+import { basename, join, resolve } from 'node:path';
 import { runAgentTask, type AgentTask } from '@platform/agents/agent-task.js';
 import type { PrototypeBrowser, RunningApp } from './prompts.js';
 import { appDown, appUp, removeAppCheckout } from '../product-app/index.js';
@@ -131,6 +131,8 @@ export interface PrototypeDraft {
   antes: PrototypeShot[];
   despues: PrototypeShot[];
   patch: string;
+  // The script its captures came from (#411), when it wrote one.
+  script?: string;
 }
 
 // The agent said no meaningful prototype could be made (its "error"), as
@@ -142,7 +144,14 @@ export interface PrototypeTaskBase extends RunningApp {
   checkoutDir: string;
   outputPath: string;
   mcpConfigPath: string;
+  // The captures from a script (#411): the command that runs one, to which
+  // the agent adds its script and the phase, and where it writes it.
+  shots: { command: string; scriptPath: string };
 }
+
+// bin/ronin-shots.mjs, next to ronin's own code: in the image, /app/bin. It
+// imports ronin's Playwright from there.
+const SHOTS_BIN = resolve('bin', 'ronin-shots.mjs');
 
 export interface PrototypeTarget {
   // Names the checkout, the app instance and the output dir: portal-p-<n>
@@ -181,6 +190,8 @@ export interface AppRun {
   diff: () => Promise<string>;
   // A screenshot or an HTML file the agent named, as an image file.
   shot: (path: string, name: string) => Promise<{ path: string; viewport: 'desktop' | 'mobile' }>;
+  // The script of captures the agent left (#411), if any.
+  script: () => Promise<string | undefined>;
 }
 
 // Detached at the base branch, fresh every time: a prototype starts from
@@ -263,14 +274,20 @@ export async function runOnApp<T>(target: PrototypeTarget, collect: (run: AppRun
     // logins, too — the app's state, where appUp left them, isn't its.
     await host().fs.mkdir(join(outDir, 'auth'), { recursive: true });
     const servers: Record<string, unknown> = {};
+    const shotBrowsers: Record<string, unknown> = {};
     for (const b of browsers) {
       await host().fs.mkdir(join(outDir, b.server), { recursive: true });
       const login = join(outDir, 'auth', basename(authStates[b.role]));
       await host().fs.writeFile(login, await host().fs.readFile(authStates[b.role]));
       servers[b.server] = mcpServer(app, b.viewport, login, join(outDir, b.server), origins);
+      const vp = app.viewports[b.viewport];
+      shotBrowsers[b.server] = { storageState: login, viewport: { width: vp.width, height: vp.height }, mobile: Boolean(vp.isMobile), outputDir: join(outDir, b.server), origins };
     }
     const mcpConfigPath = join(outDir, 'mcp.json');
     await host().fs.writeFile(mcpConfigPath, JSON.stringify({ mcpServers: servers }, null, 2));
+    // The same browsers for a script of captures (bin/ronin-shots.mjs).
+    const shotsConfigPath = join(outDir, 'browsers.json');
+    await host().fs.writeFile(shotsConfigPath, JSON.stringify({ baseUrl: session.baseUrl, browsers: shotBrowsers }, null, 2));
     const outputPath = join(outDir, 'result.json');
     let staged = 0;
     const stage = async (path: string) => {
@@ -289,6 +306,7 @@ export async function runOnApp<T>(target: PrototypeTarget, collect: (run: AppRun
       baseUrl: session.baseUrl,
       homePath: app.homePath ?? '/',
       browsers,
+      shots: { command: `node ${SHOTS_BIN} ${shotsConfigPath}`, scriptPath: join(outDir, 'guion.json') },
     }, { app: appStack(dir, user), stage }));
     // A screenshot lands in the folder of the browser that took it; an HTML
     // file sits at the top of outDir and renders at desktop size.
@@ -300,7 +318,8 @@ export async function runOnApp<T>(target: PrototypeTarget, collect: (run: AppRun
       await renderHtmlToPng(path, png, app.viewports[viewport]);
       return { path: png, viewport };
     };
-    return await collect({ appName, dir, outDir, outputPath, generated, diff: () => draftDiff(dir, generated, user), shot });
+    const script = () => host().fs.readFile(join(outDir, 'guion.json'), 'utf8').then((raw) => raw.trim() || undefined, () => undefined);
+    return await collect({ appName, dir, outDir, outputPath, generated, diff: () => draftDiff(dir, generated, user), shot, script });
   } finally {
     await appDown(dir);
     await removeAppCheckout(dir, 'prototype');
@@ -315,6 +334,7 @@ export function makePrototype<T>(target: PrototypeTarget, deliver: (draft: Proto
     const output = parsePrototypeResult(await host().fs.readFile(run.outputPath, 'utf8'), run.outDir);
     if ('error' in output) throw new PrototypeDeclined(output.error);
     const shots = { antes: [] as PrototypeShot[], despues: [] as PrototypeShot[] };
+    const script = await run.script();
     for (const kind of ['antes', 'despues'] as const) {
       for (const [i, image] of output[kind].entries()) {
         shots[kind].push({ ...(await run.shot(image.imagen, `${kind}-${i + 1}`)), ...(image.nota ? { nota: image.nota } : {}) });
@@ -327,6 +347,7 @@ export function makePrototype<T>(target: PrototypeTarget, deliver: (draft: Proto
       ...(output.mensaje ? { mensaje: output.mensaje } : {}),
       ...shots,
       patch: await run.diff(),
+      ...(script ? { script } : {}),
     });
   });
 }

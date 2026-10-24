@@ -26,7 +26,7 @@ mkdirSync(join(outDir, 'sales-desktop'));
 for (const name of ['error-1.png', 'arreglo-1.png']) writeFileSync(join(outDir, 'sales-desktop', name), name);
 const run: AppRun = {
   appName: 'backoffice', dir: '/w', outDir, outputPath: join(outDir, 'result.json'), generated: [], diff: () => draftDiff(),
-  shot: async (path) => ({ path, viewport: 'desktop' }),
+  shot: async (path) => ({ path, viewport: 'desktop' }), script: async () => undefined,
 };
 
 const reproduced = {
