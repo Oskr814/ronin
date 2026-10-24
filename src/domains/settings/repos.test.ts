@@ -27,6 +27,7 @@ beforeEach(() => {
     { productRepo: 'Bmedical/bmedical', productRepoPath: '/bm' },
   ]));
   process.env.LINEAR_API_KEY_REDMOTOS = 'lin_x';
+  process.env.ANTHROPIC_API_KEY_REDMOTOS = 'sk-ant-x';
 });
 
 describe('editRepo', () => {
@@ -115,11 +116,42 @@ describe('editRepo', () => {
   });
 });
 
+describe('editRepo — the API fallback (#421)', () => {
+  it('turns it on with a key of .env and the default cap, changes its model and cap, and turns it off', async () => {
+    await edit({ apiFallback: { apiKeyEnv: 'ANTHROPIC_API_KEY_REDMOTOS' } });
+    expect(file()[0].apiFallback).toEqual({ apiKeyEnv: 'ANTHROPIC_API_KEY_REDMOTOS', maxUsd: 20 });
+    await edit({ apiFallback: { model: 'haiku' } });
+    await edit({ apiFallback: { maxUsd: 35 } });
+    expect(file()[0].apiFallback).toEqual({ apiKeyEnv: 'ANTHROPIC_API_KEY_REDMOTOS', model: 'haiku', maxUsd: 35 });
+    expect((await loadRepos())[0].apiFallback).toEqual({ apiKeyEnv: 'ANTHROPIC_API_KEY_REDMOTOS', model: 'haiku', maxUsd: 35 });
+    await edit({ apiFallback: null });
+    expect(file()[0].apiFallback).toBeUndefined();
+    expect((await readSettingsLog()).map((e) => `${e.what}: ${e.from} → ${e.to}`)).toEqual([
+      `Repos · ${SC} · respaldo por API: ANTHROPIC_API_KEY_REDMOTOS, haiku, tope $35 → sin respaldo`,
+      `Repos · ${SC} · respaldo por API: ANTHROPIC_API_KEY_REDMOTOS, haiku, tope $20 → ANTHROPIC_API_KEY_REDMOTOS, haiku, tope $35`,
+      `Repos · ${SC} · respaldo por API: ANTHROPIC_API_KEY_REDMOTOS, sonnet, tope $20 → ANTHROPIC_API_KEY_REDMOTOS, haiku, tope $20`,
+      `Repos · ${SC} · respaldo por API: sin respaldo → ANTHROPIC_API_KEY_REDMOTOS, sonnet, tope $20`,
+    ]);
+  });
+
+  it('takes only a key of .env, a real model and a cap above zero', async () => {
+    await expect(edit({ apiFallback: { apiKeyEnv: 'ANTHROPIC_API_KEY_NO_EXISTE' } })).rejects.toThrow(/no está en .env/);
+    await expect(edit({ apiFallback: { apiKeyEnv: 'ANTHROPIC_API_KEY' } })).rejects.toThrow(/no está en .env/);
+    await expect(edit({ apiFallback: { maxUsd: 10 } })).rejects.toThrow(/primero elige la variable/);
+    await edit({ apiFallback: { apiKeyEnv: 'ANTHROPIC_API_KEY_REDMOTOS' } });
+    await expect(edit({ apiFallback: { model: 'gpt' } })).rejects.toThrow(/modelo no existe/);
+    await expect(edit({ apiFallback: { maxUsd: 0 } })).rejects.toThrow(/mayor que 0/);
+    expect(file()[0].apiFallback).toEqual({ apiKeyEnv: 'ANTHROPIC_API_KEY_REDMOTOS', maxUsd: 20 });
+  });
+});
+
 describe('reposView', () => {
   it('lists each repo with its apps, and the Linear keys of .env by name only', async () => {
     const view = await reposView(await loadRepos()) as { linearKeys: string[]; repos: Array<{ repo: string; apps: Array<{ id: string; portal: boolean; inManifest: boolean }> }> };
     expect(view.linearKeys).toContain('LINEAR_API_KEY_REDMOTOS');
     expect(JSON.stringify(view)).not.toContain('lin_x');
+    expect((view as unknown as { anthropicKeys: string[] }).anthropicKeys).toEqual(['ANTHROPIC_API_KEY_REDMOTOS']);
+    expect(JSON.stringify(view)).not.toContain('sk-ant-x');
     expect(view.repos[0].apps.map((a) => [a.id, a.portal])).toEqual([['backoffice', true], ['tienda', false]]);
   });
 });

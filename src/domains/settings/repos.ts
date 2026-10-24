@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { config } from '@platform/config/config.js';
 import { log } from '@platform/logger.js';
 import type { RepoEntry } from '@platform/agents/repo-context.js';
-import { MAX_REPO_CONCURRENCY, validateRepos } from '@platform/config/repos.js';
+import { API_FALLBACK_MAX_USD, MAX_REPO_CONCURRENCY, validateRepos } from '@platform/config/repos.js';
 import { linearKey, teamPlanning } from '@platform/linear/linear-api.js';
 import { withJson } from '@platform/fs/atomic-json.js';
 import { SettingsError, record } from './settings.js';
@@ -14,6 +14,7 @@ import { patternProblem } from '../deploys/tag-pattern.js';
 //   GET  /api/settings/repos                  each repo of repos.json, with what can be changed from here
 //   POST /api/settings/repos/<owner>/<repo>   one change: { baseRef } | { portalName } | { app: { id, portal?, name?, description?, explore?, project? } }
 //                                            | { linear } | { deploy: { on?, prerelease?, selective?, auto? } } | { agent: { model?, effort? } } | { autoMerge } | { concurrency } | { notifyTo }
+//                                            | { apiFallback: null | { apiKeyEnv?, model?, maxUsd? } }
 //
 // repos.json stays where every repo lives: what changes here is written
 // there, checked with the same rules that read it (validateRepos) and with
@@ -30,6 +31,13 @@ type Raw = Record<string, unknown> & { productRepo: string };
 
 // The env vars that hold a Linear key, by name only: the key never leaves .env.
 const linearKeyNames = () => Object.keys(process.env).filter((name) => /^LINEAR_API_KEY_[A-Z0-9_]+$/.test(name) && process.env[name]).sort();
+
+// The same for the API fallback's keys (#421): ANTHROPIC_API_KEY_*, never
+// ANTHROPIC_API_KEY itself, which would make every run pay by API.
+const anthropicKeyNames = () => Object.keys(process.env).filter((name) => /^ANTHROPIC_API_KEY_[A-Z0-9_]+$/.test(name) && process.env[name]).sort();
+
+// A fallback turned on from here starts with this cap, changed right after.
+export const API_FALLBACK_DEFAULT_USD = 20;
 
 const projectsCache = new Map<string, { at: number; names: string[] }>();
 async function linearProjects(entry: RepoEntry, now = Date.now()): Promise<string[]> {
@@ -49,6 +57,7 @@ export async function reposView(entries: RepoEntry[]): Promise<unknown> {
   return {
     path: config.reposConfigPath,
     linearKeys: linearKeyNames(),
+    anthropicKeys: anthropicKeyNames(),
     models: MODELS,
     efforts: EFFORTS,
     defaults: { baseRef: config.worktreeBaseRef, model: config.agentModel, effort: config.agentEffort, concurrency: config.tickConcurrency },
@@ -76,6 +85,7 @@ export async function reposView(entries: RepoEntry[]): Promise<unknown> {
         agent: { model: entry.agent?.model ?? '', effort: entry.agent?.effort ?? '' },
         autoMerge: entry.autoMerge !== false,
         concurrency: entry.concurrency ?? null,
+        apiFallback: entry.apiFallback ? { ...entry.apiFallback, connected: Boolean(process.env[entry.apiFallback.apiKeyEnv]) } : null,
       };
     })),
   };
@@ -177,6 +187,36 @@ function apply(raw: Raw, body: Record<string, unknown>, manifest: string[]): Arr
     else if (linear) linear.apiKeyEnv = name;
     else raw.linear = { apiKeyEnv: name };
     if (before !== name) changes.push({ what: 'Linear', from: before || 'sin Linear', to: name || 'sin Linear' });
+  }
+
+  if (body.apiFallback !== undefined) {
+    type Fallback = { apiKeyEnv: string; model?: string; maxUsd: number };
+    const before = raw.apiFallback as Fallback | undefined;
+    const label = (f: Fallback | undefined) => (f ? `${f.apiKeyEnv}, ${f.model ?? 'sonnet'}, tope $${f.maxUsd}` : 'sin respaldo');
+    if (body.apiFallback === null) delete raw.apiFallback;
+    else {
+      const f = body.apiFallback as Record<string, unknown>;
+      if (typeof f !== 'object' || Array.isArray(f)) throw new SettingsError('Respaldo por API: falta la variable, el modelo o el tope.');
+      const next: Fallback = { ...(before ?? { apiKeyEnv: '', maxUsd: API_FALLBACK_DEFAULT_USD }) };
+      if (f.apiKeyEnv !== undefined) {
+        const name = str(f.apiKeyEnv) ?? '';
+        if (!anthropicKeyNames().includes(name)) throw new SettingsError(`${name || 'Esa variable'} no está en .env.`);
+        next.apiKeyEnv = name;
+      }
+      if (!next.apiKeyEnv) throw new SettingsError('Respaldo por API: primero elige la variable de .env con la key.');
+      if (f.model !== undefined) {
+        const model = str(f.model) ?? '';
+        if (!MODELS.includes(model)) throw new SettingsError('Ese modelo no existe.');
+        if (model === 'sonnet') delete next.model;
+        else next.model = model;
+      }
+      if (f.maxUsd !== undefined) {
+        if (typeof f.maxUsd !== 'number' || !Number.isFinite(f.maxUsd) || f.maxUsd <= 0 || f.maxUsd > API_FALLBACK_MAX_USD) throw new SettingsError(`El tope es un monto en dólares, mayor que 0 y hasta ${API_FALLBACK_MAX_USD}.`);
+        next.maxUsd = f.maxUsd;
+      }
+      raw.apiFallback = next;
+    }
+    if (label(before) !== label(raw.apiFallback as Fallback | undefined)) changes.push({ what: 'respaldo por API', from: label(before), to: label(raw.apiFallback as Fallback | undefined) });
   }
 
   if (body.deploy !== undefined) {
