@@ -104,10 +104,12 @@ export interface Repo {
   agent: { model: string; effort: string };
   autoMerge: boolean;
   concurrency: number | null;
+  apiFallback: { apiKeyEnv: string; model: string; maxUsd: number; connected: boolean } | null;
 }
 export interface Repos {
   path: string;
   linearKeys: string[];
+  anthropicKeys: string[];
   models: string[];
   efforts: string[];
   defaults: { baseRef: string; model: string; effort: string; concurrency: number };

@@ -3,7 +3,7 @@ import { client, ok } from '@apps/dashboard/src/api.js';
 import { useShell } from '@apps/dashboard/src/shell/hooks.js';
 import { pct } from '@apps/dashboard/src/lib/format.js';
 import { ago } from '@ui/time.js';
-import { onCommit, Row, Sec, useChange } from './parts.js';
+import { onCommit, Row, Sec, SectionLink, useChange } from './parts.js';
 import type { Account, Accounts as AccountsData, ApiFallback, UsageWindow } from './model.js';
 import type { Data } from './Settings.js';
 
@@ -81,6 +81,6 @@ function Fallback({ f, account }: { f: ApiFallback; account: string }) {
   });
   const used = f.maxUsd ? f.spentUsd / f.maxUsd : 0;
   const desc = <>Si la cuota se corta a mitad de una corrida de {f.repo}, ronin la termina con la API key en {f.model}. {f.resetAt ? `Desde ${new Date(f.resetAt).toLocaleDateString('es', { dateStyle: 'medium' })}${f.resetBy ? `, cuando ${f.resetBy} lo reinició` : ''}.` : 'Desde que se configuró.'}</>;
-  const src = <>{f.keySet ? null : <span className="bad">● La variable no está en .env: no hay respaldo.</span>}<span className="aj-env">repos.json</span><code>apiFallback</code><span>· tope y modelo, en el archivo; la key, en</span><code>{f.apiKeyEnv}</code><button data-ajapireset={f.repo} onClick={reset}>Reiniciar lo gastado</button></>;
+  const src = <>{f.keySet ? null : <span className="bad">● La variable no está en .env: no hay respaldo.</span>}<span>La key está en</span><code>{f.apiKeyEnv}</code><span>· la key, el modelo y el tope se eligen en</span><SectionLink to="repos">Repos</SectionLink><button data-ajapireset={f.repo} onClick={reset}>Reiniciar lo gastado</button></>;
   return <Row label={`Respaldo por API · ${f.repo}`} desc={desc} ctl={<span className={`meter${used >= 0.8 ? ' hot' : ''}`}><span className="m"><span className={used >= 0.8 ? 'hot' : ''} style={{ width: `${Math.min(100, used * 100)}%` }} /></span><b>{cents(f.spentUsd)} de {cents(f.maxUsd)}</b></span>} src={src} />;
 }

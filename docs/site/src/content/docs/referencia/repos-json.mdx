@@ -50,6 +50,8 @@ Agregar o quitar un repo, y cambiar sus rutas, se hace en el archivo. Después d
 
 ## Respaldo por API
 
+Se configura en [Ajustes → Repos](/ronin/operar/ajustes/#administración): se elige la variable de `.env` con la key (solo se listan las `ANTHROPIC_API_KEY_*`), el modelo y el tope, que empieza en $20. También se puede escribir a mano en el archivo.
+
 Cuando la cuota de la suscripción de Claude se agota mientras un agente trabaja (arreglando los checks de un PR, por ejemplo), la corrida se corta. Sin `apiFallback`, la tarea espera a que vuelva la cuota. Con `apiFallback`, ronin la retoma en el momento con la API key del repo:
 
 - **Sigue en la misma sesión,** con `claude --resume`: el agente conserva lo que ya hizo y leyó. Si la sesión no está, empieza la tarea de nuevo con la key.
@@ -60,6 +62,6 @@ Cuando la cuota de la suscripción de Claude se agota mientras un agente trabaja
 Lo que gasta cada repo por API se ve en [Ajustes → Cuentas de Claude](/ronin/operar/ajustes/#administración). El contador se reinicia ahí, después de recargar los créditos de la key. Al pasar el 80 % del tope, el repo aparece en la barra de abajo del tablero.
 
 <Aside type="caution">
-La key va en `.env` con el nombre que diga `apiKeyEnv`, nunca en `repos.json` y nunca como `ANTHROPIC_API_KEY`: con ese nombre todas las corridas cobrarían a la API. Créala en un workspace propio de la consola, con un límite de gasto: es el tope que se cumple aunque ronin cuente mal (no cuenta, por ejemplo, una corrida que se cortó por tiempo).
+La key va en `.env` con un nombre `ANTHROPIC_API_KEY_<REPO>` (una variable nueva aparece en Ajustes después de desplegar), nunca en `repos.json` y nunca como `ANTHROPIC_API_KEY`: con ese nombre todas las corridas cobrarían a la API. Créala en un workspace propio de la consola, con un límite de gasto: es el tope que se cumple aunque ronin cuente mal (no cuenta, por ejemplo, una corrida que se cortó por tiempo).
 </Aside>
 
