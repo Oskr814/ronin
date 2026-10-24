@@ -9,9 +9,10 @@ export function Sec({ title, lead, children }: { title: ReactNode; lead?: ReactN
   return <section className="aj-sec"><h2>{title}</h2>{lead ? <p className="aj-d">{lead}</p> : null}<div className="aj-card">{children}</div></section>;
 }
 
-export function Row({ label, desc, ctl, src }: { label: ReactNode; desc?: ReactNode; ctl: ReactNode; src?: ReactNode }) {
+// `sub`: a setting of the row above it, indented under it.
+export function Row({ label, desc, ctl, src, sub }: { label: ReactNode; desc?: ReactNode; ctl: ReactNode; src?: ReactNode; sub?: boolean }) {
   return (
-    <div className="aj-row">
+    <div className={sub ? 'aj-row sub' : 'aj-row'}>
       <div className="l"><b>{label}</b>{desc ? <small>{desc}</small> : null}</div>
       <div className="ctl">{ctl}</div>
       {src ? <div className="src">{src}</div> : null}
