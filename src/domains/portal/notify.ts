@@ -7,7 +7,7 @@ import { recipientsFor, type NotifyEvent } from '@platform/notify/notifications.
 import { sendMail, type Mail } from '@platform/notify/notifier.js';
 import type { PortalUser } from './accounts.js';
 import { bigRequestMail, decideMail, PORTAL_FROM_NAME, teamRequestMail } from './mail.js';
-import { noteEvent, patchOf, prototypePatchPath, requestDir, type PortalRequest } from './requests.js';
+import { activePriority, noteEvent, patchOf, prototypePatchPath, requestDir, type PortalRequest } from './requests.js';
 
 // Sends a request's emails and logs the ones that fail: a lost email never
 // holds a request back. Each one, sent or not, goes to the request's
@@ -56,6 +56,8 @@ export async function handOverMail(request: PortalRequest, user: PortalUser | un
 export async function awaitingDevMail(request: PortalRequest, user: PortalUser | undefined): Promise<void> {
   // Without repos.json, the team's own choices (or NOTIFY_TO) still get it.
   const entry = (await loadRepos().catch(() => [])).find((e) => e.productRepo === request.repo);
-  const to = await recipientsFor(request.repo, entry, 'pedido-revisar');
+  // A prioritario: also to whoever chose those, without the others (#430).
+  const lists = await Promise.all((activePriority(request) ? (['pedido-revisar', 'pedido-prioritario'] as const) : (['pedido-revisar'] as const)).map((event) => recipientsFor(request.repo, entry, event)));
+  const to = [...new Set(lists.flatMap((list) => list.split(',').map((a) => a.trim())).filter(Boolean))].join(', ');
   await sendPortalMails(request, [{ ...decideMail(request, user, to, config.dashboard.url), team: true }]);
 }

@@ -16,12 +16,12 @@ import type { RepoEntry } from '../agents/repo-context.js';
 // - blockers go to NOTIFY_TO, read the same way.
 // And when nobody of the team gets one, NOTIFY_TO does: an email is never lost.
 
-export const EVENTS = ['pedido-equipo', 'pedido-revisar', 'reunion', 'bloqueo'] as const;
+export const EVENTS = ['pedido-equipo', 'pedido-revisar', 'pedido-prioritario', 'reunion', 'bloqueo'] as const;
 export type NotifyEvent = (typeof EVENTS)[number];
 export const isEvent = (value: unknown): value is NotifyEvent => typeof value === 'string' && (EVENTS as readonly string[]).includes(value);
 
 // The events portal.notifyTo stood for; blockers were NOTIFY_TO's.
-const PORTAL_EVENTS: NotifyEvent[] = ['pedido-equipo', 'pedido-revisar', 'reunion'];
+const PORTAL_EVENTS: NotifyEvent[] = ['pedido-equipo', 'pedido-revisar', 'pedido-prioritario', 'reunion'];
 
 interface Person {
   email?: string;

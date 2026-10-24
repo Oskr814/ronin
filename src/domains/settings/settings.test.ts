@@ -99,9 +99,9 @@ describe('saveNotifications', () => {
     const sc = { ...SC, portal: { name: 'Red Motos', apps: {}, notifyTo: ['persona@gmail.com'] } };
     await saveProfile('ana-dev', { email: 'persona@gmail.com' }, []);
     let view = await settingsPageView('ana-dev', false, [sc]) as { notificaciones: Array<{ events: string[]; chosen: boolean }> };
-    expect(view.notificaciones[0]).toMatchObject({ events: ['pedido-equipo', 'pedido-revisar', 'reunion'], chosen: false });
+    expect(view.notificaciones[0]).toMatchObject({ events: ['pedido-equipo', 'pedido-revisar', 'pedido-prioritario', 'reunion'], chosen: false });
     const out = await saveNotifications('ana-dev', { repo: sc.productRepo, event: 'reunion', on: false }, [sc]) as typeof view;
-    expect(out.notificaciones[0]).toMatchObject({ events: ['pedido-equipo', 'pedido-revisar'], chosen: true });
+    expect(out.notificaciones[0]).toMatchObject({ events: ['pedido-equipo', 'pedido-revisar', 'pedido-prioritario'], chosen: true });
     await expect(saveNotifications('ana-dev', { repo: BM.productRepo, event: 'bloqueo', on: true }, [sc])).rejects.toThrow(/no está entre los que ves/);
     await expect(saveNotifications('ana-dev', { repo: sc.productRepo, event: 'todo', on: true }, [sc])).rejects.toThrow(/no existe/);
     expect((await readSettingsLog())[0]).toMatchObject({ what: `Notificaciones · ${sc.productRepo} · propuestas de una reunión`, from: 'sí', to: 'no' });

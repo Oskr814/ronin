@@ -46,6 +46,7 @@ export const SETTINGS: SettingDef[] = [
   int('dashboard.sessionDays', 'DASHBOARD_SESSION_DAYS', ['dashboard', 'sessionDays'], 7, 1, 90),
   int('dashboard.githubTtlSeconds', 'DASHBOARD_GITHUB_TTL_SECONDS', ['dashboard', 'githubTtlSeconds'], 60, 10, 3600),
   int('portal.dailyLimit', 'PORTAL_DAILY_LIMIT', ['portal', 'dailyLimit'], 5, 0, 100),
+  int('portal.priorityDailyLimit', 'PORTAL_PRIORITY_DAILY_LIMIT', ['portal', 'priorityDailyLimit'], 1, 0, 100),
   int('portal.sessionDays', 'PORTAL_SESSION_DAYS', ['portal', 'sessionDays'], 30, 1, 365),
   int('portal.remindHours', 'PORTAL_REMIND_HOURS', ['portal', 'remindHours'], 12, 1, 168),
   int('portal.expireHours', 'PORTAL_EXPIRE_HOURS', ['portal', 'expireHours'], 24, 1, 720),

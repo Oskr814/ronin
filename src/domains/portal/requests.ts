@@ -75,6 +75,53 @@ export interface DevAnswer {
   answer: string;
 }
 
+// Why the person marked it prioritario, approving it: it stops their work,
+// it affects customers, or it has a deadline (the date, YYYY-MM-DD).
+export type PriorityImpact = 'blocks' | 'customers' | 'deadline';
+export const PRIORITY_IMPACTS: PriorityImpact[] = ['blocks', 'customers', 'deadline'];
+
+// How each impact reads, for the team and for the person.
+export const IMPACT_LABEL: Record<PriorityImpact, string> = {
+  blocks: 'Detiene el trabajo',
+  customers: 'Afecta a clientes',
+  deadline: 'Tiene fecha límite',
+};
+
+// "Tiene fecha límite: 31/10/2026", or just the impact.
+export function impactLine(p: Pick<Priority, 'impact' | 'deadline'>): string {
+  if (p.impact !== 'deadline' || !p.deadline) return IMPACT_LABEL[p.impact];
+  const [y, m, d] = p.deadline.split('-');
+  return `${IMPACT_LABEL.deadline}: ${d}/${m}/${y}`;
+}
+
+// A prioritario: what the person said and when; and, if the team took it
+// away, who, why and when. It goes on as a normal request then.
+export interface Priority {
+  impact: PriorityImpact;
+  deadline?: string;
+  reason: string;
+  at: string;
+  removed?: { by: string; reason: string; at: string };
+}
+
+// Its PR merged, or it closed: nothing waits on anyone.
+export const ENDED: RequestStatus[] = ['done', 'resolved', 'declined', 'cancelled'];
+
+// A prioritario still in the way: marked, not taken away, not over. It goes
+// first in the tablero and in the person's list.
+export const activePriority = (r: Pick<PortalRequest, 'priority' | 'status'>): Priority | undefined =>
+  r.priority && !r.priority.removed && !ENDED.includes(r.status) ? r.priority : undefined;
+
+// Prioritarios first, the nearest deadline first and, without one, the
+// oldest; the rest as they come.
+export function byPriority<T extends { number: number; priority?: { deadline?: string } | null }>(a: T, b: T): number {
+  if (Boolean(a.priority) !== Boolean(b.priority)) return a.priority ? -1 : 1;
+  if (!a.priority || !b.priority) return 0;
+  const da = a.priority.deadline ?? '9999';
+  const db = b.priority.deadline ?? '9999';
+  return da === db ? a.number - b.number : da < db ? -1 : 1;
+}
+
 // When the person can write: an answer, or an adjustment to the prototype.
 export const OPEN_FOR_PERSON: RequestStatus[] = ['asking', 'answered', 'proposed'];
 
@@ -270,6 +317,9 @@ export type RequestEvent = { at: string } & (
   // A try at reproducing a reported error (#137).
   | { kind: 'reproduced'; round: number; reproduced: boolean; test: 'red' | 'green' | 'none' }
   | { kind: 'decided'; decision: 'approved' | 'rejected' }
+  // Approved as prioritario, and the team taking it away.
+  | { kind: 'priority'; impact: PriorityImpact }
+  | { kind: 'priority-removed'; by: string }
   // A dev's decision before ronin makes it (#353), and, deploying it, their
   // approval left on the PR ronin opened (ok: false when their token no
   // longer worked: the PR waits for an approval).
@@ -327,6 +377,8 @@ export interface PortalRequest {
   interview?: { rounds: number; corrections: number; skipped?: true; confirmed?: true };
   // When the person approved the prototype or turned it down.
   decision?: { kind: 'approved' | 'rejected'; at: string };
+  // Marked prioritario approving it.
+  priority?: Priority;
   // What a dev decided while it was 'awaiting-dev' (#353): who and when, the
   // reason given not doing it, what they answered and noted approving it,
   // and — deploying it — their GitHub token,
@@ -409,6 +461,13 @@ export async function listRequestsOf(userId: string): Promise<PortalRequest[]> {
 export async function startedToday(userId: string, now = new Date()): Promise<number> {
   const today = dayIn(now, config.exploreTimezone);
   return (await listRequestsOf(userId)).filter((r) => dayIn(new Date(r.createdAt), config.exploreTimezone) === today).length;
+}
+
+// Requests the person marked prioritario today, even if the team took it
+// away: they count against portal.priorityDailyLimit.
+export async function prioritizedToday(userId: string, now = new Date()): Promise<number> {
+  const today = dayIn(now, config.exploreTimezone);
+  return (await listRequestsOf(userId)).filter((r) => r.priority && dayIn(new Date(r.priority.at), config.exploreTimezone) === today).length;
 }
 
 // The same for everyone at once, by user id (the dashboard's accounts).

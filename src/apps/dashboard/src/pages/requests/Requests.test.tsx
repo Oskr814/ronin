@@ -53,6 +53,9 @@ const ASKING = {
   expiry: { expiresAt: later(300), remindAt: null, remindedAt: at(60) }, closeNote: null,
 };
 
+// Approved as prioritario, with a deadline (#430).
+const PRIO = { ...WAITING, ...row(11, 'awaiting-dev', { waitsOn: 'team', prototypes: 1, priority: { impact: 'deadline', deadline: '2026-10-31' } }), prototypes: WAITING.prototypes, bug: null, priorityNote: { impact: 'deadline', deadline: '2026-10-31', reason: 'El cierre de mes es el viernes.', at: at(10) } };
+
 // jsdom doesn't scroll.
 HTMLElement.prototype.scrollTo = () => {};
 
@@ -74,6 +77,11 @@ beforeEach(() => {
     if (path === '/api/requests/8') return json(WAITING);
     if (path === '/api/requests/9') return json(TEAMS);
     if (path === '/api/requests/10') return json(ASKING);
+    if (path === '/api/requests/11') return json(PRIO);
+    if (path === '/api/requests/11/priority/remove') {
+      decided.push(JSON.parse(String(init?.body)));
+      return json({ ...PRIO, priority: null, priorityNote: { ...PRIO.priorityNote, removed: { by: 'ana-dev', reason: 'Se puede a mano.', at: at(0) } } });
+    }
     if (path === '/api/requests/9/close') {
       decided.push(JSON.parse(String(init?.body)));
       return json({ ...TEAMS, status: 'declined', waitsOn: null });
@@ -126,6 +134,31 @@ describe('Pedidos, in React', () => {
     expect(shell.openRequest).toHaveBeenCalledWith(39);
     fireEvent.click(screen.getByRole('tab', { name: 'Usuarios ↗' }));
     expect(shell.openPortalAccounts).toHaveBeenCalled();
+  });
+
+  it('a prioritario says so, with why, and has its own filter (#430)', async () => {
+    rows = [row(12, 'awaiting-dev', { waitsOn: 'team', priority: { impact: 'blocks' } }), ...ROWS.slice(0, 3)];
+    const { container } = show(<Requests />);
+    fireEvent.click(await screen.findByRole('button', { name: /^Pendientes/ }));
+    await waitFor(() => expect(container.querySelector('.pd-t')).not.toBeNull());
+    expect(container.querySelector('.pd-t tbody tr.prio')?.textContent).toMatch(/Pedido 12Prioritario.*· Detiene el trabajo/);
+    fireEvent.click(screen.getByRole('button', { name: /^Prioritarios/ }));
+    expect([...container.querySelectorAll('.pd-t tbody .pn')].map((e) => e.textContent)).toEqual(['P-12']);
+  });
+
+  it('the team takes a prioritario away with a reason (#430)', async () => {
+    const { container } = show(<Request n={11} />);
+    expect(await screen.findByText('Tiene fecha límite: 31/10/2026')).toBeTruthy();
+    expect(screen.getByText('El cierre de mes es el viernes.')).toBeTruthy();
+    expect(container.querySelector('.pd-head .pd-tag.prio')?.textContent).toBe('Prioritario');
+    fireEvent.click(screen.getByRole('button', { name: 'Quitar la prioridad' }));
+    const send = () => screen.getAllByRole('button', { name: 'Quitar la prioridad' }).at(-1) as HTMLButtonElement;
+    expect(send().disabled).toBe(true);
+    fireEvent.change(screen.getByPlaceholderText(/se puede seguir haciendo a mano/), { target: { value: 'Se puede a mano.' } });
+    fireEvent.click(send());
+    await waitFor(() => expect(decided).toEqual([{ reason: 'Se puede a mano.' }]));
+    await waitFor(() => expect(shell.toast).toHaveBeenCalledWith('P-11 ya no es prioritario: Ana recibe el motivo.'));
+    expect(container.querySelector('.pd-prio-card')).toBeNull();
   });
 
   it('a request the team wrote to last says so in its state', async () => {

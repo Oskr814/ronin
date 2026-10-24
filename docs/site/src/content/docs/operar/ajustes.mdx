@@ -14,13 +14,13 @@ Cada valor dice de dónde viene (`.env`, *Por defecto* o *Cambiado en el tablero
 Para todos:
 
 - **Perfil:** tu nombre, tu correo (GitHub no se lo da al tablero: sin él no te llega ningún correo), quién sos en cada equipo de Linear y el tema.
-- **Notificaciones:** qué correos de ronin te llegan, repo por repo: *Pedido para el equipo*, *Pedido para revisar*, *Propuestas de una reunión* y *Bloqueos*. Las elegís vos y nadie más las cambia. Lo que no le llega a nadie va a `NOTIFY_TO`.
+- **Notificaciones:** qué correos de ronin te llegan, repo por repo: *Pedido para el equipo*, *Pedido para revisar*, *Pedido prioritario*, *Propuestas de una reunión* y *Bloqueos*. Las elegís vos y nadie más las cambia. Lo que no le llega a nadie va a `NOTIFY_TO`.
 
 ## Administración
 
 Solo para administradores:
 
-- **General:** la duración de las sesiones del tablero y del portal, cuánto se reusa lo leído de GitHub, los pedidos por día del portal y las horas del recordatorio y del vencimiento de un pedido que espera a la persona.
+- **General:** la duración de las sesiones del tablero y del portal, cuánto se reusa lo leído de GitHub, los pedidos por día del portal, cuántos de ellos puede marcar cada persona como [prioritarios](/ronin/guias/pedidos-del-portal/#pedidos-prioritarios) y las horas del recordatorio y del vencimiento de un pedido que espera a la persona.
 - **Usuarios:** todos en un solo lugar, con un filtro *Todos · Equipo · Portal*.
   - **El equipo** entra con GitHub. Su rol es *Administrador* o *Miembro*. Los de `DASHBOARD_ADMINS` son administradores de respaldo y no se les quita el rol desde acá.
   - **Entrada:** «quien tenga acceso en GitHub» o «solo la lista». Mientras nadie la elija, manda `DASHBOARD_ALLOWED_USERS`.

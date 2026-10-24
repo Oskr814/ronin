@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import type { RepoEntry } from '@platform/agents/repo-context.js';
 import type { PortalUser } from './accounts.js';
-import { patchOf, prototypePatchPath, requestImagePath, TEAM_HELD, type PortalMessage, type PortalRequest, type RequestEvent, type Verdict } from './requests.js';
+import { activePriority, patchOf, prototypePatchPath, requestImagePath, TEAM_HELD, type PortalMessage, type PortalRequest, type PriorityImpact, type RequestEvent, type Verdict } from './requests.js';
 import { patchScope, type PatchScope } from './team-notes.js';
 import type { RunSummary } from '../runs/data.js';
 import { expiry } from './expire.js';
@@ -104,9 +104,16 @@ export interface RequestRow {
   personReplied: boolean;
   // The team wrote to the person last, and who.
   teamWrote: { by: string; at: string } | null;
+  // Approved as prioritario and still open (#430): it goes first.
+  priority: { impact: PriorityImpact; deadline?: string } | null;
   createdAt: string;
   // Its last change or its last run's, whichever is later.
   lastAt: string;
+}
+
+function priorityOf(r: PortalRequest): RequestRow['priority'] {
+  const p = activePriority(r);
+  return p ? { impact: p.impact, ...(p.deadline ? { deadline: p.deadline } : {}) } : null;
 }
 
 export function requestRow(r: PortalRequest, user: PortalUser | undefined, entries: RepoEntry[], runs: RunSummary[]): RequestRow {
@@ -133,6 +140,7 @@ export function requestRow(r: PortalRequest, user: PortalUser | undefined, entri
     bug: Boolean(r.bug),
     personReplied: Boolean(r.personReplied),
     teamWrote: teamWrote(r),
+    priority: priorityOf(r),
     createdAt: r.createdAt,
     lastAt: lastAt(r, own),
   };
@@ -204,6 +212,9 @@ export function requestDetail(r: PortalRequest, user: PortalUser | undefined, en
     expiry: expiryOf(r),
     // Why the team closed it, and who.
     closeNote: r.closeNote ?? null,
+    // Why the person marked it prioritario, and, if the team took it away,
+    // who and why (#430). The row's priority is whether it still is.
+    priorityNote: r.priority ?? null,
     // What its diff touches, while a dev decides it (#406).
     scope,
     activity: activity(r, own),

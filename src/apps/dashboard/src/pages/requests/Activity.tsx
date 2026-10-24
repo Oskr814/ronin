@@ -5,8 +5,9 @@ import { Dot, RunCard, runTitle, typeName } from '@apps/dashboard/src/lib/runs.j
 import { ago, short, useNow } from '@ui/time.js';
 import { DevDecide } from './DevDecide.js';
 import { TeamClose } from './TeamClose.js';
+import { Priority } from './Priority.js';
 import { useActions, Interview, Thumbs } from './Docs.js';
-import { firstName, ICON, REPRODUCTIONS, STATUS, type Detail, type Entry, type RequestEvent } from './model.js';
+import { firstName, ICON, impactLine, REPRODUCTIONS, STATUS, type Detail, type Entry, type RequestEvent } from './model.js';
 
 // A request's Actividad: what it waits on now, and everything that
 // happened to it, oldest first.
@@ -125,6 +126,9 @@ function shownEvent(d: Detail, e: RequestEvent): Shown {
     case 'pr-approved': return e.ok
       ? ['ok', 'ok', `ronin aprobó el PR #${e.number} a nombre de ${e.by}`, null, true]
       : ['warn', 'crit', `No se pudo aprobar el PR #${e.number} a nombre de ${e.by}`, <span className="m">Su sesión de GitHub ya no sirve: el PR espera que un dev lo apruebe.</span>];
+    case 'priority': return ['warn', 'person', `${who} lo marcó como prioritario`, d.priorityNote ? <div className="bx">{impactLine(d.priorityNote)}. {d.priorityNote.reason}</div> : null];
+    // Its reason is the team's message to the person, just above.
+    case 'priority-removed': return ['', 'person', `${e.by} le quitó la prioridad`, null, true];
     case 'decided': return e.decision === 'approved' ? ['ok', 'ok', `${who} aprobó el prototipo`, null] : ['warn', 'person', `${who} no aprobó el prototipo`, null];
     case 'mail': return [e.ok ? 'mail' : 'crit', 'mail', e.ok ? `Correo a ${mailTo(d, e.to)}` : `No salió el correo a ${mailTo(d, e.to)}`, <span className="m">{e.subject}</span>, e.ok];
     case 'issue': return ['ok', 'ok', e.team ? `Abrió el issue del equipo #${e.number}` : `Abrió el issue #${e.number} para ronin`, null];
@@ -179,6 +183,7 @@ export function Activity({ d }: { d: Detail }) {
   const { entries, untimed } = d.activity;
   return (
     <>
+      <Priority d={d} />
       <Now d={d} />
       <ol className="pd-tl">{entries.map((e, i) => <EntryView key={i} d={d} e={e} />)}{untimed.map((ev, i) => <EntryView key={`u${i}`} d={d} e={{ type: 'event', at: '', event: ev }} />)}</ol>
     </>

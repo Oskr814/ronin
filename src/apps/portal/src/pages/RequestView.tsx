@@ -6,6 +6,7 @@ import { useBusy } from '../lib/busy.js';
 import { Composer, ComposerFrame, useDraft } from '../components/Composer.js';
 import { AnswersView, InterviewForm, missing, openQuestions, Paragraphs, payload, progress, UnderstoodView, type Answers } from '../components/Interview.js';
 import { Chip } from '../components/Chip.js';
+import { NO_PRIORITY, PriorityOption, priorityPayload, priorityProblem, type PriorityDraft } from '../components/Priority.js';
 import { CLOSED, EXPIRED, hhmm, initials, left, TEAM_HELD, TEAM_NAME, TEAM_POLL_MS, WORKING } from '../lib/text.js';
 import { Compare, pairsOf, type Pair } from '@ui/components/Compare.js';
 
@@ -53,6 +54,7 @@ export function RequestView({ n, me, onMenu, onZoom, onMissing }: {
   const [error, setError] = useState<string | null>(null);
   const [deciding, setDeciding] = useState<'aprobar' | 'rechazar' | null>(null);
   const [note, setNote] = useState('');
+  const [priority, setPriority] = useState<PriorityDraft>(NO_PRIORITY);
   const [cancelling, setCancelling] = useState(false);
   const [skipping, setSkipping] = useState(false);
   const [correcting, setCorrecting] = useState(false);
@@ -160,10 +162,20 @@ export function RequestView({ n, me, onMenu, onZoom, onMissing }: {
   } else if (d.status === 'proposed') {
     foot = deciding ? (
       <Confirm title={deciding === 'aprobar' ? `¿Apruebas ${d.worded ? 'esta propuesta' : 'este prototipo'}?` : '¿Se lo pasamos al equipo?'} error={error} sending={sending} busyLabel="Enviando…"
-        label={deciding === 'aprobar' ? 'Sí, aprobar' : 'Pasar al equipo'}
-        onBack={() => { setDeciding(null); setError(null); }}
-        onGo={() => act(() => ok(client.requests[':n'].decision.$post({ ...params, json: { decision: deciding, text: note.trim() } })), () => setDeciding(null))}>
+        label={deciding === 'aprobar' ? (priority.on ? 'Aprobar como prioritario' : 'Sí, aprobar') : 'Pasar al equipo'}
+        onBack={() => { setDeciding(null); setError(null); setPriority(NO_PRIORITY); }}
+        onGo={() => {
+          const marked = deciding === 'aprobar' ? priorityPayload(priority) : undefined;
+          const problem = deciding === 'aprobar' ? priorityProblem(priority) : null;
+          if (problem) return setError(problem);
+          return act(() => ok(client.requests[':n'].decision.$post({ ...params, json: { decision: deciding, text: note.trim(), ...(marked ? { priority: marked } : {}) } })), () => {
+            setDeciding(null);
+            setPriority(NO_PRIORITY);
+            if (marked) void queryClient.invalidateQueries({ queryKey: ['me'] });
+          });
+        }}>
         <p>{deciding === 'aprobar' ? `El equipo de desarrollo hará el cambio tal como ${d.worded ? 'lo describe la propuesta' : 'lo ves'}.` : `El equipo de desarrollo verá tu pedido, lo que conversamos y ${d.worded ? 'la propuesta' : 'el prototipo'}.`}</p>
+        {deciding === 'aprobar' && <PriorityOption me={me} value={priority} onChange={(next) => { setPriority(next); setError(null); }} />}
         {deciding === 'rechazar' && <textarea id="note" rows={2} maxLength={4000} placeholder="¿Qué no te convenció? (opcional)" autoFocus value={note} onChange={(e) => setNote(e.target.value)} />}
       </Confirm>
     ) : (
@@ -223,7 +235,7 @@ export function RequestView({ n, me, onMenu, onZoom, onMissing }: {
   return (
     <>
       <div className="top">
-        <MenuButton onClick={onMenu} /><h2>{d.title}</h2><span className="proj-l">{d.appName} · P-{d.number}</span><Chip status={d.status} />
+        <MenuButton onClick={onMenu} /><h2>{d.title}</h2><span className="proj-l">{d.appName} · P-{d.number}</span>{d.prioritized && <span className="chip prio">Prioritario</span>}<Chip status={d.status} />
         {d.cancellable && !cancelling && <button className="btn cancel-btn" onClick={() => { setCancelling(true); setDeciding(null); setError(null); }}>Cancelar<span className="wide"> pedido</span></button>}
       </div>
       <div className="content" id="thread" ref={thread} onScroll={(e) => {

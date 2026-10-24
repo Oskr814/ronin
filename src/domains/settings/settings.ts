@@ -185,7 +185,7 @@ export function readSettingsLog(): Promise<SettingsLogEntry[]> {
 }
 
 
-const EVENT_NAME: Record<string, string> = { 'pedido-equipo': 'pedido para el equipo', 'pedido-revisar': 'pedido para revisar', reunion: 'propuestas de una reunión', bloqueo: 'bloqueos' };
+const EVENT_NAME: Record<string, string> = { 'pedido-equipo': 'pedido para el equipo', 'pedido-revisar': 'pedido para revisar', 'pedido-prioritario': 'pedido prioritario', reunion: 'propuestas de una reunión', bloqueo: 'bloqueos' };
 
 // POST /api/settings/notifications: only the person's own, only a repo they
 // see. The first change in a repo saves their defaults with it.

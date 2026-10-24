@@ -6,7 +6,7 @@ import { findUserByEmail, normalizeEmail, recordLogin, redeemLink, userForLink, 
 import { grantedApps } from './apps.js';
 import { burnPasswordCheck, hashPassword, passwordProblem, verifyPassword } from './password.js';
 import { RateLimit } from './rate-limit.js';
-import { startedToday } from './requests.js';
+import { prioritizedToday, startedToday } from './requests.js';
 import { requestRoutes } from './routes-requests.js';
 import { sendPasswordLink } from './send-link.js';
 import { portalCookie, sealPortalSession } from './session.js';
@@ -53,7 +53,8 @@ function sessionCookie(user: PortalUser, config: PortalConfig): string {
 
 async function me(user: PortalUser, config: PortalConfig, deps: PortalDeps) {
   const limit = user.dailyLimit ?? config.dailyLimit;
-  return { name: user.name, email: user.email, apps: grantedApps(user.grants, await deps.entries()), today: { used: await startedToday(user.id), limit } };
+  // Prioritarios (#430): how many they marked today, of how many.
+  return { name: user.name, email: user.email, apps: grantedApps(user.grants, await deps.entries()), today: { used: await startedToday(user.id), limit, priorityUsed: await prioritizedToday(user.id), priorityLimit: config.priorityDailyLimit } };
 }
 
 // Whatever comes that isn't a string counts as an empty one, as the checks

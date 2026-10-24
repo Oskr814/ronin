@@ -13,6 +13,8 @@ export interface PortalConfig {
   sessionDays: number;
   // Requests per person per day, unless their account sets its own.
   dailyLimit: number;
+  // Of those, the ones they may approve as prioritario per day.
+  priorityDailyLimit: number;
 }
 
 // What's missing for the portal to run; empty means it can.

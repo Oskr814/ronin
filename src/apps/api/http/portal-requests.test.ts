@@ -16,7 +16,7 @@ vi.mock('@platform/logger.js', () => ({ log: { info: vi.fn(), error: vi.fn() } }
 const sendMail = vi.fn(async () => {});
 vi.mock('@platform/notify/notifier.js', () => ({ sendMail: (...args: unknown[]) => sendMail(...(args as [])) }));
 
-const PORTAL = { url: 'https://ronin-agent.example.com', sessionSecret: 'p'.repeat(40), sessionDays: 30, dailyLimit: 2 };
+const PORTAL = { url: 'https://ronin-agent.example.com', sessionSecret: 'p'.repeat(40), sessionDays: 30, dailyLimit: 2, priorityDailyLimit: 1 };
 const entries = [{ productRepo: 'redmotos/shoppingcart', productRepoPath: '/x', portal: { name: 'Red Motos', apps: { backoffice: { name: 'Backoffice' }, tienda: { name: 'Tienda' } } } }];
 const launch = vi.fn(async () => {});
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
@@ -92,7 +92,7 @@ describe('portal requests API', () => {
     expect((await third.json()).error).toMatch(/tope de 2 pedidos/);
     await updateUser(user.id, { dailyLimit: 3 });
     expect((await open()).status).toBe(200);
-    expect((await (await get(cookie, '/api/portal/me')).json()).today).toEqual({ used: 3, limit: 3 });
+    expect((await (await get(cookie, '/api/portal/me')).json()).today).toEqual({ used: 3, limit: 3, priorityUsed: 0, priorityLimit: 1 });
   });
 
   it('takes an answer only while ronin waits on the person, and starts reading again', async () => {
@@ -140,6 +140,40 @@ describe('portal requests API', () => {
     expect(launch).toHaveBeenCalledTimes(2);
     const other = await person('otro@x.com');
     expect((await post(other.cookie, '/api/portal/requests/1/decision', { decision: 'aprobar' })).status).toBe(404);
+  });
+
+  it('approves as prioritario with why, up to the day’s limit, and lists it first while open (#430)', async () => {
+    const { cookie } = await person('mf@x.com');
+    for (const text of ['Uno', 'Dos']) await post(cookie, '/api/portal/requests', { repo: 'redmotos/shoppingcart', app: 'backoffice', text });
+    for (const n of [1, 2]) {
+      await updateRequest(n, (r) => {
+        r.status = 'proposed';
+        r.verdict = { kind: 'minor', proposal: 'p', instruction: 'i', summary: 's', at: '' };
+      });
+    }
+    sendMail.mockClear();
+    const decide = (n: number, priority: unknown) => post(cookie, `/api/portal/requests/${n}/decision`, { decision: 'aprobar', priority });
+    expect((await (await decide(1, { impact: 'urgente', reason: 'x' })).json()).error).toMatch(/por qué no puede esperar/);
+    expect((await (await decide(1, { impact: 'blocks', reason: ' ' })).json()).error).toMatch(/qué pasa si no está a tiempo/);
+    expect((await (await decide(1, { impact: 'deadline', reason: 'Cierre' })).json()).error).toMatch(/fecha límite/);
+    expect((await (await decide(1, { impact: 'deadline', reason: 'Cierre', deadline: '2000-01-01' })).json()).error).toMatch(/ya pasó/);
+
+    const res = await decide(1, { impact: 'deadline', reason: 'Cierre de mes', deadline: '2999-10-31' });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ status: 'awaiting-dev', prioritized: true, priority: { impact: 'deadline', deadline: '2999-10-31', reason: 'Cierre de mes', removed: false } });
+    expect((await getRequest(1))!.events!.map((e) => e.kind)).toContain('priority');
+    // The team's email says it.
+    expect(sendMail).toHaveBeenCalledWith(expect.objectContaining({ subject: expect.stringMatching(/^\[ronin\] Prioritario · Pedido P-1/), text: expect.stringContaining('Cierre de mes') }), expect.anything());
+    expect((await (await get(cookie, '/api/portal/me')).json()).today).toMatchObject({ priorityUsed: 1, priorityLimit: 1 });
+
+    // One a day: the second waits for tomorrow; approving it without, it goes.
+    const second = await decide(2, { impact: 'blocks', reason: 'Lo necesito' });
+    expect(second.status).toBe(429);
+    expect((await second.json()).error).toMatch(/Mañana puedes marcar más/);
+    expect((await post(cookie, '/api/portal/requests/2/decision', { decision: 'aprobar' })).status).toBe(200);
+
+    // Newest first, but the prioritario above.
+    expect((await (await get(cookie, '/api/portal/requests')).json()).map((r: { number: number; prioritized: boolean }) => [r.number, r.prioritized])).toEqual([[1, true], [2, false]]);
   });
 
   it('shows the interview’s questions, takes the answers, the summary’s confirmation or correction, and skipping it (#225)', async () => {

@@ -10,7 +10,7 @@ import { ago, useNow } from '@ui/time.js';
 import { Activity } from './Activity.js';
 import { ActionsContext, Chat, Repro, Team, useActions, type Actions } from './Docs.js';
 import { GitHub } from './GitHub.js';
-import { BugTag, EVERY_MS, imagePath, issueUrl, prUrl, repoShort, REPRODUCTIONS, StatusChip, Stepper, type Detail } from './model.js';
+import { BugTag, EVERY_MS, PriorityTag, imagePath, issueUrl, prUrl, repoShort, REPRODUCTIONS, StatusChip, Stepper, type Detail } from './model.js';
 
 // A portal request's page (#132): its activity, its conversation, what goes
 // to the team, a reported error's reproduction, its issue and PR, and its
@@ -134,7 +134,7 @@ export function Request({ n, run }: { n: number; run?: string | null }) {
     <ActionsContext.Provider value={actions}>
       <div className="head pd-head"><div className="crumb"><button className="link" onClick={() => shell.openRequests()}>Portal de pedidos</button> / <i style={{ background: repoColor(d.repo) }} />{repoShort(d.repo)} · {d.appName}</div>
         <div className="row"><h1>{d.title} <span className="n">P-{d.number}</span></h1></div>
-        <div className="state"><StatusChip p={d} /><BugTag p={d} />{d.deployed && <span className="chip ok" title={when(d.deployed.at)}>en la app desde {d.deployed.tag}</span>}<span>{d.person}</span><span className="m">abierto {ago(d.createdAt, now)}</span>{d.issue && <button className="link" onClick={() => shell.openItem(`${d.repo}#${d.issue!.number}`)}>#{d.issue.number}</button>}{d.pr && <button className="link" onClick={() => shell.openItem(`${d.repo}#${d.pr}`)}>PR #{d.pr}</button>}</div>
+        <div className="state"><StatusChip p={d} /><PriorityTag p={d} /><BugTag p={d} />{d.deployed && <span className="chip ok" title={when(d.deployed.at)}>en la app desde {d.deployed.tag}</span>}<span>{d.person}</span><span className="m">abierto {ago(d.createdAt, now)}</span>{d.issue && <button className="link" onClick={() => shell.openItem(`${d.repo}#${d.issue!.number}`)}>#{d.issue.number}</button>}{d.pr && <button className="link" onClick={() => shell.openItem(`${d.repo}#${d.pr}`)}>PR #{d.pr}</button>}</div>
         <Stepper p={d} /></div>
       <div className="doctabs" role="tablist">{tabs.map(([k, label]) => <button key={k} className="doctab" role="tab" aria-selected={tab === k} onClick={() => set({ tab: k })}>{label}{counts[k] ? <> <span className="c">{counts[k]}</span></> : null}</button>)}</div>
       <div className="pd-body" ref={body}><div className="pd-cols"><div className="pd-main">{main}</div><Side d={d} /></div></div>
