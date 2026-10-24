@@ -221,6 +221,14 @@ export async function handleAuth(req: IncomingMessage, res: ServerResponse, path
       return true;
     }
     log.info(`tablero: ${login} entró`);
+    // The session this browser had (expired or not, its token still lives
+    // on GitHub) goes: GitHub keeps ten per person and revokes the oldest,
+    // which could be one another device is still using (#445).
+    const before = cookies[SESSION_COOKIE] ? openSession(cookies[SESSION_COOKIE], config.sessionSecret) : null;
+    if (typeof before?.token === 'string' && before.token && before.token !== granted.token) {
+      const old = before.token;
+      void github.revokeToken(old, config).catch((error) => log.error(`tablero: no se pudo revocar el token anterior de ${login}`, error));
+    }
     redirect(res, safeNext(cookies[NEXT_COOKIE]), [clearState, clearNext, cookie(SESSION_COOKIE, sealSession({ login, token: granted.token }, config.sessionSecret, config.sessionDays), config.sessionDays * 24 * 60 * 60)]);
     return true;
   }

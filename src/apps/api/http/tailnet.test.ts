@@ -154,6 +154,24 @@ describe('tailnet listener', () => {
     expect(github.revokeToken).toHaveBeenCalledWith('gho_sin_repo', AUTH);
   });
 
+  it('revokes the token of the session the browser had when it logs in again, expired or not', async () => {
+    const again = async (cookie: string) => {
+      const login = await fetch(`${base}/api/auth/login`, { redirect: 'manual' });
+      const state = new URL(login.headers.get('location')!).searchParams.get('state')!;
+      const res = await fetch(`${base}/api/auth/callback?code=c1&state=${state}`, { redirect: 'manual', headers: { cookie: `${login.headers.get('set-cookie')!.split(';')[0]}; ${cookie}` } });
+      expect(res.status).toBe(302);
+    };
+    vi.mocked(github.revokeToken).mockClear();
+    await again(session('gho_viejo'));
+    await vi.waitFor(() => expect(github.revokeToken).toHaveBeenCalledWith('gho_viejo', AUTH));
+    vi.mocked(github.revokeToken).mockClear();
+    await again(`ronin_session=${sealSession({ login: 'oskr814', token: 'gho_vencido' }, AUTH.sessionSecret, 7, Date.now() - 8 * 86_400_000)}`);
+    await vi.waitFor(() => expect(github.revokeToken).toHaveBeenCalledWith('gho_vencido', AUTH));
+    vi.mocked(github.revokeToken).mockClear();
+    await again(session('gho_token'));
+    expect(github.revokeToken).not.toHaveBeenCalled();
+  });
+
   it('revokes the token on logout, and clears the cookie even if GitHub fails', async () => {
     const ok = await fetch(`${base}/api/auth/logout`, { method: 'POST', headers: { origin: AUTH.url, cookie: session('gho_salir') } });
     expect(ok.status).toBe(204);
