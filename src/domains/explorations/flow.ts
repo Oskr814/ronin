@@ -52,6 +52,8 @@ import { mentionsHandle } from '../commands/index.js';
 import type { CommitChange } from '@platform/git/commit-style.js';
 import { worktreeLock } from '@platform/workers/worktree-lock.js';
 import { host } from '@platform/host/host.js';
+import { getDb } from '@platform/db/db.js';
+import { listDecisions, markApplied } from './decisions.js';
 
 // Exploration's moving parts glued to GitHub — docs/DESIGN.md §11.7:
 // - exploreAndPublish: one run of one app, committed to the open
@@ -213,13 +215,17 @@ export function feedbackCommitChange(prNumber: number, changes: FeedbackChange[]
   };
 }
 
-export function approveCommitChange(prNumber: number, approved: Array<{ id: string; titulo: string }>): CommitChange {
+export function approveCommitChange(prNumber: number, approved: Array<{ id: string; titulo: string }>, rejected: Array<{ id: string; titulo: string; motivo: string }> = []): CommitChange {
   const ids = approved.map((a) => a.id);
+  const out = rejected.map((r) => r.id);
+  const rejections = rejected.length ? `\n\nRejected by the team before approving, with the reason kept in the app's knowledge:\n${rejected.map((r) => `- ${r.id} ${r.titulo}: ${r.motivo}`).join('\n')}` : '';
   return {
-    description: `PR #${prNumber} was approved: marks its findings still standing as approved and records the issue opened for each one:\n${approved.map((a) => `- ${a.id} ${a.titulo}`).join('\n')}`,
+    description: `PR #${prNumber} was approved: marks its findings still standing as approved and records the issue opened for each one:\n${approved.map((a) => `- ${a.id} ${a.titulo}`).join('\n')}${rejections}`,
     fallback: ids.length > 0
-      ? { en: `approve ${idList(ids)} from PR #${prNumber}`, es: `aprobar ${idList(ids)} del PR #${prNumber}` }
-      : { en: `record the issues of PR #${prNumber}`, es: `anotar los issues del PR #${prNumber}` },
+      ? { en: `approve ${idList(ids)}${out.length ? ` and reject ${idList(out)}` : ''} from PR #${prNumber}`, es: `aprobar ${idList(ids)}${out.length ? ` y rechazar ${idList(out)}` : ''} del PR #${prNumber}` }
+      : out.length > 0
+        ? { en: `reject ${idList(out)} from PR #${prNumber}`, es: `rechazar ${idList(out)} del PR #${prNumber}` }
+        : { en: `record the issues of PR #${prNumber}`, es: `anotar los issues del PR #${prNumber}` },
   };
 }
 
@@ -323,6 +329,15 @@ export function renderRejectedIssueClose(findingId: string, prNumber: number, mo
   return `Cierro este issue: la ficha ${findingId} se rechazó en el PR de exploración #${prNumber}. Motivo: ${motivo}\n\nSi igual hace falta, reabrilo.`;
 }
 
+// A finding rejected, with its reason in the file and in the app's
+// knowledge, so it isn't proposed again.
+async function rejectFinding(memoryDir: string, path: string, findingId: string, reason: string, reviewed: { revisor: string; revisado: string }, prNumber: number): Promise<{ titulo: string; issue?: number }> {
+  const finding = parseFinding(await host().fs.readFile(path, 'utf8'));
+  await host().fs.writeFile(path, serializeFinding({ ...finding, estado: 'rechazado', motivo: reason, ...reviewed }));
+  await appendKnowledge(memoryDir, `${reason} (${findingId}, rechazada en #${prNumber})`);
+  return finding;
+}
+
 // Applies what each new comment asks for — the agent only classifies it,
 // the changes are made here: reject (finding + knowledge, and its issue
 // closed if it had one), edit (title, proposal), add to the knowledge, open
@@ -366,10 +381,8 @@ async function applyFeedback(pr: PullRequestStatus, batch: string, fileComments:
     if (!meta) return;
     const path = join(memoryDir, 'findings', findingFileName(meta));
     if (action.accion === 'rechazar' && action.motivo) {
-      const finding = parseFinding(await host().fs.readFile(path, 'utf8'));
       const reason = action.motivo.trim().slice(0, 300);
-      await host().fs.writeFile(path, serializeFinding({ ...finding, estado: 'rechazado', motivo: reason, ...reviewed }));
-      await appendKnowledge(memoryDir, `${reason} (${findingId}, rechazada en #${pr.number})`);
+      const finding = await rejectFinding(memoryDir, path, findingId, reason, reviewed, pr.number);
       changes.push({ findingId, titulo: finding.titulo, kind: 'rechazada', detail: reason });
       if (finding.issue) toClose.push({ issue: finding.issue, findingId, motivo: reason });
     } else if (action.accion === 'editar') {
@@ -457,8 +470,23 @@ async function approveAndMerge(pr: PullRequestStatus, batch: string): Promise<vo
     .catch(() => undefined);
   // Approved now, by the issue whose request they came from (#376).
   const byOrigin = new Map<number, Array<{ id: string; titulo: string; issue?: number }>>();
+  // What the team rejected from the tablero (#446), written first: the
+  // rest is approved.
+  const db = getDb();
+  const repo = activeRepo().productRepo;
+  const decided = db ? (await listDecisions(db, repo, pr.number)).filter((d) => !d.applied) : [];
+  const rejected: Array<{ id: string; titulo: string; motivo: string; issue?: number }> = [];
   for (const app of await appsWithMemory(batchDir)) {
     const memoryDir = memoryDirFor(batchDir, app);
+    const metas = (await loadMemory(memoryDir)).findings;
+    for (const d of decided.filter((x) => x.decision === 'rechazar' && x.ficha.startsWith(`${app}/`))) {
+      const id = d.ficha.slice(app.length + 1);
+      const meta = metas.find((f) => f.id === id && f.estado === 'propuesto');
+      if (!meta) continue;
+      const motivo = (d.reason ?? '').trim().slice(0, 300) || 'Rechazada en la revisión.';
+      const finding = await rejectFinding(memoryDir, join(memoryDir, 'findings', findingFileName(meta)), id, motivo, { revisor: d.by, revisado: d.at }, pr.number);
+      rejected.push({ id, titulo: finding.titulo, motivo, ...(finding.issue ? { issue: finding.issue } : {}) });
+    }
     const ids = await approveFindings(memoryDir, () => true, revisor);
     await openFindingIssues(app, memoryDir, batchDir, base, (f) => f.estado === 'aprobado');
     const { findings } = await loadMemory(memoryDir);
@@ -468,7 +496,13 @@ async function approveAndMerge(pr: PullRequestStatus, batch: string): Promise<vo
     }
   }
   if (approved.length > 0) log.info(`exploración: PR #${pr.number} aprobado, fichas aprobadas: ${approved.map((a) => a.id).join(', ')}`);
-  if (await commitAndPush(batchDir, explorationBranch(batch), approveCommitChange(pr.number, approved))) await upsertExplorationPr(batch, batchDir);
+  if (rejected.length > 0) log.info(`exploración: PR #${pr.number}, rechazadas desde el tablero: ${rejected.map((r) => r.id).join(', ')}`);
+  if (await commitAndPush(batchDir, explorationBranch(batch), approveCommitChange(pr.number, approved, rejected))) await upsertExplorationPr(batch, batchDir);
+  if (db) await markApplied(db, repo, pr.number, decided.map((d) => d.ficha)).catch((error) => log.error(`exploración: no se pudieron marcar como escritas las decisiones del PR #${pr.number}`, error));
+  for (const r of rejected.filter((x) => x.issue)) {
+    await closeIssueNotPlanned(r.issue!, renderRejectedIssueClose(r.id, pr.number, r.motivo))
+      .catch((error) => log.error(`exploración: no se pudo cerrar el issue #${r.issue} de ${r.id}, rechazada`, error));
+  }
   await mergePullRequest(pr.number);
   log.info(`exploración: PR #${pr.number} mergeado`);
   for (const [issue, findings] of byOrigin) {

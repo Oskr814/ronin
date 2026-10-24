@@ -55,7 +55,8 @@ export function Chip({ view, r }: { view: ExplorationsView; r: Row }) {
 
 // An app's head: its page's, and its exploration PR's (pages/item), whose
 // page it is, with the PR's buttons and its state on GitHub.
-export function XplHead({ r, buttons, pill }: { r: Row; buttons?: ReactNode; pill?: ReactNode }) {
+// `compact`: on a phone, Explorar ahora is in the head's ⋯ (item/Head.tsx).
+export function XplHead({ r, buttons, pill, compact }: { r: Row; buttons?: ReactNode; pill?: ReactNode; compact?: boolean }) {
   const shell = useShell();
   const repoColor = useRepoColor();
   const session = useSession();
@@ -70,7 +71,7 @@ export function XplHead({ r, buttons, pill }: { r: Row; buttons?: ReactNode; pil
   return (
     <div className="head">
       <div className="crumb"><button className="crumb-l" onClick={() => shell.openExplorations()}>Exploraciones</button><span>/</span><i style={{ background: repoColor(r.repo) }} />{r.repo}</div>
-      <div className="row"><h1>{r.app}</h1>{buttons}{session.can(r.repo, 'acciones') && <button className="act-btn" disabled={Boolean(why)} title={why ?? undefined} onClick={() => shell.exploreNow(r.repo, r.app)}>Explorar ahora</button>}</div>
+      <div className="row"><h1>{r.app}</h1>{buttons}{session.can(r.repo, 'acciones') && <button className={`act-btn${compact ? ' hide-m' : ''}`} disabled={Boolean(why)} title={why ?? undefined} onClick={() => shell.exploreNow(r.repo, r.app)}>Explorar ahora</button>}</div>
       <div className="state">{pill}<Chip view={view} r={r} />{facts.map((f) => <span key={f}>{f}</span>)}</div>
     </div>
   );

@@ -217,6 +217,18 @@ export interface CommandsTable {
   finished_at: MaybeStamp;
 }
 
+// The team's decision on a finding of an exploration PR (domains/explorations/decisions.ts, #446).
+export interface FindingDecisionsTable {
+  repo: string;
+  pr: number;
+  ficha: string;
+  decision: string;
+  reason: string | null;
+  decided_by: string;
+  decided_at: ColumnType<Date, string | undefined, string>;
+  applied_at: MaybeStamp;
+}
+
 export interface Database {
   settings: SettingsTable;
   task_settings: TaskSettingsTable;
@@ -235,4 +247,5 @@ export interface Database {
   claude_usage_history: ClaudeUsageHistoryTable;
   api_budgets: ApiBudgetsTable;
   commands: CommandsTable;
+  finding_decisions: FindingDecisionsTable;
 }

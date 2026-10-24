@@ -5,6 +5,8 @@ import type { Session } from '../access/http.js';
 import type { ExplorationPr, ExplorationReview, FindingCard } from './review.js';
 import { approvePr, commentOnFile, commentOnIssue, type Posted } from '@platform/github/github-as-user.js';
 import { DomainError } from '@platform/errors.js';
+import type { Db } from '@platform/db/db.js';
+import { decide, listDecisions, undecide, type FindingDecision } from './decisions.js';
 
 // Deciding on a finding from the dashboard (#93): a comment on its file in
 // the exploration PR, written as whoever is logged in — what they'd write in
@@ -95,6 +97,35 @@ export function waitingOnRonin(review: ExplorationReview, ronin = config.githubL
     const last = f.comments[f.comments.length - 1];
     return Boolean(last && last.author.toLowerCase() !== ronin.toLowerCase() && (!last.replyTo || mention.test(last.body)));
   });
+}
+
+// Approving or rejecting a finding from the tablero (#446): kept in ronin
+// (decisions.ts), shared at once, written into the PR when the review is
+// finished. `null` takes it back. Only on one still proposed; a rejection
+// needs its reason, which goes to the app's knowledge.
+export async function runFindingDecision(
+  db: Db,
+  entry: RepoEntry,
+  pr: ExplorationPr,
+  review: ExplorationReview,
+  session: Session,
+  request: { ficha?: unknown; decision?: unknown; text?: unknown },
+): Promise<{ decisiones: FindingDecision[] }> {
+  const card = review.fichas.find((f) => `${f.app}/${f.id}` === request.ficha);
+  if (!card) throw new FindingCardActionError('Esa ficha no está en este PR.');
+  if (card.estado !== 'propuesto') throw new FindingCardActionError(`${card.id} ya está ${card.estado === 'rechazado' ? 'rechazada' : 'aprobada'} en el PR.`);
+  const key = `${card.app}/${card.id}`;
+  if (request.decision === null) {
+    await undecide(db, entry.productRepo, pr.number, key);
+  } else if (request.decision === 'aprobar' || request.decision === 'rechazar') {
+    const text = typeof request.text === 'string' ? request.text.trim().slice(0, MAX_TEXT) : '';
+    if (request.decision === 'rechazar' && !text) throw new FindingCardActionError('Falta el motivo.');
+    await decide(db, entry.productRepo, pr.number, key, request.decision, session.login, text || undefined);
+  } else {
+    throw new FindingCardActionError('Esa decisión no existe.');
+  }
+  log.info(`tablero: ${session.login} ${request.decision === null ? 'deshizo la decisión de' : request.decision === 'aprobar' ? 'marcó para aprobar' : 'rechazó'} ${card.id} de ${entry.productRepo}#${pr.number}`);
+  return { decisiones: await listDecisions(db, entry.productRepo, pr.number) };
 }
 
 // Approving the PR, as the person: an APPROVE review. From there it's

@@ -53,6 +53,10 @@ vi.mock('./pr.js', async (importOriginal) => ({
   upsertExplorationPr: (...a: unknown[]) => prMod.upsertExplorationPr(...a),
   openFindingIssues: (...a: unknown[]) => prMod.openFindingIssues(...a),
 }));
+// The team's decisions from the tablero (#446): none, unless a test says.
+const decisions = vi.hoisted(() => ({ listDecisions: vi.fn(async () => [] as unknown[]), markApplied: vi.fn(async () => {}) }));
+vi.mock('@platform/db/db.js', () => ({ getDb: () => ({}) }));
+vi.mock('./decisions.js', () => decisions);
 const spawn = vi.hoisted(() => vi.fn());
 vi.mock('node:child_process', async (importOriginal) => ({
   ...(await importOriginal<typeof import('node:child_process')>()),
@@ -163,6 +167,28 @@ describe('processExplorationPr feedback', () => {
     expect(order).toEqual(['commit', 'merge']);
     expect(prMod.commitAndPush.mock.calls[0][2].fallback.es).toBe('aprobar F-0002, F-0003 del PR #794');
     expect(prMod.upsertExplorationPr).toHaveBeenCalled();
+  });
+});
+
+describe('processExplorationPr — decisions from the tablero (#446)', () => {
+  it('writes the rejections the team decided before approving the rest, in the same commit, and closes their issues', async () => {
+    gh.listFileReviewComments.mockResolvedValue([]);
+    await writeFinding(memoryDir(), { ...finding('F-0003', 'Cambiar de cliente pierde el pedido'), issue: 801 });
+    decisions.listDecisions.mockResolvedValueOnce([
+      { ficha: 'backoffice/F-0003', decision: 'rechazar', reason: 'Lo resolvemos con otra ficha', by: 'beto-dev', at: '2026-10-24T15:00:00.000Z', applied: false },
+      { ficha: 'backoffice/F-0002', decision: 'aprobar', reason: null, by: 'ana-dev', at: '2026-10-24T15:01:00.000Z', applied: false },
+    ]);
+
+    await processExplorationPr(pr({ reviewDecision: 'APPROVED' }));
+
+    const memory = await loadMemory(memoryDir());
+    expect(Object.fromEntries(memory.findings.map((f) => [f.id, [f.estado, f.revisor]]))).toEqual({ 'F-0002': ['aprobado', 'Oskr814'], 'F-0003': ['rechazado', 'beto-dev'] });
+    expect(await readFile(join(memoryDir(), 'knowledge.md'), 'utf8')).toContain('Lo resolvemos con otra ficha (F-0003, rechazada en #794)');
+    expect(prMod.commitAndPush).toHaveBeenCalledTimes(1);
+    expect(prMod.commitAndPush.mock.calls[0][2].fallback.es).toBe('aprobar F-0002 y rechazar F-0003 del PR #794');
+    expect(decisions.markApplied).toHaveBeenCalledWith({}, 'redmotos/shoppingcart', 794, ['backoffice/F-0003', 'backoffice/F-0002']);
+    expect(gh.closeIssueNotPlanned).toHaveBeenCalledWith(801, expect.stringContaining('Lo resolvemos con otra ficha'));
+    expect(gh.mergePullRequest).toHaveBeenCalledWith(794);
   });
 });
 

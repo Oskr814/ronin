@@ -8,7 +8,7 @@ import { Md } from '@apps/dashboard/src/lib/markdown.js';
 import { evidenceSrc } from '@apps/dashboard/src/lib/md.js';
 import { useViewState } from '@apps/dashboard/src/lib/view-state.js';
 import { short } from '@ui/time.js';
-import { FICHA_DOT, FICHA_GROUPS, fichaKey, fichaStatus, postFichaComment, setLista, useExploration, visibleFichas, type FichaActionId, type FichaAsked, type FichaFilter, type FichaStatus, type FindingCard, type FindingImage } from './fichas.js';
+import { decisionOf, FICHA_DOT, FICHA_GROUPS, fichaKey, fichaStatus, listas, postDecision, postFichaComment, setLista, useExploration, visibleFichas, type FichaActionId, type FichaAsked, type FichaFilter, type FichaStatus, type FindingCard, type FindingImage } from './fichas.js';
 import { Avatar } from './model.js';
 
 // An exploration PR's Fichas tab (#93): the findings the PR brings, a list
@@ -37,6 +37,9 @@ export type FichaKeys = MutableRefObject<((key: string) => void) | null>;
 export function Fichas({ v, ask, keys }: { v: ItemView; ask: (asked: FichaAsked) => void; keys: FichaKeys }) {
   const id = v.item.id;
   const { data, error } = useExploration(id, true);
+  const queryClient = useQueryClient();
+  const session = useSession();
+  const shell = useShell();
   const [filter, setFilter] = useViewState<FichaFilter>('fichas:filter', { tipo: 'todas', vp: 'todos' });
   const [shots, setShots] = useViewState<Shots>('fichas:shots', { antes: {}, oldAfter: [] });
   const [sel, setSel] = useState(() => fichaOf(id));
@@ -86,17 +89,39 @@ export function Fichas({ v, ask, keys }: { v: ItemView; ask: (asked: FichaAsked)
   };
   const toggleLista = () => {
     if (!data || !f) return;
-    const status = fichaStatus(f, data.ronin, id);
+    const status = fichaStatus(f, data, id);
     if (status === 'esperando') return;
     letGo();
-    setLista(id, fichaKey(f), status !== 'lista');
+    if (data.decisiones) decideOn(fichaKey(f), status === 'lista' ? null : 'aprobar');
+    else setLista(id, fichaKey(f), status !== 'lista');
     setMarks((n) => n + 1);
     if (status === 'decidir') {
       // On to the next one still to decide.
-      const next = visibleFichas(data, id, filter).find((x) => fichaStatus(x, data.ronin, id) === 'decidir');
+      const next = visibleFichas(data, id, filter).find((x) => fichaStatus(x, data, id) === 'decidir');
       if (next) select(fichaKey(next));
     }
   };
+  // Kept in ronin (#446): on the page at once, for everyone; back as it was if it doesn't go.
+  const decideOn = (ficha: string, decision: 'aprobar' | null) => {
+    postDecision(queryClient, id, ficha, decision, session.me).catch((e: Error) => {
+      if (e instanceof ApiError && e.status === 401) return shell.unauthorized(e.message);
+      shell.toast(`No se pudo: ${e.message}`);
+    });
+  };
+  // What this browser marked before the marks were shared: handed to ronin
+  // once, the ones still undecided, and forgotten here.
+  const handedOver = useRef(false);
+  useEffect(() => {
+    if (!data?.decisiones || handedOver.current) return;
+    handedOver.current = true;
+    const mine = listas(id);
+    if (!mine.size) return;
+    for (const key of mine) {
+      const card = data.fichas.find((x) => fichaKey(x) === key);
+      if (card && card.estado === 'propuesto' && !decisionOf(data, card)) decideOn(key, 'aprobar');
+      setLista(id, key, false);
+    }
+  });
   const act = (action: FichaActionId) => {
     if (!f) return;
     setMenu(false);
@@ -128,10 +153,10 @@ export function Fichas({ v, ask, keys }: { v: ItemView; ask: (asked: FichaAsked)
   if (!data) return <div className="doc" id="doc"><div className="empty">{error ? `No se pudieron leer las fichas: ${error.message}` : 'Leyendo las fichas…'}</div></div>;
   if (!data.fichas.length) return <div className="doc" id="doc"><div className="empty"><b>Este PR no trae fichas nuevas</b>{data.error ? data.error : 'Solo cambia el inventario o el registro de corridas.'}</div></div>;
 
-  const reviewed = data.fichas.filter((x) => fichaStatus(x, data.ronin, id) !== 'decidir').length;
+  const reviewed = data.fichas.filter((x) => fichaStatus(x, data, id) !== 'decidir').length;
   const chip = (key: keyof FichaFilter, value: string, label: string) => <button className="fchip" aria-pressed={filter[key] === value} onClick={() => { letGo(); setFilter({ ...filter, [key]: value }); }}>{label}</button>;
   const groups = FICHA_GROUPS.map(([k, label]) => {
-    const rows = shown.filter((x) => fichaStatus(x, data.ronin, id) === k);
+    const rows = shown.filter((x) => fichaStatus(x, data, id) === k);
     if (!rows.length) return null;
     return [<div className="fgrp" key={k}><span>{label}</span><span>{rows.length}</span></div>, ...rows.map((x) => (
       <button key={fichaKey(x)} className={`frow${k === 'rechazada' ? ' rej' : ''}`} aria-current={Boolean(f && fichaKey(x) === fichaKey(f))} onClick={() => select(fichaKey(x))}>
@@ -147,7 +172,7 @@ export function Fichas({ v, ask, keys }: { v: ItemView; ask: (asked: FichaAsked)
         <div className="frows" id="frows">{groups.length ? groups : <p className="none">Ninguna ficha con esos filtros.</p>}</div>
         {data.runs.length > 0 && <div className="fruns">Corridas: {data.runs.map((run, i) => <span key={run.id}>{i > 0 && ', '}<a href={run.url} target="_blank" rel="noopener">{run.id}</a></span>)}</div>}</div>
       <div className="fdetail" id="fdetail" ref={detailRef} data-current={f ? fichaKey(f) : ''}>{f && (
-        <Ficha v={v} data={data} f={f} shown={shown} menu={menu} setMenu={setMenu} act={act} toggleLista={toggleLista} move={move}
+        <Ficha v={v} data={data} f={f} shown={shown} menu={menu} setMenu={setMenu} act={act} toggleLista={toggleLista} move={move} undo={() => decideOn(fichaKey(f), null)}
           back={() => { letGo(); showFicha(id, null, false); setSel({ ...sel, open: false }); }}
           antes={shotsOf.antes(fichaKey(f))} old={shotsOf.old(fichaKey(f))}
           setAntes={(k) => letGo() ?? setShots({ ...shots, antes: { ...shots.antes, [fichaKey(f)]: k } })}
@@ -159,21 +184,27 @@ export function Fichas({ v, ask, keys }: { v: ItemView; ask: (asked: FichaAsked)
   );
 }
 
-function Ficha({ v, data, f, shown, menu, setMenu, act, toggleLista, move, back, antes, old, setAntes, toggleOld, zoom }: {
+function Ficha({ v, data, f, shown, menu, setMenu, act, toggleLista, move, undo, back, antes, old, setAntes, toggleOld, zoom }: {
   v: ItemView; data: Exploration; f: FindingCard; shown: FindingCard[]; menu: boolean; setMenu: (open: boolean) => void;
-  act: (action: FichaActionId) => void; toggleLista: () => void; move: (delta: number) => void; back: () => void;
+  act: (action: FichaActionId) => void; toggleLista: () => void; move: (delta: number) => void; undo: () => void; back: () => void;
   antes: number; old: boolean; setAntes: (k: number) => void; toggleOld: () => void; zoom: (only: 'despues' | null) => void;
 }) {
   const { item } = v;
-  const status = fichaStatus(f, data.ronin, item.id);
+  const status = fichaStatus(f, data, item.id);
   const idx = shown.findIndex((x) => fichaKey(x) === fichaKey(f));
   // Who decided it in the review, and when (their GitHub login).
   const by = f.revisor ? <> <span className="m">por {f.revisor}{f.revisado ? `, hace ${short(Date.now() - Date.parse(f.revisado))}` : ''}</span></> : null;
+  // Decided by the team in ronin, written into the PR when the review is finished (#446).
+  const decided = decisionOf(data, f);
+  const decidedBy = decided && <> <span className="m">por {decided.by}, hace {short(Date.now() - Date.parse(decided.at))}</span></>;
   const banner = {
-    rechazada: <div className="banner crit"><Dot cls="crit" /><div><b>Rechazada</b>{by}{f.motivo && <p>{f.motivo}</p>}</div></div>,
+    rechazada: decided?.decision === 'rechazar'
+      ? <div className="banner crit"><Dot cls="crit" /><div><b>Rechazada</b>{decidedBy}{decided.reason && <p>{decided.reason}</p>}<p className="m">Se escribe en el PR, con el motivo en knowledge.md, al finalizar la revisión. <button className="link" data-fundo onClick={undo}>Deshacer</button></p></div></div>
+      : <div className="banner crit"><Dot cls="crit" /><div><b>Rechazada</b>{by}{f.motivo && <p>{f.motivo}</p>}</div></div>,
+    lista: decided?.decision === 'aprobar' ? <div className="banner ok"><Dot cls="ok" /><div><b>Para aprobar</b>{decidedBy}<p className="m">Se aprueba y abre su issue al finalizar la revisión.</p></div></div> : null,
     aprobada: <div className="banner ok"><Dot cls="ok" /><div><b>Aprobada</b>{by}{f.issue ? <p>Issue <a href={`https://github.com/${item.repo}/issues/${f.issue}`} target="_blank" rel="noopener">#{f.issue}</a>.</p> : null}</div></div>,
     esperando: <div className="banner run"><Dot cls="live" /><div><b>Esperando a ronin</b><p>Hay un comentario que ronin todavía no respondió. Cuando lo aplique, su respuesta aparece abajo.</p></div></div>,
-  }[status as 'rechazada' | 'aprobada' | 'esperando'] ?? null;
+  }[status as 'rechazada' | 'aprobada' | 'esperando' | 'lista'] ?? null;
   const meta = [f.senal && f.senal !== f.gravedad && f.tipo !== 'idea' ? f.senal : '', `rol ${f.rol}`, f.functionName || f.funcion, f.entorno ? 'entorno de dev' : '', f.revisor && f.estado === 'propuesto' ? `editada por ${f.revisor}` : ''].filter(Boolean);
   const kinds = [...new Set(f.evidencia.map((e) => e.tipo))].join(', ');
   return (
@@ -203,10 +234,11 @@ function Decisions({ status, menu, setMenu, act, toggleLista }: { status: FichaS
   };
   return (
     <span className="decide">{status !== 'esperando' && <button className="btn-s ok" data-flista aria-pressed={marked} title={marked ? 'Se aprueba cuando apruebes el PR. Clic para deshacer.' : 'Queda para aprobar: se aprueba cuando apruebes el PR.'} onClick={toggleLista}>{marked ? '✓ Para aprobar' : '✓ Aprobar'} <kbd>a</kbd></button>}
-      <button className="btn-s" data-fact="cambios" onClick={button('cambios')}>Pedir cambios <kbd>c</kbd></button>
+      <button className="btn-s hide-m" data-fact="cambios" onClick={button('cambios')}>Pedir cambios <kbd>c</kbd></button>
       <button className="btn-s danger" data-fact="rechazar" onClick={button('rechazar')}>Rechazar <kbd>r</kbd></button>
-      <span className="actions"><button className="btn-s" id="fmore" aria-haspopup="menu" aria-expanded={menu} onClick={(e) => { e.stopPropagation(); setMenu(!menu); }}>Más ▾</button>
+      <span className="actions"><button className="btn-s" id="fmore" aria-haspopup="menu" aria-expanded={menu} aria-label="Más acciones" onClick={(e) => { e.stopPropagation(); setMenu(!menu); }}><span className="hide-m">Más ▾</span><span className="only-m" aria-hidden="true">⋯</span></button>
         {menu && <div className="menu fmenu" role="menu">
+          <button role="menuitem" className="only-m" onClick={button('cambios')}><b>Pedir cambios</b><small>ronin corrige la propuesta y, si hace falta, rehace el después.</small></button>
           <button role="menuitem" data-fact="desarrollar" onClick={button('desarrollar')}><b>Desarrollar ya</b><small>Abre ahora el issue de esta ficha, asignado a ronin, sin esperar a aprobar el PR.</small></button>
           <button role="menuitem" data-fact="issue" onClick={button('issue')}><b>Pedir un issue aparte</b><small>Algo que surge de esta ficha pero no es su propuesta.</small></button>
           <button role="menuitem" data-fact="pregunta" onClick={button('pregunta')}><b>Preguntarle a ronin</b><small>Responde en el hilo, sin tocar la ficha.</small></button></div>}</span></span>

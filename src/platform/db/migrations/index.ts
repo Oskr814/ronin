@@ -10,6 +10,7 @@ import * as m0008 from './0008_corridas.js';
 import * as m0009 from './0009_cuota.js';
 import * as m0010 from './0010_api_fallback.js';
 import * as m0011 from './0011_commands.js';
+import * as m0012 from './0012_finding_decisions.js';
 
 // Every migration, in order, by name. Listed here rather than read from the
 // folder: they're compiled into dist like the rest, and a missing one is a
@@ -27,4 +28,5 @@ export const migrations: Record<string, Migration> = {
   '0009_cuota': m0009,
   '0010_api_fallback': m0010,
   '0011_commands': m0011,
+  '0012_finding_decisions': m0012,
 };

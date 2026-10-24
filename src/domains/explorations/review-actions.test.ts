@@ -2,8 +2,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('@platform/logger.js', () => ({ log: { error: vi.fn(), info: vi.fn() } }));
 vi.mock('@platform/config/config.js', () => ({ config: { githubLogin: 'ronin-agent' } }));
+const store = vi.hoisted(() => ({ decide: vi.fn(), undecide: vi.fn(), listDecisions: vi.fn(async () => []) }));
+vi.mock('./decisions.js', () => store);
 
-const { findingCardComment, generalComment, runApprove, runFindingCardAction, runGeneralComment, waitingOnRonin, FindingCardActionError } = await import('./review-actions.js');
+const { findingCardComment, generalComment, runApprove, runFindingCardAction, runFindingDecision, runGeneralComment, waitingOnRonin, FindingCardActionError } = await import('./review-actions.js');
 
 const ENTRY = { productRepo: 'acme/product', productRepoPath: '/tmp/x' } as any;
 const PR = { number: 840, headRefName: 'ronin/exploration/2026-10-14', baseRefName: 'main' };
@@ -96,5 +98,31 @@ describe('runApprove', () => {
     const review = { ...REVIEW, fichas: [{ ...ficha('F-0017'), comments: [{ id: 1, author: 'oskr814', body: 'Rechazo esta ficha: no' }] }] };
     await expect(runApprove(ENTRY, PR, review as any, SESSION, {}, approve)).rejects.toThrow('F-0017');
     expect(approve).not.toHaveBeenCalled();
+  });
+});
+
+// #446: approving or rejecting is kept in ronin, not commented.
+describe('runFindingDecision', () => {
+  const db = {} as any;
+  beforeEach(() => {
+    for (const f of Object.values(store)) f.mockClear();
+  });
+
+  it('keeps an approval or a rejection with its reason, as the person, and takes one back', async () => {
+    await runFindingDecision(db, ENTRY, PR, REVIEW, SESSION, { ficha: 'backoffice/F-0017', decision: 'rechazar', text: ' Ya está cubierto ' });
+    expect(store.decide).toHaveBeenCalledWith(db, 'acme/product', 840, 'backoffice/F-0017', 'rechazar', 'oskr814', 'Ya está cubierto');
+    await runFindingDecision(db, ENTRY, PR, REVIEW, SESSION, { ficha: 'backoffice/F-0017', decision: 'aprobar' });
+    expect(store.decide).toHaveBeenLastCalledWith(db, 'acme/product', 840, 'backoffice/F-0017', 'aprobar', 'oskr814', undefined);
+    await runFindingDecision(db, ENTRY, PR, REVIEW, SESSION, { ficha: 'backoffice/F-0017', decision: null });
+    expect(store.undecide).toHaveBeenCalledWith(db, 'acme/product', 840, 'backoffice/F-0017');
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  it('refuses a rejection without its reason, a finding already decided in the PR, or one it does not have', async () => {
+    await expect(runFindingDecision(db, ENTRY, PR, REVIEW, SESSION, { ficha: 'backoffice/F-0017', decision: 'rechazar' })).rejects.toThrow('Falta el motivo.');
+    await expect(runFindingDecision(db, ENTRY, PR, REVIEW, SESSION, { ficha: 'backoffice/F-0015', decision: 'aprobar' })).rejects.toThrow('F-0015 ya está rechazada en el PR.');
+    await expect(runFindingDecision(db, ENTRY, PR, REVIEW, SESSION, { ficha: 'backoffice/F-0099', decision: 'aprobar' })).rejects.toBeInstanceOf(FindingCardActionError);
+    await expect(runFindingDecision(db, ENTRY, PR, REVIEW, SESSION, { ficha: 'backoffice/F-0017', decision: 'otra' })).rejects.toThrow('Esa decisión no existe.');
+    expect(store.decide).not.toHaveBeenCalled();
   });
 });
