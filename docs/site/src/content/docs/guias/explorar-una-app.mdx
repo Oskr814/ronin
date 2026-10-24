@@ -9,7 +9,7 @@ ronin levanta la app, usa algunas de sus funciones como cada rol, en desktop y e
 
 ## Cuándo explora
 
-- **De noche**, las apps listadas en `explore` de [`repos.json`](/ronin/referencia/repos-json/), dentro de `EXPLORE_NIGHT_WINDOW`.
+- **De noche**, las apps listadas en `explore` de [`repos.json`](/ronin/referencia/repos-json/), dentro de `EXPLORE_NIGHT_WINDOW`. Las de `exploreNightlyOff` (en Ajustes → Repos, el switch **De noche** de la app) no corren de noche, pero siguen en Exploraciones y se pueden explorar a mano.
 - **Cuando lo pedís** con **Explorar ahora**, desde la página de la app en el tablero.
 - **Con `/explore`** en un issue: `@ronin-agent /explore <app> [cantidad de funciones]`, hasta 10. También desde la ficha del issue en el tablero, con **Acciones → Explorar**.
 
@@ -19,7 +19,7 @@ Si la cuenta de Claude del repo se queda sin cuota en medio de una corrida, roni
 
 ## Las exploraciones en el tablero
 
-El botón **Exploraciones**, arriba a la izquierda, lista las apps. El número al lado son las fichas que esperan una decisión. Cada app muestra su estado (explorando ahora, fichas por decidir, esperando a ronin o sin PR), su PR de exploración, la última corrida y la próxima de la noche.
+El botón **Exploraciones**, arriba a la izquierda, lista las apps. El número al lado son las fichas que esperan una decisión. Cada app muestra su estado (explorando ahora, fichas por decidir, esperando a ronin o sin PR), su PR de exploración, la última corrida y la próxima de la noche, o «solo a mano» si no se explora de noche.
 
 La página de una app tiene tres pestañas:
 

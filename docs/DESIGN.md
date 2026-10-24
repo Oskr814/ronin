@@ -448,7 +448,7 @@ Qué pasó, cómo reproducirlo, evidencia (con las capturas del antes) y propues
 
 #### 11.8 Programación nocturna
 
-Sin cron aparte: el tick evalúa `es de noche (EXPLORE_NIGHT_WINDOW, en la hora de EXPLORE_TIMEZONE) && hay una app de "explore" que todavía no arrancó esta noche → lanzar el worker` (`domains/explorations/schedule.ts`). Una app por vez por repo, y cada una arranca a lo sumo una vez por noche, salga bien o mal: qué noche arrancó cada app queda en `.ronin-state.json` (`nightlyExploration`). Una corrida que se corta no se retoma esa noche; la siguiente vuelve a elegir funciones desde el inventario.
+Sin cron aparte: el tick evalúa `es de noche (EXPLORE_NIGHT_WINDOW, en la hora de EXPLORE_TIMEZONE) && hay una app de "explore", fuera de "exploreNightlyOff", que todavía no arrancó esta noche → lanzar el worker` (`domains/explorations/schedule.ts`). Una app por vez por repo, y cada una arranca a lo sumo una vez por noche, salga bien o mal: qué noche arrancó cada app queda en `.ronin-state.json` (`nightlyExploration`). Una corrida que se corta no se retoma esa noche; la siguiente vuelve a elegir funciones desde el inventario.
 
 - **Lo urgente primero**: un issue asignado o una mención que llega de noche se procesa antes; la exploración es la prioridad más baja y es interrumpible entre funciones.
 - **Presupuesto por noche, no "usar todo"**: la noche aprovecha la ventana de 5 h de Claude que nadie usa, pero el límite **semanal** es compartido con el trabajo de día. Tope de tiempo y modelo de los workers configurables (como `EXTERNAL_REVIEW_WORKER_MODEL`).
@@ -891,7 +891,7 @@ La página *Exploraciones* junta lo que antes estaba repartido entre el PR fijo 
 - **La lista (`/exploraciones`).** Cada app de `explore` en `repos.json` con:
   - su estado: explorando ahora (con la función), fichas por decidir, esperando a ronin o sin PR;
   - el PR de su repo y cuántas fichas trae;
-  - la última corrida y la próxima de la noche.
+  - la última corrida y la próxima de la noche, o «solo a mano» para una app de `exploreNightlyOff` (#426): apagar la noche no la saca de la página.
 
   El PR es uno por repo (§11.7), así que un repo con dos apps muestra el mismo en las dos, aunque las fichas se cuentan por app. "Explorando" sale del agente en curso y, antes de que arranque el primero (la app tarda en levantarse), del registro de la corrida mientras el lock del repo está tomado (`liveRuns`).
 - **La página de una app (`/exploraciones/<owner>/<repo>/<app>`).**

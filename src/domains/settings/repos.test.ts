@@ -71,6 +71,19 @@ describe('editRepo', () => {
     expect(sc.agent).toBeUndefined();
   });
 
+  it('turns the nightly exploration off without taking the app out of the exploration (#426)', async () => {
+    await expect(edit({ app: { id: 'backoffice', nightly: false } })).rejects.toThrow(/primero prende/);
+    await edit({ app: { id: 'backoffice', explore: true } });
+    await edit({ app: { id: 'backoffice', nightly: false } });
+    expect(file()[0]).toMatchObject({ explore: ['backoffice'], exploreNightlyOff: ['backoffice'] });
+    await edit({ app: { id: 'backoffice', nightly: true } });
+    expect(file()[0].exploreNightlyOff).toBeUndefined();
+    await edit({ app: { id: 'backoffice', nightly: false } });
+    await edit({ app: { id: 'backoffice', explore: false } });
+    expect(file()[0].explore).toBeUndefined();
+    expect(file()[0].exploreNightlyOff).toBeUndefined();
+  });
+
   it("sets the automatic deploy's tag pattern (#353), only with picked PRs and a pattern that works", async () => {
     await edit({ deploy: { on: true } });
     await expect(edit({ deploy: { auto: 'v{major}.{minor}.{patch+1}' } })).rejects.toThrow(/Solo lo que elijas/);

@@ -64,7 +64,8 @@ export function XplHead({ r, buttons, pill }: { r: Row; buttons?: ReactNode; pil
   const facts: string[] = [];
   if (r.running) facts.push(`desde las ${hhmm(r.running.since)}`);
   else if (l?.lastRun) facts.push(`última corrida ${ago(l.lastRun.at)}${l.lastRun.state === 'ok' ? '' : `, ${RUN_STATE[l.lastRun.state]?.[2] ?? l.lastRun.state}`}`);
-  if (l?.next) facts.push(`próxima: ${nextRun(l.next)}`);
+  if (l?.nightly === false) facts.push('sin exploración nocturna');
+  else if (l?.next) facts.push(`próxima: ${nextRun(l.next)}`);
   const why = blocked(view, r);
   return (
     <div className="head">

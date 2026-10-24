@@ -12,7 +12,7 @@ import { patternProblem } from '../deploys/tag-pattern.js';
 
 // Ajustes → Repos (#174, stage 5), admins only:
 //   GET  /api/settings/repos                  each repo of repos.json, with what can be changed from here
-//   POST /api/settings/repos/<owner>/<repo>   one change: { baseRef } | { portalName } | { app: { id, portal?, name?, description?, explore?, project? } }
+//   POST /api/settings/repos/<owner>/<repo>   one change: { baseRef } | { portalName } | { app: { id, portal?, name?, description?, explore?, nightly?, project? } }
 //                                            | { linear } | { deploy: { on?, prerelease?, selective?, auto? } } | { agent: { model?, effort? } } | { autoMerge } | { concurrency } | { notifyTo }
 //                                            | { apiFallback: null | { apiKeyEnv?, model?, maxUsd? } }
 //
@@ -78,6 +78,7 @@ export async function reposView(entries: RepoEntry[]): Promise<unknown> {
           portal: Boolean(entry.portal?.apps[id]),
           ...(entry.portal?.apps[id] ? { name: entry.portal.apps[id].name, ...(entry.portal.apps[id].description ? { description: entry.portal.apps[id].description } : {}) } : {}),
           explore: (entry.explore ?? []).includes(id),
+          nightly: (entry.explore ?? []).includes(id) && !(entry.exploreNightlyOff ?? []).includes(id),
           ...(entry.linear?.explorationProject?.[id] ? { project: entry.linear.explorationProject[id] } : {}),
         })),
         linear: entry.linear ? { apiKeyEnv: entry.linear.apiKeyEnv, connected: Boolean(linearKey(entry)), projects: await linearProjects(entry) } : null,
@@ -98,6 +99,13 @@ async function backup(): Promise<void> {
   await copyFile(config.reposConfigPath, join(dir, `${new Date().toISOString().replace(/[:.]/g, '-')}.json`));
   const old = (await readdir(dir)).filter((f) => f.endsWith('.json')).sort().slice(0, -BACKUPS_KEPT);
   for (const file of old) await rm(join(dir, file), { force: true });
+}
+
+function setNightlyOff(raw: Raw, id: string, off: boolean): void {
+  const list = ((raw.exploreNightlyOff as string[] | undefined) ?? []).filter((a) => a !== id);
+  if (off) list.push(id);
+  if (list.length) raw.exploreNightlyOff = list;
+  else delete raw.exploreNightlyOff;
 }
 
 const str = (value: unknown) => (typeof value === 'string' ? value.trim() : undefined);
@@ -162,7 +170,18 @@ function apply(raw: Raw, body: Record<string, unknown>, manifest: string[]): Arr
       if (app.explore === true) list.push(id);
       if (list.length) raw.explore = list;
       else delete raw.explore;
-      if (was !== (app.explore === true)) changes.push({ what: `${id} · exploración nocturna`, from: yesNo(was), to: yesNo(app.explore) });
+      if (was !== (app.explore === true)) changes.push({ what: `${id} · exploración`, from: yesNo(was), to: yesNo(app.explore) });
+      // Out of the exploration, it's out of what skips the night too.
+      if (app.explore !== true) setNightlyOff(raw, id, false);
+    }
+    // The nightly exploration of an app ronin explores (#426): off, it stays
+    // in Exploraciones and is explored on demand only.
+    if (app.nightly !== undefined) {
+      if (typeof app.nightly !== 'boolean') throw new SettingsError('Exploración nocturna: es sí o no.');
+      if (!((raw.explore as string[] | undefined) ?? []).includes(id)) throw new SettingsError(`${id} no se explora: primero prende su exploración.`);
+      const was = !((raw.exploreNightlyOff as string[] | undefined) ?? []).includes(id);
+      setNightlyOff(raw, id, !app.nightly);
+      if (was !== app.nightly) changes.push({ what: `${id} · exploración nocturna`, from: yesNo(was), to: yesNo(app.nightly) });
     }
     if (app.project !== undefined) {
       const linear = raw.linear as { apiKeyEnv: string; explorationProject?: Record<string, string> } | undefined;

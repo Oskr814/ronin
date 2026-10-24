@@ -54,7 +54,8 @@ export function upcomingNight(now: Date, window: NightWindow, timezone: string):
 }
 
 export async function maybeLaunchNightlyExploration(now = new Date()): Promise<void> {
-  const apps = activeRepo().explore ?? [];
+  const off = activeRepo().exploreNightlyOff ?? [];
+  const apps = (activeRepo().explore ?? []).filter((app) => !off.includes(app));
   if (apps.length === 0) return;
   const tonight = currentNight(now, parseNightWindow(config.exploreNightWindow), config.exploreTimezone);
   if (!tonight) return;

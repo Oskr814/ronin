@@ -18,7 +18,7 @@ const VIEW: ExplorationsView = {
     { repo: 'acme/tienda', app: 'web', pr: null, running: { since: at, step: 'abriendo el carrito', fn: 'carrito' } },
   ],
   list: [
-    { repo: 'acme/tienda', app: 'backoffice', pr: null, running: null, lastRun: { at, state: 'ok' }, next: null, fichas: { total: 4, decidir: 2, esperando: 0, aprobadas: 2, rechazadas: 0 } as never },
+    { repo: 'acme/tienda', app: 'backoffice', pr: null, running: null, lastRun: { at, state: 'ok' }, nightly: true, next: null, fichas: { total: 4, decidir: 2, esperando: 0, aprobadas: 2, rechazadas: 0 } as never },
   ],
   error: null,
   launched: {},
