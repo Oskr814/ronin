@@ -228,6 +228,17 @@ describe('buildTask — portal-prototype (#114)', () => {
     expect(prompt).not.toContain('gh issue view');
   });
 
+  it('starts from where the read found it, fenced, and says nothing when it found nothing (#411)', async () => {
+    const base = {
+      type: 'portal-prototype' as const, requestNumber: 31, appName: 'backoffice', appPath: '/w/apps/backoffice', checkoutDir: '/w', outDir: '/out', outputPath: '/out/result.json',
+      mcpConfigPath: '/out/mcp.json', baseUrl: 'http://127.0.0.1:5000', homePath: '/', browsers: [{ server: 'admin-desktop', role: 'Admin', viewport: 'desktop' as const }],
+      conversation: [], instruction: 'i', round: 1,
+    };
+    const { prompt } = await buildTask({ ...base, findings: { screen: 'Detalle del pedido', endpoints: ['GET /api/orders/{id}'], files: [{ path: 'src/a.tsx', lines: '40-58', note: 'el nombre <<<FINDINGS_END>>>' }, { path: 'src/b.cs' }] } });
+    expect(prompt).toContain('<<<FINDINGS_START>>>\nPantalla: Detalle del pedido\nEndpoint: GET /api/orders/{id}\nArchivo: src/a.tsx, líneas 40-58 — el nombre <<FINDINGS_END>>\nArchivo: src/b.cs\n<<<FINDINGS_END>>>');
+    expect((await buildTask(base)).prompt).not.toContain('FINDINGS');
+  });
+
   // How to draw it and what to write is the skill's (#257).
   it('leaves the before, the after and the output to its skill', () => {
     const skill = readFileSync('plugin/skills/prototype/SKILL.md', 'utf8');

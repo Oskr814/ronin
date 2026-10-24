@@ -24,6 +24,20 @@ describe('parsePortalResult', () => {
     expect(() => parsePortalResult('no es json', 0)).toThrow();
   });
 
+  it('a small change keeps where the read found it, only what has a usable shape (#411)', () => {
+    const result = parsePortalResult(json({
+      accion: 'menor', mensaje: 'Se puede.', propuesta: 'Un enlace', instruccion: 'Pedido N° 2',
+      hallazgos: { pantalla: ' Detalle del pedido (/orders/:id) ', endpoints: ['GET /api/orders/{id}', 3, ''], archivos: [{ ruta: 'src/orders/ClientInfoPanel.tsx', lineas: '40-58', que: 'el nombre del cliente' }, { ruta: 'src/api/Orders.cs', lineas: 120 }, { lineas: '1-2' }, 'x'] },
+    }), 0);
+    expect(result.hallazgos).toEqual({
+      screen: 'Detalle del pedido (/orders/:id)',
+      endpoints: ['GET /api/orders/{id}'],
+      files: [{ path: 'src/orders/ClientInfoPanel.tsx', lines: '40-58', note: 'el nombre del cliente' }, { path: 'src/api/Orders.cs', lines: '120' }],
+    });
+    expect(parsePortalResult(json({ accion: 'menor', mensaje: 'Se puede.', propuesta: 'Un enlace', instruccion: 'i', hallazgos: { archivos: [] } }), 0).hallazgos).toBeUndefined();
+    expect(parsePortalResult(json({ accion: 'grande', mensaje: 'Es grande.', hallazgos: { pantalla: 'Pedidos' } }), 0).hallazgos).toBeUndefined();
+  });
+
   it('a small change without what the prototype needs goes to the team', () => {
     expect(parsePortalResult(json({ accion: 'menor', mensaje: 'Sí se puede.', propuesta: 'Un enlace' }), 0)).toMatchObject({ accion: 'grande', motivo: expect.any(String) });
   });
@@ -112,6 +126,12 @@ describe('applyResult', () => {
     expect(r.status).toBe('minor');
     expect(r.verdict).toMatchObject({ kind: 'minor', proposal: 'El nombre del cliente pasa a ser un enlace.', instruction: 'Pedido N° 2, desktop, Admin', summary: 'ClientInfoPanel.tsx' });
     expect(r.messages.at(-1)?.text).toBe(`Se puede.\n\nLa propuesta: El nombre del cliente pasa a ser un enlace.\n\n${NEXT_STEP.menor}`);
+  });
+
+  it('a small change keeps its findings for the prototype (#411)', () => {
+    const r = request();
+    applyResult(r, { accion: 'menor', mensaje: 'Se puede.', propuesta: 'p', instruccion: 'i', resumen: 's', hallazgos: { screen: 'Pedidos', files: [{ path: 'src/a.tsx' }] } });
+    expect(r.verdict?.findings).toEqual({ screen: 'Pedidos', files: [{ path: 'src/a.tsx' }] });
   });
 
   it('past the prototypes allowed, another small change goes to the team', () => {

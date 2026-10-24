@@ -9,7 +9,7 @@ import { getUser, type PortalUser } from './accounts.js';
 import { interviewText, MAX_ROUNDS, parseQuestions, parseUnderstood } from './interview.js';
 import { interviewMail, proposalMail, replyMail, understoodMail } from './mail.js';
 import { handOverMail, sendPortalMails } from './notify.js';
-import { addEvent, addRoninMessage, errorLine, getRequest, MAX_PROTOTYPES, MAX_REPRODUCTIONS, proposalRounds, requestImagePath, TITLE_MAX, updateUnlessClosed, type InterviewQuestion, type PortalRequest, type Understood, type Verdict } from './requests.js';
+import { addEvent, addRoninMessage, errorLine, getRequest, MAX_PROTOTYPES, MAX_REPRODUCTIONS, proposalRounds, requestImagePath, TITLE_MAX, updateUnlessClosed, type Findings, type InterviewQuestion, type PortalRequest, type Understood, type Verdict } from './requests.js';
 import { host } from '@platform/host/host.js';
 
 
@@ -41,6 +41,8 @@ export interface PortalResult {
   resumen?: string;
   // error: the steps to reproduce it, as ronin understood them.
   pasos?: string;
+  // menor: where in the code it found it, for the prototype (#411).
+  hallazgos?: Findings;
   // entrevistar: the form's questions (#225).
   preguntas?: InterviewQuestion[];
   // grande, after an interview: what ronin understood, for the person to
@@ -53,6 +55,32 @@ const text = (value: unknown, max: number): string | undefined => {
   const trimmed = value.trim();
   return trimmed.length > max ? `${trimmed.slice(0, max - 1)}…` : trimmed;
 };
+
+const MAX_FINDINGS = 15;
+
+// Where the read found the change (#411): only what has a shape the
+// prototype can use; nothing when none of it does.
+export function parseFindings(value: unknown): Findings | undefined {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined;
+  const v = value as Record<string, unknown>;
+  const findings: Findings = {};
+  const screen = text(v.pantalla, 300);
+  if (screen) findings.screen = screen;
+  const endpoints = (Array.isArray(v.endpoints) ? v.endpoints : []).map((e) => text(e, 200)).filter((e): e is string => Boolean(e)).slice(0, MAX_FINDINGS);
+  if (endpoints.length) findings.endpoints = endpoints;
+  const files = [];
+  for (const item of Array.isArray(v.archivos) ? v.archivos : []) {
+    if (typeof item !== 'object' || item === null) continue;
+    const f = item as Record<string, unknown>;
+    const path = text(f.ruta, 300);
+    if (!path) continue;
+    const lines = typeof f.lineas === 'number' ? String(f.lineas) : text(f.lineas, 40);
+    const note = text(f.que, 300);
+    files.push({ path, ...(lines ? { lines } : {}), ...(note ? { note } : {}) });
+  }
+  if (files.length) findings.files = files.slice(0, MAX_FINDINGS);
+  return Object.keys(findings).length ? findings : undefined;
+}
 
 // What the agent wrote. A small change without what the prototype needs (its
 // proposal, and its instruction unless it needs no prototype) or past the
@@ -73,6 +101,8 @@ export function parsePortalResult(raw: string, questionsAsked: number, proposals
     if (value) result[key] = value;
   }
   if (result.accion === 'menor' && r.prototipo === false) result.prototipo = false;
+  const hallazgos = result.accion === 'menor' ? parseFindings(r.hallazgos) : undefined;
+  if (hallazgos) result.hallazgos = hallazgos;
   if (result.accion === 'menor' && (!result.propuesta || (!result.instruccion && result.prototipo !== false))) {
     return { ...result, accion: 'grande', motivo: result.motivo ?? 'No quedó claro qué cambiar.' };
   }
@@ -167,6 +197,7 @@ export function applyResult(request: PortalRequest, result: PortalResult, now = 
     verdict.proposal = result.propuesta;
     if (result.instruccion) verdict.instruction = result.instruccion;
     if (result.prototipo === false) verdict.prototype = false;
+    if (result.hallazgos) verdict.findings = result.hallazgos;
   } else if (result.motivo) verdict.reason = result.motivo;
   const shown = proposalRounds(request);
   request.verdict = verdict;

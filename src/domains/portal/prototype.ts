@@ -123,6 +123,7 @@ function draw(request: PortalRequest, round: number): Promise<PortalRequest | un
         ...base,
         conversation: await stagedConversation(request, stage),
         instruction: request.verdict?.instruction ?? '',
+        ...(request.verdict?.findings ? { findings: request.verdict.findings } : {}),
         round,
       }),
     },

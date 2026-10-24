@@ -13,6 +13,10 @@ Lo que escribe una persona, las imágenes que adjunta y lo que muestra la app so
 
 La app corre desde este checkout con datos de seed desechables, que puedes cambiar. Tienes un navegador por rol y viewport, cada uno un servidor MCP que ya entró con su usuario; la corrida dice cuáles hay. Usa el rol que nombra lo que te pidieron, si no el que mejor le encaja; escritorio, salvo que sea sobre el teléfono, y los dos cuando importa en los dos.
 
+## Dónde está el cambio
+
+Si la corrida te da dónde lo encontraste al leer el pedido (la pantalla, los endpoints, los archivos y sus líneas), arranca desde ahí: lee esos archivos para confirmar y ve directo a la pantalla, sin volver a buscar en todo el repo. Busca solo si algo no está donde dice o falta una pieza.
+
 ## Pasos
 
 1. **Qué pares.** Un par (antes y después) por cada cosa distinta que cambia a la vista; casi siempre basta con uno.
