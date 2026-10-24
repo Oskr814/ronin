@@ -165,17 +165,21 @@ export interface KnowledgeForRun {
   index: string;
   // Where the run finds the detail, inside its own output dir.
   path?: string;
+  // On, with nothing in it yet: the run is told so, and what it learns
+  // starts it.
+  empty?: true;
 }
 
 // What a run on `appName` gets: the index, and the detail written into
 // `dir` (its output dir: a sealed run reads nothing of ronin's data, #257).
-// Nothing when the app has none yet, or it can't be read.
+// Empty when the app has none yet; nothing when its runs don't use it, or it
+// can't be read.
 export async function knowledgeForRun(appName: string, dir?: string, use: KnowledgeUse = 'portal'): Promise<KnowledgeForRun | undefined> {
   try {
     if (!knowledgeOn(appName, use)) return undefined;
     const k = await readKnowledge(appName);
     prune(k);
-    if (!k.screens.length && !k.traps.length && !k.resolved.length) return undefined;
+    if (!k.screens.length && !k.traps.length && !k.resolved.length) return { index: '', empty: true };
     const stale = await staleIds(k);
     if (!dir) return { index: knowledgeIndex(k, stale) };
     const path = join(dir, 'bitacora.json');
