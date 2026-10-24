@@ -129,8 +129,8 @@ export async function claimCommand(db: Db, id: string): Promise<Command | null> 
 }
 
 // Back to waiting, for the next run to try again: what went wrong, said.
-export async function requeueCommand(db: Db, id: string, why: string): Promise<void> {
-  await noteCommand(db, id, why);
+export async function requeueCommand(db: Db, id: string, why?: string): Promise<void> {
+  if (why) await noteCommand(db, id, why);
   const row = await db.updateTable('commands').set({ status: 'queued', started_at: null })
     .where('id', '=', id).where('status', '=', 'running').returning(COLUMNS).executeTakeFirst();
   if (row) told(db, toCommand(row));

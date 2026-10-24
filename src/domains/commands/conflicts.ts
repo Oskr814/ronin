@@ -27,8 +27,10 @@ import { agentCloneAt } from '@platform/git/worktree.js';
 export interface ConflictsWorkerRequest {
   repo: string;
   prNumber: number;
-  // The /resolve-conflicts comment, to answer in its own place.
-  comment: { id: number; kind: CommentKind };
+  // The /resolve-conflicts comment, to answer in its own place; or the
+  // command asked from the tablero (#446), to answer there.
+  comment?: { id: number; kind: CommentKind };
+  command?: string;
 }
 
 export function launchConflictsWorker(request: ConflictsWorkerRequest): void {

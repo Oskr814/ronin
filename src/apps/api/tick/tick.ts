@@ -870,6 +870,10 @@ export async function runExternalReviews(): Promise<void> {
 // unrelated issue `blocked` and email a human) nor block any other
 // candidate. Same isolation rationale as processExternalReviewCandidate.
 export async function processSpikeCandidate(candidate: SpikeCandidate): Promise<void> {
+  // One asked from the tablero (#446) is taken here: another process may have it.
+  const trigger = await claimTableroMentions(candidate.trigger);
+  if (!trigger.length) return;
+  candidate = { ...candidate, trigger };
   try {
     await runAgentTask(commandTask({
       type: 'spike',
@@ -882,9 +886,10 @@ export async function processSpikeCandidate(candidate: SpikeCandidate): Promise<
     // findTrustedSpikeCommand treat this same comment as unprocessed and
     // retry it on a later tick, same reasoning as every other command
     // trigger in this file.
-    for (const m of candidate.trigger) await markProcessed(m);
+    for (const m of candidate.trigger) await (isTableroMention(m) ? settleTableroMention(m) : markProcessed(m));
   } catch (error) {
     log.error(`spike falló para issue #${candidate.issueNumber}`, error);
+    for (const m of candidate.trigger.filter(isTableroMention)) await settleTableroMention(m, { error: (error as Error).message.slice(0, 200) }).catch(() => {});
   } finally {
     // 'spike' never opens a PR (see domains/commands/prompts.ts) so it never goes through
     // the merge-time worktree cleanup below — same reasoning as
@@ -923,11 +928,15 @@ export async function launchExploreCandidate(candidate: ExploreCandidate): Promi
     log.info(`issue #${candidate.issueNumber}: /explore esperando, ya hay una exploración corriendo en este repo`);
     return;
   }
+  // Asked from the tablero (#446): taken here, answered there by the worker.
+  const trigger = await claimTableroMentions(candidate.trigger);
+  if (!trigger.length) return;
+  const commands = trigger.filter(isTableroMention).map((c) => c.id);
   launchExploreWorker({
     repo: activeRepo().productRepo,
     appName: candidate.appName,
     ...(candidate.maxFunctions ? { maxFunctions: candidate.maxFunctions } : {}),
-    trigger: { issueNumber: candidate.issueNumber, commentIds: candidate.trigger.map((c) => c.id) },
+    trigger: { issueNumber: candidate.issueNumber, commentIds: trigger.filter((c) => !isTableroMention(c)).map((c) => c.id), ...(commands.length ? { commands } : {}) },
   });
 }
 

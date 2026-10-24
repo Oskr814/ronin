@@ -8,7 +8,7 @@ import { Md } from '@apps/dashboard/src/lib/markdown.js';
 import { evidenceSrc } from '@apps/dashboard/src/lib/md.js';
 import { useViewState } from '@apps/dashboard/src/lib/view-state.js';
 import { short } from '@ui/time.js';
-import { decisionOf, FICHA_DOT, FICHA_GROUPS, fichaKey, fichaStatus, listas, postDecision, postFichaComment, setLista, useExploration, visibleFichas, type FichaActionId, type FichaAsked, type FichaFilter, type FichaStatus, type FindingCard, type FindingImage } from './fichas.js';
+import { decisionOf, pedidosOf, FICHA_DOT, FICHA_GROUPS, fichaKey, fichaStatus, listas, postDecision, postFichaComment, setLista, useExploration, visibleFichas, type FichaActionId, type FichaAsked, type FichaFilter, type FichaStatus, type FindingCard, type FindingImage } from './fichas.js';
 import { Avatar } from './model.js';
 
 // An exploration PR's Fichas tab (#93): the findings the PR brings, a list
@@ -314,7 +314,19 @@ function Thread({ v, data, f }: { v: ItemView; data: Exploration; f: FindingCard
     box.focus();
   }, [count]);
   const roots = f.comments.filter((c) => !c.replyTo || !f.comments.some((o) => o.id === c.replyTo));
-  const ordered = roots.flatMap((root) => [root, ...f.comments.filter((c) => c.replyTo === root.id)]);
+  // The threads on GitHub, and what was asked from the tablero (#446) with
+  // ronin's answers, by when each started.
+  const asked = pedidosOf(data, f);
+  const groups = [
+    ...roots.map((root) => ({ at: root.createdAt, key: `c${root.id}`, el: [root, ...f.comments.filter((c) => c.replyTo === root.id)].map((c) => (
+      <article key={c.id} className={`cm${c.author === data.ronin ? ' bot' : ''}${c.replyTo ? ' reply' : ''}${c.id < 0 ? ' pending' : ''}`}><header><Avatar login={c.author} /><b>{c.author}</b>{c.id < 0 ? <span className="chip idle">enviando…</span> : c.url ? <a href={c.url} target="_blank" rel="noopener">{when(c.createdAt)}</a> : <span>{when(c.createdAt)}</span>}</header><Md text={c.body} repo={item.repo} /></article>
+    )) })),
+    ...asked.map((p) => ({ at: p.createdAt, key: `p${p.id}`, el: [
+      <article key={`p${p.id}`} className="cm" data-pedido={p.id}><header><Avatar login={p.requestedBy} /><b>{p.requestedBy}</b><span>{when(p.createdAt)}</span><span className="chip idle">desde el tablero</span>{(p.status === 'queued' || p.status === 'running') && <span className="chip run">ronin está en eso</span>}</header><Md text={String(p.args.body ?? p.args.text ?? '')} repo={item.repo} /></article>,
+      ...p.messages.map((m, i) => <article key={`p${p.id}-${i}`} className="cm bot reply"><header><Avatar login={data.ronin} /><b>{data.ronin}</b><span>{when(m.at)}</span></header><Md text={m.text} repo={item.repo} /></article>),
+    ] })),
+  ].sort((a, b) => (a.at ?? '').localeCompare(b.at ?? ''));
+  const talked = f.comments.length + asked.length;
   const files = /^[\w.-]+\/[\w.-]+$/.test(item.repo) ? `https://github.com/${item.repo}/pull/${item.number}` : null;
   // Optimistic (#368): in the thread at once, as being sent, with the box
   // free; out of it, and its text back in the box, if GitHub says no.
@@ -330,7 +342,7 @@ function Thread({ v, data, f }: { v: ItemView; data: Exploration; f: FindingCard
     setText('');
     try {
       const done = await postFichaComment(item.id, key, 'comentar', said, false);
-      shell.toast(`Comentaste en ${key.split('/')[1]}. ronin lo va a aplicar y te responde en el hilo.`, done.url);
+      shell.toast(`Comentaste en ${key.split('/')[1]}. ronin lo va a aplicar y te responde en el hilo.`, 'url' in done ? done.url : undefined);
       await queryClient.invalidateQueries({ queryKey });
     } catch (e) {
       if (before) queryClient.setQueryData(queryKey, before);
@@ -343,10 +355,8 @@ function Thread({ v, data, f }: { v: ItemView; data: Exploration; f: FindingCard
     }
   };
   return (
-    <div className="fthread"><h3>Conversación <span className="m">{f.comments.length ? `${f.comments.length} ${f.comments.length === 1 ? 'comentario' : 'comentarios'} en la ficha` : 'nadie comentó esta ficha'}</span></h3>
-      {ordered.length > 0 && <div className="cms">{ordered.map((c) => (
-        <article key={c.id} className={`cm${c.author === data.ronin ? ' bot' : ''}${c.replyTo ? ' reply' : ''}${c.id < 0 ? ' pending' : ''}`}><header><Avatar login={c.author} /><b>{c.author}</b>{c.id < 0 ? <span className="chip idle">enviando…</span> : c.url ? <a href={c.url} target="_blank" rel="noopener">{when(c.createdAt)}</a> : <span>{when(c.createdAt)}</span>}</header><Md text={c.body} repo={item.repo} /></article>
-      ))}</div>}
+    <div className="fthread"><h3>Conversación <span className="m">{talked ? `${talked} ${talked === 1 ? 'comentario' : 'comentarios'} en la ficha` : 'nadie comentó esta ficha'}</span></h3>
+      {groups.length > 0 && <div className="cms">{groups.flatMap((g) => g.el)}</div>}
       <div className="composer"><textarea id="fcomment" ref={area} rows={3} maxLength={4000} placeholder="Comentar en la ficha… ronin lo lee como en GitHub: puede rechazarla, corregirla, abrir un issue o responder." value={text}
         onChange={(e) => { setText(e.target.value); drafts.set(key, e.target.value); }}
         onKeyDown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) void send(); }} />

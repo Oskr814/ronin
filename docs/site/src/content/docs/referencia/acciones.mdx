@@ -1,15 +1,15 @@
 ---
 title: "Acciones del tablero"
-description: "Lo que el menú Acciones de una ficha puede pedir, cuándo aparece cada acción y qué queda en GitHub."
+description: "Lo que el menú Acciones de una ficha puede pedir, cuándo aparece cada acción y qué queda en ronin o en GitHub."
 ---
 
 import { Aside } from '@astrojs/starlight/components';
 
-El botón **Acciones** de la ficha (`M`) muestra lo que se le puede pedir a ronin sobre ese issue o PR en ese momento. El tablero escribe el comando por vos, **con tu cuenta de GitHub**: desde ahí es igual que si lo hubieras escrito en GitHub, ronin le pone 👀, lo hace y responde.
+El botón **Acciones** de la ficha (`M`) muestra lo que se le puede pedir a ronin sobre ese issue o PR en ese momento. Casi todo se le pide **directo a ronin**, sin un comentario en GitHub: el pedido aparece al instante bajo la actividad del ítem, con quién lo pidió, cómo va y lo que ronin responde, y lo ve cualquiera que tenga el ítem abierto. Si alguien ya pidió lo mismo y todavía está en curso, el tablero te lo dice en vez de pedirlo otra vez. **Asignar a ronin** y **Cerrar el issue** siguen en GitHub, con tu cuenta, porque son el estado del issue. Lo que se escribe en GitHub (`@ronin-agent /preview`, etc.) sigue funcionando igual y se responde ahí.
 
 ![El menú Acciones de un issue que ronin no tomó: Asignar a ronin e Investigar](../../../assets/capturas/acciones-issue.png)
 
-| Acción | Igual que | Cuándo aparece |
+| Acción | Igual que en GitHub | Cuándo aparece |
 |---|---|---|
 | **Asignar a ronin** | Asignar el issue a `ronin-agent` | Un issue abierto que ronin no gestiona. Destacada. Lleva un contexto opcional. |
 | **Investigar (spike)** | `/spike <app> [qué]` | Igual que *Asignar*, en un repo con `ronin.app.json`. Se elige la app. |
@@ -26,10 +26,10 @@ En un issue, las acciones de PR van al PR de su slice que avanza («Resolver con
 
 ## Antes de pedirla
 
-Un diálogo muestra el comentario que va a quedar, tal cual y a tu nombre, mientras escribís. `Ctrl ↵` comenta: el diálogo se cierra y el comentario aparece en la conversación con *enviando…*, sin esperar a GitHub. Si mientras tanto la acción dejó de aplicar (alguien la pidió en GitHub, el PR se cerró), o GitHub no lo toma, el tablero no comenta nada: el diálogo vuelve con tu texto y te dice por qué.
+Un diálogo te deja escribir lo que lleva la acción. `Ctrl ↵` la pide: el diálogo se cierra y el pedido aparece bajo la actividad, *en cola*, sin esperar a nadie. Si mientras tanto la acción dejó de aplicar (el PR se cerró), el diálogo vuelve con tu texto y te dice por qué. En **Asignar** y **Cerrar el issue**, el diálogo muestra el comentario que va a quedar en GitHub a tu nombre.
 
 - **Asignar a ronin** deja tu contexto, si escribiste uno, como un comentario común en el issue, sin mencionar a ronin (una mención se leería como un pedido aparte). Después le asigna el issue. Si a ronin no le queda claro qué hacer, pregunta en el issue antes de tocar código.
-- **Responder y destrabar** comenta tu respuesta y ronin le vuelve a poner `ronin:in-progress` al issue. Si GitHub rechazó el comentario, el label no se toca.
+- **Responder y destrabar** guarda tu respuesta en ronin y le vuelve a poner `ronin:in-progress` al issue, que retoma en ese momento. El agente que lo retoma recibe tu respuesta junto con lo demás que se le pidió desde el tablero.
 - **Cerrar el issue** deja el motivo, si escribiste uno, como un comentario común, y después lo cierra como no planeado. Si es el issue de un pedido del portal, el motivo también le llega a quien lo pidió, en la conversación y por correo. Si el issue tiene un PR abierto, el PR queda abierto: para cerrar los dos, usá **Cerrar** en el PR con *Cerrar también el issue* (ver [Decidir un PR](/ronin/guias/decidir-un-pr/)). Si ronin lo estaba trabajando, lo pasa a `ronin:done` en el próximo tick, salvo que siga abierto el PR de una de sus slices.
 
 ## Comentar

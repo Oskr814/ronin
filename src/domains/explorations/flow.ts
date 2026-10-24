@@ -53,6 +53,8 @@ import type { CommitChange } from '@platform/git/commit-style.js';
 import { worktreeLock } from '@platform/workers/worktree-lock.js';
 import { host } from '@platform/host/host.js';
 import { getDb } from '@platform/db/db.js';
+import type { Comment } from '@platform/github/github.js';
+import { claimTableroMentions, releaseTableroMentions, replyToAsker, settleTableroMention, tableroFichaComments, tableroGeneralComments } from '@platform/commands/mentions.js';
 import { listDecisions, markApplied } from './decisions.js';
 
 // Exploration's moving parts glued to GitHub — docs/DESIGN.md §11.7:
@@ -241,8 +243,21 @@ export function redoCommitChange(redone: Array<{ id: string; titulo: string }>):
 
 const FINDING_PATH_RE = new RegExp(`^${EXPLORATION_DIR}/([^/]+)/findings/(F-\\d+)[^/]*\\.md$`);
 
+// A comment on a finding's file, or what was asked on it from the tablero
+// (#446), which is answered there.
+type FichaComment = FileReviewComment & { kind?: 'command' };
+const askerOf = (c: { id: number; kind?: string }) => ({ id: c.id, kind: c.kind === 'command' ? ('command' as const) : ('review' as const) });
+const isCommand = (c: { kind?: string }) => c.kind === 'command';
+// Done with: marked on GitHub, or its command ended.
+const doneWith = (c: { id: number; kind?: string }, fallback: 'review' | 'issue' = 'review') => (isCommand(c) ? settleTableroMention(c) : markProcessed({ id: c.id, kind: fallback }));
+// Earlier in the conversation: by when for one from the tablero, whose id isn't GitHub's.
+const before = (o: { id: number; createdAt?: string; kind?: string }, c: { id: number; createdAt?: string; kind?: string }) =>
+  (isCommand(c) || isCommand(o)) && o.createdAt && c.createdAt ? o.createdAt < c.createdAt : o.id < c.id;
+
 interface PendingFeedback {
   commentId: number;
+  // Asked from the tablero (#446).
+  command?: boolean;
   app: string;
   findingId: string;
   // Who wrote it: who the finding's decision is recorded under.
@@ -255,7 +270,7 @@ const isBot = (login: string) => login.toLowerCase() === config.githubLogin.toLo
 
 // A new comment on a finding file is feedback; inside a thread, a reply is
 // only when it mentions ronin — people also talk among themselves there.
-async function pendingFeedback(comments: FileReviewComment[]): Promise<PendingFeedback[]> {
+async function pendingFeedback(comments: FichaComment[]): Promise<PendingFeedback[]> {
   const rootOf = (c: { id: number; inReplyToId?: number }) => c.inReplyToId ?? c.id;
   const findingOf = (path: string) => path.match(FINDING_PATH_RE);
   const result: PendingFeedback[] = [];
@@ -266,13 +281,13 @@ async function pendingFeedback(comments: FileReviewComment[]): Promise<PendingFe
     if (!c.inReplyToId && developRequest(c.body) !== null) continue;
     const match = findingOf(c.path);
     if (!match) continue;
-    if (await isProcessed({ ...c, kind: 'review' })) continue;
+    if (!isCommand(c) && (await isProcessed({ ...c, kind: 'review' }))) continue;
     // Matched by app and id, not path: an edited title renames the file.
     const conversacion = comments
-      .filter((o) => o.id < c.id && findingOf(o.path)?.[1] === match[1] && findingOf(o.path)?.[2] === match[2])
-      .sort((a, b) => a.id - b.id)
+      .filter((o) => before(o, c) && findingOf(o.path)?.[1] === match[1] && findingOf(o.path)?.[2] === match[2])
+      .sort((a, b) => (a.createdAt && b.createdAt ? a.createdAt.localeCompare(b.createdAt) : a.id - b.id))
       .map((o) => ({ autor: isBot(o.authorLogin) ? ('ronin' as const) : ('persona' as const), texto: o.body, mismoHilo: rootOf(o) === rootOf(c) }));
-    result.push({ commentId: c.id, app: match[1], findingId: match[2], author: c.authorLogin, body: c.body, conversacion });
+    result.push({ commentId: c.id, app: match[1], findingId: match[2], author: c.authorLogin, body: c.body, conversacion, ...(isCommand(c) ? { command: true } : {}) });
   }
   return result;
 }
@@ -280,16 +295,18 @@ async function pendingFeedback(comments: FileReviewComment[]): Promise<PendingFe
 // A general comment on the PR that mentions ronin is feedback too: it can
 // speak about several findings at once ("los de mobile") or about what the
 // next explorations should leave alone.
-async function pendingGeneralFeedback(pr: PullRequestStatus): Promise<Array<GeneralFeedback & { author: string }>> {
-  const comments = (await listIssueComments(pr.number)).sort((a, b) => a.id - b.id);
-  const result: Array<GeneralFeedback & { author: string }> = [];
+// `asked`: the general comments asked from the tablero (#446), taken already.
+async function pendingGeneralFeedback(pr: PullRequestStatus, asked: Comment[] = []): Promise<Array<GeneralFeedback & { author: string; command?: boolean }>> {
+  const github = (await listIssueComments(pr.number)).sort((a, b) => a.id - b.id);
+  const comments = [...github, ...asked];
+  const result: Array<GeneralFeedback & { author: string; command?: boolean }> = [];
   for (const c of comments) {
     if (isBot(c.authorLogin) || !c.authorLogin || !mentionsHandle(c.body, config.githubLogin)) continue;
-    if (await isProcessed(c)) continue;
-    const conversacion = comments
-      .filter((o) => o.id < c.id)
+    if (!isCommand(c) && (await isProcessed(c))) continue;
+    const conversacion = github
+      .filter((o) => before(o, c))
       .map((o) => ({ autor: isBot(o.authorLogin) ? ('ronin' as const) : ('persona' as const), texto: o.body, mismoHilo: true }));
-    result.push({ commentId: c.id, author: c.authorLogin, body: c.body, conversacion });
+    result.push({ commentId: c.id, author: c.authorLogin, body: c.body, conversacion, ...(isCommand(c) ? { command: true } : {}) });
   }
   return result;
 }
@@ -299,8 +316,9 @@ export interface RedoItem {
   findingId: string;
   instruction: string;
   commentId: number;
-  // A general PR comment is answered as a new comment, not in a thread.
-  kind?: 'issue' | 'review';
+  // A general PR comment is answered as a new comment, not in a thread;
+  // one asked from the tablero (#446), there.
+  kind?: 'issue' | 'review' | 'command';
 }
 
 interface FindingAction {
@@ -343,8 +361,8 @@ async function rejectFinding(memoryDir: string, path: string, findingId: string,
 // closed if it had one), edit (title, proposal), add to the knowledge, open
 // a follow-up issue. Redoing an after
 // image needs the app running, so those come back for the worker.
-async function applyFeedback(pr: PullRequestStatus, batch: string, fileComments: FileReviewComment[]): Promise<RedoItem[]> {
-  const [pending, general] = await Promise.all([pendingFeedback(fileComments), pendingGeneralFeedback(pr)]);
+async function applyFeedback(pr: PullRequestStatus, batch: string, fileComments: FichaComment[], askedGeneral: Comment[] = []): Promise<RedoItem[]> {
+  const [pending, general] = await Promise.all([pendingFeedback(fileComments), pendingGeneralFeedback(pr, askedGeneral)]);
   if (pending.length === 0 && general.length === 0) return [];
   const batchDir = await ensureBatchWorktree(batch);
   const apps = await appsWithMemory(batchDir);
@@ -366,7 +384,7 @@ async function applyFeedback(pr: PullRequestStatus, batch: string, fileComments:
   await runAgentTask(explorationTask({ type: 'explore-feedback', prNumber: pr.number, checkoutDir: batchDir, comments, ...(general.length > 0 ? { general: general.map(({ author: _author, ...g }) => g), fichas: cards } : {}), outputPath }));
   const parsed = JSON.parse(await host().fs.readFile(outputPath, 'utf8')) as { acciones?: FeedbackAction[] };
 
-  const replies: Array<{ commentId: number; kind: 'issue' | 'review'; body: string }> = [];
+  const replies: Array<{ commentId: number; kind: 'issue' | 'review' | 'command'; body: string }> = [];
   const redo: RedoItem[] = [];
   const changes: FeedbackChange[] = [];
   const knowledge: Array<{ app: string; texto: string }> = [];
@@ -374,7 +392,7 @@ async function applyFeedback(pr: PullRequestStatus, batch: string, fileComments:
   // away): closed once the rejection is committed.
   const toClose: Array<{ issue: number; findingId: string; motivo: string }> = [];
 
-  const applyToFinding = async (app: string, findingId: string, action: FindingAction, commentId: number, kind: 'issue' | 'review', author: string): Promise<void> => {
+  const applyToFinding = async (app: string, findingId: string, action: FindingAction, commentId: number, kind: 'issue' | 'review' | 'command', author: string): Promise<void> => {
     const reviewed = { revisor: author, revisado: new Date().toISOString() };
     const memoryDir = memoryDirFor(batchDir, app);
     const meta = (await loadMemory(memoryDir)).findings.find((f) => f.id === findingId);
@@ -393,7 +411,7 @@ async function applyFeedback(pr: PullRequestStatus, batch: string, fileComments:
       // The file name follows the title: a new title moves the file.
       await host().fs.rm(path, { force: true });
       await host().fs.writeFile(join(memoryDir, 'findings', findingFileName({ id: finding.id, titulo: title })), serializeFinding({ ...finding, titulo: title, body, ...reviewed }));
-      if (action.rehacerDespues?.trim()) redo.push({ app, findingId, instruction: action.rehacerDespues.trim().slice(0, 1200), commentId, ...(kind === 'issue' ? { kind } : {}) });
+      if (action.rehacerDespues?.trim()) redo.push({ app, findingId, instruction: action.rehacerDespues.trim().slice(0, 1200), commentId, ...(kind !== 'review' ? { kind } : {}) });
       const what = [title !== finding.titulo ? `new title "${title}"` : '', action.propuesta?.trim() ? `new proposal: ${action.propuesta.trim().slice(0, 300)}` : ''].filter(Boolean).join('; ');
       changes.push({ findingId, titulo: title, kind: 'editada', detail: what || 'proposal adjusted', redo: Boolean(action.rehacerDespues?.trim()) });
     }
@@ -417,8 +435,8 @@ async function applyFeedback(pr: PullRequestStatus, batch: string, fileComments:
     if (!action) continue;
     let reply = action.respuesta ? clean(action.respuesta) : '';
     if (action.accion === 'crear-issue') reply = await openIssue(action, `Pedido en un comentario sobre la ficha ${p.findingId} del PR de exploración #${pr.number}.`, reply, p.app);
-    else await applyToFinding(p.app, p.findingId, action, p.commentId, 'review', p.author);
-    if (reply) replies.push({ commentId: p.commentId, kind: 'review', body: reply });
+    else await applyToFinding(p.app, p.findingId, action, p.commentId, p.command ? 'command' : 'review', p.author);
+    if (reply) replies.push({ commentId: p.commentId, kind: p.command ? 'command' : 'review', body: reply });
   }
 
   for (const g of general) {
@@ -429,7 +447,7 @@ async function applyFeedback(pr: PullRequestStatus, batch: string, fileComments:
     const appOf = (app?: string) => (app && apps.includes(app) ? app : apps.length === 1 ? apps[0] : undefined);
     for (const f of action.fichas ?? []) {
       const app = appOf(f.app);
-      if (app && f.findingId) await applyToFinding(app, f.findingId, f, g.commentId, 'issue', g.author);
+      if (app && f.findingId) await applyToFinding(app, f.findingId, f, g.commentId, g.command ? 'command' : 'issue', g.author);
     }
     for (const k of action.conocimiento ?? []) {
       const app = appOf(k.app);
@@ -439,7 +457,7 @@ async function applyFeedback(pr: PullRequestStatus, batch: string, fileComments:
       knowledge.push({ app, texto });
     }
     if (action.issue) reply = await openIssue(action, `Pedido en un comentario del PR de exploración #${pr.number}.`, reply, appOf(undefined));
-    if (reply) replies.push({ commentId: g.commentId, kind: 'issue', body: reply });
+    if (reply) replies.push({ commentId: g.commentId, kind: g.command ? 'command' : 'issue', body: reply });
   }
 
   if ((changes.length > 0 || knowledge.length > 0) && (await commitAndPush(batchDir, explorationBranch(batch), feedbackCommitChange(pr.number, changes, knowledge)))) await upsertExplorationPr(batch, batchDir);
@@ -448,9 +466,9 @@ async function applyFeedback(pr: PullRequestStatus, batch: string, fileComments:
       .then((closed) => closed && log.info(`exploración: issue #${c.issue} cerrado, ${c.findingId} se rechazó en #${pr.number}`))
       .catch((error) => log.error(`exploración: no se pudo cerrar el issue #${c.issue} de ${c.findingId}, rechazada`, error));
   }
-  for (const r of replies) await replyToComment(pr.number, { id: r.commentId, kind: r.kind }, r.body).catch((error) => log.error(`exploración: no se pudo responder el comentario ${r.commentId}`, error));
-  for (const p of pending) await markProcessed({ id: p.commentId, kind: 'review' }).catch(() => {});
-  for (const g of general) await markProcessed({ id: g.commentId, kind: 'issue' }).catch(() => {});
+  for (const r of replies) await replyToAsker(pr.number, { id: r.commentId, kind: r.kind }, r.body).catch((error) => log.error(`exploración: no se pudo responder el comentario ${r.commentId}`, error));
+  for (const p of pending) await doneWith({ id: p.commentId, ...(p.command ? { kind: 'command' } : {}) }, 'review').catch(() => {});
+  for (const g of general) await doneWith({ id: g.commentId, ...(g.command ? { kind: 'command' } : {}) }, 'issue').catch(() => {});
   return redo;
 }
 
@@ -545,22 +563,22 @@ export function developCommitChange(prNumber: number, developed: Array<{ id: str
 // `write`: whether the branch can be written — not while a run of the repo
 // is on it. Then the issue goes out anyway, and the finding is marked
 // approved (and the comment done) once the run is over.
-export async function developNow(pr: PullRequestStatus, batch: string, comments: FileReviewComment[], write: boolean): Promise<void> {
-  const asks: Array<{ c: FileReviewComment; app: string; id: string; context: string }> = [];
+export async function developNow(pr: PullRequestStatus, batch: string, comments: FichaComment[], write: boolean): Promise<void> {
+  const asks: Array<{ c: FichaComment; app: string; id: string; context: string }> = [];
   for (const c of comments) {
     if (isBot(c.authorLogin) || !c.authorLogin || c.inReplyToId) continue;
     const match = c.path.match(FINDING_PATH_RE);
     const context = developRequest(c.body);
-    if (!match || context === null || (await isProcessed({ ...c, kind: 'review' }))) continue;
+    if (!match || context === null || (!isCommand(c) && (await isProcessed({ ...c, kind: 'review' })))) continue;
     asks.push({ c, app: match[1], id: match[2], context });
   }
   if (asks.length === 0) return;
   const existing = await listIssuesWithLabel(LABEL_PROPOSAL);
   const base = (activeRepo().worktreeBaseRef ?? config.worktreeBaseRef).replace(/^origin\//, '');
   const batchDir = write ? await ensureBatchWorktree(batch) : undefined;
-  const developed: Array<{ id: string; titulo: string; issue: number; commentId: number }> = [];
-  const done: number[] = [];
-  const reply = (c: FileReviewComment, body: string) => replyToComment(pr.number, { id: c.id, kind: 'review' }, body).catch((error) => log.error(`exploración: no se pudo responder el comentario ${c.id}`, error));
+  const developed: Array<{ id: string; titulo: string; issue: number; commentId: number; c: FichaComment }> = [];
+  const done: FichaComment[] = [];
+  const reply = (c: FichaComment, body: string) => replyToAsker(pr.number, askerOf(c), body).catch((error) => log.error(`exploración: no se pudo responder el comentario ${c.id}`, error));
   for (const { c, app, id, context } of asks) {
     // From the checkout when it can be written, and from the PR's branch otherwise.
     let path: string | undefined;
@@ -576,14 +594,14 @@ export async function developNow(pr: PullRequestStatus, batch: string, comments:
     if (!raw) {
       if (batchDir) {
         await reply(c, `No encuentro la ficha ${id} en este PR: no la mandé a desarrollar.`);
-        done.push(c.id);
+        done.push(c);
       }
       continue;
     }
     const finding = parseFinding(raw);
     if (finding.estado === 'rechazado' || finding.issue) {
       await reply(c, finding.issue ? `${id} ya tiene su issue: #${finding.issue}.` : `${id} está rechazada: no la mandé a desarrollar. Si igual hace falta, pedí un issue aparte.`);
-      done.push(c.id);
+      done.push(c);
       continue;
     }
     const note = [
@@ -597,12 +615,12 @@ export async function developNow(pr: PullRequestStatus, batch: string, comments:
     }
     if (!batchDir || !path) continue;
     await host().fs.writeFile(path, serializeFinding({ ...finding, estado: 'aprobado', issue: issue.number, revisor: c.authorLogin, revisado: new Date().toISOString() }));
-    developed.push({ id, titulo: finding.titulo, issue: issue.number, commentId: c.id });
+    developed.push({ id, titulo: finding.titulo, issue: issue.number, commentId: c.id, c });
   }
   if (batchDir && developed.length > 0 && (await commitAndPush(batchDir, explorationBranch(batch), developCommitChange(pr.number, developed)))) {
     await upsertExplorationPr(batch, batchDir);
   }
-  for (const id of [...done, ...developed.map((d) => d.commentId)]) await markProcessed({ id, kind: 'review' }).catch(() => {});
+  for (const c of [...done, ...developed.map((d) => d.c)]) await doneWith(c).catch(() => {});
   if (developed.length > 0) log.info(`exploración: PR #${pr.number}, mandadas a desarrollar: ${developed.map((d) => `${d.id} (#${d.issue})`).join(', ')}`);
 }
 
@@ -612,10 +630,27 @@ export async function processExplorationPr(pr: PullRequestStatus): Promise<void>
   // While the worker writes this branch, only what needs no commit: the
   // issue of a finding sent to development.
   const busy = await exploreWorkerBusy();
-  const comments = await listFileReviewComments(pr.number);
-  await developNow(pr, batch, comments, !busy).catch((error) => log.error(`exploración: no se pudo mandar a desarrollar desde el PR #${pr.number}`, error));
-  if (busy) return;
-  const redo = await applyFeedback(pr, batch, comments);
+  // What was asked from the tablero (#446), taken now: while the worker
+  // writes the branch, only sending to development.
+  const repo = activeRepo().productRepo;
+  const askedFicha = await claimTableroMentions((await tableroFichaComments(repo, pr.number)).filter((c) => !busy || developRequest(c.body) !== null));
+  const askedGeneral = busy ? [] : await claimTableroMentions(await tableroGeneralComments(repo, pr.number, config.githubLogin));
+  const comments: FichaComment[] = [...(await listFileReviewComments(pr.number)), ...askedFicha];
+  try {
+    await developNow(pr, batch, comments, !busy).catch((error) => log.error(`exploración: no se pudo mandar a desarrollar desde el PR #${pr.number}`, error));
+    if (busy) return;
+    await feedbackAndMerge(pr, batch, comments, askedGeneral);
+  } catch (error) {
+    // The agent failed: what was asked from the tablero waits for the next pass, saying so.
+    for (const c of [...askedFicha, ...askedGeneral]) await settleTableroMention(c, { error: (error as Error).message.slice(0, 200) }).catch(() => {});
+    throw error;
+  } finally {
+    await releaseTableroMentions([...askedFicha, ...askedGeneral].map((c) => c.id));
+  }
+}
+
+async function feedbackAndMerge(pr: PullRequestStatus, batch: string, comments: FichaComment[], askedGeneral: Comment[]): Promise<void> {
+  const redo = await applyFeedback(pr, batch, comments, askedGeneral);
   if (redo.length > 0) {
     launchExploreWorker({ repo: activeRepo().productRepo, appName: redo[0].app, redo: { prNumber: pr.number, batch, items: redo } });
     return; // the worker now owns the branch; merging waits for the next tick
@@ -652,7 +687,7 @@ export async function redoAndPublish(redo: NonNullable<ExploreWorkerRequest['red
     const body = ok
       ? `Rehice la imagen del después de ${item.findingId}; ya está en la ficha.`
       : `No pude rehacer la imagen del después de ${item.findingId}; el detalle está en el log del runner.`;
-    await replyToComment(redo.prNumber, { id: item.commentId, kind: item.kind ?? 'review' }, body).catch((error) => log.error(`exploración: no se pudo responder el comentario ${item.commentId}`, error));
+    await replyToAsker(redo.prNumber, { id: item.commentId, kind: item.kind ?? 'review' }, body).catch((error) => log.error(`exploración: no se pudo responder el comentario ${item.commentId}`, error));
   }
 }
 
@@ -670,7 +705,8 @@ export interface ExploreWorkerRequest {
   // request, read by the worker when it starts (issueFocus).
   focus?: ExploreFocus;
   // The /explore comment that asked for it, to answer and react to.
-  trigger?: { issueNumber: number; commentIds: number[] };
+  // `commands`: the ones asked from the tablero (#446), answered there.
+  trigger?: { issueNumber: number; commentIds: number[]; commands?: number[] };
   // Nightly runs stop starting new functions once the window closes; one
   // from the dashboard, once its time cap is up.
   until?: string;
@@ -700,7 +736,12 @@ export function launchExploreWorker(request: ExploreWorkerRequest): void {
   log.info(`exploración: worker lanzado para ${request.appName} (${pid ? `pid ${pid}` : 'en la cola del runner'})`);
 }
 
-export async function reactToTrigger(trigger: ExploreWorkerRequest['trigger']): Promise<void> {
+export async function reactToTrigger(trigger: ExploreWorkerRequest['trigger'], error?: string): Promise<void> {
   if (!trigger) return;
   for (const id of trigger.commentIds) await markProcessed({ id, kind: 'issue' }).catch(() => {});
+  for (const id of trigger.commands ?? []) await settleTableroMention({ id }, error ? { error } : {}).catch(() => {});
 }
+
+// Who asked for a focused run, to answer: the first comment, or the command from the tablero.
+export const triggerAsker = (trigger: NonNullable<ExploreWorkerRequest['trigger']>): { id: number; kind: 'issue' | 'command' } =>
+  (trigger.commentIds.length ? { id: trigger.commentIds[0], kind: 'issue' } : { id: trigger.commands![0], kind: 'command' });

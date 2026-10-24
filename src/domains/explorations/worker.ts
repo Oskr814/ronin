@@ -4,12 +4,13 @@
 // runs, and answers the /explore comment that asked for it, if any. The
 // same process redoes the after images reviewers asked for, which also need
 // the app up.
-import { replyToComment } from '@platform/github/github.js';
+import { replyToAsker } from '@platform/commands/mentions.js';
 import { log } from '@platform/logger.js';
 import {
   acquireExploreLock,
   exploreAndPublish,
   issueFocus,
+  triggerAsker,
   reactToTrigger,
   redoAndPublish,
   releaseExploreLock,
@@ -57,6 +58,8 @@ async function main(): Promise<void> {
     });
     // Answering the /explore comment can fail after the run was published: that run still ended well.
     let published = false;
+    // Why it failed, for the command asked from the tablero (#446).
+    let failed: string | undefined;
     try {
       // An /explore's focus is what its issue asks for (#376), if it asks anything.
       const focus = request.focus ?? (request.trigger ? await issueFocus(request.trigger) : undefined);
@@ -71,22 +74,23 @@ async function main(): Promise<void> {
       published = true;
       if (record) await finishRunRecord(record, { summary: run.summary, prNumber: run.prNumber }).catch((error) => log.error('exploración: no se pudo cerrar el registro de la corrida', error));
       if (request.trigger) {
-        await replyToComment(request.trigger.issueNumber, { id: request.trigger.commentIds[0], kind: 'issue' }, renderRunReply(request.appName, run));
+        await replyToAsker(request.trigger.issueNumber, triggerAsker(request.trigger), renderRunReply(request.appName, run));
       }
     } catch (error) {
       log.error(`exploración ${request.appName} falló`, error);
       if (record && !published) await finishRunRecord(record, { error: error as Error }).catch((e) => log.error('exploración: no se pudo cerrar el registro de la corrida', e));
       if (request.trigger) {
-        await replyToComment(
+        failed = (error as Error).message.split('\n')[0].slice(0, 200);
+        await replyToAsker(
           request.trigger.issueNumber,
-          { id: request.trigger.commentIds[0], kind: 'issue' },
+          triggerAsker(request.trigger),
           `No pude completar la exploración de \`${request.appName}\`: ${(error as Error).message.split('\n')[0].slice(0, 300)}. El detalle está en el log del runner.`,
         ).catch(() => {});
       }
     } finally {
       // Reacted to on success and failure alike: a failed run is answered,
       // not retried every tick at the cost of another hour of agent time.
-      await reactToTrigger(request.trigger);
+      await reactToTrigger(request.trigger, failed);
       await releaseExploreLock();
     }
   });

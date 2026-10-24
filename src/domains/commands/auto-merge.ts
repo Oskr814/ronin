@@ -164,23 +164,28 @@ async function turnOff(prNumber: number, reason: string): Promise<void> {
 // so a failure halfway is retried next tick (adding or removing the label
 // twice is harmless).
 export async function applyAutoMergeCommand(prNumber: number, comment: Pick<Comment, 'id' | 'kind'>, action: AutoMergeAction): Promise<void> {
+  await replyToComment(prNumber, comment, (await setAutoMerge(prNumber, action)).reply);
+  await markProcessed(comment);
+}
+
+// The label put on or taken off, and what to answer: also for what's asked
+// from the tablero (#446), answered there. `refused`: it couldn't be turned on.
+export async function setAutoMerge(prNumber: number, action: AutoMergeAction): Promise<{ reply: string; refused: boolean }> {
   const login = config.githubLogin;
   if (action === 'off') {
     await removeIssueLabel(prNumber, LABEL_AUTO_MERGE).catch((error) => {
       // gh fails when the label isn't on the PR: that's already "off".
       log.info(`auto-merge PR #${prNumber}: sacar el label falló, lo doy por apagado (${(error as Error).message.split('\n')[0]})`);
     });
-    await replyToComment(prNumber, comment, renderAutoMergeOff(login));
-  } else {
-    const candidates = await listOpenPrsForAutoMerge();
-    const candidate = candidates.find((c) => c.status.number === prNumber);
-    const blockers = candidate
-      ? autoMergeBlockers(candidate, headIndex(candidates))
-      : { disable: 'ya no está abierto', waits: [] };
-    if (!blockers.disable) await addIssueLabel(prNumber, LABEL_AUTO_MERGE);
-    await replyToComment(prNumber, comment, renderAutoMergeOn(blockers, login));
+    return { reply: renderAutoMergeOff(login), refused: false };
   }
-  await markProcessed(comment);
+  const candidates = await listOpenPrsForAutoMerge();
+  const candidate = candidates.find((c) => c.status.number === prNumber);
+  const blockers = candidate
+    ? autoMergeBlockers(candidate, headIndex(candidates))
+    : { disable: 'ya no está abierto', waits: [] };
+  if (!blockers.disable) await addIssueLabel(prNumber, LABEL_AUTO_MERGE);
+  return { reply: renderAutoMergeOn(blockers, login), refused: Boolean(blockers.disable) };
 }
 
 // --- replies ---

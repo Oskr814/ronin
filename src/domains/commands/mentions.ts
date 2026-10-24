@@ -5,7 +5,7 @@ import { classifyMetaCommand, renderMetaReply, type CommandContext } from './hel
 import { config } from '@platform/config/config.js';
 import { activeRepo } from '@platform/agents/repo-context.js';
 import { launchPreviewWorker } from '../previews/index.js';
-import { tableroMentions } from '@platform/commands/mentions.js';
+import { tableroIssueCommands, tableroMentions } from '@platform/commands/mentions.js';
 import { applyAutoMergeCommand, type AutoMergeAction } from './auto-merge.js';
 import { launchConflictsWorker } from './conflicts.js';
 import { log } from '@platform/logger.js';
@@ -173,6 +173,8 @@ export interface IssueCommands {
 // doesn't take plain-words requests on an issue it wasn't assigned.
 export async function findTrustedIssueCommands(issueNumber: number): Promise<IssueCommands> {
   const unprocessed = (await findUnprocessedIssueMentions(issueNumber)).filter((c) => c.authorLogin !== '');
+  // And what was asked from the tablero (#446), written as the command it'd be here.
+  unprocessed.push(...(await tableroIssueCommands(activeRepo().productRepo, issueNumber, config.githubLogin)));
   const commands: IssueCommands = { spike: [], explore: [], spec: [] };
   for (const c of unprocessed) {
     if (isSpikeCommand(c.body)) commands.spike.push(c);

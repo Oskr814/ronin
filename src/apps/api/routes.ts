@@ -15,10 +15,10 @@ import { enqueueEvent } from './jobs/store.js';
 // What's asked from the tablero starts its issue's or PR's run now (#446):
 // a job like a webhook's (webhooks/github.ts), joined to one already
 // waiting for the same ones. Without a database, the next tick.
-async function wake(repo: string, resources: string[]): Promise<void> {
+async function wake(repo: string, resources: string[], flows: string[] = ['issues']): Promise<void> {
   const db = getDb();
   if (!db) return;
-  const payload = { repo, scope: { flows: ['issues'], resources }, receivedAt: Date.now() };
+  const payload = { repo, scope: { flows, resources }, receivedAt: Date.now() };
   await enqueueEvent(db, { repo, payload, dedupeKey: `event:${JSON.stringify([repo, [...resources].sort()])}` });
 }
 

@@ -194,7 +194,7 @@ export function ActionDialog({ v, asked, close, reopen, busy }: { v: ItemView; a
       <div className="prev"><div className="lbl" id="dlg-said">{said}</div><div className="md" id="dlg-prev" hidden={!preview || action.direct} dangerouslySetInnerHTML={{ __html: markdown.html(preview, v.item.repo) }} /></div>
       <p className="bad" id="dlg-err" hidden={!error}>{error ?? ''}</p>
       <div className="foot-d"><span className="kbd-hint"><kbd>Ctrl</kbd> <kbd>Enter</kbd> para {action.id === 'assign' ? 'asignar' : action.id === 'close-issue' ? 'cerrar' : action.direct ? 'pedir' : 'comentar'}</span><button className="btn-s" id="dlg-no" onClick={cancel}>Cancelar</button>
-        <button className={`btn-s ${action.id === 'close-issue' ? 'danger-solid' : 'primary'}`} id="dlg-yes" ref={action.text ? undefined : first} disabled={disabled} onClick={() => void send()}>{action.id === 'assign' ? 'Asignar a ronin' : action.id === 'close-issue' ? 'Cerrar el issue' : action.id === 'unblock' ? 'Comentar y destrabar' : action.direct ? 'Pedir' : 'Comentar'}</button></div></div></div></div>,
+        <button className={`btn-s ${action.id === 'close-issue' ? 'danger-solid' : 'primary'}`} id="dlg-yes" ref={action.text ? undefined : first} disabled={disabled} onClick={() => void send()}>{action.id === 'assign' ? 'Asignar a ronin' : action.id === 'close-issue' ? 'Cerrar el issue' : action.id === 'unblock' ? (action.direct ? 'Destrabar' : 'Comentar y destrabar') : action.direct ? 'Pedir' : 'Comentar'}</button></div></div></div></div>,
     document.body,
   );
 }

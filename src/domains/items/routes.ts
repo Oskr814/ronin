@@ -24,7 +24,7 @@ import { touchSeen } from '../access/team.js';
 import { refusal, visibleRepos, visibleRuns } from '../access/visible.js';
 import { anyObject, body, jsonBody, onError, onlyJson, repoParam } from '@platform/http/middleware.js';
 import type { DashboardEnv } from '../access/http.js';
-import { detail, exploration, explorationContext, filesContext, itemContext, snapshot, todayWithCycles } from './service.js';
+import { detail, exploration, explorationContext, explorationPedidos, filesContext, itemContext, snapshot, todayWithCycles } from './service.js';
 
 // The dashboard's heart (#65), in Hono (#235, stage 6) — server/
 // apps/api/routes.ts mounts them:
@@ -167,7 +167,7 @@ export function itemsRoutes({ wake }: { wake?: Wake } = {}) {
         ? await noteClosing(ctx.entry.productRepo, { issue: ctx.ref.number }, reason, c.env.session.login)
         : null;
       try {
-        const done = await runAction(ctx.entry, ctx.ref, ctx.gh, ctx.detail, c.env.session, action, text, undefined, await repoApps(ctx.entry), app);
+        const done = await runAction(ctx.entry, ctx.ref, ctx.gh, ctx.detail, c.env.session, action, text, undefined, await repoApps(ctx.entry), app, undefined, undefined, wake);
         // The next read shows the comment and whatever the action changed.
         expireItem(ctx.entry.productRepo, numbersOf(ctx.ref), { files: false });
         // Taken, it moves to ronin's issues; closed, it leaves the list.
@@ -260,11 +260,14 @@ export function itemsRoutes({ wake }: { wake?: Wake } = {}) {
       const refused = refusal(c, c.env.access, ctx.entry.productRepo, 'acciones');
       if (refused) return refused;
       const what = c.req.param('what');
+      // Straight to ronin (#446), with a database and a way to wake the PR's pass.
+      const db = getDb();
+      const ask = db && wake ? { db, wake } : undefined;
       const done = what === 'approve'
-        ? await runApprove(ctx.entry, ctx.pr, ctx.review, c.env.session, given)
+        ? await runApprove(ctx.entry, ctx.pr, ctx.review, c.env.session, given, undefined, db ? await explorationPedidos(db, ctx.entry.productRepo, ctx.pr.number) : [])
         : what === 'general'
-          ? await runGeneralComment(ctx.entry, ctx.pr, c.env.session, given)
-          : await runFindingCardAction(ctx.entry, ctx.pr, ctx.review, c.env.session, given);
+          ? await runGeneralComment(ctx.entry, ctx.pr, c.env.session, given, undefined, ask)
+          : await runFindingCardAction(ctx.entry, ctx.pr, ctx.review, c.env.session, given, undefined, ask);
       expireExploration(ctx.entry.productRepo, ctx.pr.number, { wait: true });
       expireItem(ctx.entry.productRepo, [ctx.pr.number]);
       return c.json(done, 200);

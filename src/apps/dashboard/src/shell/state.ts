@@ -907,6 +907,8 @@ function listenLive() {
   stream.addEventListener('command', (event) => {
     const command = JSON.parse((event as MessageEvent<string>).data) as { repo?: string; status?: string };
     if (S.sel && command.repo && S.sel.startsWith(`${command.repo}#`)) void loadRuns(S.sel);
+    // On an exploration PR: what was asked on its findings, and their state.
+    if (S.sel && S.sel === `${command.repo}#${(command as { number?: number }).number}`) void queryClient.invalidateQueries({ queryKey: ['exploration', S.sel] });
     if (command.status === 'done' || command.status === 'failed') void refresh();
   });
   // A finding decided by someone (#446): the open exploration PR's findings.

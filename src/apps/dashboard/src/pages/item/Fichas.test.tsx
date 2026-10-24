@@ -198,8 +198,10 @@ describe('an exploration PR’s Fichas', () => {
 describe('an exploration PR’s Fichas, decided in ronin', () => {
   const URL_DECISION = '/api/items/acme%2Fweb%2312/exploration/decision';
   let decisiones: Array<Record<string, unknown>> = [];
+  let pedidos: Array<Record<string, unknown>> = [];
   beforeEach(() => {
     decisiones = [];
+    pedidos = [];
     const answer = vi.mocked(globalThis.fetch).getMockImplementation()!;
     vi.mocked(globalThis.fetch).mockImplementation(async (input, init) => {
       const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } });
@@ -212,7 +214,7 @@ describe('an exploration PR’s Fichas, decided in ronin', () => {
       }
       if ((!init?.method || init.method === 'GET') && !String(input).endsWith('/detail') && String(input) !== '/api/snapshot') {
         asked.push(String(input));
-        return json({ ronin: 'ronin-bot', fetchedAt: iso(1), branch: 'exploracion/backoffice', base: 'main', fichas, runs: [], decisiones });
+        return json({ ronin: 'ronin-bot', fetchedAt: iso(1), branch: 'exploracion/backoffice', base: 'main', fichas, runs: [], decisiones, pedidos });
       }
       return answer(input, init);
     });
@@ -259,5 +261,19 @@ describe('an exploration PR’s Fichas, decided in ronin', () => {
     expect(JSON.parse(localStorage.getItem('ronin-listas:acme/web#12')!)).toEqual([]);
     const rejected = [...container.querySelectorAll('.frow.rej .tl')].map((r) => r.textContent);
     expect(rejected).toContain('La fecha sale en otro formato');
+  });
+
+  it('shows what was asked on a finding from the tablero in its conversation, waiting on ronin until it answers', async () => {
+    const pedido = (status: string, messages: Array<{ at: string; text: string }>) => ({ id: '9', repo: 'acme/web', number: 12, kind: 'ficha', args: { ficha: 'backoffice/F-0001', action: 'cambios', body: 'Que diga el límite' }, requestedBy: 'beto-dev', status, messages, runId: null, error: null, createdAt: iso(3), startedAt: null, finishedAt: null });
+    pedidos = [pedido('running', [])];
+    const { container } = show();
+    await screen.findByText('El buscador no avisa', { selector: '.tl' });
+    expect([...container.querySelectorAll('.fgrp span:first-child')].map((x) => x.textContent)).toContain('Esperando a ronin');
+    fireEvent.click(screen.getByText('El buscador no avisa', { selector: '.tl' }));
+    const asked = container.querySelector('[data-pedido="9"]')!;
+    expect(asked.textContent).toContain('beto-dev');
+    expect(asked.textContent).toContain('desde el tablero');
+    expect(asked.textContent).toContain('ronin está en eso');
+    expect(asked.textContent).toContain('Que diga el límite');
   });
 });

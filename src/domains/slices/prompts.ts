@@ -191,7 +191,8 @@ async function buildSliceTask(task: SliceTask): Promise<PreparedTask> {
           pr: { base: stripOrigin(base), draft: false, assignee: config.githubLogin },
           issue: { number: task.issueNumber },
           threads: [],
-          triggers: [],
+          // Asked from the tablero (#446): what it says goes there (actions/executors.ts).
+          triggers: task.trigger.filter((m) => m.kind === 'command').map((m) => ({ id: m.id, kind: m.kind })),
           allowed: ['issue.comment', 'git.push', 'pr.create', 'services.up', 'services.run', 'result.report'],
         },
         services: (checkoutDir, owner) => runServices({ checkoutDir, owner }),
