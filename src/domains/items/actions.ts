@@ -9,7 +9,10 @@ import type { RepoGithub } from './github.js';
 import { assignIssue, closeIssue, commentOnIssue, type Posted } from '@platform/github/github-as-user.js';
 import { DomainError } from '@platform/errors.js';
 import { getDb } from '@platform/db/db.js';
-import { createCommand, type Command } from '@platform/commands/store.js';
+import { createCommand, finishCommand, noteCommand, startCommand, type Command } from '@platform/commands/store.js';
+import { launchConflictsWorker, setAutoMerge } from '../commands/index.js';
+import { issueResource } from '@platform/locks/locks.js';
+import type { Wake } from './decision.js';
 import { launchPreviewWorker } from '../previews/index.js';
 
 // What can be asked of ronin from an item's page (#85). Each action is a
@@ -58,7 +61,7 @@ export interface ActionView {
 }
 
 // The actions that go straight to ronin, with a database to keep them.
-const DIRECT: ReadonlySet<ActionId> = new Set(['preview', 'preview-stop']);
+const DIRECT: ReadonlySet<ActionId> = new Set(['preview', 'preview-stop', 'resolve-conflicts', 'auto-merge-on', 'auto-merge-off', 'unblock', 'spike', 'spec', 'explore']);
 const isDirect = (id: ActionId) => DIRECT.has(id) && getDb() !== null;
 
 const MAX_TEXT = 4000;
@@ -175,6 +178,7 @@ export async function runAction(
   rawApp?: unknown,
   assign: (token: string, repo: string, number: number, assignees: string[]) => Promise<{ url: string }> = assignIssue,
   close: (token: string, repo: string, number: number) => Promise<{ url: string }> = closeIssue,
+  wake?: Wake,
 ): Promise<{ url?: string; command?: Command; existing?: boolean }> {
   const action = listActions(ref, gh, detail, session.login, apps).find((a) => a.id === id);
   if (!action) throw new ActionError('Esa acción no está disponible para este ítem ahora.');
@@ -185,7 +189,7 @@ export async function runAction(
   if (action.apps && !action.apps.includes(app)) throw new ActionError(`Falta la app: una de ${action.apps.join(', ')}.`);
   if (action.apps && action.id !== 'preview') text = text.replace(/\s+/g, ' ');
 
-  if (action.direct) return askRonin(entry, action, session.login, text, app);
+  if (action.direct) return askRonin(entry, action, session.login, text, app, wake);
   if (action.id === 'assign') {
     // The context first, so it's on the issue when ronin reads it.
     if (text) await post(session.token, entry.productRepo, action.target, text);
@@ -208,11 +212,40 @@ export async function runAction(
   return { url: posted.url };
 }
 
-// A preview (or taking it down) asked straight to ronin: the command, and
-// its worker launched with it to answer there. Asked again while the first
-// waits or runs, the first, with who asked for it.
-async function askRonin(entry: RepoEntry, action: ActionView, login: string, text: string, app: string): Promise<{ command: Command; existing: boolean }> {
+// Asked straight to ronin: the command, and what answers it started with
+// it, to answer there. A preview or resolving conflicts, in their worker;
+// asked again while the first waits or runs, the first, with who asked for
+// it. Auto-merge, here: it's a label and an answer.
+async function askRonin(entry: RepoEntry, action: ActionView, login: string, text: string, app: string, wake?: Wake): Promise<{ command: Command; existing: boolean }> {
   const db = getDb()!;
+  const woken = (flows: string[]) => (wake ?? (async () => {}))(entry.productRepo, [issueResource(action.target)], flows)
+    .catch((error) => log.error(`tablero: no se pudo despertar #${action.target}; lo toma el próximo tick`, error));
+  // The answer that unblocks an issue: kept for the agent that takes it up
+  // again (agent-task.ts gives it what was asked from the tablero), and the
+  // issue back in the pipeline, as when someone moves the label by hand.
+  if (action.id === 'unblock') {
+    const { command } = await createCommand(db, { repo: entry.productRepo, number: action.target, kind: 'unblock', args: { text }, requestedBy: login });
+    await withActiveRepo(entry, () => setIssueState(action.target, 'in-progress'));
+    await noteCommand(db, command.id, 'Destrabado: retomo el issue con tu respuesta.');
+    const done = (await finishCommand(db, command.id))!;
+    await woken(['issues']);
+    log.info(`tablero: ${login} destrabó ${entry.productRepo}#${action.target} (comando ${command.id})`);
+    return { command: done, existing: false };
+  }
+  // A /spike, /spec or /explore, read by the issue commands' flow as if it were written on the issue.
+  if (action.id === 'spike' || action.id === 'spec' || action.id === 'explore') {
+    const { command, existing } = await createCommand(db, { repo: entry.productRepo, number: action.target, kind: action.id, args: { ...(app ? { app } : {}), ...(text ? { text } : {}) }, requestedBy: login, dedupeKey: `${action.id}:${entry.productRepo}#${action.target}` });
+    if (!existing) await woken(['issue-commands']);
+    log.info(`tablero: ${login} pidió ${action.id} en ${entry.productRepo}#${action.target} (comando ${command.id})`);
+    return { command, existing };
+  }
+  if (action.id === 'auto-merge-on' || action.id === 'auto-merge-off') return { command: await autoMergeDirect(entry, action.target, login, action.id === 'auto-merge-on'), existing: false };
+  if (action.id === 'resolve-conflicts') {
+    const { command, existing } = await createCommand(db, { repo: entry.productRepo, number: action.target, kind: action.id, requestedBy: login, dedupeKey: `conflicts:${entry.productRepo}#${action.target}` });
+    if (!existing) launchConflictsWorker({ repo: entry.productRepo, prNumber: action.target, command: command.id });
+    log.info(`tablero: ${login} pidió resolver los conflictos de ${entry.productRepo}#${action.target} (comando ${command.id})`);
+    return { command, existing };
+  }
   const stop = action.id === 'preview-stop';
   const args = stop ? undefined : [app, text].filter(Boolean).join('\n\n') || undefined;
   const { command, existing } = await createCommand(db, {
@@ -224,6 +257,23 @@ async function askRonin(entry: RepoEntry, action: ActionView, login: string, tex
   launchPreviewWorker({ repo: entry.productRepo, prNumber: action.target, ...(stop ? { action: 'stop' as const } : { action: 'up' as const, ...(args ? { args } : {}) }), command: command.id });
   log.info(`tablero: ${login} pidió ${action.id} en ${entry.productRepo}#${action.target} (comando ${command.id})`);
   return { command, existing };
+}
+
+// Auto-merge on or off, asked from the tablero (#446): the label, and the
+// answer in the command — also after approving from the decision bar.
+export async function autoMergeDirect(entry: RepoEntry, prNumber: number, login: string, on: boolean): Promise<Command> {
+  const db = getDb()!;
+  const { command } = await createCommand(db, { repo: entry.productRepo, number: prNumber, kind: on ? 'auto-merge-on' : 'auto-merge-off', requestedBy: login });
+  await startCommand(db, command.id);
+  try {
+    const { reply, refused } = await withActiveRepo(entry, () => setAutoMerge(prNumber, on ? 'on' : 'off'));
+    await noteCommand(db, command.id, reply);
+    log.info(`tablero: ${login} ${on ? 'activó' : 'desactivó'} el auto-merge de ${entry.productRepo}#${prNumber} (comando ${command.id})`);
+    return (await finishCommand(db, command.id, refused ? { error: reply } : {}))!;
+  } catch (error) {
+    await finishCommand(db, command.id, { error: (error as Error).message });
+    throw error;
+  }
 }
 
 // A comment on the item's issue or PR (its tab's), as the person, from the

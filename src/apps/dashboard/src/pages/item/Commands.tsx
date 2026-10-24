@@ -19,6 +19,13 @@ const NAME: Record<string, (c: ItemCommand) => string> = {
   'preview-stop': (c) => `Bajar la preview de #${c.number}`,
   'preview-update': (c) => `La preview de #${c.number} al último commit`,
   adjust: (c) => `Ajuste en #${c.number}`,
+  'resolve-conflicts': (c) => `Resolver los conflictos de #${c.number}`,
+  'auto-merge-on': (c) => `Auto-merge en #${c.number}`,
+  'auto-merge-off': (c) => `Sacar el auto-merge de #${c.number}`,
+  unblock: (c) => `Respuesta para destrabar #${c.number}`,
+  spike: (c) => `Spike${typeof c.args.app === 'string' ? ` en ${c.args.app}` : ''} de #${c.number}`,
+  spec: (c) => `Spec${typeof c.args.app === 'string' ? ` de ${c.args.app}` : ''} para #${c.number}`,
+  explore: (c) => `Exploración${typeof c.args.app === 'string' ? ` de ${c.args.app}` : ''} con el foco de #${c.number}`,
   answer: (c) => `Respuestas a sus preguntas en #${c.number}`,
 };
 const STATE: Record<string, [string, string]> = {

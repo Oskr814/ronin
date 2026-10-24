@@ -12,6 +12,11 @@ import { itemParam } from './model.js';
 
 export type FindingCard = Exploration['fichas'][number];
 export type FindingDecision = NonNullable<Exploration['decisiones']>[number];
+export type FichaPedido = NonNullable<Exploration['pedidos']>[number];
+
+// What was asked on it from the tablero (#446), oldest first, with ronin's answers.
+export const pedidosOf = (data: Pick<Exploration, 'pedidos'>, f: FindingCard): FichaPedido[] => (data.pedidos ?? []).filter((p) => p.args.ficha === fichaKey(f));
+const going = (p: FichaPedido) => p.status === 'queued' || p.status === 'running';
 export type FindingImage = FindingCard['antes'][number];
 export type FichaStatus = 'decidir' | 'esperando' | 'respondida' | 'lista' | 'aprobada' | 'rechazada';
 
@@ -71,14 +76,19 @@ export const decisionOf = (data: Pick<Exploration, 'decisiones'>, f: FindingCard
 // its thread — ronin answers a first comment, or a reply that mentions it.
 // Once ronin answered (applied the changes asked for), it can be marked to
 // approve again.
-export function fichaStatus(f: FindingCard, data: Pick<Exploration, 'ronin' | 'decisiones'>, id?: string): FichaStatus {
+export function fichaStatus(f: FindingCard, data: Pick<Exploration, 'ronin' | 'decisiones' | 'pedidos'>, id?: string): FichaStatus {
   const { ronin } = data;
   if (f.estado === 'rechazado') return 'rechazada';
   if (f.estado === 'aprobado') return 'aprobada';
   const decided = decisionOf(data, f);
   if (decided?.decision === 'rechazar') return 'rechazada';
   const marked = data.decisiones ? decided?.decision === 'aprobar' : Boolean(id) && listas(id!).has(fichaKey(f));
+  // Asked from the tablero: waiting while ronin is on it, answered once it's done.
+  const asked = pedidosOf(data, f);
+  if (asked.some(going)) return 'esperando';
   const last = f.comments[f.comments.length - 1];
+  const lastAsked = asked[asked.length - 1];
+  if (lastAsked && (!last || lastAsked.createdAt > (last.createdAt ?? ''))) return marked ? 'lista' : 'respondida';
   if (!last) return marked ? 'lista' : 'decidir';
   if (last.author !== ronin && (!last.replyTo || RONIN_MENTION.test(last.body))) return 'esperando';
   return marked ? 'lista' : 'respondida';

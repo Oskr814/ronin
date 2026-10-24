@@ -8,7 +8,11 @@ const launchPreviewWorker = vi.fn();
 vi.mock('../previews/index.js', () => ({ launchPreviewWorker: (...args: unknown[]) => launchPreviewWorker(...args) }));
 vi.mock('@platform/config/config.js', () => ({ config: { githubLogin: 'ronin-agent' }, LABEL_AUTO_MERGE: 'ronin:auto-merge', LABEL_MANAGED: 'ronin' }));
 vi.mock('@platform/logger.js', () => ({ log: { error: vi.fn(), info: vi.fn() } }));
-vi.mock('@platform/github/github.js', () => ({ setIssueState: vi.fn() }));
+const setIssueState = vi.fn();
+vi.mock('@platform/github/github.js', () => ({ setIssueState: (...args: unknown[]) => setIssueState(...args) }));
+const launchConflictsWorker = vi.fn();
+const setAutoMerge = vi.fn();
+vi.mock('../commands/index.js', () => ({ launchConflictsWorker: (...args: unknown[]) => launchConflictsWorker(...args), setAutoMerge: (...args: unknown[]) => setAutoMerge(...args) }));
 vi.mock('@platform/agents/repo-context.js', () => ({ withActiveRepo: (_entry: unknown, fn: () => unknown) => fn() }));
 
 const { listActions, runAction } = await import('./actions.js');
@@ -29,14 +33,14 @@ describe.skipIf(!TEST_DATABASE_URL)('a preview asked straight to ronin', () => {
   });
   beforeEach(async () => {
     setDb(db);
+    vi.clearAllMocks();
     launchPreviewWorker.mockReset();
     await db.deleteFrom('commands').execute();
   });
 
   it('is offered as asked to ronin, not as a comment', () => {
     const actions = listActions(REF, gh([{ prNumber: 849, appName: 'webapp', url: '', sha: 'abc' }]), DETAIL, 'ana-dev');
-    expect(actions.filter((a) => a.direct).map((a) => a.id)).toEqual(['preview', 'preview-stop']);
-    expect(actions.find((a) => a.id === 'auto-merge-on')).not.toHaveProperty('direct');
+    expect(actions.filter((a) => a.direct).map((a) => a.id)).toEqual(['resolve-conflicts', 'preview', 'preview-stop', 'auto-merge-on']);
   });
 
   it('keeps the command and launches its worker with it, writing nothing on GitHub; asked again, gives the first', async () => {
@@ -53,5 +57,34 @@ describe.skipIf(!TEST_DATABASE_URL)('a preview asked straight to ronin', () => {
   it('takes a preview down the same way', async () => {
     const done = await runAction(ENTRY, REF, gh([{ prNumber: 849, appName: 'webapp', url: '', sha: 'abc' }]), DETAIL, { login: 'ana-dev', token: 't' }, 'preview-stop', undefined, vi.fn());
     expect(launchPreviewWorker).toHaveBeenCalledWith({ repo: 'acme/product', prNumber: 849, action: 'stop', command: done.command!.id });
+  });
+
+  // Phase 4 (#446): the rest of the actions, straight to ronin too.
+  const SESSION = { login: 'ana-dev', token: 't' };
+  const UNMANAGED = { ...gh(), openIssues: [{ number: 901, title: '', url: '', labels: [] }] };
+  const BLOCKED = { ...gh(), issues: [{ number: 844, title: '', url: '', status: 'blocked' as const, direct: false, slices: [] }] };
+
+  it('resolves conflicts in its worker, and turns auto-merge on here, answering in the command', async () => {
+    const conflicts = await runAction(ENTRY, REF, gh(), DETAIL, SESSION, 'resolve-conflicts', undefined, vi.fn());
+    expect(launchConflictsWorker).toHaveBeenCalledWith({ repo: 'acme/product', prNumber: 849, command: conflicts.command!.id });
+    setAutoMerge.mockResolvedValueOnce({ reply: '🔀 Auto-merge activado.', refused: false });
+    const on = await runAction(ENTRY, REF, gh(), DETAIL, SESSION, 'auto-merge-on', undefined, vi.fn());
+    expect(setAutoMerge).toHaveBeenCalledWith(849, 'on');
+    expect(on.command).toMatchObject({ kind: 'auto-merge-on', status: 'done', messages: [expect.objectContaining({ text: '🔀 Auto-merge activado.' })] });
+  });
+
+  it('unblocks an issue with the answer kept for the agent, and asks for a spike waking the issue commands', async () => {
+    const wake = vi.fn(async () => {});
+    const post = vi.fn();
+    const ISSUE = { kind: 'issue' as const, number: 844 };
+    const unblocked = await runAction(ENTRY, ISSUE, BLOCKED, undefined, SESSION, 'unblock', 'Usá la tabla de clientes', post, [], undefined, undefined, undefined, wake);
+    expect(post).not.toHaveBeenCalled();
+    expect(setIssueState).toHaveBeenCalledWith(844, 'in-progress');
+    expect(unblocked.command).toMatchObject({ kind: 'unblock', status: 'done', args: { text: 'Usá la tabla de clientes' } });
+    expect(wake).toHaveBeenLastCalledWith('acme/product', ['issue-844'], ['issues']);
+    const spike = await runAction(ENTRY, { kind: 'issue', number: 901 }, UNMANAGED, undefined, SESSION, 'spike', 'cómo se calcula el total', post, ['webapp', 'backoffice'], 'webapp', undefined, undefined, wake);
+    expect(spike.command).toMatchObject({ kind: 'spike', status: 'queued', args: { app: 'webapp', text: 'cómo se calcula el total' } });
+    expect(wake).toHaveBeenLastCalledWith('acme/product', ['issue-901'], ['issue-commands']);
+    expect(post).not.toHaveBeenCalled();
   });
 });

@@ -7,6 +7,7 @@ import { approvePr, commentOnFile, commentOnIssue, type Posted } from '@platform
 import { DomainError } from '@platform/errors.js';
 import type { Db } from '@platform/db/db.js';
 import { decide, listDecisions, undecide, type FindingDecision } from './decisions.js';
+import { createCommand, type Command } from '@platform/commands/store.js';
 
 // Deciding on a finding from the dashboard (#93): a comment on its file in
 // the exploration PR, written as whoever is logged in — what they'd write in
@@ -46,6 +47,21 @@ export interface FindingCardActionRequest {
   redo?: unknown;
 }
 
+// Straight to ronin (#446), with a database: what's asked is kept as a
+// command and the PR's pass woken now (`wake`), instead of a comment on
+// GitHub; the pass reads it as the comment it would have been
+// (platform/commands/mentions.ts) and answers there.
+export interface AskRonin {
+  db: Db;
+  wake: (repo: string, resources: string[], flows?: string[]) => Promise<void>;
+}
+
+async function asked(ask: AskRonin, repo: string, prNumber: number, kind: string, args: Record<string, unknown>, login: string): Promise<Command> {
+  const { command } = await createCommand(ask.db, { repo, number: prNumber, kind, args, requestedBy: login });
+  await ask.wake(repo, [`pr-${prNumber}`], ['exploration']).catch((error) => log.error(`tablero: no se pudo despertar el PR #${prNumber}; lo toma el próximo tick`, error));
+  return command;
+}
+
 export async function runFindingCardAction(
   entry: RepoEntry,
   pr: ExplorationPr,
@@ -53,7 +69,8 @@ export async function runFindingCardAction(
   session: Session,
   request: FindingCardActionRequest,
   post: (token: string, repo: string, prNumber: number, path: string, body: string) => Promise<Posted> = commentOnFile,
-): Promise<Posted & { ficha: string }> {
+  ask?: AskRonin,
+): Promise<(Posted | { command: Command }) & { ficha: string }> {
   const action = ACTIONS.find((a) => a === request.action);
   if (!action) throw new FindingCardActionError('Esa acción no existe.');
   const card: FindingCard | undefined = review.fichas.find((f) => `${f.app}/${f.id}` === request.ficha);
@@ -62,7 +79,13 @@ export async function runFindingCardAction(
   const text = typeof request.text === 'string' ? request.text.trim().slice(0, MAX_TEXT) : '';
   if (!text && action !== 'desarrollar') throw new FindingCardActionError('Falta el texto.');
   if (request.redo === true && action !== 'cambios') throw new FindingCardActionError('Rehacer el después va con "Pedir cambios".');
-  const posted = await post(session.token, entry.productRepo, pr.number, card.path, findingCardComment(action, text, request.redo === true));
+  const body = findingCardComment(action, text, request.redo === true);
+  if (ask) {
+    const command = await asked(ask, entry.productRepo, pr.number, 'ficha', { ficha: `${card.app}/${card.id}`, path: card.path, action, text, ...(request.redo === true ? { redo: true } : {}), body }, session.login);
+    log.info(`tablero: ${session.login} pidió ${action} en ${card.id} de ${entry.productRepo}#${pr.number} (comando ${command.id})`);
+    return { command, ficha: `${card.app}/${card.id}` };
+  }
+  const posted = await post(session.token, entry.productRepo, pr.number, card.path, body);
   log.info(`tablero: ${session.login} comentó ${action} en ${card.id} de ${entry.productRepo}#${pr.number} (${posted.url})`);
   return { ...posted, ficha: `${card.app}/${card.id}` };
 }
@@ -80,20 +103,25 @@ export async function runGeneralComment(
   session: Session,
   request: { text?: unknown },
   post: (token: string, repo: string, number: number, body: string) => Promise<Posted> = commentOnIssue,
-): Promise<Posted> {
+  ask?: AskRonin,
+): Promise<Posted | { command: Command }> {
   const text = typeof request.text === 'string' ? request.text.trim().slice(0, MAX_TEXT) : '';
   if (!text) throw new FindingCardActionError('Falta el texto.');
+  if (ask) return { command: await asked(ask, entry.productRepo, pr.number, 'explore-general', { text }, session.login) };
   const posted = await post(session.token, entry.productRepo, pr.number, generalComment(text));
   log.info(`tablero: ${session.login} dejó un comentario general en ${entry.productRepo}#${pr.number} (${posted.url})`);
   return posted;
 }
 
 // The findings with a comment ronin hasn't applied yet: a new one on the
-// finding, or a reply that mentions it, with nothing from ronin after.
-export function waitingOnRonin(review: ExplorationReview, ronin = config.githubLogin): FindingCard[] {
+// finding, or a reply that mentions it, with nothing from ronin after; or
+// something asked on it from the tablero still waiting or going (#446).
+export function waitingOnRonin(review: ExplorationReview, ronin = config.githubLogin, pedidos: Array<Pick<Command, 'args' | 'status'>> = []): FindingCard[] {
   const mention = new RegExp(`@${ronin}\\b`, 'i');
+  const going = new Set(pedidos.filter((p) => p.status === 'queued' || p.status === 'running').map((p) => String(p.args.ficha)));
   return review.fichas.filter((f) => {
     if (f.estado !== 'propuesto') return false;
+    if (going.has(`${f.app}/${f.id}`)) return true;
     const last = f.comments[f.comments.length - 1];
     return Boolean(last && last.author.toLowerCase() !== ronin.toLowerCase() && (!last.replyTo || mention.test(last.body)));
   });
@@ -139,8 +167,9 @@ export async function runApprove(
   session: Session,
   request: { text?: unknown },
   approve: (token: string, repo: string, prNumber: number, body?: string) => Promise<Posted> = approvePr,
+  pedidos: Array<Pick<Command, 'args' | 'status'>> = [],
 ): Promise<Posted> {
-  const waiting = waitingOnRonin(review);
+  const waiting = waitingOnRonin(review, config.githubLogin, pedidos);
   if (waiting.length > 0) throw new FindingCardActionError(`ronin todavía está aplicando comentarios en ${waiting.map((f) => f.id).join(', ')}. Aprobá cuando responda.`);
   const text = typeof request.text === 'string' ? request.text.trim().slice(0, MAX_TEXT) : '';
   const posted = await approve(session.token, entry.productRepo, pr.number, text || undefined);

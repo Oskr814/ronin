@@ -1,5 +1,7 @@
 import { config } from '@platform/config/config.js';
 import { listDecisions, type FindingDecision } from '../explorations/decisions.js';
+import { listCommands, type Command } from '@platform/commands/store.js';
+import type { Db } from '@platform/db/db.js';
 import { accountName, listUsage } from '@platform/claude/claude-usage.js';
 import { apiBudgetsToWarn } from '@platform/claude/api-fallback.js';
 import { itemKindOf } from '@platform/github/github.js';
@@ -219,9 +221,19 @@ export async function explorationContext(access: Access, id: string) {
 
 // With the team's decisions kept in ronin (#446), when there's a database:
 // `decisiones` is there (maybe empty) only then, and the page decides there.
-export async function exploration(access: Access, id: string): Promise<(ExplorationReview & { ronin: string; decisiones?: FindingDecision[] }) | null> {
+// `pedidos`: what was asked on its findings from the tablero, and ronin's answers.
+export async function exploration(access: Access, id: string): Promise<(ExplorationReview & { ronin: string; decisiones?: FindingDecision[]; pedidos?: Command[] }) | null> {
   const ctx = await explorationContext(access, id);
   if (!ctx) return null;
   const db = getDb();
-  return { ronin: config.githubLogin, ...ctx.review, ...(db ? { decisiones: await listDecisions(db, ctx.entry.productRepo, ctx.pr.number) } : {}) };
+  return {
+    ronin: config.githubLogin,
+    ...ctx.review,
+    ...(db ? { decisiones: await listDecisions(db, ctx.entry.productRepo, ctx.pr.number), pedidos: await explorationPedidos(db, ctx.entry.productRepo, ctx.pr.number) } : {}),
+  };
+}
+
+// What was asked on an exploration PR from the tablero (#446): on its findings, and general.
+export async function explorationPedidos(db: Db, repo: string, prNumber: number): Promise<Command[]> {
+  return (await listCommands(db, repo, [prNumber], 200)).filter((c) => c.kind === 'ficha' || c.kind === 'explore-general').reverse();
 }

@@ -165,8 +165,15 @@ export async function executeAction(scope: RunScope, checkout: RunCheckout, acti
       if (pr.assignee) await addIssueAssignees(number, [pr.assignee]);
       return { number };
     }
-    case 'issue.comment':
+    case 'issue.comment': {
+      // A run that only answers requests from the tablero (#446) says it there.
+      const asked = scope.triggers.length > 0 && scope.triggers.every((t) => t.kind === 'command') ? scope.triggers[0] : undefined;
+      if (asked) {
+        await answerTableroMention(asked.id, action.input.body);
+        return {};
+      }
       return { url: (await postIssueComment(scope.issue!.number, action.input.body)).url };
+    }
     case 'issue.update-body': {
       const issue = scope.issue!;
       const next = issue.body === 'append' ? `${(await getIssueBody(issue.number)).trimEnd()}\n\n${action.input.body}` : action.input.body;

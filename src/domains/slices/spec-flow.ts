@@ -4,7 +4,8 @@ import { runAgentTask } from '@platform/agents/agent-task.js';
 import { sliceTask } from './prompts.js';
 import { activeRepo } from '@platform/agents/repo-context.js';
 import { log } from '@platform/logger.js';
-import { commentOnIssue, findOpenPrByHead, replyToComment } from '@platform/github/github.js';
+import { commentOnIssue, findOpenPrByHead } from '@platform/github/github.js';
+import { claimTableroMentions, isTableroMention, replyToAsker, settleTableroMention } from '@platform/commands/mentions.js';
 import { renderHtmlToPng } from '../product-app/index.js';
 import { evidenceUrl, publishEvidence } from '../product-app/index.js';
 import { notifyBlocker } from '@platform/notify/notifier.js';
@@ -34,6 +35,11 @@ export async function publishMockup(issueNumber: number, htmlPath: string, outDi
 }
 
 export async function processSpecCandidate(candidate: SpecCandidate): Promise<void> {
+  // One asked from the tablero (#446) is taken here: another process may have it.
+  const trigger = await claimTableroMentions(candidate.trigger);
+  if (!trigger.length) return;
+  candidate = { ...candidate, trigger };
+  let failed: string | undefined;
   const outDir = join(activeRepo().worktreeBasePath, 'spec-out', String(candidate.issueNumber));
   await host().fs.rm(outDir, { recursive: true, force: true });
   await host().fs.mkdir(outDir, { recursive: true });
@@ -63,12 +69,13 @@ export async function processSpecCandidate(candidate: SpecCandidate): Promise<vo
   } catch (error) {
     log.error(`spec falló para issue #${candidate.issueNumber}`, error);
     const first = candidate.trigger[0];
+    failed = (error as Error).message.split('\n')[0].slice(0, 200);
     if (first) {
-      await replyToComment(candidate.issueNumber, first, `No pude escribir el spec: ${(error as Error).message.split('\n')[0].slice(0, 300)}. El detalle está en el log del runner.`).catch(() => {});
+      await replyToAsker(candidate.issueNumber, first, `No pude escribir el spec: ${(error as Error).message.split('\n')[0].slice(0, 300)}. El detalle está en el log del runner.`).catch(() => {});
     }
   } finally {
     // Reacted to on success and failure alike: a /spec that fails is
     // answered, not retried every tick at the cost of another agent run.
-    for (const m of candidate.trigger) await markProcessed(m).catch(() => {});
+    for (const m of candidate.trigger) await (isTableroMention(m) ? settleTableroMention(m, failed ? { error: failed } : {}) : markProcessed(m)).catch(() => {});
   }
 }

@@ -8,6 +8,7 @@ import { getDb } from '@platform/db/db.js';
 import { log } from '@platform/logger.js';
 import { issueResource, prResource } from '@platform/locks/locks.js';
 import { createCommand, type Command } from '@platform/commands/store.js';
+import { autoMergeDirect } from './actions.js';
 
 // What's decided about a PR ronin opened, from its page (#195), as whoever
 // is logged in (platform/github/github-as-user.ts): merge it, ask ronin for an adjustment, or
@@ -58,7 +59,8 @@ export const isSpecPr = (pr: Pick<Discussion, 'headRefName'>) => /^ronin\/\d+\/s
 // but for a spec, which an older one may still be: approving it is what
 // starts it, and ronin takes it out of draft then.
 // Starts the run that takes a PR's mentions now (apps/api/routes.ts hands it the job queue).
-export type Wake = (repo: string, resources: string[]) => Promise<void>;
+// `flows`: which of the run's flows, the issues' by default.
+export type Wake = (repo: string, resources: string[], flows?: string[]) => Promise<void>;
 
 async function askRonin(repo: string, target: DecisionTarget, login: string, kind: 'adjust' | 'answer', text: string, wake: Wake): Promise<{ command: Command }> {
   const db = getDb()!;
@@ -89,6 +91,8 @@ export async function runDecision(entry: RepoEntry, target: DecisionTarget, sess
       // Merged once the checks pass: ronin's /auto-merge, unless it's on
       // already or can't merge (conflicts). It answers with what's missing.
       if (pr.labels.includes(AUTO_MERGE_LABEL) || pr.mergeable === 'CONFLICTING') return sent;
+      // Straight to ronin (#446): the label and its answer under the activity.
+      if (wake && getDb()) return { url: sent.url, command: await autoMergeDirect(entry, prNumber, session.login, true) };
       const auto = await commentOnIssue(session.token, repo, prNumber, `@${botLogin} /auto-merge`);
       return { url: sent.url, autoMergeUrl: auto.url };
     }

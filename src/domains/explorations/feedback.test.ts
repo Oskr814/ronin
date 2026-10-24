@@ -57,6 +57,17 @@ vi.mock('./pr.js', async (importOriginal) => ({
 const decisions = vi.hoisted(() => ({ listDecisions: vi.fn(async () => [] as unknown[]), markApplied: vi.fn(async () => {}) }));
 vi.mock('@platform/db/db.js', () => ({ getDb: () => ({}) }));
 vi.mock('./decisions.js', () => decisions);
+// Nothing asked on the findings from the tablero, unless a test says.
+const asked = vi.hoisted(() => ({ ficha: [] as unknown[], general: [] as unknown[], settled: [] as unknown[][], answered: [] as unknown[][] }));
+vi.mock('@platform/commands/mentions.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@platform/commands/mentions.js')>()),
+  tableroFichaComments: async () => asked.ficha,
+  tableroGeneralComments: async () => asked.general,
+  claimTableroMentions: async (list: unknown[]) => list,
+  releaseTableroMentions: async () => {},
+  settleTableroMention: async (...args: unknown[]) => void asked.settled.push(args),
+  replyToAsker: async (n: number, c: { id: number; kind: string }, body: string) => (c.kind === 'command' ? asked.answered.push([c.id, body]) : gh.replyToComment(n, c, body)),
+}));
 const spawn = vi.hoisted(() => vi.fn());
 vi.mock('node:child_process', async (importOriginal) => ({
   ...(await importOriginal<typeof import('node:child_process')>()),
@@ -87,6 +98,7 @@ beforeEach(async () => {
   for (const f of Object.values(gh)) f.mockReset();
   for (const f of Object.values(prMod)) f.mockReset();
   gh.listIssueComments.mockResolvedValue([]);
+  Object.assign(asked, { ficha: [], general: [], settled: [], answered: [] });
   spawn.mockReset().mockReturnValue({ pid: 1, unref: () => {} });
   actions.tasks = [];
   gh.createIssue.mockResolvedValue({ number: 795, url: 'u' });
@@ -136,6 +148,24 @@ describe('processExplorationPr feedback', () => {
     expect(assignees).toEqual(['ronin-agent']);
     expect(gh.replyToComment.mock.calls[0][2]).toBe('Listo\n\nAbrí #795 y me lo asigné.');
     expect(spawn).not.toHaveBeenCalled();
+  });
+
+  // #446: asked on a finding from the tablero, answered there, not on GitHub.
+  it('applies what was asked on a finding from the tablero, with the earlier comments as its conversation, and answers it there', async () => {
+    gh.listFileReviewComments.mockResolvedValue([{ ...comment(12, 'F-0003', 'esto pasa también en mobile'), createdAt: '2026-10-24T10:00:00Z' }]);
+    asked.ficha = [{ id: 7, kind: 'command', path: 'docs/exploration/backoffice/findings/F-0003-x.md', body: 'creá un issue para el endpoint nuevo', authorLogin: 'ana-dev', reactionsEyes: 0, createdAt: '2026-10-24T11:00:00Z' }];
+    actions.value = [{ commentId: 7, accion: 'crear-issue', issue: { titulo: 'Endpoint nuevo', cuerpo: 'Con el cliente' }, respuesta: 'Listo' }, { commentId: 12, accion: 'responder', respuesta: 'Sí, también.' }];
+
+    await processExplorationPr(pr());
+
+    const task = actions.tasks[0];
+    const fromTablero = task.comments.find((c: { commentId: number }) => c.commentId === 7);
+    expect(fromTablero.conversacion.map((c: { texto: string }) => c.texto)).toEqual(['esto pasa también en mobile']);
+    expect(asked.answered).toEqual([[7, 'Listo\n\nAbrí #795 y me lo asigné.']]);
+    expect(gh.replyToComment).toHaveBeenCalledWith(794, { id: 12, kind: 'review' }, 'Sí, también.');
+    expect(asked.settled).toEqual([[{ id: 7, kind: 'command' }]]);
+    expect(gh.addReaction).toHaveBeenCalledWith(12, 'review', 'eyes');
+    expect(gh.addReaction).not.toHaveBeenCalledWith(7, expect.anything(), expect.anything());
   });
 
   it('marks an old draft ready, and merges an approved PR into issues', async () => {

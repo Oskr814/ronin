@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { setDb, type Db } from '@platform/db/db.js';
 import { TEST_DATABASE_URL, testDb } from '@platform/db/testing.js';
-import { answerTableroMention, claimTableroMentions, settleTableroMention, tableroConversation, tableroMentions } from './mentions.js';
+import { answerTableroMention, claimTableroMentions, issuesWithTableroCommands, replyToAsker, settleTableroMention, tableroConversation, tableroIssueCommands, tableroMentions } from './mentions.js';
 import { createCommand, getCommand } from './store.js';
 
 // An adjustment asked from the tablero (#446), as the review-request run
@@ -51,5 +51,14 @@ describe.skipIf(!TEST_DATABASE_URL)('what is asked in words from the tablero, as
     expect(said).toContain('ana-dev pidió (adjust): Sacá el log');
     expect(said).toContain('ronin respondió: Lo saqué.');
     expect(said).not.toContain('Ahora el test');
+  });
+
+  it('writes a /spike, /spec or /explore asked from the tablero as the command it would be on the issue, and answers it there', async () => {
+    const { command } = await createCommand(db, { repo: 'acme/web', number: 901, kind: 'spike', args: { app: 'webapp', text: 'cómo se calcula el total' }, requestedBy: 'ana-dev' });
+    await createCommand(db, { repo: 'acme/web', number: 902, kind: 'explore', args: { app: 'backoffice' }, requestedBy: 'ana-dev' });
+    expect(await tableroIssueCommands('acme/web', 901, 'ronin-bot')).toEqual([expect.objectContaining({ id: Number(command.id), kind: 'command', body: '@ronin-bot /spike webapp cómo se calcula el total' })]);
+    expect((await issuesWithTableroCommands(() => 'acme/web')).sort()).toEqual([901, 902]);
+    await replyToAsker(901, { id: Number(command.id), kind: 'command' }, 'Esto es lo que encontré.');
+    expect((await getCommand(db, command.id))!.messages.map((m) => m.text)).toEqual(['Esto es lo que encontré.']);
   });
 });

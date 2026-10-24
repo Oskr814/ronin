@@ -75,7 +75,7 @@ export function useDecide(v: ItemPage | null) {
     changed();
     try {
       const sent = (await ok(client.api.items[':id'].decision.$post({ param: itemParam(id), json: { decision: given.kind, text: given.text, closeIssue: given.closeIssue } }))) as { url?: string; autoMergeUrl?: string; issueUrl?: string; command?: ItemCommand };
-      decided.set(id, { at: Date.now(), kind: given.kind, url: sent.url, autoMerge: Boolean(sent.autoMergeUrl), issue: Boolean(sent.issueUrl), count: pending, spec, sending: false, direct: Boolean(sent.command) });
+      decided.set(id, { at: Date.now(), kind: given.kind, url: sent.url, autoMerge: Boolean(sent.autoMergeUrl) || (given.kind === 'approve' && Boolean(sent.command)), issue: Boolean(sent.issueUrl), count: pending, spec, sending: false, direct: Boolean(sent.command) });
       // Straight to ronin (#446): under the activity, not on GitHub.
       if (sent.command) showCommand(id, sent.command);
       changed();

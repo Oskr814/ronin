@@ -1,4 +1,6 @@
 import { listOpenUnmanagedIssues, type Comment } from '@platform/github/github.js';
+import { activeRepo } from '@platform/agents/repo-context.js';
+import { issuesWithTableroCommands } from '@platform/commands/mentions.js';
 import { findTrustedIssueCommands, parseExploreCommand, parseSpecCommand, parseSpikeCommand } from './mentions.js';
 import { log } from '@platform/logger.js';
 
@@ -48,9 +50,11 @@ const COMMAND_WINDOW_MS = 3 * 24 * 60 * 60 * 1000;
 // long ago they were updated: the event that names them just happened.
 export async function findIssueCommands(only?: number[], now = Date.now()): Promise<IssueCommandCandidates> {
   const open = await listOpenUnmanagedIssues();
+  // One asked from the tablero (#446) doesn't touch the issue on GitHub.
+  const asked = new Set(only ? [] : await issuesWithTableroCommands(() => activeRepo().productRepo));
   const issues = only
     ? open.filter((issue) => only.includes(issue.number))
-    : open.filter((issue) => now - Date.parse(issue.updatedAt) <= COMMAND_WINDOW_MS);
+    : open.filter((issue) => now - Date.parse(issue.updatedAt) <= COMMAND_WINDOW_MS || asked.has(issue.number));
   const spikes: SpikeCandidate[] = [];
   const explores: ExploreCandidate[] = [];
   const specs: SpecCandidate[] = [];

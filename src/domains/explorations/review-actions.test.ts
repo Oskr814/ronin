@@ -4,6 +4,8 @@ vi.mock('@platform/logger.js', () => ({ log: { error: vi.fn(), info: vi.fn() } }
 vi.mock('@platform/config/config.js', () => ({ config: { githubLogin: 'ronin-agent' } }));
 const store = vi.hoisted(() => ({ decide: vi.fn(), undecide: vi.fn(), listDecisions: vi.fn(async () => []) }));
 vi.mock('./decisions.js', () => store);
+const createCommand = vi.hoisted(() => vi.fn(async (_db: unknown, given: Record<string, unknown>) => ({ command: { id: '5', ...given }, existing: false })));
+vi.mock('@platform/commands/store.js', () => ({ createCommand }));
 
 const { findingCardComment, generalComment, runApprove, runFindingCardAction, runFindingDecision, runGeneralComment, waitingOnRonin, FindingCardActionError } = await import('./review-actions.js');
 
@@ -124,5 +126,29 @@ describe('runFindingDecision', () => {
     await expect(runFindingDecision(db, ENTRY, PR, REVIEW, SESSION, { ficha: 'backoffice/F-0099', decision: 'aprobar' })).rejects.toBeInstanceOf(FindingCardActionError);
     await expect(runFindingDecision(db, ENTRY, PR, REVIEW, SESSION, { ficha: 'backoffice/F-0017', decision: 'otra' })).rejects.toThrow('Esa decisión no existe.');
     expect(store.decide).not.toHaveBeenCalled();
+  });
+});
+
+// #446: what's asked on a finding or the whole PR, straight to ronin.
+describe('asking on the findings straight to ronin', () => {
+  const wake = vi.fn(async () => {});
+  const ask = { db: {} as any, wake };
+  beforeEach(() => {
+    createCommand.mockClear();
+    wake.mockClear();
+  });
+
+  it('keeps a finding’s request with the words its comment would have, and wakes the PR’s pass', async () => {
+    const done = await runFindingCardAction(ENTRY, PR, REVIEW, SESSION, { action: 'cambios', ficha: 'backoffice/F-0017', text: 'Que diga el límite', redo: true }, post, ask);
+    expect(post).not.toHaveBeenCalled();
+    expect(createCommand.mock.calls[0][1]).toEqual({ repo: 'acme/product', number: 840, kind: 'ficha', requestedBy: 'oskr814', args: { ficha: 'backoffice/F-0017', path: 'docs/exploration/backoffice/findings/F-0017-x.md', action: 'cambios', text: 'Que diga el límite', redo: true, body: 'Que diga el límite\n\nTambién hay que rehacer la captura del después.' } });
+    expect(done).toMatchObject({ ficha: 'backoffice/F-0017', command: { id: '5' } });
+    expect(wake).toHaveBeenCalledWith('acme/product', ['pr-840'], ['exploration']);
+    await runGeneralComment(ENTRY, PR, SESSION, { text: 'Las de mobile van juntas' }, post, ask);
+    expect(createCommand.mock.calls[1][1]).toMatchObject({ kind: 'explore-general', args: { text: 'Las de mobile van juntas' } });
+  });
+
+  it('waits to approve while something asked on a finding is still going', async () => {
+    await expect(runApprove(ENTRY, PR, REVIEW, SESSION, {}, vi.fn(), [{ args: { ficha: 'backoffice/F-0017' }, status: 'running' }])).rejects.toThrow('F-0017');
   });
 });

@@ -33,7 +33,8 @@ async function buildCommandTask(task: CommandTask): Promise<PreparedTask> {
         actions: {
           issue: { number: task.issueNumber, body: 'append' },
           threads: [],
-          triggers: [],
+          // Asked from the tablero (#446): its answer goes there (actions/executors.ts).
+          triggers: task.trigger.filter((m) => m.kind === 'command').map((m) => ({ id: m.id, kind: m.kind })),
           allowed: ['issue.update-body', 'issue.comment', 'result.report'],
         },
         prompt: [
