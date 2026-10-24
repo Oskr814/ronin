@@ -199,6 +199,24 @@ export interface ClaudeUsageHistoryTable {
   data: Json<unknown>;
 }
 
+// What was asked of ronin from the tablero (domains/commands/store.ts, #446).
+export interface CommandsTable {
+  id: Generated<string>;
+  repo: string;
+  number: number;
+  kind: string;
+  args: ColumnType<unknown, string | undefined, string>;
+  requested_by: string;
+  dedupe_key: string | null;
+  status: string;
+  messages: ColumnType<unknown, string | undefined, string>;
+  run_id: string | null;
+  error: string | null;
+  created_at: ColumnType<Date, string | undefined, never>;
+  started_at: MaybeStamp;
+  finished_at: MaybeStamp;
+}
+
 export interface Database {
   settings: SettingsTable;
   task_settings: TaskSettingsTable;
@@ -216,4 +234,5 @@ export interface Database {
   claude_usage: ClaudeUsageTable;
   claude_usage_history: ClaudeUsageHistoryTable;
   api_budgets: ApiBudgetsTable;
+  commands: CommandsTable;
 }

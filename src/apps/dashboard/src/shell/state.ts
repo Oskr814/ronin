@@ -1,5 +1,5 @@
 import { QueryClient } from '@tanstack/react-query';
-import type { ItemDetail, ItemRun, ShownRun, Snapshot } from '../api.js';
+import type { ItemCommand, ItemDetail, ItemRun, ShownRun, Snapshot } from '../api.js';
 import type { ExplorationListRow, ExplorationRow } from '@domains/explorations/board.js';
 import { isMobile } from '../lib/format.js';
 import { docOf as docShown, docTabsOf, sameLogin } from '../lib/item.js';
@@ -49,6 +49,7 @@ export const SNAPSHOT_KEY = ['snapshot'];
 // they come while it goes), and what /api/explorations adds to the apps.
 export const detailKey = (id: string) => ['item', id, 'detail'];
 export const runsKey = (id: string) => ['item', id, 'runs'];
+export const commandsKey = (id: string) => ['item', id, 'commands'];
 export const runKey = (runId: string) => ['run', runId];
 export const EXPLORATIONS_KEY = ['explorations'];
 // `from`: how many lines the run had when it was read, where its stream starts.
@@ -213,6 +214,8 @@ export const inScope = (item: Item) => (S.scope !== 'cycle' || item.linear?.cycl
 // What was read of an item, from the cache.
 export const detailOf = (id: string) => queryClient.getQueryData<ItemDetail>(detailKey(id));
 const runsRead = (id: string) => queryClient.getQueryData<ItemRun[]>(runsKey(id));
+// What was asked of ronin on it from the tablero, newest first: read with its runs.
+export const itemCommands = (id: string): ItemCommand[] => queryClient.getQueryData<ItemCommand[]>(commandsKey(id)) ?? [];
 // The item's runs: the ones read, or its last one until they are.
 export const itemRuns = (item: Item): ItemRun[] => runsRead(item.id) ?? (item.lastRun ? [item.lastRun as ItemRun] : []);
 // The item's page by default; the transcript for what has no page (a changelog entry).
@@ -676,7 +679,9 @@ async function readRuns(id: string): Promise<ItemRun[]> {
   const before = runsRead(id);
   let runs: ItemRun[];
   try {
-    ({ runs } = await api<{ runs: ItemRun[] }>(`/api/items/${encodeURIComponent(id)}`));
+    let commands: ItemCommand[] | undefined;
+    ({ runs, commands } = await api<{ runs: ItemRun[]; commands?: ItemCommand[] }>(`/api/items/${encodeURIComponent(id)}`));
+    queryClient.setQueryData(commandsKey(id), commands ?? []);
   } catch (error) {
     if (error instanceof Unauthorized) showLogin(error);
     throw error;
@@ -732,7 +737,7 @@ export async function loadDetail(id: string) {
   if (!item || item.kind === 'other') return;
   await queryClient.fetchQuery({ ...detailQuery(id), staleTime: 0 }).catch(() => {});
 }
-async function loadRuns(id: string) {
+export async function loadRuns(id: string) {
   await queryClient.fetchQuery({ ...runsQuery(id), staleTime: 0 }).catch(() => {});
 }
 
@@ -880,6 +885,37 @@ export async function boot() {
   }
   if (from) await select(from.id, from.kind);
   else if (!openPortalPath()) changed();
+  listenLive();
+}
+
+// What changed, as it happens (#446): the API's stream names it, and what
+// the page shows of it is read again. A command on the repo of the item
+// open: its runs and commands; one that ended: the snapshot too (a
+// preview up or down). Back from a cut: everything open. Without a
+// database the stream isn't there, and the pages go on polling.
+let live: EventSource | null = null;
+function listenLive() {
+  if (live || typeof EventSource === 'undefined') return;
+  const stream = new EventSource('/api/events');
+  live = stream;
+  let lost = false;
+  const again = () => {
+    if (S.sel) void loadRuns(S.sel);
+    void refresh();
+  };
+  stream.addEventListener('command', (event) => {
+    const command = JSON.parse((event as MessageEvent<string>).data) as { repo?: string; status?: string };
+    if (S.sel && command.repo && S.sel.startsWith(`${command.repo}#`)) void loadRuns(S.sel);
+    if (command.status === 'done' || command.status === 'failed') void refresh();
+  });
+  stream.addEventListener('reconnected', again);
+  stream.addEventListener('ready', () => {
+    if (lost) again();
+    lost = false;
+  });
+  stream.onerror = () => {
+    lost = true;
+  };
 }
 
 export async function logout() {

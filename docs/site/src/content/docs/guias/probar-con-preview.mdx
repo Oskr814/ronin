@@ -11,7 +11,7 @@ Una preview es la app del PR levantada en el runner, con una URL de la tailnet, 
 
 <Tabs syncKey="donde">
   <TabItem label="Desde el tablero" icon="laptop">
-    En la ficha del PR, **Acciones** → **Levantar la preview**. Podés escribir qué datos querés, y el diálogo te muestra el comentario que va a quedar.
+    En la ficha del PR, **Acciones** → **Levantar la preview**. Podés escribir qué datos querés. El pedido va directo a ronin, sin un comentario en GitHub: aparece al momento bajo la actividad del ítem, con quién lo pidió, cómo va y lo que ronin responde (la URL, los usuarios, los datos), y lo ve cualquiera que tenga el ítem abierto. Si alguien ya la pidió y todavía está en curso, el tablero te lo dice en vez de pedirla otra vez. Las actualizaciones por cada commit también quedan ahí, no en el PR.
   </TabItem>
   <TabItem label="Desde GitHub" icon="github">
     ```
@@ -29,7 +29,7 @@ Una preview es la app del PR levantada en el runner, con una URL de la tailnet, 
 
 2. Prepara los datos que pide **Cómo probar** en la descripción del PR (los de ronin lo traen plegado al final de *Cómo se verificó*), más lo que escribiste después del comando. Si el PR no lo trae, los deduce de su diff. Si el cambio está detrás de un feature flag (u otro interruptor por tenant, por usuario o de configuración), lo deja **encendido** para los usuarios de prueba, aunque los pasos empiecen con el flag apagado, y la respuesta dice cómo apagarlo. Si el flag es una variable de entorno, no lo toca: la respuesta dice que hay que encenderlo ahí.
 
-3. Responde en el PR con la URL (solo se abre desde la tailnet), los usuarios de prueba de cada rol, y qué datos quedaron listos y cuáles no pudo preparar.
+3. Responde donde se pidió (en el PR, o bajo la actividad del ítem si fue desde el tablero) con la URL (solo se abre desde la tailnet), los usuarios de prueba de cada rol, y qué datos quedaron listos y cuáles no pudo preparar.
 
 </Steps>
 

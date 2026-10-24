@@ -19,6 +19,7 @@ import { useItem, type Action, type ItemPage } from './model.js';
 import { Questions } from './Questions.js';
 import { useReview, type Review } from './Review.js';
 import { Activity, History, Transcript } from './Runs.js';
+import { Commands } from './Commands.js';
 
 // An item's page (#85): an issue's or a PR's, with its head, its activity
 // and its tabs (the issue, the PR, Archivos; an exploration PR's Fichas,
@@ -286,6 +287,7 @@ export function Item({ id }: { id: string }) {
   return <>
     <Head v={v} actions={menuEl} decide={decide} review={review} explore={(action) => setFasked({ action })} />
     <Activity v={v} />
+    <Commands v={v} />
     <Questions key={id} v={v} />
     {v.item.kind !== 'other' && <Tab v={v} files={files.q} review={review} keys={filesKeys} ask={setFasked} fichaKeys={fichaKeys} />}
     {asked && <ActionDialog key={asked.retry ? `retry:${asked.retry.error}` : 'ask'} v={v} asked={asked} busy={dialogBusy} close={() => setAsked(null)} reopen={(again) => {

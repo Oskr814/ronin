@@ -207,6 +207,26 @@ describe('the shell, in React', () => {
     await waitFor(() => expect(location.pathname).toBe('/acme/tienda/issues/9'));
   });
 
+  it('reads the open item’s commands again when the stream says one changed in its repo (#446)', async () => {
+    const sources: Array<{ url: string; on: Record<string, (e: { data: string }) => void> }> = [];
+    vi.stubGlobal('EventSource', class {
+      on: Record<string, (e: { data: string }) => void> = {};
+      onerror: (() => void) | null = null;
+      constructor(public url: string) { sources.push(this); }
+      addEventListener(type: string, fn: (e: { data: string }) => void) { this.on[type] = fn; }
+      close() {}
+    });
+    await open('/acme/tienda/issues/1');
+    const live = sources.find((s) => s.url === '/api/events')!;
+    expect(live).toBeDefined();
+    const reads = () => vi.mocked(fetch).mock.calls.filter(([input]) => String(input) === '/api/items/acme%2Ftienda%231').length;
+    const before = reads();
+    act(() => live.on.command({ data: JSON.stringify({ type: 'command', repo: 'acme/web', number: 3, status: 'queued' }) }));
+    expect(reads()).toBe(before);
+    act(() => live.on.command({ data: JSON.stringify({ type: 'command', repo: 'acme/tienda', number: 1, status: 'running' }) }));
+    await waitFor(() => expect(reads()).toBe(before + 1));
+  });
+
   it('goes to the login when there is no session', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ error: 'sin sesión' }), { status: 401 })));
     history.replaceState(null, '', '/');

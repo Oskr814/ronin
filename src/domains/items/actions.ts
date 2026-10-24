@@ -8,6 +8,9 @@ import type { ItemDetail, ItemRef } from './detail.js';
 import type { RepoGithub } from './github.js';
 import { assignIssue, closeIssue, commentOnIssue, type Posted } from '@platform/github/github-as-user.js';
 import { DomainError } from '@platform/errors.js';
+import { getDb } from '@platform/db/db.js';
+import { createCommand, type Command } from '../commands/store.js';
+import { launchPreviewWorker } from '../previews/index.js';
 
 // What can be asked of ronin from an item's page (#85). Each action is a
 // command that already exists on GitHub, and the dashboard writes it as
@@ -15,6 +18,11 @@ import { DomainError } from '@platform/errors.js';
 // with their GitHub token. From there it's a comment like any other — its
 // webhook, the mention handler, the worker that answers it — and GitHub
 // shows who asked.
+//
+// Some go straight to ronin instead (#446), when there's a database: they're
+// kept as a command (commands/store.ts) and their worker starts without
+// waiting for GitHub. Nothing is written on the issue or the PR; ronin's
+// answers are on the item's page.
 //
 // An issue ronin doesn't manage yet can be handed to it: assigned to
 // its account, which it takes like any issue assigned on GitHub
@@ -45,7 +53,13 @@ export interface ActionView {
   primary?: boolean;
   // The comment that will be left, shown before it's sent; with text, `…` stands for it.
   preview: string;
+  // Asked straight to ronin, without a comment on GitHub (#446).
+  direct?: boolean;
 }
+
+// The actions that go straight to ronin, with a database to keep them.
+const DIRECT: ReadonlySet<ActionId> = new Set(['preview', 'preview-stop']);
+const isDirect = (id: ActionId) => DIRECT.has(id) && getDb() !== null;
 
 const MAX_TEXT = 4000;
 
@@ -123,7 +137,7 @@ export function listActions(ref: ItemRef, gh: RepoGithub | undefined, detail: It
       text: { required: false, label: 'Por qué (opcional): queda como comentario tuyo antes de cerrarlo', placeholder: 'Por ejemplo: ya no hace falta, lo cubre otro issue' },
     });
   }
-  return actions.map((a) => ({ ...a, preview: actionComment(a, a.text ? '…' : undefined, a.apps ? '{app}' : undefined) }));
+  return actions.map((a) => ({ ...a, preview: actionComment(a, a.text ? '…' : undefined, a.apps ? '{app}' : undefined), ...(isDirect(a.id) ? { direct: true } : {}) }));
 }
 
 // The comment written as the person, which the page also shows before it's
@@ -161,7 +175,7 @@ export async function runAction(
   rawApp?: unknown,
   assign: (token: string, repo: string, number: number, assignees: string[]) => Promise<{ url: string }> = assignIssue,
   close: (token: string, repo: string, number: number) => Promise<{ url: string }> = closeIssue,
-): Promise<{ url: string }> {
+): Promise<{ url?: string; command?: Command; existing?: boolean }> {
   const action = listActions(ref, gh, detail, session.login, apps).find((a) => a.id === id);
   if (!action) throw new ActionError('Esa acción no está disponible para este ítem ahora.');
   let text = typeof rawText === 'string' ? rawText.trim().slice(0, MAX_TEXT) : '';
@@ -171,6 +185,7 @@ export async function runAction(
   if (action.apps && !action.apps.includes(app)) throw new ActionError(`Falta la app: una de ${action.apps.join(', ')}.`);
   if (action.apps && action.id !== 'preview') text = text.replace(/\s+/g, ' ');
 
+  if (action.direct) return askRonin(entry, action, session.login, text, app);
   if (action.id === 'assign') {
     // The context first, so it's on the issue when ronin reads it.
     if (text) await post(session.token, entry.productRepo, action.target, text);
@@ -191,6 +206,24 @@ export async function runAction(
   // pipeline is ronin's, as when someone moves the label by hand.
   if (action.id === 'unblock') await withActiveRepo(entry, () => setIssueState(action.target, 'in-progress'));
   return { url: posted.url };
+}
+
+// A preview (or taking it down) asked straight to ronin: the command, and
+// its worker launched with it to answer there. Asked again while the first
+// waits or runs, the first, with who asked for it.
+async function askRonin(entry: RepoEntry, action: ActionView, login: string, text: string, app: string): Promise<{ command: Command; existing: boolean }> {
+  const db = getDb()!;
+  const stop = action.id === 'preview-stop';
+  const args = stop ? undefined : [app, text].filter(Boolean).join('\n\n') || undefined;
+  const { command, existing } = await createCommand(db, {
+    repo: entry.productRepo, number: action.target, kind: action.id, requestedBy: login,
+    args: { ...(app ? { app } : {}), ...(text ? { text } : {}) },
+    dedupeKey: `preview:${entry.productRepo}#${action.target}`,
+  });
+  if (existing) return { command, existing };
+  launchPreviewWorker({ repo: entry.productRepo, prNumber: action.target, ...(stop ? { action: 'stop' as const } : { action: 'up' as const, ...(args ? { args } : {}) }), command: command.id });
+  log.info(`tablero: ${login} pidió ${action.id} en ${entry.productRepo}#${action.target} (comando ${command.id})`);
+  return { command, existing };
 }
 
 // A comment on the item's issue or PR (its tab's), as the person, from the

@@ -164,7 +164,7 @@ export class RouteTimings {
 // What the dashboard measured itself (#368): from a click to its result on
 // the page, which no request alone says. The API (apps/api/http/timing.ts)
 // sums it up with its routes; without it, nothing is kept.
-export const CLICK_KINDS = ['comentar', 'accion', 'decision', 'review', 'archivos'] as const;
+export const CLICK_KINDS = ['comentar', 'accion', 'decision', 'review', 'archivos', 'pedir'] as const;
 export type ClickKind = (typeof CLICK_KINDS)[number];
 let clickSink: (kind: ClickKind, ms: number) => void = () => {};
 export function onClickTiming(sink: (kind: ClickKind, ms: number) => void): void {

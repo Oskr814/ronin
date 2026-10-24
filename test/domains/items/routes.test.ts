@@ -33,7 +33,7 @@ const call = (path: string, init: RequestInit = {}) => dashboardApp.request(path
 describe("the dashboard's items, in Hono", () => {
   it('finds an item that is only a run, by its id with colons and spaces', async () => {
     const id = 'acme/tienda:update-changelog:v1.2 (notas)';
-    expect(await (await call(`/api/items/${encodeURIComponent(id)}`)).json()).toEqual({ id, runs: [RUN] });
+    expect(await (await call(`/api/items/${encodeURIComponent(id)}`)).json()).toEqual({ id, runs: [RUN], commands: [] });
     expect((await call(`/api/items/${encodeURIComponent('acme/tienda:otra:cosa')}`)).status).toBe(404);
   });
 

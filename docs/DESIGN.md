@@ -1835,6 +1835,17 @@ Una instalación es `compose.yml` con cuatro servicios: `ronin` (la imagen del `
 - **`ronin init`** (`apps/cli/init.ts`) pide lo que le falta al `.env`, genera los secretos, suma repos a `repos.json` y migra la base; se puede volver a correr. **`scripts/backup.sh` y `scripts/restore.sh`** respaldan y restauran la base y `ronin-files`, con 7 diarios y 4 semanales.
 - **Al arrancar,** `docker/entrypoint.sh` configura git y `gh` con el token de ronin, clona los repos que falten y publica el tablero. Recrear el contenedor corta los trabajos que corrían (sin el `KillMode=process` de systemd): quedan `lost` y el tick siguiente concilia.
 
+### 23. Lo que se pide desde ronin no pasa por GitHub (#446)
+
+Lo que se pedía desde el tablero era un comentario en GitHub a nombre de la persona: su webhook, el trabajo que relee los comentarios y encuentra el comando, y la respuesta en otro comentario. Los PRs se llenaban de comentarios y cada pedido daba una vuelta por GitHub (unos 5 s del comentario al trabajo, medido en `/preview`). Ahora lo pedido desde ronin se queda en ronin; GitHub es para leer y para lo que es del código (commits, el PR, la review). Lo que se escribe en GitHub sigue igual, y ronin lo responde ahí.
+
+- **Un pedido es una fila de `commands`** (`domains/commands/store.ts`): el ítem (repo y número), el tipo, los argumentos, quién y cuándo, el estado (`queued` → `running` → `done`/`failed`), las respuestas de ronin (`messages`) y la corrida. La acción del tablero la guarda y lanza su worker con el id (`items/actions.ts`, `askRonin`); el worker responde con `noteCommand` en vez de comentar y la cierra al terminar. Sin `DATABASE_URL`, las acciones siguen comentando en GitHub.
+- **Pedido dos veces:** una clave por PR (`preview:<repo>#<n>`, un índice único parcial sobre los que esperan o corren) le devuelve al segundo el primero, con quién lo pidió.
+- **Las respuestas siguen al pedido:** una preview pedida desde el tablero guarda `origin: 'tablero'` en su estado, y sus actualizaciones por un push quedan en un comando de ronin (`preview-update`) en vez de un comentario en el PR.
+- **En vivo, para todos** (`platform/events/bus.ts`): quien cambia un comando lo avisa con `NOTIFY ronin_events` (la API o un worker del runner), y la API, que hace `LISTEN` con una conexión propia, se lo pasa a cada tablero abierto por `GET /api/events` (SSE), filtrado por los repos que ve la sesión. El evento solo nombra qué cambió; la página relee el ítem abierto (sus corridas y comandos) y, si el comando terminó, el snapshot. Si se corta, al volver relee lo abierto: no hay reenvío de lo perdido.
+- **En el ítem** (`pages/item/Commands.tsx`), bajo la actividad: los pedidos en curso y los últimos del día, con su última respuesta; el pedido aparece al hacer clic, antes de que el servidor conteste.
+- **Por fases:** el preview es el primero. Siguen las fichas (decisiones compartidas, escritas juntas al finalizar), ajustar desde la barra de decisión con el contexto de los dos lados para el agente, y el resto de las acciones; asignar y cerrar siguen en GitHub porque son su estado.
+
 ## Estado actual
 
 - [x] Definir el esqueleto del supervisor (script + estructura de tick) — ver §3.1 y `src/`
