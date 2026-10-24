@@ -102,10 +102,16 @@ async function deliver(n: number, round: number, draft: PrototypeDraft): Promise
     await mkdir(dirname(prototypePatchPath(n, patch)), { recursive: true, mode: 0o700 });
     await writeFile(prototypePatchPath(n, patch), `${draft.patch}\n`, { mode: 0o600 });
   }
+  let script: string | undefined;
+  if (draft.script) {
+    script = `${round}.guion.json`;
+    await mkdir(dirname(prototypePatchPath(n, script)), { recursive: true, mode: 0o700 });
+    await writeFile(prototypePatchPath(n, script), `${draft.script}\n`, { mode: 0o600 });
+  }
   return updateUnlessClosed(n, (r) => {
     const at = new Date();
     const messageId = addRoninMessage(r, proposedReply(draft.mensaje, proposalRounds(r) + 1), at, { images, captions });
-    (r.prototypes ??= []).push({ round, summary: draft.resumen, ...(draft.team ? { team: draft.team } : {}), ...(patch ? { patch } : {}), messageId, at: at.toISOString() });
+    (r.prototypes ??= []).push({ round, summary: draft.resumen, ...(draft.team ? { team: draft.team } : {}), ...(patch ? { patch } : {}), ...(script ? { script } : {}), messageId, at: at.toISOString() });
     r.status = 'proposed';
     delete r.worker;
   });

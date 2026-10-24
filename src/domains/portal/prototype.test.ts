@@ -70,8 +70,17 @@ describe('portal prototype', () => {
     expect(await readFile(requestImagePath(n, 'p1-despues-1.png'), 'utf8')).toBe('despues-1.png');
     expect(r.prototypes).toEqual([expect.objectContaining({ round: 1, summary: 'Envuelve el nombre en un Link.', patch: '1.diff', messageId: shown.id })]);
     expect(await readFile(prototypePatchPath(n, '1.diff'), 'utf8')).toContain('+<Link>');
+    expect(r.prototypes?.[0].script).toBeUndefined();
     expect(sendMail).toHaveBeenCalledOnce();
     expect(sendMail.mock.calls[0]).toMatchObject([{ to: 'mf@x.com', subject: expect.stringMatching(/^Tu prototipo está listo/) }, expect.any(String)]);
+  });
+
+  it('keeps the script its captures came from, next to the diff (#411)', async () => {
+    const n = await minorRequest();
+    makePrototype.mockImplementation(async (_t: PrototypeTarget, deliver: (d: PrototypeDraft) => Promise<unknown>) => deliver({ ...draft, script: '{"capturas": []}' }));
+    await prototypeRequest(n);
+    expect((await getRequest(n))!.prototypes).toEqual([expect.objectContaining({ patch: '1.diff', script: '1.guion.json' })]);
+    expect(await readFile(prototypePatchPath(n, '1.guion.json'), 'utf8')).toBe('{"capturas": []}\n');
   });
 
   it('cancelled while it was being drawn, it is left cancelled and nobody is told', async () => {

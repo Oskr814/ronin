@@ -17,6 +17,23 @@ La app corre desde este checkout con datos de seed desechables, que puedes cambi
 
 Si la corrida te da dónde lo encontraste al leer el pedido (la pantalla, los endpoints, los archivos y sus líneas), arranca desde ahí: lee esos archivos para confirmar y ve directo a la pantalla, sin volver a buscar en todo el repo. Busca solo si algo no está donde dice o falta una pieza.
 
+## Las capturas, con un guion
+
+Las capturas las saca un guion, no el navegador paso a paso: así el antes y el después salen con los mismos pasos y el mismo encuadre, y sin una llamada por clic. La corrida te da dónde escribirlo y el comando que lo corre. Es un JSON:
+
+```json
+{"capturas": [{"n": 1, "navegador": "admin-desktop", "pasos": [
+  {"ir": "/pedidos/2"},
+  {"escribir": "role=textbox[name=\"Buscar\"]", "texto": "Ana"},
+  {"clic": "role=button[name=\"Ver\"]"},
+  {"esperar": "text=Pedido N° 2"},
+  {"ver": "role=table"}]}]}
+```
+
+- Cada captura empieza en un navegador nuevo, ya con su usuario, y termina con la foto de la pantalla tal como quedó: `<navegador>/antes-<n>.png` o `<navegador>/despues-<n>.png`. `"n"` es el número del par.
+- Los pasos: `"ir"` (una ruta de la app), `"clic"`, `"escribir"` (con `"texto"`), `"esperar"` (a que se vea), `"ver"` (desplazarse hasta un elemento, para el encuadre) y `"pausa"` (milisegundos, como mucho 5000). Los selectores son de Playwright: mejor `role=…[name="…"]` o `text=…` que CSS.
+- Si un paso falla, el comando dice cuál y devuelve el árbol de accesibilidad de la página en ese momento: corrige el guion con eso y vuelve a correrlo. Usa el navegador del MCP solo para lo que el guion no te muestra: encontrar cómo llegar a una pantalla que no conoces, o medir el diseño con `browser_snapshot` y `browser_evaluate`.
+
 ## Pasos
 
 1. **Qué pares.** Un par (antes y después) por cada cosa distinta que cambia a la vista; casi siempre basta con uno.
@@ -25,9 +42,9 @@ Si la corrida te da dónde lo encontraste al leer el pedido (la pantalla, los en
    - Nunca la misma pantalla dos veces con otro dato.
    - Que lo que cambia se vea sin buscarlo, con la pantalla alrededor para ubicarlo: si la página es larga, desplázate hasta el cambio antes de la captura, y el antes y el después con el mismo encuadre.
 
-2. **El antes.** Ve a la pantalla (o las pantallas) de lo que te pidieron, en el estado que describe (crea por la app los datos que necesita si el seed no los tiene). Compruébala con `browser_snapshot` y saca la captura con `browser_take_screenshot`, con un nombre de archivo sin ruta («antes-1.png», «antes-2.png»…).
+2. **El antes.** Escribe el guion que llega a la pantalla (o las pantallas) de lo que te pidieron, en el estado que describe (si el seed no tiene los datos que necesita, créalos por la app antes, con el navegador del MCP). Córrelo con `antes`, abre las capturas con Read y comprueba que muestran lo que tienen que mostrar.
 
-3. **El después.** Haz el cambio en borrador en el código de este checkout (el servidor de desarrollo lo recarga), con el diseño y el sistema de diseño que la app ya tiene. Todo lo de la pantalla que la propuesta no cambia tiene que mantener su tamaño, su posición y su alineación: revisa la fila y los contenedores alrededor de lo que cambiaste con `browser_snapshot` y, si hace falta, el tamaño de los elementos con `browser_evaluate`, y arregla lo que el borrador rompió. Después saca las mismas pantallas otra vez («despues-1.png»…), cada una con el mismo número que su antes. Solo si un cambio real no es práctico, escribe en la carpeta de salida de la corrida un archivo HTML/CSS autocontenido, `despues-<n>.html`, que imite la pantalla (sin recursos externos).
+3. **El después.** Haz el cambio en borrador en el código de este checkout (el servidor de desarrollo lo recarga), con el diseño y el sistema de diseño que la app ya tiene. Todo lo de la pantalla que la propuesta no cambia tiene que mantener su tamaño, su posición y su alineación: revisa la fila y los contenedores alrededor de lo que cambiaste con `browser_snapshot` y, si hace falta, el tamaño de los elementos con `browser_evaluate`, y arregla lo que el borrador rompió. Después corre el mismo guion con `despues`: cada captura sale con el mismo número y el mismo encuadre que su antes. Si el borrador cambió algo que el guion usa (un texto, un botón), ajusta solo ese paso, sin tocar el encuadre, y corre `despues` otra vez: el antes ya está. Solo si un cambio real no es práctico, escribe en la carpeta de salida de la corrida un archivo HTML/CSS autocontenido, `despues-<n>.html`, que imite la pantalla (sin recursos externos).
 
 4. **El borrador se queda:** no lo reviertas. Este checkout se tira cuando terminas, y ronin saca el diff de ahí. Como mucho tres antes y tres después. ronin no muestra un par con el antes y el después iguales, ni uno repetido.
 
