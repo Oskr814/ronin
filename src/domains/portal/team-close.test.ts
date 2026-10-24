@@ -7,6 +7,8 @@ import { createRequest, getRequest, updateRequest, updateUnlessClosed, type Port
 vi.mock('@platform/logger.js', () => ({ log: { info: vi.fn(), error: vi.fn() } }));
 const sendMail = vi.fn(async (..._args: unknown[]) => {});
 vi.mock('@platform/notify/notifier.js', () => ({ sendMail: (...args: unknown[]) => sendMail(...args) }));
+const github = { comment: vi.fn(async (..._args: unknown[]) => ({ id: 1, url: 'c' })), close: vi.fn(async (..._args: unknown[]) => ({ url: 'i' })) };
+vi.mock('@platform/github/github-as-user.js', () => ({ commentOnIssue: (...a: unknown[]) => github.comment(...a), closeIssue: (...a: unknown[]) => github.close(...a) }));
 
 const { parseCloseReason, teamClose } = await import('./team-close.js');
 
@@ -20,6 +22,8 @@ async function request(over: Partial<PortalRequest> = {}): Promise<number> {
 beforeEach(async () => {
   await rm(config.portal.dataDir, { recursive: true, force: true });
   sendMail.mockClear();
+  github.comment.mockClear();
+  github.close.mockClear();
 });
 
 describe('the team closes a request from the tablero (#404)', () => {
@@ -51,6 +55,39 @@ describe('the team closes a request from the tablero (#404)', () => {
       await expect(teamClose(n, { reason: 'x', by: 'ana-dev' }), status).rejects.toThrow(/ya no se puede cerrar/);
       expect((await getRequest(n))?.status).toBe(status);
     }
+    expect(sendMail).not.toHaveBeenCalled();
+  });
+
+  it("a big one closes with its issue, as whoever closes it, with the reason", async () => {
+    const n = await request({ status: 'big', issue: { number: 40, url: 'u' } });
+    await expect(teamClose(n, { reason: 'x', by: 'ana-dev' })).rejects.toThrow(/sesión de GitHub/);
+    const closed = await teamClose(n, { reason: 'Lo cubre otro pedido.', by: 'ana-dev', token: 't' });
+    expect(github.comment).toHaveBeenCalledWith('t', 'acme/tienda', 40, expect.stringContaining('> Lo cubre otro pedido.'));
+    expect(github.close).toHaveBeenCalledWith('t', 'acme/tienda', 40);
+    expect(closed).toMatchObject({ status: 'declined', closeNote: { text: 'Lo cubre otro pedido.', by: 'ana-dev' } });
+    expect(closed.messages.at(-1)?.text).toContain('Lo cubre otro pedido.');
+    expect(sendMail).toHaveBeenCalledTimes(1);
+  });
+
+  it("a big one whose issue doesn't close stays open, without the reason", async () => {
+    const n = await request({ status: 'big', issue: { number: 41, url: 'u' } });
+    github.close.mockRejectedValueOnce(new Error('403'));
+    await expect(teamClose(n, { reason: 'No.', by: 'ana-dev', token: 't' })).rejects.toThrow('403');
+    const r = await getRequest(n);
+    expect(r?.status).toBe('big');
+    expect(r?.closeNote).toBeUndefined();
+    expect(sendMail).not.toHaveBeenCalled();
+  });
+
+  it("a big one its issue's webhook declined first isn't declined twice", async () => {
+    const n = await request({ status: 'big', issue: { number: 42, url: 'u' } });
+    github.close.mockImplementationOnce(async () => {
+      await updateRequest(n, (r) => { r.status = 'declined'; });
+      return { url: 'i' };
+    });
+    const closed = await teamClose(n, { reason: 'No.', by: 'ana-dev', token: 't' });
+    expect(closed.status).toBe('declined');
+    expect(closed.events?.filter((e) => e.kind === 'closed') ?? []).toHaveLength(0);
     expect(sendMail).not.toHaveBeenCalled();
   });
 

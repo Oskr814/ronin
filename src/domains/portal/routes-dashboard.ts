@@ -107,7 +107,7 @@ export function requestsRoutes() {
       if (!request) return c.json(missing, 404);
       const refused = refusal(c, c.env.access, request.repo, 'acciones');
       if (refused) return refused;
-      const closed = await teamClose(request.number, { reason: parseCloseReason(c.req.valid('json')), by: c.env.session.login });
+      const closed = await teamClose(request.number, { reason: parseCloseReason(c.req.valid('json')), by: c.env.session.login, token: c.env.session.token });
       return c.json(await detailOf(c.env.access, closed), 200);
     })
     // Making it or not is the repo's actions; deploying it without anyone

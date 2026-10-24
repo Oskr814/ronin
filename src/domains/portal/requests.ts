@@ -94,7 +94,8 @@ export const CANCELLABLE: RequestStatus[] = ['thinking', 'asking', 'answered', '
 
 // When someone of the team can close it from the tablero (#404), with a
 // reason the person gets: while it waits on the person, ronin answered, or
-// ronin reads it. With an issue, it closes from the issue.
+// ronin reads it. With an issue, only a big one, the team's: its issue
+// closes with it (team-close.ts).
 export const TEAM_CLOSABLE: RequestStatus[] = ['thinking', 'asking', 'answered', 'interviewing', 'confirming', 'proposed'];
 
 // When it expires on its own (#404, expire.ts): it waits on the person, or
