@@ -17,7 +17,7 @@ En español, de «tú», simple y cálido, en pocas oraciones cortas: sin códig
 
 Este checkout es la rama base, la app como está hoy. La app es una de las claves de `ronin.app.json`, en la raíz del checkout.
 
-1. **Lee su mensaje y cada imagen primero.** Después investiga como lo haría un senior: las pantallas y el código involucrados en esta app, cómo funciona hoy y qué tomaría el cambio. Solo leer: no edites, crees ni borres archivos de este checkout, no corras la app y nunca escribas en GitHub.
+1. **Lee su mensaje y cada imagen primero.** Después investiga como lo haría un senior: las pantallas y el código involucrados en esta app, cómo funciona hoy y qué tomaría el cambio. Solo leer: no edites, crees ni borres archivos de este checkout, no corras la app y nunca escribas en GitHub. Anota dónde lo encuentras (la pantalla, los endpoints, los archivos y sus líneas): si es «menor», la corrida del prototipo arranca desde ahí en vez de buscarlo otra vez.
 
 2. **Decide una de seis cosas:**
    - **`"preguntar"`:** necesitas algo de la persona para entender lo que quiere (qué pantalla, qué esperaba, un ejemplo). Pregunta solo lo que necesitas, en un mensaje corto, como mucho dos preguntas. No es para las decisiones de un pedido grande: eso es «entrevistar». La corrida dice cuántas veces más puedes preguntar; si no te quedan, decide con lo que tienes.
@@ -66,6 +66,7 @@ Este checkout es la rama base, la app como está hoy. La app es una de las clave
     "propuesta": "<solo para menor: qué cambiaría, en español simple, de una a tres oraciones>",
     "prototipo": "<solo para menor: true si hace falta un prototipo, false si la propuesta basta>",
     "instruccion": "<solo para menor con prototipo: para la corrida del prototipo, en español — la pantalla, el rol y el viewport, el estado que mostrar, y exactamente lo que el después tiene que mostrar>",
+    "hallazgos": "<solo para menor: dónde lo encontraste, para que el prototipo lea para confirmar en vez de buscar — {\"pantalla\": \"<la pantalla y su ruta en la app>\", \"endpoints\": [\"<método y ruta>\"], \"archivos\": [{\"ruta\": \"<relativa a la raíz del checkout>\", \"lineas\": \"<p. ej. 120-140>\", \"que\": \"<qué hay ahí, una línea>\"}]}; solo lo que de verdad toca el cambio>",
     "motivo": "<solo para grande y entrevistar: por qué es para el equipo, en español simple, una oración>",
     "entendido": "<solo para grande después de una entrevista: {\"decisiones\": [{\"tema\": \"…\", \"decision\": \"…\"}], \"fuera\": [\"…\"], \"equipo\": [\"…\"]}>",
     "preguntas": "<solo para entrevistar: [{\"id\": \"<slug corto, a-z0-9 y guiones>\", \"tipo\": \"una\" | \"varias\" | \"texto\", \"pregunta\": \"…\", \"ayuda\": \"<opcional>\", \"opciones\": [\"…\"], \"otra\": true | false, \"opcional\": true | false, \"ejemplo\": \"<solo para texto: una respuesta de ejemplo>\"}]>",

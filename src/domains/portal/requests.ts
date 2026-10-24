@@ -250,7 +250,18 @@ export interface Verdict {
   reason?: string;
   // For the team: the technical summary (areas, files, risks).
   summary: string;
+  // minor: where in the code ronin found it, for the prototype to start
+  // from instead of searching again (#411).
+  findings?: Findings;
   at: string;
+}
+
+// What the read of a request found in the code (#411): the screen, the
+// endpoints and the files (with their lines) the change touches.
+export interface Findings {
+  screen?: string;
+  endpoints?: string[];
+  files?: Array<{ path: string; lines?: string; note?: string }>;
 }
 
 // The test a reproduction wrote: directly on the layer where the error is
