@@ -34,9 +34,9 @@ export function TeamClose({ d }: { d: Detail }) {
       void queryClient.invalidateQueries({ queryKey: ['requests'] });
       shell.toast(`Cerraste P-${d.number}: ${who} recibe el motivo.`);
     } catch (e) {
+      setSending(false);
       if (e instanceof ApiError && e.status === 401) return shell.unauthorized(e.message);
       setError(`No se pudo: ${(e as Error).message}`);
-      setSending(false);
     }
   };
 

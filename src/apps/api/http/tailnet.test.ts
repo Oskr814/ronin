@@ -97,6 +97,22 @@ describe('tailnet listener', () => {
     expect(await me.json()).toEqual({ login: 'oskr814' });
   });
 
+  it('goes back after the login to the dashboard page it started on, never to another site', async () => {
+    const back = async (next: string) => {
+      const login = await fetch(`${base}/api/auth/login?next=${encodeURIComponent(next)}`, { redirect: 'manual' });
+      const state = new URL(login.headers.get('location')!).searchParams.get('state')!;
+      const cookie = login.headers.getSetCookie().map((c) => c.split(';')[0]).join('; ');
+      const callback = await fetch(`${base}/api/auth/callback?code=c1&state=${state}`, { redirect: 'manual', headers: { cookie } });
+      expect(callback.headers.getSetCookie()).toContainEqual(expect.stringMatching(/^ronin_oauth_next=; .*Max-Age=0/));
+      return callback.headers.get('location');
+    };
+    expect(await back('/acme/web/pull/12?tab=files')).toBe('/acme/web/pull/12?tab=files');
+    expect(await back('//evil.example')).toBe('/');
+    expect(await back('/\\evil.example')).toBe('/');
+    expect(await back('https://evil.example')).toBe('/');
+    expect(await back('/api/auth/logout')).toBe('/');
+  });
+
   it('turns away a callback without the state it started with', async () => {
     const res = await fetch(`${base}/api/auth/callback?code=c1&state=otro`, { redirect: 'manual', headers: { cookie: 'ronin_oauth_state=uno' } });
     expect(res.status).toBe(400);
@@ -136,6 +152,24 @@ describe('tailnet listener', () => {
     expect(await res.text()).toContain('"repo"');
     expect(res.headers.getSetCookie().some((c) => c.startsWith('ronin_session=') && !c.startsWith('ronin_session=;'))).toBe(false);
     expect(github.revokeToken).toHaveBeenCalledWith('gho_sin_repo', AUTH);
+  });
+
+  it('revokes the token of the session the browser had when it logs in again, expired or not', async () => {
+    const again = async (cookie: string) => {
+      const login = await fetch(`${base}/api/auth/login`, { redirect: 'manual' });
+      const state = new URL(login.headers.get('location')!).searchParams.get('state')!;
+      const res = await fetch(`${base}/api/auth/callback?code=c1&state=${state}`, { redirect: 'manual', headers: { cookie: `${login.headers.get('set-cookie')!.split(';')[0]}; ${cookie}` } });
+      expect(res.status).toBe(302);
+    };
+    vi.mocked(github.revokeToken).mockClear();
+    await again(session('gho_viejo'));
+    await vi.waitFor(() => expect(github.revokeToken).toHaveBeenCalledWith('gho_viejo', AUTH));
+    vi.mocked(github.revokeToken).mockClear();
+    await again(`ronin_session=${sealSession({ login: 'oskr814', token: 'gho_vencido' }, AUTH.sessionSecret, 7, Date.now() - 8 * 86_400_000)}`);
+    await vi.waitFor(() => expect(github.revokeToken).toHaveBeenCalledWith('gho_vencido', AUTH));
+    vi.mocked(github.revokeToken).mockClear();
+    await again(session('gho_token'));
+    expect(github.revokeToken).not.toHaveBeenCalled();
   });
 
   it('revokes the token on logout, and clears the cookie even if GitHub fails', async () => {

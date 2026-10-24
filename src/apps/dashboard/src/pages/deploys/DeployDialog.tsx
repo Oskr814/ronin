@@ -85,8 +85,8 @@ export function DeployDialog({ repos, repo, pr, onClose }: { repos: Repos; repo:
       shell.toast(`Publicado ${done.tag}: el workflow del repo ya arrancó.${done.pedidos.length ? ` ${done.pedidos.map((n) => `P-${n}`).join(', ')} ${done.pedidos.length === 1 ? 'recibe' : 'reciben'} el aviso cuando termine bien.` : ''}`, done.url || undefined);
       void queryClient.invalidateQueries({ queryKey: ['deploys'] });
     } catch (e) {
-      if (e instanceof ApiError && e.status === 401) return shell.unauthorized(e.message);
       setSending(false);
+      if (e instanceof ApiError && e.status === 401) return shell.unauthorized(e.message);
       setError((e as Error).message);
       // What goes in changed: the new plan, to look at again.
       if (e instanceof ApiError && e.body?.plan) setPlan({ key, plan: e.body.plan as Plan });

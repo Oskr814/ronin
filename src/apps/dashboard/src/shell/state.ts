@@ -66,6 +66,9 @@ export const S = {
   // another tab while something written is on screen.
   login: null as { why: string | null } | null,
   relogin: null as string | null,
+  // Whether the notice's login was opened: only then does an answer that
+  // went well mean the person is back (the reads go as ronin, not as them).
+  reloginOpened: false,
   sel: null as string | null,
   open: [] as string[],
   // The tabs pinned: an item opened from elsewhere doesn't take their place.
@@ -133,8 +136,9 @@ async function sessionEnded(response: Response) {
 export async function api<T = any>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, { ...init, headers: { Accept: 'application/json', ...(init?.body ? { 'Content-Type': 'application/json' } : {}) } });
   if (response.status === 401) throw new Unauthorized(await sessionEnded(response));
-  if (S.relogin) {
+  if (S.relogin && S.reloginOpened) {
     S.relogin = null;
+    S.reloginOpened = false;
     changed();
   }
   if (!response.ok) {
@@ -145,6 +149,9 @@ export async function api<T = any>(path: string, init?: RequestInit): Promise<T>
   }
   return (response.status === 204 ? null : response.json()) as Promise<T>;
 }
+
+// The login, back to where the person is when it's done.
+export const loginHref = () => `/api/auth/login?next=${encodeURIComponent(location.pathname + location.search + location.hash)}`;
 
 // The session ended. With something written on screen (a dialog open, a
 // comment half done) the page stays: a notice on top logs in again in

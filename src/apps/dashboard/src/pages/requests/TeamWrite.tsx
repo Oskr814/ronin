@@ -53,6 +53,7 @@ export function TeamWrite({ d }: { d: Detail }) {
       setImages([]);
       shell.toast(`Le escribiste a ${who}: le llega en el portal y por correo.`);
     } catch (e) {
+      setSending(false);
       if (e instanceof ApiError && e.status === 401) return shell.unauthorized(e.message);
       setError(`No se pudo: ${(e as Error).message}`);
     }

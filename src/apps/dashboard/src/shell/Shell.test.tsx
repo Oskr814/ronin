@@ -164,7 +164,7 @@ describe('the shell, in React', () => {
   });
 
   it("opens an issue's PR as the issue, on the PR's tab", async () => {
-    const { container } = await open('/acme/web/pull/4');
+    const { container } = await open('/acme/web/issues/3');
     await waitFor(() => expect(location.pathname).toBe('/acme/web/issues/3'));
     expect([...container.querySelectorAll('.tab .l')].map((t) => t.textContent)).toEqual(['El total no suma el envío', 'El menú no cierra']);
   });
@@ -216,5 +216,21 @@ describe('the shell, in React', () => {
     await waitFor(() => expect(container.querySelector('#login:not([hidden])')).not.toBeNull());
     expect(container.querySelector('#shell')?.hasAttribute('hidden')).toBe(true);
     expect(container.querySelector('#login-why')?.hasAttribute('hidden')).toBe(true);
+    expect(container.querySelector('#login a')?.getAttribute('href')).toBe('/api/auth/login?next=%2F');
+  });
+
+  it('keeps the notice to log in again over a dialog while reads as ronin go well, until its login is opened', async () => {
+    await open('/acme/web/issues/3');
+    const { api, showLogin, Unauthorized } = await import('./state.js');
+    const scrim = document.body.appendChild(Object.assign(document.createElement('div'), { className: 'scrim' }));
+    act(() => { showLogin(new Unauthorized('Tu sesión de GitHub venció o se revocó. Volvé a entrar.')); });
+    const link = () => document.querySelector<HTMLAnchorElement>('#relogin a');
+    expect(link()?.getAttribute('href')).toBe('/api/auth/login?next=%2Facme%2Fweb%2Fissues%2F3');
+    await act(async () => { await api('/api/snapshot'); });
+    expect(link()).not.toBeNull();
+    fireEvent.click(link()!);
+    await act(async () => { await api('/api/snapshot'); });
+    expect(link()).toBeNull();
+    scrim.remove();
   });
 });

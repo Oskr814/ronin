@@ -73,9 +73,9 @@ export function DevDecide({ d }: { d: Detail }) {
       void queryClient.invalidateQueries({ queryKey: ['requests'] });
       shell.toast(kind === 'decline' ? `Cerraste P-${d.number}: ${who} recibe el motivo.` : kind === 'deploy' ? `Aprobaste P-${d.number}: ronin lo hace, aprueba el PR a tu nombre y lo mergea con el CI en verde.` : `Aprobaste P-${d.number}: ronin lo hace y el PR espera la aprobación de un dev.`);
     } catch (e) {
+      setSending(false);
       if (e instanceof ApiError && e.status === 401) return shell.unauthorized(e.message);
       setError(`No se pudo: ${(e as Error).message}`);
-      setSending(false);
     }
   };
 

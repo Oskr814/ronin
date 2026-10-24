@@ -10,8 +10,8 @@ import { ShellContext, useShellVersion } from './hooks.js';
 import { Sidebar } from './Sidebar.js';
 import { StatusBar } from './StatusBar.js';
 import {
-  boot, changed, closeNewIssue, EXPLORATIONS_KEY, followPath, movePr, queryClient, readExplorations, readSnapshot, S, SNAPSHOT_EVERY_MS, SNAPSHOT_KEY, toggleKeysHelp,
-  XPL_EVERY_MS, XPL_PAGE_EVERY_MS, xplRows,
+  boot, changed, closeNewIssue, EXPLORATIONS_KEY, followPath, loginHref, movePr, queryClient, readExplorations, readSnapshot, S, SNAPSHOT_EVERY_MS, SNAPSHOT_KEY,
+  toggleKeysHelp, XPL_EVERY_MS, XPL_PAGE_EVERY_MS, xplRows,
 } from './state.js';
 
 // The dashboard (#65): the login, or the shell (the sidebar, the page, the
@@ -72,7 +72,7 @@ function Login() {
         <h1>ronin</h1>
         <p>Entrá con tu cuenta de GitHub para ver lo que está haciendo ronin. Lo que pidas desde acá, GitHub lo muestra a tu nombre.</p>
         <p className="bad" id="login-why" hidden={!S.login?.why}>{S.login?.why ?? ''}</p>
-        <a className="btn" href="/api/auth/login">Entrar con GitHub</a>
+        <a className="btn" href={loginHref()}>Entrar con GitHub</a>
       </div>
     </div>
   );

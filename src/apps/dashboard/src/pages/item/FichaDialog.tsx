@@ -73,9 +73,9 @@ export function FichaDialog({ v, asked, close, busy }: { v: ItemView; asked: Fic
       busy.current = false;
       close();
     } catch (e) {
-      if (e instanceof ApiError && e.status === 401) return shell.unauthorized(e.message);
       busy.current = false;
       setSending(false);
+      if (e instanceof ApiError && e.status === 401) return shell.unauthorized(e.message);
       setError(`No se pudo: ${(e as Error).message}`);
     }
   };

@@ -173,6 +173,7 @@ export function Proposals({ d, cites, onDone }: { d: Detail; cites: Cites; onDon
       shell.toast(out.failed ? `Se crearon ${out.created}; ${out.failed} no se pudieron crear: puedes intentarlo de nuevo.` : `Listo: se crearon ${out.created}.`);
       refresh();
     } catch (e) {
+      setApproving(false);
       if (e instanceof ApiError && e.status === 401) return shell.unauthorized(e.message);
       shell.toast(`No se pudo: ${(e as Error).message}`);
     }

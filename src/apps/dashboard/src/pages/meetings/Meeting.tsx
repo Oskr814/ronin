@@ -84,6 +84,7 @@ export function Meeting({ n, run }: { n: number; run?: string | null }) {
       await ok(client.api.meetings[':n'].retry.$post({ param: { n: String(n) } }));
       shell.toast(`Listo: ronin vuelve a leer R-${n}.`);
     } catch (e) {
+      setRetrying(false);
       if (isUnauthorized(e)) return shell.unauthorized(e.message);
       shell.toast(`No se pudo: ${(e as Error).message}`);
     }

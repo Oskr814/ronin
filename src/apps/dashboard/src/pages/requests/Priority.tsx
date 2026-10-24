@@ -31,9 +31,9 @@ export function Priority({ d }: { d: Detail }) {
       void queryClient.invalidateQueries({ queryKey: ['requests'] });
       shell.toast(`P-${d.number} ya no es prioritario: ${who} recibe el motivo.`);
     } catch (e) {
+      setSending(false);
       if (e instanceof ApiError && e.status === 401) return shell.unauthorized(e.message);
       setError(`No se pudo: ${(e as Error).message}`);
-      setSending(false);
     }
   };
 

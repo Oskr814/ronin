@@ -53,8 +53,8 @@ export function AddPerson({ portal: portalData, portalFirst, onClose }: { portal
       setLink(out.sent ? { id: out.user.id, text: `Le mandamos la invitación a ${out.user.email}.` } : { id: out.user.id, text: 'La cuenta quedó, pero el correo no salió. Pásale este enlace por otro medio (vence en 24 horas):', url: out.url });
       shell.openSettings('usuarios', null, null, out.user.id);
     } catch (e) {
-      if (e instanceof ApiError && e.status === 401) return shell.unauthorized(e.message);
       setSending(false);
+      if (e instanceof ApiError && e.status === 401) return shell.unauthorized(e.message);
       setError((e as Error).message);
     }
   };
