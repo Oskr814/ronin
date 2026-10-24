@@ -368,9 +368,15 @@ export function xplOfItem(id: string, rows = xplRows()): ExplorationRow | null {
   const mine = rows.filter((r) => r.pr?.id === id);
   return mine.find((r) => r.repo === S.xpl.repo && r.app === S.xpl.app) ?? mine[0] ?? null;
 }
+// An issue or a PR at the same path as on GitHub: /<owner>/<repo>/issues/<n>
+// or /<owner>/<repo>/pull/<n>. One whose kind isn't known yet goes as an
+// issue, as GitHub does, until its detail says (readDetail).
 export function itemPath(id: string) {
   const xr = xplOfItem(id);
-  return xr ? xplPath(xr.repo, xr.app) : `/i/${encodeURIComponent(id)}`;
+  if (xr) return xplPath(xr.repo, xr.app);
+  const ref = /^([\w.-]+\/[\w.-]+)#(\d+)$/.exec(id);
+  if (!ref) return `/i/${encodeURIComponent(id)}`;
+  return `/${ref[1]}/${itemById(id)?.kind === 'pr' ? 'pull' : 'issues'}/${ref[2]}`;
 }
 
 // The list (the shell's query, which the sidebar counts too), and read again now.
@@ -578,7 +584,9 @@ function issueOfPr(id: string): string | null {
   return host?.id ?? null;
 }
 
-export async function select(id: string) {
+// `kind`: what the path said it is (/issues/ or /pull/), for one the sidebar
+// doesn't have.
+export async function select(id: string, kind: 'issue' | 'pr' = 'issue') {
   // A meeting's run opens the meeting's page, on that run (#62).
   const reu = /:meeting-read:reunión R-(\d+)/.exec(id);
   if (reu) {
@@ -604,7 +612,7 @@ export async function select(id: string) {
     delete S.doc[id];
     id = host;
   }
-  knowItem(id, 'issue');
+  knowItem(id, host ? 'issue' : kind);
   // An exploration PR is its app's page (#155).
   const xr = xplOfItem(id);
   if (xr) Object.assign(S.xpl, { repo: xr.repo, app: xr.app });
@@ -645,7 +653,12 @@ async function readDetail(id: string): Promise<ItemDetail> {
   const extra = S.extra[id] as (Item & { url?: string }) | undefined;
   const ref = (d as { ref?: { kind: 'issue' | 'pr' } }).ref;
   const doc = extra && (ref?.kind === 'pr' ? d.pr : d.issue);
-  if (extra && doc) Object.assign(extra, { kind: ref!.kind, title: doc.title, url: doc.url, status: doc.state === 'OPEN' ? 'open' : 'ok' });
+  if (extra && doc) {
+    Object.assign(extra, { kind: ref!.kind, title: doc.title, url: doc.url, status: doc.state === 'OPEN' ? 'open' : 'ok' });
+    // Opened as an issue and it's a PR, or the other way round: its path.
+    const path = itemPath(id);
+    if (S.sel === id && location.pathname !== path && !path.startsWith('/exploraciones/')) history.replaceState(null, '', `${path}${location.search}`);
+  }
   return d;
 }
 export const detailQuery = (id: string) => ({ queryKey: detailKey(id), queryFn: () => readDetail(id), staleTime: DETAIL_EVERY_MS });
@@ -809,15 +822,19 @@ export function openPortalPath(): boolean {
   return true;
 }
 
-export function selectedFromPath() {
-  const match = /^\/i\/(.+)$/.exec(location.pathname);
-  return match ? decodeURIComponent(match[1]) : null;
+// The item a path opens, and its kind when the path says it. /i/<id> was the
+// path before (/i/owner%2Frepo%23n): links copied then still open.
+export function itemFromPath(): { id: string; kind?: 'issue' | 'pr' } | null {
+  const github = /^\/([\w.-]+\/[\w.-]+)\/(issues|pull)\/(\d+)$/.exec(location.pathname);
+  if (github) return { id: `${github[1]}#${github[3]}`, kind: github[2] === 'pull' ? 'pr' : 'issue' };
+  const old = /^\/i\/(.+)$/.exec(location.pathname);
+  return old ? { id: decodeURIComponent(old[1]) } : null;
 }
 
 // Back and forward.
 export function followPath() {
-  const id = selectedFromPath();
-  if (id) void select(id);
+  const from = itemFromPath();
+  if (from) void select(from.id, from.kind);
   else if (openPortalPath()) return;
   else {
     S.page = null;
@@ -842,13 +859,19 @@ export async function boot() {
   S.login = null;
   // Open from the start: whatever is running right now.
   S.open = S.snap.items.filter((item) => item.status === 'running').map((item) => item.id);
-  const fromPath = selectedFromPath();
+  const from = itemFromPath();
+  const fromPath = from?.id ?? null;
+  // An old /i/… link: the address bar takes the path it has now.
+  if (fromPath && location.pathname.startsWith('/i/')) {
+    const path = itemPath(fromPath);
+    if (!path.startsWith('/i/')) history.replaceState(null, '', `${path}${location.search}`);
+  }
   const ficha = new URLSearchParams(location.search).get('f');
   if (fromPath && ficha) {
     S.ficha[fromPath] = ficha;
     S.fichaOpen[fromPath] = true;
   }
-  if (fromPath) await select(fromPath);
+  if (from) await select(from.id, from.kind);
   else if (!openPortalPath()) changed();
 }
 

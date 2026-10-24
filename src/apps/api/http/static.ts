@@ -51,7 +51,7 @@ export function withVersions(html: string, root: string): string {
 }
 
 // A file under root, or the app's index.html for an app route (a path with
-// no extension: /i/<item>, /contrasena); anything else is a 404, and nothing
+// no extension: /<owner>/<repo>/issues/<n>, /contrasena); anything else is a 404, and nothing
 // outside root is ever served.
 export function serveStatic(path: string, res: ServerResponse, root: string): void {
   let file: string;
