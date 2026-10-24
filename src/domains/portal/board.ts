@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import type { RepoEntry } from '@platform/agents/repo-context.js';
 import type { PortalUser } from './accounts.js';
-import { patchOf, prototypePatchPath, requestImagePath, type PortalMessage, type PortalRequest, type RequestEvent, type Verdict } from './requests.js';
+import { patchOf, prototypePatchPath, requestImagePath, TEAM_HELD, type PortalMessage, type PortalRequest, type RequestEvent, type Verdict } from './requests.js';
 import { patchScope, type PatchScope } from './team-notes.js';
 import type { RunSummary } from '../runs/data.js';
 import { expiry } from './expire.js';
@@ -69,6 +69,14 @@ export function withTeamPr(r: PortalRequest, prIssue: Record<number, number> | u
 }
 
 const appName = (entries: RepoEntry[], r: PortalRequest) => entries.find((e) => e.productRepo === r.repo)?.portal?.apps[r.app]?.name ?? r.app;
+// The team's last word to the person, while the team has it: the last
+// message between them is the team's. Null once the person answers it.
+function teamWrote(r: PortalRequest): { by: string; at: string } | null {
+  if (!TEAM_HELD.includes(r.status)) return null;
+  const last = r.messages.filter((m) => m.from === 'team' || m.to === 'team').at(-1);
+  return last?.from === 'team' ? { by: last.by ?? '', at: last.at } : null;
+}
+
 const lastAt = (r: PortalRequest, runs: RunSummary[]) => [r.updatedAt, ...runs.map((run) => run.endedAt ?? run.startedAt)].sort().at(-1)!;
 
 export interface RequestRow {
@@ -94,6 +102,8 @@ export interface RequestRow {
   bug: boolean;
   // The person answered the team and nobody of the team opened it since (#353).
   personReplied: boolean;
+  // The team wrote to the person last, and who.
+  teamWrote: { by: string; at: string } | null;
   createdAt: string;
   // Its last change or its last run's, whichever is later.
   lastAt: string;
@@ -122,6 +132,7 @@ export function requestRow(r: PortalRequest, user: PortalUser | undefined, entri
     ...(r.verdict ? { verdict: r.verdict.kind } : {}),
     bug: Boolean(r.bug),
     personReplied: Boolean(r.personReplied),
+    teamWrote: teamWrote(r),
     createdAt: r.createdAt,
     lastAt: lastAt(r, own),
   };

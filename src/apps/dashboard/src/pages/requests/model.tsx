@@ -126,9 +126,13 @@ export function Stepper({ p }: { p: Staged }) {
   );
 }
 
-export function StatusChip({ p }: { p: { status: string; pr?: number | null; bug?: unknown } }) {
+// The team wrote to the person last: a state of its own on a big one, the
+// team's; on the others, next to the one they're in.
+export function StatusChip({ p }: { p: { status: string; pr?: number | null; bug?: unknown; teamWrote?: { by: string } | null } }) {
   const [cls, label] = STATUS[p.status] ?? ['idle', p.status];
-  return <span className={`chip ${cls}`}>{p.status === 'approved' && p.pr ? 'Aprobado · en un PR' : p.status === 'fixing' && p.pr ? 'En corrección · en un PR' : p.status === 'awaiting-dev' && p.bug ? 'Decidir el arreglo' : label}</span>;
+  const wrote = p.teamWrote ? <span className="chip idle" title={p.teamWrote.by ? `Le escribió ${p.teamWrote.by}` : undefined}>Respondido por el equipo</span> : null;
+  if (wrote && p.status === 'big') return wrote;
+  return <>{<span className={`chip ${cls}`}>{p.status === 'approved' && p.pr ? 'Aprobado · en un PR' : p.status === 'fixing' && p.pr ? 'En corrección · en un PR' : p.status === 'awaiting-dev' && p.bug ? 'Decidir el arreglo' : label}</span>}{wrote}</>;
 }
 
 export const BugTag = ({ p }: { p: { bug: unknown } }) => (p.bug ? <span className="pd-tag">Reporte de error</span> : null);

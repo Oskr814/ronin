@@ -12,7 +12,7 @@ vi.mock('@platform/github/github.js', () => ({ commentOnIssue: (...args: unknown
 vi.mock('@platform/config/repos.js', () => ({ loadRepos: async () => [{ productRepo: 'acme/tienda', productRepoPath: '/repo' }] }));
 
 const { canReplyToTeam, replyToTeam, seenByTeam, writeToPerson } = await import('./team-conversation.js');
-const { waitsOn } = await import('./board.js');
+const { requestRow, waitsOn } = await import('./board.js');
 
 const PNG = { ext: 'png' as const, data: Buffer.from('x') };
 
@@ -65,6 +65,19 @@ describe('the team and the person write to each other (#353)', () => {
     // Opened from the tablero, or answered: it's seen.
     await seenByTeam(n);
     expect((await getRequest(n))?.personReplied).toBeUndefined();
+  });
+
+  it('the list says the team wrote last, until the person answers', async () => {
+    const n = await teams({ issue: { number: 32, url: 'u' } });
+    const row = async () => requestRow((await getRequest(n))!, undefined, [], []).teamWrote;
+    expect(await row()).toBeNull();
+    await writeToPerson(n, { text: '¿Por sucursal?', images: [], by: 'ana-dev' });
+    expect(await row()).toMatchObject({ by: 'ana-dev', at: expect.any(String) });
+    await replyToTeam(n, 'Sí.', []);
+    expect(await row()).toBeNull();
+    await updateRequest(n, (r) => { r.status = 'resolved'; });
+    await writeToPerson(n, { text: 'x', images: [], by: 'ana-dev' }).catch(() => {});
+    expect(await row()).toBeNull();
   });
 
   it('only while the team has it, and the person only answers once the team wrote', async () => {
