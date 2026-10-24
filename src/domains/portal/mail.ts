@@ -2,7 +2,7 @@ import type { Mail } from '@platform/notify/notifier.js';
 import type { LinkKind, PortalUser } from './accounts.js';
 import type { PortalApp } from './apps.js';
 import { interviewRecord } from './interview.js';
-import type { PortalRequest } from './requests.js';
+import { activePriority, impactLine, type PortalRequest } from './requests.js';
 
 // The portal's emails (#114): plain text, and a simple HTML with inline
 // styles (what email clients render). They go out from GMAIL_USER, the same
@@ -345,10 +345,12 @@ export function decideMail(request: PortalRequest, user: PortalUser | undefined,
   const who = user ? `${user.name} <${user.email}>` : request.userId;
   const repro = request.bug?.reproductions.at(-1);
   const link = dashboardUrl ? `${dashboardUrl}/pedidos/${request.number}` : null;
+  const priority = activePriority(request);
   const text = [
     `El pedido P-${request.number} del portal espera que alguien del equipo decida antes de que ronin lo haga: ${request.title}`,
     `De: ${who}`,
     `App: ${request.repo} · ${request.app}`,
+    priority ? `Lo marcó como PRIORITARIO. ${impactLine(priority)}.\n${priority.reason}\n\nSi no lo es, se le puede quitar la prioridad desde el tablero: le llega el motivo y sigue como un pedido normal.` : null,
     request.bug
       ? `Es un error que reportó: ronin lo reprodujo con un test que falla y un arreglo chico lo pasó a verde.${repro?.summary ? `\n\nCausa:\n${repro.summary}` : ''}`
       : `Aprobó el prototipo${request.verdict?.proposal ? `: ${request.verdict.proposal}` : '.'}`,
@@ -356,7 +358,7 @@ export function decideMail(request: PortalRequest, user: PortalUser | undefined,
     'Se puede:\n- Aprobar y desplegar: ronin hace el cambio, aprueba el PR a nombre de quien decidió y lo mergea con el CI en verde.\n- Aprobar con revisión: ronin hace el cambio y el PR espera que un dev lo apruebe.\n- No hacerlo: el pedido se cierra con el motivo, que le llega a la persona.',
     link ? `Decidir en el tablero: ${link}` : 'Se decide en el tablero, en Pedidos del portal.',
   ].filter(Boolean).join('\n\n');
-  return { to, subject: `[ronin] Pedido P-${request.number} para decidir: ${request.title}`, text };
+  return { to, subject: `[ronin] ${priority ? 'Prioritario · ' : ''}Pedido P-${request.number} para decidir: ${request.title}`, text };
 }
 
 const MAX_PATCH = 30_000;

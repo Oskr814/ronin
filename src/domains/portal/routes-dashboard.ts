@@ -15,7 +15,8 @@ import { listUsers } from './accounts.js';
 import { devDecide, parseDevDecision } from './dev-decision.js';
 import { seenByTeam, writeToPerson } from './team-conversation.js';
 import { parseCloseReason, teamClose } from './team-close.js';
-import { getRequest, listRequests, TEXT_MAX, type PortalRequest } from './requests.js';
+import { removePriority } from './priority.js';
+import { byPriority, getRequest, listRequests, TEXT_MAX, type PortalRequest } from './requests.js';
 import { MAX_IMAGE_BYTES, MAX_IMAGES, parseImages } from './images.js';
 
 // Four images as data URLs, and the text.
@@ -34,6 +35,7 @@ const MAX_MESSAGE_BODY = MAX_IMAGES * Math.ceil((MAX_IMAGE_BYTES * 4) / 3) + 64 
 // POST /api/requests/<n>/decision           { decision: deploy|review|decline, reason? }: a dev decides it (#353)
 // POST /api/requests/<n>/messages           { text, images? }: the team writes to the person (#353)
 // POST /api/requests/<n>/close              { reason }: the team closes it, without an issue (#404)
+// POST /api/requests/<n>/priority/remove    { reason }: the team takes its prioritario away (#430)
 // A request of a repo the session sees, or none: one it doesn't see is one
 // that isn't there.
 async function visibleRequest(access: Access, n: string) {
@@ -66,7 +68,8 @@ export function requestsRoutes() {
       const users = new Map(requests.length ? (await listUsers()).map((u) => [u.id, u]) : []);
       const [entries, runs] = await Promise.all([visibleRepos(access), visibleRuns(access, HISTORY_DAYS)]);
       const prIssue = await prLinks(entries);
-      return c.json({ requests: requests.map((r) => requestRow(withTeamPr(r, prIssue(r.repo)), users.get(r.userId), entries, runs)).sort((a, b) => b.number - a.number) }, 200);
+      // Newest first, the prioritarios still open above (#430).
+      return c.json({ requests: requests.map((r) => requestRow(withTeamPr(r, prIssue(r.repo)), users.get(r.userId), entries, runs)).sort((a, b) => b.number - a.number).sort(byPriority) }, 200);
     })
     .get('/:n', async (c) => {
       const request = await visibleRequest(c.env.access, c.req.param('n'));
@@ -109,6 +112,16 @@ export function requestsRoutes() {
       if (refused) return refused;
       const closed = await teamClose(request.number, { reason: parseCloseReason(c.req.valid('json')), by: c.env.session.login, token: c.env.session.token });
       return c.json(await detailOf(c.env.access, closed), 200);
+    })
+    // As closing it: the repo's actions.
+    .post('/:n/priority/remove', onlyJson, jsonBody(16 * 1024, 'falta el motivo'), anyObject(), async (c) => {
+      const request = await visibleRequest(c.env.access, c.req.param('n'));
+      if (!request) return c.json(missing, 404);
+      const refused = refusal(c, c.env.access, request.repo, 'acciones');
+      if (refused) return refused;
+      const body = c.req.valid('json');
+      const removed = await removePriority(request.number, { reason: typeof body.reason === 'string' ? body.reason : '', by: c.env.session.login });
+      return c.json(await detailOf(c.env.access, removed), 200);
     })
     // Making it or not is the repo's actions; deploying it without anyone
     // else's review, its deploys too.

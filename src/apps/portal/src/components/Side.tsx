@@ -68,8 +68,8 @@ export function Side({ me, requests, current, onNew, onOpen, onOut }: {
       <div className="reqs">
         {list.length
           ? list.map((r) => (
-            <button key={r.number} className="req" aria-current={current === r.number} onClick={() => onOpen(r.number)}>
-              <span className="t">{r.title}</span><span className="pj">{r.appName}</span>
+            <button key={r.number} className={`req${r.prioritized ? ' is-prio' : ''}`} aria-current={current === r.number} onClick={() => onOpen(r.number)}>
+              <span className="t">{r.title}</span><span className="pj">{r.appName}{r.prioritized && <> · <span className="prio-t">Prioritario</span></>}</span>
               <span className="m"><Chip status={r.status} /><span className="p">P-{r.number}</span></span>
             </button>
           ))

@@ -26,7 +26,7 @@ afterEach(() => {
 
 const wrap = (node: ReactNode) => render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>{node}</QueryClientProvider>);
 
-const ME = { name: 'Ana Pérez', email: 'persona@gmail.com', apps: [], today: { used: 0, limit: 3 } };
+const ME = { name: 'Ana Pérez', email: 'persona@gmail.com', apps: [], today: { used: 0, limit: 3, priorityUsed: 0, priorityLimit: 1 } };
 
 describe('the login', () => {
   it('says what the server said on a wrong password, keeps the email, and enters with the right one', async () => {
@@ -145,5 +145,45 @@ describe('a request the team has (#353)', () => {
     await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Enviar al equipo' })));
     expect(await screen.findByText(/al equipo/)).toBeTruthy();
     expect(calls.find((c) => c.path === '/api/portal/requests/5/messages')?.body).toEqual({ text: 'Por sucursal', images: [] });
+  });
+});
+
+describe('approving as prioritario (#430)', () => {
+  const DETAIL = {
+    number: 5, title: 'Filtrar por sucursal', repo: 'acme/tienda', app: 'backoffice', appName: 'Acme · Backoffice', status: 'proposed',
+    cancellable: true, adjustmentsLeft: 2, worded: false, interview: { round: 0, rounds: 2, correctionsLeft: 2 }, priority: null, prioritized: false,
+    createdAt: '2026-10-20T15:00:00Z', updatedAt: '2026-10-20T15:00:00Z',
+    messages: [{ id: 1, from: 'person', text: 'Filtrar por sucursal', at: '2026-10-20T15:00:00Z', images: [] }, { id: 2, from: 'ronin', text: 'Así quedaría', at: '2026-10-20T15:01:00Z', images: [] }],
+  };
+
+  it('asks why it can’t wait, and sends it with the approval', async () => {
+    answers = {
+      'GET /api/portal/requests/5': () => json(DETAIL),
+      'POST /api/portal/requests/5/decision': () => json({ ...DETAIL, status: 'awaiting-dev', prioritized: true }),
+      'GET /api/portal/requests': () => json([]),
+    };
+    wrap(<RequestView n={5} me={ME} onMenu={() => {}} onZoom={() => {}} onMissing={() => {}} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Aprobar' }));
+    expect(screen.getByText('1 de 1 hoy')).toBeTruthy();
+    fireEvent.click(screen.getByRole('checkbox'));
+    fireEvent.click(screen.getByRole('button', { name: 'Aprobar como prioritario' }));
+    expect((await screen.findByRole('alert')).textContent).toMatch(/por qué no puede esperar/);
+    fireEvent.click(screen.getByLabelText(/Afecta a clientes/));
+    fireEvent.change(screen.getByLabelText('Por qué es prioritario'), { target: { value: 'Los clientes no ven su factura' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Aprobar como prioritario' }));
+    await waitFor(() => expect(calls.find((c) => c.path === '/api/portal/requests/5/decision')).toEqual({ path: '/api/portal/requests/5/decision', body: { decision: 'aprobar', text: '', priority: { impact: 'customers', reason: 'Los clientes no ven su factura' } } }));
+    expect(await screen.findByText('Prioritario')).toBeTruthy();
+  });
+
+  it('is off once the day’s are used, and gone when the portal has none', async () => {
+    answers = { 'GET /api/portal/requests/5': () => json(DETAIL), 'GET /api/portal/requests': () => json([]) };
+    const view = wrap(<RequestView n={5} me={{ ...ME, today: { ...ME.today, priorityUsed: 1 } }} onMenu={() => {}} onZoom={() => {}} onMissing={() => {}} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Aprobar' }));
+    expect((screen.getByRole('checkbox') as HTMLInputElement).disabled).toBe(true);
+    expect(screen.getByText(/Mañana puedes marcar otro/)).toBeTruthy();
+    view.unmount();
+    wrap(<RequestView n={5} me={{ ...ME, today: { ...ME.today, priorityLimit: 0 } }} onMenu={() => {}} onZoom={() => {}} onMissing={() => {}} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Aprobar' }));
+    expect(screen.queryByRole('checkbox')).toBeNull();
   });
 });

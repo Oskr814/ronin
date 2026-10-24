@@ -25,6 +25,7 @@ import {
   updateRequest,
   updateUnlessClosed,
   type PortalRequest,
+  type Priority,
 } from './requests.js';
 
 // The prototype of a small change asked in the portal (#114), made on the
@@ -44,6 +45,7 @@ export function proposedReply(mensaje: string | undefined, round: number): strin
 }
 
 export const APPROVED_REPLY = '¡Quedó aprobado! Ahora el equipo de desarrollo revisa tu pedido antes de que haga el cambio. Te aviso por correo cuando esté listo para la próxima actualización.';
+export const APPROVED_PRIORITY_REPLY = '¡Quedó aprobado como prioritario! El equipo de desarrollo lo ve antes que los demás y ya le avisé por correo. Lo revisan antes de que haga el cambio, y te aviso cuando esté listo para la próxima actualización.';
 export const REJECTED_REPLY = 'Entendido. Se lo paso al equipo de desarrollo con tu pedido y lo que conversamos. Te aviso por correo cuando esté resuelto.';
 export const FAILED_PROTOTYPE_REPLY = 'No pude armar el prototipo de este cambio, así que se lo paso al equipo de desarrollo con tu pedido y lo que conversamos. Te aviso por correo cuando esté resuelto.';
 
@@ -172,7 +174,9 @@ export type Decision = 'aprobar' | 'rechazar';
 // What the person decided on the prototype on screen. Either way the worker
 // opens its issue (issue.ts): approved, for ronin to make; turned down, for
 // the team to look at, like a big one.
-export async function decideRequest(n: number, decision: Decision, note = '', launch = launchPortalWorker): Promise<PortalRequest> {
+// Approving it, the person may mark it prioritario (priority.ts): the route
+// already checked their day's limit.
+export async function decideRequest(n: number, decision: Decision, note = '', launch = launchPortalWorker, priority?: Omit<Priority, 'at'>): Promise<PortalRequest> {
   const decided = await updateRequest(n, (r) => {
     if (r.status !== 'proposed') throw new RequestError('Este pedido no espera tu decisión ahora.');
     const at = new Date();
@@ -181,7 +185,11 @@ export async function decideRequest(n: number, decision: Decision, note = '', la
     if (decision === 'aprobar') {
       // A dev decides before ronin makes it (#353, dev-decision.ts).
       r.status = 'awaiting-dev';
-      addRoninMessage(r, APPROVED_REPLY, at);
+      if (priority) {
+        r.priority = { ...priority, at: at.toISOString() };
+        addEvent(r, { kind: 'priority', impact: priority.impact }, at);
+      }
+      addRoninMessage(r, priority ? APPROVED_PRIORITY_REPLY : APPROVED_REPLY, at);
     } else {
       if (note.trim()) addPersonNote(r, note.trim(), at);
       r.verdict = { ...(r.verdict ?? { summary: '' }), kind: 'big', reason: r.verdict?.prototype === false ? 'La persona no aprobó la propuesta.' : 'La persona no aprobó el prototipo.', at: at.toISOString() };
@@ -190,7 +198,7 @@ export async function decideRequest(n: number, decision: Decision, note = '', la
     }
     return r;
   });
-  log.info(`portal: el pedido P-${n} quedó ${decision === 'aprobar' ? 'aprobado' : 'para el equipo (prototipo no aprobado)'}`);
+  log.info(`portal: el pedido P-${n} quedó ${decision === 'aprobar' ? (priority ? 'aprobado como prioritario' : 'aprobado') : 'para el equipo (prototipo no aprobado)'}`);
   if (decided.status === 'big') {
     await handOverMail(decided, await getUser(decided.userId));
     await launch(n);

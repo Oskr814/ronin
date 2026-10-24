@@ -2,6 +2,8 @@ import { readFile } from 'node:fs/promises';
 import { Hono } from 'hono';
 import { createMiddleware } from 'hono/factory';
 import { z } from 'zod';
+import { config as appConfig } from '@platform/config/config.js';
+import { dayIn } from '@platform/config/timezone.js';
 import { log } from '@platform/logger.js';
 import { body, jsonBody, type NodeEnv } from '@platform/http/middleware.js';
 import type { PortalUser } from './accounts.js';
@@ -13,7 +15,8 @@ import { answerInterview, confirmUnderstood, MAX_CORRECTIONS, MAX_ROUNDS, skipIn
 import { launchPortalWorker } from './launch.js';
 import { decideRequest } from './prototype.js';
 import { canReplyToTeam, replyToTeam } from './team-conversation.js';
-import { addPersonMessage, CANCELLABLE, createRequest, getRequest, listRequestsOf, MAX_PROTOTYPES, proposalRounds, requestImagePath, RequestError, startedToday, TEXT_MAX, type PortalRequest } from './requests.js';
+import { parsePriority } from './priority.js';
+import { activePriority, addPersonMessage, byPriority, CANCELLABLE, prioritizedToday, createRequest, getRequest, listRequestsOf, MAX_PROTOTYPES, proposalRounds, requestImagePath, RequestError, startedToday, TEXT_MAX, type PortalRequest } from './requests.js';
 
 // A person's requests in the portal (#114), always behind their session and
 // only their own — routes.ts mounts them under /api/portal/requests:
@@ -21,7 +24,8 @@ import { addPersonMessage, CANCELLABLE, createRequest, getRequest, listRequestsO
 //   POST /                     { repo, app, text, images? }: a new one; ronin starts reading it
 //   GET  /<n>                  one, with its conversation
 //   POST /<n>/messages         { text, images? }: their answer, or an adjustment to the prototype
-//   POST /<n>/decision         { decision: 'aprobar' | 'rechazar', text? }: on the prototype on screen
+//   POST /<n>/decision         { decision: 'aprobar' | 'rechazar', text?, priority? }: on the prototype on screen;
+//                              approving, priority { impact, reason, deadline? } marks it prioritario (#430)
 //   POST /<n>/interview        { answers, note?, images? }: the answers to ronin's questions (#225)
 //   POST /<n>/skip             to the team without answering them, or without confirming the summary
 //   POST /<n>/understood       { ok, text?, images? }: the summary after the interview is right, or what to correct
@@ -54,6 +58,10 @@ function personView(r: PortalRequest, app: PortalApp | undefined) {
     expired: expiredHow(r),
     // Whether they can answer the team now (#353): the team has it and wrote to them.
     replyToTeam: canReplyToTeam(r),
+    // Approved as prioritario (#430): why, and whether the team took it away.
+    priority: r.priority ? { impact: r.priority.impact, ...(r.priority.deadline ? { deadline: r.priority.deadline } : {}), reason: r.priority.reason, removed: Boolean(r.priority.removed) } : null,
+    // It goes first in their list.
+    prioritized: Boolean(activePriority(r)),
     // Adjustments the person may still ask for on the proposal.
     adjustmentsLeft: Math.max(0, MAX_PROTOTYPES - proposalRounds(r)),
     // The proposal on screen is in words only, without a prototype (#409).
@@ -136,7 +144,9 @@ export function requestRoutes(config: PortalConfig, deps: PortalDeps) {
 
     .get('/', async (c) => {
       const apps = c.get('apps');
-      return c.json((await listRequestsOf(c.get('user').id)).map((r) => summaryView(r, appOf(apps, r))), 200);
+      // Newest first, the prioritarios still open above (#430).
+      const list = (await listRequestsOf(c.get('user').id)).map((r) => ({ r, priority: activePriority(r) ?? null, number: r.number })).sort(byPriority);
+      return c.json(list.map(({ r }) => summaryView(r, appOf(apps, r))), 200);
     })
 
     .post('/', jsonBody(MAX_REQUEST_BODY, 'El pedido no llegó bien (¿imágenes muy pesadas?).'), body(messageSchema.extend({ repo: z.unknown().optional(), app: z.unknown().optional() })), async (c) => {
@@ -169,10 +179,17 @@ export function requestRoutes(config: PortalConfig, deps: PortalDeps) {
     .post(`${N}/decision`, jsonBody(64 * 1024, 'Elige si lo apruebas o no.'), body(z.object({
       decision: z.enum(['aprobar', 'rechazar'], { error: 'Elige si lo apruebas o no.' }),
       text: written(MESSAGE_TOO_LONG),
+      priority: z.unknown().optional(),
     })), async (c) => {
       const request = c.get('request');
-      const { decision, text } = c.req.valid('json');
-      return c.json(personView(await decideRequest(request.number, decision, text, launch), appOf(c.get('apps'), request)), 200);
+      const { decision, text, priority: given } = c.req.valid('json');
+      const priority = decision === 'aprobar' ? parsePriority(given, dayIn(new Date(), appConfig.exploreTimezone)) : undefined;
+      if (priority) {
+        const limit = config.priorityDailyLimit;
+        if (limit <= 0) throw new RequestError('Marcar pedidos como prioritarios no está habilitado.');
+        if ((await prioritizedToday(c.get('user').id)) >= limit) return c.json({ error: `Ya marcaste ${limit === 1 ? 'un pedido' : `${limit} pedidos`} como prioritario${limit === 1 ? '' : 's'} hoy. Mañana puedes marcar más.` }, 429);
+      }
+      return c.json(personView(await decideRequest(request.number, decision, text, launch, priority), appOf(c.get('apps'), request)), 200);
     })
 
     .post(`${N}/interview`, jsonBody(MAX_REQUEST_BODY, 'Las respuestas no llegaron bien (¿imágenes muy pesadas?).'), body(z.object({

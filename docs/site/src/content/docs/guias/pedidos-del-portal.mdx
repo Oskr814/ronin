@@ -40,6 +40,15 @@ El portal, `https://ronin-agent.redmotoshn.com`, es para que la gente que usa la
 
 </Steps>
 
+### Pedidos prioritarios
+
+Al aprobar la propuesta, la persona puede marcar **Es prioritario**. Para eso tiene que elegir por qué no puede esperar (*detiene el trabajo*, *afecta a clientes* o *tiene fecha límite*, con la fecha) y escribir qué pasa si no llega a tiempo. Los errores reportados y los pedidos grandes no pasan por *Aprobar*, así que no tienen la opción.
+
+- **Un tope por día.** Cada persona puede marcar como prioritario un pedido por día, o los que diga *Prioritarios por día* en [Ajustes → General](/ronin/operar/ajustes/). Cuentan aunque después el equipo les quite la prioridad, y además gastan la cuota normal de pedidos por día. Con el tope usado, la casilla aparece apagada hasta el día siguiente. Con 0, no aparece.
+- **Va primero.** En la lista de Pedidos del tablero, los prioritarios abiertos van arriba, con la etiqueta **Prioritario** y el motivo, y tienen su propio filtro, *Prioritarios*. Entre ellos, primero la fecha límite más cercana y después el más viejo. En el portal van arriba de *Mis pedidos*. Cuando el pedido se mergea o se cierra, deja de ir primero.
+- **El correo** al equipo sale como *Prioritario · Pedido P-n para decidir*, con el motivo. Les llega a quienes reciben *Pedido para revisar* y también a quienes eligieron *Pedido prioritario* en [Ajustes → Notificaciones](/ronin/operar/ajustes/#tu-cuenta).
+- **Quitar la prioridad.** En la ficha, arriba de *Ahora*, está el motivo de la persona y, con el permiso para las acciones del repo, **Quitar la prioridad**. Se escribe por qué no lo es, y a la persona le llega con esas palabras, firmado por el equipo, en la conversación y por correo. El pedido sigue como uno normal y el prioritario del día no se devuelve.
+
 ### Comparar el antes y el después
 
 Las capturas de un prototipo, o de una reproducción, van en pares: el antes y el después de la misma pantalla. En la ficha se ven chicas, en *Ahora*, en la actividad y en la conversación. Con un clic se abren a pantalla completa, lado a lado y con lo que muestra cada una. También se puede ver solo el antes o solo el después, pasar al par siguiente con ← → y cerrar con Esc. En el portal, la persona las compara igual tocando cualquiera de las dos.
@@ -76,7 +85,7 @@ El tick lo revisa cada 30 minutos, así que el recordatorio y la cancelación pu
 ## Los correos
 
 - **A la persona:** cada respuesta de ronin, las preguntas de la entrevista y su resumen, el prototipo, el paso al equipo, lo que le escriba el equipo, el recordatorio y la cancelación si no responde, el merge, el despliegue y el cierre.
-- **Al equipo del repo:** el pedido que espera su decisión, el issue de un pedido que es suyo, el PR que espera aprobación y las respuestas de la persona al equipo. Le llega a quien eligió esos avisos en [Ajustes → Notificaciones](/ronin/operar/ajustes/#tu-cuenta).
+- **Al equipo del repo:** el pedido que espera su decisión (marcado si es [prioritario](#pedidos-prioritarios)), el issue de un pedido que es suyo, el PR que espera aprobación y las respuestas de la persona al equipo. Le llega a quien eligió esos avisos en [Ajustes → Notificaciones](/ronin/operar/ajustes/#tu-cuenta).
 
 ## Los pedidos en el tablero
 

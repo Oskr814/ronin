@@ -49,7 +49,7 @@ export function General({ d }: { d: Page }) {
   return <>
     <h1>General</h1><p className="lead">El tablero y el portal de pedidos. Un cambio vale al momento, sin reiniciar, y queda en el <SectionLink to="registro">Registro</SectionLink>.</p>
     <Sec title="Tablero"><Fixed label="Dirección" value={d.dashboard.url || '—'} env="DASHBOARD_URL" />{row('dashboard.sessionDays')}{row('dashboard.githubTtlSeconds')}</Sec>
-    <Sec title="Portal de pedidos" lead={<>Las cuentas del portal están en <SectionLink to="usuarios">Usuarios</SectionLink>, con el rol Usuario.</>}><Fixed label="Dirección" value={d.portal.url || '—'} env="PORTAL_URL" />{row('portal.dailyLimit')}{row('portal.sessionDays')}{row('portal.remindHours')}{row('portal.expireHours')}</Sec>
+    <Sec title="Portal de pedidos" lead={<>Las cuentas del portal están en <SectionLink to="usuarios">Usuarios</SectionLink>, con el rol Usuario.</>}><Fixed label="Dirección" value={d.portal.url || '—'} env="PORTAL_URL" />{row('portal.dailyLimit')}{row('portal.priorityDailyLimit')}{row('portal.sessionDays')}{row('portal.remindHours')}{row('portal.expireHours')}</Sec>
     <Sec title="Runner"><Fixed label="Runner" value={d.fixed.runnerId} env="RUNNER_ID" /><Fixed label="Cuenta de GitHub de ronin" value={d.fixed.githubLogin} env="RONIN_GITHUB_LOGIN" /></Sec>
   </>;
 }

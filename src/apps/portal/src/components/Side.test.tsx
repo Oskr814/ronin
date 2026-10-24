@@ -6,7 +6,7 @@ import { Side } from './Side.js';
 
 afterEach(cleanup);
 
-const ME = { name: 'Ana Pérez', email: 'persona@gmail.com', apps: [], today: { used: 0, limit: 3 } };
+const ME = { name: 'Ana Pérez', email: 'persona@gmail.com', apps: [], today: { used: 0, limit: 3, priorityUsed: 0, priorityLimit: 1 } };
 const req = (number: number, status: string) => ({ number, title: `Pedido ${number}`, appName: 'Backoffice', status }) as Summary;
 const REQUESTS = [req(9, 'asking'), req(8, 'proposed'), req(7, 'thinking'), req(6, 'big'), req(5, 'answered'), req(4, 'done'), req(3, 'cancelled'), req(2, 'declined'), req(1, 'some-new-status')];
 

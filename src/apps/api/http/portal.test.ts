@@ -14,7 +14,7 @@ import { createPortalHandler, portalVersion } from './portal.js';
 
 vi.mock('@platform/logger.js', () => ({ log: { info: vi.fn(), error: vi.fn() } }));
 
-const PORTAL = { url: 'https://ronin-agent.example.com', sessionSecret: 'p'.repeat(40), sessionDays: 30, dailyLimit: 2 };
+const PORTAL = { url: 'https://ronin-agent.example.com', sessionSecret: 'p'.repeat(40), sessionDays: 30, dailyLimit: 2, priorityDailyLimit: 1 };
 const entries = [
   { productRepo: 'redmotos/shoppingcart', productRepoPath: '/x', portal: { name: 'Red Motos', apps: { backoffice: { name: 'Backoffice', description: 'Pedidos' }, tienda: { name: 'Tienda' } } } },
   { productRepo: 'Bmedical/bmedical', productRepoPath: '/y' },
@@ -103,7 +103,7 @@ describe('request portal', () => {
     expect(setCookie).toMatch(/^ronin_portal=.+HttpOnly; Secure; SameSite=Lax/);
     const me = await (await fetch(`${base}/api/portal/me`, { headers: { Cookie: cookieOf(res) } })).json();
     // The grant for a repo that's no longer in the portal offers nothing.
-    expect(me).toEqual({ name: 'María Fernández', email: 'mfernandez@redmotoshn.com', apps: [{ repo: 'redmotos/shoppingcart', org: 'Red Motos', app: 'backoffice', name: 'Backoffice', description: 'Pedidos' }], today: { used: 0, limit: 2 } });
+    expect(me).toEqual({ name: 'María Fernández', email: 'mfernandez@redmotoshn.com', apps: [{ repo: 'redmotos/shoppingcart', org: 'Red Motos', app: 'backoffice', name: 'Backoffice', description: 'Pedidos' }], today: { used: 0, limit: 2, priorityUsed: 0, priorityLimit: 1 } });
   });
 
   it('answers the same to a wrong password, an unknown email and an account without a password', async () => {

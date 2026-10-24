@@ -206,6 +206,9 @@ export const config = {
     dataDir: resolve(process.env.PORTAL_DATA_DIR || 'portal-data'),
     // Requests a person can start per day unless the admin set theirs.
     dailyLimit: Number(process.env.PORTAL_DAILY_LIMIT ?? 5),
+    // Of the requests a person approves in a day, how many may go as
+    // prioritario: first in the tablero, with its own email. 0: none.
+    priorityDailyLimit: Number(process.env.PORTAL_PRIORITY_DAILY_LIMIT ?? 1),
     // A request waiting on the person (#404, domains/portal/expire.ts): a
     // reminder this many hours after ronin's last message, and cancelled
     // after these many.

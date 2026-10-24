@@ -136,3 +136,13 @@ export function StatusChip({ p }: { p: { status: string; pr?: number | null; bug
 }
 
 export const BugTag = ({ p }: { p: { bug: unknown } }) => (p.bug ? <span className="pd-tag">Reporte de error</span> : null);
+// A prioritario still open (#430): it goes first.
+export const PriorityTag = ({ p }: { p: { priority: unknown } }) => (p.priority ? <span className="pd-tag prio">Prioritario</span> : null);
+
+// Why it can't wait, as the person chose it; a deadline, with its date.
+const IMPACT: Record<string, string> = { blocks: 'Detiene el trabajo', customers: 'Afecta a clientes', deadline: 'Tiene fecha límite' };
+export function impactLine(p: { impact: string; deadline?: string }): string {
+  if (p.impact !== 'deadline' || !p.deadline) return IMPACT[p.impact] ?? p.impact;
+  const [y, m, d] = p.deadline.split('-');
+  return `${IMPACT.deadline}: ${d}/${m}/${y}`;
+}

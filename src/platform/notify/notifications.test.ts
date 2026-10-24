@@ -30,7 +30,7 @@ describe('recipientsFor', () => {
 
   it('counts a person whose email was on the list as subscribed, until they choose', async () => {
     people({ ana: { email: 'ana@x.com' }, jefa: { email: 'Jefa@x.com' } });
-    expect(defaultEvents('ana@x.com', entry)).toEqual(['pedido-equipo', 'pedido-revisar', 'reunion']);
+    expect(defaultEvents('ana@x.com', entry)).toEqual(['pedido-equipo', 'pedido-revisar', 'pedido-prioritario', 'reunion']);
     expect(defaultEvents('jefa@x.com', entry)).toEqual(['bloqueo']);
     expect(await recipientsFor(SC, entry, 'pedido-equipo')).toBe('ana@x.com, externo@x.com');
   });

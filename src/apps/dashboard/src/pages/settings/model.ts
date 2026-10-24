@@ -142,6 +142,7 @@ export const SETTINGS: Record<string, [string, string, string]> = {
   'dashboard.sessionDays': ['Duración de la sesión', 'Cuánto dura una sesión del tablero antes de volver a entrar con GitHub. Las que ya están abiertas no cambian.', 'días'],
   'dashboard.githubTtlSeconds': ['Datos de GitHub', 'Cuánto se reusa lo que el tablero leyó de GitHub antes de volver a pedirlo.', 's'],
   'portal.dailyLimit': ['Pedidos por día', 'Los que puede empezar cada persona del portal por día, salvo que su cuenta tenga otro tope.', 'pedidos'],
+  'portal.priorityDailyLimit': ['Prioritarios por día', 'Los pedidos que cada persona del portal puede marcar como prioritarios al aprobarlos, por día. 0 apaga la opción.', 'pedidos'],
   'portal.sessionDays': ['Duración de la sesión del portal', 'Las sesiones que ya están abiertas no cambian.', 'días'],
   'portal.remindHours': ['Recordatorio de un pedido en espera', 'Si la persona no responde, le llega un correo a estas horas del último mensaje de ronin. Igual o mayor que el vencimiento: no hay recordatorio.', 'horas'],
   'portal.expireHours': ['Vencimiento de un pedido en espera', 'Sin respuesta, el pedido se cancela solo a estas horas del último mensaje de ronin.', 'horas'],
@@ -174,6 +175,7 @@ export const SETTINGS: Record<string, [string, string, string]> = {
 export const EVENTS = [
   ['pedido-equipo', 'Pedido para el equipo', 'Un pedido o un error del portal que pasa al equipo, con su issue.'],
   ['pedido-revisar', 'Pedido para revisar', 'El PR que ronin abrió para un pedido espera la aprobación de alguien.'],
+  ['pedido-prioritario', 'Pedido prioritario', 'Alguien aprobó un pedido como prioritario y espera que un dev decida. A quien recibe «Pedido para revisar» ya le llega, marcado como prioritario.'],
   ['reunion', 'Propuestas de una reunión', 'ronin terminó de leer unas notas y hay propuestas para aprobar.'],
   ['bloqueo', 'Bloqueos', 'Un issue o PR de ronin necesita a alguien (docs/BLOCKING.md).'],
 ] as const;

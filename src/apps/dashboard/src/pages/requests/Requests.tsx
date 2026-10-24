@@ -6,7 +6,7 @@ import { isMobile } from '@apps/dashboard/src/lib/format.js';
 import { Dot, Skeleton } from '@apps/dashboard/src/lib/runs.js';
 import { useViewState } from '@apps/dashboard/src/lib/view-state.js';
 import { ago, useNow } from '@ui/time.js';
-import { BugTag, CLOSED, EVERY_MS, Mini, repoShort, StatusChip, waitsLabel, type Row } from './model.js';
+import { BugTag, CLOSED, EVERY_MS, impactLine, Mini, PriorityTag, repoShort, StatusChip, waitsLabel, type Row } from './model.js';
 
 // Pedidos del portal (#132): what people ask through the portal and where
 // each request stands, for anyone who sees its repo. The accounts are in
@@ -14,8 +14,8 @@ import { BugTag, CLOSED, EVERY_MS, Mini, repoShort, StatusChip, waitsLabel, type
 
 // Pendientes first and by default (#158): the closed ones, in Cerrados or
 // Todos. Null, a separator between the groups.
-const FILTERS: Array<[Filter, string] | null> = [['pend', 'Pendientes'], null, ['person', 'Esperan a la persona'], ['ronin', 'ronin trabajando'], ['team', 'Esperan al equipo'], null, ['cerrados', 'Cerrados'], ['todos', 'Todos']];
-type Filter = 'pend' | 'person' | 'ronin' | 'team' | 'cerrados' | 'todos';
+const FILTERS: Array<[Filter, string] | null> = [['pend', 'Pendientes'], null, ['prio', 'Prioritarios'], ['person', 'Esperan a la persona'], ['ronin', 'ronin trabajando'], ['team', 'Esperan al equipo'], null, ['cerrados', 'Cerrados'], ['todos', 'Todos']];
+type Filter = 'pend' | 'prio' | 'person' | 'ronin' | 'team' | 'cerrados' | 'todos';
 const PAGE = 25;
 
 // The Pedidos | Usuarios tabs atop the portal's page; Usuarios, only for admins.
@@ -69,6 +69,8 @@ export function Requests() {
   const groups: Record<Filter, Row[]> = {
     pend: list.filter((p) => !CLOSED.includes(p.status)),
     todos: list,
+    // Prioritarios (#430): the server sends them first while open.
+    prio: list.filter((p) => p.priority),
     person: list.filter((p) => p.waitsOn === 'person'),
     ronin: list.filter((p) => p.waitsOn === 'ronin'),
     team: list.filter((p) => p.waitsOn === 'team'),
@@ -91,11 +93,11 @@ export function Requests() {
   };
   return (
     <div className="today pd" ref={scroller}>{head}
-      <div className="pd-filters">{FILTERS.map((f, i) => (f ? <button key={f[0]} aria-pressed={filter === f[0]} onClick={() => pick(f[0])}>{f[1]}<span className="c">{groups[f[0]].length}</span></button> : <span key={i} className="sep" />))}</div>
+      <div className="pd-filters">{FILTERS.map((f, i) => (f ? <button key={f[0]} className={f[0]} aria-pressed={filter === f[0]} onClick={() => pick(f[0])}>{f[1]}<span className="c">{groups[f[0]].length}</span></button> : <span key={i} className="sep" />))}</div>
       {shown.length ? (
         <table className="padm-t pd-t"><thead><tr><th></th><th>Pedido</th><th>Estado</th><th className="hide-m">Espera a</th><th className="hide-m">GitHub</th><th className="hide-m">Último movimiento</th></tr></thead><tbody>{shown.map((p) => (
-          <tr key={p.number} tabIndex={0} onClick={() => shell.openRequest(p.number)} onKeyDown={(event) => { if (event.key === 'Enter') shell.openRequest(p.number); }}><td className="pn">P-{p.number}</td>
-            <td><span className="tt">{p.title}</span><BugTag p={p} /><small>{p.person} · {p.appName}{many ? ` · ${repoShort(p.repo)}` : ''}</small><Mini p={p} /></td>
+          <tr key={p.number} className={p.priority ? 'prio' : undefined} tabIndex={0} onClick={() => shell.openRequest(p.number)} onKeyDown={(event) => { if (event.key === 'Enter') shell.openRequest(p.number); }}><td className="pn">P-{p.number}</td>
+            <td><span className="tt">{p.title}</span><PriorityTag p={p} /><BugTag p={p} /><small>{p.person} · {p.appName}{many ? ` · ${repoShort(p.repo)}` : ''}{p.priority ? ` · ${impactLine(p.priority)}` : ''}</small><Mini p={p} /></td>
             <td><StatusChip p={p} /></td>
             <td className="hide-m">{p.status === 'awaiting-dev' && session.can(p.repo, 'acciones') ? <span className="pd-waits decide">{waitsLabel(p, true)}</span> : <span className="pd-waits">{p.running && <Dot cls="live" />}{waitsLabel(p)}</span>}</td>
             <td className="hide-m pd-gh">{p.issue ? `#${p.issue}` : <span className="m">—</span>}{p.pr ? ` · PR #${p.pr}` : ''}</td>
