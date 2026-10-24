@@ -21,6 +21,17 @@ export const STATUS: Record<string, [string, string]> = {
   big: ['idle', 'Con el equipo'],
 };
 
+// The filters over the person's requests in the side list (#422), like the
+// tablero's: what waits for them first, then what ronin or the team has, then
+// what ended (a question ronin answered, too). Each one with its icon's path.
+export const FILTERS: { id: string; label: string; statuses: string[]; icon: string }[] = [
+  { id: 'yours', label: 'Esperando tu respuesta', statuses: ['asking', 'interviewing', 'confirming', 'proposed'], icon: 'M4 20c1-4 4-6 8-6s7 2 8 6M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8' },
+  { id: 'ronin', label: 'En curso', statuses: ['thinking', 'minor', 'reproducing'], icon: 'M12 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16M12 8v4l3 2' },
+  { id: 'team', label: 'Con el equipo', statuses: ['awaiting-dev', 'big', 'approved', 'fixing'], icon: 'M3 19c.7-3 2.8-4.5 6-4.5s5.3 1.5 6 4.5M9 11.5a3 3 0 1 0 0-6 3 3 0 0 0 0 6M16 6a3 3 0 0 1 0 5.5M18 14.6c1.6.5 2.6 2 3 4.4' },
+  { id: 'done', label: 'Listos', statuses: ['done', 'resolved', 'answered'], icon: 'm5 12.5 4.5 4.5L19 7.5' },
+  { id: 'closed', label: 'Cancelados', statuses: ['cancelled', 'declined'], icon: 'M12 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16M6.5 6.5l11 11' },
+];
+
 // Under a request the person can't write on: why.
 export const CLOSED: Record<string, string> = {
   thinking: 'ronin está revisando tu pedido. Puedes cerrar la página: te avisamos por correo.',
