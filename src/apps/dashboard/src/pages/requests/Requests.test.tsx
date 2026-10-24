@@ -183,8 +183,9 @@ describe('Pedidos, in React', () => {
     expect(screen.getByText('No respondiste «Antes de aprobar»: ronin lo hace como propuso.')).toBeTruthy();
     fireEvent.change(answer, { target: { value: ' No, solo en la pantalla. ' } });
     expect(screen.getByText('Con tus respuestas a «Antes de aprobar»: van en el issue y ronin las sigue.')).toBeTruthy();
+    fireEvent.change(screen.getByRole('textbox', { name: /Nota para el issue/ }), { target: { value: ' Con el mismo gris del encabezado. ' } });
     fireEvent.click(screen.getAllByRole('button', { name: 'Aprobar con revisión' }).at(-1)!);
-    await waitFor(() => expect(decided).toEqual([{ decision: 'review', answers: [{ question: '¿También en el PDF del pedido?', answer: 'No, solo en la pantalla.' }] }]));
+    await waitFor(() => expect(decided).toEqual([{ decision: 'review', answers: [{ question: '¿También en el PDF del pedido?', answer: 'No, solo en la pantalla.' }], note: 'Con el mismo gris del encabezado.' }]));
   });
 
   it('a request waiting on the person says when it expires, and the team closes it with a reason (#404)', async () => {

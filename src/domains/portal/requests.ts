@@ -327,9 +327,10 @@ export interface PortalRequest {
   // When the person approved the prototype or turned it down.
   decision?: { kind: 'approved' | 'rejected'; at: string };
   // What a dev decided while it was 'awaiting-dev' (#353): who and when, the
-  // reason given not doing it, and — deploying it — their GitHub token,
+  // reason given not doing it, what they answered and noted approving it,
+  // and — deploying it — their GitHub token,
   // sealed (dev-decision.ts), until ronin approves the PR as them.
-  devDecision?: { kind: DevDecisionKind; by: string; at: string; reason?: string; answers?: DevAnswer[]; token?: string };
+  devDecision?: { kind: DevDecisionKind; by: string; at: string; reason?: string; answers?: DevAnswer[]; note?: string; token?: string };
   // The issue it became in the product repo (approved: for ronin; big: for
   // the team), and an approved one's PR once ronin opened it.
   issue?: { number: number; url: string };

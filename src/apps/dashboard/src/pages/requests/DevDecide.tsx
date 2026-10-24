@@ -16,8 +16,8 @@ import { firstName, imagePath, type Detail } from './model.js';
 // decisions: deploy it (ronin approves its PR as whoever decides and it
 // merges on green CI), make it with a review of the PR, or not do it, with
 // a reason the person gets. Approving it, the dev may answer each point of
-// «Antes de aprobar» (#413): the answers go in its issue, and ronin follows
-// them.
+// «Antes de aprobar» (#413) and, confirming it, add a note: both go in its
+// issue, and ronin follows them.
 
 type Kind = 'deploy' | 'review' | 'decline';
 
@@ -39,6 +39,7 @@ export function DevDecide({ d }: { d: Detail }) {
   const [open, setOpen] = useState<Kind | null>(null);
   const [reason, setReason] = useState('');
   const [answers, setAnswers] = useState<string[]>([]);
+  const [note, setNote] = useState('');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const who = firstName(d.person);
@@ -67,7 +68,7 @@ export function DevDecide({ d }: { d: Detail }) {
     setSending(true);
     setError(null);
     try {
-      const decided = await ok(client.api.requests[':n'].decision.$post({ param: { n: String(d.number) }, json: { decision: kind, ...(kind === 'decline' ? { reason: reason.trim() } : answered.length ? { answers: answered } : {}) } }));
+      const decided = await ok(client.api.requests[':n'].decision.$post({ param: { n: String(d.number) }, json: { decision: kind, ...(kind === 'decline' ? { reason: reason.trim() } : { ...(answered.length ? { answers: answered } : {}), ...(note.trim() ? { note: note.trim() } : {}) }) } }));
       queryClient.setQueryData(['request', d.number], decided);
       void queryClient.invalidateQueries({ queryKey: ['requests'] });
       shell.toast(kind === 'decline' ? `Cerraste P-${d.number}: ${who} recibe el motivo.` : kind === 'deploy' ? `Aprobaste P-${d.number}: ronin lo hace, aprueba el PR a tu nombre y lo mergea con el CI en verde.` : `Aprobaste P-${d.number}: ronin lo hace y el PR espera la aprobación de un dev.`);
@@ -92,6 +93,8 @@ export function DevDecide({ d }: { d: Detail }) {
         : answered.length ? <>Con tus respuestas a {answered.length} de {asks.length} puntos de «Antes de aprobar»: van en el issue y ronin las sigue. Lo demás lo hace como propuso.</>
           : <>No respondiste «Antes de aprobar»: ronin lo hace como propuso.</>;
     return <div className="pd-dd"><p>{text}</p>{told && <p className="pd-dd-ans">{told}</p>}
+      <label className="field"><span>Nota para el issue (opcional). ronin la sigue al hacerlo.</span>
+        <textarea rows={3} maxLength={2000} autoFocus value={note} disabled={sending} placeholder="Por ejemplo: usa el mismo formato que el total de la factura." onChange={(e) => setNote(e.target.value)} /></label>
       <div className="acts"><button className="btn-s" disabled={sending} onClick={() => setOpen(null)}>Volver</button><button className="btn-s ok-solid" disabled={sending} onClick={() => void send(kind)}>{sending ? SENDING[kind] : kind === 'deploy' ? 'Aprobar y desplegar' : 'Aprobar con revisión'}</button></div></div>;
   };
 
