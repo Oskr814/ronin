@@ -1,4 +1,5 @@
 import { config } from '@platform/config/config.js';
+import { listDecisions, type FindingDecision } from '../explorations/decisions.js';
 import { accountName, listUsage } from '@platform/claude/claude-usage.js';
 import { apiBudgetsToWarn } from '@platform/claude/api-fallback.js';
 import { itemKindOf } from '@platform/github/github.js';
@@ -216,7 +217,11 @@ export async function explorationContext(access: Access, id: string) {
   return { entry, pr, review: await explorationReview(entry, pr, changedSince) };
 }
 
-export async function exploration(access: Access, id: string): Promise<(ExplorationReview & { ronin: string }) | null> {
+// With the team's decisions kept in ronin (#446), when there's a database:
+// `decisiones` is there (maybe empty) only then, and the page decides there.
+export async function exploration(access: Access, id: string): Promise<(ExplorationReview & { ronin: string; decisiones?: FindingDecision[] }) | null> {
   const ctx = await explorationContext(access, id);
-  return ctx && { ronin: config.githubLogin, ...ctx.review };
+  if (!ctx) return null;
+  const db = getDb();
+  return { ronin: config.githubLogin, ...ctx.review, ...(db ? { decisiones: await listDecisions(db, ctx.entry.productRepo, ctx.pr.number) } : {}) };
 }

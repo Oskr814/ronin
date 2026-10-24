@@ -1,5 +1,5 @@
-import type { ReactNode } from 'react';
-import { useProjectColor, useRepoColor, useShell, useSnapshot } from '@apps/dashboard/src/shell/hooks.js';
+import { useEffect, useState, type ReactNode } from 'react';
+import { useProjectColor, useRepoColor, useSession, useShell, useSnapshot } from '@apps/dashboard/src/shell/hooks.js';
 import { XplHead } from '../explorations/model.js';
 import { DecideBar, DecidedNote, type Decide } from './Decide.js';
 import { checksChip, Chips, GhPill, itemRef, runNames, type ItemPage } from './model.js';
@@ -25,6 +25,27 @@ export function ReviewButton({ v, review, at, button }: { v: ItemPage; review: R
   return <div className="actions rwrap">{button}{review.p?.at === at && <ReviewPanel v={v} review={review} />}</div>;
 }
 
+// On a phone, an exploration PR's head keeps Acciones and Finalizar; the
+// rest goes under ⋯ (#446).
+function HeadMore({ url, general, repo, app }: { url: string | null; general: () => void; repo: string; app: string }) {
+  const shell = useShell();
+  const session = useSession();
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    const close = () => setOpen(false);
+    document.addEventListener('click', close);
+    return () => document.removeEventListener('click', close);
+  }, [open]);
+  return (
+    <span className="actions only-m"><button className="gh" id="hmore" aria-haspopup="menu" aria-expanded={open} aria-label="Más" onClick={(e) => { e.stopPropagation(); setOpen(!open); }}>⋯</button>
+      {open && <div className="menu" role="menu">
+        <button role="menuitem" onClick={general}><b>Comentario general</b><small>Sobre varias fichas a la vez.</small></button>
+        {session.can(repo, 'acciones') && <button role="menuitem" onClick={() => shell.exploreNow(repo, app)}><b>Explorar ahora</b><small>Otra corrida de exploración de {app}.</small></button>}
+        {url && <a role="menuitem" className="menu-link" href={url} target="_blank" rel="noopener"><b>Abrir el PR en GitHub ↗</b></a>}</div>}</span>
+  );
+}
+
 const STATE_CHIP: Record<string, [string, string]> = { running: ['run', 'trabajando'], blocked: ['crit', 'bloqueado'], waiting: ['warn', 'esperando a alguien'] };
 
 export function Head({ v, actions, decide, review, explore }: { v: ItemPage; actions: ReactNode; decide: Decide; review: Review; explore: (action: 'general' | 'approve') => void }) {
@@ -36,11 +57,11 @@ export function Head({ v, actions, decide, review, explore }: { v: ItemPage; act
   const spec = item.kind === 'pr' ? snap.items.find((i) => i.repo === item.repo && i.slices?.some((s) => s.prNumber === item.number)) : undefined;
   const slice = spec?.slices?.find((s) => s.prNumber === item.number);
   const d = v.detail?.data;
-  const general = d?.exploration && <button className="gh" onClick={() => explore('general')}>Comentario general</button>;
+  const general = d?.exploration && <button className="gh hide-m" onClick={() => explore('general')}>Comentario general</button>;
   const finish = d?.exploration && <button className="act-btn" title="Termina la revisión: aprueba las fichas que quedan y mergea el PR" onClick={() => explore('approve')}>Finalizar…</button>;
   if (v.exploration) {
     const url = item.url?.startsWith('https://github.com/') ? item.url : /^[\w.-]+\/[\w.-]+$/.test(item.repo) && item.number !== undefined ? `https://github.com/${item.repo}/${item.kind === 'pr' ? 'pull' : 'issues'}/${item.number}` : null;
-    return <XplHead r={v.exploration} pill={<GhPill item={item} d={d} />} buttons={<>{url && <a className="gh" href={url} target="_blank" rel="noopener">PR #{item.number} ↗</a>}{general}{actions}{finish}</>} />;
+    return <XplHead r={v.exploration} compact pill={<GhPill item={item} d={d} />} buttons={<>{url && <a className="gh hide-m" href={url} target="_blank" rel="noopener">PR #{item.number} ↗</a>}{general}{actions}{finish}{d?.exploration && <HeadMore url={url} general={() => explore('general')} repo={item.repo} app={v.exploration.app} />}</>} />;
   }
   const pr = item.pr;
   const prDoc = d?.pr;

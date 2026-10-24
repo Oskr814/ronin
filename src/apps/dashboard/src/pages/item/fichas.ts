@@ -1,14 +1,17 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, type QueryClient } from '@tanstack/react-query';
 import { ApiError, client, ok, type Exploration } from '@apps/dashboard/src/api.js';
 import { useShell } from '@apps/dashboard/src/shell/hooks.js';
 import { itemParam } from './model.js';
 
 // An exploration PR's findings (#93), as its Fichas tab reviews them: read
-// into their parts, with their threads. Deciding on one is a comment on its
-// file, written as whoever is logged in, and ronin applies it as it does
-// any other.
+// into their parts, with their threads. Approving or rejecting one is kept
+// in ronin, shared at once with everyone reviewing it, and written into the
+// PR when the review is finished (#446); without a database, rejecting is a
+// comment on its file and approving is this browser's mark. The rest
+// (changes, an issue, a question) is a comment ronin applies as any other.
 
 export type FindingCard = Exploration['fichas'][number];
+export type FindingDecision = NonNullable<Exploration['decisiones']>[number];
 export type FindingImage = FindingCard['antes'][number];
 export type FichaStatus = 'decidir' | 'esperando' | 'respondida' | 'lista' | 'aprobada' | 'rechazada';
 
@@ -36,13 +39,13 @@ export function useExploration(id: string, enabled: boolean) {
         throw e;
       }
     },
-    refetchInterval: (q) => (q.state.data?.fichas.some((f) => fichaStatus(f, q.state.data!.ronin, id) === 'esperando') ? WAITING_EVERY_MS : DETAIL_EVERY_MS),
+    refetchInterval: (q) => (q.state.data?.fichas.some((f) => fichaStatus(f, q.state.data!, id) === 'esperando') ? WAITING_EVERY_MS : DETAIL_EVERY_MS),
   });
 }
 
-// "Aprobar" on a finding leaves nothing on GitHub yet: it's this browser's
-// mark of what was looked at and stays, so the review's progress shows. The
-// finding is approved for real when the PR is (approveAndMerge).
+// Without a database, "Aprobar" on a finding is this browser's mark of what
+// was looked at, so the review's progress shows. The finding is approved
+// for real when the PR is (approveAndMerge).
 const listasKey = (id: string) => `ronin-listas:${id}`;
 // Without storage, they last while the page is open.
 const unstored = new Map<string, Set<string>>();
@@ -61,13 +64,20 @@ export function setLista(id: string, key: string, on: boolean) {
   try { localStorage.setItem(listasKey(id), JSON.stringify([...set])); } catch { /* sin storage */ }
 }
 
-// Where a finding stands: decided in its file, or by its thread — ronin
-// answers a first comment, or a reply that mentions it. Once ronin answered
-// (applied the changes asked for), it can be marked to approve again.
-export function fichaStatus(f: FindingCard, ronin: string, id?: string): FichaStatus {
+// The team's decision on it, kept in ronin and not yet written into the PR.
+export const decisionOf = (data: Pick<Exploration, 'decisiones'>, f: FindingCard): FindingDecision | undefined => data.decisiones?.find((d) => d.ficha === fichaKey(f) && !d.applied);
+
+// Where a finding stands: decided in its file or by the team in ronin, or by
+// its thread — ronin answers a first comment, or a reply that mentions it.
+// Once ronin answered (applied the changes asked for), it can be marked to
+// approve again.
+export function fichaStatus(f: FindingCard, data: Pick<Exploration, 'ronin' | 'decisiones'>, id?: string): FichaStatus {
+  const { ronin } = data;
   if (f.estado === 'rechazado') return 'rechazada';
   if (f.estado === 'aprobado') return 'aprobada';
-  const marked = Boolean(id) && listas(id!).has(fichaKey(f));
+  const decided = decisionOf(data, f);
+  if (decided?.decision === 'rechazar') return 'rechazada';
+  const marked = data.decisiones ? decided?.decision === 'aprobar' : Boolean(id) && listas(id!).has(fichaKey(f));
   const last = f.comments[f.comments.length - 1];
   if (!last) return marked ? 'lista' : 'decidir';
   if (last.author !== ronin && (!last.replyTo || RONIN_MENTION.test(last.body))) return 'esperando';
@@ -81,10 +91,29 @@ export interface FichaFilter {
 
 export function visibleFichas(data: Exploration, id: string, filter: FichaFilter): FindingCard[] {
   const shown = data.fichas.filter((f) => (filter.tipo === 'todas' || f.tipo === filter.tipo) && (filter.vp === 'todos' || f.viewport === filter.vp));
-  return FICHA_GROUPS.flatMap(([k]) => shown.filter((f) => fichaStatus(f, data.ronin, id) === k));
+  return FICHA_GROUPS.flatMap(([k]) => shown.filter((f) => fichaStatus(f, data, id) === k));
 }
 
-export const waitingCount = (data: Exploration | undefined, id: string) => (data ? data.fichas.filter((f) => fichaStatus(f, data.ronin, id) === 'esperando').length : 0);
+export const waitingCount = (data: Exploration | undefined, id: string) => (data ? data.fichas.filter((f) => fichaStatus(f, data, id) === 'esperando').length : 0);
+
+// Approving or rejecting a finding in ronin (#446), or taking it back
+// (null): on the page at once, as decided by the person, and the server's
+// list after. If it doesn't go, the page goes back to what it had.
+export async function postDecision(queryClient: QueryClient, id: string, ficha: string, decision: 'aprobar' | 'rechazar' | null, by: string, text?: string): Promise<void> {
+  const key = ['exploration', id];
+  // A read already on its way would bring back what was there before.
+  await queryClient.cancelQueries({ queryKey: key });
+  const before = queryClient.getQueryData<Exploration>(key);
+  const others = (before?.decisiones ?? []).filter((d) => d.ficha !== ficha);
+  if (before) queryClient.setQueryData<Exploration>(key, { ...before, decisiones: decision ? [...others, { ficha, decision, reason: text ?? null, by, at: new Date().toISOString(), applied: false }] : others });
+  try {
+    const done = (await ok(client.api.items[':id'].exploration.decision.$post({ param: itemParam(id), json: { ficha, decision, ...(text ? { text } : {}) } }))) as { decisiones: FindingDecision[] };
+    queryClient.setQueryData<Exploration>(key, (now) => now && { ...now, decisiones: done.decisiones });
+  } catch (error) {
+    if (before) queryClient.setQueryData<Exploration>(key, (now) => now && { ...now, decisiones: before.decisiones });
+    throw error;
+  }
+}
 
 // What a finding's dialog does: on the finding (a comment on its file), or
 // on the whole PR.

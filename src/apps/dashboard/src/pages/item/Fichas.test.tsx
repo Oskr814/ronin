@@ -129,11 +129,11 @@ describe('an exploration PR’s Fichas', () => {
   it('asks for an issue and a question from Más, and Escape closes the dialog', async () => {
     show();
     await screen.findByText('El buscador no avisa', { selector: '.tl' });
-    fireEvent.click(screen.getByRole('button', { name: 'Más ▾' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Más acciones' }));
     fireEvent.click(screen.getByRole('menuitem', { name: /Preguntarle a ronin/ }));
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(document.getElementById('flayer')).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'Más ▾' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Más acciones' }));
     fireEvent.click(screen.getByRole('menuitem', { name: /Pedir un issue aparte/ }));
     fireEvent.change(document.getElementById('fdlg-text')!, { target: { value: 'Revisar los filtros' } });
     expect(document.getElementById('fdlg-prev')!.textContent?.trim()).toBe('Abrí un issue aparte: Revisar los filtros');
@@ -145,7 +145,7 @@ describe('an exploration PR’s Fichas', () => {
   it('sends a finding to development from Más, with or without context', async () => {
     const { shell } = show();
     await screen.findByText('El buscador no avisa', { selector: '.tl' });
-    fireEvent.click(screen.getByRole('button', { name: 'Más ▾' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Más acciones' }));
     fireEvent.click(screen.getByRole('menuitem', { name: /Desarrollar ya/ }));
     expect(document.getElementById('fdlg-prev')!.textContent?.trim()).toBe('Desarrollar ya.');
     expect((document.getElementById('fdlg-yes') as HTMLButtonElement).disabled).toBe(false);
@@ -190,5 +190,74 @@ describe('an exploration PR’s Fichas', () => {
     fireEvent.keyDown(document.getElementById('fdlg-text')!, { key: 'Enter', ctrlKey: true });
     await waitFor(() => expect(posted).toHaveLength(2));
     expect(posted[1]).toEqual(['/api/items/acme%2Fweb%2312/exploration/approve', {}]);
+  });
+});
+
+// With a database (#446): approving and rejecting are kept in ronin, shared
+// with whoever reviews the PR, and written into it when it's finished.
+describe('an exploration PR’s Fichas, decided in ronin', () => {
+  const URL_DECISION = '/api/items/acme%2Fweb%2312/exploration/decision';
+  let decisiones: Array<Record<string, unknown>> = [];
+  beforeEach(() => {
+    decisiones = [];
+    const answer = vi.mocked(globalThis.fetch).getMockImplementation()!;
+    vi.mocked(globalThis.fetch).mockImplementation(async (input, init) => {
+      const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      if (init?.method === 'POST' && String(input) === URL_DECISION) {
+        const body = JSON.parse(String(init.body)) as { ficha: string; decision: string | null; text?: string };
+        posted.push([String(input), body]);
+        decisiones = decisiones.filter((d) => d.ficha !== body.ficha);
+        if (body.decision) decisiones.push({ ficha: body.ficha, decision: body.decision, reason: body.text ?? null, by: 'ana-dev', at: iso(0), applied: false });
+        return json({ decisiones });
+      }
+      if ((!init?.method || init.method === 'GET') && !String(input).endsWith('/detail') && String(input) !== '/api/snapshot') {
+        asked.push(String(input));
+        return json({ ronin: 'ronin-bot', fetchedAt: iso(1), branch: 'exploracion/backoffice', base: 'main', fichas, runs: [], decisiones });
+      }
+      return answer(input, init);
+    });
+  });
+
+  it('marks one to approve for everyone with a, and takes it back', async () => {
+    const { container } = show();
+    await screen.findByText('El buscador no avisa', { selector: '.tl' });
+    fireEvent.keyDown(document, { key: 'a' });
+    await waitFor(() => expect(posted).toContainEqual([URL_DECISION, { ficha: 'backoffice/F-0001', decision: 'aprobar' }]));
+    expect(localStorage.getItem('ronin-listas:acme/web#12')).toBeNull();
+    expect([...container.querySelectorAll('.fgrp span:first-child')].map((s) => s.textContent)).toContain('Listas para aprobar');
+    fireEvent.click(screen.getByText('El buscador no avisa', { selector: '.tl' }));
+    await waitFor(() => expect(container.querySelector('.banner.ok')?.textContent).toContain('Para aprobar por ana-dev'));
+    fireEvent.keyDown(document, { key: 'a' });
+    await waitFor(() => expect(posted).toContainEqual([URL_DECISION, { ficha: 'backoffice/F-0001', decision: null }]));
+  });
+
+  it('rejects one in ronin, without a comment, and undoes it', async () => {
+    const { container, shell } = show();
+    await screen.findByText('El buscador no avisa', { selector: '.tl' });
+    fireEvent.keyDown(document, { key: 'r' });
+    expect(document.getElementById('fdlg-said')!.textContent).toContain('Queda rechazada en ronin');
+    fireEvent.click(screen.getByRole('button', { name: 'Ya está cubierto' }));
+    fireEvent.click(document.getElementById('fdlg-yes')!);
+    await waitFor(() => expect(document.getElementById('flayer')).toBeNull());
+    expect(posted).toEqual([[URL_DECISION, { ficha: 'backoffice/F-0001', decision: 'rechazar', text: 'Ya está cubierto' }]]);
+    expect(shell.toast).toHaveBeenCalledWith('Rechazaste F-0001. Se escribe en el PR al finalizar la revisión.');
+    // It went to the rejected ones: the next one to decide is shown.
+    await waitFor(() => expect(current()).toBe('backoffice/F-0003'));
+    fireEvent.click(screen.getByText('El buscador no avisa', { selector: '.tl' }));
+    await waitFor(() => expect(container.querySelector('.banner.crit')?.textContent).toContain('Ya está cubierto'));
+    fireEvent.click(container.querySelector('[data-fundo]')!);
+    await waitFor(() => expect(posted).toContainEqual([URL_DECISION, { ficha: 'backoffice/F-0001', decision: null }]));
+    await waitFor(() => expect(container.querySelector('.banner.crit')).toBeNull());
+  });
+
+  it('shows what someone else decided, and hands this browser’s old marks to ronin once', async () => {
+    decisiones = [{ ficha: 'backoffice/F-0003', decision: 'rechazar', reason: 'No aplica', by: 'beto-dev', at: iso(5), applied: false }];
+    localStorage.setItem('ronin-listas:acme/web#12', JSON.stringify(['backoffice/F-0001']));
+    const { container } = show();
+    await screen.findByText('El buscador no avisa', { selector: '.tl' });
+    await waitFor(() => expect(posted).toContainEqual([URL_DECISION, { ficha: 'backoffice/F-0001', decision: 'aprobar' }]));
+    expect(JSON.parse(localStorage.getItem('ronin-listas:acme/web#12')!)).toEqual([]);
+    const rejected = [...container.querySelectorAll('.frow.rej .tl')].map((r) => r.textContent);
+    expect(rejected).toContain('La fecha sale en otro formato');
   });
 });

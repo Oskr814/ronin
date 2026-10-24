@@ -10,7 +10,7 @@ import { HISTORY_DAYS, itemKey } from '../runs/data.js';
 import { runDecision } from './decision.js';
 import { addDetailComment, expireDetails, type ItemRef } from './detail.js';
 import { expireExploration } from '../explorations/review.js';
-import { runApprove, runFindingCardAction, runGeneralComment } from '../explorations/review-actions.js';
+import { runApprove, runFindingCardAction, runFindingDecision, runGeneralComment } from '../explorations/review-actions.js';
 import { expireFiles, expirePersonFiles, fileContent, personFiles } from './files.js';
 import { runFilesAction } from './files-actions.js';
 import { expireGithub, repoGithub, updateGithub } from './github.js';
@@ -239,6 +239,17 @@ export function itemsRoutes() {
       return c.json(done, 200);
     })
 
+    // decision { ficha, decision: aprobar | rechazar | null, text? } on a finding (#446)
+    .post('/:id/exploration/decision', onlyJson, jsonBody(MAX_BODY, 'falta la decisión'), anyObject(), async (c) => {
+      const given = c.req.valid('json');
+      const db = getDb();
+      if (!db) return c.json({ error: 'sin base de datos: las decisiones van como comentarios' }, 404);
+      const ctx = await explorationContext(c.env.access, c.req.param('id'));
+      if (!ctx) return c.json(NO_EXPLORATION, 404);
+      const refused = refusal(c, c.env.access, ctx.entry.productRepo, 'acciones');
+      if (refused) return refused;
+      return c.json(await runFindingDecision(db, ctx.entry, ctx.pr, ctx.review, c.env.session, given), 200);
+    })
     // actions { action, ficha, text, redo? } on a finding, general { text }, approve { text? }
     .post('/:id/exploration/:what{actions|general|approve}', onlyJson, jsonBody(MAX_BODY, 'falta el pedido'), anyObject(), async (c) => {
       const given = c.req.valid('json');

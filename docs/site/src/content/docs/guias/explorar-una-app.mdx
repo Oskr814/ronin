@@ -61,18 +61,22 @@ Para que ronin proponga en vez de cambiar el código, usá `/explore` (o **Accio
 
 En **Fichas**, a la izquierda la lista agrupada (por decidir, esperando a ronin, respondidas, listas para aprobar, aprobadas y rechazadas), con filtros por tipo y viewport. A la derecha la ficha: qué pasa y qué se esperaba, el antes y el después lado a lado, la propuesta, los pasos, la evidencia, el cambio borrador y su conversación. `j`/`k` pasa de ficha, y la abierta queda en la URL para compartirla.
 
-| Botón | Qué queda comentado en la ficha, a tu nombre |
+**Aprobar** y **Rechazar** quedan en ronin, a tu nombre, sin comentar en GitHub: los ve al instante cualquiera que esté revisando el mismo PR, con quién y cuándo, y se pueden deshacer hasta finalizar. Al finalizar se escriben en el PR todas juntas: las rechazadas con su motivo en la memoria, para que no se vuelvan a proponer, y el resto aprobadas.
+
+| Botón | Qué hace |
 |---|---|
-| **Rechazar** (`r`) | `Rechazo esta ficha: <motivo>`. El motivo queda en la memoria y no se vuelve a proponer. |
+| **Aprobar** (`a`) | La marca *Para aprobar* para todos. Se aprueba de verdad al finalizar la revisión. Otra vez `a` la desmarca. |
+| **Rechazar** (`r`) | La deja rechazada para todos, con tu motivo. *Deshacer*, en la ficha, la vuelve a dejar por decidir. |
 | **Pedir cambios** (`c`) | Lo que hay que cambiar. Podés marcar que rehaga la captura del después. |
 | **Más → Desarrollar ya** | `Desarrollar ya.`, o `Desarrollar ya: <contexto>`. ronin abre en ese momento el issue de la ficha, asignado a sí mismo, sin esperar a que apruebes el PR, y te responde con el número. La ficha queda aprobada; al aprobar el PR no se abre otro issue. |
 | **Más → Pedir un issue aparte** | `Abrí un issue aparte: <qué>` |
 | **Más → Preguntar** | Tu texto |
-| **Aprobar** (`a`) | Nada todavía: la marca como *Para aprobar* en tu navegador. Se aprueba de verdad al finalizar la revisión. |
 
-ronin aplica cada comentario como si lo hubieras escrito en GitHub y responde en la conversación de la ficha. Lo que escribís en el cuadro de la ficha aparece en su conversación al instante, con *enviando…*; si GitHub no lo toma, sale de ahí y tu texto vuelve al cuadro.
+Los de **Pedir cambios** y **Más** quedan comentados en la ficha, a tu nombre. ronin aplica cada comentario como si lo hubieras escrito en GitHub y responde en la conversación de la ficha. Lo que escribís en el cuadro de la ficha aparece en su conversación al instante, con *enviando…*; si GitHub no lo toma, sale de ahí y tu texto vuelve al cuadro.
 
 *Desarrollar ya* sirve para lo urgente: el issue sale enseguida, aunque haya una exploración corriendo. En ese caso, la ficha se marca aprobada cuando termina la corrida. En una ficha rechazada, o que ya tiene issue, ronin responde eso y no abre nada.
+
+En el teléfono, la ficha muestra **Aprobar**, **Rechazar** y **⋯** con el resto, sin las teclas; la cabecera deja **Acciones** y **Finalizar…**, y lo demás (el comentario general, *Explorar ahora*, el PR en GitHub) va en su **⋯**.
 
 La ficha dice quién la decidió: *Rechazada por persona* o *Aprobada por persona*, con el usuario de GitHub de quien comentó o aprobó, y *editada por persona* si alguien pidió cambios. Queda también en el archivo de la ficha (`revisor` y `revisado`).
 
@@ -84,7 +88,7 @@ La ficha dice quién la decidió: *Rechazada por persona* o *Aprobada por person
 
 2. **Finalizar…** muestra qué fichas abren su issue y cuáles quedan rechazadas, y te avisa si alguna quedó sin revisar. No deja finalizar mientras ronin está aplicando un comentario.
 
-3. Al finalizar, se manda tu review **Approve** en GitHub; ronin marca las fichas, abre un issue por cada una que quedó en pie, **asignado a sí mismo** (lo empieza solo), y mergea el PR.
+3. Al finalizar, se manda tu review **Approve** en GitHub; ronin escribe las rechazadas en el tablero, marca las demás, abre un issue por cada una que quedó en pie, **asignado a sí mismo** (lo empieza solo), y mergea el PR.
 
 </Steps>
 

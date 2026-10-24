@@ -891,7 +891,7 @@ export async function boot() {
 // What changed, as it happens (#446): the API's stream names it, and what
 // the page shows of it is read again. A command on the repo of the item
 // open: its runs and commands; one that ended: the snapshot too (a
-// preview up or down). Back from a cut: everything open. Without a
+// preview up or down). A finding decided: the exploration PR's findings. Back from a cut: everything open. Without a
 // database the stream isn't there, and the pages go on polling.
 let live: EventSource | null = null;
 function listenLive() {
@@ -901,12 +901,18 @@ function listenLive() {
   let lost = false;
   const again = () => {
     if (S.sel) void loadRuns(S.sel);
+    if (S.sel) void queryClient.invalidateQueries({ queryKey: ['exploration', S.sel] });
     void refresh();
   };
   stream.addEventListener('command', (event) => {
     const command = JSON.parse((event as MessageEvent<string>).data) as { repo?: string; status?: string };
     if (S.sel && command.repo && S.sel.startsWith(`${command.repo}#`)) void loadRuns(S.sel);
     if (command.status === 'done' || command.status === 'failed') void refresh();
+  });
+  // A finding decided by someone (#446): the open exploration PR's findings.
+  stream.addEventListener('ficha', (event) => {
+    const ficha = JSON.parse((event as MessageEvent<string>).data) as { repo?: string; number?: number };
+    if (S.sel && ficha.repo && S.sel === `${ficha.repo}#${ficha.number}`) void queryClient.invalidateQueries({ queryKey: ['exploration', S.sel] });
   });
   stream.addEventListener('reconnected', again);
   stream.addEventListener('ready', () => {
