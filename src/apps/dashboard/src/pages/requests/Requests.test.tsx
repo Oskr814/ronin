@@ -16,6 +16,8 @@ const row = (number: number, status: string, extra: Record<string, unknown> = {}
 });
 // 30 open and 3 closed: two pages of Pendientes.
 const ROWS = [...Array.from({ length: 30 }, (_, i) => row(40 - i, i % 2 ? 'asking' : 'thinking')), row(3, 'done'), row(2, 'declined'), row(1, 'cancelled')];
+// The team wrote last: a big one, and one waiting for a dev.
+const WROTE = [row(51, 'big', { issue: 151, waitsOn: 'team', teamWrote: { by: 'ana-dev', at: at(3) } }), row(50, 'awaiting-dev', { waitsOn: 'team', teamWrote: { by: 'ana-dev', at: at(3) } })];
 const message = (id: number, from: string, text: string, min: number, extra = {}) => ({ id, from, text, images: [], at: at(min), ...extra });
 const DETAIL = {
   ...row(7, 'fixing', { issue: 107, bug: true, waitsOn: 'ronin' }),
@@ -55,7 +57,9 @@ const ASKING = {
 HTMLElement.prototype.scrollTo = () => {};
 
 const asked: string[] = [];
+let rows: unknown[] = ROWS;
 beforeEach(() => {
+  rows = ROWS;
   asked.length = 0;
   decided.length = 0;
   vi.stubGlobal('matchMedia', () => ({ matches: false }));
@@ -63,7 +67,7 @@ beforeEach(() => {
     const path = new URL(String(input), 'http://x').pathname;
     asked.push(path);
     const json = (b: unknown) => new Response(JSON.stringify(b), { status: 200, headers: { 'Content-Type': 'application/json' } });
-    if (path === '/api/requests') return json({ requests: ROWS });
+    if (path === '/api/requests') return json({ requests: rows });
     if (path === '/api/requests/7') return json(DETAIL);
     if (path === '/api/requests/7/reproduction/1') return json({ patch: PATCH });
     if (path === '/api/runs/r1') return json({ summary: DETAIL.runs[0], lines: [{ type: 'text', text: 'Reproduzco el error.' }] });
@@ -122,6 +126,15 @@ describe('Pedidos, in React', () => {
     expect(shell.openRequest).toHaveBeenCalledWith(39);
     fireEvent.click(screen.getByRole('tab', { name: 'Usuarios ↗' }));
     expect(shell.openPortalAccounts).toHaveBeenCalled();
+  });
+
+  it('a request the team wrote to last says so in its state', async () => {
+    rows = WROTE;
+    const { container } = show(<Requests />);
+    fireEvent.click(await screen.findByRole('button', { name: /^Pendientes/ }));
+    await waitFor(() => expect(container.querySelector('.pd-t')).not.toBeNull());
+    const states = [...container.querySelectorAll('.pd-t tbody tr')].map((tr) => tr.children[2].textContent);
+    expect(states).toEqual(['Respondido por el equipo', 'Decidir si se haceRespondido por el equipo']);
   });
 
   it('shows a request on its tabs: activity, reproduction with its diff, issue and runs', async () => {
