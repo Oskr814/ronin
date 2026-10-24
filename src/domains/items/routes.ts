@@ -15,6 +15,8 @@ import { expireFiles, expirePersonFiles, fileContent, personFiles } from './file
 import { runFilesAction } from './files-actions.js';
 import { expireGithub, repoGithub, updateGithub } from './github.js';
 import { itemRunKeys } from './list.js';
+import { getDb } from '@platform/db/db.js';
+import { listCommands } from '../commands/store.js';
 import { repoLinear } from './linear.js';
 import { createFromDashboard, parseNewIssue, repoApps } from './new-issue.js';
 import { touchSeen } from '../access/team.js';
@@ -106,7 +108,11 @@ export function itemsRoutes() {
       const entry = (await visibleRepos(c.env.access)).find((repo) => id.startsWith(`${repo.productRepo}#`));
       if (!entry && !runs.some((run) => itemKey(run) === id)) return c.json({ error: 'no existe ese ítem' }, 404);
       const keys = itemRunKeys(id, entry ? await repoGithub(entry) : undefined);
-      return c.json({ id, runs: runs.filter((run) => keys.includes(itemKey(run))) }, 200);
+      // What was asked of ronin from the tablero (#446) on its issue and its PR.
+      const db = getDb();
+      const numbers = entry ? keys.flatMap((key) => key.startsWith(`${entry.productRepo}#`) ? [Number(key.slice(entry.productRepo.length + 1))] : []).filter(Number.isInteger) : [];
+      const commands = db && entry ? await listCommands(db, entry.productRepo, numbers) : [];
+      return c.json({ id, runs: runs.filter((run) => keys.includes(itemKey(run))), commands }, 200);
     })
     .get('/:id/detail', async (c) => {
       const found = await detail(c.env.access, c.req.param('id'), c.env.session.login);

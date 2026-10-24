@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState, type MutableRefObject } from 'react';
 import { createPortal } from 'react-dom';
-import { ApiError, client, ok } from '@apps/dashboard/src/api.js';
+import { ApiError, client, ok, type ItemCommand } from '@apps/dashboard/src/api.js';
 import { type ItemView, reread, showDoc, useMarkdown, useSession, useShell } from '@apps/dashboard/src/shell/hooks.js';
 import { itemParam, type Action } from './model.js';
 import { clickTimer } from '@apps/dashboard/src/lib/click-timing.js';
 import { addPending, dropPending, sentPending } from '@apps/dashboard/src/shell/pending.js';
+import { commandsKey, loadRuns, queryClient } from '@apps/dashboard/src/shell/state.js';
+import { commandName } from './Commands.js';
 
 // The item's actions (#85): each one a command that exists on GitHub,
 // commented as whoever is logged in (#93), the same comment they'd write
@@ -89,6 +91,7 @@ export function ActionDialog({ v, asked, close, reopen, busy }: { v: ItemView; a
   // Assigning and closing comment only when there's something to say.
   const said = action.id === 'assign' ? (typed ? `Comentás en #${action.target} y se lo asignás a @${bot}, como ${me}` : `Se lo asignás a @${bot} como ${me}, sin comentario`)
     : action.id === 'close-issue' ? (typed ? `Comentás en #${action.target} y lo cerrás como no planeado, como ${me}` : `Lo cerrás como no planeado, como ${me}, sin comentario`)
+    : action.direct ? `Se lo pedís a ronin como ${me}: no se escribe nada en GitHub, la respuesta queda en el ítem`
     : `Comentás en #${action.target} como ${me}`;
   const disabled = Boolean(action.text?.required && !text.trim());
 
@@ -99,8 +102,9 @@ export function ActionDialog({ v, asked, close, reopen, busy }: { v: ItemView; a
   const send = async () => {
     if (sent.current || disabled) return;
     sent.current = true;
-    const shown = clickTimer('accion');
     const body = { action: action.id, ...(text.trim() ? { text: text.trim() } : {}), ...(action.apps ? { app } : {}) };
+    if (action.direct) return askRonin(body);
+    const shown = clickTimer('accion');
     const comments = !['assign', 'close-issue'].includes(action.id) || Boolean(typed);
     const pending = addPending({
       repo: v.item.repo,
@@ -141,6 +145,34 @@ export function ActionDialog({ v, asked, close, reopen, busy }: { v: ItemView; a
       reopen({ ...asked, retry: { text, app, error } });
     }
   };
+  // Straight to ronin (#446): under the item's activity at once, as asked
+  // by the person; the command the server kept takes its place.
+  const askRonin = async (body: { action: string; text?: string; app?: string }) => {
+    const shown = clickTimer('pedir');
+    const key = commandsKey(asked.item);
+    const pending: ItemCommand = { id: `pending-${Date.now()}`, repo: v.item.repo, number: action.target, kind: action.id, args: { ...(body.app ? { app: body.app } : {}), ...(body.text ? { text: body.text } : {}) }, requestedBy: me, status: 'queued', messages: [], runId: null, error: null, createdAt: new Date().toISOString(), startedAt: null, finishedAt: null };
+    const without = (list: ItemCommand[] | undefined) => (list ?? []).filter((c) => c.id !== pending.id);
+    queryClient.setQueryData<ItemCommand[]>(key, (list) => [pending, ...(list ?? [])]);
+    close();
+    try {
+      const done = (await ok(client.api.items[':id'].actions.$post({ param: itemParam(asked.item), json: body }, { init: { signal: AbortSignal.timeout(ACTION_TIMEOUT_MS) } }))) as { command?: ItemCommand; existing?: boolean };
+      const command = done.command;
+      queryClient.setQueryData<ItemCommand[]>(key, (list) => (command ? [command, ...without(list).filter((c) => c.id !== command.id)] : without(list)));
+      shell.toast(command && done.existing
+        ? `${command.requestedBy === me ? 'Ya lo habías pedido' : `Ya lo pidió ${command.requestedBy}`}: ronin está en eso.`
+        : `Listo: le pediste a ronin ${command ? commandName(command).replace(/^./, (x) => x.toLowerCase()) : 'eso'}. La respuesta queda acá.`);
+      shown(loadRuns(asked.item));
+    } catch (e) {
+      queryClient.setQueryData<ItemCommand[]>(key, without);
+      if (e instanceof ApiError && e.status === 401) return shell.unauthorized(e.message);
+      const err = e as Error;
+      const lost = err.name === 'TimeoutError' || err.name === 'AbortError' || err instanceof TypeError;
+      if (lost) void loadRuns(asked.item);
+      const error = lost ? 'No llegó la respuesta del servidor. Puede haberse pedido igual: mira los pedidos del ítem antes de volver a intentar.' : `No se pudo: ${err.message}`;
+      shell.toast(`No se pudo pedir: ${lost ? 'no llegó la respuesta del servidor' : err.message}`);
+      reopen({ ...asked, retry: { text, app, error } });
+    }
+  };
   const cancel = () => {
     close();
   };
@@ -159,10 +191,10 @@ export function ActionDialog({ v, asked, close, reopen, busy }: { v: ItemView; a
       <p className="help">{action.help}</p>
       {action.apps && <label className="field"><span>App</span><select id="dlg-app" value={app} onChange={(e) => setApp(e.target.value)}>{action.apps.map((a) => <option key={a} value={a}>{a}{a === action.app && action.appNote ? ` · ${action.appNote}` : ''}</option>)}</select></label>}
       {action.text && <label className="field"><span>{action.text.label}</span><textarea id="dlg-text" ref={first} rows={4} maxLength={4000} placeholder={action.text.placeholder} value={text} onChange={(e) => setText(e.target.value)} /></label>}
-      <div className="prev"><div className="lbl" id="dlg-said">{said}</div><div className="md" id="dlg-prev" hidden={!preview} dangerouslySetInnerHTML={{ __html: markdown.html(preview, v.item.repo) }} /></div>
+      <div className="prev"><div className="lbl" id="dlg-said">{said}</div><div className="md" id="dlg-prev" hidden={!preview || action.direct} dangerouslySetInnerHTML={{ __html: markdown.html(preview, v.item.repo) }} /></div>
       <p className="bad" id="dlg-err" hidden={!error}>{error ?? ''}</p>
-      <div className="foot-d"><span className="kbd-hint"><kbd>Ctrl</kbd> <kbd>Enter</kbd> para {action.id === 'assign' ? 'asignar' : action.id === 'close-issue' ? 'cerrar' : 'comentar'}</span><button className="btn-s" id="dlg-no" onClick={cancel}>Cancelar</button>
-        <button className={`btn-s ${action.id === 'close-issue' ? 'danger-solid' : 'primary'}`} id="dlg-yes" ref={action.text ? undefined : first} disabled={disabled} onClick={() => void send()}>{action.id === 'assign' ? 'Asignar a ronin' : action.id === 'close-issue' ? 'Cerrar el issue' : action.id === 'unblock' ? 'Comentar y destrabar' : 'Comentar'}</button></div></div></div></div>,
+      <div className="foot-d"><span className="kbd-hint"><kbd>Ctrl</kbd> <kbd>Enter</kbd> para {action.id === 'assign' ? 'asignar' : action.id === 'close-issue' ? 'cerrar' : action.direct ? 'pedir' : 'comentar'}</span><button className="btn-s" id="dlg-no" onClick={cancel}>Cancelar</button>
+        <button className={`btn-s ${action.id === 'close-issue' ? 'danger-solid' : 'primary'}`} id="dlg-yes" ref={action.text ? undefined : first} disabled={disabled} onClick={() => void send()}>{action.id === 'assign' ? 'Asignar a ronin' : action.id === 'close-issue' ? 'Cerrar el issue' : action.id === 'unblock' ? 'Comentar y destrabar' : action.direct ? 'Pedir' : 'Comentar'}</button></div></div></div></div>,
     document.body,
   );
 }

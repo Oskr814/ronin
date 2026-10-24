@@ -37,8 +37,10 @@ export type PreviewWorkerRequest =
       // What followed the command: an app and/or what the data should look
       // like — see resolvePreviewArgs.
       args?: string;
-      // The /preview comment, to answer in its own place.
-      comment: { id: number; kind: CommentKind };
+      // The /preview comment, to answer in its own place; or the command
+      // asked from the tablero (#446), to answer there.
+      comment?: { id: number; kind: CommentKind };
+      command?: string;
     }
   | { repo: string; prNumber: number; action: 'update' };
 
@@ -132,6 +134,8 @@ export interface PreviewState {
   // When it last moved to a new commit (ISO). startedAt doesn't change:
   // the TTL counts from the first boot.
   updatedAt?: string;
+  // Asked from the tablero (#446): its updates are told there, not on the PR.
+  origin?: 'tablero';
 }
 
 const reservations = (): PreviewReservations => new PreviewReservations(config.previewReservationsDir);
@@ -146,6 +150,11 @@ function slotKey(): string {
 // the agent's.
 async function previewStatePath(dir: string): Promise<string> {
   return join(await appStateDir(dir), 'preview.json');
+}
+
+// Where the PR's preview was asked from, for its updates (worker.ts).
+export async function previewOrigin(prNumber: number): Promise<PreviewState['origin']> {
+  return (await readPreviewState(previewDirFor(prNumber)))?.origin;
 }
 
 async function readPreviewState(dir: string): Promise<PreviewState | null> {
@@ -532,7 +541,7 @@ async function triageData(task: Omit<Extract<PreviewTask, { type: 'preview-data-
 
 // `startedAt`: when the preview first came up, for a rebuild that an update
 // fell back to — the TTL keeps counting from there.
-export async function startPreview(prNumber: number, pr: PrHead, args?: string, opts: { startedAt?: string } = {}): Promise<PreviewResult> {
+export async function startPreview(prNumber: number, pr: PrHead, args?: string, opts: { startedAt?: string; origin?: 'tablero' } = {}): Promise<PreviewResult> {
   const publicHost = await tailnetHost();
   const sha = pr.headRefOid;
   const existing = previewDirFor(prNumber);
@@ -586,6 +595,7 @@ export async function startPreview(prNumber: number, pr: PrHead, args?: string, 
       ...(args?.trim() ? { args: args.trim() } : {}),
       ...(instruction ? { instruction } : {}),
       ...(config.previewPrepareData ? { preparing: true } : {}),
+      ...(opts.origin ? { origin: opts.origin } : {}),
     };
     await writePreviewState(dir, state);
     await host().fs.writeFile(await previewManifestPath(dir), manifest);
@@ -730,7 +740,7 @@ export async function updatePreview(prNumber: number, pr: PrHead): Promise<Previ
   await writePreviewState(dir, { ...state, updating: true });
   const rebuild = async (reason: string): Promise<PreviewUpdate> => {
     log.info(`preview PR #${prNumber}: reconstruyéndola de cero en ${pr.headRefOid.slice(0, 7)} (${reason})`);
-    const result = await startPreview(prNumber, pr, state.args, state.startedAt ? { startedAt: state.startedAt } : {});
+    const result = await startPreview(prNumber, pr, state.args, { ...(state.startedAt ? { startedAt: state.startedAt } : {}), ...(state.origin ? { origin: state.origin } : {}) });
     return { kind: 'rebuilt', from, reason, result };
   };
   let plan: Awaited<ReturnType<typeof planInPlaceUpdate>>;

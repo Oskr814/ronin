@@ -7,6 +7,7 @@ import { meetingsRoutes } from '@domains/meetings/routes.js';
 import { metricsRoutes } from '@domains/metrics/routes.js';
 import { requestsRoutes, portalAdminRoutes } from '@domains/portal/routes-dashboard.js';
 import { evidenceRoutes, runsRoutes } from '@domains/runs/routes.js';
+import { eventsRoutes } from '@domains/commands/routes.js';
 import type { DashboardEnv } from '@domains/access/http.js';
 
 // The dashboard's API in Hono (#235, stage 6): handleDashboard (api/
@@ -22,6 +23,7 @@ export const dashboardApp = new Hono<DashboardEnv>()
   .route('/api/explorations', explorationRoutes())
   .route('/api/settings', settingsRoutes())
   .route('/api/runs', runsRoutes())
+  .route('/api/events', eventsRoutes())
   .route('/api/evidence', evidenceRoutes())
   .route('/api/items', itemsRoutes())
   .route('/api', boardRoutes());

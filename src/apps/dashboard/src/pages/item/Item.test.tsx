@@ -153,6 +153,32 @@ describe('an item’s page', () => {
     expect(document.getElementById('layer')).toBeNull();
   });
 
+  it('asks a preview straight to ronin (#446): under the activity at once, nothing in the conversation', async () => {
+    const direct = [{ ...actions[0], direct: true }];
+    const command = { id: '7', repo: 'acme/tienda', number: 42, kind: 'preview', args: { app: 'tienda' }, requestedBy: 'ana-dev', status: 'queued', messages: [], runId: null, error: null, createdAt: new Date(NOW).toISOString(), startedAt: null, finishedAt: null };
+    const fetch = vi.mocked(globalThis.fetch);
+    const answer = fetch.getMockImplementation()!;
+    fetch.mockImplementation(async (input, init) => (init?.method === 'POST' && String(input).endsWith('/actions')
+      ? (posted.push([String(input), JSON.parse(String(init.body))]), new Response(JSON.stringify({ command, existing: false }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+      // Its runs read again: the command among them, as the server keeps it.
+      : String(input) === '/api/items/acme%2Ftienda%2341' ? new Response(JSON.stringify({ runs: [], commands: [command] }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+      : answer(input, init)));
+    const { container, shell } = show({ detail: { ...person, actions: direct }, doc: 'issue' });
+    fireEvent.keyDown(document, { key: 'm' });
+    fireEvent.keyDown(document, { key: '1' });
+    expect(document.getElementById('dlg-said')!.textContent).toContain('Se lo pedís a ronin');
+    expect(document.getElementById('dlg-prev')!.hidden).toBe(true);
+    expect(document.getElementById('dlg-yes')!.textContent).toBe('Pedir');
+    fireEvent.click(document.getElementById('dlg-yes')!);
+    expect(document.getElementById('layer')).toBeNull();
+    await waitFor(() => expect(container.querySelector('.cmd .cmd-top')?.textContent).toContain('Preview de tienda en #42'));
+    await waitFor(() => expect(container.querySelector('.cmd')?.getAttribute('data-command')).toBe('7'));
+    expect(container.querySelector('.cmd .cmd-top')!.textContent).toContain('en cola · pedido por ana-dev');
+    expect(posted[0]).toEqual(['/api/items/acme%2Ftienda%2341/actions', { action: 'preview', app: 'tienda' }]);
+    expect(container.querySelector('.cm.pending')).toBeNull();
+    expect(shell.toast).toHaveBeenCalledWith('Listo: le pediste a ronin preview de tienda en #42. La respuesta queda acá.');
+  });
+
   it('comments under the conversation, as on GitHub: c goes to the box, Ctrl+Enter sends it', async () => {
     const { shell } = show({ detail: person, doc: 'issue' });
     fireEvent.keyDown(document, { key: 'c' });

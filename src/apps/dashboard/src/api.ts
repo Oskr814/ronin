@@ -24,6 +24,8 @@ export type Today = InferResponseType<typeof client.api.today.$get, 200>;
 export type ItemDetail = InferResponseType<(typeof client.api.items)[':id']['detail']['$get'], 200>;
 export type Exploration = InferResponseType<(typeof client.api.items)[':id']['exploration']['$get'], 200>;
 export type ItemRun = InferResponseType<(typeof client.api.items)[':id']['$get'], 200>['runs'][number];
+// What was asked of ronin from the tablero on the item (#446).
+export type ItemCommand = InferResponseType<(typeof client.api.items)[':id']['$get'], 200>['commands'][number];
 // The run an item's page shows, as the shell reads it (shell/state.ts): its
 // lines without its start and end, and more as they come while it goes.
 export type ShownRun = { runId: string; summary: Run['summary']; lines: Run['lines'] };
