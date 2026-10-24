@@ -29,7 +29,7 @@ const COLS: Array<[SortKey, string, string?]> = [
 ];
 
 // The change against the previous period, green when it's for the better.
-function Delta({ cur, prev, upIsGood, fmt = String }: { cur: number | null; prev: number | null; upIsGood: boolean; fmt?: (v: number) => string }) {
+export function Delta({ cur, prev, upIsGood, fmt = String }: { cur: number | null; prev: number | null; upIsGood: boolean; fmt?: (v: number) => string }) {
   if (cur === null || prev === null || cur === undefined || prev === undefined || prev === 0) return <span className="eq">sin comparación</span>;
   const ch = (cur - prev) / prev;
   if (Math.abs(ch) < 0.03) return <><span className="eq">igual</span> que antes ({fmt(prev)})</>;
@@ -99,7 +99,7 @@ export function MiniBars({ values, color }: { values: number[]; color: string })
   );
 }
 
-const Fact = ({ label, value, small }: { label: string; value: ReactNode; small?: ReactNode }) => (
+export const Fact = ({ label, value, small }: { label: string; value: ReactNode; small?: ReactNode }) => (
   <div className="mt-fact"><div className="l">{label}</div><div className="v">{value}{small ? <> <small>{small}</small></> : null}</div></div>
 );
 

@@ -1,13 +1,14 @@
 ---
 title: "Métricas"
-description: "Cómo se mueve el trabajo en los repos y cuánto se aprovecha cada cuenta de Claude."
+description: "Cómo se mueve el trabajo en los repos, cómo se atienden los pedidos del portal y cuánto se aprovecha cada cuenta de Claude."
 ---
 
 import { Aside } from '@astrojs/starlight/components';
 
-**Métricas**, arriba a la izquierda en el tablero, tiene dos pestañas y solo la ven los administradores:
+**Métricas**, arriba a la izquierda en el tablero, tiene tres pestañas y solo la ven los administradores:
 
 - **Trabajo** (`/metricas`): cómo se mueve el trabajo en los repos: cuánto entra y cuánto sale, cuánto tarda, quién lo lleva y dónde se traba.
+- **[Pedidos](#pedidos)** (`/metricas/pedidos`): cómo se atienden los pedidos del portal: cuántos entran y se entregan, cuánto tarda cada tramo y de quién es la espera, quién del equipo los toma y dónde esperan.
 - **[Suscripción](#suscripción)** (`/metricas/suscripcion`): cuánto se aprovecha cada cuenta de Claude con la que corre ronin.
 
 ![La página Métricas: los seis números del período, el gráfico de issues nuevos y resueltos por semana con la línea del backlog, y cuánto tardan en resolverse](../../../assets/capturas/metricas.png)
@@ -81,6 +82,44 @@ Cada columna se ordena con un clic en su título.
   - sus PRs aprobados sin pedido de cambios;
   - sus intentos de fix por PR.
 - **Por qué se bloqueó:** los bloqueos del período, agrupados por motivo. Los que son de antes de que ronin empezara a guardar el motivo aparecen como *Sin motivo registrado*.
+
+## Pedidos
+
+![La pestaña Pedidos con datos inventados: los seis números del período, los pedidos nuevos y entregados por semana, y cuánto tarda cada tramo, de color según de quién es la espera](../../../assets/capturas/metricas-pedidos.png)
+
+Usa el mismo período y el mismo repo que *Trabajo*. Los datos salen de cada pedido: sus fechas, sus eventos y la decisión del dev. El dueño de un pedido grande sale de GitHub: quien está asignado a su issue.
+
+- **Seis números:**
+  - pedidos nuevos;
+  - entregados, es decir, con su PR mergeado o resuelto por el equipo;
+  - hasta entregarse: la mediana desde que entra;
+  - los que esperan al equipo ahora: la decisión de un dev, o grandes abiertos;
+  - qué parte de los que terminaron respondió ronin sin nada que cambiar;
+  - qué parte se canceló o venció sin respuesta.
+- **Entran y se entregan:** por semana, o por día en el período de 7.
+- **Cuánto tarda cada tramo:** la mediana y el p90 de cada tramo, de color según de quién es la espera:
+  - **ronin:** leerlo, armar el prototipo, reproducir el error;
+  - **la persona:** aprobar la propuesta;
+  - **el equipo:** decidir si se hace, hacerlo y mergearlo, resolver un pedido grande;
+  - **la entrega:** del merge a la app.
+
+  La barra crece con la raíz cuadrada del tiempo, para que un tramo de minutos se vea al lado de uno de semanas.
+- **Por persona del equipo:**
+  - las decisiones que tomó un dev y cuánto tardó en tomarlas;
+  - los pedidos grandes que tiene asignados, el más viejo, los que cerró y en cuánto;
+  - los mensajes que le escribió a quien pidió;
+  - las veces que quitó una prioridad.
+- **Por cuenta del portal:** cuántos pedidos hizo cada cuenta, cuántos se entregaron, cuántos marcó como [prioritarios](/ronin/guias/pedidos-del-portal/#pedidos-prioritarios), a cuántos les quitaron la prioridad y cuántos se cancelaron o vencieron. Una cuenta a la que el equipo le quita la prioridad seguido está marcando de más.
+- **Resultados:**
+  - **Prioritarios:** cuántos se marcaron y a cuántos se les quitó la prioridad, y cuánto tarda un dev en decidir uno prioritario frente a uno normal.
+  - **Calidad:** qué parte de las propuestas no le sirvió a la persona, cuántas propuestas lleva un pedido, qué parte decidió no hacerse un dev, qué parte de los errores se reprodujo y cuántos despliegues fallaron.
+  - **Por app:** nuevos, entregados y la mediana hasta entregarse.
+- **Dónde esperan, ahora:**
+  - los que esperan a un dev hace más de 24 horas;
+  - los grandes cuyo issue nadie tiene asignado;
+  - los pedidos donde la persona respondió y nadie del equipo la leyó.
+
+  Un clic en el número abre el pedido.
 
 ## Suscripción
 

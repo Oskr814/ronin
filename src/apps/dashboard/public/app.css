@@ -1676,6 +1676,16 @@ select.aj-in { width: auto; min-width: 180px; }
   .mt-filters { margin-left: 0; }
   .mt-ppl tr.mt-det td { padding-left: 14px; }
 }
+/* Métricas → Pedidos (#428) */
+.mt-tramo { grid-template-columns: 190px minmax(0, 1fr) auto; }
+.mt-tramo .t i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 6px; }
+.mt-tramo .b { display: flex; }
+.mt-tramo .b i { border-radius: 0; }
+.mt-tramo .b i:first-child { border-radius: 99px 0 0 99px; }
+.mt-tramo .b i.p90 { opacity: .35; border-radius: 0 99px 99px 0; }
+.mt-plain tbody tr td { cursor: default; }
+.mt-list .t .pd-tag { margin: 0 4px 0 0; }
+@media (max-width: 760px) { .mt-tramo { grid-template-columns: 130px minmax(0, 1fr) auto; } }
 /* Métricas → Suscripción (#234) */
 .mt-tabs { padding: 0; margin: 16px 0 4px; }
 .su-acc { margin-top: 22px; }

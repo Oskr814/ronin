@@ -72,6 +72,7 @@ describe('the shell, in React', () => {
       ['/reuniones/3', 'meeting', '/reuniones/3'],
       ['/despliegues', 'deploys', '/despliegues'],
       ['/metricas', 'metrics', '/metricas'],
+      ['/metricas/pedidos', 'requestMetrics', '/metricas/pedidos'],
       ['/metricas/suscripcion', 'subscription', '/metricas/suscripcion'],
       ['/exploraciones', 'explorations', '/exploraciones'],
       ['/exploraciones/acme/web/backoffice', 'exploration', '/exploraciones/acme/web/backoffice'],

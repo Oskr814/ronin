@@ -3,6 +3,9 @@ import { log } from '@platform/logger.js';
 import { listBlockEvents } from './blocks.js';
 import { readRepoData, syncRepo, type RepoData } from './collect.js';
 import { computeMetrics, PERIODS, type Period } from './compute.js';
+import { computeRequestMetrics } from './requests.js';
+import { listUsers } from '../portal/accounts.js';
+import { listRequests } from '../portal/requests.js';
 
 export { PERIODS, type Period } from './compute.js';
 export { recordBlockEvent } from './blocks.js';
@@ -51,6 +54,25 @@ export async function metricsView(repos: string[], days: Period, repo: string | 
     repo,
     sources: read.map((r) => ({ repo: r.repo, syncedAt: r.data?.syncedAt ?? null, ...(r.error ? { error: r.error } : {}) })),
     ...computeMetrics({ repos: data, blocks, ronin: config.githubLogin, days, now }),
+  };
+}
+
+// Métricas → Pedidos (#428): the portal's requests of the repos shown, with
+// a big one's owner from the same GitHub data.
+export async function requestMetricsView(repos: string[], days: Period, repo: string | null, now = Date.now()) {
+  const shown = repo ? repos.filter((r) => r === repo) : repos;
+  const [requests, users, data] = await Promise.all([listRequests(), listUsers(), repoDataOf(shown, now)]);
+  const issues = new Map(data.flatMap((d) => Object.values(d.issues).map((i) => [`${d.repo}#${i.number}`, i.assignees] as const)));
+  return {
+    repos,
+    repo,
+    ...computeRequestMetrics({
+      requests: requests.filter((r) => shown.includes(r.repo)),
+      people: new Map(users.map((u) => [u.id, u.name])),
+      assignees: (r, n) => issues.get(`${r}#${n}`) ?? [],
+      days,
+      now,
+    }),
   };
 }
 

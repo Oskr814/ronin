@@ -12,6 +12,7 @@ export const client = hc<DashboardApi>('/', { fetch: jsonFetch });
 
 export type DeployRepos = InferResponseType<typeof client.api.deploys.$get, 200>['repos'];
 export type Metrics = InferResponseType<typeof client.api.metrics.$get, 200>;
+export type RequestMetrics = InferResponseType<typeof client.api.metrics.requests.$get, 200>;
 export type SubscriptionAccount = InferResponseType<typeof client.api.metrics.subscription.$get, 200>['cuentas'][number];
 export type RequestRow = InferResponseType<typeof client.api.requests.$get, 200>['requests'][number];
 export type RequestDetail = InferResponseType<(typeof client.api.requests)[':n']['$get'], 200>;
