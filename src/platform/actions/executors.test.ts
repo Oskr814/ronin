@@ -27,6 +27,9 @@ vi.mock('../github/github.js', () => ({
   resolveReviewThread: (...args: unknown[]) => resolveReviewThread(...args),
 }));
 
+const answerTableroMention = vi.fn();
+vi.mock('../commands/mentions.js', () => ({ answerTableroMention: (...args: unknown[]) => answerTableroMention(...args) }));
+
 const { executeAction, rootCheckout, bodyKeepsWhatItMust } = await import('./executors.js');
 const { ActionRefused } = await import('./catalog.js');
 
@@ -68,6 +71,21 @@ describe('executeAction', () => {
     await executeAction(scope, checkout, { name: 'pr.resolve-thread', input: { commentId: 100 } });
     expect(replyToComment).toHaveBeenCalledWith(7, { id: 100, kind: 'review' }, 'Hecho.');
     expect(resolveReviewThread).toHaveBeenCalledWith('PRRT_a');
+  });
+
+  // #446: a request from the tablero is answered there, never on GitHub.
+  it('answers a request from the tablero in it, by its id or as the only thing the run answers', async () => {
+    const { scope, checkout } = await setup();
+    const asked = { ...scope, triggers: [{ id: 12, kind: 'command' as const }] };
+    await executeAction(asked, checkout, { name: 'pr.reply', input: { commentId: 12, body: 'Agregué el test.' } });
+    await executeAction(asked, checkout, { name: 'pr.comment', input: { body: 'Y nada más.' } });
+    expect(answerTableroMention.mock.calls).toEqual([[12, 'Agregué el test.'], [12, 'Y nada más.']]);
+    expect(replyToComment).not.toHaveBeenCalled();
+    expect(postIssueComment).not.toHaveBeenCalled();
+    // With a mention from GitHub too, a general comment is GitHub's.
+    postIssueComment.mockResolvedValueOnce({ url: 'u' });
+    await executeAction({ ...asked, triggers: [...asked.triggers, { id: 900, kind: 'issue' }] }, checkout, { name: 'pr.comment', input: { body: 'Hecho.' } });
+    expect(postIssueComment).toHaveBeenCalledWith(7, 'Hecho.');
   });
 
   it("pushes the clone's amend from the shared repo, through a bundle", async () => {

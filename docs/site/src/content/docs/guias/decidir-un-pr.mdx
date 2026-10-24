@@ -24,7 +24,7 @@ Las **decisiones propias** van destacadas. Si una no te convence, es lo primero 
 
 ## Las preguntas
 
-Si la descripción tiene preguntas, la ficha las muestra debajo del encabezado, en todas las pestañas, con las respuestas que sugiere ronin como botones. Elegís una, o **Otra respuesta** para escribir la tuya, y **Mandar** las comenta juntas en el PR, a tu nombre, mencionando a ronin. ronin aplica las respuestas, saca las preguntas y, con el commit nuevo, vuelve a pasar la review interna.
+Si la descripción tiene preguntas, la ficha las muestra debajo del encabezado, en todas las pestañas, con las respuestas que sugiere ronin como botones. Elegís una, o **Otra respuesta** para escribir la tuya, y **Mandar** se las pasa a ronin directo, como un pedido bajo la actividad del ítem (en el PR de un spec, comentadas en GitHub mencionando a ronin). ronin aplica las respuestas, saca las preguntas y, con el commit nuevo, vuelve a pasar la review interna.
 
 No hace falta contestarlas todas a la vez: las que no respondiste quedan. Mientras quede alguna, el PR no se mergea solo, aunque lo apruebes: **Aprobar** te lo avisa.
 
@@ -37,7 +37,7 @@ Están en el encabezado de la ficha, en todas las pestañas. Cada una se desplie
     Aprueba el PR y le pide el auto-merge a ronin, que lo mergea cuando pasen los checks. Si ya tiene auto-merge o tiene conflictos, solo aprueba. Si quedan preguntas, te avisa que no se va a mergear hasta que las contestes. `↵` confirma.
   </Card>
   <Card title="Ajustar · P" icon="pencil">
-    Escribís qué debería cambiar y queda como `@ronin-agent <tu texto>`. ronin lo aplica y responde. `Ctrl ↵` manda.
+    Escribís qué debería cambiar y se lo pedís a ronin directo, sin un comentario en GitHub: empieza en ese momento, y el pedido y su respuesta quedan bajo la actividad del ítem, a la vista de todos. `Ctrl ↵` manda.
   </Card>
   <Card title="Cerrar · X" icon="close">
     Un motivo opcional, que queda como comentario, y el PR cerrado. **Cerrar también el issue** viene marcado. `Ctrl ↵` confirma. Si el PR es de un [pedido del portal](/ronin/guias/pedidos-del-portal/) y cerrás también el issue, el motivo le llega a quien lo pidió, tal cual, en la conversación y por correo.

@@ -191,7 +191,7 @@ export async function validateAction(
   const isThread = (id: number) => scope.threads.some((t) => t.commentId === id);
   if (action.name === 'pr.reply') {
     const id = action.input.commentId;
-    if (!isThread(id) && !scope.triggers.some((t) => t.id === id && t.kind === 'review')) {
+    if (!isThread(id) && !scope.triggers.some((t) => t.id === id && (t.kind === 'review' || t.kind === 'command'))) {
       throw new ActionRefused(`el comentario ${id} no es de los que esta corrida atiende`);
     }
   }

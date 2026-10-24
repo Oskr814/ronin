@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import type { ItemCommand } from '@apps/dashboard/src/api.js';
 import { type ItemView, useMarkdown } from '@apps/dashboard/src/shell/hooks.js';
-import { commandsKey, itemCommands } from '@apps/dashboard/src/shell/state.js';
+import { commandsKey, itemCommands, loadRuns, queryClient } from '@apps/dashboard/src/shell/state.js';
 import { RunDot } from '@apps/dashboard/src/lib/runs.js';
 import { short } from '@ui/time.js';
 
@@ -18,6 +18,8 @@ const NAME: Record<string, (c: ItemCommand) => string> = {
   preview: (c) => `Preview${typeof c.args.app === 'string' ? ` de ${c.args.app}` : ''} en #${c.number}`,
   'preview-stop': (c) => `Bajar la preview de #${c.number}`,
   'preview-update': (c) => `La preview de #${c.number} al último commit`,
+  adjust: (c) => `Ajuste en #${c.number}`,
+  answer: (c) => `Respuestas a sus preguntas en #${c.number}`,
 };
 const STATE: Record<string, [string, string]> = {
   queued: ['open', 'en cola'],
@@ -26,6 +28,13 @@ const STATE: Record<string, [string, string]> = {
   failed: ['error', 'no se pudo'],
 };
 export const commandName = (c: ItemCommand) => (NAME[c.kind] ?? ((x: ItemCommand) => x.kind))(c);
+
+// What the server answered for something asked straight to ronin: under the
+// item's activity at once, and its runs read again.
+export function showCommand(id: string, command: ItemCommand | undefined): void {
+  if (command) queryClient.setQueryData<ItemCommand[]>(commandsKey(id), (list) => [command, ...(list ?? []).filter((c) => c.id !== command.id)]);
+  void loadRuns(id);
+}
 
 export function Commands({ v }: { v: ItemView }) {
   const id = v.item.id;
@@ -51,6 +60,7 @@ function Row({ c, first, repo }: { c: ItemCommand; first: boolean; repo: string 
         <RunDot state={state} /><b>{commandName(c)}</b><span className="m">{label} · pedido por {by} · hace {short(Date.now() - Date.parse(c.createdAt))}</span>
         {c.messages.length > 1 && <span className="n">{open ? 'menos' : `${c.messages.length} respuestas`}</span>}
       </button>
+      {typeof c.args.text === 'string' && c.args.text && (open || going || first) && <div className="cmd-ask m">«{c.args.text}»</div>}
       {said.map((m, i) => <div key={i} className="cmd-say md" dangerouslySetInnerHTML={{ __html: markdown.html(m.text, repo) }} />)}
       {!c.messages.length && going && <div className="cmd-say m">{c.status === 'queued' ? 'Esperando a que el runner lo tome…' : 'Arrancando…'}</div>}
     </div>

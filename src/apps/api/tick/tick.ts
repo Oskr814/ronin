@@ -1,4 +1,5 @@
 import { markProcessed } from '@platform/state/processed-comments.js';
+import { claimTableroMentions, isTableroMention, settleTableroMention } from '@platform/commands/mentions.js';
 import { linearIdInPr, linearRefFrom, withLinearLink } from '@platform/linear/linear.js';
 import { currentCycle, linearKey } from '@platform/linear/linear-api.js';
 import { processLinearAssignments } from '@platform/linear/linear-assign.js';
@@ -410,7 +411,7 @@ export async function processSlicePr(issue: TrackingIssue, pr: StackedPr, isBott
   // help.ts — and the line that links it to the issue's Linear issue, if it
   // has one (linear.ts). Both idempotent, and best-effort: a failed edit only
   // means the PR goes without them until the next tick, never a blocked slice.
-  const bodyWithHelp = withHelpFooter(await withLinearLinkFor(issue, pr), config.githubLogin);
+  const bodyWithHelp = withHelpFooter(await withLinearLinkFor(issue, pr), config.githubLogin, config.dashboard?.url ? `${config.dashboard.url}/${activeRepo().productRepo}/pull/${pr.number}` : undefined);
   if (bodyWithHelp !== pr.body) {
     try {
       await setPullRequestBody(pr.number, bodyWithHelp);
@@ -437,7 +438,8 @@ export async function processSlicePr(issue: TrackingIssue, pr: StackedPr, isBott
   try {
     const allMentions = await findUnprocessedMentions(pr.number);
     commandMentions = allMentions.filter((m) => isFixCommentsCommand(m.body));
-    mentions = allMentions.filter((m) => !commandMentions.includes(m));
+    // What was asked from the tablero (#446) is taken here: another process may have it.
+    mentions = await claimTableroMentions(allMentions.filter((m) => !commandMentions.includes(m)));
   } catch (error) {
     log.error(`findUnprocessedMentions failed for PR #${pr.number}`, error);
   }
@@ -448,7 +450,7 @@ export async function processSlicePr(issue: TrackingIssue, pr: StackedPr, isBott
       await runAgentTask(reviewTask({ type: 'review-request', issueNumber: issue.number, prNumber: pr.number, mentions }));
       await setReviewStatus(pr.number, 'success', 'Review posteada');
 
-      for (const m of mentions) await markProcessed(m);
+      for (const m of mentions) await (isTableroMention(m) ? settleTableroMention(m) : markProcessed(m));
       // `pr` was read before a claude -p run that can take up to 30
       // minutes and may itself push a commit, so its checks/review fields
       // can be stale now — re-read before falling through to the merge
@@ -465,6 +467,7 @@ export async function processSlicePr(issue: TrackingIssue, pr: StackedPr, isBott
     // done, so the next tick picks these same comments up again.
     if (mentions.length > 0) await setReviewStatus(pr.number, 'error', 'La review falló — ver logs del tick');
     log.error(`review-request failed for PR #${pr.number}`, error);
+    for (const m of mentions.filter(isTableroMention)) await settleTableroMention(m, { error: (error as Error).message.slice(0, 200) }).catch(() => {});
   }
 
   // Own try/catch, separate from review-request above: a failure here must

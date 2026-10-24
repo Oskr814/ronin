@@ -190,10 +190,13 @@ export { HELP_FOOTER_MARKER };
 
 // Appended by the supervisor (tick.ts's processSlicePr) to every PR ronin
 // opens. Idempotent via the marker, so it's safe to call every tick.
-export function withHelpFooter(body: string, login: string): string {
+// `itemUrl`: the PR on ronin's dashboard (#446), where what's asked from
+// there and ronin's answers are, instead of comments here.
+export function withHelpFooter(body: string, login: string, itemUrl?: string): string {
   if (body.includes(HELP_FOOTER_MARKER)) return body;
   const footer = [
     HELP_FOOTER_MARKER,
+    ...(itemUrl ? [`🥷 [Abrir en el tablero de ronin](${itemUrl}): ahí están los pedidos que se le hacen desde el tablero y sus respuestas.`, ''] : []),
     '<details>',
     '<summary>🥷 Comandos de ronin</summary>',
     '',

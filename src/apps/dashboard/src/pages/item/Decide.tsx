@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef, useState } from 'react';
-import { ApiError, client, ok } from '@apps/dashboard/src/api.js';
+import { ApiError, client, ok, type ItemCommand } from '@apps/dashboard/src/api.js';
+import { showCommand } from './Commands.js';
 import { changed, reviewed, unreviewed, useSession, useShell, useShellVersion } from '@apps/dashboard/src/shell/hooks.js';
 import { checksChip, itemParam, oneOr, type ItemPage } from './model.js';
 import { questionsOf } from './Questions.js';
@@ -35,6 +36,8 @@ interface Decided {
   count: number;
   spec: boolean;
   sending: boolean;
+  // Asked straight to ronin (#446), not as a comment.
+  direct?: boolean;
 }
 export const deciding = (id: string) => Boolean(decided.get(id)?.sending);
 const decided = new Map<string, Decided>();
@@ -71,10 +74,12 @@ export function useDecide(v: ItemPage | null) {
     setP(null);
     changed();
     try {
-      const sent = (await ok(client.api.items[':id'].decision.$post({ param: itemParam(id), json: { decision: given.kind, text: given.text, closeIssue: given.closeIssue } }))) as { url: string; autoMergeUrl?: string; issueUrl?: string };
-      decided.set(id, { at: Date.now(), kind: given.kind, url: sent.url, autoMerge: Boolean(sent.autoMergeUrl), issue: Boolean(sent.issueUrl), count: pending, spec, sending: false });
+      const sent = (await ok(client.api.items[':id'].decision.$post({ param: itemParam(id), json: { decision: given.kind, text: given.text, closeIssue: given.closeIssue } }))) as { url?: string; autoMergeUrl?: string; issueUrl?: string; command?: ItemCommand };
+      decided.set(id, { at: Date.now(), kind: given.kind, url: sent.url, autoMerge: Boolean(sent.autoMergeUrl), issue: Boolean(sent.issueUrl), count: pending, spec, sending: false, direct: Boolean(sent.command) });
+      // Straight to ronin (#446): under the activity, not on GitHub.
+      if (sent.command) showCommand(id, sent.command);
       changed();
-      shell.toast(given.kind === 'approve' ? (spec ? 'Aprobaste el spec: ronin lo mergea y arranca las slices.' : 'Aprobaste el PR.') : given.kind === 'adjust' ? 'Se lo mandaste a ronin.' : 'Cerraste el PR.', sent.url);
+      shell.toast(given.kind === 'approve' ? (spec ? 'Aprobaste el spec: ronin lo mergea y arranca las slices.' : 'Aprobaste el PR.') : given.kind === 'adjust' ? (sent.command ? 'Se lo pediste a ronin: empieza ahora y responde bajo la actividad.' : 'Se lo mandaste a ronin.') : 'Cerraste el PR.', sent.url);
       shown(v.files.reread());
     } catch (e) {
       decided.delete(id);
@@ -106,7 +111,7 @@ export function DecidedNote({ id }: { id: string }) {
   const what = done.kind === 'approve'
     ? done.spec ? 'Aprobaste el spec. ronin lo mergea y arranca las slices en este issue: en unos minutos aparecen.' : `Aprobaste el PR${done.autoMerge ? ' y le pediste el auto-merge a ronin' : ''}.`
     : done.kind === 'adjust'
-      ? `Le pediste un ajuste a ronin${done.count ? ` con ${oneOr(done.count, 'un comentario', `${done.count} comentarios`)} de Archivos` : ''}. Lo toma en el próximo tick.`
+      ? done.direct ? 'Le pediste un ajuste a ronin: ya empezó, y su respuesta queda bajo la actividad.' : `Le pediste un ajuste a ronin${done.count ? ` con ${oneOr(done.count, 'un comentario', `${done.count} comentarios`)} de Archivos` : ''}. Lo toma en el próximo tick.`
       : `Cerraste el PR${done.issue ? ' y su issue' : ''}.`;
   return <div className="decided">{what}{done.url && <> <a href={done.url} target="_blank" rel="noopener">Ver ↗</a></>}</div>;
 }

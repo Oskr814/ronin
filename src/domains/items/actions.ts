@@ -9,7 +9,7 @@ import type { RepoGithub } from './github.js';
 import { assignIssue, closeIssue, commentOnIssue, type Posted } from '@platform/github/github-as-user.js';
 import { DomainError } from '@platform/errors.js';
 import { getDb } from '@platform/db/db.js';
-import { createCommand, type Command } from '../commands/store.js';
+import { createCommand, type Command } from '@platform/commands/store.js';
 import { launchPreviewWorker } from '../previews/index.js';
 
 // What can be asked of ronin from an item's page (#85). Each action is a

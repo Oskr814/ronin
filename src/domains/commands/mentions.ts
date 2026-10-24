@@ -5,6 +5,7 @@ import { classifyMetaCommand, renderMetaReply, type CommandContext } from './hel
 import { config } from '@platform/config/config.js';
 import { activeRepo } from '@platform/agents/repo-context.js';
 import { launchPreviewWorker } from '../previews/index.js';
+import { tableroMentions } from '@platform/commands/mentions.js';
 import { applyAutoMergeCommand, type AutoMergeAction } from './auto-merge.js';
 import { launchConflictsWorker } from './conflicts.js';
 import { log } from '@platform/logger.js';
@@ -346,7 +347,9 @@ export async function findUnprocessedMentions(prNumber: number): Promise<Comment
   const mentioned = comments.filter((c) => mentionsHandle(c.body, botLogin));
   const pending = await withWholeThreads(prNumber, await filterUnprocessed(mentioned), recent);
   const rest = await handleMetaCommands(prNumber, 'pr', pending);
-  return handleAutoMergeCommands(prNumber, await handleConflictsCommands(prNumber, await handlePreviewCommands(prNumber, rest)));
+  const github = await handleAutoMergeCommands(prNumber, await handleConflictsCommands(prNumber, await handlePreviewCommands(prNumber, rest)));
+  // And what was asked from the tablero in words (#446), waiting in ronin.
+  return [...github, ...(await tableroMentions(activeRepo().productRepo, prNumber))];
 }
 
 // An inline mention read from the last days may lack the start of its

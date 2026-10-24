@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import type { ItemCommand } from '@apps/dashboard/src/api.js';
+import { showCommand } from './Commands.js';
 import { Md } from '@apps/dashboard/src/lib/markdown.js';
 import { ApiError, client, ok } from '@apps/dashboard/src/api.js';
 import { type ItemDetail, useShell } from '@apps/dashboard/src/shell/hooks.js';
@@ -20,7 +22,7 @@ export function questionsOf(v: ItemPage): PrQuestion[] {
 // Answers just sent, per item, so the card says so until ronin takes the
 // questions out. Kept while the person is elsewhere.
 const SENT_SHOWN_MS = 30 * 60_000;
-const sent = new Map<string, { at: number; url: string }>();
+const sent = new Map<string, { at: number; url?: string }>();
 
 // The comment: each answered question (its first line) with its answer.
 export function answersText(questions: PrQuestion[], answers: Record<number, string>): string {
@@ -52,11 +54,13 @@ export function Questions({ v }: { v: ItemPage }) {
     setSending(true);
     setError(null);
     try {
-      const r = (await ok(client.api.items[':id'].decision.$post({ param: itemParam(id), json: { decision: 'answer', text } }))) as { url: string };
+      const r = (await ok(client.api.items[':id'].decision.$post({ param: itemParam(id), json: { decision: 'answer', text } }))) as { url?: string; command?: ItemCommand };
       sent.set(id, { at: Date.now(), url: r.url });
       setAnswers({});
       setOther({});
-      shell.toast('Le mandaste las respuestas a ronin.', r.url);
+      // Straight to ronin (#446): under the activity, not on GitHub.
+      if (r.command) showCommand(id, r.command);
+      shell.toast(r.command ? 'Le mandaste las respuestas a ronin. Su respuesta queda bajo la actividad.' : 'Le mandaste las respuestas a ronin.', r.url);
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) return shell.unauthorized(e.message);
       setError(`No se pudo: ${(e as Error).message}`);
@@ -67,7 +71,7 @@ export function Questions({ v }: { v: ItemPage }) {
   return (
     <section className="pqs" aria-label="Preguntas">
       <h3>{oneOr(questions.length, 'Una pregunta para vos', `${questions.length} preguntas para vos`)} <span className="m">ronin no lo mergea hasta que estén respondidas</span></h3>
-      {done && Date.now() - done.at < SENT_SHOWN_MS && <p className="pqs-sent">Ya le mandaste respuestas: ronin las aplica y saca las preguntas. <a href={done.url} target="_blank" rel="noopener">Ver ↗</a></p>}
+      {done && Date.now() - done.at < SENT_SHOWN_MS && <p className="pqs-sent">Ya le mandaste respuestas: ronin las aplica y saca las preguntas. {done.url && <a href={done.url} target="_blank" rel="noopener">Ver ↗</a>}</p>}
       <ol>{questions.map((q, i) => (
         <li key={i}><Md text={q.text} repo={v.item.repo} />
           <div className="pqs-opts">{q.options.map((o) => <button key={o} aria-pressed={!other[i] && answers[i] === o} onClick={() => pick(i, answers[i] === o && !other[i] ? '' : o, false)}>{o}</button>)}

@@ -119,3 +119,28 @@ export async function listCommands(db: Db, repo: string, numbers: number[], limi
     .orderBy('created_at', 'desc').orderBy('id', 'desc').limit(limit).execute();
   return rows.map(toCommand);
 }
+
+// Takes a waiting one to work on it: only one process gets it. Null when
+// someone else took it first, or it's no longer waiting.
+export async function claimCommand(db: Db, id: string): Promise<Command | null> {
+  const row = await db.updateTable('commands').set({ status: 'running', started_at: sql<string>`now()` })
+    .where('id', '=', id).where('status', '=', 'queued').returning(COLUMNS).executeTakeFirst();
+  return row ? told(db, toCommand(row)) : null;
+}
+
+// Back to waiting, for the next run to try again: what went wrong, said.
+export async function requeueCommand(db: Db, id: string, why: string): Promise<void> {
+  await noteCommand(db, id, why);
+  const row = await db.updateTable('commands').set({ status: 'queued', started_at: null })
+    .where('id', '=', id).where('status', '=', 'running').returning(COLUMNS).executeTakeFirst();
+  if (row) told(db, toCommand(row));
+}
+
+// What's waiting on an issue or PR, oldest first: `kinds`, the ones the caller answers.
+export async function waitingCommands(db: Db, repo: string, number: number, kinds: string[]): Promise<Command[]> {
+  if (!kinds.length) return [];
+  const rows = await db.selectFrom('commands').select(COLUMNS)
+    .where('repo', '=', repo).where('number', '=', number).where('kind', 'in', kinds).where('status', '=', 'queued')
+    .orderBy('created_at').orderBy('id').execute();
+  return rows.map(toCommand);
+}
