@@ -1,5 +1,6 @@
 import { config } from '@platform/config/config.js';
 import { accountName, listUsage } from '@platform/claude/claude-usage.js';
+import { apiBudgetsToWarn } from '@platform/claude/api-fallback.js';
 import { itemKindOf } from '@platform/github/github.js';
 import { slotsInUseDb, waitingDb } from '@platform/locks/locks-db.js';
 import { withActiveRepo, type RepoEntry } from '@platform/agents/repo-context.js';
@@ -87,6 +88,8 @@ export async function snapshot(access: Access, login: string) {
     // The queue and the Claude accounts, only of the repos it sees.
     runner: { slots: await slotsView(entries), queue: (await waitingQueue()).filter((job) => !job.repo || repos.includes(job.repo)), tick: readTickInfo(), host: hostLoad() },
     usage: (await listUsage()).filter((u) => entries.some((entry) => accountName(entry.claudeConfigDir ?? '') === u.account)),
+    // The repos it sees whose API fallback is near or at its cap (#421).
+    apiBudgets: await apiBudgetsToWarn(entries),
     items,
     // Whether it can deploy (#158): an admin, with a repo that has deploy.
     despliegues: entries.some((entry) => entry.deploy && can(access, entry.productRepo, 'desplegar')),

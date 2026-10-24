@@ -73,12 +73,13 @@ export interface RunLike {
   startedAt: string;
   durationMs?: number;
   costUsd?: number;
+  billing?: 'api';
   lastStep?: string;
 }
 
 export function RunCard({ run, onOpen }: { run: RunLike; onOpen: (runId: string) => void }) {
   const live = run.state === 'running';
-  const facts = [run.durationMs !== undefined ? duration(run.durationMs) : null, run.costUsd !== undefined ? money(run.costUsd) : null, RUN_STATE[run.state]?.[2]].filter(Boolean).join(' · ');
+  const facts = [run.billing === 'api' ? 'por API' : null, run.durationMs !== undefined ? duration(run.durationMs) : null, run.costUsd !== undefined ? money(run.costUsd) : null, RUN_STATE[run.state]?.[2]].filter(Boolean).join(' · ');
   return (
     <div className="pd-run"><RunDot state={run.state} /><span className="nm">{typeName(run.taskType)}{run.issueNumber ? ` · #${run.issueNumber}` : run.prNumber ? ` · PR #${run.prNumber}` : ''}</span>
       <span className="st">{live ? <Since at={run.startedAt} /> : facts}</span>

@@ -51,6 +51,18 @@ export interface RepoEntry {
   // each repo has its own queue, so one with a lot assigned never holds
   // another back. Absent: TICK_CONCURRENCY (Ajustes → Agentes).
   concurrency?: number;
+  // An Anthropic Console API key to finish, at API prices, a run the
+  // subscription's quota cut halfway (platform/claude/api-fallback.ts, #421):
+  // the env var holding it, the model the rest of the run goes on, and the
+  // most this repo may spend that way until someone resets it in Ajustes.
+  // Absent: a cut run waits for the quota, as before.
+  apiFallback?: ApiFallbackConfig;
+}
+
+export interface ApiFallbackConfig {
+  apiKeyEnv: string;
+  model: string;
+  maxUsd: number;
 }
 
 export interface DeployConfig {

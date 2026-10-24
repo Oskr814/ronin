@@ -1,8 +1,9 @@
 import { join, resolve } from 'node:path';
 import { ensureWorktree, ensureExternalReviewWorktree, removeExternalReviewWorktree, ensureTrustedFixWorktree, removeTrustedFixWorktree, ensureAgentClone, removeAgentClone, ensureAgentPrClone, removeAgentPrClone, ensureAgentBranchClone } from '../git/worktree.js';
-import { runClaudeHeadless, ClaudeTimeoutError, ClaudeUsageLimitError } from '../claude/claude-runner.js';
+import { runClaudeHeadless, ClaudeNoSessionError, ClaudeTimeoutError, ClaudeUsageLimitError, type HeadlessRunOptions } from '../claude/claude-runner.js';
+import { addApiSpend, apiFallbackFor } from '../claude/api-fallback.js';
 import { accountName } from '../claude/claude-usage.js';
-import { RunRecord, type RunOutcome } from './run-record.js';
+import { RunRecord, type RunContext, type RunOutcome } from './run-record.js';
 import { config, agentModelFor, agentEffortFor } from '../config/config.js';
 import { activeRepo, withActiveRepo } from './repo-context.js';
 import { log } from '../logger.js';
@@ -107,6 +108,9 @@ export interface AgentTask {
   prepare(): Promise<PreparedTask>;
 }
 
+// What a run the quota cut is told when it goes on by API in its session.
+const RESUME_PROMPT = 'Se agotó la cuota de la suscripción y la corrida se cortó. Sigue exactamente donde quedaste, sin repetir lo que ya hiciste, y termina la tarea.';
+
 function runOutcome(error: unknown): RunOutcome {
   if (error instanceof ClaudeUsageLimitError) return 'usage_limit';
   if (error instanceof ClaudeTimeoutError) return 'timeout';
@@ -207,7 +211,7 @@ export async function runAgentTask(task: AgentTask): Promise<string> {
   const effort = agentEffortFor(task.type);
   const group = currentRunGroup();
   // The run's own record, for the dashboard (run-record.ts).
-  const record = RunRecord.start({
+  const context: RunContext = {
     repo: activeRepo().productRepo,
     taskType: task.type,
     label,
@@ -221,7 +225,8 @@ export async function runAgentTask(task: AgentTask): Promise<string> {
     ...(effort ? { effort } : {}),
     account: accountName(activeRepo().claudeConfigDir ?? config.claudeConfigDir ?? ''),
     worktree: worktreeDir,
-  });
+  };
+  let record = RunRecord.start(context);
   let server: ActionsServer | null = null;
   let services: RunServices | null = null;
   try {
@@ -236,7 +241,7 @@ export async function runAgentTask(task: AgentTask): Promise<string> {
       services = makeServices?.(worktreeDir, as) ?? null;
       server = await startRunActions(actions, runCheckout, { ...(services ? { services } : {}), ...(app ? { app } : {}) }, `${task.type} #${tag}`);
     }
-    const result = await runClaudeHeadless(worktreeDir, prompt, `${task.type} #${tag}`, {
+    const runOpts: HeadlessRunOptions = {
       model,
       effort,
       ...(agentsFile ? { agentsFile } : {}),
@@ -253,7 +258,34 @@ export async function runAgentTask(task: AgentTask): Promise<string> {
         },
         ...(as ? { runAs: as } : {}),
       } : {}),
-    }, record);
+    };
+    let result: string;
+    try {
+      result = await runClaudeHeadless(worktreeDir, prompt, `${task.type} #${tag}`, runOpts, record);
+    } catch (error) {
+      const fallback = error instanceof ClaudeUsageLimitError ? await apiFallbackFor(activeRepo()) : null;
+      // Only a run the quota cut halfway: one that couldn't even start (the
+      // quota was already out) is new work, and waits for it.
+      if (!fallback || !record.usedTools) throw error;
+      const sessionId = record.sessionId;
+      await record.end('usage_limit', error);
+      log.info(`${task.type} for ${label}: se agotó la cuota, sigue por API con ${fallback.model} (quedan $${fallback.leftUsd})`);
+      record = RunRecord.start({ ...context, model: fallback.model, billing: 'api' });
+      const apiOpts: HeadlessRunOptions = { ...runOpts, model: fallback.model, apiKey: fallback.apiKey, maxBudgetUsd: fallback.leftUsd };
+      try {
+        result = sessionId
+          ? await runClaudeHeadless(worktreeDir, RESUME_PROMPT, `${task.type} #${tag}`, { ...apiOpts, resume: sessionId }, record)
+            .catch((resumeError) => {
+              if (!(resumeError instanceof ClaudeNoSessionError)) throw resumeError;
+              log.info(`${task.type} for ${label}: no está la sesión ${sessionId}, empieza de nuevo por API`);
+              return runClaudeHeadless(worktreeDir, prompt, `${task.type} #${tag}`, apiOpts, record);
+            })
+          : await runClaudeHeadless(worktreeDir, prompt, `${task.type} #${tag}`, apiOpts, record);
+      } finally {
+        await addApiSpend(activeRepo().productRepo, record.costUsd ?? 0)
+          .catch((spendError) => log.error(`${task.type} for ${label}: no se pudo sumar lo gastado por API`, spendError));
+      }
+    }
     if (sealed && as) await reclaimOutput(sealed.outputDir);
     // The status a run reports with result.report goes where the tasks that
     // ask for one already read it: the run's last line (RONIN_STATUS).

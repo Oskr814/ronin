@@ -24,7 +24,8 @@ export async function subscriptionView(entries: RepoEntry[], account: string | n
     plan: c.plan,
     repos: c.repos,
     history: await usageHistory(c.account),
-    runs: runs.filter((r) => r.account === c.account),
+    // A run on its repo's API key didn't use the plan (#421).
+    runs: runs.filter((r) => r.account === c.account && r.billing !== 'api'),
     repoData: await repoDataOf(c.repos, now),
     now,
   })));

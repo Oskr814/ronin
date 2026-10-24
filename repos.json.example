@@ -22,7 +22,8 @@
       },
       "notifyTo": ["dev1@example.com", "dev2@example.com"]
     },
-    "deploy": { "selective": true }
+    "deploy": { "selective": true },
+    "apiFallback": { "apiKeyEnv": "ANTHROPIC_API_KEY_REPO_A", "model": "sonnet", "maxUsd": 30 }
   },
   {
     "productRepo": "Oskr814/repo-b",

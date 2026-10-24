@@ -4,11 +4,13 @@ import type { RepoEntry } from '@platform/agents/repo-context.js';
 import { accountName, listUsage, type AccountUsage } from '@platform/claude/claude-usage.js';
 import { accountPlan, PLANS, planOf, PRICE_MAX_USD, validPrice, type AccountPlan } from '@platform/claude/claude-plans.js';
 import { readSettings, updateSettings } from '@platform/config/settings-store.js';
+import { apiFallbackView, resetApiSpend, type ApiFallbackView } from '@platform/claude/api-fallback.js';
 import { SettingsError, record } from './settings.js';
 
 // Ajustes → Cuentas de Claude (#234, stage 1), admins only:
 //   GET  /api/settings/accounts            each account, with its repos, its plan and its usage now
 //   POST /api/settings/accounts/<cuenta>   { plan?, priceUsd? }: plan null goes back to the default (Max 5×)
+//   POST /api/settings/api-budget/<owner>/<repo>/reset   sets what the repo spent by API back to zero (#421)
 //
 // The accounts are the claudeConfigDir of each repo in repos.json, plus any
 // with usage on record (an account a repo stopped using still has its
@@ -21,6 +23,9 @@ export interface AccountView {
   repos: string[];
   plan: AccountPlan;
   usage: Pick<AccountUsage, 'measuredAt' | 'fiveHour' | 'sevenDay' | 'limitHitAt'> | null;
+  // The repos of the account with an API fallback (#421): what each spent
+  // of its cap since it was last reset, and whether its key is in .env.
+  apiFallbacks: ApiFallbackView[];
 }
 
 const money = (usd: number | null) => (usd === null ? 'sin precio' : `$${usd}`);
@@ -33,12 +38,17 @@ export async function accountsView(entries: RepoEntry[], given?: AccountUsage[])
     const account = accountName(claudeConfigDir);
     let view = byAccount.get(account);
     if (!view) {
-      view = { account, claudeConfigDir, repos: [], plan: accountPlan(file, account), usage: null };
+      view = { account, claudeConfigDir, repos: [], plan: accountPlan(file, account), usage: null, apiFallbacks: [] };
       byAccount.set(account, view);
     }
     return view;
   };
-  for (const entry of entries) add(entry.claudeConfigDir ?? '').repos.push(entry.productRepo);
+  for (const entry of entries) {
+    const view = add(entry.claudeConfigDir ?? '');
+    view.repos.push(entry.productRepo);
+    const fallback = await apiFallbackView(entry);
+    if (fallback) view.apiFallbacks.push(fallback);
+  }
   for (const u of usage) {
     const { measuredAt, fiveHour, sevenDay, limitHitAt } = u;
     add(u.claudeConfigDir).usage = { measuredAt, ...(fiveHour ? { fiveHour } : {}), ...(sevenDay ? { sevenDay } : {}), ...(limitHitAt ? { limitHitAt } : {}) };
@@ -78,4 +88,16 @@ export async function setAccountPlan(login: string, account: string, body: Recor
   if (before.plan.priceUsd !== after.plan.priceUsd) await record({ login, what: `Cuentas de Claude · ${account} · precio al mes`, from: money(before.plan.priceUsd), to: money(after.plan.priceUsd) });
   if (before.plan.plan !== after.plan.plan || before.plan.priceUsd !== after.plan.priceUsd) log.info(`ajustes: ${login} puso la cuenta ${account} en ${after.plan.name} (${money(after.plan.priceUsd)})`);
   return { cuenta: after };
+}
+
+// POST /api/settings/api-budget/<owner>/<repo>/reset: after topping up the
+// key's credits, what the repo spent by API counts from zero again.
+export async function resetApiBudget(login: string, repo: string, entries: RepoEntry[]): Promise<{ fallback: ApiFallbackView }> {
+  const entry = entries.find((e) => e.productRepo === repo);
+  const before = entry ? await apiFallbackView(entry) : null;
+  if (!entry || !before) throw new SettingsError('Ese repo no tiene respaldo por API en repos.json.', { status: 404 });
+  await resetApiSpend(repo, login);
+  await record({ login, what: `Cuentas de Claude · ${repo} · gastado por API`, from: `$${before.spentUsd.toFixed(2)}`, to: '$0.00' });
+  log.info(`ajustes: ${login} reinició lo gastado por API de ${repo} ($${before.spentUsd.toFixed(2)})`);
+  return { fallback: (await apiFallbackView(entry))! };
 }

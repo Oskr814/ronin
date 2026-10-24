@@ -31,6 +31,13 @@ vi.mock('../claude/claude-runner.js', async (importOriginal) => ({
   runClaudeHeadless: (...args: unknown[]) => runClaudeHeadless(...args),
 }));
 
+const apiFallbackFor = vi.fn();
+const addApiSpend = vi.fn();
+vi.mock('../claude/api-fallback.js', () => ({
+  apiFallbackFor: (...args: unknown[]) => apiFallbackFor(...args),
+  addApiSpend: (...args: unknown[]) => addApiSpend(...args),
+}));
+
 const rm = vi.fn();
 const writeFile = vi.fn();
 vi.mock('node:fs/promises', () => ({
@@ -56,6 +63,8 @@ beforeEach(() => {
   ensureTrustedFixWorktree.mockResolvedValue('/tmp/worktree');
   removeTrustedFixWorktree.mockResolvedValue(undefined);
   runClaudeHeadless.mockResolvedValue(undefined);
+  apiFallbackFor.mockResolvedValue(null);
+  addApiSpend.mockResolvedValue(undefined);
   rm.mockResolvedValue(undefined);
   writeFile.mockResolvedValue(undefined);
 });
@@ -290,5 +299,92 @@ describe('runAgentTask — run record', () => {
       await expect(runAgentTask(slice())).rejects.toBe(error);
       expect((await lastRecord()).at(-1)).toMatchObject({ type: 'run_end', outcome });
     }
+  });
+});
+
+const { ClaudeNoSessionError, ClaudeUsageLimitError } = await import('../claude/claude-runner.js');
+
+describe('runAgentTask — the API fallback (#421)', () => {
+  const slice = () => task({ type: 'fix-review', prNumber: 50 });
+  const readRecord = async (call: number): Promise<any[]> => {
+    const { readFileSync } = await import('node:fs');
+    const record = runClaudeHeadless.mock.calls[call][4] as { path: string };
+    return readFileSync(record.path, 'utf8').trim().split('\n').map((line) => JSON.parse(line));
+  };
+  // A run that worked a while in session s1 and then hit the quota.
+  const cutAfterWorking = async (_cwd: string, _prompt: string, _label: string, _opts: unknown, sink: { step: Function; result: Function }) => {
+    sink.result({ sessionId: 's1' });
+    sink.step({ kind: 'tool', name: 'Bash', summary: '$ pnpm test' });
+    throw new ClaudeUsageLimitError('u');
+  };
+
+  it('goes on in the same session, on the key, the model and what the repo has left', async () => {
+    apiFallbackFor.mockResolvedValue({ apiKey: 'sk-repo', model: 'sonnet', leftUsd: 12 });
+    runClaudeHeadless.mockImplementationOnce(cutAfterWorking).mockImplementationOnce(async (_c, _p, _l, _o, sink) => {
+      sink.result({ costUsd: 1.75 });
+      return 'listo';
+    });
+
+    expect(await runAgentTask(slice())).toBe('listo');
+
+    const [, prompt, , opts] = runClaudeHeadless.mock.calls[1];
+    expect(prompt).toMatch(/Sigue exactamente donde quedaste/);
+    expect(opts).toMatchObject({ resume: 's1', apiKey: 'sk-repo', model: 'sonnet', maxBudgetUsd: 12, pluginDir: expect.any(String) });
+    expect(runClaudeHeadless.mock.calls[0][3]).not.toHaveProperty('apiKey');
+    expect((await readRecord(0)).at(-1)).toMatchObject({ type: 'run_end', outcome: 'usage_limit' });
+    const api = await readRecord(1);
+    expect(api[0]).toMatchObject({ type: 'run_start', billing: 'api', model: 'sonnet', prNumber: 50 });
+    expect(api.at(-1)).toMatchObject({ type: 'run_end', outcome: 'ok' });
+    expect(addApiSpend).toHaveBeenCalledWith('bmedical/bmedical', 1.75);
+  });
+
+  it('starts over on the key when the session is gone', async () => {
+    apiFallbackFor.mockResolvedValue({ apiKey: 'k', model: 'sonnet', leftUsd: 5 });
+    runClaudeHeadless.mockImplementationOnce(cutAfterWorking)
+      .mockRejectedValueOnce(new ClaudeNoSessionError('gone'))
+      .mockResolvedValueOnce('listo');
+
+    expect(await runAgentTask(slice())).toBe('listo');
+    expect(runClaudeHeadless.mock.calls[2][1]).toBe('the prompt');
+    expect(runClaudeHeadless.mock.calls[2][3]).not.toHaveProperty('resume');
+    expect(runClaudeHeadless.mock.calls[2][3]).toMatchObject({ apiKey: 'k' });
+  });
+
+  it('counts what it spent even when it fails, and fails as the API run did', async () => {
+    apiFallbackFor.mockResolvedValue({ apiKey: 'k', model: 'sonnet', leftUsd: 1 });
+    const spent = new ClaudeUsageLimitError('budget');
+    runClaudeHeadless.mockImplementationOnce(cutAfterWorking).mockImplementationOnce(async (_c, _p, _l, _o, sink) => {
+      sink.result({ costUsd: 1.1 });
+      throw spent;
+    });
+
+    await expect(runAgentTask(slice())).rejects.toBe(spent);
+    expect(addApiSpend).toHaveBeenCalledWith('bmedical/bmedical', 1.1);
+    expect((await readRecord(1)).at(-1)).toMatchObject({ type: 'run_end', outcome: 'usage_limit' });
+  });
+
+  it('leaves new work to the quota: a run cut before doing anything waits', async () => {
+    apiFallbackFor.mockResolvedValue({ apiKey: 'k', model: 'sonnet', leftUsd: 5 });
+    const cut = new ClaudeUsageLimitError('u');
+    runClaudeHeadless.mockImplementationOnce(async (_c, _p, _l, _o, sink) => {
+      sink.result({ sessionId: 's1' });
+      sink.step({ kind: 'text', text: "You've hit your session limit" });
+      throw cut;
+    });
+
+    await expect(runAgentTask(slice())).rejects.toBe(cut);
+    expect(runClaudeHeadless).toHaveBeenCalledTimes(1);
+  });
+
+  it('waits for the quota without a fallback, and never falls back on any other failure', async () => {
+    runClaudeHeadless.mockImplementationOnce(cutAfterWorking);
+    await expect(runAgentTask(slice())).rejects.toBeInstanceOf(ClaudeUsageLimitError);
+
+    apiFallbackFor.mockResolvedValue({ apiKey: 'k', model: 'sonnet', leftUsd: 5 });
+    const boom = new Error('boom');
+    runClaudeHeadless.mockRejectedValueOnce(boom);
+    await expect(runAgentTask(slice())).rejects.toBe(boom);
+    expect(runClaudeHeadless).toHaveBeenCalledTimes(2);
+    expect(addApiSpend).not.toHaveBeenCalled();
   });
 });

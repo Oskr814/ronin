@@ -128,7 +128,7 @@ En cada tick:
 3. Escanea issues abiertos `in-progress` → decide la próxima acción según el estado real del PR/CI/reviews (implementar siguiente slice, resolver comentarios de review, arreglar e2e, registrar las slices que un humano mergeó).
 4. Junta el resto del trabajo: reviews de PRs de humanos y menciones en ellos, `/spike` y `/spec` en issues sin asignar, entradas de changelog, el PR de exploración y la exploración nocturna (§11.8).
 5. Cada acción es una invocación de Claude no interactiva, aislada en su propio worktree, que termina al completar la unidad de trabajo — así nunca se acumula contexto entre tareas.
-6. Manejo de cuota: si `claude` sale por el límite de uso de la cuenta (`ClaudeUsageLimitError` en `claude-runner.ts`), no es un bloqueo: el tick deja esa tarea como está y la retoma en un tick posterior, cuando vuelve la cuota. No hay backoff calculado a partir del reset time; el reintento es simplemente el tick siguiente.
+6. Manejo de cuota: si `claude` sale por el límite de uso de la cuenta (`ClaudeUsageLimitError` en `claude-runner.ts`), no es un bloqueo: el tick deja esa tarea como está y la retoma en un tick posterior, cuando vuelve la cuota. No hay backoff calculado a partir del reset time; el reintento es simplemente el tick siguiente. Un repo con `apiFallback` termina en el momento la corrida cortada con su API key (§19.12).
 7. Bloqueo real (spec ambiguo, e2e fallando tras N intentos, feedback que no converge — ver `docs/BLOCKING.md`) → notificación por email, el loop deja ese issue en paz hasta recibir input humano.
 
 **Un tick a la vez por host**: como un tick puede tardar (una invocación de `claude -p` puede llegar a `AGENT_TASK_TIMEOUT_MINUTES`), el wrapper que genera `setup-cron.sh` usa `flock` para que un disparo del cron mientras el anterior sigue corriendo no arranque otro tick en paralelo: deja una marca `.tick.pending` y el tick en curso, al terminar, corre otro. Los eventos de GitHub no pasan por acá: cada uno tiene su propio handler, que corre a la par del tick (§14). Esto es independiente del claim entre runners distintos (§9), que protege contra *otro host*.
@@ -173,6 +173,7 @@ Los módulos del núcleo (en `platform/` salvo que se indique otra carpeta); los
 - `agents/run-record.ts` — el registro de cada corrida de agente en `logs/runs/`, que lee el tablero (§15.5)
 - `claude/claude-usage.ts` — el uso de cada cuenta de Claude, del `rate_limit_event` de cada corrida (§15.6)
 - `claude/claude-plans.ts` — el plan que paga cada cuenta de Claude, Max 5× si nadie lo eligió (§19.11)
+- `claude/api-fallback.ts` — el respaldo por API de un repo: la key, el modelo y lo que le queda de su tope (§19.12)
 - `apps/api/tick/tick.ts` — el loop de decisión: descubre specs asignados, y por cada issue `in-progress` decide la próxima acción leyendo el checklist y el contador de intentos por PR contra los límites de `docs/BLOCKING.md`
 
 ### 4. Testing y review externo
@@ -1611,6 +1612,7 @@ Cada cambio en Ajustes, del perfil propio a un repo, queda en el registro: la ta
 | `GET /api/settings/repos`, `POST /api/settings/repos/<owner>/<repo>` | admins | los repos (19.6) |
 | `GET /api/settings/connections`, `POST /api/settings/connections/mail` | admins | 19.7 |
 | `GET /api/settings/accounts`, `POST /api/settings/accounts/<cuenta>` | admins | `{ plan?, priceUsd? }`; `plan: null` vuelve a Max 5× (19.11) |
+| `POST /api/settings/api-budget/<owner>/<repo>/reset` | admins | lo gastado por API del repo vuelve a cero (19.12) |
 | `GET /api/settings/log` | admins | 19.8 |
 
 #### 19.10 Activarlo
@@ -1626,6 +1628,18 @@ El plan que paga cada cuenta de Claude, para calcular en Métricas cuánto se ap
 - **Planes:** Pro ($20), Max 5× ($100), Max 20× ($200), Team, Enterprise y Otro. Elegir un plan pone su precio de lista; los tres últimos no tienen y conservan el que había. El precio se puede cambiar a mano.
 - **Una cuenta sin elegir cuenta como Max 5× ($100).**
 - **Dónde queda:** con el resto de Ajustes (tabla `claude_account_plans`, o `settings.json` bajo `accounts.<cuenta>`): `{ plan, priceUsd? }`, con el precio solo si no es el de lista. Una entrada editada a mano que no se lee cuenta como sin elegir. Cada cambio queda en el Registro.
+- **Respaldo por API:** debajo de cada cuenta, sus repos con `apiFallback` (19.12), con lo gastado y el botón para reiniciarlo.
+
+#### 19.12 Respaldo por API (#421, `platform/claude/api-fallback.ts`)
+
+Una API key de la consola de Anthropic por repo, para terminar lo que la cuota de la suscripción cortó a mitad de camino.
+
+- **Configuración:** `apiFallback` en la entrada de `repos.json`: `{ apiKeyEnv, model?, maxUsd }`. La key está en `.env` con ese nombre, que no puede ser `ANTHROPIC_API_KEY`. `model` por defecto es `sonnet`.
+- **Cuándo:** `runAgentTask` atrapa el `ClaudeUsageLimitError` de una corrida que ya usó alguna herramienta. Una que se cortó sin hacer nada es trabajo nuevo y espera a la cuota, como antes. Tampoco se retoma si el repo no tiene la key en `.env` o le queda menos de `MIN_LEFT_USD` ($0,50).
+- **Cómo:** cierra el registro de la corrida cortada como `usage_limit` y abre otro con `billing: 'api'` y el modelo del respaldo. Corre `claude -p --resume <session_id>` (el `session_id` llega en el `system/init`) con `ANTHROPIC_API_KEY` solo en el entorno de esa corrida, `--model` del respaldo y `--max-budget-usd` con lo que le queda al repo. Si la sesión no está (`ClaudeNoSessionError`), empieza la tarea de nuevo con la key. El mismo worktree, el mismo servidor de acciones (que se vuelve a atar al pid nuevo).
+- **El tope:** `claude -p` corta con `error_max_budget_usd` al terminar el turno que lo pasa, y eso se lee como el límite de uso: la tarea espera. Lo mismo con el límite del workspace o «credit balance is too low». Una corrida por API no toca el uso de la cuenta (`rate_limit_event`, `limitHitAt`).
+- **Lo gastado:** un contador por repo (tabla `api_budgets`, o `<SETTINGS_DATA_DIR>/api-budget.json`), al que se suma el `total_cost_usd` de cada corrida por API al terminar, haya salido bien o no. Ajustes lo reinicia. Una corrida que muere antes del `result` no suma, y dos a la vez reciben cada una lo que quedaba al empezar: el tope que se cumple siempre es el del workspace de la key en la consola.
+- **Dónde se ve:** la columna `billing` de `runs`, «por API» en el historial y en la ficha, la barra de abajo desde el 80 % del tope (`apiBudgets` del snapshot), y Ajustes. Métricas → Suscripción no cuenta esas corridas.
 
 ### 20. Métricas (#222)
 
